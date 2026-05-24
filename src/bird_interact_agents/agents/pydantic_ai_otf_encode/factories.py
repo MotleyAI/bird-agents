@@ -763,6 +763,60 @@ async def _format_deps_block(
     return "\n".join(lines) if lines else "(none)"
 
 
+# Trim long parent definitions so a KB with many parents can't blow up the
+# prompt; the GUARD only needs enough of the definition to judge ownership.
+_REVERSE_DEP_DEF_MAXLEN = 200
+
+
+def _format_reverse_deps_block(reverse_deps: list[dict] | None) -> str:
+    """One line per KB that REFERENCES the current KB (its parents in the KB
+    graph), sorted by kb id, deduped by id (DEV-1466). Each line carries the
+    parent's ``type`` and ``knowledge`` + a trimmed ``definition`` so the setup
+    encoder can decide whether to defer an embedded scoring scheme to a
+    ``calculation_knowledge`` parent that owns that score (KB-6 → KB-44) versus
+    keep a component score its parent merely averages (KB-3/4/5 → KB-13).
+
+    Pure / synchronous — unlike :func:`_format_deps_block` it needs no storage,
+    only the raw KB rows. Tolerant of rows missing ``type`` / ``knowledge`` /
+    ``definition`` / a non-int ``id``. Returns ``"(none)"`` when empty."""
+    if not reverse_deps:
+        return "(none)"
+    seen: set[int] = set()
+    rows: list[tuple[int, dict]] = []
+    for r in reverse_deps:
+        rid_val = r.get("id")
+        if rid_val is None:
+            continue
+        try:
+            rid = int(rid_val)
+        except (TypeError, ValueError):
+            continue
+        if rid in seen:
+            continue
+        seen.add(rid)
+        rows.append((rid, r))
+    if not rows:
+        return "(none)"
+    rows.sort(key=lambda x: x[0])
+    lines: list[str] = []
+    for rid, r in rows:
+        head = f"  - KB {rid}"
+        ktype = r.get("type")
+        if ktype:
+            head += f" ({ktype})"
+        knowledge = r.get("knowledge")
+        if knowledge:
+            head += f' "{knowledge}"'
+        definition = r.get("definition")
+        if definition:
+            d = str(definition).strip()
+            if len(d) > _REVERSE_DEP_DEF_MAXLEN:
+                d = d[:_REVERSE_DEP_DEF_MAXLEN].rstrip() + "…"
+            head += f": {d}"
+        lines.append(head)
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Post-encode verification — Codex finding 3.
 # ---------------------------------------------------------------------------

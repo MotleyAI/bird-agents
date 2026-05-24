@@ -356,6 +356,12 @@ you must DEFER any item that genuinely needs it):
 
 {deps_block}
 
+KBs that REFERENCE this one (its parents in the KB graph), with their type and
+definition. Use these to decide who OWNS any scoring/derived value this KB
+merely illustrates (see VALUE-ILLUSTRATION SCORING & OWNERSHIP below):
+
+{reverse_deps_block}
+
 YOU HAVE NO USER TO ASK. There is no `ask_user` tool. If any threshold,
 weight, sentinel, unit, host table, grain, or other operationalisation detail
 is NOT pinned by the KB text, a column meaning, or an already-encoded
@@ -393,6 +399,38 @@ trigger matches:
     `create_model` with a per-parent count-or-existence stage.
   R-JOIN — cross-table relationship not in the FK graph → a `ModelJoin` via
     `edit_model(joins=[...])`.
+
+VALUE-ILLUSTRATION SCORING & OWNERSHIP. A `value_illustration` defaults to
+R-DESCRIBE — attach its value set / illustrative scoring prose as a `description`
+on the underlying base column. Do NOT materialise its scoring prose as a
+calculation Column when a `calculation_knowledge` KB that REFERENCES this one
+(see "KBs that REFERENCE this one" above) defines the SAME score as its WHOLE
+calculation — that KB OWNS the score column and will tag it with ITS kb_id;
+emitting your own competing column here would mis-tag the score (the benchmark
+masks by kb_id) and split ownership. EXCEPTION: if the referencing
+`calculation_knowledge` merely COMBINES this score with sibling component scores
+(e.g. averages several component scores into one), then DO emit this score as
+its own Column so that parent can reference it. NEVER create or claim a score
+Column that belongs to another KB: if a score you need is not yet present on the
+host model, INLINE its computation into your own Column rather than emitting a
+separately-named score column tagged with your kb_id. When you make this
+describe-vs-encode judgement for a value_illustration, state it in one sentence
+in your `notes`.
+
+LITERAL-EXISTS. Before encoding any predicate or CASE keyed on a specific
+categorical literal (a status label, a named category, an enum value), CONFIRM
+the literal actually occurs in the column's data — run a tiny `query` for the
+distinct values (do NOT trust only the `inspect_model` `sampled` summary, which
+may omit rare values). If the literal does not appear verbatim AND you cannot
+ground it unambiguously in an already-encoded score/dimension or a column
+meaning, DEFER (do not encode a silently always-true / never-true condition).
+Scope this to exact categorical-literal matches on low-cardinality columns;
+fuzzy/qualitative phrasing ("high-quality", "high X") instead needs a
+threshold/mapping you cannot guess, so it defers under the NO-GUESS rule. When
+you defer for a missing literal, and the column has FEWER THAN 20 distinct
+values, LIST those values in `clarifying_questions` / `notes` so a later
+per-task agent can map the KB's label to a real value; if 20+, say so and give a
+representative sample.
 
 KB SELF-ANNOTATION. Every entity you write MUST carry `meta = {{"kb_id":
 {kb_id}}}` (singular int) — it is the SOLE key the benchmark uses to mask the

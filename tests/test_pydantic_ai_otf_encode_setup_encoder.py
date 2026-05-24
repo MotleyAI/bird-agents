@@ -175,7 +175,7 @@ async def test_shared_server_entered_and_exited_in_same_task(monkeypatch):
 
     async def _fake_run(*, agent, kb_id, kb_body, deps_results, storage, db,
                         self_model_id="unknown", sessions_dir=None,
-                        index_rows=None):
+                        index_rows=None, reverse_deps=None):
         events.append(("run", kb_id, id(asyncio.current_task())))
         return EncoderResult(kb_id=kb_id, status="encoded", entities=[], notes="")
 
@@ -448,3 +448,158 @@ async def test_run_setup_encoder_keeps_submission_when_run_raises_after_submit(t
     )
     assert final.status == "deferred"   # NOT "error"
     assert "submitted then capped" in final.notes
+
+
+# ---------------------------------------------------------------------------
+# Reverse-dependency block (DEV-1466): a KB must see the KBs that REFERENCE it
+# (its parents) + their type/knowledge/definition, so a value_illustration can
+# defer an embedded scoring scheme to a calculation_knowledge parent that owns
+# that score (KB-6 "Dwelling Type" → defer the score to KB-44 "Dwelling Type
+# Score"), while still emitting component scores whose parent merely AVERAGES
+# them (KB-3/4/5 → KB-13). Pure helper, mirrors `_format_deps_block`.
+# ---------------------------------------------------------------------------
+
+
+def test_reverse_deps_block_empty_is_none():
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_reverse_deps_block,
+    )
+
+    assert _format_reverse_deps_block([]) == "(none)"
+    assert _format_reverse_deps_block(None) == "(none)"
+
+
+def test_reverse_deps_block_lists_parents_sorted_with_type_and_knowledge():
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_reverse_deps_block,
+    )
+
+    parents = [
+        {"id": 44, "type": "calculation_knowledge",
+         "knowledge": "Dwelling Type Score",
+         "definition": "Brickwork house 4, Apartment 3, else 1."},
+        {"id": 20, "type": "calculation_knowledge",
+         "knowledge": "Living Condition Score",
+         "definition": "50/50 average of dwelling + infra score."},
+    ]
+    block = _format_reverse_deps_block(parents)
+    lines = [ln for ln in block.splitlines() if ln.strip()]
+    assert len(lines) == 2
+    # sorted by kb id → KB 20 line precedes KB 44 line
+    assert "KB 20" in lines[0]
+    assert "KB 44" in lines[1]
+    assert "calculation_knowledge" in block
+    # knowledge AND definition both surface (the GUARD needs the definition to
+    # judge whether the parent IS this score vs merely averages it)
+    assert "Dwelling Type Score" in block
+    assert "Living Condition Score" in block
+    assert "Brickwork house 4" in block
+    assert "50/50 average" in block
+
+
+def test_reverse_deps_block_tolerates_missing_fields_and_dedups():
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_reverse_deps_block,
+    )
+
+    parents = [
+        {"id": 7},                                       # no type/knowledge/def
+        {"id": 7, "type": "calc", "knowledge": "dup"},   # duplicate id 7
+        {"id": 9, "type": "domain_knowledge", "knowledge": "X",
+         "definition": "D" * 1000},                      # very long definition
+    ]
+    block = _format_reverse_deps_block(parents)  # must not raise
+    lines = [ln for ln in block.splitlines() if ln.strip()]
+    # duplicate id 7 collapses to ONE line; 9 is its own line
+    assert sum("KB 7" in ln for ln in lines) == 1
+    assert any("KB 9" in ln for ln in lines)
+    # the 1000-char definition is present-but-TRUNCATED: a prefix of it appears,
+    # but not the whole 1000-char string, and the block stays bounded.
+    assert "DDDD" in block               # a prefix of the long definition shows
+    assert ("D" * 1000) not in block     # but not the full untrimmed value
+    assert len(block) < 1000
+
+
+async def test_run_setup_encoder_threads_reverse_deps_into_prompt(tmp_path):
+    """DEV-1466: a `reverse_deps` passed to `_run_setup_encoder` must reach the
+    formatted SETUP_ENCODER_PROMPT (so the encoder can see its parents)."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode import setup_encoder
+
+    captured: dict = {}
+
+    class _CapRun:
+        result = None
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+        def all_messages(self):
+            return []
+
+        def usage(self):
+            return None
+
+    class _CapCM:
+        def __init__(self, kw):
+            self._kw = kw
+
+        async def __aenter__(self):
+            captured["instructions"] = self._kw.get("instructions")
+            return _CapRun()
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class _CapAgent:
+        def iter(self, **kw):
+            return _CapCM(kw)
+
+    # unique sentinel so the assertion can't pass on kb_body / deps content
+    reverse = [{"id": 44, "type": "calculation_knowledge",
+                "knowledge": "UNIQUE_REVERSE_PARENT_SENTINEL",
+                "definition": "Brickwork 4, Apartment 3, else 1."}]
+    await setup_encoder._run_setup_encoder(
+        agent=_CapAgent(), kb_id=6, kb_body="KB 6 — Dwelling Type",
+        deps_results=[], storage=object(), db="households",
+        reverse_deps=reverse, sessions_dir=tmp_path,
+    )
+    instr = captured["instructions"]
+    assert instr is not None
+    assert "UNIQUE_REVERSE_PARENT_SENTINEL" in instr
+    assert "KB 44" in instr
+
+
+async def test_run_one_closure_forwards_reverse_deps(monkeypatch):
+    """DEV-1466: the real `run_one` closure from `make_setup_build_encoder` must
+    forward `reverse_deps` into `_run_setup_encoder` (the seam between
+    `_encode_all` and the prompt)."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode import setup_encoder
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+        EncoderResult,
+    )
+
+    captured: dict = {}
+
+    async def _capture_run(*, agent, kb_id, kb_body, deps_results, storage, db,
+                           self_model_id="unknown", sessions_dir=None,
+                           index_rows=None, reverse_deps=None):
+        captured["reverse_deps"] = reverse_deps
+        return EncoderResult(kb_id=kb_id, status="encoded", entities=[], notes="")
+
+    monkeypatch.setattr(setup_encoder, "_build_setup_encoder", lambda **kw: object())
+    monkeypatch.setattr(setup_encoder, "_run_setup_encoder", _capture_run)
+
+    build_encoder = setup_encoder.make_setup_build_encoder(
+        model=object(), model_settings=None, self_model_id="m",
+        build_shared_slayer_server=lambda _dir: None,
+    )
+    run_one = build_encoder(storage=object(), build_dir="/x", db="households")
+    reverse = [{"id": 44, "type": "calculation_knowledge",
+                "knowledge": "Dwelling Type Score", "definition": "x"}]
+    await run_one(6, {"id": 6, "knowledge": "Dwelling Type"}, [],
+                  reverse_deps=reverse)
+
+    assert captured["reverse_deps"] == reverse
