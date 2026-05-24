@@ -1,37 +1,50 @@
 """Per-DB cache for the on-the-fly setup path.
 
 Materialises orchestrator phases 1-3 (slayer ingest + column-meaning
-overlay + JSONB-leaf expansion) into
-``<cache_root>/<db>/<fingerprint>/`` and caches the parsed ``*_kb.jsonl``
-rows alongside.
+overlay + JSONB-leaf expansion) into a SINGLE authoritative dir per DB,
+``<cache_root>/<db>/``, and caches the parsed ``*_kb.jsonl`` rows
+alongside.
 
 Phase 4 (LLM TEXT-as-date detection) is intentionally skipped on this
 path — corpus audit (DEV-1455) showed zero retypes across all 28
 ingested DBs, so paying for an LLM call per first-task-touching-DB
 buys nothing.
 
-Cache invalidation:
+Lifecycle (DEV-1468 consolidation — presence-gated reuse + explicit
+force-wipe):
 
-- Fingerprint = sha256(sqlite size + mtime, column-meaning JSON
-  content, *_kb.jsonl content, ``slayer.__version__``).
-- Stale dirs are NOT auto-GC'd — bumping the fingerprint creates a
-  new sibling sub-dir and the user can ``rm -rf`` the old ones at
-  their leisure.
+- The completeness marker is ``_cache_fp.txt`` (written last). Its
+  presence means "complete"; its content is the build-time fingerprint
+  (provenance only). ``_kb_rows.json`` is written before it.
+- Reuse is gated solely on the marker's presence: a present marker →
+  reuse (no rebuild, ``fingerprint_of`` is NOT recomputed). Fingerprint
+  *gating* is removed — this makes an uploaded artifact reusable in the
+  cloud by construction (a recomputed fingerprint would differ on a
+  different sqlite mtime / abs root and force a needless rebuild).
+- Rebuild happens only when the marker is ABSENT or ``force=True``.
+  Accepted tradeoff: editing a KB/schema/DB and re-running WITHOUT
+  ``force`` reuses the stale artifact; reingest is now explicit.
+- ``fingerprint_of`` is retained as a pure provenance function (written
+  to ``_cache_fp.txt`` at build, loaded back on reuse into
+  ``CacheEntry.fingerprint``); it no longer names the dir or gates reuse.
 
-Concurrency:
+Concurrency / atomicity:
 
-- Build into ``<cache_root>/<db>.tmp-<random>/`` and atomic-rename
-  on success.
-- A per-DB :class:`asyncio.Lock` serialises concurrent builds within
-  the same process+event-loop.
-- For cross-process / cross-loop concurrency, the atomic rename is
-  the cross-process source of truth: two processes racing both build
-  into separate tmp dirs and one wins the rename; the loser sees
-  ``OSError`` (target exists / not empty), discards its tmp dir,
-  and re-reads the existing target on the double-checked existence
-  test that follows the lock release.
-- Failed builds are wiped before the rename, so a crash mid-build
-  never leaves a half-baked fingerprint dir behind.
+- Build into a unique sibling tmp ``<cache_root>/.<db>.tmp-<random>/``
+  and atomic-rename onto ``<cache_root>/<db>`` on success. The target is
+  NEVER pre-created (renaming onto a pre-created dir fails).
+- Migration / force: a pre-existing target with NO marker (old
+  ``<db>/<fp>/`` layout, or an incomplete dir) — or any target under
+  ``force`` — is ``rmtree``'d before the rename. The cache is
+  regenerable, so this uses the same single-process-per-run assumption
+  as the reference's force path.
+- A per-DB :class:`asyncio.Lock` serialises concurrent builds within the
+  same process+event-loop. For cross-process concurrency the atomic
+  rename is the source of truth: the loser of a rename race sees
+  ``OSError`` and treats it as success iff the target now carries the
+  marker (else re-raises), discarding its own tmp dir.
+- Failed builds wipe their tmp dir before re-raising, so a crash
+  mid-build never leaves a half-baked dir behind.
 """
 
 from __future__ import annotations
@@ -73,6 +86,10 @@ _ = _phase4_dates
 
 
 logger = logging.getLogger(__name__)
+
+# Completeness marker for a per-DB cache dir. Present ⇒ complete; written
+# LAST in the build tmp dir. Content = the build-time fingerprint (provenance).
+_CACHE_MARKER = "_cache_fp.txt"
 
 
 @dataclass(frozen=True)
@@ -182,67 +199,71 @@ def _load_kb_rows(kb_path: Path) -> list[dict]:
     ]
 
 
+def _load_cache_entry(target: Path) -> CacheEntry:
+    """Build a :class:`CacheEntry` from a complete on-disk cache dir.
+
+    Only called when the ``_cache_fp.txt`` marker is present; since the marker
+    and ``_kb_rows.json`` are committed together by one atomic rename, both are
+    guaranteed present here.
+    """
+    fp = (target / _CACHE_MARKER).read_text().strip()
+    kb_rows = json.loads((target / "_kb_rows.json").read_text())
+    return CacheEntry(cache_dir=target, fingerprint=fp, kb_rows=kb_rows)
+
+
 async def ensure_db_cache(
     db: str,
     *,
     cache_root: Path,
     mini_interact_root: Path,
+    force: bool = False,
 ) -> CacheEntry:
-    """Materialise (or no-op confirm) the per-DB orchestrator cache.
+    """Materialise (or reuse) the single authoritative per-DB cache at
+    ``<cache_root>/<db>/``.
 
-    Idempotent. Concurrency-safe: a per-DB filelock serialises
-    competing callers, and the build step uses a tmp dir + atomic
-    rename so a crash mid-build never leaves a half-baked fingerprint
-    dir behind.
+    Presence-gated: a present ``_cache_fp.txt`` completeness marker → reuse
+    (no rebuild, ``fingerprint_of`` is NOT recomputed). Rebuild only when the
+    marker is ABSENT or ``force=True``. See the module docstring for the full
+    lifecycle/atomicity contract.
 
-    Returns a :class:`CacheEntry` whose ``cache_dir`` is the
-    fingerprint-suffixed path and whose ``kb_rows`` are the parsed
-    rows from the source ``*_kb.jsonl``.
+    Returns a :class:`CacheEntry` whose ``cache_dir`` is ``<cache_root>/<db>``
+    and whose ``fingerprint`` is loaded from the marker (reuse) or freshly
+    computed (build), as provenance.
     """
-    sqlite_path = mini_interact_root / db / f"{db}.sqlite"
-    meanings_path = mini_interact_root / db / f"{db}_column_meaning_base.json"
-    kb_path = mini_interact_root / db / f"{db}_kb.jsonl"
-    for p, label in (
-        (sqlite_path, "sqlite"),
-        (meanings_path, "column-meaning"),
-        (kb_path, "kb"),
-    ):
-        if not p.is_file():
-            raise FileNotFoundError(
-                f"slayer_otf cache: required {label} file missing for db={db}: {p}"
-            )
+    target = cache_root / db
+    marker = target / _CACHE_MARKER
 
-    fp = fingerprint_of(
-        db_name=db, mini_interact_root=mini_interact_root,
-    )
-    db_root = cache_root / db
-    db_root.mkdir(parents=True, exist_ok=True)
-    target = db_root / fp
-
-    # Fast path — already built.
-    if (target / "_kb_rows.json").is_file():
-        return CacheEntry(
-            cache_dir=target, fingerprint=fp,
-            kb_rows=json.loads((target / "_kb_rows.json").read_text()),
-        )
+    # Fast path — reuse a complete cache without recomputing the fingerprint.
+    if not force and marker.is_file():
+        return _load_cache_entry(target)
 
     async with _get_lock(db):
-        # Double-checked: another coroutine may have built it while we
-        # waited for the lock.
-        if (target / "_kb_rows.json").is_file():
-            return CacheEntry(
-                cache_dir=target, fingerprint=fp,
-                kb_rows=json.loads(
-                    (target / "_kb_rows.json").read_text()
-                ),
-            )
+        # Double-check under the lock — a peer coroutine may have built it
+        # while we waited.
+        if not force and marker.is_file():
+            return _load_cache_entry(target)
 
+        sqlite_path = mini_interact_root / db / f"{db}.sqlite"
+        meanings_path = mini_interact_root / db / f"{db}_column_meaning_base.json"
+        kb_path = mini_interact_root / db / f"{db}_kb.jsonl"
+        for p, label in (
+            (sqlite_path, "sqlite"),
+            (meanings_path, "column-meaning"),
+            (kb_path, "kb"),
+        ):
+            if not p.is_file():
+                raise FileNotFoundError(
+                    f"slayer_otf cache: required {label} file missing for "
+                    f"db={db}: {p}"
+                )
+
+        fp = fingerprint_of(db_name=db, mini_interact_root=mini_interact_root)
         kb_rows = _load_kb_rows(kb_path)
 
-        # Build into a tmp sibling so a crash leaves no partial target.
-        tmp_dir = Path(tempfile.mkdtemp(
-            prefix=f".{fp}.tmp-", dir=str(db_root),
-        ))
+        # Build into a unique tmp sibling under cache_root so a crash leaves no
+        # partial target. NEVER pre-create the target itself.
+        cache_root.mkdir(parents=True, exist_ok=True)
+        tmp_dir = Path(tempfile.mkdtemp(prefix=f".{db}.tmp-", dir=str(cache_root)))
         try:
             await _build_async(
                 build_dir=tmp_dir, db=db,
@@ -250,31 +271,37 @@ async def ensure_db_cache(
                 meanings_path=meanings_path,
                 kb_rows=kb_rows,
             )
-            # Atomic-rename onto the target. os.rename of a directory
-            # is atomic on POSIX when source and target share the same
-            # filesystem (we ensure this by placing tmp under db_root).
-            #
-            # Cross-process race: if a peer process won the rename
-            # while we were building, our rename will fail with OSError
-            # (target exists / not empty). Treat that as success — the
-            # peer's content is equivalent (same fingerprint) — and
+            # Provenance marker, written LAST.
+            (tmp_dir / _CACHE_MARKER).write_text(fp)
+
+            # Migration / force: a pre-existing target with NO marker (old
+            # <db>/<fp>/ layout or an incomplete dir) — or any target under
+            # force — is wiped before the rename. (A markerless target also
+            # can't be reused, so wiping it is safe.) We never rmtree a
+            # peer's complete (marked) dir here: when the target is marked
+            # and not force, the rename below collides and the OSError branch
+            # treats the peer's dir as success.
+            if target.exists() and (force or not marker.is_file()):
+                shutil.rmtree(target, ignore_errors=True)
+
+            # Atomic-rename onto the (now-absent) target. Cross-process race:
+            # if a peer won the rename while we built, ours fails with OSError;
+            # treat that as success iff the target now carries the marker, and
             # discard our tmp dir.
             try:
                 os.rename(tmp_dir, target)
             except OSError:
-                if not (target / "_kb_rows.json").is_file():
+                if not marker.is_file():
                     raise
                 shutil.rmtree(tmp_dir, ignore_errors=True)
         except BaseException:
-            # Clean up the half-built tmp on any failure — keep the
-            # cache root tidy and the next call's double-check honest.
+            # Clean up the half-built tmp on any failure — keep the cache
+            # root tidy and the next call's double-check honest.
             if tmp_dir.exists():
                 shutil.rmtree(tmp_dir, ignore_errors=True)
             raise
 
-        return CacheEntry(
-            cache_dir=target, fingerprint=fp, kb_rows=kb_rows,
-        )
+        return CacheEntry(cache_dir=target, fingerprint=fp, kb_rows=kb_rows)
 
 
 async def _build_async(

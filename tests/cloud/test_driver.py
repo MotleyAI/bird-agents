@@ -41,6 +41,8 @@ class FakeSubmitArgs:
     run_id: str | None = None
     detach: bool = False
     allow_dirty: bool = False
+    slayer_setup: str = "pre-encoded"
+    slayer_storage_root: str = "/data/slayer_models"
 
 
 def _patch_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict[str, MagicMock]:
@@ -555,3 +557,289 @@ def test_resubmit_passes_yaml_path_to_submit_job(
 
     mocks["cluster"].submit_job.assert_called_once()
     assert mocks["cluster"].submit_job.call_args.kwargs["yaml_path"] == yaml_path
+
+
+# ---------------------------------------------------------------------------
+# DEV-1468 — cloud slayer: per-combo per-DB upload, fail-fast presence check,
+# OPENAI key delivery, manifest + resubmit plumbing, no re-upload on resubmit.
+# ---------------------------------------------------------------------------
+
+
+def _write_dataset(tmp_path: Path, dbs: list[str]) -> Path:
+    """A tiny mini_interact.jsonl mapping <db>_1 -> selected_database=<db>."""
+    import json as _json
+    f = tmp_path / "mini_interact.jsonl"
+    f.write_text(
+        "\n".join(
+            _json.dumps({"instance_id": f"{db}_1", "selected_database": db})
+            for db in dbs
+        ) + "\n"
+    )
+    return f
+
+
+def _setup_slayer_submit(
+    monkeypatch, tmp_path, *, framework, slayer_setup, mode, dbs, lay_down=True,
+):
+    """Patch collaborators + dataset + the three artifact roots for a slayer
+    submit. Returns (mocks, worktree, otf_cache_root, otf_ref_root)."""
+    mocks = _patch_collaborators(monkeypatch)
+    data_file = _write_dataset(tmp_path, dbs)
+    worktree = tmp_path / "worktree"
+    otf_cache = tmp_path / "main" / "slayer_otf_cache"
+    otf_ref = tmp_path / "main" / "slayer_models_otf"
+
+    monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: data_file)
+    monkeypatch.setattr(driver.paths, "mini_interact_root", lambda: tmp_path / "mini")
+    monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
+    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda: otf_cache)
+    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: otf_ref)
+    # download/wait/fetch never run under detach in these tests.
+    monkeypatch.setattr(driver, "wait_until_done", MagicMock())
+    monkeypatch.setattr(driver, "fetch", MagicMock())
+
+    if lay_down:
+        for db in dbs:
+            if slayer_setup == "pre-encoded":
+                d = worktree / "slayer_models" / db
+                d.mkdir(parents=True)
+                (d / "model.yaml").write_text("models: []\n")
+            elif framework == "pydantic_ai_recursive":
+                d = otf_cache / db
+                d.mkdir(parents=True)
+                (d / "_cache_fp.txt").write_text("fp")
+            else:
+                d = otf_ref / db
+                d.mkdir(parents=True)
+                (d / "_reference_fp.txt").write_text("fp")
+    return mocks, worktree, otf_cache, otf_ref
+
+
+@pytest.mark.parametrize(
+    "framework, slayer_setup, mode, artifact",
+    [
+        ("pydantic_ai_recursive", "pre-encoded", "c-interact", "slayer_models"),
+        ("pydantic_ai_recursive", "on-the-fly", "a-interact", "slayer_otf_cache"),
+        ("pydantic_ai_otf_encode", "on-the-fly", "a-interact", "slayer_models_otf"),
+    ],
+)
+def test_submit_uploads_combo_dir_per_selected_db(
+    monkeypatch, tmp_path, framework, slayer_setup, mode, artifact,
+):
+    """Submit uploads exactly the combo's local dir for each selected DB,
+    under runs/<run-id>/slayer_setup/<artifact>/<db>/."""
+    dbs = ["db_a", "db_b"]
+    mocks, worktree, otf_cache, otf_ref = _setup_slayer_submit(
+        monkeypatch, tmp_path, framework=framework, slayer_setup=slayer_setup,
+        mode=mode, dbs=dbs,
+    )
+    src_root = {
+        "slayer_models": worktree / "slayer_models",
+        "slayer_otf_cache": otf_cache,
+        "slayer_models_otf": otf_ref,
+    }[artifact]
+
+    args = FakeSubmitArgs(
+        framework=framework, query_mode="slayer", mode=mode,
+        slayer_setup=slayer_setup, instance_ids=("db_a_1", "db_b_1"),
+        detach=True,
+    )
+    run_id = driver.submit(args)
+
+    calls = mocks["gcs"].upload_dir_prefix.call_args_list
+    uploaded = {(c.args[0], c.args[1]) for c in calls}
+    expected = {
+        (src_root / db,
+         f"runs/{run_id}/slayer_setup/{artifact}/{db}")
+        for db in dbs
+    }
+    assert uploaded == expected, f"uploaded {uploaded}, expected {expected}"
+
+
+def test_submit_missing_local_artifact_raises_before_cluster(
+    monkeypatch, tmp_path,
+):
+    """Fail-fast: an on-the-fly DB with no local artifact must raise at submit
+    BEFORE building/pushing the image or bringing up a cluster."""
+    mocks, *_ = _setup_slayer_submit(
+        monkeypatch, tmp_path, framework="pydantic_ai_recursive",
+        slayer_setup="on-the-fly", mode="a-interact", dbs=["db_a"],
+        lay_down=False,  # artifact intentionally absent
+    )
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_recursive", query_mode="slayer", mode="a-interact",
+        slayer_setup="on-the-fly", instance_ids=("db_a_1",), detach=True,
+    )
+    with pytest.raises(Exception):  # noqa: B017 — any clear submit-time error
+        driver.submit(args)
+    mocks["image"].build_and_push.assert_not_called()
+    mocks["cluster"].up.assert_not_called()
+    mocks["gcs"].upload_dir_prefix.assert_not_called()
+
+
+def test_submit_pre_encoded_missing_dir_raises(monkeypatch, tmp_path):
+    """pre-encoded presence = non-empty dir; a missing slayer_models/<db>/
+    raises before the cluster."""
+    mocks, *_ = _setup_slayer_submit(
+        monkeypatch, tmp_path, framework="pydantic_ai_recursive",
+        slayer_setup="pre-encoded", mode="c-interact", dbs=["db_a"],
+        lay_down=False,
+    )
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_recursive", query_mode="slayer", mode="c-interact",
+        slayer_setup="pre-encoded", instance_ids=("db_a_1",), detach=True,
+    )
+    with pytest.raises(Exception):  # noqa: B017
+        driver.submit(args)
+    mocks["cluster"].up.assert_not_called()
+
+
+def test_submit_pre_encoded_empty_dir_raises(monkeypatch, tmp_path):
+    """pre-encoded presence requires a NON-EMPTY dir — an empty
+    slayer_models/<db>/ (e.g. a stale mkdir) must still fail fast."""
+    mocks, worktree, *_ = _setup_slayer_submit(
+        monkeypatch, tmp_path, framework="pydantic_ai_recursive",
+        slayer_setup="pre-encoded", mode="c-interact", dbs=["db_a"],
+        lay_down=False,
+    )
+    (worktree / "slayer_models" / "db_a").mkdir(parents=True)  # exists but EMPTY
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_recursive", query_mode="slayer", mode="c-interact",
+        slayer_setup="pre-encoded", instance_ids=("db_a_1",), detach=True,
+    )
+    with pytest.raises(Exception):  # noqa: B017
+        driver.submit(args)
+    mocks["cluster"].up.assert_not_called()
+
+
+def test_submit_otf_encode_missing_reference_raises(monkeypatch, tmp_path):
+    """otf_encode presence = slayer_models_otf/<db>/_reference_fp.txt marker;
+    a missing reference must fail fast before the cluster."""
+    mocks, *_ = _setup_slayer_submit(
+        monkeypatch, tmp_path, framework="pydantic_ai_otf_encode",
+        slayer_setup="on-the-fly", mode="a-interact", dbs=["db_a"],
+        lay_down=False,
+    )
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
+        slayer_setup="on-the-fly", instance_ids=("db_a_1",), detach=True,
+    )
+    with pytest.raises(Exception):  # noqa: B017
+        driver.submit(args)
+    mocks["cluster"].up.assert_not_called()
+
+
+def test_submit_dedups_uploads_when_instances_share_db(monkeypatch, tmp_path):
+    """Upload is PER SELECTED DB, not per instance — two instances mapping to
+    the same DB must produce exactly one upload."""
+    import json as _json
+
+    mocks, *_ = _setup_slayer_submit(
+        monkeypatch, tmp_path, framework="pydantic_ai_recursive",
+        slayer_setup="on-the-fly", mode="a-interact", dbs=["db_a"],
+    )
+    # Two instances → one DB.
+    (tmp_path / "mini_interact.jsonl").write_text(
+        _json.dumps({"instance_id": "db_a_1", "selected_database": "db_a"}) + "\n"
+        + _json.dumps({"instance_id": "db_a_2", "selected_database": "db_a"}) + "\n"
+    )
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_recursive", query_mode="slayer", mode="a-interact",
+        slayer_setup="on-the-fly", instance_ids=("db_a_1", "db_a_2"), detach=True,
+    )
+    driver.submit(args)
+    calls = mocks["gcs"].upload_dir_prefix.call_args_list
+    uploaded_dbs = [c.args[1].rsplit("/", 1)[-1] for c in calls]
+    assert uploaded_dbs == ["db_a"], f"expected a single db_a upload, got {uploaded_dbs}"
+
+
+def test_submit_job_args_carry_slayer_flags(monkeypatch, tmp_path):
+    mocks, *_ = _setup_slayer_submit(
+        monkeypatch, tmp_path, framework="pydantic_ai_recursive",
+        slayer_setup="on-the-fly", mode="a-interact", dbs=["db_a"],
+    )
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_recursive", query_mode="slayer", mode="a-interact",
+        slayer_setup="on-the-fly", slayer_storage_root="/data/slayer_models",
+        instance_ids=("db_a_1",), detach=True,
+    )
+    driver.submit(args)
+    job_args = mocks["cluster"].submit_job.call_args.kwargs["args"]
+    assert "--slayer-setup" in job_args
+    assert job_args[job_args.index("--slayer-setup") + 1] == "on-the-fly"
+    assert "--slayer-storage-root" in job_args
+    assert job_args[job_args.index("--slayer-storage-root") + 1] == "/data/slayer_models"
+
+
+def test_read_api_keys_includes_openai_for_slayer(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
+    monkeypatch.setenv("OPENAI_API_KEY", "o")
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5", "anthropic/claude-haiku-4-5-20251001",
+        query_mode="slayer",
+    )
+    assert keys.get("OPENAI_API_KEY") == "o"
+    assert keys.get("ANTHROPIC_API_KEY") == "a"
+
+
+def test_read_api_keys_excludes_openai_for_raw(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
+    monkeypatch.setenv("OPENAI_API_KEY", "o")
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5", "anthropic/claude-haiku-4-5-20251001",
+        query_mode="raw",
+    )
+    assert "OPENAI_API_KEY" not in keys
+
+
+def test_build_manifest_carries_slayer_fields() -> None:
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
+        slayer_setup="on-the-fly", slayer_storage_root="/data/slayer_models",
+        instance_ids=("db_a_1",),
+    )
+    manifest = driver.build_manifest(args, image_uri="x:tag", run_id=RUN_ID)
+    assert manifest["slayer_setup"] == "on-the-fly"
+    assert manifest["slayer_storage_root"] == "/data/slayer_models"
+
+
+def test_resubmit_carries_slayer_fields_and_does_not_reupload(
+    monkeypatch, tmp_path,
+):
+    """resubmit re-renders + re-runs the job with the slayer flags from the
+    manifest, but does NOT re-upload — the setup is already in GCS under the
+    run prefix and the actor downloads it."""
+    mocks = _patch_collaborators(monkeypatch)
+    yaml_path = Path("/tmp/resubmit-cluster.yaml")
+    mocks["cluster"].render_from_manifest.return_value = yaml_path
+    mocks["cluster"].head_address.return_value = "http://localhost:8265"
+    mocks["gcs"].read_manifest.return_value = {
+        "run_id": RUN_ID,
+        "framework": "pydantic_ai_otf_encode",
+        "query_mode": "slayer",
+        "mode": "a-interact",
+        "agent_model": "anthropic/claude-sonnet-4-5",
+        "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+        "instance_ids": ["db_a_1", "db_b_1"],
+        "patience": 3,
+        "strict": False,
+        "use_audited_gold_sql": False,
+        "max_depth": 3,
+        "prompt_cache": True,
+        "slayer_setup": "on-the-fly",
+        "slayer_storage_root": "/data/slayer_models",
+        "render_inputs": {"workers": 1, "actors_per_worker": 2},
+    }
+    mocks["gcs"].list_attempts.return_value = {"db_a_1": [1]}  # db_b_1 missing
+    mocks["gcs"].read_row.side_effect = lambda rid, iid, n: {"error": None}
+    monkeypatch.setattr(driver, "wait_until_done", lambda *a, **k: None)
+    monkeypatch.setattr(driver, "fetch", lambda *a, **k: {})
+
+    driver.resubmit(RUN_ID)
+
+    job_args = mocks["cluster"].submit_job.call_args.kwargs["args"]
+    assert "--slayer-setup" in job_args
+    assert job_args[job_args.index("--slayer-setup") + 1] == "on-the-fly"
+    assert "--slayer-storage-root" in job_args
+    # The crux: resubmit must NOT re-upload the setup.
+    mocks["gcs"].upload_dir_prefix.assert_not_called()

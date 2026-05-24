@@ -58,7 +58,8 @@ def fake_cache(tmp_path, monkeypatch):
     # (deterministic + isolated from the ambient dataset).
     monkeypatch.delenv("BIRD_DB_PATH", raising=False)
 
-    cache_dir = tmp_path / "cache" / DB / "fp_abc123"
+    # DEV-1468: the cache is a single authoritative dir per DB (no <fp> level).
+    cache_dir = tmp_path / "cache" / DB
     (cache_dir / "datasources").mkdir(parents=True)
     (cache_dir / "models" / DB).mkdir(parents=True)
     # Absolute conn string anchored under the mini_interact_root the build is
@@ -178,21 +179,119 @@ async def test_force_rebuilds_even_when_present(fake_cache, tmp_path):
     assert sorted(record) == [1, 2, 3], "force=True must re-run the encoder"
 
 
-async def test_stale_marker_rebuilds(fake_cache, tmp_path):
-    """If the reference's fingerprint marker no longer matches the current
-    fingerprint (KB/schema/--db-path changed since the build), it is REBUILT,
-    not reused (Codex finding) — so a task never gets models built against
-    different inputs than the data it queries."""
+async def test_present_marker_is_reused_without_fingerprint_check(
+    fake_cache, tmp_path,
+):
+    """DEV-1468 consolidation: a present ``_reference_fp.txt`` marker is REUSED
+    regardless of whether its fingerprint still matches the current inputs.
+    Fingerprint gating is removed (accepted tradeoff + provenance warning) —
+    a "stale" marker no longer triggers a rebuild; reingest is explicit via
+    --otf-rebuild."""
     record: list[int] = []
     await _build(tmp_path, _encoded_build_encoder(record))
     ref = tmp_path / "slayer_models_otf" / DB
+    # Scribble a non-matching fingerprint — under the OLD contract this forced
+    # a rebuild; under the new one it is reused as-is.
     (ref / "_reference_fp.txt").write_text("STALE_fingerprint")
 
     record.clear()
     await _build(tmp_path, _encoded_build_encoder(record))
-    assert sorted(record) == [1, 2, 3], "stale reference must be rebuilt"
-    # marker restored to the current fingerprint
-    assert (ref / "_reference_fp.txt").read_text().strip() == "fp_abc123"
+    assert record == [], "a present marker must be reused, not rebuilt"
+    # Marker left untouched (no rebuild rewrote it).
+    assert (ref / "_reference_fp.txt").read_text().strip() == "STALE_fingerprint"
+
+
+async def test_reuse_does_not_call_ensure_db_cache(
+    fake_cache, tmp_path, monkeypatch,
+):
+    """Load-bearing for cloud combo 3: when ``slayer_models_otf/<db>/`` is
+    present (downloaded), reuse must happen BEFORE ``ensure_db_cache`` — the
+    cache is NOT downloaded in cloud, so calling ensure_db_cache would try to
+    ingest in-cluster. Monkeypatch ensure_db_cache to explode and prove the
+    reuse path never reaches it."""
+    from bird_interact_agents.slayer_otf import reference_build
+
+    record: list[int] = []
+    await _build(tmp_path, _encoded_build_encoder(record))
+
+    async def boom(*_a, **_k):
+        raise AssertionError("ensure_db_cache must not run on reference reuse")
+
+    monkeypatch.setattr(reference_build, "ensure_db_cache", boom)
+    record.clear()
+    entry = await _build(tmp_path, _encoded_build_encoder(record))
+    assert record == [], "encoder must not run on reuse"
+    assert entry.reference_dir == tmp_path / "slayer_models_otf" / DB
+
+
+async def test_reuse_loads_kb_rows_from_reference_dir(fake_cache, tmp_path):
+    """On reuse, kb_rows come from the on-disk ``_kb_rows.json`` in the
+    reference dir (self-contained loader), not from a fresh cache build."""
+    await _build(tmp_path, _encoded_build_encoder([]))
+    entry = await _build(tmp_path, _encoded_build_encoder([]))
+    assert [r["id"] for r in entry.kb_rows] == [1, 2, 3]
+
+
+async def test_marker_present_but_kb_rows_missing_raises(fake_cache, tmp_path):
+    """Codex r2 Med#5: a present marker alone is not sufficient. If the marker
+    is there but ``_kb_rows.json`` is gone, that's corruption — surface it
+    loudly, do NOT silently rebuild or reuse a half-broken reference."""
+    await _build(tmp_path, _encoded_build_encoder([]))
+    ref = tmp_path / "slayer_models_otf" / DB
+    (ref / "_kb_rows.json").unlink()
+    with pytest.raises(RuntimeError):
+        await _build(tmp_path, _encoded_build_encoder([]))
+
+
+async def test_marker_present_but_kb_rows_corrupt_raises(fake_cache, tmp_path):
+    await _build(tmp_path, _encoded_build_encoder([]))
+    ref = tmp_path / "slayer_models_otf" / DB
+    (ref / "_kb_rows.json").write_text("{ not json ]")
+    with pytest.raises(RuntimeError):
+        await _build(tmp_path, _encoded_build_encoder([]))
+
+
+async def test_empty_kb_rows_is_valid_reuse(fake_cache, tmp_path):
+    """Codex (round-3): an empty KB (``[]``) is structurally valid — no
+    invariant forbids a DB with zero KB rows. Reuse must accept it, not
+    treat it as corruption."""
+    await _build(tmp_path, _encoded_build_encoder([]))
+    ref = tmp_path / "slayer_models_otf" / DB
+    (ref / "_kb_rows.json").write_text("[]")
+    entry = await _build(tmp_path, _encoded_build_encoder([]))
+    assert entry.kb_rows == []
+
+
+async def test_reuse_emits_provenance_warning(fake_cache, tmp_path, caplog):
+    """Reuse logs a one-line provenance WARNING naming the db so the operator
+    knows the fingerprint was not re-checked."""
+    import logging
+
+    await _build(tmp_path, _encoded_build_encoder([]))
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        await _build(tmp_path, _encoded_build_encoder([]))
+    assert any(
+        r.levelno == logging.WARNING and DB in r.getMessage()
+        for r in caplog.records
+    ), "reuse must emit a WARNING-level provenance line naming the db"
+
+
+async def test_purge_caches_removes_only_named_dbs(tmp_path):
+    """purge_caches drops the named per-DB cache dirs (the --otf-rebuild path
+    wipes BOTH layers) and leaves others + returns what it removed."""
+    from bird_interact_agents.slayer_otf.reference_build import purge_caches
+
+    root = tmp_path / "slayer_otf_cache"
+    for db in ("households", "crypto", "museum"):
+        (root / db).mkdir(parents=True)
+        (root / db / "_cache_fp.txt").write_text("fp")
+
+    removed = purge_caches(root, {"households", "crypto", "absent_db"})
+    assert sorted(removed) == ["crypto", "households"]
+    assert not (root / "households").exists()
+    assert not (root / "crypto").exists()
+    assert (root / "museum").exists()
 
 
 async def test_purge_references_removes_only_named_dbs(tmp_path):

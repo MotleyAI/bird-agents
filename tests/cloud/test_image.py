@@ -46,15 +46,19 @@ def test_data_hash_changes_on_mini_interact_edit(
     assert h1 != h2
 
 
-def test_data_hash_changes_on_slayer_models_edit(
+def test_data_hash_unchanged_on_slayer_models_edit(
     fake_repo_root: Path, fake_mini_interact: Path
 ) -> None:
+    """DEV-1468: slayer_models/ is uploaded to GCS at submit, not baked into
+    the image, so it is no longer a data-layer input. Editing it must NOT
+    move data_hash (else every local slayer-model rebuild would force a full
+    image rebuild for nothing)."""
     h1 = image.data_hash(fake_repo_root, fake_mini_interact)
     (fake_repo_root / "slayer_models" / "db_a" / "model.yaml").write_text(
         "models: [{name: extra}]\n"
     )
     h2 = image.data_hash(fake_repo_root, fake_mini_interact)
-    assert h1 != h2
+    assert h1 == h2
 
 
 def test_data_hash_changes_on_audited_gold_edit(
@@ -68,18 +72,30 @@ def test_data_hash_changes_on_audited_gold_edit(
     assert h1 != h2
 
 
-def test_data_hash_changes_on_slayer_ingest_version_bump(
-    monkeypatch: pytest.MonkeyPatch,
+def test_data_hash_no_longer_depends_on_slayer_ingest_version(
     fake_repo_root: Path,
     fake_mini_interact: Path,
 ) -> None:
-    """§6.2: data_hash must change when the `slayer ingest` CLI version
-    changes, since that re-derives `/data/slayer_dbs/`."""
-    monkeypatch.setattr(image, "_slayer_ingest_version", lambda: "0.6.9")
-    h1 = image.data_hash(fake_repo_root, fake_mini_interact)
-    monkeypatch.setattr(image, "_slayer_ingest_version", lambda: "0.6.10")
-    h2 = image.data_hash(fake_repo_root, fake_mini_interact)
-    assert h1 != h2
+    """DEV-1468: the image no longer runs `slayer ingest` (no baked
+    /data/slayer_dbs), so the slayer-ingest CLI version is no longer a
+    data-layer input. The helper is removed; data_hash must not reference it."""
+    assert not hasattr(image, "_slayer_ingest_version"), (
+        "_slayer_ingest_version should be removed once the ingest layer is gone"
+    )
+
+
+def test_real_dockerfile_no_longer_bakes_slayer_models_or_ingest() -> None:
+    """Guard the PRODUCTION Dockerfile.cloud (not just the test fixture): the
+    slayer setup is uploaded to GCS at submit, so the image must not COPY
+    slayer_models/ or pre-ingest into /data/slayer_dbs."""
+    repo_root = Path(__file__).resolve().parents[2]
+    df = (repo_root / "Dockerfile.cloud").read_text()
+    assert "COPY slayer_models" not in df
+    assert "/data/slayer_dbs" not in df
+    assert "slayer ingest" not in df
+    # mini-interact + audited_gold stay baked.
+    assert "/data/mini-interact" in df
+    assert "audited_gold" in df
 
 
 def test_data_hash_includes_dockerfile_data_section(

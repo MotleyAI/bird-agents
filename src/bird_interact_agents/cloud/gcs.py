@@ -167,26 +167,31 @@ def read_status(run_id: str, *, client=None) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-def concurrent_download_prefix(
-    run_id: str,
+def download_prefix(
+    prefix: str,
     dest: Path,
     *,
     max_workers: int = 32,
     client=None,
 ) -> None:
-    """Download every blob under `runs/<run_id>/` to `dest/<same-relative-path>`.
+    """Download every blob under `prefix` to `dest/<path-after-prefix>`.
 
     SDK-only; no `gsutil`. Idempotent — overwrites existing files with the
-    latest bytes from GCS, which is the semantics `fetch` needs.
+    latest bytes from GCS. Generalises `concurrent_download_prefix`: the
+    `prefix` is stripped from each blob name to form the local relative path,
+    so a blob `runs/<id>/slayer_setup/slayer_otf_cache/<db>/x.yaml` downloaded
+    with `prefix='runs/<id>/slayer_setup/slayer_otf_cache/'` lands at
+    `dest/<db>/x.yaml`.
     """
     client = client or default_gcs_client()
     bucket = client.bucket(BUCKET_NAME)
-    prefix = f"runs/{run_id}/"
     dest = Path(dest)
-    dest.mkdir(parents=True, exist_ok=True)
 
     def _one(blob: Any) -> None:
-        rel = blob.name[len(prefix):]
+        # Strip the prefix AND any leading slash, so a prefix passed without a
+        # trailing slash (e.g. ".../db") doesn't yield an absolute "/x.yaml"
+        # that would escape `dest`.
+        rel = blob.name[len(prefix):].lstrip("/")
         if not rel:
             return
         target = dest / rel
@@ -197,10 +202,95 @@ def concurrent_download_prefix(
     blobs = list(bucket.list_blobs(prefix=prefix))
     if not blobs:
         return
+    dest.mkdir(parents=True, exist_ok=True)
     # Cap concurrency at the actual blob count.
     workers = max(1, min(max_workers, len(blobs)))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         list(pool.map(_one, blobs))
+
+
+def concurrent_download_prefix(
+    run_id: str,
+    dest: Path,
+    *,
+    max_workers: int = 32,
+    client=None,
+) -> None:
+    """Download every blob under `runs/<run_id>/` to `dest/<relative-path>`.
+
+    Thin wrapper over `download_prefix` (one shared code path); the semantics
+    `fetch` needs.
+    """
+    download_prefix(
+        f"runs/{run_id}/", dest, max_workers=max_workers, client=client,
+    )
+
+
+def upload_dir_prefix(
+    local_dir: Path,
+    prefix: str,
+    *,
+    max_workers: int = 32,
+    client=None,
+) -> None:
+    """Upload every file under `local_dir` to `<prefix>/<relpath>`.
+
+    SDK-only; no `gsutil`. Mirrors `download_prefix`: a file
+    `local_dir/<db>/models/x.yaml` uploaded with
+    `prefix='runs/<id>/slayer_setup/slayer_models/<db>'` becomes the blob
+    `runs/<id>/slayer_setup/slayer_models/<db>/models/x.yaml`. Binary files
+    (e.g. `embeddings.db`) and `_`-prefixed marker files are shipped verbatim.
+    """
+    client = client or default_gcs_client()
+    bucket = client.bucket(BUCKET_NAME)
+    local_dir = Path(local_dir)
+    base = prefix.rstrip("/")
+
+    files = [p for p in local_dir.rglob("*") if p.is_file()]
+    if not files:
+        return
+
+    def _one(path: Path) -> None:
+        rel = path.relative_to(local_dir).as_posix()
+        blob = bucket.blob(f"{base}/{rel}")
+        blob.upload_from_string(path.read_bytes())
+
+    workers = max(1, min(max_workers, len(files)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        list(pool.map(_one, files))
+
+
+# ---------------------------------------------------------------------------
+# SLayer setup delivery (DEV-1468)
+# ---------------------------------------------------------------------------
+
+# The per-combo GCS artifact-dir name under runs/<id>/slayer_setup/. Single
+# source of truth shared by the driver (upload) and the in-cluster actor
+# (download).
+_ARTIFACT_PRE_ENCODED = "slayer_models"
+_ARTIFACT_OTF_CACHE = "slayer_otf_cache"
+_ARTIFACT_OTF_REFERENCE = "slayer_models_otf"
+
+
+def slayer_artifact_name(slayer_setup: str, framework: str) -> str:
+    """Map a (slayer_setup, framework) combo to its GCS artifact-dir name.
+
+    - pre-encoded (any framework) -> ``slayer_models``
+    - on-the-fly + pydantic_ai_recursive -> ``slayer_otf_cache``
+    - on-the-fly + pydantic_ai_otf_encode -> ``slayer_models_otf``
+    """
+    if slayer_setup == "pre-encoded":
+        return _ARTIFACT_PRE_ENCODED
+    if framework == "pydantic_ai_otf_encode":
+        return _ARTIFACT_OTF_REFERENCE
+    return _ARTIFACT_OTF_CACHE
+
+
+def slayer_setup_prefix(run_id: str, artifact: str, db: str | None = None) -> str:
+    """GCS prefix for an uploaded slayer-setup artifact dir (optionally for one
+    db): ``runs/<run_id>/slayer_setup/<artifact>[/<db>]``."""
+    base = f"runs/{run_id}/slayer_setup/{artifact}"
+    return f"{base}/{db}" if db else base
 
 
 # ---------------------------------------------------------------------------

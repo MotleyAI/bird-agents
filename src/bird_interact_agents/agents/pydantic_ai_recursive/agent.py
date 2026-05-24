@@ -106,15 +106,6 @@ def _build_shared_slayer_server(slayer_storage_dir: str) -> MCPServerStdio:
     )
 
 
-def _otf_cache_root() -> Path:
-    """Per-DB cache root for the on-the-fly setup mode.
-
-    Lives at ``<main_checkout>/slayer_otf_cache/`` so the cache is
-    sandboxed-writable and shared across worktrees of the same repo.
-    """
-    return _paths.main_checkout_root() / "slayer_otf_cache"
-
-
 def _otf_work_dir(instance_id: str) -> Path:
     """Per-task scratch dir for the on-the-fly setup mode.
 
@@ -158,7 +149,7 @@ async def _resolve_otf_task_storage_dir(
     mini_interact_root = Path(data_path_base).resolve()
     cache_entry = await ensure_db_cache(
         db_name,
-        cache_root=_otf_cache_root(),
+        cache_root=_paths.slayer_otf_cache_root(),
         mini_interact_root=mini_interact_root,
     )
     scratch = await prepare_task_storage(

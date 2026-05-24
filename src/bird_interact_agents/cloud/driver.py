@@ -9,11 +9,14 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 from bird_interact_agents import paths
 from bird_interact_agents.cloud import cluster, config, gcs, image, prereqs
 from bird_interact_agents.cloud import collation as _collation
+# Imported by NAME (not via the `gcs` module attr) so tests that mock
+# `driver.gcs` still get the real pure mapping — only the I/O helpers
+# (`gcs.upload_dir_prefix` etc.) need to be mockable.
+from bird_interact_agents.cloud.gcs import slayer_artifact_name
 
 
 logger = logging.getLogger(__name__)
@@ -76,12 +79,19 @@ def mint_run_id(framework: str, query_mode: str) -> str:
     return f"{ts}-{slug}-{query_mode.lower()}-{secrets.token_hex(3)}"
 
 
-def read_api_keys_from_local_env(agent_model: str, user_sim_model: str) -> dict[str, str]:
+def read_api_keys_from_local_env(
+    agent_model: str, user_sim_model: str, *, query_mode: str = "raw",
+) -> dict[str, str]:
     import os
 
     needed: set[str] = set()
     for model in (agent_model, user_sim_model):
         needed.update(prereqs._required_api_keys(model))
+    # DEV-1468: slayer mode needs OPENAI_API_KEY for channel-3 embeddings,
+    # regardless of the agent/user-sim providers (prereqs.check enforces its
+    # presence; here we deliver it to the actors).
+    if query_mode == "slayer":
+        needed.add("OPENAI_API_KEY")
     return {k: os.environ[k] for k in needed if k in os.environ}
 
 
@@ -101,6 +111,10 @@ def build_manifest(args, *, image_uri: str, run_id: str) -> dict:
         "use_audited_gold_sql": bool(args.use_audited_gold_sql),
         "max_depth": args.max_depth,
         "prompt_cache": bool(args.prompt_cache),
+        "slayer_setup": getattr(args, "slayer_setup", "pre-encoded"),
+        "slayer_storage_root": getattr(
+            args, "slayer_storage_root", "/data/slayer_models"
+        ),
         "render_inputs": {
             "workers": args.workers,
             "actors_per_worker": args.actors_per_worker,
@@ -113,6 +127,82 @@ def build_manifest(args, *, image_uri: str, run_id: str) -> dict:
             "region": config.REGION,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# SLayer setup delivery (DEV-1468)
+# ---------------------------------------------------------------------------
+
+
+def _dbs_for_instances(instance_ids) -> list[str]:
+    """Map the selected instance_ids to their distinct ``selected_database``
+    via the dataset (never string-split the id — DB names contain underscores,
+    e.g. ``california_schools``). Returns a sorted, de-duplicated db list."""
+    import json as _json
+
+    wanted = set(instance_ids)
+    dbs: set[str] = set()
+    with paths.mini_interact_data_file().open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            td = _json.loads(line)
+            if td.get("instance_id") in wanted:
+                db = td.get("selected_database")
+                if db:
+                    dbs.add(db)
+    return sorted(dbs)
+
+
+def _slayer_local_root(args) -> tuple[Path, str]:
+    """The local dir to ship + its GCS artifact-dir name for this combo.
+
+    pre-encoded ships the SUBMITTED worktree's committed ``slayer_models/``
+    (matches the code shipped from this checkout, incl. its gitignored
+    ``embeddings.db``); the OTF combos ship the main-checkout-anchored
+    ``paths.*`` dirs the local OTF agent reads/writes."""
+    artifact = slayer_artifact_name(args.slayer_setup, args.framework)
+    if args.slayer_setup == "pre-encoded":
+        return submitter_repo_root() / "slayer_models", artifact
+    if args.framework == "pydantic_ai_otf_encode":
+        return paths.slayer_models_otf_root(), artifact
+    return paths.slayer_otf_cache_root(), artifact
+
+
+def _artifact_present(root: Path, db: str, artifact: str) -> bool:
+    """Presence semantics per combo: pre-encoded = a NON-EMPTY committed dir
+    (no marker); OTF layers = their completeness marker file is present."""
+    db_dir = root / db
+    if artifact == "slayer_models":
+        return db_dir.is_dir() and any(db_dir.iterdir())
+    marker = "_cache_fp.txt" if artifact == "slayer_otf_cache" else "_reference_fp.txt"
+    return (db_dir / marker).is_file()
+
+
+def _check_slayer_setup_present(args) -> list[str]:
+    """Fail-fast (BEFORE build/push/cluster): every selected DB's artifact must
+    exist locally. No in-cloud builds. Returns the db list to upload."""
+    dbs = _dbs_for_instances(args.instance_ids)
+    root, artifact = _slayer_local_root(args)
+    missing = [db for db in dbs if not _artifact_present(root, db, artifact)]
+    if missing:
+        raise FileNotFoundError(
+            f"cloud slayer: local SLayer setup missing for {missing} under "
+            f"{root} (combo {args.slayer_setup}/{args.framework}); build it "
+            f"locally first — the cloud runner never builds setup in-cluster."
+        )
+    return dbs
+
+
+def _upload_slayer_setup(args, run_id: str, dbs: list[str]) -> None:
+    """Upload the combo's local dir PER selected DB to
+    ``runs/<run_id>/slayer_setup/<artifact>/<db>/``."""
+    root, artifact = _slayer_local_root(args)
+    client = default_gcs_client()
+    for db in dbs:
+        prefix = f"runs/{run_id}/slayer_setup/{artifact}/{db}"
+        gcs.upload_dir_prefix(root / db, prefix, client=client)
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +265,11 @@ class WaitResult:
 def submit(args) -> str:
     prereqs.check(args)
     repo_root = submitter_repo_root()
+    # DEV-1468: slayer fail-fast — verify the local setup is present BEFORE
+    # building/pushing the image or bringing up a cluster (no in-cloud builds).
+    slayer_dbs: list[str] = []
+    if args.query_mode == "slayer":
+        slayer_dbs = _check_slayer_setup_present(args)
     tag = image.image_tag(
         repo_root,
         paths.mini_interact_root(),
@@ -188,13 +283,19 @@ def submit(args) -> str:
     run_id = args.run_id or mint_run_id(args.framework, args.query_mode)
     manifest = build_manifest(args, image_uri=image_uri, run_id=run_id)
     gcs.write_manifest(run_id, manifest)
+    # Upload the slayer setup under the run prefix (per selected DB) so the
+    # actor downloads it in-cluster. After the manifest so kill/resubmit work.
+    if args.query_mode == "slayer":
+        _upload_slayer_setup(args, run_id, slayer_dbs)
     yaml_path = cluster.render_from_manifest(manifest, cache_dir=yaml_cache_dir())
     h = install_signal_handlers(run_id=run_id, yaml_path=yaml_path)
     submit_succeeded = False
     try:
         cluster.up(yaml_path)
         head = cluster.head_address(yaml_path)
-        env_vars = read_api_keys_from_local_env(args.agent_model, args.user_sim_model)
+        env_vars = read_api_keys_from_local_env(
+            args.agent_model, args.user_sim_model, query_mode=args.query_mode,
+        )
         job_args = _build_job_args(args, run_id, attempt=1)
         ray_job_id = cluster.submit_job(
             head_address=head, args=job_args, env_vars=env_vars,
@@ -244,6 +345,11 @@ def _build_job_args(args, run_id: str, *, attempt: int) -> list[str]:
         job_args.append("--prompt-cache")
     else:
         job_args.append("--no-prompt-cache")
+    job_args += [
+        "--slayer-setup", getattr(args, "slayer_setup", "pre-encoded"),
+        "--slayer-storage-root",
+        getattr(args, "slayer_storage_root", "/data/slayer_models"),
+    ]
     return job_args
 
 
@@ -397,6 +503,7 @@ def resubmit(run_id: str) -> None:
         head = cluster.head_address(yaml_path)
         env_vars = read_api_keys_from_local_env(
             manifest["agent_model"], manifest["user_sim_model"],
+            query_mode=manifest.get("query_mode", "raw"),
         )
         job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
         cluster.submit_job(
@@ -435,4 +542,9 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         job_args.append("--prompt-cache")
     else:
         job_args.append("--no-prompt-cache")
+    job_args += [
+        "--slayer-setup", manifest.get("slayer_setup", "pre-encoded"),
+        "--slayer-storage-root",
+        manifest.get("slayer_storage_root", "/data/slayer_models"),
+    ]
     return job_args

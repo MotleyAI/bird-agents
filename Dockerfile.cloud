@@ -33,8 +33,8 @@ RUN printf 'export VIRTUAL_ENV=%s\nexport PATH=%s/bin:$PATH\n' \
         "$VIRTUAL_ENV" "$VIRTUAL_ENV" >> /etc/bash.bashrc
 
 # CODE-LAYERS  ──────────────────────────────────────────────────────────────
-# Python deps install FIRST (physically) so `slayer ingest` in DATA-LAYERS
-# has the package available. The sentinel split below still puts these
+# Python deps + project install. Physically first so the data COPYs below are
+# cached independently of code churn. The sentinel split below still puts these
 # inputs under `code_hash` for the image-tag computation.
 
 COPY pyproject.toml uv.lock /app/bird-interact-agents/
@@ -52,22 +52,21 @@ COPY src/ /app/bird-interact-agents/src/
 RUN uv pip install --no-deps -e .
 
 # DATA-LAYERS  ──────────────────────────────────────────────────────────────
-# Bake dataset + slayer models + audited-gold sidecars into the image.
+# Bake the dataset + audited-gold sidecars into the image.
 # `mini-interact/` lives as a sibling of the repo, NOT inside it — pulled
 # in via BuildKit's `--build-context mini-interact=<sibling-path>` arg
 # that `image.build_and_push` sets at build time.
+#
+# DEV-1468: the SLayer setup dirs (slayer_models/, slayer_otf_cache/,
+# slayer_models_otf/) are NO LONGER baked. They are uploaded to GCS at submit
+# (`runs/<id>/slayer_setup/...`) and the in-cluster actor downloads the combo's
+# dir once per worker process into its env-override root (BIRD_SLAYER_MODELS_ROOT
+# / BIRD_OTF_CACHE_ROOT / BIRD_SLAYER_MODELS_OTF_ROOT, set in cluster.yaml.j2).
+# This makes locally-built (gitignored) embeddings.db ship too, and keeps the
+# image free of slayer-model churn.
 
 COPY --from=mini-interact . /data/mini-interact/
-COPY slayer_models/ /data/slayer_models/
 COPY audited_gold/ /app/bird-interact-agents/audited_gold/
-
-# TODO(slayer-mode): pre-ingest each per-DB SLayer model into
-# /data/slayer_dbs/<db>.sqlite. The CLI is `slayer ingest --datasource <db>`
-# per database — not a single root sweep — so a `for d in slayer_models/*/; do`
-# loop is needed. Skipped while raw-mode smokes. Until this lands, slayer-mode
-# tasks FAIL LOUDLY: `_setup_per_task_slayer` raises FileNotFoundError when the
-# baked DB is missing (it does NOT fall back to an empty SQLite stub, which
-# would make every task silently fail its queries).
 
 ENV BIRD_DB_PATH=/data/mini-interact \
     BIRD_DATA_PATH=/data/mini-interact/mini_interact.jsonl \

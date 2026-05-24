@@ -66,6 +66,53 @@ def test_missing_api_key_cerebras(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "export CEREBRAS_API_KEY=" in exc.value.remediation
 
 
+# ---------------------------------------------------------------------------
+# DEV-1468 — slayer mode requires OPENAI_API_KEY (channel-3 embeddings are
+# mandatory in cloud; default model openai/text-embedding-3-small).
+# ---------------------------------------------------------------------------
+
+
+def test_slayer_requires_openai_key_even_with_anthropic_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(prereqs.PrereqError) as exc:
+        prereqs.check_api_keys(
+            agent_model="anthropic/claude-sonnet-4-5",
+            user_sim_model="anthropic/claude-haiku-4-5-20251001",
+            query_mode="slayer",
+        )
+    assert "OPENAI_API_KEY" in str(exc.value)
+    assert "export OPENAI_API_KEY=" in exc.value.remediation
+
+
+def test_slayer_passes_when_openai_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    # Must not raise.
+    prereqs.check_api_keys(
+        agent_model="anthropic/claude-sonnet-4-5",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        query_mode="slayer",
+    )
+
+
+def test_raw_mode_does_not_require_openai(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    # raw mode with anthropic models: OPENAI not needed → no raise.
+    prereqs.check_api_keys(
+        agent_model="anthropic/claude-sonnet-4-5",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        query_mode="raw",
+    )
+
+
 def test_submitter_owner_satisfies_all_required(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

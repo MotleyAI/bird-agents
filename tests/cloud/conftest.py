@@ -48,14 +48,14 @@ def fake_repo_root(tmp_path: Path) -> Path:
         '{"instance_id":"db_a_1"}\n'
     )
 
+    # DEV-1468: slayer_models/ is uploaded to GCS at submit, no longer baked,
+    # so the Dockerfile DATA section no longer COPYs it or runs `slayer ingest`.
     (tmp_path / "Dockerfile.cloud").write_text(
         "FROM python:3.11-slim\n"
         "RUN pip install uv\n"
         "# DATA-LAYERS\n"
         "COPY mini-interact/ /data/mini-interact/\n"
-        "COPY slayer_models/ /data/slayer_models/\n"
         "COPY audited_gold/  /app/bird-interact-agents/audited_gold/\n"
-        "RUN slayer ingest --root /data/slayer_models --out /data/slayer_dbs\n"
         "# CODE-LAYERS\n"
         "COPY pyproject.toml uv.lock /app/bird-interact-agents/\n"
         "RUN uv sync --extra all --extra dev\n"
@@ -147,33 +147,6 @@ def fake_gcs_bucket():
     )
     client = SimpleNamespace(bucket=lambda _name: bucket)
     return client, store
-
-
-@pytest.fixture
-def baked_slayer_dbs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """Repoint `ray_app.SLAYER_DBS_DIR` at a tmp dir and return a factory
-    that bakes a `<db>.sqlite` file there.
-
-    `_setup_per_task_slayer` now fails loudly when the baked DB is missing
-    (a missing DB in production means the image build / ingest is broken).
-    Slayer-mode tests therefore must lay down the DB(s) they reference.
-    """
-    from bird_interact_agents.cloud import ray_app
-
-    # NB: not named "slayer_*" — `test_per_task_tmp_dirs_are_cleaned` scans
-    # $TMPDIR (== this same tmp_path) for leftover `slayer_*` dirs, so the
-    # baked-DB dir must not match that prefix.
-    dbs_dir = tmp_path / "baked_dbs"
-    dbs_dir.mkdir()
-    monkeypatch.setattr(ray_app, "SLAYER_DBS_DIR", dbs_dir)
-
-    def _bake(*databases: str) -> Path:
-        for db in databases:
-            # Minimal non-empty SQLite header so it's a believable copy.
-            (dbs_dir / f"{db}.sqlite").write_bytes(b"SQLite format 3\x00")
-        return dbs_dir
-
-    return _bake
 
 
 @pytest.fixture

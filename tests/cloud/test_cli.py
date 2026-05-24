@@ -104,21 +104,91 @@ def test_prompt_cache_default_on() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_cloud_slayer_mode_rejected_at_submit() -> None:
-    """Cloud slayer mode isn't implemented yet — submit must reject it fast
-    (before image build / cluster bring-up) with a clear message, rather than
-    failing per-task mid-run. Tracked for a follow-up PR."""
+# ---------------------------------------------------------------------------
+# DEV-1468 — cloud slayer mode is now wired. The submit parser accepts slayer
+# and the new --slayer-setup / --slayer-storage-root flags, and validates the
+# (framework, query_mode, mode, slayer_setup) tuple via run._validate_slayer_setup.
+# ---------------------------------------------------------------------------
+
+
+def _slayer_argv(**over) -> list[str]:
+    base = {
+        "framework": "pydantic_ai_recursive",
+        "query_mode": "slayer",
+        "agent_model": "anthropic/claude-sonnet-4-5",
+        "instance_ids": "db_a_1",
+        "mode": "c-interact",
+    }
+    base.update(over)
+    argv = [
+        "submit",
+        "--framework", base["framework"],
+        "--query-mode", base["query_mode"],
+        "--agent-model", base["agent_model"],
+        "--instance-ids", base["instance_ids"],
+        "--mode", base["mode"],
+    ]
+    if "slayer_setup" in over:
+        argv += ["--slayer-setup", over["slayer_setup"]]
+    if "slayer_storage_root" in over:
+        argv += ["--slayer-storage-root", over["slayer_storage_root"]]
+    return argv
+
+
+def test_slayer_pre_encoded_accepted() -> None:
+    """pre-encoded (default) + slayer + any supported framework is accepted —
+    the old hard rejection is gone."""
+    ns = cli.parse_args(_slayer_argv(mode="c-interact"))
+    assert ns.query_mode == "slayer"
+    assert ns.slayer_setup == "pre-encoded"  # default
+    assert ns.slayer_storage_root == "/data/slayer_models"  # default
+
+
+def test_slayer_on_the_fly_recursive_accepted() -> None:
+    ns = cli.parse_args(_slayer_argv(
+        framework="pydantic_ai_recursive", mode="a-interact",
+        slayer_setup="on-the-fly",
+    ))
+    assert ns.slayer_setup == "on-the-fly"
+
+
+def test_slayer_on_the_fly_otf_encode_accepted() -> None:
+    ns = cli.parse_args(_slayer_argv(
+        framework="pydantic_ai_otf_encode", mode="a-interact",
+        slayer_setup="on-the-fly",
+    ))
+    assert ns.framework == "pydantic_ai_otf_encode"
+    assert ns.slayer_setup == "on-the-fly"
+
+
+def test_slayer_storage_root_override_parsed() -> None:
+    ns = cli.parse_args(_slayer_argv(slayer_storage_root="/data/custom_models"))
+    assert ns.slayer_storage_root == "/data/custom_models"
+
+
+def test_on_the_fly_wrong_framework_rejected() -> None:
+    """on-the-fly only with pydantic_ai_recursive / pydantic_ai_otf_encode."""
     with pytest.raises(SystemExit):
-        cli.parse_args(
-            [
-                "submit",
-                "--framework", "pydantic_ai_recursive",
-                "--query-mode", "slayer",
-                "--agent-model", "anthropic/claude-sonnet-4-5",
-                "--instance-ids", "db_a_1",
-                "--mode", "c-interact",
-            ]
-        )
+        cli.parse_args(_slayer_argv(
+            framework="pydantic_ai", mode="a-interact", slayer_setup="on-the-fly",
+        ))
+
+
+def test_on_the_fly_wrong_mode_rejected() -> None:
+    with pytest.raises(SystemExit):
+        cli.parse_args(_slayer_argv(
+            framework="pydantic_ai_recursive", mode="c-interact",
+            slayer_setup="on-the-fly",
+        ))
+
+
+def test_otf_encode_requires_on_the_fly() -> None:
+    """pydantic_ai_otf_encode is on-the-fly-only; pre-encoded (default) must
+    be rejected at submit."""
+    with pytest.raises(SystemExit):
+        cli.parse_args(_slayer_argv(
+            framework="pydantic_ai_otf_encode", mode="a-interact",
+        ))
 
 
 def test_detach_and_allow_dirty_mutually_exclusive() -> None:

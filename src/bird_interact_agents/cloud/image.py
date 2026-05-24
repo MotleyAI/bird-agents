@@ -8,7 +8,6 @@ of checkout history or `touch` operations.
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import subprocess
 from pathlib import Path
@@ -84,26 +83,14 @@ def _split_dockerfile_sections(repo_root: Path) -> dict[str, str]:
     return {"CODE": text[ci:di], "DATA": text[di:]}
 
 
-@functools.cache
-def _slayer_ingest_version() -> str:
-    """Return the pinned `slayer` package version baked into the image.
-    Cached because it's invariant within a process. Tests monkeypatch.
-    """
-    try:
-        from importlib.metadata import version
-    except ImportError:
-        return "unknown"
-    try:
-        return version("motley-slayer")
-    except Exception:  # noqa: BLE001
-        return "unknown"
-
-
 def data_hash(repo_root: Path, mini_interact_root: Path) -> str:
     """Content-based hash over the inputs that compose the DATA layers
-    of `Dockerfile.cloud`: the mini-interact dataset, `slayer_models/`,
-    `audited_gold/`, the Dockerfile's DATA section, and the slayer-ingest
-    CLI version."""
+    of `Dockerfile.cloud`: the mini-interact dataset, `audited_gold/`, and
+    the Dockerfile's DATA section.
+
+    DEV-1468: `slayer_models/` is no longer baked (uploaded to GCS at submit),
+    and the image no longer runs `slayer ingest`, so neither the slayer-model
+    files nor the slayer-ingest CLI version are data-layer inputs anymore."""
     h = hashlib.sha256()
 
     # mini-interact dataset (sibling, filesystem walk — not git-tracked here)
@@ -116,7 +103,7 @@ def data_hash(repo_root: Path, mini_interact_root: Path) -> str:
         h.update(b"\x00")
 
     # In-repo data inputs
-    for sub in ("slayer_models", "audited_gold"):
+    for sub in ("audited_gold",):
         sub_root = repo_root / sub
         for f in _iter_files_under(sub_root):
             rel = f.relative_to(repo_root)
@@ -130,11 +117,6 @@ def data_hash(repo_root: Path, mini_interact_root: Path) -> str:
     sections = _split_dockerfile_sections(repo_root)
     h.update(b"dockerfile-data/")
     h.update(sections["DATA"].encode())
-    h.update(b"\x00")
-
-    # Slayer-ingest CLI version (re-derives /data/slayer_dbs/ on bump)
-    h.update(b"slayer-ingest/")
-    h.update(_slayer_ingest_version().encode())
     h.update(b"\x00")
 
     return h.hexdigest()
@@ -233,9 +215,10 @@ def _dirty_image_input_paths(repo_root: Path) -> set[str]:
         )
     dirty: set[str] = set()
     # Image-input prefixes (anything that lands inside the docker image).
+    # DEV-1468: slayer_models/ is uploaded to GCS at submit, not baked, so it
+    # is no longer an image input — editing it must not block a submit.
     input_prefixes = (
         "src/",
-        "slayer_models/",
         "audited_gold/",
         "uv.lock",
         "pyproject.toml",

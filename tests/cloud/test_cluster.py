@@ -64,6 +64,29 @@ def test_render_yaml_shape(tmp_path: Path) -> None:
     assert WORKER_SA in flat
 
 
+def test_render_sets_slayer_env_roots(tmp_path: Path) -> None:
+    """DEV-1468: the container must expose the three slayer artifact roots so
+    paths.*_root() resolve to the downloaded /data/... dirs in-cluster (this
+    is what makes the actor's download land where the local readers look)."""
+    yaml_path = cluster.render(
+        run_id=RUN_ID,
+        image_uri=IMAGE_URI,
+        workers=1,
+        actors_per_worker=1,
+        worker_type="e2-standard-4",
+        zone="us-central1-a",
+        worker_sa=WORKER_SA,
+        max_runtime_hours=1,
+        cache_dir=tmp_path,
+    )
+    rendered = yaml.safe_load(Path(yaml_path).read_text())
+    run_opts = rendered["docker"]["run_options"]
+    joined = "\n".join(run_opts)
+    assert "BIRD_SLAYER_MODELS_ROOT=/data/slayer_models" in joined
+    assert "BIRD_OTF_CACHE_ROOT=/data/slayer_otf_cache" in joined
+    assert "BIRD_SLAYER_MODELS_OTF_ROOT=/data/slayer_models_otf" in joined
+
+
 def test_render_pins_ssh_key_and_pushes_pubkey(tmp_path: Path) -> None:
     """Pin our own SSH keypair (so Ray's autoscaler doesn't auto-generate
     and corrupt it across `ray up`/`ray exec`), and push the matching
