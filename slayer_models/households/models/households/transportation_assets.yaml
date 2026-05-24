@@ -112,7 +112,7 @@ columns:
   primary_key: false
   description: "Inlines the three JSON_EXTRACT paths instead of referencing the vehicleinventory__vehicle_counts__*_Count\
     \ helper columns by name \u2014 SLayer does not recursively expand same-model\
-    \ derived refs in Column.sql (motley-ai DEV-1410). Per column meanings ('defaulting\
+    \ derived refs in Column.sql (motley-ai DEV-1410; fixed in SLayer 0.6.9, inlining now optional). Per column meanings ('defaulting\
     \ to 0 if no vehicles are owned'), each leaf coalesces to 0 so the index is well-defined\
     \ when a sub-field is missing.\n\n[kb=14]\nCalculated as the sum of car, bicycle,\
     \ and motorcycle counts. \u2014 Calculates the total number of vehicles owned\

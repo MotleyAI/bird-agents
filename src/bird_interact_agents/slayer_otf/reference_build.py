@@ -152,6 +152,17 @@ async def _encode_all(
     cyclic = _cyclic_ids(all_ids, edges)
     acyclic = all_ids - cyclic
 
+    # Reverse edges (DEV-1466): parents_by_id[c] = the KBs that list c as a
+    # child. Surfaced (acyclic-filtered) to each encoder as `reverse_deps` so a
+    # value_illustration can defer an embedded scoring scheme to a
+    # calculation_knowledge parent that OWNS that score. Only scheduled
+    # (acyclic) parents are surfaced — never a parent that will only cycle-defer.
+    parents_by_id: dict[int, set[int]] = {kid: set() for kid in rows_by_id}
+    for parent_id, child_ids in edges.items():
+        for c in child_ids:
+            if c in parents_by_id:
+                parents_by_id[c].add(parent_id)
+
     sem = asyncio.Semaphore(concurrency)
     locks: dict[int, asyncio.Lock] = {}
     results: dict[int, Any] = {}
@@ -164,12 +175,20 @@ async def _encode_all(
             list(await asyncio.gather(*(ensure(d) for d in dep_ids)))
             if dep_ids else []
         )
+        reverse_deps = [
+            rows_by_id[p]
+            for p in sorted(parents_by_id.get(kb_id, ()))
+            if p in acyclic
+        ]
         lock = locks.setdefault(kb_id, asyncio.Lock())
         async with lock:
             if kb_id in results:  # another waiter already encoded it
                 return results[kb_id]
             async with sem:
-                res = await run_one(kb_id, rows_by_id[kb_id], dep_results)
+                res = await run_one(
+                    kb_id, rows_by_id[kb_id], dep_results,
+                    reverse_deps=reverse_deps,
+                )
             results[kb_id] = res
             return res
 

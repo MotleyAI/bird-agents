@@ -10,6 +10,36 @@ from the worktree root. Mixing ray versions against one cluster corrupted
 the autoscaler SSH keypair (`private key contents do not match public`) —
 a self-inflicted bug from a bare `ray exec`.
 
+## Running the test suite (the exact command)
+
+Run the FULL non-integration suite from the worktree root with:
+
+```bash
+env -u SSH_AUTH_SOCK uv run --extra all --extra dev --extra pydantic-ai pytest
+```
+
+- The trailing `--extra pydantic-ai` pulls `httpx[socks]`. The `all` extra lists
+  the bare `pydantic-ai` package but NOT the `pydantic-ai` *extra*, so it misses
+  `httpx[socks]`. In a shell with a SOCKS proxy env var (this sandbox sets
+  `ALL_PROXY=socks5h://...`), ~6 model/agent-factory tests then die with
+  `ImportError: Using SOCKS proxy, but the 'socksio' package is not installed`.
+  Adding `--extra pydantic-ai` (or unsetting the proxy vars) fixes it.
+
+- `pytest` + `pytest-asyncio` live in the **`dev`** extra; the agent/SLayer
+  tests import `slayer`, `pydantic_ai`, etc. from the **`all`** extra. You need
+  BOTH. Bare `uv run pytest` (no extras) installs neither — it then falls back
+  to the conda `pytest`, which can't see the project and dies with
+  `ModuleNotFoundError: No module named 'bird_interact_agents'` (the wrong-env
+  trap from the note above). `.venv/bin/pytest` does not exist until the `dev`
+  extra is synced.
+- The default run excludes `integration` tests (pyproject `addopts =
+  -m 'not integration'` — they spawn real `slayer ingest` subprocesses and
+  dominate wall-time). Run integration only with `... pytest -m integration`,
+  or everything with `... pytest -o addopts=""`.
+- First run does a one-time `uv sync --extra all --extra dev` (pulls the
+  upstream `mini-interact-agent` from GitHub via `tool.uv.sources`); subsequent
+  runs are cached. Equivalent to the README's `uv sync --extra all --extra dev`.
+
 ## Launching a job / smoke test (the exact command)
 
 The CLI is the `bird-interact-cloud` console script (entry point

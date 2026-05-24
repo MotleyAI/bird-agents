@@ -98,7 +98,7 @@ def _encoded_build_encoder(record):
     )
 
     def build_encoder(storage, build_dir, db, sessions_dir=None):
-        async def run_one(kb_id, row, deps_results):
+        async def run_one(kb_id, row, deps_results, **_):
             record.append(kb_id)
             model = await storage.get_model("households")
             name = f"kb{kb_id}_col"
@@ -261,7 +261,7 @@ async def test_datasource_connection_is_live_during_encode(fake_cache, tmp_path)
     seen: dict[str, str] = {}
 
     def build_encoder(storage, build_dir, db, sessions_dir=None):
-        async def run_one(kb_id, row, deps_results):
+        async def run_one(kb_id, row, deps_results, **_):
             ds = await storage.get_datasource(db)
             # First call wins; all encoders share one storage/datasource.
             seen.setdefault("conn", ds.connection_string)
@@ -335,7 +335,7 @@ async def test_failed_build_leaves_no_reference_dir(fake_cache, tmp_path):
     """If the encoder raises mid-build, the target reference dir must NOT
     exist (build-into-tmp + atomic-rename-onto-absent)."""
     def build_encoder(storage, build_dir, db, sessions_dir=None):
-        async def run_one(kb_id, learning, deps_results):
+        async def run_one(kb_id, learning, deps_results, **_):
             raise RuntimeError("encoder died")
         return run_one
 
@@ -360,7 +360,7 @@ async def test_same_entity_name_collision_is_downgraded(fake_cache, tmp_path):
     )
 
     def build_encoder(storage, build_dir, db, sessions_dir=None):
-        async def run_one(kb_id, row, deps_results):
+        async def run_one(kb_id, row, deps_results, **_):
             model = await storage.get_model("households")
             # Every KB claims the SAME entity name -> collision. Upsert by
             # name (as edit_model does) so storage stays valid; the clash is
@@ -420,3 +420,95 @@ def test_edges_from_kb_rows_normalises_children_variants():
     assert edges[2] == [1]
     assert sorted(edges[3]) == [1, 2]
     assert edges[4] == []
+
+
+# ---------------------------------------------------------------------------
+# Reverse-dependency wiring (DEV-1466): `_encode_all` must hand each KB the rows
+# of the KBs that REFERENCE it (its parents), so a value_illustration can defer
+# an embedded scoring scheme to a calculation_knowledge parent. Only SCHEDULED
+# (acyclic) parents are surfaced — never a parent that will only cycle-defer.
+# ---------------------------------------------------------------------------
+
+
+async def test_encode_all_passes_reverse_deps_to_run_one():
+    from bird_interact_agents.slayer_otf import reference_build
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+        EncoderResult,
+    )
+
+    rows = [
+        {"id": 3, "knowledge": "Water", "type": "value_illustration",
+         "children_knowledge": -1},
+        {"id": 4, "knowledge": "Road", "type": "value_illustration",
+         "children_knowledge": -1},
+        {"id": 5, "knowledge": "Park", "type": "value_illustration",
+         "children_knowledge": -1},
+        {"id": 6, "knowledge": "Dwelling Type", "type": "value_illustration",
+         "children_knowledge": -1},
+        {"id": 13, "knowledge": "Infra Score", "type": "calculation_knowledge",
+         "children_knowledge": [3, 4, 5]},
+        {"id": 44, "knowledge": "Dwelling Type Score",
+         "type": "calculation_knowledge", "children_knowledge": [6]},
+        {"id": 20, "knowledge": "Living Condition Score",
+         "type": "calculation_knowledge", "children_knowledge": [6, 13]},
+    ]
+    edges = reference_build._edges_from_kb_rows(rows)
+    seen: dict[int, list[dict]] = {}
+
+    # keyword-only `reverse_deps` enforces the plan's kwarg contract: if the
+    # implementation passes it positionally, this run_one raises.
+    async def run_one(kb_id, row, deps_results, *, reverse_deps=None):
+        seen[kb_id] = list(reverse_deps or [])
+        return EncoderResult(kb_id=kb_id, status="encoded", entities=[], notes="")
+
+    await reference_build._encode_all(kb_rows=rows, edges=edges, run_one=run_one)
+
+    def ids(kb):
+        return {p["id"] for p in seen[kb]}
+
+    assert ids(6) == {20, 44}      # KB-6 is referenced by KB-20 and KB-44
+    assert ids(3) == {13}          # component score referenced only by its averager
+    assert ids(13) == {20}
+    assert ids(44) == set()        # nobody references KB-44
+    assert ids(20) == set()
+    # full parent ROWS are passed (type/knowledge/definition), not bare ids —
+    # the reverse-deps block needs them to drive the DUPLICATE-SCORE GUARD.
+    kb44 = next(p for p in seen[6] if p["id"] == 44)
+    assert kb44["type"] == "calculation_knowledge"
+    assert kb44["knowledge"] == "Dwelling Type Score"
+
+
+async def test_encode_all_reverse_deps_excludes_cyclic_parents():
+    from bird_interact_agents.slayer_otf import reference_build
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+        EncoderResult,
+    )
+
+    # 6 is an acyclic leaf; 7 is an acyclic parent of 6; 50<->51 form a cycle and
+    # 50 also lists 6 as a child; 52 transitively depends on the cycle (via 50)
+    # and also lists 6. Only 7 may surface in 6's reverse_deps — 50/51 (cycle
+    # members) and 52 (transitive dependent) are never scheduled.
+    rows = [
+        {"id": 6, "knowledge": "leaf", "type": "value_illustration",
+         "children_knowledge": -1},
+        {"id": 7, "knowledge": "acyclic parent", "type": "calculation_knowledge",
+         "children_knowledge": [6]},
+        {"id": 50, "knowledge": "cyc a", "type": "calculation_knowledge",
+         "children_knowledge": [6, 51]},
+        {"id": 51, "knowledge": "cyc b", "type": "calculation_knowledge",
+         "children_knowledge": [50]},
+        {"id": 52, "knowledge": "transitive dependent of cycle",
+         "type": "calculation_knowledge", "children_knowledge": [6, 50]},
+    ]
+    edges = reference_build._edges_from_kb_rows(rows)
+    seen: dict[int, set[int]] = {}
+
+    async def run_one(kb_id, row, deps_results, *, reverse_deps=None):
+        seen[kb_id] = {p["id"] for p in (reverse_deps or [])}
+        return EncoderResult(kb_id=kb_id, status="encoded", entities=[], notes="")
+
+    await reference_build._encode_all(kb_rows=rows, edges=edges, run_one=run_one)
+
+    assert seen[6] == {7}          # only the acyclic parent surfaces
+    # cycle members + transitive dependents are never scheduled (so absent here)
+    assert 50 not in seen and 51 not in seen and 52 not in seen

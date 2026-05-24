@@ -56,7 +56,7 @@ async def test_each_kb_encoded_exactly_once_diamond():
 
     calls: list[int] = []
 
-    async def run_one(kb_id, row, deps_results):
+    async def run_one(kb_id, row, deps_results, **_):
         calls.append(kb_id)
         await asyncio.sleep(0)  # let the loop interleave
         return EncoderResult(kb_id=kb_id, status="encoded", entities=[], notes="")
@@ -77,7 +77,7 @@ async def test_dependency_finishes_before_dependent_runs():
 
     seen_deps: dict[int, list[int]] = {}
 
-    async def run_one(kb_id, row, deps_results):
+    async def run_one(kb_id, row, deps_results, **_):
         seen_deps[kb_id] = [d.kb_id for d in deps_results]
         return EncoderResult(kb_id=kb_id, status="encoded", entities=[], notes="")
 
@@ -95,7 +95,7 @@ async def test_semaphore_bounds_concurrency():
     inflight = 0
     peak = 0
 
-    async def run_one(kb_id, row, deps_results):
+    async def run_one(kb_id, row, deps_results, **_):
         nonlocal inflight, peak
         inflight += 1
         peak = max(peak, inflight)
@@ -119,7 +119,7 @@ async def test_cycle_members_deferred_without_calling_encoder():
 
     called: list[int] = []
 
-    async def run_one(kb_id, row, deps_results):
+    async def run_one(kb_id, row, deps_results, **_):
         called.append(kb_id)
         return EncoderResult(kb_id=kb_id, status="encoded", entities=[], notes="")
 
@@ -144,7 +144,7 @@ async def test_deferred_dependency_is_visible_to_dependent():
         EncoderResult,
     )
 
-    async def run_one(kb_id, row, deps_results):
+    async def run_one(kb_id, row, deps_results, **_):
         if kb_id == 1:
             return EncoderResult(
                 kb_id=1, status="deferred", entities=[], notes="ambiguous",

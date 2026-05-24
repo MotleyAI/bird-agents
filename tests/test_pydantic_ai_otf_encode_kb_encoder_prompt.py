@@ -127,3 +127,83 @@ def test_sub_clarifier_prompt_template_fills_with_no_leftover_braces():
     for key in args:
         unsubstituted = "{" + key + "}"
         assert unsubstituted not in out
+
+
+# ---------------------------------------------------------------------------
+# SETUP_ENCODER_PROMPT mechanical contract (DEV-1466). Same policy: mechanical
+# only — no assertions on natural-language phrasing. The setup encoder gains a
+# `{reverse_deps_block}` placeholder so it can see the KBs that reference the
+# current KB (its parents).
+# ---------------------------------------------------------------------------
+
+
+def _setup_format_args():
+    """The arg set SETUP_ENCODER_PROMPT must accept — matches the call site in
+    setup_encoder._run_setup_encoder."""
+    return dict(
+        db_name="tinydb",
+        kb_id=6,
+        kb_body="KB 6 — Dwelling Type\n\nKB item (verbatim):\nid: 6",
+        deps_block="(none)",
+        reverse_deps_block="(none)",
+    )
+
+
+def test_setup_prompt_fills_with_no_leftover_braces():
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.prompts import (
+        SETUP_ENCODER_PROMPT,
+    )
+
+    args = _setup_format_args()
+    out = SETUP_ENCODER_PROMPT.format(**args)
+    for key in args:
+        unsubstituted = "{" + key + "}"
+        assert unsubstituted not in out, (
+            f"Unsubstituted placeholder `{unsubstituted}` in rendered "
+            f"setup-encoder prompt — key was never substituted."
+        )
+
+
+def test_setup_prompt_declares_reverse_deps_block_field():
+    """The placeholder must actually exist in the template (not merely be an
+    ignored extra kwarg). `str.format` silently drops unknown kwargs, so assert
+    on the parsed field set instead."""
+    import string
+
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.prompts import (
+        SETUP_ENCODER_PROMPT,
+    )
+
+    fields = {
+        fname
+        for _, fname, _, _ in string.Formatter().parse(SETUP_ENCODER_PROMPT)
+        if fname
+    }
+    assert "reverse_deps_block" in fields
+
+
+def test_setup_prompt_includes_reverse_deps_block_when_supplied():
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.prompts import (
+        SETUP_ENCODER_PROMPT,
+    )
+
+    args = _setup_format_args()
+    args["reverse_deps_block"] = (
+        '  - KB 44 (calculation_knowledge) "Dwelling Type Score": 4/3/1 scoring'
+    )
+    out = SETUP_ENCODER_PROMPT.format(**args)
+    assert "Dwelling Type Score" in out
+    assert "KB 44" in out
+
+
+def test_setup_prompt_includes_deps_block_when_supplied():
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.prompts import (
+        SETUP_ENCODER_PROMPT,
+    )
+
+    args = _setup_format_args()
+    args["deps_block"] = (
+        "  - KB 3 -> tinydb.infrastructure.water_access_score (kind=column)"
+    )
+    out = SETUP_ENCODER_PROMPT.format(**args)
+    assert "water_access_score" in out

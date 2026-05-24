@@ -102,7 +102,7 @@ columns:
     \ on the denominator yields NULL for rows with missing or zero bedrooms. Inlines\
     \ the JSON_EXTRACT instead of referencing the dwelling_specs__Room_Count helper\
     \ column \u2014 SLayer does not recursively expand same-model derived refs (motley-ai\
-    \ DEV-1410).\n\n[kb=11]\nCalculated as the number of residents divided by the\
+    \ DEV-1410; fixed in SLayer 0.6.9, inlining now optional).\n\n[kb=11]\nCalculated as the number of residents divided by the\
     \ number of bedrooms. \u2014 Calculates the average number of residents per bedroom\
     \ in a household.\n[/kb=11]"
   label: Household Density
@@ -116,7 +116,7 @@ columns:
   type: DOUBLE
   primary_key: false
   description: "Inlines the Bath_Count JSON_EXTRACT (the dwelling_specs__Bath_Count\
-    \ helper would not be recursively expanded \u2014 DEV-1410). NULLIF prevents division\
+    \ helper would not be recursively expanded \u2014 DEV-1410; fixed in SLayer 0.6.9, inlining now optional). NULLIF prevents division\
     \ by zero.\n\n[kb=15]\nCalculated as the number of bathrooms divided by the number\
     \ of residents. \u2014 Calculates the number of bathrooms per resident in a household.\n\
     [/kb=15]"
@@ -181,7 +181,7 @@ columns:
     \ Both inputs propagate NULL when the underlying base column is missing, so the\
     \ score is NULL when any component is missing. Inlining is required because SLayer\
     \ does not recursively expand same-model or cross-model derived-column refs in\
-    \ Column.sql (motley-ai DEV-1410).\n\n[kb=20]\nCalculated as a 50/50 weighted\
+    \ Column.sql (motley-ai DEV-1410; fixed in SLayer 0.6.9, inlining now optional).\n\n[kb=20]\nCalculated as a 50/50 weighted\
     \ average of the Dwelling Type score and the Infrastructure Quality Score. \u2014\
     \ Calculates a composite score for a household's living conditions.\n[/kb=20]"
   label: Living Condition Score
@@ -209,7 +209,7 @@ columns:
   description: "Boolean: living_condition_score > 3 AND bathroom_ratio > 0.5. Both\
     \ component expressions are inlined (no references to the named living_condition_score\
     \ / bathroom_ratio columns) because SLayer does not recursively expand derived-column\
-    \ refs in Column.sql (DEV-1410). NULL components propagate through the AND, so\
+    \ refs in Column.sql (DEV-1410; fixed in SLayer 0.6.9, inlining now optional). NULL components propagate through the AND, so\
     \ unknown rows evaluate to 0 (not-comfortable).\n\n[kb=29]\nA household is considered\
     \ 'Comfortable' if its Living Condition Score is greater than 3 AND its Bathroom\
     \ Ratio is greater than 0.5. \u2014 Defines a household with a high standard of\

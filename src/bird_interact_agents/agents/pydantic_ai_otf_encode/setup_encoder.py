@@ -28,6 +28,7 @@ from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
 )
 from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
     _format_deps_block,
+    _format_reverse_deps_block,
     _make_prepare_tools,
     _meta_has_kb_id,
     _register_submit_encoding,
@@ -145,6 +146,7 @@ async def _run_setup_encoder(
     self_model_id: str = "unknown",
     sessions_dir: Any = None,
     index_rows: list | None = None,
+    reverse_deps: list[dict] | None = None,
 ) -> EncoderResult:
     """Format the prompt, run the setup encoder agent, normalise + verify the
     result. Never raises — failures become ``status="error"``.
@@ -157,9 +159,10 @@ async def _run_setup_encoder(
     errors) is appended to ``index_rows`` for the INDEX.
     """
     deps_block = await _format_deps_block(deps_results, storage, db)
+    reverse_deps_block = _format_reverse_deps_block(reverse_deps)
     prompt = SETUP_ENCODER_PROMPT.format(
         db_name=db, kb_id=kb_id, kb_body=kb_body,
-        deps_block=deps_block,
+        deps_block=deps_block, reverse_deps_block=reverse_deps_block,
     )
     started = time.monotonic()
     deps = EncoderCaptureDeps()
@@ -265,17 +268,20 @@ def make_setup_build_encoder(
             await server.__aenter__()
             state["entered"] = True
 
-        async def run_one(kb_id, row, deps_results):
+        async def run_one(kb_id, row, deps_results, *, reverse_deps=None):
             # Server already entered by aopen() in the parent task; never
             # __aenter__ here (this runs inside a gather'd child task).
             # _run_setup_encoder appends the FULL triage row (turns / tool calls
             # / tool errors — Codex finding #4) to index_rows via write_session.
+            # `reverse_deps` (DEV-1466): the rows of the KBs that REFERENCE this
+            # one, surfaced to the prompt so a value_illustration can defer an
+            # embedded score to a calculation_knowledge parent that owns it.
             kb_body = _row_to_body(row)
             return await _run_setup_encoder(
                 agent=agent, kb_id=kb_id, kb_body=kb_body,
                 deps_results=deps_results, storage=storage, db=db,
                 self_model_id=self_model_id, sessions_dir=sessions_dir,
-                index_rows=index_rows,
+                index_rows=index_rows, reverse_deps=reverse_deps,
             )
 
         async def aclose() -> None:
