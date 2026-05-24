@@ -1,0 +1,223 @@
+version: 6
+name: operation
+sql_table: operation
+query_variables: {}
+data_source: robot
+columns:
+- name: operreg
+  sql: operreg
+  type: TEXT
+  primary_key: true
+  description: "Operation primary key. Carrier for NO row count (KB #8) and Multi-Operation\
+    \ Robot (KB #18).\n\n[kb=8]\nFor a given robot R, NO = |\\{o \\in \\text{operation}\
+    \ \\mid \\text{operbotdetref = R}\\}| \u2014 Counts the number of operation records\
+    \ for a specific robot.\n[/kb=8]"
+  label: Number of Operations (NO)
+  hidden: false
+  meta:
+    kb_id: 8
+- name: operbotdetref
+  sql: operbotdetref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: operrecref
+  sql: operrecref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: totopshrval
+  sql: totopshrval
+  type: DOUBLE
+  primary_key: false
+  description: "Cumulative total operating hours up to this row. Carrier for TOH (KB\
+    \ #7) and Heavily Used Robot (KB #17).\n\n[kb=7]\nFor a given robot R, TOH = \\\
+    max_{o \\in \\text{operation} \\mid \\text{operbotdetref = R}} totopshrval \u2014\
+    \ The maximum total operating hours recorded for the robot across all operations.\n\
+    [/kb=7]"
+  label: Total Operating Hours (TOH)
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 7
+- name: apptypeval
+  sql: apptypeval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: opermodeval
+  sql: opermodeval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: currprogval
+  sql: currprogval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: progcyclecount
+  sql: progcyclecount
+  type: INT
+  primary_key: false
+  description: "Program cycle count. Carrier for TPC (KB #9) and High Cycle Count\
+    \ Robot (KB #19).\n\n[kb=9]\nFor a given robot R, TPC = \\sum_{o \\in \\text{operation}\
+    \ \\mid \\text{operbotdetref = R}} progcyclecount \u2014 Sums the program cycle\
+    \ counts across all operations for a specific robot.\n[/kb=9]"
+  label: Total Program Cycles (TPC)
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 9
+- name: cycletimesecval
+  sql: cycletimesecval
+  type: DOUBLE
+  primary_key: false
+  description: "Per-operation cycle time (s). Carrier for OCE (KB #33), Cycle Efficiency\
+    \ Category (KB #43), and Average Cycle Time (KB #51).\n\n[kb=33]\nFor a given\
+    \ robot R, OCE = \\frac{\\text{TPC}}{\\sum_{o \\in \\text{operation} \\mid \\\
+    text{operbotdetref = R}} cycletimesecval} \u2014 Calculates the efficiency of\
+    \ program cycles relative to cycle time.\n[/kb=33]"
+  label: Operation Cycle Efficiency (OCE)
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 33
+- name: axiscountval
+  sql: axiscountval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+measures:
+- formula: totopshrval:max
+  name: toh
+  label: Total Operating Hours (TOH)
+  description: "Total Operating Hours (TOH) (KB #7) \u2014 max totopshrval across\
+    \ operation rows. Group by operbotdetref for per-robot.\n\n[kb=7]\nFor a given\
+    \ robot R, TOH = \\max_{o \\in \\text{operation} \\mid \\text{operbotdetref =\
+    \ R}} totopshrval \u2014 The maximum total operating hours recorded for the robot\
+    \ across all operations.\n[/kb=7]"
+  meta:
+    kb_id: 7
+- formula: '*:count'
+  name: 'no'
+  label: Number of Operations (NO)
+  description: "Number of Operations (NO) (KB #8) \u2014 count of operation rows.\
+    \ Group by operbotdetref for per-robot.\n\n[kb=8]\nFor a given robot R, NO = |\\\
+    {o \\in \\text{operation} \\mid \\text{operbotdetref = R}\\}| \u2014 Counts the\
+    \ number of operation records for a specific robot.\n[/kb=8]"
+  meta:
+    kb_id: 8
+- formula: progcyclecount:sum
+  name: tpc
+  label: Total Program Cycles (TPC)
+  description: "Total Program Cycles (TPC) (KB #9) \u2014 sum of progcyclecount across\
+    \ operation rows. Group by operbotdetref for per-robot.\n\n[kb=9]\nFor a given\
+    \ robot R, TPC = \\sum_{o \\in \\text{operation} \\mid \\text{operbotdetref =\
+    \ R}} progcyclecount \u2014 Sums the program cycle counts across all operations\
+    \ for a specific robot.\n[/kb=9]"
+  meta:
+    kb_id: 9
+- formula: cycletimesecval:avg
+  name: average_cycle_time
+  label: Average Cycle Time
+  description: "Average Cycle Time (KB #51) \u2014 mean cycletimesecval per robot.\
+    \ Group by operbotdetref.\n\n[kb=51]\nFor a given robot R, Average Cycle Time\
+    \ = \\frac{\\sum_{o \\in \\text{operation} \\mid \\text{operbotdetref = R}} \\\
+    text{cycletimesecval}}{|\\{o \\in \\text{operation} \\mid \\text{operbotdetref\
+    \ = R}\\}|} \u2014 Calculates the average time in seconds for completing one program\
+    \ cycle\n[/kb=51]"
+  meta:
+    kb_id: 51
+- formula: progcyclecount:sum / cycletimesecval:sum
+  name: oce
+  label: Operation Cycle Efficiency (OCE)
+  description: "Operation Cycle Efficiency (KB #33) \u2014 TPC / sum(cycletimesecval).\
+    \ Group by operbotdetref for per-robot.\n\n[kb=33]\nFor a given robot R, OCE =\
+    \ \\frac{\\text{TPC}}{\\sum_{o \\in \\text{operation} \\mid \\text{operbotdetref\
+    \ = R}} cycletimesecval} \u2014 Calculates the efficiency of program cycles relative\
+    \ to cycle time.\n[/kb=33]"
+  meta:
+    kb_id: 33
+- formula: totopshrval:max > 10000
+  name: is_heavily_used
+  label: Heavily Used Robot
+  description: "Heavily Used Robot (KB #17) \u2014 true if TOH > 10000 hours. Group\
+    \ by operbotdetref for per-robot.\n\n[kb=17]\nThe robot is heavily used if TOH\
+    \ > 10000. \u2014 Indicates if the robot has been heavily used based on total\
+    \ operating hours.\n[/kb=17]"
+  meta:
+    kb_id: 17
+- formula: '*:count > 1'
+  name: is_multi_operation
+  label: Multi-Operation Robot
+  description: "Multi-Operation Robot (KB #18) \u2014 true if NO > 1. Group by operbotdetref\
+    \ for per-robot.\n\n[kb=18]\nThe robot has performed multiple operations if NO\
+    \ > 1. \u2014 Indicates if the robot has performed multiple operations.\n[/kb=18]"
+  meta:
+    kb_id: 18
+- formula: progcyclecount:sum > 1000000
+  name: is_high_cycle_count
+  label: High Cycle Count Robot
+  description: "High Cycle Count Robot (KB #19) \u2014 true if TPC > 1000000. Group\
+    \ by operbotdetref for per-robot.\n\n[kb=19]\nThe robot has a high cycle count\
+    \ if TPC > 1000000. \u2014 Indicates if the robot has a high total program cycle\
+    \ count.\n[/kb=19]"
+  meta:
+    kb_id: 19
+- formula: (progcyclecount:sum / cycletimesecval:sum) < 100 and progcyclecount:sum
+    > 500000
+  name: is_low_efficiency
+  label: Cycle Efficiency Category
+  description: "Cycle Efficiency Category (KB #43) \u2014 'Low Efficiency' bucket:\
+    \ OCE<100 AND TPC>500000.\n\n[kb=43]\nFor a robot R, the Cycle Efficiency Category\
+    \ is:\n- 'Low Efficiency' if OCE < 100 AND TPC > 500000\n- 'Medium Efficiency'\
+    \ if OCE < 150 OR TPC > 300000\n- 'High Efficiency' otherwise \u2014 Categorizes\
+    \ robots based on their program cycle efficiency performance\n[/kb=43]"
+  meta:
+    kb_id: 43
+- formula: (not ((progcyclecount:sum / cycletimesecval:sum) < 100 and progcyclecount:sum
+    > 500000)) and ((progcyclecount:sum / cycletimesecval:sum) < 150 or progcyclecount:sum
+    > 300000)
+  name: is_medium_efficiency
+  label: Cycle Efficiency Category
+  description: "Cycle Efficiency Category (KB #43) \u2014 'Medium Efficiency' bucket:\
+    \ not Low AND (OCE<150 OR TPC>300000).\n\n[kb=43]\nFor a robot R, the Cycle Efficiency\
+    \ Category is:\n- 'Low Efficiency' if OCE < 100 AND TPC > 500000\n- 'Medium Efficiency'\
+    \ if OCE < 150 OR TPC > 300000\n- 'High Efficiency' otherwise \u2014 Categorizes\
+    \ robots based on their program cycle efficiency performance\n[/kb=43]"
+  meta:
+    kb_id: 43
+- formula: (not ((progcyclecount:sum / cycletimesecval:sum) < 100 and progcyclecount:sum
+    > 500000)) and (not ((progcyclecount:sum / cycletimesecval:sum) < 150 or progcyclecount:sum
+    > 300000))
+  name: is_high_efficiency
+  label: Cycle Efficiency Category
+  description: "Cycle Efficiency Category (KB #43) \u2014 'High Efficiency' bucket:\
+    \ neither Low nor Medium.\n\n[kb=43]\nFor a robot R, the Cycle Efficiency Category\
+    \ is:\n- 'Low Efficiency' if OCE < 100 AND TPC > 500000\n- 'Medium Efficiency'\
+    \ if OCE < 150 OR TPC > 300000\n- 'High Efficiency' otherwise \u2014 Categorizes\
+    \ robots based on their program cycle efficiency performance\n[/kb=43]"
+  meta:
+    kb_id: 43
+aggregations: []
+joins:
+- target_model: robot_details
+  join_pairs:
+  - - operbotdetref
+    - botdetreg
+  join_type: left
+- target_model: robot_record
+  join_pairs:
+  - - operrecref
+    - recreg
+  join_type: left
+filters: []
+description: 'Per-operation record of robot activity: total operating hours so far,
+  application type, mode, current program, cycle count, cycle time, axis count. Joined
+  to robot_details via operbotdetref.'
+hidden: false

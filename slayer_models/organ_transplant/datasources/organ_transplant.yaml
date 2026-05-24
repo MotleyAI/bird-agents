@@ -1,0 +1,4 @@
+version: 1
+name: organ_transplant
+type: sqlite
+connection_string: sqlite:////home/james/Dropbox/SLayer/mini-interact/organ_transplant/organ_transplant.sqlite

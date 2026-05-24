@@ -1,0 +1,51 @@
+version: 6
+name: trader_evasive_layering
+sql: "SELECT\n  trdref AS tradereg,\n  AVG(cancelpct) AS avg_cancelpct,\n  AVG(CASE\
+  \ WHEN cancelpct >= 1.0 THEN NULL ELSE modfreq * 1.0 / (1.0 - cancelpct) END) AS\
+  \ avg_omi,\n  MAX(CASE WHEN json_extract(risk_indicators, '$.layerind') = 'Confirmed'\
+  \ OR CAST(json_extract(risk_indicators, '$.spoofprob') AS REAL) > 0.75 THEN 1 ELSE\
+  \ 0 END) AS any_evasive_layering\nFROM transactionrecord\nGROUP BY trdref"
+query_variables: {}
+data_source: insider
+columns:
+- name: tradereg
+  sql: tradereg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: avg_cancelpct
+  sql: avg_cancelpct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: avg_omi
+  sql: avg_omi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: any_evasive_layering
+  sql: any_evasive_layering
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_confirmed_evasive_layering
+  sql: (avg_cancelpct > 0.5 OR avg_omi > 1.5) AND any_evasive_layering = 1
+  type: BOOLEAN
+  primary_key: false
+  description: 'Confirmed Evasive Layering/Spoofing (KB #65): High Cancel/Mod Trader
+    AND any transaction with layerind=''Confirmed'' OR spoofprob>0.75.'
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Per-trader Confirmed Evasive Layering/Spoofing flag (KB #65): High Cancellation/Modification\
+  \ Trader (KB #18) AND any transaction whose layerind='Confirmed' OR spoofprob>0.75.\n\
+  \n[kb=65]\nA trader flagged as a High Cancellation/Modification Trader  AND confirmed\
+  \ via Market Manipulation Pattern: Layering/Spoofing  where `risk_indicators.layerind`\
+  \ is 'Confirmed' or `risk_indicators.spoofprob` > 0.75. \u2014 Identifies traders\
+  \ confirmed to be layering or spoofing who also exhibit high cancellation/modification\
+  \ behavior, suggesting deliberate evasion.\n[/kb=65]"
+hidden: false
+meta:
+  kb_id: 65

@@ -1,0 +1,88 @@
+version: 6
+name: worksite_geographic_diversity
+source_queries:
+- version: 3
+  name: emp_geo
+  source_model: case_worksite
+  measures:
+  - formula: ws_addr1:count_distinct
+    name: distinct_worksites
+  - formula: wsstate:count_distinct
+    name: distinct_states
+  dimensions:
+  - name: homefirm
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: emp_geo
+    columns:
+    - name: geographic_diversity
+      sql: CASE WHEN distinct_worksites <= 1 THEN 'Single-Location' WHEN distinct_states
+        <= 3 THEN 'Regional' ELSE 'National' END
+      type: TEXT
+  dimensions:
+  - name: homefirm
+  - name: distinct_worksites
+  - name: distinct_states
+  - name: geographic_diversity
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"emp_geo.homefirm\" AS homefirm, \"emp_geo.distinct_worksites\"\
+  \ AS distinct_worksites, \"emp_geo.distinct_states\" AS distinct_states, \"emp_geo.geographic_diversity\"\
+  \ AS geographic_diversity FROM (SELECT\n  emp_geo.homefirm AS \"emp_geo.homefirm\"\
+  ,\n  emp_geo.distinct_worksites AS \"emp_geo.distinct_worksites\",\n  emp_geo.distinct_states\
+  \ AS \"emp_geo.distinct_states\",\n  CASE\n    WHEN emp_geo.distinct_worksites <=\
+  \ 1\n    THEN 'Single-Location'\n    WHEN emp_geo.distinct_states <= 3\n    THEN\
+  \ 'Regional'\n    ELSE 'National'\n  END AS \"emp_geo.geographic_diversity\"\nFROM\
+  \ (\n  SELECT\n    \"case_worksite.homefirm\" AS homefirm,\n    \"case_worksite.distinct_worksites\"\
+  \ AS distinct_worksites,\n    \"case_worksite.distinct_states\" AS distinct_states\n\
+  \  FROM (\n    SELECT\n      cases.homefirm AS \"case_worksite.homefirm\",\n   \
+  \   COUNT(DISTINCT case_worksite.ws_addr1) AS \"case_worksite.distinct_worksites\"\
+  ,\n      COUNT(DISTINCT case_worksite.wsstate) AS \"case_worksite.distinct_states\"\
+  \n    FROM case_worksite AS case_worksite\n    LEFT JOIN cases AS cases\n      ON\
+  \ case_worksite.dockkey = cases.filekey\n    GROUP BY\n      cases.homefirm\n  )\
+  \ AS _inner\n) AS emp_geo) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: homefirm
+  sql: homefirm
+  type: TEXT
+  primary_key: false
+  description: Employer (homefirm) for the case, denormalized via cases join.
+  hidden: false
+- name: distinct_worksites
+  sql: distinct_worksites
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: distinct_states
+  sql: distinct_states
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: geographic_diversity
+  sql: geographic_diversity
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Worksite Geographic Diversity per employer (KB #53). KB classifies employers\
+  \ as Single-Location (all apps for one location), Regional (multiple in one region),\
+  \ or National (multiple regions). The schema has no formal 'region' grouping for\
+  \ states, so this proxies: Single-Location = 1 distinct worksite address, Regional\
+  \ = 2-3 distinct worksite states, National = 4+ distinct states. Per-employer rows.\n\
+  \n[kb=53]\nEmployers are classified as Single-Location (all applications for one\
+  \ location), Regional (multiple locations in one region), or National (multiple\
+  \ regions), reflecting operational breadth. Worksite information is included in\
+  \ the application data. \u2014 Categorizes employers based on the geographic spread\
+  \ of their worksites.\n[/kb=53]"
+hidden: false
+meta:
+  kb_id: 53

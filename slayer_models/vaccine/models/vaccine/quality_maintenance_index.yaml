@@ -1,0 +1,195 @@
+version: 6
+name: quality_maintenance_index
+source_queries:
+- version: 3
+  name: mcs_per_shipment_qmi
+  source_model: regulatoryandmaintenance
+  measures:
+  - formula: mcs:avg
+    name: mcs
+  dimensions:
+  - name: shipgov
+  whole_periods_only: false
+- version: 3
+  name: agg_per_container_qmi
+  source_model: sensordata
+  measures:
+  - formula: tss:avg
+    name: tss
+  - formula: hqi:avg
+    name: hqi
+  - formula: cri:avg
+    name: cri
+  - formula: tbs:avg
+    name: tbs
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: vaccinedetails
+    joins:
+    - target_model: agg_per_container_qmi
+      join_pairs:
+      - - containvac
+        - containlink
+    - target_model: mcs_per_shipment_qmi
+      join_pairs:
+      - - shipinject
+        - shipgov
+    columns:
+    - name: sqi
+      type: DOUBLE
+      sql: ((JULIANDAY(expireday) - JULIANDAY('now')) * agg_per_container_qmi.tss)
+        / 365.0 * agg_per_container_qmi.hqi * (1 - agg_per_container_qmi.cri)
+    - name: qmi
+      type: DOUBLE
+      sql: mcs_per_shipment_qmi.mcs * (((JULIANDAY(expireday) - JULIANDAY('now'))
+        * agg_per_container_qmi.tss) / 365.0 * agg_per_container_qmi.hqi * (1 - agg_per_container_qmi.cri))
+        * (1 - agg_per_container_qmi.tbs / 10.0)
+  dimensions:
+  - name: vacregistry
+  - name: containvac
+  - name: shipinject
+  - name: tss
+    model: agg_per_container_qmi
+  - name: hqi
+    model: agg_per_container_qmi
+  - name: cri
+    model: agg_per_container_qmi
+  - name: tbs
+    model: agg_per_container_qmi
+  - name: mcs
+    model: mcs_per_shipment_qmi
+  - name: sqi
+  - name: qmi
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
+  \ AS containvac, \"vaccinedetails.shipinject\" AS shipinject, \"vaccinedetails.agg_per_container_qmi.tss\"\
+  \ AS agg_per_container_qmi__tss, \"vaccinedetails.agg_per_container_qmi.hqi\" AS\
+  \ agg_per_container_qmi__hqi, \"vaccinedetails.agg_per_container_qmi.cri\" AS agg_per_container_qmi__cri,\
+  \ \"vaccinedetails.agg_per_container_qmi.tbs\" AS agg_per_container_qmi__tbs, \"\
+  vaccinedetails.mcs_per_shipment_qmi.mcs\" AS mcs_per_shipment_qmi__mcs, \"vaccinedetails.sqi\"\
+  \ AS sqi, \"vaccinedetails.qmi\" AS qmi FROM (SELECT\n  vaccinedetails.vacregistry\
+  \ AS \"vaccinedetails.vacregistry\",\n  vaccinedetails.containvac AS \"vaccinedetails.containvac\"\
+  ,\n  vaccinedetails.shipinject AS \"vaccinedetails.shipinject\",\n  agg_per_container_qmi.tss\
+  \ AS \"vaccinedetails.agg_per_container_qmi.tss\",\n  agg_per_container_qmi.hqi\
+  \ AS \"vaccinedetails.agg_per_container_qmi.hqi\",\n  agg_per_container_qmi.cri\
+  \ AS \"vaccinedetails.agg_per_container_qmi.cri\",\n  agg_per_container_qmi.tbs\
+  \ AS \"vaccinedetails.agg_per_container_qmi.tbs\",\n  mcs_per_shipment_qmi.mcs AS\
+  \ \"vaccinedetails.mcs_per_shipment_qmi.mcs\",\n  (\n    (\n      JULIANDAY(vaccinedetails.expireday)\
+  \ - JULIANDAY('now')\n    ) * agg_per_container_qmi.tss\n  ) / 365.0 * agg_per_container_qmi.hqi\
+  \ * (\n    1 - agg_per_container_qmi.cri\n  ) AS \"vaccinedetails.sqi\",\n  mcs_per_shipment_qmi.mcs\
+  \ * (\n    (\n      (\n        JULIANDAY(vaccinedetails.expireday) - JULIANDAY('now')\n\
+  \      ) * agg_per_container_qmi.tss\n    ) / 365.0 * agg_per_container_qmi.hqi\
+  \ * (\n      1 - agg_per_container_qmi.cri\n    )\n  ) * (\n    1 - agg_per_container_qmi.tbs\
+  \ / 10.0\n  ) AS \"vaccinedetails.qmi\"\nFROM vaccinedetails AS vaccinedetails\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"sensordata.containlink\" AS containlink,\n\
+  \      \"sensordata.tss\" AS tss,\n      \"sensordata.hqi\" AS hqi,\n      \"sensordata.cri\"\
+  \ AS cri,\n      \"sensordata.tbs\" AS tbs\n    FROM (\n      SELECT\n        sensordata.containlink\
+  \ AS \"sensordata.containlink\",\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          ) * COALESCE(sensordata.tempstabidx, 1)\n       \
+  \ ) AS \"sensordata.tss\",\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.handleevents\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          )\n        ) AS \"sensordata.hqi\",\n        AVG(\n\
+  \          (\n            1 - (\n              (\n                1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n              ) * (\n                1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n              ) * COALESCE(sensordata.tempstabidx, 1)\n   \
+  \         )\n          ) * (\n            1 - COALESCE(container.coolremainpct,\
+  \ 0) / 100\n          )\n        ) AS \"sensordata.cri\",\n        AVG(\n      \
+  \    ABS(sensordata.tempnowc - sensordata.storetempc) / NULLIF(sensordata.temptolc,\
+  \ 0) * sensordata.tempdevcount\n        ) AS \"sensordata.tbs\"\n      FROM sensordata\
+  \ AS sensordata\n      LEFT JOIN container AS container\n        ON sensordata.containlink\
+  \ = container.containregistry\n      GROUP BY\n        sensordata.containlink\n\
+  \    ) AS _inner\n  )\n) AS agg_per_container_qmi\n  ON vaccinedetails.containvac\
+  \ = agg_per_container_qmi.containlink\nLEFT JOIN (\n  (\n    SELECT\n      \"regulatoryandmaintenance.shipgov\"\
+  \ AS shipgov,\n      \"regulatoryandmaintenance.mcs\" AS mcs\n    FROM (\n     \
+  \ SELECT\n        regulatoryandmaintenance.shipgov AS \"regulatoryandmaintenance.shipgov\"\
+  ,\n        AVG(\n          regulatoryandmaintenance.compscore * (\n            1\
+  \ - COALESCE(CAST(regulatoryandmaintenance.incidents AS REAL) / 10, 0)\n       \
+  \   )\n        ) AS \"regulatoryandmaintenance.mcs\"\n      FROM regulatoryandmaintenance\
+  \ AS regulatoryandmaintenance\n      GROUP BY\n        regulatoryandmaintenance.shipgov\n\
+  \    ) AS _inner\n  )\n) AS mcs_per_shipment_qmi\n  ON vaccinedetails.shipinject\
+  \ = mcs_per_shipment_qmi.shipgov) AS _inner"
+data_source: vaccine
+columns:
+- name: vacregistry
+  sql: vacregistry
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: containvac
+  sql: containvac
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shipinject
+  sql: shipinject
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: agg_per_container_qmi__tss
+  sql: agg_per_container_qmi__tss
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: agg_per_container_qmi__hqi
+  sql: agg_per_container_qmi__hqi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: agg_per_container_qmi__cri
+  sql: agg_per_container_qmi__cri
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: agg_per_container_qmi__tbs
+  sql: agg_per_container_qmi__tbs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mcs_per_shipment_qmi__mcs
+  sql: mcs_per_shipment_qmi__mcs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: sqi
+  sql: sqi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: qmi
+  sql: qmi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Quality Maintenance Index (QMI, KB #37). One row per vaccinedetails\
+  \ record with QMI = MCS * SQI * (1 - TBS/10), where MCS (KB #7) is averaged over\
+  \ regulatoryandmaintenance rows for the vaccine's shipment, SQI (KB #33) is computed\
+  \ inline from VVP/HQI/CRI, and TBS (KB #9) is averaged over sensordata rows for\
+  \ the container. The High Maintenance Priority (KB #42) and Quality Alert Status\
+  \ (KB #46) classifications live on sibling models `high_maintenance_priority` and\
+  \ `quality_alert_status`.\n\n[kb=37]\nQMI = \\text{MCS} \\times \\text{SQI} \\times\
+  \ (1 - \\frac{\\text{TBS}}{10}) \u2014 Combined quality and maintenance metric.\n\
+  [/kb=37]"
+hidden: false
+meta:
+  kb_id: 37

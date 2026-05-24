@@ -1,0 +1,142 @@
+version: 6
+name: waterandwaste
+sql_table: waterandwaste
+query_variables: {}
+data_source: polar
+columns:
+- name: waterregistry
+  sql: waterregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: watereqref
+  sql: watereqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: waterlevelpercent
+  sql: waterlevelpercent
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: waterpressurekpa
+  sql: waterpressurekpa
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: watertemperaturec
+  sql: watertemperaturec
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: waterflowlpm
+  sql: waterflowlpm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: waterqualityindex
+  sql: waterqualityindex
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: wastetanklevelpercent
+  sql: wastetanklevelpercent
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: wrmi
+  sql: waterlevelpercent * (waterqualityindex / 100.0) * (1 - wastetanklevelpercent
+    / 100.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Water Resource Management Index (KB #7).\n\n[kb=7]\nWRMI = waterlevelpercent\
+    \ \\times \\frac{waterqualityindex}{100} \\times (1 - \\frac{wastetanklevelpercent}{100}),\
+    \ \\text{ where higher water quality and appropriate water/waste levels indicate\
+    \ better management.} \u2014 Evaluates the efficiency of water resource management\
+    \ based on water levels, quality, and waste levels.\n[/kb=7]"
+  label: Water Resource Management Index (WRMI)
+  hidden: false
+  meta:
+    kb_id: 7
+- name: water_quality_class
+  sql: CASE WHEN waterqualityindex >= 91 THEN 'High-Quality' WHEN waterqualityindex
+    >= 71 THEN 'Good' WHEN waterqualityindex >= 51 THEN 'Moderate' WHEN waterqualityindex
+    >= 26 THEN 'Poor' ELSE 'Unsafe' END
+  type: TEXT
+  primary_key: false
+  description: "Water Quality Classification System (KB #25): High-Quality (>=91),\
+    \ Good (71-90), Moderate (51-70), Poor (26-50), Unsafe (<26).\n\n[kb=25]\nWater\
+    \ is classified into five quality categories based on its quality index: 'High-Quality'\
+    \ WHEN (waterqualityindex >= 91), suitable for all purposes including direct consumption;\
+    \ 'Good' WHEN (waterqualityindex >= 71 AND waterqualityindex < 91), safe for consumption\
+    \ after standard treatment; 'Moderate' WHEN (waterqualityindex >= 51 AND waterqualityindex\
+    \ < 71), acceptable for washing but not consumption; 'Poor' WHEN (waterqualityindex\
+    \ >= 26 AND waterqualityindex < 51), suitable only for limited non-contact uses;\
+    \ 'Unsafe' WHEN (waterqualityindex < 26), unsuitable for any use and requiring\
+    \ immediate remediation. \u2014 A standardized system that categorizes water quality\
+    \ for health, safety, and operational purposes in polar environments.\n[/kb=25]"
+  label: Water Quality Classification System (WQCS)
+  hidden: false
+  meta:
+    kb_id: 25
+- name: needs_water_conservation
+  sql: (waterlevelpercent * (waterqualityindex / 100.0) * (1 - wastetanklevelpercent
+    / 100.0)) < 0.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Water Conservation Requirement (KB #18): TRUE iff WRMI < 0.5.\n\n\
+    [kb=18]\nWater conservation measures must be implemented when the WRMI falls below\
+    \ 0.5, indicating either low water levels, poor water quality, or high waste tank\
+    \ levels that require immediate attention to maintain sustainable water usage.\
+    \ \u2014 Specifies the conditions under which water conservation measures must\
+    \ be implemented.\n[/kb=18]"
+  label: Water Conservation Requirement
+  hidden: false
+  meta:
+    kb_id: 18
+- name: water_resource_management_status
+  sql: CASE WHEN (waterlevelpercent * (waterqualityindex / 100.0) * (1 - wastetanklevelpercent
+    / 100.0)) < 0.5 THEN 'Conservation Needed' WHEN (waterlevelpercent * (waterqualityindex
+    / 100.0) * (1 - wastetanklevelpercent / 100.0)) < 0.7 THEN 'Monitoring Advised'
+    ELSE 'Sustainable Management' END
+  type: TEXT
+  primary_key: false
+  description: "Water Resource Management Status Classification (KB #53): Conservation\
+    \ Needed (WRMI < 0.5), Monitoring Advised (0.5 <= WRMI < 0.7), Sustainable Management\
+    \ (WRMI >= 0.7).\n\n[kb=53]\nWater management operations are classified into three\
+    \ status levels: 'Conservation Needed' WHEN (WRMI < 0.5), indicating critical\
+    \ resource limitations requiring immediate conservation measures; 'Monitoring\
+    \ Advised' WHEN (WRMI >= 0.5 AND WRMI < 0.7), representing adequate but vigilant\
+    \ management requiring regular system monitoring; 'Sustainable Management' WHEN\
+    \ (WRMI >= 0.7), indicating optimal water resource utilization suitable for unrestricted\
+    \ operations. \u2014 A comprehensive classification system that categorizes water\
+    \ resource management status based on WRMI values to guide operational decisions.\n\
+    [/kb=53]"
+  label: Water Resource Management Status Classification (WRMSC)
+  hidden: false
+  meta:
+    kb_id: 53
+measures: []
+aggregations: []
+joins:
+- target_model: equipment
+  join_pairs:
+  - - watereqref
+    - equipmentcode
+  join_type: left
+filters: []
+hidden: false

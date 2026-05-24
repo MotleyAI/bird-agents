@@ -1,0 +1,174 @@
+version: 6
+name: comprehensive_environmental_adaptability_rating
+source_queries:
+- version: 3
+  name: ecac_cear
+  source_model: extreme_climate_adaptation_coefficient
+  measures:
+  - formula: ecac:avg
+    name: ecac
+  - formula: ssf_avg:avg
+    name: ssf
+  dimensions:
+  - name: operationmaintenance__opmainteqref
+  whole_periods_only: false
+- version: 3
+  name: insul_cear
+  source_model: thermalsolarwindandgrid
+  dimensions:
+  - name: thermaleqref
+  - name: insulationstatus
+  whole_periods_only: false
+- version: 3
+  name: joined_cear
+  source_model:
+    source_name: ecac_cear
+    joins:
+    - target_model: insul_cear
+      join_pairs:
+      - - operationmaintenance__opmainteqref
+        - thermaleqref
+  measures:
+  - formula: ecac:avg
+    name: ecac_v
+  - formula: ssf:avg
+    name: ssf_v
+  dimensions:
+  - name: operationmaintenance__opmainteqref
+  - name: insulationstatus
+    model: insul_cear
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: joined_cear
+    columns:
+    - name: cear_level
+      type: TEXT
+      sql: CASE WHEN ecac_v > 0.85 AND ssf_v > 0.8 AND insul_cear__insulationstatus
+        = 'Good' THEN 'Excellent Adaptability' WHEN ecac_v > 0.7 AND ssf_v > 0.65
+        AND insul_cear__insulationstatus != 'Poor' THEN 'Good Adaptability' ELSE 'Limited
+        Adaptability' END
+  dimensions:
+  - name: operationmaintenance__opmainteqref
+  - name: cear_level
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"joined_cear.operationmaintenance__opmainteqref\" AS operationmaintenance__opmainteqref,\
+  \ \"joined_cear.cear_level\" AS cear_level FROM (SELECT\n  joined_cear.operationmaintenance__opmainteqref\
+  \ AS \"joined_cear.operationmaintenance__opmainteqref\",\n  CASE\n    WHEN joined_cear.ecac_v\
+  \ > 0.85\n    AND joined_cear.ssf_v > 0.8\n    AND joined_cear.insul_cear__insulationstatus\
+  \ = 'Good'\n    THEN 'Excellent Adaptability'\n    WHEN joined_cear.ecac_v > 0.7\n\
+  \    AND joined_cear.ssf_v > 0.65\n    AND joined_cear.insul_cear__insulationstatus\
+  \ <> 'Poor'\n    THEN 'Good Adaptability'\n    ELSE 'Limited Adaptability'\n  END\
+  \ AS \"joined_cear.cear_level\"\nFROM (\n  SELECT\n    \"ecac_cear.operationmaintenance__opmainteqref\"\
+  \ AS operationmaintenance__opmainteqref,\n    \"ecac_cear.insul_cear.insulationstatus\"\
+  \ AS insul_cear__insulationstatus,\n    \"ecac_cear.ecac_v\" AS ecac_v,\n    \"\
+  ecac_cear.ssf_v\" AS ssf_v\n  FROM (\n    SELECT\n      ecac_cear.operationmaintenance__opmainteqref\
+  \ AS \"ecac_cear.operationmaintenance__opmainteqref\",\n      insul_cear.insulationstatus\
+  \ AS \"ecac_cear.insul_cear.insulationstatus\",\n      AVG(ecac_cear.ecac) AS \"\
+  ecac_cear.ecac_v\",\n      AVG(ecac_cear.ssf) AS \"ecac_cear.ssf_v\"\n    FROM (\n\
+  \      SELECT\n        \"extreme_climate_adaptation_coefficient.operationmaintenance__opmainteqref\"\
+  \ AS operationmaintenance__opmainteqref,\n        \"extreme_climate_adaptation_coefficient.ecac\"\
+  \ AS ecac,\n        \"extreme_climate_adaptation_coefficient.ssf\" AS ssf\n    \
+  \  FROM (\n        SELECT\n          extreme_climate_adaptation_coefficient.operationmaintenance__opmainteqref\
+  \ AS \"extreme_climate_adaptation_coefficient.operationmaintenance__opmainteqref\"\
+  ,\n          AVG(extreme_climate_adaptation_coefficient.ecac) AS \"extreme_climate_adaptation_coefficient.ecac\"\
+  ,\n          AVG(extreme_climate_adaptation_coefficient.ssf_avg) AS \"extreme_climate_adaptation_coefficient.ssf\"\
+  \n        FROM (\n          SELECT\n            \"weather_per_eq.operationmaintenance__opmainteqref\"\
+  \ AS operationmaintenance__opmainteqref,\n            \"weather_per_eq.ext_factor_avg\"\
+  \ AS ext_factor_avg,\n            \"weather_per_eq.ssf_avg\" AS ssf_avg,\n     \
+  \       \"weather_per_eq.ecac\" AS ecac,\n            \"weather_per_eq.tie_per_eq.tie_avg\"\
+  \ AS tie_per_eq__tie_avg\n          FROM (\n            WITH _base AS (\n      \
+  \        SELECT\n                weather_per_eq.operationmaintenance__opmainteqref\
+  \ AS \"weather_per_eq.operationmaintenance__opmainteqref\",\n                AVG(weather_per_eq.ext_factor)\
+  \ AS \"weather_per_eq.ext_factor_avg\",\n                AVG(weather_per_eq.ssf)\
+  \ AS \"weather_per_eq.ssf_avg\"\n              FROM (\n                SELECT\n\
+  \                  \"weatherandstructure.operationmaintenance.opmainteqref\" AS\
+  \ operationmaintenance__opmainteqref,\n                  \"weatherandstructure.ssf\"\
+  \ AS ssf,\n                  \"weatherandstructure.ext_factor\" AS ext_factor\n\
+  \                FROM (\n                  SELECT\n                    operationmaintenance.opmainteqref\
+  \ AS \"weatherandstructure.operationmaintenance.opmainteqref\",\n              \
+  \      AVG(\n                      (\n                        100 - weatherandstructure.structuralloadpercent\n\
+  \                      ) / 100.0 * CASE\n                        WHEN weatherandstructure.snowloadkgm2\
+  \ > 100 OR weatherandstructure.windspeedms > 20\n                        THEN 0.5\n\
+  \                        WHEN weatherandstructure.snowloadkgm2 > 50 OR weatherandstructure.windspeedms\
+  \ > 10\n                        THEN 0.8\n                        ELSE 1.0\n   \
+  \                   END\n                    ) AS \"weatherandstructure.ssf\",\n\
+  \                    AVG(\n                      CASE\n                        WHEN\
+  \ weatherandstructure.externaltemperaturec < -30\n                        THEN 0.7\n\
+  \                        WHEN weatherandstructure.externaltemperaturec < -15\n \
+  \                       THEN 0.85\n                        ELSE 1.0\n          \
+  \            END\n                    ) AS \"weatherandstructure.ext_factor\"\n\
+  \                  FROM weatherandstructure AS weatherandstructure\n           \
+  \       LEFT JOIN operationmaintenance AS operationmaintenance\n               \
+  \     ON weatherandstructure.weatheropmaintref = operationmaintenance.opmaintregistry\n\
+  \                  GROUP BY\n                    operationmaintenance.opmainteqref\n\
+  \                ) AS _inner\n              ) AS weather_per_eq\n              GROUP\
+  \ BY\n                weather_per_eq.operationmaintenance__opmainteqref\n      \
+  \      ), _cm_weather_per_eq__tie_per_eq__tie_avg AS (\n              SELECT\n \
+  \               AVG(tie_per_eq.tie) AS \"weather_per_eq.tie_per_eq.tie_avg\"\n \
+  \             FROM (\n                SELECT\n                  \"thermalsolarwindandgrid.thermaleqref\"\
+  \ AS thermaleqref,\n                  \"thermalsolarwindandgrid.tie\" AS tie\n \
+  \               FROM (\n                  SELECT\n                    thermalsolarwindandgrid.thermaleqref\
+  \ AS \"thermalsolarwindandgrid.thermaleqref\",\n                    AVG(\n     \
+  \                 (\n                        CASE thermalsolarwindandgrid.insulationstatus\n\
+  \                          WHEN 'Good'\n                          THEN 0.9\n   \
+  \                       WHEN 'Fair'\n                          THEN 0.6\n      \
+  \                    WHEN 'Poor'\n                          THEN 0.3\n         \
+  \                 ELSE 0.0\n                        END\n                      )\
+  \ - thermalsolarwindandgrid.heatlossratekwh / 10.0\n                    ) AS \"\
+  thermalsolarwindandgrid.tie\"\n                  FROM thermalsolarwindandgrid AS\
+  \ thermalsolarwindandgrid\n                  GROUP BY\n                    thermalsolarwindandgrid.thermaleqref\n\
+  \                ) AS _inner\n              ) AS tie_per_eq\n            ), _combined\
+  \ AS (\n              SELECT\n                _base.\"weather_per_eq.operationmaintenance__opmainteqref\"\
+  ,\n                _base.\"weather_per_eq.ext_factor_avg\",\n                _base.\"\
+  weather_per_eq.ssf_avg\",\n                _cm_weather_per_eq__tie_per_eq__tie_avg.\"\
+  weather_per_eq.tie_per_eq.tie_avg\"\n              FROM _base\n              CROSS\
+  \ JOIN _cm_weather_per_eq__tie_per_eq__tie_avg\n            ), step1 AS (\n    \
+  \          SELECT\n                \"weather_per_eq.ext_factor_avg\",\n        \
+  \        \"weather_per_eq.operationmaintenance__opmainteqref\",\n              \
+  \  \"weather_per_eq.ssf_avg\",\n                \"weather_per_eq.tie_per_eq.tie_avg\"\
+  ,\n                \"weather_per_eq.ssf_avg\" * (\n                  1 + \"weather_per_eq.tie_per_eq.tie_avg\"\
+  \ * 0.5\n                ) * \"weather_per_eq.ext_factor_avg\" AS \"weather_per_eq.ecac\"\
+  \n              FROM _combined\n            )\n            SELECT\n            \
+  \  \"weather_per_eq.ecac\",\n              \"weather_per_eq.ext_factor_avg\",\n\
+  \              \"weather_per_eq.operationmaintenance__opmainteqref\",\n        \
+  \      \"weather_per_eq.ssf_avg\",\n              \"weather_per_eq.tie_per_eq.tie_avg\"\
+  \n            FROM step1\n          ) AS _inner\n        ) AS extreme_climate_adaptation_coefficient\n\
+  \        GROUP BY\n          extreme_climate_adaptation_coefficient.operationmaintenance__opmainteqref\n\
+  \      ) AS _inner\n    ) AS ecac_cear\n    LEFT JOIN (\n      (\n        SELECT\n\
+  \          \"thermalsolarwindandgrid.thermaleqref\" AS thermaleqref,\n         \
+  \ \"thermalsolarwindandgrid.insulationstatus\" AS insulationstatus\n        FROM\
+  \ (\n          SELECT\n            thermalsolarwindandgrid.thermaleqref AS \"thermalsolarwindandgrid.thermaleqref\"\
+  ,\n            thermalsolarwindandgrid.insulationstatus AS \"thermalsolarwindandgrid.insulationstatus\"\
+  \n          FROM thermalsolarwindandgrid AS thermalsolarwindandgrid\n        ) AS\
+  \ _inner\n      )\n    ) AS insul_cear\n      ON ecac_cear.operationmaintenance__opmainteqref\
+  \ = insul_cear.thermaleqref\n    GROUP BY\n      ecac_cear.operationmaintenance__opmainteqref,\n\
+  \      insul_cear.insulationstatus\n  ) AS _inner\n) AS joined_cear) AS _inner"
+data_source: polar
+columns:
+- name: operationmaintenance__opmainteqref
+  sql: operationmaintenance__opmainteqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cear_level
+  sql: cear_level
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Comprehensive Environmental Adaptability Rating (KB #49): Excellent\
+  \ (ECAC > 0.85 AND SSF > 0.8 AND insulationstatus='Good'), Good (ECAC > 0.7 AND\
+  \ SSF > 0.65 AND insulationstatus != 'Poor'), Limited otherwise. R-MULTISTAGE.\n\
+  \n[kb=49]\nEquipment and systems are rated as having 'Excellent Adaptability' (ECAC\
+  \ > 0.85 and SSF > 0.8 and thermalsolarwindandgrid.insulationstatus = 'Good'), 'Good\
+  \ Adaptability' (ECAC > 0.7 and SSF > 0.65 and thermalsolarwindandgrid.insulationstatus\
+  \ != 'Poor'), or 'Limited Adaptability' (other cases). \u2014 Assesses the overall\
+  \ adaptability of equipment and systems to the polar environment\n[/kb=49]"
+hidden: false
+meta:
+  kb_id: 49

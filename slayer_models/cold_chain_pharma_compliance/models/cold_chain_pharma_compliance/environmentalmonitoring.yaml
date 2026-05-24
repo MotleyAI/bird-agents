@@ -1,0 +1,349 @@
+version: 6
+name: environmentalmonitoring
+sql_table: environmentalmonitoring
+query_variables: {}
+data_source: cold_chain_pharma_compliance
+columns:
+- name: reckeylink
+  sql: reckeylink
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: devlink
+  sql: devlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: env_metrics
+  sql: env_metrics
+  type: TEXT
+  primary_key: false
+  description: JSON blob bundling temperature, humidity, light/shock and tracking
+    telemetry for the shipment. Sub-fields are surfaced as named helper columns elsewhere
+    on this model.
+  hidden: false
+  meta: {}
+- name: temp_avg_c
+  sql: json_extract(env_metrics, '$.temperature.avg_c')
+  type: DOUBLE
+  primary_key: false
+  description: "Average temperature (\xB0C) recorded during transit."
+  hidden: false
+- name: temp_min_c
+  sql: json_extract(env_metrics, '$.temperature.min_c')
+  type: DOUBLE
+  primary_key: false
+  description: "Minimum temperature (\xB0C) recorded during transit."
+  hidden: false
+- name: temp_max_c
+  sql: json_extract(env_metrics, '$.temperature.max_c')
+  type: DOUBLE
+  primary_key: false
+  description: "Maximum temperature (\xB0C) recorded during transit."
+  hidden: false
+- name: temp_excursion_count
+  sql: json_extract(env_metrics, '$.temperature.excursion_count')
+  type: DOUBLE
+  primary_key: false
+  description: Count of temperature excursions beyond limits.
+  hidden: false
+- name: temp_excursion_duration_min
+  sql: json_extract(env_metrics, '$.temperature.excursion_duration_min')
+  type: DOUBLE
+  primary_key: false
+  description: "Total minutes of temperature deviation during transit. This is the\
+    \ per-shipment Temperature Excursion Duration (TED, KB #0): the sum \u03A3 t\u1D62\
+    \ over each individual excursion event aggregated to a single value at telemetry-record\
+    \ level.\n\n[kb=0]\nTED = \\sum_{i=1}^{n} t_i, \\text{where } t_i \\text{ is the\
+    \ duration in minutes of each individual temperature excursion event.} \u2014\
+    \ The total time a shipment spends outside its required temperature range during\
+    \ transit.\n[/kb=0]"
+  label: Temperature Excursion Duration (TED)
+  hidden: false
+  meta:
+    kb_id: 0
+- name: temp_alarm_count
+  sql: json_extract(env_metrics, '$.temperature.alarm_count')
+  type: DOUBLE
+  primary_key: false
+  description: Number of temperature alarm events.
+  hidden: false
+- name: humidity_avg_pct
+  sql: json_extract(env_metrics, '$.humidity.avg_pct')
+  type: DOUBLE
+  primary_key: false
+  description: Average relative humidity (%).
+  hidden: false
+- name: humidity_excursion_count
+  sql: json_extract(env_metrics, '$.humidity.excursion_count')
+  type: DOUBLE
+  primary_key: false
+  description: Count of humidity deviations.
+  hidden: false
+- name: humidity_monitor
+  sql: json_extract(env_metrics, '$.humidity.humidity_monitor')
+  type: TEXT
+  primary_key: false
+  description: "Humidity monitoring flag: 'Yes' (Highly Sensitive), 'Partial' (Moderately\
+    \ Sensitive), 'No' (Not Sensitive), null (humidity sensitivity not specified).\
+    \ KB #28 (Humidity Sensitivity Categories) describes the labelled tiers; this\
+    \ column is the most granular humidity-sensitivity proxy in the schema.\n\n[kb=28]\n\
+    Humidity sensitivity categories are: 'Not Sensitive' (can tolerate wide humidity\
+    \ variations), 'Moderately Sensitive' (can tolerate limited humidity variations),\
+    \ 'Highly Sensitive' (requires strict humidity control), with null values indicating\
+    \ humidity sensitivity not specified. \u2014 Classifies pharmaceutical products\
+    \ based on their sensitivity to humidity variations.\n[/kb=28]"
+  label: Humidity Sensitivity Categories
+  hidden: false
+  meta:
+    kb_id: 28
+- name: shock_event_count
+  sql: json_extract(env_metrics, '$.light_and_shock.shock_event_count')
+  type: DOUBLE
+  primary_key: false
+  description: "Count of shock events detected. KB #23 (Shock Event Significance Levels)\
+    \ classifies each shock as 'Minor' (unlikely to cause damage), 'Moderate' (potential\
+    \ to damage if repeated), or 'Severe' (likely to cause damage). Source data does\
+    \ not break down by severity, only the total count.\n\n[kb=23]\nShock events are\
+    \ classified as: 'Minor' (unlikely to cause damage), 'Moderate' (potential to\
+    \ damage if repeated), 'Severe' (likely to cause damage to product or packaging),\
+    \ with null values indicating no shock monitoring was implemented. \u2014 Classifies\
+    \ impact events based on their potential to damage pharmaceutical products.\n\
+    [/kb=23]"
+  label: Shock Event Significance Levels
+  hidden: false
+  meta:
+    kb_id: 23
+- name: shock_monitor
+  sql: json_extract(env_metrics, '$.light_and_shock.shock_monitor')
+  type: TEXT
+  primary_key: false
+  description: 'Shock-event monitoring flag: Active/Passive/null.'
+  hidden: false
+- name: light_monitor_mode
+  sql: json_extract(env_metrics, '$.light_and_shock.light_monitor_mode')
+  type: TEXT
+  primary_key: false
+  description: Light-exposure monitoring flag.
+  hidden: false
+- name: location_tracking_state
+  sql: json_extract(env_metrics, '$.tracking.location_tracking_state')
+  type: TEXT
+  primary_key: false
+  description: "Location tracking state (KB #18): 'Active', 'Intermittent', 'Failed',\
+    \ or null. NULL means tracking not implemented for this shipment.\n\n[kb=18]\n\
+    Location tracking can be in one of these states: 'Active' (providing regular updates),\
+    \ 'Intermittent' (occasional gaps in tracking), 'Failed' (no longer providing\
+    \ location data), or null (tracking was not implemented for this shipment). \u2014\
+    \ Illustrates the possible states of location tracking systems during transit.\n\
+    [/kb=18]"
+  label: Location Tracking States
+  hidden: false
+  meta:
+    kb_id: 18
+- name: gps_completeness_pct
+  sql: CAST(json_extract(env_metrics, '$.tracking.gps_completeness_pct') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: GPS completeness/coverage percentage.
+  hidden: false
+- name: route_deviation_incidents
+  sql: json_extract(env_metrics, '$.tracking.route_deviation_incidents')
+  type: DOUBLE
+  primary_key: false
+  description: Number of route deviation incidents.
+  hidden: false
+- name: unscheduled_stops
+  sql: json_extract(env_metrics, '$.tracking.unscheduled_stops')
+  type: DOUBLE
+  primary_key: false
+  description: Count of unplanned stops.
+  hidden: false
+- name: stop_duration_min
+  sql: json_extract(env_metrics, '$.tracking.stop_duration_min')
+  type: DOUBLE
+  primary_key: false
+  description: Total minutes spent in unplanned stops.
+  hidden: false
+- name: is_critical_monitoring_failure
+  sql: (CAST(json_extract(env_metrics, '$.tracking.gps_completeness_pct') AS REAL)
+    < 80) OR (CAST(json_extract(env_metrics, '$.temperature.excursion_duration_min')
+    AS REAL) > 30)
+  type: BOOLEAN
+  primary_key: false
+  description: "Critical Monitoring Failure (KB #11): GPS completeness < 80% OR temperature\
+    \ monitoring gaps exceeding 30 minutes during transit. NOTE: source data exposes\
+    \ total excursion_duration_min, not per-gap duration, so this proxies 'gaps >\
+    \ 30 min' with total minutes-out-of-range > 30.\n\n[kb=11]\nOccurs when either\
+    \ GPS completeness falls below 80% or when temperature monitoring has gaps exceeding\
+    \ 30 minutes during transit. \u2014 Indicates when monitoring systems fail to\
+    \ provide sufficient data to assess product quality.\n[/kb=11]"
+  label: Critical Monitoring Failure
+  hidden: false
+  meta:
+    kb_id: 11
+- name: tirp
+  sql: (CAST(json_extract(shipments.shipment_overview, '$.timing_performance.actual_duration_hrs')
+    AS REAL) * 60.0 - CAST(json_extract(env_metrics, '$.temperature.excursion_duration_min')
+    AS REAL)) * 100.0 / NULLIF(CAST(json_extract(shipments.shipment_overview, '$.timing_performance.actual_duration_hrs')
+    AS REAL) * 60.0, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Time In Range Percentage (TIRP, KB #25): (T_total - TED) / T_total\
+    \ * 100 where T_total is converted from shipments.shipment_overview JSON actual_duration_hrs\
+    \ (hours) to minutes to match TED units (minutes). Reaches the host shipment via\
+    \ the shipments FK.\n\n[kb=25]\nTIRP = \\frac{T_{total} - TED}{T_{total}} \\times\
+    \ 100\\%, \\text{where } T_{total} \\text{ is the total transit time and TED is\
+    \ the Temperature Excursion Duration.} \u2014 Calculates the percentage of time\
+    \ a shipment's temperature stayed within required parameters.\n[/kb=25]"
+  label: Time In Range Percentage (TIRP)
+  hidden: false
+  meta:
+    kb_id: 25
+- name: quality_risk_zone
+  sql: CASE WHEN ((CAST(json_extract(shipments.shipment_overview, '$.timing_performance.actual_duration_hrs')
+    AS REAL) * 60.0 - CAST(json_extract(env_metrics, '$.temperature.excursion_duration_min')
+    AS REAL)) * 100.0 / NULLIF(CAST(json_extract(shipments.shipment_overview, '$.timing_performance.actual_duration_hrs')
+    AS REAL) * 60.0, 0)) > 98 AND CAST(json_extract(env_metrics, '$.temperature.excursion_duration_min')
+    AS REAL) <= 30 THEN 'Green Zone' WHEN ((CAST(json_extract(shipments.shipment_overview,
+    '$.timing_performance.actual_duration_hrs') AS REAL) * 60.0 - CAST(json_extract(env_metrics,
+    '$.temperature.excursion_duration_min') AS REAL)) * 100.0 / NULLIF(CAST(json_extract(shipments.shipment_overview,
+    '$.timing_performance.actual_duration_hrs') AS REAL) * 60.0, 0)) >= 95 OR CAST(json_extract(env_metrics,
+    '$.temperature.excursion_duration_min') AS REAL) <= 60 THEN 'Yellow Zone' ELSE
+    'Red Zone' END
+  type: TEXT
+  primary_key: false
+  description: "Quality Risk Zone (KB #27): 'Green' (TIRP > 98% and no single excursion\
+    \ > 30 min), 'Yellow' (95-98% TIRP or any excursion 30-60 min), 'Red' (TIRP <\
+    \ 95% or any excursion > 60 min). Source data exposes total excursion_duration_min\
+    \ not per-event durations \u2014 the per-event predicate uses total excursion\
+    \ duration as a proxy.\n\n[kb=27]\nQuality risk zones are: 'Green Zone' (TIRP\
+    \ > 98% and no excursions > 30 min), 'Yellow Zone' (95% \u2264 TIRP \u2264 98%\
+    \ or any excursion 30-60 min), 'Red Zone' (TIRP < 95% or any excursion > 60 min).\
+    \ \u2014 Identifies risk levels for temperature-sensitive products based on excursion\
+    \ metrics.\n[/kb=27]"
+  label: Quality Risk Zones
+  hidden: false
+  meta:
+    kb_id: 27
+- name: temp_avg_kelvin
+  sql: (CAST(json_extract(env_metrics, '$.temperature.avg_c') AS REAL) + 273.15)
+  type: DOUBLE
+  primary_key: false
+  description: "Average temperature in Kelvin, derived from env_metrics.temperature.avg_c.\
+    \ Used as the per-shipment T\u1D62 series feed into MKT (KB #26). Note: source\
+    \ data only stores avg/min/max per shipment, not the full point series, so :mkt\
+    \ at query time is computed over shipment-level averages.\n\n[kb=26]\nMKT = \\\
+    frac{-\\Delta H/R}{\\ln\\left(\\frac{\\sum_{i=1}^{n} e^{-\\Delta H/RT_i}}{n}\\\
+    right)}, \\text{where } \\Delta H \\text{ is the activation energy (usually 83.144\
+    \ kJ/mol for pharmaceuticals), R is the gas constant (8.3144 J/mol/K), and } T_i\
+    \ \\text{ is each temperature point in Kelvin.} \u2014 A calculated temperature\
+    \ that expresses the overall effect of temperature fluctuations during storage\
+    \ or transit.\n[/kb=26]"
+  label: Mean Kinetic Temperature (MKT)
+  hidden: false
+  meta:
+    kb_id: 26
+- name: compliant_shipment_id
+  sql: CASE WHEN CAST(json_extract(env_metrics, '$.temperature.excursion_count') AS
+    INTEGER) = 0 THEN reckeylink END
+  type: TEXT
+  primary_key: false
+  description: "Compliant shipment id helper for CCCR (KB #5): yields the shipment\
+    \ reckey only when the row has zero temperature excursions, NULL otherwise. Plugged\
+    \ into a COUNT to produce N_compliant.\n\n[kb=5]\nCCCR = \\frac{N_{compliant}}{N_{total}}\
+    \ \\times 100\\%, \\text{where } N_{compliant} \\text{ is the number of shipments\
+    \ with zero temperature excursions, and } N_{total} \\text{ is the total number\
+    \ of shipments.} \u2014 Measures the percentage of shipments that maintained required\
+    \ temperature conditions throughout transit.\n[/kb=5]"
+  label: Cold Chain Compliance Rate (CCCR)
+  hidden: false
+  meta:
+    kb_id: 5
+- name: is_temp_monitoring_gap
+  sql: CASE WHEN temp_excursion_duration_min > 15 THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Temperature Monitoring Gap indicator (KB #8): proxy 1 when total minutes-out-of-range\
+    \ exceeds 15 (the KB defines a gap as a >15-minute period without temperature\
+    \ readings; source schema only exposes total excursion_duration_min, not per-event\
+    \ durations).\n\n[kb=8]\nA period of over 15 minutes where no temperature data\
+    \ points were recorded in a shipment that should have continuous monitoring. \u2014\
+    \ Indicates periods where temperature data is missing during transit.\n[/kb=8]"
+  label: Temperature Monitoring Gap
+  hidden: false
+  meta:
+    kb_id: 8
+- name: temperature_profile_class
+  sql: CASE WHEN temp_excursion_count > 0 THEN 'Excursion' WHEN (temp_max_c - temp_min_c)
+    > 6 THEN 'Erratic' WHEN (temp_max_c - temp_min_c) > 3 THEN 'Cyclic' ELSE 'Stable'
+    END
+  type: TEXT
+  primary_key: false
+  description: "Temperature Profile Categorization (KB #40): Stable / Cyclic / Trend\
+    \ / Excursion / Erratic. Schema lacks a continuous temperature point series, so\
+    \ this proxies via excursion_count and temp range (max-min). 'Trend' is not derivable\
+    \ without a time series.\n\n[kb=40]\nTemperature profiles are categorized as:\
+    \ 'Stable' (minimal variations within range), 'Cyclic' (regular patterns of variation\
+    \ within range), 'Trend' (gradual increase or decrease over time), 'Excursion'\
+    \ (periods outside acceptable range), or 'Erratic' (unpredictable variations suggesting\
+    \ monitoring issues). \u2014 Classifies the pattern of temperature readings during\
+    \ a shipment.\n[/kb=40]"
+  label: Temperature Profile Categorization
+  hidden: false
+  meta:
+    kb_id: 40
+- name: temperature_deviation_frequency
+  sql: temp_excursion_count
+  type: DOUBLE
+  primary_key: false
+  description: "Last Mile Delivery Metrics (KB #50): the only sub-metric directly\
+    \ observable from this model is Temperature Deviation Frequency, which equals\
+    \ the per-shipment temp_excursion_count. Other last-mile metrics (First Attempt\
+    \ Delivery Success Rate, Receiver Wait Time, Documentation Completion Rate, Handler\
+    \ Qualification Status) are not present in the schema.\n\n[kb=50]\nKey last mile\
+    \ metrics include: First Attempt Delivery Success Rate, Temperature Deviation\
+    \ Frequency, Receiver Wait Time, Documentation Completion Rate, and Handler Qualification\
+    \ Status. \u2014 Key performance indicators specific to final stage pharmaceutical\
+    \ delivery.\n[/kb=50]"
+  label: Last Mile Delivery Metrics
+  hidden: false
+  meta:
+    kb_id: 50
+measures:
+- formula: temp_excursion_duration_min:sum
+  name: ted
+  description: "Temperature Excursion Duration (TED, KB #0): \u03A3 t\u1D62 \u2014\
+    \ sum of excursion durations across the included rows."
+- formula: compliant_shipment_id:count * 100.0 / *:count
+  name: cccr
+  description: "Cold Chain Compliance Rate (CCCR, KB #5): N_compliant / N_total \xD7\
+    \ 100% where compliant = zero temperature excursions."
+aggregations:
+- name: mkt
+  formula: (-{deltaH}/{R}) / ln(SUM(exp(-{deltaH}/({R} * {value}))) / COUNT(*))
+  params:
+  - name: deltaH
+    sql: '83144'
+  - name: R
+    sql: '8.314'
+  description: "Mean Kinetic Temperature (MKT, KB #26): -\u0394H/R divided by ln(\u03A3\
+    \ e^(-\u0394H/RT_i) / n). Defaults: \u0394H = 83144 J/mol, R = 8.314 J/mol/K.\
+    \ Uses SLayer's ln/exp UDFs. Apply to temp_avg_kelvin: temp_avg_kelvin:mkt across\
+    \ shipments (or any other Kelvin column)."
+joins:
+- target_model: monitoringdevices
+  join_pairs:
+  - - devlink
+    - mondevref
+  join_type: left
+- target_model: shipments
+  join_pairs:
+  - - reckeylink
+    - reckey
+  join_type: left
+filters: []
+description: Per-shipment environmental telemetry. Holds the env_metrics JSON blob
+  with temperature (avg/min/max, alarm/excursion counts, excursion duration), humidity,
+  light_and_shock and tracking sub-objects.
+hidden: false

@@ -1,0 +1,158 @@
+version: 6
+name: disasterevents
+sql_table: disasterevents
+query_variables: {}
+data_source: disaster
+columns:
+- name: distregistry
+  sql: distregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: timemark
+  sql: timemark
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: haztype
+  sql: haztype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: hazlevel
+  sql: hazlevel
+  type: TEXT
+  primary_key: false
+  description: "Severity classification of the hazard (KB #0). Level 1 = minimal threat,\
+    \ Level 2 = moderate danger, Level 3 = significant hazard, Level 4 = severe emergency,\
+    \ Level 5 = catastrophic.\n\n[kb=0]\nLevel 1 represents minimal threat, Level\
+    \ 2 indicates moderate danger, Level 3 shows significant hazard, Level 4 denotes\
+    \ severe emergency situation, and Level 5 signifies catastrophic conditions requiring\
+    \ maximum response \u2014 Illustrates the severity classification of disaster\
+    \ events\n[/kb=0]"
+  label: hazlevel
+  hidden: false
+  meta:
+    kb_id: 0
+- name: affectedarea
+  sql: affectedarea
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: regiontag
+  sql: regiontag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: latcoord
+  sql: latcoord
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: loncoord
+  sql: loncoord
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: impactmetrics
+  sql: impactmetrics
+  type: TEXT
+  primary_key: false
+  description: 'JSON with population (affected, displaced, casualties, injured, missing),
+    infrastructure (damage_percent, power_outage_percent, water_damage_percent), communication
+    (KB #5), transportation, and damage_level (KB #7) sub-fields.'
+  hidden: false
+  meta: {}
+- name: communication_status
+  sql: impactmetrics ->> '$.communication'
+  type: TEXT
+  primary_key: false
+  description: "Communication infrastructure condition (KB #5). Operational = fully\
+    \ functioning; Limited = partial capabilities; Down = complete failure.\n\n[kb=5]\n\
+    Operational indicates fully functioning communication networks, Limited means\
+    \ partial communication capabilities with restrictions, and Down represents complete\
+    \ failure of communication infrastructure requiring alternative methods \u2014\
+    \ Illustrates the condition of communication infrastructure\n[/kb=5]"
+  label: impactMetrics.communication
+  hidden: false
+  meta:
+    kb_id: 5
+- name: damage_level
+  sql: impactmetrics ->> '$.damage_level'
+  type: TEXT
+  primary_key: false
+  description: "Extent of destruction caused by the disaster (KB #7). Minor / Moderate\
+    \ / Severe / Catastrophic.\n\n[kb=7]\nMinor represents limited structural damage\
+    \ with most systems functional, Moderate indicates significant damage with some\
+    \ systems compromised, Severe shows extensive damage with most systems affected,\
+    \ and Catastrophic represents complete devastation with total system failures\
+    \ \u2014 Illustrates the extent of destruction caused by disasters\n[/kb=7]"
+  label: impactMetrics.damage_level
+  hidden: false
+  meta:
+    kb_id: 7
+- name: hazlevel_numeric
+  sql: CAST(SUBSTR(hazlevel, 7) AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Numeric severity 1..5 parsed from hazlevel ('Level 3' -> 3).
+  hidden: false
+- name: population_affected
+  sql: CAST(impactmetrics ->> '$.population.affected' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Total people affected by the disaster (parsed from impactmetrics.population.affected).
+  hidden: false
+- name: population_displaced
+  sql: CAST(impactmetrics ->> '$.population.displaced' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: People displaced (parsed from impactmetrics.population.displaced).
+  hidden: false
+- name: population_casualties
+  sql: CAST(impactmetrics ->> '$.population.casualties' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Fatalities (parsed from impactmetrics.population.casualties).
+  hidden: false
+- name: population_injured
+  sql: CAST(impactmetrics ->> '$.population.injured' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Number injured (parsed from impactmetrics.population.injured).
+  hidden: false
+- name: population_missing
+  sql: CAST(impactmetrics ->> '$.population.missing' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Number missing (parsed from impactmetrics.population.missing).
+  hidden: false
+- name: infra_damage_pct
+  sql: CAST(impactmetrics ->> '$.infrastructure.damage_percent' AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Infrastructure damage percentage.
+  hidden: false
+- name: infra_power_outage_pct
+  sql: CAST(impactmetrics ->> '$.infrastructure.power_outage_percent' AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Power outage percentage.
+  hidden: false
+- name: infra_water_damage_pct
+  sql: CAST(impactmetrics ->> '$.infrastructure.water_damage_percent' AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Water system damage percentage.
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: One row per disaster event. Hub for all child tables (operations, distributionhubs,
+  financials, etc.) which reference distregistry.
+hidden: false

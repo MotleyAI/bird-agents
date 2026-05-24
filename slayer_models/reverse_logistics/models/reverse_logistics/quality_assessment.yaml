@@ -1,0 +1,40 @@
+version: 6
+name: quality_assessment
+sql_table: quality_assessment
+query_variables: {}
+data_source: reverse_logistics
+columns:
+- name: inspectref
+  sql: inspectref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: assessment_summary
+  sql: assessment_summary
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: item_condition
+  sql: TRIM(json_extract(assessment_summary, '$.condition.item_condition'), '"')
+  type: TEXT
+  primary_key: false
+  description: "Item Condition States \u2014 'New', 'Like New', 'Used', or 'Damaged'.\n\
+    \n[kb=22]\nThere are 4 different states: 'New', 'Like New', 'Used' and 'Damaged'.\
+    \ \u2014 Standardised terms describing physical state of returned merchandise.\n\
+    [/kb=22]"
+  label: Item Condition States
+  hidden: false
+  meta:
+    kb_id: 22
+measures: []
+aggregations: []
+joins:
+- target_model: returns
+  join_pairs:
+  - - inspectref
+    - casenum
+  join_type: left
+filters: []
+description: Quality inspection / usage / documentation state for a returned product.
+  One row per return case (joined to returns via inspectref = casenum).
+hidden: false

@@ -1,0 +1,68 @@
+version: 6
+name: employer_size_classification
+source_queries:
+- version: 3
+  name: emp_apps
+  source_model: cases
+  measures:
+  - formula: '*:count'
+    name: _count
+  dimensions:
+  - name: homefirm
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: emp_apps
+    columns:
+    - name: size_class
+      type: TEXT
+      sql: CASE WHEN _count < 5 THEN 'Small-scale' WHEN _count <= 25 THEN 'Medium-scale'
+        ELSE 'Large-scale' END
+  dimensions:
+  - name: homefirm
+  - name: _count
+  - name: size_class
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"emp_apps.homefirm\" AS homefirm, \"emp_apps._count\"\
+  \ AS _count, \"emp_apps.size_class\" AS size_class FROM (SELECT\n  emp_apps.homefirm\
+  \ AS \"emp_apps.homefirm\",\n  emp_apps._count AS \"emp_apps._count\",\n  CASE\n\
+  \    WHEN emp_apps._count < 5\n    THEN 'Small-scale'\n    WHEN emp_apps._count\
+  \ <= 25\n    THEN 'Medium-scale'\n    ELSE 'Large-scale'\n  END AS \"emp_apps.size_class\"\
+  \nFROM (\n  SELECT\n    \"cases.homefirm\" AS homefirm,\n    \"cases._count\" AS\
+  \ _count\n  FROM (\n    SELECT\n      cases.homefirm AS \"cases.homefirm\",\n  \
+  \    COUNT(*) AS \"cases._count\"\n    FROM cases AS cases\n    GROUP BY\n     \
+  \ cases.homefirm\n  ) AS _inner\n) AS emp_apps) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: homefirm
+  sql: homefirm
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: _count
+  sql: _count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: size_class
+  sql: size_class
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Employer Size Classification per employer (KB #46): Small-scale (<5\
+  \ apps annually), Medium-scale (5-25), Large-scale (>25). Companion to `employer_scale_indicator`\
+  \ (KB #30).\n\n[kb=46]\nEmployers are classified as Small-scale users (fewer than\
+  \ 5 applications annually), Medium-scale users (5-25 applications annually), or\
+  \ Large-scale users (more than 25 applications annually). Employer and application\
+  \ information are tracked as part of the application data. \u2014 Categorizes employers\
+  \ based on their scale of visa usage.\n[/kb=46]"
+hidden: false
+meta:
+  kb_id: 46

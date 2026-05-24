@@ -1,0 +1,84 @@
+version: 6
+name: nic_rank_per_account
+source_queries:
+- version: 3
+  name: nic_per_account
+  source_model: moderationaction
+  measures:
+  - formula: nic:avg
+    name: nic_v
+  dimensions:
+  - name: account_id
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: nic_per_account
+    columns:
+    - name: nic_rank
+      type: DOUBLE
+      sql: RANK() OVER (ORDER BY nic_v DESC)
+  dimensions:
+  - name: account_id
+  - name: nic_v
+  - name: nic_rank
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"nic_per_account.account_id\" AS account_id, \"nic_per_account.nic_v\"\
+  \ AS nic_v, \"nic_per_account.nic_rank\" AS nic_rank FROM (SELECT\n  nic_per_account.account_id\
+  \ AS \"nic_per_account.account_id\",\n  nic_per_account.nic_v AS \"nic_per_account.nic_v\"\
+  ,\n  RANK() OVER (ORDER BY nic_per_account.nic_v DESC) AS \"nic_per_account.nic_rank\"\
+  \nFROM (\n  SELECT\n    \"moderationaction.account_id\" AS account_id,\n    \"moderationaction.nic_v\"\
+  \ AS nic_v\n  FROM (\n    SELECT\n      contentbehavior__sessionbehavior__profile.profaccref\
+  \ AS \"moderationaction.account_id\",\n      AVG(\n        0.4 * CAST(JSON_EXTRACT(\n\
+  \          securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \          '$.connection_metrics.connqualscore'\n        ) AS REAL) + 0.3 * moderationaction.netinflscore\
+  \ + 0.3 * CAST(JSON_EXTRACT(\n          securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \          '$.interaction_metrics.interactdiv'\n        ) AS REAL)\n      ) AS \"\
+  moderationaction.nic_v\"\n    FROM moderationaction AS moderationaction\n    LEFT\
+  \ JOIN contentbehavior AS contentbehavior\n      ON moderationaction.macntref =\
+  \ contentbehavior.cntref\n    LEFT JOIN securitydetection AS securitydetection\n\
+  \      ON moderationaction.masedetref = securitydetection.secdetkey\n    LEFT JOIN\
+  \ technicalinfo AS securitydetection__technicalinfo\n      ON securitydetection.sectechref\
+  \ = securitydetection__technicalinfo.techkey\n    LEFT JOIN sessionbehavior AS contentbehavior__sessionbehavior\n\
+  \      ON contentbehavior.cntsessref = contentbehavior__sessionbehavior.sessref\n\
+  \    LEFT JOIN networkmetrics AS securitydetection__technicalinfo__networkmetrics\n\
+  \      ON securitydetection__technicalinfo.technetref = securitydetection__technicalinfo__networkmetrics.netkey\n\
+  \    LEFT JOIN profile AS contentbehavior__sessionbehavior__profile\n      ON contentbehavior__sessionbehavior.sessprofref\
+  \ = contentbehavior__sessionbehavior__profile.profkey\n    GROUP BY\n      contentbehavior__sessionbehavior__profile.profaccref\n\
+  \  ) AS _inner\n) AS nic_per_account) AS _inner"
+data_source: fake
+columns:
+- name: account_id
+  sql: account_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row account identifier resolved through the moderationaction \u2192\
+    \ contentbehavior \u2192 sessionbehavior \u2192 profile join chain. Convenience\
+    \ handle for grouping/multistage; equals the underlying account.accindex."
+  hidden: false
+- name: nic_v
+  sql: nic_v
+  type: DOUBLE
+  primary_key: false
+  description: 'Network Influence Centrality (KB #51): 0.4*connqualscore + 0.3*netinflscore
+    + 0.3*interactdiv.'
+  hidden: false
+  format:
+    type: float
+- name: nic_rank
+  sql: nic_rank
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Influence ranking by NIC (KB #78). RANK() OVER (ORDER BY avg NIC per\
+  \ account DESC). Rank 1 = highest NIC.\n\n[kb=78]\n\\text{rank}_i = |\\{j : \\text{NIC}_j\
+  \ > \\text{NIC}_i\\}| + 1 where i is the current account and j iterates over all\
+  \ accounts \u2014 A ranking system that orders accounts based on their NIC scores\
+  \ from highest to lowest.\n[/kb=78]"
+hidden: false
+meta:
+  kb_id: 78

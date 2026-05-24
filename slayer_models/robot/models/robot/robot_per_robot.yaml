@@ -1,0 +1,616 @@
+version: 6
+name: robot_per_robot
+source_queries:
+- version: 3
+  name: _robot_ops
+  source_model: operation
+  measures:
+  - formula: totopshrval:max
+    name: toh
+  - formula: progcyclecount:sum
+    name: tpc
+  - formula: cycletimesecval:sum
+    name: sum_cycle_time_sec
+  - formula: '*:count'
+    name: 'no'
+  - formula: apptypeval:max
+    name: apptypeval
+  dimensions:
+  - name: operbotdetref
+  whole_periods_only: false
+- version: 3
+  name: _robot_energy_tools
+  source_model: performance_and_safety
+  measures:
+  - formula: energyusekwhval:sum
+    name: energy_kwh
+  - formula: toolwearpct:sum
+    name: tool_wear_sum
+  - formula: toolwearpct:avg
+    name: avg_tool_wear
+  dimensions:
+  - name: effectivenessrobot
+  whole_periods_only: false
+- version: 3
+  name: _robot_jc
+  source_model: joint_condition
+  measures:
+  - formula: row_max_joint_temp:max
+    name: mjt
+  - formula: '*:count'
+    name: jc_count
+  dimensions:
+  - name: jcdetref
+  whole_periods_only: false
+- version: 3
+  name: _robot_jc_sums
+  source_model: joint_condition
+  measures:
+  - formula: j1tempval:sum
+    name: j1t
+  - formula: j2tempval:sum
+    name: j2t
+  - formula: j3tempval:sum
+    name: j3t
+  - formula: j4tempval:sum
+    name: j4t
+  - formula: j5tempval:sum
+    name: j5t
+  - formula: j6tempval:sum
+    name: j6t
+  - formula: j1vibval:sum
+    name: j1v
+  - formula: j2vibval:sum
+    name: j2v
+  - formula: j3vibval:sum
+    name: j3v
+  - formula: j4vibval:sum
+    name: j4v
+  - formula: j5vibval:sum
+    name: j5v
+  - formula: j6vibval:sum
+    name: j6v
+  dimensions:
+  - name: jcdetref
+  whole_periods_only: false
+- version: 3
+  name: _robot_act
+  source_model: actuation_data
+  measures:
+  - formula: poserrmmval:avg
+    name: ape
+  - formula: tcpspeedval:avg
+    name: atcs
+  dimensions:
+  - name: actdetref
+  whole_periods_only: false
+- version: 3
+  name: _robot_maint
+  source_model: maintenance_and_fault
+  measures:
+  - formula: rulhours:min
+    name: mrul
+  dimensions:
+  - name: upkeeprobot
+  whole_periods_only: false
+- version: 3
+  name: _robot_meta
+  source_model: robot_details
+  dimensions:
+  - name: botdetreg
+  - name: modelseriesval
+  - name: ctrltypeval
+  - name: mfgnameval
+  - name: bottypeval
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: _robot_ops
+    joins:
+    - target_model: _robot_energy_tools
+      join_pairs:
+      - - operbotdetref
+        - effectivenessrobot
+    - target_model: _robot_jc
+      join_pairs:
+      - - operbotdetref
+        - jcdetref
+    - target_model: _robot_jc_sums
+      join_pairs:
+      - - operbotdetref
+        - jcdetref
+    - target_model: _robot_act
+      join_pairs:
+      - - operbotdetref
+        - actdetref
+    - target_model: _robot_maint
+      join_pairs:
+      - - operbotdetref
+        - upkeeprobot
+    - target_model: _robot_meta
+      join_pairs:
+      - - operbotdetref
+        - botdetreg
+    columns:
+    - name: eer
+      sql: CASE WHEN _robot_ops.toh > 0 THEN _robot_energy_tools.energy_kwh / _robot_ops.toh
+        END
+      type: number
+    - name: twr
+      sql: CASE WHEN _robot_ops.tpc > 0 THEN _robot_energy_tools.tool_wear_sum / _robot_ops.tpc
+        END
+      type: number
+    - name: oce_per_robot
+      sql: CASE WHEN _robot_ops.sum_cycle_time_sec > 0 THEN _robot_ops.tpc * 1.0 /
+        _robot_ops.sum_cycle_time_sec END
+      type: number
+    - name: jdi
+      sql: CASE WHEN _robot_jc.mjt > 0 AND _robot_jc.jc_count > 0 THEN (_robot_jc_sums.j1t
+        + _robot_jc_sums.j2t + _robot_jc_sums.j3t + _robot_jc_sums.j4t + _robot_jc_sums.j5t
+        + _robot_jc_sums.j6t) * 1.0 / (_robot_jc.mjt * _robot_jc.jc_count * 6) + (_robot_jc_sums.j1v
+        + _robot_jc_sums.j2v + _robot_jc_sums.j3v + _robot_jc_sums.j4v + _robot_jc_sums.j5v
+        + _robot_jc_sums.j6v) * 1.0 / (_robot_jc.jc_count * 6) END
+      type: number
+    - name: mjt
+      sql: _robot_jc.mjt
+      type: number
+    - name: ape
+      sql: _robot_act.ape
+      type: number
+    - name: atcs
+      sql: _robot_act.atcs
+      type: number
+    - name: mrul
+      sql: _robot_maint.mrul
+      type: number
+    - name: energy_kwh
+      sql: _robot_energy_tools.energy_kwh
+      type: number
+    - name: tool_wear_sum
+      sql: _robot_energy_tools.tool_wear_sum
+      type: number
+    - name: avg_tool_wear
+      sql: _robot_energy_tools.avg_tool_wear
+      type: number
+    - name: jc_count
+      sql: _robot_jc.jc_count
+      type: number
+    - name: apptypeval
+      sql: _robot_ops.apptypeval
+      type: string
+    - name: modelseriesval
+      sql: _robot_meta.modelseriesval
+      type: string
+    - name: ctrltypeval
+      sql: _robot_meta.ctrltypeval
+      type: string
+    - name: mfgnameval
+      sql: _robot_meta.mfgnameval
+      type: string
+    - name: bottypeval
+      sql: _robot_meta.bottypeval
+      type: string
+  dimensions:
+  - name: operbotdetref
+  - name: toh
+  - name: tpc
+  - name: sum_cycle_time_sec
+  - name: 'no'
+  - name: energy_kwh
+  - name: tool_wear_sum
+  - name: avg_tool_wear
+  - name: mjt
+  - name: jc_count
+  - name: ape
+  - name: atcs
+  - name: mrul
+  - name: eer
+  - name: twr
+  - name: oce_per_robot
+  - name: jdi
+  - name: apptypeval
+  - name: modelseriesval
+  - name: ctrltypeval
+  - name: mfgnameval
+  - name: bottypeval
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"_robot_ops.operbotdetref\" AS operbotdetref, \"_robot_ops.toh\"\
+  \ AS toh, \"_robot_ops.tpc\" AS tpc, \"_robot_ops.sum_cycle_time_sec\" AS sum_cycle_time_sec,\
+  \ \"_robot_ops.no\" AS no, \"_robot_ops.energy_kwh\" AS energy_kwh, \"_robot_ops.tool_wear_sum\"\
+  \ AS tool_wear_sum, \"_robot_ops.avg_tool_wear\" AS avg_tool_wear, \"_robot_ops.mjt\"\
+  \ AS mjt, \"_robot_ops.jc_count\" AS jc_count, \"_robot_ops.ape\" AS ape, \"_robot_ops.atcs\"\
+  \ AS atcs, \"_robot_ops.mrul\" AS mrul, \"_robot_ops.eer\" AS eer, \"_robot_ops.twr\"\
+  \ AS twr, \"_robot_ops.oce_per_robot\" AS oce_per_robot, \"_robot_ops.jdi\" AS jdi,\
+  \ \"_robot_ops.apptypeval\" AS apptypeval, \"_robot_ops.modelseriesval\" AS modelseriesval,\
+  \ \"_robot_ops.ctrltypeval\" AS ctrltypeval, \"_robot_ops.mfgnameval\" AS mfgnameval,\
+  \ \"_robot_ops.bottypeval\" AS bottypeval FROM (SELECT\n  _robot_ops.operbotdetref\
+  \ AS \"_robot_ops.operbotdetref\",\n  _robot_ops.toh AS \"_robot_ops.toh\",\n  _robot_ops.tpc\
+  \ AS \"_robot_ops.tpc\",\n  _robot_ops.sum_cycle_time_sec AS \"_robot_ops.sum_cycle_time_sec\"\
+  ,\n  _robot_ops.no AS \"_robot_ops.no\",\n  _robot_energy_tools.energy_kwh AS \"\
+  _robot_ops.energy_kwh\",\n  _robot_energy_tools.tool_wear_sum AS \"_robot_ops.tool_wear_sum\"\
+  ,\n  _robot_energy_tools.avg_tool_wear AS \"_robot_ops.avg_tool_wear\",\n  _robot_jc.mjt\
+  \ AS \"_robot_ops.mjt\",\n  _robot_jc.jc_count AS \"_robot_ops.jc_count\",\n  _robot_act.ape\
+  \ AS \"_robot_ops.ape\",\n  _robot_act.atcs AS \"_robot_ops.atcs\",\n  _robot_maint.mrul\
+  \ AS \"_robot_ops.mrul\",\n  CAST(CASE\n    WHEN _robot_ops.toh > 0\n    THEN _robot_energy_tools.energy_kwh\
+  \ / _robot_ops.toh\n  END AS REAL) AS \"_robot_ops.eer\",\n  CAST(CASE\n    WHEN\
+  \ _robot_ops.tpc > 0\n    THEN _robot_energy_tools.tool_wear_sum / _robot_ops.tpc\n\
+  \  END AS REAL) AS \"_robot_ops.twr\",\n  CAST(CASE\n    WHEN _robot_ops.sum_cycle_time_sec\
+  \ > 0\n    THEN _robot_ops.tpc * 1.0 / _robot_ops.sum_cycle_time_sec\n  END AS REAL)\
+  \ AS \"_robot_ops.oce_per_robot\",\n  CAST(CASE\n    WHEN _robot_jc.mjt > 0 AND\
+  \ _robot_jc.jc_count > 0\n    THEN (\n      _robot_jc_sums.j1t + _robot_jc_sums.j2t\
+  \ + _robot_jc_sums.j3t + _robot_jc_sums.j4t + _robot_jc_sums.j5t + _robot_jc_sums.j6t\n\
+  \    ) * 1.0 / (\n      _robot_jc.mjt * _robot_jc.jc_count * 6\n    ) + (\n    \
+  \  _robot_jc_sums.j1v + _robot_jc_sums.j2v + _robot_jc_sums.j3v + _robot_jc_sums.j4v\
+  \ + _robot_jc_sums.j5v + _robot_jc_sums.j6v\n    ) * 1.0 / (\n      _robot_jc.jc_count\
+  \ * 6\n    )\n  END AS REAL) AS \"_robot_ops.jdi\",\n  _robot_ops.apptypeval AS\
+  \ \"_robot_ops.apptypeval\",\n  _robot_meta.modelseriesval AS \"_robot_ops.modelseriesval\"\
+  ,\n  _robot_meta.ctrltypeval AS \"_robot_ops.ctrltypeval\",\n  _robot_meta.mfgnameval\
+  \ AS \"_robot_ops.mfgnameval\",\n  _robot_meta.bottypeval AS \"_robot_ops.bottypeval\"\
+  \nFROM (\n  SELECT\n    \"operation.operbotdetref\" AS operbotdetref,\n    \"operation.toh\"\
+  \ AS toh,\n    \"operation.tpc\" AS tpc,\n    \"operation.sum_cycle_time_sec\" AS\
+  \ sum_cycle_time_sec,\n    \"operation.no\" AS no,\n    \"operation.apptypeval\"\
+  \ AS apptypeval\n  FROM (\n    SELECT\n      operation.operbotdetref AS \"operation.operbotdetref\"\
+  ,\n      MAX(operation.totopshrval) AS \"operation.toh\",\n      SUM(operation.progcyclecount)\
+  \ AS \"operation.tpc\",\n      SUM(operation.cycletimesecval) AS \"operation.sum_cycle_time_sec\"\
+  ,\n      COUNT(*) AS \"operation.no\",\n      MAX(operation.apptypeval) AS \"operation.apptypeval\"\
+  \n    FROM operation AS operation\n    GROUP BY\n      operation.operbotdetref\n\
+  \  ) AS _inner\n) AS _robot_ops\nLEFT JOIN (\n  (\n    SELECT\n      \"maintenance_and_fault.upkeeprobot\"\
+  \ AS upkeeprobot,\n      \"maintenance_and_fault.mrul\" AS mrul\n    FROM (\n  \
+  \    SELECT\n        maintenance_and_fault.upkeeprobot AS \"maintenance_and_fault.upkeeprobot\"\
+  ,\n        MIN(maintenance_and_fault.rulhours) AS \"maintenance_and_fault.mrul\"\
+  \n      FROM maintenance_and_fault AS maintenance_and_fault\n      GROUP BY\n  \
+  \      maintenance_and_fault.upkeeprobot\n    ) AS _inner\n  )\n) AS _robot_maint\n\
+  \  ON _robot_ops.operbotdetref = _robot_maint.upkeeprobot\nLEFT JOIN (\n  (\n  \
+  \  SELECT\n      \"robot_details.botdetreg\" AS botdetreg,\n      \"robot_details.modelseriesval\"\
+  \ AS modelseriesval,\n      \"robot_details.ctrltypeval\" AS ctrltypeval,\n    \
+  \  \"robot_details.mfgnameval\" AS mfgnameval,\n      \"robot_details.bottypeval\"\
+  \ AS bottypeval\n    FROM (\n      SELECT\n        robot_details.botdetreg AS \"\
+  robot_details.botdetreg\",\n        robot_details.modelseriesval AS \"robot_details.modelseriesval\"\
+  ,\n        robot_details.ctrltypeval AS \"robot_details.ctrltypeval\",\n       \
+  \ robot_details.mfgnameval AS \"robot_details.mfgnameval\",\n        robot_details.bottypeval\
+  \ AS \"robot_details.bottypeval\"\n      FROM robot_details AS robot_details\n \
+  \   ) AS _inner\n  )\n) AS _robot_meta\n  ON _robot_ops.operbotdetref = _robot_meta.botdetreg\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"performance_and_safety.effectivenessrobot\"\
+  \ AS effectivenessrobot,\n      \"performance_and_safety.energy_kwh\" AS energy_kwh,\n\
+  \      \"performance_and_safety.tool_wear_sum\" AS tool_wear_sum,\n      \"performance_and_safety.avg_tool_wear\"\
+  \ AS avg_tool_wear\n    FROM (\n      SELECT\n        performance_and_safety.effectivenessrobot\
+  \ AS \"performance_and_safety.effectivenessrobot\",\n        SUM(performance_and_safety.energyusekwhval)\
+  \ AS \"performance_and_safety.energy_kwh\",\n        SUM(performance_and_safety.toolwearpct)\
+  \ AS \"performance_and_safety.tool_wear_sum\",\n        AVG(performance_and_safety.toolwearpct)\
+  \ AS \"performance_and_safety.avg_tool_wear\"\n      FROM performance_and_safety\
+  \ AS performance_and_safety\n      GROUP BY\n        performance_and_safety.effectivenessrobot\n\
+  \    ) AS _inner\n  )\n) AS _robot_energy_tools\n  ON _robot_ops.operbotdetref =\
+  \ _robot_energy_tools.effectivenessrobot\nLEFT JOIN (\n  (\n    SELECT\n      \"\
+  joint_condition.jcdetref\" AS jcdetref,\n      \"joint_condition.mjt\" AS mjt,\n\
+  \      \"joint_condition.jc_count\" AS jc_count\n    FROM (\n      SELECT\n    \
+  \    joint_condition.jcdetref AS \"joint_condition.jcdetref\",\n        MAX(\n \
+  \         CAST(MAX(\n            joint_condition.j1tempval,\n            joint_condition.j2tempval,\n\
+  \            joint_condition.j3tempval,\n            joint_condition.j4tempval,\n\
+  \            joint_condition.j5tempval,\n            joint_condition.j6tempval\n\
+  \          ) AS REAL)\n        ) AS \"joint_condition.mjt\",\n        COUNT(*) AS\
+  \ \"joint_condition.jc_count\"\n      FROM joint_condition AS joint_condition\n\
+  \      GROUP BY\n        joint_condition.jcdetref\n    ) AS _inner\n  )\n) AS _robot_jc\n\
+  \  ON _robot_ops.operbotdetref = _robot_jc.jcdetref\nLEFT JOIN (\n  (\n    SELECT\n\
+  \      \"actuation_data.actdetref\" AS actdetref,\n      \"actuation_data.ape\"\
+  \ AS ape,\n      \"actuation_data.atcs\" AS atcs\n    FROM (\n      SELECT\n   \
+  \     actuation_data.actdetref AS \"actuation_data.actdetref\",\n        AVG(actuation_data.poserrmmval)\
+  \ AS \"actuation_data.ape\",\n        AVG(actuation_data.tcpspeedval) AS \"actuation_data.atcs\"\
+  \n      FROM actuation_data AS actuation_data\n      GROUP BY\n        actuation_data.actdetref\n\
+  \    ) AS _inner\n  )\n) AS _robot_act\n  ON _robot_ops.operbotdetref = _robot_act.actdetref\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"joint_condition.jcdetref\" AS jcdetref,\n\
+  \      \"joint_condition.j1t\" AS j1t,\n      \"joint_condition.j2t\" AS j2t,\n\
+  \      \"joint_condition.j3t\" AS j3t,\n      \"joint_condition.j4t\" AS j4t,\n\
+  \      \"joint_condition.j5t\" AS j5t,\n      \"joint_condition.j6t\" AS j6t,\n\
+  \      \"joint_condition.j1v\" AS j1v,\n      \"joint_condition.j2v\" AS j2v,\n\
+  \      \"joint_condition.j3v\" AS j3v,\n      \"joint_condition.j4v\" AS j4v,\n\
+  \      \"joint_condition.j5v\" AS j5v,\n      \"joint_condition.j6v\" AS j6v\n \
+  \   FROM (\n      SELECT\n        joint_condition.jcdetref AS \"joint_condition.jcdetref\"\
+  ,\n        SUM(joint_condition.j1tempval) AS \"joint_condition.j1t\",\n        SUM(joint_condition.j2tempval)\
+  \ AS \"joint_condition.j2t\",\n        SUM(joint_condition.j3tempval) AS \"joint_condition.j3t\"\
+  ,\n        SUM(joint_condition.j4tempval) AS \"joint_condition.j4t\",\n        SUM(joint_condition.j5tempval)\
+  \ AS \"joint_condition.j5t\",\n        SUM(joint_condition.j6tempval) AS \"joint_condition.j6t\"\
+  ,\n        SUM(joint_condition.j1vibval) AS \"joint_condition.j1v\",\n        SUM(joint_condition.j2vibval)\
+  \ AS \"joint_condition.j2v\",\n        SUM(joint_condition.j3vibval) AS \"joint_condition.j3v\"\
+  ,\n        SUM(joint_condition.j4vibval) AS \"joint_condition.j4v\",\n        SUM(joint_condition.j5vibval)\
+  \ AS \"joint_condition.j5v\",\n        SUM(joint_condition.j6vibval) AS \"joint_condition.j6v\"\
+  \n      FROM joint_condition AS joint_condition\n      GROUP BY\n        joint_condition.jcdetref\n\
+  \    ) AS _inner\n  )\n) AS _robot_jc_sums\n  ON _robot_ops.operbotdetref = _robot_jc_sums.jcdetref)\
+  \ AS _inner"
+data_source: robot
+columns:
+- name: operbotdetref
+  sql: operbotdetref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: toh
+  sql: toh
+  type: DOUBLE
+  primary_key: false
+  description: "Cumulative total operating hours up to this row. Carrier for TOH (KB\
+    \ #7) and Heavily Used Robot (KB #17).\n\n[kb=7]\nFor a given robot R, TOH = \\\
+    max_{o \\in \\text{operation} \\mid \\text{operbotdetref = R}} totopshrval \u2014\
+    \ The maximum total operating hours recorded for the robot across all operations.\n\
+    [/kb=7]"
+  label: Total Operating Hours (TOH)
+  hidden: false
+  format:
+    type: float
+- name: tpc
+  sql: tpc
+  type: DOUBLE
+  primary_key: false
+  description: "Program cycle count. Carrier for TPC (KB #9) and High Cycle Count\
+    \ Robot (KB #19).\n\n[kb=9]\nFor a given robot R, TPC = \\sum_{o \\in \\text{operation}\
+    \ \\mid \\text{operbotdetref = R}} progcyclecount \u2014 Sums the program cycle\
+    \ counts across all operations for a specific robot.\n[/kb=9]"
+  label: Total Program Cycles (TPC)
+  hidden: false
+  format:
+    type: integer
+- name: sum_cycle_time_sec
+  sql: sum_cycle_time_sec
+  type: DOUBLE
+  primary_key: false
+  description: "Per-operation cycle time (s). Carrier for OCE (KB #33), Cycle Efficiency\
+    \ Category (KB #43), and Average Cycle Time (KB #51).\n\n[kb=33]\nFor a given\
+    \ robot R, OCE = \\frac{\\text{TPC}}{\\sum_{o \\in \\text{operation} \\mid \\\
+    text{operbotdetref = R}} cycletimesecval} \u2014 Calculates the efficiency of\
+    \ program cycles relative to cycle time.\n[/kb=33]"
+  label: Operation Cycle Efficiency (OCE)
+  hidden: false
+  format:
+    type: float
+- name: 'no'
+  sql: 'no'
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: energy_kwh
+  sql: energy_kwh
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: tool_wear_sum
+  sql: tool_wear_sum
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: avg_tool_wear
+  sql: avg_tool_wear
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: mjt
+  sql: mjt
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: jc_count
+  sql: jc_count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: ape
+  sql: ape
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: atcs
+  sql: atcs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: mrul
+  sql: mrul
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: eer
+  sql: eer
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: twr
+  sql: twr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: oce_per_robot
+  sql: oce_per_robot
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: jdi
+  sql: jdi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: apptypeval
+  sql: apptypeval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: modelseriesval
+  sql: modelseriesval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ctrltypeval
+  sql: ctrltypeval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: mfgnameval
+  sql: mfgnameval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: bottypeval
+  sql: bottypeval
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures:
+- formula: eer:max
+  name: eer_value
+  label: Energy Efficiency Ratio (EER)
+  description: "Energy Efficiency Ratio (KB #31): \u03A3energyusekwhval (performance_and_safety)\
+    \ / TOH (operation), composed at per-robot grain via the multistage rollup. One\
+    \ value per robot \u2014 :max equals :avg equals :min for the robot's row.\n\n\
+    [kb=31]\nFor a given robot R, EER = \\frac{\\sum_{ps \\in \\text{performance_and_safety}\
+    \ \\mid \\text{effectivenessrobot = R}} energyusekwhval}{\\text{TOH}}, \\text{where\
+    \ TOH is used to normalize energy consumption.} \u2014 Measures energy efficiency\
+    \ by comparing energy usage to operating hours.\n[/kb=31]"
+  meta:
+    kb_id: 31
+- formula: twr:max
+  name: twr_value
+  label: Tool Wear Rate (TWR)
+  description: "Tool Wear Rate (KB #37): \u03A3toolwearpct (performance_and_safety)\
+    \ / TPC (operation), composed at per-robot grain via the multistage rollup.\n\n\
+    [kb=37]\nFor a given robot R, TWR = \\frac{\\sum_{ps \\in \\text{performance_and_safety}\
+    \ \\mid \\text{effectivenessrobot = R}} toolwearpct}{\\text{TPC}}, \\text{where\
+    \ TPC normalizes tool wear percentage.} \u2014 Estimates the rate of tool wear\
+    \ relative to program cycles.\n[/kb=37]"
+  meta:
+    kb_id: 37
+- formula: jdi:max
+  name: jdi_value
+  label: Joint Degradation Index (JDI)
+  description: "Joint Degradation Index (KB #32): (\u03A3temps / (MJT \xB7 |jc| \xB7\
+    \ 6)) + (\u03A3vibs / (|jc| \xB7 6)), composed at per-robot grain via the multistage\
+    \ rollup so MJT (the per-robot global divisor) is materialized first.\n\n[kb=32]\n\
+    For a given robot R, JDI = \\frac{\\sum_{jc \\in \\text{joint_condition} \\mid\
+    \ \\text{jcdetref = R}} \\sum_{i=1}^6 (jitempval_i / \\text{MJT} + jivibval_i)}{\\\
+    text{|}\\{jc \\in \\text{joint_condition} \\mid \\text{jcdetref = R}\\}| \\cdot\
+    \ 6}, \\text{where MJT normalizes temperatures, and jitempval_i, jivibval_i are\
+    \ joint i's temperature and vibration.} \u2014 Computes a composite index of joint\
+    \ health based on temperature and vibration.\n[/kb=32]"
+  meta:
+    kb_id: 32
+- formula: eer:max > 0.01 and toh:max > 1000
+  name: is_energy_inefficient
+  label: Energy Inefficient Robot
+  description: "Energy Inefficient Robot (KB #41): true if EER > 0.01 AND TOH > 1000.\n\
+    \n[kb=41]\nA robot R is Energy Inefficient if EER > 0.01 and TOH > 1000. \u2014\
+    \ Flags robots with poor energy efficiency.\n[/kb=41]"
+  meta:
+    kb_id: 41
+- formula: jdi:max > 1.5 and mjt:max > 65
+  name: is_joint_health_risk
+  label: Joint Health Risk
+  description: "Joint Health Risk (KB #42): true if JDI > 1.5 AND MJT > 65.\n\n[kb=42]\n\
+    A robot R has Joint Health Risk if JDI > 1.5 and MJT > 65. \u2014 Indicates robots\
+    \ at risk of joint failure.\n[/kb=42]"
+  meta:
+    kb_id: 42
+- formula: twr:max > 0.001 and tpc:max > 10000
+  name: is_tool_replace_urgent
+  label: Tool Replacement Status
+  description: "Tool Replacement Status (KB #47): 'URGENT' bucket \u2014 TWR > 0.001\
+    \ AND TPC > 10000.\n\n[kb=47]\nFor a robot R, the Tool Replacement Status is:\n\
+    - 'URGENT' if TWR > 0.001 AND TPC > 10000\n- 'WARNING' if TWR > 0.0005 OR average\
+    \ tool wear percentage > 75\n- 'NORMAL' otherwise \u2014 Classifies robots into\
+    \ tool replacement priority categories based on tool wear rate and program cycles\n\
+    [/kb=47]"
+  meta:
+    kb_id: 47
+- formula: (not (twr:max > 0.001 and tpc:max > 10000)) and (twr:max > 0.0005 or avg_tool_wear:max
+    > 75)
+  name: is_tool_replace_warning
+  label: Tool Replacement Status
+  description: "Tool Replacement Status (KB #47): 'WARNING' bucket \u2014 not URGENT\
+    \ and (TWR > 0.0005 OR avg toolwearpct > 75).\n\n[kb=47]\nFor a robot R, the Tool\
+    \ Replacement Status is:\n- 'URGENT' if TWR > 0.001 AND TPC > 10000\n- 'WARNING'\
+    \ if TWR > 0.0005 OR average tool wear percentage > 75\n- 'NORMAL' otherwise \u2014\
+    \ Classifies robots into tool replacement priority categories based on tool wear\
+    \ rate and program cycles\n[/kb=47]"
+  meta:
+    kb_id: 47
+- formula: (not (twr:max > 0.001 and tpc:max > 10000)) and (not (twr:max > 0.0005
+    or avg_tool_wear:max > 75))
+  name: is_tool_replace_normal
+  label: Tool Replacement Status
+  description: "Tool Replacement Status (KB #47): 'NORMAL' bucket \u2014 neither URGENT\
+    \ nor WARNING.\n\n[kb=47]\nFor a robot R, the Tool Replacement Status is:\n- 'URGENT'\
+    \ if TWR > 0.001 AND TPC > 10000\n- 'WARNING' if TWR > 0.0005 OR average tool\
+    \ wear percentage > 75\n- 'NORMAL' otherwise \u2014 Classifies robots into tool\
+    \ replacement priority categories based on tool wear rate and program cycles\n\
+    [/kb=47]"
+  meta:
+    kb_id: 47
+- formula: percent_rank(eer:max, partition_by=apptypeval)
+  name: eer_rank
+  label: EER Rank
+  description: "EER Rank (KB #52) \u2014 PERCENT_RANK over Energy Efficiency Ratio\
+    \ within each application type, descending. Group by operbotdetref and include\
+    \ apptypeval as a dimension; the rank partitions on it.\n\n[kb=52]\nEER Rank =\
+    \ \\text{PERCENT_RANK}() \\text{ OVER } (\\text{PARTITION BY } apptypeval \\text{\
+    \ ORDER BY } EER \\text{ DESC})} \u2014 Ranks the Energy Efficiency Ratio within\
+    \ each application type to assess relative efficiency.\n[/kb=52]"
+  meta:
+    kb_id: 52
+- formula: ape:avg
+  name: model_avg_position_error
+  label: Model Average Position Error
+  description: "Model Average Position Error (KB #57) \u2014 average of per-robot\
+    \ APE values across robots in a model series. Avg-of-aggregate; one row per robot\
+    \ in the underlying multistage rollup, then averaged. Group by modelseriesval.\n\
+    \n[kb=57]\nLet M be the model series, \\mathcal{R}_M be the set of unique robot\
+    \ identifiers in M. Then Model Avg Pos Error = \\frac{\\sum_{R \\in \\mathcal{R}_M}\
+    \ \\text{APE}(R)}{|\\mathcal{R}_M|} \u2014 The average of the Average Position\
+    \ Error values for all robots within a specific model series.\n[/kb=57]"
+  meta:
+    kb_id: 57
+- formula: atcs:avg
+  name: model_avg_tcp_speed
+  label: Model Average TCP Speed
+  description: "Model Average TCP Speed (KB #58) \u2014 average of per-robot ATCS\
+    \ values across robots in a model series. Avg-of-aggregate. Group by modelseriesval.\n\
+    \n[kb=58]\nLet M be the model series, \\mathcal{R}_M be the set of unique robot\
+    \ identifiers in M. Then Model Avg TCP Speed = \\frac{\\sum_{R \\in \\mathcal{R}_M}\
+    \ \\text{ATCS}(R)}{|\\mathcal{R}_M|} \u2014 The average of the Average TCP Speed\
+    \ values for all robots within a specific model series.\n[/kb=58]"
+  meta:
+    kb_id: 58
+- formula: toh:avg
+  name: model_avg_max_operating_hours
+  label: Model Average Max Operating Hours
+  description: "Model Average Max Operating Hours (KB #59) \u2014 average of per-robot\
+    \ maximum total operating hours across robots in a model series. Avg-of-aggregate.\
+    \ Group by modelseriesval.\n\n[kb=59]\nLet M be the model series, \\mathcal{R}_M\
+    \ be the set of unique robot identifiers in M. Then Model Avg Max Ops Hours =\
+    \ \\frac{\\sum_{R \\in \\mathcal{R}_M} \\text{TOH}(R)}{|\\mathcal{R}_M|} \u2014\
+    \ The average of the maximum Total Operating Hours recorded for each robot within\
+    \ a specific model series.\n[/kb=59]"
+  meta:
+    kb_id: 59
+- formula: jdi:covar_pop(other=toh) / toh:var_pop
+  name: jdi_toh_regression_slope
+  label: JDI-TOH Regression Slope
+  description: "JDI-TOH Regression Slope (KB #50) \u2014 OLS slope of JDI on TOH across\
+    \ robots qualifying jdi > 1.5 AND mjt > 65 AND toh > 5000. Equivalent to covar_pop(JDI,\
+    \ TOH)/var_pop(TOH). Apply the qualifying filters in the query.\n\n[kb=50]\nFor\
+    \ a set of robots meeting JDI > 1.5, MJT > 65, and TOH > 5000, the JDI-TOH Regression\
+    \ Slope is given by \\[ \\text{slope} = \\frac{n \\sum (x_i y_i) - \\sum x_i \\\
+    sum y_i}{n \\sum x_i^2 - (\\sum x_i)^2} \\] where \\( y_i = \\text{JDI} \\) (Joint\
+    \ Degradation Index for robot \\( i \\)), \\( x_i = \\text{TOH} \\) (Total Operating\
+    \ Hours for robot \\( i \\)), \\( n \\) is the number of qualifying robots, and\
+    \ sums are over all qualifying robots. \u2014 Measures the linear relationship\
+    \ between Joint Degradation Index and Total Operating Hours using regression.\n\
+    [/kb=50]"
+  meta:
+    kb_id: 50
+aggregations: []
+joins: []
+filters: []
+description: Per-robot aggregate view. One row per robot, joining per-child-table
+  rollups so peer-table metrics (EER, TWR, JDI, OCE) compose without fan-out. Built
+  as a multistage query over operation, performance_and_safety, joint_condition, actuation_data,
+  maintenance_and_fault. Use this model for any KB metric whose value is fixed at
+  the robot grain.
+hidden: false

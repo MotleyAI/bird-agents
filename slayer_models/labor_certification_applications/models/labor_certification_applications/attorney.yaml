@@ -1,0 +1,53 @@
+version: 6
+name: attorney
+sql_table: attorney
+query_variables: {}
+data_source: labor_certification_applications
+columns:
+- name: lawmail
+  sql: lawmail
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: attorney_profile
+  sql: attorney_profile
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: firm
+  sql: attorney_profile ->> '$.firm'
+  type: TEXT
+  primary_key: false
+  description: Law firm name.
+  hidden: false
+- name: first_name
+  sql: attorney_profile ->> '$.name.first'
+  type: TEXT
+  primary_key: false
+  description: Attorney first name.
+  hidden: false
+- name: last_name
+  sql: attorney_profile ->> '$.name.last'
+  type: TEXT
+  primary_key: false
+  description: Attorney last name.
+  hidden: false
+- name: state
+  sql: attorney_profile ->> '$.address.state'
+  type: TEXT
+  primary_key: false
+  description: Attorney state.
+  hidden: false
+- name: country
+  sql: attorney_profile ->> '$.address.country'
+  type: TEXT
+  primary_key: false
+  description: Attorney country.
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: Attorney records keyed by lawmail. Profile JSON has firm, name, address,
+  contact, highest_court.
+hidden: false

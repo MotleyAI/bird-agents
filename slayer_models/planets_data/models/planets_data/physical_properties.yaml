@@ -1,0 +1,220 @@
+version: 6
+name: physical_properties
+sql_table: physical_properties
+query_variables: {}
+data_source: planets_data
+columns:
+- name: physref
+  sql: physref
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: objectlink
+  sql: objectlink
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: massjup
+  sql: massjup
+  type: INT
+  primary_key: false
+  description: "Planet mass in Jupiter masses (KB #47). Range 0.00006..28.5 M_J.\n\
+    \n[kb=47]\nTypically measured in Jupiter masses ($M_J$). Earth's mass is about\
+    \ 0.003 $M_J$. Known exoplanets range from less than Earth's mass to over 20 times\
+    \ the mass of Jupiter. \u2014 Illustrates the value for a planet's mass.\n[/kb=47]"
+  label: Planet Mass Value
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 47
+- name: radjup
+  sql: radjup
+  type: INT
+  primary_key: false
+  description: "Planet radius in Jupiter radii (KB #48). Range 0.027..6.9 R_J.\n\n\
+    [kb=48]\nTypically measured in Jupiter radii ($R_J$). Earth's radius is about\
+    \ 0.09 $R_J$. Planets range from small rocky worlds smaller than Earth to 'inflated'\
+    \ gas giants larger than Jupiter. \u2014 Illustrates the value for a planet's\
+    \ physical size.\n[/kb=48]"
+  label: Planet Radius Value
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 48
+- name: densvalue
+  sql: densvalue
+  type: INT
+  primary_key: false
+  description: "Bulk planet density in g/cm^3 (KB #49). <1 = puffy gas giant, ~5.5\
+    \ = rocky, >20 = super-dense.\n\n[kb=49]\nMeasured in grams per cubic centimeter\
+    \ (g/cm\xB3). Puffy gas giants can have densities less than water (<1 g/cm\xB3\
+    ), while dense, rocky planets like Earth have densities around 5.5 g/cm\xB3. \u2014\
+    \ Illustrates the value for a planet's bulk density.\n[/kb=49]"
+  label: Planet Density Value
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 49
+- name: mass_earth
+  sql: massjup * 317.83
+  type: DOUBLE
+  primary_key: false
+  description: "Planet mass in Earth masses (KB #1): M_E = M_J x 317.83.\n\n[kb=1]\n\
+    Given a planet's mass in Jupiter masses ($M_J$), its mass in Earth masses ($M_E$)\
+    \ is: $M_E = M_J \\times 317.83$ \u2014 Converts a planet's mass from Jupiter\
+    \ mass units to Earth mass units.\n[/kb=1]"
+  label: Planet Mass in Earth Units
+  hidden: false
+  meta:
+    kb_id: 1
+- name: radius_earth
+  sql: radjup * 11.209
+  type: DOUBLE
+  primary_key: false
+  description: "Planet radius in Earth radii (KB #2): R_E = R_J x 11.209.\n\n[kb=2]\n\
+    Given a planet's radius in Jupiter radii ($R_J$), its radius in Earth radii ($R_E$)\
+    \ is: $R_E = R_J \\times 11.209$ \u2014 Converts a planet's radius from Jupiter\
+    \ radius units to Earth radius units.\n[/kb=2]"
+  label: Planet Radius in Earth Units
+  hidden: false
+  meta:
+    kb_id: 2
+- name: surface_gravity
+  sql: (massjup * 317.83) / pow(radjup * 11.209, 2)
+  type: DOUBLE
+  primary_key: false
+  description: "Planet surface gravity relative to Earth (KB #4): g_p = M_E / R_E^2.\n\
+    \n[kb=4]\nThe surface gravity ($g_p$) relative to Earth's is found by: $g_p =\
+    \ \\frac{M_E}{R_E^2}$, where $M_E$ is the planet's mass in Earth masses and $R_E$\
+    \ is its radius in Earth radii. Depends on knowing the Planet Mass in Earth Units\
+    \ and Planet Radius in Earth Units. \u2014 Estimates the surface gravity of a\
+    \ planet relative to Earth's.\n[/kb=4]"
+  label: Planet Surface Gravity
+  hidden: false
+  meta:
+    kb_id: 4
+- name: mass_radius_ratio
+  sql: (massjup * 317.83) / NULLIF(radjup * 11.209, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Mass-Radius Ratio (KB #16): MRR = M_E / R_E.\n\n[kb=16]\nA basic mass-radius\
+    \ ratio ($MRR$) can be expressed as: $MRR = \\frac{M_E}{R_E}$, which depends on\
+    \ the Planet Mass in Earth Units and Planet Radius in Earth Units. \u2014 A simple\
+    \ ratio to compare a planet's mass and size.\n[/kb=16]"
+  label: Mass-Radius Relationship
+  hidden: false
+  meta:
+    kb_id: 16
+- name: escape_velocity
+  sql: sqrt(2.0 * 6.6743e-11 * (massjup * 317.83 * 5.972e24) / NULLIF(radjup * 11.209
+    * 6.371e6, 0))
+  type: DOUBLE
+  primary_key: false
+  description: "Planet escape velocity in m/s (KB #10): v_e = sqrt(2 G M_p / R_p).\
+    \ Earth-mass and Earth-radius converted to SI (1 M_E=5.972e24 kg, 1 R_E=6.371e6\
+    \ m).\n\n[kb=10]\nThe escape velocity ($v_e$) is calculated as: $v_e = \\sqrt{\\\
+    frac{2GM_p}{R_p}}$, where $M_p$ and $R_p$ are the planet's mass and radius, and\
+    \ G is the gravitational constant. The calculation depends on Planet Mass in Earth\
+    \ Units and Planet Radius in Earth Units, converted to standard units. \u2014\
+    \ Calculates the minimum speed needed for an object to escape a planet's gravitational\
+    \ pull.\n[/kb=10]"
+  label: Planet Escape Velocity
+  hidden: false
+  meta:
+    kb_id: 10
+- name: transit_depth
+  sql: pow((radjup * 11.209) / NULLIF(CAST(json_extract(planets__stars.stellarprops,
+    '$.physical.Radius_Value') AS REAL) * 109.076, 0), 2)
+  type: DOUBLE
+  primary_key: false
+  description: "Transit Depth (KB #9): Delta F = (R_p / R_star)^2. Both radii converted\
+    \ to common units (Earth radii; 1 R_sun = 109.076 R_E).\n\n[kb=9]\nThe transit\
+    \ depth ($Delta F$) is the ratio of the planet's surface area to the star's: $Delta\
+    \ F = \\left( \\frac{R_p}{R_{\\star}} \\right)^2$, where $R_p$ is the planet's\
+    \ radius and $R_{\\star}$ is the star's radius. \u2014 Calculates the fractional\
+    \ drop in a star's brightness when a planet passes in front of it.\n[/kb=9]"
+  label: Transit Depth
+  hidden: false
+  meta:
+    kb_id: 9
+- name: planet_star_mass_ratio
+  sql: (massjup * 317.83) / NULLIF(CAST(json_extract(planets__stars.stellarprops,
+    '$.physical.Mass_Value') AS REAL) * 332946.0, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Planet-Star Mass Ratio (KB #18): q = M_p / M_star. Both masses converted\
+    \ to Earth masses (1 M_sun = 332946 M_E).\n\n[kb=18]\nThe mass ratio ($q$) is:\
+    \ $q = \\frac{M_p}{M_{\\star}}$, where $M_p$ is the planet's mass and $M_{\\star}$\
+    \ is the star's mass. Both must be in the same units. \u2014 Calculates the ratio\
+    \ of a planet's mass to its host star's mass.\n[/kb=18]"
+  label: Planet-Star Mass Ratio
+  hidden: false
+  meta:
+    kb_id: 18
+- name: is_gas_giant
+  sql: massjup > 0.1
+  type: BOOLEAN
+  primary_key: false
+  description: "Gas Giant (KB #20): planet mass > 0.1 Jupiter masses.\n\n[kb=20]\n\
+    A planet with a mass greater than 0.1 Jupiter masses. \u2014 A large planet composed\
+    \ primarily of gases like hydrogen and helium.\n[/kb=20]"
+  label: Gas Giant Planet
+  hidden: false
+  meta:
+    kb_id: 20
+- name: is_rocky_planet
+  sql: densvalue > 3
+  type: BOOLEAN
+  primary_key: false
+  description: "Rocky Planet (KB #21): bulk density > 3 g/cm^3.\n\n[kb=21]\nA planet\
+    \ with a bulk density greater than 3 g/cm\xB3. \u2014 A planet composed primarily\
+    \ of rock or metals, with a solid surface.\n[/kb=21]"
+  label: Rocky Planet
+  hidden: false
+  meta:
+    kb_id: 21
+- name: is_super_earth
+  sql: densvalue > 3 AND (massjup * 317.83) BETWEEN 1 AND 10
+  type: BOOLEAN
+  primary_key: false
+  description: "Super-Earth (KB #24): a Rocky Planet with mass between 1 and 10 Earth\
+    \ masses.\n\n[kb=24]\nA planet that is likely a Rocky Planet and has a mass between\
+    \ 1 and 10 Earth masses. This depends on the Planet Mass in Earth Units. \u2014\
+    \ A class of planets with masses higher than Earth's but substantially below those\
+    \ of the solar system's ice giants.\n[/kb=24]"
+  label: Super-Earth
+  hidden: false
+  meta:
+    kb_id: 24
+- name: is_inflated_gas_giant
+  sql: massjup > 0.1 AND densvalue < 0.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Inflated Gas Giant (KB #32): a Gas Giant with bulk density < 0.5 g/cm^3.\n\
+    \n[kb=32]\nA Gas Giant Planet with a bulk density less than 0.5 g/cm\xB3. \u2014\
+    \ A gas giant planet with a radius that is unexpectedly large for its mass, suggesting\
+    \ a high internal temperature.\n[/kb=32]"
+  label: Inflated Gas Giant
+  hidden: false
+  meta:
+    kb_id: 32
+measures: []
+aggregations: []
+joins:
+- target_model: planets
+  join_pairs:
+  - - objectlink
+    - planetref
+  join_type: left
+filters: []
+description: Planet physical properties (one row per planet). Holds Jupiter-unit mass
+  and radius plus bulk density. Joins to planets via objectlink, which transitively
+  reaches the host stars model.
+hidden: false

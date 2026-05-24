@@ -1,0 +1,128 @@
+version: 6
+name: fans
+sql_table: fans
+query_variables: {}
+data_source: virtual
+columns:
+- name: userregistry
+  sql: userregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: nicklabel
+  sql: nicklabel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: regmoment
+  sql: regmoment
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tierstep
+  sql: tierstep
+  type: INT
+  primary_key: false
+  description: "Fan loyalty tier (KB #1). Starts at 1 and increases. Tiers 1-3 = Entry-level,\
+    \ 4-7 = Mid-level, 8-10 = High-level, >10 = Core. Higher tiers grant new privileges\
+    \ and more visibility. Missing/invalid \u2192 'Undefined' (admin review).\n\n\
+    [kb=1]\nFan tiers (tierstep) start at 1 and increase progressively, representing\
+    \ different loyalty levels and privileges: Tiers 1-3 are 'Entry-level' fans (newly\
+    \ joined), tiers 4-7 represent 'Mid-level' fans (stable supporters), tiers 8-10\
+    \ are 'High-level fans (long-term loyal followers), and tiers above 10 are 'Core'\
+    \ fans (foundational idol supporters). Any accounts with missing or invalid tier\
+    \ values are classified as 'Undefined' and require administrative review. Each\
+    \ tier level grants new privileges and increases platform visibility. \u2014 Explains\
+    \ the practical significance of fan tier levels\n[/kb=1]"
+  label: fans.tierstep
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 1
+- name: ptsval
+  sql: ptsval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: statustag
+  sql: statustag
+  type: TEXT
+  primary_key: false
+  description: "Fan account status (KB #0). 'Active' = normal user with full access;\
+    \ 'VIP' = premium user with privileged services; 'Inactive' = dormant (no login\
+    \ >30 days, some features restricted); 'Blocked' = banned (no platform access).\n\
+    \n[kb=0]\nFan status typically falls into four categories: 'Active' indicates\
+    \ normal users with full access to all features; 'VIP' represents premium users\
+    \ with privileged services; 'Inactive' refers to dormant accounts with no login\
+    \ for over 30 days, with some features restricted; 'Blocked' means accounts temporarily\
+    \ or permanently banned due to violations, with no access to platform features.\
+    \ \u2014 Explains the meaning of fan account status and its impact on platform\
+    \ interactions\n[/kb=0]"
+  label: fans.statustag
+  hidden: false
+  meta:
+    kb_id: 0
+- name: personal_attributes
+  sql: personal_attributes
+  type: TEXT
+  primary_key: false
+  description: 'JSONB: demographics (agecount, gendertype, locnation, loctown), preferences
+    (langpref, occupath, interestset). Sub-fields exposed as helper columns.'
+  hidden: false
+- name: agecount
+  sql: CAST(json_extract(personal_attributes, '$.demographics.agecount') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Fan age in years, extracted from personal_attributes.demographics.agecount.
+  hidden: false
+- name: gendertype
+  sql: personal_attributes ->> '$.demographics.gendertype'
+  type: TEXT
+  primary_key: false
+  description: Gender (Male / Female / Other / Undisclosed), extracted from personal_attributes.demographics.gendertype.
+  hidden: false
+- name: locnation
+  sql: personal_attributes ->> '$.demographics.locnation'
+  type: TEXT
+  primary_key: false
+  description: Country of residence, extracted from personal_attributes.demographics.locnation.
+  hidden: false
+- name: loctown
+  sql: personal_attributes ->> '$.demographics.loctown'
+  type: TEXT
+  primary_key: false
+  description: City of residence, extracted from personal_attributes.demographics.loctown.
+  hidden: false
+- name: fan_langpref
+  sql: personal_attributes ->> '$.preferences.langpref'
+  type: TEXT
+  primary_key: false
+  description: Fan's main language (Multiple / Korean / English / Japanese / Chinese),
+    extracted from personal_attributes.preferences.langpref.
+  hidden: false
+- name: occupath
+  sql: personal_attributes ->> '$.preferences.occupath'
+  type: TEXT
+  primary_key: false
+  description: Fan occupation (Professional / Student / Other / Creative), extracted
+    from personal_attributes.preferences.occupath.
+  hidden: false
+- name: interestset
+  sql: personal_attributes ->> '$.preferences.interestset'
+  type: TEXT
+  primary_key: false
+  description: Primary interest area (Technology / Anime / Art / Music / Gaming),
+    extracted from personal_attributes.preferences.interestset.
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: Each row = one fan/user account. Holds identity (userregistry, nicklabel),
+  registration date (regmoment), tier progression (tierstep), accumulated points (ptsval),
+  account status (statustag), and a `personal_attributes` JSON column with demographics
+  + preferences. Joined to membership, interactions, etc. via userregistry.
+hidden: false

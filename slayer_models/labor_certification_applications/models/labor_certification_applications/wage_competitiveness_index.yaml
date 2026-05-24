@@ -1,0 +1,117 @@
+version: 6
+name: wage_competitiveness_index
+source_queries:
+- version: 3
+  name: case_wage
+  source_model: case_worksite
+  measures:
+  - formula: offered_wage_annual:avg
+  dimensions:
+  - name: dockkey
+  - name: homefirm
+  - name: naics_code
+  whole_periods_only: false
+- version: 3
+  name: with_industry_avg
+  source_model:
+    source_name: case_wage
+    columns:
+    - name: industry_avg
+      type: DOUBLE
+      sql: AVG(offered_wage_annual_avg) OVER (PARTITION BY naics_code)
+  dimensions:
+  - name: homefirm
+  - name: naics_code
+  - name: offered_wage_annual_avg
+  - name: industry_avg
+  whole_periods_only: false
+- version: 3
+  source_model: with_industry_avg
+  measures:
+  - formula: offered_wage_annual_avg:avg / industry_avg:avg
+    name: wci
+  dimensions:
+  - name: homefirm
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"with_industry_avg.homefirm\" AS homefirm, \"with_industry_avg.offered_wage_annual_avg_avg\"\
+  \ AS offered_wage_annual_avg_avg, \"with_industry_avg.industry_avg_avg\" AS industry_avg_avg,\
+  \ \"with_industry_avg.wci\" AS wci FROM (WITH base AS (\nSELECT\n  with_industry_avg.homefirm\
+  \ AS \"with_industry_avg.homefirm\",\n  AVG(with_industry_avg.offered_wage_annual_avg)\
+  \ AS \"with_industry_avg.offered_wage_annual_avg_avg\",\n  AVG(with_industry_avg.industry_avg)\
+  \ AS \"with_industry_avg.industry_avg_avg\"\nFROM (\n  SELECT\n    \"case_wage.homefirm\"\
+  \ AS homefirm,\n    \"case_wage.naics_code\" AS naics_code,\n    \"case_wage.offered_wage_annual_avg\"\
+  \ AS offered_wage_annual_avg,\n    \"case_wage.industry_avg\" AS industry_avg\n\
+  \  FROM (\n    SELECT\n      case_wage.homefirm AS \"case_wage.homefirm\",\n   \
+  \   case_wage.naics_code AS \"case_wage.naics_code\",\n      case_wage.offered_wage_annual_avg\
+  \ AS \"case_wage.offered_wage_annual_avg\",\n      AVG(offered_wage_annual_avg)\
+  \ OVER (PARTITION BY naics_code) AS \"case_wage.industry_avg\"\n    FROM (\n   \
+  \   SELECT\n        \"case_worksite.dockkey\" AS dockkey,\n        \"case_worksite.homefirm\"\
+  \ AS homefirm,\n        \"case_worksite.naics_code\" AS naics_code,\n        \"\
+  case_worksite.offered_wage_annual_avg\" AS offered_wage_annual_avg\n      FROM (\n\
+  \        SELECT\n          case_worksite.dockkey AS \"case_worksite.dockkey\",\n\
+  \          cases.homefirm AS \"case_worksite.homefirm\",\n          CAST(cases__employer.employer_contact_info\
+  \ ->> '$.naics_code' AS INTEGER) AS \"case_worksite.naics_code\",\n          AVG(\n\
+  \            CAST(REPLACE(REPLACE(prevailing_wage.wage_details ->> '$.offered_wage.from',\
+  \ '$', ''), ',', '') AS REAL) * CASE prevailing_wage.wage_details ->> '$.offered_wage.unit'\n\
+  \              WHEN 'Hour'\n              THEN 2080\n              WHEN 'Week'\n\
+  \              THEN 52\n              WHEN 'Month'\n              THEN 12\n    \
+  \          WHEN 'Year'\n              THEN 1\n              ELSE NULL\n        \
+  \    END\n          ) AS \"case_worksite.offered_wage_annual_avg\"\n        FROM\
+  \ case_worksite AS case_worksite\n        LEFT JOIN prevailing_wage AS prevailing_wage\n\
+  \          ON case_worksite.wagetrack = prevailing_wage.trackno\n        LEFT JOIN\
+  \ cases AS cases\n          ON case_worksite.dockkey = cases.filekey\n        LEFT\
+  \ JOIN employer AS cases__employer\n          ON cases.homefirm = cases__employer.corphandle\n\
+  \        GROUP BY\n          case_worksite.dockkey,\n          cases.homefirm,\n\
+  \          CAST(cases__employer.employer_contact_info ->> '$.naics_code' AS INTEGER)\n\
+  \      ) AS _inner\n    ) AS case_wage\n  ) AS _inner\n) AS with_industry_avg\n\
+  GROUP BY\n  with_industry_avg.homefirm\n),\nstep1 AS (\nSELECT\n    \"with_industry_avg.homefirm\"\
+  ,\n    \"with_industry_avg.industry_avg_avg\",\n    \"with_industry_avg.offered_wage_annual_avg_avg\"\
+  ,\n    \"with_industry_avg.offered_wage_annual_avg_avg\" / \"with_industry_avg.industry_avg_avg\"\
+  \ AS \"with_industry_avg.wci\"\nFROM base\n)\nSELECT\n    \"with_industry_avg.homefirm\"\
+  ,\n    \"with_industry_avg.industry_avg_avg\",\n    \"with_industry_avg.offered_wage_annual_avg_avg\"\
+  ,\n    \"with_industry_avg.wci\"\nFROM step1) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: homefirm
+  sql: homefirm
+  type: TEXT
+  primary_key: false
+  description: Employer (homefirm) for the case, denormalized via cases join.
+  hidden: false
+- name: offered_wage_annual_avg_avg
+  sql: offered_wage_annual_avg_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'Offered wage annualized for this case_worksite, denormalized via prevailing_wage
+    join. Used for KB #28 / KB #31 industry-wage analyses.'
+  hidden: false
+  format:
+    type: float
+- name: industry_avg_avg
+  sql: industry_avg_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: wci
+  sql: wci
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Wage Competitiveness Index per employer (KB #28): employer avg offered\
+  \ wage / industry avg offered wage. Industry = NAICS code. Per-employer rows.\n\n\
+  [kb=28]\nWCI = (Employer Average Offered Wage / Industry Average Offered Wage).\
+  \ Wage and industry information are included in the application data. \u2014 Measures\
+  \ how competitive an employer's offered wage is compared to industry average.\n\
+  [/kb=28]"
+hidden: false
+meta:
+  kb_id: 28

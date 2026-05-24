@@ -1,0 +1,149 @@
+version: 6
+name: qualifying
+sql_table: qualifying
+query_variables: {}
+data_source: sports_events
+columns:
+- name: qualkey
+  sql: qualkey
+  type: INT
+  primary_key: true
+  description: Unique qualifying record identifier.
+  hidden: false
+  format:
+    type: integer
+- name: rbind
+  sql: rbind
+  type: INT
+  primary_key: false
+  description: Foreign key to races.
+  hidden: false
+  format:
+    type: integer
+- name: pilotrec
+  sql: pilotrec
+  type: INT
+  primary_key: false
+  description: Foreign key to drivers.
+  hidden: false
+  format:
+    type: integer
+- name: corptag
+  sql: corptag
+  type: INT
+  primary_key: false
+  description: Foreign key to constructors.
+  hidden: false
+  format:
+    type: integer
+- name: regno
+  sql: regno
+  type: INT
+  primary_key: false
+  description: Driver registration number for the event.
+  hidden: false
+  format:
+    type: integer
+- name: px_pos
+  sql: px_pos
+  type: INT
+  primary_key: false
+  description: 'Final qualifying position (1 = Pole Position, KB #10).'
+  hidden: false
+  format:
+    type: integer
+- name: q1_r
+  sql: q1_r
+  type: TEXT
+  primary_key: false
+  description: 'Q1 qualifying time as ''M:SS.fff'' string. NULL = no Q1 time recorded
+    (KB #1).'
+  hidden: false
+- name: q2_r
+  sql: q2_r
+  type: TEXT
+  primary_key: false
+  description: 'Q2 qualifying time as ''M:SS.fff'' string. NULL = driver did not advance
+    to Q2 or no time recorded (KB #1).'
+  hidden: false
+- name: q3_r
+  sql: q3_r
+  type: TEXT
+  primary_key: false
+  description: 'Q3 qualifying time as ''M:SS.fff'' string. NULL = driver did not advance
+    to Q3 (KB #1).'
+  hidden: false
+- name: is_pole_position
+  sql: px_pos = 1
+  type: BOOLEAN
+  primary_key: false
+  description: "Pole Position (KB #10): TRUE iff the driver set the fastest qualifying\
+    \ time (px_pos = 1).\n\n[kb=10]\nA driver achieves Pole Position by setting the\
+    \ fastest lap time during the final stage of the Qualifying Format Explained.\
+    \ \u2014 Defines the premier starting position for a race.\n[/kb=10]"
+  label: Pole Position
+  hidden: false
+  meta:
+    kb_id: 10
+- name: q1_seconds
+  sql: CASE WHEN q1_r IS NULL OR INSTR(q1_r, ':') = 0 THEN NULL ELSE CAST(SUBSTR(q1_r,
+    1, INSTR(q1_r, ':') - 1) AS REAL) * 60 + CAST(SUBSTR(q1_r, INSTR(q1_r, ':') +
+    1) AS REAL) END
+  type: DOUBLE
+  primary_key: false
+  description: 'Q1 time converted from ''M:SS.fff'' to seconds (KB #21).'
+  hidden: false
+- name: q2_seconds
+  sql: CASE WHEN q2_r IS NULL OR INSTR(q2_r, ':') = 0 THEN NULL ELSE CAST(SUBSTR(q2_r,
+    1, INSTR(q2_r, ':') - 1) AS REAL) * 60 + CAST(SUBSTR(q2_r, INSTR(q2_r, ':') +
+    1) AS REAL) END
+  type: DOUBLE
+  primary_key: false
+  description: 'Q2 time converted from ''M:SS.fff'' to seconds (KB #21).'
+  hidden: false
+- name: q3_seconds
+  sql: CASE WHEN q3_r IS NULL OR INSTR(q3_r, ':') = 0 THEN NULL ELSE CAST(SUBSTR(q3_r,
+    1, INSTR(q3_r, ':') - 1) AS REAL) * 60 + CAST(SUBSTR(q3_r, INSTR(q3_r, ':') +
+    1) AS REAL) END
+  type: DOUBLE
+  primary_key: false
+  description: 'Q3 time converted from ''M:SS.fff'' to seconds (KB #21).'
+  hidden: false
+- name: best_qualifying_seconds
+  sql: MIN(COALESCE(CASE WHEN q1_r IS NULL OR INSTR(q1_r, ':') = 0 THEN NULL ELSE
+    CAST(SUBSTR(q1_r, 1, INSTR(q1_r, ':') - 1) AS REAL) * 60 + CAST(SUBSTR(q1_r, INSTR(q1_r,
+    ':') + 1) AS REAL) END, 1e18), COALESCE(CASE WHEN q2_r IS NULL OR INSTR(q2_r,
+    ':') = 0 THEN NULL ELSE CAST(SUBSTR(q2_r, 1, INSTR(q2_r, ':') - 1) AS REAL) *
+    60 + CAST(SUBSTR(q2_r, INSTR(q2_r, ':') + 1) AS REAL) END, 1e18), COALESCE(CASE
+    WHEN q3_r IS NULL OR INSTR(q3_r, ':') = 0 THEN NULL ELSE CAST(SUBSTR(q3_r, 1,
+    INSTR(q3_r, ':') - 1) AS REAL) * 60 + CAST(SUBSTR(q3_r, INSTR(q3_r, ':') + 1)
+    AS REAL) END, 1e18))
+  type: DOUBLE
+  primary_key: false
+  description: 'Driver''s best qualifying time (across Q1/Q2/Q3) in seconds. Used
+    as T_driver in KB #28 Qualifying Time Deficit to Pole.'
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: constructors
+  join_pairs:
+  - - corptag
+    - cstr_key
+  join_type: left
+- target_model: drivers
+  join_pairs:
+  - - pilotrec
+    - drv_main
+  join_type: left
+- target_model: races
+  join_pairs:
+  - - rbind
+    - rak_id
+  join_type: left
+filters: []
+description: "Qualifying session results. Per KB #1, qualifying is split into Q1,\
+  \ Q2, Q3 \u2014 slowest drivers are eliminated after each part. Q3 is contested\
+  \ for Pole Position. NULL Q1/Q2/Q3 means the driver did not record a time in that\
+  \ part."
+hidden: false

@@ -1,0 +1,236 @@
+version: 6
+name: properties
+sql_table: properties
+query_variables: {}
+data_source: households
+columns:
+- name: propref
+  sql: propref
+  type: INT
+  primary_key: true
+  description: A SERIAL primary key uniquely identifying each residential property
+    record in the database. EX. 1,2,3
+  hidden: false
+  format:
+    type: integer
+- name: houselink
+  sql: houselink
+  type: INT
+  primary_key: false
+  description: Foreign key referencing households.HouseNum with unique constraint,
+    ensuring 1:1 relationship between properties and households. EX.3,4,7
+  hidden: false
+  format:
+    type: integer
+  sampled: 3 .. 6507
+- name: infralink
+  sql: infralink
+  type: INT
+  primary_key: false
+  description: Foreign key referencing infrastructure.InfraRef, indicating which infrastructure
+    configuration applies to this property's location and services. EX.1,2
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 1342
+- name: dwelling_specs
+  sql: dwelling_specs
+  type: TEXT
+  primary_key: false
+  description: JSONB column. Combines dwelling characteristics including structural
+    type and room specifications for property classification and capacity assessment.
+  hidden: false
+  meta:
+    jsonb: true
+  sampled: '> 20 distinct'
+- name: dwelling_specs__Dwelling_Class
+  sql: JSON_EXTRACT(dwelling_specs, '$.Dwelling_Class')
+  type: TEXT
+  primary_key: false
+  description: "Dwelling type classification describing the structural and architectural\
+    \ category of the residential unit. Contains NULL when dwelling type is non-standard,\
+    \ mixed-use, or classification is pending. Sample values are mixed-case ('Brickwork\
+    \ house', 'Apartment', 'apartment'); use LOWER for exact-match comparisons.\n\n\
+    [kb=6]\nValues based on schema include 'Brickwork house', 'Apartment', 'Condominium',\
+    \ etc. \u2014 Illustrates dwelling categories. For scoring, 'Brickwork house'\
+    \ and 'Condominium' are 4 points, 'Apartment' is 3 points, and all other types\
+    \ are 1 point.\n[/kb=6]"
+  label: Dwelling Type
+  hidden: false
+  meta:
+    kb_id: 6
+  sampled: '> 20 distinct'
+- name: dwelling_specs__Bath_Count
+  sql: JSON_EXTRACT(dwelling_specs, '$.Bath_Count')
+  type: TEXT
+  primary_key: false
+  description: Total number of bathrooms in the residential property, including full
+    bathrooms and half-bathrooms. Contains NULL when bathroom count is not available
+    or property has shared/communal bathroom facilities that cannot be counted per
+    household. Ex. 1, 2, 3
+  label: Bath Count
+  hidden: false
+  meta:
+    derived_from:
+      json_col: dwelling_specs
+      path:
+      - Bath_Count
+  sampled: 1, 2, 3, 4, 5, 6, 7, 9, 12
+- name: dwelling_specs__Room_Count
+  sql: JSON_EXTRACT(dwelling_specs, '$.Room_Count')
+  type: TEXT
+  primary_key: false
+  description: Total number of bedrooms in the residential property, representing
+    the sleeping accommodation capacity. Contains NULL when room count is not available
+    or property has non-standard room configurations that cannot be classified as
+    bedrooms. Ex. 1, 2, 3
+  label: Room Count
+  hidden: false
+  meta:
+    derived_from:
+      json_col: dwelling_specs
+      path:
+      - Room_Count
+  sampled: 0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 31
+- name: household_density
+  sql: CAST(households.residentcount AS REAL) / NULLIF(CAST(JSON_EXTRACT(dwelling_specs,
+    '$.Room_Count') AS REAL), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Crosses the 1:1 properties\u2194households join (houselink \u2192\
+    \ housenum) to get residentcount; divides by the Room_Count JSONB leaf. NULLIF\
+    \ on the denominator yields NULL for rows with missing or zero bedrooms. Inlines\
+    \ the JSON_EXTRACT instead of referencing the dwelling_specs__Room_Count helper\
+    \ column \u2014 SLayer does not recursively expand same-model derived refs (motley-ai\
+    \ DEV-1410).\n\n[kb=11]\nCalculated as the number of residents divided by the\
+    \ number of bedrooms. \u2014 Calculates the average number of residents per bedroom\
+    \ in a household.\n[/kb=11]"
+  label: Household Density
+  hidden: false
+  meta:
+    kb_id: 11
+  sampled: 0.0967741935483871 .. 6.0
+- name: bathroom_ratio
+  sql: CAST(JSON_EXTRACT(dwelling_specs, '$.Bath_Count') AS REAL) / NULLIF(CAST(households.residentcount
+    AS REAL), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Inlines the Bath_Count JSON_EXTRACT (the dwelling_specs__Bath_Count\
+    \ helper would not be recursively expanded \u2014 DEV-1410). NULLIF prevents division\
+    \ by zero.\n\n[kb=15]\nCalculated as the number of bathrooms divided by the number\
+    \ of residents. \u2014 Calculates the number of bathrooms per resident in a household.\n\
+    [/kb=15]"
+  label: Bathroom Ratio
+  hidden: false
+  meta:
+    kb_id: 15
+  sampled: 0.1111111111111111 .. 6.0
+- name: dwelling_capacity
+  sql: 2 * CAST(JSON_EXTRACT(dwelling_specs, '$.Room_Count') AS REAL) + CAST(JSON_EXTRACT(dwelling_specs,
+    '$.Bath_Count') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=17]\nCalculated as twice the number of bedrooms plus the number\
+    \ of bathrooms. \u2014 Calculates the potential capacity of a dwelling based on\
+    \ bedrooms and bathrooms.\n[/kb=17]"
+  label: Dwelling Capacity
+  hidden: false
+  meta:
+    kb_id: 17
+  sampled: 1.0 .. 65.0
+- name: dwelling_type_score
+  sql: CASE WHEN JSON_EXTRACT(dwelling_specs, '$.Dwelling_Class') IS NULL OR TRIM(JSON_EXTRACT(dwelling_specs,
+    '$.Dwelling_Class')) = '' THEN NULL WHEN LOWER(TRIM(JSON_EXTRACT(dwelling_specs,
+    '$.Dwelling_Class'))) LIKE 'brickwork%' THEN 4 WHEN LOWER(TRIM(JSON_EXTRACT(dwelling_specs,
+    '$.Dwelling_Class'))) LIKE 'apartment%' THEN 3 ELSE 1 END
+  type: DOUBLE
+  primary_key: false
+  description: "Sample values mix case ('Brickwork house', 'Apartment', 'apartment');\
+    \ LOWER+TRIM normalises before the CASE. KB 6 (value-illustration) also maps 'Condominium'\
+    \ \u2192 4 \u2014 here we follow KB 44's explicit scoring (Condominium falls into\
+    \ the catch-all 1) since KB 44 is the calculation_knowledge entry that KB 20 (Living\
+    \ Condition Score) cites. Missing dwelling-type returns NULL so the score doesn't\
+    \ get treated as a catch-all 1 when data is unknown.\n\n[kb=44]\nA scoring system\
+    \ where 'Brickwork house' receives 4 points, 'Apartment' receives 3 points, and\
+    \ all other types receive 1 point. This score is used in broader calculations\
+    \ like the Living Condition Score. \u2014 Assigns a numerical score to different\
+    \ dwelling types based on a predefined quality ranking.\n[/kb=44]"
+  label: Dwelling Type Score
+  hidden: false
+  meta:
+    kb_id: 44
+  sampled: 1.0 .. 4.0
+- name: living_condition_score
+  sql: 0.5 * CAST(CASE WHEN JSON_EXTRACT(dwelling_specs, '$.Dwelling_Class') IS NULL
+    OR TRIM(JSON_EXTRACT(dwelling_specs, '$.Dwelling_Class')) = '' THEN NULL WHEN
+    LOWER(TRIM(JSON_EXTRACT(dwelling_specs, '$.Dwelling_Class'))) LIKE 'brickwork%'
+    THEN 4 WHEN LOWER(TRIM(JSON_EXTRACT(dwelling_specs, '$.Dwelling_Class'))) LIKE
+    'apartment%' THEN 3 ELSE 1 END AS REAL) + 0.5 * CAST((CAST(CASE WHEN infrastructure.wateraccess
+    IS NULL OR TRIM(infrastructure.wateraccess) = '' THEN NULL WHEN LOWER(TRIM(infrastructure.wateraccess))
+    LIKE 'yes%' THEN 4 ELSE 1 END AS REAL) + CAST(CASE WHEN infrastructure.roadsurface
+    IS NULL OR TRIM(infrastructure.roadsurface) = '' THEN NULL WHEN LOWER(infrastructure.roadsurface)
+    LIKE '%asphalt%' OR LOWER(infrastructure.roadsurface) LIKE '%concrete%' THEN 4
+    ELSE 1 END AS REAL) + CAST(CASE WHEN infrastructure.parkavail IS NULL OR TRIM(infrastructure.parkavail)
+    = '' THEN NULL WHEN LOWER(infrastructure.parkavail) LIKE '%not%' THEN 1 ELSE 4
+    END AS REAL)) / 3.0 AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "50/50 weighted average of (a) the inlined dwelling_type_score CASE\
+    \ on `dwelling_specs.Dwelling_Class` and (b) the inlined Infrastructure Quality\
+    \ Score (average of three component scores) on the joined infrastructure row.\
+    \ Both inputs propagate NULL when the underlying base column is missing, so the\
+    \ score is NULL when any component is missing. Inlining is required because SLayer\
+    \ does not recursively expand same-model or cross-model derived-column refs in\
+    \ Column.sql (motley-ai DEV-1410).\n\n[kb=20]\nCalculated as a 50/50 weighted\
+    \ average of the Dwelling Type score and the Infrastructure Quality Score. \u2014\
+    \ Calculates a composite score for a household's living conditions.\n[/kb=20]"
+  label: Living Condition Score
+  hidden: false
+  meta:
+    kb_id: 20
+  sampled: 2.0 .. 4.0
+- name: is_comfortable_living_household
+  sql: CASE WHEN (0.5 * CAST(CASE WHEN JSON_EXTRACT(dwelling_specs, '$.Dwelling_Class')
+    IS NULL OR TRIM(JSON_EXTRACT(dwelling_specs, '$.Dwelling_Class')) = '' THEN NULL
+    WHEN LOWER(TRIM(JSON_EXTRACT(dwelling_specs, '$.Dwelling_Class'))) LIKE 'brickwork%'
+    THEN 4 WHEN LOWER(TRIM(JSON_EXTRACT(dwelling_specs, '$.Dwelling_Class'))) LIKE
+    'apartment%' THEN 3 ELSE 1 END AS REAL) + 0.5 * CAST((CAST(CASE WHEN infrastructure.wateraccess
+    IS NULL OR TRIM(infrastructure.wateraccess) = '' THEN NULL WHEN LOWER(TRIM(infrastructure.wateraccess))
+    LIKE 'yes%' THEN 4 ELSE 1 END AS REAL) + CAST(CASE WHEN infrastructure.roadsurface
+    IS NULL OR TRIM(infrastructure.roadsurface) = '' THEN NULL WHEN LOWER(infrastructure.roadsurface)
+    LIKE '%asphalt%' OR LOWER(infrastructure.roadsurface) LIKE '%concrete%' THEN 4
+    ELSE 1 END AS REAL) + CAST(CASE WHEN infrastructure.parkavail IS NULL OR TRIM(infrastructure.parkavail)
+    = '' THEN NULL WHEN LOWER(infrastructure.parkavail) LIKE '%not%' THEN 1 ELSE 4
+    END AS REAL)) / 3.0 AS REAL)) > 3 AND (CAST(JSON_EXTRACT(dwelling_specs, '$.Bath_Count')
+    AS REAL) / NULLIF(CAST(households.residentcount AS REAL), 0)) > 0.5 THEN 1 ELSE
+    0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Boolean: living_condition_score > 3 AND bathroom_ratio > 0.5. Both\
+    \ component expressions are inlined (no references to the named living_condition_score\
+    \ / bathroom_ratio columns) because SLayer does not recursively expand derived-column\
+    \ refs in Column.sql (DEV-1410). NULL components propagate through the AND, so\
+    \ unknown rows evaluate to 0 (not-comfortable).\n\n[kb=29]\nA household is considered\
+    \ 'Comfortable' if its Living Condition Score is greater than 3 AND its Bathroom\
+    \ Ratio is greater than 0.5. \u2014 Defines a household with a high standard of\
+    \ living conditions.\n[/kb=29]"
+  label: Comfortable Living Household
+  hidden: false
+  meta:
+    kb_id: 29
+  sampled: 0, 1
+measures: []
+aggregations: []
+joins:
+- target_model: households
+  join_pairs:
+  - - houselink
+    - housenum
+  join_type: left
+- target_model: infrastructure
+  join_pairs:
+  - - infralink
+    - infraref
+  join_type: left
+filters: []
+hidden: false

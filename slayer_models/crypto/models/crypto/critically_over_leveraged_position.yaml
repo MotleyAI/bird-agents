@@ -1,0 +1,157 @@
+version: 6
+name: critically_over_leveraged_position
+source_queries:
+- version: 3
+  name: olp
+  source_model: over_leveraged_position
+  measures:
+  - formula: is_over_leveraged:max
+    name: is_olp
+  dimensions:
+  - name: recordvault
+  whole_periods_only: false
+- version: 3
+  name: el
+  source_model: effective_leverage
+  measures:
+  - formula: el_value:max
+    name: el_v
+  dimensions:
+  - name: recordvault
+  whole_periods_only: false
+- version: 3
+  name: mu
+  source_model: margin_utilization
+  measures:
+  - formula: mu_value:max
+    name: mu_v
+  dimensions:
+  - name: recordvault
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: olp
+    joins:
+    - target_model: el
+      join_pairs:
+      - - recordvault
+        - recordvault
+    - target_model: mu
+      join_pairs:
+      - - recordvault
+        - recordvault
+    columns:
+    - name: is_critical
+      type: BOOLEAN
+      sql: olp.is_olp = 1 AND el.el_v > 20 AND mu.mu_v > 90
+  dimensions:
+  - name: recordvault
+  - name: is_critical
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"olp.recordvault\" AS recordvault, \"olp.is_critical\"\
+  \ AS is_critical FROM (SELECT\n  olp.recordvault AS \"olp.recordvault\",\n  olp.is_olp\
+  \ = 1 AND el.el_v > 20 AND mu.mu_v > 90 AS \"olp.is_critical\"\nFROM (\n  SELECT\n\
+  \    \"over_leveraged_position.recordvault\" AS recordvault,\n    \"over_leveraged_position.is_olp\"\
+  \ AS is_olp\n  FROM (\n    SELECT\n      over_leveraged_position.recordvault AS\
+  \ \"over_leveraged_position.recordvault\",\n      MAX(over_leveraged_position.is_over_leveraged)\
+  \ AS \"over_leveraged_position.is_olp\"\n    FROM (\n      SELECT\n        \"orders.recordvault\"\
+  \ AS recordvault,\n        \"orders.leverage_x_vol\" AS leverage_x_vol,\n      \
+  \  \"orders.is_over_leveraged\" AS is_over_leveraged\n      FROM (\n        SELECT\n\
+  \          orders.recordvault AS \"orders.recordvault\",\n          (\n        \
+  \    CAST(riskandmargin.risk_margin_profile ->> '$.position.posmagn' AS REAL)\n\
+  \          ) * vol_per_pair.vol_avg AS \"orders.leverage_x_vol\",\n          (\n\
+  \            (\n              CAST(riskandmargin.risk_margin_profile ->> '$.position.posmagn'\
+  \ AS REAL)\n            ) * vol_per_pair.vol_avg\n          ) > 500 AS \"orders.is_over_leveraged\"\
+  \n        FROM orders AS orders\n        LEFT JOIN riskandmargin AS riskandmargin\n\
+  \          ON orders.recordvault = riskandmargin.ordervault\n        LEFT JOIN (\n\
+  \          (\n            SELECT\n              \"marketstats.marketdata.mktcombo\"\
+  \ AS marketdata__mktcombo,\n              \"marketstats.vol_avg\" AS vol_avg\n \
+  \           FROM (\n              SELECT\n                marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo' AS \"marketstats.marketdata.mktcombo\",\n          \
+  \      AVG(marketstats.volmeter) AS \"marketstats.vol_avg\"\n              FROM\
+  \ marketstats AS marketstats\n              LEFT JOIN marketdata AS marketdata\n\
+  \                ON marketstats.mdlink = marketdata.marketdatanode\n           \
+  \   GROUP BY\n                marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\n\
+  \            ) AS _inner\n          )\n        ) AS vol_per_pair\n          ON orders.mktnote\
+  \ = vol_per_pair.marketdata__mktcombo\n      ) AS _inner\n    ) AS over_leveraged_position\n\
+  \    GROUP BY\n      over_leveraged_position.recordvault\n  ) AS _inner\n) AS olp\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"margin_utilization.recordvault\" AS recordvault,\n\
+  \      \"margin_utilization.mu_v\" AS mu_v\n    FROM (\n      SELECT\n        margin_utilization.recordvault\
+  \ AS \"margin_utilization.recordvault\",\n        MAX(margin_utilization.mu_value)\
+  \ AS \"margin_utilization.mu_v\"\n      FROM (\n        SELECT\n          \"orders.recordvault\"\
+  \ AS recordvault,\n          \"orders.userlink\" AS userlink,\n          \"orders.mu_value\"\
+  \ AS mu_value,\n          \"orders.is_margin_call_risk\" AS is_margin_call_risk\n\
+  \        FROM (\n          SELECT\n            orders.recordvault AS \"orders.recordvault\"\
+  ,\n            orders.userlink AS \"orders.userlink\",\n            (\n        \
+  \      riskandmargin.risk_margin_profile ->> '$.margin_thresholds.inithold'\n  \
+  \          ) / NULLIF(margsum_per_user.margsum_total, 0) * 100 AS \"orders.mu_value\"\
+  ,\n            (\n              (\n                riskandmargin.risk_margin_profile\
+  \ ->> '$.margin_thresholds.inithold'\n              ) / NULLIF(margsum_per_user.margsum_total,\
+  \ 0) * 100\n            ) > 80 AS \"orders.is_margin_call_risk\"\n          FROM\
+  \ orders AS orders\n          LEFT JOIN riskandmargin AS riskandmargin\n       \
+  \     ON orders.recordvault = riskandmargin.ordervault\n          LEFT JOIN (\n\
+  \            (\n              SELECT\n                \"accountbalances.usertag\"\
+  \ AS usertag,\n                \"accountbalances.margsum_total\" AS margsum_total\n\
+  \              FROM (\n                SELECT\n                  accountbalances.usertag\
+  \ AS \"accountbalances.usertag\",\n                  SUM(accountbalances.margsum)\
+  \ AS \"accountbalances.margsum_total\"\n                FROM accountbalances AS\
+  \ accountbalances\n                GROUP BY\n                  accountbalances.usertag\n\
+  \              ) AS _inner\n            )\n          ) AS margsum_per_user\n   \
+  \         ON orders.userlink = margsum_per_user.usertag\n        ) AS _inner\n \
+  \     ) AS margin_utilization\n      GROUP BY\n        margin_utilization.recordvault\n\
+  \    ) AS _inner\n  )\n) AS mu\n  ON olp.recordvault = mu.recordvault\nLEFT JOIN\
+  \ (\n  (\n    SELECT\n      \"effective_leverage.recordvault\" AS recordvault,\n\
+  \      \"effective_leverage.el_v\" AS el_v\n    FROM (\n      SELECT\n        effective_leverage.recordvault\
+  \ AS \"effective_leverage.recordvault\",\n        MAX(effective_leverage.el_value)\
+  \ AS \"effective_leverage.el_v\"\n      FROM (\n        SELECT\n          \"orders.recordvault\"\
+  \ AS recordvault,\n          \"orders.userlink\" AS userlink,\n          \"orders.el_value\"\
+  \ AS el_value,\n          \"orders.el_risk_class\" AS el_risk_class\n        FROM\
+  \ (\n          SELECT\n            orders.recordvault AS \"orders.recordvault\"\
+  ,\n            orders.userlink AS \"orders.userlink\",\n            (\n        \
+  \      CAST(riskandmargin.risk_margin_profile ->> '$.position.posmagn' AS REAL)\n\
+  \            ) * (\n              riskandmargin.risk_margin_profile ->> '$.position.possum'\n\
+  \            ) / NULLIF(wallet_per_user.wallet_total, 0) AS \"orders.el_value\"\
+  ,\n            CASE\n              WHEN (\n                (\n                 \
+  \ CAST(riskandmargin.risk_margin_profile ->> '$.position.posmagn' AS REAL)\n   \
+  \             ) * (\n                  riskandmargin.risk_margin_profile ->> '$.position.possum'\n\
+  \                ) / NULLIF(wallet_per_user.wallet_total, 0)\n              ) >\
+  \ 20\n              THEN 'High Risk'\n              ELSE 'Normal'\n            END\
+  \ AS \"orders.el_risk_class\"\n          FROM orders AS orders\n          LEFT JOIN\
+  \ riskandmargin AS riskandmargin\n            ON orders.recordvault = riskandmargin.ordervault\n\
+  \          LEFT JOIN (\n            (\n              SELECT\n                \"\
+  accountbalances.usertag\" AS usertag,\n                \"accountbalances.wallet_total\"\
+  \ AS wallet_total\n              FROM (\n                SELECT\n              \
+  \    accountbalances.usertag AS \"accountbalances.usertag\",\n                 \
+  \ SUM(accountbalances.walletsum) AS \"accountbalances.wallet_total\"\n         \
+  \       FROM accountbalances AS accountbalances\n                GROUP BY\n    \
+  \              accountbalances.usertag\n              ) AS _inner\n            )\n\
+  \          ) AS wallet_per_user\n            ON orders.userlink = wallet_per_user.usertag\n\
+  \        ) AS _inner\n      ) AS effective_leverage\n      GROUP BY\n        effective_leverage.recordvault\n\
+  \    ) AS _inner\n  )\n) AS el\n  ON olp.recordvault = el.recordvault) AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_critical
+  sql: is_critical
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Critically Over-Leveraged Position (KB #40) per order: Over-Leveraged\
+  \ AND Effective Leverage > 20 AND Margin Utilization > 90%. Composes the three component\
+  \ models (over_leveraged_position, effective_leverage, margin_utilization) by joining\
+  \ on orders.recordvault.\n\n[kb=40]\nA position that qualifies as an Over-Leveraged\
+  \ Position where additionally the Effective Leverage exceeds 20 and the Margin Utilization\
+  \ exceeds 90%, creating extreme liquidation risk. \u2014 Identifies positions with\
+  \ extremely dangerous leverage levels requiring immediate risk management.\n[/kb=40]"
+hidden: false
+meta:
+  kb_id: 40

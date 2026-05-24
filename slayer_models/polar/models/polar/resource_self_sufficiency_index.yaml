@@ -1,0 +1,107 @@
+version: 6
+name: resource_self_sufficiency_index
+source_queries:
+- version: 3
+  name: rec_per_eq
+  source_model: thermalsolarwindandgrid
+  measures:
+  - formula: rec:avg
+    name: rec
+  dimensions:
+  - name: thermaleqref
+  whole_periods_only: false
+- version: 3
+  name: wrmi_per_eq
+  source_model: waterandwaste
+  measures:
+  - formula: wrmi:avg
+    name: wrmi
+  dimensions:
+  - name: watereqref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: rec_per_eq
+    joins:
+    - target_model: wrmi_per_eq
+      join_pairs:
+      - - thermaleqref
+        - watereqref
+  measures:
+  - formula: 0.6 * rec:avg + 0.4 * wrmi_per_eq.wrmi:avg
+    name: rssi
+  dimensions:
+  - name: thermaleqref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"rec_per_eq.thermaleqref\" AS thermaleqref, \"rec_per_eq.rec_avg\"\
+  \ AS rec_avg, \"rec_per_eq.rssi\" AS rssi, \"rec_per_eq.wrmi_per_eq.wrmi_avg\" AS\
+  \ wrmi_per_eq__wrmi_avg FROM (WITH _base AS (\nSELECT\n  rec_per_eq.thermaleqref\
+  \ AS \"rec_per_eq.thermaleqref\",\n  AVG(rec_per_eq.rec) AS \"rec_per_eq.rec_avg\"\
+  \nFROM (\n  SELECT\n    \"thermalsolarwindandgrid.thermaleqref\" AS thermaleqref,\n\
+  \    \"thermalsolarwindandgrid.rec\" AS rec\n  FROM (\n    SELECT\n      thermalsolarwindandgrid.thermaleqref\
+  \ AS \"thermalsolarwindandgrid.thermaleqref\",\n      AVG(\n        (\n        \
+  \  JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics, '$.solar.output_w') +\
+  \ JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics, '$.wind.output_w')\n  \
+  \      ) * 100.0 / NULLIF(\n          thermalsolarwindandgrid.fuelcelloutputw +\
+  \ JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics, '$.solar.output_w') + JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics,\
+  \ '$.wind.output_w'),\n          0\n        )\n      ) AS \"thermalsolarwindandgrid.rec\"\
+  \n    FROM thermalsolarwindandgrid AS thermalsolarwindandgrid\n    GROUP BY\n  \
+  \    thermalsolarwindandgrid.thermaleqref\n  ) AS _inner\n) AS rec_per_eq\nGROUP\
+  \ BY\n  rec_per_eq.thermaleqref\n),\n_cm_rec_per_eq__wrmi_per_eq__wrmi_avg AS (\n\
+  SELECT\n  AVG(wrmi_per_eq.wrmi) AS \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\nFROM (\n\
+  \  SELECT\n    \"waterandwaste.watereqref\" AS watereqref,\n    \"waterandwaste.wrmi\"\
+  \ AS wrmi\n  FROM (\n    SELECT\n      waterandwaste.watereqref AS \"waterandwaste.watereqref\"\
+  ,\n      AVG(\n        waterandwaste.waterlevelpercent * (\n          waterandwaste.waterqualityindex\
+  \ / 100.0\n        ) * (\n          1 - waterandwaste.wastetanklevelpercent / 100.0\n\
+  \        )\n      ) AS \"waterandwaste.wrmi\"\n    FROM waterandwaste AS waterandwaste\n\
+  \    GROUP BY\n      waterandwaste.watereqref\n  ) AS _inner\n) AS wrmi_per_eq\n\
+  ),\n_combined AS (\nSELECT _base.\"rec_per_eq.thermaleqref\", _base.\"rec_per_eq.rec_avg\"\
+  , _cm_rec_per_eq__wrmi_per_eq__wrmi_avg.\"rec_per_eq.wrmi_per_eq.wrmi_avg\"\nFROM\
+  \ _base\nCROSS JOIN _cm_rec_per_eq__wrmi_per_eq__wrmi_avg\n),\nstep1 AS (\nSELECT\n\
+  \    \"rec_per_eq.rec_avg\",\n    \"rec_per_eq.thermaleqref\",\n    \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\
+  ,\n    0.6 * \"rec_per_eq.rec_avg\" + 0.4 * \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\
+  \ AS \"rec_per_eq.rssi\"\nFROM _combined\n)\nSELECT\n    \"rec_per_eq.rec_avg\"\
+  ,\n    \"rec_per_eq.rssi\",\n    \"rec_per_eq.thermaleqref\",\n    \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\
+  \nFROM step1) AS _inner"
+data_source: polar
+columns:
+- name: thermaleqref
+  sql: thermaleqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rec_avg
+  sql: rec_avg
+  type: DOUBLE
+  primary_key: false
+  description: "Renewable Energy Contribution (KB #9): (solar+wind)/(solar+wind+fuelcell)\
+    \ \xD7 100, %."
+  hidden: false
+  format:
+    type: float
+- name: rssi
+  sql: rssi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: wrmi_per_eq__wrmi_avg
+  sql: wrmi_per_eq__wrmi_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Resource Self-Sufficiency Index (KB #35): RSSI = 0.6 x REC + 0.4 x WRMI.\
+  \ Peer-join via equipment (R-MULTISTAGE).\n\n[kb=35]\nRSSI = 0.6 \xD7 REC + 0.4\
+  \ \xD7 WRMI \u2014 Measures a polar site's self-sufficiency in terms of resources\n\
+  [/kb=35]"
+hidden: false
+meta:
+  kb_id: 35

@@ -1,0 +1,153 @@
+version: 6
+name: contentbehavior
+sql_table: contentbehavior
+query_variables: {}
+data_source: fake
+columns:
+- name: cntref
+  sql: cntref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: cntsessref
+  sql: cntsessref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: postnum
+  sql: postnum
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: postfreq
+  sql: postfreq
+  type: DOUBLE
+  primary_key: false
+  description: "Post frequency. Used in KB #13 (Content Farm: postfreq > 50) and KB\
+    \ #73 (High-Impact Amplifier: postfreq > 30). \u03A3 postfreq across all content\
+    \ rows for an account is Total Post Frequency (KB #76).\n\n[kb=76]\nTPF_a = \\\
+    sum_{\\text{cntref} \\in \\text{contentbehavior}} \\text{postfreq}, \\quad \\\
+    text{where } \\text{cntsessref} = \\text{sessref}, \\text{sessprofref} = \\text{profkey},\
+    \ \\text{profaccref} = a \u2014 Measures the total posting frequency across all\
+    \ sessions for an account.\n[/kb=76]"
+  label: Total Post Frequency (TPF)
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 76
+- name: postintvar
+  sql: postintvar
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: cntsimscore
+  sql: cntsimscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: cntuniqscore
+  sql: cntuniqscore
+  type: DOUBLE
+  primary_key: false
+  description: "Content uniqueness score (KB #23). Range 0-1; >0.8 highly unique;\
+    \ <0.3 duplicate / templated. Component of CAS (KB #1) and CMS uses (1 - cntuniqscore)\
+    \ (KB #8).\n\n[kb=23]\nRanges from 0 to 1. Scores above 0.8 indicate highly unique\
+    \ content, while scores below 0.3 suggest duplicate or templated content. \u2014\
+    \ Illustrates content uniqueness scoring.\n[/kb=23]"
+  label: contentbehavior.cntuniqscore
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 23
+- name: cntdiverseval
+  sql: cntdiverseval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: cntlangnum
+  sql: cntlangnum
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cnttopicent
+  sql: cnttopicent
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: hashusepat
+  sql: hashusepat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: hashratio
+  sql: hashratio
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mentionpat
+  sql: mentionpat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: mentionratio
+  sql: mentionratio
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: urlsharefreq
+  sql: urlsharefreq
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: urldomdiv
+  sql: urldomdiv
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mediaupratio
+  sql: mediaupratio
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mediareratio
+  sql: mediareratio
+  type: DOUBLE
+  primary_key: false
+  description: 'Media reuse ratio. Component of CMS (KB #8).'
+  hidden: false
+  format:
+    type: float
+measures:
+- formula: postfreq:sum
+  name: total_post_frequency
+  description: "Total Post Frequency (KB #76): \u03A3 postfreq across all content\
+    \ rows for an account when grouped by sessionbehavior.profile.account.accindex."
+aggregations: []
+joins:
+- target_model: sessionbehavior
+  join_pairs:
+  - - cntsessref
+    - sessref
+  join_type: left
+filters: []
+hidden: false

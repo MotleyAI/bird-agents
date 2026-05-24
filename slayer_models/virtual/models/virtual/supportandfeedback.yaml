@@ -1,0 +1,95 @@
+version: 6
+name: supportandfeedback
+sql_table: supportandfeedback
+query_variables: {}
+data_source: virtual
+columns:
+- name: supportreg
+  sql: supportreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: supportinteractpivot
+  sql: supportinteractpivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: supportprefpivot
+  sql: supportprefpivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: techissuerpt
+  sql: techissuerpt
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: supptix
+  sql: supptix
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: fbsubs
+  sql: fbsubs
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: survpart
+  sql: survpart
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: betapart
+  sql: betapart
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: featreqsubs
+  sql: featreqsubs
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: bugsubs
+  sql: bugsubs
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: satrate
+  sql: satrate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: npsval
+  sql: npsval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins:
+- target_model: interactions
+  join_pairs:
+  - - supportinteractpivot
+    - activityreg
+  join_type: left
+- target_model: preferencesandsettings
+  join_pairs:
+  - - supportprefpivot
+    - prefreg
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,215 @@
+"""Shared fixtures for tests/cloud/.
+
+The cloud package itself is built behind an optional `cloud` extra (ray,
+google-cloud-storage, jinja2). When those aren't installed locally these
+tests collect-error on import, which is the right behaviour: a developer
+who hasn't installed the cloud extra shouldn't see cloud-test failures
+masquerading as something else.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture
+def fake_repo_root(tmp_path: Path) -> Path:
+    """A minimal repo layout that the image-hash helpers can walk.
+
+    Lays down:
+      <tmp>/uv.lock
+      <tmp>/pyproject.toml
+      <tmp>/src/bird_interact_agents/__init__.py
+      <tmp>/src/bird_interact_agents/run.py
+      <tmp>/slayer_models/db_a/model.yaml
+      <tmp>/audited_gold/db_a/db_a_audited.jsonl
+      <tmp>/Dockerfile.cloud   (with sentinel-delimited DATA/CODE sections)
+    """
+    (tmp_path / "src" / "bird_interact_agents").mkdir(parents=True)
+    (tmp_path / "src" / "bird_interact_agents" / "__init__.py").write_text(
+        "VERSION = '0.1.0'\n"
+    )
+    (tmp_path / "src" / "bird_interact_agents" / "run.py").write_text(
+        "def main(): pass\n"
+    )
+    (tmp_path / "uv.lock").write_text("# lock file\n")
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+
+    (tmp_path / "slayer_models" / "db_a").mkdir(parents=True)
+    (tmp_path / "slayer_models" / "db_a" / "model.yaml").write_text(
+        "models: []\n"
+    )
+
+    (tmp_path / "audited_gold" / "db_a").mkdir(parents=True)
+    (tmp_path / "audited_gold" / "db_a" / "db_a_audited.jsonl").write_text(
+        '{"instance_id":"db_a_1"}\n'
+    )
+
+    (tmp_path / "Dockerfile.cloud").write_text(
+        "FROM python:3.11-slim\n"
+        "RUN pip install uv\n"
+        "# DATA-LAYERS\n"
+        "COPY mini-interact/ /data/mini-interact/\n"
+        "COPY slayer_models/ /data/slayer_models/\n"
+        "COPY audited_gold/  /app/bird-interact-agents/audited_gold/\n"
+        "RUN slayer ingest --root /data/slayer_models --out /data/slayer_dbs\n"
+        "# CODE-LAYERS\n"
+        "COPY pyproject.toml uv.lock /app/bird-interact-agents/\n"
+        "RUN uv sync --extra all --extra dev\n"
+        "COPY src/ /app/bird-interact-agents/src/\n"
+    )
+    return tmp_path
+
+
+@pytest.fixture
+def fake_mini_interact(tmp_path: Path) -> Path:
+    """A minimal mini-interact sibling data dir."""
+    root = tmp_path / "mini-interact"
+    root.mkdir()
+    (root / "mini_interact.jsonl").write_text(
+        '{"instance_id":"db_a_1","selected_database":"db_a"}\n'
+    )
+    (root / "db_a").mkdir()
+    (root / "db_a" / "schema.sql").write_text("CREATE TABLE t (x INT);\n")
+    return root
+
+
+@pytest.fixture
+def make_git(monkeypatch: pytest.MonkeyPatch):
+    """Stub `subprocess.run` for `git status` / `git rev-parse` calls.
+
+    Returns a callable so each test can configure the canned `git status`
+    output and any other git invocations the function-under-test needs.
+    """
+
+    def _set(*, status_porcelain: str = "", commit: str = "deadbeef"):
+        import subprocess as _sp
+
+        real_run = _sp.run
+
+        def fake_run(argv, *args, **kwargs):
+            if argv[:2] == ["git", "status"]:
+                kwargs.setdefault("capture_output", False)
+                return _sp.CompletedProcess(
+                    argv, 0, stdout=status_porcelain, stderr=""
+                )
+            if argv[:3] == ["git", "rev-parse", "HEAD"]:
+                return _sp.CompletedProcess(
+                    argv, 0, stdout=f"{commit}\n", stderr=""
+                )
+            return real_run(argv, *args, **kwargs)
+
+        monkeypatch.setattr(_sp, "run", fake_run)
+
+    return _set
+
+
+@pytest.fixture
+def fake_gcs_bucket():
+    """In-memory stand-in for the subset of google.cloud.storage we use.
+
+    Returns a tuple `(client, store)` where `store` is a plain
+    `dict[str, bytes]` keyed by full blob path. The `client` quacks like
+    `google.cloud.storage.Client` for the methods the cloud package
+    actually calls (`bucket`, `bucket().blob`, `blob.upload_from_string`,
+    `blob.download_as_bytes`, `bucket.list_blobs`).
+    """
+    from types import SimpleNamespace
+
+    store: dict[str, bytes] = {}
+
+    def _blob(name: str):
+        def _upload(data, content_type=None, **_kw):
+            store[name] = data if isinstance(data, bytes) else data.encode()
+
+        def _download():
+            if name not in store:
+                raise KeyError(name)
+            return store[name]
+
+        return SimpleNamespace(
+            name=name,
+            upload_from_string=_upload,
+            download_as_bytes=_download,
+            exists=lambda: name in store,
+        )
+
+    def _list_blobs(*, prefix: str = "", **_kw):
+        # Match real google.cloud.storage.Client.list_blobs(prefix=...):
+        # returned objects have BOTH `.name` and `.download_as_bytes()`.
+        return [_blob(k) for k in sorted(store) if k.startswith(prefix)]
+
+    bucket = SimpleNamespace(
+        blob=_blob, list_blobs=_list_blobs, name="motley-team-birdbench"
+    )
+    client = SimpleNamespace(bucket=lambda _name: bucket)
+    return client, store
+
+
+@pytest.fixture
+def baked_slayer_dbs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """Repoint `ray_app.SLAYER_DBS_DIR` at a tmp dir and return a factory
+    that bakes a `<db>.sqlite` file there.
+
+    `_setup_per_task_slayer` now fails loudly when the baked DB is missing
+    (a missing DB in production means the image build / ingest is broken).
+    Slayer-mode tests therefore must lay down the DB(s) they reference.
+    """
+    from bird_interact_agents.cloud import ray_app
+
+    # NB: not named "slayer_*" — `test_per_task_tmp_dirs_are_cleaned` scans
+    # $TMPDIR (== this same tmp_path) for leftover `slayer_*` dirs, so the
+    # baked-DB dir must not match that prefix.
+    dbs_dir = tmp_path / "baked_dbs"
+    dbs_dir.mkdir()
+    monkeypatch.setattr(ray_app, "SLAYER_DBS_DIR", dbs_dir)
+
+    def _bake(*databases: str) -> Path:
+        for db in databases:
+            # Minimal non-empty SQLite header so it's a believable copy.
+            (dbs_dir / f"{db}.sqlite").write_bytes(b"SQLite format 3\x00")
+        return dbs_dir
+
+    return _bake
+
+
+@pytest.fixture
+def sample_task_result_row() -> dict:
+    """A canonical task-result row matching `TaskResultRow` from
+    bird_interact_agents.results_db."""
+    return {
+        "run_id": "20260521T1422-pydanticai-raw-a1b2c3",
+        "framework": "pydantic_ai",
+        "mode": "c-interact",
+        "query_mode": "raw",
+        "instance_id": "db_a_1",
+        "database": "db_a",
+        "started_at": 1747825320.0,
+        "duration_s": 42.5,
+        "phase1_passed": True,
+        "phase2_passed": True,
+        "total_reward": 1.0,
+        "submitted_sql": "SELECT 1;",
+        "submitted_query": None,
+        "ground_truth_sql": "SELECT 1;",
+        "error": None,
+        "usage_json": "{}",
+        "user_query": "Find 1.",
+        "submission_status": "submitted_correct",
+        "phase1_observation": "OK",
+        "phase2_observation": "OK",
+        "predicted_result_json": "[[1]]",
+        "gold_result_json": "[[1]]",
+        "n_agent_turns": 3,
+        "tool_call_stats_json": None,
+    }
+
+
+def write_row_object(store: dict[str, bytes], run_id: str, iid: str,
+                     attempt: int, row: dict) -> None:
+    """Helper: place a row directly into the fake-GCS store."""
+    path = f"runs/{run_id}/rows/{iid}/attempt-{attempt}.json"
+    store[path] = json.dumps(row).encode()

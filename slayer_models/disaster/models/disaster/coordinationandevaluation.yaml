@@ -1,0 +1,304 @@
+version: 6
+name: coordinationandevaluation
+sql_table: coordinationandevaluation
+query_variables: {}
+data_source: disaster
+columns:
+- name: coordevalregistry
+  sql: coordevalregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: coorddistref
+  sql: coorddistref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: coordopsref
+  sql: coordopsref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: secincidentcount
+  sql: secincidentcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: safetyranking
+  sql: safetyranking
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: accesslimitation
+  sql: accesslimitation
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: coordeffectlvl
+  sql: coordeffectlvl
+  type: TEXT
+  primary_key: false
+  description: "Coordination effectiveness between agencies (KB #9). High = seamless\
+    \ integration; Medium = adequate with occasional gaps; Low = significant problems\
+    \ hindering response.\n\n[kb=9]\nHigh indicates seamless integration and information\
+    \ sharing across agencies, Medium represents adequate coordination with occasional\
+    \ communication gaps, and Low indicates significant coordination problems hindering\
+    \ effective response \u2014 Illustrates the quality of coordination between responding\
+    \ agencies\n[/kb=9]"
+  label: coordeffectlvl
+  hidden: false
+  meta:
+    kb_id: 9
+- name: partnerorgs
+  sql: partnerorgs
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: infosharingstate
+  sql: infosharingstate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: reportcompliance
+  sql: reportcompliance
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: dataqualityvalue
+  sql: dataqualityvalue
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: monitoringfreq
+  sql: monitoringfreq
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: evaluationstage
+  sql: evaluationstage
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lessonslearnedstage
+  sql: lessonslearnedstage
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: contingencyplanstage
+  sql: contingencyplanstage
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: riskmitigationsteps
+  sql: riskmitigationsteps
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: insurancescope
+  sql: insurancescope
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: compliancestate
+  sql: compliancestate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: auditstate
+  sql: auditstate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: qualitycontrolsteps
+  sql: qualitycontrolsteps
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: stakeholdersatisf
+  sql: stakeholdersatisf
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mediacoversentiment
+  sql: mediacoversentiment
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: publicperception
+  sql: publicperception
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: documentationstate
+  sql: documentationstate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lessonsrecorded
+  sql: lessonsrecorded
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: bestpracticeslisted
+  sql: bestpracticeslisted
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: improvementrecs
+  sql: improvementrecs
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: nextreviewdate
+  sql: nextreviewdate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: notes
+  sql: notes
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: coordeffect_numeric
+  sql: CASE coordeffectlvl WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN
+    3 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric mapping of coordeffectlvl used by KB #39 (CACI) and KB #31
+    (RDE): Low=1, Medium=2, High=3, else=0.'
+  hidden: false
+- name: coordeffect_factor
+  sql: CASE coordeffectlvl WHEN 'High' THEN 1.2 WHEN 'Medium' THEN 1.0 WHEN 'Low'
+    THEN 0.8 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric factor used by KB #31 (RDE): High=1.2, Medium=1.0, Low=0.8,
+    else=0.'
+  hidden: false
+- name: infosharing_numeric
+  sql: CASE infosharingstate WHEN 'Poor' THEN 1 WHEN 'Limited' THEN 2 WHEN 'Effective'
+    THEN 3 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric mapping of infosharingstate used by KB #39 (CACI): Poor=1,
+    Limited=2, Effective=3, else=0.'
+  hidden: false
+- name: partnerorgs_count
+  sql: CAST(partnerorgs AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric value of partnerorgs (the column is TEXT in schema but rows
+    hold integer counts; KB #14 and KB #39 use it as an integer).'
+  hidden: false
+- name: csr
+  sql: secincidentcount * 5 + (100 - reportcompliance) + 90 - (dataqualityvalue *
+    3)
+  type: DOUBLE
+  primary_key: false
+  description: "Communication Security Risk (CSR, KB #12): secincidentcount*5 + (100\
+    \ - reportcompliance) + 90 - (dataqualityvalue*3).\n\n[kb=12]\nCSR = secincidentcount\
+    \ \\times 5 + (100 - reportcompliance) + 90 - (dataqualityvalue \\times 3) \u2014\
+    \ Measures the security risk associated with communication systems during disaster\
+    \ response\n[/kb=12]"
+  label: Communication Security Risk (CSR)
+  hidden: false
+  meta:
+    kb_id: 12
+- name: crf
+  sql: 100 - ((secincidentcount * 5 + (100 - reportcompliance) + 90 - (dataqualityvalue
+    * 3)) / 2.0) * (CASE disasterevents.impactmetrics ->> '$.communication' WHEN 'Operational'
+    THEN 1.0 WHEN 'Limited' THEN 0.6 WHEN 'Down' THEN 0.3 ELSE 0 END)
+  type: DOUBLE
+  primary_key: false
+  description: "Communication Resilience Factor (CRF, KB #32): 100 - (CSR/2) * communication_factor\
+    \ (Operational=1.0, Limited=0.6, Down=0.3).\n\n[kb=32]\nCRF = 100 - \\frac{CSR}{2}\
+    \ \\times communication\\_factor, \\text{ where communication\\_factor is 1.0\
+    \ for Operational, 0.6 for Limited, and 0.3 for Down communication status from\
+    \ impactMetrics.communication} \u2014 Measures the resilience of communication\
+    \ systems during disasters\n[/kb=32]"
+  label: Communication Resilience Factor (CRF)
+  hidden: false
+  meta:
+    kb_id: 32
+- name: caci
+  sql: (CAST(partnerorgs AS INTEGER) / 10.0) * (CASE coordeffectlvl WHEN 'Low' THEN
+    1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE 0 END) * ((CASE infosharingstate
+    WHEN 'Poor' THEN 1 WHEN 'Limited' THEN 2 WHEN 'Effective' THEN 3 ELSE 0 END +
+    1) / 3.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Cross-Agency Coordination Index (CACI, KB #39): (partnerorgs/10) *\
+    \ coordeffect_numeric * ((infosharing_numeric+1)/3).\n\n[kb=39]\nCACI = \\frac{partnerorgs}{10}\
+    \ \\times coordeffect\\_numeric \\times \\left(\\frac{infosharing\\_numeric +\
+    \ 1}{3}\\right), \\text{ where coordeffect\\_numeric maps Low=1, Medium=2, High=3,\
+    \ else=0 and infosharing\\_numeric maps Poor=1, Limited=2, Effective=3, else=0}\
+    \ \u2014 Quantifies how effectively multiple agencies coordinate during disaster\
+    \ response\n[/kb=39]"
+  label: Cross-Agency Coordination Index (CACI)
+  hidden: false
+  meta:
+    kb_id: 39
+- name: is_high_impact_comm_failure
+  sql: (disasterevents.impactmetrics ->> '$.communication') = 'Down' AND (100 - ((secincidentcount
+    * 5 + (100 - reportcompliance) + 90 - (dataqualityvalue * 3)) / 2.0) * (CASE disasterevents.impactmetrics
+    ->> '$.communication' WHEN 'Operational' THEN 1.0 WHEN 'Limited' THEN 0.6 WHEN
+    'Down' THEN 0.3 ELSE 0 END)) < 40 AND coordeffectlvl = 'Low'
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Impact Communication Failure (KB #41): impactMetrics.communication='Down'\
+    \ AND CRF<40 AND coordeffectlvl='Low'.\n\n[kb=41]\nAreas where impactMetrics.communication\
+    \ is 'Down' AND CRF < 40 AND coordeffectlvl is 'Low', representing critical communication\
+    \ failures that severely impede response coordination \u2014 Identifies disaster\
+    \ areas with severe communication infrastructure breakdown\n[/kb=41]"
+  label: High-Impact Communication Failure
+  hidden: false
+  meta:
+    kb_id: 41
+- name: is_cross_agency_coordination_crisis
+  sql: ((CAST(partnerorgs AS INTEGER) / 10.0) * (CASE coordeffectlvl WHEN 'Low' THEN
+    1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE 0 END) * ((CASE infosharingstate
+    WHEN 'Poor' THEN 1 WHEN 'Limited' THEN 2 WHEN 'Effective' THEN 3 ELSE 0 END +
+    1) / 3.0)) < 1.5 AND secincidentcount > 40 AND operations.emerglevel = 'Black'
+  type: BOOLEAN
+  primary_key: false
+  description: "Cross-Agency Coordination Crisis (KB #47): CACI<1.5 AND secincidentcount>40\
+    \ AND emerglevel='Black'.\n\n[kb=47]\nSituations where CACI < 1.5 AND secincidentcount\
+    \ > 40 AND emerglevel is 'Black', indicating dangerous breakdowns in inter-agency\
+    \ coordination during critical emergency situations \u2014 Identifies critical\
+    \ failures in multi-agency coordination\n[/kb=47]"
+  label: Cross-Agency Coordination Crisis
+  hidden: false
+  meta:
+    kb_id: 47
+measures: []
+aggregations: []
+joins:
+- target_model: disasterevents
+  join_pairs:
+  - - coorddistref
+    - distregistry
+  join_type: left
+- target_model: operations
+  join_pairs:
+  - - coordopsref
+    - opsregistry
+  join_type: left
+- target_model: transportation
+  join_pairs:
+  - - coorddistref
+    - transportdistref
+  join_type: left
+filters: []
+description: Coordination & evaluation record per (disaster, operation); 1:1 with
+  operations.
+hidden: false

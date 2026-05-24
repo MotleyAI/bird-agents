@@ -1,0 +1,82 @@
+version: 6
+name: life_support_reliability_classification
+source_queries:
+- version: 3
+  source_model:
+    source_name: life_support_system_reliability
+    columns:
+    - name: lsrc_class
+      type: TEXT
+      sql: CASE WHEN lssr >= 0.8 THEN 'High Reliability' WHEN lssr >= 0.6 THEN 'Moderate
+        Reliability' ELSE 'Low Reliability' END
+  dimensions:
+  - name: opmainteqref
+  - name: lsrc_class
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"life_support_system_reliability.opmainteqref\" AS opmainteqref,\
+  \ \"life_support_system_reliability.lsrc_class\" AS lsrc_class FROM (SELECT\n  life_support_system_reliability.opmainteqref\
+  \ AS \"life_support_system_reliability.opmainteqref\",\n  CASE\n    WHEN life_support_system_reliability.lssr\
+  \ >= 0.8\n    THEN 'High Reliability'\n    WHEN life_support_system_reliability.lssr\
+  \ >= 0.6\n    THEN 'Moderate Reliability'\n    ELSE 'Low Reliability'\n  END AS\
+  \ \"life_support_system_reliability.lsrc_class\"\nFROM (\n  SELECT\n    \"ors_per_eq.opmainteqref\"\
+  \ AS opmainteqref,\n    \"ors_per_eq.ors_avg\" AS ors_avg,\n    \"ors_per_eq.lssr\"\
+  \ AS lssr,\n    \"ors_per_eq.tie_per_eq.tie_avg\" AS tie_per_eq__tie_avg\n  FROM\
+  \ (\n    WITH _base AS (\n      SELECT\n        ors_per_eq.opmainteqref AS \"ors_per_eq.opmainteqref\"\
+  ,\n        AVG(ors_per_eq.ors) AS \"ors_per_eq.ors_avg\"\n      FROM (\n       \
+  \ SELECT\n          \"operationmaintenance.opmainteqref\" AS opmainteqref,\n   \
+  \       \"operationmaintenance.ors\" AS ors\n        FROM (\n          SELECT\n\
+  \            operationmaintenance.opmainteqref AS \"operationmaintenance.opmainteqref\"\
+  ,\n            AVG(\n              CASE operationmaintenance.operationalstatus\n\
+  \                WHEN 'Active'\n                THEN 10\n                WHEN 'Standby'\n\
+  \                THEN 5\n                ELSE 0\n              END * (\n       \
+  \         1 - operationmaintenance.operationhours * 1.0 / NULLIF(operationmaintenance.maintenancecyclehours,\
+  \ 0)\n              )\n            ) AS \"operationmaintenance.ors\"\n         \
+  \ FROM operationmaintenance AS operationmaintenance\n          GROUP BY\n      \
+  \      operationmaintenance.opmainteqref\n        ) AS _inner\n      ) AS ors_per_eq\n\
+  \      GROUP BY\n        ors_per_eq.opmainteqref\n    ), _cm_ors_per_eq__tie_per_eq__tie_avg\
+  \ AS (\n      SELECT\n        AVG(tie_per_eq.tie) AS \"ors_per_eq.tie_per_eq.tie_avg\"\
+  \n      FROM (\n        SELECT\n          \"thermalsolarwindandgrid.thermaleqref\"\
+  \ AS thermaleqref,\n          \"thermalsolarwindandgrid.tie\" AS tie\n        FROM\
+  \ (\n          SELECT\n            thermalsolarwindandgrid.thermaleqref AS \"thermalsolarwindandgrid.thermaleqref\"\
+  ,\n            AVG(\n              (\n                CASE thermalsolarwindandgrid.insulationstatus\n\
+  \                  WHEN 'Good'\n                  THEN 0.9\n                  WHEN\
+  \ 'Fair'\n                  THEN 0.6\n                  WHEN 'Poor'\n          \
+  \        THEN 0.3\n                  ELSE 0.0\n                END\n           \
+  \   ) - thermalsolarwindandgrid.heatlossratekwh / 10.0\n            ) AS \"thermalsolarwindandgrid.tie\"\
+  \n          FROM thermalsolarwindandgrid AS thermalsolarwindandgrid\n          GROUP\
+  \ BY\n            thermalsolarwindandgrid.thermaleqref\n        ) AS _inner\n  \
+  \    ) AS tie_per_eq\n    ), _combined AS (\n      SELECT\n        _base.\"ors_per_eq.opmainteqref\"\
+  ,\n        _base.\"ors_per_eq.ors_avg\",\n        _cm_ors_per_eq__tie_per_eq__tie_avg.\"\
+  ors_per_eq.tie_per_eq.tie_avg\"\n      FROM _base\n      CROSS JOIN _cm_ors_per_eq__tie_per_eq__tie_avg\n\
+  \    ), step1 AS (\n      SELECT\n        \"ors_per_eq.opmainteqref\",\n       \
+  \ \"ors_per_eq.ors_avg\",\n        \"ors_per_eq.tie_per_eq.tie_avg\",\n        0.7\
+  \ * \"ors_per_eq.ors_avg\" + 0.3 * \"ors_per_eq.tie_per_eq.tie_avg\" AS \"ors_per_eq.lssr\"\
+  \n      FROM _combined\n    )\n    SELECT\n      \"ors_per_eq.lssr\",\n      \"\
+  ors_per_eq.opmainteqref\",\n      \"ors_per_eq.ors_avg\",\n      \"ors_per_eq.tie_per_eq.tie_avg\"\
+  \n    FROM step1\n  ) AS _inner\n) AS life_support_system_reliability) AS _inner"
+data_source: polar
+columns:
+- name: opmainteqref
+  sql: opmainteqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lsrc_class
+  sql: lsrc_class
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Life Support Reliability Classification (KB #51): High (LSSR >= 0.8),\
+  \ Moderate (0.6 <= LSSR < 0.8), Low (LSSR < 0.6).\n\n[kb=51]\nLife support systems\
+  \ are classified into three reliability categories: 'High Reliability' WHEN (LSSR\
+  \ >= 0.8), 'Moderate Reliability' WHEN (LSSR >= 0.6 AND LSSR < 0.8), and 'Low Reliability'\
+  \ WHEN (LSSR < 0.6). \u2014 Categorizes life support systems into reliability classes\
+  \ based on their LSSR score for operational decision-making.\n[/kb=51]"
+hidden: false
+meta:
+  kb_id: 51

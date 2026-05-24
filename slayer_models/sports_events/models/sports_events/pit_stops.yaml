@@ -1,0 +1,109 @@
+version: 6
+name: pit_stops
+sql_table: pit_stops
+query_variables: {}
+data_source: sports_events
+columns:
+- name: matchidx
+  sql: matchidx
+  type: INT
+  primary_key: true
+  description: Foreign key to races.
+  hidden: false
+  format:
+    type: integer
+- name: wunit
+  sql: wunit
+  type: INT
+  primary_key: true
+  description: Foreign key to drivers.
+  hidden: false
+  format:
+    type: integer
+- name: pause_no
+  sql: pause_no
+  type: INT
+  primary_key: true
+  description: Sequence number of this pit stop for the driver in the race.
+  hidden: false
+  format:
+    type: integer
+- name: moment
+  sql: moment
+  type: INT
+  primary_key: false
+  description: Lap/moment within the race when the pit stop occurred.
+  hidden: false
+  format:
+    type: integer
+- name: attime
+  sql: attime
+  type: TEXT
+  primary_key: false
+  description: Wall-clock timestamp of the pit stop.
+  hidden: false
+- name: durtxt
+  sql: durtxt
+  type: TEXT
+  primary_key: false
+  description: Pit stop duration as a free-form text label.
+  hidden: false
+- name: ms_count
+  sql: ms_count
+  type: INT
+  primary_key: false
+  description: Pit stop duration in milliseconds (the car-stationary time).
+  hidden: false
+  format:
+    type: integer
+- name: pit_stop_seconds
+  sql: ms_count / 1000.0
+  type: DOUBLE
+  primary_key: false
+  description: "Pit Stop Duration in Seconds (KB #22): D_seconds = D_milliseconds\
+    \ / 1000.\n\n[kb=22]\nD_{seconds} = \\frac{D_{milliseconds}}{1000} \u2014 Converts\
+    \ pit stop duration from milliseconds to a more human-readable seconds format.\n\
+    [/kb=22]"
+  label: Pit Stop Duration in Seconds
+  hidden: false
+  meta:
+    kb_id: 22
+- name: is_efficient_pit_stop
+  sql: ms_count < 2500
+  type: BOOLEAN
+  primary_key: false
+  description: "Efficient Pit Stop (KB #17): TRUE iff total stationary time < 2.5\
+    \ s.\n\n[kb=17]\nAn Efficient Pit Stop is a pit stop where the total time the\
+    \ car is stationary is less than 2.5 seconds, indicating outstanding performance\
+    \ by the pit crew. \u2014 Defines a benchmark for an exceptionally fast pit stop.\n\
+    [/kb=17]"
+  label: Efficient Pit Stop
+  hidden: false
+  meta:
+    kb_id: 17
+measures:
+- formula: pit_stop_seconds:sum
+  name: total_pit_stop_seconds
+  label: Total Pit Stop Time (s)
+  description: "\u03A3 Pit Stop Duration in Seconds for the group (used as the second\
+    \ term of KB #33 Adjusted Race Time Delta)."
+- formula: '*:count'
+  name: pit_stop_count
+  label: Pit Stop Count
+  description: 'Number of pit stops for the group (typically grouped by race + driver).
+    Used by KB #39 Tyre Management Index and KB #54 Average Stops Per Car.'
+aggregations: []
+joins:
+- target_model: races
+  join_pairs:
+  - - matchidx
+    - rak_id
+  join_type: left
+- target_model: drivers
+  join_pairs:
+  - - wunit
+    - drv_main
+  join_type: left
+filters: []
+description: Pit stop events. One row per (race, driver, pit_stop_number).
+hidden: false

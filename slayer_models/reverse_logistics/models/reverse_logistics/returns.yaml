@@ -1,0 +1,202 @@
+version: 6
+name: returns
+sql_table: returns
+query_variables: {}
+data_source: reverse_logistics
+columns:
+- name: casenum
+  sql: casenum
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: logtime
+  sql: logtime
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: srctxn
+  sql: srctxn
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: itemlink
+  sql: itemlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: revdate
+  sql: revdate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: dayslapsed
+  sql: dayslapsed
+  type: INT
+  primary_key: false
+  description: "Days Lapsed: number of calendar days between original transaction\
+    \ and completion of return processing.\n\n[kb=16]\nDifference in days between\
+    \ transaction date and point at which funds/refund are issued. \u2014 Number of\
+    \ calendar days between original transaction and completion of return processing.\n\
+    [/kb=16]"
+  label: Days Lapsed
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 16
+- name: return_channel
+  sql: return_channel
+  type: TEXT
+  primary_key: false
+  description: "Return Channels \u2014 pathway through which the customer sent the\
+    \ item back. 'Store' (in-person retail outlet), 'Courier' (doorstep pickup), 'Mail'\
+    \ (national post), 'Locker' (automated drop-box), 'Pickup' (retailer-scheduled\
+    \ collection for oversized/fragile goods).\n\n[kb=20]\nMarked as 'Store' when\
+    \ customer returns item in person at a retail outlet; 'Courier' when customer\
+    \ arranges a courier service for doorstep pickup; 'Mail' when item is posted through\
+    \ the national mail system; 'Locker' when customer deposits parcel in an automated\
+    \ locker or drop-box; 'Pickup' when retailer schedules a home or office collection\
+    \ for oversized or fragile goods. \u2014 Enumerates the pathways through which\
+    \ customers send items back.\n[/kb=20]"
+  label: Return Channels
+  hidden: false
+  meta:
+    kb_id: 20
+- name: return_details
+  sql: return_details
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shipping_fee
+  sql: CAST(json_extract(return_details, '$.shipping.fee') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Shipping Fee (S_f): cost charged by the logistics provider for transporting\
+    \ the returned item.\n\n[kb=10]\nA monetary amount reflecting transportation cost\
+    \ incurred for a single return shipment. \u2014 Cost charged by the logistics\
+    \ provider for transporting a returned item.\n[/kb=10]"
+  label: Shipping Fee
+  hidden: false
+  meta:
+    kb_id: 10
+- name: fraud_flags
+  sql: CAST(json_extract(return_details, '$.fraud.fraud_flags') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: "Number of fraud flags raised on this return (0-5).\n\n[kb=7]\n$$FFS\
+    \ = F_f \\times w_{risk}$$ where $F_f$ is number of fraud flags and $w_{risk}$\
+    \ is weight based on Fraud Risk Level. \u2014 Composite score that weights fraud\
+    \ flags by qualitative risk level.\n[/kb=7]"
+  label: Fraud Flag Severity Score (FFS)
+  hidden: false
+  meta:
+    kb_id: 7
+- name: fraud_risk_level
+  sql: TRIM(json_extract(return_details, '$.fraud.risk_level'), '"')
+  type: TEXT
+  primary_key: false
+  description: "Fraud Risk Level \u2014 qualitative grading of suspected fraud severity.\
+    \ 'Low', 'Medium', or 'High'.\n\n[kb=21]\nThere are 3 different levels: 'Low',\
+    \ 'Medium' and 'High'. \u2014 Qualitative grading of suspected fraud severity\
+    \ in a return.\n[/kb=21]"
+  label: Fraud Risk Levels
+  hidden: false
+  meta:
+    kb_id: 21
+- name: fraud_risk_weight
+  sql: CASE TRIM(json_extract(return_details, '$.fraud.risk_level'), '"') WHEN 'Low'
+    THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Risk weight for FFS \u2014 Low=1, Medium=2, High=3 (KB does not pin\
+    \ exact weights; using ascending-by-severity ordinals).\n\n[kb=7]\n$$FFS = F_f\
+    \ \\times w_{risk}$$ where $F_f$ is number of fraud flags and $w_{risk}$ is weight\
+    \ based on Fraud Risk Level. \u2014 Composite score that weights fraud flags by\
+    \ qualitative risk level.\n[/kb=7]"
+  label: Fraud Flag Severity Score (FFS)
+  hidden: false
+  meta:
+    kb_id: 7
+- name: fraud_flag_severity_score
+  sql: CAST(json_extract(return_details, '$.fraud.fraud_flags') AS INTEGER) * (CASE
+    TRIM(json_extract(return_details, '$.fraud.risk_level'), '"') WHEN 'Low' THEN
+    1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END)
+  type: DOUBLE
+  primary_key: false
+  description: "Fraud Flag Severity Score (FFS) = F_f * w_risk. F_f is fraud_flags;\
+    \ w_risk is 1/2/3 for Low/Medium/High.\n\n[kb=7]\n$$FFS = F_f \\times w_{risk}$$\
+    \ where $F_f$ is number of fraud flags and $w_{risk}$ is weight based on Fraud\
+    \ Risk Level. \u2014 Composite score that weights fraud flags by qualitative risk\
+    \ level.\n[/kb=7]"
+  label: Fraud Flag Severity Score (FFS)
+  hidden: false
+  meta:
+    kb_id: 7
+- name: warranty_status
+  sql: TRIM(json_extract(return_details, '$.authorization.warranty_status'), '"')
+  type: TEXT
+  primary_key: false
+  description: "Warranty Status \u2014 'Valid' (within manufacturer/retailer warranty),\
+    \ 'Expired' (term lapsed), 'Not Applicable' (no warranty / proof unavailable).\n\
+    \n[kb=27]\n'Valid' is within manufacturer or retailer warranty period; 'Expired'\
+    \ is warranty term has lapsed; 'Not Applicable' is no warranty offered or proof\
+    \ unavailable. \u2014 Indicates whether a product remains under warranty coverage.\n\
+    [/kb=27]"
+  label: Warranty Statuses
+  hidden: false
+  meta:
+    kb_id: 27
+- name: warranty_claim
+  sql: TRIM(json_extract(return_details, '$.authorization.warranty_claim'), '"')
+  type: TEXT
+  primary_key: false
+  description: "Warranty claim identifier (NULL if none filed).\n\n[kb=6]\n$$WCR =\
+    \ \\frac{N_{claims}}{T_r}$$ where $N_{claims}$ is the number of authorised warranty\
+    \ claims. \u2014 Proportion of returns that include a valid warranty claim.\n\
+    [/kb=6]"
+  label: Warranty Claim Ratio (WCR)
+  hidden: false
+  meta:
+    kb_id: 6
+- name: has_warranty_claim
+  sql: CASE WHEN json_extract(return_details, '$.authorization.warranty_claim') <>
+    'null' AND json_extract(return_details, '$.authorization.warranty_claim') IS NOT
+    NULL AND TRIM(json_extract(return_details, '$.authorization.auth_status'), '"')
+    = 'Approved' THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "1 if an authorised warranty claim was filed for this return (claim\
+    \ id present AND auth_status='Approved'), else 0. KB #6 N_claims indicator.\n\n\
+    [kb=6]\n$$WCR = \\frac{N_{claims}}{T_r}$$ where $N_{claims}$ is the number of\
+    \ authorised warranty claims. \u2014 Proportion of returns that include a valid\
+    \ warranty claim.\n[/kb=6]"
+  label: Warranty Claim Ratio (WCR)
+  hidden: false
+  meta:
+    kb_id: 6
+measures:
+- formula: has_warranty_claim:sum * 1.0 / *:count
+  name: warranty_claim_ratio
+  label: Warranty Claim Ratio (WCR)
+  description: "Warranty Claim Ratio (WCR) = N_claims / T_r. Proportion of returns\
+    \ that include an authorised warranty claim. KB #6.\n\n[kb=6]\n$$WCR = \\frac{N_{claims}}{T_r}$$\
+    \ where $N_{claims}$ is the number of authorised warranty claims. \u2014 Proportion\
+    \ of returns that include a valid warranty claim.\n[/kb=6]"
+  meta:
+    kb_id: 6
+aggregations: []
+joins:
+- target_model: rl_products
+  join_pairs:
+  - - itemlink
+    - itemcode
+  join_type: left
+- target_model: rl_orders
+  join_pairs:
+  - - srctxn
+    - txnnum
+  join_type: left
+filters: []
+description: A return case logged for an item, joined to its source order, product,
+  and (via children) financial / quality / processing / case detail tables.
+hidden: false

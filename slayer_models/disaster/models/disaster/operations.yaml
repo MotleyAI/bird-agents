@@ -1,0 +1,352 @@
+version: 6
+name: operations
+sql_table: operations
+query_variables: {}
+data_source: disaster
+columns:
+- name: opsregistry
+  sql: opsregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: opsdistref
+  sql: opsdistref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: opshubref
+  sql: opshubref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: emerglevel
+  sql: emerglevel
+  type: TEXT
+  primary_key: false
+  description: "Color-coded emergency classification (KB #1). Yellow = monitoring/minimal\
+    \ activation; Orange = partial activation/elevated alert; Red = full activation/serious\
+    \ emergency; Black = critical emergency requiring all available resources.\n\n\
+    [kb=1]\nYellow indicates monitoring phase with minimal activation, Orange represents\
+    \ partial activation with elevated alert, Red signifies full activation for serious\
+    \ emergencies, and Black denotes critical emergency situations requiring all available\
+    \ resources \u2014 Illustrates the color-coded emergency classification system\n\
+    [/kb=1]"
+  label: emerglevel
+  hidden: false
+  meta:
+    kb_id: 1
+- name: respphase
+  sql: respphase
+  type: TEXT
+  primary_key: false
+  description: "Disaster response progression phase (KB #2). Initial = immediate life-saving\
+    \ actions; Emergency = critical needs/stabilization; Recovery = restoring basic\
+    \ services/infrastructure; Reconstruction = long-term rebuilding.\n\n[kb=2]\n\
+    Initial phase focuses on immediate life-saving actions, Emergency phase addresses\
+    \ critical needs and stabilization, Recovery phase works on restoring basic services\
+    \ and infrastructure, and Reconstruction phase involves long-term rebuilding efforts\
+    \ \u2014 Illustrates the progression of disaster response operations\n[/kb=2]"
+  label: respphase
+  hidden: false
+  meta:
+    kb_id: 2
+- name: opsstatus
+  sql: opsstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: coordcenter
+  sql: coordcenter
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: opsstartdate
+  sql: opsstartdate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: estdurationdays
+  sql: estdurationdays
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: priorityrank
+  sql: priorityrank
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: resourceallocstate
+  sql: resourceallocstate
+  type: TEXT
+  primary_key: false
+  description: "Adequacy of resource distribution (KB #6). Sufficient = resources\
+    \ meet operational needs; Limited = stretched, prioritisation needed; Critical\
+    \ = severe shortages requiring immediate supplementation.\n\n[kb=6]\nSufficient\
+    \ means resources meet current operational needs, Limited indicates resources\
+    \ are stretched and prioritization is necessary, and Critical represents severe\
+    \ shortages requiring immediate supplementation \u2014 Illustrates the adequacy\
+    \ of resource distribution\n[/kb=6]"
+  label: resourceallocstate
+  hidden: false
+  meta:
+    kb_id: 6
+- name: supplyflowstate
+  sql: supplyflowstate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: respphase_numeric
+  sql: CASE respphase WHEN 'Initial' THEN 1 WHEN 'Emergency' THEN 2 WHEN 'Recovery'
+    THEN 3 WHEN 'Reconstruction' THEN 4 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric mapping of respphase used by KB #30 (RTER): Initial=1, Emergency=2,
+    Recovery=3, Reconstruction=4, else=0.'
+  hidden: false
+- name: msi
+  sql: (estdurationdays / 365.0) * (transportation.deliverysuccessrate / 100.0) *
+    (1 - coordinationandevaluation.secincidentcount * 1.0 / NULLIF(CAST(coordinationandevaluation.partnerorgs
+    AS INTEGER) * 10 + 1, 0)) * 100
+  type: DOUBLE
+  primary_key: false
+  description: "Market Stability Index (MSI, KB #14): (estdurationdays/365) * (deliverysuccessrate/100)\
+    \ * (1 - secincidentcount/(partnerorgs::int*10 + 1)) * 100.\n\n[kb=14]\nMSI =\
+    \ \\frac{estdurationdays}{365.0} \\times \\frac{deliverysuccessrate}{100.0} \\\
+    times \\left(1 - \\frac{secincidentcount}{partnerorgs::integer \\times 10 + 1}\\\
+    right) \\times 100, \\text{ where estdurationdays represents operation duration\
+    \ from operations table, deliverysuccessrate captures logistics reliability from\
+    \ transportation table, and secincidentcount/partnerorgs ratio approximates system\
+    \ disruptions per partner organization} \u2014 Assesses the stability and reliability\
+    \ of disaster response operations over time\n[/kb=14]"
+  label: Market Stability Index (MSI)
+  hidden: false
+  meta:
+    kb_id: 14
+- name: rter
+  sql: (100.0 / (estdurationdays + 1)) * (transportation.deliverysuccessrate / 100.0)
+    * ((4 - (CASE respphase WHEN 'Initial' THEN 1 WHEN 'Emergency' THEN 2 WHEN 'Recovery'
+    THEN 3 WHEN 'Reconstruction' THEN 4 ELSE 0 END)) / 3.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Response Time Effectiveness Ratio (RTER, KB #30): (100/(estdurationdays+1))\
+    \ * (deliverysuccessrate/100) * ((4 - respphase_numeric)/3).\n\n[kb=30]\nRTER\
+    \ = \\frac{100}{estdurationdays + 1} \\times \\frac{deliverysuccessrate}{100}\
+    \ \\times \\left(\\frac{4 - respphase\\_numeric}{3}\\right), \\text{ where respphase\\\
+    _numeric maps Initial=1, Emergency=2, Recovery=3, Reconstruction=4, else=0, representing\
+    \ faster deployment relative to disaster phase} \u2014 Measures how quickly and\
+    \ effectively disaster response operations are deployed\n[/kb=30]"
+  label: Response Time Effectiveness Ratio (RTER)
+  hidden: false
+  meta:
+    kb_id: 30
+- name: is_critical_resource_shortage
+  sql: distributionhubs.storeavailm3 < 0.1 * distributionhubs.storecapm3 AND supplyflowstate
+    IN ('Strained', 'Disrupted')
+  type: BOOLEAN
+  primary_key: false
+  description: "Critical Resource Shortage (KB #20): storeavailm3 < 10% of storecapm3\
+    \ AND supplyflowstate IN ('Strained','Disrupted').\n\n[kb=20]\nA condition where\
+    \ storeavailm3 is less than 10% of storecapm3 AND supplyflowstate is 'Strained'\
+    \ or 'Disrupted', indicating severe logistical constraints that may compromise\
+    \ disaster response \u2014 Identifies situations where essential resources are\
+    \ dangerously depleted\n[/kb=20]"
+  label: Critical Resource Shortage
+  hidden: false
+  meta:
+    kb_id: 20
+- name: is_high_risk_response
+  sql: emerglevel IN ('Red', 'Black') AND coordinationandevaluation.safetyranking
+    = 'High Risk' AND coordinationandevaluation.secincidentcount > 50
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Risk Response Operation (KB #21): emerglevel in (Red, Black)\
+    \ AND safetyranking='High Risk' AND secincidentcount>50.\n\n[kb=21]\nOperations\
+    \ where emerglevel is 'Red' or 'Black' AND safetyranking is 'High Risk' AND secincidentcount\
+    \ > 50, indicating dangerous conditions requiring special safety protocols \u2014\
+    \ Identifies disaster operations with elevated risk factors\n[/kb=21]"
+  label: High-Risk Response Operation
+  hidden: false
+  meta:
+    kb_id: 21
+- name: is_resource_optimization_opportunity
+  sql: distributionhubs.hubutilpct < 30 AND transportation.distributionpoints > 20
+  type: BOOLEAN
+  primary_key: false
+  description: "Resource Optimization Opportunity (KB #22): hubutilpct<30 AND distributionpoints>20.\n\
+    \n[kb=22]\nA scenario where hubutilpct < 30 while simultaneously having distributionpoints\
+    \ > 20, suggesting potential for redistribution of resources to maximize efficiency\
+    \ \u2014 Identifies situations where resource allocation could be optimized\n\
+    [/kb=22]"
+  label: Resource Optimization Opportunity
+  hidden: false
+  meta:
+    kb_id: 22
+- name: is_operational_excellence
+  sql: transportation.deliverysuccessrate > 90 AND distributionhubs.invaccpct > 95
+    AND ((transportation.deliverysuccessrate / 100.0) * (1 - transportation.avgdeliveryhours
+    / 24.0) * (1 + transportation.distributionpoints / 10.0)) > 3
+  type: BOOLEAN
+  primary_key: false
+  description: "Operational Excellence (KB #24): deliverysuccessrate>90 AND invaccpct>95\
+    \ AND OEI>3.\n\n[kb=24]\nOperations with deliverysuccessrate > 90 AND invaccpct\
+    \ > 95 AND OEI > 3, representing highly effective logistics and resource management\
+    \ \u2014 Identifies disaster response operations demonstrating superior performance\n\
+    [/kb=24]"
+  label: Operational Excellence
+  hidden: false
+  meta:
+    kb_id: 24
+- name: is_critical_resource_prioritization_need
+  sql: distributionhubs.storeavailm3 < 0.1 * distributionhubs.storecapm3 AND supplyflowstate
+    IN ('Strained', 'Disrupted') AND ((CAST(humanresources.staffingprofile ->> '$.personnel.total'
+    AS INTEGER) * 1.0 / NULLIF(financials.personnelcostsusd / 10000.0, 0)) * (CAST(humanresources.staffingprofile
+    ->> '$.readiness.availability_percent' AS REAL) / 100.0)) < 0.5 AND emerglevel
+    IN ('Red', 'Black')
+  type: BOOLEAN
+  primary_key: false
+  description: "Critical Resource Prioritization Need (KB #40): is_critical_resource_shortage\
+    \ AND PER<0.5 AND emerglevel in (Red, Black).\n\n[kb=40]\nOperations experiencing\
+    \ Critical Resource Shortage where PER < 0.5 AND emerglevel is either 'Red' or\
+    \ 'Black', indicating a severe mismatch between available resources and critical\
+    \ operational needs \u2014 Identifies operations requiring immediate resource\
+    \ redistribution\n[/kb=40]"
+  label: Critical Resource Prioritization Need
+  hidden: false
+  meta:
+    kb_id: 40
+- name: is_sustainable_operation_excellence
+  sql: transportation.deliverysuccessrate > 90 AND distributionhubs.invaccpct > 95
+    AND ((transportation.deliverysuccessrate / 100.0) * (1 - transportation.avgdeliveryhours
+    / 24.0) * (1 + transportation.distributionpoints / 10.0)) > 3 AND (environmentandhealth.carbontons
+    * (1 - environmentandhealth.renewenergypct / 100.0) + (100 - environmentandhealth.recyclepct)
+    * 0.5) < 50 AND environmentandhealth.renewenergypct > 30 AND environmentandhealth.recyclepct
+    > 60
+  type: BOOLEAN
+  primary_key: false
+  description: "Sustainable Operation Excellence (KB #42): is_operational_excellence\
+    \ AND is_sustainable_response.\n\n[kb=42]\nOperations qualifying as Operational\
+    \ Excellence while simultaneously meeting Sustainable Response Operation criteria,\
+    \ representing the gold standard for effective and environmentally responsible\
+    \ disaster management \u2014 Identifies disaster operations that achieve high\
+    \ performance with minimal environmental impact\n[/kb=42]"
+  label: Sustainable Operation Excellence
+  hidden: false
+  meta:
+    kb_id: 42
+- name: is_financial_vulnerability_zone
+  sql: financials.fundsutilpct > 80 AND financials.fundingstate = 'Critical' AND ((financials.donorcommitmentsusd
+    * 1.0 / NULLIF(financials.budgetallotusd, 0)) * (1 - financials.fundsutilpct /
+    100.0) - (financials.resourcegapsusd * 1.0 / NULLIF(financials.budgetallotusd,
+    0))) < 0.2 AND ((distributionhubs.hubutilpct / 100.0) * (distributionhubs.storecapm3
+    / (distributionhubs.storeavailm3 + 1.0))) > 0.9 AND resourceallocstate = 'Critical'
+  type: BOOLEAN
+  primary_key: false
+  description: "Financial Vulnerability Zone (KB #43): is_financial_crisis_risk AND\
+    \ RUR>0.9 AND resourceallocstate='Critical'.\n\n[kb=43]\nOperations facing Financial\
+    \ Crisis Risk where RUR > 0.9 AND resourceallocstate is 'Critical', indicating\
+    \ dangerous convergence of financial instability and high resource utilization\
+    \ \u2014 Identifies operations at severe risk due to both funding and resource\
+    \ constraints\n[/kb=43]"
+  label: Financial Vulnerability Zone
+  hidden: false
+  meta:
+    kb_id: 43
+- name: is_rapid_response_success_model
+  sql: ((100.0 / (estdurationdays + 1)) * (transportation.deliverysuccessrate / 100.0)
+    * ((4 - (CASE respphase WHEN 'Initial' THEN 1 WHEN 'Emergency' THEN 2 WHEN 'Recovery'
+    THEN 3 WHEN 'Reconstruction' THEN 4 ELSE 0 END)) / 3.0)) > 20 AND ((transportation.deliverysuccessrate
+    / 100.0) * (1 - transportation.avgdeliveryhours / 24.0) * (1 + transportation.distributionpoints
+    / 10.0)) > 2.5 AND transportation.deliverysuccessrate > 85
+  type: BOOLEAN
+  primary_key: false
+  description: "Rapid Response Success Model (KB #49): RTER>20 AND OEI>2.5 AND deliverysuccessrate>85.\n\
+    \n[kb=49]\nOperations where RTER > 20 AND OEI > 2.5 AND deliverysuccessrate >\
+    \ 85, representing highly effective and rapidly deployed response operations that\
+    \ can serve as models for future disasters \u2014 Identifies exemplary rapid deployment\
+    \ operations\n[/kb=49]"
+  label: Rapid Response Success Model
+  hidden: false
+  meta:
+    kb_id: 49
+- name: community_resilience_classification
+  sql: CASE WHEN (beneficiariesandassessments.localcapacitygrowth = 'Active' AND beneficiariesandassessments.commengagelvl
+    = 'High' AND (beneficiariesandassessments.benefeedbackscore * 10 + (CASE beneficiariesandassessments.commengagelvl
+    WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE 0 END) * 20 + beneficiariesandassessments.distequityidx
+    * 50) > 70) THEN 'Community Resilience Builder' WHEN ((((beneficiariesandassessments.benefeedbackscore
+    * 10 + (CASE beneficiariesandassessments.commengagelvl WHEN 'Low' THEN 1 WHEN
+    'Medium' THEN 2 WHEN 'High' THEN 3 ELSE 0 END) * 20 + beneficiariesandassessments.distequityidx
+    * 50) / 100.0) * (CASE beneficiariesandassessments.commengagelvl WHEN 'Low' THEN
+    1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE 0 END) * ((coordinationandevaluation.stakeholdersatisf
+    + 1) / 5.0)) > 2.5 AND beneficiariesandassessments.vulnerabilityreview = 'Complete'
+    AND NOT (beneficiariesandassessments.localcapacitygrowth = 'Active' AND beneficiariesandassessments.commengagelvl
+    = 'High' AND (beneficiariesandassessments.benefeedbackscore * 10 + (CASE beneficiariesandassessments.commengagelvl
+    WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE 0 END) * 20 + beneficiariesandassessments.distequityidx
+    * 50) > 70)) THEN 'Community Resilience Opportunity' ELSE 'Standard Operation'
+    END
+  type: TEXT
+  primary_key: false
+  description: "Community Resilience Classification (KB #52): Builder, Opportunity,\
+    \ or Standard Operation.\n\n[kb=52]\nOperations satisfying criteria from Community\
+    \ Resilience Builder are classified as Community Resilience Builder; operations\
+    \ meeting criteria from Community Resilience Opportunity are classified as Community\
+    \ Resilience Opportunity; all other operations are classified as Standard Operation\
+    \ \u2014 Categorizes operations based on their community engagement and resilience-building\
+    \ effectiveness\n[/kb=52]"
+  label: Community Resilience Classification
+  hidden: false
+  meta:
+    kb_id: 52
+measures: []
+aggregations: []
+joins:
+- target_model: disasterevents
+  join_pairs:
+  - - opsdistref
+    - distregistry
+  join_type: left
+- target_model: distributionhubs
+  join_pairs:
+  - - opshubref
+    - hubregistry
+  join_type: left
+- target_model: humanresources
+  join_pairs:
+  - - opsregistry
+    - hropsref
+  join_type: left
+- target_model: financials
+  join_pairs:
+  - - opsregistry
+    - finopsref
+  join_type: left
+- target_model: coordinationandevaluation
+  join_pairs:
+  - - opsregistry
+    - coordopsref
+  join_type: left
+- target_model: beneficiariesandassessments
+  join_pairs:
+  - - opsregistry
+    - beneopsref
+  join_type: left
+- target_model: transportation
+  join_pairs:
+  - - opsdistref
+    - transportdistref
+  join_type: left
+- target_model: environmentandhealth
+  join_pairs:
+  - - opsdistref
+    - envdistref
+  join_type: left
+- target_model: supplies
+  join_pairs:
+  - - opsdistref
+    - supplydistref
+  join_type: left
+filters: []
+description: One row per response operation, linked to a disaster event and a distribution
+  hub.
+hidden: false

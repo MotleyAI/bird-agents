@@ -1,0 +1,56 @@
+version: 6
+name: signal_eci
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signaldecoding
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: eci
+      type: DOUBLE
+      sql: (signaldecoding.compressratio * signalclassification.complexidx * signalclassification.entropyval)
+        / 10.0
+  dimensions:
+  - name: signalregistry
+  - name: eci
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.eci\"\
+  \ AS eci FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\",\n\
+  \  (\n    signaldecoding.compressratio * signalclassification.complexidx * signalclassification.entropyval\n\
+  \  ) / 10.0 AS \"signals.eci\"\nFROM signals AS signals\nLEFT JOIN signaldecoding\
+  \ AS signaldecoding\n  ON signals.signalregistry = signaldecoding.signalref\nLEFT\
+  \ JOIN signalclassification AS signalclassification\n  ON signals.signalregistry\
+  \ = signalclassification.signalref) AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: eci
+  sql: eci
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Encoding Complexity Index (ECI) per signal.\n\n[kb=6]\n$\\text{ECI}\
+  \ = \\frac{\\text{CompressRatio} \\times \\text{ComplexIdx} \\times \\text{EntropyVal}}{10}$,\
+  \ where values above 1.5 suggest deliberate information encoding rather than random\
+  \ patterns. \u2014 Evaluates the sophistication of potential encoding in the signal.\n\
+  [/kb=6]"
+hidden: false
+meta:
+  kb_id: 6

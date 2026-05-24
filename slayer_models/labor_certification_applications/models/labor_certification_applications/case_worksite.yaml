@@ -1,0 +1,165 @@
+version: 6
+name: case_worksite
+sql_table: case_worksite
+query_variables: {}
+data_source: labor_certification_applications
+columns:
+- name: dockkey
+  sql: dockkey
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: ws_addr1
+  sql: ws_addr1
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: wscity
+  sql: wscity
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: wsstate
+  sql: wsstate
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: wszip
+  sql: wszip
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: wsheads
+  sql: wsheads
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: wagetrack
+  sql: wagetrack
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: homefirm
+  sql: cases.homefirm
+  type: TEXT
+  primary_key: false
+  description: Employer (homefirm) for the case, denormalized via cases join.
+  hidden: false
+- name: naics_code
+  sql: CAST(cases__employer.employer_contact_info ->> '$.naics_code' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: "Employer NAICS code (KB #6) via cases\u2192employer join."
+  hidden: false
+- name: offered_wage_annual
+  sql: CAST(REPLACE(REPLACE(prevailing_wage.wage_details ->> '$.offered_wage.from',
+    '$', ''), ',', '') AS REAL) * CASE prevailing_wage.wage_details ->> '$.offered_wage.unit'
+    WHEN 'Hour' THEN 2080 WHEN 'Week' THEN 52 WHEN 'Month' THEN 12 WHEN 'Year' THEN
+    1 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: 'Offered wage annualized for this case_worksite, denormalized via prevailing_wage
+    join. Used for KB #28 / KB #31 industry-wage analyses.'
+  hidden: false
+- name: wage_differential_rate
+  sql: (CAST(REPLACE(REPLACE(prevailing_wage.wage_details ->> '$.offered_wage.from',
+    '$', ''), ',', '') AS REAL) * CASE prevailing_wage.wage_details ->> '$.offered_wage.unit'
+    WHEN 'Hour' THEN 2080 WHEN 'Week' THEN 52 WHEN 'Month' THEN 12 WHEN 'Year' THEN
+    1 ELSE NULL END - CAST(REPLACE(REPLACE(REPLACE(prevailing_wage.wage_details ->>
+    '$.prevailing_wage.value', 'USD', ''), ',', ''), ' ', '') AS REAL) * CASE prevailing_wage.wage_details
+    ->> '$.prevailing_wage.unit' WHEN 'Hour' THEN 2080 WHEN 'Week' THEN 52 WHEN 'Month'
+    THEN 12 WHEN 'Year' THEN 1 ELSE NULL END) * 100.0 / NULLIF(CAST(REPLACE(REPLACE(REPLACE(prevailing_wage.wage_details
+    ->> '$.prevailing_wage.value', 'USD', ''), ',', ''), ' ', '') AS REAL) * CASE
+    prevailing_wage.wage_details ->> '$.prevailing_wage.unit' WHEN 'Hour' THEN 2080
+    WHEN 'Week' THEN 52 WHEN 'Month' THEN 12 WHEN 'Year' THEN 1 ELSE NULL END, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "WDR for this case_worksite, denormalized via prevailing_wage join.\
+    \ Used for KB #31 (Industry Wage Differential).\n\n[kb=11]\nWDR = ((Offered Wage\
+    \ - Prevailing Wage) / Prevailing Wage) \xD7 100%. Both offered and prevailing\
+    \ wages are converted to the same payment unit (hourly, weekly, or annually) before\
+    \ calculation. Wage information is included in the wage determination data. \u2014\
+    \ Calculates the percentage difference between offered wage and prevailing wage.\n\
+    [/kb=11]"
+  label: Wage Differential Rate (WDR)
+  hidden: false
+  meta:
+    kb_id: 11
+- name: soccd
+  sql: cases.soccd
+  type: TEXT
+  primary_key: false
+  description: 'SOC code (KB #7) for this case_worksite, denormalized via cases join.'
+  hidden: false
+- name: wd_workers_helper
+  sql: wsheads
+  type: INT
+  primary_key: false
+  description: "Helper for Worksite Density (WD, KB #16). WD = total workers (\u03A3\
+    \ wsheads) / distinct worksite addresses; see worksite_density measure.\n\n[kb=16]\n\
+    WD = (Number of Workers at Worksite / Number of Worksites). Worksite and worker\
+    \ information are recorded as part of the application data. \u2014 Measures the\
+    \ number of visa workers per worksite.\n[/kb=16]"
+  label: Worksite Density (WD)
+  hidden: true
+  meta:
+    kb_id: 16
+measures:
+- formula: wsheads:sum
+  name: total_workers
+  description: 'Total workers across worksites (numerator of KB #16 WD).'
+- formula: ws_addr1:count_distinct
+  name: worksite_count
+  description: 'Distinct worksites count (denominator of KB #16 WD; also numerator/denominator
+    helper for diversity).'
+- formula: wsheads:sum / ws_addr1:count_distinct
+  name: worksite_density
+  description: 'Worksite Density (KB #16): total workers / distinct worksite addresses.'
+- formula: wage_differential_rate:avg
+  name: industry_wage_differential
+  label: Industry Wage Differential (IWD)
+  description: "Industry Wage Differential (KB #31): avg WDR per industry. Group by\
+    \ naics_code.\n\n[kb=31]\nIWD = (Sum of Wage Differential Rates in Industry /\
+    \ Number of Applications in Industry). Wage and industry information are included\
+    \ in the application data. \u2014 Measures the average wage differential in each\
+    \ industry.\n[/kb=31]"
+  meta:
+    kb_id: 31
+aggregations: []
+joins:
+- target_model: cases
+  join_pairs:
+  - - dockkey
+    - filekey
+  join_type: left
+- target_model: prevailing_wage
+  join_pairs:
+  - - wagetrack
+    - trackno
+  join_type: left
+- target_model: worksite
+  join_pairs:
+  - - ws_addr1
+    - w_addr1
+  join_type: left
+- target_model: worksite
+  join_pairs:
+  - - wscity
+    - wcity
+  join_type: left
+- target_model: worksite
+  join_pairs:
+  - - wsstate
+    - wstate
+  join_type: left
+- target_model: worksite
+  join_pairs:
+  - - wszip
+    - wzip
+  join_type: left
+filters: []
+description: Bridge between cases and worksites with workers-per-worksite (wsheads)
+  and wage tracker.
+hidden: false

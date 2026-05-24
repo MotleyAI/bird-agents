@@ -1,0 +1,63 @@
+version: 6
+name: geographic_concentration_index
+source_queries:
+- version: 3
+  name: state_apps
+  source_model: case_worksite
+  measures:
+  - formula: dockkey:count_distinct
+  dimensions:
+  - name: wsstate
+  whole_periods_only: false
+- version: 3
+  name: state_share_sq
+  source_model:
+    source_name: state_apps
+    columns:
+    - name: share_sq
+      type: DOUBLE
+      sql: (dockkey_count_distinct * 1.0 / SUM(dockkey_count_distinct) OVER ()) *
+        (dockkey_count_distinct * 1.0 / SUM(dockkey_count_distinct) OVER ())
+  dimensions:
+  - name: wsstate
+  - name: share_sq
+  whole_periods_only: false
+- version: 3
+  source_model: state_share_sq
+  measures:
+  - formula: share_sq:sum
+    name: gci
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"state_share_sq.share_sq_sum\" AS share_sq_sum FROM (SELECT\n\
+  \  SUM(state_share_sq.share_sq) AS \"state_share_sq.share_sq_sum\"\nFROM (\n  SELECT\n\
+  \    \"state_apps.wsstate\" AS wsstate,\n    \"state_apps.share_sq\" AS share_sq\n\
+  \  FROM (\n    SELECT\n      state_apps.wsstate AS \"state_apps.wsstate\",\n   \
+  \   (\n        dockkey_count_distinct * 1.0 / SUM(dockkey_count_distinct) OVER ()\n\
+  \      ) * (\n        dockkey_count_distinct * 1.0 / SUM(dockkey_count_distinct)\
+  \ OVER ()\n      ) AS \"state_apps.share_sq\"\n    FROM (\n      SELECT\n      \
+  \  \"case_worksite.wsstate\" AS wsstate,\n        \"case_worksite.dockkey_count_distinct\"\
+  \ AS dockkey_count_distinct\n      FROM (\n        SELECT\n          case_worksite.wsstate\
+  \ AS \"case_worksite.wsstate\",\n          COUNT(DISTINCT case_worksite.dockkey)\
+  \ AS \"case_worksite.dockkey_count_distinct\"\n        FROM case_worksite AS case_worksite\n\
+  \        GROUP BY\n          case_worksite.wsstate\n      ) AS _inner\n    ) AS\
+  \ state_apps\n  ) AS _inner\n) AS state_share_sq) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: share_sq_sum
+  sql: share_sq_sum
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Geographic Concentration Index (KB #33): Herfindahl-style sum((apps_in_state\
+  \ / total_apps)^2). Single-row model with column share_sq_sum = the GCI.\n\n[kb=33]\n\
+  GCI = sum((Applications in State i / Total Applications)^2) for all states. State\
+  \ and application information are included in the application data. \u2014 Measures\
+  \ the geographic concentration of visa applications.\n[/kb=33]"
+hidden: false
+meta:
+  kb_id: 33

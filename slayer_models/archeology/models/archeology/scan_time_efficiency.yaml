@@ -1,0 +1,122 @@
+version: 6
+name: scan_time_efficiency
+source_queries:
+- version: 3
+  name: pc_per_arcref
+  source_model: scanpointcloud
+  measures:
+  - formula: sqs:avg
+    name: sqs
+  - formula: coverpct:avg
+    name: coverpct
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  name: scans_per_arcref
+  source_model: scans
+  measures:
+  - formula: spanmin:avg
+    name: spanmin
+  - formula: scancount:avg
+    name: scancount
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  name: merged
+  source_model:
+    source_name: pc_per_arcref
+    joins:
+    - target_model: scans_per_arcref
+      join_pairs:
+      - - arcref
+        - arcref
+  dimensions:
+  - name: arcref
+  - name: sqs
+  - name: coverpct
+  - name: spanmin
+    model: scans_per_arcref
+  - name: scancount
+    model: scans_per_arcref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: merged
+    columns:
+    - name: ste
+      type: DOUBLE
+      sql: sqs * sqrt(coverpct) / (scans_per_arcref__spanmin * sqrt(scans_per_arcref__scancount))
+  measures:
+  - formula: ste:avg
+    name: ste
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"merged.arcref\" AS arcref, \"merged.ste\" AS ste FROM\
+  \ (SELECT\n  merged.arcref AS \"merged.arcref\",\n  AVG(\n    merged.sqs * SQRT(merged.coverpct)\
+  \ / (\n      merged.scans_per_arcref__spanmin * SQRT(merged.scans_per_arcref__scancount)\n\
+  \    )\n  ) AS \"merged.ste\"\nFROM (\n  SELECT\n    \"pc_per_arcref.arcref\" AS\
+  \ arcref,\n    \"pc_per_arcref.sqs\" AS sqs,\n    \"pc_per_arcref.coverpct\" AS\
+  \ coverpct,\n    \"pc_per_arcref.scans_per_arcref.spanmin\" AS scans_per_arcref__spanmin,\n\
+  \    \"pc_per_arcref.scans_per_arcref.scancount\" AS scans_per_arcref__scancount\n\
+  \  FROM (\n    SELECT\n      pc_per_arcref.arcref AS \"pc_per_arcref.arcref\",\n\
+  \      pc_per_arcref.sqs AS \"pc_per_arcref.sqs\",\n      pc_per_arcref.coverpct\
+  \ AS \"pc_per_arcref.coverpct\",\n      scans_per_arcref.spanmin AS \"pc_per_arcref.scans_per_arcref.spanmin\"\
+  ,\n      scans_per_arcref.scancount AS \"pc_per_arcref.scans_per_arcref.scancount\"\
+  \n    FROM (\n      SELECT\n        \"scanpointcloud.arcref\" AS arcref,\n     \
+  \   \"scanpointcloud.sqs\" AS sqs,\n        \"scanpointcloud.coverpct\" AS coverpct\n\
+  \      FROM (\n        SELECT\n          scanpointcloud.arcref AS \"scanpointcloud.arcref\"\
+  ,\n          AVG(\n            (\n              CASE\n                WHEN (\n \
+  \                 (\n                    LOG10(scanpointcloud.scanresolmm * 1000.0)\
+  \ / LOG10(scanpointcloud.pointdense)\n                  ) * 5.0\n              \
+  \  ) > 0\n                THEN POWER(\n                  10.0 / (\n            \
+  \        (\n                      LOG10(scanpointcloud.scanresolmm * 1000.0) / LOG10(scanpointcloud.pointdense)\n\
+  \                    ) * 5.0\n                  ),\n                  1.5\n    \
+  \            )\n                ELSE NULL\n              END\n            ) * (\n\
+  \              (\n                scanpointcloud.coverpct * (\n                \
+  \  1 + (\n                    scanpointcloud.lappct / 100.0\n                  )\
+  \ * (\n                    1 - scanpointcloud.coverpct / 100.0\n               \
+  \   )\n                )\n              ) / 100.0\n            ) * POWER(1 - scanpointcloud.noisedb\
+  \ / 30.0, 2)\n          ) AS \"scanpointcloud.sqs\",\n          AVG(scanpointcloud.coverpct)\
+  \ AS \"scanpointcloud.coverpct\"\n        FROM scanpointcloud AS scanpointcloud\n\
+  \        GROUP BY\n          scanpointcloud.arcref\n      ) AS _inner\n    ) AS\
+  \ pc_per_arcref\n    LEFT JOIN (\n      (\n        SELECT\n          \"scans.arcref\"\
+  \ AS arcref,\n          \"scans.spanmin\" AS spanmin,\n          \"scans.scancount\"\
+  \ AS scancount\n        FROM (\n          SELECT\n            scans.arcref AS \"\
+  scans.arcref\",\n            AVG(scans.spanmin) AS \"scans.spanmin\",\n        \
+  \    AVG(scans.scancount) AS \"scans.scancount\"\n          FROM scans AS scans\n\
+  \          GROUP BY\n            scans.arcref\n        ) AS _inner\n      )\n  \
+  \  ) AS scans_per_arcref\n      ON pc_per_arcref.arcref = scans_per_arcref.arcref\n\
+  \  ) AS _inner\n) AS merged\nGROUP BY\n  merged.arcref) AS _inner"
+data_source: archeology
+columns:
+- name: arcref
+  sql: arcref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ste
+  sql: ste
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Scan Time Efficiency (STE, KB #30): SQS * sqrt(CoverPct) / (SpanMin\
+  \ * sqrt(ScanCount)). Higher = more efficient use of scanning time. Multistage:\
+  \ scanpointcloud (SQS, CoverPct per arcref) joined to scans (SpanMin, ScanCount\
+  \ per arcref) on the shared project key.\n\n[kb=30]\nSTE = \\frac{SQS \\times \\\
+  sqrt{CoverPct}}{SpanMin \\times \\sqrt{ScanCount}}, \\text{ where SQS is the Scan\
+  \ Quality Score and higher STE values indicate more efficient use of scanning time\
+  \ relative to coverage achieved.} \u2014 Measures how efficiently scanning time\
+  \ was used relative to data quality and completeness metrics.\n[/kb=30]"
+hidden: false
+meta:
+  kb_id: 30

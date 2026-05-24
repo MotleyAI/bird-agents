@@ -1,0 +1,136 @@
+version: 6
+name: news_systemperformance
+sql_table: systemperformance
+query_variables: {}
+data_source: news
+columns:
+- name: rectrace
+  sql: rectrace
+  type: INT
+  primary_key: true
+  description: Primary key.
+  hidden: false
+- name: perfts
+  sql: perfts
+  type: TIMESTAMP
+  primary_key: false
+  description: When this record was logged.
+  hidden: false
+- name: resptime
+  sql: resptime
+  type: INT
+  primary_key: false
+  description: System response time in milliseconds.
+  hidden: false
+- name: loadscore
+  sql: loadscore
+  type: DOUBLE
+  primary_key: false
+  description: System load score (0..1).
+  hidden: false
+- name: errcount
+  sql: errcount
+  type: TEXT
+  primary_key: false
+  description: "Error count enum (typically 0\u20135). KB #27: indicator of system\
+    \ health and operational robustness.\n\n[kb=27]\nError counts, typically ranging\
+    \ from 0 to 5, serve as essential indicators of system health and operational\
+    \ robustness. \u2014 Demonstrates the importance of monitoring error counts to\
+    \ evaluate system reliability.\n[/kb=27]"
+  label: Error Count Illustration
+  hidden: false
+  meta:
+    kb_id: 27
+- name: warncount
+  sql: warncount
+  type: INT
+  primary_key: false
+  description: Warning count.
+  hidden: false
+- name: perfscore
+  sql: perfscore
+  type: DOUBLE
+  primary_key: false
+  description: System performance score (0..1).
+  hidden: false
+- name: cachestate
+  sql: cachestate
+  type: TEXT
+  primary_key: false
+  description: 'Cache status: Hit, Expired, Miss.'
+  hidden: false
+- name: apiver
+  sql: apiver
+  type: TEXT
+  primary_key: false
+  description: API version.
+  hidden: false
+- name: cliver
+  sql: cliver
+  type: TEXT
+  primary_key: false
+  description: Client version.
+  hidden: false
+- name: featset
+  sql: featset
+  type: TEXT
+  primary_key: false
+  description: Feature flags / toggles.
+  hidden: false
+- name: devlink
+  sql: devlink
+  type: INT
+  primary_key: false
+  description: FK to news_devices.devkey.
+  hidden: false
+- name: seshlink
+  sql: seshlink
+  type: INT
+  primary_key: false
+  description: FK to news_sessions.seshkey.
+  hidden: false
+- name: system_performance_index
+  sql: ((perfscore - loadscore) * 100.0) / NULLIF(resptime, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "System Performance Index (SPI, KB #4) = (perfscore - loadscore) \xD7\
+    \ 100 / resptime.\n\n[kb=4]\nSPI = \\frac{(perfscore - loadscore) \\times 100}{resptime},\
+    \ \\text{ where resptime is measured in milliseconds.} \u2014 Measures overall\
+    \ system performance by considering response time, load, and performance scores.\n\
+    [/kb=4]"
+  label: System Performance Index (SPI)
+  hidden: false
+  meta:
+    kb_id: 4
+- name: performance_status
+  sql: CASE WHEN resptime > 200 THEN 'Critical' WHEN resptime > 150 THEN 'Warning'
+    ELSE 'Normal' END
+  type: TEXT
+  primary_key: false
+  description: "Performance Status (KB #51): resptime>200 'Critical', >150 'Warning',\
+    \ else 'Normal'.\n\n[kb=51]\nA CASE-based classification where resptime > 200\
+    \ is 'Critical', >150 is 'Warning', and others are 'Normal'. \u2014 Categorizes\
+    \ system records based on response time into Critical, Warning, or Normal bands.\n\
+    [/kb=51]"
+  label: Performance Status
+  hidden: false
+  meta:
+    kb_id: 51
+measures: []
+aggregations: []
+joins:
+- target_model: news_devices
+  join_pairs:
+  - - devlink
+    - devkey
+  join_type: left
+- target_model: news_sessions
+  join_pairs:
+  - - seshlink
+    - seshkey
+  join_type: left
+filters: []
+description: 'News DB: System performance log records per device/session: response
+  time, load score, error/warning counts, perf score, cache state, API/client version.
+  Drives KB #4 SPI and KB #51 Performance Status.'
+hidden: false

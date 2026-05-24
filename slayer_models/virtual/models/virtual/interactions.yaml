@@ -1,0 +1,176 @@
+version: 6
+name: interactions
+sql_table: interactions
+query_variables: {}
+data_source: virtual
+columns:
+- name: activityreg
+  sql: activityreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: timemark
+  sql: timemark
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: interactfanpivot
+  sql: interactfanpivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: interactidolpivot
+  sql: interactidolpivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: actkind
+  sql: actkind
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: actplat
+  sql: actplat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: platused
+  sql: platused
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: devtype
+  sql: devtype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: appver
+  sql: appver
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: giftfreq
+  sql: giftfreq
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: gifttot
+  sql: gifttot
+  type: INT
+  primary_key: false
+  description: "Total number of gifts sent in this interaction (KB #7). Bands: <10\
+    \ minimal gifting, 10-50 moderate support, >50 substantial support. Combined with\
+    \ giftvalusd to assess economic support level.\n\n[kb=7]\ngifttot represents the\
+    \ total number of gifts sent by fans, typically classified as: fewer than 10 is\
+    \ considered minimal gifting, 10-50 represents moderate support, and above 50\
+    \ indicates substantial support; giftvalusd represents the USD value of gifts,\
+    \ generally $1-5 for small support, $5-20 for moderate support, $20-100 for large\
+    \ support, and above $100 for super support. Both metrics combined assess a fan's\
+    \ economic support level. \u2014 Explains the statistical significance of gift\
+    \ quantity and value\n[/kb=7]"
+  label: interactions.gifttot_interactions.giftvalusd
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 7
+- name: giftvalusd
+  sql: giftvalusd
+  type: DOUBLE
+  primary_key: false
+  description: "USD value of gifts sent (KB #7). Bands: $1-5 small support, $5-20\
+    \ moderate, $20-100 large, >$100 super support. Combined with gifttot to assess\
+    \ economic support level.\n\n[kb=7]\ngifttot represents the total number of gifts\
+    \ sent by fans, typically classified as: fewer than 10 is considered minimal gifting,\
+    \ 10-50 represents moderate support, and above 50 indicates substantial support;\
+    \ giftvalusd represents the USD value of gifts, generally $1-5 for small support,\
+    \ $5-20 for moderate support, $20-100 for large support, and above $100 for super\
+    \ support. Both metrics combined assess a fan's economic support level. \u2014\
+    \ Explains the statistical significance of gift quantity and value\n[/kb=7]"
+  label: interactions.gifttot_interactions.giftvalusd
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 7
+- name: favgifttag
+  sql: favgifttag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: engagement_metrics
+  sql: engagement_metrics
+  type: TEXT
+  primary_key: false
+  description: 'JSONB: session (sessdurmin, liveatt, watchhrs), chat_activity (chatmsg,
+    chatlang, msgtone, emojicount, stkcount). Sub-fields are exposed as helper columns.'
+  hidden: false
+- name: sessdurmin
+  sql: CAST(json_extract(engagement_metrics, '$.session.sessdurmin') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Session duration in minutes, extracted from engagement_metrics.session.sessdurmin.
+  hidden: false
+- name: liveatt
+  sql: CAST(json_extract(engagement_metrics, '$.session.liveatt') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Live stream attendances in this session, extracted from engagement_metrics.session.liveatt.
+  hidden: false
+- name: watchhrs
+  sql: CAST(json_extract(engagement_metrics, '$.session.watchhrs') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Watch hours, extracted from engagement_metrics.session.watchhrs.
+  hidden: false
+- name: chatmsg
+  sql: CAST(json_extract(engagement_metrics, '$.chat_activity.chatmsg') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Chat messages count, extracted from engagement_metrics.chat_activity.chatmsg.
+  hidden: false
+- name: msgtone
+  sql: engagement_metrics ->> '$.chat_activity.msgtone'
+  type: TEXT
+  primary_key: false
+  description: Message sentiment (Negative / Positive / Neutral), extracted from engagement_metrics.chat_activity.msgtone.
+  hidden: false
+- name: chatlang
+  sql: engagement_metrics ->> '$.chat_activity.chatlang'
+  type: TEXT
+  primary_key: false
+  description: Chat language usage (Mixed / Translation / English / Native), extracted
+    from engagement_metrics.chat_activity.chatlang.
+  hidden: false
+- name: stkcount
+  sql: CAST(json_extract(engagement_metrics, '$.chat_activity.stkcount') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Stickers count, extracted from engagement_metrics.chat_activity.stkcount.
+  hidden: false
+- name: emojicount
+  sql: CAST(json_extract(engagement_metrics, '$.chat_activity.emojicount') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Emoji count, extracted from engagement_metrics.chat_activity.emojicount.
+  hidden: false
+- name: giq
+  sql: giftvalusd * gifttot / 100.0
+  type: DOUBLE
+  primary_key: false
+  description: "Gift Impact Quotient (GIQ, KB #34) = giftvalusd * gifttot / 100. Combined\
+    \ volume and value of gifting.\n\n[kb=34]\nGIQ = \\frac{giftvalusd \\times gifttot}{100},\
+    \ \\text{ producing an amplified measure of gifting significance by combining\
+    \ both quantity and monetary value.} \u2014 Evaluates the relative impact of a\
+    \ fan's gifting behavior considering both volume and value\n[/kb=34]"
+  label: Gift Impact Quotient (GIQ)
+  hidden: false
+  meta:
+    kb_id: 34
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: Per-interaction events between a fan and a virtual idol. Holds platform/device,
+  gift counts and values, and engagement_metrics JSON (session, chat_activity).
+hidden: false

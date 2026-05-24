@@ -1,0 +1,77 @@
+version: 6
+name: conditionassessments
+sql_table: conditionassessments
+query_variables: {}
+data_source: museum
+columns:
+- name: conditionassessregistry
+  sql: conditionassessregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: artrefexamined
+  sql: artrefexamined
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: showcaserefexamined
+  sql: showcaserefexamined
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lightreadrefobserved
+  sql: lightreadrefobserved
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: condassessscore
+  sql: condassessscore
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: conserveassessdate
+  sql: conserveassessdate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: nextassessdue
+  sql: nextassessdue
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artrefexamined
+    - artregistry
+  join_type: left
+- target_model: lightandradiationreadings
+  join_pairs:
+  - - lightreadrefobserved
+    - lightradregistry
+  join_type: left
+- target_model: showcases
+  join_pairs:
+  - - showcaserefexamined
+    - showcasereg
+  join_type: left
+- target_model: sensitivitydata
+  join_pairs:
+  - - artrefexamined
+    - artref
+  join_type: left
+- target_model: artifactratings
+  join_pairs:
+  - - artrefexamined
+    - artref
+  join_type: left
+filters: []
+hidden: false

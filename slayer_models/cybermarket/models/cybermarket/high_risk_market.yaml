@@ -1,0 +1,82 @@
+version: 6
+name: high_risk_market
+source_queries:
+- version: 3
+  name: high_alerts_per_market
+  source_model: securitymonitoring
+  measures:
+  - formula: '*:count'
+    name: high_alert_count
+  dimensions:
+  - name: mktref
+    model: communication.transactions
+  filters:
+  - alertsev = 'High'
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: markets
+    joins:
+    - target_model: high_alerts_per_market
+      join_pairs:
+      - - mktregistry
+        - communication__transactions__mktref
+    columns:
+    - name: is_high_risk_market
+      type: DOUBLE
+      sql: CASE WHEN markets.mrs > 500 AND markets.vendcount > 100 AND markets.dlyflow
+        > 5000 AND COALESCE(high_alerts_per_market.high_alert_count, 0) >= 1 THEN
+        1 ELSE 0 END
+  dimensions:
+  - name: mktregistry
+  - name: is_high_risk_market
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"markets.mktregistry\" AS mktregistry, \"markets.is_high_risk_market\"\
+  \ AS is_high_risk_market FROM (SELECT\n  markets.mktregistry AS \"markets.mktregistry\"\
+  ,\n  CASE\n    WHEN (\n      (\n        markets.dlyflow * 1.0 / 1000\n      ) +\
+  \ (\n        markets.esccomprate * 0.2\n      ) + (\n        markets.interscore\
+  \ * 0.3\n      ) + (\n        markets.vendcount * 0.1\n      ) - (\n        markets.mktspan\
+  \ * 1.0 / 100\n      )\n    ) > 500\n    AND markets.vendcount > 100\n    AND markets.dlyflow\
+  \ > 5000\n    AND COALESCE(high_alerts_per_market.high_alert_count, 0) >= 1\n  \
+  \  THEN 1\n    ELSE 0\n  END AS \"markets.is_high_risk_market\"\nFROM markets AS\
+  \ markets\nLEFT JOIN (\n  (\n    SELECT\n      \"securitymonitoring.communication.transactions.mktref\"\
+  \ AS communication__transactions__mktref,\n      \"securitymonitoring.high_alert_count\"\
+  \ AS high_alert_count\n    FROM (\n      SELECT\n        communication__transactions.mktref\
+  \ AS \"securitymonitoring.communication.transactions.mktref\",\n        COUNT(*)\
+  \ AS \"securitymonitoring.high_alert_count\"\n      FROM securitymonitoring AS securitymonitoring\n\
+  \      LEFT JOIN communication AS communication\n        ON securitymonitoring.commref\
+  \ = communication.commregistry\n      LEFT JOIN transactions AS communication__transactions\n\
+  \        ON communication.txref = communication__transactions.txregistry\n     \
+  \ WHERE\n        securitymonitoring.alertsev = 'High'\n      GROUP BY\n        communication__transactions.mktref\n\
+  \    ) AS _inner\n  )\n) AS high_alerts_per_market\n  ON markets.mktregistry = high_alerts_per_market.communication__transactions__mktref)\
+  \ AS _inner"
+data_source: cybermarket
+columns:
+- name: mktregistry
+  sql: mktregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_high_risk_market
+  sql: is_high_risk_market
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "High-Risk Market (KB #20): MRS > 500, vendcount > 100, dlyflow > 5000,\
+  \ AND >= 1 'High' security alert connected to the market via tx -> communication\
+  \ -> security monitoring. Multistage: stage 1 counts 'High' alerts per market by\
+  \ aggregating securitymonitoring with the chain to transactions.mktref via communication;\
+  \ stage 2 anchors at markets and applies the four-condition boolean using the existing\
+  \ mrs column and the joined high-alert count.\n\n[kb=20]\nA market with MRS > 500,\
+  \ having more than 100 vendors, a daily flow exceeding 5000 transactions, and at\
+  \ least one 'High' security alert. These markets typically have the highest potential\
+  \ for illicit activity and represent priority monitoring targets for investigators.\
+  \ \u2014 Identifies markets with significant operational risk factors\n[/kb=20]"
+hidden: false
+meta:
+  kb_id: 20

@@ -1,0 +1,119 @@
+version: 6
+name: retentionandinfluence
+sql_table: retentionandinfluence
+query_variables: {}
+data_source: virtual
+columns:
+- name: retreg
+  sql: retreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: retainengagepivot
+  sql: retainengagepivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: retainloyaltypivot
+  sql: retainloyaltypivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: churnflag
+  sql: churnflag
+  type: TEXT
+  primary_key: false
+  description: "Churn risk rating (KB #8). 'None' = extremely low risk (high-frequency\
+    \ interaction + recent consumption); 'Low' = slight risk (slightly decreased login\
+    \ freq); 'Medium' = moderate risk (significantly decreased interaction/consumption\
+    \ + longer login intervals); 'High' = severe risk (no logins or interactions in\
+    \ past 14-30 days, immediate intervention).\n\n[kb=8]\n'None' indicates extremely\
+    \ low churn risk, with users maintaining high-frequency interaction and recent\
+    \ consumption; 'Low' represents slight churn risk with slightly decreased login\
+    \ frequency; 'Medium' indicates moderate churn risk with significantly decreased\
+    \ interaction and consumption frequency and increased login intervals; 'High'\
+    \ represents severe churn risk with no logins or interactions in the past 14-30\
+    \ days, requiring immediate intervention. \u2014 Explains the judgment basis for\
+    \ churn risk rating\n[/kb=8]"
+  label: retentionandinfluence.churnflag
+  hidden: false
+  meta:
+    kb_id: 8
+- name: reactcount
+  sql: reactcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: refcount
+  sql: refcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: contreach
+  sql: contreach
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: viralcont
+  sql: viralcont
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: trendpart
+  sql: trendpart
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: hashuse
+  sql: hashuse
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: churnflag_numeric
+  sql: CASE churnflag WHEN 'None' THEN 0 WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN
+    'High' THEN 3 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric mapping of churnflag (KB #52) used by RRF and other retention\
+    \ calcs: None=0, Low=1, Medium=2, High=3.\n\n[kb=52]\nTransforms the churnflag\
+    \ enum values into numeric equivalents for use in calculations and risk models:\
+    \ 'None' maps to 0 (representing minimal risk), 'Low' maps to 1 (representing\
+    \ slight risk), 'Medium' maps to 2 (representing moderate risk), and 'High' maps\
+    \ to 3 (representing severe risk). This numeric mapping enables mathematical operations\
+    \ in retention analysis formulas, especially for the Retention Risk Factor (RRF)\
+    \ calculation. \u2014 Converts the churn risk enum values to numeric form for\
+    \ analytical calculations\n[/kb=52]"
+  label: Churn Risk Numeric Mapping
+  hidden: false
+  meta:
+    kb_id: 52
+measures: []
+aggregations: []
+joins:
+- target_model: engagement
+  join_pairs:
+  - - retainengagepivot
+    - engagereg
+  join_type: left
+- target_model: loyaltyandachievements
+  join_pairs:
+  - - retainloyaltypivot
+    - loyaltyreg
+  join_type: left
+filters: []
+description: Per-fan churn risk and influence/reach metrics. Holds churnflag, reactivation
+  count, referrals, content reach, viral content count, trend participation, hashtag
+  use.
+hidden: false

@@ -1,0 +1,66 @@
+version: 6
+name: trader_cancel_mod_profile
+sql: "SELECT\n  trdref AS tradereg,\n  AVG(cancelpct) AS avg_cancelpct,\n  AVG(CASE\
+  \ WHEN cancelpct >= 1.0 THEN NULL ELSE modfreq * 1.0 / (1.0 - cancelpct) END) AS\
+  \ avg_omi,\n  AVG(CASE WHEN CAST(darkusage AS REAL) > 0.5 THEN 1.0 ELSE 0.0 END)\
+  \ AS dark_usage_share\nFROM transactionrecord\nGROUP BY trdref"
+query_variables: {}
+data_source: insider
+columns:
+- name: tradereg
+  sql: tradereg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: avg_cancelpct
+  sql: avg_cancelpct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: avg_omi
+  sql: avg_omi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: dark_usage_share
+  sql: dark_usage_share
+  type: DOUBLE
+  primary_key: false
+  description: 'Share of trader''s transactions whose darkusage is non-empty (used
+    by KB #47).'
+  hidden: false
+- name: is_high_cancel_mod_trader
+  sql: avg_cancelpct > 0.5 OR avg_omi > 1.5
+  type: BOOLEAN
+  primary_key: false
+  description: "High Cancellation/Modification Trader (KB #18): avg cancelpct > 0.5\
+    \ OR avg OMI > 1.5.\n\n[kb=18]\nA trader is flagged if their average cancelpct\
+    \ > 0.5 OR their average OMI > 1.5 across their transactions. \u2014 Identifies\
+    \ traders who frequently cancel or modify orders, potentially indicating manipulative\
+    \ intent or poor execution strategy.\n[/kb=18]"
+  label: High Cancellation/Modification Trader
+  hidden: false
+  meta:
+    kb_id: 18
+- name: is_potentially_evasive_modifier
+  sql: (avg_cancelpct > 0.5 OR avg_omi > 1.5) AND dark_usage_share > 0.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Potentially Evasive Order Modifier (KB #47): High Cancellation/Modification\
+    \ Trader AND dark-pool usage > 50% of transactions.\n\n[kb=47]\nA trader identified\
+    \ as a High Cancellation/Modification Trader  AND whose transaction records show\
+    \ Dark Pool Usage  in more than 50% of instances. \u2014 Flags high cancellation/modification\
+    \ traders who make significant use of dark pools.\n[/kb=47]"
+  label: Potentially Evasive Order Modifier
+  hidden: false
+  meta:
+    kb_id: 47
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Per-trader average cancelpct + average OMI over their transactions,
+  with KB #18 flag (High Cancellation/Modification Trader): avg cancelpct > 0.5 OR
+  avg OMI > 1.5.'
+hidden: false
+meta: {}

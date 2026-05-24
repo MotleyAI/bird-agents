@@ -1,0 +1,28 @@
+version: 6
+name: users
+sql_table: users
+query_variables: {}
+data_source: crypto
+columns:
+- name: usersnode
+  sql: usersnode
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: userstamp
+  sql: userstamp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: acctscope
+  sql: acctscope
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

@@ -1,0 +1,23 @@
+version: 6
+name: categories
+sql_table: categories
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: catref
+  sql: catref
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: classtype
+  sql: classtype
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

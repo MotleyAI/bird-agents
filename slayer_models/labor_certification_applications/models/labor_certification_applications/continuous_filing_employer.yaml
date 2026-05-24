@@ -1,0 +1,69 @@
+version: 6
+name: continuous_filing_employer
+source_queries:
+- version: 3
+  name: emp_months
+  source_model: cases
+  measures:
+  - formula: recv_month:count_distinct
+  dimensions:
+  - name: homefirm
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: emp_months
+    columns:
+    - name: is_continuous_filer
+      type: BOOLEAN
+      sql: recv_month_count_distinct >= 9
+  dimensions:
+  - name: homefirm
+  - name: recv_month_count_distinct
+  - name: is_continuous_filer
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"emp_months.homefirm\" AS homefirm, \"emp_months.recv_month_count_distinct\"\
+  \ AS recv_month_count_distinct, \"emp_months.is_continuous_filer\" AS is_continuous_filer\
+  \ FROM (SELECT\n  emp_months.homefirm AS \"emp_months.homefirm\",\n  emp_months.recv_month_count_distinct\
+  \ AS \"emp_months.recv_month_count_distinct\",\n  recv_month_count_distinct >= 9\
+  \ AS \"emp_months.is_continuous_filer\"\nFROM (\n  SELECT\n    \"cases.homefirm\"\
+  \ AS homefirm,\n    \"cases.recv_month_count_distinct\" AS recv_month_count_distinct\n\
+  \  FROM (\n    SELECT\n      cases.homefirm AS \"cases.homefirm\",\n      COUNT(DISTINCT\
+  \ CAST(SUBSTRING(recvday, 6, 2) AS INTEGER)) AS \"cases.recv_month_count_distinct\"\
+  \n    FROM cases AS cases\n    GROUP BY\n      cases.homefirm\n  ) AS _inner\n)\
+  \ AS emp_months) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: homefirm
+  sql: homefirm
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: recv_month_count_distinct
+  sql: recv_month_count_distinct
+  type: DOUBLE
+  primary_key: false
+  description: 'Month of receipt (1-12), parsed from recvday ''YYYY/MM/DD''. Used
+    for KB #23/50 seasonal analysis.'
+  hidden: false
+  format:
+    type: integer
+- name: is_continuous_filer
+  sql: is_continuous_filer
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Continuous Filer per employer (KB #58): submits visa applications in\
+  \ \u22659 distinct months in the year. Per-employer rows. NOTE: this dataset has\
+  \ all receipt dates on 2023-12-21 so the count is 1 month and no employer qualifies.\n\
+  \n[kb=58]\nAn employer is considered a continuous filer if they submit visa applications\
+  \ in at least 9 months of the year, indicating consistent reliance on foreign worker\
+  \ programs. \u2014 Defines employers with regular, ongoing visa application activity.\n\
+  [/kb=58]"
+hidden: false
+meta:
+  kb_id: 58

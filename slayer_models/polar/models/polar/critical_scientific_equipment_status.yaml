@@ -1,0 +1,162 @@
+version: 6
+name: critical_scientific_equipment_status
+source_queries:
+- version: 3
+  name: ser_flag_p_eq
+  source_model: scientific
+  measures:
+  - formula: ser:avg
+    name: ser
+  dimensions:
+  - name: scieqref
+  whole_periods_only: false
+- version: 3
+  name: smsp_p_eq
+  source_model: scientific_mission_success_probability
+  measures:
+  - formula: smsp:avg
+    name: smsp
+  dimensions:
+  - name: scieqref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: ser_flag_p_eq
+    joins:
+    - target_model: smsp_p_eq
+      join_pairs:
+      - - scieqref
+        - scieqref
+    columns:
+    - name: cses_full_op_flag
+      type: DOUBLE
+      sql: CASE WHEN ser > 0.9 AND smsp_p_eq__smsp > 0.85 THEN 1 ELSE 0 END
+    - name: cses_degraded_flag
+      type: DOUBLE
+      sql: CASE WHEN NOT (ser > 0.9 AND smsp_p_eq__smsp > 0.85) AND ser > 0.7 AND
+        smsp_p_eq__smsp > 0.6 THEN 1 ELSE 0 END
+  measures:
+  - formula: ser:avg
+    name: ser
+  - formula: smsp_p_eq.smsp:avg
+    name: smsp
+  - formula: cses_full_op_flag:min
+    name: is_fully_operational
+  - formula: cses_degraded_flag:min
+    name: is_degraded_operation
+  dimensions:
+  - name: scieqref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"ser_flag_p_eq.scieqref\" AS scieqref, \"ser_flag_p_eq.ser\"\
+  \ AS ser, \"ser_flag_p_eq.is_fully_operational\" AS is_fully_operational, \"ser_flag_p_eq.is_degraded_operation\"\
+  \ AS is_degraded_operation, \"ser_flag_p_eq.smsp_p_eq.smsp_avg\" AS smsp_p_eq__smsp_avg\
+  \ FROM (WITH _base AS (\nSELECT\n  ser_flag_p_eq.scieqref AS \"ser_flag_p_eq.scieqref\"\
+  ,\n  AVG(ser_flag_p_eq.ser) AS \"ser_flag_p_eq.ser\",\n  MIN(\n    CASE\n      WHEN\
+  \ ser_flag_p_eq.ser > 0.9 AND ser_flag_p_eq.smsp_p_eq__smsp > 0.85\n      THEN 1\n\
+  \      ELSE 0\n    END\n  ) AS \"ser_flag_p_eq.is_fully_operational\",\n  MIN(\n\
+  \    CASE\n      WHEN NOT (\n        ser_flag_p_eq.ser > 0.9 AND ser_flag_p_eq.smsp_p_eq__smsp\
+  \ > 0.85\n      )\n      AND ser_flag_p_eq.ser > 0.7\n      AND ser_flag_p_eq.smsp_p_eq__smsp\
+  \ > 0.6\n      THEN 1\n      ELSE 0\n    END\n  ) AS \"ser_flag_p_eq.is_degraded_operation\"\
+  \nFROM (\n  SELECT\n    \"scientific.scieqref\" AS scieqref,\n    \"scientific.ser\"\
+  \ AS ser\n  FROM (\n    SELECT\n      scientific.scieqref AS \"scientific.scieqref\"\
+  ,\n      AVG(\n        scientific.measurementaccuracypercent * CASE scientific.calibrationstatus\n\
+  \          WHEN 'Valid'\n          THEN 1.0\n          WHEN 'Due'\n          THEN\
+  \ 0.7\n          WHEN 'Expired'\n          THEN 0.3\n          ELSE 0.0\n      \
+  \  END\n      ) AS \"scientific.ser\"\n    FROM scientific AS scientific\n    GROUP\
+  \ BY\n      scientific.scieqref\n  ) AS _inner\n) AS ser_flag_p_eq\nGROUP BY\n \
+  \ ser_flag_p_eq.scieqref\n), _cm_ser_flag_p_eq__smsp_p_eq__smsp_avg AS (\nSELECT\n\
+  \  AVG(smsp_p_eq.smsp) AS \"ser_flag_p_eq.smsp_p_eq.smsp_avg\"\nFROM (\n  SELECT\n\
+  \    \"scientific_mission_success_probability.scieqref\" AS scieqref,\n    \"scientific_mission_success_probability.smsp\"\
+  \ AS smsp\n  FROM (\n    SELECT\n      scientific_mission_success_probability.scieqref\
+  \ AS \"scientific_mission_success_probability.scieqref\",\n      AVG(scientific_mission_success_probability.smsp)\
+  \ AS \"scientific_mission_success_probability.smsp\"\n    FROM (\n      SELECT\n\
+  \        \"ser_per_eq.scieqref\" AS scieqref,\n        \"ser_per_eq.ser_avg\" AS\
+  \ ser_avg,\n        \"ser_per_eq.smsp\" AS smsp,\n        \"ser_per_eq.cri_per_eq.cri_avg\"\
+  \ AS cri_per_eq__cri_avg\n      FROM (\n        WITH _base AS (\n          SELECT\n\
+  \            ser_per_eq.scieqref AS \"ser_per_eq.scieqref\",\n            AVG(ser_per_eq.ser)\
+  \ AS \"ser_per_eq.ser_avg\"\n          FROM (\n            SELECT\n            \
+  \  \"scientific.scieqref\" AS scieqref,\n              \"scientific.ser\" AS ser\n\
+  \            FROM (\n              SELECT\n                scientific.scieqref AS\
+  \ \"scientific.scieqref\",\n                AVG(\n                  scientific.measurementaccuracypercent\
+  \ * CASE scientific.calibrationstatus\n                    WHEN 'Valid'\n      \
+  \              THEN 1.0\n                    WHEN 'Due'\n                    THEN\
+  \ 0.7\n                    WHEN 'Expired'\n                    THEN 0.3\n      \
+  \              ELSE 0.0\n                  END\n                ) AS \"scientific.ser\"\
+  \n              FROM scientific AS scientific\n              GROUP BY\n        \
+  \        scientific.scieqref\n            ) AS _inner\n          ) AS ser_per_eq\n\
+  \          GROUP BY\n            ser_per_eq.scieqref\n        ), _cm_ser_per_eq__cri_per_eq__cri_avg\
+  \ AS (\n          SELECT\n            AVG(cri_per_eq.cri) AS \"ser_per_eq.cri_per_eq.cri_avg\"\
+  \n          FROM (\n            SELECT\n              \"communication.commeqref\"\
+  \ AS commeqref,\n              \"communication.cri\" AS cri\n            FROM (\n\
+  \              SELECT\n                communication.commeqref AS \"communication.commeqref\"\
+  ,\n                AVG(\n                  (\n                    CASE communication.antennastatus\n\
+  \                      WHEN 'Normal'\n                      THEN 10\n          \
+  \            WHEN 'Warning'\n                      THEN 5\n                    \
+  \  WHEN 'Error'\n                      THEN 0\n                      ELSE 0\n  \
+  \                  END\n                  ) * (\n                    1 - JSON_EXTRACT(communication.signalmetrics,\
+  \ '$.latency_ms') / 1000.0\n                  )\n                ) AS \"communication.cri\"\
+  \n              FROM communication AS communication\n              GROUP BY\n  \
+  \              communication.commeqref\n            ) AS _inner\n          ) AS\
+  \ cri_per_eq\n        ), _combined AS (\n          SELECT\n            _base.\"\
+  ser_per_eq.scieqref\",\n            _base.\"ser_per_eq.ser_avg\",\n            _cm_ser_per_eq__cri_per_eq__cri_avg.\"\
+  ser_per_eq.cri_per_eq.cri_avg\"\n          FROM _base\n          CROSS JOIN _cm_ser_per_eq__cri_per_eq__cri_avg\n\
+  \        ), step1 AS (\n          SELECT\n            \"ser_per_eq.cri_per_eq.cri_avg\"\
+  ,\n            \"ser_per_eq.scieqref\",\n            \"ser_per_eq.ser_avg\",\n \
+  \           \"ser_per_eq.ser_avg\" * (\n              0.8 + 0.2 * \"ser_per_eq.cri_per_eq.cri_avg\"\
+  \ / 10.0\n            ) AS \"ser_per_eq.smsp\"\n          FROM _combined\n     \
+  \   )\n        SELECT\n          \"ser_per_eq.cri_per_eq.cri_avg\",\n          \"\
+  ser_per_eq.scieqref\",\n          \"ser_per_eq.ser_avg\",\n          \"ser_per_eq.smsp\"\
+  \n        FROM step1\n      ) AS _inner\n    ) AS scientific_mission_success_probability\n\
+  \    GROUP BY\n      scientific_mission_success_probability.scieqref\n  ) AS _inner\n\
+  ) AS smsp_p_eq\n)\nSELECT _base.\"ser_flag_p_eq.scieqref\", _base.\"ser_flag_p_eq.ser\"\
+  , _base.\"ser_flag_p_eq.is_fully_operational\", _base.\"ser_flag_p_eq.is_degraded_operation\"\
+  , _cm_ser_flag_p_eq__smsp_p_eq__smsp_avg.\"ser_flag_p_eq.smsp_p_eq.smsp_avg\"\n\
+  FROM _base\nCROSS JOIN _cm_ser_flag_p_eq__smsp_p_eq__smsp_avg) AS _inner"
+data_source: polar
+columns:
+- name: scieqref
+  sql: scieqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ser
+  sql: ser
+  type: DOUBLE
+  primary_key: false
+  description: "Scientific Equipment Reliability (KB #8): accuracy% \xD7 calibration\
+    \ multiplier."
+  hidden: false
+  format:
+    type: float
+- name: is_fully_operational
+  sql: is_fully_operational
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_degraded_operation
+  sql: is_degraded_operation
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: smsp_p_eq__smsp_avg
+  sql: smsp_p_eq__smsp_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Critical Scientific Equipment Status (KB #43): 'Fully Operational' (SER\
+  \ > 0.9 AND SMSP > 0.85), 'Degraded Operation' (SER > 0.7 AND SMSP > 0.6), or 'Needs\
+  \ Repair' otherwise. R-MULTISTAGE; reads from SMSP query-backed model and scientific\
+  \ table.\n\n[kb=43]\nScientific equipment is classified as 'Fully Operational' (SER\
+  \ > 0.9 and SMSP > 0.85), 'Degraded Operation' (SER > 0.7 and SMSP > 0.6), or 'Needs\
+  \ Repair' (other cases). \u2014 Determines the operational status and reliability\
+  \ of critical scientific equipment\n[/kb=43]"
+hidden: false
+meta:
+  kb_id: 43

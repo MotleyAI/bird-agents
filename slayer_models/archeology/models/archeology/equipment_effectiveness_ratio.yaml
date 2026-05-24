@@ -1,0 +1,154 @@
+version: 6
+name: equipment_effectiveness_ratio
+source_queries:
+- version: 3
+  name: pc_per_arcref
+  source_model: scanpointcloud
+  measures:
+  - formula: sqs:avg
+    name: sqs
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  name: scan_with_equip
+  source_model:
+    source_name: scans
+    joins:
+    - target_model: pc_per_arcref
+      join_pairs:
+      - - arcref
+        - arcref
+    - target_model: scanprocessing
+      join_pairs:
+      - - zoneref
+        - zoneref
+  dimensions:
+  - name: questregistry
+  - name: arcref
+  - name: zoneref
+  - name: equipref
+    model: scanprocessing
+  - name: equipstatus_value
+    model: scanprocessing.equipment
+  - name: equipage_days
+    model: scanprocessing.equipment
+  - name: powerlevel
+    model: scanprocessing.equipment
+  - name: sqs
+    model: pc_per_arcref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: scan_with_equip
+    columns:
+    - name: eer
+      type: DOUBLE
+      sql: (pc_per_arcref__sqs * scanprocessing__equipment__equipstatus_value) / (scanprocessing__equipment__powerlevel
+        * (101 - scanprocessing__equipment__equipage_days) / 365.0) * 25
+  measures:
+  - formula: eer:avg
+    name: eer
+  dimensions:
+  - name: questregistry
+  - name: arcref
+  - name: zoneref
+  - name: scanprocessing__equipref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"scan_with_equip.questregistry\" AS questregistry, \"\
+  scan_with_equip.arcref\" AS arcref, \"scan_with_equip.zoneref\" AS zoneref, \"scan_with_equip.scanprocessing__equipref\"\
+  \ AS scanprocessing__equipref, \"scan_with_equip.eer\" AS eer FROM (SELECT\n  scan_with_equip.questregistry\
+  \ AS \"scan_with_equip.questregistry\",\n  scan_with_equip.arcref AS \"scan_with_equip.arcref\"\
+  ,\n  scan_with_equip.zoneref AS \"scan_with_equip.zoneref\",\n  scan_with_equip.scanprocessing__equipref\
+  \ AS \"scan_with_equip.scanprocessing__equipref\",\n  AVG(\n    (\n      scan_with_equip.pc_per_arcref__sqs\
+  \ * scan_with_equip.scanprocessing__equipment__equipstatus_value\n    ) / (\n  \
+  \    scan_with_equip.scanprocessing__equipment__powerlevel * (\n        101 - scan_with_equip.scanprocessing__equipment__equipage_days\n\
+  \      ) / 365.0\n    ) * 25\n  ) AS \"scan_with_equip.eer\"\nFROM (\n  SELECT\n\
+  \    \"scans.questregistry\" AS questregistry,\n    \"scans.arcref\" AS arcref,\n\
+  \    \"scans.zoneref\" AS zoneref,\n    \"scans.scanprocessing.equipref\" AS scanprocessing__equipref,\n\
+  \    \"scans.scanprocessing.equipment.equipstatus_value\" AS scanprocessing__equipment__equipstatus_value,\n\
+  \    \"scans.scanprocessing.equipment.equipage_days\" AS scanprocessing__equipment__equipage_days,\n\
+  \    \"scans.scanprocessing.equipment.powerlevel\" AS scanprocessing__equipment__powerlevel,\n\
+  \    \"scans.pc_per_arcref.sqs\" AS pc_per_arcref__sqs\n  FROM (\n    SELECT\n \
+  \     scans.questregistry AS \"scans.questregistry\",\n      scans.arcref AS \"\
+  scans.arcref\",\n      scans.zoneref AS \"scans.zoneref\",\n      scanprocessing.equipref\
+  \ AS \"scans.scanprocessing.equipref\",\n      CASE scanprocessing__equipment.equipstatus\n\
+  \        WHEN 'Excellent'\n        THEN 1.0\n        WHEN 'Good'\n        THEN 0.7\n\
+  \        WHEN 'Fair'\n        THEN 0.5\n        WHEN 'Poor'\n        THEN 0.2\n\
+  \        ELSE NULL\n      END AS \"scans.scanprocessing.equipment.equipstatus_value\"\
+  ,\n      JULIANDAY('now') - JULIANDAY(scanprocessing__equipment.equiptune) AS \"\
+  scans.scanprocessing.equipment.equipage_days\",\n      scanprocessing__equipment.powerlevel\
+  \ AS \"scans.scanprocessing.equipment.powerlevel\",\n      pc_per_arcref.sqs AS\
+  \ \"scans.pc_per_arcref.sqs\"\n    FROM scans AS scans\n    LEFT JOIN scanprocessing\
+  \ AS scanprocessing\n      ON scans.zoneref = scanprocessing.zoneref\n    LEFT JOIN\
+  \ (\n      (\n        SELECT\n          \"scanpointcloud.arcref\" AS arcref,\n \
+  \         \"scanpointcloud.sqs\" AS sqs\n        FROM (\n          SELECT\n    \
+  \        scanpointcloud.arcref AS \"scanpointcloud.arcref\",\n            AVG(\n\
+  \              (\n                CASE\n                  WHEN (\n             \
+  \       (\n                      LOG10(scanpointcloud.scanresolmm * 1000.0) / LOG10(scanpointcloud.pointdense)\n\
+  \                    ) * 5.0\n                  ) > 0\n                  THEN POWER(\n\
+  \                    10.0 / (\n                      (\n                       \
+  \ LOG10(scanpointcloud.scanresolmm * 1000.0) / LOG10(scanpointcloud.pointdense)\n\
+  \                      ) * 5.0\n                    ),\n                    1.5\n\
+  \                  )\n                  ELSE NULL\n                END\n       \
+  \       ) * (\n                (\n                  scanpointcloud.coverpct * (\n\
+  \                    1 + (\n                      scanpointcloud.lappct / 100.0\n\
+  \                    ) * (\n                      1 - scanpointcloud.coverpct /\
+  \ 100.0\n                    )\n                  )\n                ) / 100.0\n\
+  \              ) * POWER(1 - scanpointcloud.noisedb / 30.0, 2)\n            ) AS\
+  \ \"scanpointcloud.sqs\"\n          FROM scanpointcloud AS scanpointcloud\n    \
+  \      GROUP BY\n            scanpointcloud.arcref\n        ) AS _inner\n      )\n\
+  \    ) AS pc_per_arcref\n      ON scans.arcref = pc_per_arcref.arcref\n    LEFT\
+  \ JOIN equipment AS scanprocessing__equipment\n      ON scanprocessing.equipref\
+  \ = scanprocessing__equipment.equipregistry\n  ) AS _inner\n) AS scan_with_equip\n\
+  GROUP BY\n  scan_with_equip.questregistry,\n  scan_with_equip.arcref,\n  scan_with_equip.zoneref,\n\
+  \  scan_with_equip.scanprocessing__equipref) AS _inner"
+data_source: archeology
+columns:
+- name: questregistry
+  sql: questregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: arcref
+  sql: arcref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: zoneref
+  sql: zoneref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: scanprocessing__equipref
+  sql: scanprocessing__equipref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: eer
+  sql: eer
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Equipment Effectiveness Ratio (EER, KB #39): SQS * EquipStatus_value\
+  \ / (PowerLevel * (101 - EquipAge_days)/365) * 25, where EquipStatus_value = 1.0\
+  \ (Excellent), 0.7 (Good), 0.5 (Fair), 0.2 (Poor) and EquipAge_days = days since\
+  \ EquipTune. Multistage: scanpointcloud (SQS per arcref) joined to scans (arcref\
+  \ + zoneref) joined to scanprocessing (zoneref \u2192 equipref) joined to equipment.\n\
+  \n[kb=39]\nEER = \\frac{SQS \\times EquipStatus\\_value}{PowerLevel \\times (101\
+  \ - EquipAge\\_days) / 365} \\times 25, \\text{ where SQS is the Scan Quality Score,\
+  \ EquipStatus_value is 1.0 for 'Excellent' to 0.2 for 'Poor', and EquipAge_days\
+  \ is days since EquipTune, with higher values indicating more efficient use of equipment\
+  \ relative to condition.} \u2014 Evaluates how effectively equipment was utilized\
+  \ based on power consumption and scan quality relative to equipment capability.\n\
+  [/kb=39]"
+hidden: false
+meta:
+  kb_id: 39

@@ -1,0 +1,353 @@
+version: 6
+name: transactionrecord
+sql_table: transactionrecord
+query_variables: {}
+data_source: insider
+columns:
+- name: transreg
+  sql: transreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: transtime
+  sql: transtime
+  type: TEXT
+  primary_key: false
+  description: Date-time the trade blotter snapshot was taken.
+  hidden: false
+- name: trdref
+  sql: trdref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ordervar
+  sql: ordervar
+  type: DOUBLE
+  primary_key: false
+  description: Variance of order sizes submitted during the session.
+  hidden: false
+  format:
+    type: float
+- name: ordertimepat
+  sql: ordertimepat
+  type: TEXT
+  primary_key: false
+  description: 'Pattern of order entry times: Irregular, Regular, Suspicious.'
+  hidden: false
+- name: ordertypedist
+  sql: ordertypedist
+  type: TEXT
+  primary_key: false
+  description: "Order Type Distribution (KB #23): Market = primarily market orders\
+    \ (speed); Limit = primarily limit orders (price); Mixed = combination of order\
+    \ types.\n\n[kb=23]\n`ordertypedist`: 'Market' indicates primarily using market\
+    \ orders (execute immediately at the best available price, prioritizing speed\
+    \ over price). 'Limit' indicates primarily using limit orders (execute only at\
+    \ a specified price or better, prioritizing price over speed). 'Mixed' suggests\
+    \ a combination of order types, reflecting varied trading strategies or objectives.\
+    \ \u2014 Illustrates the mix of primary order types used by a trader.\n[/kb=23]"
+  label: Order Type Distribution
+  hidden: false
+  meta:
+    kb_id: 23
+- name: cancelpct
+  sql: cancelpct
+  type: DOUBLE
+  primary_key: false
+  description: Percentage of orders cancelled before execution (decimal 0..1).
+  hidden: false
+  format:
+    type: float
+- name: modfreq
+  sql: modfreq
+  type: DOUBLE
+  primary_key: false
+  description: Average number of order modifications per original order.
+  hidden: false
+  format:
+    type: float
+- name: darkusage
+  sql: darkusage
+  type: TEXT
+  primary_key: false
+  description: "Dark Pool Usage Venues (KB #21): qualitative or list of ATS / dark-pool\
+    \ identifiers (e.g. 'ATS-X, ATS-Y'). Private exchanges where large orders execute\
+    \ without revealing intent. Patterns watched for best-execution + transparency-avoidance.\n\
+    \n[kb=21]\n`darkusage`: This field lists Alternative Trading Systems (ATS) or\
+    \ other dark pools used. 'ATS-X', 'ATS-Y' are anonymized identifiers for specific\
+    \ dark pools, which are private exchanges where large orders can be executed without\
+    \ revealing intent to the public market, potentially reducing market impact. Usage\
+    \ patterns can be analyzed for regulatory compliance (e.g., ensuring best execution)\
+    \ or signs of avoiding market transparency. \u2014 Explains the nature of dark\
+    \ pool usage indicated in transaction records.\n[/kb=21]"
+  label: Dark Pool Usage Venues
+  hidden: false
+  meta:
+    kb_id: 21
+- name: offmkt
+  sql: offmkt
+  type: TEXT
+  primary_key: false
+  description: "Off-Market Trading Activity (KB #22): trades not executed on lit exchanges.\
+    \ 'Internal crosses' = broker matching its own clients' buy + sell orders without\
+    \ routing them to a public exchange.\n\n[kb=22]\n`offmkt`: Describes trades not\
+    \ executed on lit exchanges. 'Internal crosses' specifically refer to a broker\
+    \ matching buy and sell orders from their own clients internally, without routing\
+    \ them to a public exchange. This can be efficient but requires monitoring to\
+    \ ensure fairness and prevent potential conflicts of interest. \u2014 Illustrates\
+    \ types of trading activity occurring outside public exchanges.\n[/kb=22]"
+  label: Off-Market Trading Activity
+  hidden: false
+  meta:
+    kb_id: 22
+- name: crossfreq
+  sql: crossfreq
+  type: DOUBLE
+  primary_key: false
+  description: Frequency of cross trades relative to total trades.
+  hidden: false
+  format:
+    type: float
+- name: risk_indicators
+  sql: risk_indicators
+  type: TEXT
+  primary_key: false
+  description: "JSONB: {spoofprob (0..1 here, KB describes as 0..100), frontscore,\
+    \ qstuffindex, washsus (Low/Medium/High \u2014 KB #16, #30), layerind (Confirmed/Suspected\
+    \ \u2014 KB #12), momentignit (Strong/Weak \u2014 KB #24), markclosepat (Frequent/Occasional\
+    \ \u2014 KB #25)}."
+  hidden: false
+  meta: {}
+- name: spoofprob
+  sql: CAST(json_extract(risk_indicators, '$.spoofprob') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: 'Spoofing probability (extracted from risk_indicators JSON). Data is
+    already 0..1 (KB #3 describes it as 0..100).'
+  hidden: false
+- name: frontscore
+  sql: CAST(json_extract(risk_indicators, '$.frontscore') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Front-running risk score (extracted from risk_indicators JSON, 0..100).
+  hidden: false
+- name: qstuffindex
+  sql: CAST(json_extract(risk_indicators, '$.qstuffindex') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Quote-stuffing index (extracted from risk_indicators JSON, ~0..1).
+  hidden: false
+- name: washsus
+  sql: json_extract(risk_indicators, '$.washsus')
+  type: TEXT
+  primary_key: false
+  description: Wash-trading suspicion level (Low/Medium/High) extracted from risk_indicators
+    JSON.
+  hidden: false
+- name: layerind
+  sql: json_extract(risk_indicators, '$.layerind')
+  type: TEXT
+  primary_key: false
+  description: Layering indicator (Confirmed/Suspected) extracted from risk_indicators
+    JSON.
+  hidden: false
+- name: momentignit
+  sql: json_extract(risk_indicators, '$.momentignit')
+  type: TEXT
+  primary_key: false
+  description: "Momentum Ignition Signal (KB #24): Strong = patterns consistent with\
+    \ attempts to trigger momentum algorithms. Weak = less evident.\n\n[kb=24]\n`risk_indicators.momentignit`:\
+    \ 'Strong' indicates patterns consistent with attempts to trigger momentum algorithms\
+    \ or attract other traders by creating a false sense of rapid price movement (e.g.,\
+    \ through rapid successive trades). 'Weak' suggests such patterns are less evident\
+    \ or absent. This is a potential indicator of manipulative behavior. \u2014 Explains\
+    \ the signals related to attempting to artificially create price momentum.\n[/kb=24]"
+  label: Momentum Ignition Signals
+  hidden: false
+  meta:
+    kb_id: 24
+- name: markclosepat
+  sql: json_extract(risk_indicators, '$.markclosepat')
+  type: TEXT
+  primary_key: false
+  description: "Marking the Close Patterns (KB #25): Frequent = repeated trading near\
+    \ close, potential price manipulation. Occasional = infrequent.\n\n[kb=25]\n`risk_indicators.markclosepat`:\
+    \ 'Frequent' indicates repeated trading activity near the market close, potentially\
+    \ intended to manipulate the closing price (e.g., to affect margin calls, NAV\
+    \ calculations, or settlement prices). 'Occasional' suggests such activity is\
+    \ infrequent or less patterned. Marking the close is a prohibited manipulative\
+    \ practice. \u2014 Explains the patterns associated with influencing the closing\
+    \ price of a security.\n[/kb=25]"
+  label: Marking the Close Patterns
+  hidden: false
+  meta:
+    kb_id: 25
+- name: omi
+  sql: CASE WHEN cancelpct >= 1.0 THEN NULL ELSE modfreq * 1.0 / (1.0 - cancelpct)
+    END
+  type: DOUBLE
+  primary_key: false
+  description: "Order Modification Intensity (OMI = modfreq / (1 - cancelpct), undefined\
+    \ when cancelpct = 1) \u2014 KB #1.\n\n[kb=1]\nOMI = \\frac{\\text{modfreq}}{1\
+    \ - \\text{cancelpct}} \\text{ (undefined if cancelpct = 1)} \u2014 Measures how\
+    \ frequently a trader modifies orders relative to their cancellation rate.\n[/kb=1]"
+  label: Order Modification Intensity (OMI)
+  hidden: false
+  meta:
+    kb_id: 1
+- name: spoof_prob_norm
+  sql: CAST(json_extract(risk_indicators, '$.spoofprob') AS REAL) / 100.0
+  type: DOUBLE
+  primary_key: false
+  description: 'SpoofProbNorm = spoofprob / 100 (KB #3 component). Note: stored data
+    already appears 0..1; this follows the KB literally.'
+  hidden: false
+- name: front_score_norm
+  sql: CAST(json_extract(risk_indicators, '$.frontscore') AS REAL) / 100.0
+  type: DOUBLE
+  primary_key: false
+  description: 'FrontScoreNorm = frontscore / 100 (KB #3 component, assumes max 100).'
+  hidden: false
+- name: qstuff_norm
+  sql: CAST(json_extract(risk_indicators, '$.qstuffindex') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: 'QStuffNorm = MinMaxScale(qstuffindex) (KB #3). Stored qstuffindex
+    is ~0..1 so we use as-is.'
+  hidden: false
+- name: wash_sus_norm
+  sql: CASE json_extract(risk_indicators, '$.washsus') WHEN 'Low' THEN 0.1 WHEN 'Medium'
+    THEN 0.5 WHEN 'High' THEN 1.0 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: 'WashSusNorm = MapToNumeric(washsus, {Low:0.1, Medium:0.5, High:1.0})
+    (KB #3 component).'
+  hidden: false
+- name: layer_ind_norm
+  sql: CASE json_extract(risk_indicators, '$.layerind') WHEN 'None' THEN 0.0 WHEN
+    'Suspected' THEN 0.5 WHEN 'Confirmed' THEN 1.0 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: 'LayerIndNorm = MapToNumeric(layerind, {None:0.0, Suspected:0.5, Confirmed:1.0})
+    (KB #3 component).'
+  hidden: false
+- name: sai
+  sql: (0.2 * (CAST(json_extract(risk_indicators, '$.spoofprob') AS REAL) / 100.0))
+    + (0.2 * (CAST(json_extract(risk_indicators, '$.frontscore') AS REAL) / 100.0))
+    + (0.2 * CAST(json_extract(risk_indicators, '$.qstuffindex') AS REAL)) + (0.2
+    * (CASE json_extract(risk_indicators, '$.washsus') WHEN 'Low' THEN 0.1 WHEN 'Medium'
+    THEN 0.5 WHEN 'High' THEN 1.0 ELSE 0 END)) + (0.2 * (CASE json_extract(risk_indicators,
+    '$.layerind') WHEN 'None' THEN 0.0 WHEN 'Suspected' THEN 0.5 WHEN 'Confirmed'
+    THEN 1.0 ELSE 0 END))
+  type: DOUBLE
+  primary_key: false
+  description: "Suspicious Activity Index (SAI = w1*SpoofProbNorm + w2*FrontScoreNorm\
+    \ + w3*QStuffNorm + w4*WashSusNorm + w5*LayerIndNorm). KB #3 leaves weights unspecified;\
+    \ uses equal w_i = 0.2.\n\n[kb=3]\nSAI = (w_1 \\times \\text{SpoofProbNorm}) +\
+    \ (w_2 \\times \\text{FrontScoreNorm}) + (w_3 \\times \\text{QStuffNorm}) + (w_4\
+    \ \\times \\text{WashSusNorm}) + (w_5 \\times \\text{LayerIndNorm}) \\\\ \\text{where\
+    \ } \\text{SpoofProbNorm} = \\frac{\\text{risk_indicators.spoofprob}}{100} \\\\\
+    \ \\text{FrontScoreNorm} = \\frac{\\text{risk_indicators.frontscore}}{100} \\\
+    text{ (assuming max score is 100)} \\\\ \\text{QStuffNorm} = \\text{MinMaxScale}(\\\
+    text{risk_indicators.qstuffindex}) \\\\ \\text{WashSusNorm} = \\text{MapToNumeric}(\\\
+    text{risk_indicators.washsus}, {'Low': 0.1, 'Medium': 0.5, 'High': 1.0}) \\\\\
+    \ \\text{LayerIndNorm} = \\text{MapToNumeric}(\\text{risk_indicators.layerind},\
+    \ {'None': 0.0, 'Suspected': 0.5, 'Confirmed': 1.0}) \\\\ w_i \\text{ are weights\
+    \ assigned based on importance, summing to 1.} \u2014 A composite index attempting\
+    \ to quantify overall suspicious trading behavior based on risk indicators.\n\
+    [/kb=3]"
+  label: Suspicious Activity Index (SAI)
+  hidden: false
+  meta:
+    kb_id: 3
+- name: is_layering_spoofing
+  sql: json_extract(risk_indicators, '$.layerind') = 'Confirmed' OR (CAST(json_extract(risk_indicators,
+    '$.spoofprob') AS REAL) > 0.75 AND (CASE WHEN cancelpct >= 1.0 THEN NULL ELSE
+    modfreq * 1.0 / (1.0 - cancelpct) END) > 1.0)
+  type: BOOLEAN
+  primary_key: false
+  description: "Market Manipulation Pattern: Layering/Spoofing (KB #12) = layerind='Confirmed'\
+    \ OR (spoofprob>0.75 AND OMI>1.0).\n\n[kb=12]\nA transaction record suggests Layering/Spoofing\
+    \ if `risk_indicators.layerind` is 'Confirmed' OR (`risk_indicators.spoofprob`\
+    \ > 0.75 AND OMI > 1.0). \u2014 Identifies trading sessions indicative of layering\
+    \ or spoofing tactics.\n[/kb=12]"
+  label: 'Market Manipulation Pattern: Layering/Spoofing'
+  hidden: false
+  meta:
+    kb_id: 12
+- name: is_wash_trading_alert
+  sql: json_extract(risk_indicators, '$.washsus') = 'High'
+  type: BOOLEAN
+  primary_key: false
+  description: "Wash Trading Alert (KB #16) = washsus='High'.\n\n[kb=16]\nA transaction\
+    \ triggers a Wash Trading Alert if `risk_indicators.washsus` is 'High'. \u2014\
+    \ Flags transactions highly suspicious for wash trading.\n[/kb=16]"
+  label: Wash Trading Alert
+  hidden: false
+  meta:
+    kb_id: 16
+- name: is_evasive_layering_spoofing_pattern
+  sql: json_extract(risk_indicators, '$.layerind') = 'Confirmed' OR CAST(json_extract(risk_indicators,
+    '$.spoofprob') AS REAL) > 0.75
+  type: BOOLEAN
+  primary_key: false
+  description: 'Per-transaction precondition for KB #65: layerind=''Confirmed'' OR
+    spoofprob>0.75 (the trader-level half is ''High Cancellation/Modification Trader'').'
+  hidden: false
+- name: cmr
+  sql: crossfreq * 1.0 / MAX(0.01, (CASE WHEN cancelpct >= 1.0 THEN NULL ELSE modfreq
+    * 1.0 / (1.0 - cancelpct) END))
+  type: DOUBLE
+  primary_key: false
+  description: "Cross-Modification Ratio (CMR = crossfreq / Max(0.01, OMI)) \u2014\
+    \ KB #57.\n\n[kb=57]\nCMR = \\frac{\\text{crossfreq}}{\\text{Max}(0.01, \\text{OMI})}\
+    \ \\\\ \\text{where OMI is Order Modification Intensity .} \u2014 Calculates the\
+    \ ratio of cross-trade frequency to order modification intensity, potentially\
+    \ indicating coordinated or manipulative crossing activity.\n[/kb=57]"
+  label: Cross-Modification Ratio (CMR)
+  hidden: false
+  meta:
+    kb_id: 57
+- name: is_high_volume_wash_trading
+  sql: json_extract(risk_indicators, '$.washsus') = 'High' AND trader.voldaily > 1000000
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Volume Wash Trading Concern (KB #45): Wash Trading Alert AND\
+    \ trader.voldaily > 1,000,000.\n\n[kb=45]\nA trader triggering a Wash Trading\
+    \ Alert  AND whose voldaily exceeds 1000000. \u2014 Flags traders with wash trading\
+    \ alerts who also trade significant volume.\n[/kb=45]"
+  label: High-Volume Wash Trading Concern
+  hidden: false
+  meta:
+    kb_id: 45
+- name: is_high_risk_manipulator_candidate
+  sql: ((CAST(json_extract(trader.trading_performance, '$.risklevel.levratio') AS
+    REAL) > 5.0 AND json_extract(trader.trading_performance, '$.risklevel.risklevel')
+    = 'Aggressive') OR (trader.voldaily * 1.0 / NULLIF(trader.acctbal, 0)) > 0.5)
+    AND (json_extract(risk_indicators, '$.layerind') = 'Confirmed' OR (CAST(json_extract(risk_indicators,
+    '$.spoofprob') AS REAL) > 0.75 AND (CASE WHEN cancelpct >= 1.0 THEN NULL ELSE
+    modfreq * 1.0 / (1.0 - cancelpct) END) > 1.0))
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Risk Manipulator Candidate (KB #60): High-Risk Trader Profile\
+    \ AND Layering/Spoofing.\n\n[kb=60]\nA trader who meets the High-Risk Trader Profile\
+    \  AND is flagged for Market Manipulation Pattern: Layering/Spoofing . \u2014\
+    \ Identifies traders flagged for both high-risk profiles and specific market manipulation\
+    \ patterns.\n[/kb=60]"
+  label: High-Risk Manipulator Candidate
+  hidden: false
+  meta:
+    kb_id: 60
+measures: []
+aggregations: []
+joins:
+- target_model: trader
+  join_pairs:
+  - - trdref
+    - tradereg
+  join_type: left
+filters: []
+description: A trade-day blotter snapshot for one trader. PK = `transreg`. JSON `risk_indicators`
+  holds spoof/front/quote-stuff probabilities and washsus/layerind/momentignit/markclosepat
+  enums.
+hidden: false

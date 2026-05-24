@@ -1,0 +1,161 @@
+version: 6
+name: qualifying_performance_cluster
+source_queries:
+- version: 3
+  name: best_qual_per_driver
+  source_model: qualifying
+  dimensions:
+  - name: qualkey
+  - name: rbind
+  - name: pilotrec
+  - name: corptag
+  - name: px_pos
+  - name: best_qualifying_seconds
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: best_qual_per_driver
+    columns:
+    - name: pole_seconds
+      type: DOUBLE
+      sql: MIN(best_qualifying_seconds) OVER (PARTITION BY rbind)
+    - name: qualifying_time_deficit_to_pole
+      type: DOUBLE
+      sql: best_qualifying_seconds - MIN(best_qualifying_seconds) OVER (PARTITION
+        BY rbind)
+    - name: qualifying_performance_cluster
+      type: TEXT
+      sql: CASE WHEN (best_qualifying_seconds - MIN(best_qualifying_seconds) OVER
+        (PARTITION BY rbind)) < 0.15 THEN 'Pole Threat' WHEN (best_qualifying_seconds
+        - MIN(best_qualifying_seconds) OVER (PARTITION BY rbind)) < 0.4 THEN 'Mid
+        Gap' ELSE 'Backmarker' END
+  dimensions:
+  - name: qualkey
+  - name: rbind
+  - name: pilotrec
+  - name: corptag
+  - name: px_pos
+  - name: best_qualifying_seconds
+  - name: pole_seconds
+  - name: qualifying_time_deficit_to_pole
+  - name: qualifying_performance_cluster
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"best_qual_per_driver.qualkey\" AS qualkey, \"best_qual_per_driver.rbind\"\
+  \ AS rbind, \"best_qual_per_driver.pilotrec\" AS pilotrec, \"best_qual_per_driver.corptag\"\
+  \ AS corptag, \"best_qual_per_driver.px_pos\" AS px_pos, \"best_qual_per_driver.best_qualifying_seconds\"\
+  \ AS best_qualifying_seconds, \"best_qual_per_driver.pole_seconds\" AS pole_seconds,\
+  \ \"best_qual_per_driver.qualifying_time_deficit_to_pole\" AS qualifying_time_deficit_to_pole,\
+  \ \"best_qual_per_driver.qualifying_performance_cluster\" AS qualifying_performance_cluster\
+  \ FROM (SELECT\n  best_qual_per_driver.qualkey AS \"best_qual_per_driver.qualkey\"\
+  ,\n  best_qual_per_driver.rbind AS \"best_qual_per_driver.rbind\",\n  best_qual_per_driver.pilotrec\
+  \ AS \"best_qual_per_driver.pilotrec\",\n  best_qual_per_driver.corptag AS \"best_qual_per_driver.corptag\"\
+  ,\n  best_qual_per_driver.px_pos AS \"best_qual_per_driver.px_pos\",\n  best_qual_per_driver.best_qualifying_seconds\
+  \ AS \"best_qual_per_driver.best_qualifying_seconds\",\n  MIN(best_qual_per_driver.best_qualifying_seconds)\
+  \ OVER (PARTITION BY best_qual_per_driver.rbind) AS \"best_qual_per_driver.pole_seconds\"\
+  ,\n  best_qual_per_driver.best_qualifying_seconds - MIN(best_qual_per_driver.best_qualifying_seconds)\
+  \ OVER (PARTITION BY best_qual_per_driver.rbind) AS \"best_qual_per_driver.qualifying_time_deficit_to_pole\"\
+  ,\n  CASE\n    WHEN (\n      best_qual_per_driver.best_qualifying_seconds - MIN(best_qual_per_driver.best_qualifying_seconds)\
+  \ OVER (PARTITION BY best_qual_per_driver.rbind)\n    ) < 0.15\n    THEN 'Pole Threat'\n\
+  \    WHEN (\n      best_qual_per_driver.best_qualifying_seconds - MIN(best_qual_per_driver.best_qualifying_seconds)\
+  \ OVER (PARTITION BY best_qual_per_driver.rbind)\n    ) < 0.4\n    THEN 'Mid Gap'\n\
+  \    ELSE 'Backmarker'\n  END AS \"best_qual_per_driver.qualifying_performance_cluster\"\
+  \nFROM (\n  SELECT\n    \"qualifying.qualkey\" AS qualkey,\n    \"qualifying.rbind\"\
+  \ AS rbind,\n    \"qualifying.pilotrec\" AS pilotrec,\n    \"qualifying.corptag\"\
+  \ AS corptag,\n    \"qualifying.px_pos\" AS px_pos,\n    \"qualifying.best_qualifying_seconds\"\
+  \ AS best_qualifying_seconds\n  FROM (\n    SELECT\n      qualifying.qualkey AS\
+  \ \"qualifying.qualkey\",\n      qualifying.rbind AS \"qualifying.rbind\",\n   \
+  \   qualifying.pilotrec AS \"qualifying.pilotrec\",\n      qualifying.corptag AS\
+  \ \"qualifying.corptag\",\n      qualifying.px_pos AS \"qualifying.px_pos\",\n \
+  \     MIN(\n        COALESCE(\n          CASE\n            WHEN qualifying.q1_r\
+  \ IS NULL OR INSTR(qualifying.q1_r, ':') = 0\n            THEN NULL\n          \
+  \  ELSE CAST(SUBSTRING(qualifying.q1_r, 1, INSTR(qualifying.q1_r, ':') - 1) AS REAL)\
+  \ * 60 + CAST(SUBSTRING(qualifying.q1_r, INSTR(qualifying.q1_r, ':') + 1) AS REAL)\n\
+  \          END,\n          1e18\n        ),\n        COALESCE(\n          CASE\n\
+  \            WHEN qualifying.q2_r IS NULL OR INSTR(qualifying.q2_r, ':') = 0\n \
+  \           THEN NULL\n            ELSE CAST(SUBSTRING(qualifying.q2_r, 1, INSTR(qualifying.q2_r,\
+  \ ':') - 1) AS REAL) * 60 + CAST(SUBSTRING(qualifying.q2_r, INSTR(qualifying.q2_r,\
+  \ ':') + 1) AS REAL)\n          END,\n          1e18\n        ),\n        COALESCE(\n\
+  \          CASE\n            WHEN qualifying.q3_r IS NULL OR INSTR(qualifying.q3_r,\
+  \ ':') = 0\n            THEN NULL\n            ELSE CAST(SUBSTRING(qualifying.q3_r,\
+  \ 1, INSTR(qualifying.q3_r, ':') - 1) AS REAL) * 60 + CAST(SUBSTRING(qualifying.q3_r,\
+  \ INSTR(qualifying.q3_r, ':') + 1) AS REAL)\n          END,\n          1e18\n  \
+  \      )\n      ) AS \"qualifying.best_qualifying_seconds\"\n    FROM qualifying\
+  \ AS qualifying\n  ) AS _inner\n) AS best_qual_per_driver) AS _inner"
+data_source: sports_events
+columns:
+- name: qualkey
+  sql: qualkey
+  type: DOUBLE
+  primary_key: false
+  description: Unique qualifying record identifier.
+  hidden: false
+  format:
+    type: integer
+- name: rbind
+  sql: rbind
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to races.
+  hidden: false
+  format:
+    type: integer
+- name: pilotrec
+  sql: pilotrec
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to drivers.
+  hidden: false
+  format:
+    type: integer
+- name: corptag
+  sql: corptag
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to constructors.
+  hidden: false
+  format:
+    type: integer
+- name: px_pos
+  sql: px_pos
+  type: DOUBLE
+  primary_key: false
+  description: 'Final qualifying position (1 = Pole Position, KB #10).'
+  hidden: false
+  format:
+    type: integer
+- name: best_qualifying_seconds
+  sql: best_qualifying_seconds
+  type: DOUBLE
+  primary_key: false
+  description: 'Driver''s best qualifying time (across Q1/Q2/Q3) in seconds. Used
+    as T_driver in KB #28 Qualifying Time Deficit to Pole.'
+  hidden: false
+- name: pole_seconds
+  sql: pole_seconds
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: qualifying_time_deficit_to_pole
+  sql: qualifying_time_deficit_to_pole
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: qualifying_performance_cluster
+  sql: qualifying_performance_cluster
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Qualifying Performance Cluster (KB #53): one row per (race, driver)\
+  \ qualifying entry; classifies the driver into 'Pole Threat' (<0.15 s), 'Mid Gap'\
+  \ (0.15-0.4 s), 'Backmarker' (>=0.4 s) by their Qualifying Time Deficit to Pole\
+  \ (KB #28).\n\n[kb=53]\nThree tiers: 'Pole Threat' (<0.15s), 'Mid Gap' (0.15s-0.4s),\
+  \ 'Backmarker' (\u22650.4s) \u2014 Categorizes drivers based on their average qualifying\
+  \ deficit to pole position.\n[/kb=53]"
+hidden: false
+meta:
+  kb_id: 53

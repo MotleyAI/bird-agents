@@ -1,0 +1,60 @@
+version: 6
+name: driver_performance_value
+sql: "SELECT\n  ds.drive_link AS drive_link,\n  r.yr AS yr,\n  CAST(MAX(ds.acc_pt)\
+  \ AS REAL) / NULLIF(COUNT(*), 0) AS ppr,\n  CAST(strftime('%Y', 'now') - strftime('%Y',\
+  \ d.driver_identity ->> '$.birth_date') AS INTEGER) -\n    (strftime('%m-%d', 'now')\
+  \ < strftime('%m-%d', d.driver_identity ->> '$.birth_date')) AS driver_age,\n  (CAST(MAX(ds.acc_pt)\
+  \ AS REAL) / NULLIF(COUNT(*), 0))\n    / NULLIF(\n        CAST(strftime('%Y', 'now')\
+  \ - strftime('%Y', d.driver_identity ->> '$.birth_date') AS INTEGER) -\n       \
+  \   (strftime('%m-%d', 'now') < strftime('%m-%d', d.driver_identity ->> '$.birth_date')),\n\
+  \        0) AS dpv\nFROM driver_standings ds\nJOIN races r ON ds.rlink = r.rak_id\n\
+  JOIN drivers d ON d.drv_main = ds.drive_link\nWHERE d.driver_identity ->> '$.birth_date'\
+  \ IS NOT NULL\nGROUP BY ds.drive_link, r.yr"
+query_variables: {}
+data_source: sports_events
+columns:
+- name: drive_link
+  sql: drive_link
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to drivers.
+  hidden: false
+- name: yr
+  sql: yr
+  type: DOUBLE
+  primary_key: false
+  description: Year of the season.
+  hidden: false
+- name: ppr
+  sql: ppr
+  type: DOUBLE
+  primary_key: false
+  description: 'Driver''s Points Per Race (KB #26) for the season.'
+  hidden: false
+- name: driver_age
+  sql: driver_age
+  type: DOUBLE
+  primary_key: false
+  description: 'Driver Age (KB #20) computed from driver_identity.birth_date.'
+  hidden: false
+- name: dpv
+  sql: dpv
+  type: DOUBLE
+  primary_key: false
+  description: "Driver Performance Value (KB #37): PPR / driver_age. Higher = more\
+    \ points per race relative to age.\n\n[kb=37]\nDPV = \\frac{\\text{Driver's Points\
+    \ Per Race (PPR)}}{\\text{Driver Age}}, \\text{providing a measure of success\
+    \ relative to experience.} \u2014 Calculates a value metric for a driver by comparing\
+    \ their points-scoring record to their age.\n[/kb=37]"
+  label: Driver Performance Value
+  hidden: false
+  meta:
+    kb_id: 37
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Driver Performance Value (KB #37): DPV = PPR / driver_age, per (driver,
+  season). Encodes KB #20 + KB #26: divides the driver''s points-per-race by their
+  current age in years.'
+hidden: false

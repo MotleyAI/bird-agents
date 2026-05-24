@@ -1,0 +1,153 @@
+version: 6
+name: cabinenvironment
+sql_table: cabinenvironment
+query_variables: {}
+data_source: polar
+columns:
+- name: cabinregistry
+  sql: cabinregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: cabineqref
+  sql: cabineqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cabinlocref
+  sql: cabinlocref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: emergencybeaconstatus
+  sql: emergencybeaconstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ventilationstatus
+  sql: ventilationstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ventilationspeedpercent
+  sql: ventilationspeedpercent
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: heaterstatus
+  sql: heaterstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: heatertemperaturec
+  sql: heatertemperaturec
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: defrosterstatus
+  sql: defrosterstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: windowstatus
+  sql: windowstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: doorstatus
+  sql: doorstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: hatchstatus
+  sql: hatchstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cabincommref
+  sql: cabincommref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: cabinclimate
+  sql: cabinclimate
+  type: TEXT
+  primary_key: false
+  description: "JSONB with co2_ppm (KB #26: <600 excellent ventilation, 600\u2013\
+    1000 good, 1000\u20132500 elevated), o2_percent, pressure_kpa, temperature_c,\
+    \ humidity_percent, air_quality_index.\n\n[kb=26]\nCO2 levels in enclosed spaces\
+    \ like cabins are measured in parts per million (ppm). Levels below 600 ppm indicate\
+    \ excellent ventilation, 600-1000 ppm represent good air quality, 1000-2500 ppm\
+    \ indicate poor ventilation that may cause drowsiness and reduced cognitive function,\
+    \ while levels above 2500 ppm may cause headaches, sleepiness, and significantly\
+    \ impaired cognitive performance. \u2014 Illustrates the health and cognitive\
+    \ implications of carbon dioxide levels in enclosed environments.\n[/kb=26]"
+  label: cabinclimate.co2_ppm
+  hidden: false
+  meta:
+    kb_id: 26
+- name: cabin_temperature_c
+  sql: json_extract(cabinclimate, '$.temperature_c')
+  type: DOUBLE
+  primary_key: false
+  description: "Cabin temperature \xB0C (extracted from cabinclimate JSON)."
+  hidden: false
+- name: cabin_o2_percent
+  sql: json_extract(cabinclimate, '$.o2_percent')
+  type: DOUBLE
+  primary_key: false
+  description: "Cabin O\u2082 percent (extracted from cabinclimate JSON)."
+  hidden: false
+- name: cabin_co2_ppm
+  sql: json_extract(cabinclimate, '$.co2_ppm')
+  type: DOUBLE
+  primary_key: false
+  description: "Cabin CO\u2082 ppm (extracted from cabinclimate JSON)."
+  hidden: false
+- name: is_habitable
+  sql: json_extract(cabinclimate, '$.temperature_c') BETWEEN 18 AND 24 AND json_extract(cabinclimate,
+    '$.o2_percent') > 19.5 AND json_extract(cabinclimate, '$.co2_ppm') < 1000
+  type: BOOLEAN
+  primary_key: false
+  description: "Cabin Habitability Standard (KB #17): 18\u201324\xB0C cabin temp AND\
+    \ O\u2082 > 19.5% AND CO\u2082 < 1000 ppm. (KB also mentions other thresholds\
+    \ \u2014 those covered approximately by these three core gates.)\n\n[kb=17]\n\
+    A cabin meets 'Habitability Standards' when it maintains internal temperature\
+    \ (cabinclimate.temperature_c) between 18-24\xB0C, oxygen levels (cabinclimate.o2_percent)\
+    \ above 19.5%, CO2 levels (cabinclimate.co2_ppm) below 1000 ppm, functioning ventilation\
+    \ systems, and operational heating systems. \u2014 Defines the minimum standards\
+    \ for habitable cabin conditions in polar environments.\n[/kb=17]"
+  label: Cabin Habitability Standard
+  hidden: false
+  meta:
+    kb_id: 17
+measures: []
+aggregations: []
+joins:
+- target_model: communication
+  join_pairs:
+  - - cabincommref
+    - commregistry
+  join_type: left
+- target_model: equipment
+  join_pairs:
+  - - cabineqref
+    - equipmentcode
+  join_type: left
+- target_model: location
+  join_pairs:
+  - - cabinlocref
+    - locationregistry
+  join_type: left
+filters: []
+hidden: false

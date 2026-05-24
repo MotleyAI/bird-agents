@@ -1,0 +1,289 @@
+version: 6
+name: compatibility_metrics
+sql_table: compatibility_metrics
+query_variables: {}
+data_source: organ_transplant
+columns:
+- name: match_comp_registry
+  sql: match_comp_registry
+  type: TEXT
+  primary_key: true
+  description: FK to transplant_matching.match_rec_registry.
+  hidden: false
+- name: hla_mis_count
+  sql: hla_mis_count
+  type: INT
+  primary_key: false
+  description: "HLA Mismatch Score: count of mismatched HLA antigens (A, B, DR) between\
+    \ donor and recipient. Range 0-6.\n\n[kb=4]\nA count of the mismatched HLA antigens\
+    \ (A, B, DR) between the donor and recipient. Formula: $S_{mismatch} = \\sum_{i\
+    \ \\in \\{A, B, DR\\}} (HLA_i^{donor} \\neq HLA_i^{recipient})$ \u2014 Quantifies\
+    \ the degree of immunological difference between a donor and recipient based on\
+    \ Human Leukocyte Antigens (HLA).\n[/kb=4]"
+  label: HLA Mismatch Score
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 4
+- name: blood_compat
+  sql: blood_compat
+  type: TEXT
+  primary_key: false
+  description: "ABO compatibility text (heavily case-noised). See blood_compat_norm.\
+    \ KB ABO Blood Type Compatibility.\n\n[kb=20]\nA fundamental matching rule where\
+    \ recipient blood type determines acceptable donor types. Type O is the universal\
+    \ donor; Type AB is the universal recipient. Type A can receive from A and O.\
+    \ Type B can receive from B and O. \u2014 Defines the rules for matching blood\
+    \ types between an organ donor and recipient to prevent hyperacute rejection.\n\
+    [/kb=20]"
+  label: ABO Blood Type Compatibility
+  hidden: false
+  meta:
+    kb_id: 20
+- name: distance
+  sql: distance
+  type: TEXT
+  primary_key: false
+  description: Donor-recipient geographic distance text (always 'NN miles').
+  hidden: false
+- name: exp_isch_time
+  sql: exp_isch_time
+  type: TEXT
+  primary_key: false
+  description: "Expected cold ischemia time text, e.g. '539 minutes ischemia'. See\
+    \ exp_isch_minutes. KB Cold Ischemia.\n\n[kb=21]\nA state of organ preservation\
+    \ where metabolic activity is slowed by cooling, typically to around 4\xB0C, to\
+    \ minimize tissue damage while outside the body. This is a critical factor in\
+    \ transplant success. \u2014 The period during which a harvested organ is kept\
+    \ cold to preserve it, starting from when its blood supply is cut off until it\
+    \ is transplanted.\n[/kb=21]"
+  label: Cold Ischemia
+  hidden: false
+  meta:
+    kb_id: 21
+- name: exp_time
+  sql: exp_time
+  type: TEXT
+  primary_key: false
+  description: Expected transport time text, e.g. '142 minutes transport'.
+  hidden: false
+- name: cost_est
+  sql: cost_est
+  type: TEXT
+  primary_key: false
+  description: Estimated transplant cost text (e.g. 'US$5210.53').
+  hidden: false
+- name: donor_ref_reg
+  sql: donor_ref_reg
+  type: TEXT
+  primary_key: false
+  description: FK to demographics.contrib_registry.
+  hidden: false
+- name: recip_ref_reg
+  sql: recip_ref_reg
+  type: TEXT
+  primary_key: false
+  description: FK to recipients_demographics.recip_registry.
+  hidden: false
+- name: compatscores
+  sql: compatscores
+  type: TEXT
+  primary_key: false
+  description: 'JSON: {Hla_Score, Size_Score, Age_Score} sub-scores (provided by upstream
+    system).'
+  hidden: false
+- name: blood_compat_norm
+  sql: CASE WHEN lower(blood_compat) = 'compatible' THEN 'Compatible' WHEN lower(blood_compat)
+    = 'incompatible' THEN 'Incompatible' ELSE blood_compat END
+  type: TEXT
+  primary_key: false
+  description: "Normalized ABO compatibility (case-folded) -> 'Compatible'/'Incompatible'/NULL.\n\
+    \n[kb=20]\nA fundamental matching rule where recipient blood type determines acceptable\
+    \ donor types. Type O is the universal donor; Type AB is the universal recipient.\
+    \ Type A can receive from A and O. Type B can receive from B and O. \u2014 Defines\
+    \ the rules for matching blood types between an organ donor and recipient to prevent\
+    \ hyperacute rejection.\n[/kb=20]"
+  label: ABO Blood Type Compatibility
+  hidden: false
+  meta:
+    kb_id: 20
+- name: is_blood_compatible
+  sql: CASE WHEN lower(blood_compat) = 'compatible' THEN 1 WHEN lower(blood_compat)
+    = 'incompatible' THEN 0 ELSE NULL END
+  type: BOOLEAN
+  primary_key: false
+  description: "True/false ABO compatibility (NULL when blood_compat is NULL/missing).\n\
+    \n[kb=20]\nA fundamental matching rule where recipient blood type determines acceptable\
+    \ donor types. Type O is the universal donor; Type AB is the universal recipient.\
+    \ Type A can receive from A and O. Type B can receive from B and O. \u2014 Defines\
+    \ the rules for matching blood types between an organ donor and recipient to prevent\
+    \ hyperacute rejection.\n[/kb=20]"
+  label: ABO Blood Type Compatibility
+  hidden: false
+  meta:
+    kb_id: 20
+- name: distance_miles
+  sql: CAST(substr(distance, 1, instr(distance, ' ') - 1) AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Distance in miles (parsed).
+  hidden: false
+- name: distance_km
+  sql: CAST(substr(distance, 1, instr(distance, ' ') - 1) AS REAL) * 1.609344
+  type: DOUBLE
+  primary_key: false
+  description: Distance in km (miles * 1.609344).
+  hidden: false
+- name: exp_isch_minutes
+  sql: CAST(substr(exp_isch_time, 1, instr(exp_isch_time, ' ') - 1) AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Expected cold ischemia time in minutes (parsed).
+  hidden: false
+- name: exp_transport_minutes
+  sql: CAST(substr(exp_time, 1, instr(exp_time, ' ') - 1) AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Expected transport time in minutes (parsed).
+  hidden: false
+- name: total_ischemia_minutes
+  sql: CAST(substr(exp_isch_time, 1, instr(exp_isch_time, ' ') - 1) AS REAL) + CAST(substr(exp_time,
+    1, instr(exp_time, ' ') - 1) AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Total Ischemia Time = T_cold + T_warm (KB). Uses exp_isch_minutes\
+    \ (cold) + exp_transport_minutes (warm).\n\n[kb=2]\nThe sum of the time from organ\
+    \ recovery to preservation and the time from preservation to transplant. Formula:\
+    \ $T_{ischemia} = T_{cold} + T_{warm}$ \u2014 Measures the total time an organ\
+    \ is without blood supply, from recovery to transplant.\n[/kb=2]"
+  label: Total Ischemia Time
+  hidden: false
+  meta:
+    kb_id: 2
+- name: cost_usd
+  sql: CAST(substr(cost_est, 4) AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Estimated cost in USD (numeric, parsed from 'US$NNN.NN').
+  hidden: false
+- name: compat_hla_score
+  sql: CAST(json_extract(compatscores, '$.Hla_Score') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Pre-computed HLA sub-score (0-1).
+  hidden: false
+- name: compat_size_score
+  sql: CAST(json_extract(compatscores, '$.Size_Score') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Pre-computed Size sub-score (0-1). KB Size Compatibility Score.\n\n\
+    [kb=6]\nA score derived from the ratio of donor and recipient BMI. Formula: $S_{size}\
+    \ = 1 - |\\frac{BMI_{donor}}{BMI_{recipient}} - 1|$. \u2014 A score that assesses\
+    \ the physical size match between a donor and recipient, primarily using Body\
+    \ Mass Index (BMI).\n[/kb=6]"
+  label: Size Compatibility Score
+  hidden: false
+  meta:
+    kb_id: 6
+- name: compat_age_score
+  sql: CAST(json_extract(compatscores, '$.Age_Score') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Pre-computed Age sub-score (0-1). KB Age Compatibility Score.\n\n\
+    [kb=7]\nA normalized score based on the Donor-Recipient Age Difference. Formula:\
+    \ $S_{age} = e^{-0.03 \\times |Age_{recipient} - Age_{donor}|}$, using a standard\
+    \ scaling factor. \u2014 A score evaluating the suitability of a donor's age relative\
+    \ to the recipient's, considering the Donor-Recipient Age Difference.\n[/kb=7]"
+  label: Age Compatibility Score
+  hidden: false
+  meta:
+    kb_id: 7
+- name: logistical_feasibility_index
+  sql: (700.0 / (CAST(substr(distance, 1, instr(distance, ' ') - 1) AS REAL) * 1.609344))
+    + (300.0 / (CAST(substr(exp_isch_time, 1, instr(exp_isch_time, ' ') - 1) AS REAL)
+    + CAST(substr(exp_time, 1, instr(exp_time, ' ') - 1) AS REAL)))
+  type: DOUBLE
+  primary_key: false
+  description: "Logistical Feasibility Index = 700/distance_km + 300/total_ischemia_minutes\
+    \ (KB).\n\n[kb=8]\nA score combining geographic distance and Total Ischemia Time.\
+    \ Formula: $I_{logistics} = (\\frac{700}{Distance_{km}}) + (\\frac{300}{T_{ischemia\\\
+    _mins}})$ \u2014 Calculates an index representing the logistical viability of\
+    \ a transplant, considering distance and expected organ preservation time.\n[/kb=8]"
+  label: Logistical Feasibility Index
+  hidden: false
+  meta:
+    kb_id: 8
+- name: immunological_compat_score
+  sql: 0.6 * (CASE WHEN lower(blood_compat) = 'compatible' THEN 1.0 ELSE 0.0 END)
+    + 0.4 * (1.0 - hla_mis_count / 6.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Immunological Compatibility Score = 0.6*I_ABO + 0.4*(1 - HLA_mismatch/6)\
+    \ (KB).\n\n[kb=10]\nA weighted score based on ABO blood type compatibility status\
+    \ and the HLA Mismatch Score. Formula: $S_{immune} = 0.6 \\times I_{ABO} + 0.4\
+    \ \\times (1 - \\frac{S_{mismatch}}{6})$, where $I_{ABO}$ is 1 for compatible,\
+    \ 0 otherwise. \u2014 A comprehensive score assessing the immunological match,\
+    \ factoring in blood type and HLA differences.\n[/kb=10]"
+  label: Immunological Compatibility Score
+  hidden: false
+  meta:
+    kb_id: 10
+- name: is_optimal_match
+  sql: CASE WHEN lower(blood_compat) = 'compatible' AND hla_mis_count = 0 AND CAST(json_extract(compatscores,
+    '$.Size_Score') AS REAL) BETWEEN 0.9 AND 1.1 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Optimal Donor-Recipient Match (KB): full ABO compat AND HLA mismatch=0\
+    \ AND Size_Score in [0.9, 1.1].\n\n[kb=31]\nAn ideal match defined by meeting\
+    \ three specific, stringent criteria simultaneously: 1) Full ABO Blood Type Compatibility.\
+    \ 2) An HLA Mismatch Score of exactly 0. 3) A Size Compatibility Score within\
+    \ the inclusive range of [0.9, 1.1]. A pairing that satisfies all three conditions\
+    \ is classified as an Optimal Donor-Recipient Match. \u2014 An ideal pairing of\
+    \ a donor and recipient that meets a strict set of criteria to maximize the probability\
+    \ of long-term transplant success.\n[/kb=31]"
+  label: Optimal Donor-Recipient Match
+  hidden: false
+  meta:
+    kb_id: 31
+- name: hla_mismatch_level
+  sql: CASE WHEN hla_mis_count = 0 THEN '0-mismatch (Perfect Match)' WHEN hla_mis_count
+    = 6 THEN '6-mismatch (Complete Mismatch)' ELSE CAST(hla_mis_count AS TEXT) ||
+    '-mismatch (Partial Match)' END
+  type: TEXT
+  primary_key: false
+  description: "HLA Mismatch Levels (KB 44): '0-mismatch' is a perfect HLA match (ideal).\
+    \ '6-mismatch' is a complete mismatch across A, B, DR loci, the highest immunological\
+    \ barrier outside ABO/positive crossmatch. Intermediate counts are partial matches.\n\
+    \n[kb=44]\nThe number of mismatches impacts rejection risk. A '0-mismatch' is\
+    \ a perfect HLA match and is ideal. A '6-mismatch' is a complete mismatch across\
+    \ the A, B, and DR loci, representing the highest immunological barrier outside\
+    \ of ABO or positive crossmatch issues. \u2014 Illustrates the significance of\
+    \ the number of HLA mismatches.\n[/kb=44]"
+  label: HLA Mismatch Levels
+  hidden: false
+  meta:
+    kb_id: 44
+measures: []
+aggregations: []
+joins:
+- target_model: demographics
+  join_pairs:
+  - - donor_ref_reg
+    - contrib_registry
+  join_type: left
+- target_model: transplant_matching
+  join_pairs:
+  - - match_comp_registry
+    - match_rec_registry
+  join_type: left
+- target_model: recipients_demographics
+  join_pairs:
+  - - recip_ref_reg
+    - recip_registry
+  join_type: left
+filters: []
+description: 'Per-match compatibility scores: HLA mismatch count, ABO compatibility,
+  geographic distance, expected ischemia and transport times, cost estimate, and a
+  JSON compatscores (HLA/Size/Age sub-scores). One row per transplant_matching record.'
+hidden: false

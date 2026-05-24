@@ -1,0 +1,51 @@
+version: 6
+name: worksite
+sql_table: worksite
+query_variables: {}
+data_source: labor_certification_applications
+columns:
+- name: w_addr1
+  sql: w_addr1
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: wcity
+  sql: wcity
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: wstate
+  sql: wstate
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: wzip
+  sql: wzip
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: secent
+  sql: secent
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: secentname
+  sql: secentname
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: waddr_2
+  sql: waddr_2
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: wcnty
+  sql: wcnty
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

@@ -1,0 +1,174 @@
+version: 6
+name: treatmentoutcomes
+sql_table: treatmentoutcomes
+query_variables: {}
+data_source: mental
+columns:
+- name: txoutkey
+  sql: txoutkey
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: txref
+  sql: txref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: thprog
+  sql: thprog
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: txadh
+  sql: txadh
+  type: TEXT
+  primary_key: false
+  description: "Treatment adherence enum (Non-compliant, Low, Medium, High). Non-compliant\
+    \ = no adherence, Low = occasional, Medium = regular, High = consistent.\n\n[kb=26]\n\
+    Ranges from Non-compliant to High. Non-compliant indicates no adherence, Low indicates\
+    \ occasional adherence, Medium indicates regular adherence, and High indicates\
+    \ consistent adherence. \u2014 Illustrates the value of treatment adherence levels.\n\
+    [/kb=26]"
+  label: Treatment Adherence
+  hidden: false
+  meta:
+    kb_id: 26
+- name: txresp
+  sql: txresp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sideburd
+  sql: sideburd
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: txgoalstat
+  sql: txgoalstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: recgoalstat
+  sql: recgoalstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sympimp
+  sql: sympimp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: funcimpv
+  sql: funcimpv
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: workstatchg
+  sql: workstatchg
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: satscr
+  sql: satscr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: theralliance
+  sql: theralliance
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: txeng
+  sql: txeng
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: txsat
+  sql: txsat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: high_med_adh_helper
+  sql: txoutkey
+  type: INT
+  primary_key: false
+  description: "Filtered count helper: rows where txadh in {High, Medium}. Used in\
+    \ TAR numerator.\n\n[kb=2]\nTAR = \\frac{|treatmentoutcomes \\text{ with } txadh\
+    \ \\in \\{High, Medium\\}|} {|treatmentoutcomes|} \u2014 Measures the proportion\
+    \ of patients with high or medium treatment adherence at a facility.\n[/kb=2]"
+  label: Treatment Adherence Rate (TAR)
+  hidden: false
+  filter: txadh IN ('High', 'Medium')
+  meta:
+    kb_id: 2
+- name: theralliance_score
+  sql: CASE theralliance WHEN 'Strong' THEN 3 WHEN 'Moderate' THEN 2 WHEN 'Weak' THEN
+    1 WHEN 'Poor' THEN 0 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric therapeutic alliance score: Strong=3, Moderate=2, Weak=1,
+    Poor=0.'
+  hidden: false
+- name: funcimpv_score
+  sql: CASE funcimpv WHEN 'Significant' THEN 3 WHEN 'Moderate' THEN 2 WHEN 'Minimal'
+    THEN 1 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric functional improvement score: Significant=3, Moderate=2, Minimal=1.
+    Used in RTI.'
+  hidden: false
+- name: is_treatment_resistant
+  sql: txresp = 'Poor' AND txadh IN ('Medium', 'High')
+  type: BOOLEAN
+  primary_key: false
+  description: "Treatment-Resistant Patient (KB #11): txresp = 'Poor' AND txadh in\
+    \ {Medium, High}.\n\n[kb=11]\nA patient with txresp = Poor and txadh \\in \\{Medium,\
+    \ High\\} \u2014 Identifies patients with poor treatment response despite adherence.\n\
+    [/kb=11]"
+  label: Treatment-Resistant Patient
+  hidden: false
+  meta:
+    kb_id: 11
+- name: is_non_compliant
+  sql: txadh = 'Non-compliant' AND EXISTS (SELECT 1 FROM treatmentbasics tb WHERE
+    tb.txkey = treatmentoutcomes.txref AND tb.medadh = 'Non-compliant')
+  type: BOOLEAN
+  primary_key: false
+  description: "Non-Compliant Patient (KB #18): txadh = 'Non-compliant' AND linked\
+    \ treatmentbasics.medadh = 'Non-compliant'.\n\n[kb=18]\nA patient with txadh =\
+    \ Non-compliant and medadh = Non-compliant \u2014 Identifies patients with consistent\
+    \ non-compliance in treatment.\n[/kb=18]"
+  label: Non-Compliant Patient
+  hidden: false
+  meta:
+    kb_id: 18
+measures:
+- formula: high_med_adh_helper:count * 1.0 / *:count
+  name: tar
+  label: Treatment Adherence Rate (TAR)
+  description: "Treatment Adherence Rate (TAR) \u2014 fraction (0-1) of treatmentoutcomes\
+    \ with txadh in {High, Medium}.\n\n[kb=2]\nTAR = \\frac{|treatmentoutcomes \\\
+    text{ with } txadh \\in \\{High, Medium\\}|} {|treatmentoutcomes|} \u2014 Measures\
+    \ the proportion of patients with high or medium treatment adherence at a facility.\n\
+    [/kb=2]"
+  meta:
+    kb_id: 2
+aggregations: []
+joins:
+- target_model: treatmentbasics
+  join_pairs:
+  - - txref
+    - txkey
+  join_type: left
+filters: []
+description: Per-outcome record linked to a treatmentbasics row. Captures therapy
+  progress, treatment adherence, response, side-effect burden, goal status, symptom
+  and functional improvement, work-status changes, satisfaction score, and clinician-reported
+  therapeutic alliance/engagement.
+hidden: false

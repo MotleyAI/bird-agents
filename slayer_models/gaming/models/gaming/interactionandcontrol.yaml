@@ -1,0 +1,249 @@
+version: 6
+name: interactionandcontrol
+sql_table: interactionandcontrol
+query_variables: {}
+data_source: gaming
+columns:
+- name: interactregistry
+  sql: interactregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: interactphysref
+  sql: interactphysref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: interactdevref
+  sql: interactdevref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: amblight
+  sql: amblight
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: tempsense
+  sql: tempsense
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: accelsense
+  sql: accelsense
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: gyrosense
+  sql: gyrosense
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: hapfeed
+  sql: hapfeed
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: hapstr
+  sql: hapstr
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: vibmodes
+  sql: vibmodes
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: forcefeed
+  sql: forcefeed
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: trigres
+  sql: trigres
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: trigtravmm
+  sql: trigtravmm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: joydead
+  sql: joydead
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: joyprec
+  sql: joyprec
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: btnspcmm
+  sql: btnspcmm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: btnszmm
+  sql: btnszmm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: dpadvar
+  sql: dpadvar
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: dpadacc
+  sql: dpadacc
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: astickvar
+  sql: astickvar
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: driftres
+  sql: driftres
+  type: DOUBLE
+  primary_key: false
+  description: "Drift resistance 1-10 (KB #27: <5 prone to drift, 6-8 good, 9-10 Hall\
+    \ Effect/magnetic eliminating drift).\n\n[kb=27]\nRated on a scale of 1-10, where\
+    \ values below 5 indicate susceptibility to developing drift over time, 6-8 represents\
+    \ good resistance to drift under normal use conditions, and 9-10 indicates premium\
+    \ Hall Effect or magnetic sensing technologies specifically designed to eliminate\
+    \ drift entirely throughout the controller's lifespan. \u2014 Illustrates the\
+    \ significance of drift resistance in analog sticks for consistent gaming performance.\n\
+    [/kb=27]"
+  label: DriftRes (Drift Resistance)
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 27
+- name: rai
+  sql: ((joyprec + dpadacc) * 1.0 / 20) * (1 - deviceidentity__testsessions.inplagms
+    * 1.0 / 10) * 10
+  type: DOUBLE
+  primary_key: false
+  description: "Response Accuracy Index (RAI) = ((JoyPrec + DpadAcc)/20) \xD7 (1 -\
+    \ InpLagMs/10) \xD7 10. Reaches InpLagMs via deviceidentity\u2192testsessions.\n\
+    \n[kb=31]\nRAI = \\left(\\frac{JoyPrec + DpadAcc}{20}\\right) \\times \\left(1\
+    \ - \\frac{InpLagMs}{10}\\right) \\times 10 \u2014 Measures the accuracy and consistency\
+    \ of input response in gaming devices, accounting for both sensor precision and\
+    \ control stability.\n[/kb=31]"
+  label: Response Accuracy Index (RAI)
+  hidden: false
+  meta:
+    kb_id: 31
+- name: hfq
+  sql: (hapstr * 1.0 / 10) * (1 + vibmodes * 1.0 / 10) * (1 + LENGTH(forcefeed) *
+    1.0 / 20)
+  type: DOUBLE
+  primary_key: false
+  description: "Haptic Feedback Quality (HFQ) = (HapStr/10) \xD7 (1 + VibModes/10)\
+    \ \xD7 (1 + ForceFeed_length/20). ForceFeed_length is the string length of the\
+    \ ForceFeed descriptor.\n\n[kb=34]\nHFQ = \\left(\\frac{HapStr}{10}\\right) \\\
+    times \\left(1 + \\frac{VibModes}{10}\\right) \\times \\left(1 + \\frac{ForceFeed\\\
+    _length}{20}\\right) \u2014 Measures the quality and effectiveness of haptic feedback\
+    \ systems in gaming controllers and devices.\n[/kb=34]"
+  label: Haptic Feedback Quality (HFQ)
+  hidden: false
+  meta:
+    kb_id: 34
+- name: is_pro_esports_controller
+  sql: ((deviceidentity__testsessions.pollratehz * 1.0 / 100) * (1 - (deviceidentity__testsessions.inplagms
+    + deviceidentity__testsessions.resptimems) * 1.0 / 30) * 10) > 8.0 AND joyprec
+    > 9.0 AND driftres > 9.5 AND trigres >= 5 AND hapstr > 8
+  type: BOOLEAN
+  primary_key: false
+  description: "Professional Esports Controller (KB #14): IRS > 8.0 AND JoyPrec >\
+    \ 9.0 AND DriftRes > 9.5 AND TrigRes >= 5 AND HapStr > 8.\n\n[kb=14]\nA controller\
+    \ with IRS > 8.0, JoyPrec > 9.0, DriftRes > 9.5, TrigRes \u2265 5, and HapStr\
+    \ > 8, offering precise inputs and reliable performance required for competitive\
+    \ play at the highest level. \u2014 Defines the quality standards for controllers\
+    \ used in professional esports competitions.\n[/kb=14]"
+  label: Professional Esports Controller
+  hidden: false
+  meta:
+    kb_id: 14
+- name: is_ultra_responsive
+  sql: ((deviceidentity__testsessions.pollratehz * 1.0 / 100) * (1 - (deviceidentity__testsessions.inplagms
+    + deviceidentity__testsessions.resptimems) * 1.0 / 30) * 10) > 9.0 AND (((joyprec
+    + dpadacc) * 1.0 / 20) * (1 - deviceidentity__testsessions.inplagms * 1.0 / 10)
+    * 10) > 8.5 AND deviceidentity__testsessions.latms < 1.0 AND physicaldurability__performance.clklat
+    < 0.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Ultra-Responsive Gaming Device (KB #43): IRS > 9.0 AND RAI > 8.5 AND\
+    \ LatMs < 1.0 AND ClkLat < 0.5. Reaches ClkLat via physicaldurability\u2192performance.\n\
+    \n[kb=43]\nA device with IRS > 9.0, RAI > 8.5, LatMs < 1.0, and ClkLat < 0.5,\
+    \ delivering near-instantaneous input recognition essential for competitive gaming\
+    \ at the highest levels where milliseconds determine outcomes. \u2014 Defines\
+    \ the elite tier of input devices with exceptional response characteristics for\
+    \ reaction-critical competitive games.\n[/kb=43]"
+  label: Ultra-Responsive Gaming Device
+  hidden: false
+  meta:
+    kb_id: 43
+- name: is_pro_control_consistency
+  sql: (((joyprec + dpadacc) * 1.0 / 20) * (1 - deviceidentity__testsessions.inplagms
+    * 1.0 / 10) * 10) > 8.5 AND physicaldurability__rgb__mechanical.swtchcons > 9.0
+    AND joyprec > 9.0 AND driftres > 9.0
+  type: BOOLEAN
+  primary_key: false
+  description: "Professional-Grade Control Consistency (KB #46): RAI > 8.5 AND SwtchCons\
+    \ > 9.0 AND JoyPrec > 9.0 AND DriftRes > 9.0. Reaches SwtchCons via physicaldurability\u2192\
+    rgb\u2192mechanical (multi-hop).\n\n[kb=46]\nA device with RAI > 8.5, SwtchCons\
+    \ > 9.0, JoyPrec > 9.0 (if applicable), and DriftRes > 9.0 (if featuring analog\
+    \ sticks), delivering the precise, predictable input response professional players\
+    \ rely on for muscle memory development and consistent performance across practice\
+    \ and tournament environments. \u2014 Identifies controllers and input devices\
+    \ with exceptionally consistent control characteristics required for high-level\
+    \ competitive play.\n[/kb=46]"
+  label: Professional-Grade Control Consistency
+  hidden: false
+  meta:
+    kb_id: 46
+measures: []
+aggregations: []
+joins:
+- target_model: deviceidentity
+  join_pairs:
+  - - interactdevref
+    - devregistry
+  join_type: left
+- target_model: physicaldurability
+  join_pairs:
+  - - interactphysref
+    - physregistry
+  join_type: left
+filters: []
+hidden: false

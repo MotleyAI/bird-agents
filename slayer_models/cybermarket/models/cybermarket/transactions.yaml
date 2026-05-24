@@ -1,0 +1,267 @@
+version: 6
+name: transactions
+sql_table: transactions
+query_variables: {}
+data_source: cybermarket
+columns:
+- name: txregistry
+  sql: txregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: rectag
+  sql: rectag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: eventstamp
+  sql: eventstamp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: paymethod
+  sql: paymethod
+  type: TEXT
+  primary_key: false
+  description: "Payment method, by anonymity / traceability: 'Crypto_A' typically\
+    \ Bitcoin (pseudonymous, public ledger); 'Crypto_B' typically Monero / privacy\
+    \ coins (enhanced obfuscation); 'Crypto_C' emerging / niche cryptocurrencies;\
+    \ 'Token' platform-specific value exchange outside standard blockchains.\n\n[kb=2]\n\
+    Payment methods represent varying degrees of anonymity and traceability: 'Crypto_A'\
+    \ typically refers to Bitcoin, offering pseudonymous transactions with public\
+    \ ledgers; 'Crypto_B' often indicates Monero or similar privacy coins with enhanced\
+    \ transaction obfuscation; 'Crypto_C' represents emerging or niche cryptocurrencies;\
+    \ 'Token' indicates platform-specific value exchange systems that operate outside\
+    \ traditional blockchain networks. \u2014 Explains the significance of different\
+    \ payment methods\n[/kb=2]"
+  label: cybermarket|transactions|paymethod
+  hidden: false
+  meta:
+    kb_id: 2
+- name: payamtusd
+  sql: payamtusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: txfeeusd
+  sql: txfeeusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: escrowused
+  sql: escrowused
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: escrowhrs
+  sql: escrowhrs
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: multisigflag
+  sql: multisigflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: txstatus
+  sql: txstatus
+  type: TEXT
+  primary_key: false
+  description: "Transaction lifecycle stage: 'Pending' = initiated, awaiting verification\
+    \ or escrow; 'Completed' = successfully executed; 'Cancelled' = terminated before\
+    \ completion (often refund-pending); 'Disputed' = contested, requiring arbitration\
+    \ (potential fraud / service failure).\n\n[kb=3]\n'Pending' represents initiated\
+    \ but incomplete transactions awaiting verification or escrow conditions; 'Completed'\
+    \ indicates successfully executed transactions with all parties satisfied; 'Cancelled'\
+    \ denotes transactions terminated before completion, often requiring refund processing;\
+    \ 'Disputed' represents contested transactions requiring arbitration, indicating\
+    \ potential fraud or service failure. \u2014 Explains the transaction lifecycle\
+    \ stages and their implications\n[/kb=3]"
+  label: cybermarket|transactions|txstatus
+  hidden: false
+  meta:
+    kb_id: 3
+- name: txfinishhrs
+  sql: txfinishhrs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: shipmethod
+  sql: shipmethod
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shipregionsrc
+  sql: shipregionsrc
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shipregiondst
+  sql: shipregiondst
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: crossborderflag
+  sql: crossborderflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: routecomplexity
+  sql: routecomplexity
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: mktref
+  sql: mktref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: prodref
+  sql: prodref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: buyref
+  sql: buyref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tas
+  sql: (payamtusd * 1.0 / 1000) * (txfinishhrs * 1.0 / 24) * (1 + escrowhrs * 1.0
+    / 100) * (1 - markets.esccomprate * 1.0 / 100)
+  type: DOUBLE
+  primary_key: false
+  description: "Transaction Anomaly Score (TAS): (payamtusd/1000)*(txfinishhrs/24)*(1+escrowhrs/100)*(1-esccomprate/100).\
+    \ esccomprate is from the associated market (joined via mktref). Higher = more\
+    \ suspicious.\n\n[kb=12]\nTAS = \\frac{payamtusd}{1000} \\times \\frac{txfinishhrs}{24}\
+    \ \\times \\left(1 + \\frac{escrowhrs}{100}\\right) \\times \\left(1 - \\frac{esccomprate}{100}\\\
+    right), \\text{where esccomprate is from the associated market, and higher scores\
+    \ indicate more suspicious transactions.} \u2014 Detects unusual transactions\
+    \ based on multiple variables\n[/kb=12]"
+  label: Transaction Anomaly Score (TAS)
+  hidden: false
+  meta:
+    kb_id: 12
+- name: prodtheme_weight
+  sql: CASE products.prodtheme WHEN 'Digital' THEN 10 WHEN 'Data' THEN 20 WHEN 'Service'
+    THEN 30 WHEN 'Physical' THEN 50 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric weight of the linked product's prodtheme used by PRE: Digital=10,\
+    \ Data=20, Service=30, Physical=50.\n\n[kb=4]\n'Digital' products include software,\
+    \ account credentials, and virtual goods requiring no physical shipping; 'Data'\
+    \ encompasses information packages like databases, personal information, and intellectual\
+    \ property; 'Service' refers to activities rather than tangible products, including\
+    \ hacking, documentation, or technical assistance; 'Physical' indicates tangible\
+    \ goods requiring actual shipment through delivery networks, representing the\
+    \ highest exposure risk category. \u2014 Clarifies product theme classifications\
+    \ and their enforcement implications\n[/kb=4]"
+  label: cybermarket|products|prodtheme
+  hidden: false
+  meta:
+    kb_id: 4
+- name: escrowused_numeric
+  sql: CASE WHEN escrowused = 'Yes' THEN 0 WHEN escrowused = 'No' THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric mapping of escrowused (used by PRE): 0 if escrow used ('Yes'),\
+    \ 1 if not ('No').\n\n[kb=4]\n'Digital' products include software, account credentials,\
+    \ and virtual goods requiring no physical shipping; 'Data' encompasses information\
+    \ packages like databases, personal information, and intellectual property; 'Service'\
+    \ refers to activities rather than tangible products, including hacking, documentation,\
+    \ or technical assistance; 'Physical' indicates tangible goods requiring actual\
+    \ shipment through delivery networks, representing the highest exposure risk category.\
+    \ \u2014 Clarifies product theme classifications and their enforcement implications\n\
+    [/kb=4]"
+  label: cybermarket|products|prodtheme
+  hidden: false
+  meta:
+    kb_id: 4
+- name: pre
+  sql: (CASE products.prodtheme WHEN 'Digital' THEN 10 WHEN 'Data' THEN 20 WHEN 'Service'
+    THEN 30 WHEN 'Physical' THEN 50 ELSE 0 END) + (CASE WHEN escrowused = 'Yes' THEN
+    0 WHEN escrowused = 'No' THEN 1 ELSE 0 END) * 10 - (escrowhrs * 1.0 / 24) + (payamtusd
+    * 1.0 / 500)
+  type: DOUBLE
+  primary_key: false
+  description: "Product Risk Exposure (PRE): prodtheme_weight + 10*escrowused_numeric\
+    \ - escrowhrs/24 + payamtusd/500. Encoded on transactions because both product\
+    \ theme (via prodref) and transaction-level escrow / pay fields are needed.\n\n\
+    [kb=32]\nPRE = prodtheme_weight + (escrowused_numeric \\times 10) - \\frac{escrowhrs}{24}\
+    \ + \\frac{payamtusd}{500}, \\text{where prodtheme_weight assigns Digital=10,\
+    \ Data=20, Service=30, Physical=50 based on the product theme classification,\
+    \ and escrowused_numeric is 0 if escrow is used and 1 if not.} \u2014 Quantifies\
+    \ the regulatory exposure risk associated with product listings\n[/kb=32]"
+  label: Product Risk Exposure (PRE)
+  hidden: false
+  meta:
+    kb_id: 32
+- name: is_suspicious_transaction_pattern
+  sql: ((payamtusd * 1.0 / 1000) * (txfinishhrs * 1.0 / 24) * (1 + escrowhrs * 1.0
+    / 100) * (1 - markets.esccomprate * 1.0 / 100)) > 75 AND paymethod = 'Crypto_B'
+    AND (escrowused = 'No' OR escrowhrs < 24) AND routecomplexity = 'Complex'
+  type: BOOLEAN
+  primary_key: false
+  description: "Suspicious Transaction Pattern (KB #22): TAS > 75, paymethod = 'Crypto_B'\
+    \ (privacy coin), escrow disabled or <24h, routecomplexity = 'Complex'.\n\n[kb=22]\n\
+    A transaction with TAS > 75, payment in privacy-focused cryptocurrencies (Crypto_B),\
+    \ escrow disabled or minimized (escrowused = 'No' or escrowhrs < 24), and unusual\
+    \ routing complexity (routecomplexity = 'Complex'). These transactions often represent\
+    \ high-risk activities requiring further investigation. \u2014 Identifies transactions\
+    \ with characteristics suggesting potential illegal activity\n[/kb=22]"
+  label: Suspicious Transaction Pattern
+  hidden: false
+  meta:
+    kb_id: 22
+- name: is_high_exposure_product
+  sql: ((CASE products.prodtheme WHEN 'Digital' THEN 10 WHEN 'Data' THEN 20 WHEN 'Service'
+    THEN 30 WHEN 'Physical' THEN 50 ELSE 0 END) + (CASE WHEN escrowused = 'Yes' THEN
+    0 WHEN escrowused = 'No' THEN 1 ELSE 0 END) * 10 - (escrowhrs * 1.0 / 24) + (payamtusd
+    * 1.0 / 500)) > 60 AND products.prodtheme = 'Physical' AND escrowused = 'No' AND
+    paymethod = 'Crypto_B'
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Exposure Product (KB #42): PRE > 60, prodtheme='Physical', escrowused='No',\
+    \ paymethod='Crypto_B'. Encoded on transactions (the row that carries pay/escrow/method\
+    \ and joins to product theme).\n\n[kb=42]\nA product with PRE > 60, in the 'Physical'\
+    \ theme category as defined in the product theme classification, without escrow\
+    \ protection (escrowused = 'No'), and transacted with privacy-focused cryptocurrency\
+    \ (paymethod = 'Crypto_B'). These products require immediate monitoring due to\
+    \ their heightened risk profile. \u2014 Identifies products with elevated regulatory\
+    \ risk factors\n[/kb=42]"
+  label: High-Exposure Product
+  hidden: false
+  meta:
+    kb_id: 42
+measures: []
+aggregations: []
+joins:
+- target_model: buyers
+  join_pairs:
+  - - buyref
+    - buyregistry
+  join_type: left
+- target_model: markets
+  join_pairs:
+  - - mktref
+    - mktregistry
+  join_type: left
+- target_model: products
+  join_pairs:
+  - - prodref
+    - prodregistry
+  join_type: left
+filters: []
+description: 'Cybermarket transactions. One row per transaction, joined to its market
+  (mktref), product (prodref), and buyer (buyref). Key dimensions: paymethod, txstatus,
+  escrow flags, shipping method/region, route complexity. Numeric metrics: payamtusd,
+  txfeeusd, escrowhrs, txfinishhrs.'
+hidden: false

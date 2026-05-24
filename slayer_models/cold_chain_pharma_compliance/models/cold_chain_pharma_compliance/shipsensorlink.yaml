@@ -1,0 +1,31 @@
+version: 6
+name: shipsensorlink
+sql_table: shipsensorlink
+query_variables: {}
+data_source: cold_chain_pharma_compliance
+columns:
+- name: shpnode
+  sql: shpnode
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: devnode
+  sql: devnode
+  type: TEXT
+  primary_key: true
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: monitoringdevices
+  join_pairs:
+  - - devnode
+    - mondevref
+  join_type: left
+- target_model: shipments
+  join_pairs:
+  - - shpnode
+    - reckey
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,107 @@
+version: 6
+name: market_depth_ratio
+source_queries:
+- version: 3
+  name: depth_per_pair
+  source_model: marketdata
+  measures:
+  - formula: biddepth:avg
+    name: biddepth_avg
+  - formula: askdepth:avg
+    name: askdepth_avg
+  dimensions:
+  - name: mktcombo
+  whole_periods_only: false
+- version: 3
+  name: lr_per_pair
+  source_model: marketstats
+  measures:
+  - formula: liquidity_ratio:avg
+    name: lr_avg
+  dimensions:
+  - name: mktcombo
+    model: marketdata
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: orders
+    joins:
+    - target_model: depth_per_pair
+      join_pairs:
+      - - mktnote
+        - mktcombo
+    - target_model: lr_per_pair
+      join_pairs:
+      - - mktnote
+        - marketdata__mktcombo
+    - target_model: riskandmargin
+      join_pairs:
+      - - recordvault
+        - ordervault
+    columns:
+    - name: mdr_value
+      type: DOUBLE
+      sql: (CASE WHEN (riskandmargin.risk_margin_profile ->> '$.position.posedge')
+        = 'Long' THEN depth_per_pair.biddepth_avg ELSE depth_per_pair.askdepth_avg
+        END) / NULLIF(orders.dealcount, 0) * lr_per_pair.lr_avg
+  dimensions:
+  - name: recordvault
+  - name: mdr_value
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.mdr_value\"\
+  \ AS mdr_value FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\",\n \
+  \ (\n    CASE\n      WHEN (\n        riskandmargin.risk_margin_profile ->> '$.position.posedge'\n\
+  \      ) = 'Long'\n      THEN depth_per_pair.biddepth_avg\n      ELSE depth_per_pair.askdepth_avg\n\
+  \    END\n  ) / NULLIF(orders.dealcount, 0) * lr_per_pair.lr_avg AS \"orders.mdr_value\"\
+  \nFROM orders AS orders\nLEFT JOIN (\n  (\n    SELECT\n      \"marketdata.mktcombo\"\
+  \ AS mktcombo,\n      \"marketdata.biddepth_avg\" AS biddepth_avg,\n      \"marketdata.askdepth_avg\"\
+  \ AS askdepth_avg\n    FROM (\n      SELECT\n        marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo' AS \"marketdata.mktcombo\",\n        AVG(marketdata.quote_depth_snapshot\
+  \ ->> '$.depth.biddepth') AS \"marketdata.biddepth_avg\",\n        AVG(marketdata.quote_depth_snapshot\
+  \ ->> '$.depth.askdepth') AS \"marketdata.askdepth_avg\"\n      FROM marketdata\
+  \ AS marketdata\n      GROUP BY\n        marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\n\
+  \    ) AS _inner\n  )\n) AS depth_per_pair\n  ON orders.mktnote = depth_per_pair.mktcombo\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"marketstats.marketdata.mktcombo\" AS marketdata__mktcombo,\n\
+  \      \"marketstats.lr_avg\" AS lr_avg\n    FROM (\n      SELECT\n        marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo' AS \"marketstats.marketdata.mktcombo\",\n        AVG(\n\
+  \          (\n            CAST(marketdata.quote_depth_snapshot ->> '$.depth.bidunits'\
+  \ AS REAL) + CAST(marketdata.quote_depth_snapshot ->> '$.depth.askunits' AS REAL)\n\
+  \          ) * CAST(marketdata.quote_depth_snapshot ->> '$.quotes.midquote' AS REAL)\
+  \ / NULLIF(marketstats.volday, 0)\n        ) AS \"marketstats.lr_avg\"\n      FROM\
+  \ marketstats AS marketstats\n      LEFT JOIN marketdata AS marketdata\n       \
+  \ ON marketstats.mdlink = marketdata.marketdatanode\n      GROUP BY\n        marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo'\n    ) AS _inner\n  )\n) AS lr_per_pair\n  ON orders.mktnote\
+  \ = lr_per_pair.marketdata__mktcombo\nLEFT JOIN riskandmargin AS riskandmargin\n\
+  \  ON orders.recordvault = riskandmargin.ordervault) AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: mdr_value
+  sql: mdr_value
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Market Depth Ratio (KB #36) per order: (biddepth or askdepth) / dealcount\
+  \ x Liquidity Ratio, where biddepth/askdepth is used depending on position direction\
+  \ (posedge), dealcount is the order quantity, and Liquidity Ratio measures available\
+  \ liquidity to total market volume. The choice of biddepth vs askdepth follows posedge\
+  \ (Long \u2192 biddepth, Short \u2192 askdepth). biddepth/askdepth are per-pair\
+  \ averages from marketdata; Liquidity Ratio is per-pair on marketstats (avg). Both\
+  \ joined to orders via orders.mktnote = mktcombo.\n\n[kb=36]\nMarket Depth Ratio\
+  \ = \\frac{biddepth \\text{ or } askdepth}{dealcount} \\times Liquidity Ratio, \\\
+  text{where } biddepth/askdepth \\text{ is used depending on position direction (posedge),\
+  \ } dealcount \\text{ is the order quantity, and } Liquidity Ratio \\text{ measures\
+  \ available liquidity to total market volume.} \u2014 Measures the ratio of order\
+  \ book depth to position size to assess market liquidity for position exit.\n[/kb=36]"
+hidden: false
+meta:
+  kb_id: 36

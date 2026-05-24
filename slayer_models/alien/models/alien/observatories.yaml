@@ -1,0 +1,217 @@
+version: 6
+name: observatories
+sql_table: observatories
+query_variables: {}
+data_source: alien
+columns:
+- name: observstation
+  sql: observstation
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: weathprofile
+  sql: weathprofile
+  type: TEXT
+  primary_key: false
+  description: "Weather Profile. WeathProfile='Clear' indicates pristine sky conditions\
+    \ with no clouds, usually associated with AtmosTransparency > 0.9, low HumidityRate\
+    \ (<40%), and minimal WindSpeedMs (<3.0). Provides ideal visibility for optical\
+    \ observations and minimal atmospheric interference for radio observations.\n\n\
+    [kb=20]\nIndicates pristine sky conditions with no clouds, usually associated\
+    \ with $\\text{AtmosTransparency} > 0.9$, low $\\text{HumidityRate} (< 40\\%)$,\
+    \ and minimal $\\text{WindSpeedMs} (< 3.0)$. Provides ideal visibility for optical\
+    \ observations and minimal atmospheric interference for radio observations. \u2014\
+    \ Illustrates optimal weather conditions for signal detection.\n[/kb=20]"
+  label: 'WeathProfile: Clear'
+  hidden: false
+  meta:
+    kb_id: 20
+- name: seeingprofile
+  sql: seeingprofile
+  type: TEXT
+  primary_key: false
+  description: "Seeing Profile. SeeingProfile='Excellent' describes atmospheric conditions\
+    \ with minimal turbulence, allowing for sharp, detailed observations. Typically\
+    \ corresponds to image stability better than 1 arcsecond and is often associated\
+    \ with stable temperature gradients and low wind speeds (WindSpeedMs < 2.5).\n\
+    \n[kb=21]\nDescribes atmospheric conditions with minimal turbulence, allowing\
+    \ for sharp, detailed observations. Typically corresponds to image stability better\
+    \ than 1 arcsecond and is often associated with stable temperature gradients and\
+    \ low wind speeds ($\\text{WindSpeedMs} < 2.5$). \u2014 Illustrates superior atmospheric\
+    \ seeing conditions.\n[/kb=21]"
+  label: 'SeeingProfile: Excellent'
+  hidden: false
+  meta:
+    kb_id: 21
+- name: atmostransparency
+  sql: atmostransparency
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: lunarstage
+  sql: lunarstage
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lunardistdeg
+  sql: lunardistdeg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: solarstatus
+  sql: solarstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: geomagstatus
+  sql: geomagstatus
+  type: TEXT
+  primary_key: false
+  description: "Geomagnetic Activity status. GeomagStatus='Storm' (or 'Major Storm'\
+    \ in domain prose) indicates intense solar-induced geomagnetic activity (Kp index\
+    \ >= 7). During such conditions, ionospheric perturbations significantly affect\
+    \ radio observations below 100 MHz, aurora may be visible at mid-latitudes, and\
+    \ satellite communications may experience disruptions.\n\n[kb=23]\nIndicates intense\
+    \ solar-induced geomagnetic activity with Kp index \u2265 7. During such conditions,\
+    \ ionospheric perturbations significantly affect radio observations below 100\
+    \ MHz, aurora may be visible at mid-latitudes, and satellite communications may\
+    \ experience disruptions. \u2014 Illustrates severe geomagnetic disturbance conditions.\n\
+    [/kb=23]"
+  label: 'GeomagStatus: Major Storm'
+  hidden: false
+  meta:
+    kb_id: 23
+- name: sidereallocal
+  sql: sidereallocal
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: airtempc
+  sql: airtempc
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: humidityrate
+  sql: humidityrate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: windspeedms
+  sql: windspeedms
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: presshpa
+  sql: presshpa
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: aoi
+  sql: atmostransparency * (1 - humidityrate / 100.0) * (1 - 0.02 * windspeedms)
+  type: DOUBLE
+  primary_key: false
+  description: "Atmospheric Observability Index (AOI) = AtmosTransparency * (1 - HumidityRate/100)\
+    \ * (1 - 0.02 * WindSpeedMs). Values closer to 1 indicate ideal observation conditions.\n\
+    \n[kb=1]\n$\\text{AOI} = \\text{AtmosTransparency} \\times (1 - \\frac{\\text{HumidityRate}}{100})\
+    \ \\times (1 - 0.02 \\times \\text{WindSpeedMs})$, where values closer to 1 indicate\
+    \ ideal observation conditions. \u2014 Quantifies how conducive atmospheric conditions\
+    \ are for signal detection.\n[/kb=1]"
+  label: Atmospheric Observability Index (AOI)
+  hidden: false
+  meta:
+    kb_id: 1
+- name: disf
+  sql: (10 - ABS(airtempc - 15) / 10.0) * atmostransparency * (1 - humidityrate /
+    200.0) * (100 - lunardistdeg) / 100.0
+  type: DOUBLE
+  primary_key: false
+  description: "Detection Instrument Sensitivity Factor (DISF) = (10 - |AirTempC-15|/10)\
+    \ * AtmosTransparency * (1 - HumidityRate/200) * (100 - LunarDistDeg)/100. Values\
+    \ closer to 10 indicate optimal detection sensitivity.\n\n[kb=5]\n$\\text{DISF}\
+    \ = (10 - \\frac{|\\text{AirTempC} - 15|}{10}) \\times \\text{AtmosTransparency}\
+    \ \\times (1 - \\frac{\\text{HumidityRate}}{200}) \\times \\frac{100 - \\text{LunarDistDeg}}{100}$,\
+    \ where values closer to 10 indicate optimal detection sensitivity. \u2014 Calculates\
+    \ the effective sensitivity of the detection setup based on telescope and environmental\
+    \ factors.\n[/kb=5]"
+  label: Detection Instrument Sensitivity Factor (DISF)
+  hidden: false
+  meta:
+    kb_id: 5
+- name: lif
+  sql: (1 - lunardistdeg / 180.0) * (1 - atmostransparency)
+  type: DOUBLE
+  primary_key: false
+  description: "Lunar Interference Factor (LIF) = (1 - LunarDistDeg/180) * (1 - AtmosTransparency).\
+    \ Higher values indicate more lunar interference; values above 0.5 suggest significant\
+    \ lunar contamination.\n\n[kb=9]\n$\\text{LIF} = (1 - \\frac{\\text{LunarDistDeg}}{180})\
+    \ \\times (1 - \\text{AtmosTransparency})$, where higher values indicate more\
+    \ lunar interference. Values above 0.5 suggest significant lunar contamination\
+    \ in data. \u2014 Calculates the potential interference from lunar illumination\
+    \ on observations.\n[/kb=9]"
+  label: Lunar Interference Factor (LIF)
+  hidden: false
+  meta:
+    kb_id: 9
+- name: is_oow
+  sql: CASE WHEN (atmostransparency * (1 - humidityrate / 100.0) * (1 - 0.02 * windspeedms))
+    > 0.85 AND lunarstage IN ('New', 'First Quarter') AND lunardistdeg > 45 AND solarstatus
+    IN ('Low', 'Moderate') THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Optimal Observing Window (OOW): periods when AOI > 0.85, LunarStage\
+    \ in ('New','First Quarter'), LunarDistDeg > 45, SolarStatus in ('Low','Moderate').\n\
+    \n[kb=13]\nTime periods when $\\text{AOI} > 0.85$, $\\text{LunarStage}$ is 'New'\
+    \ or 'First Quarter', $\\text{LunarDistDeg} > 45$, and $\\text{SolarStatus}$ is\
+    \ 'Low' or 'Moderate'. \u2014 Defines conditions when observational quality is\
+    \ maximized.\n[/kb=13]"
+  label: Optimal Observing Window (OOW)
+  hidden: false
+  meta:
+    kb_id: 13
+- name: is_sds
+  sql: CASE WHEN atmostransparency < 0.7 OR humidityrate > 70 OR windspeedms > 8 OR
+    geomagstatus LIKE '%Storm%' THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Signal Degradation Scenario (SDS): observation conditions where AtmosTransparency<0.7\
+    \ OR HumidityRate>70 OR WindSpeedMs>8 OR GeomagStatus contains 'Storm'.\n\n[kb=14]\n\
+    Observation conditions where one or more of: $\\text{AtmosTransparency} < 0.7$,\
+    \ $\\text{HumidityRate} > 70$, $\\text{WindSpeedMs} > 8$, or $\\text{GeomagStatus}$\
+    \ contains 'Storm', resulting in compromised data quality. \u2014 Characterizes\
+    \ situations where signal quality is compromised by environmental factors.\n[/kb=14]"
+  label: Signal Degradation Scenario (SDS)
+  hidden: false
+  meta:
+    kb_id: 14
+- name: is_high_lif
+  sql: CASE WHEN ((1 - lunardistdeg / 180.0) * (1 - atmostransparency)) > 0.5 THEN
+    1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "High Lunar Interference Events: observations where LIF > 0.5, indicating\
+    \ strong lunar contamination in the data.\n\n[kb=53]\nEvents where the calculated\
+    \ LIF is greater than 0.5, indicating strong lunar contamination in the data.\
+    \ \u2014 Observations with significant lunar interference.\n[/kb=53]"
+  label: High Lunar Interference Events
+  hidden: false
+  meta:
+    kb_id: 53
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: Observatory stations and their environmental observation conditions (weather,
+  atmospheric transparency, lunar phase, geomagnetic & solar activity).
+hidden: false

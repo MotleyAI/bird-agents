@@ -1,0 +1,262 @@
+version: 6
+name: investigationdetails
+sql_table: investigationdetails
+query_variables: {}
+data_source: insider
+columns:
+- name: invdetreg
+  sql: invdetreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: compref
+  sql: compref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: reginv
+  sql: reginv
+  type: TEXT
+  primary_key: false
+  description: Current phase of regulatory investigation (Preliminary / Active).
+  hidden: false
+- name: patrecsc
+  sql: patrecsc
+  type: DOUBLE
+  primary_key: false
+  description: Pattern-recognition match score.
+  hidden: false
+  format:
+    type: float
+- name: behansc
+  sql: behansc
+  type: DOUBLE
+  primary_key: false
+  description: Behavioural analysis score.
+  hidden: false
+  format:
+    type: float
+- name: netansc
+  sql: netansc
+  type: DOUBLE
+  primary_key: false
+  description: Network-analysis anomaly score.
+  hidden: false
+  format:
+    type: float
+- name: relmapstat
+  sql: relmapstat
+  type: TEXT
+  primary_key: false
+  description: Status of mapping relationships among entities.
+  hidden: false
+- name: connent
+  sql: connent
+  type: TEXT
+  primary_key: false
+  description: List or description of connected entities uncovered.
+  hidden: false
+- name: commaddr
+  sql: commaddr
+  type: INT
+  primary_key: false
+  description: Count of shared physical or IP addresses across the network.
+  hidden: false
+  format:
+    type: integer
+- name: sharectc
+  sql: sharectc
+  type: TEXT
+  primary_key: false
+  description: Type of shared contact information identified.
+  hidden: false
+- name: finrel
+  sql: finrel
+  type: TEXT
+  primary_key: false
+  description: Nature of financial relationships linked.
+  hidden: false
+- name: commpat
+  sql: commpat
+  type: TEXT
+  primary_key: false
+  description: Observed communication pattern among parties (Regular / Irregular).
+  hidden: false
+- name: tcirclesz
+  sql: tcirclesz
+  type: INT
+  primary_key: false
+  description: Size of the trading circle or colluding group.
+  hidden: false
+  format:
+    type: integer
+- name: grpbehsc
+  sql: grpbehsc
+  type: DOUBLE
+  primary_key: false
+  description: Group-behaviour risk score.
+  hidden: false
+  format:
+    type: float
+- name: mktabprob
+  sql: mktabprob
+  type: DOUBLE
+  primary_key: false
+  description: Estimated probability of market-abuse activity.
+  hidden: false
+  format:
+    type: float
+- name: evidstr
+  sql: evidstr
+  type: TEXT
+  primary_key: false
+  description: Strength of supporting evidence (Weak / Moderate / Strong).
+  hidden: false
+- name: docustat
+  sql: docustat
+  type: TEXT
+  primary_key: false
+  description: Documentation completeness level (Incomplete / Partial / Complete).
+  hidden: false
+- name: sentref
+  sql: sentref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: iii
+  sql: (0.6 * behansc) + (0.4 * netansc)
+  type: DOUBLE
+  primary_key: false
+  description: "Investigation Intensity Index (III = 0.6*behansc + 0.4*netansc) \u2014\
+    \ KB #6.\n\n[kb=6]\nIII = (0.6 \\times \\text{behansc}) + (0.4 \\times \\text{netansc})\
+    \ \u2014 Combines behavioral and network analysis scores from an investigation.\n\
+    [/kb=6]"
+  label: Investigation Intensity Index (III)
+  hidden: false
+  meta:
+    kb_id: 6
+- name: wis
+  sql: ((0.6 * behansc) + (0.4 * netansc)) * (CASE compliancecase.alertlvl WHEN 'Low'
+    THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 WHEN 'Critical' THEN 4 ELSE NULL
+    END)
+  type: DOUBLE
+  primary_key: false
+  description: "Weighted Investigation Score (WIS = III * AlertLevelMultiplier) \u2014\
+    \ KB #33. AlertLevelMultiplier maps Alert Level Severity from compliancecase to\
+    \ numeric: Low=1, Medium=2, High=3, Critical=4.\n\n[kb=33]\nWIS = \\text{III}\
+    \ \\times \\text{AlertLevelMultiplier} \\\\ \\text{where III is Investigation\
+    \ Intensity Index } \\\\ \\text{and AlertLevelMultiplier maps Alert Level Severity\
+    \  to numeric: 'Low'=1, 'Medium'=2, 'High'=3, 'Critical'=4.} \u2014 Combines raw\
+    \ investigation scores with the current alert severity level.\n[/kb=33]"
+  label: Weighted Investigation Score (WIS)
+  hidden: false
+  meta:
+    kb_id: 33
+- name: icri
+  sql: (((0.6 * behansc) + (0.4 * netansc)) * (CASE compliancecase.alertlvl WHEN 'Low'
+    THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 WHEN 'Critical' THEN 4 ELSE NULL
+    END)) * (1.0 - (1.0 / (1.0 + (compliancecase.prevviol * 1.0 / MAX(1.0, compliancecase__transactionrecord__trader.acctdays
+    / 365.0)) * (CASE compliancecase.comprate WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN
+    'C' THEN 3 WHEN 'D' THEN 4 ELSE 0 END))))
+  type: DOUBLE
+  primary_key: false
+  description: "Investigation Compliance Risk Index (ICRI = WIS * (1 - CHS)) \u2014\
+    \ KB #50. CHS computed inline from compliancecase fields.\n\n[kb=50]\nICRI = \\\
+    text{WIS} \\times (1 - \\text{CHS}) \\\\ \\text{where WIS is Weighted Investigation\
+    \ Score  and CHS is Compliance Health Score .} \u2014 Combines the weighted investigation\
+    \ score with the inverse compliance health score, highlighting cases that are\
+    \ both problematic and under intense investigation.\n[/kb=50]"
+  label: Investigation Compliance Risk Index (ICRI)
+  hidden: false
+  meta:
+    kb_id: 50
+- name: caii
+  sql: ((0.6 * behansc) + (0.4 * netansc)) * 1.0 / MAX(1000.0, compliancecase__transactionrecord__trader.acctbal)
+  type: DOUBLE
+  primary_key: false
+  description: "Capital-Adjusted Investigation Intensity (CAII = III / Max(1000, acctbal))\
+    \ \u2014 KB #55. acctbal joined via compliancecase.transactionrecord.trader.\n\
+    \n[kb=55]\nCAII = \\frac{\\text{III}}{\\text{Max}(1000, \\text{acctbal})} \\\\\
+    \ \\text{where III is Investigation Intensity Index .} \u2014 Normalizes the investigation\
+    \ intensity index by the trader's account balance, showing investigation focus\
+    \ relative to trader size.\n[/kb=55]"
+  label: Capital-Adjusted Investigation Intensity (CAII)
+  hidden: false
+  meta:
+    kb_id: 55
+- name: is_collusion_network_indicator
+  sql: tcirclesz > 5 AND grpbehsc > 0.6 AND commpat = 'Regular'
+  type: BOOLEAN
+  primary_key: false
+  description: "Collusion Network Indicator (KB #13): tcirclesz>5 AND grpbehsc>0.6\
+    \ AND commpat='Regular'.\n\n[kb=13]\nA case indicates potential collusion if `tcirclesz`\
+    \ > 5 AND `grpbehsc` > 0.6 AND `commpat` is 'Regular'. \u2014 Suggests potential\
+    \ collusion based on investigation details.\n[/kb=13]"
+  label: Collusion Network Indicator
+  hidden: false
+  meta:
+    kb_id: 13
+- name: is_high_intensity_insider_investigation
+  sql: ((0.6 * behansc) + (0.4 * netansc)) > 70 AND (sentimentandfundamentals.infoleaksc
+    > 50.0 AND sentimentandfundamentals.corpeventprx IS NOT NULL AND (sentimentandfundamentals.eventannotm
+    = 'Pre-market' OR sentimentandfundamentals.eventannotm = 'Intraday'))
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Intensity Insider Investigation (KB #67): linked to Potential\
+    \ Insider Trading Flag (KB #11, joined via sentref) AND III > 70.\n\n[kb=67]\n\
+    An investigation linked to a Potential Insider Trading Flag  AND having a high\
+    \ Investigation Intensity Index (III)  (e.g., > 70). \u2014 Flags investigations\
+    \ triggered by potential insider trading that show high intensity scores, suggesting\
+    \ significant findings.\n[/kb=67]"
+  label: High-Intensity Insider Investigation
+  hidden: false
+  meta:
+    kb_id: 67
+- name: is_high_risk_collusion_group_member
+  sql: (tcirclesz > 5 AND grpbehsc > 0.6 AND commpat = 'Regular') AND ((CAST(json_extract(compliancecase__transactionrecord__trader.trading_performance,
+    '$.risklevel.levratio') AS REAL) > 5.0 AND json_extract(compliancecase__transactionrecord__trader.trading_performance,
+    '$.risklevel.risklevel') = 'Aggressive') OR (compliancecase__transactionrecord__trader.voldaily
+    * 1.0 / NULLIF(compliancecase__transactionrecord__trader.acctbal, 0)) > 0.5)
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Risk Collusion Group Member (KB #43): Collusion Network Indicator\
+    \ AND High-Risk Trader Profile (joined via compliancecase.transactionrecord.trader).\n\
+    \n[kb=43]\nA trader flagged by the Collusion Network Indicator  AND who also meets\
+    \ the High-Risk Trader Profile  criteria. \u2014 Identifies traders within a suspected\
+    \ collusion network who individually exhibit high-risk behavior.\n[/kb=43]"
+  label: High-Risk Collusion Group Member
+  hidden: false
+  meta:
+    kb_id: 43
+- name: is_networked_mimicry_risk
+  sql: (ABS(compliancecase__advancedbehavior.patsim - compliancecase__advancedbehavior.peercorr)
+    < 0.1 AND compliancecase__advancedbehavior.peercorr > 0.7) AND (tcirclesz > 5
+    AND grpbehsc > 0.6 AND commpat = 'Regular')
+  type: BOOLEAN
+  primary_key: false
+  description: "Networked Mimicry Risk (KB #62): Peer Mimicry Suspicion (advancedbehavior)\
+    \ AND Collusion Network Indicator.\n\n[kb=62]\nA trader flagged for Peer Mimicry\
+    \ Suspicion  AND associated with a Collusion Network Indicator . \u2014 Flags\
+    \ traders suspected of peer mimicry who are also part of an identified potential\
+    \ collusion network.\n[/kb=62]"
+  label: Networked Mimicry Risk
+  hidden: false
+  meta:
+    kb_id: 62
+measures: []
+aggregations: []
+joins:
+- target_model: compliancecase
+  join_pairs:
+  - - compref
+    - compreg
+  join_type: left
+- target_model: sentimentandfundamentals
+  join_pairs:
+  - - sentref
+    - sentreg
+  join_type: left
+filters: []
+description: Detailed investigation record opened against a compliance case. PK =
+  `invdetreg`, FK = `compref` -> compliancecase, optional FK = `sentref` -> sentimentandfundamentals.
+hidden: false

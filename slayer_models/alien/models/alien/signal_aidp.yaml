@@ -1,0 +1,68 @@
+version: 6
+name: signal_aidp
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signaldecoding
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: aidp
+      type: DOUBLE
+      sql: (((signaldecoding.compressratio * signalclassification.complexidx * signalclassification.entropyval)
+        / 10.0) * (signalprobabilities.techsigprob * (1 - signalprobabilities.natsrcprob)
+        * signalprobabilities.sigunique * (0.5 + signalprobabilities.anomscore / 10.0)))
+        / (1 + signalprobabilities.natsrcprob)
+  dimensions:
+  - name: signalregistry
+  - name: aidp
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.aidp\"\
+  \ AS aidp FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\",\n\
+  \  (\n    (\n      (\n        signaldecoding.compressratio * signalclassification.complexidx\
+  \ * signalclassification.entropyval\n      ) / 10.0\n    ) * (\n      signalprobabilities.techsigprob\
+  \ * (\n        1 - signalprobabilities.natsrcprob\n      ) * signalprobabilities.sigunique\
+  \ * (\n        0.5 + signalprobabilities.anomscore / 10.0\n      )\n    )\n  ) /\
+  \ (\n    1 + signalprobabilities.natsrcprob\n  ) AS \"signals.aidp\"\nFROM signals\
+  \ AS signals\nLEFT JOIN signaldecoding AS signaldecoding\n  ON signals.signalregistry\
+  \ = signaldecoding.signalref\nLEFT JOIN signalprobabilities AS signalprobabilities\n\
+  \  ON signals.signalregistry = signalprobabilities.signalref\nLEFT JOIN signalclassification\
+  \ AS signalclassification\n  ON signals.signalregistry = signalclassification.signalref)\
+  \ AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: aidp
+  sql: aidp
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Artificial Intelligence Detection Probability (AIDP) per signal.\n\n\
+  [kb=31]\n$\\text{AIDP} = \\frac{\\text{ECI} \\times \\text{TOLS}}{1 + \\text{NatSrcProb}}$,\
+  \ where ECI (Encoding Complexity Index) and TOLS (Technological Origin Likelihood\
+  \ Score) are weighted against natural source probability. \u2014 Calculates likelihood\
+  \ of artificial intelligence origin based on encoding complexity and technosignature\
+  \ indicators.\n[/kb=31]"
+hidden: false
+meta:
+  kb_id: 31

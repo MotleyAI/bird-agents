@@ -1,0 +1,808 @@
+version: 6
+name: engagement
+sql_table: engagement
+query_variables: {}
+data_source: virtual
+columns:
+- name: engagereg
+  sql: engagereg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: engageactivitypivot
+  sql: engageactivitypivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: engagememberpivot
+  sql: engagememberpivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: socintscore
+  sql: socintscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: engrate
+  sql: engrate
+  type: DOUBLE
+  primary_key: false
+  description: "Engagement rate (KB #5), 0..1.000. 0-0.200 = low (view only); 0.201-0.500\
+    \ = moderate (occasional comments/likes); 0.501-0.800 = high (frequent comments/sharing);\
+    \ 0.801-1.000 = ultra-high (deep co-creation). Platforms typically treat >0.500\
+    \ as quality fans.\n\n[kb=5]\nEngagement rate (engrate) typically ranges from\
+    \ 0 to 1.000, with higher values indicating more active fans. 0-0.200 represents\
+    \ low engagement (viewing only without participation), 0.201-0.500 indicates moderate\
+    \ engagement (occasional comments and likes), 0.501-0.800 shows high engagement\
+    \ (frequent comments and sharing), and 0.801-1.000 represents ultra-high engagement\
+    \ (comprehensive deep participation in content co-creation). Platforms generally\
+    \ consider rates above 0.500 as quality fans. \u2014 Explains the calculation\
+    \ basis and business significance of fan engagement rate\n[/kb=5]"
+  label: engagement.engrate
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 5
+- name: actfreq
+  sql: actfreq
+  type: TEXT
+  primary_key: false
+  description: "Activity frequency band (KB #4). 'Daily' = >=1 login/day; 'Weekly'\
+    \ = 3-5 logins/week; 'Monthly' = 1-2 logins/month; 'Occasional' = >1 month between\
+    \ logins. Affects push priority, content recs, event invites; Daily users are\
+    \ the platform's core active group.\n\n[kb=4]\n'Daily' users log into the platform\
+    \ at least once per day on average; 'Weekly' users log in 3-5 times per week;\
+    \ 'Monthly' users log in 1-2 times per month; 'Occasional' users have login intervals\
+    \ exceeding one month. Interaction frequency affects platform push priority, content\
+    \ recommendations, and event invitations, with Daily users considered the platform's\
+    \ core active group. \u2014 Analyzes the significance of interaction frequency\
+    \ for fan classification\n[/kb=4]"
+  label: engagement.actfreq
+  hidden: false
+  meta:
+    kb_id: 4
+- name: peaktime
+  sql: peaktime
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: actdayswk
+  sql: actdayswk
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: avgsesscount
+  sql: avgsesscount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: contpref
+  sql: contpref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: langpref
+  sql: langpref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: transuse
+  sql: transuse
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fei
+  sql: (engrate * 0.4) + (socintscore / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2) + (avgsesscount
+    / 10.0 * 0.1)
+  type: DOUBLE
+  primary_key: false
+  description: "Fan Engagement Index (FEI, KB #10) = (engrate*0.4) + (socintscore/100*0.3)\
+    \ + (actdayswk/7*0.2) + (avgsesscount/10*0.1). Range 0-1; higher = more engaged.\n\
+    \n[kb=10]\nFEI = (engrate \\times 0.4) + (\\frac{socintscore}{100} \\times 0.3)\
+    \ + (\\frac{actdayswk}{7} \\times 0.2) + (\\frac{avgsesscount}{10} \\times 0.1),\
+    \ \\text{ where weights reflect each factor's different contribution to engagement,\
+    \ with results ranging from 0-1. Higher values indicate more engaged fans.} \u2014\
+    \ A comprehensive metric measuring fan activity level with platform and virtual\
+    \ idols\n[/kb=10]"
+  label: Fan Engagement Index (FEI)
+  hidden: false
+  meta:
+    kb_id: 10
+- name: mv
+  sql: membershipandspending.spendusd * (1 + membershipandspending.membdays / 365.0
+    * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)
+  type: DOUBLE
+  primary_key: false
+  description: "Monetization Value (MV, KB #11) = spendusd * (1 + membdays/365 * 0.5)\
+    \ * (1 + gifttot/10 * 0.2). Adjusts spending for membership tenure and gift activity.\n\
+    \n[kb=11]\nMV = spendusd \\times \\left(1 + \\frac{membdays}{365} \\times 0.5\\\
+    right) \\times \\left(1 + \\frac{gifttot}{10} \\times 0.2\\right), \\text{ where\
+    \ the formula adjusts spending based on membership duration and gift activity\
+    \ to reflect long-term value.} \u2014 Calculates the monetary value a fan brings\
+    \ to the platform over time\n[/kb=11]"
+  label: Monetization Value (MV)
+  hidden: false
+  meta:
+    kb_id: 11
+- name: rrf
+  sql: (1 - preferencesandsettings.intconsist) * 2 + (julianday('2025-03-01') - julianday(preferencesandsettings.lastlogdt))
+    / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag WHEN 'None' THEN 0 WHEN 'Low'
+    THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END / 3.0) * 2
+  type: DOUBLE
+  primary_key: false
+  description: "Retention Risk Factor (RRF, KB #13) = (1 - intconsist) * 2 + (days_since_last_login\
+    \ / 30) * 0.5 + (churnflag_numeric / 3) * 2. The 'now' anchor for days_since_last_login\
+    \ is hardcoded to 2025-03-01 (the day after the latest lastlogdt in the dataset).\
+    \ churnflag_numeric (KB #52) maps None=0, Low=1, Medium=2, High=3.\n\n[kb=13]\n\
+    RRF = (1 - intconsist) \\times 2 + \\left(\\frac{CURRENT\\_DATE - lastlogdt}{30}\\\
+    right) \\times 0.5 + \\left(\\frac{churnflag\\_numeric}{3}\\right) \\times 2,\
+    \ \\text{ where churnflag\\_numeric maps churnflag enum: None=0, Low=1, Medium=2,\
+    \ High=3.} \u2014 Quantifies the risk of fan churn based on multiple behavioral\
+    \ indicators\n[/kb=13]"
+  label: Retention Risk Factor (RRF)
+  hidden: false
+  meta:
+    kb_id: 13
+- name: sim
+  sql: (CAST(json_extract(socialcommunity.community_engagement, '$.network.follcount')
+    AS INTEGER) / 100.0) * (engrate * 2) * (retentionandinfluence.viralcont + 1) *
+    0.5
+  type: DOUBLE
+  primary_key: false
+  description: "Social Influence Multiplier (SIM, KB #14) = (follcount/100) * (engrate*2)\
+    \ * (viralcont+1) * 0.5. Reflects ability to spread content through followers,\
+    \ engagement and viral history.\n\n[kb=14]\nSIM = \\left(\\frac{follcount}{100}\\\
+    right) \\times (engrate \\times 2) \\times (viralcont + 1) \\times 0.5, \\text{\
+    \ reflecting the fan's ability to spread content through their network based on\
+    \ their following, engagement level, and history of creating viral content.} \u2014\
+    \ Calculates how much a fan amplifies content through their social network\n[/kb=14]"
+  label: Social Influence Multiplier (SIM)
+  hidden: false
+  meta:
+    kb_id: 14
+- name: lpr
+  sql: (CAST(json_extract(loyaltyandachievements.reward_progress, '$.loyalty.loypts')
+    AS INTEGER) * 1.0 / NULLIF(membershipandspending.membdays, 0)) * (1 + (engrate
+    * 2))
+  type: DOUBLE
+  primary_key: false
+  description: "Loyalty Progression Rate (LPR, KB #15) = (loypts/membdays) * (1 +\
+    \ engrate*2). Loyalty points per membership day, adjusted by engagement.\n\n[kb=15]\n\
+    LPR = \\left(\\frac{loypts}{membdays}\\right) \\times (1 + (engrate \\times 2)),\
+    \ \\text{ showing points earned per day adjusted by engagement level to identify\
+    \ rapidly advancing fans.} \u2014 Measures how quickly a fan is accumulating loyalty\
+    \ within the system\n[/kb=15]"
+  label: Loyalty Progression Rate (LPR)
+  hidden: false
+  meta:
+    kb_id: 15
+- name: flv
+  sql: (membershipandspending.spendusd * (1 + membershipandspending.membdays / 365.0
+    * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) * (1 - ((1 - preferencesandsettings.intconsist)
+    * 2 + (julianday('2025-03-01') - julianday(preferencesandsettings.lastlogdt))
+    / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag WHEN 'None' THEN 0 WHEN 'Low'
+    THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END / 3.0) * 2) / 10.0)
+    * (1 + ((engrate * 0.4) + (socintscore / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2)
+    + (avgsesscount / 10.0 * 0.1))) * 24
+  type: DOUBLE
+  primary_key: false
+  description: "Fan Lifetime Value (FLV, KB #16) = MV * (1 - RRF/10) * (1 + FEI) *\
+    \ 24. 24-month projection adjusted for retention risk and engagement.\n\n[kb=16]\n\
+    FLV = MV \\times \\left(1 - \\frac{RRF}{10}\\right) \\times (1 + FEI) \\times\
+    \ 24, \\text{ estimating 24-month value adjusted by retention risk and engagement\
+    \ level.} \u2014 Projects the total economic value of a fan throughout their relationship\
+    \ with the platform\n[/kb=16]"
+  label: Fan Lifetime Value (FLV)
+  hidden: false
+  meta:
+    kb_id: 16
+- name: cci
+  sql: ((CAST(json_extract(socialcommunity.community_engagement, '$.content_creation.contqualrate')
+    AS REAL) * (CAST(json_extract(socialcommunity.community_engagement, '$.content_creation.ugcval')
+    AS INTEGER) / 10.0) * (1 + CAST(json_extract(socialcommunity.community_engagement,
+    '$.network.follcount') AS INTEGER) / 100.0 * 0.5)) * 0.4) + (((CAST(json_extract(socialcommunity.community_engagement,
+    '$.network.follcount') AS INTEGER) / 100.0) * (engrate * 2) * (retentionandinfluence.viralcont
+    + 1) * 0.5) * 0.3) + (socialcommunity.collabcount * 0.1) + (((engrate * 0.4) +
+    (socintscore / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2) + (avgsesscount / 10.0 *
+    0.1)) * 0.2)
+  type: DOUBLE
+  primary_key: false
+  description: "Community Contribution Index (CCI, KB #17) = (CCIS*0.4) + (SIM*0.3)\
+    \ + (collabcount*0.1) + (FEI*0.2). Balances content creation, social influence,\
+    \ collaboration and general engagement.\n\n[kb=17]\nCCI = (CCIS \\times 0.4) +\
+    \ (SIM \\times 0.3) + (collabcount \\times 0.1) + (FEI \\times 0.2), \\text{ balancing\
+    \ content creation, social influence, collaboration activity, and general engagement.}\
+    \ \u2014 Measures a fan's overall contribution to the virtual idol community\n\
+    [/kb=17]"
+  label: Community Contribution Index (CCI)
+  hidden: false
+  meta:
+    kb_id: 17
+- name: erp
+  sql: ((membershipandspending.spendusd * (1 + membershipandspending.membdays / 365.0
+    * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) * (1 - ((1 - preferencesandsettings.intconsist)
+    * 2 + (julianday('2025-03-01') - julianday(preferencesandsettings.lastlogdt))
+    / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag WHEN 'None' THEN 0 WHEN 'Low'
+    THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END / 3.0) * 2) / 10.0)
+    * (1 + ((engrate * 0.4) + (socintscore / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2)
+    + (avgsesscount / 10.0 * 0.1))) * 24) * ((CASE eventsandclub.participation_summary
+    ->> '$.event_attendance.evtpart' WHEN 'Never' THEN 0 WHEN 'Rare' THEN 1 WHEN 'Regular'
+    THEN 2 WHEN 'Always' THEN 3 ELSE NULL END) / 3.0) * (membershipandspending__fans.tierstep
+    / 5.0) * (1 + loyaltyandachievements.inflscore / 100.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Event ROI Potential (ERP, KB #18) = FLV * (evtpart_numeric/3) * (tierstep/5)\
+    \ * (1 + inflscore/100). evtpart_numeric maps event attendance enum: Never=0,\
+    \ Rare=1, Regular=2, Always=3.\n\n[kb=18]\nERP = FLV \\times \\left(\\frac{evtpart\\\
+    _numeric}{3}\\right) \\times \\left(\\frac{tierstep}{5}\\right) \\times \\left(1\
+    \ + \\frac{inflscore}{100}\\right), \\text{ where evtpart\\_numeric maps participation\\\
+    _summary.event\\_attendance.evtpart enum values: Never=0, Rare=1, Regular=2, Always=3.\
+    \ Higher scores indicate fans likely to generate more value when included in events.}\
+    \ \u2014 Estimates the potential return on investment for inviting a fan to exclusive\
+    \ events\n[/kb=18]"
+  label: Event ROI Potential (ERP)
+  hidden: false
+  meta:
+    kb_id: 18
+- name: sei
+  sql: (supportandfeedback.satrate / (supportandfeedback.supptix + 1)) * (1 + (membershipandspending.spendusd
+    * (1 + membershipandspending.membdays / 365.0 * 0.5) * (1 + interactions.gifttot
+    / 10.0 * 0.2)) * (1 - ((1 - preferencesandsettings.intconsist) * 2 + (julianday('2025-03-01')
+    - julianday(preferencesandsettings.lastlogdt)) / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag
+    WHEN 'None' THEN 0 WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE
+    NULL END / 3.0) * 2) / 10.0) * (1 + ((engrate * 0.4) + (socintscore / 100.0 *
+    0.3) + (actdayswk / 7.0 * 0.2) + (avgsesscount / 10.0 * 0.1))) * 24 / 100.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Support Efficiency Index (SEI, KB #19) = (satrate / (supptix + 1))\
+    \ * (1 + FLV/100). Higher = good ratings with low support need, weighted by FLV.\n\
+    \n[kb=19]\nSEI = \\frac{satrate}{(supptix + 1)} \\times \\left(1 + \\frac{FLV}{100}\\\
+    right), \\text{ where higher values indicate fans who provide good platform ratings\
+    \ with minimal support requirements, adjusted by their lifetime value.} \u2014\
+    \ Measures the efficiency of platform resources spent on supporting a fan\n[/kb=19]"
+  label: Support Efficiency Index (SEI)
+  hidden: false
+  meta:
+    kb_id: 19
+- name: per
+  sql: (membershipandspending.spendusd * (1 + membershipandspending.membdays / 365.0
+    * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) / NULLIF(((engrate * 0.4) +
+    (socintscore / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2) + (avgsesscount / 10.0 *
+    0.1)) * 100, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Premium Engagement Ratio (PER, KB #30) = MV / (FEI * 100). Higher\
+    \ = more spend relative to engagement.\n\n[kb=30]\nPER = \\frac{MV}{FEI \\times\
+    \ 100}, \\text{ where higher values indicate fans who spend more relative to their\
+    \ engagement level.} \u2014 Measures the relationship between fan spending and\
+    \ their engagement level\n[/kb=30]"
+  label: Premium Engagement Ratio (PER)
+  hidden: false
+  meta:
+    kb_id: 30
+- name: cqer
+  sql: CAST(json_extract(socialcommunity.community_engagement, '$.content_creation.contqualrate')
+    AS REAL) / NULLIF(engrate * 10, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Content Quality to Engagement Ratio (CQER, KB #31) = contqualrate\
+    \ / (engrate * 10). Values >1.0 indicate content quality outpacing engagement.\n\
+    \n[kb=31]\nCQER = \\frac{contqualrate}{engrate \\times 10}, \\text{ where values\
+    \ above 1.0 indicate fans producing content of quality higher than their general\
+    \ engagement level would predict.} \u2014 Measures how a fan's content quality\
+    \ relates to their overall engagement\n[/kb=31]"
+  label: Content Quality to Engagement Ratio (CQER)
+  hidden: false
+  meta:
+    kb_id: 31
+- name: irp
+  sql: (supportandfeedback.supptix * 30) / NULLIF((membershipandspending.spendusd
+    * (1 + membershipandspending.membdays / 365.0 * 0.5) * (1 + interactions.gifttot
+    / 10.0 * 0.2)) * (1 - ((1 - preferencesandsettings.intconsist) * 2 + (julianday('2025-03-01')
+    - julianday(preferencesandsettings.lastlogdt)) / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag
+    WHEN 'None' THEN 0 WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE
+    NULL END / 3.0) * 2) / 10.0), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Investment Recovery Period (IRP, KB #32) = (supptix * 30) / (MV *\
+    \ (1 - RRF/10)). Months to recoup platform investment in the fan; supptix proxies\
+    \ invested resources.\n\n[kb=32]\nIRP = \\frac{supptix \\times 30}{MV \\times\
+    \ (1 - \\frac{RRF}{10})}, \\text{ where supptix represents support tickets as\
+    \ a proxy for platform resources invested in the fan.} \u2014 Estimates how many\
+    \ months it will take to recover platform investment in a fan\n[/kb=32]"
+  label: Investment Recovery Period (IRP)
+  hidden: false
+  meta:
+    kb_id: 32
+- name: taf
+  sql: (membershipandspending__fans.tierstep / sqrt(NULLIF(membershipandspending.membdays,
+    0))) * (10 / sqrt(365.0))
+  type: DOUBLE
+  primary_key: false
+  description: "Tier Acceleration Factor (TAF, KB #33) = tierstep / sqrt(membdays)\
+    \ * 10/sqrt(365). Annual-scale normalisation of tier progression speed.\n\n[kb=33]\n\
+    TAF = \\frac{tierstep}{\\sqrt{membdays}} \\times \\frac{10}{\\sqrt{365}}, \\text{\
+    \ normalized to annual scale for consistent comparison across fans with different\
+    \ membership durations.} \u2014 Measures how quickly a fan is advancing through\
+    \ tier levels relative to platform norms\n[/kb=33]"
+  label: Tier Acceleration Factor (TAF)
+  hidden: false
+  meta:
+    kb_id: 33
+- name: scr
+  sql: retentionandinfluence.refcount * 100.0 / NULLIF(CAST(json_extract(socialcommunity.community_engagement,
+    '$.network.follcount') AS INTEGER), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Social Conversion Rate (SCR, KB #35) = refcount / follcount * 100.\
+    \ Pct of followers converted to platform users.\n\n[kb=35]\nSCR = \\frac{refcount}{(socialcommunity.community\\\
+    _engagement->>'network.follcount')::int} \\times 100, \\text{ expressed as a percentage\
+    \ of followers successfully converted to platform users.} \u2014 Measures a fan's\
+    \ ability to convert their social network into active platform participants\n\
+    [/kb=35]"
+  label: Social Conversion Rate (SCR)
+  hidden: false
+  meta:
+    kb_id: 35
+- name: cqc
+  sql: CAST(json_extract(socialcommunity.community_engagement, '$.content_creation.contqualrate')
+    AS REAL) * preferencesandsettings.intconsist * (CAST(json_extract(socialcommunity.community_engagement,
+    '$.content_creation.ugcval') AS INTEGER) / 10.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Content Quality Consistency (CQC, KB #36) = contqualrate * intconsist\
+    \ * ugcval/10. intconsist (0-1) measures interaction consistency.\n\n[kb=36]\n\
+    CQC = contqualrate \\times intconsist \\times \\frac{ugcval}{10}, \\text{ where\
+    \ intconsist measures interaction consistency on a scale of 0-1.} \u2014 Measures\
+    \ the consistency of a fan's content quality relative to their engagement consistency\n\
+    [/kb=36]"
+  label: Content Quality Consistency (CQC)
+  hidden: false
+  meta:
+    kb_id: 36
+- name: lvr
+  sql: CAST(json_extract(loyaltyandachievements.reward_progress, '$.loyalty.loypts')
+    AS INTEGER) * 1.0 / NULLIF((membershipandspending.spendusd * (1 + membershipandspending.membdays
+    / 365.0 * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) * 10, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Loyalty Value Ratio (LVR, KB #37) = loypts / (MV * 10). Higher = loyalty\
+    \ accruing faster than spending would predict.\n\n[kb=37]\nLVR = \\frac{loypts}{MV\
+    \ \\times 10}, \\text{ where higher values indicate fans accumulating loyalty\
+    \ faster than their spending would predict.} \u2014 Evaluates the relationship\
+    \ between a fan's loyalty points and their economic value\n[/kb=37]"
+  label: Loyalty Value Ratio (LVR)
+  hidden: false
+  meta:
+    kb_id: 37
+- name: erf
+  sql: (CAST(json_extract(eventsandclub.participation_summary, '$.event_attendance.onevtatt')
+    AS INTEGER) + CAST(json_extract(eventsandclub.participation_summary, '$.event_attendance.offevtatt')
+    AS INTEGER)) / 10.0 * (1 + ((engrate * 0.4) + (socintscore / 100.0 * 0.3) + (actdayswk
+    / 7.0 * 0.2) + (avgsesscount / 10.0 * 0.1)) / 2.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Event Response Factor (ERF, KB #38) = (onevtatt + offevtatt) / 10\
+    \ * (1 + FEI/2). Online + offline event attendance weighted by FEI.\n\n[kb=38]\n\
+    ERF = \\frac{(eventsandclub.participation\\_summary->>'event\\_attendance.onevtatt')::int\
+    \ + (eventsandclub.participation\\_summary->>'event\\_attendance.offevtatt')::int}{10}\
+    \ \\times \\left(1 + \\frac{FEI}{2}\\right), \\text{ where onevtatt and offevtatt\
+    \ represent online and offline events attended.} \u2014 Measures a fan's response\
+    \ rate to official events and activities\n[/kb=38]"
+  label: Event Response Factor (ERF)
+  hidden: false
+  meta:
+    kb_id: 38
+- name: cpi
+  sql: (membershipandspending.spendusd * (1 + membershipandspending.membdays / 365.0
+    * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) * (1 - ((1 - preferencesandsettings.intconsist)
+    * 2 + (julianday('2025-03-01') - julianday(preferencesandsettings.lastlogdt))
+    / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag WHEN 'None' THEN 0 WHEN 'Low'
+    THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END / 3.0) * 2) / 10.0)
+    * (1 + ((engrate * 0.4) + (socintscore / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2)
+    + (avgsesscount / 10.0 * 0.1))) * 24 * (((1 - preferencesandsettings.intconsist)
+    * 2 + (julianday('2025-03-01') - julianday(preferencesandsettings.lastlogdt))
+    / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag WHEN 'None' THEN 0 WHEN 'Low'
+    THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END / 3.0) * 2) / 5.0)
+    * 0.1
+  type: DOUBLE
+  primary_key: false
+  description: "Churn Prevention Investment (CPI, KB #39) = FLV * (RRF/5) * 0.1. Suggests\
+    \ investing up to 10% of at-risk value, scaled by churn risk.\n\n[kb=39]\nCPI\
+    \ = FLV \\times \\frac{RRF}{5} \\times 0.1, \\text{ suggesting investing up to\
+    \ 10\\% of at-risk value, scaled according to churn risk level.} \u2014 Calculates\
+    \ the optimal investment for preventing churn based on fan value and risk\n[/kb=39]"
+  label: Churn Prevention Investment (CPI)
+  hidden: false
+  meta:
+    kb_id: 39
+- name: content_pref_class
+  sql: CASE contpref WHEN 'Music' THEN 'Content Consumer (Music)' WHEN 'Dance' THEN
+    'Content Consumer (Dance)' WHEN 'Gaming' THEN 'Content Consumer (Gaming)' ELSE
+    'General Content Consumer' END
+  type: TEXT
+  primary_key: false
+  description: "Content Preference Classification (KB #51): Music \u2192 'Content\
+    \ Consumer (Music)', Dance \u2192 'Content Consumer (Dance)', Gaming \u2192 'Content\
+    \ Consumer (Gaming)', else 'General Content Consumer'.\n\n[kb=51]\nUses the contpref\
+    \ field to classify viewers: contpref = 'Music' maps to 'Content Consumer (Music)',\
+    \ contpref = 'Dance' maps to 'Content Consumer (Dance)', contpref = 'Gaming' maps\
+    \ to 'Content Consumer (Gaming)', and all other values map to 'General Content\
+    \ Consumer'. This classification enables targeted content delivery and personalized\
+    \ marketing. \u2014 Categorizes fans based on their primary content consumption\
+    \ preferences\n[/kb=51]"
+  label: Content Preference Classification
+  hidden: false
+  meta:
+    kb_id: 51
+- name: churn_severity_class
+  sql: CASE WHEN ((1 - preferencesandsettings.intconsist) * 2 + (julianday('2025-03-01')
+    - julianday(preferencesandsettings.lastlogdt)) / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag
+    WHEN 'None' THEN 0 WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE
+    NULL END / 3.0) * 2) > 4.5 THEN 'Severe' WHEN ((1 - preferencesandsettings.intconsist)
+    * 2 + (julianday('2025-03-01') - julianday(preferencesandsettings.lastlogdt))
+    / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag WHEN 'None' THEN 0 WHEN 'Low'
+    THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END / 3.0) * 2) > 3.5
+    THEN 'High' WHEN ((1 - preferencesandsettings.intconsist) * 2 + (julianday('2025-03-01')
+    - julianday(preferencesandsettings.lastlogdt)) / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag
+    WHEN 'None' THEN 0 WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE
+    NULL END / 3.0) * 2) > 2.5 THEN 'Medium' ELSE NULL END
+  type: TEXT
+  primary_key: false
+  description: "Enhanced Churn Risk Severity Classification (KB #54): Severe = RRF\
+    \ > 4.5 (immediate intervention + executive attention); High = RRF in (3.5, 4.5]\
+    \ (prioritized retention); Medium = RRF in (2.5, 3.5] (standard monitoring). RRF\
+    \ anchored at 2025-03-01.\n\n[kb=54]\nEnhances the standard churn risk classification\
+    \ by adding a 'Severe' category for critically at-risk users. The classification\
+    \ uses precise RRF thresholds: 'Severe' identifies users with RRF > 4.5 requiring\
+    \ immediate intervention and executive attention; 'High' identifies users with\
+    \ RRF between 3.5-4.5 requiring prioritized retention campaigns; 'Medium' applies\
+    \ to users with RRF between 2.5-3.5 requiring standard monitoring. This refined\
+    \ classification enables more targeted allocation of retention resources based\
+    \ on urgency level and churn probability. \u2014 Defines detailed categorization\
+    \ for high-risk churn candidates requiring intervention\n[/kb=54]"
+  label: Enhanced Churn Risk Severity Classification
+  hidden: false
+  meta:
+    kb_id: 54
+- name: is_superfan
+  sql: membershipandspending__fans.tierstep >= 8 AND ((engrate * 0.4) + (socintscore
+    / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2) + (avgsesscount / 10.0 * 0.1)) > 0.7
+    AND (membershipandspending.spendusd * (1 + membershipandspending.membdays / 365.0
+    * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) > 200
+  type: BOOLEAN
+  primary_key: false
+  description: "Superfan (KB #20): tierstep >= 8 AND FEI > 0.7 AND MV > 200. Highest-value\
+    \ segment with substantial financial support and high engagement.\n\n[kb=20]\n\
+    A fan with tierstep \u2265 8, FEI > 0.7, and MV > 200, representing the highest\
+    \ value segment providing substantial financial support while maintaining high\
+    \ engagement. \u2014 Identifies fans with exceptional platform value and engagement\n\
+    [/kb=20]"
+  label: Superfan
+  hidden: false
+  meta:
+    kb_id: 20
+- name: is_social_amplifier
+  sql: CAST(json_extract(socialcommunity.community_engagement, '$.network.follcount')
+    AS INTEGER) > 500 AND ((CAST(json_extract(socialcommunity.community_engagement,
+    '$.network.follcount') AS INTEGER) / 100.0) * (engrate * 2) * (retentionandinfluence.viralcont
+    + 1) * 0.5) > 2.0 AND retentionandinfluence.viralcont >= 1
+  type: BOOLEAN
+  primary_key: false
+  description: "Social Amplifier (KB #22): follcount > 500 AND SIM > 2.0 AND viralcont\
+    \ >= 1. Effectively spreads idol content via large social network.\n\n[kb=22]\n\
+    A fan with follcount > 500, SIM > 2.0, and viralcont \u2265 1, representing users\
+    \ who effectively spread idol content through their substantial social networks.\
+    \ \u2014 Identifies fans who significantly extend idol content reach\n[/kb=22]"
+  label: Social Amplifier
+  hidden: false
+  meta:
+    kb_id: 22
+- name: is_churn_candidate
+  sql: ((1 - preferencesandsettings.intconsist) * 2 + (julianday('2025-03-01') - julianday(preferencesandsettings.lastlogdt))
+    / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag WHEN 'None' THEN 0 WHEN 'Low'
+    THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END / 3.0) * 2) > 3.5
+    AND (julianday('2025-03-01') - julianday(preferencesandsettings.lastlogdt)) >
+    20 AND engrate < 0.2
+  type: BOOLEAN
+  primary_key: false
+  description: "Churn Candidate (KB #23): RRF > 3.5 AND lastlogdt > 20 days in the\
+    \ past AND engrate < 0.2. Immediate retention efforts required. RRF anchored at\
+    \ 2025-03-01.\n\n[kb=23]\nA fan with RRF > 3.5, lastlogdt more than 20 days in\
+    \ the past, and engrate < 0.2, requiring immediate retention efforts. \u2014 Identifies\
+    \ fans at immediate risk of platform abandonment\n[/kb=23]"
+  label: Churn Candidate
+  hidden: false
+  meta:
+    kb_id: 23
+- name: is_silent_supporter
+  sql: (membershipandspending.spendusd * (1 + membershipandspending.membdays / 365.0
+    * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) > 100 AND engrate < 0.3 AND
+    (CAST(json_extract(interactions.engagement_metrics, '$.chat_activity.chatmsg')
+    AS INTEGER) * 1.0 / NULLIF(preferencesandsettings.sesscount, 0)) < 0.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Silent Supporter (KB #24): MV > 100 AND engrate < 0.3 AND (chatmsg/sesscount)\
+    \ < 0.5. Economic contributors who observe rather than participate.\n\n[kb=24]\n\
+    A fan with MV > 100, engrate < 0.3, and chatmsg/sesscount ratio < 0.5, representing\
+    \ valuable economic contributors who prefer to observe rather than actively participate\
+    \ in community activities. \u2014 Identifies financially supportive fans with\
+    \ low social visibility\n[/kb=24]"
+  label: Silent Supporter
+  hidden: false
+  meta:
+    kb_id: 24
+- name: is_community_pillar
+  sql: (((CAST(json_extract(socialcommunity.community_engagement, '$.content_creation.contqualrate')
+    AS REAL) * (CAST(json_extract(socialcommunity.community_engagement, '$.content_creation.ugcval')
+    AS INTEGER) / 10.0) * (1 + CAST(json_extract(socialcommunity.community_engagement,
+    '$.network.follcount') AS INTEGER) / 100.0 * 0.5)) * 0.4) + (((CAST(json_extract(socialcommunity.community_engagement,
+    '$.network.follcount') AS INTEGER) / 100.0) * (engrate * 2) * (retentionandinfluence.viralcont
+    + 1) * 0.5) * 0.3) + (socialcommunity.collabcount * 0.1) + (((engrate * 0.4) +
+    (socintscore / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2) + (avgsesscount / 10.0 *
+    0.1)) * 0.2)) > 7 AND actfreq = 'Daily' AND membershipandspending.membdays > 180
+    AND (socialcommunity.community_engagement ->> '$.group_involvement.grprole') IN
+    ('Moderator', 'Leader')
+  type: BOOLEAN
+  primary_key: false
+  description: "Community Pillar (KB #25): CCI > 7 AND actfreq='Daily' AND membdays\
+    \ > 180 AND grprole in ('Moderator','Leader'). Foundation of the idol community.\n\
+    \n[kb=25]\nA fan with CCI > 7, actfreq = 'Daily', membdays > 180, and community_engagement.group_involvement.grprole\
+    \ = 'Moderator' or community_engagement.group_involvement.grprole = 'Leader'.\
+    \ These fans play essential roles in maintaining community structure and culture.\
+    \ \u2014 Identifies fans who form the foundation of the idol community\n[/kb=25]"
+  label: Community Pillar
+  hidden: false
+  meta:
+    kb_id: 25
+- name: is_potential_ambassador
+  sql: loyaltyandachievements.inflscore > 75 AND loyaltyandachievements.trustval >
+    8.5 AND ((engrate * 0.4) + (socintscore / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2)
+    + (avgsesscount / 10.0 * 0.1)) > 0.6 AND CAST(json_extract(socialcommunity.community_engagement,
+    '$.content_creation.contqualrate') AS REAL) > 8.0
+  type: BOOLEAN
+  primary_key: false
+  description: "Potential Ambassador (KB #26): inflscore > 75 AND trustval > 8.5 AND\
+    \ FEI > 0.6 AND contqualrate > 8.0. Candidates for official ambassador programs.\n\
+    \n[kb=26]\nA fan with inflscore > 75, trustval > 8.5, FEI > 0.6, and contqualrate\
+    \ > 8.0, representing candidates for official ambassador programs who can authentically\
+    \ promote the idol. \u2014 Identifies fans with high potential to represent the\
+    \ idol brand\n[/kb=26]"
+  label: Potential Ambassador
+  hidden: false
+  meta:
+    kb_id: 26
+- name: is_whale
+  sql: interactions.giftvalusd > 500 OR membershipandspending.spendusd > 1000
+  type: BOOLEAN
+  primary_key: false
+  description: "Whale (KB #27): giftvalusd > 500 OR spendusd > 1000 (within a 90-day\
+    \ period). Financial backbone of the idol economic ecosystem. Time-window not\
+    \ enforced; encoded as the all-time threshold predicate \u2014 the agent can scope\
+    \ to a date range at query time if needed.\n\n[kb=27]\nA fan with giftvalusd >\
+    \ 500 or spendusd > 1000 within a 90-day period, regardless of other engagement\
+    \ metrics. These fans form the financial backbone of idol economic ecosystems.\
+    \ \u2014 Identifies fans who provide extraordinary financial support\n[/kb=27]"
+  label: Whale
+  hidden: false
+  meta:
+    kb_id: 27
+- name: is_event_champion
+  sql: (eventsandclub.participation_summary ->> '$.event_attendance.evtpart') = 'Always'
+    AND (((membershipandspending.spendusd * (1 + membershipandspending.membdays /
+    365.0 * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) * (1 - ((1 - preferencesandsettings.intconsist)
+    * 2 + (julianday('2025-03-01') - julianday(preferencesandsettings.lastlogdt))
+    / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag WHEN 'None' THEN 0 WHEN 'Low'
+    THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END / 3.0) * 2) / 10.0)
+    * (1 + ((engrate * 0.4) + (socintscore / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2)
+    + (avgsesscount / 10.0 * 0.1))) * 24) * ((CASE eventsandclub.participation_summary
+    ->> '$.event_attendance.evtpart' WHEN 'Never' THEN 0 WHEN 'Rare' THEN 1 WHEN 'Regular'
+    THEN 2 WHEN 'Always' THEN 3 ELSE NULL END) / 3.0) * (membershipandspending__fans.tierstep
+    / 5.0) * (1 + loyaltyandachievements.inflscore / 100.0)) > 50 AND retentionandinfluence.hashuse
+    > 15
+  type: BOOLEAN
+  primary_key: false
+  description: "Event Champion (KB #28): evtpart='Always' AND ERP > 50 AND hashuse\
+    \ > 15. Consistent event attendance + active social promotion.\n\n[kb=28]\nA fan\
+    \ with participation_summary.event_attendance.evtpart = 'Always', ERP > 50, and\
+    \ hashuse > 15, representing users who consistently attend events and actively\
+    \ promote them through social channels. \u2014 Identifies fans who excel at event\
+    \ participation and promotion\n[/kb=28]"
+  label: Event Champion
+  hidden: false
+  meta:
+    kb_id: 28
+- name: is_engagement_deficient_whale
+  sql: (interactions.giftvalusd > 500 OR membershipandspending.spendusd > 1000) AND
+    ((engrate * 0.4) + (socintscore / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2) + (avgsesscount
+    / 10.0 * 0.1)) < 0.3
+  type: BOOLEAN
+  primary_key: false
+  description: "Engagement-Deficient Whale (KB #41): (giftvalusd > 500 OR spendusd\
+    \ > 1000) AND FEI < 0.3. Significant financial contribution despite limited participation.\n\
+    \n[kb=41]\nA fan with giftvalusd > 500 or spendusd > 1000, but with FEI < 0.3,\
+    \ indicating significant financial contribution despite limited platform participation.\
+    \ \u2014 Identifies high-spending fans with surprisingly low engagement\n[/kb=41]"
+  label: Engagement-Deficient Whale
+  hidden: false
+  meta:
+    kb_id: 41
+- name: is_rapidly_ascending
+  sql: ((membershipandspending__fans.tierstep / sqrt(NULLIF(membershipandspending.membdays,
+    0))) * (10 / sqrt(365.0))) > 1.5 AND ((CAST(json_extract(loyaltyandachievements.reward_progress,
+    '$.loyalty.loypts') AS INTEGER) * 1.0 / NULLIF(membershipandspending.membdays,
+    0)) * (1 + (engrate * 2))) > 20
+  type: BOOLEAN
+  primary_key: false
+  description: "Rapidly Ascending Fan (KB #42): TAF > 1.5 AND LPR > 20. Exceptional\
+    \ speed advancing through tier levels and accumulating loyalty.\n\n[kb=42]\nA\
+    \ fan with TAF > 1.5 and LPR > 20, demonstrating exceptional speed in advancing\
+    \ through tier levels and accumulating loyalty points. \u2014 Identifies fans\
+    \ who are progressing through membership tiers at an accelerated rate\n[/kb=42]"
+  label: Rapidly Ascending Fan
+  hidden: false
+  meta:
+    kb_id: 42
+- name: is_retention_risk_superfan
+  sql: membershipandspending__fans.tierstep >= 8 AND ((engrate * 0.4) + (socintscore
+    / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2) + (avgsesscount / 10.0 * 0.1)) > 0.7
+    AND (membershipandspending.spendusd * (1 + membershipandspending.membdays / 365.0
+    * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) > 200 AND ((1 - preferencesandsettings.intconsist)
+    * 2 + (julianday('2025-03-01') - julianday(preferencesandsettings.lastlogdt))
+    / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag WHEN 'None' THEN 0 WHEN 'Low'
+    THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END / 3.0) * 2) > 2.0
+  type: BOOLEAN
+  primary_key: false
+  description: "Retention Risk Superfan (KB #44): tierstep >= 8 AND FEI > 0.7 AND\
+    \ MV > 200 AND RRF > 2.0. Significant value at risk of being lost.\n\n[kb=44]\n\
+    A fan with tierstep \u2265 8, FEI > 0.7, and MV > 200, but also showing RRF >\
+    \ 2.0, representing significant value at risk of being lost. \u2014 Identifies\
+    \ high-value fans showing early warning signs of potential churn\n[/kb=44]"
+  label: Retention Risk Superfan
+  hidden: false
+  meta:
+    kb_id: 44
+- name: is_loyalty_underperformer
+  sql: (CAST(json_extract(loyaltyandachievements.reward_progress, '$.loyalty.loypts')
+    AS INTEGER) * 1.0 / NULLIF((membershipandspending.spendusd * (1 + membershipandspending.membdays
+    / 365.0 * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) * 10, 0)) < 0.5 AND
+    (membershipandspending.spendusd * (1 + membershipandspending.membdays / 365.0
+    * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) > 150
+  type: BOOLEAN
+  primary_key: false
+  description: "Loyalty Underperformer (KB #45): LVR < 0.5 AND MV > 150. Lower than\
+    \ expected loyalty point accumulation vs spending.\n\n[kb=45]\nA fan with LVR\
+    \ < 0.5 and MV > 150, indicating a lower than expected loyalty point accumulation\
+    \ compared to their economic contribution. \u2014 Identifies fans with unusually\
+    \ low loyalty points relative to their spending\n[/kb=45]"
+  label: Loyalty Underperformer
+  hidden: false
+  meta:
+    kb_id: 45
+- name: is_premium_service_candidate
+  sql: ((supportandfeedback.satrate / (supportandfeedback.supptix + 1)) * (1 + (membershipandspending.spendusd
+    * (1 + membershipandspending.membdays / 365.0 * 0.5) * (1 + interactions.gifttot
+    / 10.0 * 0.2)) * (1 - ((1 - preferencesandsettings.intconsist) * 2 + (julianday('2025-03-01')
+    - julianday(preferencesandsettings.lastlogdt)) / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag
+    WHEN 'None' THEN 0 WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE
+    NULL END / 3.0) * 2) / 10.0) * (1 + ((engrate * 0.4) + (socintscore / 100.0 *
+    0.3) + (actdayswk / 7.0 * 0.2) + (avgsesscount / 10.0 * 0.1))) * 24 / 100.0))
+    < 0.8 AND (membershipandspending.spendusd * (1 + membershipandspending.membdays
+    / 365.0 * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) > 300 AND supportandfeedback.supptix
+    > 5
+  type: BOOLEAN
+  primary_key: false
+  description: "Premium Service Candidate (KB #46): SEI < 0.8 AND MV > 300 AND supptix\
+    \ > 5. Heavy support consumers with significant economic value.\n\n[kb=46]\nA\
+    \ fan with SEI < 0.8, MV > 300, and supptix > 5, representing users who require\
+    \ substantial support and have demonstrated significant economic value. \u2014\
+    \ Identifies fans who would benefit from and likely pay for enhanced support services\n\
+    [/kb=46]"
+  label: Premium Service Candidate
+  hidden: false
+  meta:
+    kb_id: 46
+- name: is_social_network_underutilizer
+  sql: CAST(json_extract(socialcommunity.community_engagement, '$.network.follcount')
+    AS INTEGER) > 1000 AND (retentionandinfluence.refcount * 100.0 / NULLIF(CAST(json_extract(socialcommunity.community_engagement,
+    '$.network.follcount') AS INTEGER), 0)) < 0.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Social Network Underutilizer (KB #47): follcount > 1000 AND SCR <\
+    \ 0.5%. Large social network but largely untapped.\n\n[kb=47]\nA fan with follcount\
+    \ > 1000 but SCR < 0.5%, indicating a substantial but largely untapped potential\
+    \ for platform growth through their social connections. \u2014 Identifies fans\
+    \ with large social networks but low conversion to platform activity\n[/kb=47]"
+  label: Social Network Underutilizer
+  hidden: false
+  meta:
+    kb_id: 47
+- name: is_tier_stuck_veteran
+  sql: membershipandspending.membdays > 365 AND engrate > 0.4 AND ((membershipandspending__fans.tierstep
+    / sqrt(NULLIF(membershipandspending.membdays, 0))) * (10 / sqrt(365.0))) < 0.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Tier-Stuck Veteran (KB #48): membdays > 365 AND engrate > 0.4 AND\
+    \ TAF < 0.5. Engaged but slow tier progression.\n\n[kb=48]\nA fan with membdays\
+    \ > 365, engrate > 0.4, but TAF < 0.5, representing users who remain engaged but\
+    \ are advancing through tier levels more slowly than expected. \u2014 Identifies\
+    \ long-term fans who have stalled in tier progression\n[/kb=48]"
+  label: Tier-Stuck Veteran
+  hidden: false
+  meta:
+    kb_id: 48
+- name: is_gift_focused_supporter
+  sql: (interactions.giftvalusd * interactions.gifttot / 100.0) > 50 AND membershipandspending.spendusd
+    < 100
+  type: BOOLEAN
+  primary_key: false
+  description: "Gift-Focused Supporter (KB #49): GIQ > 50 AND spendusd < 100. Prefers\
+    \ gift-based support over subscriptions/purchases.\n\n[kb=49]\nA fan with GIQ\
+    \ > 50 but spendusd < 100, showing a preference for gift-based support mechanisms\
+    \ over traditional subscription or purchase options. \u2014 Identifies fans whose\
+    \ primary support comes through gifting rather than direct spending\n[/kb=49]"
+  label: Gift-Focused Supporter
+  hidden: false
+  meta:
+    kb_id: 49
+measures: []
+aggregations: []
+joins:
+- target_model: interactions
+  join_pairs:
+  - - engageactivitypivot
+    - activityreg
+  join_type: left
+- target_model: membershipandspending
+  join_pairs:
+  - - engagememberpivot
+    - memberreg
+  join_type: left
+- target_model: socialcommunity
+  join_pairs:
+  - - engagereg
+    - socialengagepivot
+  join_type: left
+- target_model: retentionandinfluence
+  join_pairs:
+  - - engagereg
+    - retainengagepivot
+  join_type: left
+- target_model: loyaltyandachievements
+  join_pairs:
+  - - engagereg
+    - loyaltyengagepivot
+  join_type: left
+- target_model: preferencesandsettings
+  join_pairs:
+  - - engagememberpivot
+    - preferencesmemberpivot
+  join_type: left
+- target_model: eventsandclub
+  join_pairs:
+  - - engagememberpivot
+    - eventsmemberpivot
+  join_type: left
+- target_model: supportandfeedback
+  join_pairs:
+  - - engageactivitypivot
+    - supportinteractpivot
+  join_type: left
+- target_model: commerceandcollection
+  join_pairs:
+  - - engagereg
+    - commerceengagepivot
+  join_type: left
+filters: []
+description: Per-fan engagement metrics (1:1 with fans via membership). Holds social
+  interaction score, engagement rate, activity frequency band, peak time, active days/week,
+  avg sessions, content/language/translation preferences.
+hidden: false

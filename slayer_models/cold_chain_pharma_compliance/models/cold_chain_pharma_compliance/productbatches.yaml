@@ -1,0 +1,267 @@
+version: 6
+name: productbatches
+sql_table: productbatches
+query_variables: {}
+data_source: cold_chain_pharma_compliance
+columns:
+- name: batchtag
+  sql: batchtag
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: prodlink
+  sql: prodlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: mfg_ts
+  sql: mfg_ts
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: exp_ts
+  sql: exp_ts
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: store_cond
+  sql: store_cond
+  type: TEXT
+  primary_key: false
+  description: "Required storage condition for this batch (KB #9, Product Storage\
+    \ Classifications). One of: '2-8\xB0C' (refrigerated), '-20\xB0C' (frozen), '-70\xB0\
+    C' (ultra-low temperature), '15-25\xB0C' (controlled room temperature).\n\n[kb=9]\n\
+    Four standard storage classifications: '2-8\xB0C' (refrigerated), '-20\xB0C' (frozen),\
+    \ '-70\xB0C' (ultra-low temperature), and '15-25\xB0C' (controlled room temperature).\
+    \ \u2014 Standardized temperature ranges for pharmaceutical product storage.\n\
+    [/kb=9]"
+  label: Product Storage Classifications
+  hidden: false
+  meta:
+    kb_id: 9
+- name: tempmin
+  sql: tempmin
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: tempmax
+  sql: tempmax
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: tempsense
+  sql: tempsense
+  type: TEXT
+  primary_key: false
+  description: "Temperature sensitivity tier (KB #6, Temperature Sensitivity Tiers):\
+    \ 'Low' (tolerates up to 24h of minor deviations), 'Medium' (up to 8h), 'High'\
+    \ (cannot tolerate >2h).\n\n[kb=6]\nProducts are classified into three sensitivity\
+    \ tiers: 'Low' (can tolerate up to 24 hours of minor temperature deviations),\
+    \ 'Medium' (can tolerate up to 8 hours of minor temperature deviations), 'High'\
+    \ (cannot tolerate temperature deviations beyond 2 hours). \u2014 Classifies pharmaceutical\
+    \ products based on their sensitivity to temperature variations.\n[/kb=6]"
+  label: Temperature Sensitivity Tiers
+  hidden: false
+  meta:
+    kb_id: 6
+- name: pack_type
+  sql: pack_type
+  type: TEXT
+  primary_key: false
+  description: "Packaging type for this batch: Ampoule, Container, Syringe, Vial.\n\
+    \n[kb=33]\nPackage integrity monitoring systems include: Shock Indicators (mechanical\
+    \ devices that show when a package has received an impact), Tilt Indicators (show\
+    \ if a package was tilted beyond acceptable angles), Electronic Impact Recorders\
+    \ (provide detailed shock measurements), and Pressure Indicators (monitor pressure\
+    \ changes in sealed containers). \u2014 Identifies technologies used to monitor\
+    \ physical integrity of packages during transit.\n[/kb=33]"
+  label: Package Integrity Monitoring Systems
+  hidden: false
+  meta:
+    kb_id: 33
+- name: pack_cnt
+  sql: pack_cnt
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: valusd
+  sql: valusd
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: insusd
+  sql: insusd
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: valusd_num
+  sql: CAST(REPLACE(REPLACE(valusd, '$', ''), ',', '') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Declared commercial value (USD) parsed to a numeric value. The raw
+    'valusd' column is a formatted string like '$57,421.85'.
+  hidden: false
+- name: is_tier_1_cold_chain
+  sql: tempsense = 'High' AND CAST(REPLACE(REPLACE(valusd, '$', ''), ',', '') AS REAL)
+    > 100000
+  type: BOOLEAN
+  primary_key: false
+  description: "Tier 1 Cold Chain Product (KB #7): batch with 'High' temperature sensitivity\
+    \ and value > $100,000 USD.\n\n[kb=7]\nProducts with both a 'High' temperature\
+    \ sensitivity and a value exceeding $100,000 USD. \u2014 Identifies the highest\
+    \ value and most temperature-sensitive pharmaceutical products.\n[/kb=7]"
+  label: Tier 1 Cold Chain Products
+  hidden: false
+  meta:
+    kb_id: 7
+- name: rrf
+  sql: "CASE store_cond WHEN '15-25\xB0C' THEN 1 WHEN '2-8\xB0C' THEN 1.5 WHEN '-20\xB0\
+    C' THEN 2 WHEN '-70\xB0C' THEN 2.5 ELSE 1 END"
+  type: DOUBLE
+  primary_key: false
+  description: "Temperature factor T used inside Packing Integrity Risk Factor (KB\
+    \ #19): 1 for 15-25\xB0C, 1.5 for 2-8\xB0C, 2 for -20\xB0C, 2.5 for -70\xB0C.\
+    \ Reused as Route Risk Factor proxy where applicable.\n\n[kb=19]\nPIRF = \\frac{S\
+    \ \\times D \\times T}{P}, \\text{where S is the shock event count, D is the distance\
+    \ in thousands of km, T is a temperature factor (1 for 15-25\xB0C, 1.5 for 2-8\xB0\
+    C, 2 for -20\xB0C, 2.5 for -70\xB0C), and P is the packaging robustness factor\
+    \ (1-10, with 10 being most robust).} \u2014 Quantifies the risk of packaging\
+    \ failure based on product, route, and handling conditions.\n[/kb=19]"
+  label: Packing Integrity Risk Factor (PIRF)
+  hidden: false
+  meta:
+    kb_id: 19
+- name: is_biologic_appropriate_storage
+  sql: "CASE WHEN store_cond IN ('2-8\xB0C', '-20\xB0C', '-70\xB0C') THEN 1 WHEN store_cond\
+    \ = '15-25\xB0C' THEN 0 ELSE NULL END"
+  type: DOUBLE
+  primary_key: false
+  description: "Storage Temperature Requirements for Biologics (KB #37): biologics\
+    \ typically require 2-8\xB0C (refrigerated) or -20\xB0C (frozen), with specialized\
+    \ biologic products requiring -70\xB0C (ultra-low). Room temperature (15-25\xB0\
+    C) is rarely suitable for biologics. 1 = storage range generally appropriate for\
+    \ biologics, 0 = room temperature, NULL when store_cond is unknown.\n\n[kb=37]\n\
+    Most biologics require storage at either '2-8\xB0C' (refrigerated) or '-20\xB0\
+    C' (frozen), with certain specialized biologic products requiring '-70\xB0C' (ultra-low\
+    \ temperature) storage. Room temperature (15-25\xB0C) storage is rarely suitable\
+    \ for biologics unless specifically formulated for stability at those temperatures.\
+    \ \u2014 Specifies the standard temperature storage requirements for biological\
+    \ pharmaceutical products.\n[/kb=37]"
+  label: Storage Temperature Requirements for Biologics
+  hidden: false
+  meta:
+    kb_id: 37
+- name: deviation_tolerance_label
+  sql: "CASE store_cond WHEN '2-8\xB0C' THEN 'Brief excursion to 0-12\xB0C acceptable\
+    \ (<30 min)' WHEN '-20\xB0C' THEN 'Brief excursion to -15\xB0C acceptable' WHEN\
+    \ '-70\xB0C' THEN 'Brief excursion to -60\xB0C acceptable' WHEN '15-25\xB0C' THEN\
+    \ 'Brief excursion 8-30\xB0C acceptable' ELSE NULL END"
+  type: TEXT
+  primary_key: false
+  description: "Acceptable Temperature Deviation Limits (KB #49): per-storage-class\
+    \ brief-excursion tolerances. 2-8\xB0C \u2192 0-12\xB0C (<30 min); -20\xB0C \u2192\
+    \ -15\xB0C; -70\xB0C \u2192 -60\xB0C; 15-25\xB0C \u2192 8-30\xB0C briefly. The\
+    \ label is descriptive \u2014 used by the agent to choose the right deviation\
+    \ predicate downstream.\n\n[kb=49]\nFor refrigerated products (2-8\xB0C): brief\
+    \ excursions (< 30 min) to 0-12\xB0C may be acceptable; For frozen products (-20\xB0\
+    C): brief excursions to -15\xB0C may be acceptable; For ultra-frozen products\
+    \ (-70\xB0C): brief excursions to -60\xB0C may be acceptable; For controlled room\
+    \ temperature products (15-25\xB0C): brief excursions to 10-30\xB0C may be acceptable.\
+    \ \u2014 Industry standards for tolerable temperature deviations during pharmaceutical\
+    \ transport.\n[/kb=49]"
+  label: Acceptable Temperature Deviation Limits
+  hidden: false
+  meta:
+    kb_id: 49
+- name: thermodynamic_stability_class
+  sql: CASE tempsense WHEN 'Low' THEN 'A' WHEN 'Medium' THEN 'B' WHEN 'High' THEN
+    'C' ELSE NULL END
+  type: TEXT
+  primary_key: false
+  description: "Thermodynamic Stability Class (KB #47): Class A (highly stable, brief\
+    \ excursions tolerated with minimal degradation) / B (moderately stable) / C (limited\
+    \ stability, strict control) / D (highly unstable). Schema does not carry the\
+    \ class as a column; the closest proxy is tempsense (Low\u2192A, Medium\u2192\
+    B, High\u2192C). Class D is not present without explicit data.\n\n[kb=47]\nProducts\
+    \ are classified as: Class A (highly stable, can tolerate brief temperature excursions\
+    \ with minimal degradation), Class B (moderately stable), Class C (limited stability,\
+    \ requires strict temperature control), and Class D (highly unstable, no temperature\
+    \ excursions permitted). \u2014 Categorizes pharmaceutical products based on their\
+    \ thermal stability characteristics.\n[/kb=47]"
+  label: Thermodynamic Stability Class
+  hidden: false
+  meta:
+    kb_id: 47
+- name: stability_budget_hours
+  sql: CASE tempsense WHEN 'Low' THEN 24 WHEN 'Medium' THEN 8 WHEN 'High' THEN 2 ELSE
+    NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Pharmaceutical Stability Budget (KB #31): the maximum cumulative duration\
+    \ (hours) a product can spend outside labeled storage requirements without significant\
+    \ impact to quality, safety, or efficacy. NULL means stability budget has not\
+    \ been determined. Derived from the per-product tempsense tier \u2014 Low=24h,\
+    \ Medium=8h, High=2h per the KB.\n\n[kb=31]\nThe maximum cumulative duration (typically\
+    \ specified in hours or days) that a pharmaceutical product can experience conditions\
+    \ outside its labeled storage requirements without significant impact to its quality,\
+    \ safety, or efficacy. Null values indicate stability budget has not been determined\
+    \ for the product. \u2014 The total allowable time a product can spend outside\
+    \ of ideal conditions before quality is compromised.\n[/kb=31]"
+  label: Pharmaceutical Stability Budget
+  hidden: false
+  meta:
+    kb_id: 31
+- name: is_premium_transport_container
+  sql: CASE WHEN pack_type = 'Container' THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Premium Transport Container Types (KB #29): Envirotainer RAP e2, Envirotainer\
+    \ RKN e1, va-Q-tainer USx, CSafe RKN, DoKaSch Opticooler, Sonoco ThermoSafe PharmaPort\
+    \ 360. The schema does not name the specific premium model \u2014 pack_type='Container'\
+    \ is the closest proxy for premium thermal transport, vs single-unit packaging\
+    \ (Ampoule/Syringe/Vial).\n\n[kb=29]\nPremium transport containers include: Envirotainer\
+    \ RAP e2, Envirotainer RKN e1, va-Q-tainer USx, CSafe RKN, DoKaSch Opticooler,\
+    \ and Sonoco ThermoSafe PharmaPort 360. \u2014 Identifies specialized containers\
+    \ used for high-value pharmaceutical transport.\n[/kb=29]"
+  label: Premium Transport Container Types
+  hidden: false
+  meta:
+    kb_id: 29
+- name: thermal_efficiency_rating
+  sql: CASE pack_type WHEN 'Container' THEN 'Extended' WHEN 'Vial' THEN 'Standard'
+    WHEN 'Syringe' THEN 'Basic' WHEN 'Ampoule' THEN 'Basic' ELSE NULL END
+  type: TEXT
+  primary_key: false
+  description: "Package Thermal Efficiency Rating (KB #43): 'Basic' (<24h protection)\
+    \ / 'Standard' (24-48h) / 'Enhanced' (48-96h) / 'Extended' (>96h). The schema\
+    \ doesn't store the rating; pack_type is the closest available container indicator\
+    \ and Container is treated as the most thermally efficient class while single-dose\
+    \ packaging defaults to Basic.\n\n[kb=43]\nThermal efficiency rating is classified\
+    \ as: 'Basic' (<24 hours of protection), 'Standard' (24-48 hours of protection),\
+    \ 'Enhanced' (48-96 hours of protection), 'Extended' (>96 hours of protection).\
+    \ \u2014 Measures how effectively a packaging system maintains internal temperature\
+    \ despite external conditions.\n[/kb=43]"
+  label: Package Thermal Efficiency Rating
+  hidden: false
+  meta:
+    kb_id: 43
+measures: []
+aggregations: []
+joins:
+- target_model: products
+  join_pairs:
+  - - prodlink
+    - prodcode
+  join_type: left
+filters: []
+description: Pharmaceutical production batches with required temperature range, packaging,
+  sensitivity, and value. Linked to a parent product via prodlink.
+hidden: false

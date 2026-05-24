@@ -1,0 +1,110 @@
+version: 6
+name: average_stops_per_car
+source_queries:
+- version: 3
+  name: stops_per_race
+  source_model: pit_stops
+  measures:
+  - formula: '*:count'
+  - formula: wunit:count_distinct
+  dimensions:
+  - name: matchidx
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: stops_per_race
+    columns:
+    - name: average_stops_per_car
+      type: DOUBLE
+      sql: _count * 1.0 / NULLIF(wunit_count_distinct, 0)
+      description: 'Average Stops Per Car (KB #54): total_stops / unique_cars_with_a_pit_stop,
+        per race.'
+      meta:
+        kb_id: 54
+    - name: pit_strategy_cluster
+      type: TEXT
+      sql: CASE WHEN _count * 1.0 / NULLIF(wunit_count_distinct, 0) < 1.5 THEN 'Single-Stop
+        Race' WHEN _count * 1.0 / NULLIF(wunit_count_distinct, 0) < 2.5 THEN 'Standard
+        Two-Stop' ELSE 'High-Strategy Event' END
+      description: 'Pit Strategy Cluster (KB #55): ''Single-Stop Race'' (<1.5), ''Standard
+        Two-Stop'' (1.5-2.5), ''High-Strategy Event'' (>=2.5) by Average Stops Per
+        Car.'
+      meta:
+        kb_id: 55
+  dimensions:
+  - name: matchidx
+  - name: _count
+  - name: wunit_count_distinct
+  - name: average_stops_per_car
+  - name: pit_strategy_cluster
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"stops_per_race.matchidx\" AS matchidx, \"stops_per_race._count\"\
+  \ AS _count, \"stops_per_race.wunit_count_distinct\" AS wunit_count_distinct, \"\
+  stops_per_race.average_stops_per_car\" AS average_stops_per_car, \"stops_per_race.pit_strategy_cluster\"\
+  \ AS pit_strategy_cluster FROM (SELECT\n  stops_per_race.matchidx AS \"stops_per_race.matchidx\"\
+  ,\n  stops_per_race._count AS \"stops_per_race._count\",\n  stops_per_race.wunit_count_distinct\
+  \ AS \"stops_per_race.wunit_count_distinct\",\n  stops_per_race._count * 1.0 / NULLIF(stops_per_race.wunit_count_distinct,\
+  \ 0) AS \"stops_per_race.average_stops_per_car\",\n  CASE\n    WHEN stops_per_race._count\
+  \ * 1.0 / NULLIF(stops_per_race.wunit_count_distinct, 0) < 1.5\n    THEN 'Single-Stop\
+  \ Race'\n    WHEN stops_per_race._count * 1.0 / NULLIF(stops_per_race.wunit_count_distinct,\
+  \ 0) < 2.5\n    THEN 'Standard Two-Stop'\n    ELSE 'High-Strategy Event'\n  END\
+  \ AS \"stops_per_race.pit_strategy_cluster\"\nFROM (\n  SELECT\n    \"pit_stops.matchidx\"\
+  \ AS matchidx,\n    \"pit_stops._count\" AS _count,\n    \"pit_stops.wunit_count_distinct\"\
+  \ AS wunit_count_distinct\n  FROM (\n    SELECT\n      pit_stops.matchidx AS \"\
+  pit_stops.matchidx\",\n      COUNT(*) AS \"pit_stops._count\",\n      COUNT(DISTINCT\
+  \ pit_stops.wunit) AS \"pit_stops.wunit_count_distinct\"\n    FROM pit_stops AS\
+  \ pit_stops\n    GROUP BY\n      pit_stops.matchidx\n  ) AS _inner\n) AS stops_per_race)\
+  \ AS _inner"
+data_source: sports_events
+columns:
+- name: matchidx
+  sql: matchidx
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to races.
+  hidden: false
+  format:
+    type: integer
+- name: _count
+  sql: _count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: wunit_count_distinct
+  sql: wunit_count_distinct
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to drivers.
+  hidden: false
+  format:
+    type: integer
+- name: average_stops_per_car
+  sql: average_stops_per_car
+  type: DOUBLE
+  primary_key: false
+  description: 'Average Stops Per Car (KB #54): total_stops / unique_cars_with_a_pit_stop,
+    per race.'
+  hidden: false
+- name: pit_strategy_cluster
+  sql: pit_strategy_cluster
+  type: TEXT
+  primary_key: false
+  description: 'Pit Strategy Cluster (KB #55): ''Single-Stop Race'' (<1.5), ''Standard
+    Two-Stop'' (1.5-2.5), ''High-Strategy Event'' (>=2.5) by Average Stops Per Car.'
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Average Stops Per Car (KB #54) per race: (total number of pit stops)\
+  \ / (number of unique cars that made a pit stop). Stage 1 aggregates pit_stops by\
+  \ race; stage 2 exposes the ratio.\n\n[kb=54]\nFor a given race, this is calculated\
+  \ as: (Total Number of Pit Stops) / (Number of Unique Cars that made a Pit Stop).\
+  \ \u2014 Calculates the average number of pit stops undertaken by each competing\
+  \ car in a single race.\n[/kb=54]"
+hidden: false
+meta:
+  kb_id: 54

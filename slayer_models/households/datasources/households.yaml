@@ -1,0 +1,4 @@
+version: 1
+name: households
+type: sqlite
+connection_string: sqlite:///households/households.sqlite

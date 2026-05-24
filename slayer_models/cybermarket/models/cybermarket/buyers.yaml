@@ -1,0 +1,75 @@
+version: 6
+name: buyers
+sql_table: buyers
+query_variables: {}
+data_source: cybermarket
+columns:
+- name: buyregistry
+  sql: buyregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: buyspan
+  sql: buyspan
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: buytxtally
+  sql: buytxtally
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: buyspending
+  sql: buyspending
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: buyfreqcat
+  sql: buyfreqcat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: buychecklvl
+  sql: buychecklvl
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: buyriskrate
+  sql: buyriskrate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mktref
+  sql: mktref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vendref
+  sql: vendref
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: markets
+  join_pairs:
+  - - mktref
+    - mktregistry
+  join_type: left
+- target_model: vendors
+  join_pairs:
+  - - vendref
+    - vendregistry
+  join_type: left
+filters: []
+description: Cybermarket buyers, joined to their home market (mktref) and optionally
+  a directly-associated vendor (vendref). buytxtally, buyspending, buyfreqcat, buychecklvl,
+  and buyriskrate characterise the buyer.
+hidden: false

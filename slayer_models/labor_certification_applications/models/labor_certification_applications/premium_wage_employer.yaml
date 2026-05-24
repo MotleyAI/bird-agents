@@ -1,0 +1,90 @@
+version: 6
+name: premium_wage_employer
+source_queries:
+- version: 3
+  name: emp_avg_wdr
+  source_model: case_worksite
+  measures:
+  - formula: wage_differential_rate:avg
+  dimensions:
+  - name: homefirm
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: emp_avg_wdr
+    columns:
+    - name: is_premium_wage_employer
+      type: BOOLEAN
+      sql: wage_differential_rate_avg > 15
+  dimensions:
+  - name: homefirm
+  - name: wage_differential_rate_avg
+  - name: is_premium_wage_employer
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"emp_avg_wdr.homefirm\" AS homefirm, \"emp_avg_wdr.wage_differential_rate_avg\"\
+  \ AS wage_differential_rate_avg, \"emp_avg_wdr.is_premium_wage_employer\" AS is_premium_wage_employer\
+  \ FROM (SELECT\n  emp_avg_wdr.homefirm AS \"emp_avg_wdr.homefirm\",\n  emp_avg_wdr.wage_differential_rate_avg\
+  \ AS \"emp_avg_wdr.wage_differential_rate_avg\",\n  wage_differential_rate_avg >\
+  \ 15 AS \"emp_avg_wdr.is_premium_wage_employer\"\nFROM (\n  SELECT\n    \"case_worksite.homefirm\"\
+  \ AS homefirm,\n    \"case_worksite.wage_differential_rate_avg\" AS wage_differential_rate_avg\n\
+  \  FROM (\n    SELECT\n      cases.homefirm AS \"case_worksite.homefirm\",\n   \
+  \   AVG(\n        (\n          CAST(REPLACE(REPLACE(prevailing_wage.wage_details\
+  \ ->> '$.offered_wage.from', '$', ''), ',', '') AS REAL) * CASE prevailing_wage.wage_details\
+  \ ->> '$.offered_wage.unit'\n            WHEN 'Hour'\n            THEN 2080\n  \
+  \          WHEN 'Week'\n            THEN 52\n            WHEN 'Month'\n        \
+  \    THEN 12\n            WHEN 'Year'\n            THEN 1\n            ELSE NULL\n\
+  \          END - CAST(REPLACE(\n            REPLACE(\n              REPLACE(prevailing_wage.wage_details\
+  \ ->> '$.prevailing_wage.value', 'USD', ''),\n              ',',\n             \
+  \ ''\n            ),\n            ' ',\n            ''\n          ) AS REAL) * CASE\
+  \ prevailing_wage.wage_details ->> '$.prevailing_wage.unit'\n            WHEN 'Hour'\n\
+  \            THEN 2080\n            WHEN 'Week'\n            THEN 52\n         \
+  \   WHEN 'Month'\n            THEN 12\n            WHEN 'Year'\n            THEN\
+  \ 1\n            ELSE NULL\n          END\n        ) * 100.0 / NULLIF(\n       \
+  \   CAST(REPLACE(\n            REPLACE(\n              REPLACE(prevailing_wage.wage_details\
+  \ ->> '$.prevailing_wage.value', 'USD', ''),\n              ',',\n             \
+  \ ''\n            ),\n            ' ',\n            ''\n          ) AS REAL) * CASE\
+  \ prevailing_wage.wage_details ->> '$.prevailing_wage.unit'\n            WHEN 'Hour'\n\
+  \            THEN 2080\n            WHEN 'Week'\n            THEN 52\n         \
+  \   WHEN 'Month'\n            THEN 12\n            WHEN 'Year'\n            THEN\
+  \ 1\n            ELSE NULL\n          END,\n          0\n        )\n      ) AS \"\
+  case_worksite.wage_differential_rate_avg\"\n    FROM case_worksite AS case_worksite\n\
+  \    LEFT JOIN prevailing_wage AS prevailing_wage\n      ON case_worksite.wagetrack\
+  \ = prevailing_wage.trackno\n    LEFT JOIN cases AS cases\n      ON case_worksite.dockkey\
+  \ = cases.filekey\n    GROUP BY\n      cases.homefirm\n  ) AS _inner\n) AS emp_avg_wdr)\
+  \ AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: homefirm
+  sql: homefirm
+  type: TEXT
+  primary_key: false
+  description: Employer (homefirm) for the case, denormalized via cases join.
+  hidden: false
+- name: wage_differential_rate_avg
+  sql: wage_differential_rate_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'WDR for this case_worksite, denormalized via prevailing_wage join.
+    Used for KB #31 (Industry Wage Differential).'
+  hidden: false
+  format:
+    type: float
+- name: is_premium_wage_employer
+  sql: is_premium_wage_employer
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Premium Wage Employer per employer (KB #56): avg WDR > 15% across all\
+  \ the employer's applications. Per-employer rows with avg_wdr and is_premium_wage_employer.\n\
+  \n[kb=56]\nAn employer is considered a premium wage employer if their average Wage\
+  \ Differential Rate (WDR) across all applications exceeds 15%, indicating a consistent\
+  \ strategy of offering premium compensation. \u2014 Defines employers that consistently\
+  \ offer above-market wages.\n[/kb=56]"
+hidden: false
+meta:
+  kb_id: 56

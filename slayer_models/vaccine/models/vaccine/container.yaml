@@ -1,0 +1,136 @@
+version: 6
+name: container
+sql_table: container
+query_variables: {}
+data_source: vaccine
+columns:
+- name: containregistry
+  sql: containregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: containmodel
+  sql: containmodel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: volliters
+  sql: volliters
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: masskg
+  sql: masskg
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: containflag
+  sql: containflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: coolkind
+  sql: coolkind
+  type: TEXT
+  primary_key: false
+  description: "Coolant type. 'Phase Change Material' uses paraffin-based material\
+    \ with a 2-8 C phase transition point and 200 kJ/kg latent heat capacity for temperature\
+    \ stabilization (KB #24).\n\n[kb=24]\nUses paraffin-based material with 2-8\xB0\
+    C phase transition point and 200 kJ/kg latent heat capacity for temperature stabilization.\
+    \ \u2014 Illustrates PCM cooling mechanism\n[/kb=24]"
+  label: 'CoolKind: ''Phase Change Material'''
+  hidden: false
+  meta:
+    kb_id: 24
+- name: coolmass
+  sql: coolmass
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: coolremainpct
+  sql: coolremainpct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: coolrefills
+  sql: coolrefills
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: refilllatest
+  sql: refilllatest
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: refillnext
+  sql: refillnext
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: batterypct
+  sql: batterypct
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: pwrfeed
+  sql: pwrfeed
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: pwrbackupflag
+  sql: pwrbackupflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shipown
+  sql: shipown
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cdr
+  sql: (100 - coolremainpct) / NULLIF(julianday('now') - julianday(refilllatest),
+    0)
+  type: DOUBLE
+  primary_key: false
+  description: "Coolant Depletion Rate (CDR). How quickly coolant is being depleted,\
+    \ in percentage points per day: (100 - CoolRemainPct) / (Current_Date - RefillLatest)\
+    \ (KB #1).\n\n[kb=1]\nCDR = \\frac{100 - CoolRemainPct}{(Current_Date - RefillLatest)}\
+    \ \u2014 Measures how quickly the coolant is being depleted.\n[/kb=1]"
+  label: Coolant Depletion Rate (CDR)
+  hidden: false
+  meta:
+    kb_id: 1
+- name: is_coolant_critical
+  sql: CASE WHEN ((100 - coolremainpct) / NULLIF(julianday('now') - julianday(refilllatest),
+    0)) > 1 AND coolremainpct < 30 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Coolant Critical flag. True when CDR > 1 AND CoolRemainPct < 30 (KB\
+    \ #17).\n\n[kb=17]\nA condition where CDR > 1 and CoolRemainPct < 30 \u2014 Identifies\
+    \ critical coolant conditions.\n[/kb=17]"
+  label: Coolant Critical
+  hidden: false
+  meta:
+    kb_id: 17
+measures: []
+aggregations: []
+joins:
+- target_model: vaccine_shipments
+  join_pairs:
+  - - shipown
+    - shipmentregistry
+  join_type: left
+filters: []
+hidden: false

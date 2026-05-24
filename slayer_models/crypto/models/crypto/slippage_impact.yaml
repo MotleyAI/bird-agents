@@ -1,0 +1,79 @@
+version: 6
+name: slippage_impact
+source_queries:
+- version: 3
+  name: depth_per_pair
+  source_model: marketdata
+  measures:
+  - formula: bidunits:avg
+    name: bidunits_avg
+  - formula: askunits:avg
+    name: askunits_avg
+  - formula: spreadband:avg
+    name: spreadband_avg
+  dimensions:
+  - name: mktcombo
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: orders
+    joins:
+    - target_model: depth_per_pair
+      join_pairs:
+      - - mktnote
+        - mktcombo
+    columns:
+    - name: slippage_impact
+      type: DOUBLE
+      sql: dealcount / NULLIF(CASE WHEN dealedge = 'Buy' THEN depth_per_pair.askunits_avg
+        ELSE depth_per_pair.bidunits_avg END, 0) * depth_per_pair.spreadband_avg
+  dimensions:
+  - name: recordvault
+  - name: slippage_impact
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.slippage_impact\"\
+  \ AS slippage_impact FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\"\
+  ,\n  orders.dealcount / NULLIF(\n    CASE\n      WHEN orders.dealedge = 'Buy'\n\
+  \      THEN depth_per_pair.askunits_avg\n      ELSE depth_per_pair.bidunits_avg\n\
+  \    END,\n    0\n  ) * depth_per_pair.spreadband_avg AS \"orders.slippage_impact\"\
+  \nFROM orders AS orders\nLEFT JOIN (\n  (\n    SELECT\n      \"marketdata.mktcombo\"\
+  \ AS mktcombo,\n      \"marketdata.bidunits_avg\" AS bidunits_avg,\n      \"marketdata.askunits_avg\"\
+  \ AS askunits_avg,\n      \"marketdata.spreadband_avg\" AS spreadband_avg\n    FROM\
+  \ (\n      SELECT\n        marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\
+  \ AS \"marketdata.mktcombo\",\n        AVG(marketdata.quote_depth_snapshot ->> '$.depth.bidunits')\
+  \ AS \"marketdata.bidunits_avg\",\n        AVG(marketdata.quote_depth_snapshot ->>\
+  \ '$.depth.askunits') AS \"marketdata.askunits_avg\",\n        AVG(marketdata.quote_depth_snapshot\
+  \ ->> '$.spread.spreadband') AS \"marketdata.spreadband_avg\"\n      FROM marketdata\
+  \ AS marketdata\n      GROUP BY\n        marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\n\
+  \    ) AS _inner\n  )\n) AS depth_per_pair\n  ON orders.mktnote = depth_per_pair.mktcombo)\
+  \ AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: slippage_impact
+  sql: slippage_impact
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Slippage Impact (KB #1) per order: dealcount / (askunits or bidunits)\
+  \ \xD7 spreadband. dealcount/dealedge come from orders; bidunits/askunits/spreadband\
+  \ are per-pair averages from marketdata grouped by mktcombo. Joined to orders via\
+  \ orders.mktnote = mktcombo. The denominator switches on dealedge: 'Buy' uses askunits\
+  \ (the available liquidity at the ask), 'Sell' uses bidunits.\n\n[kb=1]\nSlippage\
+  \ Impact = \\frac{dealcount}{bidunits \\text{ or } askunits} \\times spreadband,\
+  \ \\text{where } dealcount \\text{ is the order quantity, } bidunits/askunits \\\
+  text{ is the quantity available at best bid/ask, and } spreadband \\text{ is the\
+  \ raw spread.} \u2014 Calculates the expected price slippage impact for a given\
+  \ order size.\n[/kb=1]"
+hidden: false
+meta:
+  kb_id: 1

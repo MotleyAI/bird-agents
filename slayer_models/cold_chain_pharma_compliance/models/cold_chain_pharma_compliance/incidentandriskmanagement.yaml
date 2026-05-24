@@ -1,0 +1,147 @@
+version: 6
+name: incidentandriskmanagement
+sql_table: incidentandriskmanagement
+query_variables: {}
+data_source: cold_chain_pharma_compliance
+columns:
+- name: reckeyrisk
+  sql: reckeyrisk
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: incident_risk_record
+  sql: incident_risk_record
+  type: TEXT
+  primary_key: false
+  description: JSON blob combining stability review, deviation investigation, risk
+    assessment, reporting and impact analysis for a shipment to support CAPA and pharmacovigilance
+    workflows.
+  hidden: false
+- name: stability_data_review
+  sql: json_extract(incident_risk_record, '$.stability_and_quality.stability_data_review')
+  type: TEXT
+  primary_key: false
+  description: 'Stability-data review summary: Completed / Pending / Not Required.'
+  hidden: false
+- name: stability_impact_assessment
+  sql: json_extract(incident_risk_record, '$.stability_and_quality.stability_impact_assessment')
+  type: TEXT
+  primary_key: false
+  description: 'Assessment of stability impact: Minor / Major. NULL means impact not
+    assessed.'
+  hidden: false
+- name: product_quality_impact
+  sql: json_extract(incident_risk_record, '$.stability_and_quality.product_quality_impact')
+  type: TEXT
+  primary_key: false
+  description: 'Product-quality impact summary: Confirmed / Possible. NULL means impact
+    not assessed.'
+  hidden: false
+- name: batch_release_decision
+  sql: json_extract(incident_risk_record, '$.batch_decision.batch_release_decision')
+  type: TEXT
+  primary_key: false
+  description: 'Decision on batch release: Approved / Pending / Rejected.'
+  hidden: false
+- name: investigation_status
+  sql: json_extract(incident_risk_record, '$.deviation_investigation.investigation_status')
+  type: TEXT
+  primary_key: false
+  description: 'Deviation investigation status: Completed / Ongoing / null.'
+  hidden: false
+- name: corrective_actions
+  sql: json_extract(incident_risk_record, '$.deviation_investigation.corrective_actions')
+  type: TEXT
+  primary_key: false
+  description: 'Corrective actions taken: Implemented / Pending.'
+  hidden: false
+- name: preventive_actions
+  sql: json_extract(incident_risk_record, '$.deviation_investigation.preventive_actions')
+  type: TEXT
+  primary_key: false
+  description: 'Preventive actions planned: Implemented / Planned.'
+  hidden: false
+- name: risk_assessment_status
+  sql: json_extract(incident_risk_record, '$.risk.risk_assessment_status')
+  type: TEXT
+  primary_key: false
+  description: 'Overall risk-assessment status: Completed / Ongoing / Required.'
+  hidden: false
+- name: risk_level
+  sql: json_extract(incident_risk_record, '$.risk.risk_level')
+  type: TEXT
+  primary_key: false
+  description: 'Assigned risk level: High / Medium / Low. NULL means level not set.'
+  hidden: false
+- name: incident_report_status
+  sql: json_extract(incident_risk_record, '$.reporting_notification.incident_report_status')
+  type: TEXT
+  primary_key: false
+  description: 'Incident-reporting status: Draft / Reviewed / Submitted.'
+  hidden: false
+- name: health_authority_notification
+  sql: json_extract(incident_risk_record, '$.reporting_notification.health_authority_notification')
+  type: TEXT
+  primary_key: false
+  description: 'Health-authority notification status: Completed / Pending / Not Required.'
+  hidden: false
+- name: authority_response
+  sql: json_extract(incident_risk_record, '$.reporting_notification.authority_response')
+  type: TEXT
+  primary_key: false
+  description: 'Authority response summary: Acknowledged / Investigation. NULL means
+    no response yet.'
+  hidden: false
+- name: customer_notification
+  sql: json_extract(incident_risk_record, '$.reporting_notification.customer_notification')
+  type: TEXT
+  primary_key: false
+  description: 'Customer notification status: Completed / Pending / Not Required.'
+  hidden: false
+- name: customer_response
+  sql: json_extract(incident_risk_record, '$.reporting_notification.customer_response')
+  type: TEXT
+  primary_key: false
+  description: 'Customer response summary: Accepted / Rejected. NULL means no response
+    yet.'
+  hidden: false
+- name: patient_impact
+  sql: json_extract(incident_risk_record, '$.impact.patient_impact')
+  type: TEXT
+  primary_key: false
+  description: 'Assessment of patient impact: Confirmed / Possible. NULL means impact
+    not assessed.'
+  hidden: false
+- name: market_impact
+  sql: json_extract(incident_risk_record, '$.impact.market_impact')
+  type: TEXT
+  primary_key: false
+  description: 'Assessment of market impact: Limited / Significant. NULL means impact
+    not assessed.'
+  hidden: false
+- name: reputation_impact
+  sql: json_extract(incident_risk_record, '$.impact.reputation_impact')
+  type: TEXT
+  primary_key: false
+  description: 'Reputation impact statement: Minor / Major. NULL means impact not
+    assessed.'
+  hidden: false
+- name: lessons_learned
+  sql: json_extract(incident_risk_record, '$.lessons_learned')
+  type: TEXT
+  primary_key: false
+  description: 'Lessons learned documentation reference: Yes / No / In Progress.'
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: shipments
+  join_pairs:
+  - - reckeyrisk
+    - reckey
+  join_type: left
+filters: []
+description: Per-shipment incident and risk management record. Holds the incident_risk_record
+  JSON blob with stability, batch decision, deviation investigation, risk, reporting/notification,
+  impact and lessons-learned sub-objects.
+hidden: false

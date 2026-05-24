@@ -1,0 +1,192 @@
+version: 6
+name: monitoringdevices
+sql_table: monitoringdevices
+query_variables: {}
+data_source: cold_chain_pharma_compliance
+columns:
+- name: mondevref
+  sql: mondevref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: calibts
+  sql: calibts
+  type: TIMESTAMP
+  primary_key: false
+  description: "Timestamp of last calibration. KB #55 (Monitoring Device Calibration\
+    \ Status): 'Current' (within ~12 months), 'Expired' (period elapsed), 'Exempt'\
+    \ (single-use factory-calibrated), with null indicating unknown/undocumented.\
+    \ The calibration_status column derives this label from this timestamp.\n\n[kb=55]\n\
+    Calibration status includes: 'Current' (calibrated within required timeframe,\
+    \ typically 12 months), 'Expired' (calibration period has elapsed), 'Exempt' (single-use\
+    \ devices with factory calibration), with null values indicating calibration status\
+    \ is unknown or not documented. \u2014 Indicates if temperature monitoring devices\
+    \ are properly calibrated for accurate readings.\n[/kb=55]"
+  label: Monitoring Device Calibration Status
+  hidden: false
+  meta:
+    kb_id: 55
+- name: devacc
+  sql: devacc
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: recintmin
+  sql: recintmin
+  type: INT
+  primary_key: false
+  description: "Recording interval in minutes (KB #44, Risk-Based Monitoring Intensity):\
+    \ high-risk products require 5-minute intervals, medium 15, low 30. NULL means\
+    \ unplanned or non-standardised monitoring approaches.\n\n[kb=44]\nHigh-risk products\
+    \ (biologics, vaccines) require continuous temperature monitoring with 5-minute\
+    \ intervals, medium-risk products should have 15-minute intervals, and low-risk\
+    \ products can use 30-minute intervals, with null values in monitoring frequency\
+    \ indicating unplanned or non-standardized monitoring approaches. \u2014 Determines\
+    \ appropriate monitoring frequency based on product risk profile.\n[/kb=44]"
+  label: Risk-Based Monitoring Intensity
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 44
+- name: temppts
+  sql: temppts
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: devacc_num
+  sql: CAST(devacc AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Device accuracy specification (\xB0C), parsed numerically. Used as\
+    \ the 'A' parameter in Temperature Accuracy Impact Factor (KB #57). KB #48 (Data\
+    \ Logger Reliability Score) further references device-error rates which are not\
+    \ present in this schema."
+  hidden: false
+- name: calibration_status
+  sql: CASE WHEN calibts IS NULL THEN NULL WHEN julianday('now') - julianday(calibts)
+    < 365 THEN 'Current' ELSE 'Expired' END
+  type: TEXT
+  primary_key: false
+  description: "Calibration Status (KB #55) derived from calibts: 'Current' if calibrated\
+    \ within the last 365 days, 'Expired' otherwise. NULL when calibts is not recorded.\
+    \ The 'Exempt' value is not derivable from this schema.\n\n[kb=55]\nCalibration\
+    \ status includes: 'Current' (calibrated within required timeframe, typically\
+    \ 12 months), 'Expired' (calibration period has elapsed), 'Exempt' (single-use\
+    \ devices with factory calibration), with null values indicating calibration status\
+    \ is unknown or not documented. \u2014 Indicates if temperature monitoring devices\
+    \ are properly calibrated for accurate readings.\n[/kb=55]"
+  label: Monitoring Device Calibration Status
+  hidden: false
+  meta:
+    kb_id: 55
+- name: is_reading_failure
+  sql: CASE WHEN recintmin IS NULL THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Reading-failure indicator for DLRS (KB #48): 1 when the recording\
+    \ interval (recintmin) is not configured, 0 otherwise. Used to compute Fr (rate\
+    \ of reading failures per 100 deployments).\n\n[kb=48]\nDLRS = 100 - (10 \\times\
+    \ F_r + 5 \\times F_d + 3 \\times F_c + 2 \\times F_b), \\text{where } F_r \\\
+    text{ is the rate of reading failures, } F_d \\text{ is the rate of download failures,\
+    \ } F_c \\text{ is the calibration drift rate, and } F_b \\text{ is the battery\
+    \ failure rate. All rates are per 100 deployments.} \u2014 Assesses the reliability\
+    \ of temperature monitoring devices based on historical performance.\n[/kb=48]"
+  label: Data Logger Reliability Score (DLRS)
+  hidden: false
+  meta:
+    kb_id: 48
+- name: is_calibration_drift
+  sql: CASE WHEN calibts IS NOT NULL AND calibts < '2024-06-26' THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: 'Calibration-drift indicator for DLRS (KB #48): 1 when the device''s
+    last calibration date is older than 365 days before the dataset reference date
+    (2025-06-26 - 1 year = 2024-06-26), 0 otherwise. Used to compute Fc (calibration
+    drift rate per 100 deployments). Anchor date is hardcoded to match the dataset''s
+    time range; for live use, parametrise via a query variable.'
+  hidden: false
+- name: qualification_status
+  sql: CASE WHEN devacc IS NOT NULL AND calibts IS NOT NULL THEN 'Fully Qualified'
+    WHEN devacc IS NOT NULL OR calibts IS NOT NULL THEN 'Partially Qualified' ELSE
+    'Unqualified' END
+  type: TEXT
+  primary_key: false
+  description: "Qualification Status of Temperature Monitoring Devices (KB #35): 'Fully\
+    \ Qualified' (calibrated with NIST-traceable standards and validated for pharmaceutical\
+    \ use), 'Partially Qualified' (calibrated but not fully validated), 'Unqualified'\
+    \ (not formally qualified). Schema lacks an explicit qualification flag, so this\
+    \ proxies via presence of accuracy spec (devacc) and calibration timestamp (calibts).\n\
+    \n[kb=35]\nMonitoring devices can be: 'Fully Qualified' (calibrated with NIST-traceable\
+    \ standards and validated for pharmaceutical use), 'Partially Qualified' (calibrated\
+    \ but not fully validated), 'Unqualified' (not formally qualified), with null\
+    \ values indicating qualification status is unknown. \u2014 Indicates the validation\
+    \ level of monitoring devices used in pharmaceutical transport.\n[/kb=35]"
+  label: Qualification Status of Temperature Monitoring Devices
+  hidden: false
+  meta:
+    kb_id: 35
+- name: monitoring_system_tier
+  sql: CASE WHEN recintmin <= 5 THEN 'Tier 4' WHEN recintmin <= 15 THEN 'Tier 3' WHEN
+    recintmin <= 30 THEN 'Tier 2' ELSE 'Tier 1' END
+  type: TEXT
+  primary_key: false
+  description: "Electronic Monitoring System Tier (KB #52): Tier 1 (basic data loggers,\
+    \ manual download) / Tier 2 (USB or Bluetooth download) / Tier 3 (network-connected\
+    \ real-time alerts) / Tier 4 (full IoT predictive). Source schema does not store\
+    \ the tier directly; the recording-interval intensity (recintmin) is the closest\
+    \ proxy \u2014 finer intervals indicate higher-tier capability.\n\n[kb=52]\nElectronic\
+    \ monitoring systems are classified as: Tier 1 (basic data loggers with manual\
+    \ download), Tier 2 (enhanced loggers with USB or Bluetooth download), Tier 3\
+    \ (network-connected devices with real-time alerts), and Tier 4 (fully integrated\
+    \ IoT systems with predictive capabilities and automated interventions). \u2014\
+    \ Classification of monitoring systems based on their capabilities and features.\n\
+    [/kb=52]"
+  label: Electronic Monitoring System Tiers
+  hidden: false
+  meta:
+    kb_id: 52
+- name: package_integrity_monitoring_class
+  sql: CASE WHEN devacc IS NOT NULL THEN 'Electronic Impact Recorder' ELSE NULL END
+  type: TEXT
+  primary_key: false
+  description: "Package Integrity Monitoring Systems (KB #33): Shock Indicators /\
+    \ Tilt Indicators / Electronic Impact Recorders / Pressure Indicators. The monitoringdevices\
+    \ table represents the electronic-recorder class; mechanical shock/tilt/pressure\
+    \ indicators are not separate rows in this schema. Provided as a label so the\
+    \ agent can surface the KB-described categorization.\n\n[kb=33]\nPackage integrity\
+    \ monitoring systems include: Shock Indicators (mechanical devices that show when\
+    \ a package has received an impact), Tilt Indicators (show if a package was tilted\
+    \ beyond acceptable angles), Electronic Impact Recorders (provide detailed shock\
+    \ measurements), and Pressure Indicators (monitor pressure changes in sealed containers).\
+    \ \u2014 Identifies technologies used to monitor physical integrity of packages\
+    \ during transit.\n[/kb=33]"
+  label: Package Integrity Monitoring Systems
+  hidden: false
+  meta:
+    kb_id: 33
+measures:
+- formula: 100 - 10 * (is_reading_failure:sum * 100.0 / *:count) - 3 * (is_calibration_drift:sum
+    * 100.0 / *:count)
+  name: dlrs
+  description: 'Data Logger Reliability Score (DLRS, KB #48): 100 - 10*Fr - 5*Fd -
+    3*Fc - 2*Fb where rates are per 100 deployments. The schema only exposes reading-failure
+    (recintmin IS NULL) and calibration-drift (calibts > 1 year old) proxies; download-failure
+    (Fd) and battery-failure (Fb) rates are not stored, so they are taken as 0. Apply
+    on monitoringdevices fleet-wide for the headline reliability number.'
+aggregations: []
+joins: []
+filters: []
+description: "Temperature/environment monitoring devices. KB #52 (Electronic Monitoring\
+  \ System Tiers) classifies these systems Tier 1-4 by capabilities (Tier 1: basic\
+  \ data loggers with manual download, Tier 2: enhanced loggers with USB/Bluetooth,\
+  \ Tier 3: network-connected real-time, Tier 4: full IoT with predictive analytics).\
+  \ KB #33 (Package Integrity Monitoring Systems) lists shock/tilt/electronic-impact/pressure\
+  \ indicators as adjacent device classes. KB #35 (Qualification Status of Temperature\
+  \ Monitoring Devices) describes 'Fully Qualified' / 'Partially Qualified' / 'Unqualified'\
+  \ \u2014 the schema does not carry this status as a distinct column; devacc and\
+  \ calibts together act as a partial proxy."
+hidden: false
+meta: {}

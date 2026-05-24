@@ -1,0 +1,91 @@
+version: 6
+name: employer_dependency_level
+source_queries:
+- version: 3
+  name: emp_h1b_share
+  source_model: cases
+  measures:
+  - formula: is_h1b:sum * 100.0 / *:count
+    name: h1b_app_pct
+  - formula: is_h1b_dependent_yes:max
+    name: any_h1b_dependent
+  dimensions:
+  - name: homefirm
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: emp_h1b_share
+    columns:
+    - name: dependency_level
+      sql: CASE WHEN h1b_app_pct > 15 THEN 'High Dependency' WHEN h1b_app_pct >= 5
+        THEN 'Moderate Dependency' ELSE 'Low Dependency' END
+      type: TEXT
+  dimensions:
+  - name: homefirm
+  - name: h1b_app_pct
+  - name: any_h1b_dependent
+  - name: dependency_level
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"emp_h1b_share.homefirm\" AS homefirm, \"emp_h1b_share.h1b_app_pct\"\
+  \ AS h1b_app_pct, \"emp_h1b_share.any_h1b_dependent\" AS any_h1b_dependent, \"emp_h1b_share.dependency_level\"\
+  \ AS dependency_level FROM (SELECT\n  emp_h1b_share.homefirm AS \"emp_h1b_share.homefirm\"\
+  ,\n  emp_h1b_share.h1b_app_pct AS \"emp_h1b_share.h1b_app_pct\",\n  emp_h1b_share.any_h1b_dependent\
+  \ AS \"emp_h1b_share.any_h1b_dependent\",\n  CASE\n    WHEN emp_h1b_share.h1b_app_pct\
+  \ > 15\n    THEN 'High Dependency'\n    WHEN emp_h1b_share.h1b_app_pct >= 5\n  \
+  \  THEN 'Moderate Dependency'\n    ELSE 'Low Dependency'\n  END AS \"emp_h1b_share.dependency_level\"\
+  \nFROM (\n  SELECT\n    \"cases.homefirm\" AS homefirm,\n    \"cases._count\" AS\
+  \ _count,\n    \"cases.is_h1b_sum\" AS is_h1b_sum,\n    \"cases.any_h1b_dependent\"\
+  \ AS any_h1b_dependent,\n    \"cases.h1b_app_pct\" AS h1b_app_pct\n  FROM (\n  \
+  \  WITH base AS (\n      SELECT\n        cases.homefirm AS \"cases.homefirm\",\n\
+  \        COUNT(*) AS \"cases._count\",\n        SUM(CASE WHEN cases.visacls = 'H-1B'\
+  \ THEN 1 ELSE 0 END) AS \"cases.is_h1b_sum\",\n        MAX(CASE WHEN cases.h1bdep\
+  \ = 'Yes' THEN 1 ELSE 0 END) AS \"cases.any_h1b_dependent\"\n      FROM cases AS\
+  \ cases\n      GROUP BY\n        cases.homefirm\n    ), step1 AS (\n      SELECT\n\
+  \        \"cases._count\",\n        \"cases.any_h1b_dependent\",\n        \"cases.homefirm\"\
+  ,\n        \"cases.is_h1b_sum\",\n        \"cases.is_h1b_sum\" * 100.0 / \"cases._count\"\
+  \ AS \"cases.h1b_app_pct\"\n      FROM base\n    )\n    SELECT\n      \"cases._count\"\
+  ,\n      \"cases.any_h1b_dependent\",\n      \"cases.h1b_app_pct\",\n      \"cases.homefirm\"\
+  ,\n      \"cases.is_h1b_sum\"\n    FROM step1\n  ) AS _inner\n) AS emp_h1b_share)\
+  \ AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: homefirm
+  sql: homefirm
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: h1b_app_pct
+  sql: h1b_app_pct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: any_h1b_dependent
+  sql: any_h1b_dependent
+  type: DOUBLE
+  primary_key: false
+  description: '1 if h1bdep=''Yes''. KB #2 / KB #37 component.'
+  hidden: false
+- name: dependency_level
+  sql: dependency_level
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Employer Dependency Level per employer (KB #54). Strict KB definition\
+  \ uses H-1B workers as % of workforce; the schema has no workforce column, so this\
+  \ proxies using H-1B applications as % of the employer's total applications: Low\
+  \ Dependency (<5%), Moderate (5-15%), High (>15%). Also surfaces h1bdep_yes (the\
+  \ per-application H-1B-dependent flag) as a hard signal of the High Dependency category.\n\
+  \n[kb=54]\nEmployers are classified as Low Dependency (less than 5% of workforce),\
+  \ Moderate Dependency (5-15%), or High Dependency (over 15%). H-1B dependent status\
+  \ typically applies to the high dependency category. \u2014 Categorizes the degree\
+  \ to which employers rely on visa programs.\n[/kb=54]"
+hidden: false
+meta:
+  kb_id: 54

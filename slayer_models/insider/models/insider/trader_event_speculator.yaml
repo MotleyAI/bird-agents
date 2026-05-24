@@ -1,0 +1,89 @@
+version: 6
+name: trader_event_speculator
+sql: "SELECT\n  t.tradereg,\n  t.trading_performance,\n  json_extract(t.trading_performance,\
+  \ '$.risklevel.risklevel') AS risk_appetite,\n  COALESCE(\n    SUM(CASE WHEN sf.corpeventprx\
+  \ IS NOT NULL THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(sf.sentreg), 0),\n    0.0\n\
+  \  ) AS event_share,\n  COALESCE(\n    MAX(CASE WHEN sf.infoleaksc > 50.0 AND sf.corpeventprx\
+  \ IS NOT NULL AND (sf.eventannotm = 'Pre-market' OR sf.eventannotm = 'Intraday')\
+  \ THEN 1 ELSE 0 END),\n    0\n  ) AS any_insider_flag,\n  COALESCE(\n    MAX(CASE\
+  \ WHEN ABS(sf.newsscore - sf.socscore) > 1.0 THEN 1 ELSE 0 END),\n    0\n  ) AS\
+  \ any_high_sdf\nFROM trader t\nLEFT JOIN transactionrecord tr ON tr.trdref = t.tradereg\n\
+  LEFT JOIN sentimentandfundamentals sf ON sf.transref = tr.transreg\nGROUP BY t.tradereg,\
+  \ t.trading_performance"
+query_variables: {}
+data_source: insider
+columns:
+- name: tradereg
+  sql: tradereg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: risk_appetite
+  sql: risk_appetite
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: event_share
+  sql: event_share
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: any_insider_flag
+  sql: any_insider_flag
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: any_high_sdf
+  sql: any_high_sdf
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_suspected_event_driven_insider
+  sql: event_share > 0.30 AND any_insider_flag = 1
+  type: BOOLEAN
+  primary_key: false
+  description: "Suspected Event-Driven Insider (KB #41): Event-Driven Trader AND any\
+    \ transaction triggers Potential Insider Trading Flag.\n\n[kb=41]\nA trader who\
+    \ meets the criteria for Event-Driven Trader  AND for whom the Potential Insider\
+    \ Trading Flag  is True. \u2014 Flags traders identified as event-driven who also\
+    \ trigger potential insider trading alerts.\n[/kb=41]"
+  label: Suspected Event-Driven Insider
+  hidden: false
+  meta:
+    kb_id: 41
+- name: is_aggressive_event_speculator
+  sql: event_share > 0.30 AND risk_appetite = 'Aggressive'
+  type: BOOLEAN
+  primary_key: false
+  description: "Aggressive Event Speculator (KB #46): Event-Driven Trader AND risk_appetite='Aggressive'.\n\
+    \n[kb=46]\nA trader classified as an Event-Driven Trader  AND whose Trader Risk\
+    \ Appetite  is 'Aggressive'. \u2014 Classifies event-driven traders who employ\
+    \ an aggressive risk strategy.\n[/kb=46]"
+  label: Aggressive Event Speculator
+  hidden: false
+  meta:
+    kb_id: 46
+- name: is_volatile_event_speculator
+  sql: event_share > 0.30 AND risk_appetite = 'Aggressive' AND any_high_sdf = 1
+  type: BOOLEAN
+  primary_key: false
+  description: "Volatile Event Speculator (KB #64): Aggressive Event Speculator AND\
+    \ SDF > 1.0 (any transaction).\n\n[kb=64]\nA trader identified as an Aggressive\
+    \ Event Speculator  AND associated with a high Sentiment Divergence Factor (e.g.,\
+    \ SDF > 1.0). \u2014 Flags aggressive event speculators whose trading coincides\
+    \ with high sentiment divergence, indicating potential reaction to conflicting\
+    \ information.\n[/kb=64]"
+  label: Volatile Event Speculator
+  hidden: false
+  meta:
+    kb_id: 64
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Per-trader event-related composite flags: Suspected Event-Driven Insider
+  (KB #41), Aggressive Event Speculator (KB #46), Volatile Event Speculator (KB #64).
+  Builds on Event-Driven Trader (KB #17) by joining trader.risk_appetite + per-transaction
+  insider/SDF facts.'
+hidden: false
+meta: {}

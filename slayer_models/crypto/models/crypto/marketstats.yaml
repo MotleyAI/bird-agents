@@ -1,0 +1,201 @@
+version: 6
+name: marketstats
+sql_table: marketstats
+query_variables: {}
+data_source: crypto
+columns:
+- name: marketstatsmark
+  sql: marketstatsmark
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: fundrate
+  sql: fundrate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: fundspot
+  sql: fundspot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: openstake
+  sql: openstake
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: volday
+  sql: volday
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: tradeday
+  sql: tradeday
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: tnoverday
+  sql: tnoverday
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: priceshiftday
+  sql: priceshiftday
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: highspotday
+  sql: highspotday
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: lowspotday
+  sql: lowspotday
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: vwapday
+  sql: vwapday
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mktsize
+  sql: mktsize
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: circtotal
+  sql: circtotal
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: totsupply
+  sql: totsupply
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: maxsupply
+  sql: maxsupply
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mkthold
+  sql: mkthold
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: traderank
+  sql: traderank
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: liquidscore
+  sql: liquidscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: volmeter
+  sql: volmeter
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mdlink
+  sql: mdlink
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: liquidity_ratio
+  sql: (CAST(marketdata.quote_depth_snapshot ->> '$.depth.bidunits' AS REAL) + CAST(marketdata.quote_depth_snapshot
+    ->> '$.depth.askunits' AS REAL)) * CAST(marketdata.quote_depth_snapshot ->> '$.quotes.midquote'
+    AS REAL) / NULLIF(volday, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Liquidity Ratio (KB #5): (bidunits + askunits) \xD7 midquote / volday.\
+    \ Available liquidity vs 24h volume.\n\n[kb=5]\nLiquidity Ratio = \\frac{(bidunits\
+    \ + askunits) \\times midquote}{volday}, \\text{where } bidunits \\text{ and }\
+    \ askunits \\text{ are quantities at best bid and ask, } midquote \\text{ is the\
+    \ midpoint price, and } volday \\text{ is the 24h volume.} \u2014 Measures the\
+    \ ratio of available liquidity to total market volume.\n[/kb=5]"
+  label: Liquidity Ratio
+  hidden: false
+  meta:
+    kb_id: 5
+- name: is_liquidity_crisis
+  sql: (CAST(marketdata.quote_depth_snapshot ->> '$.depth.bidunits' AS REAL) + CAST(marketdata.quote_depth_snapshot
+    ->> '$.depth.askunits' AS REAL)) * CAST(marketdata.quote_depth_snapshot ->> '$.quotes.midquote'
+    AS REAL) / NULLIF(volday, 0) < 0.01
+  type: BOOLEAN
+  primary_key: false
+  description: "Liquidity Crisis (KB #16): Liquidity Ratio < 0.01. Severely reduced\
+    \ market liquidity.\n\n[kb=16]\nMarket conditions where the Liquidity Ratio falls\
+    \ below 0.01, indicating insufficient market depth relative to typical trading\
+    \ volume. \u2014 Identifies periods of severely reduced market liquidity.\n[/kb=16]"
+  label: Liquidity Crisis
+  hidden: false
+  meta:
+    kb_id: 16
+- name: volatility_adjusted_spread
+  sql: ((CAST(marketdata.quote_depth_snapshot ->> '$.quotes.askquote' AS REAL) - CAST(marketdata.quote_depth_snapshot
+    ->> '$.quotes.bidquote' AS REAL)) / NULLIF(CAST(marketdata.quote_depth_snapshot
+    ->> '$.quotes.midquote' AS REAL), 0) * 100) / NULLIF(volmeter * 0.1, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Volatility-Adjusted Spread (KB #37): Spread Percentage / (volmeter\
+    \ \xD7 0.1). Tight spread relative to volatility \u2192 favorable.\n\n[kb=37]\n\
+    Volatility-Adjusted Spread = \\frac{Spread Percentage}{volmeter \\times 0.1},\
+    \ \\text{where } Spread Percentage \\text{ is the spread as percentage of midpoint\
+    \ price and } volmeter \\text{ is the volatility or fluctuation rating.} \u2014\
+    \ Normalizes the spread by the market volatility to determine if spread is wide\
+    \ relative to expected price movement.\n[/kb=37]"
+  label: Volatility-Adjusted Spread
+  hidden: false
+  meta:
+    kb_id: 37
+measures: []
+aggregations: []
+joins:
+- target_model: marketdata
+  join_pairs:
+  - - mdlink
+    - marketdatanode
+  join_type: left
+filters: []
+hidden: false

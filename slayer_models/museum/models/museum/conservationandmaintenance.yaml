@@ -1,0 +1,205 @@
+version: 6
+name: conservationandmaintenance
+sql_table: conservationandmaintenance
+query_variables: {}
+data_source: museum
+columns:
+- name: conservemaintregistry
+  sql: conservemaintregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: artrefmaintained
+  sql: artrefmaintained
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: hallrefmaintained
+  sql: hallrefmaintained
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: surfreadrefobserved
+  sql: surfreadrefobserved
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: conservetreatstatus
+  sql: conservetreatstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: treatpriority
+  sql: treatpriority
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lastcleaningdate
+  sql: lastcleaningdate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: nextcleaningdue
+  sql: nextcleaningdue
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cleanintervaldays
+  sql: cleanintervaldays
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: maintlog
+  sql: maintlog
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: incidentreportstatus
+  sql: incidentreportstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: emergencydrillstatus
+  sql: emergencydrillstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: stafftrainstatus
+  sql: stafftrainstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: budgetallocstatus
+  sql: budgetallocstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: maintbudgetstatus
+  sql: maintbudgetstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: conservefreq
+  sql: conservefreq
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: intervhistory
+  sql: intervhistory
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: prevtreatments
+  sql: prevtreatments
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: treateffectiveness
+  sql: treateffectiveness
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: reversibilitypotential
+  sql: reversibilitypotential
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: budget_score
+  sql: CASE LOWER(TRIM(budgetallocstatus)) WHEN 'adequate' THEN 1.0 WHEN 'review required'
+    THEN 0.5 WHEN 'insufficient' THEN 0.0 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric mapping of BudgetAllocStatus per KB #9 hint: Adequate=1.0,\
+    \ Review Required=0.5, Insufficient=0.0. Used as the per-artifact budget-adequacy\
+    \ signal that the BudgetRatio in the CBE formula needs (the underlying column\
+    \ is categorical rather than a numeric proportion).\n\n[kb=9]\nCBE = \\frac{\\\
+    sum_{i \\in artifacts} (CPI_i \\times BudgetRatio_i)}{|artifacts|}, \\text{where\
+    \ BudgetRatio is the proportion of total conservation budget allocated to each\
+    \ artifact} \u2014 Measures the efficiency of conservation budget allocation relative\
+    \ to artifact importance.\n[/kb=9]"
+  label: Conservation Budget Efficiency (CBE)
+  hidden: false
+  meta:
+    kb_id: 9
+- name: is_budget_insufficient
+  sql: LOWER(TRIM(budgetallocstatus)) = 'insufficient'
+  type: BOOLEAN
+  primary_key: false
+  description: "Boolean: BudgetAllocStatus = 'Insufficient'. Used by KB #17 Conservation\
+    \ Budget Crisis composite predicate.\n\n[kb=17]\nOccurs when CBE < 0.5 AND at\
+    \ least one artifact has ConserveStatus='Critical' and BudgetAllocStatus='Insufficient'.\
+    \ \u2014 Identifies when conservation budget allocation is insufficient for high-priority\
+    \ artifacts.\n[/kb=17]"
+  label: Conservation Budget Crisis
+  hidden: false
+  meta:
+    kb_id: 17
+- name: cpi_x_budget_score
+  sql: (((artifactratings.histsignrating + artifactratings.researchvalrating + artifactratings.cultscore)
+    * (10 - CASE artifactscore.conservestatus WHEN 'Excellent' THEN 1 WHEN 'Good'
+    THEN 3 WHEN 'Fair' THEN 5 WHEN 'Poor' THEN 7 WHEN 'Critical' THEN 10 ELSE NULL
+    END)) / 30.0) * (CASE LOWER(TRIM(budgetallocstatus)) WHEN 'adequate' THEN 1.0
+    WHEN 'review required' THEN 0.5 WHEN 'insufficient' THEN 0.0 ELSE NULL END)
+  type: DOUBLE
+  primary_key: false
+  description: "Helper column used to express the Conservation Budget Efficiency (CBE,\
+    \ KB #9) numerator as a single sum-able expression on conservationandmaintenance.\
+    \ Equals CPI * budget_score, where budget_score is the numeric mapping of BudgetAllocStatus\
+    \ per the museum hint (Adequate=1.0, Review Required=0.5, Insufficient=0.0). CBE\
+    \ = sum(CPI*budget_score) / sum(budget_score) / count.\n\n[kb=9]\nCBE = \\frac{\\\
+    sum_{i \\in artifacts} (CPI_i \\times BudgetRatio_i)}{|artifacts|}, \\text{where\
+    \ BudgetRatio is the proportion of total conservation budget allocated to each\
+    \ artifact} \u2014 Measures the efficiency of conservation budget allocation relative\
+    \ to artifact importance.\n[/kb=9]"
+  label: Conservation Budget Efficiency (CBE)
+  hidden: false
+  meta:
+    kb_id: 9
+measures:
+- formula: cpi_x_budget_score:sum / budget_score:sum / *:count
+  name: cbe
+  label: Conservation Budget Efficiency (CBE)
+  description: "Conservation Budget Efficiency (KB #9): mean over artifacts of (CPI_i\
+    \ * BudgetRatio_i), where BudgetRatio_i = budget_score_i / sum(budget_score).\
+    \ Algebraically simplifies to sum(CPI*budget_score) / sum(budget_score) / count(*).\
+    \ budget_score is the numeric mapping of BudgetAllocStatus per the museum W4c\
+    \ hint (Adequate=1, Review Required=0.5, Insufficient=0). Group by artifactscore.artdynasty\
+    \ (or any other dim) to compute per-group CBE; group-less query returns the global\
+    \ value.\n\n[kb=9]\nCBE = \\frac{\\sum_{i \\in artifacts} (CPI_i \\times BudgetRatio_i)}{|artifacts|},\
+    \ \\text{where BudgetRatio is the proportion of total conservation budget allocated\
+    \ to each artifact} \u2014 Measures the efficiency of conservation budget allocation\
+    \ relative to artifact importance.\n[/kb=9]"
+  meta:
+    kb_id: 9
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artrefmaintained
+    - artregistry
+  join_type: left
+- target_model: exhibitionhalls
+  join_pairs:
+  - - hallrefmaintained
+    - hallrecord
+  join_type: left
+- target_model: surfaceandphysicalreadings
+  join_pairs:
+  - - surfreadrefobserved
+    - surfphysregistry
+  join_type: left
+- target_model: artifactratings
+  join_pairs:
+  - - artrefmaintained
+    - artref
+  join_type: left
+filters: []
+hidden: false

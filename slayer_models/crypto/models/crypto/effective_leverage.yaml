@@ -1,0 +1,83 @@
+version: 6
+name: effective_leverage
+source_queries:
+- version: 3
+  name: wallet_per_user
+  source_model: accountbalances
+  measures:
+  - formula: walletsum:sum
+    name: wallet_total
+  dimensions:
+  - name: usertag
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: orders
+    joins:
+    - target_model: riskandmargin
+      join_pairs:
+      - - recordvault
+        - ordervault
+    - target_model: wallet_per_user
+      join_pairs:
+      - - userlink
+        - usertag
+    columns:
+    - name: el_value
+      type: DOUBLE
+      sql: (CAST(riskandmargin.risk_margin_profile ->> '$.position.posmagn' AS REAL))
+        * (riskandmargin.risk_margin_profile ->> '$.position.possum') / NULLIF(wallet_per_user.wallet_total,
+        0)
+  dimensions:
+  - name: recordvault
+  - name: userlink
+  - name: el_value
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.userlink\"\
+  \ AS userlink, \"orders.el_value\" AS el_value FROM (SELECT\n  orders.recordvault\
+  \ AS \"orders.recordvault\",\n  orders.userlink AS \"orders.userlink\",\n  (\n \
+  \   CAST(riskandmargin.risk_margin_profile ->> '$.position.posmagn' AS REAL)\n \
+  \ ) * (\n    riskandmargin.risk_margin_profile ->> '$.position.possum'\n  ) / NULLIF(wallet_per_user.wallet_total,\
+  \ 0) AS \"orders.el_value\"\nFROM orders AS orders\nLEFT JOIN riskandmargin AS riskandmargin\n\
+  \  ON orders.recordvault = riskandmargin.ordervault\nLEFT JOIN (\n  (\n    SELECT\n\
+  \      \"accountbalances.usertag\" AS usertag,\n      \"accountbalances.wallet_total\"\
+  \ AS wallet_total\n    FROM (\n      SELECT\n        accountbalances.usertag AS\
+  \ \"accountbalances.usertag\",\n        SUM(accountbalances.walletsum) AS \"accountbalances.wallet_total\"\
+  \n      FROM accountbalances AS accountbalances\n      GROUP BY\n        accountbalances.usertag\n\
+  \    ) AS _inner\n  )\n) AS wallet_per_user\n  ON orders.userlink = wallet_per_user.usertag)\
+  \ AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: userlink
+  sql: userlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: el_value
+  sql: el_value
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Effective Leverage (KB #33) per order: posmagn x possum / walletsum,\
+  \ where posmagn is the position leverage, possum is the notional value of position,\
+  \ and walletsum is the total wallet balance. posmagn/possum come from the per-order\
+  \ riskandmargin row and walletsum is summed per user from accountbalances. Peer-joined\
+  \ via shared parent users (orders.userlink \u2192 users.userstamp; accountbalances.usertag\
+  \ \u2192 users.userstamp).\n\n[kb=33]\nEffective Leverage = posmagn \\times \\frac{possum}{walletsum},\
+  \ \\text{where } posmagn \\text{ is the position leverage, } possum \\text{ is the\
+  \ notional value of position, and } walletsum \\text{ is the total wallet balance.}\
+  \ \u2014 Calculates the actual leverage considering both explicit leverage setting\
+  \ and position size relative to account balance.\n[/kb=33]"
+hidden: false
+meta:
+  kb_id: 33

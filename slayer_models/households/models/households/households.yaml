@@ -1,0 +1,150 @@
+version: 6
+name: households
+sql_table: households
+query_variables: {}
+data_source: households
+columns:
+- name: housenum
+  sql: housenum
+  type: INT
+  primary_key: true
+  description: A BIGINT primary key uniquely identifying each household unit in the
+    database system. EX.3,4,7
+  hidden: false
+  format:
+    type: integer
+- name: residentcount
+  sql: residentcount
+  type: INT
+  primary_key: false
+  description: Number of people currently residing in the household, representing
+    the total household size including all family members and occupants. EX. 1,2 3
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 12
+- name: locregion
+  sql: locregion
+  type: TEXT
+  primary_key: false
+  description: Foreign key referencing locations.RegionCode, indicating the administrative
+    region where this household is located. Part of composite foreign key constraint.
+    EX.Taguatinga,Samambaia
+  hidden: false
+  sampled: '> 20 distinct'
+- name: loczone
+  sql: loczone
+  type: INT
+  primary_key: false
+  description: Foreign key referencing locations.ZoneNum, indicating the specific
+    macrozone within the administrative region. Part of composite foreign key constraint.
+    EX.315,222,332
+  hidden: false
+  format:
+    type: integer
+  sampled: 121 .. 414
+- name: serviceplan
+  sql: serviceplan
+  type: INT
+  primary_key: false
+  description: Foreign key referencing service_types.ServiceRef, indicating which
+    social service package or plan the household is enrolled in or eligible for. Contains
+    NULL when household is not enrolled in any social service programs or eligibility
+    has not been determined. EX. 1
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 1539
+- name: socioeconomic
+  sql: socioeconomic
+  type: TEXT
+  primary_key: false
+  description: JSONB column. Groups socioeconomic characteristics of the household
+    including tenure status, income classification, and expenditure patterns for demographic
+    analysis.
+  hidden: false
+  meta:
+    jsonb: true
+  sampled: '> 20 distinct'
+- name: socioeconomic__Tenure_Type
+  sql: JSON_EXTRACT(socioeconomic, '$.Tenure_Type')
+  type: TEXT
+  primary_key: false
+  description: "Household tenure classification indicating the ownership or occupancy\
+    \ status. Contains NULL when tenure status is unknown, transitional, or under\
+    \ legal dispute. Sample values mix case ('OWNED', 'Owned', 'owned'); downstream\
+    \ callers should LOWER+TRIM before exact-equals matches.\n\n[kb=1]\nValues based\
+    \ on schema include 'OWNED', 'RENTED', 'OCCUPIED'. The 'OWNED' status corresponds\
+    \ to owner-occupied properties. \u2014 Illustrates the types of household tenure\
+    \ based on ownership or occupancy.\n[/kb=1]"
+  label: Household Tenure Status
+  hidden: false
+  meta:
+    kb_id: 1
+  sampled: '> 20 distinct'
+- name: socioeconomic__Income_Bracket
+  sql: JSON_EXTRACT(socioeconomic, '$.Income_Bracket')
+  type: TEXT
+  primary_key: false
+  description: "Income classification level representing the household's economic\
+    \ status and earning capacity. Contains NULL when income information is not disclosed\
+    \ or irregular/informal.\n\nThe actual sample values are R$ amount ranges (e.g.\
+    \ 'More than R$ 1,760 and less than R$ 2,640'), not the KB-described ordinal labels\
+    \ ('Low Income' \u2026 'Very High Income'). Any encoding that needs to map this\
+    \ column to an ordinal score (KB 12, 19, 21, 28, 42) must define the bracket\u2192\
+    label mapping explicitly \u2014 the schema does not carry it.\n\n[kb=2]\nRanges\
+    \ from 'Low Income' to 'Very High Income'. Null indicates undisclosed or irregular\
+    \ income. \u2014 Illustrates the income brackets for household economic status.\n\
+    [/kb=2]"
+  label: Income Classification
+  hidden: false
+  meta:
+    kb_id: 2
+  sampled: '> 20 distinct'
+- name: socioeconomic__Expend_Coeff
+  sql: JSON_EXTRACT(socioeconomic, '$.Expend_Coeff')
+  type: TEXT
+  primary_key: false
+  description: Household expenditure coefficient as a real number representing the
+    spending pattern or consumption multiplier factor for economic analysis. Contains
+    NULL when expenditure data is not available or household spending patterns cannot
+    be reliably calculated. EX.60.6315
+  label: Expend Coeff
+  hidden: false
+  meta:
+    derived_from:
+      json_col: socioeconomic
+      path:
+      - Expend_Coeff
+  sampled: '> 20 distinct'
+- name: is_urban_zone
+  sql: CASE WHEN loczone = 1 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=45]\nA zone is considered urban if its `loczone` is 1. \u2014\
+    \ Defines which zones are considered urban.\n[/kb=45]"
+  label: Urban Zone
+  hidden: false
+  meta:
+    kb_id: 45
+  sampled: '0'
+measures: []
+aggregations: []
+joins:
+- target_model: locations
+  join_pairs:
+  - - locregion
+    - regioncode
+  join_type: left
+- target_model: locations
+  join_pairs:
+  - - loczone
+    - zonenum
+  join_type: left
+- target_model: service_types
+  join_pairs:
+  - - serviceplan
+    - serviceref
+  join_type: left
+filters: []
+hidden: false

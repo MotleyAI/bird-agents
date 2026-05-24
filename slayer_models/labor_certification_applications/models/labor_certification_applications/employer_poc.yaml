@@ -1,0 +1,41 @@
+version: 6
+name: employer_poc
+sql_table: employer_poc
+query_variables: {}
+data_source: labor_certification_applications
+columns:
+- name: contactmail
+  sql: contactmail
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: firmlink
+  sql: firmlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: firmzip
+  sql: firmzip
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: poc_contact_info
+  sql: poc_contact_info
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: employer
+  join_pairs:
+  - - firmlink
+    - corphandle
+  join_type: left
+- target_model: employer
+  join_pairs:
+  - - firmzip
+    - zipref
+  join_type: left
+filters: []
+hidden: false

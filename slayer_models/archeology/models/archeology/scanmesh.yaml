@@ -1,0 +1,178 @@
+version: 6
+name: scanmesh
+sql_table: scanmesh
+query_variables: {}
+data_source: archeology
+columns:
+- name: facetregistry
+  sql: facetregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: zoneref
+  sql: zoneref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: equipref
+  sql: equipref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: facetverts
+  sql: facetverts
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: facetfaces
+  sql: facetfaces
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: facetresmm
+  sql: facetresmm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: texdist
+  sql: texdist
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: texpix
+  sql: texpix
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: uvmapqual
+  sql: uvmapqual
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: geomdeltamm
+  sql: geomdeltamm
+  type: DOUBLE
+  primary_key: false
+  description: "Geometric Accuracy (mm) \u2014 average deviation between the scan\
+    \ and the final 3D model. <0.1mm = museum-quality; ~1.0mm = general documentation\
+    \ but introduces uncertainty in fine features.\n\n[kb=24]\nMeasured in millimeters,\
+    \ representing the average deviation between the scan data and final 3D model.\
+    \ Values below 0.1mm indicate museum-quality accuracy, while values around 1.0mm\
+    \ are suitable for general documentation but introduce uncertainty in fine feature\
+    \ analysis. \u2014 Illustrates the significance of geometric accuracy in 3D models\
+    \ for measurement reliability.\n[/kb=24]"
+  label: GeomDeltaMm (Geometric Accuracy)
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 24
+- name: mcr
+  sql: (facetfaces * 1.0 / (facetverts * facetresmm * facetresmm)) * 1000.0
+  type: DOUBLE
+  primary_key: false
+  description: "Mesh Complexity Ratio (MCR, KB #4): FacetFaces / (FacetVerts * FacetResMm^2)\
+    \ * 10^3. Higher values indicate more complex meshes for a given resolution.\n\
+    \n[kb=4]\nMCR = \\frac{FacetFaces}{FacetVerts \\times FacetResMm^2} \\times 10^3,\
+    \ \\text{ where higher values indicate more complex meshes for a given resolution,\
+    \ capturing finer archaeological details.} \u2014 Measures the topological complexity\
+    \ of a mesh relative to its resolution, helping identify overly complex or simplified\
+    \ archaeological models.\n[/kb=4]"
+  label: Mesh Complexity Ratio (MCR)
+  hidden: false
+  meta:
+    kb_id: 4
+- name: tdi
+  sql: (texpix * 1.0 / (sqrt(facetfaces) * facetresmm)) * 0.01
+  type: DOUBLE
+  primary_key: false
+  description: "Texture Density Index (TDI, KB #5): TexPix / (sqrt(FacetFaces) * FacetResMm)\
+    \ * 10^-2. Higher = more detailed textures relative to geometric complexity.\n\
+    \n[kb=5]\nTDI = \\frac{TexPix}{\\sqrt{FacetFaces} \\times FacetResMm} \\times\
+    \ 10^{-2}, \\text{ where higher values indicate more detailed textures relative\
+    \ to geometric complexity.} \u2014 Evaluates the pixel density of textures relative\
+    \ to mesh resolution for assessing surface detail preservation.\n[/kb=5]"
+  label: Texture Density Index (TDI)
+  hidden: false
+  meta:
+    kb_id: 5
+- name: mfs
+  sql: ((facetfaces * 1.0 / (facetverts * facetresmm * facetresmm)) * 1000.0) * (((texpix
+    * 1.0 / (sqrt(facetfaces) * facetresmm)) * 0.01) / 10.0) * (1 + exp(-geomdeltamm))
+  type: DOUBLE
+  primary_key: false
+  description: "Model Fidelity Score (MFS, KB #6): MCR * (TDI/10) * (1 + exp(-GeomDeltaMm)).\
+    \ Higher = more accurate and detailed models with appropriate complexity.\n\n\
+    [kb=6]\nMFS = MCR \\times \\left(\\frac{TDI}{10}\\right) \\times \\left(1 + \\\
+    exp\\left(-GeomDeltaMm\\right)\\right), \\text{ where higher values indicate more\
+    \ accurate and detailed models with appropriate complexity.} \u2014 Combines mesh\
+    \ complexity, texture quality, and geometric accuracy to assess overall 3D model\
+    \ fidelity for archaeological analysis.\n[/kb=6]"
+  label: Model Fidelity Score (MFS)
+  hidden: false
+  meta:
+    kb_id: 6
+- name: is_high_fidelity_mesh
+  sql: CASE WHEN ((facetfaces * 1.0 / (facetverts * facetresmm * facetresmm)) * 1000.0)
+    > 5.0 AND facetresmm < 1.0 AND geomdeltamm < 0.5 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "High Fidelity Mesh (KB #13): MCR > 5.0 AND FacetResMm < 1.0 AND GeomDeltaMm\
+    \ < 0.5 \u2014 capable of representing fine archaeological details and surface\
+    \ morphology.\n\n[kb=13]\nA mesh with MCR > 5.0, FacetResMm < 1.0, and GeomDeltaMm\
+    \ < 0.5, where MCR is the Mesh Complexity Ratio, capable of representing fine\
+    \ archaeological details and surface morphology. \u2014 Defines criteria for high-fidelity\
+    \ 3D mesh models in archaeological documentation suitable for analytical studies.\n\
+    [/kb=13]"
+  label: High Fidelity Mesh
+  hidden: false
+  meta:
+    kb_id: 13
+- name: mesh_quality_class
+  sql: CASE WHEN ((facetfaces * 1.0 / (facetverts * facetresmm * facetresmm)) * 1000.0)
+    > 5.0 AND facetresmm < 1.0 AND geomdeltamm < 0.5 THEN 'Has High-Fidelity Meshes'
+    WHEN facetfaces IS NOT NULL THEN 'Standard Mesh Quality' ELSE 'No Mesh Data' END
+  type: TEXT
+  primary_key: false
+  description: "Mesh Quality Classification (KB #53): three-tier classification \u2014\
+    \ 'Has High-Fidelity Meshes' (KB #13), 'Standard Mesh Quality', or 'No Mesh Data'.\n\
+    \n[kb=53]\nA three-tier classification where 'Has High-Fidelity Meshes' indicates\
+    \ sites with at least one mesh meeting high-fidelity criteria, 'Standard Mesh\
+    \ Quality' indicates sites with meshes that don't meet high-fidelity standards,\
+    \ and 'No Mesh Data' indicates sites lacking 3D mesh documentation entirely. This\
+    \ classification helps prioritize additional documentation efforts and determines\
+    \ appropriate analytical approaches for different sites. \u2014 A standardized\
+    \ system for categorizing archaeological site documentation based on the presence\
+    \ and quality of 3D mesh models.\n[/kb=53]"
+  label: Mesh Quality Classification
+  hidden: false
+  meta:
+    kb_id: 53
+measures: []
+aggregations: []
+joins:
+- target_model: equipment
+  join_pairs:
+  - - equipref
+    - equipregistry
+  join_type: left
+- target_model: sites
+  join_pairs:
+  - - zoneref
+    - zoneregistry
+  join_type: left
+filters: []
+description: 'Per-scan 3D mesh quality metrics. Hosts the Mesh Complexity Ratio (MCR,
+  KB #4), Texture Density Index (TDI, KB #5), Model Fidelity Score (MFS, KB #6), High
+  Fidelity Mesh predicate (KB #13), and the Mesh Quality Classification (KB #53).'
+hidden: false

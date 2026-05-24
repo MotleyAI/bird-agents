@@ -1,0 +1,263 @@
+version: 6
+name: sentimentandfundamentals
+sql_table: sentimentandfundamentals
+query_variables: {}
+data_source: insider
+columns:
+- name: sentreg
+  sql: sentreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: transref
+  sql: transref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: newsscore
+  sql: newsscore
+  type: DOUBLE
+  primary_key: false
+  description: Normalised sentiment score from news feeds.
+  hidden: false
+  format:
+    type: float
+- name: socscore
+  sql: socscore
+  type: DOUBLE
+  primary_key: false
+  description: Social-media sentiment score.
+  hidden: false
+  format:
+    type: float
+- name: anlycount
+  sql: anlycount
+  type: INT
+  primary_key: false
+  description: Number of active analyst coverage reports.
+  hidden: false
+  format:
+    type: integer
+- name: inholdpct
+  sql: inholdpct
+  type: DOUBLE
+  primary_key: false
+  description: Insider ownership percentage of the stock.
+  hidden: false
+  format:
+    type: float
+- name: instownpct
+  sql: instownpct
+  type: DOUBLE
+  primary_key: false
+  description: Institutional ownership percentage.
+  hidden: false
+  format:
+    type: float
+- name: shortintrt
+  sql: shortintrt
+  type: DOUBLE
+  primary_key: false
+  description: Short-interest ratio (days to cover).
+  hidden: false
+  format:
+    type: float
+- name: optvolrt
+  sql: optvolrt
+  type: DOUBLE
+  primary_key: false
+  description: Option volume ratio versus average.
+  hidden: false
+  format:
+    type: float
+- name: putcallrt
+  sql: putcallrt
+  type: DOUBLE
+  primary_key: false
+  description: Put-to-call volume ratio.
+  hidden: false
+  format:
+    type: float
+- name: impvolrank
+  sql: impvolrank
+  type: DOUBLE
+  primary_key: false
+  description: Implied-volatility rank (0..1 scale).
+  hidden: false
+  format:
+    type: float
+- name: unuoptact
+  sql: unuoptact
+  type: TEXT
+  primary_key: false
+  description: "Unusual Option Activity Level (KB #26): 'High' = significant deviations\
+    \ from normal option-trading patterns (volume / strikes / expirations) \u2014\
+    \ potential informed trading. 'Moderate' = some unusual activity.\n\n[kb=26]\n\
+    `unuoptact`: 'High' suggests significant deviations from normal option trading\
+    \ patterns in terms of volume, strike prices, or expiration dates, potentially\
+    \ indicating informed trading or speculation ahead of news. 'Moderate' indicates\
+    \ some unusual activity, but less pronounced. This can be a flag for investigating\
+    \ potential insider information. \u2014 Illustrates the degree of detected unusual\
+    \ options trading volume or types.\n[/kb=26]"
+  label: Unusual Option Activity Level
+  hidden: false
+  meta:
+    kb_id: 26
+- name: corpeventprx
+  sql: corpeventprx
+  type: TEXT
+  primary_key: false
+  description: Corporate event in close temporal proximity (Earnings / Restructuring
+    / M&A).
+  hidden: false
+- name: eventannotm
+  sql: eventannotm
+  type: TEXT
+  primary_key: false
+  description: 'Timing of the relevant event announcement: Pre-market / Intraday /
+    Post-market.'
+  hidden: false
+- name: infoleaksc
+  sql: infoleaksc
+  type: DOUBLE
+  primary_key: false
+  description: "Information Leakage Score Interpretation (KB #27): 0..100. Low (<20)\
+    \ = little evidence; Moderate (20..50) = warrants attention; High (>50) = strongly\
+    \ suggests trading on material non-public info.\n\n[kb=27]\n`infoleaksc`: A score\
+    \ typically from 0-100. Low scores (<20) suggest little evidence of trading activity\
+    \ ahead of significant news or events. Moderate scores (20-50) warrant attention\
+    \ and may correlate with known events. High scores (>50) strongly suggest potential\
+    \ trading based on material non-public information, requiring investigation. \u2014\
+    \ Provides context for the information leakage score, indicating potential trading\
+    \ on non-public information.\n[/kb=27]"
+  label: Information Leakage Score Interpretation
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 27
+- name: trdref2
+  sql: trdref2
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sdf
+  sql: ABS(newsscore - socscore)
+  type: DOUBLE
+  primary_key: false
+  description: "Sentiment Divergence Factor (SDF = |newsscore - socscore|) \u2014\
+    \ KB #7.\n\n[kb=7]\nSDF = |\\text{newsscore} - \\text{socscore}| \u2014 Measures\
+    \ the difference between news and social media sentiment scores.\n[/kb=7]"
+  label: Sentiment Divergence Factor (SDF)
+  hidden: false
+  meta:
+    kb_id: 7
+- name: rsi
+  sql: CASE WHEN instownpct = 0 THEN NULL ELSE shortintrt * 1.0 / instownpct END
+  type: DOUBLE
+  primary_key: false
+  description: "Relative Short Interest (RSI = shortintrt / instownpct, undefined\
+    \ if instownpct = 0) \u2014 KB #8.\n\n[kb=8]\nRSI = \\frac{\\text{shortintrt}}{\\\
+    text{instownpct}} \\text{ (undefined if instownpct = 0)} \u2014 Calculates short\
+    \ interest ratio relative to institutional ownership.\n[/kb=8]"
+  label: Relative Short Interest (RSI)
+  hidden: false
+  meta:
+    kb_id: 8
+- name: swov
+  sql: optvolrt * (1.0 + ABS(newsscore - socscore))
+  type: DOUBLE
+  primary_key: false
+  description: "Sentiment-Weighted Option Volume (SWOV = optvolrt * (1 + SDF)) \u2014\
+    \ KB #34.\n\n[kb=34]\nSWOV = \\text{optvolrt} \\times (1 + \\text{SDF}) \\\\ \\\
+    text{where SDF is the Sentiment Divergence Factor .} \u2014 Adjusts the option\
+    \ volume ratio based on the divergence between news and social sentiment.\n[/kb=34]"
+  label: Sentiment-Weighted Option Volume (SWOV)
+  hidden: false
+  meta:
+    kb_id: 34
+- name: sdlr
+  sql: (optvolrt * (1.0 + ABS(newsscore - socscore))) * infoleaksc
+  type: DOUBLE
+  primary_key: false
+  description: "Sentiment-Driven Leakage Risk (SDLR = SWOV * infoleaksc) \u2014 KB\
+    \ #51.\n\n[kb=51]\nSDLR = \\text{SWOV} \\times \\text{infoleaksc}. \u2014 Calculates\
+    \ potential information leakage risk weighted by sentiment-driven unusual option\
+    \ volume.\n[/kb=51]"
+  label: Sentiment-Driven Leakage Risk (SDLR)
+  hidden: false
+  meta:
+    kb_id: 51
+- name: is_potential_insider_trading
+  sql: infoleaksc > 50.0 AND corpeventprx IS NOT NULL AND (eventannotm = 'Pre-market'
+    OR eventannotm = 'Intraday')
+  type: BOOLEAN
+  primary_key: false
+  description: "Potential Insider Trading Flag (KB #11): infoleaksc>50 AND corpeventprx\
+    \ IS NOT NULL AND eventannotm IN ('Pre-market','Intraday').\n\n[kb=11]\nA transaction\
+    \ is flagged if `infoleaksc` > 50.0 AND `corpeventprx` is NOT NULL AND `eventannotm`\
+    \ is 'Pre-market' or 'Intraday'. \u2014 Flags transactions potentially linked\
+    \ to insider knowledge based on timing and context.\n[/kb=11]"
+  label: Potential Insider Trading Flag
+  hidden: false
+  meta:
+    kb_id: 11
+- name: bils
+  sql: infoleaksc * (CASE WHEN infoleaksc > 50.0 AND corpeventprx IS NOT NULL AND
+    (eventannotm = 'Pre-market' OR eventannotm = 'Intraday') THEN 1.5 ELSE 1.0 END)
+  type: DOUBLE
+  primary_key: false
+  description: "Boosted Insider Leakage Score (BILS = infoleaksc * (1.5 if Potential\
+    \ Insider Trading Flag else 1.0)) \u2014 KB #38.\n\n[kb=38]\nBILS = \\text{InfoLeakageScoreValue}\
+    \ \\times (1.5 \\text{ if Potential Insider Trading Flag  is True else } 1.0)\
+    \ \\\\ \\text{where InfoLeakageScoreValue is from Information Leakage Score Interpretation\
+    \ .} \u2014 Increases the Information Leakage Score if a Potential Insider Trading\
+    \ Flag is also present.\n[/kb=38]"
+  label: Boosted Insider Leakage Score (BILS)
+  hidden: false
+  meta:
+    kb_id: 38
+- name: issr
+  sql: (infoleaksc * (CASE WHEN infoleaksc > 50.0 AND corpeventprx IS NOT NULL AND
+    (eventannotm = 'Pre-market' OR eventannotm = 'Intraday') THEN 1.5 ELSE 1.0 END))
+    * (CASE WHEN instownpct = 0 THEN NULL ELSE shortintrt * 1.0 / instownpct END)
+  type: DOUBLE
+  primary_key: false
+  description: "Insider Sentiment Short Ratio (ISSR = BILS * RSI) \u2014 KB #58.\n\
+    \n[kb=58]\nISSR = \\text{BILS} \\times \\text{RSI} \\\\ \\text{where BILS is Boosted\
+    \ Insider Leakage Score  and RSI is Relative Short Interest .} \u2014 Combines\
+    \ boosted insider leakage score with relative short interest, identifying potential\
+    \ insider trading concurrent with high relative short interest.\n[/kb=58]"
+  label: Insider Sentiment Short Ratio (ISSR)
+  hidden: false
+  meta:
+    kb_id: 58
+- name: is_high_sdlr_transaction
+  sql: ((optvolrt * (1.0 + ABS(newsscore - socscore))) * infoleaksc) > 1000
+  type: BOOLEAN
+  primary_key: false
+  description: "High SDLR Transaction (KB #70): SDLR > 1000.\n\n[kb=70]\nA transaction\
+    \ where the calculated Sentiment-Driven Leakage Risk (SDLR) > 1000. \u2014 Identifies\
+    \ transactions deemed high-risk based on their Sentiment-Driven Leakage Risk score\
+    \ exceeding a specific threshold.\n[/kb=70]"
+  label: High SDLR Transaction
+  hidden: false
+  meta:
+    kb_id: 70
+measures: []
+aggregations: []
+joins:
+- target_model: transactionrecord
+  join_pairs:
+  - - transref
+    - transreg
+  join_type: left
+- target_model: trader
+  join_pairs:
+  - - trdref2
+    - tradereg
+  join_type: left
+filters: []
+description: Per-transaction sentiment + market fundamentals snapshot. PK = `sentreg`,
+  FK = `transref` -> transactionrecord, optional FK = `trdref2` -> trader.
+hidden: false

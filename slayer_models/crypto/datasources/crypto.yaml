@@ -1,0 +1,4 @@
+version: 1
+name: crypto
+type: sqlite
+connection_string: sqlite:////home/james/Dropbox/SLayer/mini-interact/crypto/crypto.sqlite

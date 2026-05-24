@@ -1,0 +1,117 @@
+version: 6
+name: circuits
+sql_table: circuits
+query_variables: {}
+data_source: sports_events
+columns:
+- name: cctkey
+  sql: cctkey
+  type: INT
+  primary_key: true
+  description: Unique circuit identifier.
+  hidden: false
+  format:
+    type: integer
+- name: location_metadata
+  sql: location_metadata
+  type: TEXT
+  primary_key: false
+  description: 'JSONB column. Encapsulates all geographical and identification data
+    related to the circuit''s location: name, reference_code, location.{city,country},
+    coordinates.{latitude,longitude,elevation_m}, external_link.'
+  hidden: false
+  meta: {}
+- name: circuit_name
+  sql: json_extract(location_metadata, '$.name')
+  type: TEXT
+  primary_key: false
+  description: Circuit name (extracted from location_metadata).
+  hidden: false
+- name: reference_code
+  sql: json_extract(location_metadata, '$.reference_code')
+  type: TEXT
+  primary_key: false
+  description: Short circuit reference code (extracted).
+  hidden: false
+- name: city
+  sql: json_extract(location_metadata, '$.location.city')
+  type: TEXT
+  primary_key: false
+  description: "City of the circuit (extracted from location_metadata). NULL means\
+    \ the locality is not supplied or unknown in the source feed (KB #3 Data Unavailability\
+    \ for Circuit Location).\n\n[kb=3]\nWhen a circuit's city, latitude, or longitude\
+    \ are not provided, it indicates that this information was not supplied or is\
+    \ unknown in the source data feed. \u2014 Clarifies the meaning of unavailable\
+    \ geographical data for a circuit.\n[/kb=3]"
+  label: Data Unavailability for Circuit Location
+  hidden: false
+  meta:
+    kb_id: 3
+- name: country
+  sql: json_extract(location_metadata, '$.location.country')
+  type: TEXT
+  primary_key: false
+  description: Country of the circuit (extracted).
+  hidden: false
+- name: latitude
+  sql: json_extract(location_metadata, '$.coordinates.latitude')
+  type: DOUBLE
+  primary_key: false
+  description: "Latitude of the circuit (extracted). NULL = unknown / not supplied\
+    \ in the source feed (KB #3 Data Unavailability for Circuit Location).\n\n[kb=3]\n\
+    When a circuit's city, latitude, or longitude are not provided, it indicates that\
+    \ this information was not supplied or is unknown in the source data feed. \u2014\
+    \ Clarifies the meaning of unavailable geographical data for a circuit.\n[/kb=3]"
+  label: Data Unavailability for Circuit Location
+  hidden: false
+  meta:
+    kb_id: 3
+- name: longitude
+  sql: json_extract(location_metadata, '$.coordinates.longitude')
+  type: DOUBLE
+  primary_key: false
+  description: "Longitude of the circuit (extracted). NULL = unknown / not supplied\
+    \ in the source feed (KB #3 Data Unavailability for Circuit Location).\n\n[kb=3]\n\
+    When a circuit's city, latitude, or longitude are not provided, it indicates that\
+    \ this information was not supplied or is unknown in the source data feed. \u2014\
+    \ Clarifies the meaning of unavailable geographical data for a circuit.\n[/kb=3]"
+  label: Data Unavailability for Circuit Location
+  hidden: false
+  meta:
+    kb_id: 3
+- name: elevation_m
+  sql: json_extract(location_metadata, '$.coordinates.elevation_m')
+  type: DOUBLE
+  primary_key: false
+  description: "Circuit elevation in metres (extracted from location_metadata). NULL\
+    \ = elevation was not recorded for the circuit (KB #4 Data Unavailability for\
+    \ Circuit Elevation).\n\n[kb=4]\nWhen a circuit's elevation in meters is not provided,\
+    \ it signifies that this specific data point was not recorded for the circuit.\
+    \ \u2014 Clarifies the meaning of unavailable elevation data for a circuit.\n\
+    [/kb=4]"
+  label: Data Unavailability for Circuit Elevation
+  hidden: false
+  meta:
+    kb_id: 4
+- name: is_high_altitude
+  sql: CASE WHEN CAST(json_extract(location_metadata, '$.coordinates.elevation_m')
+    AS REAL) > 800 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Altitude Circuit (KB #14): elevation > 800 m above sea level.\n\
+    \n[kb=14]\nA circuit is considered a High-Altitude Circuit if its elevation is\
+    \ greater than 800 meters above sea level. These circuits pose unique challenges\
+    \ for aerodynamics and power unit performance. \u2014 Defines a circuit with specific\
+    \ environmental characteristics that impact vehicle performance.\n[/kb=14]"
+  label: High-Altitude Circuit
+  hidden: false
+  meta:
+    kb_id: 14
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: F1 circuits. One row per circuit. Geographical and identification data
+  is held in the JSONB-style location_metadata column; convenience extracted columns
+  are exposed below.
+hidden: false

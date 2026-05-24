@@ -1,0 +1,63 @@
+version: 6
+name: signal_cip_class
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: cip_class
+      type: TEXT
+      sql: CASE WHEN ((1 - ABS(freqdrifthzs) / (freqmhz * 1000.0)) * sigdursec / (1
+        + doppshifthz / 1000.0)) > 0.8 AND signalclassification.entropyval BETWEEN
+        0.4 AND 0.8 AND modindex > 0.5 THEN 'Coherent Information Pattern Detected'
+        WHEN ((1 - ABS(freqdrifthzs) / (freqmhz * 1000.0)) * sigdursec / (1 + doppshifthz
+        / 1000.0)) > 0.6 AND signalclassification.entropyval BETWEEN 0.3 AND 0.9 THEN
+        'Potential Information Pattern' ELSE 'No Clear Pattern' END
+  dimensions:
+  - name: signalregistry
+  - name: cip_class
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.cip_class\"\
+  \ AS cip_class FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
+  ,\n  CASE\n    WHEN (\n      (\n        1 - ABS(signals.freqdrifthzs) / (\n    \
+  \      signals.freqmhz * 1000.0\n        )\n      ) * signals.sigdursec / (\n  \
+  \      1 + signals.doppshifthz / 1000.0\n      )\n    ) > 0.8\n    AND signalclassification.entropyval\
+  \ BETWEEN 0.4 AND 0.8\n    AND signals.modindex > 0.5\n    THEN 'Coherent Information\
+  \ Pattern Detected'\n    WHEN (\n      (\n        1 - ABS(signals.freqdrifthzs)\
+  \ / (\n          signals.freqmhz * 1000.0\n        )\n      ) * signals.sigdursec\
+  \ / (\n        1 + signals.doppshifthz / 1000.0\n      )\n    ) > 0.6\n    AND signalclassification.entropyval\
+  \ BETWEEN 0.3 AND 0.9\n    THEN 'Potential Information Pattern'\n    ELSE 'No Clear\
+  \ Pattern'\n  END AS \"signals.cip_class\"\nFROM signals AS signals\nLEFT JOIN signalclassification\
+  \ AS signalclassification\n  ON signals.signalregistry = signalclassification.signalref)\
+  \ AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cip_class
+  sql: cip_class
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "CIP Classification Label per signal.\n\n[kb=24]\nClassification labels:\
+  \ 'Coherent Information Pattern Detected' ($\\text{SSM} > 0.8$, $\\text{EntropyVal}$\
+  \ between 0.4-0.8, and $\\text{ModIndex} > 0.5$), 'Potential Information Pattern'\
+  \ ($\\text{SSM} > 0.6$ and $\\text{EntropyVal}$ between 0.3-0.9$), or 'No Clear\
+  \ Pattern' (all other signals). \u2014 Three-tier rating system for evaluating signal\
+  \ coherence against intelligent transmission criteria.\n[/kb=24]"
+hidden: false
+meta:
+  kb_id: 24

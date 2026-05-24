@@ -1,0 +1,111 @@
+version: 6
+name: airqualityreadings
+sql_table: airqualityreadings
+query_variables: {}
+data_source: museum
+columns:
+- name: aqrecordregistry
+  sql: aqrecordregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: envreadref
+  sql: envreadref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: co2ppm
+  sql: co2ppm
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: tvocppb
+  sql: tvocppb
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: ozoneppb
+  sql: ozoneppb
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: so2ppb
+  sql: so2ppb
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: no2ppb
+  sql: no2ppb
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: pm25conc
+  sql: pm25conc
+  type: INT
+  primary_key: false
+  description: "PM2.5 concentration (KB #30, ug/m^3): clean museum air <5; 5-15 acceptable;\
+    \ 15-30 risk to sensitive materials; >30 hazardous, requires immediate filtration\
+    \ review.\n\n[kb=30]\nValues represent PM2.5 concentration in \xB5g/m\xB3. Clean\
+    \ museum air should measure below 5 \xB5g/m\xB3. Values of 5-15 indicate acceptable\
+    \ conditions, 15-30 indicate potential risk to sensitive materials, and above\
+    \ 30 represent hazardous conditions requiring immediate air filtration review.\
+    \ \u2014 Illustrates fine particulate matter measurements and their conservation\
+    \ implications.\n[/kb=30]"
+  label: AirQualityReadings.PM25Conc
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 30
+- name: pm10conc
+  sql: pm10conc
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: hchoconc
+  sql: hchoconc
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: airexrate
+  sql: airexrate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: airvelms
+  sql: airvelms
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins:
+- target_model: environmentalreadingscore
+  join_pairs:
+  - - envreadref
+    - envreadregistry
+  join_type: left
+filters: []
+hidden: false

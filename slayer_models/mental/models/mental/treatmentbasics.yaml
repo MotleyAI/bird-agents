@@ -1,0 +1,179 @@
+version: 6
+name: treatmentbasics
+sql_table: treatmentbasics
+query_variables: {}
+data_source: mental
+columns:
+- name: txkey
+  sql: txkey
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: encref
+  sql: encref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: curmed
+  sql: curmed
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: medadh
+  sql: medadh
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: medside
+  sql: medside
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: medchg
+  sql: medchg
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: crisisint
+  sql: crisisint
+  type: DOUBLE
+  primary_key: false
+  description: "Crisis intervention count for this treatment record. 0 = no interventions,\
+    \ higher (e.g. 3) = frequent interventions.\n\n[kb=27]\nA numeric value indicating\
+    \ the number of crisis interventions. A value of 0 indicates no interventions,\
+    \ while higher values (e.g., 3) indicate frequent interventions. \u2014 Illustrates\
+    \ the value of the crisis intervention count.\n[/kb=27]"
+  label: Crisis Intervention Count
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 27
+- name: therapy_details
+  sql: therapy_details
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: therapy_engagement
+  sql: therapy_details ->> '$.engagement'
+  type: TEXT
+  primary_key: false
+  description: "Therapy engagement enum (Non-compliant, Low, Medium, High). Non-compliant\
+    \ = no participation, Low = minimal, Medium = regular, High = active engagement.\n\
+    \n[kb=23]\nRanges from Non-compliant to High. Non-compliant indicates no participation,\
+    \ Low indicates minimal participation, Medium indicates regular participation,\
+    \ and High indicates active engagement. \u2014 Illustrates the value of therapy\
+    \ engagement levels.\n[/kb=23]"
+  label: Therapy Engagement
+  hidden: false
+  meta:
+    kb_id: 23
+- name: therapy_type
+  sql: therapy_details ->> '$.type'
+  type: TEXT
+  primary_key: false
+  description: Therapy modality enum (DBT, Group, Psychodynamic, CBT).
+  hidden: false
+- name: therapy_frequency
+  sql: therapy_details ->> '$.frequency'
+  type: TEXT
+  primary_key: false
+  description: Therapy frequency enum (Weekly, Biweekly, Monthly).
+  hidden: false
+- name: therapy_duration_months
+  sql: CAST(therapy_details ->> '$.duration_months' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Therapy duration in months.
+  hidden: false
+- name: therapy_changes
+  sql: therapy_details ->> '$.changes'
+  type: TEXT
+  primary_key: false
+  description: Therapy changes enum (Frequency Change, Modality Change, Therapist
+    Change).
+  hidden: false
+- name: engagement_score
+  sql: CASE therapy_details ->> '$.engagement' WHEN 'High' THEN 3 WHEN 'Medium' THEN
+    2 WHEN 'Low' THEN 1 WHEN 'Non-compliant' THEN 0 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric therapy-engagement score: High=3, Medium=2, Low=1, Non-compliant=0.\
+    \ Used in TES.\n\n[kb=4]\nTES = \\frac{\\sum_{i \\in treatmentbasics} (therapy\\\
+    _details_i['engagement\\_score'])} {|treatmentbasics|}, \\text{where } engagement\\\
+    _score = \\begin{cases} 3 & \\text{if } therapy\\_details['engagement'] = High\
+    \ \\\\ 2 & \\text{if } therapy\\_details['engagement'] = Medium \\\\ 1 & \\text{if\
+    \ } therapy\\_details['engagement'] = Low \\\\ 0 & \\text{if } therapy\\_details['engagement']\
+    \ = Non-compliant \\end{cases}, \\text{and } therapy\\_details \\text{ is the\
+    \ JSONB column in the treatmentbasics table} \u2014 Computes an average engagement\
+    \ score across therapy sessions.\n[/kb=4]"
+  label: Therapy Engagement Score (TES)
+  hidden: false
+  meta:
+    kb_id: 4
+- name: is_frequent_crisis
+  sql: crisisint > 2
+  type: BOOLEAN
+  primary_key: false
+  description: "Frequent Crisis Patient (KB #17): individual crisisint > 2 (per-row\
+    \ interpretation, matching KB #47).\n\n[kb=17]\nA patient with CIF > 2 \u2014\
+    \ Identifies patients with frequent crisis interventions.\n[/kb=17]"
+  label: Frequent Crisis Patient
+  hidden: false
+  meta:
+    kb_id: 17
+- name: is_low_engagement_risk
+  sql: (CASE therapy_details ->> '$.engagement' WHEN 'High' THEN 3 WHEN 'Medium' THEN
+    2 WHEN 'Low' THEN 1 WHEN 'Non-compliant' THEN 0 ELSE NULL END) < 1.5 AND EXISTS
+    (SELECT 1 FROM treatmentoutcomes tox WHERE tox.txref = treatmentbasics.txkey AND
+    tox.txeng IN ('Low', 'Non-compliant'))
+  type: BOOLEAN
+  primary_key: false
+  description: "Low Engagement Risk (KB #14): per-row engagement_score < 1.5 AND linked\
+    \ treatmentoutcomes.txeng in {Low, Non-compliant}.\n\n[kb=14]\nA patient with\
+    \ TES < 1.5 and txeng \\in \\{Low, Non-compliant\\} \u2014 Identifies patients\
+    \ at risk of disengagement from therapy.\n[/kb=14]"
+  label: Low Engagement Risk
+  hidden: false
+  meta:
+    kb_id: 14
+measures:
+- formula: engagement_score:avg
+  name: tes
+  label: Therapy Engagement Score (TES)
+  description: "Therapy Engagement Score (TES) \u2014 average engagement_score across\
+    \ treatmentbasics rows.\n\n[kb=4]\nTES = \\frac{\\sum_{i \\in treatmentbasics}\
+    \ (therapy\\_details_i['engagement\\_score'])} {|treatmentbasics|}, \\text{where\
+    \ } engagement\\_score = \\begin{cases} 3 & \\text{if } therapy\\_details['engagement']\
+    \ = High \\\\ 2 & \\text{if } therapy\\_details['engagement'] = Medium \\\\ 1\
+    \ & \\text{if } therapy\\_details['engagement'] = Low \\\\ 0 & \\text{if } therapy\\\
+    _details['engagement'] = Non-compliant \\end{cases}, \\text{and } therapy\\_details\
+    \ \\text{ is the JSONB column in the treatmentbasics table} \u2014 Computes an\
+    \ average engagement score across therapy sessions.\n[/kb=4]"
+  meta:
+    kb_id: 4
+- formula: crisisint:sum * 1.0 / encounters.patref:count_distinct
+  name: cif
+  label: Crisis Intervention Frequency (CIF)
+  description: "Crisis Intervention Frequency (CIF) \u2014 sum of crisisint across\
+    \ treatmentbasics rows divided by the count of distinct patients (via encounters).\n\
+    \n[kb=7]\nCIF = \\frac{\\sum_{i \\in treatmentbasics} crisisint_i} {|patients|}\
+    \ \u2014 Measures the average number of crisis interventions per patient at a\
+    \ facility.\n[/kb=7]"
+  meta:
+    kb_id: 7
+aggregations: []
+joins:
+- target_model: encounters
+  join_pairs:
+  - - encref
+    - enckey
+  join_type: left
+filters: []
+description: Per-treatment record linked to an encounter. Captures current medications,
+  medication adherence, side-effect severity, medication changes, crisis intervention
+  count, and a JSONB therapy_details column with therapy modality, frequency, duration,
+  engagement, and changes.
+hidden: false

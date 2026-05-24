@@ -1,0 +1,93 @@
+version: 6
+name: lane_risk_potential
+source_queries:
+- version: 3
+  name: shipments_per_lane
+  source_model: shipments
+  measures:
+  - formula: '*:count'
+  - formula: is_delayed_shipment:sum
+  dimensions:
+  - name: route_string
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: shipments_per_lane
+    joins:
+    - target_model: te_per_lane
+      join_pairs:
+      - - route_string
+        - shipments__route_string
+    - target_model: cd_per_lane
+      join_pairs:
+      - - route_string
+        - shipments__route_string
+    columns:
+    - name: lrp
+      type: DOUBLE
+      sql: (te_per_lane.temp_excursion_count_sum + shipments_per_lane.is_delayed_shipment_sum
+        + cd_per_lane.is_customs_delayed_sum) * 1.0 / NULLIF(shipments_per_lane._count,
+        0)
+  dimensions:
+  - name: route_string
+  - name: lrp
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"shipments_per_lane.route_string\" AS route_string, \"\
+  shipments_per_lane.lrp\" AS lrp FROM (SELECT\n  shipments_per_lane.route_string\
+  \ AS \"shipments_per_lane.route_string\",\n  (\n    te_per_lane.temp_excursion_count_sum\
+  \ + shipments_per_lane.is_delayed_shipment_sum + cd_per_lane.is_customs_delayed_sum\n\
+  \  ) * 1.0 / NULLIF(shipments_per_lane._count, 0) AS \"shipments_per_lane.lrp\"\n\
+  FROM (\n  SELECT\n    \"shipments.route_string\" AS route_string,\n    \"shipments._count\"\
+  \ AS _count,\n    \"shipments.is_delayed_shipment_sum\" AS is_delayed_shipment_sum\n\
+  \  FROM (\n    SELECT\n      shipment_overview ->> '$.route.route_string' AS \"\
+  shipments.route_string\",\n      COUNT(*) AS \"shipments._count\",\n      SUM(\n\
+  \        CASE\n          WHEN CAST(shipment_overview -> '$.timing_performance.actual_duration_hrs'\
+  \ AS REAL) - CAST(shipment_overview -> '$.timing_performance.planned_eta_hrs' AS\
+  \ REAL) > 2\n          THEN 1\n          ELSE 0\n        END\n      ) AS \"shipments.is_delayed_shipment_sum\"\
+  \n    FROM shipments AS shipments\n    GROUP BY\n      shipment_overview ->> '$.route.route_string'\n\
+  \  ) AS _inner\n) AS shipments_per_lane\nLEFT JOIN (\n  (\n    SELECT\n      \"\
+  qualitycompliance.shipments.route_string\" AS shipments__route_string,\n      \"\
+  qualitycompliance.is_customs_delayed_sum\" AS is_customs_delayed_sum\n    FROM (\n\
+  \      SELECT\n        shipment_overview ->> '$.route.route_string' AS \"qualitycompliance.shipments.route_string\"\
+  ,\n        SUM(\n          CASE\n            WHEN qc_checklist -> '$.customs_and_regulatory.custom_clearance_status'\
+  \ = 'Delayed'\n            THEN 1\n            ELSE 0\n          END\n        )\
+  \ AS \"qualitycompliance.is_customs_delayed_sum\"\n      FROM qualitycompliance\
+  \ AS qualitycompliance\n      LEFT JOIN shipments AS shipments\n        ON qualitycompliance.reckeyqc\
+  \ = shipments.reckey\n      GROUP BY\n        shipment_overview ->> '$.route.route_string'\n\
+  \    ) AS _inner\n  )\n) AS cd_per_lane\n  ON shipments_per_lane.route_string =\
+  \ cd_per_lane.shipments__route_string\nLEFT JOIN (\n  (\n    SELECT\n      \"environmentalmonitoring.shipments.route_string\"\
+  \ AS shipments__route_string,\n      \"environmentalmonitoring.temp_excursion_count_sum\"\
+  \ AS temp_excursion_count_sum\n    FROM (\n      SELECT\n        shipment_overview\
+  \ ->> '$.route.route_string' AS \"environmentalmonitoring.shipments.route_string\"\
+  ,\n        SUM(env_metrics -> '$.temperature.excursion_count') AS \"environmentalmonitoring.temp_excursion_count_sum\"\
+  \n      FROM environmentalmonitoring AS environmentalmonitoring\n      LEFT JOIN\
+  \ shipments AS shipments\n        ON environmentalmonitoring.reckeylink = shipments.reckey\n\
+  \      GROUP BY\n        shipment_overview ->> '$.route.route_string'\n    ) AS\
+  \ _inner\n  )\n) AS te_per_lane\n  ON shipments_per_lane.route_string = te_per_lane.shipments__route_string)\
+  \ AS _inner"
+data_source: cold_chain_pharma_compliance
+columns:
+- name: route_string
+  sql: route_string
+  type: TEXT
+  primary_key: false
+  description: Encoded planned route (origin -> destination) string. Uses ->> to return
+    the JSON scalar without surrounding quotes (json_extract gets rewritten to ->
+    which yields JSON-quoted strings).
+  hidden: false
+- name: lrp
+  sql: lrp
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Lane Risk Potential (LRP, KB #36): per-lane composite (TE + SD + CD)
+  / N_shipments where TE = sum of temperature excursion counts, SD = count of delayed
+  shipments, CD = count of customs-delayed shipments, N = number of shipments on the
+  lane. Lane key is shipments.route_string. Encoded as a multistage query that pulls
+  TE from te_per_lane, CD from cd_per_lane, and SD/N from shipments grouped by route_string.'
+hidden: false

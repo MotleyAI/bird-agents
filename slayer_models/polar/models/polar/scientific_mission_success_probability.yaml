@@ -1,0 +1,105 @@
+version: 6
+name: scientific_mission_success_probability
+source_queries:
+- version: 3
+  name: ser_per_eq
+  source_model: scientific
+  measures:
+  - formula: ser:avg
+    name: ser
+  dimensions:
+  - name: scieqref
+  whole_periods_only: false
+- version: 3
+  name: cri_per_eq
+  source_model: communication
+  measures:
+  - formula: cri:avg
+    name: cri
+  dimensions:
+  - name: commeqref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: ser_per_eq
+    joins:
+    - target_model: cri_per_eq
+      join_pairs:
+      - - scieqref
+        - commeqref
+  measures:
+  - formula: ser:avg * (0.8 + 0.2 * cri_per_eq.cri:avg / 10.0)
+    name: smsp
+  dimensions:
+  - name: scieqref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"ser_per_eq.scieqref\" AS scieqref, \"ser_per_eq.ser_avg\"\
+  \ AS ser_avg, \"ser_per_eq.smsp\" AS smsp, \"ser_per_eq.cri_per_eq.cri_avg\" AS\
+  \ cri_per_eq__cri_avg FROM (WITH _base AS (\nSELECT\n  ser_per_eq.scieqref AS \"\
+  ser_per_eq.scieqref\",\n  AVG(ser_per_eq.ser) AS \"ser_per_eq.ser_avg\"\nFROM (\n\
+  \  SELECT\n    \"scientific.scieqref\" AS scieqref,\n    \"scientific.ser\" AS ser\n\
+  \  FROM (\n    SELECT\n      scientific.scieqref AS \"scientific.scieqref\",\n \
+  \     AVG(\n        scientific.measurementaccuracypercent * CASE scientific.calibrationstatus\n\
+  \          WHEN 'Valid'\n          THEN 1.0\n          WHEN 'Due'\n          THEN\
+  \ 0.7\n          WHEN 'Expired'\n          THEN 0.3\n          ELSE 0.0\n      \
+  \  END\n      ) AS \"scientific.ser\"\n    FROM scientific AS scientific\n    GROUP\
+  \ BY\n      scientific.scieqref\n  ) AS _inner\n) AS ser_per_eq\nGROUP BY\n  ser_per_eq.scieqref\n\
+  ),\n_cm_ser_per_eq__cri_per_eq__cri_avg AS (\nSELECT\n  AVG(cri_per_eq.cri) AS \"\
+  ser_per_eq.cri_per_eq.cri_avg\"\nFROM (\n  SELECT\n    \"communication.commeqref\"\
+  \ AS commeqref,\n    \"communication.cri\" AS cri\n  FROM (\n    SELECT\n      communication.commeqref\
+  \ AS \"communication.commeqref\",\n      AVG(\n        (\n          CASE communication.antennastatus\n\
+  \            WHEN 'Normal'\n            THEN 10\n            WHEN 'Warning'\n  \
+  \          THEN 5\n            WHEN 'Error'\n            THEN 0\n            ELSE\
+  \ 0\n          END\n        ) * (\n          1 - JSON_EXTRACT(communication.signalmetrics,\
+  \ '$.latency_ms') / 1000.0\n        )\n      ) AS \"communication.cri\"\n    FROM\
+  \ communication AS communication\n    GROUP BY\n      communication.commeqref\n\
+  \  ) AS _inner\n) AS cri_per_eq\n),\n_combined AS (\nSELECT _base.\"ser_per_eq.scieqref\"\
+  , _base.\"ser_per_eq.ser_avg\", _cm_ser_per_eq__cri_per_eq__cri_avg.\"ser_per_eq.cri_per_eq.cri_avg\"\
+  \nFROM _base\nCROSS JOIN _cm_ser_per_eq__cri_per_eq__cri_avg\n),\nstep1 AS (\nSELECT\n\
+  \    \"ser_per_eq.cri_per_eq.cri_avg\",\n    \"ser_per_eq.scieqref\",\n    \"ser_per_eq.ser_avg\"\
+  ,\n    \"ser_per_eq.ser_avg\" * (0.8 + 0.2 * \"ser_per_eq.cri_per_eq.cri_avg\" /\
+  \ 10.0) AS \"ser_per_eq.smsp\"\nFROM _combined\n)\nSELECT\n    \"ser_per_eq.cri_per_eq.cri_avg\"\
+  ,\n    \"ser_per_eq.scieqref\",\n    \"ser_per_eq.ser_avg\",\n    \"ser_per_eq.smsp\"\
+  \nFROM step1) AS _inner"
+data_source: polar
+columns:
+- name: scieqref
+  sql: scieqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ser_avg
+  sql: ser_avg
+  type: DOUBLE
+  primary_key: false
+  description: "Scientific Equipment Reliability (KB #8): accuracy% \xD7 calibration\
+    \ multiplier."
+  hidden: false
+  format:
+    type: float
+- name: smsp
+  sql: smsp
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: cri_per_eq__cri_avg
+  sql: cri_per_eq__cri_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Scientific Mission Success Probability (KB #34): SMSP = SER x (0.8 +\
+  \ 0.2 x CRI / 10). Peer-join via equipment (R-MULTISTAGE).\n\n[kb=34]\nSMSP = SER\
+  \ \xD7 (0.8 + 0.2 \xD7 CRI \xF7 10) \u2014 Predicts the probability of successful\
+  \ completion of scientific missions\n[/kb=34]"
+hidden: false
+meta:
+  kb_id: 34

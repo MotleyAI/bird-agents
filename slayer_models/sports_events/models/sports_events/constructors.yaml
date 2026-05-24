@@ -1,0 +1,51 @@
+version: 6
+name: constructors
+sql_table: constructors
+query_variables: {}
+data_source: sports_events
+columns:
+- name: cstr_key
+  sql: cstr_key
+  type: INT
+  primary_key: true
+  description: Unique constructor identifier.
+  hidden: false
+  format:
+    type: integer
+- name: refcod
+  sql: refcod
+  type: TEXT
+  primary_key: false
+  description: Constructor reference code (e.g. mclaren, williams).
+  hidden: false
+- name: namelabel
+  sql: namelabel
+  type: TEXT
+  primary_key: false
+  description: Full team name.
+  hidden: false
+- name: naty
+  sql: naty
+  type: TEXT
+  primary_key: false
+  description: "Constructor nationality. NULL = not recorded (KB #6).\n\n[kb=6]\n\
+    When a constructor's nationality is not specified, it means the team's country\
+    \ of origin is not recorded in the dataset. \u2014 Clarifies the meaning of unavailable\
+    \ nationality data for a constructor.\n[/kb=6]"
+  label: Data Unavailability for Constructor Nationality
+  hidden: false
+  meta:
+    kb_id: 6
+- name: linkpage
+  sql: linkpage
+  type: TEXT
+  primary_key: false
+  description: URL of the constructor's reference page.
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'F1 constructors (teams). Per KB #6, missing nationality (naty) means
+  the team''s country of origin is not recorded in the dataset.'
+hidden: false

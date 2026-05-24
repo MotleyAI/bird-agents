@@ -1,0 +1,104 @@
+version: 6
+name: robot_details
+sql_table: robot_details
+query_variables: {}
+data_source: robot
+columns:
+- name: botdetreg
+  sql: botdetreg
+  type: TEXT
+  primary_key: true
+  description: "Robot primary key. Carrier for Robot Count measure (KB #56).\n\n[kb=56]\n\
+    Let M be the model series, \\mathcal{R}_M be the set of unique robot identifiers\
+    \ in M. Then Robot Count = |\\mathcal{R}_M| \u2014 The number of distinct robots\
+    \ within a specific group (e.g., model series).\n[/kb=56]"
+  label: Robot Count
+  hidden: false
+  meta:
+    kb_id: 56
+- name: mfgnameval
+  sql: mfgnameval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: modelseriesval
+  sql: modelseriesval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: bottypeval
+  sql: bottypeval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: payloadcapkg
+  sql: payloadcapkg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: reachmmval
+  sql: reachmmval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: instdateval
+  sql: instdateval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fwversionval
+  sql: fwversionval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ctrltypeval
+  sql: ctrltypeval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ray
+  sql: (julianday(robot_record.rects) - julianday(instdateval)) / 365.25
+  type: DOUBLE
+  primary_key: false
+  description: "Robot Age in Years (RAY) (KB #0): (record_timestamp \u2212 install_date)\
+    \ in years. Joins robot_record.rects with this row's instdateval.\n\n[kb=0]\n\
+    For a given robot R, let D be the instdateval from robot_details where botdetreg\
+    \ = R, and T be the rects from robot_record where recreg = R. Then, RAY = \\frac{(T\
+    \ - D).days}{365.25} \u2014 Calculates the age of the robot in years based on\
+    \ installation date and record timestamp.\n[/kb=0]"
+  label: Robot Age in Years (RAY)
+  hidden: false
+  meta:
+    kb_id: 0
+- name: is_old_robot
+  sql: ((julianday(robot_record.rects) - julianday(instdateval)) / 365.25) >= 2
+  type: BOOLEAN
+  primary_key: false
+  description: "Old Robot (KB #10): RAY >= 2 years.\n\n[kb=10]\nA robot is considered\
+    \ old if RAY >= 2. \u2014 Indicates if a robot is old based on its age.\n[/kb=10]"
+  label: Old Robot
+  hidden: false
+  meta:
+    kb_id: 10
+measures:
+- formula: '*:count'
+  name: robot_count
+  label: Robot Count
+  description: "Robot Count (KB #56) \u2014 number of distinct robots in a group (e.g.\
+    \ group by modelseriesval). Each row of robot_details is one robot."
+aggregations: []
+joins:
+- target_model: robot_record
+  join_pairs:
+  - - botdetreg
+    - recreg
+  join_type: left
+filters: []
+description: One row per robot. Holds installation/spec metadata (manufacturer, model
+  series, type, payload capacity, reach, install date, firmware, controller type).
+  Most robot-level metrics aggregate child tables that reference botdetreg.
+hidden: false

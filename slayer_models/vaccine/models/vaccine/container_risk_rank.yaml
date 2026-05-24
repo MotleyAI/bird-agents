@@ -1,0 +1,70 @@
+version: 6
+name: container_risk_rank
+source_queries:
+- version: 3
+  name: cri_per_container
+  source_model: sensordata
+  measures:
+  - formula: cri:max
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: cri_per_container
+    columns:
+    - name: risk_rank
+      type: DOUBLE
+      sql: RANK() OVER (ORDER BY cri_max DESC)
+  dimensions:
+  - name: containlink
+  - name: cri_max
+  - name: risk_rank
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"cri_per_container.containlink\" AS containlink, \"cri_per_container.cri_max\"\
+  \ AS cri_max, \"cri_per_container.risk_rank\" AS risk_rank FROM (SELECT\n  cri_per_container.containlink\
+  \ AS \"cri_per_container.containlink\",\n  cri_per_container.cri_max AS \"cri_per_container.cri_max\"\
+  ,\n  RANK() OVER (ORDER BY cri_max DESC) AS \"cri_per_container.risk_rank\"\nFROM\
+  \ (\n  SELECT\n    \"sensordata.containlink\" AS containlink,\n    \"sensordata.cri_max\"\
+  \ AS cri_max\n  FROM (\n    SELECT\n      sensordata.containlink AS \"sensordata.containlink\"\
+  ,\n      MAX(\n        (\n          1 - (\n            (\n              1 - COALESCE(CAST(tempdevcount\
+  \ AS REAL) / 100, 0)\n            ) * (\n              1 - COALESCE(CAST(critevents\
+  \ AS REAL) / 10, 0)\n            ) * COALESCE(tempstabidx, 1)\n          )\n   \
+  \     ) * (\n          1 - COALESCE(container.coolremainpct, 0) / 100\n        )\n\
+  \      ) AS \"sensordata.cri_max\"\n    FROM sensordata AS sensordata\n    LEFT\
+  \ JOIN container AS container\n      ON sensordata.containlink = container.containregistry\n\
+  \    GROUP BY\n      sensordata.containlink\n  ) AS _inner\n) AS cri_per_container)\
+  \ AS _inner"
+data_source: vaccine
+columns:
+- name: containlink
+  sql: containlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cri_max
+  sql: cri_max
+  type: DOUBLE
+  primary_key: false
+  description: 'Container Risk Index (CRI). Overall risk level for a container based
+    on temperature stability and coolant status: (1 - TSS) * (1 - CoolRemainPct/100)
+    (KB #2). CoolRemainPct comes from the joined container row.'
+  hidden: false
+- name: risk_rank
+  sql: risk_rank
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Container Risk Rank (KB #64). Containers ranked in descending order\
+  \ of CRI (Container Risk Index). Backing query: stage 1 takes max(CRI) over sensordata\
+  \ grouped by container; stage 2 ranks by that aggregated value.\n\n[kb=64]\nRank\
+  \ assigned to containers based on descending order of CRI \u2014 Ranks containers\
+  \ based on their risk level.\n[/kb=64]"
+hidden: false
+meta:
+  kb_id: 64

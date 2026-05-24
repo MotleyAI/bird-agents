@@ -1,0 +1,524 @@
+version: 6
+name: auditandcompliance
+sql_table: auditandcompliance
+query_variables: {}
+data_source: cross_db
+columns:
+- name: audittrace
+  sql: audittrace
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: profjoin
+  sql: profjoin
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: compjoin
+  sql: compjoin
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: vendjoin
+  sql: vendjoin
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: recordregistry
+  sql: recordregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: audtrailstate
+  sql: audtrailstate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: findtally
+  sql: findtally
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: critfindnum
+  sql: critfindnum
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: remedstate
+  sql: remedstate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: remeddue
+  sql: remeddue
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: authnotify
+  sql: authnotify
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: bordermech
+  sql: bordermech
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: transimpassess
+  sql: transimpassess
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: localreqs
+  sql: localreqs
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: datamapstate
+  sql: datamapstate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sysintstate
+  sql: sysintstate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: accreqnum
+  sql: accreqnum
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: delreqnum
+  sql: delreqnum
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: rectreqnum
+  sql: rectreqnum
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: portreqnum
+  sql: portreqnum
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: resptimeday
+  sql: resptimeday
+  type: DOUBLE
+  primary_key: false
+  description: "Average/allowed response time in days for data subject requests. KB\
+    \ #26: 1.5 = quick; >7 indicates delays.\n\n[kb=26]\nRanges from 0 to days. A\
+    \ RespTimeDay of 1.5 suggests quick responses, while >7 indicates delays, from\
+    \ AuditAndCompliance. \u2014 Illustrates the response time for data subject requests.\n\
+    [/kb=26]"
+  label: AuditAndCompliance.RespTimeDay
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 26
+- name: afs
+  sql: critfindnum * 1.0 / (findtally + 1)
+  type: DOUBLE
+  primary_key: false
+  description: "Audit Finding Severity (AFS) \u2014 KB #7: CritFindNum / (FindTally\
+    \ + 1).\n\n[kb=7]\nAFS = \\frac{\\text{CritFindNum}}{\\text{FindTally} + 1} \u2014\
+    \ Quantifies the severity of audit findings based on critical findings.\n[/kb=7]"
+  label: Audit Finding Severity (AFS)
+  hidden: false
+  meta:
+    kb_id: 7
+- name: dsrl
+  sql: accreqnum + delreqnum + rectreqnum + portreqnum
+  type: DOUBLE
+  primary_key: false
+  description: "Data Subject Request Load (DSRL) \u2014 KB #8: AccReqNum + DelReqNum\
+    \ + RectReqNum + PortReqNum.\n\n[kb=8]\nDSRL = \\text{AccReqNum} + \\text{DelReqNum}\
+    \ + \\text{RectReqNum} + \\text{PortReqNum} \u2014 Measures the workload from\
+    \ data subject requests.\n[/kb=8]"
+  label: Data Subject Request Load (DSRL)
+  hidden: false
+  meta:
+    kb_id: 8
+- name: vcb
+  sql: (critfindnum * 1.0 / (findtally + 1)) * (5 - (CASE vendormanagement.vendsecrate
+    WHEN 'A' THEN 4 WHEN 'B' THEN 3 WHEN 'C' THEN 2 WHEN 'D' THEN 1 ELSE 1 END))
+  type: DOUBLE
+  primary_key: false
+  description: "Vendor Compliance Burden (VCB) \u2014 KB #32: AFS \xD7 (5 \u2212 VendSecRate\
+    \ value).\n\n[kb=32]\nVCB = \\text{AFS} \\times (5 - \\text{VendSecRate value})\
+    \ \u2014 Measures the compliance burden of a vendor based on audit findings and\
+    \ security rating.\n[/kb=32]"
+  label: Vendor Compliance Burden (VCB)
+  hidden: false
+  meta:
+    kb_id: 32
+- name: dsrp
+  sql: (accreqnum + delreqnum + rectreqnum + portreqnum) * resptimeday
+  type: DOUBLE
+  primary_key: false
+  description: "Data Subject Request Pressure (DSRP) \u2014 KB #34: DSRL \xD7 RespTimeDay.\n\
+    \n[kb=34]\nDSRP = \\text{DSRL} \\times \\text{RespTimeDay} \u2014 Quantifies pressure\
+    \ from data subject requests relative to response time.\n[/kb=34]"
+  label: Data Subject Request Pressure (DSRP)
+  hidden: false
+  meta:
+    kb_id: 34
+- name: arl
+  sql: (critfindnum * 1.0 / (findtally + 1)) * (accreqnum + delreqnum + rectreqnum
+    + portreqnum)
+  type: DOUBLE
+  primary_key: false
+  description: "Audit Remediation Load (ARL) \u2014 KB #36: AFS \xD7 DSRL.\n\n[kb=36]\n\
+    ARL = \\text{AFS} \\times \\text{DSRL} \u2014 Calculates the workload required\
+    \ for audit remediation based on findings and compliance gaps.\n[/kb=36]"
+  label: Audit Remediation Load (ARL)
+  hidden: false
+  meta:
+    kb_id: 36
+- name: cor
+  sql: ((accreqnum + delreqnum + rectreqnum + portreqnum) * resptimeday) * 1.0 / (compliance__riskmanagement.costusd
+    + 1)
+  type: DOUBLE
+  primary_key: false
+  description: "Compliance Overhead Ratio (COR) \u2014 KB #51: DSRP / (CostUSD + 1).\n\
+    \n[kb=51]\nCOR = \\text{DSRP} / (\\text{CostUSD} + 1) \u2014 Measures the operational\
+    \ burden of compliance relative to data subject request load.\n[/kb=51]"
+  label: Compliance Overhead Ratio (COR)
+  hidden: false
+  meta:
+    kb_id: 51
+- name: acp
+  sql: ((critfindnum * 1.0 / (findtally + 1)) * (accreqnum + delreqnum + rectreqnum
+    + portreqnum)) * (critfindnum * 1.0 / (findtally + 1))
+  type: DOUBLE
+  primary_key: false
+  description: "Audit Compliance Pressure (ACP) \u2014 KB #57: ARL \xD7 AFS.\n\n[kb=57]\n\
+    ACP = \\text{ARL} \\times \\text{AFS} \u2014 Quantifies pressure from audit findings\
+    \ and compliance remediation needs.\n[/kb=57]"
+  label: Audit Compliance Pressure (ACP)
+  hidden: false
+  meta:
+    kb_id: 57
+- name: request_breakdown
+  sql: '''Access: '' || accreqnum || '', Deletion: '' || delreqnum || '', Rectification:
+    '' || rectreqnum || '', Portability: '' || portreqnum'
+  type: TEXT
+  primary_key: false
+  description: "Request Breakdown (KB #71): comma-separated list of subject-request\
+    \ types and counts.\n\n[kb=71]\nAn array of strings listing request types and\
+    \ their counts: 'Access: AccReqNum', 'Deletion: DelReqNum', 'Rectification: RectReqNum',\
+    \ 'Portability: PortReqNum', unnested for display \u2014 Describes the types and\
+    \ counts of data subject requests.\n[/kb=71]"
+  label: Request Breakdown
+  hidden: false
+  meta:
+    kb_id: 71
+- name: is_critical_audit_issue
+  sql: (critfindnum * 1.0 / (findtally + 1)) > 0.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Critical Audit Issue (KB #13): AFS > 0.5.\n\n[kb=13]\nAn audit where\
+    \ AFS > 0.5 \u2014 Flags audits with significant issues requiring urgent remediation.\n\
+    [/kb=13]"
+  label: Critical Audit Issue
+  hidden: false
+  meta:
+    kb_id: 13
+- name: days_until_remed
+  sql: CAST(julianday(remeddue) - julianday(date('now')) AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: 'Days until RemedDue from today (helper for KB #76 / #77).'
+  hidden: false
+  meta: {}
+- name: is_slow_remediation
+  sql: julianday(date('now')) - julianday(remeddue) > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Slow Remediation Timeline (KB #76): CURRENT_DATE \u2212 RemedDue >\
+    \ 0 (deadline passed).\n\n[kb=76]\nA data flow where CURRENT_DATE - RemedDue >\
+    \ 0 \u2014 Identifies data flows where the remediation deadline has passed.\n\
+    [/kb=76]"
+  label: Slow Remediation Timeline
+  hidden: false
+  meta:
+    kb_id: 76
+- name: is_nearing_remediation
+  sql: (julianday(date('now')) - julianday(remeddue)) BETWEEN -5 AND 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Nearing Remediation Deadline (KB #77): (CURRENT_DATE \u2212 RemedDue)\
+    \ between -5 and 0.\n\n[kb=77]\nA data flow where (CURRENT_DATE - RemedDue) is\
+    \ between -5 and 0 \u2014 Identifies data flows where the remediation deadline\
+    \ is within 5 days.\n[/kb=77]"
+  label: Nearing Remediation Deadline
+  hidden: false
+  meta:
+    kb_id: 77
+- name: cbce
+  sql: ((dataprofile__riskmanagement.riskassess * 1.0 / NULLIF(dataprofile__riskmanagement.ctrleff,
+    0)) * CASE WHEN dataprofile__riskmanagement__dataflow.orignation != dataprofile__riskmanagement__dataflow.destnation
+    THEN 2 ELSE 1 END * dataprofile.volgb) * CASE WHEN compliance.gdprcomp = 'Non-compliant'
+    THEN 2 ELSE 1 END
+  type: DOUBLE
+  primary_key: false
+  description: "Cross-Border Compliance Exposure (CBCE) \u2014 KB #54: CDVR \xD7 (2\
+    \ if GdprComp='Non-compliant' else 1).\n\n[kb=54]\nCBCE = \\text{CDVR} \\times\
+    \ \\begin{cases} 2 & \\text{if GdprComp = 'Non-compliant'} \\\\ 1 & \\text{otherwise}\
+    \ \\end{cases} \u2014 Quantifies compliance risk for cross-border flows based\
+    \ on regulatory gaps and volume.\n[/kb=54]"
+  label: Cross-Border Compliance Exposure (CBCE)
+  hidden: false
+  meta:
+    kb_id: 54
+- name: bcr
+  sql: ((dataprofile__dataflow.bwidthpct * dataprofile__dataflow.datasizemb * 1.0
+    / NULLIF(dataprofile__dataflow.durmin, 0)) * (dataprofile.volgb * CASE dataprofile.datasense
+    WHEN 'High' THEN 3 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 1 ELSE 1 END)) * CASE
+    compliance.gdprcomp WHEN 'Partial' THEN 1.5 WHEN 'Non-compliant' THEN 2 ELSE 1
+    END
+  type: DOUBLE
+  primary_key: false
+  description: "Bandwidth Compliance Risk (BCR) \u2014 KB #58: BRF \xD7 (1.5 if GdprComp='Partial',\
+    \ 2 if 'Non-compliant', else 1).\n\n[kb=58]\nBCR = \\text{BRF} \\times \\begin{cases}\
+    \ 1.5 & \\text{if GdprComp = 'Partial'} \\\\ 2 & \\text{if GdprComp = 'Non-compliant'}\
+    \ \\\\ 1 & \\text{otherwise} \\end{cases} \u2014 Assesses compliance risk from\
+    \ bandwidth-constrained data flows.\n[/kb=58]"
+  label: Bandwidth Compliance Risk (BCR)
+  hidden: false
+  meta:
+    kb_id: 58
+- name: vsci
+  sql: ((critfindnum * 1.0 / (findtally + 1)) * (5 - (CASE vendormanagement.vendsecrate
+    WHEN 'A' THEN 4 WHEN 'B' THEN 3 WHEN 'C' THEN 2 WHEN 'D' THEN 1 ELSE 1 END)))
+    * 1.0 / ((((CASE WHEN vendormanagement__securityprofile.encstate = 'Full' AND
+    vendormanagement__securityprofile.aclstate = 'Strong' THEN 3 WHEN vendormanagement__securityprofile.encstate
+    = 'Full' OR vendormanagement__securityprofile.aclstate = 'Adequate' THEN 2 ELSE
+    1 END) * 1.0 / (vendormanagement__securityprofile__riskmanagement.costusd + 1)))
+    + 1)
+  type: DOUBLE
+  primary_key: false
+  description: "Vendor Security Cost Index (VSCI) \u2014 KB #59: VCB / (SCCR + 1).\n\
+    \n[kb=59]\nVSCI = \\text{VCB} / (\\text{SCCR} + 1) \u2014 Evaluates the cost-effectiveness\
+    \ of vendor security relative to compliance burden.\n[/kb=59]"
+  label: Vendor Security Cost Index (VSCI)
+  hidden: false
+  meta:
+    kb_id: 59
+- name: is_overburdened_compliance_flow
+  sql: (compliance__riskmanagement.costusd * 1.0 / (compliance__riskmanagement.penusd
+    + 1)) > 0.8 AND ((critfindnum * 1.0 / (findtally + 1)) * (accreqnum + delreqnum
+    + rectreqnum + portreqnum)) > 10
+  type: BOOLEAN
+  primary_key: false
+  description: "Overburdened Compliance Flow (KB #40): CCR > 0.8 AND ARL > 10.\n\n\
+    [kb=40]\nA data flow where CCR > 0.8 and ARL > 10 \u2014 Flags data flows with\
+    \ high compliance costs and audit remediation needs.\n[/kb=40]"
+  label: Overburdened Compliance Flow
+  hidden: false
+  meta:
+    kb_id: 40
+- name: is_high_pressure_data_flow
+  sql: ((accreqnum + delreqnum + rectreqnum + portreqnum) * resptimeday) > 50 AND
+    (dataprofile__dataflow.bwidthpct * dataprofile__dataflow.datasizemb * 1.0 / NULLIF(dataprofile__dataflow.durmin,
+    0)) > 50
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Pressure Data Flow (KB #42): DSRP > 50 AND BSI > 50.\n\n[kb=42]\n\
+    A data flow where DSRP > 50 and BSI > 50 \u2014 Highlights data flows under strain\
+    \ from data subject requests and bandwidth saturation.\n[/kb=42]"
+  label: High-Pressure Data Flow
+  hidden: false
+  meta:
+    kb_id: 42
+- name: is_vendor_driven_risk_flow
+  sql: (((CASE vendormanagement.vendsecrate WHEN 'A' THEN 4 WHEN 'B' THEN 3 WHEN 'C'
+    THEN 2 WHEN 'D' THEN 1 ELSE 1 END) * CASE WHEN vendormanagement.contrstate = 'Active'
+    THEN 1 ELSE 0.5 END) * (vendormanagement__riskmanagement.riskassess * 1.0 / NULLIF(vendormanagement__riskmanagement.ctrleff,
+    0))) > 3 AND ((critfindnum * 1.0 / (findtally + 1)) * (5 - (CASE vendormanagement.vendsecrate
+    WHEN 'A' THEN 4 WHEN 'B' THEN 3 WHEN 'C' THEN 2 WHEN 'D' THEN 1 ELSE 1 END)))
+    > 2
+  type: BOOLEAN
+  primary_key: false
+  description: "Vendor-Driven Risk Flow (KB #43): VRA > 3 AND VCB > 2.\n\n[kb=43]\n\
+    A data flow where VRA > 3 and VCB > 2 \u2014 Identifies data flows with elevated\
+    \ risk due to vendor issues.\n[/kb=43]"
+  label: Vendor-Driven Risk Flow
+  hidden: false
+  meta:
+    kb_id: 43
+- name: is_cross_border_audit_risk
+  sql: ((dataprofile__riskmanagement.riskassess * 1.0 / NULLIF(dataprofile__riskmanagement.ctrleff,
+    0)) * CASE WHEN dataprofile__riskmanagement__dataflow.orignation != dataprofile__riskmanagement__dataflow.destnation
+    THEN 2 ELSE 1 END * dataprofile.volgb) > 1000 AND (critfindnum * 1.0 / (findtally
+    + 1)) > 0.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Cross-Border Audit Risk (KB #44): CDVR > 1000 AND AFS > 0.5.\n\n[kb=44]\n\
+    A data flow where CDVR > 1000 and AFS > 0.5 \u2014 Flags cross-border data flows\
+    \ with significant audit issues.\n[/kb=44]"
+  label: Cross-Border Audit Risk
+  hidden: false
+  meta:
+    kb_id: 44
+- name: is_overloaded_security_flow
+  sql: (((CASE WHEN vendormanagement__securityprofile.encstate = 'Full' AND vendormanagement__securityprofile.aclstate
+    = 'Strong' THEN 3 WHEN vendormanagement__securityprofile.encstate = 'Full' OR
+    vendormanagement__securityprofile.aclstate = 'Adequate' THEN 2 ELSE 1 END) * (vendormanagement__securityprofile__dataprofile.volgb
+    * CASE vendormanagement__securityprofile__dataprofile.datasense WHEN 'High' THEN
+    3 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 1 ELSE 1 END)) * (vendormanagement__securityprofile.logretdays
+    * 1.0 / 365)) < 1 AND (((dataprofile__riskmanagement.riskassess * 1.0 / NULLIF(dataprofile__riskmanagement.ctrleff,
+    0)) * CASE WHEN dataprofile__riskmanagement__dataflow.orignation != dataprofile__riskmanagement__dataflow.destnation
+    THEN 2 ELSE 1 END * dataprofile.volgb) * CASE WHEN compliance.gdprcomp = 'Non-compliant'
+    THEN 2 ELSE 1 END) > 100
+  type: BOOLEAN
+  primary_key: false
+  description: "Overloaded Security Flow (KB #61): SPM < 1 AND CBCE > 100.\n\n[kb=61]\n\
+    A data flow where SPM < 1 and CBCE > 100 \u2014 Flags data flows with high security\
+    \ burden and compliance exposure.\n[/kb=61]"
+  label: Overloaded Security Flow
+  hidden: false
+  meta:
+    kb_id: 61
+- name: is_vendor_compliance_risk_cluster
+  sql: ((((CASE vendormanagement.vendsecrate WHEN 'A' THEN 4 WHEN 'B' THEN 3 WHEN
+    'C' THEN 2 WHEN 'D' THEN 1 ELSE 1 END) * CASE WHEN vendormanagement.contrstate
+    = 'Active' THEN 1 ELSE 0.5 END) * (vendormanagement__riskmanagement.riskassess
+    * 1.0 / NULLIF(vendormanagement__riskmanagement.ctrleff, 0))) * (1 - ((CASE vendormanagement.vendsecrate
+    WHEN 'A' THEN 4 WHEN 'B' THEN 3 WHEN 'C' THEN 2 WHEN 'D' THEN 1 ELSE 1 END) *
+    CASE WHEN vendormanagement.contrstate = 'Active' THEN 1 ELSE 0.5 END))) > 2 AND
+    ((critfindnum * 1.0 / (findtally + 1)) * (5 - (CASE vendormanagement.vendsecrate
+    WHEN 'A' THEN 4 WHEN 'B' THEN 3 WHEN 'C' THEN 2 WHEN 'D' THEN 1 ELSE 1 END)))
+    > 2
+  type: BOOLEAN
+  primary_key: false
+  description: "Vendor Compliance Risk Cluster (KB #63): VRC > 2 AND VCB > 2.\n\n\
+    [kb=63]\nA vendor where VRC > 2 and VCB > 2 \u2014 Identifies vendors contributing\
+    \ to concentrated compliance risks.\n[/kb=63]"
+  label: Vendor Compliance Risk Cluster
+  hidden: false
+  meta:
+    kb_id: 63
+- name: is_audit_stressed_data_flow
+  sql: (((critfindnum * 1.0 / (findtally + 1)) * (accreqnum + delreqnum + rectreqnum
+    + portreqnum)) * (critfindnum * 1.0 / (findtally + 1))) > 5 AND (((accreqnum +
+    delreqnum + rectreqnum + portreqnum) * resptimeday) * 1.0 / (compliance__riskmanagement.costusd
+    + 1)) > 0.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Audit-Stressed Data Flow (KB #65): ACP > 5 AND COR > 0.5.\n\n[kb=65]\n\
+    A data flow where ACP > 5 and COR > 0.5. \u2014 Identifies data flows under pressure\
+    \ from audit findings and compliance burdens.\n[/kb=65]"
+  label: Audit-Stressed Data Flow
+  hidden: false
+  meta:
+    kb_id: 65
+- name: is_bandwidth_limited_compliance_risk
+  sql: (((dataprofile__dataflow.bwidthpct * dataprofile__dataflow.datasizemb * 1.0
+    / NULLIF(dataprofile__dataflow.durmin, 0)) * (dataprofile.volgb * CASE dataprofile.datasense
+    WHEN 'High' THEN 3 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 1 ELSE 1 END)) * CASE
+    compliance.gdprcomp WHEN 'Partial' THEN 1.5 WHEN 'Non-compliant' THEN 2 ELSE 1
+    END) > 50 AND (compliance.gdprcomp = 'Non-compliant' OR (compliance.loclawcomp
+    = 'Non-compliant' AND dataprofile__dataflow.orignation != dataprofile__dataflow.destnation))
+  type: BOOLEAN
+  primary_key: false
+  description: "Bandwidth-Limited Compliance Risk (KB #66): BCR > 50 AND Cross-Border\
+    \ Compliance Gap.\n\n[kb=66]\nA data flow where BCR > 50 and Cross-Border Compliance\
+    \ Gap exists \u2014 Highlights data flows where bandwidth constraints exacerbate\
+    \ compliance risks.\n[/kb=66]"
+  label: Bandwidth-Limited Compliance Risk
+  hidden: false
+  meta:
+    kb_id: 66
+- name: is_costly_vendor_risk_flow
+  sql: (((critfindnum * 1.0 / (findtally + 1)) * (5 - (CASE vendormanagement.vendsecrate
+    WHEN 'A' THEN 4 WHEN 'B' THEN 3 WHEN 'C' THEN 2 WHEN 'D' THEN 1 ELSE 1 END)))
+    * 1.0 / ((((CASE WHEN vendormanagement__securityprofile.encstate = 'Full' AND
+    vendormanagement__securityprofile.aclstate = 'Strong' THEN 3 WHEN vendormanagement__securityprofile.encstate
+    = 'Full' OR vendormanagement__securityprofile.aclstate = 'Adequate' THEN 2 ELSE
+    1 END) * 1.0 / (vendormanagement__securityprofile__riskmanagement.costusd + 1)))
+    + 1)) > 1 AND (((CASE vendormanagement.vendsecrate WHEN 'A' THEN 4 WHEN 'B' THEN
+    3 WHEN 'C' THEN 2 WHEN 'D' THEN 1 ELSE 1 END) * CASE WHEN vendormanagement.contrstate
+    = 'Active' THEN 1 ELSE 0.5 END) * (vendormanagement__riskmanagement.riskassess
+    * 1.0 / NULLIF(vendormanagement__riskmanagement.ctrleff, 0))) > 3
+  type: BOOLEAN
+  primary_key: false
+  description: "Costly Vendor Risk Flow (KB #67): VSCI > 1 AND VRA > 3.\n\n[kb=67]\n\
+    A data flow where VSCI > 1 and VRA > 3 \u2014 Identifies data flows with high\
+    \ vendor-related costs and risks.\n[/kb=67]"
+  label: Costly Vendor Risk Flow
+  hidden: false
+  meta:
+    kb_id: 67
+- name: is_high_impact_audit_risk_flow
+  sql: (((compliance__riskmanagement.riskassess * 1.0 / NULLIF(compliance__riskmanagement.ctrleff,
+    0)) * CASE WHEN compliance__riskmanagement__dataflow.orignation != compliance__riskmanagement__dataflow.destnation
+    THEN 2 ELSE 1 END) > 1.5 AND (compliance.gdprcomp = 'Non-compliant' OR (compliance.loclawcomp
+    = 'Non-compliant' AND compliance__riskmanagement__dataflow.orignation != compliance__riskmanagement__dataflow.destnation)))
+    AND (((critfindnum * 1.0 / (findtally + 1)) * (accreqnum + delreqnum + rectreqnum
+    + portreqnum)) * (critfindnum * 1.0 / (findtally + 1))) > 5
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Impact Audit Risk Flow (KB #69): Regulatory Risk Exposure AND\
+    \ ACP > 5.\n\n[kb=69]\nA data flow where Regulatory Risk Exposure exists and ACP\
+    \ > 5 \u2014 Identifies data flows with severe audit findings and regulatory risks.\n\
+    [/kb=69]"
+  label: High-Impact Audit Risk Flow
+  hidden: false
+  meta:
+    kb_id: 69
+- name: is_high_audit_compliance_pressure
+  sql: (((critfindnum * 1.0 / (findtally + 1)) * (accreqnum + delreqnum + rectreqnum
+    + portreqnum)) * (critfindnum * 1.0 / (findtally + 1))) > 5
+  type: BOOLEAN
+  primary_key: false
+  description: "High Audit Compliance Pressure (KB #74): ACP > 5.\n\n[kb=74]\nA data\
+    \ flow where ACP > 5 \u2014 Identifies data flows with elevated audit compliance\
+    \ pressure based on audit findings and data subject request load.\n[/kb=74]"
+  label: High Audit Compliance Pressure
+  hidden: false
+  meta:
+    kb_id: 74
+measures: []
+aggregations: []
+joins:
+- target_model: compliance
+  join_pairs:
+  - - compjoin
+    - compliancetrace
+  join_type: left
+- target_model: dataprofile
+  join_pairs:
+  - - profjoin
+    - profiletrace
+  join_type: left
+- target_model: vendormanagement
+  join_pairs:
+  - - vendjoin
+    - vendortrace
+  join_type: left
+filters: []
+hidden: false

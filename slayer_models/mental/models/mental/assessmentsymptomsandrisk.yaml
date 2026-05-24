@@ -1,0 +1,228 @@
+version: 6
+name: assessmentsymptomsandrisk
+sql_table: assessmentsymptomsandrisk
+query_variables: {}
+data_source: mental
+columns:
+- name: asrkey
+  sql: asrkey
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: suicideation
+  sql: suicideation
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: suicrisk
+  sql: suicrisk
+  type: TEXT
+  primary_key: false
+  description: "Suicide risk level enum (Low, Medium, High, Severe). Low = minimal\
+    \ risk, Medium = some concern, High = immediate concern, Severe = urgent intervention\
+    \ needed.\n\n[kb=22]\nRanges from Low to Severe. Low indicates minimal risk, Medium\
+    \ indicates some concern, High indicates immediate concern, and Severe indicates\
+    \ urgent intervention needed. \u2014 Illustrates the value of the suicide risk\
+    \ level.\n[/kb=22]"
+  label: Suicide Risk Level
+  hidden: false
+  meta:
+    kb_id: 22
+- name: selfharm
+  sql: selfharm
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: violrisk
+  sql: violrisk
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: subuse
+  sql: subuse
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: subusefreq
+  sql: subusefreq
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: subusesev
+  sql: subusesev
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: mental_health_scores
+  sql: mental_health_scores
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: phq9_score
+  sql: CAST(mental_health_scores ->> '$.depression.phq9_score' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: "PHQ-9 depression score (0-27). 0-4 minimal, 5-9 mild, 10-14 moderate,\
+    \ 15-19 moderately severe, 20-27 severe. Source: mental_health_scores JSON.\n\n\
+    [kb=20]\nRanges from 0 to 27. A score of 0\u20134 indicates minimal depression,\
+    \ 5\u20139 mild, 10\u201314 moderate, 15\u201319 moderately severe, and 20\u2013\
+    27 severe. \u2014 Illustrates the value of the PHQ-9 score for depression severity.\n\
+    [/kb=20]"
+  label: PHQ-9 Score (Depression)
+  hidden: false
+  meta:
+    kb_id: 20
+- name: phq9_severity
+  sql: mental_health_scores ->> '$.depression.phq9_severity'
+  type: TEXT
+  primary_key: false
+  description: PHQ-9 severity bucket (Mild, Moderate, Moderately Severe, Severe).
+  hidden: false
+- name: gad7_score
+  sql: CAST(mental_health_scores ->> '$.anxiety.gad7_score' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: "GAD-7 anxiety score (0-21). 0-4 minimal, 5-9 mild, 10-14 moderate,\
+    \ 15-21 severe. Source: mental_health_scores JSON.\n\n[kb=21]\nRanges from 0 to\
+    \ 21. A score of 0\u20134 indicates minimal anxiety, 5\u20139 mild, 10\u201314\
+    \ moderate, and 15\u201321 severe. \u2014 Illustrates the value of the GAD-7 score\
+    \ for anxiety severity.\n[/kb=21]"
+  label: GAD-7 Score (Anxiety)
+  hidden: false
+  meta:
+    kb_id: 21
+- name: gad7_severity
+  sql: mental_health_scores ->> '$.anxiety.gad7_severity'
+  type: TEXT
+  primary_key: false
+  description: GAD-7 severity bucket (Mild, Moderate, Severe).
+  hidden: false
+- name: is_high_severe_suicrisk
+  sql: CASE WHEN suicrisk IN ('High', 'Severe') THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: Indicator (0/1) for suicide risk in {High, Severe}. Used as numerator
+    for SRP.
+  hidden: false
+- name: high_severe_suicrisk_helper
+  sql: asrkey
+  type: DOUBLE
+  primary_key: false
+  description: "Filtered count helper: rows with suicrisk in {High, Severe}.\n\n[kb=3]\n\
+    SRP = \\frac{|assessmentsymptomsandrisk \\text{ with } suicrisk \\in \\{High,\
+    \ Severe\\}|} {|assessmentsymptomsandrisk|} \\times 100 \u2014 Calculates the\
+    \ percentage of assessments indicating high or severe suicide risk at a facility.\n\
+    [/kb=3]"
+  label: Suicide Risk Prevalence (SRP)
+  hidden: false
+  filter: suicrisk IN ('High', 'Severe')
+  meta:
+    kb_id: 3
+- name: is_high_risk
+  sql: suicrisk IN ('High', 'Severe') OR CAST(mental_health_scores ->> '$.depression.phq9_score'
+    AS INTEGER) > 15 OR CAST(mental_health_scores ->> '$.anxiety.gad7_score' AS INTEGER)
+    > 15
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Risk Patient (KB #10): suicrisk in {High,Severe} OR PHQ-9 > 15\
+    \ OR GAD-7 > 15.\n\n[kb=10]\nA patient with suicrisk \\in \\{High, Severe\\} or\
+    \ mental\\_health\\_scores['depression']['phq9\\_score'] > 15 or mental\\_health\\\
+    _scores['anxiety']['gad7\\_score'] > 15, \u2014 Identifies patients with elevated\
+    \ suicide risk or severe symptoms.\n[/kb=10]"
+  label: High-Risk Patient
+  hidden: false
+  meta:
+    kb_id: 10
+- name: is_severe_comorbid_distress
+  sql: CAST(mental_health_scores ->> '$.depression.phq9_score' AS INTEGER) >= 15 AND
+    CAST(mental_health_scores ->> '$.anxiety.gad7_score' AS INTEGER) >= 15 AND EXISTS
+    (SELECT 1 FROM assessmentsocialanddiagnosis asd WHERE asd.asdkey = assessmentsymptomsandrisk.asrkey
+    AND asd.funcimp = 'Severe')
+  type: BOOLEAN
+  primary_key: false
+  description: "Severe Comorbid Distress Profile (KB #45): PHQ-9 >= 15 AND GAD-7 >=\
+    \ 15 AND linked assessmentsocialanddiagnosis.funcimp = 'Severe'.\n\n[kb=45]\n\
+    A patient where mental_health_scores['depression']['phq9_score'] \\geq 15 AND\
+    \ mental_health_scores['anxiety']['gad7_score'] \\geq 15 AND funcimp = 'Severe'.\
+    \ \\text{This profile relates to high individual contributions to APSF, AGSF,\
+    \ and PFIS}. \u2014 Identifies patients experiencing significant simultaneous\
+    \ distress across depression, anxiety, and functional domains.\n[/kb=45]"
+  label: Patient with Severe Comorbid Distress Profile
+  hidden: false
+  meta:
+    kb_id: 45
+- name: is_high_severity_high_risk
+  sql: (CAST(mental_health_scores ->> '$.depression.phq9_score' AS INTEGER) > 19 OR
+    CAST(mental_health_scores ->> '$.anxiety.gad7_score' AS INTEGER) > 14) AND suicrisk
+    IN ('High', 'Severe')
+  type: BOOLEAN
+  primary_key: false
+  description: "High Severity, High Risk Patient Group (KB #49): (PHQ-9 > 19 OR GAD-7\
+    \ > 14) AND suicrisk in {High, Severe}.\n\n[kb=49]\nA patient where (mental_health_scores['depression']['phq9_score']\
+    \ > 19 OR mental_health_scores['anxiety']['gad7_score'] > 14) AND suicrisk IN\
+    \ {'High', 'Severe'}. \u2014 Identifies patients presenting with both high symptom\
+    \ severity (depression/anxiety) and elevated suicide risk.\n[/kb=49]"
+  label: High Severity, High Risk Patient Group
+  hidden: false
+  meta:
+    kb_id: 49
+measures:
+- formula: phq9_score:avg
+  name: apsf
+  label: Average PHQ-9 Score by Facility (APSF)
+  description: "Average PHQ-9 Score (APSF) \u2014 average depression score across\
+    \ assessments.\n\n[kb=0]\nAPSF = \\frac{\\sum_{i \\in assessmentsymptomsandrisk}\
+    \ (mental\\_health\\_scores_i['depression']['phq9\\_score'])} {|assessmentsymptomsandrisk|}\
+    \ \u2014 Calculates the average PHQ-9 depression score for patients assessed at\
+    \ a specific facility.\n[/kb=0]"
+  meta:
+    kb_id: 0
+- formula: gad7_score:avg
+  name: agsf
+  label: Average GAD-7 Score by Facility (AGSF)
+  description: "Average GAD-7 Score (AGSF) \u2014 average anxiety score across assessments.\n\
+    \n[kb=1]\nAGSF = \\frac{\\sum_{i \\in assessmentsymptomsandrisk} (mental\\_health\\\
+    _scores_i['anxiety']['gad7\\_score'])} {|assessmentsymptomsandrisk|}, \\text{where\
+    \ } mental\\_health\\_scores_i['anxiety']['gad7\\_score'] \\text{ is the GAD-7\
+    \ score for each assessment in the assessmentsymptomsandrisk table, linked to\
+    \ a facility via encounters.facid} \u2014 Calculates the average GAD-7 anxiety\
+    \ score for patients assessed at a specific facility.\n[/kb=1]"
+  meta:
+    kb_id: 1
+- formula: high_severe_suicrisk_helper:count * 100.0 / *:count
+  name: srp
+  label: Suicide Risk Prevalence (SRP)
+  description: "Suicide Risk Prevalence (SRP) \u2014 % of assessments with suicrisk\
+    \ in {High, Severe}, scaled 0-100.\n\n[kb=3]\nSRP = \\frac{|assessmentsymptomsandrisk\
+    \ \\text{ with } suicrisk \\in \\{High, Severe\\}|} {|assessmentsymptomsandrisk|}\
+    \ \\times 100 \u2014 Calculates the percentage of assessments indicating high\
+    \ or severe suicide risk at a facility.\n[/kb=3]"
+  meta:
+    kb_id: 3
+- formula: (apsf + agsf) / 2
+  name: ssi
+  label: Symptom Severity Index (SSI)
+  description: "Symptom Severity Index (SSI) \u2014 (APSF + AGSF) / 2.\n\n[kb=30]\n\
+    SSI = \\frac{APSF + AGSF}{2}, \\text{using Average PHQ-9 Score (APSF) and Average\
+    \ GAD-7 Score (AGSF)} \u2014 Calculates a combined average symptom severity score\
+    \ for a facility, based on depression and anxiety.\n[/kb=30]"
+  meta:
+    kb_id: 30
+aggregations: []
+joins:
+- target_model: assessmentbasics
+  join_pairs:
+  - - asrkey
+    - abkey
+  join_type: left
+- target_model: encounters
+  join_pairs:
+  - - asrkey
+    - abref
+  join_type: left
+filters: []
+description: Per-assessment symptom and risk record. Each row corresponds 1:1 with
+  an assessmentbasics row (same primary key). Holds suicide ideation, suicide risk
+  level, self-harm history, violence risk, substance use details, plus the JSONB mental_health_scores
+  column with PHQ-9/GAD-7 scores and severities.
+hidden: false

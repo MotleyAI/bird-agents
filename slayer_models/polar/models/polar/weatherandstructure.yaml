@@ -1,0 +1,180 @@
+version: 6
+name: weatherandstructure
+sql_table: weatherandstructure
+query_variables: {}
+data_source: polar
+columns:
+- name: weatherregistry
+  sql: weatherregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: weatherlocref
+  sql: weatherlocref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: externaltemperaturec
+  sql: externaltemperaturec
+  type: INT
+  primary_key: false
+  description: "External temp (\xB0C) for polar regions. <-40 extreme cold, -40 to\
+    \ -20 standard, -20 to 0 mild, 0\u201310 warm (KB #22).\n\n[kb=22]\nExternal temperature\
+    \ in polar regions typically ranges from -70\xB0C to 10\xB0C. Temperatures below\
+    \ -40\xB0C represent extreme cold requiring special equipment protection measures,\
+    \ -20\xB0C to -40\xB0C require standard cold weather protocols, while temperatures\
+    \ above -20\xB0C are considered relatively mild for polar operations but still\
+    \ require normal cold weather precautions. \u2014 Illustrates the significance\
+    \ of external temperature readings in polar environments.\n[/kb=22]"
+  label: externaltemperaturec
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 22
+- name: windspeedms
+  sql: windspeedms
+  type: INT
+  primary_key: false
+  description: "Wind speed (m/s). <5 calm, 5\u201315 moderate, 15\u201325 strong,\
+    \ >25 severe (KB #23).\n\n[kb=23]\nWind speeds in polar environments typically\
+    \ range from 0 to 60 m/s. Speeds below 5 m/s represent calm conditions, 5-15 m/s\
+    \ indicate moderate winds with minor operational impact, 15-25 m/s represent strong\
+    \ winds requiring additional safety measures, and speeds above 25 m/s indicate\
+    \ dangerous conditions that may require suspension of outdoor activities and securing\
+    \ of equipment. \u2014 Illustrates the impact of wind speed measurements on operations\
+    \ and safety.\n[/kb=23]"
+  label: windspeedms
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 23
+- name: winddirectiondegrees
+  sql: winddirectiondegrees
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: barometricpressurehpa
+  sql: barometricpressurehpa
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: solarradiationwm2
+  sql: solarradiationwm2
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: snowdepthcm
+  sql: snowdepthcm
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: icethicknesscm
+  sql: icethicknesscm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: visibilitykm
+  sql: visibilitykm
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: precipitationtype
+  sql: precipitationtype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: precipitationratemmh
+  sql: precipitationratemmh
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: snowloadkgm2
+  sql: snowloadkgm2
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: structuralloadpercent
+  sql: structuralloadpercent
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: structuralintegritystatus
+  sql: structuralintegritystatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vibrationlevelmms2
+  sql: vibrationlevelmms2
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: noiseleveldb
+  sql: noiseleveldb
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: weatheropmaintref
+  sql: weatheropmaintref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: ssf
+  sql: (100 - structuralloadpercent) / 100.0 * CASE WHEN snowloadkgm2 > 100 OR windspeedms
+    > 20 THEN 0.5 WHEN snowloadkgm2 > 50 OR windspeedms > 10 THEN 0.8 ELSE 1.0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Structural Safety Factor (KB #3): (100 \u2212 structuralloadpercent)/100\
+    \ \xD7 weather multiplier.\n\n[kb=3]\nSSF = \\frac{100 - structuralloadpercent}{100}\
+    \ \\times \\begin{cases} 0.5 & \\text{if snowloadkgm2 > 100 or windspeedms > 20}\
+    \ \\\\ 0.8 & \\text{if snowloadkgm2 > 50 or windspeedms > 10} \\\\ 1.0 & \\text{otherwise}\
+    \ \\end{cases} \u2014 Evaluates the safety margin of structures under extreme\
+    \ weather conditions.\n[/kb=3]"
+  label: Structural Safety Factor (SSF)
+  hidden: false
+  meta:
+    kb_id: 3
+measures: []
+aggregations: []
+joins:
+- target_model: location
+  join_pairs:
+  - - weatherlocref
+    - locationregistry
+  join_type: left
+- target_model: operationmaintenance
+  join_pairs:
+  - - weatheropmaintref
+    - opmaintregistry
+  join_type: left
+filters: []
+hidden: false

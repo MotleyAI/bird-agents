@@ -1,0 +1,128 @@
+version: 6
+name: powerbattery
+sql_table: powerbattery
+query_variables: {}
+data_source: polar
+columns:
+- name: powerbattregistry
+  sql: powerbattregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: pwrbatteqref
+  sql: pwrbatteqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: powerstatus
+  sql: powerstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: powersource
+  sql: powersource
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: chargingstatus
+  sql: chargingstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: powerconsumptionw
+  sql: powerconsumptionw
+  type: DOUBLE
+  primary_key: false
+  description: "Power consumption (W). 5\u201350 small instruments, 20\u2013200 comms,\
+    \ 500\u20135000 heating, 1000+ vehicles (KB #24).\n\n[kb=24]\nPower consumption\
+    \ measured in watts varies by equipment type. Small scientific instruments typically\
+    \ consume 5-50W, communication equipment 20-200W, heating systems 500-5000W, and\
+    \ vehicle systems 1000-10000W. Understanding consumption patterns is crucial for\
+    \ power budgeting and determining appropriate power source sizing in isolated\
+    \ polar environments. \u2014 Illustrates the significance of power consumption\
+    \ measurements in energy management.\n[/kb=24]"
+  label: powerconsumptionw
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 24
+- name: energyefficiencypercent
+  sql: energyefficiencypercent
+  type: DOUBLE
+  primary_key: false
+  description: "Energy efficiency %. <30 inefficient, 30\u201360 standard, 60\u2013\
+    80 efficient, >80 highly efficient (KB #27).\n\n[kb=27]\nEnergy efficiency percentage\
+    \ typically ranges from 10% to 99%. Values below 30% indicate inefficient systems\
+    \ typical of older equipment, 30-60% represent standard efficiency for conventional\
+    \ equipment, 60-80% indicate high-efficiency modern systems, while values above\
+    \ 80% represent cutting-edge technology with optimal efficiency that minimizes\
+    \ energy waste and operational costs. \u2014 Illustrates the meaning and importance\
+    \ of energy efficiency percentages.\n[/kb=27]"
+  label: energyefficiencypercent
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 27
+- name: batterystatus
+  sql: batterystatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: esi
+  sql: energyefficiencypercent * CASE powersource WHEN 'Solar' THEN 1.5 WHEN 'Wind'
+    THEN 1.5 WHEN 'Hybrid' THEN 1.2 WHEN 'Battery' THEN 1.0 WHEN 'Diesel' THEN 0.7
+    ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Energy Sustainability Index (KB #2): efficiency% x powersource multiplier\
+    \ (Solar/Wind=1.5, Hybrid=1.2, Battery=1.0, Diesel=0.7, otherwise 0).\n\n[kb=2]\n\
+    ESI = energyefficiencypercent \\times \\begin{cases} 1.5 & \\text{if powersource\
+    \ IN ('Solar', 'Wind')} \\\\ 1.2 & \\text{if powersource = 'Hybrid'} \\\\ 1.0\
+    \ & \\text{if powersource = 'Battery'} \\\\ 0.7 & \\text{if powersource = 'Diesel'}\
+    \ \\\\ 0 & \\text{otherwise} \\end{cases}, \\text{ providing higher ratings for\
+    \ renewable energy and lower ratings for fossil fuels.} \u2014 Measures the sustainability\
+    \ of an equipment's energy usage by evaluating energy efficiency and renewable\
+    \ sources.\n[/kb=2]"
+  label: Energy Sustainability Index (ESI)
+  hidden: false
+  meta:
+    kb_id: 2
+- name: energy_sustainability_class
+  sql: CASE WHEN (energyefficiencypercent * CASE powersource WHEN 'Solar' THEN 1.5
+    WHEN 'Wind' THEN 1.5 WHEN 'Hybrid' THEN 1.2 WHEN 'Battery' THEN 1.0 WHEN 'Diesel'
+    THEN 0.7 ELSE 0 END) > 0.8 THEN 'Green' WHEN (energyefficiencypercent * CASE powersource
+    WHEN 'Solar' THEN 1.5 WHEN 'Wind' THEN 1.5 WHEN 'Hybrid' THEN 1.2 WHEN 'Battery'
+    THEN 1.0 WHEN 'Diesel' THEN 0.7 ELSE 0 END) >= 0.4 THEN 'Intermediate' ELSE 'High
+    Impact' END
+  type: TEXT
+  primary_key: false
+  description: "Energy Sustainability Classification (KB #13): Green (ESI > 0.8),\
+    \ Intermediate (0.4 <= ESI <= 0.8), High Impact (ESI < 0.4).\n\n[kb=13]\nEquipment\
+    \ is classified as 'Green' (ESI > 0.8), 'Intermediate' (ESI between 0.4 and 0.8),\
+    \ or 'High Impact' (ESI < 0.4), with Green indicating environmentally sustainable\
+    \ operations. \u2014 Categories equipment based on their energy sustainability\
+    \ index for environmental impact assessment.\n[/kb=13]"
+  label: Energy Sustainability Classification
+  hidden: false
+  meta:
+    kb_id: 13
+- name: battery_level_percent
+  sql: json_extract(batterystatus, '$.level_percent')
+  type: DOUBLE
+  primary_key: false
+  description: Battery level percent (extracted from batterystatus JSON).
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: equipment
+  join_pairs:
+  - - pwrbatteqref
+    - equipmentcode
+  join_type: left
+filters: []
+hidden: false

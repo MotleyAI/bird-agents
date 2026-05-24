@@ -1,0 +1,53 @@
+version: 6
+name: smc_avg
+source_queries:
+- version: 3
+  source_model:
+    source_name: qualitycompliance
+    columns:
+    - name: k
+      sql: '1'
+      type: DOUBLE
+  measures:
+  - formula: smc_score:avg
+  dimensions:
+  - name: k
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"qualitycompliance.k\" AS k, \"qualitycompliance.smc_score_avg\"\
+  \ AS smc_score_avg FROM (SELECT\n  1 AS \"qualitycompliance.k\",\n  AVG(\n    CASE\n\
+  \      WHEN LOWER(TRIM(qc_checklist ->> '$.gdp_quality.gdp_compliance')) = 'full'\n\
+  \      THEN 9\n      WHEN LOWER(TRIM(qc_checklist ->> '$.gdp_quality.gdp_compliance'))\
+  \ = 'partial'\n      THEN 6\n      ELSE 3\n    END\n  ) AS \"qualitycompliance.smc_score_avg\"\
+  \nFROM qualitycompliance AS qualitycompliance\nGROUP BY\n  1) AS _inner"
+data_source: cold_chain_pharma_compliance
+columns:
+- name: k
+  sql: k
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: smc_score_avg
+  sql: smc_score_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'Stock Management Capability proxy (KB #30, SCRS sub-score, 0-10):
+    GDP compliance Full = 9, Partial = 6, else = 3. Used inside Supply Chain Resilience
+    Score; heuristic from the gold task solution because the schema does not store
+    SMC directly.'
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Fleet-wide Stock Management Capability average for SCRS (KB #30). Hidden\
+  \ helper.\n\n[kb=30]\nSCRS = 0.4 \\times ART + 0.3 \\times RRD + 0.2 \\times SBP\
+  \ + 0.1 \\times SMC, \\text{where ART is Alternative Route Availability (0-10),\
+  \ RRD is Redundant Resources Depth (0-10), SBP is Supplier Backup Presence (0-10),\
+  \ and SMC is Stock Management Capability (0-10).} \u2014 Measures a cold chain's\
+  \ ability to maintain integrity despite disruptions.\n[/kb=30]"
+hidden: true
+meta:
+  kb_id: 30

@@ -1,0 +1,76 @@
+version: 6
+name: account
+sql_table: account
+query_variables: {}
+data_source: fake
+columns:
+- name: accindex
+  sql: accindex
+  type: TEXT
+  primary_key: true
+  description: 'Account primary key. Used as the natural grouping key for KB metrics.
+    The KB #81 (member count per cluster) and KB #83 (member account IDs per cluster)
+    helpers are encoded as named measures on moderationaction (member_count, member_account_ids).'
+  hidden: false
+  meta: {}
+- name: acctident
+  sql: acctident
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: platident
+  sql: platident
+  type: TEXT
+  primary_key: false
+  description: "Platform identifier. Per KB #80, this is the cluster identifier used\
+    \ to group accounts in an Amplification Network and similar cluster-level rules.\n\
+    \n[kb=80]\nIn this context, the platform identifier (`platident`) associated with\
+    \ the accounts in the potential Amplification Network is the cluster identifier.\
+    \ \u2014 A key used to group related accounts identified as part of the same network\
+    \ or cluster.\n[/kb=80]"
+  label: cluster identifier
+  hidden: false
+  meta:
+    kb_id: 80
+- name: plattype
+  sql: plattype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: acctcreatedate
+  sql: acctcreatedate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: acctagespan
+  sql: acctagespan
+  type: INT
+  primary_key: false
+  description: 'Account age in days since creation. Denominator of AAF (KB #0).'
+  hidden: false
+  format:
+    type: integer
+- name: acctstatus
+  sql: acctstatus
+  type: TEXT
+  primary_key: false
+  description: 'Account status enum (Active / Deleted / Suspended / Dormant). KB #15
+    (Dormant Bot) checks acctstatus=''Dormant''.'
+  hidden: false
+- name: acctcategory
+  sql: acctcategory
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: authstatus
+  sql: authstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Accounts on the platform \u2014 the natural grouping key for KB metrics.\
+  \ Use accindex to identify a unique account."
+hidden: false

@@ -1,0 +1,58 @@
+version: 6
+name: signal_is_eit
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signaldecoding
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: is_eit
+      type: BOOLEAN
+      sql: CASE WHEN ((signaldecoding.compressratio * signalclassification.complexidx
+        * signalclassification.entropyval) / 10.0) > 1.8 AND signalclassification.entropyval
+        BETWEEN 0.3 AND 0.7 THEN 1 ELSE 0 END
+  dimensions:
+  - name: signalregistry
+  - name: is_eit
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_eit\"\
+  \ AS is_eit FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
+  ,\n  CASE\n    WHEN (\n      (\n        signaldecoding.compressratio * signalclassification.complexidx\
+  \ * signalclassification.entropyval\n      ) / 10.0\n    ) > 1.8\n    AND signalclassification.entropyval\
+  \ BETWEEN 0.3 AND 0.7\n    THEN 1\n    ELSE 0\n  END AS \"signals.is_eit\"\nFROM\
+  \ signals AS signals\nLEFT JOIN signaldecoding AS signaldecoding\n  ON signals.signalregistry\
+  \ = signaldecoding.signalref\nLEFT JOIN signalclassification AS signalclassification\n\
+  \  ON signals.signalregistry = signalclassification.signalref) AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_eit
+  sql: is_eit
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Encoded Information Transfer (EIT) predicate per signal.\n\n[kb=18]\n\
+  Signals with $\\text{ECI} > 1.8$, $\\text{EntropyVal}$ between 0.3-0.7 (not random\
+  \ but structured), and consistent internal patterns that suggest language or data\
+  \ encoding schemes. \u2014 Characterizes signals that appear to contain deliberate\
+  \ information encoding.\n[/kb=18]"
+hidden: false
+meta:
+  kb_id: 18

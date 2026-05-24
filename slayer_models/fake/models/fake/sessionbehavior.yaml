@@ -1,0 +1,88 @@
+version: 6
+name: sessionbehavior
+sql_table: sessionbehavior
+query_variables: {}
+data_source: fake
+columns:
+- name: sessref
+  sql: sessref
+  type: TEXT
+  primary_key: true
+  description: "Session reference (PK). KB #75 (Session Count) is defined as the count\
+    \ of these records associated with an account.\n\n[kb=75]\nSC_a = \\left| \\{\
+    \ \\text{sessref} \\in \\text{sessionbehavior} \\mid \\text{sessprofref} = \\\
+    text{profkey}, \\text{profaccref} = a \\} \\right| \u2014 Measures the total number\
+    \ of session records associated with an account.\n[/kb=75]"
+  label: Session Count (SC)
+  hidden: false
+  meta:
+    kb_id: 75
+- name: sessprofref
+  sql: sessprofref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: logintimepat
+  sql: logintimepat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: loginfreq
+  sql: loginfreq
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: loginlocvar
+  sql: loginlocvar
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: sesslenmean
+  sql: sesslenmean
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: sesscount
+  sql: sesscount
+  type: INT
+  primary_key: false
+  description: 'Total sessions count. Numerator of AAF (KB #0).'
+  hidden: false
+  format:
+    type: integer
+- name: actregval
+  sql: actregval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: acttimedist
+  sql: acttimedist
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures:
+- formula: '*:count'
+  name: session_count
+  description: 'Session Count (KB #75): total session-behavior records per account
+    when grouped by account.accindex.'
+- formula: sesscount:sum
+  name: session_count_sum
+  description: "Sum of per-row sesscount across an account's sessions (alternative\
+    \ reading of KB #75 if SC=\u03A3 sesscount)."
+aggregations: []
+joins:
+- target_model: profile
+  join_pairs:
+  - - sessprofref
+    - profkey
+  join_type: left
+filters: []
+description: Per-session behavior records, one per session (linked to a profile, which
+  links to an account).
+hidden: false

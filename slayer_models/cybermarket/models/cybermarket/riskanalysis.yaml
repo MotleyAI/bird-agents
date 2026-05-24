@@ -1,0 +1,270 @@
+version: 6
+name: riskanalysis
+sql_table: riskanalysis
+query_variables: {}
+data_source: cybermarket
+columns:
+- name: riskregistry
+  sql: riskregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: fraudprob
+  sql: fraudprob
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: moneyrisk
+  sql: moneyrisk
+  type: TEXT
+  primary_key: false
+  description: "Money-laundering risk: 'Low' = transparent flows, consistent monetary\
+    \ behaviour; 'Medium' = unusual patterns warranting monitoring; 'High' = significant\
+    \ red flags (rapid transfers, unusual chains, known high-risk wallet associations);\
+    \ 'Unknown' = insufficient data (itself a risk indicator due to potential deliberate\
+    \ obfuscation).\n\n[kb=8]\n'Low' indicates minimal risk patterns with transparent\
+    \ transaction flows and consistent monetary behavior; 'Medium' suggests some unusual\
+    \ patterns warranting monitoring but insufficient evidence for immediate action;\
+    \ 'High' represents significant red flags such as rapid fund transfers, unusual\
+    \ transaction chains, or known high-risk wallet associations; 'Unknown' indicates\
+    \ insufficient data to properly assess risk, itself often considered a risk indicator\
+    \ due to potential deliberate obfuscation. \u2014 Explains the significance of\
+    \ money laundering risk classification\n[/kb=8]"
+  label: cybermarket|riskanalysis|moneyrisk
+  hidden: false
+  meta:
+    kb_id: 8
+- name: linkedtxcount
+  sql: linkedtxcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: txchainlen
+  sql: txchainlen
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: wallrisksc
+  sql: wallrisksc
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: wallage
+  sql: wallage
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: wallbalusd
+  sql: wallbalusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: wallturnrt
+  sql: wallturnrt
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: txvel
+  sql: txvel
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: profilecomplete
+  sql: profilecomplete
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: idverifyscore
+  sql: idverifyscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: feedbackauthscore
+  sql: feedbackauthscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: commref
+  sql: commref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: txref
+  sql: txref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: network_behavior_analytics
+  sql: network_behavior_analytics
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: wri
+  sql: (fraudprob * 100) + (wallrisksc * 0.5) - (wallage * 1.0 / 30) + (wallturnrt
+    * 10) + (txvel * 1.0 / 10)
+  type: DOUBLE
+  primary_key: false
+  description: "Wallet Risk Index (WRI): 100*fraudprob + 0.5*wallrisksc - wallage/30\
+    \ + 10*wallturnrt + txvel/10. Higher = more suspicious wallet activity.\n\n[kb=14]\n\
+    WRI = (fraudprob \\times 100) + (wallrisksc \\times 0.5) - \\frac{wallage}{30}\
+    \ + (wallturnrt \\times 10) + \\frac{txvel}{10}, \\text{where higher scores indicate\
+    \ potentially suspicious wallet activity.} \u2014 Assesses the risk level of cryptocurrency\
+    \ wallets\n[/kb=14]"
+  label: Wallet Risk Index (WRI)
+  hidden: false
+  meta:
+    kb_id: 14
+- name: tcr
+  sql: (txchainlen * 10) + (linkedtxcount * 5) + (fraudprob * 100) - (profilecomplete
+    * 0.5) - (idverifyscore * 0.5)
+  type: DOUBLE
+  primary_key: false
+  description: "Transaction Chain Risk (TCR): 10*txchainlen + 5*linkedtxcount + 100*fraudprob\
+    \ - 0.5*profilecomplete - 0.5*idverifyscore. Higher = higher-risk transaction\
+    \ chain.\n\n[kb=16]\nTCR = (txchainlen \\times 10) + (linkedtxcount \\times 5)\
+    \ + (fraudprob \\times 100) - (profilecomplete \\times 0.5) - (idverifyscore \\\
+    times 0.5), \\text{where higher scores indicate higher risk transaction chains.}\
+    \ \u2014 Evaluates the risk level of a transaction chain\n[/kb=16]"
+  label: Transaction Chain Risk (TCR)
+  hidden: false
+  meta:
+    kb_id: 16
+- name: moneyrisk_numeric
+  sql: CASE moneyrisk WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 WHEN
+    'Unknown' THEN 2 ELSE 2 END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric mapping of moneyrisk used by MFC: Low=1, Medium=2, High=3,\
+    \ Unknown=2.\n\n[kb=8]\n'Low' indicates minimal risk patterns with transparent\
+    \ transaction flows and consistent monetary behavior; 'Medium' suggests some unusual\
+    \ patterns warranting monitoring but insufficient evidence for immediate action;\
+    \ 'High' represents significant red flags such as rapid fund transfers, unusual\
+    \ transaction chains, or known high-risk wallet associations; 'Unknown' indicates\
+    \ insufficient data to properly assess risk, itself often considered a risk indicator\
+    \ due to potential deliberate obfuscation. \u2014 Explains the significance of\
+    \ money laundering risk classification\n[/kb=8]"
+  label: cybermarket|riskanalysis|moneyrisk
+  hidden: false
+  meta:
+    kb_id: 8
+- name: mfc
+  sql: (txchainlen * 5) + (linkedtxcount * 3) + ((CASE moneyrisk WHEN 'Low' THEN 1
+    WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 WHEN 'Unknown' THEN 2 ELSE 2 END) * 15)
+    + (((txchainlen * 10) + (linkedtxcount * 5) + (fraudprob * 100) - (profilecomplete
+    * 0.5) - (idverifyscore * 0.5)) * 0.2) - (profilecomplete * 10)
+  type: DOUBLE
+  primary_key: false
+  description: "Money Flow Complexity (MFC): 5*txchainlen + 3*linkedtxcount + 15*moneyrisk_numeric\
+    \ + 0.2*TCR - 10*profilecomplete. Higher = more complex money flows.\n\n[kb=39]\n\
+    MFC = (txchainlen \\times 5) + (linkedtxcount \\times 3) + (moneyrisk_numeric\
+    \ \\times 15) + (TCR \\times 0.2) - (profilecomplete \\times 10), \\text{where\
+    \ moneyrisk_numeric maps Low=1, Medium=2, High=3, Unknown=2 according to the money\
+    \ laundering risk classification, and higher scores indicate more complex money\
+    \ flows.} \u2014 Quantifies the complexity of money flows in transaction chains\n\
+    [/kb=39]"
+  label: Money Flow Complexity (MFC)
+  hidden: false
+  meta:
+    kb_id: 39
+- name: is_money_laundering_indicator
+  sql: ((txchainlen * 10) + (linkedtxcount * 5) + (fraudprob * 100) - (profilecomplete
+    * 0.5) - (idverifyscore * 0.5)) > 150 AND wallage < 30 AND wallturnrt > 5 AND
+    linkedtxcount >= 3
+  type: BOOLEAN
+  primary_key: false
+  description: "Money Laundering Indicator (KB #23): TCR > 150, wallage < 30, wallturnrt\
+    \ > 5, linkedtxcount >= 3.\n\n[kb=23]\nA transaction chain with TCR > 150, involving\
+    \ wallets less than 30 days old (wallage < 30), high turnover rates (wallturnrt\
+    \ > 5), and at least 3 linked transactions (linkedtxcount >= 3). These patterns\
+    \ often indicate attempts to obscure the source or destination of funds. \u2014\
+    \ Identifies transaction patterns consistent with money laundering\n[/kb=23]"
+  label: Money Laundering Indicator
+  hidden: false
+  meta:
+    kb_id: 23
+- name: is_complex_money_laundering_operation
+  sql: ((txchainlen * 5) + (linkedtxcount * 3) + ((CASE moneyrisk WHEN 'Low' THEN
+    1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 WHEN 'Unknown' THEN 2 ELSE 2 END) *
+    15) + (((txchainlen * 10) + (linkedtxcount * 5) + (fraudprob * 100) - (profilecomplete
+    * 0.5) - (idverifyscore * 0.5)) * 0.2) - (profilecomplete * 10)) > 90 AND ((txchainlen
+    * 10) + (linkedtxcount * 5) + (fraudprob * 100) - (profilecomplete * 0.5) - (idverifyscore
+    * 0.5)) > 180 AND moneyrisk = 'High' AND ((txchainlen * 10) + (linkedtxcount *
+    5) + (fraudprob * 100) - (profilecomplete * 0.5) - (idverifyscore * 0.5)) > 150
+    AND wallage < 30 AND wallturnrt > 5 AND linkedtxcount >= 3
+  type: BOOLEAN
+  primary_key: false
+  description: "Complex Money Laundering Operation (KB #49): MFC > 90, displays Money\
+    \ Laundering Indicator (KB #23), TCR > 180, moneyrisk = 'High'.\n\n[kb=49]\nA\
+    \ transaction network with MFC > 90, displaying Money Laundering Indicator characteristics,\
+    \ high TCR scores (TCR > 180), and 'High' money laundering risk classification\
+    \ as defined in the money laundering risk system. These operations represent the\
+    \ most sophisticated financial obfuscation attempts requiring specialized financial\
+    \ investigation approaches. \u2014 Identifies sophisticated financial obfuscation\
+    \ schemes\n[/kb=49]"
+  label: Complex Money Laundering Operation
+  hidden: false
+  meta:
+    kb_id: 49
+- name: is_sophisticated_opsec_entity
+  sql: ((((CASE communication.vpnflag WHEN 'Yes' THEN 1 WHEN 'Suspected' THEN 0.5
+    WHEN 'No' THEN 0 ELSE 0 END) * 30) + (communication.tornodecount * 2) + ((CASE
+    communication.encryptmethod WHEN 'Standard' THEN 1 WHEN 'Enhanced' THEN 2 WHEN
+    'Custom' THEN 3 ELSE 0 END) * 15) + (communication.connpatscore * 0.2) + (communication.brwsrunique
+    * 1.0 / 20)) > 120) AND communication.langpattern = 'Variable' AND communication.msgtally
+    < 10 AND txchainlen > 5
+  type: BOOLEAN
+  primary_key: false
+  description: "Sophisticated Operational Security (KB #28): APL > 120, langpattern='Variable',\
+    \ msgtally < 10, txchainlen > 5. APL is inlined since cross-model refs must be\
+    \ raw column refs. Encoded on riskanalysis (it FK-joins to communication via commref\
+    \ and carries txchainlen).\n\n[kb=28]\nAn entity demonstrating APL > 120, consistently\
+    \ using variable language patterns (langpattern = 'Variable'), maintaining minimal\
+    \ communication (msgtally < 10), and employing multiple transaction chains (txchainlen\
+    \ > 5). These patterns indicate professional-level operational security possibly\
+    \ linking to organized criminal activity. \u2014 Identifies entities employing\
+    \ advanced security practices\n[/kb=28]"
+  label: Sophisticated Operational Security
+  hidden: false
+  meta:
+    kb_id: 28
+measures: []
+aggregations: []
+joins:
+- target_model: communication
+  join_pairs:
+  - - commref
+    - commregistry
+  join_type: left
+- target_model: transactions
+  join_pairs:
+  - - txref
+    - txregistry
+  join_type: left
+filters: []
+description: Risk-analysis records, each tied to a transaction (txref) and the originating
+  communication (commref). Carries fraud probability, money-laundering risk classification,
+  transaction-chain shape, wallet attributes (age, balance, turnover), and identity
+  / profile completeness.
+hidden: false

@@ -1,0 +1,588 @@
+version: 6
+name: core
+sql_table: core
+query_variables: {}
+data_source: hulushows
+columns:
+- name: content_key
+  sql: content_key
+  type: INT
+  primary_key: true
+  description: "Primary key \u2014 unique id per Hulu content item (show/movie/special)."
+  hidden: false
+  format:
+    type: integer
+- name: canonical_name
+  sql: canonical_name
+  type: TEXT
+  primary_key: false
+  description: Standardized canonical name (slug-style) for cross-platform search/matching.
+  hidden: false
+- name: content_title
+  sql: content_title
+  type: TEXT
+  primary_key: false
+  description: Display title shown in UI.
+  hidden: false
+- name: series_id
+  sql: series_id
+  type: INT
+  primary_key: false
+  description: "Franchise/series identifier \u2014 content sharing the same series_id\
+    \ belongs to the same franchise (KB 13 Franchise Group). NULL = standalone content.\n\
+    \n[kb=13]\nContent entries recognized as part of the same story world or universe\
+    \ are grouped together as a franchise. \u2014 Groups shows by shared franchise.\n\
+    [/kb=13]"
+  label: Franchise Group
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 13
+- name: studiolink
+  sql: studiolink
+  type: INT
+  primary_key: false
+  description: "FK to companies.entity_key \u2014 primary production studio for the\
+    \ content."
+  hidden: false
+  format:
+    type: integer
+  meta: {}
+- name: annotations
+  sql: annotations
+  type: TEXT
+  primary_key: false
+  description: "Free-text annotation/metadata blob; populated when the content has\
+    \ any extra notes (KB 38 ACR uses 'has annotation'). NULL when no annotations.\n\
+    \n[kb=38]\nACR = The share of content items that include extra notes or descriptions.\
+    \ \u2014 Proportion of content items with non-empty annotation fields.\n[/kb=38]"
+  label: Annotated Content Ratio (ACR)
+  hidden: false
+  meta:
+    kb_id: 38
+- name: genreclass
+  sql: genreclass
+  type: TEXT
+  primary_key: false
+  description: "JSONB column with content classification: User_Score (mixed format\
+    \ strings \u2014 KB 1), Content_Type ('show'/'movie'/'special' \u2014 KB 0), Primary_Genre\
+    \ (broad genre \u2014 KB 74), Hierarchical_Genres (delimited multi-genre string\
+    \ using '~' for sub-genre and '|' for alternative \u2014 KB 6)."
+  hidden: false
+  meta: {}
+- name: user_score_raw
+  sql: genreclass ->> '$.User_Score'
+  type: TEXT
+  primary_key: false
+  description: "Raw User_Score string from genreclass JSON. KB 1 documents multiple\
+    \ formats: '4.35', '4.35 \u2605', '$4.35M', '4.35 RTG', etc.\n\n[kb=1]\nExamples\
+    \ include raw numbers like '4.35', symbols like '4.35\u2605', monetized ratings\
+    \ like '$4.35M', and normalized formats like '4.35 RTG'. \u2014 Illustrates different\
+    \ formats used to record user ratings.\n[/kb=1]"
+  label: User Score Formats
+  hidden: false
+  meta:
+    kb_id: 1
+- name: user_score
+  sql: CAST(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(genreclass
+    ->> '$.User_Score', CHAR(9733), ''), '$', ''), 'M', ''), 'RTG', ''), 'bp', ''),
+    ' ', ''), ',', ''), '%', '') AS REAL) / CASE WHEN (genreclass ->> '$.User_Score')
+    LIKE '%bp%' THEN 100.0 ELSE 1.0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Normalized User_Score as REAL \u2014 strips currency/star/RTG/bp suffixes\
+    \ and divides basis points by 100 to align with the 0-5 rating scale. KB 28 (NUS\
+    \ = (score-min)/(max-min)) operates row-wise on this column at query time using\
+    \ min_user_score/max_user_score measures.\n\n[kb=28]\nNUS = \\frac{score - min}{max\
+    \ - min} \u2014 Scales user score to [0,1] range.\n[/kb=28]"
+  label: Normalized User Score
+  hidden: false
+  meta:
+    kb_id: 28
+- name: content_type
+  sql: genreclass ->> '$.Content_Type'
+  type: TEXT
+  primary_key: false
+  description: "Content type label: 'show', 'movie', or 'special' (KB 0).\n\n[kb=0]\n\
+    Includes 'show', 'movie', and 'special' to distinguish the type of content displayed.\
+    \ \u2014 Clarifies the values used to indicate whether a piece of content is a\
+    \ show, movie, or other format.\n[/kb=0]"
+  label: Content Type Labels
+  hidden: false
+  meta:
+    kb_id: 0
+- name: primary_genre
+  sql: genreclass ->> '$.Primary_Genre'
+  type: TEXT
+  primary_key: false
+  description: "Primary high-level genre tag (KB 74).\n\n[kb=74]\nExamples include\
+    \ 'Drama', 'Comedy', 'Documentary', 'Reality', and 'Animation'. These genres can\
+    \ appear in the genre metadata of content records. \u2014 Categorizes shows using\
+    \ common high-level genre tags for filtering.\n[/kb=74]"
+  label: Primary Genre Classification
+  hidden: false
+  meta:
+    kb_id: 74
+- name: hierarchical_genres
+  sql: genreclass ->> '$.Hierarchical_Genres'
+  type: TEXT
+  primary_key: false
+  description: "Delimited hierarchical-genre string using '~' for sub-genre and '|'\
+    \ for alternative branches (KB 6).\n\n[kb=6]\nUses '~' for sub genres and '|'\
+    \ for alternatives. Example: 'Comedy~Sitcom|Teen'. \u2014 Explains how genres\
+    \ are combined and nested.\n[/kb=6]"
+  label: Genre Hierarchy Format
+  hidden: false
+  meta:
+    kb_id: 6
+- name: has_annotation
+  sql: CASE WHEN annotations IS NOT NULL AND TRIM(annotations) <> '' THEN 1 ELSE 0
+    END
+  type: DOUBLE
+  primary_key: false
+  description: "1 when the content has any annotation text, 0 otherwise. Used by KB\
+    \ 38 (ACR).\n\n[kb=38]\nACR = The share of content items that include extra notes\
+    \ or descriptions. \u2014 Proportion of content items with non-empty annotation\
+    \ fields.\n[/kb=38]"
+  label: Annotated Content Ratio (ACR)
+  hidden: false
+  meta:
+    kb_id: 38
+- name: title_length
+  sql: LENGTH(content_title)
+  type: DOUBLE
+  primary_key: false
+  description: "Number of characters in content_title. KB 90 (Average Title Length\
+    \ per Studio) averages this column grouped by studiolink. KB 36 (TER) uses this\
+    \ in content_info.title_to_episode_ratio.\n\n[kb=90]\nWe look at how many characters\
+    \ are in the titles of a studio\u2019s shows, then average those lengths to see\
+    \ what naming style they tend to use. \u2014 This metric measures how long the\
+    \ average show title is for each production studio. It reflects naming trends\
+    \ or stylistic tendencies in studio catalogs.\n[/kb=90]"
+  label: Average Title Length per Studio
+  hidden: false
+  meta:
+    kb_id: 90
+- name: is_movie_by_type
+  sql: LOWER(genreclass ->> '$.Content_Type') = 'movie'
+  type: BOOLEAN
+  primary_key: false
+  description: "TRUE when content_type='movie' (one of the Movie Identifier Format\
+    \ conventions \u2014 KB 5).\n\n[kb=5]\nCan appear as 'TRUE', 'FALSE', 'Y', 'N',\
+    \ 'Movie', 'Series'. These values signal whether content is a movie. \u2014 Describes\
+    \ how movie content is labeled.\n[/kb=5]"
+  label: Movie Identifier Formats
+  hidden: false
+  meta:
+    kb_id: 5
+- name: is_show_by_type
+  sql: LOWER(genreclass ->> '$.Content_Type') = 'show'
+  type: BOOLEAN
+  primary_key: false
+  description: TRUE when content_type='show'.
+  hidden: false
+- name: n_genre_tokens
+  sql: CASE WHEN (genreclass ->> '$.Hierarchical_Genres') IS NULL OR TRIM(genreclass
+    ->> '$.Hierarchical_Genres') = '' THEN 0 ELSE 1 + (LENGTH(genreclass ->> '$.Hierarchical_Genres')
+    - LENGTH(REPLACE(REPLACE(genreclass ->> '$.Hierarchical_Genres', '|', ''), '~',
+    ''))) END
+  type: DOUBLE
+  primary_key: false
+  description: "Total genre tokens in Hierarchical_Genres = 1 + count of '|' or '~'\
+    \ delimiters. Used by KB 50 (GFI) and KB 39 (MGSS).\n\n[kb=39]\nMGSS = Multi-genre\
+    \ spread is measured by the number of ways genres are split or combined in a show.\
+    \ \u2014 Captures how many hierarchical and hybrid genres a show spans.\n[/kb=39]"
+  label: Multi-Genre Spread Score (MGSS)
+  hidden: false
+  meta:
+    kb_id: 39
+- name: n_genre_delimiters
+  sql: (LENGTH(COALESCE(genreclass ->> '$.Hierarchical_Genres', '')) - LENGTH(REPLACE(REPLACE(COALESCE(genreclass
+    ->> '$.Hierarchical_Genres', ''), '|', ''), '~', '')))
+  type: DOUBLE
+  primary_key: false
+  description: "Number of '~' or '|' delimiters in Hierarchical_Genres \u2014 used\
+    \ as the GFI denominator (+1) per KB 50."
+  hidden: false
+- name: genre_fragmentation_index
+  sql: CASE WHEN (genreclass ->> '$.Hierarchical_Genres') IS NULL OR TRIM(genreclass
+    ->> '$.Hierarchical_Genres') = '' THEN NULL ELSE (1.0 + (LENGTH(genreclass ->>
+    '$.Hierarchical_Genres') - LENGTH(REPLACE(REPLACE(genreclass ->> '$.Hierarchical_Genres',
+    '|', ''), '~', '')))) / (1.0 + (LENGTH(genreclass ->> '$.Hierarchical_Genres')
+    - LENGTH(REPLACE(REPLACE(genreclass ->> '$.Hierarchical_Genres', '|', ''), '~',
+    '')))) END
+  type: DOUBLE
+  primary_key: false
+  description: "Genre Fragmentation Index (KB 50): n_genre_tokens / (1 + n_genre_delimiters).\
+    \ Note: tokens = 1 + delimiters by construction so GFI = (1+d)/(1+d) = 1; encoded\
+    \ literally per KB formula.\n\n[kb=50]\nGFI = \\frac{\\text{Number of genre tokens}}{1\
+    \ + \\text{Number of '~' or '|' delimiters}}, using the way genres are split or\
+    \ grouped into subtypes and alternatives \u2014 Quantifies the complexity of genre\
+    \ categorization using delimiter count.\n[/kb=50]"
+  label: Genre Fragmentation Index (GFI)
+  hidden: false
+  meta:
+    kb_id: 50
+- name: is_highly_diversified
+  sql: (LENGTH(COALESCE(genreclass ->> '$.Hierarchical_Genres', '')) - LENGTH(REPLACE(REPLACE(COALESCE(genreclass
+    ->> '$.Hierarchical_Genres', ''), '|', ''), '~', ''))) >= 3
+  type: BOOLEAN
+  primary_key: false
+  description: "TRUE when the show spans many genre branches (KB 44) \u2014 operationalised\
+    \ as \u22653 hierarchical-genre delimiters.\n\n[kb=44]\nIf a show\u2019s genres\
+    \ span many different types and combinations, it\u2019s highly diversified. \u2014\
+    \ Indicates a show that spans multiple genre branches.\n[/kb=44]"
+  label: Highly Diversified Show
+  hidden: false
+  meta:
+    kb_id: 44
+- name: is_fragmented_genre
+  sql: (LENGTH(COALESCE(genreclass ->> '$.Hierarchical_Genres', '')) - LENGTH(REPLACE(REPLACE(COALESCE(genreclass
+    ->> '$.Hierarchical_Genres', ''), '|', ''), '~', ''))) > 4
+  type: BOOLEAN
+  primary_key: false
+  description: "Fragmented Genre Definition (KB 62) \u2014 flagged when the genre\
+    \ hierarchy uses many sub/alt delimiters (>4).\n\n[kb=62]\nShows are considered\
+    \ fragmented if the number of types and subtypes listed for the show is high \u2014\
+    \ Labels shows with complex or ambiguous genre hierarchy.\n[/kb=62]"
+  label: Fragmented Genre Definition
+  hidden: false
+  meta:
+    kb_id: 62
+- name: is_animation_family_genre
+  sql: (genreclass ->> '$.Primary_Genre') IN ('Animation and Cartoons', 'Primetime
+    Animation', 'Teen', 'Comedy', 'Sitcoms') OR (genreclass ->> '$.Hierarchical_Genres')
+    LIKE '%Animation and Cartoons%' OR (genreclass ->> '$.Hierarchical_Genres') LIKE
+    '%Primetime Animation%' OR (genreclass ->> '$.Hierarchical_Genres') LIKE '%Sitcoms%'
+  type: BOOLEAN
+  primary_key: false
+  description: "Animation Families genre membership (KB 46): Primary_Genre or Hierarchical_Genres\
+    \ contains 'Animation and Cartoons', 'Primetime Animation', 'Teen', 'Comedy',\
+    \ or 'Sitcoms'.\n\n[kb=46]\nIncludes 'Animation and Cartoons', 'Primetime Animation',\
+    \ 'Teen', 'Comedy', 'Sitcoms'. \u2014 Defines a group of genre types frequently\
+    \ used for animation-targeted family content.\n[/kb=46]"
+  label: 'Genre Enumeration: Animation Families'
+  hidden: false
+  meta:
+    kb_id: 46
+- name: is_comedy
+  sql: (genreclass ->> '$.Primary_Genre') = 'Comedy' OR (genreclass ->> '$.Hierarchical_Genres')
+    LIKE '%Comedy%'
+  type: BOOLEAN
+  primary_key: false
+  description: Comedy genre membership (used by KB 43 Iconic Comedy Brands).
+  hidden: false
+- name: is_highly_rated
+  sql: CAST(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(genreclass
+    ->> '$.User_Score', CHAR(9733), ''), '$', ''), 'M', ''), 'RTG', ''), 'bp', ''),
+    ' ', ''), ',', ''), '%', '') AS REAL) / CASE WHEN (genreclass ->> '$.User_Score')
+    LIKE '%bp%' THEN 100.0 ELSE 1.0 END > 4.2
+  type: BOOLEAN
+  primary_key: false
+  description: "'Highly rated' shorthand (KB 43) \u2014 user_score > 4.2 (top of KB\
+    \ 78 'High' band)."
+  hidden: false
+- name: comedy_int
+  sql: CASE WHEN (genreclass ->> '$.Primary_Genre') = 'Comedy' OR (genreclass ->>
+    '$.Hierarchical_Genres') LIKE '%Comedy%' THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Integer 0/1 of is_comedy.\n\n[kb=43]\nA studio is considered iconic\
+    \ for comedy if it has created at least three highly-rated comedy shows. \u2014\
+    \ Identifies production companies that created multiple top-rated comedy shows.\n\
+    [/kb=43]"
+  label: Iconic Comedy Brands
+  hidden: false
+  meta:
+    kb_id: 43
+- name: highly_rated_comedy_int
+  sql: CASE WHEN ((genreclass ->> '$.Primary_Genre') = 'Comedy' OR (genreclass ->>
+    '$.Hierarchical_Genres') LIKE '%Comedy%') AND CAST(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(genreclass
+    ->> '$.User_Score', CHAR(9733), ''), '$', ''), 'M', ''), 'RTG', ''), 'bp', ''),
+    ' ', ''), ',', ''), '%', '') AS REAL) > 4.2 THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Integer 0/1 indicator: highly-rated comedy show. Used by KB 43 (group\
+    \ by studiolink, sum, then filter sum >= 3).\n\n[kb=43]\nA studio is considered\
+    \ iconic for comedy if it has created at least three highly-rated comedy shows.\
+    \ \u2014 Identifies production companies that created multiple top-rated comedy\
+    \ shows.\n[/kb=43]"
+  label: Iconic Comedy Brands
+  hidden: false
+  meta:
+    kb_id: 43
+- name: episode_rating_band
+  sql: CASE WHEN CAST(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(genreclass
+    ->> '$.User_Score', CHAR(9733), ''), '$', ''), 'M', ''), 'RTG', ''), 'bp', ''),
+    ' ', ''), ',', ''), '%', '') AS REAL) < 3.5 THEN 'Low' WHEN CAST(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(genreclass
+    ->> '$.User_Score', CHAR(9733), ''), '$', ''), 'M', ''), 'RTG', ''), 'bp', ''),
+    ' ', ''), ',', ''), '%', '') AS REAL) <= 4.2 THEN 'Medium' ELSE 'High' END
+  type: TEXT
+  primary_key: false
+  description: "Episode Rating Band (KB 78): Low (<3.5), Medium (3.5..4.2), High (>4.2).\
+    \ Operationalised on user_score per row.\n\n[kb=78]\nWe calculate the average\
+    \ user rating across all episodes in a show, and sort it into one of three categories:\
+    \ Low (under 3.5), Medium (3.5 to 4.2), or High (above 4.2). \u2014 Groups shows\
+    \ into bands like Low, Medium, and High based on average episode ratings.\n[/kb=78]"
+  label: Episode Rating Band
+  hidden: false
+  meta:
+    kb_id: 78
+- name: user_score_tier
+  sql: CASE WHEN CAST(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(genreclass
+    ->> '$.User_Score', CHAR(9733), ''), '$', ''), 'M', ''), 'RTG', ''), 'bp', ''),
+    ' ', ''), ',', ''), '%', '') AS REAL) >= 4 THEN 'High' WHEN CAST(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(genreclass
+    ->> '$.User_Score', CHAR(9733), ''), '$', ''), 'M', ''), 'RTG', ''), 'bp', ''),
+    ' ', ''), ',', ''), '%', '') AS REAL) >= 2 THEN 'Medium' ELSE 'Low' END
+  type: TEXT
+  primary_key: false
+  description: "Tiered User Score Coverage band (KB 83): High (4..5), Medium (2..4),\
+    \ Low (0..2).\n\n[kb=83]\nEach show gets a user rating, which is then matched\
+    \ to a category: Low (0\u20132), Medium (2\u20134), or High (4\u20135). We count\
+    \ how many shows fall into each of those rating bands. \u2014 Counts how many\
+    \ shows have user scores that fall within predefined standard score tiers\n[/kb=83]"
+  label: TieredUserScoreCoverage
+  hidden: false
+  meta:
+    kb_id: 83
+- name: is_animation_family_int
+  sql: CASE WHEN (genreclass ->> '$.Primary_Genre') IN ('Animation and Cartoons',
+    'Primetime Animation', 'Teen', 'Comedy', 'Sitcoms') OR (genreclass ->> '$.Hierarchical_Genres')
+    LIKE '%Animation and Cartoons%' OR (genreclass ->> '$.Hierarchical_Genres') LIKE
+    '%Primetime Animation%' OR (genreclass ->> '$.Hierarchical_Genres') LIKE '%Sitcoms%'
+    THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: Integer 0/1 form of is_animation_family_genre.
+  hidden: false
+- name: is_high_csi_low_acr_helper
+  sql: CASE WHEN (COALESCE(CAST(content_info.mediacounts ->> '$.content_volumes.Episode_Total'
+    AS INTEGER), 0) + 2 * COALESCE(CAST(content_info.mediacounts ->> '$.content_volumes.Film_Clips'
+    AS INTEGER), 0) + COALESCE(CAST(content_info.mediacounts ->> '$.content_volumes.Feature_Films'
+    AS INTEGER), 0) + COALESCE(CAST(content_info.mediacounts ->> '$.content_volumes.Clips_Total'
+    AS INTEGER), 0)) > 100 AND (CASE WHEN annotations IS NOT NULL AND TRIM(annotations)
+    <> '' THEN 1 ELSE 0 END) = 0 THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Incomplete High-Engagement Title (KB 63): high CSI (>100, derived\
+    \ in joined content_info) AND no annotation (ACR < 0.5). Per-row indicator joining\
+    \ to content_info via the auto-FK.\n\n[kb=63]\nDefined by high Content Size Index\
+    \ and ACR < 0.5. \u2014 Titles with high content volume but missing key annotations.\n\
+    [/kb=63]"
+  label: Incomplete High-Engagement Title
+  hidden: false
+  meta:
+    kb_id: 63
+- name: is_over_fragmented
+  sql: (LENGTH(COALESCE(genreclass ->> '$.Hierarchical_Genres', '')) - LENGTH(REPLACE(REPLACE(COALESCE(genreclass
+    ->> '$.Hierarchical_Genres', ''), '|', ''), '~', ''))) > 6 AND COALESCE(CAST(content_info.mediacounts
+    ->> '$.content_volumes.Clips_Total' AS INTEGER), 0) > COALESCE(CAST(content_info.mediacounts
+    ->> '$.content_volumes.Feature_Films' AS INTEGER), 0)
+  type: BOOLEAN
+  primary_key: false
+  description: "Over-Fragmented Offering (KB 68): >6 nested genre delimiters AND short-form\
+    \ clips > long-form features. KB 71 is a more verbose restatement of the same\
+    \ predicate \u2014 documented as a duplicate in the per-DB notes file.\n\n[kb=68]\n\
+    A show is over-fragmented if the number of short-form genre categories and content\
+    \ types exceeds a given threshold \u2014 Indicates a show spread across too many\
+    \ short-form genres.\n[/kb=68]"
+  label: Over-Fragmented Offering
+  hidden: false
+  meta:
+    kb_id: 68
+- name: is_series_title_uniform_helper
+  sql: canonical_name
+  type: TEXT
+  primary_key: false
+  description: "Helper for Series Title Uniformity Flag (KB 87): per-row canonical_name;\
+    \ the agent computes COUNT(DISTINCT canonical_name)=1 grouped by series_id at\
+    \ query time.\n\n[kb=87]\nIf every title in a series uses the exact same name,\
+    \ it\u2019s marked as 'True'. If they don\u2019t match, it\u2019s marked as 'False'.\
+    \ \u2014 Checks whether all content entries in the same series share the same\
+    \ canonical name.\n[/kb=87]"
+  label: Series Title Uniformity Flag
+  hidden: false
+  meta:
+    kb_id: 87
+measures:
+- formula: user_score:avg
+  name: average_episode_rating
+  label: Average Episode Rating (AER)
+  description: "Average Episode Rating (AER, KB 30): average user_score across content\
+    \ rows. KB phrasing says 'across all episodes of a show'; this dataset has one\
+    \ user_score per content row, so AER reduces to AVG(user_score) over the rows\
+    \ in scope.\n\n[kb=30]\nAER = The average rating across all episodes of a show\
+    \ is calculated by taking all their ratings and finding the mean. \u2014 Calculates\
+    \ the average user score for a show's episodes.\n[/kb=30]"
+  meta:
+    kb_id: 30
+- formula: user_score:avg
+  name: average_user_score
+  description: Mean user score across content rows. Used by KB 30 (AER).
+- formula: user_score:var_samp
+  name: user_score_dispersion
+  label: User Score Dispersion (USD)
+  description: "User Score Dispersion (USD, KB 34): variance of user_score across\
+    \ content rows in scope (e.g. all episodes/items of a show or franchise).\n\n\
+    [kb=34]\nUSD = User score dispersion is the variance in episode ratings for a\
+    \ show. \u2014 Calculates the variance of user scores for a show\u2019s episodes.\n\
+    [/kb=34]"
+  meta:
+    kb_id: 34
+- formula: user_score:stddev_samp
+  name: rating_diversity_score
+  label: Rating Diversity Score (RDS)
+  description: "Rating Diversity Score (RDS, KB 53): stddev of (user) rating across\
+    \ rows; KB says 'stddev(Rating) across all content within a Franchise Group'.\
+    \ Group by series_id when computing per franchise.\n\n[kb=53]\nRDS = stddev(Rating)\
+    \ across all content within a Franchise Group, by checking the different rating\
+    \ categories assigned within the same franchise \u2014 Evaluates the variance\
+    \ of TV ratings within a franchise.\n[/kb=53]"
+  meta:
+    kb_id: 53
+- formula: '*:count'
+  name: title_count
+  description: Count of content rows. Useful for KB 84 (Studio Activity Index) / KB
+    85-89 (counting titles per series or studio).
+- formula: content_key:count_distinct
+  name: studio_catalog_size
+  label: Studio Catalog Size
+  description: "Studio Catalog Size (KB 88): distinct content_keys per studio when\
+    \ grouped by studiolink. Same data underlies KB 84 (SAI) and KB 89 (Title Count\
+    \ per Studio).\n\n[kb=88]\nThis counts how many different shows are linked to\
+    \ each studio, showing how big their catalog is. \u2014 Measures the number of\
+    \ unique titles associated with each studio.\n[/kb=88]"
+  meta:
+    kb_id: 88
+- formula: content_key:count_distinct
+  name: series_size
+  label: Series Size
+  description: "Series Size (KB 86) / Series Entry Count (KB 85): count of distinct\
+    \ content rows tied to a series_id. Group by series_id.\n\n[kb=86]\nThis tells\
+    \ us how many titles are part of a single series, giving a sense of how large\
+    \ or deep a series is. \u2014 Series Size measures how many individual titles\
+    \ (e.g., episodes or entries) are associated with each series identifier in the\
+    \ catalog.\n[/kb=86]"
+  meta:
+    kb_id: 86
+- formula: title_length:avg
+  name: average_title_length
+  label: Average Title Length per Studio
+  description: "Average Title Length per Studio (KB 90): mean number of characters\
+    \ in content_title. Group by studiolink.\n\n[kb=90]\nWe look at how many characters\
+    \ are in the titles of a studio\u2019s shows, then average those lengths to see\
+    \ what naming style they tend to use. \u2014 This metric measures how long the\
+    \ average show title is for each production studio. It reflects naming trends\
+    \ or stylistic tendencies in studio catalogs.\n[/kb=90]"
+  meta:
+    kb_id: 90
+- formula: 1.0 * has_annotation:sum / *:count
+  name: annotated_content_ratio
+  description: 'Annotated Content Ratio (ACR, KB 38): share of content rows with non-empty
+    annotations.'
+- formula: highly_rated_comedy_int:sum
+  name: highly_rated_comedy_count
+  description: "Iconic Comedy Brands helper (KB 43): per-studio count of highly-rated\
+    \ comedy shows. Group by studiolink and filter \u2265 3."
+- formula: content_key:count_distinct
+  name: studio_activity_index
+  label: Studio Activity Index
+  description: "Studio Activity Index (SAI, KB 84): count of distinct titles linked\
+    \ to a studio (group by studiolink).\n\n[kb=84]\nThis measures how many different\
+    \ shows a studio is involved in, giving a sense of how active or prolific each\
+    \ studio is. \u2014 The Studio Activity Index (SAI) measures how active a production\
+    \ studio is by counting how many distinct titles in the table and are linked to\
+    \ each studio via the studio link. This metric helps determine which studios have\
+    \ the largest output footprint in the catalog.\n[/kb=84]"
+  meta:
+    kb_id: 84
+- formula: '*:count'
+  name: title_count_per_studio
+  label: Title Count per Studio
+  description: "Title Count per Studio (KB 89): count of content rows per studio.\
+    \ Same as KB 88 (Studio Catalog Size) when studio_link is the grouping.\n\n[kb=89]\n\
+    We total up how many shows are tied to each studio, to find out which ones have\
+    \ produced the most content. \u2014 This metric reflects how many titles are associated\
+    \ with each production studio, helping identify the studios with the most content\
+    \ in the catalog.\n[/kb=89]"
+  meta:
+    kb_id: 89
+- formula: '*:count'
+  name: series_entry_count
+  label: Series Entry Count
+  description: "Series Entry Count (KB 85): count of content rows per series_id.\n\
+    \n[kb=85]\nFor each series, we count how many unique shows or episodes it includes.\
+    \ This helps show how big or ongoing the series is. \u2014 Counts how many distinct\
+    \ titles are part of each series. Useful for understanding franchise size or continuation.\n\
+    [/kb=85]"
+  meta:
+    kb_id: 85
+- formula: user_score:min
+  name: min_user_score
+  description: Minimum user_score in scope. Used by KB 28 (NUS) as the minimum.
+- formula: user_score:max
+  name: max_user_score
+  description: Maximum user_score in scope. Used by KB 28 (NUS) as the maximum.
+- formula: content_info.episode_total:sum
+  name: franchise_episode_total
+  label: Franchise Engagement Summary
+  description: "Franchise Engagement Summary helper (KB 72): total episode count per\
+    \ franchise. Group by series_id; the agent pairs this with series_entry_count\
+    \ (KB 85) for the full 'number of shows + total episode count' summary.\n\n[kb=72]\n\
+    For each franchise group, compute the number of shows and the total episode count\
+    \ by summing up values across all entries that share the same franchise. \u2014\
+    \ Summarizes engagement statistics across franchises by grouping shows with shared\
+    \ series identifiers.\n[/kb=72]"
+  meta:
+    kb_id: 72
+- formula: content_info.episode_total:sum
+  name: underutilized_franchise_episode_total
+  label: Underutilized Franchise
+  description: "Underutilized Franchise (KB 49) helper: aggregate Media Total / Episode\
+    \ Total per franchise. Group by series_id and filter title_count >= 3 AND franchise_episode_total\
+    \ < 10 (KB references 'Media Total' which here uses content_info.episode_total\
+    \ as the aggregate engagement signal).\n\n[kb=49]\nFranchises with \u2265 3 content\
+    \ items and aggregate Media Total < 10 are underutilized. \u2014 Defines a franchise\
+    \ ID that has multiple content entries but low total media output.\n[/kb=49]"
+  meta:
+    kb_id: 49
+- formula: user_score:max - user_score:min
+  name: franchise_rating_inconsistency
+  label: Rating Inconsistency in Franchise
+  description: "Rating Inconsistency in Franchise (KB 66): the range (max - min) of\
+    \ user ratings within a franchise group. Wide range \u2192 inconsistent. Group\
+    \ by series_id; the agent compares this against a threshold.\n\n[kb=66]\nFranchise\
+    \ Groups where the range of rating types is very wide are labeled inconsistent\
+    \ \u2014 Detects franchises with significant rating inconsistency.\n[/kb=66]"
+  meta:
+    kb_id: 66
+- formula: content_key:count_distinct
+  name: syndicated_franchise_show_count
+  label: Syndicated Franchise Engagement
+  description: "Syndicated Franchise Engagement (KB 73): franchise has \u22653 shows\
+    \ AND is available in \u22653 unique subscription tiers. Use this measure (group\
+    \ by series_id, filter \u22653) along with show_rollups.tier_count_per_show (filter\
+    \ \u22653) to identify qualifying franchises.\n\n[kb=73]\nFranchises that have\
+    \ at least 3 shows and are available in 3 or more unique subscription tiers. \u2014\
+    \ Identifies popular franchises that span across multiple availability tiers.\n\
+    [/kb=73]"
+  meta:
+    kb_id: 73
+aggregations: []
+joins:
+- target_model: companies
+  join_pairs:
+  - - studiolink
+    - entity_key
+  join_type: left
+- target_model: content_info
+  join_pairs:
+  - - content_key
+    - content_key
+  join_type: left
+filters: []
+description: One row per Hulu show / movie / special. Holds the canonical key (`content_key`),
+  display title, free-text annotations, the `genreclass` JSONB blob (User_Score, Content_Type,
+  Primary_Genre, Hierarchical_Genres), and FKs to series and studio.
+hidden: false

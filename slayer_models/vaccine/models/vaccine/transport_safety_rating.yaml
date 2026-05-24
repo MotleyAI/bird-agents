@@ -1,0 +1,112 @@
+version: 6
+name: transport_safety_rating
+source_queries:
+- version: 3
+  name: trs_hqi_per_vehicle
+  source_model: sensordata
+  measures:
+  - formula: trs:avg
+    name: trs
+  - formula: hqi:avg
+    name: hqi
+  dimensions:
+  - name: vehsenseref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: transportinfo
+    joins:
+    - target_model: trs_hqi_per_vehicle
+      join_pairs:
+      - - vehiclereg
+        - vehsenseref
+    columns:
+    - name: tsr
+      type: DOUBLE
+      sql: rcp / 100.0 * (1 - trs_hqi_per_vehicle.trs) * trs_hqi_per_vehicle.hqi
+  dimensions:
+  - name: vehiclereg
+  - name: rcp
+  - name: trs
+    model: trs_hqi_per_vehicle
+  - name: hqi
+    model: trs_hqi_per_vehicle
+  - name: tsr
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"transportinfo.vehiclereg\" AS vehiclereg, \"transportinfo.rcp\"\
+  \ AS rcp, \"transportinfo.trs_hqi_per_vehicle.trs\" AS trs_hqi_per_vehicle__trs,\
+  \ \"transportinfo.trs_hqi_per_vehicle.hqi\" AS trs_hqi_per_vehicle__hqi, \"transportinfo.tsr\"\
+  \ AS tsr FROM (SELECT\n  transportinfo.vehiclereg AS \"transportinfo.vehiclereg\"\
+  ,\n  CAST(transportinfo.distdonekm AS REAL) / NULLIF(transportinfo.distdonekm +\
+  \ transportinfo.distleftkm, 0) * 100 AS \"transportinfo.rcp\",\n  trs_hqi_per_vehicle.trs\
+  \ AS \"transportinfo.trs_hqi_per_vehicle.trs\",\n  trs_hqi_per_vehicle.hqi AS \"\
+  transportinfo.trs_hqi_per_vehicle.hqi\",\n  transportinfo.rcp / 100.0 * (\n    1\
+  \ - trs_hqi_per_vehicle.trs\n  ) * trs_hqi_per_vehicle.hqi AS \"transportinfo.tsr\"\
+  \nFROM transportinfo AS transportinfo\nLEFT JOIN (\n  (\n    SELECT\n      \"sensordata.vehsenseref\"\
+  \ AS vehsenseref,\n      \"sensordata.trs\" AS trs,\n      \"sensordata.hqi\" AS\
+  \ hqi\n    FROM (\n      SELECT\n        sensordata.vehsenseref AS \"sensordata.vehsenseref\"\
+  ,\n        AVG(\n          (\n            (\n              1 - (\n             \
+  \   (\n                  1 - COALESCE(CAST(sensordata.tempdevcount AS REAL) / 100,\
+  \ 0)\n                ) * (\n                  1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n                ) * COALESCE(sensordata.tempstabidx, 1)\n \
+  \             )\n            ) * (\n              1 - COALESCE(container.coolremainpct,\
+  \ 0) / 100\n            )\n          ) * (\n            1 - (\n              (\n\
+  \                1 - COALESCE(CAST(sensordata.handleevents AS REAL) / 100, 0)\n\
+  \              ) * (\n                1 - COALESCE(CAST(sensordata.critevents AS\
+  \ REAL) / 10, 0)\n              )\n            )\n          ) * (\n            1\
+  \ + ABS(sensordata.tempnowc - sensordata.storetempc) / NULLIF(sensordata.temptolc,\
+  \ 0) * sensordata.tempdevcount\n          )\n        ) AS \"sensordata.trs\",\n\
+  \        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.handleevents\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          )\n        ) AS \"sensordata.hqi\"\n      FROM sensordata\
+  \ AS sensordata\n      LEFT JOIN container AS container\n        ON sensordata.containlink\
+  \ = container.containregistry\n      GROUP BY\n        sensordata.vehsenseref\n\
+  \    ) AS _inner\n  )\n) AS trs_hqi_per_vehicle\n  ON transportinfo.vehiclereg =\
+  \ trs_hqi_per_vehicle.vehsenseref) AS _inner"
+data_source: vaccine
+columns:
+- name: vehiclereg
+  sql: vehiclereg
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rcp
+  sql: rcp
+  type: DOUBLE
+  primary_key: false
+  description: 'Route Completion Percentage (RCP). Percentage of route completed:
+    DistDoneKm / (DistDoneKm + DistLeftKm) * 100 (KB #4).'
+  hidden: false
+- name: trs_hqi_per_vehicle__trs
+  sql: trs_hqi_per_vehicle__trs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: trs_hqi_per_vehicle__hqi
+  sql: trs_hqi_per_vehicle__hqi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tsr
+  sql: tsr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Transport Safety Rating (TSR, KB #35). One row per vehicle with TSR\
+  \ = RCP / 100 * (1 - TRS) * HQI, where RCP (KB #4) is on transportinfo and TRS (KB\
+  \ #30) and HQI (KB #8) are averaged over sensordata rows for the vehicle. The Critical\
+  \ Transport Condition classification (KB #40) lives on a sibling model `critical_transport_condition`.\n\
+  \n[kb=35]\nTSR = \\frac{\\text{RCP}}{100} \\times (1 - \\text{TRS}) \\times \\text{HQI}\
+  \ \u2014 Safety rating for transport considering multiple factors.\n[/kb=35]"
+hidden: false
+meta:
+  kb_id: 35

@@ -1,0 +1,1219 @@
+version: 6
+name: funds
+sql_table: funds
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: productnum
+  sql: productnum
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: tickersym
+  sql: tickersym
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: quotemode
+  sql: quotemode
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: geozone
+  sql: geozone
+  type: TEXT
+  primary_key: false
+  description: "Geographic focus (KB 18): raw label such as UNITED_STATES / usa /\
+    \ U.S.A. / International / Pacific/Asia ex-Japan Stk; case + spelling vary.\n\n\
+    [kb=18]\nFunds are categorized by their geographic scope, such as 'UNITED_STATES',\
+    \ 'International', 'Global', 'Pacific/Asia ex-Japan Stk', and 'Emerging Markets'.\
+    \ \u2014 Classification of funds based on their primary geographic area of investment.\n\
+    [/kb=18]"
+  label: Geographic Focus
+  hidden: false
+  meta:
+    kb_id: 18
+- name: shortlabel
+  sql: shortlabel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fulldescription
+  sql: fulldescription
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: currencybase
+  sql: currencybase
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: strategytype
+  sql: strategytype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: capsize
+  sql: capsize
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: parentgroup
+  sql: parentgroup
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: listingvenue
+  sql: listingvenue
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: productclass
+  sql: productclass
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: networth
+  sql: networth
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: yieldrate
+  sql: yieldrate
+  type: INT
+  primary_key: false
+  description: "Annual dividend yield (KB 20). Decimal share of share price; 0.02\
+    \ = 2% yield.\n\n[kb=20]\nRepresents the annual dividend per share as a percentage\
+    \ of the share's price. A value of 0.02 signifies a 2% yield. This is a crucial\
+    \ metric for income-focused investors. \u2014 Illustrates the fund's annual dividend\
+    \ yield.\n[/kb=20]"
+  label: Yield Rate
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 20
+- name: launchdate
+  sql: launchdate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: turnoverratio
+  sql: turnoverratio
+  type: INT
+  primary_key: false
+  description: "Annual portfolio turnover ratio (KB 21). 1.0 = full replacement once\
+    \ a year; <0.3 buy-and-hold; >1.0 active trading.\n\n[kb=21]\nMeasures how frequently\
+    \ assets within a fund are bought and sold. A ratio of 1.0 (100%) means the fund\
+    \ replaces its entire portfolio once per year. A low value (<0.3) suggests a buy-and-hold\
+    \ strategy, while a high value (>1.0) indicates active trading. \u2014 Illustrates\
+    \ the fund's portfolio turnover.\n[/kb=21]"
+  label: Turnover Ratio
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 21
+- name: strategynotes
+  sql: strategynotes
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: expensenet
+  sql: expensenet
+  type: INT
+  primary_key: false
+  description: "Net expense ratio (KB 26): annual fee as fraction of assets; 0.005\
+    \ = 0.5%.\n\n[kb=26]\nThe annual fee charged to investors as a percentage of assets.\
+    \ A value of 0.005 corresponds to a 0.5% annual fee. Lower is generally better,\
+    \ as costs directly reduce returns. \u2014 Illustrates the fund's net annual cost\
+    \ (Expense Ratio).\n[/kb=26]"
+  label: Net Expense Ratio
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 26
+- name: benchmarkexp
+  sql: benchmarkexp
+  type: INT
+  primary_key: false
+  description: Benchmark / category-average expense ratio for comparison.
+  hidden: false
+  format:
+    type: integer
+- name: vol3m
+  sql: vol3m
+  type: INT
+  primary_key: false
+  description: Average daily trading volume over the past 3 months (KB 76).
+  hidden: false
+  format:
+    type: integer
+- name: volrecent
+  sql: volrecent
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: ma50
+  sql: ma50
+  type: INT
+  primary_key: false
+  description: 50-day moving-average price (used by KB 5 momentum).
+  hidden: false
+  format:
+    type: integer
+- name: ma200
+  sql: ma200
+  type: INT
+  primary_key: false
+  description: 200-day moving-average price (used by KB 5 momentum and KB 76 ADVT).
+  hidden: false
+  format:
+    type: integer
+- name: equityweight
+  sql: equityweight
+  type: INT
+  primary_key: false
+  description: "Equity Weight (KB 27): fraction of fund assets in equity (stocks).\
+    \ 0.9 = 90% stocks.\n\n[kb=27]\nThe percentage of the fund's assets invested in\
+    \ equities (stocks). A value of 0.9 indicates that 90% of the fund is invested\
+    \ in stocks, suggesting a growth-oriented strategy. \u2014 Illustrates the fund's\
+    \ allocation to stocks.\n[/kb=27]"
+  label: Equity Weight
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 27
+- name: bondweight
+  sql: bondweight
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: pb_ratio
+  sql: pb_ratio
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: pcf_ratio
+  sql: pcf_ratio
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: pe_ratio
+  sql: pe_ratio
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: ps_ratio
+  sql: ps_ratio
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: avgmaturity
+  sql: avgmaturity
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: duration
+  sql: duration
+  type: INT
+  primary_key: false
+  description: "Bond fund duration (KB 25): years; 1% rate move ~= duration % price\
+    \ move.\n\n[kb=25]\nMeasures how much a bond fund's price is likely to change\
+    \ for every 1% change in interest rates. A duration of 7 years means the fund's\
+    \ price will likely fall by about 7% if interest rates rise by 1%. \u2014 Illustrates\
+    \ a bond fund's interest rate sensitivity (Duration).\n[/kb=25]"
+  label: Duration
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 25
+- name: fundclass
+  sql: fundclass
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fundmetrics
+  sql: fundmetrics
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tradingdata
+  sql: tradingdata
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: allocweights
+  sql: allocweights
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: valuationratios
+  sql: valuationratios
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: relative_expense_ratio
+  sql: expensenet - benchmarkexp
+  type: DOUBLE
+  primary_key: false
+  description: "Relative Expense Ratio (KB 1) = net expense ratio - benchmark expense\
+    \ ratio. Negative = cheaper than benchmark.\n\n[kb=1]\next{Relative Expense} =\
+    \ \text{Fund's net expense ratio} - \text{Benchmark's expense ratio} \u2014 Measures\
+    \ the difference between a fund's net expense ratio and its benchmark's expense\
+    \ ratio.\n[/kb=1]"
+  label: Relative Expense Ratio
+  hidden: false
+  meta:
+    kb_id: 1
+- name: return_on_cost
+  sql: etf_performance.r1y * 1.0 / NULLIF(expensenet, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Return on Cost (KB 2) = fund 1-year return / net expense ratio.\n\n\
+    [kb=2]\nROC = \frac{\text{Fund's 1-year return}}{\text{Net expense ratio}} \u2014\
+    \ Assesses the fund's one-year performance relative to its cost, indicating how\
+    \ much return is generated per unit of expense.\n[/kb=2]"
+  label: Return on Cost (ROC)
+  hidden: false
+  meta:
+    kb_id: 2
+- name: yield_to_expense_ratio
+  sql: yieldrate * 1.0 / NULLIF(expensenet, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Yield-to-Expense Ratio (KB 3) = fund yield / net expense ratio.\n\n\
+    [kb=3]\nYTER = \frac{\text{Fund's yield rate}}{\text{Net expense ratio}} \u2014\
+    \ Evaluates an income-generating fund's efficiency by comparing its dividend yield\
+    \ to its net expense ratio.\n[/kb=3]"
+  label: Yield-to-Expense Ratio (YTER)
+  hidden: false
+  meta:
+    kb_id: 3
+- name: short_term_momentum
+  sql: ma50 - ma200
+  type: DOUBLE
+  primary_key: false
+  description: "Short-Term Momentum Indicator (KB 5) = 50-day MA - 200-day MA.\n\n\
+    [kb=5]\next{Momentum} = \text{50-day moving average} - \text{200-day moving average}\
+    \ \u2014 A technical indicator that signals short-term trend strength by comparing\
+    \ the 50-day and 200-day moving averages.\n[/kb=5]"
+  label: Short-Term Momentum Indicator
+  hidden: false
+  meta:
+    kb_id: 5
+- name: is_total_return_fund
+  sql: equityweight IS NOT NULL AND equityweight > 0 AND yieldrate IS NOT NULL AND
+    yieldrate > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Total Return Fund (KB 9): non-zero equity allocation AND non-zero\
+    \ dividend yield.\n\n[kb=9]\nA fund is classified as a Total Return Fund if it\
+    \ has both a non-zero allocation to stocks and a non-zero dividend yield. \u2014\
+    \ Defines a fund that aims to provide both capital appreciation and income through\
+    \ dividends.\n[/kb=9]"
+  label: Total Return Fund
+  hidden: false
+  meta:
+    kb_id: 9
+- name: is_low_turnover_strategy
+  sql: turnoverratio < 0.30
+  type: BOOLEAN
+  primary_key: false
+  description: "Low-Turnover Strategy (KB 12): turnoverratio < 30%.\n\n[kb=12]\nA\
+    \ fund employs a Low-Turnover Strategy if its annual portfolio turnover is less\
+    \ than 30%. \u2014 An investment strategy characterized by infrequent trading\
+    \ of portfolio holdings, often associated with long-term, passive, or buy-and-hold\
+    \ approaches.\n[/kb=12]"
+  label: Low-Turnover Strategy
+  hidden: false
+  meta:
+    kb_id: 12
+- name: is_efficient_income_generator
+  sql: (yieldrate * 1.0 / NULLIF(expensenet, 0)) > 15
+  type: BOOLEAN
+  primary_key: false
+  description: "Efficient Income Generator (KB 14): YTER > 15.\n\n[kb=14]\nA fund\
+    \ is classified as an Efficient Income Generator if its 'Yield-to-Expense Ratio\
+    \ (YTER)' is greater than 15. \u2014 A fund that provides a high dividend yield\
+    \ relative to its management cost.\n[/kb=14]"
+  label: Efficient Income Generator
+  hidden: false
+  meta:
+    kb_id: 14
+- name: is_golden_cross
+  sql: (ma50 - ma200) > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Golden Cross Signal (KB 17): short-term momentum > 0.\n\n[kb=17]\n\
+    A Golden Cross Signal occurs for a fund when its 'Short-Term Momentum Indicator'\
+    \ is positive, suggesting its short-term average price has crossed above its long-term\
+    \ average price. \u2014 A bullish technical signal indicating potential for a\
+    \ major rally, based on moving average trends.\n[/kb=17]"
+  label: Golden Cross Signal
+  hidden: false
+  meta:
+    kb_id: 17
+- name: is_high_fee_strategic_bet
+  sql: (expensenet - benchmarkexp) > 0 AND (risk_metrics.rsquared3y IS NULL OR risk_metrics.rsquared3y
+    <= 90)
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Fee Strategic Bet (KB 44): positive Relative Expense Ratio AND\
+    \ not a Market-Tracking Fund (R-squared 3Y <= 90).\n\n[kb=44]\nA fund is a High-Fee\
+    \ Strategic Bet if its 'Relative Expense Ratio' is positive and it does not qualify\
+    \ as a 'Market-Tracking Fund'. \u2014 Classifies a fund as an expensive, actively-managed\
+    \ portfolio that deviates significantly from market benchmarks, representing a\
+    \ pure play on manager skill.\n[/kb=44]"
+  label: High-Fee Strategic Bet
+  hidden: false
+  meta:
+    kb_id: 44
+- name: active_management_footprint
+  sql: (1 - risk_metrics.rsquared3y / 100.0) * 1.0 / NULLIF(turnoverratio, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Active Management Footprint (KB 52) = (1 - R-Squared 3Y) / Turnover\
+    \ Ratio. R-Squared is stored on a 0-100 scale, so divided by 100 to get 0-1 fraction.\n\
+    \n[kb=52]\nAMF = \frac{1 - \text{3-Year R-Squared}}{\text{Turnover Ratio}} \u2014\
+    \ Quantifies the degree of a fund's active management by measuring its deviation\
+    \ from the benchmark relative to its trading activity.\n[/kb=52]"
+  label: Active Management Footprint
+  hidden: false
+  meta:
+    kb_id: 52
+- name: growth_value_spectrum_score
+  sql: ln(pe_ratio * 1.0 / NULLIF(pb_ratio, 0))
+  type: DOUBLE
+  primary_key: false
+  description: "Growth-Value Spectrum Score (KB 59) = ln(P/E / P/B). Positive = growth\
+    \ tilt, negative = value tilt.\n\n[kb=59]\next{GVS Score} = \\ln(\frac{\text{P/E\
+    \ Ratio}}{\text{P/B Ratio}}) \u2014 A quantitative factor score that places a\
+    \ fund on a spectrum from deep value to high growth based on the interplay of\
+    \ its Price-to-Earnings and Price-to-Book ratios.\n[/kb=59]"
+  label: Growth-Value Spectrum Score
+  hidden: false
+  meta:
+    kb_id: 59
+- name: composite_valuation_score
+  sql: 0.25 * ((1.0 / NULLIF(pe_ratio, 0)) + (1.0 / NULLIF(ps_ratio, 0)) + (1.0 /
+    NULLIF(pb_ratio, 0)) + (1.0 / NULLIF(pcf_ratio, 0)))
+  type: DOUBLE
+  primary_key: false
+  description: "Composite Valuation Score (KB 51) = average of inverted P/E, P/S,\
+    \ P/B, P/CF. Higher = cheaper.\n\n[kb=51]\nCVS = \frac{1}{4} \times (\frac{1}{\t\
+    ext{P/E Ratio}} + \frac{1}{\text{P/S Ratio}} + \frac{1}{\text{P/B Ratio}} + \f\
+    rac{1}{\text{P/CF Ratio}}) \u2014 Calculates a single score representing a fund's\
+    \ valuation attractiveness by averaging the inverted values of its key price-to-metric\
+    \ ratios.\n[/kb=51]"
+  label: Composite Valuation Score
+  hidden: false
+  meta:
+    kb_id: 51
+- name: average_daily_value_traded_3m
+  sql: vol3m * ma200
+  type: DOUBLE
+  primary_key: false
+  description: "Average Daily Value Traded over 3 months (KB 76) = Vol_3M * 200-day\
+    \ MA price (KB-prescribed proxy for average share price).\n\n[kb=76]\next{ADVT}{3M}\
+    \ = \text{Average daily volume (3M)} \times \text{Average share price (e.g., 200-day\
+    \ MA)} \u2014 Calculates the average monetary value of a fund's shares traded\
+    \ daily over the last 3 months.\n[/kb=76]"
+  label: Average Daily Value Traded (3M)
+  hidden: false
+  meta:
+    kb_id: 76
+- name: portfolio_liquidity_pressure
+  sql: (networth * turnoverratio) * 1.0 / NULLIF(vol3m * ma200 * 252, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Portfolio Liquidity Pressure (KB 58) = (Net Worth * Turnover Ratio)\
+    \ / (Average Daily Volume (3M) * 252). KB defines ADV in shares; using vol3m *\
+    \ ma200 to compute dollar ADV.\n\n[kb=58]\nPLP = \frac{\text{Net Worth} \times\
+    \ \text{Turnover Ratio}}{\text{Average Daily Volume (3M) } \times 252} \u2014\
+    \ Estimates the potential market impact of a fund's trading activity by comparing\
+    \ its annual turnover to its average daily trading volume.\n[/kb=58]"
+  label: Portfolio Liquidity Pressure
+  hidden: false
+  meta:
+    kb_id: 58
+- name: is_valuation_transparent
+  sql: pe_ratio IS NOT NULL AND pb_ratio IS NOT NULL
+  type: BOOLEAN
+  primary_key: false
+  description: "Valuation Data Availability (KB 84): TRUE = Transparent (P/E and P/B\
+    \ both populated), FALSE = Opaque.\n\n[kb=84]\nA fund is classified as 'Transparent'\
+    \ if it provides numeric values for both its P/E and P/B ratios; otherwise, it\
+    \ is 'Opaque'. \u2014 A classification that categorizes funds based on whether\
+    \ they disclose key valuation metrics.\n[/kb=84]"
+  label: Valuation Data Availability
+  hidden: false
+  meta:
+    kb_id: 84
+- name: information_ratio_simplified
+  sql: (etf_performance.r3y - etf_performance.benchr3y) * 1.0 / NULLIF(risk_metrics.volatility3y,
+    0)
+  type: DOUBLE
+  primary_key: false
+  description: "Information Ratio Simplified (KB 6) = (3Y fund return - 3Y benchmark\
+    \ return) / 3Y volatility.\n\n[kb=6]\nIR = \frac{\text{Fund's 3-year average return}\
+    \ - \text{Benchmark's 3-year average return}}{\text{Fund's 3-year volatility}}\
+    \ \u2014 Measures a fund's risk-adjusted excess return over its benchmark, using\
+    \ volatility as the measure of risk.\n[/kb=6]"
+  label: Information Ratio (Simplified)
+  hidden: false
+  meta:
+    kb_id: 6
+- name: performance_cost_efficiency_score
+  sql: (SELECT AVG(ar.fundperf - ar.categoryperf) FROM annual_returns ar WHERE ar.portfolioref
+    = funds.tickersym) * 1.0 / NULLIF(expensenet - benchmarkexp, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "PCES (KB 30) = Annual Fund Outperformance / Relative Expense Ratio.\
+    \ Numerator uses average annual outperformance across all years for the fund.\n\
+    \n[kb=30]\next{PCES} = \frac{\text{Annual Fund Outperformance}}{\text{Relative\
+    \ Expense Ratio}} \u2014 Calculates a fund's efficiency by measuring its annual\
+    \ outperformance relative to its cost compared to peers.\n[/kb=30]"
+  label: Performance-Cost Efficiency Score
+  hidden: false
+  meta:
+    kb_id: 30
+- name: momentum_weighted_price_strength
+  sql: (etf_performance.lowdelta * 100.0 / NULLIF(etf_performance.high52w - etf_performance.low52w,
+    0)) * (1 + (ma50 - ma200) * 1.0 / NULLIF(ma200, 0))
+  type: DOUBLE
+  primary_key: false
+  description: "Momentum-Weighted Price Strength (KB 31) = Price Position * (1 + Momentum/MA200).\n\
+    \n[kb=31]\next{MWPS} = \text{Price Position} \times (1 + \frac{\text{Momentum}}{\t\
+    ext{200-Day Moving Average}}) \u2014 A composite technical indicator that scores\
+    \ a fund based on its current price position, giving more weight to funds with\
+    \ stronger upward momentum.\n[/kb=31]"
+  label: Momentum-Weighted Price Strength
+  hidden: false
+  meta:
+    kb_id: 31
+- name: consistency_adjusted_information_ratio
+  sql: ((etf_performance.r3y - etf_performance.benchr3y) * 1.0 / NULLIF(risk_metrics.volatility3y,
+    0)) * ((etf_performance.positiveyears * 1.0 / NULLIF(etf_performance.positiveyears
+    + etf_performance.negativeyears, 0)))
+  type: DOUBLE
+  primary_key: false
+  description: "Consistency-Adjusted Information Ratio (KB 32) = Information Ratio\
+    \ * (Positive Return Consistency / 100).\n\n[kb=32]\next{CAIR} = \text{Information\
+    \ Ratio} \times \frac{\text{Positive Return Consistency}}{100} \u2014 Refines\
+    \ the Information Ratio by factoring in the historical consistency of a fund's\
+    \ positive returns.\n[/kb=32]"
+  label: Consistency-Adjusted Information Ratio
+  hidden: false
+  meta:
+    kb_id: 32
+- name: active_manager_value
+  sql: ((etf_performance.r3y - etf_performance.benchr3y) * 1.0 / NULLIF(risk_metrics.volatility3y,
+    0)) - (expensenet - benchmarkexp) * 10
+  type: DOUBLE
+  primary_key: false
+  description: "Active Manager Value (KB 34) = Information Ratio - (Relative Expense\
+    \ Ratio * 10).\n\n[kb=34]\next{AMV} = \text{Information Ratio} - (\text{Relative\
+    \ Expense Ratio} \times 10) \u2014 Quantifies the net value an active manager\
+    \ provides by subtracting the fund's relative cost from its demonstrated ability\
+    \ to generate risk-adjusted excess returns.\n[/kb=34]"
+  label: Active Manager Value
+  hidden: false
+  meta:
+    kb_id: 34
+- name: composite_momentum_strength
+  sql: (ma50 - ma200) * (etf_performance.lowdelta * 100.0 / NULLIF(etf_performance.high52w
+    - etf_performance.low52w, 0))
+  type: DOUBLE
+  primary_key: false
+  description: "Composite Momentum Strength (KB 36) = Short-Term Momentum * Price\
+    \ Position in 52-Week Range.\n\n[kb=36]\next{CMS} = \text{Short-Term Momentum\
+    \ Indicator} \times \text{Price Position in 52-Week Range} \u2014 A score that\
+    \ confirms a bullish technical trend by combining a positive momentum signal with\
+    \ the fund's price strength.\n[/kb=36]"
+  label: Composite Momentum Strength
+  hidden: false
+  meta:
+    kb_id: 36
+- name: net_yield_advantage
+  sql: yieldrate - (expensenet - benchmarkexp)
+  type: DOUBLE
+  primary_key: false
+  description: "Net Yield Advantage (KB 37) = Yield Rate - Relative Expense Ratio.\n\
+    \n[kb=37]\next{NYA} = \text{Yield Rate} - \text{Relative Expense Ratio} \u2014\
+    \ Calculates a fund's final yield advantage or disadvantage after accounting for\
+    \ its cost relative to peers.\n[/kb=37]"
+  label: Net Yield Advantage
+  hidden: false
+  meta:
+    kb_id: 37
+- name: risk_return_efficiency_index
+  sql: (etf_performance.r1y * 1.0 / NULLIF(expensenet, 0)) * 1.0 / NULLIF(risk_metrics.volatility3y,
+    0)
+  type: DOUBLE
+  primary_key: false
+  description: "Risk-Return Efficiency Index (KB 39) = Return on Cost / 3-Year Volatility.\n\
+    \n[kb=39]\next{RREI} = \frac{\text{Return on Cost}}{\text{3-Year Volatility}}\
+    \ \u2014 An index that evaluates how effectively a fund translates risk (volatility)\
+    \ into returns, adjusted for costs.\n[/kb=39]"
+  label: Risk-Return Efficiency Index
+  hidden: false
+  meta:
+    kb_id: 39
+- name: momentum_adjusted_information_ratio
+  sql: ((etf_performance.r3y - etf_performance.benchr3y) * 1.0 / NULLIF(risk_metrics.volatility3y,
+    0)) * (1 + (ma50 - ma200) * 1.0 / NULLIF(ma200, 0))
+  type: DOUBLE
+  primary_key: false
+  description: "Momentum-Adjusted Information Ratio (KB 54) = Information Ratio *\
+    \ (1 + Momentum / 200-Day MA).\n\n[kb=54]\nMAIR = \text{Information Ratio (Simplified)}\
+    \ \times (1 + \frac{\text{Short-Term Momentum Indicator}}{\text{200-Day Moving\
+    \ Average}}) \u2014 A dynamic version of the Information Ratio that is enhanced\
+    \ by the fund's current price momentum, rewarding funds that are outperforming\
+    \ on a risk-adjusted basis and are also in a strong uptrend.\n[/kb=54]"
+  label: Momentum-Adjusted Information Ratio
+  hidden: false
+  meta:
+    kb_id: 54
+- name: is_closet_indexer
+  sql: risk_metrics.rsquared3y > 90 AND (expensenet - benchmarkexp) > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Closet Indexer (KB 60): Market-Tracking Fund AND positive Relative\
+    \ Expense Ratio.\n\n[kb=60]\nA fund is identified as a Closet Indexer if it is\
+    \ a 'Market-Tracking Fund' but has a positive 'Relative Expense Ratio'. \u2014\
+    \ A fund that is marketed as an active fund and charges higher fees, but its portfolio\
+    \ holdings and performance closely track a benchmark index.\n[/kb=60]"
+  label: Closet Indexer
+  hidden: false
+  meta:
+    kb_id: 60
+- name: is_strategic_beta
+  sql: turnoverratio < 0.30 AND (risk_metrics.rsquared3y IS NULL OR risk_metrics.rsquared3y
+    <= 90)
+  type: BOOLEAN
+  primary_key: false
+  description: "Strategic Beta Fund (KB 61): Low-Turnover Strategy AND not a Market-Tracking\
+    \ Fund.\n\n[kb=61]\nA fund is classified as Strategic Beta if it employs a 'Low-Turnover\
+    \ Strategy' but is explicitly not a 'Market-Tracking Fund'. \u2014 An investment\
+    \ fund that occupies the middle ground between passive and active management,\
+    \ using a rules-based system to target specific factors or market segments beyond\
+    \ simple market-cap weighting.\n[/kb=61]"
+  label: Strategic Beta Fund
+  hidden: false
+  meta:
+    kb_id: 61
+- name: wasted_fee_amount
+  sql: CASE WHEN risk_metrics.rsquared3y > 90 AND (expensenet - benchmarkexp) > 0
+    THEN (expensenet - benchmarkexp) * networth ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Wasted Fee Amount (KB 86) = (Net Expense Ratio - Benchmark Expense\
+    \ Ratio) * Net Worth, but only for Closet Indexer funds (per KB definition: 'fees\
+    \ paid by investors in a Closet Indexer fund'). NULL otherwise.\n\n[kb=86]\nWFA\
+    \ = (\text{Net Expense Ratio} - \text{Benchmark Expense Ratio}) \times \text{Net\
+    \ Worth} \u2014 The total dollar amount of fees paid by investors in a Closet\
+    \ Indexer fund that are in excess of the benchmark's expense ratio.\n[/kb=86]"
+  label: Wasted Fee Amount
+  hidden: false
+  meta:
+    kb_id: 86
+- name: is_global_alpha_specialist
+  sql: risk_metrics.alpha5y > 0 AND UPPER(TRIM(geozone)) NOT IN ('UNITED_STATES',
+    'US', 'USA', 'U.S.', 'U.S.A.', 'AMERICA', 'UNITED STATES')
+  type: BOOLEAN
+  primary_key: false
+  description: "Global Alpha Specialist (KB 48): Alpha Generator AND geozone is anything\
+    \ other than 'UNITED_STATES' or 'US' (case/whitespace tolerant; geozone is messy).\n\
+    \n[kb=48]\nA fund is a Global Alpha Specialist if it is an 'Alpha Generator' and\
+    \ its 'Geographic Focus' is anything other than 'UNITED_STATES' or 'US'. \u2014\
+    \ An investment fund that specializes in a non-US market and has demonstrated\
+    \ a skillful ability to outperform its relevant benchmark.\n[/kb=48]"
+  label: Global Alpha Specialist
+  hidden: false
+  meta:
+    kb_id: 48
+- name: is_high_cost_underperformer
+  sql: (expensenet - benchmarkexp) > 0 AND (SELECT (ar.fundperf - ar.categoryperf)
+    FROM annual_returns ar WHERE ar.portfolioref = funds.tickersym AND ar.fundperf
+    IS NOT NULL AND ar.categoryperf IS NOT NULL ORDER BY ar.calendaryear DESC LIMIT
+    1) < 0
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Cost Underperformer (KB 49): positive Relative Expense Ratio\
+    \ AND negative Annual Fund Outperformance for the latest reported year.\n\n[kb=49]\n\
+    A fund is a High-Cost Underperformer if it has a positive 'Relative Expense Ratio'\
+    \ and a negative 'Annual Fund Outperformance'. \u2014 Flags a fund that is both\
+    \ more expensive than its peers and has failed to outperform its category, representing\
+    \ poor value for investors.\n[/kb=49]"
+  label: High-Cost Underperformer
+  hidden: false
+  meta:
+    kb_id: 49
+- name: is_focused_alpha_leader
+  sql: risk_metrics.alpha5y > 0 AND etf_performance.topweight > 0.08
+  type: BOOLEAN
+  primary_key: false
+  description: "Focused Alpha Leader (KB 45): Alpha Generator AND High-Conviction\
+    \ Portfolio.\n\n[kb=45]\nA fund is a Focused Alpha Leader if it is classified\
+    \ as both an 'Alpha Generator' and a 'High-Conviction Portfolio'. \u2014 An actively\
+    \ managed fund that successfully generates excess returns by taking concentrated\
+    \ bets on its best ideas.\n[/kb=45]"
+  label: Focused Alpha Leader
+  hidden: false
+  meta:
+    kb_id: 45
+- name: is_consistent_outperformer
+  sql: risk_metrics.alpha5y > 0 AND (etf_performance.positiveyears * 100.0 / NULLIF(etf_performance.positiveyears
+    + etf_performance.negativeyears, 0)) > 80
+  type: BOOLEAN
+  primary_key: false
+  description: "Consistent Outperformer (KB 15): Alpha Generator AND Positive Return\
+    \ Consistency > 80.\n\n[kb=15]\nA fund is a Consistent Outperformer if it is an\
+    \ 'Alpha Generator' and has a 'Positive Return Consistency' score greater than\
+    \ 80. \u2014 A fund that not only generates alpha but also consistently delivers\
+    \ positive annual returns.\n[/kb=15]"
+  label: Consistent Outperformer
+  hidden: false
+  meta:
+    kb_id: 15
+- name: is_passive_alpha_generator
+  sql: risk_metrics.rsquared3y > 90 AND risk_metrics.alpha5y > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Passive Alpha Generator (KB 16): Market-Tracking Fund AND Alpha Generator.\n\
+    \n[kb=16]\nA fund is a Passive Alpha Generator if it is both a 'Market-Tracking\
+    \ Fund' and an 'Alpha Generator'. \u2014 A rare type of fund that closely tracks\
+    \ a market benchmark but still manages to produce positive alpha.\n[/kb=16]"
+  label: Passive Alpha Generator
+  hidden: false
+  meta:
+    kb_id: 16
+- name: is_elite_active_manager
+  sql: risk_metrics.alpha5y > 0 AND (etf_performance.positiveyears * 100.0 / NULLIF(etf_performance.positiveyears
+    + etf_performance.negativeyears, 0)) > 80 AND etf_performance.topweight > 0.08
+  type: BOOLEAN
+  primary_key: false
+  description: "Elite Active Manager (KB 40): Consistent Outperformer AND High-Conviction\
+    \ Portfolio.\n\n[kb=40]\nA fund is run by an Elite Active Manager if it qualifies\
+    \ as a 'Consistent Outperformer' and maintains a 'High-Conviction Portfolio'.\
+    \ \u2014 Identifies a top-tier fund manager who generates consistent, risk-adjusted\
+    \ outperformance through a high-conviction, concentrated portfolio.\n[/kb=40]"
+  label: Elite Active Manager
+  hidden: false
+  meta:
+    kb_id: 40
+- name: is_ideal_index_fund
+  sql: risk_metrics.rsquared3y > 90 AND turnoverratio < 0.30 AND (expensenet - benchmarkexp)
+    < 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Ideal Index Fund (KB 41): Market-Tracking Fund AND Low-Turnover Strategy\
+    \ AND negative Relative Expense Ratio.\n\n[kb=41]\nA fund is an Ideal Index Fund\
+    \ if it is a 'Market-Tracking Fund', employs a 'Low-Turnover Strategy', and has\
+    \ a negative 'Relative Expense Ratio'. \u2014 Defines a fund that perfectly embodies\
+    \ the principles of passive investing: low cost, low trading, and tight benchmark\
+    \ tracking.\n[/kb=41]"
+  label: Ideal Index Fund
+  hidden: false
+  meta:
+    kb_id: 41
+- name: is_rebound_prospect
+  sql: (SELECT (ar.fundperf - ar.categoryperf) FROM annual_returns ar WHERE ar.portfolioref
+    = funds.tickersym AND ar.fundperf IS NOT NULL AND ar.categoryperf IS NOT NULL
+    ORDER BY ar.calendaryear DESC LIMIT 1) < 0 AND (ma50 - ma200) > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Rebound Prospect (KB 43): negative latest-year Annual Fund Outperformance\
+    \ AND Golden Cross Signal.\n\n[kb=43]\nA fund is a Rebound Prospect if its 'Annual\
+    \ Fund Outperformance' for the last reported year is negative, but it is currently\
+    \ showing a 'Golden Cross Signal'. \u2014 A fund that has recently underperformed\
+    \ but is showing strong technical signs of a potential turnaround in its price\
+    \ trend.\n[/kb=43]"
+  label: Rebound Prospect
+  hidden: false
+  meta:
+    kb_id: 43
+- name: is_speculative_turnaround_play
+  sql: (expensenet - benchmarkexp) > 0 AND (SELECT (ar.fundperf - ar.categoryperf)
+    FROM annual_returns ar WHERE ar.portfolioref = funds.tickersym AND ar.fundperf
+    IS NOT NULL AND ar.categoryperf IS NOT NULL ORDER BY ar.calendaryear DESC LIMIT
+    1) < 0 AND (ma50 - ma200) > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Speculative Turnaround Play (KB 69): High-Cost Underperformer AND\
+    \ Golden Cross Signal.\n\n[kb=69]\nA fund is a Speculative Turnaround Play if\
+    \ it is a 'High-Cost Underperformer' but has recently triggered a 'Golden Cross\
+    \ Signal'. \u2014 A high-risk, high-reward fund that has been performing poorly\
+    \ and is costly, but is showing technical signs of a potential, albeit uncertain,\
+    \ recovery.\n[/kb=69]"
+  label: Speculative Turnaround Play
+  hidden: false
+  meta:
+    kb_id: 69
+- name: cost_adjusted_annual_outperformance_note
+  sql: '''see annual_returns.annual_fund_outperformance + funds.relative_expense_ratio'''
+  type: TEXT
+  primary_key: false
+  description: "Cost-Adjusted Annual Outperformance (KB 8): KB defines this as a qualitative\
+    \ *combination* of 'Annual Fund Outperformance' and 'Relative Expense Ratio' (no\
+    \ formula). At query time, use both metrics together. This stub column carries\
+    \ the KB id for traceability.\n\n[kb=8]\nA fund's performance is adjusted by combining\
+    \ its 'Annual Fund Outperformance' with its 'Relative Expense Ratio'. A higher\
+    \ positive outperformance and a lower (negative) relative expense are desirable.\
+    \ \u2014 Evaluates a fund's performance by considering both its excess return\
+    \ over its category and its cost relative to its benchmark.\n[/kb=8]"
+  label: Cost-Adjusted Annual Outperformance
+  hidden: true
+  meta:
+    kb_id: 8
+- name: holistic_outperformance_metric
+  sql: ((SELECT AVG(ar.fundperf - ar.categoryperf) FROM annual_returns ar WHERE ar.portfolioref
+    = funds.tickersym) + ((SELECT AVG(ar.fundperf - ar.categoryperf) FROM annual_returns
+    ar WHERE ar.portfolioref = funds.tickersym) + (expensenet - benchmarkexp))) /
+    2.0
+  type: DOUBLE
+  primary_key: false
+  description: "Holistic Outperformance Metric (KB 38) = (Annual Fund Outperformance\
+    \ + Cost-Adjusted Annual Outperformance) / 2. KB 8 defines 'cost-adjusted' as\
+    \ Annual Outperformance + Relative Expense Ratio (a qualitative combination);\
+    \ using sum here as the most natural numeric reading.\n\n[kb=38]\next{HOM} = \f\
+    rac{\text{Annual Fund Outperformance} + \text{Cost-Adjusted Annual Outperformance}}{2}\
+    \ \u2014 A comprehensive metric that blends a fund's raw outperformance with its\
+    \ risk-adjusted, cost-adjusted performance.\n[/kb=38]"
+  label: Holistic Outperformance Metric
+  hidden: false
+  meta:
+    kb_id: 38
+- name: high_quality_credit_share
+  sql: (SELECT SUM(CASE WHEN br.creditmark IN ('us_government', 'aaa', 'aa') THEN
+    ba.allocationpct ELSE 0 END) * 1.0 / NULLIF(SUM(ba.allocationpct), 0) FROM bond_allocations
+    ba JOIN bond_ratings br ON ba.ratinglink = br.ratekey WHERE ba.fundlink = funds.tickersym)
+  type: DOUBLE
+  primary_key: false
+  description: Share of fund's bond holdings rated US-government / AAA / AA. Used
+    by KB 19 High-Quality Credit Portfolio.
+  hidden: false
+- name: is_high_quality_credit_portfolio
+  sql: (SELECT SUM(CASE WHEN br.creditmark IN ('us_government', 'aaa', 'aa') THEN
+    ba.allocationpct ELSE 0 END) * 1.0 / NULLIF(SUM(ba.allocationpct), 0) FROM bond_allocations
+    ba JOIN bond_ratings br ON ba.ratinglink = br.ratekey WHERE ba.fundlink = funds.tickersym)
+    > 0.60
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Quality Credit Portfolio (KB 19): >60% of bond holdings are government\
+    \ / AAA / AA.\n\n[kb=19]\nA fund is defined as having a High-Quality Credit Portfolio\
+    \ if the sum of its allocations to government, AAA, and AA rated bonds exceeds\
+    \ 60% of its total bond holdings. \u2014 A bond fund that primarily holds securities\
+    \ with very low credit risk.\n[/kb=19]"
+  label: High-Quality Credit Portfolio
+  hidden: false
+  meta:
+    kb_id: 19
+- name: is_premier_income_fund
+  sql: (yieldrate * 1.0 / NULLIF(expensenet, 0)) > 15 AND (SELECT SUM(CASE WHEN br.creditmark
+    IN ('us_government', 'aaa', 'aa') THEN ba.allocationpct ELSE 0 END) * 1.0 / NULLIF(SUM(ba.allocationpct),
+    0) FROM bond_allocations ba JOIN bond_ratings br ON ba.ratinglink = br.ratekey
+    WHERE ba.fundlink = funds.tickersym) > 0.60
+  type: BOOLEAN
+  primary_key: false
+  description: "Premier Income Fund (KB 42): Efficient Income Generator AND High-Quality\
+    \ Credit Portfolio.\n\n[kb=42]\nA fund is a Premier Income Fund if it is both\
+    \ an 'Efficient Income Generator' and has a 'High-Quality Credit Portfolio'. \u2014\
+    \ Identifies a superior income-focused fund that is not only efficient in generating\
+    \ yield but also prioritizes the safety of its underlying bond holdings.\n[/kb=42]"
+  label: Premier Income Fund
+  hidden: false
+  meta:
+    kb_id: 42
+- name: quality_income_score
+  sql: CASE WHEN (SELECT SUM(CASE WHEN br.creditmark IN ('us_government', 'aaa', 'aa')
+    THEN ba.allocationpct ELSE 0 END) * 1.0 / NULLIF(SUM(ba.allocationpct), 0) FROM
+    bond_allocations ba JOIN bond_ratings br ON ba.ratinglink = br.ratekey WHERE ba.fundlink
+    = funds.tickersym) > 0.60 THEN (yieldrate * 1.0 / NULLIF(expensenet, 0)) ELSE
+    NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Quality-Income Score (KB 35): Yield-to-Expense Ratio if fund qualifies\
+    \ as High-Quality Credit Portfolio, else NULL.\n\n[kb=35]\nThis score is the 'Yield-to-Expense\
+    \ Ratio' for a fund, but only applies if the fund also qualifies as a 'High-Quality\
+    \ Credit Portfolio'. \u2014 A metric that assesses income-generating funds on\
+    \ both the efficiency and the credit quality of their yield.\n[/kb=35]"
+  label: Quality-Income Score
+  hidden: false
+  meta:
+    kb_id: 35
+- name: secure_income_efficiency_score
+  sql: (yieldrate * 1.0 / NULLIF(expensenet, 0)) * (SELECT SUM(CASE WHEN br.creditmark
+    IN ('us_government', 'aaa', 'aa') THEN ba.allocationpct ELSE 0 END) * 1.0 / NULLIF(SUM(ba.allocationpct),
+    0) FROM bond_allocations ba JOIN bond_ratings br ON ba.ratinglink = br.ratekey
+    WHERE ba.fundlink = funds.tickersym)
+  type: DOUBLE
+  primary_key: false
+  description: "Secure Income Efficiency Score (KB 55) = Yield-to-Expense Ratio *\
+    \ Allocation to High-Quality Credit.\n\n[kb=55]\nSIES = \text{Yield-to-Expense\
+    \ Ratio} \times (\text{Allocation to High-Quality Credit}) \u2014 A composite\
+    \ score for income funds that measures yield-generating efficiency while heavily\
+    \ weighting for the credit safety of the underlying assets.\n[/kb=55]"
+  label: Secure Income Efficiency Score
+  hidden: false
+  meta:
+    kb_id: 55
+- name: is_contrarian_value_play
+  sql: (etf_performance.lowdelta * 100.0 / NULLIF(etf_performance.high52w - etf_performance.low52w,
+    0)) < 25 AND turnoverratio < 0.30 AND (expensenet - benchmarkexp) < 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Contrarian Value Play (KB 47): Price Position < 25% AND Low-Turnover\
+    \ Strategy AND negative Relative Expense Ratio.\n\n[kb=47]\nA fund is a Contrarian\
+    \ Value Play if its Price Position in 52-Week Range is below 25%, it follows a\
+    \ Low-Turnover Strategy, and its Relative Expense Ratio is negative. \u2014 A\
+    \ fund that is currently out of favor with the market but is managed with a patient,\
+    \ low-cost, long-term strategy, making it a potential value investment.\n[/kb=47]"
+  label: Contrarian Value Play
+  hidden: false
+  meta:
+    kb_id: 47
+- name: is_efficient_core_holding
+  sql: risk_metrics.rsquared3y > 90 AND turnoverratio < 0.30 AND (expensenet - benchmarkexp)
+    < 0 AND (etf_performance.r1y * 1.0 / NULLIF(expensenet, 0)) > 50
+  type: BOOLEAN
+  primary_key: false
+  description: "Efficient Core Holding (KB 65): Ideal Index Fund AND high Return on\
+    \ Cost. KB doesn't pin 'high'; using ROC > 50 as a heuristic.\n\n[kb=65]\nA fund\
+    \ is an Efficient Core Holding if it qualifies as an 'Ideal Index Fund' and also\
+    \ exhibits a high 'Return on Cost (ROC)'. \u2014 An ideal fund for the core of\
+    \ a portfolio, characterized by extremely low costs, tight benchmark tracking,\
+    \ and proven efficiency in translating assets into returns.\n[/kb=65]"
+  label: Efficient Core Holding
+  hidden: false
+  meta:
+    kb_id: 65
+- name: is_momentum_driven_growth_fund
+  sql: ln(pe_ratio * 1.0 / NULLIF(pb_ratio, 0)) > 0 AND (ma50 - ma200) > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Momentum-Driven Growth Fund (KB 66): GVS > 0 (growth tilt) AND Golden\
+    \ Cross Signal.\n\n[kb=66]\nA fund is a Momentum-Driven Growth Fund if its 'Growth-Value\
+    \ Spectrum Score' indicates a growth tilt and it is also currently signaling a\
+    \ 'Golden Cross Signal'. \u2014 A fund that specifically targets high-growth companies\
+    \ that are also exhibiting strong, positive price momentum in the market.\n[/kb=66]"
+  label: Momentum-Driven Growth Fund
+  hidden: false
+  meta:
+    kb_id: 66
+- name: is_true_active_differentiator
+  sql: ((1 - risk_metrics.rsquared3y / 100.0) * 1.0 / NULLIF(turnoverratio, 0)) >
+    0.5 AND (risk_metrics.alpha3y * 1.0 / NULLIF(risk_metrics.volatility3y * sqrt(1
+    - risk_metrics.rsquared3y / 100.0), 0)) > 0.2 AND etf_performance.topweight >
+    0.08
+  type: BOOLEAN
+  primary_key: false
+  description: "True Active Differentiator (KB 68): AMF > 0.5 AND Appraisal Ratio\
+    \ > 0.2 AND High-Conviction Portfolio.\n\n[kb=68]\nA fund is a True Active Differentiator\
+    \ if it has 'Active Management Footprint' > 0.5, 'Appraisal Ratio' > 0.2, and\
+    \ is also a 'High-Conviction Portfolio'. \u2014 A fund that demonstrates genuine\
+    \ active management through significant deviation from its benchmark, skilled\
+    \ stock selection, and a high-conviction approach.\n[/kb=68]"
+  label: True Active Differentiator
+  hidden: false
+  meta:
+    kb_id: 68
+- name: total_value_score
+  sql: CASE WHEN (etf_performance.r1y * 1.0 / NULLIF(expensenet, 0)) * ((etf_performance.r3y
+    - etf_performance.benchr3y) * 1.0 / NULLIF(risk_metrics.volatility3y, 0)) * (etf_performance.positiveyears
+    * 100.0 / NULLIF(etf_performance.positiveyears + etf_performance.negativeyears,
+    0)) IS NULL THEN NULL ELSE pow(ABS((etf_performance.r1y * 1.0 / NULLIF(expensenet,
+    0)) * ((etf_performance.r3y - etf_performance.benchr3y) * 1.0 / NULLIF(risk_metrics.volatility3y,
+    0)) * (etf_performance.positiveyears * 100.0 / NULLIF(etf_performance.positiveyears
+    + etf_performance.negativeyears, 0))), 1.0/3.0) * CASE WHEN (etf_performance.r1y
+    * 1.0 / NULLIF(expensenet, 0)) * ((etf_performance.r3y - etf_performance.benchr3y)
+    * 1.0 / NULLIF(risk_metrics.volatility3y, 0)) * (etf_performance.positiveyears
+    * 100.0 / NULLIF(etf_performance.positiveyears + etf_performance.negativeyears,
+    0)) < 0 THEN -1 ELSE 1 END END
+  type: DOUBLE
+  primary_key: false
+  description: "Total Value Score (KB 33) = cube_root(Return on Cost * Information\
+    \ Ratio * Positive Return Consistency). Sign-preserving via |x|^(1/3) * sign(x).\n\
+    \n[kb=33]\next{TVS} = \\sqrt[3]{\text{Return on Cost} \times \text{Information\
+    \ Ratio} \times \text{Positive Return Consistency}} \u2014 A holistic performance\
+    \ score combining risk-adjusted returns, cost-efficiency, and historical consistency.\n\
+    [/kb=33]"
+  label: Total Value Score
+  hidden: false
+  meta:
+    kb_id: 33
+- name: is_reliable_core_holding
+  sql: risk_metrics.alpha5y > 0 AND (etf_performance.positiveyears * 100.0 / NULLIF(etf_performance.positiveyears
+    + etf_performance.negativeyears, 0)) > 80 AND equityweight IS NOT NULL AND equityweight
+    > 0 AND yieldrate IS NOT NULL AND yieldrate > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Reliable Core Holding (KB 46): Consistent Outperformer AND Total Return\
+    \ Fund.\n\n[kb=46]\nA fund is a Reliable Core Holding if it is a 'Consistent Outperformer'\
+    \ and is also structured as a 'Total Return Fund'. \u2014 Identifies a fund suitable\
+    \ as a core portfolio holding due to its history of steady returns and its balanced\
+    \ approach to providing both growth and income.\n[/kb=46]"
+  label: Reliable Core Holding
+  hidden: false
+  meta:
+    kb_id: 46
+- name: category_average_duration
+  sql: (SELECT AVG(f2.duration) FROM funds f2 WHERE f2.productclass = funds.productclass
+    AND f2.duration IS NOT NULL)
+  type: DOUBLE
+  primary_key: false
+  description: "Category Average Duration (KB 71): mean of duration across funds in\
+    \ the same productclass.\n\n[kb=71]\n\bar{D}c = \frac{\\sum \text{Fund Durations}}{\t\
+    ext{Total number of funds}} \text{ for a given category.} \u2014 Calculates the\
+    \ average duration for all funds within the same investment category.\n[/kb=71]"
+  label: Category Average Duration
+  hidden: false
+  meta:
+    kb_id: 71
+- name: duration_advantage
+  sql: (SELECT AVG(f2.duration) FROM funds f2 WHERE f2.productclass = funds.productclass
+    AND f2.duration IS NOT NULL) - duration
+  type: DOUBLE
+  primary_key: false
+  description: "Duration Advantage (KB 72) = Category Average Duration - Fund Duration.\
+    \ Positive = lower duration than peers.\n\n[kb=72]\nD{\text{adv}} = \text{Category\
+    \ Average Duration} - \text{Fund's Duration} \u2014 Measures how much lower a\
+    \ fund's duration is compared to its category average.\n[/kb=72]"
+  label: Duration Advantage
+  hidden: false
+  meta:
+    kb_id: 72
+- name: cvs_percentile_rank_in_category
+  sql: PERCENT_RANK() OVER (PARTITION BY productclass ORDER BY 0.25 * (COALESCE(1.0
+    / NULLIF(pe_ratio, 0), 0) + COALESCE(1.0 / NULLIF(ps_ratio, 0), 0) + COALESCE(1.0
+    / NULLIF(pb_ratio, 0), 0) + COALESCE(1.0 / NULLIF(pcf_ratio, 0), 0)))
+  type: DOUBLE
+  primary_key: false
+  description: Percentile rank of Composite Valuation Score within productclass (0=lowest
+    CVS, 1=highest). Used by KB 63 Q-GARP and KB 64 High-Conviction Value Investor.
+  hidden: false
+- name: alpha5y_pctrank_in_category
+  sql: PERCENT_RANK() OVER (PARTITION BY productclass ORDER BY (SELECT alpha5y FROM
+    risk_metrics WHERE risk_metrics.investmentref = funds.tickersym))
+  type: DOUBLE
+  primary_key: false
+  description: Percentile rank of fund's 5Y Alpha within its productclass.
+  hidden: false
+- name: sharpe3y_pctrank_in_category
+  sql: PERCENT_RANK() OVER (PARTITION BY productclass ORDER BY (SELECT sharperatio3y
+    FROM risk_metrics WHERE risk_metrics.investmentref = funds.tickersym))
+  type: DOUBLE
+  primary_key: false
+  description: Percentile rank of fund's 3Y Sharpe within its productclass.
+  hidden: false
+- name: inverse_expense_pctrank_in_category
+  sql: PERCENT_RANK() OVER (PARTITION BY productclass ORDER BY -expensenet)
+  type: DOUBLE
+  primary_key: false
+  description: Percentile rank of fund's inverse net expense (i.e., cheapness) within
+    its productclass.
+  hidden: false
+- name: composite_score
+  sql: (PERCENT_RANK() OVER (PARTITION BY productclass ORDER BY (SELECT alpha5y FROM
+    risk_metrics WHERE risk_metrics.investmentref = funds.tickersym)) + PERCENT_RANK()
+    OVER (PARTITION BY productclass ORDER BY (SELECT sharperatio3y FROM risk_metrics
+    WHERE risk_metrics.investmentref = funds.tickersym)) + PERCENT_RANK() OVER (PARTITION
+    BY productclass ORDER BY -expensenet)) / 3.0
+  type: DOUBLE
+  primary_key: false
+  description: "Composite Score (KB 80) = average percentile rank of (5Y Alpha, 3Y\
+    \ Sharpe, Inverse Net Expense) within productclass.\n\n[kb=80]\next{Score} = \f\
+    rac{\text{Percentile Rank}(\text{5Y Alpha}) + \text{Percentile Rank}(\text{3Y\
+    \ Sharpe}) + \text{Percentile Rank}(\text{Inverse Net Expense})}{3} \u2014 A normalized\
+    \ score that averages a fund's percentile rank across multiple key performance\
+    \ and cost metrics, allowing for peer-group comparison.\n[/kb=80]"
+  label: Composite Score
+  hidden: false
+  meta:
+    kb_id: 80
+- name: is_fallen_angel
+  sql: (SELECT alpha5y FROM risk_metrics WHERE risk_metrics.investmentref = funds.tickersym)
+    > 0 AND ((SELECT positiveyears FROM performance WHERE performance.productref =
+    funds.tickersym) * 100.0 / NULLIF((SELECT positiveyears FROM performance WHERE
+    performance.productref = funds.tickersym) + (SELECT negativeyears FROM performance
+    WHERE performance.productref = funds.tickersym), 0)) > 80 AND (SELECT alpha3y
+    FROM risk_metrics WHERE risk_metrics.investmentref = funds.tickersym) < 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Fallen Angel (KB 62): a fund that was previously a Consistent Outperformer\
+    \ (Alpha Generator AND Positive Return Consistency > 80) but whose most recent\
+    \ 3-year alpha is now negative.\n\n[kb=62]\nA fund is a Fallen Angel if it was\
+    \ previously considered a 'Consistent Outperformer' but its most recent 3-year\
+    \ alpha is now negative. \u2014 A once highly-regarded fund that has seen a significant\
+    \ decline in its performance and ability to generate alpha.\n[/kb=62]"
+  label: Fallen Angel
+  hidden: false
+  meta:
+    kb_id: 62
+- name: is_q_garp
+  sql: (SELECT alpha5y FROM risk_metrics WHERE risk_metrics.investmentref = funds.tickersym)
+    > 0 AND ((SELECT positiveyears FROM performance WHERE performance.productref =
+    funds.tickersym) * 100.0 / NULLIF((SELECT positiveyears FROM performance WHERE
+    performance.productref = funds.tickersym) + (SELECT negativeyears FROM performance
+    WHERE performance.productref = funds.tickersym), 0)) > 80 AND (SELECT cvs_pr FROM
+    (SELECT tickersym AS t, PERCENT_RANK() OVER (PARTITION BY productclass ORDER BY
+    0.25 * (COALESCE(1.0 / NULLIF(pe_ratio, 0), 0) + COALESCE(1.0 / NULLIF(ps_ratio,
+    0), 0) + COALESCE(1.0 / NULLIF(pb_ratio, 0), 0) + COALESCE(1.0 / NULLIF(pcf_ratio,
+    0), 0))) AS cvs_pr FROM funds) sub WHERE sub.t = funds.tickersym) >= 0.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Quality-Growth at a Reasonable Price / Q-GARP (KB 63): Consistent\
+    \ Outperformer (Alpha Generator AND Positive Return Consistency > 80) AND Composite\
+    \ Valuation Score in the top 50th percentile of its category (productclass).\n\
+    \n[kb=63]\nA fund follows a Q-GARP strategy if it is a 'Consistent Outperformer'\
+    \ and has a 'Composite Valuation Score' in the top 50th percentile of its category.\
+    \ \u2014 An investment style that seeks to own high-quality, growing companies\
+    \ without overpaying. These funds blend quality, growth, and value characteristics.\n\
+    [/kb=63]"
+  label: Quality-Growth at a Reasonable Price (Q-GARP)
+  hidden: false
+  meta:
+    kb_id: 63
+- name: is_high_conviction_value_investor
+  sql: (SELECT topweight FROM performance WHERE performance.productref = funds.tickersym)
+    > 0.08 AND (SELECT cvs_pr FROM (SELECT tickersym AS t, PERCENT_RANK() OVER (PARTITION
+    BY productclass ORDER BY 0.25 * (COALESCE(1.0 / NULLIF(pe_ratio, 0), 0) + COALESCE(1.0
+    / NULLIF(ps_ratio, 0), 0) + COALESCE(1.0 / NULLIF(pb_ratio, 0), 0) + COALESCE(1.0
+    / NULLIF(pcf_ratio, 0), 0))) AS cvs_pr FROM funds) sub WHERE sub.t = funds.tickersym)
+    >= 0.75
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Conviction Value Investor (KB 64): High-Conviction Portfolio\
+    \ (largest holding > 8%) AND Composite Valuation Score in the top 25th percentile\
+    \ of its category.\n\n[kb=64]\nA fund is a High-Conviction Value Investor if it\
+    \ is a 'High-Conviction Portfolio' and has a 'Composite Valuation Score' in the\
+    \ top 25th percentile of its category. \u2014 A fund manager who adheres to a\
+    \ strict value discipline, evidenced by attractive valuation metrics, while taking\
+    \ large, concentrated positions in their best ideas.\n[/kb=64]"
+  label: High-Conviction Value Investor
+  hidden: false
+  meta:
+    kb_id: 64
+- name: category_fund_count
+  sql: (SELECT COUNT(*) FROM funds f2 WHERE f2.productclass = funds.productclass)
+  type: DOUBLE
+  primary_key: false
+  description: "Number of funds in the same investment category (productclass). Used\
+    \ by KB 81 Category Dominator (requires category contains at least 10 funds).\n\
+    \n[kb=81]\nThe fund with the highest 'Composite Score' within its investment category,\
+    \ provided the category contains at least 10 funds. \u2014 Identifies the single\
+    \ best-performing fund within an investment category based on a multi-factor composite\
+    \ score.\n[/kb=81]"
+  label: Category Dominator
+  hidden: false
+  meta:
+    kb_id: 81
+- name: is_category_dominator
+  sql: (SELECT COUNT(*) FROM funds f2 WHERE f2.productclass = funds.productclass)
+    >= 10 AND (SELECT cs FROM (SELECT tickersym AS t, (PERCENT_RANK() OVER (PARTITION
+    BY productclass ORDER BY (SELECT alpha5y FROM risk_metrics WHERE risk_metrics.investmentref
+    = funds.tickersym)) + PERCENT_RANK() OVER (PARTITION BY productclass ORDER BY
+    (SELECT sharperatio3y FROM risk_metrics WHERE risk_metrics.investmentref = funds.tickersym))
+    + PERCENT_RANK() OVER (PARTITION BY productclass ORDER BY -expensenet)) / 3.0
+    AS cs FROM funds) sub WHERE sub.t = funds.tickersym) = (SELECT MAX(cs) FROM (SELECT
+    tickersym AS t, productclass AS pc, (PERCENT_RANK() OVER (PARTITION BY productclass
+    ORDER BY (SELECT alpha5y FROM risk_metrics WHERE risk_metrics.investmentref =
+    funds.tickersym)) + PERCENT_RANK() OVER (PARTITION BY productclass ORDER BY (SELECT
+    sharperatio3y FROM risk_metrics WHERE risk_metrics.investmentref = funds.tickersym))
+    + PERCENT_RANK() OVER (PARTITION BY productclass ORDER BY -expensenet)) / 3.0
+    AS cs FROM funds) sub2 WHERE sub2.pc = funds.productclass)
+  type: BOOLEAN
+  primary_key: false
+  description: "Category Dominator (KB 81): the fund with the highest Composite Score\
+    \ within its investment category, provided the category contains at least 10 funds.\n\
+    \n[kb=81]\nThe fund with the highest 'Composite Score' within its investment category,\
+    \ provided the category contains at least 10 funds. \u2014 Identifies the single\
+    \ best-performing fund within an investment category based on a multi-factor composite\
+    \ score.\n[/kb=81]"
+  label: Category Dominator
+  hidden: false
+  meta:
+    kb_id: 81
+- name: alpha3y_for_regression
+  sql: (SELECT alpha3y FROM risk_metrics WHERE risk_metrics.investmentref = funds.tickersym)
+  type: DOUBLE
+  primary_key: false
+  description: 3-Year Alpha pulled inline from risk_metrics, used as the Y variable
+    for the Alpha-Turnover Slope (KB 82) and Fit Quality (KB 83) ModelMeasures. Helper
+    / data carrier; the kb_ids live on the measures that operationalize the regression.
+  hidden: false
+  meta: {}
+measures:
+- formula: alpha3y_for_regression:covar_samp(other=turnoverratio) / turnoverratio:var_samp
+  name: alpha_turnover_slope
+  label: Alpha-Turnover Slope
+  description: "[kb=82]\n\beta_{\\alpha, T} = \text{Slope of regression}(\text{3-Year\
+    \ Alpha}, \text{Turnover Ratio}) \u2014 Calculates the slope of the linear regression\
+    \ line between a fund's alpha (dependent variable, Y) and its turnover ratio (independent\
+    \ variable, X).\n[/kb=82]"
+  meta:
+    kb_id: 82
+- formula: alpha3y_for_regression:corr(other=turnoverratio) * alpha3y_for_regression:corr(other=turnoverratio)
+  name: alpha_turnover_fit_quality
+  label: Fit Quality
+  description: "[kb=83]\nR^2 = \text{R-squared of regression}(\text{3-Year Alpha},\
+    \ \text{Turnover Ratio}) \u2014 Measures how well the turnover ratio explains\
+    \ the variation in alpha in the regression model.\n[/kb=83]"
+  meta:
+    kb_id: 83
+aggregations: []
+joins:
+- target_model: exchanges
+  join_pairs:
+  - - listingvenue
+    - marketcode
+  join_type: left
+- target_model: families
+  join_pairs:
+  - - parentgroup
+    - groupname
+  join_type: left
+- target_model: categories
+  join_pairs:
+  - - productclass
+    - classtype
+  join_type: left
+- target_model: risk_metrics
+  join_pairs:
+  - - tickersym
+    - investmentref
+  join_type: left
+- target_model: etf_performance
+  join_pairs:
+  - - tickersym
+    - productref
+  join_type: left
+filters: []
+description: 'Exchange-traded fund (ETF) reference data: one row per fund (PK=productnum,
+  business key tickersym). Holds basic identification, family/category/exchange relationships,
+  asset-mix metrics (equityweight, bondweight), valuation ratios (pe_ratio, pb_ratio,
+  ps_ratio, pcf_ratio), expense ratios (expensenet, benchmarkexp), yield, turnover,
+  technical price levels (ma50, ma200) and 3-month volume.'
+hidden: false

@@ -1,0 +1,157 @@
+version: 6
+name: telescopes
+sql_table: telescopes
+query_variables: {}
+data_source: alien
+columns:
+- name: telescregistry
+  sql: telescregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: observstation
+  sql: observstation
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: equipstatus
+  sql: equipstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: calibrstatus
+  sql: calibrstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: pointaccarc
+  sql: pointaccarc
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: trackaccarc
+  sql: trackaccarc
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: focusquality
+  sql: focusquality
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: detecttempk
+  sql: detecttempk
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: coolsysstatus
+  sql: coolsysstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: powerstatus
+  sql: powerstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: datastorstatus
+  sql: datastorstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: netstatus
+  sql: netstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: bandusagepct
+  sql: bandusagepct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: procqueuestatus
+  sql: procqueuestatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: oqf
+  sql: (observatories.atmostransparency * (1 - observatories.humidityrate / 100.0)
+    * (1 - 0.02 * observatories.windspeedms)) * (1 - ((1 - observatories.lunardistdeg
+    / 180.0) * (1 - observatories.atmostransparency))) * (CASE WHEN pointaccarc <
+    2 THEN 1 ELSE 2.0 / pointaccarc END)
+  type: DOUBLE
+  primary_key: false
+  description: "Observation Quality Factor (OQF) = AOI * (1 - LIF) * (PointAccArc\
+    \ < 2 ? 1 : 2/PointAccArc). Combines atmospheric AOI (=AtmosTransparency*(1-HumidityRate/100)*(1-0.02*WindSpeedMs)),\
+    \ lunar interference LIF (=(1-LunarDistDeg/180)*(1-AtmosTransparency)), and telescope\
+    \ pointing accuracy. Inlined here because column refs across joins resolve only\
+    \ base columns, not derived observatories columns.\n\n[kb=32]\n$\\text{OQF} =\
+    \ \\text{AOI} \\times (1 - \\text{LIF}) \\times (\\text{PointAccArc} < 2 ? 1 :\
+    \ \\frac{2}{\\text{PointAccArc}})$, where AOI (Atmospheric Observability Index)\
+    \ and LIF (Lunar Interference Factor) are combined with telescope pointing accuracy.\
+    \ \u2014 Provides a comprehensive measure of observational conditions quality.\n\
+    [/kb=32]"
+  label: Observation Quality Factor (OQF)
+  hidden: false
+  meta:
+    kb_id: 32
+- name: ocl
+  sql: CASE WHEN (observatories.atmostransparency * (1 - observatories.humidityrate
+    / 100.0) * (1 - 0.02 * observatories.windspeedms)) > 0.8 AND equipstatus = 'Operational'
+    AND calibrstatus = 'Current' THEN 'High' WHEN (observatories.atmostransparency
+    * (1 - observatories.humidityrate / 100.0) * (1 - 0.02 * observatories.windspeedms))
+    >= 0.5 AND (observatories.atmostransparency * (1 - observatories.humidityrate
+    / 100.0) * (1 - 0.02 * observatories.windspeedms)) <= 0.8 THEN 'Medium' ELSE 'Low'
+    END
+  type: TEXT
+  primary_key: false
+  description: "Observational Confidence Level (OCL) tier: 'High' (AOI>0.8 AND EquipStatus='Operational'\
+    \ AND CalibrStatus='Current'), 'Medium' (AOI in 0.5-0.8 with minor issues), 'Low'\
+    \ (AOI<0.5 or significant equipment problems). AOI inlined as AtmosTransparency*(1-HumidityRate/100)*(1-0.02*WindSpeedMs).\n\
+    \n[kb=16]\nA classification system with three tiers: 'High' ($\\text{AOI} > 0.8$,\
+    \ $\\text{EquipStatus} = \\text{'Operational'}$, $\\text{CalibrStatus} = \\text{'Current'}$),\
+    \ 'Medium' ($\\text{AOI}$ 0.5-0.8, minor equipment issues), and 'Low' ($\\text{AOI}\
+    \ < 0.5$ or significant equipment problems). \u2014 Rates the reliability of observations\
+    \ based on conditions and equipment.\n[/kb=16]"
+  label: Observational Confidence Level (OCL)
+  hidden: false
+  meta:
+    kb_id: 16
+- name: has_equipment_problem
+  sql: CASE WHEN equipstatus <> 'Operational' OR calibrstatus <> 'Current' OR coolsysstatus
+    <> 'Normal' THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Equipment Problems: a telescope has an equipment problem whenever\
+    \ any of its key subsystem states are not in their nominal condition: EquipStatus<>'Operational',\
+    \ CalibrStatus<>'Current', or CoolSysStatus<>'Normal'.\n\n[kb=55]\nA telescope\
+    \ is considered to have an equipment problem whenever **any** of its key subsystem\
+    \ states are not in their nominal condition: \u2022 Equipment status is not \u201C\
+    Operational\u201D; \u2022 Calibration status is not \u201CCurrent\u201D; \u2022\
+    \ Cooling-system status is not \u201CNormal\u201D. \u2014 Defines what counts\
+    \ as an abnormal condition for a telescope\u2019s subsystems.\n[/kb=55]"
+  label: Equipment Problems
+  hidden: false
+  meta:
+    kb_id: 55
+measures: []
+aggregations: []
+joins:
+- target_model: observatories
+  join_pairs:
+  - - observstation
+    - observstation
+  join_type: left
+filters: []
+description: Telescope instruments registered to observatories. Tracks operational
+  state (equipstatus, calibrstatus, coolsysstatus), pointing/tracking accuracy, detector
+  temperature, and data/networking subsystem health.
+hidden: false

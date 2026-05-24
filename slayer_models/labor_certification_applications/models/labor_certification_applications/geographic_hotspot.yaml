@@ -1,0 +1,77 @@
+version: 6
+name: geographic_hotspot
+source_queries:
+- version: 3
+  name: state_apps
+  source_model: case_worksite
+  measures:
+  - formula: '*:count'
+  dimensions:
+  - name: wsstate
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: state_apps
+    columns:
+    - name: national_avg
+      type: DOUBLE
+      sql: AVG(_count) OVER ()
+    - name: is_hotspot
+      type: BOOLEAN
+      sql: _count > AVG(_count) OVER () * 1.5
+  dimensions:
+  - name: wsstate
+  - name: _count
+  - name: national_avg
+  - name: is_hotspot
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"state_apps.wsstate\" AS wsstate, \"state_apps._count\"\
+  \ AS _count, \"state_apps.national_avg\" AS national_avg, \"state_apps.is_hotspot\"\
+  \ AS is_hotspot FROM (SELECT\n  state_apps.wsstate AS \"state_apps.wsstate\",\n\
+  \  state_apps._count AS \"state_apps._count\",\n  AVG(_count) OVER () AS \"state_apps.national_avg\"\
+  ,\n  _count > AVG(_count) OVER () * 1.5 AS \"state_apps.is_hotspot\"\nFROM (\n \
+  \ SELECT\n    \"case_worksite.wsstate\" AS wsstate,\n    \"case_worksite._count\"\
+  \ AS _count\n  FROM (\n    SELECT\n      case_worksite.wsstate AS \"case_worksite.wsstate\"\
+  ,\n      COUNT(*) AS \"case_worksite._count\"\n    FROM case_worksite AS case_worksite\n\
+  \    GROUP BY\n      case_worksite.wsstate\n  ) AS _inner\n) AS state_apps) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: wsstate
+  sql: wsstate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: _count
+  sql: _count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: national_avg
+  sql: national_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_hotspot
+  sql: is_hotspot
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Geographic Application Hotspot per state (KB #44): state where application\
+  \ count > 1.5x national average across states. Per-state rows. NOTE: KB also mentions\
+  \ 'adjusted for population' but no population data is in the schema; this implements\
+  \ the unadjusted variant (matches benchmark task labor_certification_applications_13).\n\
+  \n[kb=44]\nA geographic area (such as a state, metropolitan area, or city) is considered\
+  \ a hotspot if the volume of visa applications is at least 50% higher than the national\
+  \ average when adjusted for population. Location information is included in the\
+  \ worksite data. \u2014 Identifies geographic areas with concentrated visa application\
+  \ activity.\n[/kb=44]"
+hidden: false
+meta:
+  kb_id: 44

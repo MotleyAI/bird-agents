@@ -1,0 +1,4 @@
+version: 1
+name: sports_events
+type: sqlite
+connection_string: sqlite:////home/james/Dropbox/SLayer/mini-interact/sports_events/sports_events.sqlite

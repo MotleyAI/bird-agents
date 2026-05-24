@@ -1,0 +1,4 @@
+version: 1
+name: cross_db
+type: sqlite
+connection_string: sqlite:////home/james/Dropbox/SLayer/mini-interact/cross_db/cross_db.sqlite

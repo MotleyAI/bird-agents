@@ -1,0 +1,73 @@
+version: 6
+name: whale_order
+source_queries:
+- version: 3
+  name: depth_per_pair
+  source_model: marketdata
+  measures:
+  - formula: bidunits:avg
+    name: bidunits_avg
+  - formula: askunits:avg
+    name: askunits_avg
+  dimensions:
+  - name: mktcombo
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: orders
+    joins:
+    - target_model: depth_per_pair
+      join_pairs:
+      - - mktnote
+        - mktcombo
+    columns:
+    - name: is_whale_order
+      type: BOOLEAN
+      sql: dealcount > 0.10 * (CASE WHEN dealedge = 'Buy' THEN depth_per_pair.askunits_avg
+        ELSE depth_per_pair.bidunits_avg END)
+  dimensions:
+  - name: recordvault
+  - name: is_whale_order
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.is_whale_order\"\
+  \ AS is_whale_order FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\"\
+  ,\n  orders.dealcount > 0.10 * (\n    CASE\n      WHEN orders.dealedge = 'Buy'\n\
+  \      THEN depth_per_pair.askunits_avg\n      ELSE depth_per_pair.bidunits_avg\n\
+  \    END\n  ) AS \"orders.is_whale_order\"\nFROM orders AS orders\nLEFT JOIN (\n\
+  \  (\n    SELECT\n      \"marketdata.mktcombo\" AS mktcombo,\n      \"marketdata.bidunits_avg\"\
+  \ AS bidunits_avg,\n      \"marketdata.askunits_avg\" AS askunits_avg\n    FROM\
+  \ (\n      SELECT\n        marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\
+  \ AS \"marketdata.mktcombo\",\n        AVG(marketdata.quote_depth_snapshot ->> '$.depth.bidunits')\
+  \ AS \"marketdata.bidunits_avg\",\n        AVG(marketdata.quote_depth_snapshot ->>\
+  \ '$.depth.askunits') AS \"marketdata.askunits_avg\"\n      FROM marketdata AS marketdata\n\
+  \      GROUP BY\n        marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\n\
+  \    ) AS _inner\n  )\n) AS depth_per_pair\n  ON orders.mktnote = depth_per_pair.mktcombo)\
+  \ AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_whale_order
+  sql: is_whale_order
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Whale Order (KB #10) per order: dealcount > 10% \xD7 (bidunits or askunits\
+  \ at the order's pair). bidunits/askunits are per-pair averages from marketdata\
+  \ grouped by mktcombo, joined to orders via orders.mktnote = mktcombo. The denominator\
+  \ switches on dealedge ('Buy' uses askunits; 'Sell' uses bidunits) \u2014 the side\
+  \ the order would consume liquidity from.\n\n[kb=10]\nAn order where the dealcount\
+  \ exceeds 10% of the available liquidity (bidunits or askunits) at the current best\
+  \ bid or ask price. \u2014 Identifies large orders that could significantly impact\
+  \ market prices.\n[/kb=10]"
+hidden: false
+meta:
+  kb_id: 10

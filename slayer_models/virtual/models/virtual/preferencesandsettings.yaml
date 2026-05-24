@@ -1,0 +1,135 @@
+version: 6
+name: preferencesandsettings
+sql_table: preferencesandsettings
+query_variables: {}
+data_source: virtual
+columns:
+- name: prefreg
+  sql: prefreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: preferencesmemberpivot
+  sql: preferencesmemberpivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: preferencessocialpivot
+  sql: preferencessocialpivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: privset
+  sql: privset
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: dsconsent
+  sql: dsconsent
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: notifpref
+  sql: notifpref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: commpref
+  sql: commpref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: markpref
+  sql: markpref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: langset
+  sql: langset
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: accessset
+  sql: accessset
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: devcount
+  sql: devcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: logfreq
+  sql: logfreq
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lastlogdt
+  sql: lastlogdt
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sesscount
+  sql: sesscount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: timehrs
+  sql: timehrs
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: avgdailymin
+  sql: avgdailymin
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: peaksess
+  sql: peaksess
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: intconsist
+  sql: intconsist
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: platstable
+  sql: platstable
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: connqual
+  sql: connqual
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: membershipandspending
+  join_pairs:
+  - - preferencesmemberpivot
+    - memberreg
+  join_type: left
+- target_model: socialcommunity
+  join_pairs:
+  - - preferencessocialpivot
+    - socialreg
+  join_type: left
+filters: []
+hidden: false

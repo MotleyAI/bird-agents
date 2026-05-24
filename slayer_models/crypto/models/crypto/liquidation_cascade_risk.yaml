@@ -1,0 +1,163 @@
+version: 6
+name: liquidation_cascade_risk
+source_queries:
+- version: 3
+  name: lr_per_pair
+  source_model:
+    source_name: liquidation_risk
+    joins:
+    - target_model: orders
+      join_pairs:
+      - - recordvault
+        - recordvault
+  measures:
+  - formula: is_liquidation_high_risk:sum / *:count
+    name: high_risk_share
+  dimensions:
+  - name: mktnote
+    model: orders
+  whole_periods_only: false
+- version: 3
+  name: obi_per_pair
+  source_model:
+    source_name: marketdata
+    columns:
+    - name: abs_obi_raw
+      type: DOUBLE
+      sql: ABS((CAST(marketdata.quote_depth_snapshot ->> '$.depth.biddepth' AS REAL)
+        - CAST(marketdata.quote_depth_snapshot ->> '$.depth.askdepth' AS REAL)) /
+        NULLIF(CAST(marketdata.quote_depth_snapshot ->> '$.depth.biddepth' AS REAL)
+        + CAST(marketdata.quote_depth_snapshot ->> '$.depth.askdepth' AS REAL), 0))
+  measures:
+  - formula: abs_obi_raw:avg
+    name: abs_obi_avg
+  dimensions:
+  - name: mktcombo
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: lr_per_pair
+    joins:
+    - target_model: obi_per_pair
+      join_pairs:
+      - - orders__mktnote
+        - mktcombo
+    columns:
+    - name: is_liquidation_cascade
+      type: DOUBLE
+      sql: CASE WHEN lr_per_pair.high_risk_share > 0.15 AND obi_per_pair.abs_obi_avg
+        > 0.3 THEN 1 ELSE 0 END
+  dimensions:
+  - name: orders__mktnote
+  - name: high_risk_share
+  - name: abs_obi_avg
+    model: obi_per_pair
+  - name: is_liquidation_cascade
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"lr_per_pair.orders__mktnote\" AS orders__mktnote, \"\
+  lr_per_pair.high_risk_share\" AS high_risk_share, \"lr_per_pair.obi_per_pair.abs_obi_avg\"\
+  \ AS obi_per_pair__abs_obi_avg, \"lr_per_pair.is_liquidation_cascade\" AS is_liquidation_cascade\
+  \ FROM (SELECT\n  lr_per_pair.orders__mktnote AS \"lr_per_pair.orders__mktnote\"\
+  ,\n  lr_per_pair.high_risk_share AS \"lr_per_pair.high_risk_share\",\n  obi_per_pair.abs_obi_avg\
+  \ AS \"lr_per_pair.obi_per_pair.abs_obi_avg\",\n  CASE\n    WHEN lr_per_pair.high_risk_share\
+  \ > 0.15 AND obi_per_pair.abs_obi_avg > 0.3\n    THEN 1\n    ELSE 0\n  END AS \"\
+  lr_per_pair.is_liquidation_cascade\"\nFROM (\n  SELECT\n    \"liquidation_risk.orders.mktnote\"\
+  \ AS orders__mktnote,\n    \"liquidation_risk.is_liquidation_high_risk_sum\" AS\
+  \ is_liquidation_high_risk_sum,\n    \"liquidation_risk._count\" AS _count,\n  \
+  \  \"liquidation_risk.high_risk_share\" AS high_risk_share\n  FROM (\n    WITH base\
+  \ AS (\n      SELECT\n        orders.mktnote AS \"liquidation_risk.orders.mktnote\"\
+  ,\n        SUM(liquidation_risk.is_liquidation_high_risk) AS \"liquidation_risk.is_liquidation_high_risk_sum\"\
+  ,\n        COUNT(*) AS \"liquidation_risk._count\"\n      FROM (\n        SELECT\n\
+  \          \"orders.recordvault\" AS recordvault,\n          \"orders.is_liquidation_high_risk\"\
+  \ AS is_liquidation_high_risk\n        FROM (\n          SELECT\n            orders.recordvault\
+  \ AS \"orders.recordvault\",\n            ABS(\n              midquote_per_pair.marketdata__midquote_avg\
+  \ - (\n                riskandmargin.risk_margin_profile ->> '$.price_levels.liqquote'\n\
+  \              )\n            ) / NULLIF((\n              riskandmargin.risk_margin_profile\
+  \ ->> '$.price_levels.liqquote'\n            ), 0) <= 0.05 AS \"orders.is_liquidation_high_risk\"\
+  \n          FROM orders AS orders\n          LEFT JOIN riskandmargin AS riskandmargin\n\
+  \            ON orders.recordvault = riskandmargin.ordervault\n          LEFT JOIN\
+  \ (\n            (\n              SELECT\n                \"marketstats.marketdata.mktcombo\"\
+  \ AS marketdata__mktcombo,\n                \"marketstats.marketdata.midquote_avg\"\
+  \ AS marketdata__midquote_avg\n              FROM (\n                WITH _base\
+  \ AS (\n                  SELECT\n                    marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo' AS \"marketstats.marketdata.mktcombo\"\n           \
+  \       FROM marketstats AS marketstats\n                  LEFT JOIN marketdata\
+  \ AS marketdata\n                    ON marketstats.mdlink = marketdata.marketdatanode\n\
+  \                  GROUP BY\n                    marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo'\n                ), _cm_marketstats__marketdata__midquote_avg\
+  \ AS (\n                  SELECT\n                    marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo' AS \"marketstats.marketdata.mktcombo\",\n          \
+  \          AVG(marketdata.quote_depth_snapshot ->> '$.quotes.midquote') AS \"marketstats.marketdata.midquote_avg\"\
+  \n                  FROM marketdata AS marketdata\n                  GROUP BY\n\
+  \                    marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\n\
+  \                )\n                SELECT\n                  _base.\"marketstats.marketdata.mktcombo\"\
+  ,\n                  _cm_marketstats__marketdata__midquote_avg.\"marketstats.marketdata.midquote_avg\"\
+  \n                FROM _base\n                LEFT JOIN _cm_marketstats__marketdata__midquote_avg\n\
+  \                  ON _base.\"marketstats.marketdata.mktcombo\" = _cm_marketstats__marketdata__midquote_avg.\"\
+  marketstats.marketdata.mktcombo\"\n              ) AS _inner\n            )\n  \
+  \        ) AS midquote_per_pair\n            ON orders.mktnote = midquote_per_pair.marketdata__mktcombo\n\
+  \        ) AS _inner\n      ) AS liquidation_risk\n      LEFT JOIN orders AS orders\n\
+  \        ON liquidation_risk.recordvault = orders.recordvault\n      GROUP BY\n\
+  \        orders.mktnote\n    ), step1 AS (\n      SELECT\n        \"liquidation_risk._count\"\
+  ,\n        \"liquidation_risk.is_liquidation_high_risk_sum\",\n        \"liquidation_risk.orders.mktnote\"\
+  ,\n        \"liquidation_risk.is_liquidation_high_risk_sum\" / \"liquidation_risk._count\"\
+  \ AS \"liquidation_risk.high_risk_share\"\n      FROM base\n    )\n    SELECT\n\
+  \      \"liquidation_risk._count\",\n      \"liquidation_risk.high_risk_share\"\
+  ,\n      \"liquidation_risk.is_liquidation_high_risk_sum\",\n      \"liquidation_risk.orders.mktnote\"\
+  \n    FROM step1\n  ) AS _inner\n) AS lr_per_pair\nLEFT JOIN (\n  (\n    SELECT\n\
+  \      \"marketdata.mktcombo\" AS mktcombo,\n      \"marketdata.abs_obi_avg\" AS\
+  \ abs_obi_avg\n    FROM (\n      SELECT\n        marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo' AS \"marketdata.mktcombo\",\n        AVG(\n        \
+  \  ABS(\n            (\n              CAST(marketdata.quote_depth_snapshot ->> '$.depth.biddepth'\
+  \ AS REAL) - CAST(marketdata.quote_depth_snapshot ->> '$.depth.askdepth' AS REAL)\n\
+  \            ) / NULLIF(\n              CAST(marketdata.quote_depth_snapshot ->>\
+  \ '$.depth.biddepth' AS REAL) + CAST(marketdata.quote_depth_snapshot ->> '$.depth.askdepth'\
+  \ AS REAL),\n              0\n            )\n          )\n        ) AS \"marketdata.abs_obi_avg\"\
+  \n      FROM marketdata AS marketdata\n      GROUP BY\n        marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo'\n    ) AS _inner\n  )\n) AS obi_per_pair\n  ON lr_per_pair.orders__mktnote\
+  \ = obi_per_pair.mktcombo) AS _inner"
+data_source: crypto
+columns:
+- name: orders__mktnote
+  sql: orders__mktnote
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: high_risk_share
+  sql: high_risk_share
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: obi_per_pair__abs_obi_avg
+  sql: obi_per_pair__abs_obi_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: is_liquidation_cascade
+  sql: is_liquidation_cascade
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Liquidation Cascade Risk (KB #47) per-pair: more than 15% of open positions\
+  \ classified as Liquidation Risk 'High Risk' (KB #11) AND the absolute Order Book\
+  \ Imbalance Ratio (KB #32) > 0.3. Stage 1 computes per-pair high_risk_share = sum(is_liquidation_high_risk)\
+  \ / count(*) over orders (joined to liquidation_risk by recordvault, then to orders\
+  \ for mktnote). Stage 2 computes per-pair avg |OBI| from marketdata using a column-extension\
+  \ `abs_obi` = ABS((biddepth \u2212 askdepth) / (biddepth + askdepth)). Stage 3 joins\
+  \ them and emits is_liquidation_cascade.\n\n[kb=47]\nMarket conditions where more\
+  \ than 15% of open positions are classified as Liquidation Risk Level 'High Risk'\
+  \ and the Order Book Imbalance Ratio exceeds 0.3 in absolute value, indicating concentrated\
+  \ risk and imbalanced liquidity. \u2014 Identifies market conditions prone to cascading\
+  \ liquidations.\n[/kb=47]"
+hidden: false
+meta:
+  kb_id: 47

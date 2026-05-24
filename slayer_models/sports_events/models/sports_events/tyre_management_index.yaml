@@ -1,0 +1,103 @@
+version: 6
+name: tyre_management_index
+source_queries:
+- version: 3
+  name: ltc_with_stops
+  source_model:
+    source_name: lap_times
+    columns:
+    - name: n_stops_for_lap
+      type: DOUBLE
+      sql: (SELECT COUNT(*) FROM pit_stops p WHERE p.matchidx = lap_times.rc_index
+        AND p.wunit = lap_times.wheel_unit)
+      description: Number of pit stops the driver made in this race (correlated subquery).
+  measures:
+  - formula: lap_seconds:stddev_pop
+    name: ltc
+  - formula: n_stops_for_lap:max
+    name: n_stops
+  dimensions:
+  - name: rc_index
+  - name: wheel_unit
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: ltc_with_stops
+    columns:
+    - name: tmi
+      type: DOUBLE
+      sql: 1.0 / NULLIF(ltc * (1 + COALESCE(n_stops, 0)), 0)
+      description: "Tyre Management Index (KB #39): 1 / (LTC \xD7 (1 + N_stops))."
+  dimensions:
+  - name: rc_index
+  - name: wheel_unit
+  - name: ltc
+  - name: n_stops
+  - name: tmi
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"ltc_with_stops.rc_index\" AS rc_index, \"ltc_with_stops.wheel_unit\"\
+  \ AS wheel_unit, \"ltc_with_stops.ltc\" AS ltc, \"ltc_with_stops.n_stops\" AS n_stops,\
+  \ \"ltc_with_stops.tmi\" AS tmi FROM (SELECT\n  ltc_with_stops.rc_index AS \"ltc_with_stops.rc_index\"\
+  ,\n  ltc_with_stops.wheel_unit AS \"ltc_with_stops.wheel_unit\",\n  ltc_with_stops.ltc\
+  \ AS \"ltc_with_stops.ltc\",\n  ltc_with_stops.n_stops AS \"ltc_with_stops.n_stops\"\
+  ,\n  1.0 / NULLIF(ltc * (\n    1 + COALESCE(n_stops, 0)\n  ), 0) AS \"ltc_with_stops.tmi\"\
+  \nFROM (\n  SELECT\n    \"lap_times.rc_index\" AS rc_index,\n    \"lap_times.wheel_unit\"\
+  \ AS wheel_unit,\n    \"lap_times.lap_seconds_stddev_pop\" AS lap_seconds_stddev_pop,\n\
+  \    \"lap_times.n_stops_for_lap_max\" AS n_stops_for_lap_max\n  FROM (\n    SELECT\n\
+  \      lap_times.rc_index AS \"lap_times.rc_index\",\n      lap_times.wheel_unit\
+  \ AS \"lap_times.wheel_unit\",\n      STDDEV_POP(msec_val / 1000.0) AS \"lap_times.lap_seconds_stddev_pop\"\
+  ,\n      MAX(\n        (\n          SELECT\n            COUNT(*)\n          FROM\
+  \ pit_stops AS p\n          WHERE\n            p.matchidx = lap_times.rc_index AND\
+  \ p.wunit = lap_times.wheel_unit\n        )\n      ) AS \"lap_times.n_stops_for_lap_max\"\
+  \n    FROM lap_times AS lap_times\n    GROUP BY\n      lap_times.rc_index,\n   \
+  \   lap_times.wheel_unit\n  ) AS _inner\n) AS ltc_with_stops) AS _inner"
+data_source: sports_events
+columns:
+- name: rc_index
+  sql: rc_index
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to races.
+  hidden: false
+  format:
+    type: integer
+- name: wheel_unit
+  sql: wheel_unit
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to drivers.
+  hidden: false
+  format:
+    type: integer
+- name: ltc
+  sql: ltc
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: n_stops
+  sql: n_stops
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tmi
+  sql: tmi
+  type: DOUBLE
+  primary_key: false
+  description: "Tyre Management Index (KB #39): 1 / (LTC \xD7 (1 + N_stops))."
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Tyre Management Index (KB #39) per (driver, race): TMI = 1 / (Lap Time\
+  \ Consistency \xD7 (1 + N_stops)). Stage 1 aggregates lap_times by (race, driver)\
+  \ with N_stops fetched via correlated subquery on pit_stops; stage 2 computes TMI\
+  \ as a row-level expression. Uses KB #17 / KB #32.\n\n[kb=39]\nTMI = \\frac{1}{\\\
+  text{Lap Time Consistency} \\times (1 + N_{stops})}, \\text{ where a higher value\
+  \ is better. Uses the concept of pit stops from Efficient Pit Stop.} \u2014 Estimates\
+  \ a driver's ability to manage tyre degradation, by comparing their lap time consistency\
+  \ against the number of pit stops made.\n[/kb=39]"
+hidden: false
+meta:
+  kb_id: 39

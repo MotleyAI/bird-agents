@@ -1,0 +1,121 @@
+version: 6
+name: medical_history
+sql_table: medical_history
+query_variables: {}
+data_source: organ_transplant
+columns:
+- name: contrib_med_registry
+  sql: contrib_med_registry
+  type: TEXT
+  primary_key: true
+  description: FK to demographics.contrib_registry.
+  hidden: false
+- name: med_history
+  sql: med_history
+  type: TEXT
+  primary_key: false
+  description: Comma-separated donor medical history (e.g. 'None,Cancer,Heart Disease').
+    'None' tokens mean no condition; NULL means undocumented.
+  hidden: false
+- name: smk_cond
+  sql: smk_cond
+  type: TEXT
+  primary_key: false
+  description: Donor smoking status (e.g. 'Never smoked, optimal lung condition').
+  hidden: false
+- name: alc_cond
+  sql: alc_cond
+  type: TEXT
+  primary_key: false
+  description: Donor alcohol-use status.
+  hidden: false
+- name: drug_cond
+  sql: drug_cond
+  type: TEXT
+  primary_key: false
+  description: Donor drug-use status (e.g. 'Current use, high risk assessment').
+  hidden: false
+- name: viralstatinfo
+  sql: viralstatinfo
+  type: TEXT
+  primary_key: false
+  description: "JSON: {Cmv_State, Ebv_State, Hbv_State, Hcv_State, Hiv_State}. KB\
+    \ Viral Infection Status.\n\n[kb=39]\nTesting for viruses such as Cytomegalovirus\
+    \ (CMV), Epstein-Barr Virus (EBV), and Hepatitis. The Viral Infection Status of\
+    \ both donor and recipient is critical for assessing infection risk and planning\
+    \ post-transplant prophylactic treatment. \u2014 Screening of donors and recipients\
+    \ for key viral infections that can be transmitted or reactivated during transplantation.\n\
+    [/kb=39]"
+  label: Viral Infection Status
+  hidden: false
+  meta:
+    kb_id: 39
+- name: donor_cmv_state
+  sql: json_extract(viralstatinfo, '$.Cmv_State')
+  type: TEXT
+  primary_key: false
+  description: "Donor CMV status (Negative/Positive). KB Viral Infection Status.\n\
+    \n[kb=39]\nTesting for viruses such as Cytomegalovirus (CMV), Epstein-Barr Virus\
+    \ (EBV), and Hepatitis. The Viral Infection Status of both donor and recipient\
+    \ is critical for assessing infection risk and planning post-transplant prophylactic\
+    \ treatment. \u2014 Screening of donors and recipients for key viral infections\
+    \ that can be transmitted or reactivated during transplantation.\n[/kb=39]"
+  label: Viral Infection Status
+  hidden: false
+  meta:
+    kb_id: 39
+- name: donor_ebv_state
+  sql: json_extract(viralstatinfo, '$.Ebv_State')
+  type: TEXT
+  primary_key: false
+  description: Donor EBV status.
+  hidden: false
+- name: donor_hbv_state
+  sql: json_extract(viralstatinfo, '$.Hbv_State')
+  type: TEXT
+  primary_key: false
+  description: Donor HBV status.
+  hidden: false
+- name: donor_hcv_state
+  sql: json_extract(viralstatinfo, '$.Hcv_State')
+  type: TEXT
+  primary_key: false
+  description: Donor HCV status.
+  hidden: false
+- name: donor_hiv_state
+  sql: json_extract(viralstatinfo, '$.Hiv_State')
+  type: TEXT
+  primary_key: false
+  description: Donor HIV status.
+  hidden: false
+- name: is_high_risk_donor
+  sql: CASE WHEN json_extract(viralstatinfo, '$.Hcv_State') = 'Positive' OR json_extract(viralstatinfo,
+    '$.Hiv_State') = 'Positive' OR json_extract(viralstatinfo, '$.Hbv_State') = 'Positive'
+    OR drug_cond LIKE 'Current use%' OR med_history LIKE '%Cancer%' THEN 1 ELSE 0
+    END
+  type: BOOLEAN
+  primary_key: false
+  description: "True when donor has communicable-disease positive status (HBV/HCV/HIV),\
+    \ active high-risk drug use, or malignancy history (KB High-Risk Donor).\n\n[kb=27]\n\
+    A donor category defined by criteria such as a history of communicable diseases\
+    \ (e.g., Hepatitis C, HIV), malignancy, or high-risk social behaviors (e.g., intravenous\
+    \ drug use). The use of organs from a High-Risk Donor requires careful evaluation\
+    \ and informed consent. \u2014 An organ donor who has a history of certain medical\
+    \ conditions or behaviors that may increase the risk of disease transmission or\
+    \ poorer graft function in the recipient.\n[/kb=27]"
+  label: High-Risk Donor
+  hidden: false
+  meta:
+    kb_id: 27
+measures: []
+aggregations: []
+joins:
+- target_model: demographics
+  join_pairs:
+  - - contrib_med_registry
+    - contrib_registry
+  join_type: left
+filters: []
+description: 'Donor medical/social history: comma-separated condition list, smoking/alcohol/drug
+  status, and a viralstatinfo JSON (CMV/EBV/HBV/HCV/HIV).'
+hidden: false

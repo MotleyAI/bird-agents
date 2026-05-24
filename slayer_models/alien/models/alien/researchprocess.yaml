@@ -1,0 +1,74 @@
+version: 6
+name: researchprocess
+sql_table: researchprocess
+query_variables: {}
+data_source: alien
+columns:
+- name: signalref
+  sql: signalref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: analysisprio
+  sql: analysisprio
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: followstat
+  sql: followstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: peerrevstat
+  sql: peerrevstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: pubstat
+  sql: pubstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: resprio
+  sql: resprio
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fundstat
+  sql: fundstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: collabstat
+  sql: collabstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: secclass
+  sql: secclass
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: discstat
+  sql: discstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: notesmemo
+  sql: notesmemo
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: signals
+  join_pairs:
+  - - signalref
+    - signalregistry
+  join_type: left
+filters: []
+description: 'Research workflow and disposition for each signal: analysis priority,
+  follow-up status, peer review and publication state, funding & collaboration status,
+  security classification.'
+hidden: false

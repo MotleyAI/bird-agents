@@ -1,0 +1,59 @@
+version: 6
+name: vaccine_efficiency_rank
+source_queries:
+- version: 3
+  source_model:
+    source_name: vaccinedetails
+    columns:
+    - name: efficiency_rank
+      type: DOUBLE
+      sql: RANK() OVER (ORDER BY CAST(vialtally AS REAL) * 10 / NULLIF(container.volliters,
+        0) DESC)
+  dimensions:
+  - name: vacregistry
+  - name: ser
+  - name: efficiency_rank
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.ser\"\
+  \ AS ser, \"vaccinedetails.efficiency_rank\" AS efficiency_rank FROM (SELECT\n \
+  \ vaccinedetails.vacregistry AS \"vaccinedetails.vacregistry\",\n  CAST(vialtally\
+  \ AS REAL) * 10 / NULLIF(container.volliters, 0) AS \"vaccinedetails.ser\",\n  RANK()\
+  \ OVER (ORDER BY CAST(vialtally AS REAL) * 10 / NULLIF(container.volliters, 0) DESC)\
+  \ AS \"vaccinedetails.efficiency_rank\"\nFROM vaccinedetails AS vaccinedetails\n\
+  LEFT JOIN container AS container\n  ON vaccinedetails.containvac = container.containregistry)\
+  \ AS _inner"
+data_source: vaccine
+columns:
+- name: vacregistry
+  sql: vacregistry
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: ser
+  sql: ser
+  type: DOUBLE
+  primary_key: false
+  description: 'Storage Efficiency Ratio (SER). How efficiently container volume is
+    utilized: VialTally * 10 / VolLiters (KB #5). Reaches container.volliters via
+    the FK join.'
+  hidden: false
+- name: efficiency_rank
+  sql: efficiency_rank
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Vaccine Efficiency Rank (KB #63). Vaccine-detail rows ranked in descending\
+  \ order of SER (Storage Efficiency Ratio = VialTally * 10 / VolLiters). Backing\
+  \ query joins vaccinedetails to container for VolLiters and computes the rank window-function.\n\
+  \n[kb=63]\nRank assigned to containers based on descending order of SER \u2014 Ranks\
+  \ containers based on their storage efficiency.\n[/kb=63]"
+hidden: false
+meta:
+  kb_id: 63

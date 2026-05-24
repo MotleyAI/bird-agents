@@ -1,0 +1,97 @@
+version: 6
+name: wage_growth_rate
+source_queries:
+- version: 3
+  name: year_wage
+  source_model:
+    source_name: case_worksite
+    columns:
+    - name: recv_year
+      sql: CAST(SUBSTR(cases.recvday, 1, 4) AS INTEGER)
+      type: DOUBLE
+  measures:
+  - formula: offered_wage_annual:avg
+    name: avg_offered_wage
+  dimensions:
+  - name: recv_year
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: year_wage
+    columns:
+    - name: prev_year_avg
+      sql: LAG(avg_offered_wage, 1) OVER (ORDER BY recv_year)
+      type: DOUBLE
+    - name: wage_growth_rate
+      sql: (avg_offered_wage - LAG(avg_offered_wage, 1) OVER (ORDER BY recv_year))
+        * 100.0 / NULLIF(LAG(avg_offered_wage, 1) OVER (ORDER BY recv_year), 0)
+      type: DOUBLE
+  dimensions:
+  - name: recv_year
+  - name: avg_offered_wage
+  - name: prev_year_avg
+  - name: wage_growth_rate
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"year_wage.recv_year\" AS recv_year, \"year_wage.avg_offered_wage\"\
+  \ AS avg_offered_wage, \"year_wage.prev_year_avg\" AS prev_year_avg, \"year_wage.wage_growth_rate\"\
+  \ AS wage_growth_rate FROM (SELECT\n  year_wage.recv_year AS \"year_wage.recv_year\"\
+  ,\n  year_wage.avg_offered_wage AS \"year_wage.avg_offered_wage\",\n  LAG(year_wage.avg_offered_wage,\
+  \ 1) OVER (ORDER BY year_wage.recv_year) AS \"year_wage.prev_year_avg\",\n  (\n\
+  \    year_wage.avg_offered_wage - LAG(year_wage.avg_offered_wage, 1) OVER (ORDER\
+  \ BY year_wage.recv_year)\n  ) * 100.0 / NULLIF(LAG(year_wage.avg_offered_wage,\
+  \ 1) OVER (ORDER BY year_wage.recv_year), 0) AS \"year_wage.wage_growth_rate\"\n\
+  FROM (\n  SELECT\n    \"case_worksite.recv_year\" AS recv_year,\n    \"case_worksite.avg_offered_wage\"\
+  \ AS avg_offered_wage\n  FROM (\n    SELECT\n      CAST(SUBSTRING(cases.recvday,\
+  \ 1, 4) AS INTEGER) AS \"case_worksite.recv_year\",\n      AVG(\n        CAST(REPLACE(REPLACE(prevailing_wage.wage_details\
+  \ ->> '$.offered_wage.from', '$', ''), ',', '') AS REAL) * CASE prevailing_wage.wage_details\
+  \ ->> '$.offered_wage.unit'\n          WHEN 'Hour'\n          THEN 2080\n      \
+  \    WHEN 'Week'\n          THEN 52\n          WHEN 'Month'\n          THEN 12\n\
+  \          WHEN 'Year'\n          THEN 1\n          ELSE NULL\n        END\n   \
+  \   ) AS \"case_worksite.avg_offered_wage\"\n    FROM case_worksite AS case_worksite\n\
+  \    LEFT JOIN prevailing_wage AS prevailing_wage\n      ON case_worksite.wagetrack\
+  \ = prevailing_wage.trackno\n    LEFT JOIN cases AS cases\n      ON case_worksite.dockkey\
+  \ = cases.filekey\n    GROUP BY\n      CAST(SUBSTRING(cases.recvday, 1, 4) AS INTEGER)\n\
+  \  ) AS _inner\n) AS year_wage) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: recv_year
+  sql: recv_year
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: avg_offered_wage
+  sql: avg_offered_wage
+  type: DOUBLE
+  primary_key: false
+  description: 'Offered wage annualized for this case_worksite, denormalized via prevailing_wage
+    join. Used for KB #28 / KB #31 industry-wage analyses.'
+  hidden: false
+  format:
+    type: float
+- name: prev_year_avg
+  sql: prev_year_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: wage_growth_rate
+  sql: wage_growth_rate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Wage Growth Rate (KB #36): annual % change in average offered wage for\
+  \ similar positions. Implemented per receipt year: WGR = ((current_year_avg - prev_year_avg)\
+  \ / prev_year_avg) * 100. Per-year rows with the previous-year average computed\
+  \ via a window LAG over years sorted ascending. Dataset is single-year (2023) so\
+  \ WGR is empty in practice, but the formula is faithful to the KB.\n\n[kb=36]\n\
+  WGR = ((Current Year Average Wage - Previous Year Average Wage) / Previous Year\
+  \ Average Wage) \xD7 100%. Wage and year information are included in the application\
+  \ data. \u2014 Measures the annual percentage increase in offered wages for similar\
+  \ positions.\n[/kb=36]"
+hidden: false
+meta:
+  kb_id: 36

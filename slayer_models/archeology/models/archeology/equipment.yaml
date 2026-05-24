@@ -1,0 +1,79 @@
+version: 6
+name: equipment
+sql_table: equipment
+query_variables: {}
+data_source: archeology
+columns:
+- name: equipregistry
+  sql: equipregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: equipform
+  sql: equipform
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: equipdesign
+  sql: equipdesign
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: equiptune
+  sql: equiptune
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: equipstatus
+  sql: equipstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: powerlevel
+  sql: powerlevel
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: equipstatus_value
+  sql: CASE equipstatus WHEN 'Excellent' THEN 1.0 WHEN 'Good' THEN 0.7 WHEN 'Fair'
+    THEN 0.5 WHEN 'Poor' THEN 0.2 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "EquipStatus_value (KB #39 component): Excellent=1.0, Good=0.7, Fair=0.5,\
+    \ Poor=0.2. KB #39 specifies endpoints (Excellent=1.0, Poor=0.2); intermediate\
+    \ values (Good=0.7, Fair=0.5) are linearly interpolated.\n\n[kb=39]\nEER = \\\
+    frac{SQS \\times EquipStatus\\_value}{PowerLevel \\times (101 - EquipAge\\_days)\
+    \ / 365} \\times 25, \\text{ where SQS is the Scan Quality Score, EquipStatus_value\
+    \ is 1.0 for 'Excellent' to 0.2 for 'Poor', and EquipAge_days is days since EquipTune,\
+    \ with higher values indicating more efficient use of equipment relative to condition.}\
+    \ \u2014 Evaluates how effectively equipment was utilized based on power consumption\
+    \ and scan quality relative to equipment capability.\n[/kb=39]"
+  label: Equipment Effectiveness Ratio (EER)
+  hidden: false
+  meta:
+    kb_id: 39
+- name: equipage_days
+  sql: julianday('now') - julianday(equiptune)
+  type: DOUBLE
+  primary_key: false
+  description: "EquipAge_days (KB #39 component): days since EquipTune (last calibration\
+    \ date). Uses current date.\n\n[kb=39]\nEER = \\frac{SQS \\times EquipStatus\\\
+    _value}{PowerLevel \\times (101 - EquipAge\\_days) / 365} \\times 25, \\text{\
+    \ where SQS is the Scan Quality Score, EquipStatus_value is 1.0 for 'Excellent'\
+    \ to 0.2 for 'Poor', and EquipAge_days is days since EquipTune, with higher values\
+    \ indicating more efficient use of equipment relative to condition.} \u2014 Evaluates\
+    \ how effectively equipment was utilized based on power consumption and scan quality\
+    \ relative to equipment capability.\n[/kb=39]"
+  label: Equipment Effectiveness Ratio (EER)
+  hidden: false
+  meta:
+    kb_id: 39
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Equipment registry. Used by KB #39 (EER) for EquipStatus_value mapping
+  (Excellent=1.0..Poor=0.2) and EquipAge_days from EquipTune.'
+hidden: false

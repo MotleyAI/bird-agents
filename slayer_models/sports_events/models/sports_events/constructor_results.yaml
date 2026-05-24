@@ -1,0 +1,149 @@
+version: 6
+name: constructor_results
+sql_table: constructor_results
+query_variables: {}
+data_source: sports_events
+columns:
+- name: cresref
+  sql: cresref
+  type: INT
+  primary_key: true
+  description: Unique result identifier.
+  hidden: false
+  format:
+    type: integer
+- name: matchref
+  sql: matchref
+  type: INT
+  primary_key: false
+  description: Foreign key to races.
+  hidden: false
+  format:
+    type: integer
+- name: unitnode
+  sql: unitnode
+  type: INT
+  primary_key: false
+  description: Foreign key to constructors.
+  hidden: false
+  format:
+    type: integer
+- name: scoreval
+  sql: scoreval
+  type: INT
+  primary_key: false
+  description: "Points scored by the constructor in this race (sum of the constructor's\
+    \ drivers' points). Implements KB #25 Constructor's Total Race Points: \u03A3\
+    \ driver points for the team in the race.\n\n[kb=25]\nP_{constructor} = \\sum\
+    \ P_{driver}, \\text{where the sum includes the points from all drivers of a constructor\
+    \ who had a Points Finish.} \u2014 Calculates the total points a constructor scores\
+    \ in a single race from both of its drivers.\n[/kb=25]"
+  label: Constructor's Total Race Points
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 25
+- name: st_mark
+  sql: st_mark
+  type: TEXT
+  primary_key: false
+  description: 'Status mark for the result. Per KB #27, NULL means the constructor''s
+    car(s) were classified as finishers in the race; non-NULL (e.g. ''D'') means specially
+    marked (disqualification etc.) and counts as not finished.'
+  hidden: false
+- name: is_finish
+  sql: st_mark IS NULL
+  type: BOOLEAN
+  primary_key: false
+  description: "TRUE iff the team's race is classified as a finish (st_mark IS NULL).\
+    \ Used by KB #27 Constructor Reliability Rate.\n\n[kb=27]\nR_{reliability} = \\\
+    frac{N_{finishes}}{N_{starts}} \\times 100, \\text{where } N_{finishes} \\text{\
+    \ is the total number of times the constructor's cars were classified as finishers,\
+    \ and } N_{starts} \\text{ is the total number of times they started a race.}\
+    \ A race is considered 'finished' if the status mark is not specially marked (null).\
+    \ \u2014 Calculates the percentage of times a constructor's cars have finished\
+    \ the races they started.\n[/kb=27]"
+  label: Constructor Reliability Rate
+  hidden: false
+  meta:
+    kb_id: 27
+- name: finish_count
+  sql: cresref
+  type: INT
+  primary_key: false
+  description: 'Filtered count helper: rows that are finishes (st_mark IS NULL). Numerator
+    of KB #27 Constructor Reliability Rate.'
+  hidden: false
+  filter: st_mark IS NULL
+- name: start_count
+  sql: cresref
+  type: INT
+  primary_key: false
+  description: "Helper: every constructor_results row counts as a race start. Denominator\
+    \ of KB #27 Constructor Reliability Rate. Threshold for KB #50 Significant Participation\
+    \ (>10 starts).\n\n[kb=50]\nConstructors are considered to have significant participation\
+    \ if they have started more than 10 races, ensuring statistical validity for reliability\
+    \ rate calculations. \u2014 A threshold criterion for constructors with Significant\
+    \ Participation in races.\n[/kb=50]"
+  label: Constructors with Significant Participation
+  hidden: false
+  meta:
+    kb_id: 50
+- name: constructor_performance_score_helper
+  sql: scoreval * (CASE WHEN st_mark IS NULL THEN 1.0 ELSE 0.0 END)
+  type: DOUBLE
+  primary_key: false
+  description: "Helper anchor for KB #31 Constructor's Performance Score (CPS). The\
+    \ actual CPS is exposed as the constructor_performance_score measure: scoreval:sum\
+    \ \xD7 (finishes/starts).\n\n[kb=31]\nCPS = (\\text{Season Total Points}) \\times\
+    \ \\frac{\\text{Constructor Reliability Rate}}{100}, \\text{where total points\
+    \ are derived from their Constructor's Total Race Points over the season.} \u2014\
+    \ Calculates a constructor's overall seasonal performance by weighting their points-scoring\
+    \ ability with their finishing reliability.\n[/kb=31]"
+  label: Constructor's Performance Score (CPS)
+  hidden: true
+  meta:
+    kb_id: 31
+measures:
+- formula: scoreval:sum
+  name: constructor_total_race_points
+  label: Constructor's Total Race Points
+  description: "KB #25 Constructor's Total Race Points: \u03A3 of constructor scoreval\
+    \ across the group. When grouped by constructor + race, equals the team's score\
+    \ for that race; when grouped by constructor over a season, equals the constructor's\
+    \ season total points."
+- formula: finish_count:count * 100.0 / start_count:count
+  name: constructor_reliability_rate
+  label: Constructor Reliability Rate (%)
+  description: "KB #27 Constructor Reliability Rate: (#finishes / #starts) \xD7 100.\
+    \ A race is 'finished' when st_mark IS NULL (not specially marked)."
+- formula: start_count:count
+  name: constructor_starts
+  label: Constructor Race Starts
+  description: 'Number of race starts for the group. Used by KB #50 Constructors with
+    Significant Participation (>10 starts).'
+- formula: scoreval:sum * (finish_count:count * 1.0 / start_count:count)
+  name: constructor_performance_score
+  label: Constructor's Performance Score
+  description: "KB #31 Constructor's Performance Score (CPS): season total points\
+    \ \xD7 (Constructor Reliability Rate / 100) = scoreval:sum \xD7 (finishes / starts).\
+    \ Combines points-scoring with reliability. Uses KB #25, KB #27."
+aggregations: []
+joins:
+- target_model: races
+  join_pairs:
+  - - matchref
+    - rak_id
+  join_type: left
+- target_model: constructors
+  join_pairs:
+  - - unitnode
+    - cstr_key
+  join_type: left
+filters: []
+description: Constructor results per race. One row per (race, constructor) summarising
+  the team's points scored in the event and a status mark indicating issues (NULL
+  = the team's car(s) finished the race normally; non-NULL = a status mark such as
+  'D' indicating disqualification/anomaly).
+hidden: false

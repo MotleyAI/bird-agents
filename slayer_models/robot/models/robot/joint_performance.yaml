@@ -1,0 +1,166 @@
+version: 6
+name: joint_performance
+sql_table: joint_performance
+query_variables: {}
+data_source: robot
+columns:
+- name: jperfoperref
+  sql: jperfoperref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: jperfrecref
+  sql: jperfrecref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: jperfdetref
+  sql: jperfdetref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: joint_metrics
+  sql: joint_metrics
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: j1_torque
+  sql: CAST(json_extract(joint_metrics, '$.joint1.torque') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Joint 1 torque from joint_metrics JSON \u2014 helper for JTV (KB #38).\n\
+    \n[kb=38]\nFor a given robot R, JTV = \\frac{\\sum_{jp \\in \\text{joint_performance}\
+    \ \\mid \\text{jperfdetref = R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float\
+    \ - \\mu_i)^2)}{\\text{|}\\{jp \\in \\text{joint_performance} \\mid \\text{jperfdetref\
+    \ = R}\\}| \\cdot 6}, \\text{where } \\mu_i = \\frac{\\sum_{jp} joint_metrics->>'jointi'->>'torque'::float}{\\\
+    text{|}\\{jp\\}|}, \\text{and jointi is joint i's metrics.} \u2014 Calculates\
+    \ the variance of joint torques to assess operational stability.\n[/kb=38]"
+  label: Joint Torque Variance (JTV)
+  hidden: false
+  meta:
+    kb_id: 38
+- name: j2_torque
+  sql: CAST(json_extract(joint_metrics, '$.joint2.torque') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Joint 2 torque from joint_metrics JSON \u2014 helper for JTV (KB #38).\n\
+    \n[kb=38]\nFor a given robot R, JTV = \\frac{\\sum_{jp \\in \\text{joint_performance}\
+    \ \\mid \\text{jperfdetref = R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float\
+    \ - \\mu_i)^2)}{\\text{|}\\{jp \\in \\text{joint_performance} \\mid \\text{jperfdetref\
+    \ = R}\\}| \\cdot 6}, \\text{where } \\mu_i = \\frac{\\sum_{jp} joint_metrics->>'jointi'->>'torque'::float}{\\\
+    text{|}\\{jp\\}|}, \\text{and jointi is joint i's metrics.} \u2014 Calculates\
+    \ the variance of joint torques to assess operational stability.\n[/kb=38]"
+  label: Joint Torque Variance (JTV)
+  hidden: false
+  meta:
+    kb_id: 38
+- name: j3_torque
+  sql: CAST(json_extract(joint_metrics, '$.joint3.torque') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Joint 3 torque from joint_metrics JSON \u2014 helper for JTV (KB #38).\n\
+    \n[kb=38]\nFor a given robot R, JTV = \\frac{\\sum_{jp \\in \\text{joint_performance}\
+    \ \\mid \\text{jperfdetref = R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float\
+    \ - \\mu_i)^2)}{\\text{|}\\{jp \\in \\text{joint_performance} \\mid \\text{jperfdetref\
+    \ = R}\\}| \\cdot 6}, \\text{where } \\mu_i = \\frac{\\sum_{jp} joint_metrics->>'jointi'->>'torque'::float}{\\\
+    text{|}\\{jp\\}|}, \\text{and jointi is joint i's metrics.} \u2014 Calculates\
+    \ the variance of joint torques to assess operational stability.\n[/kb=38]"
+  label: Joint Torque Variance (JTV)
+  hidden: false
+  meta:
+    kb_id: 38
+- name: j4_torque
+  sql: CAST(json_extract(joint_metrics, '$.joint4.torque') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Joint 4 torque from joint_metrics JSON \u2014 helper for JTV (KB #38).\n\
+    \n[kb=38]\nFor a given robot R, JTV = \\frac{\\sum_{jp \\in \\text{joint_performance}\
+    \ \\mid \\text{jperfdetref = R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float\
+    \ - \\mu_i)^2)}{\\text{|}\\{jp \\in \\text{joint_performance} \\mid \\text{jperfdetref\
+    \ = R}\\}| \\cdot 6}, \\text{where } \\mu_i = \\frac{\\sum_{jp} joint_metrics->>'jointi'->>'torque'::float}{\\\
+    text{|}\\{jp\\}|}, \\text{and jointi is joint i's metrics.} \u2014 Calculates\
+    \ the variance of joint torques to assess operational stability.\n[/kb=38]"
+  label: Joint Torque Variance (JTV)
+  hidden: false
+  meta:
+    kb_id: 38
+- name: j5_torque
+  sql: CAST(json_extract(joint_metrics, '$.joint5.torque') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Joint 5 torque from joint_metrics JSON \u2014 helper for JTV (KB #38).\n\
+    \n[kb=38]\nFor a given robot R, JTV = \\frac{\\sum_{jp \\in \\text{joint_performance}\
+    \ \\mid \\text{jperfdetref = R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float\
+    \ - \\mu_i)^2)}{\\text{|}\\{jp \\in \\text{joint_performance} \\mid \\text{jperfdetref\
+    \ = R}\\}| \\cdot 6}, \\text{where } \\mu_i = \\frac{\\sum_{jp} joint_metrics->>'jointi'->>'torque'::float}{\\\
+    text{|}\\{jp\\}|}, \\text{and jointi is joint i's metrics.} \u2014 Calculates\
+    \ the variance of joint torques to assess operational stability.\n[/kb=38]"
+  label: Joint Torque Variance (JTV)
+  hidden: false
+  meta:
+    kb_id: 38
+- name: j6_torque
+  sql: CAST(json_extract(joint_metrics, '$.joint6.torque') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Joint 6 torque from joint_metrics JSON \u2014 helper for JTV (KB #38).\n\
+    \n[kb=38]\nFor a given robot R, JTV = \\frac{\\sum_{jp \\in \\text{joint_performance}\
+    \ \\mid \\text{jperfdetref = R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float\
+    \ - \\mu_i)^2)}{\\text{|}\\{jp \\in \\text{joint_performance} \\mid \\text{jperfdetref\
+    \ = R}\\}| \\cdot 6}, \\text{where } \\mu_i = \\frac{\\sum_{jp} joint_metrics->>'jointi'->>'torque'::float}{\\\
+    text{|}\\{jp\\}|}, \\text{and jointi is joint i's metrics.} \u2014 Calculates\
+    \ the variance of joint torques to assess operational stability.\n[/kb=38]"
+  label: Joint Torque Variance (JTV)
+  hidden: false
+  meta:
+    kb_id: 38
+measures:
+- formula: (j1_torque:var_pop + j2_torque:var_pop + j3_torque:var_pop + j4_torque:var_pop
+    + j5_torque:var_pop + j6_torque:var_pop) / 6
+  name: jtv
+  label: Joint Torque Variance (JTV)
+  description: "Joint Torque Variance (KB #38) \u2014 (\u03A3_i var_pop(torque_i))\
+    \ / 6 across joint_performance rows, where torque_i is extracted from joint_metrics\
+    \ JSON. Group by jperfdetref for per-robot.\n\n[kb=38]\nFor a given robot R, JTV\
+    \ = \\frac{\\sum_{jp \\in \\text{joint_performance} \\mid \\text{jperfdetref =\
+    \ R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float - \\mu_i)^2)}{\\\
+    text{|}\\{jp \\in \\text{joint_performance} \\mid \\text{jperfdetref = R}\\}|\
+    \ \\cdot 6}, \\text{where } \\mu_i = \\frac{\\sum_{jp} joint_metrics->>'jointi'->>'torque'::float}{\\\
+    text{|}\\{jp\\}|}, \\text{and jointi is joint i's metrics.} \u2014 Calculates\
+    \ the variance of joint torques to assess operational stability.\n[/kb=38]"
+  meta:
+    kb_id: 38
+- formula: (j1_torque:var_pop + j2_torque:var_pop + j3_torque:var_pop + j4_torque:var_pop
+    + j5_torque:var_pop + j6_torque:var_pop) / 6 > 50
+  name: is_high_torque_variance
+  label: Operational Instability
+  description: "Operational Instability (KB #48) \u2014 JTV > 50 part of the predicate.\
+    \ KB #48 also requires MJT > 60 (on joint_condition, peer table); the agent must\
+    \ intersect with joint_condition's is_overheating_risk-style filter. Group by\
+    \ jperfdetref for per-robot.\n\n[kb=48]\nA robot R has Operational Instability\
+    \ if JTV > 50 and MJT > 60. \u2014 Identifies robots with unstable joint performance.\n\
+    [/kb=48]"
+  meta:
+    kb_id: 48
+aggregations: []
+joins:
+- target_model: robot_details
+  join_pairs:
+  - - jperfdetref
+    - botdetreg
+  join_type: left
+- target_model: operation
+  join_pairs:
+  - - jperfoperref
+    - operreg
+  join_type: left
+- target_model: robot_record
+  join_pairs:
+  - - jperfrecref
+    - recreg
+  join_type: left
+filters: []
+description: Per-operation joint performance metrics, stored as a JSONB joint_metrics
+  blob with angle/speed/torque per joint (joint1..joint6). Joined to robot_details
+  via jperfdetref.
+hidden: false

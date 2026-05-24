@@ -1,0 +1,271 @@
+version: 6
+name: sustainable_polar_operations
+source_queries:
+- version: 3
+  name: rssi_flag_p_eq
+  source_model:
+    source_name: resource_self_sufficiency_index
+    columns:
+    - name: rssi_ok
+      type: DOUBLE
+      sql: CASE WHEN rssi > 0.7 THEN 1 ELSE 0 END
+  measures:
+  - formula: rssi_ok:min
+    name: rssi_ok
+  dimensions:
+  - name: thermaleqref
+  whole_periods_only: false
+- version: 3
+  name: ewrii_flag_p_eq
+  source_model:
+    source_name: energy_water_resource_integration_index
+    columns:
+    - name: ewrii_ok
+      type: DOUBLE
+      sql: CASE WHEN ewrii > 0.65 THEN 1 ELSE 0 END
+  measures:
+  - formula: ewrii_ok:min
+    name: ewrii_ok
+  dimensions:
+  - name: pwrbatteqref
+  whole_periods_only: false
+- version: 3
+  name: waste_flag_p_eq_spo
+  source_model:
+    source_name: lightingandsafety
+    columns:
+    - name: waste_normal_flag
+      type: DOUBLE
+      sql: CASE WHEN wastemanagementstatus = 'Normal' THEN 1 ELSE 0 END
+  measures:
+  - formula: waste_normal_flag:min
+    name: waste_ok
+  dimensions:
+  - name: lighteqref
+  whole_periods_only: false
+- version: 3
+  name: env_flag_p_eq_spo
+  source_model:
+    source_name: equipment
+    columns:
+    - name: env_ok_flag
+      type: DOUBLE
+      sql: CASE WHEN environmentalimpactindex < 6.0 THEN 1 ELSE 0 END
+  measures:
+  - formula: env_ok_flag:min
+    name: env_ok
+  dimensions:
+  - name: equipmentcode
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: env_flag_p_eq_spo
+    joins:
+    - target_model: rssi_flag_p_eq
+      join_pairs:
+      - - equipmentcode
+        - thermaleqref
+    - target_model: ewrii_flag_p_eq
+      join_pairs:
+      - - equipmentcode
+        - pwrbatteqref
+    - target_model: waste_flag_p_eq_spo
+      join_pairs:
+      - - equipmentcode
+        - lighteqref
+  measures:
+  - formula: env_ok:min * rssi_flag_p_eq.rssi_ok:min * ewrii_flag_p_eq.ewrii_ok:min
+      * waste_flag_p_eq_spo.waste_ok:min
+    name: is_sustainable
+  dimensions:
+  - name: equipmentcode
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"env_flag_p_eq_spo.equipmentcode\" AS equipmentcode, \"\
+  env_flag_p_eq_spo.env_ok_min\" AS env_ok_min, \"env_flag_p_eq_spo.is_sustainable\"\
+  \ AS is_sustainable, \"env_flag_p_eq_spo.waste_flag_p_eq_spo.waste_ok_min\" AS waste_flag_p_eq_spo__waste_ok_min,\
+  \ \"env_flag_p_eq_spo.ewrii_flag_p_eq.ewrii_ok_min\" AS ewrii_flag_p_eq__ewrii_ok_min,\
+  \ \"env_flag_p_eq_spo.rssi_flag_p_eq.rssi_ok_min\" AS rssi_flag_p_eq__rssi_ok_min\
+  \ FROM (WITH _base AS (\nSELECT\n  env_flag_p_eq_spo.equipmentcode AS \"env_flag_p_eq_spo.equipmentcode\"\
+  ,\n  MIN(env_flag_p_eq_spo.env_ok) AS \"env_flag_p_eq_spo.env_ok_min\"\nFROM (\n\
+  \  SELECT\n    \"equipment.equipmentcode\" AS equipmentcode,\n    \"equipment.env_ok\"\
+  \ AS env_ok\n  FROM (\n    SELECT\n      equipment.equipmentcode AS \"equipment.equipmentcode\"\
+  ,\n      MIN(CASE WHEN equipment.environmentalimpactindex < 6.0 THEN 1 ELSE 0 END)\
+  \ AS \"equipment.env_ok\"\n    FROM equipment AS equipment\n    GROUP BY\n     \
+  \ equipment.equipmentcode\n  ) AS _inner\n) AS env_flag_p_eq_spo\nGROUP BY\n  env_flag_p_eq_spo.equipmentcode\n\
+  ),\n_cm_env_flag_p_eq_spo__waste_flag_p_eq_spo__waste_ok_min AS (\nSELECT\n  MIN(waste_flag_p_eq_spo.waste_ok)\
+  \ AS \"env_flag_p_eq_spo.waste_flag_p_eq_spo.waste_ok_min\"\nFROM (\n  SELECT\n\
+  \    \"lightingandsafety.lighteqref\" AS lighteqref,\n    \"lightingandsafety.waste_ok\"\
+  \ AS waste_ok\n  FROM (\n    SELECT\n      lightingandsafety.lighteqref AS \"lightingandsafety.lighteqref\"\
+  ,\n      MIN(CASE WHEN lightingandsafety.wastemanagementstatus = 'Normal' THEN 1\
+  \ ELSE 0 END) AS \"lightingandsafety.waste_ok\"\n    FROM lightingandsafety AS lightingandsafety\n\
+  \    GROUP BY\n      lightingandsafety.lighteqref\n  ) AS _inner\n) AS waste_flag_p_eq_spo\n\
+  ),\n_cm_env_flag_p_eq_spo__ewrii_flag_p_eq__ewrii_ok_min AS (\nSELECT\n  MIN(ewrii_flag_p_eq.ewrii_ok)\
+  \ AS \"env_flag_p_eq_spo.ewrii_flag_p_eq.ewrii_ok_min\"\nFROM (\n  SELECT\n    \"\
+  energy_water_resource_integration_index.pwrbatteqref\" AS pwrbatteqref,\n    \"\
+  energy_water_resource_integration_index.ewrii_ok\" AS ewrii_ok\n  FROM (\n    SELECT\n\
+  \      energy_water_resource_integration_index.pwrbatteqref AS \"energy_water_resource_integration_index.pwrbatteqref\"\
+  ,\n      MIN(CASE WHEN energy_water_resource_integration_index.ewrii > 0.65 THEN\
+  \ 1 ELSE 0 END) AS \"energy_water_resource_integration_index.ewrii_ok\"\n    FROM\
+  \ (\n      SELECT\n        \"esi_per_eq_ewrii.pwrbatteqref\" AS pwrbatteqref,\n\
+  \        \"esi_per_eq_ewrii.esi_avg\" AS esi_avg,\n        \"esi_per_eq_ewrii.ewrii\"\
+  \ AS ewrii,\n        \"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\" AS wrmi_per_eq_ewrii__wrmi_avg,\n\
+  \        \"esi_per_eq_ewrii.heater_per_eq_ewrii.heater_temp_avg\" AS heater_per_eq_ewrii__heater_temp_avg\n\
+  \      FROM (\n        WITH _base AS (\n          SELECT\n            esi_per_eq_ewrii.pwrbatteqref\
+  \ AS \"esi_per_eq_ewrii.pwrbatteqref\",\n            AVG(esi_per_eq_ewrii.esi) AS\
+  \ \"esi_per_eq_ewrii.esi_avg\"\n          FROM (\n            SELECT\n         \
+  \     \"powerbattery.pwrbatteqref\" AS pwrbatteqref,\n              \"powerbattery.esi\"\
+  \ AS esi\n            FROM (\n              SELECT\n                powerbattery.pwrbatteqref\
+  \ AS \"powerbattery.pwrbatteqref\",\n                AVG(\n                  powerbattery.energyefficiencypercent\
+  \ * CASE powerbattery.powersource\n                    WHEN 'Solar'\n          \
+  \          THEN 1.5\n                    WHEN 'Wind'\n                    THEN 1.5\n\
+  \                    WHEN 'Hybrid'\n                    THEN 1.2\n             \
+  \       WHEN 'Battery'\n                    THEN 1.0\n                    WHEN 'Diesel'\n\
+  \                    THEN 0.7\n                    ELSE 0\n                  END\n\
+  \                ) AS \"powerbattery.esi\"\n              FROM powerbattery AS powerbattery\n\
+  \              GROUP BY\n                powerbattery.pwrbatteqref\n           \
+  \ ) AS _inner\n          ) AS esi_per_eq_ewrii\n          GROUP BY\n           \
+  \ esi_per_eq_ewrii.pwrbatteqref\n        ), _cm_esi_per_eq_ewrii__wrmi_per_eq_ewrii__wrmi_avg\
+  \ AS (\n          SELECT\n            AVG(wrmi_per_eq_ewrii.wrmi) AS \"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\"\
+  \n          FROM (\n            SELECT\n              \"waterandwaste.watereqref\"\
+  \ AS watereqref,\n              \"waterandwaste.wrmi\" AS wrmi\n            FROM\
+  \ (\n              SELECT\n                waterandwaste.watereqref AS \"waterandwaste.watereqref\"\
+  ,\n                AVG(\n                  waterandwaste.waterlevelpercent * (\n\
+  \                    waterandwaste.waterqualityindex / 100.0\n                 \
+  \ ) * (\n                    1 - waterandwaste.wastetanklevelpercent / 100.0\n \
+  \                 )\n                ) AS \"waterandwaste.wrmi\"\n             \
+  \ FROM waterandwaste AS waterandwaste\n              GROUP BY\n                waterandwaste.watereqref\n\
+  \            ) AS _inner\n          ) AS wrmi_per_eq_ewrii\n        ), _cm_esi_per_eq_ewrii__heater_per_eq_ewrii__heater_temp_avg\
+  \ AS (\n          SELECT\n            AVG(heater_per_eq_ewrii.heater_temp) AS \"\
+  esi_per_eq_ewrii.heater_per_eq_ewrii.heater_temp_avg\"\n          FROM (\n     \
+  \       SELECT\n              \"cabinenvironment.cabineqref\" AS cabineqref,\n \
+  \             \"cabinenvironment.heater_temp\" AS heater_temp\n            FROM\
+  \ (\n              SELECT\n                cabinenvironment.cabineqref AS \"cabinenvironment.cabineqref\"\
+  ,\n                AVG(cabinenvironment.heatertemperaturec) AS \"cabinenvironment.heater_temp\"\
+  \n              FROM cabinenvironment AS cabinenvironment\n              GROUP BY\n\
+  \                cabinenvironment.cabineqref\n            ) AS _inner\n        \
+  \  ) AS heater_per_eq_ewrii\n        ), _combined AS (\n          SELECT\n     \
+  \       _base.\"esi_per_eq_ewrii.pwrbatteqref\",\n            _base.\"esi_per_eq_ewrii.esi_avg\"\
+  ,\n            _cm_esi_per_eq_ewrii__wrmi_per_eq_ewrii__wrmi_avg.\"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\"\
+  ,\n            _cm_esi_per_eq_ewrii__heater_per_eq_ewrii__heater_temp_avg.\"esi_per_eq_ewrii.heater_per_eq_ewrii.heater_temp_avg\"\
+  \n          FROM _base\n          CROSS JOIN _cm_esi_per_eq_ewrii__wrmi_per_eq_ewrii__wrmi_avg\n\
+  \          CROSS JOIN _cm_esi_per_eq_ewrii__heater_per_eq_ewrii__heater_temp_avg\n\
+  \        ), step1 AS (\n          SELECT\n            \"esi_per_eq_ewrii.esi_avg\"\
+  ,\n            \"esi_per_eq_ewrii.heater_per_eq_ewrii.heater_temp_avg\",\n     \
+  \       \"esi_per_eq_ewrii.pwrbatteqref\",\n            \"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\"\
+  ,\n            0.5 * \"esi_per_eq_ewrii.esi_avg\" + 0.5 * \"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\"\
+  \ * (\n              1 - \"esi_per_eq_ewrii.heater_per_eq_ewrii.heater_temp_avg\"\
+  \ / 100.0\n            ) AS \"esi_per_eq_ewrii.ewrii\"\n          FROM _combined\n\
+  \        )\n        SELECT\n          \"esi_per_eq_ewrii.esi_avg\",\n          \"\
+  esi_per_eq_ewrii.ewrii\",\n          \"esi_per_eq_ewrii.heater_per_eq_ewrii.heater_temp_avg\"\
+  ,\n          \"esi_per_eq_ewrii.pwrbatteqref\",\n          \"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\"\
+  \n        FROM step1\n      ) AS _inner\n    ) AS energy_water_resource_integration_index\n\
+  \    GROUP BY\n      energy_water_resource_integration_index.pwrbatteqref\n  ) AS\
+  \ _inner\n) AS ewrii_flag_p_eq\n),\n_cm_env_flag_p_eq_spo__rssi_flag_p_eq__rssi_ok_min\
+  \ AS (\nSELECT\n  MIN(rssi_flag_p_eq.rssi_ok) AS \"env_flag_p_eq_spo.rssi_flag_p_eq.rssi_ok_min\"\
+  \nFROM (\n  SELECT\n    \"resource_self_sufficiency_index.thermaleqref\" AS thermaleqref,\n\
+  \    \"resource_self_sufficiency_index.rssi_ok\" AS rssi_ok\n  FROM (\n    SELECT\n\
+  \      resource_self_sufficiency_index.thermaleqref AS \"resource_self_sufficiency_index.thermaleqref\"\
+  ,\n      MIN(CASE WHEN resource_self_sufficiency_index.rssi > 0.7 THEN 1 ELSE 0\
+  \ END) AS \"resource_self_sufficiency_index.rssi_ok\"\n    FROM (\n      SELECT\n\
+  \        \"rec_per_eq.thermaleqref\" AS thermaleqref,\n        \"rec_per_eq.rec_avg\"\
+  \ AS rec_avg,\n        \"rec_per_eq.rssi\" AS rssi,\n        \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\
+  \ AS wrmi_per_eq__wrmi_avg\n      FROM (\n        WITH _base AS (\n          SELECT\n\
+  \            rec_per_eq.thermaleqref AS \"rec_per_eq.thermaleqref\",\n         \
+  \   AVG(rec_per_eq.rec) AS \"rec_per_eq.rec_avg\"\n          FROM (\n          \
+  \  SELECT\n              \"thermalsolarwindandgrid.thermaleqref\" AS thermaleqref,\n\
+  \              \"thermalsolarwindandgrid.rec\" AS rec\n            FROM (\n    \
+  \          SELECT\n                thermalsolarwindandgrid.thermaleqref AS \"thermalsolarwindandgrid.thermaleqref\"\
+  ,\n                AVG(\n                  (\n                    JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics,\
+  \ '$.solar.output_w') + JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics, '$.wind.output_w')\n\
+  \                  ) * 100.0 / NULLIF(\n                    thermalsolarwindandgrid.fuelcelloutputw\
+  \ + JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics, '$.solar.output_w') +\
+  \ JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics, '$.wind.output_w'),\n \
+  \                   0\n                  )\n                ) AS \"thermalsolarwindandgrid.rec\"\
+  \n              FROM thermalsolarwindandgrid AS thermalsolarwindandgrid\n      \
+  \        GROUP BY\n                thermalsolarwindandgrid.thermaleqref\n      \
+  \      ) AS _inner\n          ) AS rec_per_eq\n          GROUP BY\n            rec_per_eq.thermaleqref\n\
+  \        ), _cm_rec_per_eq__wrmi_per_eq__wrmi_avg AS (\n          SELECT\n     \
+  \       AVG(wrmi_per_eq.wrmi) AS \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\n         \
+  \ FROM (\n            SELECT\n              \"waterandwaste.watereqref\" AS watereqref,\n\
+  \              \"waterandwaste.wrmi\" AS wrmi\n            FROM (\n            \
+  \  SELECT\n                waterandwaste.watereqref AS \"waterandwaste.watereqref\"\
+  ,\n                AVG(\n                  waterandwaste.waterlevelpercent * (\n\
+  \                    waterandwaste.waterqualityindex / 100.0\n                 \
+  \ ) * (\n                    1 - waterandwaste.wastetanklevelpercent / 100.0\n \
+  \                 )\n                ) AS \"waterandwaste.wrmi\"\n             \
+  \ FROM waterandwaste AS waterandwaste\n              GROUP BY\n                waterandwaste.watereqref\n\
+  \            ) AS _inner\n          ) AS wrmi_per_eq\n        ), _combined AS (\n\
+  \          SELECT\n            _base.\"rec_per_eq.thermaleqref\",\n            _base.\"\
+  rec_per_eq.rec_avg\",\n            _cm_rec_per_eq__wrmi_per_eq__wrmi_avg.\"rec_per_eq.wrmi_per_eq.wrmi_avg\"\
+  \n          FROM _base\n          CROSS JOIN _cm_rec_per_eq__wrmi_per_eq__wrmi_avg\n\
+  \        ), step1 AS (\n          SELECT\n            \"rec_per_eq.rec_avg\",\n\
+  \            \"rec_per_eq.thermaleqref\",\n            \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\
+  ,\n            0.6 * \"rec_per_eq.rec_avg\" + 0.4 * \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\
+  \ AS \"rec_per_eq.rssi\"\n          FROM _combined\n        )\n        SELECT\n\
+  \          \"rec_per_eq.rec_avg\",\n          \"rec_per_eq.rssi\",\n          \"\
+  rec_per_eq.thermaleqref\",\n          \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\n    \
+  \    FROM step1\n      ) AS _inner\n    ) AS resource_self_sufficiency_index\n \
+  \   GROUP BY\n      resource_self_sufficiency_index.thermaleqref\n  ) AS _inner\n\
+  ) AS rssi_flag_p_eq\n),\n_combined AS (\nSELECT _base.\"env_flag_p_eq_spo.equipmentcode\"\
+  , _base.\"env_flag_p_eq_spo.env_ok_min\", _cm_env_flag_p_eq_spo__waste_flag_p_eq_spo__waste_ok_min.\"\
+  env_flag_p_eq_spo.waste_flag_p_eq_spo.waste_ok_min\", _cm_env_flag_p_eq_spo__ewrii_flag_p_eq__ewrii_ok_min.\"\
+  env_flag_p_eq_spo.ewrii_flag_p_eq.ewrii_ok_min\", _cm_env_flag_p_eq_spo__rssi_flag_p_eq__rssi_ok_min.\"\
+  env_flag_p_eq_spo.rssi_flag_p_eq.rssi_ok_min\"\nFROM _base\nCROSS JOIN _cm_env_flag_p_eq_spo__waste_flag_p_eq_spo__waste_ok_min\n\
+  CROSS JOIN _cm_env_flag_p_eq_spo__ewrii_flag_p_eq__ewrii_ok_min\nCROSS JOIN _cm_env_flag_p_eq_spo__rssi_flag_p_eq__rssi_ok_min\n\
+  ),\nstep1 AS (\nSELECT\n    \"env_flag_p_eq_spo.env_ok_min\",\n    \"env_flag_p_eq_spo.equipmentcode\"\
+  ,\n    \"env_flag_p_eq_spo.ewrii_flag_p_eq.ewrii_ok_min\",\n    \"env_flag_p_eq_spo.rssi_flag_p_eq.rssi_ok_min\"\
+  ,\n    \"env_flag_p_eq_spo.waste_flag_p_eq_spo.waste_ok_min\",\n    \"env_flag_p_eq_spo.env_ok_min\"\
+  \ * \"env_flag_p_eq_spo.rssi_flag_p_eq.rssi_ok_min\" * \"env_flag_p_eq_spo.ewrii_flag_p_eq.ewrii_ok_min\"\
+  \ * \"env_flag_p_eq_spo.waste_flag_p_eq_spo.waste_ok_min\" AS \"env_flag_p_eq_spo.is_sustainable\"\
+  \nFROM _combined\n)\nSELECT\n    \"env_flag_p_eq_spo.env_ok_min\",\n    \"env_flag_p_eq_spo.equipmentcode\"\
+  ,\n    \"env_flag_p_eq_spo.ewrii_flag_p_eq.ewrii_ok_min\",\n    \"env_flag_p_eq_spo.is_sustainable\"\
+  ,\n    \"env_flag_p_eq_spo.rssi_flag_p_eq.rssi_ok_min\",\n    \"env_flag_p_eq_spo.waste_flag_p_eq_spo.waste_ok_min\"\
+  \nFROM step1) AS _inner"
+data_source: polar
+columns:
+- name: equipmentcode
+  sql: equipmentcode
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: env_ok_min
+  sql: env_ok_min
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_sustainable
+  sql: is_sustainable
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: waste_flag_p_eq_spo__waste_ok_min
+  sql: waste_flag_p_eq_spo__waste_ok_min
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: ewrii_flag_p_eq__ewrii_ok_min
+  sql: ewrii_flag_p_eq__ewrii_ok_min
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: rssi_flag_p_eq__rssi_ok_min
+  sql: rssi_flag_p_eq__rssi_ok_min
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Sustainable Polar Operations (KB #42): operations 'sustainable' iff\
+  \ RSSI > 0.7 AND EWRII > 0.65 AND wastemanagementstatus='Normal' AND environmentalimpactindex\
+  \ < 6.0. R-MULTISTAGE.\n\n[kb=42]\nPolar operations are defined as 'sustainable'\
+  \ when the site maintains RSSI > 0.7 and EWRII > 0.65, with wastemanagementstatus\
+  \ = 'Normal' and environmentalimpactindex < 6.0. \u2014 Defines sustainability standards\
+  \ for polar operations\n[/kb=42]"
+hidden: false
+meta:
+  kb_id: 42

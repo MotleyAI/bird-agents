@@ -1,0 +1,102 @@
+version: 6
+name: accountbalances
+sql_table: accountbalances
+query_variables: {}
+data_source: crypto
+columns:
+- name: accountbalancesnode
+  sql: accountbalancesnode
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: walletsum
+  sql: walletsum
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: availsum
+  sql: availsum
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: frozensum
+  sql: frozensum
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: margsum
+  sql: margsum
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: unrealline
+  sql: unrealline
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: realline
+  sql: realline
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: usertag
+  sql: usertag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: positive_realline
+  sql: realline
+  type: INT
+  primary_key: false
+  description: "Helper for Profit Factor (KB #34): realline filtered to positive PnL\
+    \ rows.\n\n[kb=34]\nProfit Factor = \\frac{\\sum positive\\ realline}{|\\sum negative\\\
+    \ realline|}, \\text{where } realline \\text{ is the realized PnL, calculated\
+    \ separately for positive and negative values.} \u2014 Measures the ratio of profitable\
+    \ trades to losing trades adjusted for their values.\n[/kb=34]"
+  label: Profit Factor
+  hidden: false
+  filter: realline > 0
+  meta:
+    kb_id: 34
+- name: negative_realline
+  sql: realline
+  type: INT
+  primary_key: false
+  description: "Helper for Profit Factor (KB #34): realline filtered to negative PnL\
+    \ rows.\n\n[kb=34]\nProfit Factor = \\frac{\\sum positive\\ realline}{|\\sum negative\\\
+    \ realline|}, \\text{where } realline \\text{ is the realized PnL, calculated\
+    \ separately for positive and negative values.} \u2014 Measures the ratio of profitable\
+    \ trades to losing trades adjusted for their values.\n[/kb=34]"
+  label: Profit Factor
+  hidden: false
+  filter: realline < 0
+  meta:
+    kb_id: 34
+measures:
+- formula: positive_realline:sum / -negative_realline:sum
+  name: profit_factor
+  description: "Profit Factor (KB #34): \u03A3(positive realline) / |\u03A3(negative\
+    \ realline)|. Negative-sum is negated to take the absolute value."
+aggregations: []
+joins:
+- target_model: users
+  join_pairs:
+  - - usertag
+    - userstamp
+  join_type: left
+filters: []
+hidden: false

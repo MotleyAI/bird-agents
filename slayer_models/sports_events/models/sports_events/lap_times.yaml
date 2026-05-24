@@ -1,0 +1,120 @@
+version: 6
+name: lap_times
+sql_table: lap_times
+query_variables: {}
+data_source: sports_events
+columns:
+- name: rc_index
+  sql: rc_index
+  type: INT
+  primary_key: true
+  description: Foreign key to races.
+  hidden: false
+  format:
+    type: integer
+- name: wheel_unit
+  sql: wheel_unit
+  type: INT
+  primary_key: true
+  description: Foreign key to drivers.
+  hidden: false
+  format:
+    type: integer
+- name: lapval
+  sql: lapval
+  type: INT
+  primary_key: true
+  description: Lap number.
+  hidden: false
+  format:
+    type: integer
+- name: pp
+  sql: pp
+  type: INT
+  primary_key: false
+  description: Driver's position at this lap.
+  hidden: false
+  format:
+    type: integer
+- name: tmdesc
+  sql: tmdesc
+  type: TEXT
+  primary_key: false
+  description: Lap time as 'M:SS.fff' string. NULL = lap time was not captured or
+    is invalid.
+  hidden: false
+- name: msec_val
+  sql: msec_val
+  type: INT
+  primary_key: false
+  description: Lap time in milliseconds.
+  hidden: false
+  format:
+    type: integer
+- name: lap_seconds
+  sql: msec_val / 1000.0
+  type: DOUBLE
+  primary_key: false
+  description: "Lap Time in Seconds (KB #21): T_seconds = T_milliseconds / 1000.\n\
+    \n[kb=21]\nT_{seconds} = \\frac{T_{milliseconds}}{1000} \u2014 Converts lap time\
+    \ measurements from milliseconds to seconds.\n[/kb=21]"
+  label: Lap Time in Seconds
+  hidden: false
+  meta:
+    kb_id: 21
+- name: lap_seconds_for_avg
+  sql: msec_val / 1000.0
+  type: DOUBLE
+  primary_key: false
+  description: "Helper anchor for KB #23 Driver's Average Lap Time (exposed as the\
+    \ average_lap_seconds measure).\n\n[kb=23]\n\\bar{T}_{lap} = \\frac{\\sum_{i=1}^{n}\
+    \ T_{lap_i}}{n}, \\text{where } T_{lap_i} \\text{ is the Lap Time in Seconds for\
+    \ each lap } i \\text{, and } n \\text{ is the total number of laps completed\
+    \ by the driver.} \u2014 Calculates a driver's average lap time over the course\
+    \ of a race.\n[/kb=23]"
+  label: Driver's Average Lap Time
+  hidden: true
+  meta:
+    kb_id: 23
+- name: lap_seconds_for_consistency
+  sql: msec_val / 1000.0
+  type: DOUBLE
+  primary_key: false
+  description: "Helper anchor for KB #32 Lap Time Consistency (exposed as the lap_time_consistency\
+    \ measure).\n\n[kb=32]\nLTC = \\sqrt{\\frac{\\sum (T_{lap_i} - \\bar{T}_{lap})^2}{n}},\
+    \ \\text{where } \\bar{T}_{lap} \\text{ is the driver's Driver's Average Lap Time.}\
+    \ \u2014 Measures the stability of a driver's lap times during a race, calculated\
+    \ as the standard deviation.\n[/kb=32]"
+  label: Lap Time Consistency
+  hidden: true
+  meta:
+    kb_id: 32
+measures:
+- formula: lap_seconds:avg
+  name: average_lap_seconds
+  label: Driver's Average Lap Time
+  description: 'Driver''s Average Lap Time (KB #23): mean of Lap Time in Seconds across
+    the laps in the group (typically grouped by race + driver). Uses KB #21 Lap Time
+    in Seconds.'
+- formula: lap_seconds:stddev_pop
+  name: lap_time_consistency
+  label: Lap Time Consistency
+  description: 'Lap Time Consistency (KB #32): population standard deviation of Lap
+    Time in Seconds for the group (typically race + driver). Lower is better. Uses
+    KB #21 / KB #23.'
+aggregations: []
+joins:
+- target_model: races
+  join_pairs:
+  - - rc_index
+    - rak_id
+  join_type: left
+- target_model: drivers
+  join_pairs:
+  - - wheel_unit
+    - drv_main
+  join_type: left
+filters: []
+description: Per-driver per-lap timing data for races. One row per (race, driver,
+  lap).
+hidden: false

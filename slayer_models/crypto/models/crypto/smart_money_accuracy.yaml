@@ -1,0 +1,183 @@
+version: 6
+name: smart_money_accuracy
+source_queries:
+- version: 3
+  name: midquote_with_lead
+  source_model: marketdata
+  measures:
+  - formula: midquote:avg
+    name: midquote_now
+  - formula: lead(midquote:avg, 4)
+    name: midquote_next_4h
+  dimensions:
+  - name: mktcombo
+  time_dimensions:
+  - dimension:
+      name: timetrack
+    granularity: hour
+  whole_periods_only: false
+- version: 3
+  name: flow_per_pair_hour
+  source_model: analyticsindicators
+  measures:
+  - formula: smartforce:avg
+    name: smartforce_avg
+  - formula: retailflow:avg
+    name: retailflow_avg
+  - formula: instflow:avg
+    name: instflow_avg
+  dimensions:
+  - name: mktcombo
+    model: marketdata
+  time_dimensions:
+  - dimension:
+      name: timetrack
+      model: marketdata
+    granularity: hour
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: midquote_with_lead
+    joins:
+    - target_model: flow_per_pair_hour
+      join_pairs:
+      - - mktcombo
+        - marketdata__mktcombo
+      - - timetrack
+        - marketdata__timetrack
+    columns:
+    - name: is_correct
+      type: DOUBLE
+      sql: CASE WHEN (flow_per_pair_hour.smartforce_avg > flow_per_pair_hour.retailflow_avg
+        AND flow_per_pair_hour.smartforce_avg > flow_per_pair_hour.instflow_avg AND
+        midquote_with_lead.midquote_next_4h > midquote_with_lead.midquote_now) OR
+        (flow_per_pair_hour.smartforce_avg < flow_per_pair_hour.retailflow_avg AND
+        flow_per_pair_hour.smartforce_avg < flow_per_pair_hour.instflow_avg AND midquote_with_lead.midquote_next_4h
+        < midquote_with_lead.midquote_now) THEN 1 ELSE 0 END
+  dimensions:
+  - name: mktcombo
+  - name: timetrack
+  - name: midquote_now
+  - name: midquote_next_4h
+  - name: is_correct
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"midquote_with_lead.mktcombo\" AS mktcombo, \"midquote_with_lead.timetrack\"\
+  \ AS timetrack, \"midquote_with_lead.midquote_now\" AS midquote_now, \"midquote_with_lead.midquote_next_4h\"\
+  \ AS midquote_next_4h, \"midquote_with_lead.is_correct\" AS is_correct FROM (SELECT\n\
+  \  midquote_with_lead.mktcombo AS \"midquote_with_lead.mktcombo\",\n  midquote_with_lead.timetrack\
+  \ AS \"midquote_with_lead.timetrack\",\n  midquote_with_lead.midquote_now AS \"\
+  midquote_with_lead.midquote_now\",\n  midquote_with_lead.midquote_next_4h AS \"\
+  midquote_with_lead.midquote_next_4h\",\n  CASE\n    WHEN (\n      flow_per_pair_hour.smartforce_avg\
+  \ > flow_per_pair_hour.retailflow_avg\n      AND flow_per_pair_hour.smartforce_avg\
+  \ > flow_per_pair_hour.instflow_avg\n      AND midquote_with_lead.midquote_next_4h\
+  \ > midquote_with_lead.midquote_now\n    )\n    OR (\n      flow_per_pair_hour.smartforce_avg\
+  \ < flow_per_pair_hour.retailflow_avg\n      AND flow_per_pair_hour.smartforce_avg\
+  \ < flow_per_pair_hour.instflow_avg\n      AND midquote_with_lead.midquote_next_4h\
+  \ < midquote_with_lead.midquote_now\n    )\n    THEN 1\n    ELSE 0\n  END AS \"\
+  midquote_with_lead.is_correct\"\nFROM (\n  SELECT\n    \"marketdata.mktcombo\" AS\
+  \ mktcombo,\n    \"marketdata.timetrack\" AS timetrack,\n    \"marketdata.midquote_now\"\
+  \ AS midquote_now,\n    \"marketdata.midquote_avg\" AS midquote_avg,\n    \"marketdata.midquote_next_4h\"\
+  \ AS midquote_next_4h\n  FROM (\n    WITH base AS (\n      SELECT\n        marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo' AS \"marketdata.mktcombo\",\n        STRFTIME('%Y-%m-%d\
+  \ %H:00:00', marketdata.quote_depth_snapshot ->> '$.metadata.timetrack') AS \"marketdata.timetrack\"\
+  ,\n        AVG(marketdata.quote_depth_snapshot ->> '$.quotes.midquote') AS \"marketdata.midquote_now\"\
+  ,\n        AVG(marketdata.quote_depth_snapshot ->> '$.quotes.midquote') AS \"marketdata.midquote_avg\"\
+  \n      FROM marketdata AS marketdata\n      GROUP BY\n        marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo',\n        STRFTIME('%Y-%m-%d %H:00:00', marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.timetrack')\n    ), step1 AS (\n      SELECT\n        \"marketdata.midquote_avg\"\
+  ,\n        \"marketdata.midquote_now\",\n        \"marketdata.mktcombo\",\n    \
+  \    \"marketdata.timetrack\",\n        LEAD(\"marketdata.midquote_avg\", 4) OVER\
+  \ (PARTITION BY \"marketdata.mktcombo\" ORDER BY \"marketdata.timetrack\") AS \"\
+  marketdata.midquote_next_4h\"\n      FROM base\n    )\n    SELECT\n      \"marketdata.midquote_avg\"\
+  ,\n      \"marketdata.midquote_next_4h\",\n      \"marketdata.midquote_now\",\n\
+  \      \"marketdata.mktcombo\",\n      \"marketdata.timetrack\"\n    FROM step1\n\
+  \  ) AS _inner\n) AS midquote_with_lead\nLEFT JOIN (\n  (\n    SELECT\n      \"\
+  analyticsindicators.marketdata.mktcombo\" AS marketdata__mktcombo,\n      \"analyticsindicators.marketdata.timetrack\"\
+  \ AS marketdata__timetrack,\n      \"analyticsindicators.smartforce_avg\" AS smartforce_avg,\n\
+  \      \"analyticsindicators.retailflow_avg\" AS retailflow_avg,\n      \"analyticsindicators.instflow_avg\"\
+  \ AS instflow_avg\n    FROM (\n      SELECT\n        marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo' AS \"analyticsindicators.marketdata.mktcombo\",\n  \
+  \      STRFTIME('%Y-%m-%d %H:00:00', marketdata.quote_depth_snapshot ->> '$.metadata.timetrack')\
+  \ AS \"analyticsindicators.marketdata.timetrack\",\n        AVG(analyticsindicators.market_sentiment_indicators\
+  \ ->> '$.flow.smartforce') AS \"analyticsindicators.smartforce_avg\",\n        AVG(analyticsindicators.market_sentiment_indicators\
+  \ ->> '$.flow.retailflow') AS \"analyticsindicators.retailflow_avg\",\n        AVG(analyticsindicators.market_sentiment_indicators\
+  \ ->> '$.flow.instflow') AS \"analyticsindicators.instflow_avg\"\n      FROM analyticsindicators\
+  \ AS analyticsindicators\n      LEFT JOIN marketdata AS marketdata\n        ON analyticsindicators.mdataref\
+  \ = marketdata.marketdatanode\n      GROUP BY\n        marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo',\n        STRFTIME('%Y-%m-%d %H:00:00', marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.timetrack')\n    ) AS _inner\n  )\n) AS flow_per_pair_hour\n \
+  \ ON midquote_with_lead.mktcombo = flow_per_pair_hour.marketdata__mktcombo\n  AND\
+  \ midquote_with_lead.timetrack = flow_per_pair_hour.marketdata__timetrack) AS _inner"
+data_source: crypto
+columns:
+- name: mktcombo
+  sql: mktcombo
+  type: TEXT
+  primary_key: false
+  description: Trading pair (e.g. BTC-USDT).
+  hidden: false
+- name: timetrack
+  sql: timetrack
+  type: TIMESTAMP
+  primary_key: false
+  description: Timestamp the snapshot was recorded.
+  hidden: false
+- name: midquote_now
+  sql: midquote_now
+  type: DOUBLE
+  primary_key: false
+  description: Midpoint price.
+  hidden: false
+  format:
+    type: float
+- name: midquote_next_4h
+  sql: midquote_next_4h
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: is_correct
+  sql: is_correct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures:
+- formula: is_correct:avg
+  name: smart_money_accuracy
+  label: Smart Money Accuracy
+  description: "Smart Money Accuracy (KB #51): mean of the per-(pair, hour) is_correct\
+    \ boolean. Aggregates to the proportion of (pair, hour) buckets where Smart Money\
+    \ Flow direction agreed with the 4-hour-ahead midquote movement.\n\n[kb=51]\n\
+    The proportion of times the Smart Money Flow direction matches the 4-hour price\
+    \ movement direction, calculated as: $$ \\frac{\\text{COUNT(CASE WHEN (smartforce\
+    \ > retailflow AND smartforce > instflow AND next\\_price\\_4h > mid\\_price)\
+    \ OR (smartforce < retailflow AND smartforce < instflow AND next\\_price\\_4h\
+    \ < mid\\_price) THEN 1 ELSE 0 END)}}{\\text{COUNT(*)}} $$ \u2014 Measures the\
+    \ success rate of smart money flow in predicting the 4-hour price movement direction.\n\
+    [/kb=51]"
+  meta:
+    kb_id: 51
+aggregations: []
+joins: []
+filters: []
+description: "Smart Money Accuracy (KB #51): proportion of (mktcombo, hour) buckets\
+  \ where Smart Money Flow direction matched the 4-hour-ahead midquote movement. Stage\
+  \ 1 builds per-(pair, hour) midquote_now and midquote_next_4h via lead(midquote,\
+  \ 4) on marketdata partitioned by mktcombo and ordered by timetrack. Stage 2 builds\
+  \ per-(pair, hour) average flow signals (smartforce, retailflow, instflow) from\
+  \ analyticsindicators (joined to marketdata for the pair/time keys). Stage 3 joins\
+  \ them and emits is_correct: 1 when smart money was bullish (smartforce > retailflow\
+  \ AND smartforce > instflow) and midquote_next_4h > midquote_now, OR bearish (smartforce\
+  \ < retailflow AND smartforce < instflow) and midquote_next_4h < midquote_now, else\
+  \ 0. Aggregate is_correct:avg to get the accuracy proportion.\n\n[kb=51]\nThe proportion\
+  \ of times the Smart Money Flow direction matches the 4-hour price movement direction,\
+  \ calculated as: $$ \\frac{\\text{COUNT(CASE WHEN (smartforce > retailflow AND smartforce\
+  \ > instflow AND next\\_price\\_4h > mid\\_price) OR (smartforce < retailflow AND\
+  \ smartforce < instflow AND next\\_price\\_4h < mid\\_price) THEN 1 ELSE 0 END)}}{\\\
+  text{COUNT(*)}} $$ \u2014 Measures the success rate of smart money flow in predicting\
+  \ the 4-hour price movement direction.\n[/kb=51]"
+hidden: false
+meta:
+  kb_id: 51

@@ -1,0 +1,64 @@
+version: 6
+name: industry_concentration_ratio
+source_queries:
+- version: 3
+  name: industry_apps
+  source_model: cases
+  measures:
+  - formula: '*:count'
+  dimensions:
+  - name: naics_code
+  whole_periods_only: false
+- version: 3
+  name: industry_share_sq
+  source_model:
+    source_name: industry_apps
+    columns:
+    - name: share_sq
+      type: DOUBLE
+      sql: (_count * 1.0 / SUM(_count) OVER ()) * (_count * 1.0 / SUM(_count) OVER
+        ())
+  dimensions:
+  - name: naics_code
+  - name: share_sq
+  whole_periods_only: false
+- version: 3
+  source_model: industry_share_sq
+  measures:
+  - formula: share_sq:sum
+    name: icr
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"industry_share_sq.share_sq_sum\" AS share_sq_sum FROM\
+  \ (SELECT\n  SUM(industry_share_sq.share_sq) AS \"industry_share_sq.share_sq_sum\"\
+  \nFROM (\n  SELECT\n    \"industry_apps.naics_code\" AS naics_code,\n    \"industry_apps.share_sq\"\
+  \ AS share_sq\n  FROM (\n    SELECT\n      industry_apps.naics_code AS \"industry_apps.naics_code\"\
+  ,\n      (\n        _count * 1.0 / SUM(_count) OVER ()\n      ) * (\n        _count\
+  \ * 1.0 / SUM(_count) OVER ()\n      ) AS \"industry_apps.share_sq\"\n    FROM (\n\
+  \      SELECT\n        \"cases.naics_code\" AS naics_code,\n        \"cases._count\"\
+  \ AS _count\n      FROM (\n        SELECT\n          CAST(employer.employer_contact_info\
+  \ ->> '$.naics_code' AS INTEGER) AS \"cases.naics_code\",\n          COUNT(*) AS\
+  \ \"cases._count\"\n        FROM cases AS cases\n        LEFT JOIN employer AS employer\n\
+  \          ON cases.homefirm = employer.corphandle\n        GROUP BY\n         \
+  \ CAST(employer.employer_contact_info ->> '$.naics_code' AS INTEGER)\n      ) AS\
+  \ _inner\n    ) AS industry_apps\n  ) AS _inner\n) AS industry_share_sq) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: share_sq_sum
+  sql: share_sq_sum
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Industry Concentration Ratio (KB #35): Herfindahl-style sum((apps_in_industry\
+  \ / total_apps)^2) where industry = employer NAICS code. Single-row model with column\
+  \ share_sq_sum = the ICR.\n\n[kb=35]\nICR = sum((Applications in Industry i / Total\
+  \ Applications)^2) for all industries. Industry and application information are\
+  \ included in the application data. \u2014 Measures the concentration of applications\
+  \ across industries.\n[/kb=35]"
+hidden: false
+meta:
+  kb_id: 35

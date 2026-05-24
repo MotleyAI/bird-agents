@@ -1,0 +1,68 @@
+version: 6
+name: market_stability_index
+source_queries:
+- version: 3
+  name: vendor_disputes_per_market
+  source_model: vendors
+  measures:
+  - formula: venddisputecount:sum
+  - formula: vendtxcount:sum
+  dimensions:
+  - name: mktref
+  - name: mktspan
+    model: markets
+  - name: esccomprate
+    model: markets
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: vendor_disputes_per_market
+    columns:
+    - name: msi
+      type: DOUBLE
+      sql: (markets__mktspan * 1.0 / 365) * (markets__esccomprate * 1.0 / 100) * (1
+        - venddisputecount_sum * 1.0 / NULLIF(vendtxcount_sum, 0)) * 100
+  dimensions:
+  - name: mktref
+  - name: msi
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vendor_disputes_per_market.mktref\" AS mktref, \"vendor_disputes_per_market.msi\"\
+  \ AS msi FROM (SELECT\n  vendor_disputes_per_market.mktref AS \"vendor_disputes_per_market.mktref\"\
+  ,\n  (\n    markets__mktspan * 1.0 / 365\n  ) * (\n    markets__esccomprate * 1.0\
+  \ / 100\n  ) * (\n    1 - venddisputecount_sum * 1.0 / NULLIF(vendtxcount_sum, 0)\n\
+  \  ) * 100 AS \"vendor_disputes_per_market.msi\"\nFROM (\n  SELECT\n    \"vendors.mktref\"\
+  \ AS mktref,\n    \"vendors.markets.mktspan\" AS markets__mktspan,\n    \"vendors.markets.esccomprate\"\
+  \ AS markets__esccomprate,\n    \"vendors.venddisputecount_sum\" AS venddisputecount_sum,\n\
+  \    \"vendors.vendtxcount_sum\" AS vendtxcount_sum\n  FROM (\n    SELECT\n    \
+  \  vendors.mktref AS \"vendors.mktref\",\n      markets.mktspan AS \"vendors.markets.mktspan\"\
+  ,\n      markets.esccomprate AS \"vendors.markets.esccomprate\",\n      SUM(vendors.venddisputecount)\
+  \ AS \"vendors.venddisputecount_sum\",\n      SUM(vendors.vendtxcount) AS \"vendors.vendtxcount_sum\"\
+  \n    FROM vendors AS vendors\n    LEFT JOIN markets AS markets\n      ON vendors.mktref\
+  \ = markets.mktregistry\n    GROUP BY\n      vendors.mktref,\n      markets.mktspan,\n\
+  \      markets.esccomprate\n  ) AS _inner\n) AS vendor_disputes_per_market) AS _inner"
+data_source: cybermarket
+columns:
+- name: mktref
+  sql: mktref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: msi
+  sql: msi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Market Stability Index (MSI, KB #15) per market: (mktspan/365) * (esccomprate/100)\
+  \ * (1 - SUM(venddisputecount)/SUM(vendtxcount)) * 100. Higher = more stable market.\n\
+  \n[kb=15]\nMSI = \\frac{mktspan}{365} \\times \\frac{esccomprate}{100} \\times \\\
+  left(1 - \\frac{\\sum venddisputecount}{\\sum vendtxcount} \\right) \\times 100,\
+  \ \\text{where higher scores indicate more stable markets less likely to disappear\
+  \ suddenly.} \u2014 Measures the operational stability of a market\n[/kb=15]"
+hidden: false
+meta:
+  kb_id: 15

@@ -1,0 +1,139 @@
+version: 6
+name: sourceproperties
+sql_table: sourceproperties
+query_variables: {}
+data_source: alien
+columns:
+- name: signalref
+  sql: signalref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: sourceradeg
+  sql: sourceradeg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: sourcedecdeg
+  sql: sourcedecdeg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: sourcedistly
+  sql: sourcedistly
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: gallong
+  sql: gallong
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: gallat
+  sql: gallat
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: celestobj
+  sql: celestobj
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: objtype
+  sql: objtype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: objmag
+  sql: objmag
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: objtempk
+  sql: objtempk
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: objmasssol
+  sql: objmasssol
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: objagegyr
+  sql: objagegyr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: objmetal
+  sql: objmetal
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: objpropmotion
+  sql: objpropmotion
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: objradvel
+  sql: objradvel
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: clsf
+  sql: (CASE WHEN celestobj IS NOT NULL AND celestobj <> '' AND celestobj <> 'Unknown'
+    THEN 2 ELSE 1 END) * (CASE WHEN objtype = 'Giant' AND objmasssol BETWEEN 0.8 AND
+    1.2 THEN 1.5 ELSE 1 END) * (CASE WHEN objmetal > 0 THEN objmetal + 1 ELSE 0.5
+    END)
+  type: DOUBLE
+  primary_key: false
+  description: "Celestial Location Significance Factor (CLSF) = (CelestObj?2:1) *\
+    \ (ObjType='Giant' AND ObjMassSol in [0.8,1.2] ? 1.5 : 1) * (ObjMetal>0 ? ObjMetal+1\
+    \ : 0.5). Higher values indicate source locations more likely to harbor intelligent\
+    \ life. The CelestObj truthiness is interpreted as 'classified to a known type'\
+    \ (i.e. not NULL/empty/Unknown).\n\n[kb=35]\n$\\text{CLSF} = (\\text{CelestObj}\
+    \ ? 2 : 1) \\times (\\text{ObjType} == \\text{'Giant'} \\&\\& \\text{ObjMassSol}\
+    \ \\text{ between } 0.8 \\text{ and } 1.2 ? 1.5 : 1) \\times (\\text{ObjMetal}\
+    \ > 0 ? \\text{ObjMetal} + 1 : 0.5)$, where higher values indicate source locations\
+    \ more likely to harbor intelligent life. \u2014 Calculates significance of signal\
+    \ source location based on astronomical targets of interest.\n[/kb=35]"
+  label: Celestial Location Significance Factor (CLSF)
+  hidden: false
+  meta:
+    kb_id: 35
+measures: []
+aggregations: []
+joins:
+- target_model: signals
+  join_pairs:
+  - - signalref
+    - signalregistry
+  join_type: left
+filters: []
+description: 'Astronomical source properties for each signal: sky coordinates, distance,
+  celestial object class & subtype, mass / age / metallicity, proper motion and radial
+  velocity.'
+hidden: false

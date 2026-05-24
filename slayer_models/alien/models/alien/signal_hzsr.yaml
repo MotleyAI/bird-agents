@@ -1,0 +1,70 @@
+version: 6
+name: signal_hzsr
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: sourceproperties
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: hzsr
+      type: DOUBLE
+      sql: (signalprobabilities.techsigprob * (1 - signalprobabilities.natsrcprob)
+        * signalprobabilities.sigunique * (0.5 + signalprobabilities.anomscore / 10.0))
+        * (CASE WHEN sourceproperties.objtype = 'Dwarf' THEN (CASE WHEN sourceproperties.objmasssol
+        BETWEEN 0.7 AND 1.4 THEN (CASE WHEN (sourceproperties.sourcedistly / (CASE
+        WHEN sourceproperties.objmasssol > 0 THEN sourceproperties.objmasssol ELSE
+        1 END)) BETWEEN 0.8 AND 1.7 THEN 2 ELSE 0.5 END) ELSE 0.3 END) ELSE 0.1 END)
+  dimensions:
+  - name: signalregistry
+  - name: hzsr
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.hzsr\"\
+  \ AS hzsr FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\",\n\
+  \  (\n    signalprobabilities.techsigprob * (\n      1 - signalprobabilities.natsrcprob\n\
+  \    ) * signalprobabilities.sigunique * (\n      0.5 + signalprobabilities.anomscore\
+  \ / 10.0\n    )\n  ) * (\n    CASE\n      WHEN sourceproperties.objtype = 'Dwarf'\n\
+  \      THEN (\n        CASE\n          WHEN sourceproperties.objmasssol BETWEEN\
+  \ 0.7 AND 1.4\n          THEN (\n            CASE\n              WHEN (\n      \
+  \          sourceproperties.sourcedistly / (\n                  CASE\n         \
+  \           WHEN sourceproperties.objmasssol > 0\n                    THEN sourceproperties.objmasssol\n\
+  \                    ELSE 1\n                  END\n                )\n        \
+  \      ) BETWEEN 0.8 AND 1.7\n              THEN 2\n              ELSE 0.5\n   \
+  \         END\n          )\n          ELSE 0.3\n        END\n      )\n      ELSE\
+  \ 0.1\n    END\n  ) AS \"signals.hzsr\"\nFROM signals AS signals\nLEFT JOIN signalprobabilities\
+  \ AS signalprobabilities\n  ON signals.signalregistry = signalprobabilities.signalref\n\
+  LEFT JOIN sourceproperties AS sourceproperties\n  ON signals.signalregistry = sourceproperties.signalref)\
+  \ AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: hzsr
+  sql: hzsr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Habitable Zone Signal Relevance (HZSR) per signal.\n\n[kb=37]\n$\\text{HZSR}\
+  \ = \\text{TOLS} \\times (\\text{ObjType} == \\text{'Dwarf'} ? (0.7 \\leq \\text{ObjMassSol}\
+  \ \\leq 1.4 ? (0.8 \\leq \\frac{\\text{SourceDistLy}}{\\sqrt{\\text{ObjMassSol}}}\
+  \ \\leq 1.7 ? 2 : 0.5) : 0.3) : 0.1)$, where TOLS (Technological Origin Likelihood\
+  \ Score) is weighted by stellar habitability factors. \u2014 Assesses signal relevance\
+  \ based on source's position in habitable zone.\n[/kb=37]"
+hidden: false
+meta:
+  kb_id: 37

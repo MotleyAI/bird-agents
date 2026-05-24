@@ -1,0 +1,183 @@
+version: 6
+name: quality_alert_status
+source_queries:
+- version: 3
+  name: mcs_per_shipment_qas
+  source_model: regulatoryandmaintenance
+  measures:
+  - formula: mcs:avg
+    name: mcs
+  dimensions:
+  - name: shipgov
+  whole_periods_only: false
+- version: 3
+  name: agg_per_container_qas
+  source_model: sensordata
+  measures:
+  - formula: tss:avg
+    name: tss
+  - formula: hqi:avg
+    name: hqi
+  - formula: cri:avg
+    name: cri
+  - formula: tbs:avg
+    name: tbs
+  - formula: cei:avg
+    name: cei
+  - formula: trs:avg
+    name: trs
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: vaccinedetails
+    joins:
+    - target_model: agg_per_container_qas
+      join_pairs:
+      - - containvac
+        - containlink
+    - target_model: mcs_per_shipment_qas
+      join_pairs:
+      - - shipinject
+        - shipgov
+    columns:
+    - name: qmi
+      type: DOUBLE
+      sql: mcs_per_shipment_qas.mcs * (((JULIANDAY(expireday) - JULIANDAY('now'))
+        * agg_per_container_qas.tss) / 365.0 * agg_per_container_qas.hqi * (1 - agg_per_container_qas.cri))
+        * (1 - agg_per_container_qas.tbs / 10.0)
+    - name: vsi
+      type: DOUBLE
+      sql: ((JULIANDAY(expireday) - JULIANDAY('now')) * agg_per_container_qas.tss)
+        / 365.0 * agg_per_container_qas.cei * (1 - agg_per_container_qas.trs)
+    - name: is_quality_alert_status
+      type: BOOLEAN
+      sql: CASE WHEN (mcs_per_shipment_qas.mcs * (((JULIANDAY(expireday) - JULIANDAY('now'))
+        * agg_per_container_qas.tss) / 365.0 * agg_per_container_qas.hqi * (1 - agg_per_container_qas.cri))
+        * (1 - agg_per_container_qas.tbs / 10.0)) < 0.3 AND (((JULIANDAY(expireday)
+        - JULIANDAY('now')) * agg_per_container_qas.tss) / 365.0 * agg_per_container_qas.cei
+        * (1 - agg_per_container_qas.trs)) < 0.5 THEN 1 ELSE 0 END
+  dimensions:
+  - name: vacregistry
+  - name: containvac
+  - name: shipinject
+  - name: qmi
+  - name: vsi
+  - name: is_quality_alert_status
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
+  \ AS containvac, \"vaccinedetails.shipinject\" AS shipinject, \"vaccinedetails.qmi\"\
+  \ AS qmi, \"vaccinedetails.vsi\" AS vsi, \"vaccinedetails.is_quality_alert_status\"\
+  \ AS is_quality_alert_status FROM (SELECT\n  vaccinedetails.vacregistry AS \"vaccinedetails.vacregistry\"\
+  ,\n  vaccinedetails.containvac AS \"vaccinedetails.containvac\",\n  vaccinedetails.shipinject\
+  \ AS \"vaccinedetails.shipinject\",\n  mcs_per_shipment_qas.mcs * (\n    (\n   \
+  \   (\n        JULIANDAY(vaccinedetails.expireday) - JULIANDAY('now')\n      ) *\
+  \ agg_per_container_qas.tss\n    ) / 365.0 * agg_per_container_qas.hqi * (\n   \
+  \   1 - agg_per_container_qas.cri\n    )\n  ) * (\n    1 - agg_per_container_qas.tbs\
+  \ / 10.0\n  ) AS \"vaccinedetails.qmi\",\n  (\n    (\n      JULIANDAY(vaccinedetails.expireday)\
+  \ - JULIANDAY('now')\n    ) * agg_per_container_qas.tss\n  ) / 365.0 * agg_per_container_qas.cei\
+  \ * (\n    1 - agg_per_container_qas.trs\n  ) AS \"vaccinedetails.vsi\",\n  CASE\n\
+  \    WHEN (\n      mcs_per_shipment_qas.mcs * (\n        (\n          (\n      \
+  \      JULIANDAY(vaccinedetails.expireday) - JULIANDAY('now')\n          ) * agg_per_container_qas.tss\n\
+  \        ) / 365.0 * agg_per_container_qas.hqi * (\n          1 - agg_per_container_qas.cri\n\
+  \        )\n      ) * (\n        1 - agg_per_container_qas.tbs / 10.0\n      )\n\
+  \    ) < 0.3\n    AND (\n      (\n        (\n          JULIANDAY(vaccinedetails.expireday)\
+  \ - JULIANDAY('now')\n        ) * agg_per_container_qas.tss\n      ) / 365.0 * agg_per_container_qas.cei\
+  \ * (\n        1 - agg_per_container_qas.trs\n      )\n    ) < 0.5\n    THEN 1\n\
+  \    ELSE 0\n  END AS \"vaccinedetails.is_quality_alert_status\"\nFROM vaccinedetails\
+  \ AS vaccinedetails\nLEFT JOIN (\n  (\n    SELECT\n      \"regulatoryandmaintenance.shipgov\"\
+  \ AS shipgov,\n      \"regulatoryandmaintenance.mcs\" AS mcs\n    FROM (\n     \
+  \ SELECT\n        regulatoryandmaintenance.shipgov AS \"regulatoryandmaintenance.shipgov\"\
+  ,\n        AVG(\n          regulatoryandmaintenance.compscore * (\n            1\
+  \ - COALESCE(CAST(regulatoryandmaintenance.incidents AS REAL) / 10, 0)\n       \
+  \   )\n        ) AS \"regulatoryandmaintenance.mcs\"\n      FROM regulatoryandmaintenance\
+  \ AS regulatoryandmaintenance\n      GROUP BY\n        regulatoryandmaintenance.shipgov\n\
+  \    ) AS _inner\n  )\n) AS mcs_per_shipment_qas\n  ON vaccinedetails.shipinject\
+  \ = mcs_per_shipment_qas.shipgov\nLEFT JOIN (\n  (\n    SELECT\n      \"sensordata.containlink\"\
+  \ AS containlink,\n      \"sensordata.tss\" AS tss,\n      \"sensordata.hqi\" AS\
+  \ hqi,\n      \"sensordata.cri\" AS cri,\n      \"sensordata.tbs\" AS tbs,\n   \
+  \   \"sensordata.cei\" AS cei,\n      \"sensordata.trs\" AS trs\n    FROM (\n  \
+  \    SELECT\n        sensordata.containlink AS \"sensordata.containlink\",\n   \
+  \     AVG(\n          (\n            1 - COALESCE(CAST(sensordata.tempdevcount AS\
+  \ REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          ) * COALESCE(sensordata.tempstabidx, 1)\n       \
+  \ ) AS \"sensordata.tss\",\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.handleevents\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          )\n        ) AS \"sensordata.hqi\",\n        AVG(\n\
+  \          (\n            1 - (\n              (\n                1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n              ) * (\n                1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n              ) * COALESCE(sensordata.tempstabidx, 1)\n   \
+  \         )\n          ) * (\n            1 - COALESCE(container.coolremainpct,\
+  \ 0) / 100\n          )\n        ) AS \"sensordata.cri\",\n        AVG(\n      \
+  \    ABS(sensordata.tempnowc - sensordata.storetempc) / NULLIF(sensordata.temptolc,\
+  \ 0) * sensordata.tempdevcount\n        ) AS \"sensordata.tbs\",\n        AVG(\n\
+  \          (\n            (\n              1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n            ) * (\n              1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n            ) * COALESCE(sensordata.tempstabidx, 1)\n     \
+  \     ) * (\n            COALESCE(container.coolremainpct, 0) / 100.0\n        \
+  \  ) * (\n            1 - (\n              (\n                100 - container.coolremainpct\n\
+  \              ) / NULLIF(JULIANDAY('now') - JULIANDAY(container.refilllatest),\
+  \ 0)\n            ) / 20.0\n          )\n        ) AS \"sensordata.cei\",\n    \
+  \    AVG(\n          (\n            (\n              1 - (\n                (\n\
+  \                  1 - COALESCE(CAST(sensordata.tempdevcount AS REAL) / 100, 0)\n\
+  \                ) * (\n                  1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n                ) * COALESCE(sensordata.tempstabidx, 1)\n \
+  \             )\n            ) * (\n              1 - COALESCE(container.coolremainpct,\
+  \ 0) / 100\n            )\n          ) * (\n            1 - (\n              (\n\
+  \                1 - COALESCE(CAST(sensordata.handleevents AS REAL) / 100, 0)\n\
+  \              ) * (\n                1 - COALESCE(CAST(sensordata.critevents AS\
+  \ REAL) / 10, 0)\n              )\n            )\n          ) * (\n            1\
+  \ + ABS(sensordata.tempnowc - sensordata.storetempc) / NULLIF(sensordata.temptolc,\
+  \ 0) * sensordata.tempdevcount\n          )\n        ) AS \"sensordata.trs\"\n \
+  \     FROM sensordata AS sensordata\n      LEFT JOIN container AS container\n  \
+  \      ON sensordata.containlink = container.containregistry\n      GROUP BY\n \
+  \       sensordata.containlink\n    ) AS _inner\n  )\n) AS agg_per_container_qas\n\
+  \  ON vaccinedetails.containvac = agg_per_container_qas.containlink) AS _inner"
+data_source: vaccine
+columns:
+- name: vacregistry
+  sql: vacregistry
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: containvac
+  sql: containvac
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shipinject
+  sql: shipinject
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: qmi
+  sql: qmi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: vsi
+  sql: vsi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_quality_alert_status
+  sql: is_quality_alert_status
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Quality Alert Status (KB #46). One row per vaccinedetails record with\
+  \ is_quality_alert_status boolean = QMI < 0.3 AND VSI < 0.5. QMI (KB #37) and VSI\
+  \ (KB #39) are computed inline from per-shipment / per-container peer aggregates.\n\
+  \n[kb=46]\nA status where QMI < 0.3 and VSI < 0.5 \u2014 Identifies severe quality\
+  \ issues.\n[/kb=46]"
+hidden: false
+meta:
+  kb_id: 46

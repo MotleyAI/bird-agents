@@ -1,0 +1,64 @@
+version: 6
+name: occupational_demand_index
+source_queries:
+- version: 3
+  name: soc_apps
+  source_model: cases
+  measures:
+  - formula: '*:count'
+  dimensions:
+  - name: soccd
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: soc_apps
+    columns:
+    - name: odi
+      type: DOUBLE
+      sql: _count * 1.0 / AVG(_count) OVER ()
+  dimensions:
+  - name: soccd
+  - name: _count
+  - name: odi
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"soc_apps.soccd\" AS soccd, \"soc_apps._count\" AS _count,\
+  \ \"soc_apps.odi\" AS odi FROM (SELECT\n  soc_apps.soccd AS \"soc_apps.soccd\",\n\
+  \  soc_apps._count AS \"soc_apps._count\",\n  _count * 1.0 / AVG(_count) OVER ()\
+  \ AS \"soc_apps.odi\"\nFROM (\n  SELECT\n    \"cases.soccd\" AS soccd,\n    \"cases._count\"\
+  \ AS _count\n  FROM (\n    SELECT\n      cases.soccd AS \"cases.soccd\",\n     \
+  \ COUNT(*) AS \"cases._count\"\n    FROM cases AS cases\n    GROUP BY\n      cases.soccd\n\
+  \  ) AS _inner\n) AS soc_apps) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: soccd
+  sql: soccd
+  type: TEXT
+  primary_key: false
+  description: 'Standard Occupational Classification (SOC) code (KB #7). E.g. 15-1253.00
+    = Software Quality Assurance Analysts and Testers; 29-1141.00 = Registered Nurses.'
+  hidden: false
+- name: _count
+  sql: _count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: odi
+  sql: odi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Occupational Demand Index per SOC (KB #21): apps_for_SOC / avg_apps_per_SOC.\
+  \ Per-SOC rows.\n\n[kb=21]\nODI = (Number of Applications for SOC Code / Average\
+  \ Applications per SOC Code). SOC code information is included in the job data for\
+  \ each application. \u2014 Measures the relative demand for specific occupations\
+  \ based on SOC codes.\n[/kb=21]"
+hidden: false
+meta:
+  kb_id: 21

@@ -1,0 +1,113 @@
+version: 6
+name: messaginganalysis
+sql_table: messaginganalysis
+query_variables: {}
+data_source: fake
+columns:
+- name: msgkey
+  sql: msgkey
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: msgcntref
+  sql: msgcntref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: msgnetref
+  sql: msgnetref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: msgsimscore
+  sql: msgsimscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: msgfreq
+  sql: msgfreq
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: msgtgtdiv
+  sql: msgtgtdiv
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: resptimepat
+  sql: resptimepat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: convnatval
+  sql: convnatval
+  type: DOUBLE
+  primary_key: false
+  description: "Conversation naturalness (KB #24). Range 0-1; >0.7 natural human conversation;\
+    \ <0.3 automated / scripted. Component of CAS (Content Authenticity, KB #1) and\
+    \ (1-convnatval) feeds BBI (KB #3).\n\n[kb=24]\nRanges from 0 to 1. Values above\
+    \ 0.7 indicate natural human conversation, while values below 0.3 suggest automated\
+    \ or scripted responses. \u2014 Illustrates conversation naturalness value.\n\
+    [/kb=24]"
+  label: messaginganalysis.convnatval
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 24
+- name: sentvar
+  sql: sentvar
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: langsoph
+  sql: langsoph
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: txtuniq
+  sql: txtuniq
+  type: DOUBLE
+  primary_key: false
+  description: 'Text uniqueness across messages. Component of CMS (KB #8): 0.3 * (1
+    - txtuniq).'
+  hidden: false
+  format:
+    type: float
+- name: keypatmatch
+  sql: keypatmatch
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: topiccoh
+  sql: topiccoh
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins:
+- target_model: contentbehavior
+  join_pairs:
+  - - msgcntref
+    - cntref
+  join_type: left
+- target_model: networkmetrics
+  join_pairs:
+  - - msgnetref
+    - netkey
+  join_type: left
+filters: []
+hidden: false

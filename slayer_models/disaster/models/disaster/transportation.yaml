@@ -1,0 +1,234 @@
+version: 6
+name: transportation
+sql_table: transportation
+query_variables: {}
+data_source: disaster
+columns:
+- name: transportregistry
+  sql: transportregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: transportdistref
+  sql: transportdistref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: transporthubref
+  sql: transporthubref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: transportsupref
+  sql: transportsupref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vehiclecount
+  sql: vehiclecount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: trucksavailable
+  sql: trucksavailable
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: helosavailable
+  sql: helosavailable
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: boatsavailable
+  sql: boatsavailable
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: totaldeliverytons
+  sql: totaldeliverytons
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: dailydeliverytons
+  sql: dailydeliverytons
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: lastmilestatus
+  sql: lastmilestatus
+  type: TEXT
+  primary_key: false
+  description: "Last-mile delivery state (KB #3). On Track = proceeding as scheduled;\
+    \ Delayed = non-critical setbacks; Suspended = temporarily halted due to severe\
+    \ constraints.\n\n[kb=3]\nOn Track indicates deliveries proceeding as scheduled,\
+    \ Delayed shows deliveries facing non-critical setbacks, and Suspended means deliveries\
+    \ have temporarily halted due to severe constraints \u2014 Illustrates the state\
+    \ of final delivery operations to affected populations\n[/kb=3]"
+  label: lastmilestatus
+  hidden: false
+  meta:
+    kb_id: 3
+- name: distributionpoints
+  sql: distributionpoints
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: avgdeliveryhours
+  sql: avgdeliveryhours
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: deliverysuccessrate
+  sql: deliverysuccessrate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: routeoptstatus
+  sql: routeoptstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fuelefficiencylpk
+  sql: fuelefficiencylpk
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: maintenancestate
+  sql: maintenancestate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vehiclebreakrate
+  sql: vehiclebreakrate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: lastmile_factor
+  sql: CASE lastmilestatus WHEN 'On Track' THEN 1.0 WHEN 'Delayed' THEN 0.7 WHEN 'Suspended'
+    THEN 0.4 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric factor used by KB #36 (LNR): On Track=1.0, Delayed=0.7, Suspended=0.4,
+    else=0.'
+  hidden: false
+- name: oei
+  sql: (deliverysuccessrate / 100.0) * (1 - avgdeliveryhours / 24.0) * (1 + distributionpoints
+    / 10.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Operational Efficiency Index (OEI, KB #11): (deliverysuccessrate/100)\
+    \ * (1 - avgdeliveryhours/24) * (1 + distributionpoints/10).\n\n[kb=11]\nOEI =\
+    \ \\frac{deliverysuccessrate}{100} \\times \\left(1 - \\frac{avgdeliveryhours}{24}\\\
+    right) \\times \\left(1 + \\frac{distributionpoints}{10}\\right) \u2014 Quantifies\
+    \ operational efficiency based on resource allocation and supply flow\n[/kb=11]"
+  label: Operational Efficiency Index (OEI)
+  hidden: false
+  meta:
+    kb_id: 11
+- name: lpm
+  sql: (totaldeliverytons * 1.0 / NULLIF(distributionhubs.hubcaptons, 0)) * deliverysuccessrate
+    * (1 - vehiclebreakrate / 100.0) * 100
+  type: DOUBLE
+  primary_key: false
+  description: "Logistics Performance Metric (LPM, KB #15): (totaldeliverytons/distributionhubs.hubcaptons)\
+    \ * deliverysuccessrate * (1 - vehiclebreakrate/100) * 100.\n\n[kb=15]\nLPM =\
+    \ \\frac{totaldeliverytons}{hubcaptons} \\times deliverysuccessrate \\times \\\
+    left(1 - \\frac{vehiclebreakrate}{100}\\right) \\times 100 \u2014 Measures the\
+    \ overall performance of logistics operations\n[/kb=15]"
+  label: Logistics Performance Metric (LPM)
+  hidden: false
+  meta:
+    kb_id: 15
+- name: lnr
+  sql: ((totaldeliverytons * 1.0 / NULLIF(distributionhubs.hubcaptons, 0)) * deliverysuccessrate
+    * (1 - vehiclebreakrate / 100.0) * 100) * (vehiclecount / 20.0) * (CASE lastmilestatus
+    WHEN 'On Track' THEN 1.0 WHEN 'Delayed' THEN 0.7 WHEN 'Suspended' THEN 0.4 ELSE
+    0 END)
+  type: DOUBLE
+  primary_key: false
+  description: "Logistics Network Resilience (LNR, KB #36): LPM * (vehiclecount/20)\
+    \ * lastmile_factor.\n\n[kb=36]\nLNR = LPM \\times \\frac{vehiclecount}{20} \\\
+    times lastmile\\_factor, \\text{ where lastmile\\_factor is 1.0 for On Track,\
+    \ 0.7 for Delayed, 0.4 for Suspended lastmilestatus, 0 for else} \u2014 Quantifies\
+    \ the ability of the logistics network to withstand disruption\n[/kb=36]"
+  label: Logistics Network Resilience (LNR)
+  hidden: false
+  meta:
+    kb_id: 36
+- name: is_logistics_breakdown
+  sql: ((totaldeliverytons * 1.0 / NULLIF(distributionhubs.hubcaptons, 0)) * deliverysuccessrate
+    * (1 - vehiclebreakrate / 100.0) * 100) < 30 AND lastmilestatus = 'Suspended'
+    AND vehiclebreakrate > 15
+  type: BOOLEAN
+  primary_key: false
+  description: "Logistics Breakdown (KB #29): LPM<30 AND lastmilestatus='Suspended'\
+    \ AND vehiclebreakrate>15.\n\n[kb=29]\nSituations where LPM < 30 AND lastmilestatus\
+    \ is 'Suspended' AND vehiclebreakrate > 15, indicating critical failures in the\
+    \ logistics system requiring immediate intervention \u2014 Identifies severe disruptions\
+    \ in the supply chain\n[/kb=29]"
+  label: Logistics Breakdown
+  hidden: false
+  meta:
+    kb_id: 29
+- name: is_logistics_collapse_risk
+  sql: ((totaldeliverytons * 1.0 / NULLIF(distributionhubs.hubcaptons, 0)) * deliverysuccessrate
+    * (1 - vehiclebreakrate / 100.0) * 100) < 30 AND lastmilestatus = 'Suspended'
+    AND vehiclebreakrate > 15 AND (((totaldeliverytons * 1.0 / NULLIF(distributionhubs.hubcaptons,
+    0)) * deliverysuccessrate * (1 - vehiclebreakrate / 100.0) * 100) * (vehiclecount
+    / 20.0) * (CASE lastmilestatus WHEN 'On Track' THEN 1.0 WHEN 'Delayed' THEN 0.7
+    WHEN 'Suspended' THEN 0.4 ELSE 0 END)) < 20 AND vehiclebreakrate > 25
+  type: BOOLEAN
+  primary_key: false
+  description: "Logistics System Collapse Risk (KB #45): is_logistics_breakdown AND\
+    \ LNR<20 AND vehiclebreakrate>25.\n\n[kb=45]\nOperations experiencing Logistics\
+    \ Breakdown where LNR < 20 AND vehiclebreakrate > 25, indicating a logistics system\
+    \ on the verge of complete collapse requiring immediate external support \u2014\
+    \ Identifies operations at imminent risk of complete logistics failure\n[/kb=45]"
+  label: Logistics System Collapse Risk
+  hidden: false
+  meta:
+    kb_id: 45
+measures: []
+aggregations: []
+joins:
+- target_model: supplies
+  join_pairs:
+  - - transportsupref
+    - supplyregistry
+  join_type: left
+- target_model: disasterevents
+  join_pairs:
+  - - transportdistref
+    - distregistry
+  join_type: left
+- target_model: distributionhubs
+  join_pairs:
+  - - transporthubref
+    - hubregistry
+  join_type: left
+filters: []
+description: Transportation/logistics record per (disaster, hub, supply); 1:1 with
+  operations through the shared distregistry.
+hidden: false

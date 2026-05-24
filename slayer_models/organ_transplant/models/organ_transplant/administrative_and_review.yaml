@@ -1,0 +1,165 @@
+version: 6
+name: administrative_and_review
+sql_table: administrative_and_review
+query_variables: {}
+data_source: organ_transplant
+columns:
+- name: adm_rev_registry
+  sql: adm_rev_registry
+  type: TEXT
+  primary_key: true
+  description: FK to transplant_matching.match_rec_registry.
+  hidden: false
+- name: exp_rev_stat_val
+  sql: exp_rev_stat_val
+  type: TEXT
+  primary_key: false
+  description: Expert review status (Approved/Rejected/Pending/Modified, raw with
+    noise).
+  hidden: false
+- name: exp_rev_notes
+  sql: exp_rev_notes
+  type: TEXT
+  primary_key: false
+  description: Expert review notes (raw text).
+  hidden: false
+- name: ec_appro_val
+  sql: ec_appro_val
+  type: TEXT
+  primary_key: false
+  description: Ethics committee approval status (raw with noise).
+  hidden: false
+- name: reg_comp_val
+  sql: reg_comp_val
+  type: TEXT
+  primary_key: false
+  description: Regulatory compliance status (raw with noise).
+  hidden: false
+- name: docu_stat_val
+  sql: docu_stat_val
+  type: TEXT
+  primary_key: false
+  description: Documentation completeness status (raw with noise).
+  hidden: false
+- name: cons_stat_val
+  sql: cons_stat_val
+  type: TEXT
+  primary_key: false
+  description: "Consent status. KB Informed Consent. See cons_stat_norm / has_informed_consent.\n\
+    \n[kb=35]\nA critical ethical and legal requirement in transplantation where the\
+    \ recipient (or their proxy) must be fully informed about all aspects of the surgery,\
+    \ including the use of organs from a High-Risk Donor, before giving permission.\
+    \ \u2014 The process by which a patient, after understanding the risks and benefits,\
+    \ voluntarily agrees to a medical procedure.\n[/kb=35]"
+  label: Informed Consent
+  hidden: false
+  meta:
+    kb_id: 35
+- name: fin_clear_val
+  sql: fin_clear_val
+  type: TEXT
+  primary_key: false
+  description: Financial clearance status (raw with noise).
+  hidden: false
+- name: ins_appro_val
+  sql: ins_appro_val
+  type: TEXT
+  primary_key: false
+  description: Insurance approval status (raw with noise).
+  hidden: false
+- name: coord_ref
+  sql: coord_ref
+  type: TEXT
+  primary_key: false
+  description: Transplant coordinator id.
+  hidden: false
+- name: surge_ref
+  sql: surge_ref
+  type: TEXT
+  primary_key: false
+  description: Surgeon id.
+  hidden: false
+- name: tx_cen_code
+  sql: tx_cen_code
+  type: TEXT
+  primary_key: false
+  description: Transplant center id.
+  hidden: false
+- name: rec_cen_code
+  sql: rec_cen_code
+  type: TEXT
+  primary_key: false
+  description: Recovery center id.
+  hidden: false
+- name: lab_ref
+  sql: lab_ref
+  type: TEXT
+  primary_key: false
+  description: Lab id.
+  hidden: false
+- name: adm_don_ref
+  sql: adm_don_ref
+  type: TEXT
+  primary_key: false
+  description: FK to demographics.contrib_registry.
+  hidden: false
+- name: adm_rec_ref
+  sql: adm_rec_ref
+  type: TEXT
+  primary_key: false
+  description: FK to recipients_demographics.recip_registry.
+  hidden: false
+- name: cons_stat_norm
+  sql: CASE WHEN lower(cons_stat_val) IN ('obtained') THEN 'Obtained' WHEN lower(cons_stat_val)
+    IN ('refused') THEN 'Refused' WHEN lower(cons_stat_val) IN ('pending') THEN 'Pending'
+    END
+  type: TEXT
+  primary_key: false
+  description: "Normalized consent status (case-folded).\n\n[kb=35]\nA critical ethical\
+    \ and legal requirement in transplantation where the recipient (or their proxy)\
+    \ must be fully informed about all aspects of the surgery, including the use of\
+    \ organs from a High-Risk Donor, before giving permission. \u2014 The process\
+    \ by which a patient, after understanding the risks and benefits, voluntarily\
+    \ agrees to a medical procedure.\n[/kb=35]"
+  label: Informed Consent
+  hidden: false
+  meta:
+    kb_id: 35
+- name: has_informed_consent
+  sql: CASE WHEN lower(cons_stat_val) = 'obtained' THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "True when consent obtained (KB Informed Consent).\n\n[kb=35]\nA critical\
+    \ ethical and legal requirement in transplantation where the recipient (or their\
+    \ proxy) must be fully informed about all aspects of the surgery, including the\
+    \ use of organs from a High-Risk Donor, before giving permission. \u2014 The process\
+    \ by which a patient, after understanding the risks and benefits, voluntarily\
+    \ agrees to a medical procedure.\n[/kb=35]"
+  label: Informed Consent
+  hidden: false
+  meta:
+    kb_id: 35
+measures: []
+aggregations: []
+joins:
+- target_model: demographics
+  join_pairs:
+  - - adm_don_ref
+    - contrib_registry
+  join_type: left
+- target_model: recipients_demographics
+  join_pairs:
+  - - adm_rec_ref
+    - recip_registry
+  join_type: left
+- target_model: transplant_matching
+  join_pairs:
+  - - adm_rev_registry
+    - match_rec_registry
+  join_type: left
+filters: []
+description: 'Per-match administrative review: expert review status/notes, ethics
+  committee, regulatory, documentation, consent, financial clearance, insurance, and
+  references to coordinator/surgeon/center/lab. Many fields have random case noise;
+  see normalized siblings.'
+hidden: false

@@ -1,0 +1,123 @@
+version: 6
+name: shipment_quality_index
+source_queries:
+- version: 3
+  name: tss_per_container_sqi
+  source_model: sensordata
+  measures:
+  - formula: tss:avg
+    name: tss
+  - formula: hqi:avg
+    name: hqi
+  - formula: cri:avg
+    name: cri
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: vaccinedetails
+    joins:
+    - target_model: tss_per_container_sqi
+      join_pairs:
+      - - containvac
+        - containlink
+    columns:
+    - name: sqi
+      type: DOUBLE
+      sql: ((julianday(expireday) - julianday('now')) * tss_per_container_sqi.tss)
+        / 365.0 * tss_per_container_sqi.hqi * (1 - tss_per_container_sqi.cri)
+  dimensions:
+  - name: vacregistry
+  - name: containvac
+  - name: tss
+    model: tss_per_container_sqi
+  - name: hqi
+    model: tss_per_container_sqi
+  - name: cri
+    model: tss_per_container_sqi
+  - name: sqi
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
+  \ AS containvac, \"vaccinedetails.tss_per_container_sqi.tss\" AS tss_per_container_sqi__tss,\
+  \ \"vaccinedetails.tss_per_container_sqi.hqi\" AS tss_per_container_sqi__hqi, \"\
+  vaccinedetails.tss_per_container_sqi.cri\" AS tss_per_container_sqi__cri, \"vaccinedetails.sqi\"\
+  \ AS sqi FROM (SELECT\n  vaccinedetails.vacregistry AS \"vaccinedetails.vacregistry\"\
+  ,\n  vaccinedetails.containvac AS \"vaccinedetails.containvac\",\n  tss_per_container_sqi.tss\
+  \ AS \"vaccinedetails.tss_per_container_sqi.tss\",\n  tss_per_container_sqi.hqi\
+  \ AS \"vaccinedetails.tss_per_container_sqi.hqi\",\n  tss_per_container_sqi.cri\
+  \ AS \"vaccinedetails.tss_per_container_sqi.cri\",\n  (\n    (\n      JULIANDAY(vaccinedetails.expireday)\
+  \ - JULIANDAY('now')\n    ) * tss_per_container_sqi.tss\n  ) / 365.0 * tss_per_container_sqi.hqi\
+  \ * (\n    1 - tss_per_container_sqi.cri\n  ) AS \"vaccinedetails.sqi\"\nFROM vaccinedetails\
+  \ AS vaccinedetails\nLEFT JOIN (\n  (\n    SELECT\n      \"sensordata.containlink\"\
+  \ AS containlink,\n      \"sensordata.tss\" AS tss,\n      \"sensordata.hqi\" AS\
+  \ hqi,\n      \"sensordata.cri\" AS cri\n    FROM (\n      SELECT\n        sensordata.containlink\
+  \ AS \"sensordata.containlink\",\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          ) * COALESCE(sensordata.tempstabidx, 1)\n       \
+  \ ) AS \"sensordata.tss\",\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.handleevents\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          )\n        ) AS \"sensordata.hqi\",\n        AVG(\n\
+  \          (\n            1 - (\n              (\n                1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n              ) * (\n                1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n              ) * COALESCE(sensordata.tempstabidx, 1)\n   \
+  \         )\n          ) * (\n            1 - COALESCE(container.coolremainpct,\
+  \ 0) / 100\n          )\n        ) AS \"sensordata.cri\"\n      FROM sensordata\
+  \ AS sensordata\n      LEFT JOIN container AS container\n        ON sensordata.containlink\
+  \ = container.containregistry\n      GROUP BY\n        sensordata.containlink\n\
+  \    ) AS _inner\n  )\n) AS tss_per_container_sqi\n  ON vaccinedetails.containvac\
+  \ = tss_per_container_sqi.containlink) AS _inner"
+data_source: vaccine
+columns:
+- name: vacregistry
+  sql: vacregistry
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: containvac
+  sql: containvac
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tss_per_container_sqi__tss
+  sql: tss_per_container_sqi__tss
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tss_per_container_sqi__hqi
+  sql: tss_per_container_sqi__hqi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tss_per_container_sqi__cri
+  sql: tss_per_container_sqi__cri
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: sqi
+  sql: sqi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Shipment Quality Index (SQI, KB #33). One row per vaccinedetails record\
+  \ with SQI = VVP / 365 * HQI * (1 - CRI), where VVP (KB #3) is computed inline as\
+  \ (ExpireDay - Current_Date) * avg(TSS) per container, HQI (KB #8) and CRI (KB #2)\
+  \ are averaged over sensordata rows for the container.\n\n[kb=33]\nSQI = \\frac{\\\
+  text{VVP}}{365} \\times \\text{HQI} \\times (1 - \\text{CRI}) \u2014 Overall quality\
+  \ score for shipment considering multiple factors.\n[/kb=33]"
+hidden: false
+meta:
+  kb_id: 33

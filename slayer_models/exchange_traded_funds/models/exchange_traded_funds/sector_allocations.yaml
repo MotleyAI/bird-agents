@@ -1,0 +1,57 @@
+version: 6
+name: sector_allocations
+sql_table: sector_allocations
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: allockey
+  sql: allockey
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: productlink
+  sql: productlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sectorlink
+  sql: sectorlink
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: weightpct
+  sql: weightpct
+  type: INT
+  primary_key: false
+  description: "Sector Weight (KB 28): the percentage of a fund's assets invested\
+    \ in this sector. A high value such as 0.4 (40%) indicates a significant bet on\
+    \ that sector's performance. Decimal share, 0-1.\n\n[kb=28]\nThe percentage of\
+    \ a fund's assets invested in a particular sector, like 'technology' or 'healthcare'.\
+    \ A high value, such as 0.4 (40%), indicates a significant bet on that sector's\
+    \ performance. \u2014 Illustrates the fund's concentration in a specific economic\
+    \ sector.\n[/kb=28]"
+  label: Sector Weight
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 28
+measures: []
+aggregations: []
+joins:
+- target_model: funds
+  join_pairs:
+  - - productlink
+    - tickersym
+  join_type: left
+- target_model: sectors
+  join_pairs:
+  - - sectorlink
+    - secid
+  join_type: left
+filters: []
+hidden: false

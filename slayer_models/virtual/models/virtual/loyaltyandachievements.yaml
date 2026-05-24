@@ -1,0 +1,117 @@
+version: 6
+name: loyaltyandachievements
+sql_table: loyaltyandachievements
+query_variables: {}
+data_source: virtual
+columns:
+- name: loyaltyreg
+  sql: loyaltyreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: loyaltyeventspivot
+  sql: loyaltyeventspivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: loyaltyengagepivot
+  sql: loyaltyengagepivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rankpos
+  sql: rankpos
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: inflscore
+  sql: inflscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: reputelv
+  sql: reputelv
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: trustval
+  sql: trustval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: reward_progress
+  sql: reward_progress
+  type: TEXT
+  primary_key: false
+  description: 'JSONB: loyalty (loypts, rewtier) and achievements (achcount, badgecoll,
+    spectitles). Sub-fields are exposed as helper columns.'
+  hidden: false
+- name: loypts
+  sql: CAST(json_extract(reward_progress, '$.loyalty.loypts') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: "Loyalty points (KB #9), cumulative reward for activities. Bands: 0-1000\
+    \ entry (basic digital items); 1001-5000 intermediate (limited-time privileges\
+    \ + mid-level digital); 5001-20000 advanced (limited merchandise + activity priorities);\
+    \ >20000 expert (platform-decision invitations + idol development). Earned via\
+    \ logins, purchases, activity participation.\n\n[kb=9]\nLoyalty points (loypts)\
+    \ are cumulative rewards for fan activities: 0-1000 points is entry-level (redeemable\
+    \ for basic digital items); 1001-5000 points is intermediate level (redeemable\
+    \ for limited-time privileges and mid-level digital items); 5001-20000 points\
+    \ is advanced level (redeemable for limited merchandise and activity priorities);\
+    \ above 20000 points is expert level (invitations to participate in platform decisions\
+    \ and idol development). Points are typically earned through logins, purchases,\
+    \ and activity participation. \u2014 Explains the accumulation and application\
+    \ value of loyalty points\n[/kb=9]"
+  label: loyaltyandachievements.reward_progress.loyalty.loypts
+  hidden: false
+  meta:
+    kb_id: 9
+- name: rewtier
+  sql: reward_progress ->> '$.loyalty.rewtier'
+  type: TEXT
+  primary_key: false
+  description: Reward tier (Bronze / Silver / Gold / Platinum), extracted from reward_progress.loyalty.rewtier.
+  hidden: false
+- name: achcount
+  sql: CAST(json_extract(reward_progress, '$.achievements.achcount') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Achievements count, extracted from reward_progress.achievements.achcount.
+  hidden: false
+- name: badgecoll
+  sql: CAST(json_extract(reward_progress, '$.achievements.badgecoll') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Badge collection count, extracted from reward_progress.achievements.badgecoll.
+  hidden: false
+- name: spectitles
+  sql: CAST(json_extract(reward_progress, '$.achievements.spectitles') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Special titles count, extracted from reward_progress.achievements.spectitles.
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: engagement
+  join_pairs:
+  - - loyaltyengagepivot
+    - engagereg
+  join_type: left
+- target_model: eventsandclub
+  join_pairs:
+  - - loyaltyeventspivot
+    - eventsreg
+  join_type: left
+filters: []
+description: Per-fan loyalty and achievements (1:1 with fans via engagement). Holds
+  rank position, influencer score, reputation level, trust value, and a `reward_progress`
+  JSONB with loyalty (loypts, rewtier) and achievements (achcount, badgecoll, spectitles).
+hidden: false

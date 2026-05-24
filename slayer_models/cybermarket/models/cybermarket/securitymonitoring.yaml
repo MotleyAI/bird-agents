@@ -1,0 +1,253 @@
+version: 6
+name: securitymonitoring
+sql_table: securitymonitoring
+query_variables: {}
+data_source: cybermarket
+columns:
+- name: secmonregistry
+  sql: secmonregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: securityauditstatus
+  sql: securityauditstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vulntally
+  sql: vulntally
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: inctally
+  sql: inctally
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: securitymeasurecount
+  sql: securitymeasurecount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: encryptionstrength
+  sql: encryptionstrength
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: authenticationmethod
+  sql: authenticationmethod
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sessionsecurityscore
+  sql: sessionsecurityscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: dataprotectionlevel
+  sql: dataprotectionlevel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: privprotscore
+  sql: privprotscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: operationalsecurityscore
+  sql: operationalsecurityscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: fpprob
+  sql: fpprob
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: alertsev
+  sql: alertsev
+  type: TEXT
+  primary_key: false
+  description: "Alert severity: 'Low' = minor anomaly, minimal attention; 'Medium'\
+    \ = notable deviation, investigate within standard timeframes; 'High' = significant\
+    \ security concern, prompt attention; 'Critical' = severe, immediate threat requiring\
+    \ urgent action / emergency response.\n\n[kb=9]\n'Low' alerts indicate minor anomalies\
+    \ requiring minimal attention and posing limited security risk; 'Medium' alerts\
+    \ signal notable deviations from baseline behavior requiring investigation within\
+    \ standard timeframes; 'High' alerts denote significant security concerns demanding\
+    \ prompt attention and intervention; 'Critical' alerts represent severe and immediate\
+    \ security threats requiring urgent action and potential emergency response protocols.\
+    \ \u2014 Explains the alert severity classification system\n[/kb=9]"
+  label: cybermarket|securitymonitoring|alertsev
+  hidden: false
+  meta:
+    kb_id: 9
+- name: alertcategory
+  sql: alertcategory
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: alertconfidencescore
+  sql: alertconfidencescore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: riskref
+  sql: riskref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: commref
+  sql: commref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: threat_analysis_metrics
+  sql: threat_analysis_metrics
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sps
+  sql: (100 - (vulntally * 5)) + (securitymeasurecount * 2) + (sessionsecurityscore
+    * 0.5) + (privprotscore * 0.3) - (fpprob * 100)
+  type: DOUBLE
+  primary_key: false
+  description: "Security Posture Score (SPS): (100 - 5*vulntally) + 2*securitymeasurecount\
+    \ + 0.5*sessionsecurityscore + 0.3*privprotscore - 100*fpprob. Higher = stronger\
+    \ security posture.\n\n[kb=17]\nSPS = (100 - (vulntally \\times 5)) + (securitymeasurecount\
+    \ \\times 2) + (sessionsecurityscore \\times 0.5) + (privprotscore \\times 0.3)\
+    \ - (fpprob \\times 100), \\text{where higher scores indicate stronger security\
+    \ postures.} \u2014 Evaluates the overall security posture of an entity\n[/kb=17]"
+  label: Security Posture Score (SPS)
+  hidden: false
+  meta:
+    kb_id: 17
+- name: osi
+  sql: ((((CASE communication.vpnflag WHEN 'Yes' THEN 1 WHEN 'Suspected' THEN 0.5
+    WHEN 'No' THEN 0 ELSE 0 END) * 30) + (communication.tornodecount * 2) + ((CASE
+    communication.encryptmethod WHEN 'Standard' THEN 1 WHEN 'Enhanced' THEN 2 WHEN
+    'Custom' THEN 3 ELSE 0 END) * 15) + (communication.connpatscore * 0.2) + (communication.brwsrunique
+    * 1.0 / 20)) * 0.5) + (((100 - (vulntally * 5)) + (securitymeasurecount * 2) +
+    (sessionsecurityscore * 0.5) + (privprotscore * 0.3) - (fpprob * 100)) * 0.2)
+    + (communication.tornodecount * 2) + ((CASE communication.encryptmethod WHEN 'Standard'
+    THEN 1 WHEN 'Enhanced' THEN 2 WHEN 'Custom' THEN 3 ELSE 0 END) * 5) - (communication.iptally
+    * 0.5)
+  type: DOUBLE
+  primary_key: false
+  description: "Operational Security Index (OSI): 0.5*APL + 0.2*SPS + 2*tornodecount\
+    \ + 5*encryptmethod_numeric (Standard=1/Enhanced=2/Custom=3 else=0) - 0.5*iptally.\
+    \ APL/tornodecount/iptally/encryptmethod come from the linked communication record\
+    \ (commref FK). APL is inlined since cross-model references must be raw column\
+    \ refs, not computed-column refs.\n\n[kb=36]\nOSI = (APL \\times 0.5) + (SPS \\\
+    times 0.2) + (tornodecount \\times 2) + (CASE WHEN encryptmethod = 'Standard'\
+    \ THEN 1 WHEN encryptmethod = 'Enhanced' THEN 2 WHEN encryptmethod = 'Custom'\
+    \ THEN 3 ELSE 0 END \\times 5) - (iptally \\times 0.5), \\text{where APL and SPS\
+    \ are defined by the Anonymity Protection Level and Security Posture Score respectively,\
+    \ and higher scores indicate stronger operational security.} \u2014 Quantifies\
+    \ an entity's operational security practices\n[/kb=36]"
+  label: Operational Security Index (OSI)
+  hidden: false
+  meta:
+    kb_id: 36
+- name: is_high_security_entity
+  sql: ((100 - (vulntally * 5)) + (securitymeasurecount * 2) + (sessionsecurityscore
+    * 0.5) + (privprotscore * 0.3) - (fpprob * 100)) > 80 AND encryptionstrength =
+    'Military-grade' AND authenticationmethod IN ('2FA', 'Multi-factor') AND vulntally
+    < 5
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Security Entity (KB #24): SPS > 80, encryptionstrength='Military-grade',\
+    \ authenticationmethod IN ('2FA','Multi-factor'), vulntally < 5.\n\n[kb=24]\n\
+    An entity with SPS > 80, using military-grade encryption, implementing 2FA or\
+    \ multi-factor authentication, and maintaining fewer than 5 vulnerabilities (vulntally\
+    \ < 5). These entities represent lower security breach risks but may indicate\
+    \ sophisticated operators requiring specialized investigation approaches. \u2014\
+    \ Identifies entities with strong security practices\n[/kb=24]"
+  label: High-Security Entity
+  hidden: false
+  meta:
+    kb_id: 24
+- name: is_opsec_specialist
+  sql: (((((CASE communication.vpnflag WHEN 'Yes' THEN 1 WHEN 'Suspected' THEN 0.5
+    WHEN 'No' THEN 0 ELSE 0 END) * 30) + (communication.tornodecount * 2) + ((CASE
+    communication.encryptmethod WHEN 'Standard' THEN 1 WHEN 'Enhanced' THEN 2 WHEN
+    'Custom' THEN 3 ELSE 0 END) * 15) + (communication.connpatscore * 0.2) + (communication.brwsrunique
+    * 1.0 / 20)) * 0.5) + (((100 - (vulntally * 5)) + (securitymeasurecount * 2) +
+    (sessionsecurityscore * 0.5) + (privprotscore * 0.3) - (fpprob * 100)) * 0.2)
+    + (communication.tornodecount * 2) + ((CASE communication.encryptmethod WHEN 'Standard'
+    THEN 1 WHEN 'Enhanced' THEN 2 WHEN 'Custom' THEN 3 ELSE 0 END) * 5) - (communication.iptally
+    * 0.5)) > 85 AND ((((CASE communication.vpnflag WHEN 'Yes' THEN 1 WHEN 'Suspected'
+    THEN 0.5 WHEN 'No' THEN 0 ELSE 0 END) * 30) + (communication.tornodecount * 2)
+    + ((CASE communication.encryptmethod WHEN 'Standard' THEN 1 WHEN 'Enhanced' THEN
+    2 WHEN 'Custom' THEN 3 ELSE 0 END) * 15) + (communication.connpatscore * 0.2)
+    + (communication.brwsrunique * 1.0 / 20)) > 120) AND communication.langpattern
+    = 'Variable' AND communication.msgtally < 10 AND riskanalysis.txchainlen > 5 AND
+    communication.encryptmethod IN ('Enhanced', 'Custom')
+  type: BOOLEAN
+  primary_key: false
+  description: "OpSec Specialist (KB #46): OSI > 85, displays Sophisticated Operational\
+    \ Security characteristics (KB #28: APL > 120, langpattern='Variable', msgtally\
+    \ < 10, txchainlen > 5), encryptmethod IN ('Enhanced','Custom'). Encoded on securitymonitoring;\
+    \ reaches communication via commref and riskanalysis via riskref.\n\n[kb=46]\n\
+    An entity with OSI > 85, demonstrating Sophisticated Operational Security characteristics,\
+    \ with exceptionally high APL scores (APL > 120), and using either 'Enhanced'\
+    \ or 'Custom' encryption methods (encryptmethod IN ('Enhanced', 'Custom')). These\
+    \ entities represent high-value intelligence targets requiring specialized investigation\
+    \ techniques. \u2014 Identifies entities employing exceptionally sophisticated\
+    \ operational security\n[/kb=46]"
+  label: OpSec Specialist
+  hidden: false
+  meta:
+    kb_id: 46
+- name: alertsev_numeric
+  sql: CASE alertsev WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 WHEN
+    'Critical' THEN 4 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric mapping of alertsev used by MVI: Low=1, Medium=2, High=3,\
+    \ Critical=4 (per the alert severity classification, KB #9).\n\n[kb=30]\nMVI =\
+    \ (100 - MSI) + (COUNT(CASE WHEN alertsev IS NOT NULL THEN 1 END) / 10) \\times\
+    \ (alertsev_numeric \\times 2) - (vendcount \\times 0.05) + (COUNT(CASE WHEN lawinterest\
+    \ = 'High' THEN 1 END) / 5), \\text{where alertsev_numeric maps Low=1, Medium=2,\
+    \ High=3, Critical=4 as defined in the alert severity system, and higher scores\
+    \ indicate greater vulnerability to disruption.} \u2014 Evaluates a market's susceptibility\
+    \ to disruption or shutdown\n[/kb=30]"
+  label: Market Vulnerability Index (MVI)
+  hidden: false
+  meta:
+    kb_id: 30
+measures: []
+aggregations: []
+joins:
+- target_model: communication
+  join_pairs:
+  - - commref
+    - commregistry
+  join_type: left
+- target_model: riskanalysis
+  join_pairs:
+  - - riskref
+    - riskregistry
+  join_type: left
+filters: []
+description: Security-monitoring records for the platform / entity, tied to a risk
+  profile (riskref) and communication (commref). Captures audit status, vulnerability
+  + incident counts, encryption + auth posture, alert severity / category, and the
+  threat_analysis_metrics JSON column with detection scores.
+hidden: false

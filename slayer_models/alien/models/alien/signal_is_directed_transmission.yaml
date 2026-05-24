@@ -1,0 +1,62 @@
+version: 6
+name: signal_is_directed_transmission
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signaldynamics
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: is_directed_transmission
+      type: BOOLEAN
+      sql: CASE WHEN signaldynamics.spatstab = 'Moderate' AND polarmode = 'Linear'
+        AND (signalprobabilities.techsigprob * (1 - signalprobabilities.natsrcprob)
+        * signalprobabilities.sigunique * (0.5 + signalprobabilities.anomscore / 10.0))
+        > 0.85 THEN 1 ELSE 0 END
+  dimensions:
+  - name: signalregistry
+  - name: is_directed_transmission
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_directed_transmission\"\
+  \ AS is_directed_transmission FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
+  ,\n  CASE\n    WHEN signaldynamics.spatstab = 'Moderate'\n    AND signals.polarmode\
+  \ = 'Linear'\n    AND (\n      signalprobabilities.techsigprob * (\n        1 -\
+  \ signalprobabilities.natsrcprob\n      ) * signalprobabilities.sigunique * (\n\
+  \        0.5 + signalprobabilities.anomscore / 10.0\n      )\n    ) > 0.85\n   \
+  \ THEN 1\n    ELSE 0\n  END AS \"signals.is_directed_transmission\"\nFROM signals\
+  \ AS signals\nLEFT JOIN signalprobabilities AS signalprobabilities\n  ON signals.signalregistry\
+  \ = signalprobabilities.signalref\nLEFT JOIN signaldynamics AS signaldynamics\n\
+  \  ON signals.signalregistry = signaldynamics.signalref) AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_directed_transmission
+  sql: is_directed_transmission
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Directed Transmission predicate per signal.\n\n[kb=45]\nSignals with\
+  \ high spatial stability ($\\text{SpatStab} = \\text{'Moderate'}$), narrow beam\
+  \ characteristics ($\\text{PolarMode} = \\text{'Linear'}$ with stable $\\text{PolarAngleDeg}$),\
+  \ and high $\\text{TOLS} > 0.85$, suggesting intentional transmission toward our\
+  \ location. \u2014 Identifies signals that appear specifically directed rather than\
+  \ omnidirectional.\n[/kb=45]"
+hidden: false
+meta:
+  kb_id: 45

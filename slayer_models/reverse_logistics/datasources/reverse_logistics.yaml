@@ -1,0 +1,4 @@
+version: 1
+name: reverse_logistics
+type: sqlite
+connection_string: sqlite:////home/james/Dropbox/SLayer/mini-interact/reverse_logistics/reverse_logistics.sqlite

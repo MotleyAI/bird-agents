@@ -1,0 +1,79 @@
+version: 6
+name: margin_utilization
+source_queries:
+- version: 3
+  name: margsum_per_user
+  source_model: accountbalances
+  measures:
+  - formula: margsum:sum
+    name: margsum_total
+  dimensions:
+  - name: usertag
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: orders
+    joins:
+    - target_model: riskandmargin
+      join_pairs:
+      - - recordvault
+        - ordervault
+    - target_model: margsum_per_user
+      join_pairs:
+      - - userlink
+        - usertag
+    columns:
+    - name: mu_value
+      type: DOUBLE
+      sql: (riskandmargin.risk_margin_profile ->> '$.margin_thresholds.inithold')
+        / NULLIF(margsum_per_user.margsum_total, 0) * 100
+  dimensions:
+  - name: recordvault
+  - name: userlink
+  - name: mu_value
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.userlink\"\
+  \ AS userlink, \"orders.mu_value\" AS mu_value FROM (SELECT\n  orders.recordvault\
+  \ AS \"orders.recordvault\",\n  orders.userlink AS \"orders.userlink\",\n  (\n \
+  \   riskandmargin.risk_margin_profile ->> '$.margin_thresholds.inithold'\n  ) /\
+  \ NULLIF(margsum_per_user.margsum_total, 0) * 100 AS \"orders.mu_value\"\nFROM orders\
+  \ AS orders\nLEFT JOIN riskandmargin AS riskandmargin\n  ON orders.recordvault =\
+  \ riskandmargin.ordervault\nLEFT JOIN (\n  (\n    SELECT\n      \"accountbalances.usertag\"\
+  \ AS usertag,\n      \"accountbalances.margsum_total\" AS margsum_total\n    FROM\
+  \ (\n      SELECT\n        accountbalances.usertag AS \"accountbalances.usertag\"\
+  ,\n        SUM(accountbalances.margsum) AS \"accountbalances.margsum_total\"\n \
+  \     FROM accountbalances AS accountbalances\n      GROUP BY\n        accountbalances.usertag\n\
+  \    ) AS _inner\n  )\n) AS margsum_per_user\n  ON orders.userlink = margsum_per_user.usertag)\
+  \ AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: userlink
+  sql: userlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: mu_value
+  sql: mu_value
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Margin Utilization (KB #7) per order: inithold / margsum x 100, where\
+  \ inithold is the initial margin required and margsum is the margin account balance.\
+  \ inithold is per-order from riskandmargin; margsum is summed per user from accountbalances.\
+  \ Cross-grain peer-join via shared parent users.\n\n[kb=7]\nMargin Utilization =\
+  \ \\frac{inithold}{margsum} \\times 100, \\text{where } inithold \\text{ is the\
+  \ initial margin required and } margsum \\text{ is the margin account balance.}\
+  \ \u2014 Calculates the percentage of margin being utilized.\n[/kb=7]"
+hidden: false
+meta:
+  kb_id: 7

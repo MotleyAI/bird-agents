@@ -1,0 +1,194 @@
+version: 6
+name: regulatoryandmaintenance
+sql_table: regulatoryandmaintenance
+query_variables: {}
+data_source: vaccine
+columns:
+- name: regmaintregistry
+  sql: regmaintregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: maintflag
+  sql: maintflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: maintdatelast
+  sql: maintdatelast
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: maintdatenext
+  sql: maintdatenext
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: calibflag
+  sql: calibflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: calibdatelast
+  sql: calibdatelast
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: calibdatenext
+  sql: calibdatenext
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: docuflag
+  sql: docuflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: compscore
+  sql: compscore
+  type: INT
+  primary_key: false
+  description: "Compliance / condition score. A score above 0.9 indicates excellent\
+    \ compliance with all regulatory requirements (KB #21).\n\n[kb=21]\nA score above\
+    \ 0.9 indicates excellent compliance with all regulatory requirements. \u2014\
+    \ Illustrates excellent compliance level\n[/kb=21]"
+  label: CompScore Value
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 21
+- name: riskflag
+  sql: riskflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: incidents
+  sql: incidents
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: resolveflag
+  sql: resolveflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: respperson
+  sql: respperson
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: contactno
+  sql: contactno
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: contactemerg
+  sql: contactemerg
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: inspectdatelast
+  sql: inspectdatelast
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: inspectdatenext
+  sql: inspectdatenext
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: inspectoutcome
+  sql: inspectoutcome
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: correctactions
+  sql: correctactions
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: preventsteps
+  sql: preventsteps
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: validflag
+  sql: validflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: verifymethod
+  sql: verifymethod
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shipgov
+  sql: shipgov
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vehgov
+  sql: vehgov
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: mcs
+  sql: compscore * (1 - COALESCE(CAST(incidents AS REAL) / 10, 0))
+  type: DOUBLE
+  primary_key: false
+  description: "Maintenance Compliance Score (MCS). Compliance with maintenance schedules:\
+    \ CompScore * (1 - Incidents/10) (KB #7).\n\n[kb=7]\nMCS = CompScore \\times (1\
+    \ - \\frac{Incidents}{10}) \u2014 Calculates compliance with maintenance schedules.\n\
+    [/kb=7]"
+  label: Maintenance Compliance Score (MCS)
+  hidden: false
+  meta:
+    kb_id: 7
+- name: is_maintenance_due
+  sql: CASE WHEN (compscore * (1 - COALESCE(CAST(incidents AS REAL) / 10, 0))) < 0.7
+    AND (julianday('now') > julianday(maintdatenext) OR julianday('now') > julianday(calibdatenext))
+    THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Maintenance Due flag. True when MCS < 0.7 AND (Current_Date > MaintDateNext\
+    \ OR Current_Date > CalibDateNext) (KB #13).\n\n[kb=13]\nEquipment where MCS <\
+    \ 0.7 and (Current_Date > MaintDateNext or Current_Date > CalibDateNext) \u2014\
+    \ Identifies equipment requiring maintenance.\n[/kb=13]"
+  label: Maintenance Due
+  hidden: false
+  meta:
+    kb_id: 13
+- name: days_overdue
+  sql: MAX(julianday('now') - julianday(maintdatenext), julianday('now') - julianday(calibdatenext),
+    0)
+  type: DOUBLE
+  primary_key: false
+  description: "Days Overdue. Number of days past the scheduled maintenance or calibration\
+    \ date: max(Current_Date - MaintDateNext, Current_Date - CalibDateNext, 0) (KB\
+    \ #61).\n\n[kb=61]\nDaysOverdue = \\max\\left( (\\text{Current_Date} - \\text{MaintDateNext}),\
+    \ (\\text{Current_Date} - \\text{CalibDateNext}), 0 \\right) \u2014 Calculates\
+    \ the number of days past the scheduled maintenance or calibration date.\n[/kb=61]"
+  label: Days Overdue
+  hidden: false
+  meta:
+    kb_id: 61
+measures: []
+aggregations: []
+joins:
+- target_model: transportinfo
+  join_pairs:
+  - - vehgov
+    - vehiclereg
+  join_type: left
+- target_model: vaccine_shipments
+  join_pairs:
+  - - shipgov
+    - shipmentregistry
+  join_type: left
+filters: []
+hidden: false

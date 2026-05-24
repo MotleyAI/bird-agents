@@ -1,0 +1,230 @@
+version: 6
+name: socialcommunity
+sql_table: socialcommunity
+query_variables: {}
+data_source: virtual
+columns:
+- name: socialreg
+  sql: socialreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: socialengagepivot
+  sql: socialengagepivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: socialcommercepivot
+  sql: socialcommercepivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: collabcount
+  sql: collabcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: community_engagement
+  sql: community_engagement
+  type: TEXT
+  primary_key: false
+  description: 'JSONB: network (socnetsz, fingcount, follcount, friendcon), content_creation
+    (ugcval, artsubs, ficsubs, commcontrib, contqualrate, coverperfcnt, contcreatestat),
+    group_involvement (grpmemb, grprole). Many derived metrics extract sub-fields
+    via json_extract.'
+  hidden: false
+- name: follcount
+  sql: CAST(json_extract(community_engagement, '$.network.follcount') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Followers count, extracted from community_engagement.network.follcount.
+  hidden: false
+- name: socnetsz
+  sql: CAST(json_extract(community_engagement, '$.network.socnetsz') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Social network size, extracted from community_engagement.network.socnetsz.
+  hidden: false
+- name: fingcount
+  sql: CAST(json_extract(community_engagement, '$.network.fingcount') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Following count (accounts the fan follows), extracted from community_engagement.network.fingcount.
+  hidden: false
+- name: friendcon
+  sql: CAST(json_extract(community_engagement, '$.network.friendcon') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Direct friend connections, extracted from community_engagement.network.friendcon.
+  hidden: false
+- name: ugcval
+  sql: CAST(json_extract(community_engagement, '$.content_creation.ugcval') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: User-generated content volume, extracted from community_engagement.content_creation.ugcval.
+  hidden: false
+- name: artsubs
+  sql: CAST(json_extract(community_engagement, '$.content_creation.artsubs') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Art submissions count, extracted from community_engagement.content_creation.artsubs.
+  hidden: false
+- name: ficsubs
+  sql: CAST(json_extract(community_engagement, '$.content_creation.ficsubs') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Fan fiction submissions count, extracted from community_engagement.content_creation.ficsubs.
+  hidden: false
+- name: coverperfcnt
+  sql: CAST(json_extract(community_engagement, '$.content_creation.coverperfcnt')
+    AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Cover performances count, extracted from community_engagement.content_creation.coverperfcnt.
+  hidden: false
+- name: contqualrate
+  sql: CAST(json_extract(community_engagement, '$.content_creation.contqualrate')
+    AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Content quality rating (KB #6), 0-10 scale. Bands: 0-3.9 low (rule-violating\
+    \ or poor); 4.0-6.9 medium (basic platform standards); 7.0-8.9 high (well-produced\
+    \ and creative); 9.0-10.0 premium (recommendation level). Affects content recommendations,\
+    \ exposure, and creator incentives.\n\n[kb=6]\nContent quality rating (contqualrate)\
+    \ ranges from 0-10.0: 0-3.9 points indicate low-quality content (potentially violating\
+    \ rules or poor quality); 4.0-6.9 points represent medium-quality content (meeting\
+    \ basic platform standards); 7.0-8.9 points indicate high-quality content (well-produced\
+    \ and creative); 9.0-10.0 points represent premium content (platform recommendation\
+    \ level). Quality ratings affect content recommendations, exposure, and creator\
+    \ incentives. \u2014 Explains content quality rating standards and classification\n\
+    [/kb=6]"
+  label: socialcommunity.community_engagement.content_creation.contqualrate
+  hidden: false
+  meta:
+    kb_id: 6
+- name: commcontrib
+  sql: community_engagement ->> '$.content_creation.commcontrib'
+  type: TEXT
+  primary_key: false
+  description: Community contribution level (Low / Medium / High), extracted from
+    community_engagement.content_creation.commcontrib.
+  hidden: false
+- name: contcreatestat
+  sql: community_engagement ->> '$.content_creation.contcreatestat'
+  type: TEXT
+  primary_key: false
+  description: Content creation status (Active / Occasional), extracted from community_engagement.content_creation.contcreatestat.
+  hidden: false
+- name: grpmemb
+  sql: CAST(json_extract(community_engagement, '$.group_involvement.grpmemb') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Group memberships count, extracted from community_engagement.group_involvement.grpmemb.
+  hidden: false
+- name: grprole
+  sql: community_engagement ->> '$.group_involvement.grprole'
+  type: TEXT
+  primary_key: false
+  description: Group role (Member / Moderator / Leader), extracted from community_engagement.group_involvement.grprole.
+  hidden: false
+- name: ccis
+  sql: CAST(json_extract(community_engagement, '$.content_creation.contqualrate')
+    AS REAL) * (CAST(json_extract(community_engagement, '$.content_creation.ugcval')
+    AS INTEGER) / 10.0) * (1 + CAST(json_extract(community_engagement, '$.network.follcount')
+    AS INTEGER) / 100.0 * 0.5)
+  type: DOUBLE
+  primary_key: false
+  description: "Content Creation Impact Score (CCIS, KB #12) = contqualrate * (ugcval/10)\
+    \ * (1 + follcount/100 * 0.5). Content quality multiplied by normalized volume\
+    \ and amplified by follower reach.\n\n[kb=12]\nCCIS = contqualrate \\times \\\
+    left(\\frac{ugcval}{10}\\right) \\times \\left(1 + \\frac{follcount}{100} \\times\
+    \ 0.5\\right), \\text{ where content quality is multiplied by normalized content\
+    \ volume and amplified by follower reach.} \u2014 Measures the impact of fan-created\
+    \ content on the community\n[/kb=12]"
+  label: Content Creation Impact Score (CCIS)
+  hidden: false
+  meta:
+    kb_id: 12
+- name: is_content_creator
+  sql: CAST(json_extract(community_engagement, '$.content_creation.ugcval') AS INTEGER)
+    > 20 AND CAST(json_extract(community_engagement, '$.content_creation.contqualrate')
+    AS REAL) > 7.0 AND (CAST(json_extract(community_engagement, '$.content_creation.artsubs')
+    AS INTEGER) > 3 OR CAST(json_extract(community_engagement, '$.content_creation.ficsubs')
+    AS INTEGER) > 2 OR CAST(json_extract(community_engagement, '$.content_creation.coverperfcnt')
+    AS INTEGER) > 0)
+  type: BOOLEAN
+  primary_key: false
+  description: "Content Creator (KB #21): ugcval > 20 AND contqualrate > 7.0 AND (artsubs\
+    \ > 3 OR ficsubs > 2 OR coverperfcnt > 0). These fans contribute significantly\
+    \ to community content ecosystem.\n\n[kb=21]\nA fan with ugcval > 20, contqualrate\
+    \ > 7.0, and at least one of: artsubs > 3, ficsubs > 2, or coverperfcnt > 0. These\
+    \ fans contribute significantly to community content ecosystem. \u2014 Identifies\
+    \ fans who actively produce and share idol-related content\n[/kb=21]"
+  label: Content Creator
+  hidden: false
+  meta:
+    kb_id: 21
+- name: is_high_value_content_creator
+  sql: CAST(json_extract(community_engagement, '$.content_creation.contqualrate')
+    AS REAL) > 8.5 AND CAST(json_extract(community_engagement, '$.network.follcount')
+    AS INTEGER) > 1000 AND CAST(json_extract(community_engagement, '$.content_creation.ugcval')
+    AS INTEGER) > 20
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Value Content Creator (KB #40): contqualrate > 8.5 AND follcount\
+    \ > 1000 AND ugcval > 20. Elite tier of community content producers.\n\n[kb=40]\n\
+    A fan who produces content with contqualrate > 8.5, has follcount > 1000, and\
+    \ maintains ugcval > 20, representing the elite tier of community content producers.\
+    \ \u2014 Identifies fans who produce exceptional quality content with significant\
+    \ reach\n[/kb=40]"
+  label: High-Value Content Creator
+  hidden: false
+  meta:
+    kb_id: 40
+- name: content_creator_class
+  sql: CASE WHEN CAST(json_extract(community_engagement, '$.content_creation.contqualrate')
+    AS REAL) > 8.5 AND CAST(json_extract(community_engagement, '$.network.follcount')
+    AS INTEGER) > 1000 AND CAST(json_extract(community_engagement, '$.content_creation.ugcval')
+    AS INTEGER) > 20 THEN 'High-Value Content Creator' WHEN CAST(json_extract(community_engagement,
+    '$.content_creation.contqualrate') AS REAL) > 7.0 AND CAST(json_extract(community_engagement,
+    '$.content_creation.ugcval') AS INTEGER) > 20 THEN 'Content Creator' ELSE 'Regular
+    Fan' END
+  type: TEXT
+  primary_key: false
+  description: "Content Creator Classification (KB #50): 3-way classification \u2014\
+    \ High-Value Content Creator (contqualrate > 8.5 AND follcount > 1000 AND ugcval\
+    \ > 20), Content Creator (contqualrate > 7.0 AND ugcval > 20), else Regular Fan.\n\
+    \n[kb=50]\nFans are classified into three categories based on content metrics:\
+    \ 'High-Value Content Creator' identifies fans with exceptional content quality\
+    \ (contqualrate > 8.5), significant reach (follcount > 1000), and substantial\
+    \ content volume (ugcval > 20); 'Content Creator' identifies fans who produce\
+    \ good quality content (contqualrate > 7.0) with substantial volume (ugcval >\
+    \ 20); 'Regular Fan' applies to all others who don't meet content creator thresholds,\
+    \ representing the standard user base who primarily consume rather than create\
+    \ content. \u2014 Categorizes fans based on their content creation quality, volume,\
+    \ and reach\n[/kb=50]"
+  label: Content Creator Classification
+  hidden: false
+  meta:
+    kb_id: 50
+measures: []
+aggregations: []
+joins:
+- target_model: commerceandcollection
+  join_pairs:
+  - - socialcommercepivot
+    - commercereg
+  join_type: left
+- target_model: engagement
+  join_pairs:
+  - - socialengagepivot
+    - engagereg
+  join_type: left
+filters: []
+description: Per-fan social network and content-creation metrics (1:1 with fans via
+  engagement). Holds collabcount and a `community_engagement` JSONB with network (socnetsz,
+  follcount, fingcount, friendcon), content_creation (ugcval, artsubs, ficsubs, contqualrate,
+  etc.), group_involvement (grpmemb, grprole).
+hidden: false

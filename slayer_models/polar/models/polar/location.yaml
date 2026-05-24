@@ -1,0 +1,64 @@
+version: 6
+name: location
+sql_table: location
+query_variables: {}
+data_source: polar
+columns:
+- name: locationregistry
+  sql: locationregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: loceqref
+  sql: loceqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: Timestamp
+  sql: Timestamp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: stationname
+  sql: stationname
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: locationtype
+  sql: locationtype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: latitude
+  sql: latitude
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: longitude
+  sql: longitude
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: altitudem
+  sql: altitudem
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins:
+- target_model: equipment
+  join_pairs:
+  - - loceqref
+    - equipmentcode
+  join_type: left
+filters: []
+hidden: false

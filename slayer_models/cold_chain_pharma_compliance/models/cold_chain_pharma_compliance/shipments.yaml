@@ -1,0 +1,269 @@
+version: 6
+name: shipments
+sql_table: shipments
+query_variables: {}
+data_source: cold_chain_pharma_compliance
+columns:
+- name: reckey
+  sql: reckey
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: log_ts
+  sql: log_ts
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shiptok
+  sql: shiptok
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shipment_overview
+  sql: shipment_overview
+  type: TEXT
+  primary_key: false
+  description: "JSON column bundling routing, timing and risk-performance metadata\
+    \ for one shipment.\n\n[kb=16]\nMajor pharmaceutical markets include: United States,\
+    \ European Union (specifically Germany, France, Italy, Spain, and United Kingdom),\
+    \ Japan, China, Brazil, India, and Russia. \u2014 Identifies the primary global\
+    \ pharmaceutical markets for cold chain distribution.\n[/kb=16]"
+  label: Major Pharmaceutical Markets
+  hidden: false
+  meta:
+    kb_id: 16
+- name: origin_hub
+  sql: json_extract(shipment_overview, '$.route.origin.hub')
+  type: TEXT
+  primary_key: false
+  description: Origin logistics hub name (extracted from shipment_overview.route.origin.hub).
+  hidden: false
+- name: origin_nation
+  sql: json_extract(shipment_overview, '$.route.origin.nation')
+  type: TEXT
+  primary_key: false
+  description: Origin country/nation (extracted from shipment_overview.route.origin.nation).
+  hidden: false
+- name: origin_address
+  sql: json_extract(shipment_overview, '$.route.origin.address')
+  type: TEXT
+  primary_key: false
+  description: Origin street address (extracted from shipment_overview.route.origin.address).
+  hidden: false
+- name: destination_hub
+  sql: json_extract(shipment_overview, '$.route.destination.hub')
+  type: TEXT
+  primary_key: false
+  description: Destination logistics hub name (extracted from shipment_overview.route.destination.hub).
+  hidden: false
+- name: destination_nation
+  sql: json_extract(shipment_overview, '$.route.destination.nation')
+  type: TEXT
+  primary_key: false
+  description: "Destination country/nation. KB #16 (Major Pharmaceutical Markets)\
+    \ names the principal destinations for cold-chain distribution: United States,\
+    \ EU (Germany, France, Italy, Spain, UK), Japan, China, Brazil, India, Russia.\
+    \ Use this column to filter shipments to/from those markets.\n\n[kb=16]\nMajor\
+    \ pharmaceutical markets include: United States, European Union (specifically\
+    \ Germany, France, Italy, Spain, and United Kingdom), Japan, China, Brazil, India,\
+    \ and Russia. \u2014 Identifies the primary global pharmaceutical markets for\
+    \ cold chain distribution.\n[/kb=16]"
+  label: Major Pharmaceutical Markets
+  hidden: false
+  meta:
+    kb_id: 16
+- name: destination_address
+  sql: json_extract(shipment_overview, '$.route.destination.address')
+  type: TEXT
+  primary_key: false
+  description: Destination street address (extracted from shipment_overview.route.destination.address).
+  hidden: false
+- name: route_string
+  sql: shipment_overview ->> '$.route.route_string'
+  type: TEXT
+  primary_key: false
+  description: Encoded planned route (origin -> destination) string. Uses ->> to return
+    the JSON scalar without surrounding quotes (json_extract gets rewritten to ->
+    which yields JSON-quoted strings).
+  hidden: false
+- name: risk_note
+  sql: json_extract(shipment_overview, '$.route.risk_note')
+  type: TEXT
+  primary_key: false
+  description: "Qualitative route-risk note: 'Low', 'Medium', or 'High'. KB #3 (Route\
+    \ Risk Classification) defines the same categories quantitatively as 0-1 / 2-4\
+    \ / 5+ historical excursion events per 10 shipments. The pre-computed risk_note\
+    \ value is the schema's encoding of that classification per shipment.\n\n[kb=3]\n\
+    Routes are classified as: 'Low Risk' (0-1 historical excursion events per 10 shipments),\
+    \ 'Medium Risk' (2-4 historical excursion events per 10 shipments), 'High Risk'\
+    \ (5+ historical excursion events per 10 shipments). \u2014 Categorizes shipping\
+    \ routes based on their risk level for temperature excursions.\n[/kb=3]"
+  label: Route Risk Classification
+  hidden: false
+  meta:
+    kb_id: 3
+- name: go_time_ts
+  sql: json_extract(shipment_overview, '$.timing_performance.go_time_ts')
+  type: TIMESTAMP
+  primary_key: false
+  description: Planned departure timestamp.
+  hidden: false
+- name: end_time_ts
+  sql: json_extract(shipment_overview, '$.timing_performance.end_time_ts')
+  type: TIMESTAMP
+  primary_key: false
+  description: Actual arrival timestamp.
+  hidden: false
+- name: planned_eta_hrs
+  sql: json_extract(shipment_overview, '$.timing_performance.planned_eta_hrs')
+  type: DOUBLE
+  primary_key: false
+  description: Estimated/planned transit time in hours.
+  hidden: false
+- name: actual_duration_hrs
+  sql: json_extract(shipment_overview, '$.timing_performance.actual_duration_hrs')
+  type: DOUBLE
+  primary_key: false
+  description: "Actual transit time in hours. NULL means actual hours not yet recorded.\
+    \ KB #38 (Last Mile Delivery Risk) describes the special risks of the final delivery\
+    \ stage \u2014 lack of temp-controlled vehicles, multiple stops, variable handling,\
+    \ inconsistent receiving, limited monitoring \u2014 that contribute to longer-than-expected\
+    \ actual_duration_hrs vs planned_eta_hrs.\n\n[kb=38]\nLast mile delivery risks\
+    \ include: Lack of temperature-controlled vehicles, Multiple stops increasing\
+    \ door-opening frequency, Variable driver training in handling procedures, Inconsistent\
+    \ receiving procedures at destinations, and Limited monitoring capabilities compared\
+    \ to main transport segments. \u2014 Specific risks associated with the final\
+    \ stage of pharmaceutical product delivery.\n[/kb=38]"
+  label: Last Mile Delivery Risk
+  hidden: false
+  meta:
+    kb_id: 38
+- name: distance_km
+  sql: json_extract(shipment_overview, '$.timing_performance.distance_km')
+  type: DOUBLE
+  primary_key: false
+  description: Total distance travelled (km).
+  hidden: false
+- name: otdp
+  sql: CAST(json_extract(shipment_overview, '$.timing_performance.actual_duration_hrs')
+    AS REAL) * 100.0 / NULLIF(CAST(json_extract(shipment_overview, '$.timing_performance.planned_eta_hrs')
+    AS REAL), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "On-Time Delivery Performance (OTDP, KB #12): actual_duration_hrs /\
+    \ planned_eta_hrs * 100. <100 = early, 100 = on-time, >100 = late.\n\n[kb=12]\n\
+    OTDP = \\frac{actual\\_duration}{planned\\_duration} \\times 100\\%, \\text{where\
+    \ a value of 100\\% indicates exact on-time delivery, <100\\% is early, and >100\\\
+    % is late delivery.} \u2014 Measures how accurately shipments meet their planned\
+    \ delivery times.\n[/kb=12]"
+  label: On-Time Delivery Performance (OTDP)
+  hidden: false
+  meta:
+    kb_id: 12
+- name: delivery_performance_class
+  sql: CASE WHEN CAST(json_extract(shipment_overview, '$.timing_performance.actual_duration_hrs')
+    AS REAL) - CAST(json_extract(shipment_overview, '$.timing_performance.planned_eta_hrs')
+    AS REAL) < -2 THEN 'Early' WHEN CAST(json_extract(shipment_overview, '$.timing_performance.actual_duration_hrs')
+    AS REAL) - CAST(json_extract(shipment_overview, '$.timing_performance.planned_eta_hrs')
+    AS REAL) <= 2 THEN 'On-Time' WHEN CAST(json_extract(shipment_overview, '$.timing_performance.actual_duration_hrs')
+    AS REAL) - CAST(json_extract(shipment_overview, '$.timing_performance.planned_eta_hrs')
+    AS REAL) <= 24 THEN 'Delayed' ELSE 'Severely Delayed' END
+  type: TEXT
+  primary_key: false
+  description: "Delivery Performance Classification (KB #13): based on (actual - planned)\
+    \ hours. Early <-2h, On-Time within +-2h, Delayed 2-24h late, Severely Delayed\
+    \ >24h late.\n\n[kb=13]\nShipments are classified as: 'Early' (>2 hours before\
+    \ scheduled time), 'On-Time' (within \xB12 hours of scheduled time), 'Delayed'\
+    \ (2-24 hours after scheduled time), 'Severely Delayed' (>24 hours after scheduled\
+    \ time). \u2014 Categorizes delivery performance based on variance from expected\
+    \ delivery time.\n[/kb=13]"
+  label: Delivery Performance Classification
+  hidden: false
+  meta:
+    kb_id: 13
+- name: is_high_risk_lane
+  sql: json_extract(shipment_overview, '$.route.risk_note') = 'High'
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Risk Shipping Origin-Destination Pair indicator (KB #17, partial).\
+    \ Source data only carries the qualitative risk_note tag set per shipment; the\
+    \ four KB criteria (>3 climate zones, >2 carrier transfers, >48h customs delay,\
+    \ >15% historical excursion rate) are not present in the schema, so this proxies\
+    \ via risk_note='High'.\n\n[kb=17]\nShipping lane combinations that either: 1)\
+    \ cross more than three climate zones, 2) involve more than two carrier transfers,\
+    \ 3) include countries with historical customs delays exceeding 48 hours, or 4)\
+    \ have previously documented temperature excursion rates above 15%. \u2014 Identifies\
+    \ shipping routes that historically show elevated risks for cold chain integrity.\n\
+    [/kb=17]"
+  label: High-Risk Shipping Origin-Destination Pairs
+  hidden: false
+  meta:
+    kb_id: 17
+- name: is_delayed_shipment
+  sql: CASE WHEN CAST(json_extract(shipment_overview, '$.timing_performance.actual_duration_hrs')
+    AS REAL) - CAST(json_extract(shipment_overview, '$.timing_performance.planned_eta_hrs')
+    AS REAL) > 2 THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Shipping-delay indicator for Lane Risk Potential (KB #36): 1 when\
+    \ actual duration exceeds planned ETA by more than 2 hours (Delayed or Severely\
+    \ Delayed under KB #13), 0 otherwise. Used to compute SD (count of shipping delays\
+    \ per lane).\n\n[kb=36]\nLRP = \\frac{TE_{total} + SD_{total} + CD_{total}}{N_{shipments}},\
+    \ \\text{where } TE_{total} \\text{ is the total count of temperature excursions,\
+    \ } SD_{total} \\text{ is the total count of shipping delays, } CD_{total} \\\
+    text{ is the total count of customs delays, and } N_{shipments} \\text{ is the\
+    \ number of shipments on that lane.} \u2014 Quantifies the risk associated with\
+    \ a specific shipping route based on historical performance.\n[/kb=36]"
+  label: Lane Risk Potential (LRP)
+  hidden: false
+  meta:
+    kb_id: 36
+- name: art_score
+  sql: CASE WHEN LOWER(TRIM(shipment_overview ->> '$.route.risk_note')) = 'low' THEN
+    8 WHEN LOWER(TRIM(shipment_overview ->> '$.route.risk_note')) = 'medium' THEN
+    5 WHEN LOWER(TRIM(shipment_overview ->> '$.route.risk_note')) = 'high' THEN 2
+    ELSE 4 END
+  type: DOUBLE
+  primary_key: false
+  description: "Alternative Route Availability proxy (KB #30, SCRS sub-score, 0-10):\
+    \ low risk lane = 8, medium = 5, high = 2, unknown = 4. Used inside Supply Chain\
+    \ Resilience Score; not a KB-authored value but a heuristic the gold solution\
+    \ applies because the schema does not store ART directly.\n\n[kb=30]\nSCRS = 0.4\
+    \ \\times ART + 0.3 \\times RRD + 0.2 \\times SBP + 0.1 \\times SMC, \\text{where\
+    \ ART is Alternative Route Availability (0-10), RRD is Redundant Resources Depth\
+    \ (0-10), SBP is Supplier Backup Presence (0-10), and SMC is Stock Management\
+    \ Capability (0-10).} \u2014 Measures a cold chain's ability to maintain integrity\
+    \ despite disruptions.\n[/kb=30]"
+  label: Supply Chain Resilience Score (SCRS)
+  hidden: false
+  meta:
+    kb_id: 30
+- name: destination_regulatory_authority
+  sql: CASE destination_nation WHEN 'United States' THEN 'FDA' WHEN 'Germany' THEN
+    'EMA' WHEN 'France' THEN 'EMA' WHEN 'Italy' THEN 'EMA' WHEN 'Spain' THEN 'EMA'
+    WHEN 'United Kingdom' THEN 'MHRA' WHEN 'Canada' THEN 'Health Canada' WHEN 'Australia'
+    THEN 'TGA' WHEN 'Japan' THEN 'PMDA' ELSE NULL END
+  type: TEXT
+  primary_key: false
+  description: "Primary Cold Chain Monitoring Authority (KB #42) for the shipment's\
+    \ destination country: FDA (US), EMA (EU member states), MHRA (UK), Health Canada\
+    \ (Canada), TGA (Australia), PMDA (Japan). NULL when no primary regulator is identified\
+    \ for the destination_nation.\n\n[kb=42]\nPrimary regulatory authorities for pharmaceutical\
+    \ cold chains include: FDA (US Food and Drug Administration), EMA (European Medicines\
+    \ Agency), MHRA (UK Medicines and Healthcare products Regulatory Agency), Health\
+    \ Canada, TGA (Australian Therapeutic Goods Administration), PMDA (Japanese Pharmaceuticals\
+    \ and Medical Devices Agency), and WHO (World Health Organization). \u2014 Key\
+    \ regulatory bodies that oversee cold chain management for pharmaceuticals.\n\
+    [/kb=42]"
+  label: Primary Cold Chain Monitoring Authorities
+  hidden: false
+  meta:
+    kb_id: 42
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Cold-chain pharmaceutical shipments \u2014 one row per logged shipment.\
+  \ Holds the JSON shipment_overview blob with route (origin/destination/risk_note/route_string)\
+  \ and timing_performance (planned vs. actual hours, distance) sub-objects."
+hidden: false

@@ -1,0 +1,193 @@
+version: 6
+name: scanconservation
+sql_table: scanconservation
+query_variables: {}
+data_source: archeology
+columns:
+- name: cureregistry
+  sql: cureregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: arcref
+  sql: arcref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: zoneref
+  sql: zoneref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: harmassess
+  sql: harmassess
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: curerank
+  sql: curerank
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: structstate
+  sql: structstate
+  type: TEXT
+  primary_key: false
+  description: "Structural State (KB #26). 'Stable' = maintains integrity under normal\
+    \ conditions; 'Unstable' = signs of deterioration requiring intervention; 'Critical'\
+    \ = imminent risk of collapse requiring emergency stabilization.\n\n[kb=26]\n\
+    A categorical assessment with specific values: 'Stable' indicates structures that\
+    \ maintain integrity under normal conditions, 'Unstable' indicates structures\
+    \ showing signs of deterioration requiring intervention, and 'Critical' indicates\
+    \ structures at imminent risk of collapse requiring emergency stabilization. \u2014\
+    \ Illustrates structural state classifications in archaeological conservation.\n\
+    [/kb=26]"
+  label: StructState (Structural State)
+  hidden: false
+  meta:
+    kb_id: 26
+- name: intervhistory
+  sql: intervhistory
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: priordocs
+  sql: priordocs
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_degradation_risk_zone
+  sql: CASE WHEN (sites.presstat LIKE '%Poor%' OR sites.presstat LIKE '%Critical%')
+    AND (structstate IS NULL OR structstate <> 'Stable') THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Degradation Risk Zone (KB #14): site PresStat in {'Poor','Critical'}\
+    \ AND StructState != 'Stable' \u2014 active deterioration, immediate conservation\
+    \ needs.\n\n[kb=14]\nA site with PresStat containing 'Poor' or 'Critical' and\
+    \ StructState not containing 'Stable', signaling immediate conservation needs\
+    \ due to active deterioration processes. \u2014 Identifies archaeological sites\
+    \ at risk of degradation requiring urgent conservation intervention based on multiple\
+    \ factors.\n[/kb=14]"
+  label: Degradation Risk Zone
+  hidden: false
+  meta:
+    kb_id: 14
+- name: risk_zone_category
+  sql: CASE WHEN (sites.presstat LIKE '%Poor%' OR sites.presstat LIKE '%Critical%')
+    AND (structstate IS NULL OR structstate <> 'Stable') THEN 'Degradation Risk Zone'
+    ELSE 'Not in Risk Zone' END
+  type: TEXT
+  primary_key: false
+  description: "Risk Zone Category (KB #52): two-class classification \u2014 'Degradation\
+    \ Risk Zone' (KB #14) or 'Not in Risk Zone'.\n\n[kb=52]\nCategorizes archaeological\
+    \ sites into two main groups: 'Degradation Risk Zone' and 'Not in Risk Zone'.\
+    \ 'Not in Risk Zone' means that the site is not in a Degradation Risk Zone. \u2014\
+    \ Classification system that evaluates archaeological sites for degradation risk\
+    \ based on preservation status and structural condition.\n[/kb=52]"
+  label: Risk Zone Category
+  hidden: false
+  meta:
+    kb_id: 52
+- name: ps_score
+  sql: CASE sites.presstat WHEN 'Excellent' THEN 10 WHEN 'Good' THEN 30 WHEN 'Fair'
+    THEN 50 WHEN 'Poor' THEN 70 WHEN 'Critical' THEN 90 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: 'PresStat-to-PS mapping (KB #35 component): Excellent=10, Good=30,
+    Fair=50, Poor=70, Critical=90; unrecognized values resolve to NULL. Component
+    of `cpi`.'
+  label: Preservation Status Score (PS)
+  hidden: false
+- name: af_millennia
+  sql: abs(CAST(sites.guessdate AS REAL)) / 1000.0
+  type: DOUBLE
+  primary_key: false
+  description: 'Approximate Age in millennia (KB #35 component) derived from GuessDate.
+    Best-effort: leading numeric portion of GuessDate, absolute, divided by 1000.
+    Non-numeric labels (e.g. ''Iron Age'') resolve to 0; underlying KB doesn''t fully
+    specify the mapping for label-only dates. Component of `cpi`.'
+  label: Approximate Age (AF, millennia)
+  hidden: false
+- name: ts_rarity
+  sql: CASE sites.typesite WHEN 'Religious' THEN 10 WHEN 'Military' THEN 8 WHEN 'Settlement'
+    THEN 6 WHEN 'Industrial' THEN 4 WHEN 'Burial' THEN 2 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: 'TypeSite rarity score (KB #35 component): 0-10 based on type. Religious=10,
+    Military=8, Settlement=6, Industrial=4, Burial=2, other=0. KB #35 doesn''t specify
+    the exact mapping; this is a best-effort archaeology-domain ranking. Component
+    of `cpi`.'
+  label: TypeSite Rarity Score (TS)
+  hidden: false
+- name: cpi
+  sql: CASE WHEN (sites.presstat LIKE '%Poor%' OR sites.presstat LIKE '%Critical%')
+    AND (structstate IS NULL OR structstate <> 'Stable') THEN 100 - (CASE sites.presstat
+    WHEN 'Excellent' THEN 10 WHEN 'Good' THEN 30 WHEN 'Fair' THEN 50 WHEN 'Poor' THEN
+    70 WHEN 'Critical' THEN 90 ELSE NULL END) + (abs(CAST(sites.guessdate AS REAL))
+    / 1000.0) * (1 + (CASE sites.typesite WHEN 'Religious' THEN 10 WHEN 'Military'
+    THEN 8 WHEN 'Settlement' THEN 6 WHEN 'Industrial' THEN 4 WHEN 'Burial' THEN 2
+    ELSE 0 END) / 10.0) ELSE 50 - (CASE sites.presstat WHEN 'Excellent' THEN 10 WHEN
+    'Good' THEN 30 WHEN 'Fair' THEN 50 WHEN 'Poor' THEN 70 WHEN 'Critical' THEN 90
+    ELSE NULL END) + (abs(CAST(sites.guessdate AS REAL)) / 1000.0) * (1 + (CASE sites.typesite
+    WHEN 'Religious' THEN 10 WHEN 'Military' THEN 8 WHEN 'Settlement' THEN 6 WHEN
+    'Industrial' THEN 4 WHEN 'Burial' THEN 2 ELSE 0 END) / 20.0) END
+  type: DOUBLE
+  primary_key: false
+  description: "Conservation Priority Index (CPI, KB #35): piecewise formula. If in\
+    \ Degradation Risk Zone: 100 - PS + AF*(1+TS/10); else: 50 - PS + AF*(1+TS/20).\
+    \ PS from PresStat (Excellent=10..Critical=90), AF in millennia from GuessDate,\
+    \ TS 0-10 from TypeSite. Higher = greater urgency.\n\n[kb=35]\nCPI = \\begin{cases}\
+    \ 100 - PS + AF \\times \\left(1 + \\frac{TS}{10}\\right), & \\text{if in a Degradation\
+    \ Risk Zone} \\\\ 50 - PS + AF \\times \\left(1 + \\frac{TS}{20}\\right), & \\\
+    text{otherwise} \\end{cases}, \\text{ where PS is 0-100 based on PresStat condition\
+    \ ('Excellent'=10, 'Good'=30, 'Fair'=50, 'Poor'=70, 'Critical'=90), AF is approximate\
+    \ age in millennia derived from GuessDate, and TS is 0-10 based on TypeSite rarity.}\
+    \ \u2014 Quantifies the urgency of conservation efforts based on site condition,\
+    \ historical significance and structural stability.\n[/kb=35]"
+  label: Conservation Priority Index (CPI)
+  hidden: false
+  meta:
+    kb_id: 35
+- name: is_conservation_emergency
+  sql: CASE WHEN (sites.presstat LIKE '%Poor%' OR sites.presstat LIKE '%Critical%')
+    AND (structstate IS NULL OR structstate <> 'Stable') AND (100 - (CASE sites.presstat
+    WHEN 'Excellent' THEN 10 WHEN 'Good' THEN 30 WHEN 'Fair' THEN 50 WHEN 'Poor' THEN
+    70 WHEN 'Critical' THEN 90 ELSE NULL END) + (abs(CAST(sites.guessdate AS REAL))
+    / 1000.0) * (1 + (CASE sites.typesite WHEN 'Religious' THEN 10 WHEN 'Military'
+    THEN 8 WHEN 'Settlement' THEN 6 WHEN 'Industrial' THEN 4 WHEN 'Burial' THEN 2
+    ELSE 0 END) / 10.0)) > 75 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Conservation Emergency (KB #42): in a Degradation Risk Zone (KB #14)\
+    \ AND CPI > 75 (KB #35) \u2014 immediate protective measures and priority documentation\
+    \ required.\n\n[kb=42]\nA site that is in a Degradation Risk Zone with CPI > 75,\
+    \ where CPI is the Conservation Priority Index, requiring immediate protective\
+    \ measures and priority documentation with at least Premium Quality Scans before\
+    \ any intervention to establish baseline condition. \u2014 Identifies sites requiring\
+    \ immediate conservation intervention based on multiple risk factors and structural\
+    \ assessment.\n[/kb=42]"
+  label: Conservation Emergency
+  hidden: false
+  meta:
+    kb_id: 42
+measures: []
+aggregations: []
+joins:
+- target_model: projects
+  join_pairs:
+  - - arcref
+    - arcregistry
+  join_type: left
+- target_model: sites
+  join_pairs:
+  - - zoneref
+    - zoneregistry
+  join_type: left
+filters: []
+description: 'Per-project conservation assessments. Hosts the Degradation Risk Zone
+  predicate (KB #14), Risk Zone Category classification (KB #52), Conservation Priority
+  Index (CPI, KB #35), and Conservation Emergency predicate (KB #42). Joins to `sites`
+  for PresStat / GuessDate / TypeSite and to `projects`.'
+hidden: false

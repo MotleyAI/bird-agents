@@ -1,0 +1,136 @@
+version: 6
+name: companies
+sql_table: companies
+query_variables: {}
+data_source: hulushows
+columns:
+- name: entity_key
+  sql: entity_key
+  type: INT
+  primary_key: true
+  description: "Primary key \u2014 unique studio id."
+  hidden: false
+  format:
+    type: integer
+- name: chanref
+  sql: chanref
+  type: INT
+  primary_key: false
+  description: Legacy channel reference id (gaps + non-sequential).
+  hidden: false
+  format:
+    type: integer
+- name: company_name
+  sql: company_name
+  type: TEXT
+  primary_key: false
+  description: Official full legal name of the studio.
+  hidden: false
+- name: short_name
+  sql: short_name
+  type: TEXT
+  primary_key: false
+  description: Common short name (e.g. 'Disney').
+  hidden: false
+- name: canonical_name
+  sql: canonical_name
+  type: TEXT
+  primary_key: false
+  description: Standardized canonical (slug) name for matching across the platform.
+  hidden: false
+- name: brandingassets
+  sql: brandingassets
+  type: TEXT
+  primary_key: false
+  description: "JSONB column with KeyArt_URL, NetworkLogo_URL, and HasLogo_Flag (high-res\
+    \ logo flag \u2014 KB 4: stored as 'TRUE'/'FALSE'/'Yes'/'No'/'1'/'0').\n\n[kb=4]\n\
+    Typical values include 'TRUE', 'FALSE', 'Yes', 'No', '1', '0' and all indicate\
+    \ presence or absence of a high-resolution logo. \u2014 Explains how availability\
+    \ of high-res logos is marked.\n[/kb=4]"
+  label: High-Resolution Logo Flags
+  hidden: false
+  meta:
+    kb_id: 4
+- name: haslogo_raw
+  sql: brandingassets ->> '$.HasLogo_Flag'
+  type: TEXT
+  primary_key: false
+  description: "Raw HasLogo_Flag string from brandingassets JSON (KB 4).\n\n[kb=4]\n\
+    Typical values include 'TRUE', 'FALSE', 'Yes', 'No', '1', '0' and all indicate\
+    \ presence or absence of a high-resolution logo. \u2014 Explains how availability\
+    \ of high-res logos is marked.\n[/kb=4]"
+  label: High-Resolution Logo Flags
+  hidden: false
+  meta:
+    kb_id: 4
+- name: has_high_res_logo
+  sql: LOWER(TRIM(CAST(brandingassets ->> '$.HasLogo_Flag' AS TEXT))) IN ('true',
+    'yes', 'y', '1')
+  type: BOOLEAN
+  primary_key: false
+  description: 'High-Resolution Logo Flag (KB 4): TRUE when HasLogo_Flag indicates
+    presence (TRUE/Yes/Y/1).'
+  hidden: false
+- name: high_res_logo_int
+  sql: CASE WHEN LOWER(TRIM(CAST(brandingassets ->> '$.HasLogo_Flag' AS TEXT))) IN
+    ('true', 'yes', 'y', '1') THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Integer flag for has_high_res_logo \u2014 used by KB 33 (HBR) and\
+    \ KB 52 (HRUR).\n\n[kb=33]\nHBR = The share of studios using high-quality brand\
+    \ images is found by dividing the number that use them by the total number of\
+    \ studios. \u2014 Measures the share of studios with high-resolution logos.\n\
+    [/kb=33]"
+  label: High-Res Branding Ratio (HBR)
+  hidden: false
+  meta:
+    kb_id: 33
+- name: company_name_length
+  sql: LENGTH(company_name)
+  type: DOUBLE
+  primary_key: false
+  description: Character length of the company_name.
+  hidden: false
+- name: key_art_url
+  sql: brandingassets ->> '$.KeyArt_URL'
+  type: TEXT
+  primary_key: false
+  description: URL of the company's key-art image.
+  hidden: false
+- name: network_logo_url
+  sql: brandingassets ->> '$.NetworkLogo_URL'
+  type: TEXT
+  primary_key: false
+  description: URL of the company's network logo image.
+  hidden: false
+- name: is_brand_consistent
+  sql: LOWER(TRIM(CAST(brandingassets ->> '$.HasLogo_Flag' AS TEXT))) IN ('true',
+    'yes', 'y', '1')
+  type: BOOLEAN
+  primary_key: false
+  description: "Studio Brand Consistency (KB 45): TRUE when the studio's HBR (KB 33)\
+    \ = 1. Since each studio has one row, this reduces to has_high_res_logo (HasLogo_Flag\
+    \ indicates presence).\n\n[kb=45]\nStudios with HBR = 1 are said to maintain brand\
+    \ consistency. \u2014 Identifies studios that consistently apply high-resolution\
+    \ logos across all their shows.\n[/kb=45]"
+  label: Studio Brand Consistency
+  hidden: false
+  meta:
+    kb_id: 45
+measures:
+- formula: 1.0 * high_res_logo_int:sum / *:count
+  name: high_res_branding_ratio
+  description: 'High-Res Branding Ratio (HBR, KB 33): fraction of studios with high-resolution
+    logos.'
+- formula: high_res_logo_int:sum
+  name: studios_with_logo_count
+  description: Count of studios with HasLogo_Flag indicating presence.
+- formula: '*:count'
+  name: studio_count
+  description: Total studios.
+aggregations: []
+joins: []
+filters: []
+description: One row per production company / studio / distributor. Holds canonical
+  names + a brandingassets JSONB blob (KeyArt_URL, NetworkLogo_URL, HasLogo_Flag).
+hidden: false

@@ -1,0 +1,72 @@
+version: 6
+name: bond_allocations
+sql_table: bond_allocations
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: bondallocid
+  sql: bondallocid
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: fundlink
+  sql: fundlink
+  type: TEXT
+  primary_key: false
+  description: Fund ticker (FK to funds.tickersym).
+  hidden: false
+- name: ratinglink
+  sql: ratinglink
+  type: INT
+  primary_key: false
+  description: FK to bond_ratings.ratekey.
+  hidden: false
+  format:
+    type: integer
+- name: allocationpct
+  sql: allocationpct
+  type: INT
+  primary_key: false
+  description: Percentage (0-1) of the fund's bond holdings in this credit rating
+    bucket.
+  hidden: false
+  format:
+    type: integer
+- name: is_high_quality_rating
+  sql: bond_ratings.creditmark IN ('us_government', 'aaa', 'aa')
+  type: BOOLEAN
+  primary_key: false
+  description: TRUE iff the joined bond_ratings.creditmark is government, AAA, or
+    AA (KB 19 building block).
+  hidden: false
+- name: high_quality_alloc
+  sql: CASE WHEN bond_ratings.creditmark IN ('us_government', 'aaa', 'aa') THEN allocationpct
+    ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: 'allocationpct restricted to high-quality bonds (KB 19 building block:
+    government / AAA / AA).'
+  hidden: false
+measures:
+- formula: high_quality_alloc:sum / allocationpct:sum
+  name: high_quality_credit_share
+  description: Share of bond holdings rated US government, AAA, or AA (KB 19 building
+    block).
+aggregations: []
+joins:
+- target_model: funds
+  join_pairs:
+  - - fundlink
+    - tickersym
+  join_type: left
+- target_model: bond_ratings
+  join_pairs:
+  - - ratinglink
+    - ratekey
+  join_type: left
+filters: []
+description: 'Per-fund bond credit-rating allocations: each row is one (fund, credit
+  rating) pair with a percent allocation. Used by KB 19 High-Quality Credit Portfolio.'
+hidden: false

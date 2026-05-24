@@ -1,0 +1,259 @@
+version: 6
+name: etf_performance
+sql_table: performance
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: perfid
+  sql: perfid
+  type: INT
+  primary_key: true
+  hidden: false
+- name: productref
+  sql: productref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: reportdate
+  sql: reportdate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: high52w
+  sql: high52w
+  type: INT
+  primary_key: false
+  description: 52-week high price (KB 4).
+  hidden: false
+- name: highdelta
+  sql: highdelta
+  type: INT
+  primary_key: false
+  hidden: false
+- name: highdeltapct
+  sql: highdeltapct
+  type: INT
+  primary_key: false
+  hidden: false
+- name: low52w
+  sql: low52w
+  type: INT
+  primary_key: false
+  description: 52-week low price (KB 4).
+  hidden: false
+- name: lowdelta
+  sql: lowdelta
+  type: INT
+  primary_key: false
+  description: Recent price minus 52-week low (positive). Implies recent_price = low52w
+    + lowdelta.
+  hidden: false
+- name: lowdeltapct
+  sql: lowdeltapct
+  type: INT
+  primary_key: false
+  hidden: false
+- name: rangemove
+  sql: rangemove
+  type: INT
+  primary_key: false
+  hidden: false
+- name: rangemovepct
+  sql: rangemovepct
+  type: INT
+  primary_key: false
+  hidden: false
+- name: rytd
+  sql: rytd
+  type: INT
+  primary_key: false
+  hidden: false
+- name: benchrytd
+  sql: benchrytd
+  type: INT
+  primary_key: false
+  hidden: false
+- name: r1m
+  sql: r1m
+  type: INT
+  primary_key: false
+  hidden: false
+- name: benchr1m
+  sql: benchr1m
+  type: INT
+  primary_key: false
+  hidden: false
+- name: r3m
+  sql: r3m
+  type: INT
+  primary_key: false
+  hidden: false
+- name: benchr3m
+  sql: benchr3m
+  type: INT
+  primary_key: false
+  hidden: false
+- name: r1y
+  sql: r1y
+  type: INT
+  primary_key: false
+  description: Fund 1-year return (decimal). Used by KB 2 Return on Cost.
+  hidden: false
+- name: benchr1y
+  sql: benchr1y
+  type: INT
+  primary_key: false
+  description: Benchmark 1-year return.
+  hidden: false
+- name: r3y
+  sql: r3y
+  type: INT
+  primary_key: false
+  description: Fund 3-year average return (decimal). Used by KB 6 Information Ratio
+    numerator.
+  hidden: false
+- name: benchr3y
+  sql: benchr3y
+  type: INT
+  primary_key: false
+  description: Benchmark 3-year average return (decimal). Used by KB 6 IR.
+  hidden: false
+- name: r5y
+  sql: r5y
+  type: INT
+  primary_key: false
+  hidden: false
+- name: benchr5y
+  sql: benchr5y
+  type: INT
+  primary_key: false
+  hidden: false
+- name: r10y
+  sql: r10y
+  type: INT
+  primary_key: false
+  hidden: false
+- name: benchr10y
+  sql: benchr10y
+  type: INT
+  primary_key: false
+  hidden: false
+- name: positiveyears
+  sql: positiveyears
+  type: INT
+  primary_key: false
+  description: Number of historical years with positive fund returns (KB 7).
+  hidden: false
+- name: negativeyears
+  sql: negativeyears
+  type: INT
+  primary_key: false
+  description: Number of historical years with negative fund returns (KB 7).
+  hidden: false
+- name: topholdings
+  sql: topholdings
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: topweight
+  sql: topweight
+  type: INT
+  primary_key: false
+  description: "Largest single holding's weight (0-1) (KB 13).\n\n[kb=13]\nA fund\
+    \ is considered to have a High-Conviction Portfolio if the weight of its single\
+    \ largest holding is greater than 8%. \u2014 A portfolio where the manager allocates\
+    \ a significant portion of assets to a small number of their best ideas.\n[/kb=13]"
+  label: High-Conviction Portfolio
+  hidden: false
+  meta:
+    kb_id: 13
+- name: pricerange52w
+  sql: pricerange52w
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: returnmetrics
+  sql: returnmetrics
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: histstats
+  sql: histstats
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_high_conviction_portfolio
+  sql: topweight > 0.08
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Conviction Portfolio (KB 13): largest holding weight > 8%.\n\n\
+    [kb=13]\nA fund is considered to have a High-Conviction Portfolio if the weight\
+    \ of its single largest holding is greater than 8%. \u2014 A portfolio where the\
+    \ manager allocates a significant portion of assets to a small number of their\
+    \ best ideas.\n[/kb=13]"
+  label: High-Conviction Portfolio
+  hidden: false
+  meta:
+    kb_id: 13
+- name: price_position_52w
+  sql: lowdelta * 100.0 / NULLIF(high52w - low52w, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Price Position in 52-Week Range (KB 4) = (recent_price - low52w) /\
+    \ (high52w - low52w) * 100. lowdelta = recent_price - low52w.\n\n[kb=4]\next{Position}\
+    \ = \frac{\text{Recent price} - \text{52-week low price}}{\text{52-week high price}\
+    \ - \text{52-week low price}} \times 100 \u2014 Calculates the current price's\
+    \ position within its 52-week high-low range as a percentage.\n[/kb=4]"
+  label: Price Position in 52-Week Range
+  hidden: false
+  meta:
+    kb_id: 4
+- name: recent_price
+  sql: low52w + lowdelta
+  type: DOUBLE
+  primary_key: false
+  description: Reconstructed recent (current) price = low52w + lowdelta. Used by KB
+    57 Capital Preservation Index.
+  hidden: false
+- name: positive_return_consistency
+  sql: positiveyears * 100.0 / NULLIF(positiveyears + negativeyears, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Positive Return Consistency (KB 7) = positiveyears / (positiveyears\
+    \ + negativeyears) * 100.\n\n[kb=7]\next{Consistency} = \frac{\text{Number of\
+    \ years with positive returns}}{\text{number of positive years with positive returns}\
+    \ + \text{number if years with negative returns}} \times 100 \u2014 Calculates\
+    \ the percentage of a fund's historical years that have yielded positive returns.\n\
+    [/kb=7]"
+  label: Positive Return Consistency
+  hidden: false
+  meta:
+    kb_id: 7
+- name: capital_preservation_index
+  sql: (1.0 / (1 + COALESCE(negativeyears, 0))) * (1 - (low52w - (low52w + lowdelta))
+    * 1.0 / NULLIF(low52w, 0))
+  type: DOUBLE
+  primary_key: false
+  description: "Capital Preservation Index (KB 57) = (1/(1+Negative Years)) * (1 -\
+    \ (52-Week Low - Current Price)/52-Week Low). Current price = low52w + lowdelta.\n\
+    \n[kb=57]\nCPI = (\frac{1}{1 + \text{Negative Years}}) \times (1 - \frac{\text{52-Week\
+    \ Low} - \text{Current Price}}{\text{52-Week Low}}) \u2014 Scores a fund on its\
+    \ ability to protect capital by combining its history of avoiding down years with\
+    \ its ability to stay above its 52-week lows.\n[/kb=57]"
+  label: Capital Preservation Index
+  hidden: false
+  meta:
+    kb_id: 57
+measures: []
+aggregations: []
+joins:
+- target_model: funds
+  join_pairs:
+  - - productref
+    - tickersym
+  join_type: left
+filters: []
+description: Per-fund performance snapshot (1:1 to funds via productref). Holds 52-week
+  price range, returns over 1M / 3M / 1Y / 3Y / 5Y / 10Y vs benchmark, year-counts
+  (positive/negative).
+hidden: false

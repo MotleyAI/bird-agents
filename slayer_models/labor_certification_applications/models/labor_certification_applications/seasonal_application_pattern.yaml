@@ -1,0 +1,73 @@
+version: 6
+name: seasonal_application_pattern
+source_queries:
+- version: 3
+  name: month_apps
+  source_model: cases
+  measures:
+  - formula: '*:count'
+  dimensions:
+  - name: recv_month
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: month_apps
+    columns:
+    - name: season_pattern
+      type: TEXT
+      sql: CASE WHEN _count > AVG(_count) OVER () * 1.2 THEN 'Peak Season' WHEN _count
+        < AVG(_count) OVER () * 0.8 THEN 'Off-Peak Season' ELSE 'Transition Period'
+        END
+  dimensions:
+  - name: recv_month
+  - name: _count
+  - name: season_pattern
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"month_apps.recv_month\" AS recv_month, \"month_apps._count\"\
+  \ AS _count, \"month_apps.season_pattern\" AS season_pattern FROM (SELECT\n  month_apps.recv_month\
+  \ AS \"month_apps.recv_month\",\n  month_apps._count AS \"month_apps._count\",\n\
+  \  CASE\n    WHEN _count > AVG(_count) OVER () * 1.2\n    THEN 'Peak Season'\n \
+  \   WHEN _count < AVG(_count) OVER () * 0.8\n    THEN 'Off-Peak Season'\n    ELSE\
+  \ 'Transition Period'\n  END AS \"month_apps.season_pattern\"\nFROM (\n  SELECT\n\
+  \    \"cases.recv_month\" AS recv_month,\n    \"cases._count\" AS _count\n  FROM\
+  \ (\n    SELECT\n      CAST(SUBSTRING(recvday, 6, 2) AS INTEGER) AS \"cases.recv_month\"\
+  ,\n      COUNT(*) AS \"cases._count\"\n    FROM cases AS cases\n    GROUP BY\n \
+  \     CAST(SUBSTRING(recvday, 6, 2) AS INTEGER)\n  ) AS _inner\n) AS month_apps)\
+  \ AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: recv_month
+  sql: recv_month
+  type: DOUBLE
+  primary_key: false
+  description: 'Month of receipt (1-12), parsed from recvday ''YYYY/MM/DD''. Used
+    for KB #23/50 seasonal analysis.'
+  hidden: false
+- name: _count
+  sql: _count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: season_pattern
+  sql: season_pattern
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Seasonal Application Pattern by month (KB #50): Peak Season (count >\
+  \ 1.2x avg), Off-Peak (< 0.8x avg), Transition (in-between). Per-month rows. NOTE:\
+  \ dataset is single-month, so all rows fall to a single bucket.\n\n[kb=50]\nSeasonal\
+  \ patterns in visa application submissions include Peak Season (periods with higher\
+  \ submission rates), Off-Peak Season (lower submission rates), and Transition Periods\
+  \ (moderate activity between peaks). Application receipt dates are tracked as part\
+  \ of the application data. \u2014 Defines patterns in visa application timing throughout\
+  \ the year.\n[/kb=50]"
+hidden: false
+meta:
+  kb_id: 50

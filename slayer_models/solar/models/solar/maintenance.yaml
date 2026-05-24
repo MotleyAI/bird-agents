@@ -1,0 +1,168 @@
+version: 6
+name: maintenance
+sql_table: maintenance
+query_variables: {}
+data_source: solar
+columns:
+- name: maintregistry
+  sql: maintregistry
+  type: TEXT
+  primary_key: true
+  description: VARCHAR(50) PRIMARY KEY uniquely identifying each maintenance record.
+  hidden: false
+- name: powerref
+  sql: powerref
+  type: TEXT
+  primary_key: false
+  description: UUID REFERENCES Plant(GrowRegistry), referencing which plant is maintained.
+  hidden: false
+- name: compref
+  sql: compref
+  type: TEXT
+  primary_key: false
+  description: VARCHAR(50) REFERENCES Panel(PaneMark), referencing the panel if maintenance
+    is panel-specific.
+  hidden: false
+- name: obsref
+  sql: obsref
+  type: TEXT
+  primary_key: false
+  description: VARCHAR(50) REFERENCES Performance(PerfRegistry), linking to performance
+    data if relevant.
+  hidden: false
+- name: inspectmeth
+  sql: inspectmeth
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(100) describing the inspection method (was ''InspectionMethod'').
+    Possible enumerations: ''Visual'', ''IR Thermal'', ''IV Curve'', ''EL Imaging''.'
+  hidden: false
+- name: inspectres
+  sql: inspectres
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(150) noting the inspection result (was ''InspectionResult'').
+    Possible enumerations: ''Minor Issues'', ''Major Issues'', ''Pass''.'
+  hidden: false
+- name: inspectdate
+  sql: inspectdate
+  type: DATE
+  primary_key: false
+  description: DATE specifying when inspection took place (was 'InspectionDate') (e.g.,
+    '2023-07-01').
+  hidden: false
+- name: maintsched
+  sql: maintsched
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(100) summarizing the maintenance schedule (was ''MaintenanceSchedule'').
+    Possible enumerations: ''Delayed'', ''Overdue'', ''On Schedule''.'
+  hidden: false
+- name: wtystatus
+  sql: wtystatus
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(50) describing the warranty status (was ''WarrantyStatus'').
+    Possible enumerations: ''Claimed'', ''Active'', ''Expired''.'
+  hidden: false
+- name: wtyclaimcnt
+  sql: wtyclaimcnt
+  type: INT
+  primary_key: false
+  description: 'SMALLINT counting how many warranty claims have been filed (was ''WarrantyClaimCount'').
+    Possible enumerations: 0, 1, 2, 3, 4, 5.'
+  hidden: false
+  format:
+    type: integer
+- name: maintcostusd
+  sql: maintcostusd
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(9,2) cost of maintenance in USD (was 'MaintenanceCostUSD')
+    (e.g., 250.00).
+  hidden: false
+  format:
+    type: float
+- name: cleancostusd
+  sql: cleancostusd
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(8,3) cost of cleaning in USD (was 'CleaningCostUSD') (e.g.,
+    50.125).
+  hidden: false
+  format:
+    type: float
+- name: replacecostusd
+  sql: replacecostusd
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(9,3) cost to replace components in USD (was 'ReplacementCostUSD')
+    (e.g., 1200.500).
+  hidden: false
+  format:
+    type: float
+- name: revlossusd
+  sql: revlossusd
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(7,2) revenue loss in USD due to downtime (was 'RevenueLossUSD')
+    (e.g., 100.25).
+  hidden: false
+  format:
+    type: float
+- name: maintenance_cost_efficiency
+  sql: (maintcostusd + cleancostusd + replacecostusd) / NULLIF(plant.gencapmw, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=7]\nMCE = (MaintenanceCostUSD + CleaningCostUSD + ReplacementCostUSD)\
+    \ / GenCapMW, where lower values indicate more cost-effective maintenance. \u2014\
+    \ The total maintenance cost per MW of generation capacity; lower values indicate\
+    \ more cost-effective maintenance.\n[/kb=7]"
+  label: Maintenance Cost Efficiency (MCE)
+  hidden: false
+  meta:
+    kb_id: 7
+- name: revenue_loss_rate
+  sql: revlossusd / NULLIF(plant.gencapmw, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=8]\nRLR = RevenueLossUSD / GenCapMW, where higher values indicate\
+    \ greater financial impact from downtime. \u2014 Revenue loss per MW of generation\
+    \ capacity; higher values indicate greater financial impact from downtime.\n[/kb=8]"
+  label: Revenue Loss Rate (RLR)
+  hidden: false
+  meta:
+    kb_id: 8
+- name: maintenance_roi
+  sql: revenue_loss_rate / NULLIF(maintenance_cost_efficiency, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=32]\nMROI = RLR / MCE, where RLR is the Revenue Loss Rate and\
+    \ MCE is the Maintenance Cost Efficiency. Higher values indicate better return\
+    \ on maintenance investments. \u2014 Indicator of return on maintenance spend:\
+    \ revenue loss per MW divided by maintenance cost per MW; higher is better.\n\
+    [/kb=32]"
+  label: Maintenance Return on Investment (MROI)
+  hidden: false
+  meta:
+    kb_id: 32
+measures: []
+aggregations: []
+joins:
+- target_model: panel
+  join_pairs:
+  - - compref
+    - panemark
+  join_type: left
+- target_model: performance
+  join_pairs:
+  - - obsref
+    - perfregistry
+  join_type: left
+- target_model: plant
+  join_pairs:
+  - - powerref
+    - growregistry
+  join_type: left
+filters: []
+hidden: false

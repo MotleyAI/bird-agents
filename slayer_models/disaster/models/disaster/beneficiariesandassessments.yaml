@@ -1,0 +1,210 @@
+version: 6
+name: beneficiariesandassessments
+sql_table: beneficiariesandassessments
+query_variables: {}
+data_source: disaster
+columns:
+- name: beneregistry
+  sql: beneregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: benedistref
+  sql: benedistref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: beneopsref
+  sql: beneopsref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: beneregister
+  sql: beneregister
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vulnerabilityreview
+  sql: vulnerabilityreview
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: needsassessstatus
+  sql: needsassessstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: distequityidx
+  sql: distequityidx
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: benefeedbackscore
+  sql: benefeedbackscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: commengagelvl
+  sql: commengagelvl
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: localcapacitygrowth
+  sql: localcapacitygrowth
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: commengage_numeric
+  sql: CASE commengagelvl WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN
+    3 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric mapping of commengagelvl used by KB #19 (BSI) and KB #38 (CEE):
+    Low=1, Medium=2, High=3, else=0.'
+  hidden: false
+- name: bsi
+  sql: benefeedbackscore * 10 + (CASE commengagelvl WHEN 'Low' THEN 1 WHEN 'Medium'
+    THEN 2 WHEN 'High' THEN 3 ELSE 0 END) * 20 + distequityidx * 50
+  type: DOUBLE
+  primary_key: false
+  description: "Beneficiary Satisfaction Index (BSI, KB #19): benefeedbackscore*10\
+    \ + commengage_numeric*20 + distequityidx*50, with commengage_numeric mapping\
+    \ Low=1, Medium=2, High=3.\n\n[kb=19]\nBSI = benefeedbackscore \\times 10 + (commengage\\\
+    _numeric \\times 20) + distequityidx \\times 50, \\text{ where commengage\\_numeric\
+    \ maps Low=1, Medium=2, High=3} \u2014 Measures the satisfaction level of aid\
+    \ recipients\n[/kb=19]"
+  label: Beneficiary Satisfaction Index (BSI)
+  hidden: false
+  meta:
+    kb_id: 19
+- name: rde
+  sql: distequityidx * (1 + transportation.distributionpoints / 20.0) * (1 - (100
+    - transportation.deliverysuccessrate) / 100.0) * (CASE coordinationandevaluation.coordeffectlvl
+    WHEN 'High' THEN 1.2 WHEN 'Medium' THEN 1.0 WHEN 'Low' THEN 0.8 ELSE 0 END)
+  type: DOUBLE
+  primary_key: false
+  description: "Resource Distribution Equity (RDE, KB #31): distequityidx * (1 + transportation.distributionpoints/20)\
+    \ * (1 - (100 - transportation.deliverysuccessrate)/100) * coordeffect_factor.\n\
+    \n[kb=31]\nRDE = distequityidx \\times \\left(1 + \\frac{distributionpoints}{20}\\\
+    right) \\times \\left(1 - \\frac{100 - deliverysuccessrate}{100}\\right) \\times\
+    \ coordeffect\\_factor, \\text{ where coordeffect\\_factor is 1.2 for High, 1.0\
+    \ for Medium, 0.8 for Low coordination effectiveness level, and 0 for else} \u2014\
+    \ Evaluates the fairness of resource distribution across affected areas\n[/kb=31]"
+  label: Resource Distribution Equity (RDE)
+  hidden: false
+  meta:
+    kb_id: 31
+- name: cee
+  sql: ((benefeedbackscore * 10 + (CASE commengagelvl WHEN 'Low' THEN 1 WHEN 'Medium'
+    THEN 2 WHEN 'High' THEN 3 ELSE 0 END) * 20 + distequityidx * 50) / 100.0) * (CASE
+    commengagelvl WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE 0
+    END) * ((coordinationandevaluation.stakeholdersatisf + 1) / 5.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Community Engagement Effectiveness (CEE, KB #38): (BSI/100) * commengage_numeric\
+    \ * ((stakeholdersatisf+1)/5).\n\n[kb=38]\nCEE = \\frac{BSI}{100} \\times commengage\\\
+    _numeric \\times \\left(\\frac{stakeholdersatisf + 1}{5}\\right), \\text{ where\
+    \ commengage\\_numeric maps Low=1, Medium=2, High=3, else=0 for community engagement\
+    \ level} \u2014 Evaluates how effectively operations engage with affected communities\n\
+    [/kb=38]"
+  label: Community Engagement Effectiveness (CEE)
+  hidden: false
+  meta:
+    kb_id: 38
+- name: is_community_resilience_builder
+  sql: localcapacitygrowth = 'Active' AND commengagelvl = 'High' AND (benefeedbackscore
+    * 10 + (CASE commengagelvl WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High'
+    THEN 3 ELSE 0 END) * 20 + distequityidx * 50) > 70
+  type: BOOLEAN
+  primary_key: false
+  description: "Community Resilience Builder (KB #28): localcapacitygrowth='Active'\
+    \ AND commengagelvl='High' AND BSI>70.\n\n[kb=28]\nOperations where localcapacitygrowth\
+    \ is 'Active' AND commengagelvl is 'High' AND BSI > 70, representing efforts that\
+    \ effectively build sustainable community resilience \u2014 Identifies operations\
+    \ that strengthen local community capacity\n[/kb=28]"
+  label: Community Resilience Builder
+  hidden: false
+  meta:
+    kb_id: 28
+- name: is_vulnerable_population_hotspot
+  sql: vulnerabilityreview = 'Complete' AND distequityidx < 0.3 AND coordinationandevaluation.coordeffectlvl
+    = 'Low'
+  type: BOOLEAN
+  primary_key: false
+  description: "Vulnerable Population Hotspot (KB #23): vulnerabilityreview='Complete'\
+    \ AND distequityidx<0.3 AND coordeffectlvl='Low'.\n\n[kb=23]\nAreas where vulnerabilityreview\
+    \ is 'Complete' with distequityidx < 0.3 AND coordeffectlvl is 'Low', indicating\
+    \ populations with high vulnerability and inadequate coordination support \u2014\
+    \ Identifies areas with highly vulnerable populations requiring priority attention\n\
+    [/kb=23]"
+  label: Vulnerable Population Hotspot
+  hidden: false
+  meta:
+    kb_id: 23
+- name: is_resource_distribution_inequity
+  sql: (distequityidx * (1 + transportation.distributionpoints / 20.0) * (1 - (100
+    - transportation.deliverysuccessrate) / 100.0) * (CASE coordinationandevaluation.coordeffectlvl
+    WHEN 'High' THEN 1.2 WHEN 'Medium' THEN 1.0 WHEN 'Low' THEN 0.8 ELSE 0 END)) <
+    0.4 AND distequityidx < 0.5 AND transportation.distributionpoints < 5
+  type: BOOLEAN
+  primary_key: false
+  description: "Resource Distribution Inequity (KB #48): RDE<0.4 AND distequityidx<0.5\
+    \ AND distributionpoints<5.\n\n[kb=48]\nOperations where RDE < 0.4 AND distequityidx\
+    \ < 0.5 AND distributionpoints < 5, indicating serious inequities in how resources\
+    \ reach affected populations \u2014 Identifies operations with significant disparities\
+    \ in resource allocation\n[/kb=48]"
+  label: Resource Distribution Inequity
+  hidden: false
+  meta:
+    kb_id: 48
+- name: is_community_resilience_opportunity
+  sql: (((benefeedbackscore * 10 + (CASE commengagelvl WHEN 'Low' THEN 1 WHEN 'Medium'
+    THEN 2 WHEN 'High' THEN 3 ELSE 0 END) * 20 + distequityidx * 50) / 100.0) * (CASE
+    commengagelvl WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE 0
+    END) * ((coordinationandevaluation.stakeholdersatisf + 1) / 5.0)) > 2.5 AND vulnerabilityreview
+    = 'Complete' AND NOT (localcapacitygrowth = 'Active' AND commengagelvl = 'High'
+    AND (benefeedbackscore * 10 + (CASE commengagelvl WHEN 'Low' THEN 1 WHEN 'Medium'
+    THEN 2 WHEN 'High' THEN 3 ELSE 0 END) * 20 + distequityidx * 50) > 70)
+  type: BOOLEAN
+  primary_key: false
+  description: "Community Resilience Opportunity (KB #46): CEE>2.5 AND vulnerabilityreview='Complete'\
+    \ AND NOT is_community_resilience_builder.\n\n[kb=46]\nAreas where CEE > 2.5 AND\
+    \ vulnerabilityreview is 'Complete' BUT NOT qualifying as Community Resilience\
+    \ Builder, representing opportunities where community engagement is strong but\
+    \ resilience building efforts need strengthening \u2014 Identifies high-potential\
+    \ areas for community resilience building\n[/kb=46]"
+  label: Community Resilience Opportunity
+  hidden: false
+  meta:
+    kb_id: 46
+measures: []
+aggregations: []
+joins:
+- target_model: disasterevents
+  join_pairs:
+  - - benedistref
+    - distregistry
+  join_type: left
+- target_model: operations
+  join_pairs:
+  - - beneopsref
+    - opsregistry
+  join_type: left
+- target_model: coordinationandevaluation
+  join_pairs:
+  - - beneopsref
+    - coordopsref
+  join_type: left
+- target_model: transportation
+  join_pairs:
+  - - benedistref
+    - transportdistref
+  join_type: left
+filters: []
+description: Beneficiary registry & assessment per (disaster, operation); 1:1 with
+  operations.
+hidden: false

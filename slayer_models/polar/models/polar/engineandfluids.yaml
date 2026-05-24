@@ -1,0 +1,80 @@
+version: 6
+name: engineandfluids
+sql_table: engineandfluids
+query_variables: {}
+data_source: polar
+columns:
+- name: engineregistry
+  sql: engineregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: engfluidseqref
+  sql: engfluidseqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: engfluidspbref
+  sql: engfluidspbref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: enginespeedrpm
+  sql: enginespeedrpm
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: engineloadpercent
+  sql: engineloadpercent
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: enginetemperaturec
+  sql: enginetemperaturec
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: enginehours
+  sql: enginehours
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: engfluidsopmaintref
+  sql: engfluidsopmaintref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: fluidmetrics
+  sql: fluidmetrics
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: equipment
+  join_pairs:
+  - - engfluidseqref
+    - equipmentcode
+  join_type: left
+- target_model: powerbattery
+  join_pairs:
+  - - engfluidspbref
+    - powerbattregistry
+  join_type: left
+filters: []
+hidden: false

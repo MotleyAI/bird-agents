@@ -1,0 +1,164 @@
+version: 6
+name: environmentalreadingscore
+sql_table: environmentalreadingscore
+query_variables: {}
+data_source: museum
+columns:
+- name: envreadregistry
+  sql: envreadregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: monitorcode
+  sql: monitorcode
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: readtimestamp
+  sql: readtimestamp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: showcaseref
+  sql: showcaseref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tempc
+  sql: tempc
+  type: INT
+  primary_key: false
+  description: "Temperature in Celsius (KB #27): typical 15-25; ideal 18-22; >2 deg\
+    \ fluctuation in 24h stresses materials; <10 or >30 indicates control failure.\n\
+    \n[kb=27]\nValues typically range from 15-25\xB0C, with 18-22\xB0C being ideal\
+    \ for most collections. Fluctuations greater than 2\xB0C within 24 hours can stress\
+    \ materials. Values outside 10-30\xB0C indicate environmental control failure\
+    \ requiring immediate attention. \u2014 Illustrates temperature readings and their\
+    \ conservation implications.\n[/kb=27]"
+  label: EnvironmentalReadingsCore.TempC
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 27
+- name: tempvar24h
+  sql: tempvar24h
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: relhumidity
+  sql: relhumidity
+  type: INT
+  primary_key: false
+  description: "Relative humidity %% (KB #28): typical 30-65; ideal 45-55 for mixed\
+    \ collections; >5 pp fluctuation/24h causes dimensional changes; <30 risks embrittlement;\
+    \ >65 risks mold.\n\n[kb=28]\nValues typically range from 30-65%, with 45-55%\
+    \ being ideal for mixed collections. Fluctuations greater than 5% within 24 hours\
+    \ can cause dimensional changes in organic materials. Values below 30% risk embrittlement,\
+    \ while above 65% risk mold growth. \u2014 Illustrates relative humidity readings\
+    \ and their conservation implications.\n[/kb=28]"
+  label: EnvironmentalReadingsCore.RelHumidity
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 28
+- name: humvar24h
+  sql: humvar24h
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: airpresshpa
+  sql: airpresshpa
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: sesr
+  sql: 10 - (tempvar24h + (humvar24h / 5.0) + showcases.leakrate) / 3.0
+  type: DOUBLE
+  primary_key: false
+  description: "Showcase Environmental Stability Rating (KB #5): 10 - (TempVar24h\
+    \ + HumVar24h/5 + LeakRate)/3. Higher = more stable showcase.\n\n[kb=5]\nSESR\
+    \ = 10 - \\frac{(TempVar24h + \\frac{HumVar24h}{5} + LeakRate)}{3}, \\text{where\
+    \ higher scores indicate more stable showcases} \u2014 Measures how well a showcase\
+    \ maintains stable environmental conditions.\n[/kb=5]"
+  label: Showcase Environmental Stability Rating (SESR)
+  hidden: false
+  meta:
+    kb_id: 5
+- name: is_env_instability_event
+  sql: tempvar24h > 1 OR humvar24h > 3
+  type: BOOLEAN
+  primary_key: false
+  description: "Environmental Instability Event (KB #13): TempVar24h > 1C OR HumVar24h\
+    \ > 3 within 24h.\n\n[kb=13]\nOccurs when TempVar24h > 1\xB0C OR HumVar24h > 3\
+    \ within a 24-hour period. \u2014 Identifies periods when showcase environmental\
+    \ conditions fluctuate beyond acceptable parameters.\n[/kb=13]"
+  label: Environmental Instability Event
+  hidden: false
+  meta:
+    kb_id: 13
+- name: is_showcase_failure_risk
+  sql: (10 - (tempvar24h + (humvar24h / 5.0) + showcases.leakrate) / 3.0) < 4 OR (CASE
+    WHEN showcases.sealcondition = 'Poor' THEN 1 ELSE 0 END + CASE WHEN showcases.maintstatus
+    = 'Overdue' THEN 1 ELSE 0 END + CASE WHEN showcases.filterstatus = 'Replace Now'
+    THEN 1 ELSE 0 END + CASE WHEN showcases.silicagelstatus = 'Replace Now' THEN 1
+    ELSE 0 END) >= 3
+  type: BOOLEAN
+  primary_key: false
+  description: "Showcase Failure Risk (KB #16): SESR<4 OR >=3 of {SealCondition='Poor',\
+    \ MaintStatus='Overdue', FilterStatus='Replace Now', SilicaGelStatus='Replace\
+    \ Now'}.\n\n[kb=16]\nOccurs when SESR < 4 OR at least three of the following are\
+    \ true: SealCondition='Poor', MaintStatus='Overdue', FilterStatus='Replace Now',\
+    \ SilicaGelStatus='Replace Now'. \u2014 Identifies showcases at risk of failing\
+    \ to maintain proper environmental conditions.\n[/kb=16]"
+  label: Showcase Failure Risk
+  hidden: false
+  meta:
+    kb_id: 16
+measures: []
+aggregations: []
+joins:
+- target_model: showcases
+  join_pairs:
+  - - showcaseref
+    - showcasereg
+  join_type: left
+- target_model: lightandradiationreadings
+  join_pairs:
+  - - envreadregistry
+    - envreadref
+  join_type: left
+- target_model: airqualityreadings
+  join_pairs:
+  - - envreadregistry
+    - envreadref
+  join_type: left
+- target_model: surfaceandphysicalreadings
+  join_pairs:
+  - - envreadregistry
+    - envreadref
+  join_type: left
+filters: []
+description: "Environmental sensor readings per showcase (1 row per timestamp, here\
+  \ 1:1 with showcases). Conservation Environment Chronology (CEC, KB #54): supports\
+  \ grouping readings by fixed time intervals (year/quarter/month) to identify seasonal\
+  \ trends, long-term shifts, and anomalies in environmental conditions. Use the readtimestamp\
+  \ column with `time_dimensions` queries to apply CEC.\n\n[kb=54]\nCEC involves grouping\
+  \ readings (e.g., temperature, humidity, air pressure) by fixed time intervals (such\
+  \ as by year) to discern patterns and inform conservation strategies. \u2014 A methodological\
+  \ approach used in museum conservation to segment environmental monitoring data\
+  \ into chronological intervals. This approach enables curators to identify seasonal\
+  \ trends, long-term shifts, and anomalies in environmental conditions that can affect\
+  \ artifact stability and preservation.\n[/kb=54]"
+hidden: false
+meta:
+  kb_id: 54

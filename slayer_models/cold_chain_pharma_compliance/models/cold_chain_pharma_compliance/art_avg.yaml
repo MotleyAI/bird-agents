@@ -1,0 +1,53 @@
+version: 6
+name: art_avg
+source_queries:
+- version: 3
+  source_model:
+    source_name: shipments
+    columns:
+    - name: k
+      sql: '1'
+      type: DOUBLE
+  measures:
+  - formula: art_score:avg
+  dimensions:
+  - name: k
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"shipments.k\" AS k, \"shipments.art_score_avg\" AS art_score_avg\
+  \ FROM (SELECT\n  1 AS \"shipments.k\",\n  AVG(\n    CASE\n      WHEN LOWER(TRIM(shipment_overview\
+  \ ->> '$.route.risk_note')) = 'low'\n      THEN 8\n      WHEN LOWER(TRIM(shipment_overview\
+  \ ->> '$.route.risk_note')) = 'medium'\n      THEN 5\n      WHEN LOWER(TRIM(shipment_overview\
+  \ ->> '$.route.risk_note')) = 'high'\n      THEN 2\n      ELSE 4\n    END\n  ) AS\
+  \ \"shipments.art_score_avg\"\nFROM shipments AS shipments\nGROUP BY\n  1) AS _inner"
+data_source: cold_chain_pharma_compliance
+columns:
+- name: k
+  sql: k
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: art_score_avg
+  sql: art_score_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'Alternative Route Availability proxy (KB #30, SCRS sub-score, 0-10):
+    low risk lane = 8, medium = 5, high = 2, unknown = 4. Used inside Supply Chain
+    Resilience Score; not a KB-authored value but a heuristic the gold solution applies
+    because the schema does not store ART directly.'
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Fleet-wide Alternative Route Availability average for SCRS (KB #30).\
+  \ Hidden helper.\n\n[kb=30]\nSCRS = 0.4 \\times ART + 0.3 \\times RRD + 0.2 \\times\
+  \ SBP + 0.1 \\times SMC, \\text{where ART is Alternative Route Availability (0-10),\
+  \ RRD is Redundant Resources Depth (0-10), SBP is Supplier Backup Presence (0-10),\
+  \ and SMC is Stock Management Capability (0-10).} \u2014 Measures a cold chain's\
+  \ ability to maintain integrity despite disruptions.\n[/kb=30]"
+hidden: true
+meta:
+  kb_id: 30

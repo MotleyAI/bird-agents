@@ -1,0 +1,38 @@
+version: 6
+name: family_categories
+sql_table: family_categories
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: linkid
+  sql: linkid
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: familylink
+  sql: familylink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: categorylink
+  sql: categorylink
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: categories
+  join_pairs:
+  - - categorylink
+    - classtype
+  join_type: left
+- target_model: families
+  join_pairs:
+  - - familylink
+    - groupname
+  join_type: left
+filters: []
+hidden: false

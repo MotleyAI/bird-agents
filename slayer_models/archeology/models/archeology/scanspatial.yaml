@@ -1,0 +1,94 @@
+version: 6
+name: scanspatial
+sql_table: scanspatial
+query_variables: {}
+data_source: archeology
+columns:
+- name: domainregistry
+  sql: domainregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: arcref
+  sql: arcref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: crewref
+  sql: crewref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: aream2
+  sql: aream2
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: volm3
+  sql: volm3
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: boxx
+  sql: boxx
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: boxy
+  sql: boxy
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: boxz
+  sql: boxz
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: angleaz
+  sql: angleaz
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: angletilt
+  sql: angletilt
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: groundspan
+  sql: groundspan
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins:
+- target_model: projects
+  join_pairs:
+  - - arcref
+    - arcregistry
+  join_type: left
+- target_model: personnel
+  join_pairs:
+  - - crewref
+    - crewregistry
+  join_type: left
+filters: []
+hidden: false

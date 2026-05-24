@@ -1,0 +1,186 @@
+version: 6
+name: sprint_results
+sql_table: sprint_results
+query_variables: {}
+data_source: sports_events
+columns:
+- name: srescode
+  sql: srescode
+  type: INT
+  primary_key: true
+  description: Unique sprint result identifier.
+  hidden: false
+  format:
+    type: integer
+- name: matchref
+  sql: matchref
+  type: INT
+  primary_key: false
+  description: Foreign key to races (the race weekend whose sprint this belongs to).
+  hidden: false
+  format:
+    type: integer
+- name: unitdrive
+  sql: unitdrive
+  type: INT
+  primary_key: false
+  description: Foreign key to drivers.
+  hidden: false
+  format:
+    type: integer
+- name: makeref
+  sql: makeref
+  type: INT
+  primary_key: false
+  description: Foreign key to constructors.
+  hidden: false
+  format:
+    type: integer
+- name: rno
+  sql: rno
+  type: INT
+  primary_key: false
+  description: Sprint result number (driver registration). NULL = no sprint result
+    number available.
+  hidden: false
+  format:
+    type: integer
+- name: sprint_performance
+  sql: sprint_performance
+  type: TEXT
+  primary_key: false
+  description: "JSONB column. Captures performance metrics in sprint races including\
+    \ grid, final_position, position_label, ranking_order, points, laps_completed,\
+    \ timing.{final_time,duration_ms}, fastest_lap.{lap_number,lap_time}, status_code.\
+    \ Per KB #9 Championship Points System (Sprint), points are awarded to the top\
+    \ 8 sprint finishers as 8/7/6/5/4/3/2/1 (1st through 8th).\n\n[kb=9]\nPoints are\
+    \ awarded to the top 8 finishers in a Sprint session as follows: 1st place - 8\
+    \ points, 2nd - 7, 3rd - 6, 4th - 5, 5th - 4, 6th - 3, 7th - 2, 8th - 1. This\
+    \ is a key feature of the Sprint Session Explained. \u2014 Defines the points\
+    \ awarded for top finishing positions in a Sprint session.\n[/kb=9]"
+  label: Championship Points System (Sprint)
+  hidden: false
+  meta:
+    kb_id: 9
+- name: sprint_grid
+  sql: CAST(json_extract(sprint_performance, '$.grid') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Sprint starting grid position (extracted).
+  hidden: false
+- name: sprint_final_position
+  sql: CAST(json_extract(sprint_performance, '$.final_position') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Sprint finishing position (extracted). NULL = did not finish / classify.
+  hidden: false
+- name: sprint_points
+  sql: CAST(json_extract(sprint_performance, '$.points') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: 'Points awarded in the sprint per KB #9 (top 8 = 8/7/6/5/4/3/2/1, else
+    0).'
+  hidden: false
+- name: sprint_laps_completed
+  sql: CAST(json_extract(sprint_performance, '$.laps_completed') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Number of laps completed in the sprint (extracted).
+  hidden: false
+- name: sprint_duration_ms
+  sql: CAST(json_extract(sprint_performance, '$.timing.duration_ms') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Sprint final time in milliseconds (extracted).
+  hidden: false
+- name: sprint_final_time_str
+  sql: json_extract(sprint_performance, '$.timing.final_time')
+  type: TEXT
+  primary_key: false
+  description: Sprint final time / status marker (extracted).
+  hidden: false
+- name: sprint_fastest_lap_time
+  sql: json_extract(sprint_performance, '$.fastest_lap.lap_time')
+  type: TEXT
+  primary_key: false
+  description: Driver's fastest lap time in the sprint (extracted).
+  hidden: false
+- name: sprint_fastest_lap_number
+  sql: CAST(json_extract(sprint_performance, '$.fastest_lap.lap_number') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Lap number of the driver's fastest sprint lap (extracted).
+  hidden: false
+- name: sprint_status_code
+  sql: CAST(json_extract(sprint_performance, '$.status_code') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Sprint status code (extracted).
+  hidden: false
+- name: is_sprint_winner
+  sql: CAST(json_extract(sprint_performance, '$.final_position') AS INTEGER) = 1
+  type: BOOLEAN
+  primary_key: false
+  description: "Sprint Winner (KB #15): TRUE iff classified 1st in the sprint.\n\n\
+    [kb=15]\nA Sprint Winner is the driver who is classified in 1st place at the conclusion\
+    \ of a Sprint Session. \u2014 Defines the winner of a sprint session.\n[/kb=15]"
+  label: Sprint Winner
+  hidden: false
+  meta:
+    kb_id: 15
+- name: sprint_performance_index
+  sql: (9 - CAST(json_extract(sprint_performance, '$.final_position') AS INTEGER))
+    + CAST(json_extract(sprint_performance, '$.points') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Sprint Performance Index (KB #36): SPI = (9 - sprint_final_position)\
+    \ + sprint_points. Combines the driver's sprint finishing result with points scored.\
+    \ Uses KB #9 (sprint points) and KB #15 (winner).\n\n[kb=36]\nSPI = (9 - P_{sprint})\
+    \ + S_{pts}, \\text{where } P_{sprint} \\text{ is the finishing position of the\
+    \ Sprint Winner (or other driver) and } S_{pts} \\text{ is points awarded per\
+    \ the Championship Points System (Sprint).} \u2014 Calculates a driver's overall\
+    \ performance in a Sprint session, combining their finishing result with points\
+    \ scored.\n[/kb=36]"
+  label: Sprint Performance Index
+  hidden: false
+  meta:
+    kb_id: 36
+- name: sprint_position_gain
+  sql: CAST(json_extract(sprint_performance, '$.grid') AS INTEGER) - CAST(json_extract(sprint_performance,
+    '$.final_position') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: "Position Gain / Loss (KB #24) for the sprint: G_pos = P_start - P_finish\
+    \ using sprint_grid and sprint_final_position. Positive = positions gained.\n\n\
+    [kb=24]\nG_{pos} = P_{start} - P_{finish}, \\text{where } P_{start} \\text{ is\
+    \ the starting grid position and } P_{finish} \\text{ is the final race position.\
+    \ A positive value indicates a gain.} \u2014 Calculates the number of positions\
+    \ a driver gained or lost between the start and end of a race.\n[/kb=24]"
+  label: Position Gain / Loss
+  hidden: false
+  meta:
+    kb_id: 24
+measures: []
+aggregations: []
+joins:
+- target_model: constructors
+  join_pairs:
+  - - makeref
+    - cstr_key
+  join_type: left
+- target_model: races
+  join_pairs:
+  - - matchref
+    - rak_id
+  join_type: left
+- target_model: drivers
+  join_pairs:
+  - - unitdrive
+    - drv_main
+  join_type: left
+filters: []
+description: 'Sprint race results. One row per (sprint_race, driver). Per KB #2, a
+  Sprint is a shorter race held on some race weekends with its own abbreviated qualifying;
+  it awards fewer championship points than the main Grand Prix and its result determines
+  the starting grid for the main race.'
+hidden: false

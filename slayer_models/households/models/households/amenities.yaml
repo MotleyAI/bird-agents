@@ -1,0 +1,50 @@
+version: 6
+name: amenities
+sql_table: amenities
+query_variables: {}
+data_source: households
+columns:
+- name: amenityref
+  sql: amenityref
+  type: INT
+  primary_key: true
+  description: A SERIAL primary key uniquely identifying each household amenities
+    and utilities record. EX. 1,2,3
+  hidden: false
+  format:
+    type: integer
+- name: houseid
+  sql: houseid
+  type: INT
+  primary_key: false
+  description: Foreign key referencing households.HouseNum with unique constraint,
+    ensuring 1:1 relationship for amenities configuration per household. Ex.3,4,7
+  hidden: false
+  format:
+    type: integer
+  sampled: 3 .. 6507
+- name: cablestatus
+  sql: cablestatus
+  type: TEXT
+  primary_key: false
+  description: "Cable television service availability and subscription status. Sample\
+    \ values include 'avail', 'available', 'yes', 'Yes', 'Available' (mixed case and\
+    \ abbreviations). Treat 'avail' / 'available' / 'yes' (case-insensitive) as 'has\
+    \ cable'.\n\n[kb=7]\nValues indicating availability, based on schema, are 'avail',\
+    \ 'available', and 'yes'. \u2014 Illustrates the availability of cable television.\n\
+    [/kb=7]"
+  label: Cable TV Status
+  hidden: false
+  meta:
+    kb_id: 7
+  sampled: '> 20 distinct'
+measures: []
+aggregations: []
+joins:
+- target_model: households
+  join_pairs:
+  - - houseid
+    - housenum
+  join_type: left
+filters: []
+hidden: false

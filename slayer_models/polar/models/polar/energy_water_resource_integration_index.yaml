@@ -1,0 +1,140 @@
+version: 6
+name: energy_water_resource_integration_index
+source_queries:
+- version: 3
+  name: esi_per_eq_ewrii
+  source_model: powerbattery
+  measures:
+  - formula: esi:avg
+    name: esi
+  dimensions:
+  - name: pwrbatteqref
+  whole_periods_only: false
+- version: 3
+  name: wrmi_per_eq_ewrii
+  source_model: waterandwaste
+  measures:
+  - formula: wrmi:avg
+    name: wrmi
+  dimensions:
+  - name: watereqref
+  whole_periods_only: false
+- version: 3
+  name: heater_per_eq_ewrii
+  source_model: cabinenvironment
+  measures:
+  - formula: heatertemperaturec:avg
+    name: heater_temp
+  dimensions:
+  - name: cabineqref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: esi_per_eq_ewrii
+    joins:
+    - target_model: wrmi_per_eq_ewrii
+      join_pairs:
+      - - pwrbatteqref
+        - watereqref
+    - target_model: heater_per_eq_ewrii
+      join_pairs:
+      - - pwrbatteqref
+        - cabineqref
+  measures:
+  - formula: 0.5 * esi:avg + 0.5 * wrmi_per_eq_ewrii.wrmi:avg * (1 - heater_per_eq_ewrii.heater_temp:avg
+      / 100.0)
+    name: ewrii
+  dimensions:
+  - name: pwrbatteqref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"esi_per_eq_ewrii.pwrbatteqref\" AS pwrbatteqref, \"esi_per_eq_ewrii.esi_avg\"\
+  \ AS esi_avg, \"esi_per_eq_ewrii.ewrii\" AS ewrii, \"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\"\
+  \ AS wrmi_per_eq_ewrii__wrmi_avg, \"esi_per_eq_ewrii.heater_per_eq_ewrii.heater_temp_avg\"\
+  \ AS heater_per_eq_ewrii__heater_temp_avg FROM (WITH _base AS (\nSELECT\n  esi_per_eq_ewrii.pwrbatteqref\
+  \ AS \"esi_per_eq_ewrii.pwrbatteqref\",\n  AVG(esi_per_eq_ewrii.esi) AS \"esi_per_eq_ewrii.esi_avg\"\
+  \nFROM (\n  SELECT\n    \"powerbattery.pwrbatteqref\" AS pwrbatteqref,\n    \"powerbattery.esi\"\
+  \ AS esi\n  FROM (\n    SELECT\n      powerbattery.pwrbatteqref AS \"powerbattery.pwrbatteqref\"\
+  ,\n      AVG(\n        powerbattery.energyefficiencypercent * CASE powerbattery.powersource\n\
+  \          WHEN 'Solar'\n          THEN 1.5\n          WHEN 'Wind'\n          THEN\
+  \ 1.5\n          WHEN 'Hybrid'\n          THEN 1.2\n          WHEN 'Battery'\n \
+  \         THEN 1.0\n          WHEN 'Diesel'\n          THEN 0.7\n          ELSE\
+  \ 0\n        END\n      ) AS \"powerbattery.esi\"\n    FROM powerbattery AS powerbattery\n\
+  \    GROUP BY\n      powerbattery.pwrbatteqref\n  ) AS _inner\n) AS esi_per_eq_ewrii\n\
+  GROUP BY\n  esi_per_eq_ewrii.pwrbatteqref\n),\n_cm_esi_per_eq_ewrii__wrmi_per_eq_ewrii__wrmi_avg\
+  \ AS (\nSELECT\n  AVG(wrmi_per_eq_ewrii.wrmi) AS \"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\"\
+  \nFROM (\n  SELECT\n    \"waterandwaste.watereqref\" AS watereqref,\n    \"waterandwaste.wrmi\"\
+  \ AS wrmi\n  FROM (\n    SELECT\n      waterandwaste.watereqref AS \"waterandwaste.watereqref\"\
+  ,\n      AVG(\n        waterandwaste.waterlevelpercent * (\n          waterandwaste.waterqualityindex\
+  \ / 100.0\n        ) * (\n          1 - waterandwaste.wastetanklevelpercent / 100.0\n\
+  \        )\n      ) AS \"waterandwaste.wrmi\"\n    FROM waterandwaste AS waterandwaste\n\
+  \    GROUP BY\n      waterandwaste.watereqref\n  ) AS _inner\n) AS wrmi_per_eq_ewrii\n\
+  ),\n_cm_esi_per_eq_ewrii__heater_per_eq_ewrii__heater_temp_avg AS (\nSELECT\n  AVG(heater_per_eq_ewrii.heater_temp)\
+  \ AS \"esi_per_eq_ewrii.heater_per_eq_ewrii.heater_temp_avg\"\nFROM (\n  SELECT\n\
+  \    \"cabinenvironment.cabineqref\" AS cabineqref,\n    \"cabinenvironment.heater_temp\"\
+  \ AS heater_temp\n  FROM (\n    SELECT\n      cabinenvironment.cabineqref AS \"\
+  cabinenvironment.cabineqref\",\n      AVG(cabinenvironment.heatertemperaturec) AS\
+  \ \"cabinenvironment.heater_temp\"\n    FROM cabinenvironment AS cabinenvironment\n\
+  \    GROUP BY\n      cabinenvironment.cabineqref\n  ) AS _inner\n) AS heater_per_eq_ewrii\n\
+  ),\n_combined AS (\nSELECT _base.\"esi_per_eq_ewrii.pwrbatteqref\", _base.\"esi_per_eq_ewrii.esi_avg\"\
+  , _cm_esi_per_eq_ewrii__wrmi_per_eq_ewrii__wrmi_avg.\"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\"\
+  , _cm_esi_per_eq_ewrii__heater_per_eq_ewrii__heater_temp_avg.\"esi_per_eq_ewrii.heater_per_eq_ewrii.heater_temp_avg\"\
+  \nFROM _base\nCROSS JOIN _cm_esi_per_eq_ewrii__wrmi_per_eq_ewrii__wrmi_avg\nCROSS\
+  \ JOIN _cm_esi_per_eq_ewrii__heater_per_eq_ewrii__heater_temp_avg\n),\nstep1 AS\
+  \ (\nSELECT\n    \"esi_per_eq_ewrii.esi_avg\",\n    \"esi_per_eq_ewrii.heater_per_eq_ewrii.heater_temp_avg\"\
+  ,\n    \"esi_per_eq_ewrii.pwrbatteqref\",\n    \"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\"\
+  ,\n    0.5 * \"esi_per_eq_ewrii.esi_avg\" + 0.5 * \"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\"\
+  \ * (1 - \"esi_per_eq_ewrii.heater_per_eq_ewrii.heater_temp_avg\" / 100.0) AS \"\
+  esi_per_eq_ewrii.ewrii\"\nFROM _combined\n)\nSELECT\n    \"esi_per_eq_ewrii.esi_avg\"\
+  ,\n    \"esi_per_eq_ewrii.ewrii\",\n    \"esi_per_eq_ewrii.heater_per_eq_ewrii.heater_temp_avg\"\
+  ,\n    \"esi_per_eq_ewrii.pwrbatteqref\",\n    \"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\"\
+  \nFROM step1) AS _inner"
+data_source: polar
+columns:
+- name: pwrbatteqref
+  sql: pwrbatteqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: esi_avg
+  sql: esi_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'Energy Sustainability Index (KB #2): efficiency% x powersource multiplier
+    (Solar/Wind=1.5, Hybrid=1.2, Battery=1.0, Diesel=0.7, otherwise 0).'
+  hidden: false
+  format:
+    type: float
+- name: ewrii
+  sql: ewrii
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: wrmi_per_eq_ewrii__wrmi_avg
+  sql: wrmi_per_eq_ewrii__wrmi_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: heater_per_eq_ewrii__heater_temp_avg
+  sql: heater_per_eq_ewrii__heater_temp_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Energy-Water Resource Integration Index (KB #38): EWRII = 0.5 x ESI\
+  \ + 0.5 x WRMI x (1 - heatertemperaturec / 100). Peer-join via equipment (R-MULTISTAGE).\n\
+  \n[kb=38]\nEWRII = 0.5 \xD7 ESI + 0.5 \xD7 WRMI \xD7 (1 - \\frac{heatertemperaturec}{100})\
+  \ \u2014 Evaluates the integration efficiency of energy and water resource management\n\
+  [/kb=38]"
+hidden: false
+meta:
+  kb_id: 38

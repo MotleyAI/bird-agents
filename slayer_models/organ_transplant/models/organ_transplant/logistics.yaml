@@ -1,0 +1,52 @@
+version: 6
+name: logistics
+sql_table: logistics
+query_variables: {}
+data_source: organ_transplant
+columns:
+- name: log_match_registry
+  sql: log_match_registry
+  type: TEXT
+  primary_key: true
+  description: FK to transplant_matching.match_rec_registry.
+  hidden: false
+- name: trans_method
+  sql: trans_method
+  type: TEXT
+  primary_key: false
+  description: Transportation method.
+  hidden: false
+- name: don_ref_reg
+  sql: don_ref_reg
+  type: TEXT
+  primary_key: false
+  description: FK to demographics.
+  hidden: false
+- name: rec_ref_reg
+  sql: rec_ref_reg
+  type: TEXT
+  primary_key: false
+  description: FK to recipients_demographics.
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: demographics
+  join_pairs:
+  - - don_ref_reg
+    - contrib_registry
+  join_type: left
+- target_model: transplant_matching
+  join_pairs:
+  - - log_match_registry
+    - match_rec_registry
+  join_type: left
+- target_model: recipients_demographics
+  join_pairs:
+  - - rec_ref_reg
+    - recip_registry
+  join_type: left
+filters: []
+description: 'Per-match transport logistics: which transport method moves the organ
+  (Charter Air / Commercial Air / Ground / Helicopter).'
+hidden: false

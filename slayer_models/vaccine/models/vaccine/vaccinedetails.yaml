@@ -1,0 +1,111 @@
+version: 6
+name: vaccinedetails
+sql_table: vaccinedetails
+query_variables: {}
+data_source: vaccine
+columns:
+- name: vacregistry
+  sql: vacregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: vacvariant
+  sql: vacvariant
+  type: TEXT
+  primary_key: false
+  description: "Vaccine type/variant. 'Viral Vector' uses a modified adenovirus Ad26\
+    \ vector expressing SARS-CoV-2 spike protein, requiring -20 C storage with a 6-month\
+    \ shelf life (KB #27).\n\n[kb=27]\nUses modified adenovirus Ad26 vector expressing\
+    \ SARS-CoV-2 spike protein, requiring -20\xB0C storage with 6-month shelf life.\
+    \ \u2014 Illustrates vaccine technology type\n[/kb=27]"
+  label: 'VacVariant: ''Viral Vector'''
+  hidden: false
+  meta:
+    kb_id: 27
+- name: mfgsource
+  sql: mfgsource
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: batchlabel
+  sql: batchlabel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: prodday
+  sql: prodday
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: expireday
+  sql: expireday
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lotmeasure
+  sql: lotmeasure
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: vialtally
+  sql: vialtally
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: dosepervial
+  sql: dosepervial
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: dosetotal
+  sql: dosetotal
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: shipinject
+  sql: shipinject
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: containvac
+  sql: containvac
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ser
+  sql: CAST(vialtally AS REAL) * 10 / NULLIF(container.volliters, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Storage Efficiency Ratio (SER). How efficiently container volume is\
+    \ utilized: VialTally * 10 / VolLiters (KB #5). Reaches container.volliters via\
+    \ the FK join.\n\n[kb=5]\nSER = \\frac{VialTally \\times 10}{VolLiters} \u2014\
+    \ Measures how efficiently container volume is utilized.\n[/kb=5]"
+  label: Storage Efficiency Ratio (SER)
+  hidden: false
+  meta:
+    kb_id: 5
+measures: []
+aggregations: []
+joins:
+- target_model: container
+  join_pairs:
+  - - containvac
+    - containregistry
+  join_type: left
+- target_model: vaccine_shipments
+  join_pairs:
+  - - shipinject
+    - shipmentregistry
+  join_type: left
+filters: []
+hidden: false

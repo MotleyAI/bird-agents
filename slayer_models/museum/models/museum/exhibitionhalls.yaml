@@ -1,0 +1,103 @@
+version: 6
+name: exhibitionhalls
+sql_table: exhibitionhalls
+query_variables: {}
+data_source: museum
+columns:
+- name: hallrecord
+  sql: hallrecord
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: cctvcoverage
+  sql: cctvcoverage
+  type: TEXT
+  primary_key: false
+  description: "CCTV coverage classification (KB #25): 'Full' = 100%% coverage with\
+    \ overlapping cameras; 'Partial' = 60-90%% with possible blind spots; 'Limited'\
+    \ = <60%% covering only high-value areas.\n\n[kb=25]\n'Full' indicates 100% exhibition\
+    \ space coverage with overlapping cameras, 'Partial' indicates 60-90% coverage\
+    \ with possible blind spots, and 'Limited' indicates less than 60% coverage focusing\
+    \ only on high-value areas. \u2014 Illustrates CCTV coverage classifications.\n\
+    [/kb=25]"
+  label: ExhibitionHalls.CCTVCoverage
+  hidden: false
+  meta:
+    kb_id: 25
+- name: motiondetectstatus
+  sql: motiondetectstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: alarmsysstatus
+  sql: alarmsysstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: accessctrlstatus
+  sql: accessctrlstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: visitorcountdaily
+  sql: visitorcountdaily
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: visitorflowrate
+  sql: visitorflowrate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: visitordwellmin
+  sql: visitordwellmin
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: visitorbehaviornotes
+  sql: visitorbehaviornotes
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: visitorflowrate_score
+  sql: CASE LOWER(TRIM(visitorflowrate)) WHEN 'low' THEN 1 WHEN 'medium' THEN 3 WHEN
+    'high' THEN 5 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric VisitorFlowRate per KB #10: Low=1, Medium=3, High=5.\n\n[kb=10]\n\
+    VIR = \\frac{VisitorCountDaily \\times VisitorFlowRate \\times VisitorDwellMin}{1000},\
+    \ \\text{where VisitorFlowRate is numerically mapped: Low=1, Medium=3, High=5}\
+    \ \u2014 Assesses the risk posed by visitor traffic to artifacts in exhibition\
+    \ halls.\n[/kb=10]"
+  label: Visitor Impact Risk (VIR)
+  hidden: false
+  meta:
+    kb_id: 10
+- name: vir
+  sql: (visitorcountdaily * (CASE LOWER(TRIM(visitorflowrate)) WHEN 'low' THEN 1 WHEN
+    'medium' THEN 3 WHEN 'high' THEN 5 ELSE NULL END) * visitordwellmin) / 1000.0
+  type: DOUBLE
+  primary_key: false
+  description: "Visitor Impact Risk (KB #10): VisitorCountDaily * VisitorFlowRate_score\
+    \ * VisitorDwellMin / 1000.\n\n[kb=10]\nVIR = \\frac{VisitorCountDaily \\times\
+    \ VisitorFlowRate \\times VisitorDwellMin}{1000}, \\text{where VisitorFlowRate\
+    \ is numerically mapped: Low=1, Medium=3, High=5} \u2014 Assesses the risk posed\
+    \ by visitor traffic to artifacts in exhibition halls.\n[/kb=10]"
+  label: Visitor Impact Risk (VIR)
+  hidden: false
+  meta:
+    kb_id: 10
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - hallrecord
+    - artregistry
+  join_type: left
+filters: []
+hidden: false

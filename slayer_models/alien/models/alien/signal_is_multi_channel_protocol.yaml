@@ -1,0 +1,65 @@
+version: 6
+name: signal_is_multi_channel_protocol
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signaldecoding
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: is_multi_channel_protocol
+      type: BOOLEAN
+      sql: CASE WHEN ((1 - ABS(freqdrifthzs) / (freqmhz * 1000.0)) * sigdursec / (1
+        + doppshifthz / 1000.0)) > 0.8 AND signalclassification.entropyval BETWEEN
+        0.4 AND 0.8 AND modindex > 0.5 AND signalclassification.repeatcount > 3 AND
+        ((signaldecoding.compressratio * signalclassification.complexidx * signalclassification.entropyval)
+        / 10.0) > 2.0 THEN 1 ELSE 0 END
+  dimensions:
+  - name: signalregistry
+  - name: is_multi_channel_protocol
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_multi_channel_protocol\"\
+  \ AS is_multi_channel_protocol FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
+  ,\n  CASE\n    WHEN (\n      (\n        1 - ABS(signals.freqdrifthzs) / (\n    \
+  \      signals.freqmhz * 1000.0\n        )\n      ) * signals.sigdursec / (\n  \
+  \      1 + signals.doppshifthz / 1000.0\n      )\n    ) > 0.8\n    AND signalclassification.entropyval\
+  \ BETWEEN 0.4 AND 0.8\n    AND signals.modindex > 0.5\n    AND signalclassification.repeatcount\
+  \ > 3\n    AND (\n      (\n        signaldecoding.compressratio * signalclassification.complexidx\
+  \ * signalclassification.entropyval\n      ) / 10.0\n    ) > 2.0\n    THEN 1\n \
+  \   ELSE 0\n  END AS \"signals.is_multi_channel_protocol\"\nFROM signals AS signals\n\
+  LEFT JOIN signaldecoding AS signaldecoding\n  ON signals.signalregistry = signaldecoding.signalref\n\
+  LEFT JOIN signalclassification AS signalclassification\n  ON signals.signalregistry\
+  \ = signalclassification.signalref) AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_multi_channel_protocol
+  sql: is_multi_channel_protocol
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Multi-Channel Communication Protocol predicate per signal.\n\n[kb=42]\n\
+  Signal exhibiting Coherent Information Pattern (CIP) characteristics across multiple\
+  \ frequency channels with coordinated timing ($\\text{RepeatCount} > 3$, $\\text{PeriodSec}$\
+  \ consistent across observations) and $\\text{ECI} > 2.0$, suggesting a designed\
+  \ communication system. \u2014 Identifies signal patterns consistent with sophisticated\
+  \ communication protocols.\n[/kb=42]"
+hidden: false
+meta:
+  kb_id: 42

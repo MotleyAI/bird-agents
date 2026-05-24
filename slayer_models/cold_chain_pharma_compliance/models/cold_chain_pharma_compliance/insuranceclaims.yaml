@@ -1,0 +1,50 @@
+version: 6
+name: insuranceclaims
+sql_table: insuranceclaims
+query_variables: {}
+data_source: cold_chain_pharma_compliance
+columns:
+- name: reckeyclaim
+  sql: reckeyclaim
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: claimneed
+  sql: claimneed
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: claimstat
+  sql: claimstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: claimusd
+  sql: claimusd
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: costimpactusd
+  sql: costimpactusd
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: respparty
+  sql: respparty
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: shipments
+  join_pairs:
+  - - reckeyclaim
+    - reckey
+  join_type: left
+filters: []
+hidden: false

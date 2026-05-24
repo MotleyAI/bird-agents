@@ -1,0 +1,180 @@
+version: 6
+name: performance_and_safety
+sql_table: performance_and_safety
+query_variables: {}
+data_source: robot
+columns:
+- name: effectivenessactuation
+  sql: effectivenessactuation
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: effectivenessoperation
+  sql: effectivenessoperation
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: effectivenessrobot
+  sql: effectivenessrobot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: conditionindexval
+  sql: conditionindexval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: effectivenessindexval
+  sql: effectivenessindexval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: qualitymeasureval
+  sql: qualitymeasureval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: energyusekwhval
+  sql: energyusekwhval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: pwrfactorval
+  sql: pwrfactorval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: airpressval
+  sql: airpressval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: toolchangecount
+  sql: toolchangecount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: toolwearpct
+  sql: toolwearpct
+  type: INT
+  primary_key: false
+  description: "Tool wear percentage. 100% indicates the tool needs replacement (KB\
+    \ #28).\n\n[kb=28]\nTool wear is expressed as a percentage, with 100% indicating\
+    \ the tool needs replacement. \u2014 Illustrates the tool wear percentage.\n[/kb=28]"
+  label: Tool Wear Percentage
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 28
+- name: safety_metrics
+  sql: safety_metrics
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: safety_state
+  sql: json_extract(safety_metrics, '$.safety_state')
+  type: TEXT
+  primary_key: false
+  description: "Robot safety state from safety_metrics JSON ('Normal', 'Warning',\
+    \ 'Emergency') (KB #26).\n\n[kb=26]\nPossible states include 'Normal', 'Warning',\
+    \ and 'Emergency', indicating the current safety condition. \u2014 Illustrates\
+    \ the safety state of the robot.\n[/kb=26]"
+  label: Safety State
+  hidden: false
+  meta:
+    kb_id: 26
+- name: emergency_stops
+  sql: json_extract(safety_metrics, '$.emergency_stops')
+  type: DOUBLE
+  primary_key: false
+  description: "Number of emergency stops from safety_metrics JSON. Higher = more\
+    \ operational issues / safety concerns (KB #27).\n\n[kb=27]\nA higher number of\
+    \ emergency stops may indicate operational issues or safety concerns. \u2014 Illustrates\
+    \ the number of emergency stops recorded.\n[/kb=27]"
+  label: Emergency Stops
+  hidden: false
+  meta:
+    kb_id: 27
+- name: row_safety_incident_total
+  sql: COALESCE(CAST(json_extract(safety_metrics, '$.overloads') AS INTEGER), 0) +
+    COALESCE(CAST(json_extract(safety_metrics, '$.collisions') AS INTEGER), 0) + COALESCE(CAST(json_extract(safety_metrics,
+    '$.emergency_stops') AS INTEGER), 0) + COALESCE(CAST(json_extract(safety_metrics,
+    '$.speed_violations') AS INTEGER), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Row-level helper for SIS (KB #34): per-row sum of overloads + collisions\
+    \ + emergency_stops + speed_violations from safety_metrics JSON.\n\n[kb=34]\n\
+    For a given robot R, SIS = \\sum_{ps \\in \\text{performance_and_safety} \\mid\
+    \ \\text{effectivenessrobot = R}} (safety_metrics->>'overloads'::int + safety_metrics->>'collisions'::int\
+    \ + safety_metrics->>'emergency_stops'::int + safety_metrics->>'speed_violations'::int),\
+    \ \\text{where JSONB fields are extracted and summed.} \u2014 Aggregates safety\
+    \ incidents from JSONB safety_metrics.\n[/kb=34]"
+  label: Safety Incident Score (SIS)
+  hidden: false
+  meta:
+    kb_id: 34
+measures:
+- formula: row_safety_incident_total:sum
+  name: sis
+  label: Safety Incident Score (SIS)
+  description: "Safety Incident Score (KB #34) \u2014 sum across performance_and_safety\
+    \ rows of (overloads + collisions + emergency_stops + speed_violations) from the\
+    \ safety_metrics JSON. Group by effectivenessrobot for per-robot.\n\n[kb=34]\n\
+    For a given robot R, SIS = \\sum_{ps \\in \\text{performance_and_safety} \\mid\
+    \ \\text{effectivenessrobot = R}} (safety_metrics->>'overloads'::int + safety_metrics->>'collisions'::int\
+    \ + safety_metrics->>'emergency_stops'::int + safety_metrics->>'speed_violations'::int),\
+    \ \\text{where JSONB fields are extracted and summed.} \u2014 Aggregates safety\
+    \ incidents from JSONB safety_metrics.\n[/kb=34]"
+  meta:
+    kb_id: 34
+- formula: energyusekwhval:sum
+  name: energy_use_kwh_total
+  label: Total Energy Use (kWh)
+  description: 'Sum of energyusekwhval, the numerator of EER (KB #31). EER itself
+    = this / TOH on operation; that ratio crosses tables (peer-join) and is deferred
+    to multistage.'
+- formula: row_safety_incident_total:sum > 20
+  name: is_high_safety_concern
+  label: High Safety Concern
+  description: "High Safety Concern (KB #44) \u2014 true if SIS > 20. Group by effectivenessrobot\
+    \ for per-robot.\n\n[kb=44]\nA robot R has High Safety Concern if SIS > 20. \u2014\
+    \ Flags robots with significant safety incidents.\n[/kb=44]"
+  meta:
+    kb_id: 44
+aggregations: []
+joins:
+- target_model: actuation_data
+  join_pairs:
+  - - effectivenessactuation
+    - actreg
+  join_type: left
+- target_model: operation
+  join_pairs:
+  - - effectivenessoperation
+    - operreg
+  join_type: left
+- target_model: robot_details
+  join_pairs:
+  - - effectivenessrobot
+    - botdetreg
+  join_type: left
+filters: []
+description: 'Per-actuation performance and safety telemetry: condition/effectiveness/quality
+  indices, energy use, tool wear, plus a JSONB safety_metrics blob (safety_state,
+  emergency_stops, collisions, overloads, etc.). Joined to robot_details via effectivenessrobot.'
+hidden: false

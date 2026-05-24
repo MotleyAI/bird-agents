@@ -1,0 +1,160 @@
+version: 6
+name: operationmaintenance
+sql_table: operationmaintenance
+query_variables: {}
+data_source: polar
+columns:
+- name: opmaintregistry
+  sql: opmaintregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: opmainteqref
+  sql: opmainteqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: opmaintlocref
+  sql: opmaintlocref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: operationhours
+  sql: operationhours
+  type: DOUBLE
+  primary_key: false
+  description: "Cumulative active-use hours. New: 0\u2013100, mid-life: 100\u2013\
+    1000, near-replacement: high (KB #21).\n\n[kb=21]\nOperation hours represent the\
+    \ cumulative time an equipment has been in active use. New equipment typically\
+    \ has low hours (0-100), mid-life equipment shows moderate hours (100-1000), while\
+    \ equipment approaching maintenance or replacement typically exceeds 1000 hours.\
+    \ The ratio of operation hours to maintenance cycle hours is critical for preventative\
+    \ maintenance scheduling. \u2014 Illustrates the meaning and importance of equipment\
+    \ operation hours.\n[/kb=21]"
+  label: operationhours
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 21
+- name: maintenancecyclehours
+  sql: maintenancecyclehours
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: lastmaintenancedate
+  sql: lastmaintenancedate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: nextmaintenancedue
+  sql: nextmaintenancedue
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: operationalstatus
+  sql: operationalstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: crewcertificationstatus
+  sql: crewcertificationstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: inspectionstatus
+  sql: inspectionstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: compliancestatus
+  sql: compliancestatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: documentationstatus
+  sql: documentationstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: opmaintcommref
+  sql: opmaintcommref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: costmetrics
+  sql: costmetrics
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ors
+  sql: CASE operationalstatus WHEN 'Active' THEN 10 WHEN 'Standby' THEN 5 ELSE 0 END
+    * (1 - operationhours * 1.0 / NULLIF(maintenancecyclehours, 0))
+  type: DOUBLE
+  primary_key: false
+  description: "Operational Readiness Score (KB #1): 10 x (1 - operationhours/maintenancecyclehours)\
+    \ if Active, 5 x (...) if Standby, 0 otherwise.\n\n[kb=1]\nORS = \\begin{cases}\
+    \ 10 \\times (1 - \\frac{operationhours}{maintenancecyclehours}) & \\text{if operationalstatus\
+    \ = 'Active'} \\\\ 5 \\times (1 - \\frac{operationhours}{maintenancecyclehours})\
+    \ & \\text{if operationalstatus = 'Standby'} \\\\ 0 & \\text{otherwise} \\end{cases}\
+    \ \u2014 Quantifies how ready equipment is for immediate deployment based on operational\
+    \ status and maintenance schedule.\n[/kb=1]"
+  label: Operational Readiness Score (ORS)
+  hidden: false
+  meta:
+    kb_id: 1
+- name: loss
+  sql: 0.5 * equipment.eer + 0.5 * (CASE operationalstatus WHEN 'Active' THEN 10 WHEN
+    'Standby' THEN 5 ELSE 0 END * (1 - operationhours * 1.0 / NULLIF(maintenancecyclehours,
+    0))) * (1 - operationhours / 20000.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Long-term Operational Stability Score (KB #37): 0.5 x EER + 0.5 x\
+    \ ORS x (1 - operationhours/20000). Cross-table to equipment via existing FK join.\n\
+    \n[kb=37]\nLOSS = 0.5 \xD7 EER + 0.5 \xD7 ORS \xD7 (1 - \\frac{operationhours}{20000})\
+    \ \u2014 Evaluates the stability of equipment during long-term operation\n[/kb=37]"
+  label: Long-term Operational Stability Score (LOSS)
+  hidden: false
+  meta:
+    kb_id: 37
+- name: maintenance_priority_level
+  sql: CASE WHEN operationhours > maintenancecyclehours OR operationalstatus = 'Repair'
+    THEN 'Immediate Attention' WHEN operationhours > 0.8 * maintenancecyclehours THEN
+    'Scheduled Service' ELSE 'Routine Maintenance' END
+  type: TEXT
+  primary_key: false
+  description: "Maintenance Priority Level (KB #12): Immediate Attention (operationhours\
+    \ > maintenancecyclehours OR status='Repair'), Scheduled Service (operationhours\
+    \ > 0.8 * maintenancecyclehours), Routine Maintenance (otherwise).\n\n[kb=12]\n\
+    Equipment is categorized into maintenance priority levels: 'Immediate Attention'\
+    \ (operationhours > maintenancecyclehours OR operationalstatus = 'Repair'), 'Scheduled\
+    \ Service' (operationhours > 0.8 * maintenancecyclehours), and 'Routine Maintenance'\
+    \ (all other cases), helping prioritize resource allocation. \u2014 Classifies\
+    \ equipment based on the urgency of required maintenance.\n[/kb=12]"
+  label: Maintenance Priority Level
+  hidden: false
+  meta:
+    kb_id: 12
+measures: []
+aggregations: []
+joins:
+- target_model: equipment
+  join_pairs:
+  - - opmainteqref
+    - equipmentcode
+  join_type: left
+- target_model: location
+  join_pairs:
+  - - opmaintlocref
+    - locationregistry
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,38 @@
+version: 6
+name: rl_orders
+sql_table: orders
+query_variables: {}
+data_source: reverse_logistics
+columns:
+- name: txnnum
+  sql: txnnum
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: buyerlink
+  sql: buyerlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: transaction_value
+  sql: transaction_value
+  type: INT
+  primary_key: false
+  hidden: false
+- name: txndate
+  sql: txndate
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: customers
+  join_pairs:
+  - - buyerlink
+    - profilenum
+  join_type: left
+filters: []
+description: reverse_logistics orders. Renamed to rl_orders to avoid name collision
+  with the crypto.orders model in shared SLayer storage.
+hidden: false

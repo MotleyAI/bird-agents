@@ -1,0 +1,33 @@
+version: 6
+name: exchanges
+sql_table: exchanges
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: xchgnum
+  sql: xchgnum
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: marketcode
+  sql: marketcode
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tradingvenue
+  sql: tradingvenue
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: exchangetime
+  sql: exchangetime
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

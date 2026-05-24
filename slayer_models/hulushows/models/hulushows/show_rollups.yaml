@@ -1,0 +1,667 @@
+version: 6
+name: show_rollups
+sql_table: show_rollups
+query_variables: {}
+data_source: hulushows
+columns:
+- name: srkeys
+  sql: srkeys
+  type: INT
+  primary_key: true
+  description: "FK to core.content_key \u2014 which show this rollup row is for."
+  hidden: false
+  format:
+    type: integer
+- name: srlinks
+  sql: srlinks
+  type: INT
+  primary_key: true
+  description: "FK to rollups.tierkey \u2014 which subscription tier (free / subscriber\
+    \ / current / free_on_web / etc.)."
+  hidden: false
+  format:
+    type: integer
+  meta: {}
+- name: launchmoment
+  sql: launchmoment
+  type: TEXT
+  primary_key: false
+  description: "First-availability timestamp in this tier. KB 9 (Cache Time Formats)\
+    \ documents that this field carries multiple date formats. KB 48 (Missing Launch\
+    \ Moment) is encoded on the is_legacy_uploaded column.\n\n[kb=9]\nIncludes examples\
+    \ like '2024-12-08', 'Dec 8, 2024', '08/12/24', and ISO-8601 format. \u2014 Lists\
+    \ typical formats used in content caching timestamps.\n[/kb=9]"
+  label: Cache Time Formats
+  hidden: false
+  meta:
+    kb_id: 9
+- name: latestadd
+  sql: latestadd
+  type: TEXT
+  primary_key: false
+  description: "Most-recent content addition timestamp for this tier. NULL implies\
+    \ the content has not been updated since first appearance (KB 14).\n\n[kb=14]\n\
+    If there\u2019s no recent update record, it means the content hasn\u2019t received\
+    \ any new additions since it first appeared. \u2014 Explains the implication of\
+    \ a missing update timestamp.\n[/kb=14]"
+  label: Null Update Tag
+  hidden: false
+  meta:
+    kb_id: 14
+- name: contentvols
+  sql: contentvols
+  type: TEXT
+  primary_key: false
+  description: 'JSONB column with standard_content volumes: Ep_Vol, Clip_Vol, Game_Vol,
+    Season_Vol, Feature_Vol, Media_Total, Trailer_Vol, FilmClip_Vol.'
+  hidden: false
+- name: html5metrics
+  sql: html5metrics
+  type: TEXT
+  primary_key: false
+  description: 'JSONB column with html5_volumes: H5_Clips, H5_Games, H5_Episodes,
+    H5_Features, H5_Trailers, H5_FilmClips, H5_MediaTotal.'
+  hidden: false
+- name: ratinginfo
+  sql: ratinginfo
+  type: TEXT
+  primary_key: false
+  description: "JSONB column with TV_Rating, Peak_Rating (KB 2/19 \u2014 noisy variants\
+    \ like 'TVMA','MA','T14'), and Unrated_Vol (KB 12)."
+  hidden: false
+  meta: {}
+- name: ep_vol
+  sql: CAST(contentvols ->> '$.standard_content.Ep_Vol' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Episode volume for this tier.
+  hidden: false
+- name: clip_vol
+  sql: CAST(contentvols ->> '$.standard_content.Clip_Vol' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Clip volume for this tier.
+  hidden: false
+- name: game_vol
+  sql: CAST(contentvols ->> '$.standard_content.Game_Vol' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Game volume for this tier.
+  hidden: false
+- name: season_vol
+  sql: CAST(contentvols ->> '$.standard_content.Season_Vol' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Season volume for this tier.
+  hidden: false
+- name: feature_vol
+  sql: CAST(contentvols ->> '$.standard_content.Feature_Vol' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Feature volume for this tier.
+  hidden: false
+- name: media_total
+  sql: CAST(contentvols ->> '$.standard_content.Media_Total' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Total media for this tier (Media_Total). KB 24 (Unrated Share), KB
+    26 (AMT), KB 51 (TNML), KB 55 (UPT) are all encoded as measures over this column.
+  hidden: false
+  meta: {}
+- name: trailer_vol
+  sql: CAST(contentvols ->> '$.standard_content.Trailer_Vol' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: "Trailer volume for this tier.\n\n[kb=58]\nTCR = \\frac{\\text{Trailer\
+    \ Vol}}{\\text{Total Content Items}}, indicating marketing completeness. \u2014\
+    \ Proportion of content entries that include trailers.\n[/kb=58]"
+  label: Trailer Coverage Ratio (TCR)
+  hidden: false
+  meta:
+    kb_id: 58
+- name: filmclip_vol
+  sql: CAST(contentvols ->> '$.standard_content.FilmClip_Vol' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: FilmClip volume for this tier.
+  hidden: false
+- name: h5_clips
+  sql: CAST(html5metrics ->> '$.html5_volumes.H5_Clips' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: HTML5-compatible clip count for this tier (KB 7).
+  hidden: false
+- name: h5_games
+  sql: CAST(html5metrics ->> '$.html5_volumes.H5_Games' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: HTML5-compatible game count (KB 7).
+  hidden: false
+- name: h5_episodes
+  sql: CAST(html5metrics ->> '$.html5_volumes.H5_Episodes' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: HTML5-compatible episode count for this tier (KB 7).
+  hidden: false
+- name: h5_features
+  sql: CAST(html5metrics ->> '$.html5_volumes.H5_Features' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: HTML5-compatible feature count (KB 7).
+  hidden: false
+- name: h5_trailers
+  sql: CAST(html5metrics ->> '$.html5_volumes.H5_Trailers' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: HTML5-compatible trailer count (KB 7).
+  hidden: false
+- name: h5_filmclips
+  sql: CAST(html5metrics ->> '$.html5_volumes.H5_FilmClips' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: HTML5-compatible film clip count (KB 7).
+  hidden: false
+- name: h5_media_total
+  sql: CAST(html5metrics ->> '$.html5_volumes.H5_MediaTotal' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: "Total HTML5-compatible media count for this tier (KB 7).\n\n[kb=7]\n\
+    Includes clips, episodes, games, features, trailers that support cross-platform\
+    \ playback. \u2014 Details types of media available in HTML5 format.\n[/kb=7]"
+  label: HTML5 Media Metrics
+  hidden: false
+  meta:
+    kb_id: 7
+- name: tv_rating
+  sql: ratinginfo ->> '$.TV_Rating'
+  type: TEXT
+  primary_key: false
+  description: Television rating string for this tier (KB 2/19).
+  hidden: false
+- name: peak_rating_raw
+  sql: ratinginfo ->> '$.Peak_Rating'
+  type: TEXT
+  primary_key: false
+  description: "Raw peak-rating string for this tier. KB 2 (TV Rating Types value\
+    \ illustration): the canonical ratings (TV-Y, TV-Y7, TV-G, TV-PG, TV-14, TV-MA);\
+    \ raw values are noisy ('TVMA', 'MA', 'T14', 'FOURTEEN'). The canonicalised form\
+    \ lives in peak_rating_canonical (KB 19).\n\n[kb=2]\nIncludes 'TV-Y', 'TV-Y7',\
+    \ 'TV-G', 'TV-PG', 'TV-14', and 'TV-MA' to represent different maturity levels.\
+    \ \u2014 Shows the different age-based content classifications used in broadcasting.\n\
+    [/kb=2]"
+  label: TV Rating Types
+  hidden: false
+  meta:
+    kb_id: 2
+- name: peak_rating_canonical
+  sql: CASE WHEN UPPER(REPLACE(REPLACE(COALESCE(ratinginfo ->> '$.Peak_Rating',''),
+    '-', ''), ' ', '')) IN ('TVMA','MA','MATURE','ADULT','18','18+') THEN 'TV-MA'
+    WHEN UPPER(REPLACE(REPLACE(COALESCE(ratinginfo ->> '$.Peak_Rating',''), '-', ''),
+    ' ', '')) IN ('TV14','14','14+','T14','TEEN','FOURTEEN') THEN 'TV-14' WHEN UPPER(REPLACE(REPLACE(COALESCE(ratinginfo
+    ->> '$.Peak_Rating',''), '-', ''), ' ', '')) IN ('TVPG','PG','PARENTALGUIDANCE')
+    THEN 'TV-PG' WHEN UPPER(REPLACE(REPLACE(COALESCE(ratinginfo ->> '$.Peak_Rating',''),
+    '-', ''), ' ', '')) IN ('TVG','G','GENERAL','ALL') THEN 'TV-G' WHEN UPPER(REPLACE(REPLACE(COALESCE(ratinginfo
+    ->> '$.Peak_Rating',''), '-', ''), ' ', '')) IN ('TVY7','Y7','TVY7FV') THEN 'TV-Y7'
+    WHEN UPPER(REPLACE(REPLACE(COALESCE(ratinginfo ->> '$.Peak_Rating',''), '-', ''),
+    ' ', '')) IN ('TVY','Y','T') THEN 'TV-Y' ELSE NULL END
+  type: TEXT
+  primary_key: false
+  description: "Peak_Rating mapped to one of the six canonical TV ratings (KB 19 Canonical\
+    \ Rating Enumeration: TV-Y, TV-Y7, TV-G, TV-PG, TV-14, TV-MA). NULL when the raw\
+    \ value is 'Not Rated', '', or unrecognised.\n\n[kb=19]\nThe six recognized TV\
+    \ content ratings are TV-Y, TV-Y7, TV-G, TV-PG, TV-14, TV-MA. \u2014 Enumerates\
+    \ all known TV ratings for content classification.\n[/kb=19]"
+  label: Canonical Rating Enumeration
+  hidden: false
+  meta:
+    kb_id: 19
+- name: is_unrated
+  sql: (ratinginfo ->> '$.TV_Rating') IS NULL AND (CASE WHEN UPPER(REPLACE(REPLACE(COALESCE(ratinginfo
+    ->> '$.Peak_Rating',''), '-', ''), ' ', '')) IN ('TVMA','MA','MATURE','ADULT','18','18+','TV14','14','14+','T14','TEEN','FOURTEEN','TVPG','PG','PARENTALGUIDANCE','TVG','G','GENERAL','ALL','TVY7','Y7','TVY7FV','TVY','Y','T')
+    THEN 0 ELSE 1 END = 1)
+  type: BOOLEAN
+  primary_key: false
+  description: "Unrated Media (KB 12): TRUE when neither TV_Rating nor a canonical\
+    \ Peak_Rating is set.\n\n[kb=12]\nMedia is considered unrated when there is no\
+    \ official rating information available. \u2014 Defines media that lacks an official\
+    \ rating.\n[/kb=12]"
+  label: Unrated Media
+  hidden: false
+  meta:
+    kb_id: 12
+- name: unrated_vol
+  sql: CAST(ratinginfo ->> '$.Unrated_Vol' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Count of unrated content items in this (show, tier) bucket.
+  hidden: false
+- name: is_html5_compatible
+  sql: CAST(html5metrics ->> '$.html5_volumes.H5_Episodes' AS INTEGER) > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "HTML5 Compatible Show (KB 11): TRUE when H5_Episodes > 0.\n\n[kb=11]\n\
+    A show with more than 0 HTML5-compatible full episodes is HTML5 compatible. \u2014\
+    \ Denotes a show with HTML5 support for full episodes.\n[/kb=11]"
+  label: HTML5 Compatible Show
+  hidden: false
+  meta:
+    kb_id: 11
+- name: html5_depth_index
+  sql: COALESCE(CAST(html5metrics ->> '$.html5_volumes.H5_Clips' AS INTEGER), 0) +
+    COALESCE(CAST(html5metrics ->> '$.html5_volumes.H5_Episodes' AS INTEGER), 0) +
+    COALESCE(CAST(html5metrics ->> '$.html5_volumes.H5_Trailers' AS INTEGER), 0) +
+    COALESCE(CAST(html5metrics ->> '$.html5_volumes.H5_Games' AS INTEGER), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "HTML5 Depth Index (HDI, KB 59): H5_Clips + H5_Episodes + H5_Trailers\
+    \ + H5_Games.\n\n[kb=59]\nHDI = H5 Clips + H5 Episodes + H5 Trailers + H5 Games,\
+    \ by adding up the number of HTML5-compatible video types \u2014 Quantifies HTML5\
+    \ support by combining media type counts.\n[/kb=59]"
+  label: HTML5 Depth Index (HDI)
+  hidden: false
+  meta:
+    kb_id: 59
+- name: her
+  sql: 1.0 * CAST(html5metrics ->> '$.html5_volumes.H5_Episodes' AS INTEGER) / NULLIF(CAST(contentvols
+    ->> '$.standard_content.Ep_Vol' AS INTEGER), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "HTML5 Episode Ratio (HER, KB 20): H5_Episodes / Ep_Vol.\n\n[kb=20]\n\
+    HER = \\frac{\\text{H5 Episodes}}{\\text{Episodes Vol}} \u2014 Computes the share\
+    \ of HTML5 episodes relative to all episodes.\n[/kb=20]"
+  label: HTML5 Episode Ratio
+  hidden: false
+  meta:
+    kb_id: 20
+- name: mpcr
+  sql: 1.0 * CAST(html5metrics ->> '$.html5_volumes.H5_MediaTotal' AS INTEGER) / NULLIF(CAST(contentvols
+    ->> '$.standard_content.Media_Total' AS INTEGER), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Media Platform Compatibility Rate (MPCR, KB 22): H5_MediaTotal / Media_Total.\n\
+    \n[kb=22]\nMPCR = \\frac{\\text{H5Media Total}}{\\text{Media Total}} \u2014 Assesses\
+    \ platform compatibility for all media.\n[/kb=22]"
+  label: Media Platform Compatibility Rate
+  hidden: false
+  meta:
+    kb_id: 22
+- name: is_single_platform_dependent
+  sql: COALESCE(CAST(html5metrics ->> '$.html5_volumes.H5_MediaTotal' AS INTEGER),
+    0) >= COALESCE(CAST(contentvols ->> '$.standard_content.Media_Total' AS INTEGER),
+    0) AND COALESCE(CAST(contentvols ->> '$.standard_content.Media_Total' AS INTEGER),
+    0) > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Single-Platform Dependency (KB 60): TRUE when all available media\
+    \ in this tier is HTML5-compatible (H5_MediaTotal \u2265 Media_Total).\n\n[kb=60]\n\
+    Content is considered single-platform dependent if all available content is playable\
+    \ in HTML5 format \u2014 Labels content that only supports HTML5 media types.\n\
+    [/kb=60]"
+  label: Single-Platform Dependency
+  hidden: false
+  meta:
+    kb_id: 60
+- name: cfr
+  sql: 1.0 * CAST(contentvols ->> '$.standard_content.FilmClip_Vol' AS INTEGER) /
+    NULLIF(CAST(contentvols ->> '$.standard_content.Feature_Vol' AS INTEGER), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Clip-to-Feature Ratio (CFR, KB 56): FilmClip_Vol / Feature_Vol.\n\n\
+    [kb=56]\nCFR = \\frac{\\text{Film Clip Vol}}{\\text{Feature Vol}}, both contributing\
+    \ to the total size of content available \u2014 Compares short-form clips to long-form\
+    \ feature content.\n[/kb=56]"
+  label: Clip-to-Feature Ratio (CFR)
+  hidden: false
+  meta:
+    kb_id: 56
+- name: peak_media_load
+  sql: MAX(COALESCE(CAST(contentvols ->> '$.standard_content.Trailer_Vol' AS INTEGER),
+    0), COALESCE(CAST(contentvols ->> '$.standard_content.Feature_Vol' AS INTEGER),
+    0))
+  type: DOUBLE
+  primary_key: false
+  description: "Peak Media Load (KB 77): for each (show, tier), MAX(Trailer_Vol, Feature_Vol).\n\
+    \n[kb=77]\nFor each show, we check the sizes of both its trailers and full episodes,\
+    \ and pick whichever is bigger to represent its media load. \u2014 Identifies\
+    \ shows with heavy media volume by selecting the larger of trailer or feature\
+    \ content.\n[/kb=77]"
+  label: Peak Media Load
+  hidden: false
+  meta:
+    kb_id: 77
+- name: is_legacy_uploaded
+  sql: (launchmoment IS NULL OR TRIM(launchmoment) = '') AND COALESCE(CAST(contentvols
+    ->> '$.standard_content.Media_Total' AS INTEGER), 0) > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Missing Launch Moment (KB 48): launchmoment NULL while Media_Total\
+    \ > 0 \u2192 legacy-uploaded.\n\n[kb=48]\nIf Launch Moment is NULL while Media\
+    \ Total > 0, the show is considered legacy-uploaded. \u2014 A meaningful missing\
+    \ value indicating legacy or untracked rollup entries.\n[/kb=48]"
+  label: Missing Launch Moment
+  hidden: false
+  meta:
+    kb_id: 48
+- name: tier_has_no_recent_update
+  sql: latestadd IS NULL OR TRIM(latestadd) = ''
+  type: BOOLEAN
+  primary_key: false
+  description: "Null Update Tag (KB 14): TRUE when latestadd is missing \u2192 content\
+    \ unchanged since first appearance."
+  hidden: false
+- name: current_year
+  sql: CAST(strftime('%Y', 'now') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: 'Helper: current year (used by KB 27 longevity).'
+  hidden: false
+- name: launch_year
+  sql: CASE WHEN launchmoment IS NULL OR TRIM(launchmoment) = '' THEN NULL ELSE CAST(SUBSTR(launchmoment,
+    1, 4) AS INTEGER) END
+  type: DOUBLE
+  primary_key: false
+  description: "Year extracted from launchmoment (KB 9 documents formats; sample data\
+    \ is YYYY-MM-DD). Used by KB 27 (longevity) and KB 91 (launch year distribution).\n\
+    \n[kb=91]\nWe check when each show was released, group them by year, and count\
+    \ how many came out in each. This shows how active each year was for launches.\
+    \ \u2014 Breaks down the number of titles launched each year based on their recorded\
+    \ launch dates. Helps analyze content release trends over time.\n[/kb=91]"
+  label: Launch Year Distribution
+  hidden: false
+  meta:
+    kb_id: 91
+- name: longevity
+  sql: CASE WHEN launchmoment IS NULL OR TRIM(launchmoment) = '' THEN NULL ELSE CAST(strftime('%Y',
+    'now') AS INTEGER) - CAST(SUBSTR(launchmoment, 1, 4) AS INTEGER) END
+  type: DOUBLE
+  primary_key: false
+  description: "Show Longevity Estimate (KB 27): current_year - launch_year.\n\n[kb=27]\n\
+    Longevity = How long content has been available is estimated by subtracting its\
+    \ release year from the current year. \u2014 Estimates how long content has been\
+    \ on platform.\n[/kb=27]"
+  label: Show Longevity Estimate
+  hidden: false
+  meta:
+    kb_id: 27
+- name: tsi_days
+  sql: CASE WHEN latestadd IS NULL OR TRIM(latestadd) = '' THEN NULL ELSE CAST(julianday('now')
+    - julianday(CASE WHEN latestadd LIKE '%/%/%' THEN substr(latestadd, length(latestadd)
+    - 3, 4) || '-' || (CASE WHEN length(substr(latestadd, 1, instr(latestadd, '/')
+    - 1)) = 1 THEN '0' || substr(latestadd, 1, instr(latestadd, '/') - 1) ELSE substr(latestadd,
+    1, instr(latestadd, '/') - 1) END) || '-' || (CASE WHEN length(substr(substr(latestadd,
+    instr(latestadd, '/') + 1), 1, instr(substr(latestadd, instr(latestadd, '/') +
+    1), '/') - 1)) = 1 THEN '0' || substr(substr(latestadd, instr(latestadd, '/')
+    + 1), 1, instr(substr(latestadd, instr(latestadd, '/') + 1), '/') - 1) ELSE substr(substr(latestadd,
+    instr(latestadd, '/') + 1), 1, instr(substr(latestadd, instr(latestadd, '/') +
+    1), '/') - 1) END) ELSE latestadd END) AS INTEGER) END
+  type: DOUBLE
+  primary_key: false
+  description: "Temporal Staleness Index (TSI, KB 57): days between today and latest\
+    \ update. Handles both YYYY-MM-DD and M/D/YYYY formats found in latestadd.\n\n\
+    [kb=57]\nTSI = \\text{Current Date} - \\text{Latest Update Date}, where lack of\
+    \ a recent update means the content is considered unchanged \u2014 Measures how\
+    \ long it's been since a show was last updated.\n[/kb=57]"
+  label: Temporal Staleness Index (TSI)
+  hidden: false
+  meta:
+    kb_id: 57
+- name: trailer_deficient_int
+  sql: CASE WHEN COALESCE(CAST(contentvols ->> '$.standard_content.Ep_Vol' AS INTEGER),
+    0) >= 50 AND COALESCE(CAST(contentvols ->> '$.standard_content.Trailer_Vol' AS
+    INTEGER), 0) = 0 THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Trailer-Deficient Feature (KB 67): TRUE when many episodes (\u2265\
+    50) but Trailer_Vol = 0.\n\n[kb=67]\nA show is trailer-deficient if it has many\
+    \ main episodes but no trailers \u2014 Content with features but no accompanying\
+    \ trailer.\n[/kb=67]"
+  label: Trailer-Deficient Feature
+  hidden: false
+  meta:
+    kb_id: 67
+- name: is_visually_empty
+  sql: COALESCE(CAST(contentvols ->> '$.standard_content.Trailer_Vol' AS INTEGER),
+    0) = 0 AND COALESCE(CAST(contentvols ->> '$.standard_content.Clip_Vol' AS INTEGER),
+    0) = 0 AND COALESCE(CAST(contentvols ->> '$.standard_content.FilmClip_Vol' AS
+    INTEGER), 0) = 0
+  type: BOOLEAN
+  primary_key: false
+  description: 'Helper used by KB 69/70: no trailers AND no extra clips/film_clips.'
+  hidden: false
+- name: is_legacy_title
+  sql: (launchmoment IS NULL OR TRIM(launchmoment) = '') AND (latestadd IS NULL OR
+    TRIM(latestadd) = '' OR julianday('now') - julianday(CASE WHEN latestadd LIKE
+    '%/%/%' THEN substr(latestadd, length(latestadd) - 3, 4) || '-' || (CASE WHEN
+    length(substr(latestadd, 1, instr(latestadd, '/') - 1)) = 1 THEN '0' || substr(latestadd,
+    1, instr(latestadd, '/') - 1) ELSE substr(latestadd, 1, instr(latestadd, '/')
+    - 1) END) || '-01' ELSE latestadd END) > 365)
+  type: BOOLEAN
+  primary_key: false
+  description: "Legacy Title Indicator (KB 65): no launch date AND no recent update\
+    \ (>365 days). Combines KB 14 (null update) with KB 48 (missing launch).\n\n[kb=65]\n\
+    Shows are considered legacy if there is no launch date and the content hasn\u2019\
+    t been updated for a long time \u2014 Flags older shows that lack launch timestamps.\n\
+    [/kb=65]"
+  label: Legacy Title Indicator
+  hidden: false
+  meta:
+    kb_id: 65
+- name: tier_distribution_ratio_helper
+  sql: CAST(contentvols ->> '$.standard_content.Media_Total' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: "Marker for Tier Distribution Ratio (KB 29): the per-row Media_Total\
+    \ used in the TDR ratio Media_Total_tier / \u03A3 Media_Total_tier. The aggregation/grouping\
+    \ is performed in the query.\n\n[kb=29]\nTDR = \\frac{\\text{Media Total}_{tier}}{\\\
+    sum_{tier} Media Total tier} \u2014 Determines tier-specific share of media.\n\
+    [/kb=29]"
+  label: Tier Distribution Ratio
+  hidden: false
+  meta:
+    kb_id: 29
+- name: is_high_visibility_empty_bucket
+  sql: COALESCE(CAST(contentvols ->> '$.standard_content.Trailer_Vol' AS INTEGER),
+    0) = 0 AND COALESCE(CAST(contentvols ->> '$.standard_content.Clip_Vol' AS INTEGER),
+    0) = 0 AND COALESCE(CAST(contentvols ->> '$.standard_content.FilmClip_Vol' AS
+    INTEGER), 0) = 0
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Visibility Empty Bucket (KB 69): a show is highly rated but has\
+    \ no extra video segments or trailers. Row predicate: TRUE when no clips and no\
+    \ trailers; combine with user_score being high (joined from core). KB 70 is a\
+    \ verbose restatement of the same concept \u2014 documented as a duplicate in\
+    \ the per-DB notes file.\n\n[kb=69]\nA show is highly rated but has no extra video\
+    \ segments or trailers \u2014 Popular show with missing clip or trailer materials.\n\
+    [/kb=69]"
+  label: High-Visibility Empty Bucket
+  hidden: false
+  meta:
+    kb_id: 69
+- name: is_tier_content_gap
+  sql: 1.0 * CAST(contentvols ->> '$.standard_content.Media_Total' AS INTEGER) / (1.0
+    + COALESCE(CAST(html5metrics ->> '$.html5_volumes.H5_MediaTotal' AS INTEGER),
+    0)) < 1.0
+  type: BOOLEAN
+  primary_key: false
+  description: "Tier-Specific Content Gaps (KB 64): tier where normalized content\
+    \ amount (KB 31 NMV style) is below threshold (here < 1.0).\n\n[kb=64]\nTiers\
+    \ where normalized content amount is less than a given threshold are considered\
+    \ to have content gaps. \u2014 Highlights tiers with significantly lower media\
+    \ volume.\n[/kb=64]"
+  label: Tier-Specific Content Gaps
+  hidden: false
+  meta:
+    kb_id: 64
+- name: normalized_media_volume
+  sql: 1.0 * CAST(contentvols ->> '$.standard_content.Media_Total' AS INTEGER) / (1.0
+    + COALESCE(CAST(html5metrics ->> '$.html5_volumes.H5_MediaTotal' AS INTEGER),
+    0))
+  type: DOUBLE
+  primary_key: false
+  description: "Normalized Media Volume (NMV, KB 31): KB definition is 'total content\
+    \ amount / (total number of parts or groupings + 1)'. KB references children KB\
+    \ 4 (HasLogo flags) and KB 5 (Movie identifier formats); we operationalise 'parts'\
+    \ as the H5_MediaTotal grouping count + 1 (the only available grouping signal),\
+    \ so NMV = Media_Total / (1 + H5_MediaTotal).\n\n[kb=31]\nNMV = The normalized\
+    \ media volume is found by dividing the total content amount by the total number\
+    \ of parts or groupings, plus one. \u2014 Computes the normalized total media\
+    \ volume across different tiers.\n[/kb=31]"
+  label: Normalized Media Volume (NMV)
+  hidden: false
+  meta:
+    kb_id: 31
+- name: media_share_log_term
+  sql: CASE WHEN CAST(contentvols ->> '$.standard_content.Media_Total' AS INTEGER)
+    > 0 THEN CAST(contentvols ->> '$.standard_content.Media_Total' AS INTEGER) * ln(1.0
+    * CAST(contentvols ->> '$.standard_content.Media_Total' AS INTEGER)) ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Helper for AES (KB 35): per-row term contributing to availability\
+    \ entropy = -\u03A3 type_i * log(type_i). The full entropy formula uses tier proportions;\
+    \ this column carries the per-row product term so the agent can sum/normalise\
+    \ at query time.\n\n[kb=35]\nAES = -\\sum_{i=1}^{k} type_i \\log type_i, where\
+    \ type_i is the proportion of availability tier i. \u2014 Calculates the entropy\
+    \ of availability types for a show.\n[/kb=35]"
+  label: Availability Entropy Score (AES)
+  hidden: false
+  meta:
+    kb_id: 35
+measures:
+- formula: srlinks:count_distinct
+  name: tier_count
+  description: Number of distinct tiers a show appears in (used by KB 16/41/76, AMT
+    KB 26, TNML KB 51).
+- formula: srlinks:count_distinct
+  name: is_multi_tier
+  label: Multi-Tier Presence
+  description: "Same calculation as tier_count; reach via filter '>= 2' for KB 16\
+    \ (Multi-Tier Presence), '>= 3' for KB 41/76.\n\n[kb=16]\nIf content is available\
+    \ in two or more distinct subscription tiers, it qualifies as multi-tier. \u2014\
+    \ Labels content appearing in multiple tiers.\n[/kb=16]"
+  meta:
+    kb_id: 16
+- formula: media_total:sum
+  name: total_media
+  description: Sum of Media_Total across rows in scope. Used as 'Total Media Volume'
+    in KB 51 (TNML).
+- formula: 1.0 * media_total:sum / NULLIF(srlinks:count_distinct, 0)
+  name: tier_normalized_media_load
+  label: Tier-Normalized Media Load (TNML)
+  description: "Tier-Normalized Media Load (TNML, KB 51): Total Media Volume / Number\
+    \ of Availability Tiers. Group by srkeys to get one value per show.\n\n[kb=51]\n\
+    TNML = \\frac{\\text{Total Media Volume}}{\\text{Number of Availability Tiers}},\
+    \ where tiers are determined by content access grouping. \u2014 Calculates average\
+    \ media volume per available tier.\n[/kb=51]"
+  meta:
+    kb_id: 51
+- formula: 1.0 * media_total:sum / NULLIF(srlinks:count_distinct, 0)
+  name: average_media_per_tier
+  label: Average Media per Tier
+  description: "Average Media per Tier (AMT, KB 26): \u03A3 Media_Total_tier / |Tiers|.\
+    \ Same shape as TNML; KB 26 references KB 3 (tier values).\n\n[kb=26]\nAMT = \\\
+    frac{\\sum Media Total tier}{|Tiers|} \u2014 Computes average number of media\
+    \ items across tiers.\n[/kb=26]"
+  meta:
+    kb_id: 26
+- formula: 1.0 * trailer_vol:sum / NULLIF(*:count, 0)
+  name: trailer_coverage_ratio
+  description: 'Trailer Coverage Ratio (TCR, KB 58): Trailer_Vol / Total Content Items.'
+- formula: 1.0 * unrated_vol:sum / NULLIF(media_total:sum, 0)
+  name: unrated_share
+  label: Unrated Share
+  description: "Unrated Share (KB 24): Unrated_Vol / Media_Total over rows in scope.\n\
+    \n[kb=24]\nUnrated content share is calculated as the amount of unrated material\
+    \ divided by all available content. \u2014 Estimates the share of unrated content.\n\
+    [/kb=24]"
+  meta:
+    kb_id: 24
+- formula: 1.0 * unrated_vol:sum / NULLIF(media_total:sum, 0)
+  name: unrated_proportion_per_tier
+  label: Unrated Proportion per Tier (UPT)
+  description: "Unrated Proportion per Tier (UPT, KB 55): same formula as KB 24, but\
+    \ grouped by tier (use dimension rollups.tiertype).\n\n[kb=55]\nUPT = \\frac{\\\
+    text{Unrated Vol}_{tier}}{\\text{Media Total}_{tier}}, using the standard set\
+    \ of content ratings and grouping by access level \u2014 Computes the share of\
+    \ unrated media for each access tier.\n[/kb=55]"
+  meta:
+    kb_id: 55
+- formula: 1.0 * h5_episodes:sum / NULLIF(ep_vol:sum, 0)
+  name: html5_episode_ratio
+  description: 'Aggregate HER (KB 20): summed H5_Episodes / summed Ep_Vol over rows
+    in scope. The row-level her column gives the per-row form.'
+- formula: 1.0 * h5_media_total:sum / NULLIF(media_total:sum, 0)
+  name: media_platform_compatibility_rate
+  description: 'Aggregate MPCR (KB 22): summed H5_MediaTotal / summed Media_Total.'
+- formula: 1.0 * filmclip_vol:sum / NULLIF(feature_vol:sum, 0)
+  name: clip_to_feature_ratio
+  description: Aggregate CFR (KB 56).
+- formula: srlinks:count_distinct
+  name: tier_count_per_show
+  label: Multitier Syndicated Show
+  description: "Same as tier_count \u2014 alias used in KB 73 (\u2265 3 tiers in a\
+    \ franchise).\n\n[kb=41]\nIf a show is made available in three or more distinct\
+    \ access groups, it's considered multi-tier. \u2014 Identifies content available\
+    \ across multiple subscription tiers.\n[/kb=41]"
+  meta:
+    kb_id: 41
+- formula: h5_clips:sum + h5_episodes:sum + h5_trailers:sum + h5_games:sum
+  name: html5_depth_index_total
+  description: Aggregate HDI (KB 59) over rows in scope.
+- formula: longevity:avg
+  name: longevity_avg
+  description: Average longevity (KB 27) across rows in scope.
+- formula: tsi_days:avg
+  name: temporal_staleness_index_avg
+  description: Average TSI (KB 57) across rows.
+- formula: 1.0 * media_total:sum / NULLIF(total_media:sum, 0)
+  name: tier_distribution_ratio
+  description: "Tier Distribution Ratio (TDR, KB 29): Media_Total_tier / \u03A3_tier\
+    \ Media_Total_tier. Group by tier dimension to compute per-tier share. Note: this\
+    \ is the ratio per row in scope vs. total scope, so use group-by-tier filter narrowing."
+- formula: trailer_deficient_int:sum
+  name: trailer_deficient_count
+  description: Count of (show, tier) rows that are trailer-deficient (KB 67).
+- formula: peak_rating_canonical:count
+  name: most_common_peak_rating_count
+  label: Most Common Peak TV Rating
+  description: "Helper for KB 81 \u2014 count of rows by peak_rating_canonical when\
+    \ grouped on that dim, the agent picks top by ORDER BY desc + LIMIT 1.\n\n[kb=81]\n\
+    This identifies which TV rating (like TV-MA or TV-PG) appears the most often across\
+    \ all shows, showing the most typical maturity level in the catalog. \u2014 Finds\
+    \ the most commonly assigned peak TV rating across all content distribution records\
+    \ in the HuluShows dataset. This metric is useful for understanding the typical\
+    \ maturity level (e.g., TV-PG, TV-MA) that shows are released with.\n[/kb=81]"
+  meta:
+    kb_id: 81
+- formula: '*:count'
+  name: launch_year_count
+  description: 'Launch Year Distribution (KB 91): count of rollup rows per launch_year.
+    Group by launch_year.'
+- formula: srkeys:count_distinct
+  name: show_count
+  description: "Distinct show count among rows (used in KB 49 / 73 'franchise has\
+    \ \u22653 shows')."
+- formula: media_share_log_term:sum
+  name: availability_entropy_score
+  description: "Availability Entropy Score (AES, KB 35): KB definition is -\u03A3\
+    \ type_i * log(type_i) over availability tier proportions. Use group-by-tier on\
+    \ Media_Total + log normalisation; this measure exposes the underlying \u03A3\
+    \ term for further composition."
+aggregations: []
+joins:
+- target_model: core
+  join_pairs:
+  - - srkeys
+    - content_key
+  join_type: left
+- target_model: rollups
+  join_pairs:
+  - - srlinks
+    - tierkey
+  join_type: left
+filters: []
+description: 'One row per (content_key, tier) pair. Carries per-tier launch + update
+  timestamps and three JSONB blobs: contentvols (standard_content with Ep/Clip/Game/Season/Feature/Media_Total/Trailer/FilmClip
+  volumes), html5metrics (html5_volumes with H5_* counts), and ratinginfo (TV_Rating,
+  Peak_Rating, Unrated_Vol).'
+hidden: false

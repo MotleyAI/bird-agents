@@ -1,0 +1,92 @@
+version: 6
+name: performance
+sql_table: performance
+query_variables: {}
+data_source: gaming
+columns:
+- name: perfregistry
+  sql: perfregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: perfsessionref
+  sql: perfsessionref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: accelmax
+  sql: accelmax
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: speedips
+  sql: speedips
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: liftdistmm
+  sql: liftdistmm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: angsnap
+  sql: angsnap
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: btntens
+  sql: btntens
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: clklat
+  sql: clklat
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: clkdur
+  sql: clkdur
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: screnctyp
+  sql: screnctyp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: scrsteps
+  sql: scrsteps
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: scraccy
+  sql: scraccy
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins:
+- target_model: testsessions
+  join_pairs:
+  - - perfsessionref
+    - sessionregistry
+  join_type: left
+filters: []
+hidden: false

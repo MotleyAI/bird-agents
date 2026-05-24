@@ -1,0 +1,129 @@
+version: 6
+name: distributionhubs
+sql_table: distributionhubs
+query_variables: {}
+data_source: disaster
+columns:
+- name: hubregistry
+  sql: hubregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: disteventref
+  sql: disteventref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: hubcaptons
+  sql: hubcaptons
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: hubutilpct
+  sql: hubutilpct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: storecapm3
+  sql: storecapm3
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: storeavailm3
+  sql: storeavailm3
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: coldstorecapm3
+  sql: coldstorecapm3
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: coldstoretempc
+  sql: coldstoretempc
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: warehousestate
+  sql: warehousestate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: invaccpct
+  sql: invaccpct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: stockturnrate
+  sql: stockturnrate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: rur
+  sql: (hubutilpct / 100.0) * (storecapm3 / (storeavailm3 + 1.0))
+  type: DOUBLE
+  primary_key: false
+  description: "Resource Utilization Ratio (RUR, KB #10): (hubutilpct/100) * (storecapm3\
+    \ / (storeavailm3+1)).\n\n[kb=10]\nRUR = \\frac{hubutilpct}{100} \\times \\frac{storecapm3}{storeavailm3\
+    \ + 1} \u2014 Measures how effectively hub capacity is being used relative to\
+    \ available resources\n[/kb=10]"
+  label: Resource Utilization Ratio (RUR)
+  hidden: false
+  meta:
+    kb_id: 10
+- name: rur_classification
+  sql: CASE WHEN ((hubutilpct / 100.0) * (storecapm3 / (storeavailm3 + 1.0))) > 5
+    THEN 'High Utilization' WHEN ((hubutilpct / 100.0) * (storecapm3 / (storeavailm3
+    + 1.0))) >= 2 THEN 'Moderate Utilization' ELSE 'Low Utilization' END
+  type: TEXT
+  primary_key: false
+  description: "Resource Utilization Classification (KB #50): High Utilization (RUR>5),\
+    \ Moderate (2<=RUR<=5), Low (RUR<2).\n\n[kb=50]\nHigh Utilization (RUR > 5) indicates\
+    \ potentially overloaded hubs that may need resource expansion; Moderate Utilization\
+    \ (2 \u2264 RUR \u2264 5) represents optimal resource usage balance; Low Utilization\
+    \ (RUR < 2) indicates underutilized hubs with potential efficiency gains through\
+    \ resource reallocation \u2014 Categorizes distribution hubs based on their Resource\
+    \ Utilization Ratio (RUR) values\n[/kb=50]"
+  label: Resource Utilization Classification
+  hidden: false
+  meta:
+    kb_id: 50
+- name: available_storage_percentage
+  sql: (storeavailm3 * 1.0 / NULLIF(storecapm3, 0)) * 100
+  type: DOUBLE
+  primary_key: false
+  description: "Available Storage Percentage (KB #53): (storeavailm3 / storecapm3)\
+    \ * 100.\n\n[kb=53]\nThe percentage calculated by dividing available storage (storeavailm3)\
+    \ by total storage capacity (storecapm3) and multiplying by 100 \u2014 Calculates\
+    \ what proportion of total storage capacity is currently available\n[/kb=53]"
+  label: available storage percentage
+  hidden: false
+  meta:
+    kb_id: 53
+measures: []
+aggregations: []
+joins:
+- target_model: disasterevents
+  join_pairs:
+  - - disteventref
+    - distregistry
+  join_type: left
+filters: []
+description: Distribution hub per disaster event; 1:1 with disasterevents.
+hidden: false

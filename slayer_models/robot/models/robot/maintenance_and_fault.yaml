@@ -1,0 +1,279 @@
+version: 6
+name: maintenance_and_fault
+sql_table: maintenance_and_fault
+query_variables: {}
+data_source: robot
+columns:
+- name: upkeepactuation
+  sql: upkeepactuation
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: upkeepoperation
+  sql: upkeepoperation
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: upkeeprobot
+  sql: upkeeprobot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: faultcodeval
+  sql: faultcodeval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: issuecategoryval
+  sql: issuecategoryval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: issuelevelval
+  sql: issuelevelval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: faultpredscore
+  sql: faultpredscore
+  type: INT
+  primary_key: false
+  description: "Fault prediction score, range [0,1]. Higher = more likely impending\
+    \ fault (KB #24).\n\n[kb=24]\nThe score ranges from 0 to 1, with higher values\
+    \ indicating a higher likelihood of an impending fault. \u2014 Illustrates the\
+    \ fault prediction score in maintenance records.\n[/kb=24]"
+  label: Fault Prediction Score
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 24
+- name: faulttypeestimation
+  sql: faulttypeestimation
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rulhours
+  sql: rulhours
+  type: INT
+  primary_key: false
+  description: "Remaining Useful Life (hours) \u2014 estimated time until next maintenance\
+    \ (KB #25).\n\n[kb=25]\nRUL is measured in hours and indicates the estimated time\
+    \ until the next maintenance is required. \u2014 Illustrates the Remaining Useful\
+    \ Life in maintenance records.\n[/kb=25]"
+  label: Remaining Useful Life (RUL)
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 25
+- name: upkeepduedays
+  sql: upkeepduedays
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: upkeepcostest
+  sql: upkeepcostest
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: recency_weight
+  sql: 1.0 / (1.0 + upkeepduedays)
+  type: DOUBLE
+  primary_key: false
+  description: 'Recency weight w(mf) = 1/(1+upkeepduedays) used in WFPS (KB #30) and
+    MCT (KB #35).'
+  hidden: false
+- name: weighted_faultpredscore
+  sql: faultpredscore * 1.0 / (1.0 + upkeepduedays)
+  type: DOUBLE
+  primary_key: false
+  description: "faultpredscore \xD7 recency_weight \u2014 numerator helper for WFPS\
+    \ (KB #30).\n\n[kb=30]\nFor a given robot R, WFPS = \\frac{\\sum_{mf \\in \\text{maintenance_and_fault}\
+    \ \\mid \\text{upkeeprobot = R}} (faultpredscore \\cdot w(mf))}{\\sum_{mf \\in\
+    \ \\text{maintenance_and_fault} \\mid \\text{upkeeprobot = R}} w(mf)}, \\text{where\
+    \ } w(mf) = 1 / (1 + \\text{upkeepduedays}) \u2014 Calculates a weighted average\
+    \ fault prediction score, prioritizing recent records.\n[/kb=30]"
+  label: Weighted Fault Prediction Score (WFPS)
+  hidden: false
+  meta:
+    kb_id: 30
+- name: weighted_upkeepcostest
+  sql: upkeepcostest * 1.0 / (1.0 + upkeepduedays)
+  type: DOUBLE
+  primary_key: false
+  description: "upkeepcostest \xD7 recency_weight \u2014 numerator helper for MCT\
+    \ (KB #35).\n\n[kb=35]\nFor a given robot R, MCT = \\frac{\\sum_{mf \\in \\text{maintenance_and_fault}\
+    \ \\mid \\text{upkeeprobot = R}} \\text{upkeepcostest} \\cdot w(mf)}{\\text{|}\\\
+    {mf \\in \\text{maintenance_and_fault} \\mid \\text{upkeeprobot = R}\\}|}, \\\
+    text{where } w(mf) = \\frac{1}{1 + \\text{upkeepduedays}} \u2014 Estimates the\
+    \ trend in maintenance costs over time.\n[/kb=35]"
+  label: Maintenance Cost Trend (MCT)
+  hidden: false
+  meta:
+    kb_id: 35
+- name: is_old_robot_row
+  sql: ((julianday(robot_details__robot_record.rects) - julianday(robot_details.instdateval))
+    / 365.25) > 2
+  type: BOOLEAN
+  primary_key: false
+  description: "Row-level: is the robot owning this maintenance record older than\
+    \ 2 years (RAY>2). Helper for KB #45. Inlines the RAY formula via the joined path\
+    \ maintenance_and_fault \u2192 robot_details \u2192 robot_record."
+  hidden: true
+- name: most_recent_faultpredscore
+  sql: (SELECT m2.faultpredscore FROM maintenance_and_fault m2 WHERE m2.upkeeprobot
+    = maintenance_and_fault.upkeeprobot ORDER BY m2.upkeepduedays ASC, m2.ROWID ASC
+    LIMIT 1)
+  type: DOUBLE
+  primary_key: false
+  description: "faultpredscore at the maintenance record with minimum upkeepduedays\
+    \ per robot (most-recent record), via correlated subquery. Helper for RFPS (KB\
+    \ #5). Aggregate with :max (or :min/:avg) to get a single per-robot value.\n\n\
+    [kb=5]\nFor a given robot R, \\text{faultpredscore}(mf) \\text{ where } mf \\\
+    in \\text{maintenance_and_fault}, \\text{upkeeprobot} = R, \\text{and } \\text{upkeepduedays}(mf)\
+    \ = \\min_{mf' \\in \\text{maintenance_and_fault} \\mid \\text{upkeeprobot} =\
+    \ R} \\text{upkeepduedays}(mf'). \u2014 The fault prediction score from the most\
+    \ recent maintenance record for a robot.\n[/kb=5]"
+  label: Recent Fault Prediction Score (RFPS)
+  hidden: false
+  meta:
+    kb_id: 5
+measures:
+- formula: rulhours:min
+  name: mrul
+  label: Minimum Remaining Useful Life (MRUL)
+  description: "Minimum Remaining Useful Life (MRUL) (KB #6) \u2014 min rulhours across\
+    \ maintenance records. Group by upkeeprobot for per-robot.\n\n[kb=6]\nFor a given\
+    \ robot R, MRUL = \\min_{mf \\in \\text{maintenance_and_fault} \\mid \\text{upkeeprobot\
+    \ = R}} rulhours \u2014 Finds the minimum Remaining Useful Life across all maintenance\
+    \ records for a specific robot.\n[/kb=6]"
+  meta:
+    kb_id: 6
+- formula: weighted_faultpredscore:sum / recency_weight:sum
+  name: wfps
+  label: Weighted Fault Prediction Score (WFPS)
+  description: "Weighted Fault Prediction Score (KB #30) \u2014 \u03A3(faultpredscore\
+    \ \xD7 w) / \u03A3w, w(mf) = 1/(1+upkeepduedays). Group by upkeeprobot for per-robot.\n\
+    \n[kb=30]\nFor a given robot R, WFPS = \\frac{\\sum_{mf \\in \\text{maintenance_and_fault}\
+    \ \\mid \\text{upkeeprobot = R}} (faultpredscore \\cdot w(mf))}{\\sum_{mf \\in\
+    \ \\text{maintenance_and_fault} \\mid \\text{upkeeprobot = R}} w(mf)}, \\text{where\
+    \ } w(mf) = 1 / (1 + \\text{upkeepduedays}) \u2014 Calculates a weighted average\
+    \ fault prediction score, prioritizing recent records.\n[/kb=30]"
+  meta:
+    kb_id: 30
+- formula: weighted_upkeepcostest:sum / *:count
+  name: mct
+  label: Maintenance Cost Trend (MCT)
+  description: "Maintenance Cost Trend (KB #35) \u2014 \u03A3(upkeepcostest \xD7 w)\
+    \ / |records|, w = 1/(1+upkeepduedays). Group by upkeeprobot for per-robot.\n\n\
+    [kb=35]\nFor a given robot R, MCT = \\frac{\\sum_{mf \\in \\text{maintenance_and_fault}\
+    \ \\mid \\text{upkeeprobot = R}} \\text{upkeepcostest} \\cdot w(mf)}{\\text{|}\\\
+    {mf \\in \\text{maintenance_and_fault} \\mid \\text{upkeeprobot = R}\\}|}, \\\
+    text{where } w(mf) = \\frac{1}{1 + \\text{upkeepduedays}} \u2014 Estimates the\
+    \ trend in maintenance costs over time.\n[/kb=35]"
+  meta:
+    kb_id: 35
+- formula: rulhours:min < 100
+  name: is_urgent_maintenance
+  label: Urgent Maintenance Needed
+  description: "Urgent Maintenance Needed (KB #16) \u2014 true if MRUL < 100. Group\
+    \ by upkeeprobot for per-robot.\n\n[kb=16]\nUrgent maintenance is needed if MRUL\
+    \ < 100. \u2014 Indicates if urgent maintenance is needed based on minimum Remaining\
+    \ Useful Life.\n[/kb=16]"
+  meta:
+    kb_id: 16
+- formula: (weighted_faultpredscore:sum / recency_weight:sum) > 0.6 and rulhours:min
+    < 500
+  name: is_priority_critical
+  label: Maintenance Priority Level
+  description: "Maintenance Priority Level (KB #40) \u2014 'CRITICAL' bucket: WFPS>0.6\
+    \ AND MRUL<500. Group by upkeeprobot.\n\n[kb=40]\nFor a robot R, the Maintenance\
+    \ Priority Level is:\n- 'CRITICAL' if WFPS > 0.6 AND MRUL < 500\n- 'WARNING' if\
+    \ WFPS > 0.4 OR MRUL < 500\n- 'NORMAL' otherwise \u2014 Classifies robots into\
+    \ maintenance priority categories based on fault prediction scores and remaining\
+    \ useful life\n[/kb=40]"
+  meta:
+    kb_id: 40
+- formula: (not ((weighted_faultpredscore:sum / recency_weight:sum) > 0.6 and rulhours:min
+    < 500)) and ((weighted_faultpredscore:sum / recency_weight:sum) > 0.4 or rulhours:min
+    < 500)
+  name: is_priority_warning
+  label: Maintenance Priority Level
+  description: "Maintenance Priority Level (KB #40) \u2014 'WARNING' bucket: not CRITICAL\
+    \ AND (WFPS>0.4 OR MRUL<500). Group by upkeeprobot.\n\n[kb=40]\nFor a robot R,\
+    \ the Maintenance Priority Level is:\n- 'CRITICAL' if WFPS > 0.6 AND MRUL < 500\n\
+    - 'WARNING' if WFPS > 0.4 OR MRUL < 500\n- 'NORMAL' otherwise \u2014 Classifies\
+    \ robots into maintenance priority categories based on fault prediction scores\
+    \ and remaining useful life\n[/kb=40]"
+  meta:
+    kb_id: 40
+- formula: (not ((weighted_faultpredscore:sum / recency_weight:sum) > 0.6 and rulhours:min
+    < 500)) and (not ((weighted_faultpredscore:sum / recency_weight:sum) > 0.4 or
+    rulhours:min < 500))
+  name: is_priority_normal
+  label: Maintenance Priority Level
+  description: "Maintenance Priority Level (KB #40) \u2014 'NORMAL' bucket: neither\
+    \ CRITICAL nor WARNING. Group by upkeeprobot.\n\n[kb=40]\nFor a robot R, the Maintenance\
+    \ Priority Level is:\n- 'CRITICAL' if WFPS > 0.6 AND MRUL < 500\n- 'WARNING' if\
+    \ WFPS > 0.4 OR MRUL < 500\n- 'NORMAL' otherwise \u2014 Classifies robots into\
+    \ maintenance priority categories based on fault prediction scores and remaining\
+    \ useful life\n[/kb=40]"
+  meta:
+    kb_id: 40
+- formula: (weighted_upkeepcostest:sum / *:count) > 500 and is_old_robot_row:max >
+    0
+  name: is_escalating_maintenance_costs
+  label: Escalating Maintenance Costs
+  description: "Escalating Maintenance Costs (KB #45) \u2014 true if MCT > 500 AND\
+    \ RAY > 2. Uses joined robot_details.ray. Group by upkeeprobot for per-robot.\n\
+    \n[kb=45]\nA robot R has Escalating Maintenance Costs if MCT > 500 and RAY > 2.\
+    \ \u2014 Identifies robots with rising maintenance costs.\n[/kb=45]"
+  meta:
+    kb_id: 45
+- formula: most_recent_faultpredscore:max
+  name: rfps
+  label: Recent Fault Prediction Score (RFPS)
+  description: "Recent Fault Prediction Score (RFPS) (KB #5) \u2014 faultpredscore\
+    \ from the maintenance record with the smallest upkeepduedays per robot. Group\
+    \ by upkeeprobot.\n\n[kb=5]\nFor a given robot R, \\text{faultpredscore}(mf) \\\
+    text{ where } mf \\in \\text{maintenance_and_fault}, \\text{upkeeprobot} = R,\
+    \ \\text{and } \\text{upkeepduedays}(mf) = \\min_{mf' \\in \\text{maintenance_and_fault}\
+    \ \\mid \\text{upkeeprobot} = R} \\text{upkeepduedays}(mf'). \u2014 The fault\
+    \ prediction score from the most recent maintenance record for a robot.\n[/kb=5]"
+  meta:
+    kb_id: 5
+- formula: most_recent_faultpredscore:max > 0.5
+  name: is_high_fault_risk
+  label: High Fault Risk
+  description: "High Fault Risk (KB #15) \u2014 true if RFPS > 0.5. Group by upkeeprobot.\n\
+    \n[kb=15]\nThe robot has high fault risk if RFPS > 0.5. \u2014 Indicates if the\
+    \ robot has a high risk of fault based on average fault prediction score.\n[/kb=15]"
+  meta:
+    kb_id: 15
+aggregations: []
+joins:
+- target_model: actuation_data
+  join_pairs:
+  - - upkeepactuation
+    - actreg
+  join_type: left
+- target_model: operation
+  join_pairs:
+  - - upkeepoperation
+    - operreg
+  join_type: left
+- target_model: robot_details
+  join_pairs:
+  - - upkeeprobot
+    - botdetreg
+  join_type: left
+filters: []
+description: 'Per-actuation maintenance/fault snapshot: fault code, severity, fault
+  prediction score, remaining useful life, days until next maintenance, estimated
+  cost. Joined to robot_details via upkeeprobot.'
+hidden: false

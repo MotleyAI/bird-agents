@@ -1,0 +1,142 @@
+version: 6
+name: high_risk_bot_network
+source_queries:
+- version: 3
+  name: scores_per_account
+  source_model: moderationaction
+  measures:
+  - formula: bbi:avg
+    name: bbi_v
+  - formula: cbr:avg
+    name: cbr_v
+  - formula: srs:avg
+    name: srs_v
+  - formula: clustsize:max
+    name: clustsize_v
+  dimensions:
+  - name: account_id
+  - name: cluster_id
+  whole_periods_only: false
+- version: 3
+  source_model: scores_per_account
+  measures:
+  - formula: bbi_v:avg
+    name: avg_bbi
+  - formula: cbr_v:avg
+    name: avg_cbr
+  - formula: srs_v:avg
+    name: avg_srs
+  - formula: clustsize_v:max
+    name: max_clustsize
+  - formula: '*:count'
+    name: member_count
+  dimensions:
+  - name: cluster_id
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"scores_per_account.cluster_id\" AS cluster_id, \"scores_per_account.avg_bbi\"\
+  \ AS avg_bbi, \"scores_per_account.avg_cbr\" AS avg_cbr, \"scores_per_account.avg_srs\"\
+  \ AS avg_srs, \"scores_per_account.max_clustsize\" AS max_clustsize, \"scores_per_account.member_count\"\
+  \ AS member_count FROM (SELECT\n  scores_per_account.cluster_id AS \"scores_per_account.cluster_id\"\
+  ,\n  AVG(scores_per_account.bbi_v) AS \"scores_per_account.avg_bbi\",\n  AVG(scores_per_account.cbr_v)\
+  \ AS \"scores_per_account.avg_cbr\",\n  AVG(scores_per_account.srs_v) AS \"scores_per_account.avg_srs\"\
+  ,\n  MAX(scores_per_account.clustsize_v) AS \"scores_per_account.max_clustsize\"\
+  ,\n  COUNT(*) AS \"scores_per_account.member_count\"\nFROM (\n  SELECT\n    \"moderationaction.account_id\"\
+  \ AS account_id,\n    \"moderationaction.cluster_id\" AS cluster_id,\n    \"moderationaction.bbi_v\"\
+  \ AS bbi_v,\n    \"moderationaction.cbr_v\" AS cbr_v,\n    \"moderationaction.srs_v\"\
+  \ AS srs_v,\n    \"moderationaction.clustsize_v\" AS clustsize_v\n  FROM (\n   \
+  \ SELECT\n      contentbehavior__sessionbehavior__profile.profaccref AS \"moderationaction.account_id\"\
+  ,\n      contentbehavior__sessionbehavior__profile__account.platident AS \"moderationaction.cluster_id\"\
+  ,\n      AVG(\n        0.4 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.behavior_scores.botlikscore') + 0.3 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.behavior_scores.autobehavscore') + 0.3 * (\n          1 - securitydetection__technicalinfo__messaginganalysis.convnatval\n\
+  \        )\n      ) AS \"moderationaction.bbi_v\",\n      AVG(\n        (\n    \
+  \      0.4 * JSON_EXTRACT(securitydetection.detection_score_profile, '$.behavior_scores.botlikscore')\
+  \ + 0.3 * JSON_EXTRACT(securitydetection.detection_score_profile, '$.behavior_scores.autobehavscore')\
+  \ + 0.3 * (\n            1 - securitydetection__technicalinfo__messaginganalysis.convnatval\n\
+  \          )\n        ) * (\n          0.5 * moderationaction.coordscore + 0.3 *\
+  \ moderationaction.netinflscore + 0.2 * (\n            CAST(moderationaction.clustsize\
+  \ AS REAL) / 100\n          )\n        ) * (\n          CAST(moderationaction.clustsize\
+  \ AS REAL) / 100\n        )\n      ) AS \"moderationaction.cbr_v\",\n      AVG(\n\
+  \        0.4 * JSON_EXTRACT(securitydetection.detection_score_profile, '$.overall.riskval')\
+  \ + 0.3 * (\n          1 - moderationaction.trustval\n        ) + 0.3 * moderationaction.impactval\n\
+  \      ) AS \"moderationaction.srs_v\",\n      MAX(moderationaction.clustsize) AS\
+  \ \"moderationaction.clustsize_v\"\n    FROM moderationaction AS moderationaction\n\
+  \    LEFT JOIN contentbehavior AS contentbehavior\n      ON moderationaction.macntref\
+  \ = contentbehavior.cntref\n    LEFT JOIN securitydetection AS securitydetection\n\
+  \      ON moderationaction.masedetref = securitydetection.secdetkey\n    LEFT JOIN\
+  \ technicalinfo AS securitydetection__technicalinfo\n      ON securitydetection.sectechref\
+  \ = securitydetection__technicalinfo.techkey\n    LEFT JOIN sessionbehavior AS contentbehavior__sessionbehavior\n\
+  \      ON contentbehavior.cntsessref = contentbehavior__sessionbehavior.sessref\n\
+  \    LEFT JOIN messaginganalysis AS securitydetection__technicalinfo__messaginganalysis\n\
+  \      ON securitydetection__technicalinfo.techmsgref = securitydetection__technicalinfo__messaginganalysis.msgkey\n\
+  \    LEFT JOIN profile AS contentbehavior__sessionbehavior__profile\n      ON contentbehavior__sessionbehavior.sessprofref\
+  \ = contentbehavior__sessionbehavior__profile.profkey\n    LEFT JOIN account AS\
+  \ contentbehavior__sessionbehavior__profile__account\n      ON contentbehavior__sessionbehavior__profile.profaccref\
+  \ = contentbehavior__sessionbehavior__profile__account.accindex\n    GROUP BY\n\
+  \      contentbehavior__sessionbehavior__profile.profaccref,\n      contentbehavior__sessionbehavior__profile__account.platident\n\
+  \  ) AS _inner\n) AS scores_per_account\nGROUP BY\n  scores_per_account.cluster_id)\
+  \ AS _inner"
+data_source: fake
+columns:
+- name: cluster_id
+  sql: cluster_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row cluster identifier resolved through the moderationaction \u2192\
+    \ contentbehavior \u2192 sessionbehavior \u2192 profile \u2192 account join chain.\
+    \ Equals account.platident; per KB #80, this is the cluster identifier used to\
+    \ group accounts in cluster-level rules (Bot Network, Amplification Network, ...)."
+  hidden: false
+- name: avg_bbi
+  sql: avg_bbi
+  type: DOUBLE
+  primary_key: false
+  description: 'Bot Behavior Index (KB #3): 0.4*botlikscore + 0.3*autobehavscore +
+    0.3*(1-convnatval). botlikscore observed in 0-100; KB-implied composite assumes
+    0-1, so values may exceed 1.'
+  hidden: false
+  format:
+    type: float
+- name: avg_cbr
+  sql: avg_cbr
+  type: DOUBLE
+  primary_key: false
+  description: 'Coordinated Bot Risk (KB #33): BBI * CAS-coord * clustsize/100.'
+  hidden: false
+  format:
+    type: float
+- name: avg_srs
+  sql: avg_srs
+  type: DOUBLE
+  primary_key: false
+  description: 'Security Risk Score (KB #4): 0.4*riskval + 0.3*(1-trustval) + 0.3*impactval.'
+  hidden: false
+  format:
+    type: float
+- name: max_clustsize
+  sql: max_clustsize
+  type: DOUBLE
+  primary_key: false
+  description: Size of the related account cluster.
+  hidden: false
+  format:
+    type: integer
+- name: member_count
+  sql: member_count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "High-Risk Bot Network (KB #40): a Bot Network (KB #11) with CBR > 0.8\
+  \ AND SRS > 0.7. Bot Network condition: avg_bbi > 0.7 AND max_clustsize > 10. Apply\
+  \ all four filters at query time.\n\n[kb=40]\nA Bot Network with CBR > 0.8 and SRS\
+  \ > 0.7 \u2014 Identifies dangerous coordinated bot networks.\n[/kb=40]"
+hidden: false
+meta:
+  kb_id: 40

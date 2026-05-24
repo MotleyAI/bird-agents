@@ -1,0 +1,65 @@
+version: 6
+name: margin_call_risk
+source_queries:
+- version: 3
+  source_model:
+    source_name: margin_utilization
+    columns:
+    - name: is_margin_call_risk
+      type: BOOLEAN
+      sql: mu_value > 80
+  dimensions:
+  - name: recordvault
+  - name: userlink
+  - name: is_margin_call_risk
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"margin_utilization.recordvault\" AS recordvault, \"margin_utilization.userlink\"\
+  \ AS userlink, \"margin_utilization.is_margin_call_risk\" AS is_margin_call_risk\
+  \ FROM (SELECT\n  margin_utilization.recordvault AS \"margin_utilization.recordvault\"\
+  ,\n  margin_utilization.userlink AS \"margin_utilization.userlink\",\n  margin_utilization.mu_value\
+  \ > 80 AS \"margin_utilization.is_margin_call_risk\"\nFROM (\n  SELECT\n    \"orders.recordvault\"\
+  \ AS recordvault,\n    \"orders.userlink\" AS userlink,\n    \"orders.mu_value\"\
+  \ AS mu_value\n  FROM (\n    SELECT\n      orders.recordvault AS \"orders.recordvault\"\
+  ,\n      orders.userlink AS \"orders.userlink\",\n      (\n        riskandmargin.risk_margin_profile\
+  \ ->> '$.margin_thresholds.inithold'\n      ) / NULLIF(margsum_per_user.margsum_total,\
+  \ 0) * 100 AS \"orders.mu_value\"\n    FROM orders AS orders\n    LEFT JOIN riskandmargin\
+  \ AS riskandmargin\n      ON orders.recordvault = riskandmargin.ordervault\n   \
+  \ LEFT JOIN (\n      (\n        SELECT\n          \"accountbalances.usertag\" AS\
+  \ usertag,\n          \"accountbalances.margsum_total\" AS margsum_total\n     \
+  \   FROM (\n          SELECT\n            accountbalances.usertag AS \"accountbalances.usertag\"\
+  ,\n            SUM(accountbalances.margsum) AS \"accountbalances.margsum_total\"\
+  \n          FROM accountbalances AS accountbalances\n          GROUP BY\n      \
+  \      accountbalances.usertag\n        ) AS _inner\n      )\n    ) AS margsum_per_user\n\
+  \      ON orders.userlink = margsum_per_user.usertag\n  ) AS _inner\n) AS margin_utilization)\
+  \ AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: userlink
+  sql: userlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_margin_call_risk
+  sql: is_margin_call_risk
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Margin Call Risk (KB #18): accounts where the Margin Utilization exceeds\
+  \ 80%, putting them at risk of margin calls if market prices move adversely. Joins\
+  \ to margin_utilization on recordvault to read mu_value.\n\n[kb=18]\nAccounts where\
+  \ the Margin Utilization exceeds 80%, putting them at risk of margin calls if market\
+  \ prices move adversely. \u2014 Identifies accounts at risk of receiving a margin\
+  \ call.\n[/kb=18]"
+hidden: false
+meta:
+  kb_id: 18

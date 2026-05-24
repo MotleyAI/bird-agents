@@ -1,0 +1,203 @@
+version: 6
+name: recipients_immunology
+sql_table: recipients_immunology
+query_variables: {}
+data_source: organ_transplant
+columns:
+- name: immu_recip_registry
+  sql: immu_recip_registry
+  type: TEXT
+  primary_key: true
+  description: FK to recipients_demographics.recip_registry.
+  hidden: false
+- name: pra_score
+  sql: pra_score
+  type: INT
+  primary_key: false
+  description: "Panel Reactive Antibody (PRA) score (0-100). Measure of recipient\
+    \ sensitization to foreign HLA antigens. A recipient with pra_score >= 80 is defined\
+    \ as having a 'high PRA score' (high immunological sensitization). See pra_band\
+    \ (KB 43) for interpretation bands and is_high_pra (KB 29) for the >= 80 threshold\
+    \ helper.\n\n[kb=23]\nA measure of a recipient's sensitization to foreign HLA\
+    \ antigens, represented by the `pra_score`[cite: 36]. For matching purposes, a\
+    \ recipient with a `pra_score` of 80 or higher is defined as having a 'high PRA\
+    \ score', indicating a state of high immunological sensitization. \u2014 A test\
+    \ that measures the level of pre-existing antibodies in a recipient's blood against\
+    \ common HLA antigens, indicating their sensitization level.\n[/kb=23]"
+  label: Panel Reactive Antibody (PRA)
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 23
+- name: dsa_state
+  sql: dsa_state
+  type: TEXT
+  primary_key: false
+  description: "Donor-specific antibody status (Negative/Positive). KB Donor-Specific\
+    \ Antibodies.\n\n[kb=26]\nThe presence of these antibodies is identified by a\
+    \ positive Crossmatch Test. They pose a significant risk for antibody-mediated\
+    \ rejection of the transplanted organ. \u2014 Antibodies in a recipient's blood\
+    \ that are specifically directed against a particular donor's HLA antigens.\n\
+    [/kb=26]"
+  label: Donor-Specific Antibodies (DSA)
+  hidden: false
+  meta:
+    kb_id: 26
+- name: cross_result
+  sql: cross_result
+  type: TEXT
+  primary_key: false
+  description: "Crossmatch result (Negative/Positive/Pending). 'Negative' means no\
+    \ pre-formed donor-specific antibodies \u2014 transplant can proceed. 'Positive'\
+    \ indicates donor-specific antibodies, making transplant highly risky/contraindicated\
+    \ due to high chance of hyperacute rejection.\n\n[kb=46]\nA 'Negative' result\
+    \ means no pre-formed donor-specific antibodies were detected, and the transplant\
+    \ can proceed. A 'Positive' result indicates the presence of these antibodies,\
+    \ making transplant highly risky or contraindicated due to the high chance of\
+    \ hyperacute rejection. \u2014 Illustrates the critical outcomes of a crossmatch\
+    \ test.\n[/kb=46]"
+  label: Crossmatch Results
+  hidden: false
+  meta:
+    kb_id: 46
+- name: cmv_state
+  sql: cmv_state
+  type: TEXT
+  primary_key: false
+  description: Recipient CMV status.
+  hidden: false
+- name: ebv_state
+  sql: ebv_state
+  type: TEXT
+  primary_key: false
+  description: Recipient EBV status.
+  hidden: false
+- name: func_status
+  sql: func_status
+  type: TEXT
+  primary_key: false
+  description: Recipient functional status band.
+  hidden: false
+- name: life_support
+  sql: life_support
+  type: TEXT
+  primary_key: false
+  description: Recipient life-support modality (NULL if none).
+  hidden: false
+- name: hlaprofile
+  sql: hlaprofile
+  type: TEXT
+  primary_key: false
+  description: "JSON: {Hla_A_Val, Hla_B_Val, Hla_Dr_Val, Hla_Dq_Val} for recipient.\
+    \ KB HLA Typing.\n\n[kb=22]\nA genetic test that identifies a person's unique\
+    \ HLA markers. A closer HLA match between a donor and recipient reduces the risk\
+    \ of the recipient's immune system attacking, or rejecting, the transplanted organ.\
+    \ \u2014 The process of identifying specific HLA protein markers on a person's\
+    \ cells to match a donor with a recipient for transplantation.\n[/kb=22]"
+  label: Human Leukocyte Antigen (HLA) Typing
+  hidden: false
+  meta:
+    kb_id: 22
+- name: pra_band
+  sql: CASE WHEN pra_score <= 10 THEN 'Low' WHEN pra_score < 80 THEN 'Moderate' ELSE
+    'High' END
+  type: TEXT
+  primary_key: false
+  description: "PRA banding per KB PRA Score Interpretation: 0-10 Low, 11-79 Moderate,\
+    \ >=80 High.\n\n[kb=43]\nA PRA score reflects a recipient's sensitization level.\
+    \ A score of 0-10% indicates low sensitization, making it easier to find a compatible\
+    \ donor. A score > 80% indicates high Immunological Sensitization, meaning the\
+    \ patient is likely to be incompatible with over 80% of potential donors. \u2014\
+    \ Illustrates the meaning of different PRA score percentages.\n[/kb=43]"
+  label: Panel Reactive Antibody (PRA) Score Interpretation
+  hidden: false
+  meta:
+    kb_id: 43
+- name: is_high_pra
+  sql: CASE WHEN pra_score >= 80 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "True when pra_score >= 80 (KB Immunological Sensitization).\n\n[kb=29]\n\
+    A clinical state where a recipient is considered highly sensitized to potential\
+    \ donors. This condition is formally defined as having a Panel Reactive Antibody\
+    \ (PRA) score of 80 or greater. This high level of sensitization significantly\
+    \ complicates the matching process by severely limiting the number of compatible\
+    \ donors. \u2014 A state where a recipient has a high level of pre-formed antibodies,\
+    \ making it difficult to find a compatible donor.\n[/kb=29]"
+  label: Immunological Sensitization
+  hidden: false
+  meta:
+    kb_id: 29
+- name: recip_hla_a
+  sql: CAST(json_extract(hlaprofile, '$.Hla_A_Val') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Recipient HLA-A value parsed from hlaprofile.
+  hidden: false
+- name: recip_hla_b
+  sql: CAST(json_extract(hlaprofile, '$.Hla_B_Val') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Recipient HLA-B value parsed from hlaprofile.
+  hidden: false
+- name: recip_hla_dr
+  sql: CAST(json_extract(hlaprofile, '$.Hla_Dr_Val') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Recipient HLA-DR value parsed from hlaprofile.
+  hidden: false
+- name: recip_hla_dq
+  sql: CAST(json_extract(hlaprofile, '$.Hla_Dq_Val') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Recipient HLA-DQ value parsed from hlaprofile.
+  hidden: false
+- name: is_amr_high_risk
+  sql: CASE WHEN cross_result = 'Positive' AND pra_score >= 80 AND dsa_state = 'Positive'
+    THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Antibody-Mediated Rejection High-Risk (KB AMR Risk Stratification):\
+    \ Positive crossmatch AND PRA >= 80 AND Positive DSA.\n\n[kb=51]\nA risk classification\
+    \ system. For recipients who have a 'Positive' crossmatch result, the 'High Risk'\
+    \ category is defined by meeting two concurrent criteria: having a Panel Reactive\
+    \ Antibody (PRA) score of 80 or greater AND having a 'Positive' donor-specific\
+    \ antibody (DSA) status. Recipients not meeting these criteria are considered\
+    \ 'Standard Risk'. \u2014 A system for categorizing a recipient's risk of developing\
+    \ antibody-mediated rejection based on their immunological profile.\n[/kb=51]"
+  label: Antibody-Mediated Rejection (AMR) Risk Stratification
+  hidden: false
+  meta:
+    kb_id: 51
+- name: is_positive_crossmatch
+  sql: CASE WHEN cross_result = 'Positive' THEN 1 WHEN cross_result IS NULL THEN NULL
+    ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Crossmatch Test contraindication flag (KB 24): true when crossmatch\
+    \ is Positive \u2014 indicates presence of donor-specific antibodies and is a\
+    \ contraindication to transplantation, predicting immediate organ rejection.\n\
+    \n[kb=24]\nA laboratory test that directly mixes the recipient's serum with the\
+    \ donor's lymphocytes. A 'positive' Crossmatch Test indicates the presence of\
+    \ donor-specific antibodies and is a contraindication to transplantation, as it\
+    \ predicts immediate organ rejection. \u2014 A final compatibility test performed\
+    \ just before transplant surgery to ensure the recipient has no pre-formed antibodies\
+    \ against the specific donor's tissues.\n[/kb=24]"
+  label: Crossmatch Test
+  hidden: false
+  meta:
+    kb_id: 24
+measures: []
+aggregations: []
+joins:
+- target_model: recipients_demographics
+  join_pairs:
+  - - immu_recip_registry
+    - recip_registry
+  join_type: left
+filters: []
+description: 'Recipient immunology: PRA, DSA status, crossmatch, viral status (CMV/EBV),
+  functional status, life support, and a JSON hlaprofile (recipient HLA A/B/DR/DQ
+  values). KB PRA / Crossmatch / DSA / Sensitization.'
+hidden: false

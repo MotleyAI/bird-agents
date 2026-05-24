@@ -1,0 +1,143 @@
+version: 6
+name: annual_returns
+sql_table: annual_returns
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: yearlyid
+  sql: yearlyid
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: portfolioref
+  sql: portfolioref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: calendaryear
+  sql: calendaryear
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: fundperf
+  sql: fundperf
+  type: INT
+  primary_key: false
+  description: "Fund's return performance for that calendar year as decimal. Source\
+    \ for KB 85 Median 1-Year Return (median of fundperf within the grouping).\n\n\
+    [kb=85]\nM = \text{The 50th percentile of 1-year returns for a specified group\
+    \ of funds.} \u2014 Calculates the median (50th percentile) of the 1-year returns\
+    \ for a group of funds.\n[/kb=85]"
+  label: Median 1-Year Return
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 85
+- name: categoryperf
+  sql: categoryperf
+  type: INT
+  primary_key: false
+  description: Category average return for the same calendar year.
+  hidden: false
+  format:
+    type: integer
+- name: annual_fund_outperformance
+  sql: fundperf - categoryperf
+  type: DOUBLE
+  primary_key: false
+  description: "Annual Fund Outperformance (KB 0) = fund's annual return - category's\
+    \ average annual return.\n\n[kb=0]\next{Annual Fund Outperformance} = \text{Fund's\
+    \ annual return} - \text{Category's average annual return} \u2014 Calculates the\
+    \ excess return of a fund compared to its category benchmark for a given year.\n\
+    [/kb=0]"
+  label: Annual Fund Outperformance
+  hidden: false
+  meta:
+    kb_id: 0
+- name: is_up_market_year
+  sql: categoryperf > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Marker: 1 = category had positive return that year, 0 = non-positive\
+    \ (KB 73 / 74). Up/down split is the building block for KB 75 Capture Differential.\n\
+    \n[kb=75]\nC_{\text{diff}} = \text{Average Upside Outperformance} - \text{Average\
+    \ Downside Outperformance} \u2014 Calculates the difference between a fund's average\
+    \ outperformance in up markets versus down markets, indicating its overall adaptability.\n\
+    [/kb=75]"
+  label: Capture Differential
+  hidden: false
+  meta:
+    kb_id: 75
+- name: upside_outperformance
+  sql: CASE WHEN categoryperf > 0 THEN fundperf - categoryperf ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Annual Fund Outperformance restricted to category-up years (KB 73).\
+    \ NULL otherwise so AVG ignores down years.\n\n[kb=73]\n\bar{O}{\text{up}} = \t\
+    ext{Average 'Annual Fund Outperformance' during years with positive category returns.}\
+    \ \u2014 Measures a fund's average outperformance during years when its category\
+    \ had positive returns.\n[/kb=73]"
+  label: Average Upside Outperformance
+  hidden: false
+  meta:
+    kb_id: 73
+- name: downside_outperformance
+  sql: CASE WHEN categoryperf <= 0 THEN fundperf - categoryperf ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Annual Fund Outperformance restricted to category-non-positive years\
+    \ (KB 74).\n\n[kb=74]\n\bar{O}{\text{down}} = \text{Average 'Annual Fund Outperformance'\
+    \ during years with non-positive category returns.} \u2014 Measures a fund's average\
+    \ outperformance during years when its category had negative returns. A smaller\
+    \ negative number indicates better downside protection.\n[/kb=74]"
+  label: Average Downside Outperformance
+  hidden: false
+  meta:
+    kb_id: 74
+- name: year_over_year_performance_trend
+  sql: (fundperf - categoryperf) - LAG(fundperf - categoryperf) OVER (PARTITION BY
+    portfolioref ORDER BY calendaryear)
+  type: DOUBLE
+  primary_key: false
+  description: "Year-over-Year Performance Trend (KB 70) = current year's Annual Fund\
+    \ Outperformance minus previous year's. Computed per fund across years.\n\n[kb=70]\n\
+    \\Delta_{YoY} = \text{Outperformance}{\text{current year}} - \text{Outperformance}{\t\
+    ext{previous year}} \u2014 Calculates the change in a fund's performance relative\
+    \ to its category from one year to the next.\n[/kb=70]"
+  label: Year-over-Year Performance Trend
+  hidden: false
+  meta:
+    kb_id: 70
+measures:
+- formula: upside_outperformance:avg
+  name: average_upside_outperformance
+  description: 'Average Upside Outperformance (KB 73): AVG(fund_outperformance) over
+    years where category had positive returns.'
+- formula: downside_outperformance:avg
+  name: average_downside_outperformance
+  description: 'Average Downside Outperformance (KB 74): AVG(fund_outperformance)
+    over years where category had non-positive returns.'
+- formula: upside_outperformance:avg - downside_outperformance:avg
+  name: capture_differential
+  description: 'Capture Differential (KB 75): Avg Upside Outperformance - Avg Downside
+    Outperformance.'
+- formula: fundperf:median
+  name: median_1y_return
+  description: 'Median 1-Year Return (KB 85): median of annual fundperf across the
+    grouping.'
+aggregations: []
+joins:
+- target_model: funds
+  join_pairs:
+  - - portfolioref
+    - tickersym
+  join_type: left
+filters: []
+description: Per-fund per-calendar-year returns and category benchmark comparison.
+  Many rows per fund (one per calendar year).
+hidden: false

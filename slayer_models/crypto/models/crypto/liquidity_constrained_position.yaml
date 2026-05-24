@@ -1,0 +1,74 @@
+version: 6
+name: liquidity_constrained_position
+source_queries:
+- version: 3
+  source_model:
+    source_name: market_depth_ratio
+    columns:
+    - name: is_liquidity_constrained
+      type: BOOLEAN
+      sql: mdr_value < 2.0
+  dimensions:
+  - name: recordvault
+  - name: is_liquidity_constrained
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"market_depth_ratio.recordvault\" AS recordvault, \"market_depth_ratio.is_liquidity_constrained\"\
+  \ AS is_liquidity_constrained FROM (SELECT\n  market_depth_ratio.recordvault AS\
+  \ \"market_depth_ratio.recordvault\",\n  market_depth_ratio.mdr_value < 2.0 AS \"\
+  market_depth_ratio.is_liquidity_constrained\"\nFROM (\n  SELECT\n    \"orders.recordvault\"\
+  \ AS recordvault,\n    \"orders.mdr_value\" AS mdr_value\n  FROM (\n    SELECT\n\
+  \      orders.recordvault AS \"orders.recordvault\",\n      (\n        CASE\n  \
+  \        WHEN (\n            riskandmargin.risk_margin_profile ->> '$.position.posedge'\n\
+  \          ) = 'Long'\n          THEN depth_per_pair.biddepth_avg\n          ELSE\
+  \ depth_per_pair.askdepth_avg\n        END\n      ) / NULLIF(orders.dealcount, 0)\
+  \ * lr_per_pair.lr_avg AS \"orders.mdr_value\"\n    FROM orders AS orders\n    LEFT\
+  \ JOIN (\n      (\n        SELECT\n          \"marketdata.mktcombo\" AS mktcombo,\n\
+  \          \"marketdata.biddepth_avg\" AS biddepth_avg,\n          \"marketdata.askdepth_avg\"\
+  \ AS askdepth_avg\n        FROM (\n          SELECT\n            marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo' AS \"marketdata.mktcombo\",\n            AVG(marketdata.quote_depth_snapshot\
+  \ ->> '$.depth.biddepth') AS \"marketdata.biddepth_avg\",\n            AVG(marketdata.quote_depth_snapshot\
+  \ ->> '$.depth.askdepth') AS \"marketdata.askdepth_avg\"\n          FROM marketdata\
+  \ AS marketdata\n          GROUP BY\n            marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo'\n        ) AS _inner\n      )\n    ) AS depth_per_pair\n\
+  \      ON orders.mktnote = depth_per_pair.mktcombo\n    LEFT JOIN (\n      (\n \
+  \       SELECT\n          \"marketstats.marketdata.mktcombo\" AS marketdata__mktcombo,\n\
+  \          \"marketstats.lr_avg\" AS lr_avg\n        FROM (\n          SELECT\n\
+  \            marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo' AS \"marketstats.marketdata.mktcombo\"\
+  ,\n            AVG(\n              (\n                CAST(marketdata.quote_depth_snapshot\
+  \ ->> '$.depth.bidunits' AS REAL) + CAST(marketdata.quote_depth_snapshot ->> '$.depth.askunits'\
+  \ AS REAL)\n              ) * CAST(marketdata.quote_depth_snapshot ->> '$.quotes.midquote'\
+  \ AS REAL) / NULLIF(marketstats.volday, 0)\n            ) AS \"marketstats.lr_avg\"\
+  \n          FROM marketstats AS marketstats\n          LEFT JOIN marketdata AS marketdata\n\
+  \            ON marketstats.mdlink = marketdata.marketdatanode\n          GROUP\
+  \ BY\n            marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\n  \
+  \      ) AS _inner\n      )\n    ) AS lr_per_pair\n      ON orders.mktnote = lr_per_pair.marketdata__mktcombo\n\
+  \    LEFT JOIN riskandmargin AS riskandmargin\n      ON orders.recordvault = riskandmargin.ordervault\n\
+  \  ) AS _inner\n) AS market_depth_ratio) AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_liquidity_constrained
+  sql: is_liquidity_constrained
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Liquidity Constrained Position (KB #43): a position where the Market\
+  \ Depth Ratio is less than 2.0, indicating that the position size is large relative\
+  \ to available market depth, potentially leading to significant slippage upon exit.\
+  \ Joins to market_depth_ratio on recordvault to read mdr_value.\n\n[kb=43]\nA position\
+  \ where the Market Depth Ratio is less than 2.0, indicating that the position size\
+  \ is large relative to available market depth, potentially leading to significant\
+  \ slippage upon exit. \u2014 Identifies positions that may be difficult to exit\
+  \ due to insufficient market liquidity.\n[/kb=43]"
+hidden: false
+meta:
+  kb_id: 43

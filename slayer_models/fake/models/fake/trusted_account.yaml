@@ -1,0 +1,110 @@
+version: 6
+name: trusted_account
+source_queries:
+- version: 3
+  name: pci_per_account
+  source_model: moderationaction
+  measures:
+  - formula: pci:avg
+    name: pci_v
+  dimensions:
+  - name: account_id
+  whole_periods_only: false
+- version: 3
+  name: recent_detections_per_account
+  source_model:
+    source_name: securitydetection
+    filters:
+    - detecttime > date('now', '-180 days')
+  measures:
+  - formula: '*:count'
+    name: n_recent
+  dimensions:
+  - name: account_id
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: pci_per_account
+    joins:
+    - target_model: recent_detections_per_account
+      join_pairs:
+      - - account_id
+        - account_id
+  measures:
+  - formula: recent_detections_per_account.n_recent:max
+    name: recent_count
+  dimensions:
+  - name: account_id
+  - name: pci_v
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"pci_per_account.account_id\" AS account_id, \"pci_per_account.pci_v\"\
+  \ AS pci_v, \"pci_per_account.recent_detections_per_account.n_recent_max\" AS recent_detections_per_account__n_recent_max\
+  \ FROM (WITH _base AS (\nSELECT\n  pci_per_account.account_id AS \"pci_per_account.account_id\"\
+  ,\n  pci_per_account.pci_v AS \"pci_per_account.pci_v\"\nFROM (\n  SELECT\n    \"\
+  moderationaction.account_id\" AS account_id,\n    \"moderationaction.pci_v\" AS\
+  \ pci_v\n  FROM (\n    SELECT\n      contentbehavior__sessionbehavior__profile.profaccref\
+  \ AS \"moderationaction.account_id\",\n      AVG(\n        0.3 * moderationaction.credscore\
+  \ + 0.3 * moderationaction.reputscore + 0.4 * JSON_EXTRACT(contentbehavior__sessionbehavior__profile.profile_composition,\
+  \ '$.completeness')\n      ) AS \"moderationaction.pci_v\"\n    FROM moderationaction\
+  \ AS moderationaction\n    LEFT JOIN contentbehavior AS contentbehavior\n      ON\
+  \ moderationaction.macntref = contentbehavior.cntref\n    LEFT JOIN sessionbehavior\
+  \ AS contentbehavior__sessionbehavior\n      ON contentbehavior.cntsessref = contentbehavior__sessionbehavior.sessref\n\
+  \    LEFT JOIN profile AS contentbehavior__sessionbehavior__profile\n      ON contentbehavior__sessionbehavior.sessprofref\
+  \ = contentbehavior__sessionbehavior__profile.profkey\n    GROUP BY\n      contentbehavior__sessionbehavior__profile.profaccref\n\
+  \  ) AS _inner\n) AS pci_per_account\nGROUP BY\n  pci_per_account.account_id,\n\
+  \  pci_per_account.pci_v\n), _cm_pci_per_account__recent_detections_per_account__n_recent_max\
+  \ AS (\nSELECT\n  MAX(recent_detections_per_account.n_recent) AS \"pci_per_account.recent_detections_per_account.n_recent_max\"\
+  \nFROM (\n  SELECT\n    \"securitydetection.account_id\" AS account_id,\n    \"\
+  securitydetection.n_recent\" AS n_recent\n  FROM (\n    SELECT\n      technicalinfo__networkmetrics__sessionbehavior__profile.profaccref\
+  \ AS \"securitydetection.account_id\",\n      COUNT(*) AS \"securitydetection.n_recent\"\
+  \n    FROM securitydetection AS securitydetection\n    LEFT JOIN technicalinfo AS\
+  \ technicalinfo\n      ON securitydetection.sectechref = technicalinfo.techkey\n\
+  \    LEFT JOIN networkmetrics AS technicalinfo__networkmetrics\n      ON technicalinfo.technetref\
+  \ = technicalinfo__networkmetrics.netkey\n    LEFT JOIN sessionbehavior AS technicalinfo__networkmetrics__sessionbehavior\n\
+  \      ON technicalinfo__networkmetrics.netsessref = technicalinfo__networkmetrics__sessionbehavior.sessref\n\
+  \    LEFT JOIN profile AS technicalinfo__networkmetrics__sessionbehavior__profile\n\
+  \      ON technicalinfo__networkmetrics__sessionbehavior.sessprofref = technicalinfo__networkmetrics__sessionbehavior__profile.profkey\n\
+  \    GROUP BY\n      technicalinfo__networkmetrics__sessionbehavior__profile.profaccref\n\
+  \  ) AS _inner\n) AS recent_detections_per_account\n)\nSELECT _base.\"pci_per_account.account_id\"\
+  , _base.\"pci_per_account.pci_v\", _cm_pci_per_account__recent_detections_per_account__n_recent_max.\"\
+  pci_per_account.recent_detections_per_account.n_recent_max\"\nFROM _base\nCROSS\
+  \ JOIN _cm_pci_per_account__recent_detections_per_account__n_recent_max) AS _inner"
+data_source: fake
+columns:
+- name: account_id
+  sql: account_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row account identifier resolved through the moderationaction \u2192\
+    \ contentbehavior \u2192 sessionbehavior \u2192 profile join chain. Convenience\
+    \ handle for grouping/multistage; equals the underlying account.accindex."
+  hidden: false
+- name: pci_v
+  sql: pci_v
+  type: DOUBLE
+  primary_key: false
+  description: 'Profile Credibility Index (KB #5): 0.3*credscore + 0.3*reputscore
+    + 0.4*completeness.'
+  hidden: false
+  format:
+    type: float
+- name: recent_detections_per_account__n_recent_max
+  sql: recent_detections_per_account__n_recent_max
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Trusted Account (KB #12): account with PCI > 0.8 AND no security detections\
+  \ in past 180 days. Filter pci_v > 0.8 AND (recent_count IS NULL OR recent_count\
+  \ = 0) for the Trusted Account predicate.\n\n[kb=12]\nAn account with PCI > 0.8\
+  \ and no security detections in the past 180 days \u2014 Identifies highly trustworthy\
+  \ accounts.\n[/kb=12]"
+hidden: false
+meta:
+  kb_id: 12

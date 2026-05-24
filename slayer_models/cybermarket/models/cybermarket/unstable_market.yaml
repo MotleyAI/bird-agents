@@ -1,0 +1,166 @@
+version: 6
+name: unstable_market
+source_queries:
+- version: 3
+  name: critical_alerts_per_market
+  source_model: securitymonitoring
+  measures:
+  - formula: '*:count'
+    name: critical_alert_count
+  dimensions:
+  - name: mktref
+    model: communication.transactions
+  filters:
+  - alertsev = 'Critical'
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: markets
+    joins:
+    - target_model: market_vulnerability_index
+      join_pairs:
+      - - mktregistry
+        - mktregistry
+    - target_model: market_stability_index
+      join_pairs:
+      - - mktregistry
+        - mktref
+    - target_model: critical_alerts_per_market
+      join_pairs:
+      - - mktregistry
+        - communication__transactions__mktref
+    columns:
+    - name: is_unstable_market
+      sql: CASE WHEN COALESCE(market_vulnerability_index.mvi, 0) > 75 AND COALESCE(market_stability_index.msi,
+        0) < 40 AND COALESCE(critical_alerts_per_market.critical_alert_count, 0) >=
+        1 THEN 1 ELSE 0 END
+      type: DOUBLE
+  dimensions:
+  - name: mktregistry
+  - name: is_unstable_market
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"markets.mktregistry\" AS mktregistry, \"markets.is_unstable_market\"\
+  \ AS is_unstable_market FROM (SELECT\n  markets.mktregistry AS \"markets.mktregistry\"\
+  ,\n  CASE\n    WHEN COALESCE(market_vulnerability_index.mvi, 0) > 75\n    AND COALESCE(market_stability_index.msi,\
+  \ 0) < 40\n    AND COALESCE(critical_alerts_per_market.critical_alert_count, 0)\
+  \ >= 1\n    THEN 1\n    ELSE 0\n  END AS \"markets.is_unstable_market\"\nFROM markets\
+  \ AS markets\nLEFT JOIN (\n  (\n    SELECT\n      \"markets.mktregistry\" AS mktregistry,\n\
+  \      \"markets.mvi\" AS mvi\n    FROM (\n      SELECT\n        markets.mktregistry\
+  \ AS \"markets.mktregistry\",\n        (\n          100 - COALESCE(market_stability_index.msi,\
+  \ 0)\n        ) + (\n          COALESCE(alert_severity_per_market.alertsev_total,\
+  \ 0) * 0.2\n        ) - (\n          markets.vendcount * 0.05\n        ) + (\n \
+  \         COALESCE(high_lawinterest_per_market.high_law_count, 0) * 1.0 / 5\n  \
+  \      ) AS \"markets.mvi\"\n      FROM markets AS markets\n      LEFT JOIN (\n\
+  \        (\n          SELECT\n            \"securitymonitoring.communication.transactions.mktref\"\
+  \ AS communication__transactions__mktref,\n            \"securitymonitoring.alertsev_total\"\
+  \ AS alertsev_total,\n            \"securitymonitoring.alert_count\" AS alert_count\n\
+  \          FROM (\n            SELECT\n              communication__transactions.mktref\
+  \ AS \"securitymonitoring.communication.transactions.mktref\",\n              SUM(\n\
+  \                CASE securitymonitoring.alertsev\n                  WHEN 'Low'\n\
+  \                  THEN 1\n                  WHEN 'Medium'\n                  THEN\
+  \ 2\n                  WHEN 'High'\n                  THEN 3\n                 \
+  \ WHEN 'Critical'\n                  THEN 4\n                  ELSE 0\n        \
+  \        END\n              ) AS \"securitymonitoring.alertsev_total\",\n      \
+  \        COUNT(*) AS \"securitymonitoring.alert_count\"\n            FROM securitymonitoring\
+  \ AS securitymonitoring\n            LEFT JOIN communication AS communication\n\
+  \              ON securitymonitoring.commref = communication.commregistry\n    \
+  \        LEFT JOIN transactions AS communication__transactions\n              ON\
+  \ communication.txref = communication__transactions.txregistry\n            WHERE\n\
+  \              NOT securitymonitoring.alertsev IS NULL\n            GROUP BY\n \
+  \             communication__transactions.mktref\n          ) AS _inner\n      \
+  \  )\n      ) AS alert_severity_per_market\n        ON markets.mktregistry = alert_severity_per_market.communication__transactions__mktref\n\
+  \      LEFT JOIN (\n        (\n          SELECT\n            \"vendor_disputes_per_market.mktref\"\
+  \ AS mktref,\n            \"vendor_disputes_per_market.msi\" AS msi\n          FROM\
+  \ (\n            SELECT\n              vendor_disputes_per_market.mktref AS \"vendor_disputes_per_market.mktref\"\
+  ,\n              (\n                markets__mktspan * 1.0 / 365\n             \
+  \ ) * (\n                markets__esccomprate * 1.0 / 100\n              ) * (\n\
+  \                1 - venddisputecount_sum * 1.0 / NULLIF(vendtxcount_sum, 0)\n \
+  \             ) * 100 AS \"vendor_disputes_per_market.msi\"\n            FROM (\n\
+  \              SELECT\n                \"vendors.mktref\" AS mktref,\n         \
+  \       \"vendors.markets.mktspan\" AS markets__mktspan,\n                \"vendors.markets.esccomprate\"\
+  \ AS markets__esccomprate,\n                \"vendors.venddisputecount_sum\" AS\
+  \ venddisputecount_sum,\n                \"vendors.vendtxcount_sum\" AS vendtxcount_sum\n\
+  \              FROM (\n                SELECT\n                  vendors.mktref\
+  \ AS \"vendors.mktref\",\n                  markets.mktspan AS \"vendors.markets.mktspan\"\
+  ,\n                  markets.esccomprate AS \"vendors.markets.esccomprate\",\n \
+  \                 SUM(vendors.venddisputecount) AS \"vendors.venddisputecount_sum\"\
+  ,\n                  SUM(vendors.vendtxcount) AS \"vendors.vendtxcount_sum\"\n \
+  \               FROM vendors AS vendors\n                LEFT JOIN markets AS markets\n\
+  \                  ON vendors.mktref = markets.mktregistry\n                GROUP\
+  \ BY\n                  vendors.mktref,\n                  markets.mktspan,\n  \
+  \                markets.esccomprate\n              ) AS _inner\n            ) AS\
+  \ vendor_disputes_per_market\n          ) AS _inner\n        )\n      ) AS market_stability_index\n\
+  \        ON markets.mktregistry = market_stability_index.mktref\n      LEFT JOIN\
+  \ (\n        (\n          SELECT\n            \"investigation.riskanalysis.transactions.mktref\"\
+  \ AS riskanalysis__transactions__mktref,\n            \"investigation.high_law_count\"\
+  \ AS high_law_count\n          FROM (\n            SELECT\n              riskanalysis__transactions.mktref\
+  \ AS \"investigation.riskanalysis.transactions.mktref\",\n              COUNT(*)\
+  \ AS \"investigation.high_law_count\"\n            FROM investigation AS investigation\n\
+  \            LEFT JOIN riskanalysis AS riskanalysis\n              ON investigation.riskref\
+  \ = riskanalysis.riskregistry\n            LEFT JOIN transactions AS riskanalysis__transactions\n\
+  \              ON riskanalysis.txref = riskanalysis__transactions.txregistry\n \
+  \           WHERE\n              investigation.lawinterest = 'High'\n          \
+  \  GROUP BY\n              riskanalysis__transactions.mktref\n          ) AS _inner\n\
+  \        )\n      ) AS high_lawinterest_per_market\n        ON markets.mktregistry\
+  \ = high_lawinterest_per_market.riskanalysis__transactions__mktref\n    ) AS _inner\n\
+  \  )\n) AS market_vulnerability_index\n  ON markets.mktregistry = market_vulnerability_index.mktregistry\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"securitymonitoring.communication.transactions.mktref\"\
+  \ AS communication__transactions__mktref,\n      \"securitymonitoring.critical_alert_count\"\
+  \ AS critical_alert_count\n    FROM (\n      SELECT\n        communication__transactions.mktref\
+  \ AS \"securitymonitoring.communication.transactions.mktref\",\n        COUNT(*)\
+  \ AS \"securitymonitoring.critical_alert_count\"\n      FROM securitymonitoring\
+  \ AS securitymonitoring\n      LEFT JOIN communication AS communication\n      \
+  \  ON securitymonitoring.commref = communication.commregistry\n      LEFT JOIN transactions\
+  \ AS communication__transactions\n        ON communication.txref = communication__transactions.txregistry\n\
+  \      WHERE\n        securitymonitoring.alertsev = 'Critical'\n      GROUP BY\n\
+  \        communication__transactions.mktref\n    ) AS _inner\n  )\n) AS critical_alerts_per_market\n\
+  \  ON markets.mktregistry = critical_alerts_per_market.communication__transactions__mktref\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"vendor_disputes_per_market.mktref\" AS mktref,\n\
+  \      \"vendor_disputes_per_market.msi\" AS msi\n    FROM (\n      SELECT\n   \
+  \     vendor_disputes_per_market.mktref AS \"vendor_disputes_per_market.mktref\"\
+  ,\n        (\n          markets__mktspan * 1.0 / 365\n        ) * (\n          markets__esccomprate\
+  \ * 1.0 / 100\n        ) * (\n          1 - venddisputecount_sum * 1.0 / NULLIF(vendtxcount_sum,\
+  \ 0)\n        ) * 100 AS \"vendor_disputes_per_market.msi\"\n      FROM (\n    \
+  \    SELECT\n          \"vendors.mktref\" AS mktref,\n          \"vendors.markets.mktspan\"\
+  \ AS markets__mktspan,\n          \"vendors.markets.esccomprate\" AS markets__esccomprate,\n\
+  \          \"vendors.venddisputecount_sum\" AS venddisputecount_sum,\n         \
+  \ \"vendors.vendtxcount_sum\" AS vendtxcount_sum\n        FROM (\n          SELECT\n\
+  \            vendors.mktref AS \"vendors.mktref\",\n            markets.mktspan\
+  \ AS \"vendors.markets.mktspan\",\n            markets.esccomprate AS \"vendors.markets.esccomprate\"\
+  ,\n            SUM(vendors.venddisputecount) AS \"vendors.venddisputecount_sum\"\
+  ,\n            SUM(vendors.vendtxcount) AS \"vendors.vendtxcount_sum\"\n       \
+  \   FROM vendors AS vendors\n          LEFT JOIN markets AS markets\n          \
+  \  ON vendors.mktref = markets.mktregistry\n          GROUP BY\n            vendors.mktref,\n\
+  \            markets.mktspan,\n            markets.esccomprate\n        ) AS _inner\n\
+  \      ) AS vendor_disputes_per_market\n    ) AS _inner\n  )\n) AS market_stability_index\n\
+  \  ON markets.mktregistry = market_stability_index.mktref) AS _inner"
+data_source: cybermarket
+columns:
+- name: mktregistry
+  sql: mktregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_unstable_market
+  sql: is_unstable_market
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Unstable Market (KB #40): MVI > 75, MSI < 40, and at least one 'Critical'\
+  \ security alert (alertsev = 'Critical') tied to the market via securitymonitoring\
+  \ -> communication -> transactions.mktref. Multistage: stage 1 counts 'Critical'\
+  \ alerts per market; stage 2 anchors at markets, joins market_vulnerability_index\
+  \ (KB #30) and market_stability_index (KB #15), and applies the three-condition\
+  \ boolean.\n\n[kb=40]\nA market with MVI > 75, MSI < 40, and at least one 'Critical'\
+  \ security alert (alertsev = 'Critical'). These markets typically show signs of\
+  \ administrative instability, declining transaction volumes, and may suggest potential\
+  \ exit scam preparation or law enforcement attention. \u2014 Identifies markets\
+  \ at high risk of imminent shutdown or disruption\n[/kb=40]"
+hidden: false
+meta:
+  kb_id: 40

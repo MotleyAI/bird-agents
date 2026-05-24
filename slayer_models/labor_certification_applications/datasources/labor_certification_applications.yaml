@@ -1,0 +1,4 @@
+version: 1
+name: labor_certification_applications
+type: sqlite
+connection_string: sqlite:////home/james/Dropbox/SLayer/mini-interact/labor_certification_applications/labor_certification_applications.sqlite

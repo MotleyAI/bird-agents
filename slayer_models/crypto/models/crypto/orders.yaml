@@ -1,0 +1,146 @@
+version: 6
+name: orders
+sql_table: orders
+query_variables: {}
+data_source: crypto
+columns:
+- name: orderspivot
+  sql: orderspivot
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: timecode
+  sql: timecode
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: exchspot
+  sql: exchspot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: mktnote
+  sql: mktnote
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: orderstamp
+  sql: orderstamp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: userlink
+  sql: userlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ordertune
+  sql: ordertune
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: dealedge
+  sql: dealedge
+  type: TEXT
+  primary_key: false
+  description: "Order side enum (KB #20): 'Buy' = purchase the base asset using the\
+    \ quote (e.g. buy BTC with USDT). 'Sell' = sell the base asset for the quote.\n\
+    \n[kb=20]\nAn enum with values 'Buy' or 'Sell'. 'Buy' indicates the order is to\
+    \ purchase the base asset using the quote asset (e.g., buying BTC with USDT).\
+    \ 'Sell' indicates the order is to sell the base asset for the quote asset (e.g.,\
+    \ selling BTC for USDT). \u2014 Illustrates the meaning of different values for\
+    \ the dealedge enum.\n[/kb=20]"
+  label: dealedge
+  hidden: false
+  meta:
+    kb_id: 20
+- name: dealquote
+  sql: dealquote
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: dealcount
+  sql: dealcount
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: notionsum
+  sql: notionsum
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: orderflow
+  sql: orderflow
+  type: TEXT
+  primary_key: false
+  description: "Order status enum (KB #21): 'New' = newly placed, unmatched. 'PartiallyFilled'\
+    \ = some portion executed. 'Cancelled' = cancelled before full execution. 'Filled'\
+    \ = completely executed.\n\n[kb=21]\nAn enum with values 'New', 'PartiallyFilled',\
+    \ 'Cancelled', or 'Filled'. 'New' indicates a newly placed order that hasn't been\
+    \ matched. 'PartiallyFilled' means some portion has been executed but not all.\
+    \ 'Cancelled' means the order was cancelled before full execution. 'Filled' means\
+    \ the order has been completely executed. \u2014 Illustrates the meaning of different\
+    \ values for the orderflow enum.\n[/kb=21]"
+  label: orderflow
+  hidden: false
+  meta:
+    kb_id: 21
+- name: timespan
+  sql: timespan
+  type: TEXT
+  primary_key: false
+  description: "Time-in-force enum (KB #22): 'IOC' = immediate-or-cancel. 'GTC' =\
+    \ good-till-cancelled. 'GTD' = good-till-date. 'FOK' = fill-or-kill.\n\n[kb=22]\n\
+    An enum with values 'IOC', 'GTC', 'GTD', or 'FOK'. 'IOC' (Immediate-or-Cancel)\
+    \ means execute immediately available portion or cancel. 'GTC' (Good-Till-Cancelled)\
+    \ means the order remains active until explicitly cancelled. 'GTD' (Good-Till-Date)\
+    \ means the order remains active until a specified date. 'FOK' (Fill-or-Kill)\
+    \ means execute completely immediately or cancel entirely. \u2014 Illustrates\
+    \ the meaning of different values for the timespan enum.\n[/kb=22]"
+  label: timespan
+  hidden: false
+  meta:
+    kb_id: 22
+- name: orderbase
+  sql: orderbase
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: clientmark
+  sql: clientmark
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: createspot
+  sql: createspot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: updatespot
+  sql: updatespot
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: users
+  join_pairs:
+  - - userlink
+    - userstamp
+  join_type: left
+filters: []
+hidden: false

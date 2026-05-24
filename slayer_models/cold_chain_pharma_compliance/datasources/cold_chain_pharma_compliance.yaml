@@ -1,0 +1,4 @@
+version: 1
+name: cold_chain_pharma_compliance
+type: sqlite
+connection_string: sqlite:////home/james/Dropbox/SLayer/mini-interact/cold_chain_pharma_compliance/cold_chain_pharma_compliance.sqlite

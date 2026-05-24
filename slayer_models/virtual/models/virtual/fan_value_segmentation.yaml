@@ -1,0 +1,210 @@
+version: 6
+name: fan_value_segmentation
+source_queries:
+- version: 3
+  source_model:
+    source_name: engagement
+    columns:
+    - name: flv_percentile
+      type: DOUBLE
+      sql: NTILE(100) OVER (ORDER BY ((membershipandspending.spendusd * (1 + membershipandspending.membdays
+        / 365.0 * 0.5) * (1 + interactions.gifttot / 10.0 * 0.2)) * (1 - ((1 - preferencesandsettings.intconsist)
+        * 2 + (julianday('2025-03-01') - julianday(preferencesandsettings.lastlogdt))
+        / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag WHEN 'None' THEN 0 WHEN
+        'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END / 3.0)
+        * 2) / 10.0) * (1 + ((engrate * 0.4) + (socintscore / 100.0 * 0.3) + (actdayswk
+        / 7.0 * 0.2) + (avgsesscount / 10.0 * 0.1))) * 24) DESC)
+    - name: fan_value_segment
+      type: TEXT
+      sql: CASE WHEN NTILE(100) OVER (ORDER BY ((membershipandspending.spendusd *
+        (1 + membershipandspending.membdays / 365.0 * 0.5) * (1 + interactions.gifttot
+        / 10.0 * 0.2)) * (1 - ((1 - preferencesandsettings.intconsist) * 2 + (julianday('2025-03-01')
+        - julianday(preferencesandsettings.lastlogdt)) / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag
+        WHEN 'None' THEN 0 WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN
+        3 ELSE NULL END / 3.0) * 2) / 10.0) * (1 + ((engrate * 0.4) + (socintscore
+        / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2) + (avgsesscount / 10.0 * 0.1))) *
+        24) DESC) <= 10 THEN 'Top Tier' WHEN NTILE(100) OVER (ORDER BY ((membershipandspending.spendusd
+        * (1 + membershipandspending.membdays / 365.0 * 0.5) * (1 + interactions.gifttot
+        / 10.0 * 0.2)) * (1 - ((1 - preferencesandsettings.intconsist) * 2 + (julianday('2025-03-01')
+        - julianday(preferencesandsettings.lastlogdt)) / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag
+        WHEN 'None' THEN 0 WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN
+        3 ELSE NULL END / 3.0) * 2) / 10.0) * (1 + ((engrate * 0.4) + (socintscore
+        / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2) + (avgsesscount / 10.0 * 0.1))) *
+        24) DESC) <= 25 THEN 'High Value' WHEN NTILE(100) OVER (ORDER BY ((membershipandspending.spendusd
+        * (1 + membershipandspending.membdays / 365.0 * 0.5) * (1 + interactions.gifttot
+        / 10.0 * 0.2)) * (1 - ((1 - preferencesandsettings.intconsist) * 2 + (julianday('2025-03-01')
+        - julianday(preferencesandsettings.lastlogdt)) / 30.0 * 0.5 + (CASE retentionandinfluence.churnflag
+        WHEN 'None' THEN 0 WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN
+        3 ELSE NULL END / 3.0) * 2) / 10.0) * (1 + ((engrate * 0.4) + (socintscore
+        / 100.0 * 0.3) + (actdayswk / 7.0 * 0.2) + (avgsesscount / 10.0 * 0.1))) *
+        24) DESC) <= 50 THEN 'Medium Value' ELSE 'Low Value' END
+  dimensions:
+  - name: engagereg
+  - name: engagememberpivot
+  - name: fei
+  - name: mv
+  - name: rrf
+  - name: flv
+  - name: flv_percentile
+  - name: fan_value_segment
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"engagement.engagereg\" AS engagereg, \"engagement.engagememberpivot\"\
+  \ AS engagememberpivot, \"engagement.fei\" AS fei, \"engagement.mv\" AS mv, \"engagement.rrf\"\
+  \ AS rrf, \"engagement.flv\" AS flv, \"engagement.flv_percentile\" AS flv_percentile,\
+  \ \"engagement.fan_value_segment\" AS fan_value_segment FROM (SELECT\n  engagement.engagereg\
+  \ AS \"engagement.engagereg\",\n  engagement.engagememberpivot AS \"engagement.engagememberpivot\"\
+  ,\n  (\n    engrate * 0.4\n  ) + (\n    socintscore / 100.0 * 0.3\n  ) + (\n   \
+  \ actdayswk / 7.0 * 0.2\n  ) + (\n    avgsesscount / 10.0 * 0.1\n  ) AS \"engagement.fei\"\
+  ,\n  membershipandspending.spendusd * (\n    1 + membershipandspending.membdays\
+  \ / 365.0 * 0.5\n  ) * (\n    1 + interactions.gifttot / 10.0 * 0.2\n  ) AS \"engagement.mv\"\
+  ,\n  (\n    1 - preferencesandsettings.intconsist\n  ) * 2 + (\n    JULIANDAY('2025-03-01')\
+  \ - JULIANDAY(preferencesandsettings.lastlogdt)\n  ) / 30.0 * 0.5 + (\n    CASE\
+  \ retentionandinfluence.churnflag\n      WHEN 'None'\n      THEN 0\n      WHEN 'Low'\n\
+  \      THEN 1\n      WHEN 'Medium'\n      THEN 2\n      WHEN 'High'\n      THEN\
+  \ 3\n      ELSE NULL\n    END / 3.0\n  ) * 2 AS \"engagement.rrf\",\n  (\n    membershipandspending.spendusd\
+  \ * (\n      1 + membershipandspending.membdays / 365.0 * 0.5\n    ) * (\n     \
+  \ 1 + interactions.gifttot / 10.0 * 0.2\n    )\n  ) * (\n    1 - (\n      (\n  \
+  \      1 - preferencesandsettings.intconsist\n      ) * 2 + (\n        JULIANDAY('2025-03-01')\
+  \ - JULIANDAY(preferencesandsettings.lastlogdt)\n      ) / 30.0 * 0.5 + (\n    \
+  \    CASE retentionandinfluence.churnflag\n          WHEN 'None'\n          THEN\
+  \ 0\n          WHEN 'Low'\n          THEN 1\n          WHEN 'Medium'\n         \
+  \ THEN 2\n          WHEN 'High'\n          THEN 3\n          ELSE NULL\n       \
+  \ END / 3.0\n      ) * 2\n    ) / 10.0\n  ) * (\n    1 + (\n      (\n        engrate\
+  \ * 0.4\n      ) + (\n        socintscore / 100.0 * 0.3\n      ) + (\n        actdayswk\
+  \ / 7.0 * 0.2\n      ) + (\n        avgsesscount / 10.0 * 0.1\n      )\n    )\n\
+  \  ) * 24 AS \"engagement.flv\",\n  NTILE(100) OVER (\n    ORDER BY (\n      (\n\
+  \        membershipandspending.spendusd * (\n          1 + membershipandspending.membdays\
+  \ / 365.0 * 0.5\n        ) * (\n          1 + interactions.gifttot / 10.0 * 0.2\n\
+  \        )\n      ) * (\n        1 - (\n          (\n            1 - preferencesandsettings.intconsist\n\
+  \          ) * 2 + (\n            JULIANDAY('2025-03-01') - JULIANDAY(preferencesandsettings.lastlogdt)\n\
+  \          ) / 30.0 * 0.5 + (\n            CASE retentionandinfluence.churnflag\n\
+  \              WHEN 'None'\n              THEN 0\n              WHEN 'Low'\n   \
+  \           THEN 1\n              WHEN 'Medium'\n              THEN 2\n        \
+  \      WHEN 'High'\n              THEN 3\n              ELSE NULL\n            END\
+  \ / 3.0\n          ) * 2\n        ) / 10.0\n      ) * (\n        1 + (\n       \
+  \   (\n            engrate * 0.4\n          ) + (\n            socintscore / 100.0\
+  \ * 0.3\n          ) + (\n            actdayswk / 7.0 * 0.2\n          ) + (\n \
+  \           avgsesscount / 10.0 * 0.1\n          )\n        )\n      ) * 24\n  \
+  \  ) DESC\n  ) AS \"engagement.flv_percentile\",\n  CASE\n    WHEN NTILE(100) OVER\
+  \ (\n      ORDER BY (\n        (\n          membershipandspending.spendusd * (\n\
+  \            1 + membershipandspending.membdays / 365.0 * 0.5\n          ) * (\n\
+  \            1 + interactions.gifttot / 10.0 * 0.2\n          )\n        ) * (\n\
+  \          1 - (\n            (\n              1 - preferencesandsettings.intconsist\n\
+  \            ) * 2 + (\n              JULIANDAY('2025-03-01') - JULIANDAY(preferencesandsettings.lastlogdt)\n\
+  \            ) / 30.0 * 0.5 + (\n              CASE retentionandinfluence.churnflag\n\
+  \                WHEN 'None'\n                THEN 0\n                WHEN 'Low'\n\
+  \                THEN 1\n                WHEN 'Medium'\n                THEN 2\n\
+  \                WHEN 'High'\n                THEN 3\n                ELSE NULL\n\
+  \              END / 3.0\n            ) * 2\n          ) / 10.0\n        ) * (\n\
+  \          1 + (\n            (\n              engrate * 0.4\n            ) + (\n\
+  \              socintscore / 100.0 * 0.3\n            ) + (\n              actdayswk\
+  \ / 7.0 * 0.2\n            ) + (\n              avgsesscount / 10.0 * 0.1\n    \
+  \        )\n          )\n        ) * 24\n      ) DESC\n    ) <= 10\n    THEN 'Top\
+  \ Tier'\n    WHEN NTILE(100) OVER (\n      ORDER BY (\n        (\n          membershipandspending.spendusd\
+  \ * (\n            1 + membershipandspending.membdays / 365.0 * 0.5\n          )\
+  \ * (\n            1 + interactions.gifttot / 10.0 * 0.2\n          )\n        )\
+  \ * (\n          1 - (\n            (\n              1 - preferencesandsettings.intconsist\n\
+  \            ) * 2 + (\n              JULIANDAY('2025-03-01') - JULIANDAY(preferencesandsettings.lastlogdt)\n\
+  \            ) / 30.0 * 0.5 + (\n              CASE retentionandinfluence.churnflag\n\
+  \                WHEN 'None'\n                THEN 0\n                WHEN 'Low'\n\
+  \                THEN 1\n                WHEN 'Medium'\n                THEN 2\n\
+  \                WHEN 'High'\n                THEN 3\n                ELSE NULL\n\
+  \              END / 3.0\n            ) * 2\n          ) / 10.0\n        ) * (\n\
+  \          1 + (\n            (\n              engrate * 0.4\n            ) + (\n\
+  \              socintscore / 100.0 * 0.3\n            ) + (\n              actdayswk\
+  \ / 7.0 * 0.2\n            ) + (\n              avgsesscount / 10.0 * 0.1\n    \
+  \        )\n          )\n        ) * 24\n      ) DESC\n    ) <= 25\n    THEN 'High\
+  \ Value'\n    WHEN NTILE(100) OVER (\n      ORDER BY (\n        (\n          membershipandspending.spendusd\
+  \ * (\n            1 + membershipandspending.membdays / 365.0 * 0.5\n          )\
+  \ * (\n            1 + interactions.gifttot / 10.0 * 0.2\n          )\n        )\
+  \ * (\n          1 - (\n            (\n              1 - preferencesandsettings.intconsist\n\
+  \            ) * 2 + (\n              JULIANDAY('2025-03-01') - JULIANDAY(preferencesandsettings.lastlogdt)\n\
+  \            ) / 30.0 * 0.5 + (\n              CASE retentionandinfluence.churnflag\n\
+  \                WHEN 'None'\n                THEN 0\n                WHEN 'Low'\n\
+  \                THEN 1\n                WHEN 'Medium'\n                THEN 2\n\
+  \                WHEN 'High'\n                THEN 3\n                ELSE NULL\n\
+  \              END / 3.0\n            ) * 2\n          ) / 10.0\n        ) * (\n\
+  \          1 + (\n            (\n              engrate * 0.4\n            ) + (\n\
+  \              socintscore / 100.0 * 0.3\n            ) + (\n              actdayswk\
+  \ / 7.0 * 0.2\n            ) + (\n              avgsesscount / 10.0 * 0.1\n    \
+  \        )\n          )\n        ) * 24\n      ) DESC\n    ) <= 50\n    THEN 'Medium\
+  \ Value'\n    ELSE 'Low Value'\n  END AS \"engagement.fan_value_segment\"\nFROM\
+  \ engagement AS engagement\nLEFT JOIN membershipandspending AS membershipandspending\n\
+  \  ON engagement.engagememberpivot = membershipandspending.memberreg\nLEFT JOIN\
+  \ preferencesandsettings AS preferencesandsettings\n  ON engagement.engagememberpivot\
+  \ = preferencesandsettings.preferencesmemberpivot\nLEFT JOIN interactions AS interactions\n\
+  \  ON engagement.engageactivitypivot = interactions.activityreg\nLEFT JOIN retentionandinfluence\
+  \ AS retentionandinfluence\n  ON engagement.engagereg = retentionandinfluence.retainengagepivot)\
+  \ AS _inner"
+data_source: virtual
+columns:
+- name: engagereg
+  sql: engagereg
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: engagememberpivot
+  sql: engagememberpivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fei
+  sql: fei
+  type: DOUBLE
+  primary_key: false
+  description: 'Fan Engagement Index (FEI, KB #10) = (engrate*0.4) + (socintscore/100*0.3)
+    + (actdayswk/7*0.2) + (avgsesscount/10*0.1). Range 0-1; higher = more engaged.'
+  hidden: false
+- name: mv
+  sql: mv
+  type: DOUBLE
+  primary_key: false
+  description: 'Monetization Value (MV, KB #11) = spendusd * (1 + membdays/365 * 0.5)
+    * (1 + gifttot/10 * 0.2). Adjusts spending for membership tenure and gift activity.'
+  hidden: false
+- name: rrf
+  sql: rrf
+  type: DOUBLE
+  primary_key: false
+  description: 'Retention Risk Factor (RRF, KB #13) = (1 - intconsist) * 2 + (days_since_last_login
+    / 30) * 0.5 + (churnflag_numeric / 3) * 2. The ''now'' anchor for days_since_last_login
+    is hardcoded to 2025-03-01 (the day after the latest lastlogdt in the dataset).
+    churnflag_numeric (KB #52) maps None=0, Low=1, Medium=2, High=3.'
+  hidden: false
+- name: flv
+  sql: flv
+  type: DOUBLE
+  primary_key: false
+  description: 'Fan Lifetime Value (FLV, KB #16) = MV * (1 - RRF/10) * (1 + FEI) *
+    24. 24-month projection adjusted for retention risk and engagement.'
+  hidden: false
+- name: flv_percentile
+  sql: flv_percentile
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: fan_value_segment
+  sql: fan_value_segment
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Fan Value Segmentation (KB #53): per-fan classification by FLV percentile\
+  \ band \u2014 'Top Tier' (>p90), 'High Value' (p75-p90), 'Medium Value' (p50-p75),\
+  \ 'Low Value' (<p50). Uses NTILE(100) over FLV across all fans. RRF anchor 2025-03-01.\n\
+  \n[kb=53]\nSegments fans into four distinct value categories using percentile thresholds:\
+  \ 'Top Tier' identifies fans with FLV above the 90th percentile (p90), representing\
+  \ the platform's most valuable users; 'High Value' identifies fans with FLV between\
+  \ the 75th and 90th percentiles (p75 to p90); 'Medium Value' identifies fans with\
+  \ FLV between the 50th and 75th percentiles (median to p75); 'Low Value' applies\
+  \ to all fans with FLV below the median (p50). This segmentation enables targeted\
+  \ retention strategies, premium service offerings, and resource allocation based\
+  \ on projected economic contribution. \u2014 Classifies fans into value tiers based\
+  \ on their Fan Lifetime Value (FLV) relative to platform-wide percentiles\n[/kb=53]"
+hidden: false
+meta:
+  kb_id: 53

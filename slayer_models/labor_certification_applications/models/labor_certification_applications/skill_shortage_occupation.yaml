@@ -1,0 +1,102 @@
+version: 6
+name: skill_shortage_occupation
+source_queries:
+- version: 3
+  name: soc_metrics
+  source_model: case_worksite
+  measures:
+  - formula: wage_differential_rate:avg
+  - formula: '*:count'
+  dimensions:
+  - name: soccd
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: soc_metrics
+    columns:
+    - name: is_skill_shortage
+      type: BOOLEAN
+      sql: wage_differential_rate_avg > 10 AND _count >= 5
+  dimensions:
+  - name: soccd
+  - name: wage_differential_rate_avg
+  - name: _count
+  - name: is_skill_shortage
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"soc_metrics.soccd\" AS soccd, \"soc_metrics.wage_differential_rate_avg\"\
+  \ AS wage_differential_rate_avg, \"soc_metrics._count\" AS _count, \"soc_metrics.is_skill_shortage\"\
+  \ AS is_skill_shortage FROM (SELECT\n  soc_metrics.soccd AS \"soc_metrics.soccd\"\
+  ,\n  soc_metrics.wage_differential_rate_avg AS \"soc_metrics.wage_differential_rate_avg\"\
+  ,\n  soc_metrics._count AS \"soc_metrics._count\",\n  wage_differential_rate_avg\
+  \ > 10 AND _count >= 5 AS \"soc_metrics.is_skill_shortage\"\nFROM (\n  SELECT\n\
+  \    \"case_worksite.soccd\" AS soccd,\n    \"case_worksite.wage_differential_rate_avg\"\
+  \ AS wage_differential_rate_avg,\n    \"case_worksite._count\" AS _count\n  FROM\
+  \ (\n    SELECT\n      cases.soccd AS \"case_worksite.soccd\",\n      AVG(\n   \
+  \     (\n          CAST(REPLACE(REPLACE(prevailing_wage.wage_details ->> '$.offered_wage.from',\
+  \ '$', ''), ',', '') AS REAL) * CASE prevailing_wage.wage_details ->> '$.offered_wage.unit'\n\
+  \            WHEN 'Hour'\n            THEN 2080\n            WHEN 'Week'\n     \
+  \       THEN 52\n            WHEN 'Month'\n            THEN 12\n            WHEN\
+  \ 'Year'\n            THEN 1\n            ELSE NULL\n          END - CAST(REPLACE(\n\
+  \            REPLACE(\n              REPLACE(prevailing_wage.wage_details ->> '$.prevailing_wage.value',\
+  \ 'USD', ''),\n              ',',\n              ''\n            ),\n          \
+  \  ' ',\n            ''\n          ) AS REAL) * CASE prevailing_wage.wage_details\
+  \ ->> '$.prevailing_wage.unit'\n            WHEN 'Hour'\n            THEN 2080\n\
+  \            WHEN 'Week'\n            THEN 52\n            WHEN 'Month'\n      \
+  \      THEN 12\n            WHEN 'Year'\n            THEN 1\n            ELSE NULL\n\
+  \          END\n        ) * 100.0 / NULLIF(\n          CAST(REPLACE(\n         \
+  \   REPLACE(\n              REPLACE(prevailing_wage.wage_details ->> '$.prevailing_wage.value',\
+  \ 'USD', ''),\n              ',',\n              ''\n            ),\n          \
+  \  ' ',\n            ''\n          ) AS REAL) * CASE prevailing_wage.wage_details\
+  \ ->> '$.prevailing_wage.unit'\n            WHEN 'Hour'\n            THEN 2080\n\
+  \            WHEN 'Week'\n            THEN 52\n            WHEN 'Month'\n      \
+  \      THEN 12\n            WHEN 'Year'\n            THEN 1\n            ELSE NULL\n\
+  \          END,\n          0\n        )\n      ) AS \"case_worksite.wage_differential_rate_avg\"\
+  ,\n      COUNT(*) AS \"case_worksite._count\"\n    FROM case_worksite AS case_worksite\n\
+  \    LEFT JOIN prevailing_wage AS prevailing_wage\n      ON case_worksite.wagetrack\
+  \ = prevailing_wage.trackno\n    LEFT JOIN cases AS cases\n      ON case_worksite.dockkey\
+  \ = cases.filekey\n    GROUP BY\n      cases.soccd\n  ) AS _inner\n) AS soc_metrics)\
+  \ AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: soccd
+  sql: soccd
+  type: TEXT
+  primary_key: false
+  description: 'SOC code (KB #7) for this case_worksite, denormalized via cases join.'
+  hidden: false
+- name: wage_differential_rate_avg
+  sql: wage_differential_rate_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'WDR for this case_worksite, denormalized via prevailing_wage join.
+    Used for KB #31 (Industry Wage Differential).'
+  hidden: false
+  format:
+    type: float
+- name: _count
+  sql: _count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: is_skill_shortage
+  sql: is_skill_shortage
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Skill Shortage Occupation per SOC (KB #43): SOC with avg WDR > 10% AND\
+  \ application count >= 5 (interpretation of 'statistically significant'). Per-SOC\
+  \ rows.\n\n[kb=43]\nOccupations with significant shortages of qualified U.S. workers\
+  \ are identified by a Wage Differential Rate (WDR) exceeding 10% and a statistically\
+  \ significant number of applications. These occupations may receive prioritized\
+  \ processing or cap exemptions. \u2014 Identifies occupations with demonstrated\
+  \ shortages of qualified U.S. workers.\n[/kb=43]"
+hidden: false
+meta:
+  kb_id: 43

@@ -1,0 +1,108 @@
+version: 6
+name: polar_transportation_efficiency_coefficient
+source_queries:
+- version: 3
+  name: vpc_per_eq
+  source_model: chassisandvehicle
+  measures:
+  - formula: vpc:avg
+    name: vpc
+  dimensions:
+  - name: chassiseqref
+  whole_periods_only: false
+- version: 3
+  name: esi_per_eq
+  source_model: powerbattery
+  measures:
+  - formula: esi:avg
+    name: esi
+  dimensions:
+  - name: pwrbatteqref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: vpc_per_eq
+    joins:
+    - target_model: esi_per_eq
+      join_pairs:
+      - - chassiseqref
+        - pwrbatteqref
+  measures:
+  - formula: vpc:avg * (0.6 + 0.4 * esi_per_eq.esi:avg / 100.0)
+    name: ptec
+  dimensions:
+  - name: chassiseqref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vpc_per_eq.chassiseqref\" AS chassiseqref, \"vpc_per_eq.vpc_avg\"\
+  \ AS vpc_avg, \"vpc_per_eq.ptec\" AS ptec, \"vpc_per_eq.esi_per_eq.esi_avg\" AS\
+  \ esi_per_eq__esi_avg FROM (WITH _base AS (\nSELECT\n  vpc_per_eq.chassiseqref AS\
+  \ \"vpc_per_eq.chassiseqref\",\n  AVG(vpc_per_eq.vpc) AS \"vpc_per_eq.vpc_avg\"\n\
+  FROM (\n  SELECT\n    \"chassisandvehicle.chassiseqref\" AS chassiseqref,\n    \"\
+  chassisandvehicle.vpc\" AS vpc\n  FROM (\n    SELECT\n      chassisandvehicle.chassiseqref\
+  \ AS \"chassisandvehicle.chassiseqref\",\n      AVG(\n        (\n          1 - (\n\
+  \            chassisandvehicle.brakepadwearpercent + chassisandvehicle.trackwearpercent\n\
+  \          ) / 200.0\n        ) * (\n          chassisandvehicle.vehiclespeedkmh\
+  \ / 50.0\n        ) * (\n          engineandfluids.engineloadpercent / 100.0\n \
+  \       )\n      ) AS \"chassisandvehicle.vpc\"\n    FROM chassisandvehicle AS chassisandvehicle\n\
+  \    LEFT JOIN engineandfluids AS engineandfluids\n      ON chassisandvehicle.chassisengref\
+  \ = engineandfluids.engineregistry\n    GROUP BY\n      chassisandvehicle.chassiseqref\n\
+  \  ) AS _inner\n) AS vpc_per_eq\nGROUP BY\n  vpc_per_eq.chassiseqref\n),\n_cm_vpc_per_eq__esi_per_eq__esi_avg\
+  \ AS (\nSELECT\n  AVG(esi_per_eq.esi) AS \"vpc_per_eq.esi_per_eq.esi_avg\"\nFROM\
+  \ (\n  SELECT\n    \"powerbattery.pwrbatteqref\" AS pwrbatteqref,\n    \"powerbattery.esi\"\
+  \ AS esi\n  FROM (\n    SELECT\n      powerbattery.pwrbatteqref AS \"powerbattery.pwrbatteqref\"\
+  ,\n      AVG(\n        powerbattery.energyefficiencypercent * CASE powerbattery.powersource\n\
+  \          WHEN 'Solar'\n          THEN 1.5\n          WHEN 'Wind'\n          THEN\
+  \ 1.5\n          WHEN 'Hybrid'\n          THEN 1.2\n          WHEN 'Battery'\n \
+  \         THEN 1.0\n          WHEN 'Diesel'\n          THEN 0.7\n          ELSE\
+  \ 0\n        END\n      ) AS \"powerbattery.esi\"\n    FROM powerbattery AS powerbattery\n\
+  \    GROUP BY\n      powerbattery.pwrbatteqref\n  ) AS _inner\n) AS esi_per_eq\n\
+  ),\n_combined AS (\nSELECT _base.\"vpc_per_eq.chassiseqref\", _base.\"vpc_per_eq.vpc_avg\"\
+  , _cm_vpc_per_eq__esi_per_eq__esi_avg.\"vpc_per_eq.esi_per_eq.esi_avg\"\nFROM _base\n\
+  CROSS JOIN _cm_vpc_per_eq__esi_per_eq__esi_avg\n),\nstep1 AS (\nSELECT\n    \"vpc_per_eq.chassiseqref\"\
+  ,\n    \"vpc_per_eq.esi_per_eq.esi_avg\",\n    \"vpc_per_eq.vpc_avg\",\n    \"vpc_per_eq.vpc_avg\"\
+  \ * (0.6 + 0.4 * \"vpc_per_eq.esi_per_eq.esi_avg\" / 100.0) AS \"vpc_per_eq.ptec\"\
+  \nFROM _combined\n)\nSELECT\n    \"vpc_per_eq.chassiseqref\",\n    \"vpc_per_eq.esi_per_eq.esi_avg\"\
+  ,\n    \"vpc_per_eq.ptec\",\n    \"vpc_per_eq.vpc_avg\"\nFROM step1) AS _inner"
+data_source: polar
+columns:
+- name: chassiseqref
+  sql: chassiseqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vpc_avg
+  sql: vpc_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'Vehicle Performance Coefficient (KB #5): wear / speed / engine-load
+    product. Cross-table to engineandfluids for engineloadpercent.'
+  hidden: false
+  format:
+    type: float
+- name: ptec
+  sql: ptec
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: esi_per_eq__esi_avg
+  sql: esi_per_eq__esi_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Polar Transportation Efficiency Coefficient (KB #31): PTEC = VPC x (0.6\
+  \ + 0.4 x ESI / 100). Peer-join via equipment (R-MULTISTAGE).\n\n[kb=31]\nPTEC =\
+  \ VPC \xD7 (0.6 + 0.4 \xD7 ESI \xF7 100) \u2014 Measures vehicle transportation\
+  \ efficiency in polar conditions, considering vehicle performance and energy sustainability\n\
+  [/kb=31]"
+hidden: false
+meta:
+  kb_id: 31

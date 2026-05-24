@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.env
+results/
+*.sqlite
+.venv/
+.claude/*
+!.claude/skills/
+slayer_storage/
+slayer_otf_cache/
+# Generated SLayer embedding sidecars — the committed models ship without them;
+# YAMLStorage lazily creates an (empty, when embeddings are unavailable) one
+# whenever a test/tool opens a model dir. Never commit them. Also baked at
+# image-build time for the cloud runner; never source.
+slayer_models/*/embeddings.db
+slayer_models_otf/*/embeddings.db
+# Scratch spec docs — not part of the package.
+_specs/
+
+# Gated benchmark gold — licensed for local use only, NEVER redistribute.
+# Kept on disk for local `--use-audited-gold-sql` runs; never committed/pushed.
+audited_gold/
+sar_audited_gold/

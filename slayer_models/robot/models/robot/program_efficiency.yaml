@@ -1,0 +1,125 @@
+version: 6
+name: program_efficiency
+source_queries:
+- version: 3
+  name: _robot_program_oce
+  source_model: operation
+  measures:
+  - formula: progcyclecount:sum / cycletimesecval:sum
+    name: program_oce
+  dimensions:
+  - name: operbotdetref
+  - name: currprogval
+  - name: modelseriesval
+    model: robot_details
+  whole_periods_only: false
+- version: 3
+  source_model: _robot_program_oce
+  measures:
+  - formula: program_oce:avg
+    name: avg_program_oce
+  dimensions:
+  - name: currprogval
+  - name: robot_details__modelseriesval
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"_robot_program_oce.currprogval\" AS currprogval, \"_robot_program_oce.robot_details__modelseriesval\"\
+  \ AS robot_details__modelseriesval, \"_robot_program_oce.avg_program_oce\" AS avg_program_oce\
+  \ FROM (SELECT\n  _robot_program_oce.currprogval AS \"_robot_program_oce.currprogval\"\
+  ,\n  _robot_program_oce.robot_details__modelseriesval AS \"_robot_program_oce.robot_details__modelseriesval\"\
+  ,\n  AVG(_robot_program_oce.program_oce) AS \"_robot_program_oce.avg_program_oce\"\
+  \nFROM (\n  SELECT\n    \"operation.operbotdetref\" AS operbotdetref,\n    \"operation.currprogval\"\
+  \ AS currprogval,\n    \"operation.robot_details.modelseriesval\" AS robot_details__modelseriesval,\n\
+  \    \"operation.progcyclecount_sum\" AS progcyclecount_sum,\n    \"operation.cycletimesecval_sum\"\
+  \ AS cycletimesecval_sum,\n    \"operation.program_oce\" AS program_oce\n  FROM\
+  \ (\n    WITH base AS (\n      SELECT\n        operation.operbotdetref AS \"operation.operbotdetref\"\
+  ,\n        operation.currprogval AS \"operation.currprogval\",\n        robot_details.modelseriesval\
+  \ AS \"operation.robot_details.modelseriesval\",\n        SUM(operation.progcyclecount)\
+  \ AS \"operation.progcyclecount_sum\",\n        SUM(operation.cycletimesecval) AS\
+  \ \"operation.cycletimesecval_sum\"\n      FROM operation AS operation\n      LEFT\
+  \ JOIN robot_details AS robot_details\n        ON operation.operbotdetref = robot_details.botdetreg\n\
+  \      GROUP BY\n        operation.operbotdetref,\n        operation.currprogval,\n\
+  \        robot_details.modelseriesval\n    ), step1 AS (\n      SELECT\n       \
+  \ \"operation.currprogval\",\n        \"operation.cycletimesecval_sum\",\n     \
+  \   \"operation.operbotdetref\",\n        \"operation.progcyclecount_sum\",\n  \
+  \      \"operation.robot_details.modelseriesval\",\n        \"operation.progcyclecount_sum\"\
+  \ / \"operation.cycletimesecval_sum\" AS \"operation.program_oce\"\n      FROM base\n\
+  \    )\n    SELECT\n      \"operation.currprogval\",\n      \"operation.cycletimesecval_sum\"\
+  ,\n      \"operation.operbotdetref\",\n      \"operation.progcyclecount_sum\",\n\
+  \      \"operation.program_oce\",\n      \"operation.robot_details.modelseriesval\"\
+  \n    FROM step1\n  ) AS _inner\n) AS _robot_program_oce\nGROUP BY\n  _robot_program_oce.currprogval,\n\
+  \  _robot_program_oce.robot_details__modelseriesval) AS _inner"
+data_source: robot
+columns:
+- name: currprogval
+  sql: currprogval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: robot_details__modelseriesval
+  sql: robot_details__modelseriesval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: avg_program_oce
+  sql: avg_program_oce
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures:
+- formula: avg_program_oce:max
+  name: avg_program_oce_value
+  label: Avg Operation Cycle Efficiency per program
+  description: "Average Operation Cycle Efficiency per program (KB #54 helper) \u2014\
+    \ mean of program_oce (TPC/\u03A3cycletime per (robot, currprogval)) across robots\
+    \ that ran the program. One value per row of program_efficiency."
+  meta: {}
+- formula: dense_rank(avg_program_oce:max)
+  name: program_efficiency_rank
+  label: Program Efficiency Rank
+  description: "Program Efficiency Rank (KB #54) \u2014 DENSE_RANK over avg_program_oce\
+    \ across all programs, descending. Ties share a rank without skipping. Group by\
+    \ currprogval.\n\n[kb=54]\nFor a program P, Program Efficiency Rank = \\text{DENSE_RANK}()\
+    \ \\text{ OVER } (\\text{ORDER BY } \\text{AVG(program_oce)} \\text{ DESC}), \\\
+    text{where program_oce is the Operation Cycle Efficiency for program P on each\
+    \ robot.} \u2014 Ranks programs based on their average Operation Cycle Efficiency\
+    \ across robots.\n[/kb=54]"
+  meta:
+    kb_id: 54
+- formula: dense_rank(avg_program_oce:max) == 1
+  name: is_most_efficient_program
+  label: Efficiency Metrics
+  description: "Most Efficient Program flag (KB #55 component) \u2014 true when the\
+    \ program is rank 1 by avg_program_oce. Combined with avg_program_efficiency_overall\
+    \ to assemble the Efficiency Metrics JSON shape described in KB #55.\n\n[kb=55]\n\
+    For a model series, Efficiency Metrics = \\text{jsonb_build_object}('most_efficient_program',\
+    \ \\text{currprogval with Program Efficiency Rank = 1}, 'avg_program_efficiency',\
+    \ \\text{AVG(avg_program_oce)}), \\text{where avg_program_oce is the average Operation\
+    \ Cycle Efficiency per program.} \u2014 Aggregates efficiency-related metrics,\
+    \ including the most efficient program and average program Operation Cycle Efficiency.\n\
+    [/kb=55]"
+  meta:
+    kb_id: 55
+- formula: avg_program_oce:avg
+  name: avg_program_efficiency
+  label: Efficiency Metrics
+  description: "Average Program Efficiency (KB #55 component) \u2014 mean of avg_program_oce\
+    \ across programs in the grouping; combine with `is_most_efficient_program` to\
+    \ assemble the Efficiency Metrics JSON shape (KB #55) when grouped by robot_details__modelseriesval.\n\
+    \n[kb=55]\nFor a model series, Efficiency Metrics = \\text{jsonb_build_object}('most_efficient_program',\
+    \ \\text{currprogval with Program Efficiency Rank = 1}, 'avg_program_efficiency',\
+    \ \\text{AVG(avg_program_oce)}), \\text{where avg_program_oce is the average Operation\
+    \ Cycle Efficiency per program.} \u2014 Aggregates efficiency-related metrics,\
+    \ including the most efficient program and average program Operation Cycle Efficiency.\n\
+    [/kb=55]"
+  meta:
+    kb_id: 55
+aggregations: []
+joins: []
+filters: []
+description: "Per-program efficiency rollup. One row per program (currprogval), carrying\
+  \ avg_program_oce \u2014 the average over robots of OCE-on-this-program. Foundation\
+  \ for KB #54 (Program Efficiency Rank) and KB #55 (Efficiency Metrics)."
+hidden: false

@@ -1,0 +1,338 @@
+version: 6
+name: risk_metrics
+sql_table: risk_metrics
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: riskid
+  sql: riskid
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: investmentref
+  sql: investmentref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: alpha3y
+  sql: alpha3y
+  type: INT
+  primary_key: false
+  description: 3-year alpha (excess return vs benchmark).
+  hidden: false
+  format:
+    type: integer
+- name: beta3y
+  sql: beta3y
+  type: INT
+  primary_key: false
+  description: "Beta over 3 years (KB 22).\n\n[kb=22]\nMeasures a fund's volatility\
+    \ in relation to the overall market. Beta > 1 indicates the fund is more volatile\
+    \ than the market. Beta < 1 indicates it is less volatile. Beta = 1 implies its\
+    \ movement matches the market. \u2014 Illustrates the fund's market sensitivity\
+    \ (Beta).\n[/kb=22]"
+  label: Beta
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 22
+- name: avgreturn3y
+  sql: avgreturn3y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: rsquared3y
+  sql: rsquared3y
+  type: INT
+  primary_key: false
+  description: "R-squared over 3 years (KB 23). Stored on a 0-100 scale.\n\n[kb=23]\n\
+    Represents the percentage of a fund's movements that can be explained by movements\
+    \ in its benchmark index. A value of 95 means that 95% of the fund's performance\
+    \ is attributable to the benchmark's performance. \u2014 Illustrates the fund's\
+    \ correlation to its benchmark (R-squared).\n[/kb=23]"
+  label: R-Squared
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 23
+- name: volatility3y
+  sql: volatility3y
+  type: INT
+  primary_key: false
+  description: 3-year standard deviation of returns.
+  hidden: false
+  format:
+    type: integer
+- name: sharperatio3y
+  sql: sharperatio3y
+  type: INT
+  primary_key: false
+  description: "3-year Sharpe ratio (risk-adjusted return per unit of volatility)\
+    \ (KB 24).\n\n[kb=24]\nMeasures the fund's excess return per unit of total risk\
+    \ (volatility). A higher Sharpe Ratio is better. A ratio > 1 is generally considered\
+    \ good, > 2 is very good, and > 3 is excellent. \u2014 Illustrates the fund's\
+    \ risk-adjusted return (Sharpe Ratio).\n[/kb=24]"
+  label: Sharpe Ratio
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 24
+- name: treynorratio3y
+  sql: treynorratio3y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: alpha5y
+  sql: alpha5y
+  type: INT
+  primary_key: false
+  description: 5-year alpha. Used by KB 10 Alpha Generator.
+  hidden: false
+  format:
+    type: integer
+- name: beta5y
+  sql: beta5y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: avgreturn5y
+  sql: avgreturn5y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: rsquared5y
+  sql: rsquared5y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: volatility5y
+  sql: volatility5y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: sharperatio5y
+  sql: sharperatio5y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: treynorratio5y
+  sql: treynorratio5y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: alpha10y
+  sql: alpha10y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: beta10y
+  sql: beta10y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: avgreturn10y
+  sql: avgreturn10y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: rsquared10y
+  sql: rsquared10y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: volatility10y
+  sql: volatility10y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: sharperatio10y
+  sql: sharperatio10y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: treynorratio10y
+  sql: treynorratio10y
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: risk3y
+  sql: risk3y
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: risk5y
+  sql: risk5y
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: risk10y
+  sql: risk10y
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_alpha_generator
+  sql: alpha5y > 0
+  type: BOOLEAN
+  primary_key: false
+  description: "Alpha Generator (KB 10): 5-year alpha > 0.\n\n[kb=10]\nA fund is considered\
+    \ an Alpha Generator if its 5-year alpha is greater than 0. \u2014 A fund that\
+    \ has demonstrated an ability to outperform its benchmark on a risk-adjusted basis.\n\
+    [/kb=10]"
+  label: Alpha Generator
+  hidden: false
+  meta:
+    kb_id: 10
+- name: is_market_tracking
+  sql: rsquared3y > 90
+  type: BOOLEAN
+  primary_key: false
+  description: "Market-Tracking Fund (KB 11): 3-year R-squared > 90.\n\n[kb=11]\n\
+    A fund is considered a Market-Tracking Fund if its 3-year R-squared value is greater\
+    \ than 90, indicating a strong correlation with its benchmark. \u2014 A fund whose\
+    \ performance is highly correlated with its market benchmark.\n[/kb=11]"
+  label: Market-Tracking Fund
+  hidden: false
+  meta:
+    kb_id: 11
+- name: is_defensive_anchor
+  sql: beta3y < 0.75 AND (1.0 / (1 + COALESCE(funds__etf_performance.negativeyears,
+    0))) * (1 - (funds__etf_performance.low52w - (funds__etf_performance.low52w +
+    funds__etf_performance.lowdelta)) * 1.0 / NULLIF(funds__etf_performance.low52w,
+    0)) >= 0.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Defensive Anchor (KB 67): 3-year Beta < 0.75 AND high Capital Preservation\
+    \ Index. KB doesn't pin the CPI threshold; using 0.5 as a 'high' default. The\
+    \ CPI formula is inlined here because it lives on etf_performance.\n\n[kb=67]\n\
+    A fund is a Defensive Anchor if its 3-year Beta is less than 0.75 and it has a\
+    \ high 'Capital Preservation Index' score. \u2014 A fund suitable for mitigating\
+    \ portfolio volatility, characterized by low market sensitivity and a strong track\
+    \ record of preserving capital.\n[/kb=67]"
+  label: Defensive Anchor
+  hidden: false
+  meta:
+    kb_id: 67
+- name: appraisal_ratio
+  sql: alpha3y * 1.0 / NULLIF(volatility3y * sqrt(1 - rsquared3y / 100.0), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Appraisal Ratio (KB 50) = 3Y Alpha / (3Y Volatility * sqrt(1 - 3Y\
+    \ R-Squared)). R-squared rescaled from 0-100 to 0-1.\n\n[kb=50]\next{Appraisal\
+    \ Ratio} = \frac{\text{3-Year Alpha}}{\text{Unsystematic Risk}}, \text{ where\
+    \ Unsystematic Risk} = \text{3-Year Volatility} \times \\sqrt{1 - \text{3-Year\
+    \ R-Squared}} \u2014 Measures a fund manager's skill in stock selection by calculating\
+    \ the alpha generated per unit of specific, unsystematic risk taken.\n[/kb=50]"
+  label: Appraisal Ratio
+  hidden: false
+  meta:
+    kb_id: 50
+- name: cost_adjusted_alpha
+  sql: alpha3y - funds.relative_expense_ratio
+  type: DOUBLE
+  primary_key: false
+  description: "Cost-Adjusted Alpha (KB 53) = 3Y Alpha - Relative Expense Ratio.\n\
+    \n[kb=53]\nCAA = \text{3-Year Alpha} - \text{Relative Expense Ratio} \u2014 Calculates\
+    \ the fund's alpha after penalizing it for having higher expenses than its benchmark,\
+    \ revealing the true value added by the manager.\n[/kb=53]"
+  label: Cost-Adjusted Alpha
+  hidden: false
+  meta:
+    kb_id: 53
+- name: manager_skill_ratio
+  sql: alpha3y * 1.0 / NULLIF(funds.expensenet, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Manager Skill Ratio (KB 56) = 3Y Alpha / Net Expense Ratio.\n\n[kb=56]\n\
+    MSR = \frac{\text{3-Year Alpha}}{\text{Net Expense Ratio}} \u2014 Measures the\
+    \ amount of alpha a fund manager generates for each dollar of fee charged to investors.\n\
+    [/kb=56]"
+  label: Manager Skill Ratio
+  hidden: false
+  meta:
+    kb_id: 56
+- name: beta_drift_3y_vs_5y
+  sql: beta3y - beta5y
+  type: DOUBLE
+  primary_key: false
+  description: "Beta Drift (KB 77): change in market sensitivity. Using Beta_3Y minus\
+    \ Beta_5Y as the canonical 'recent vs longer' pairing in this schema.\n\n[kb=77]\n\
+    \\Delta{\beta} = \text{Beta}{\text{1st Period}} - \text{Beta}{\text{2nd Period}}\
+    \ \u2014 Measures the change in a fund's sensitivity to market movements over\
+    \ time.\n[/kb=77]"
+  label: Beta Drift
+  hidden: false
+  meta:
+    kb_id: 77
+- name: rsquared_drift_3y_vs_5y
+  sql: rsquared3y - rsquared5y
+  type: DOUBLE
+  primary_key: false
+  description: "R-Squared Drift (KB 78): change in benchmark correlation. Using R-Squared_3Y\
+    \ minus R-Squared_5Y.\n\n[kb=78]\n\\Delta_{R^2} = R^2_{\text{1st Period}} - R^2_{\t\
+    ext{2nd Period}} \u2014 Measures the change in a fund's performance correlation\
+    \ with its benchmark over time.\n[/kb=78]"
+  label: R-Squared Drift
+  hidden: false
+  meta:
+    kb_id: 78
+- name: is_style_drift
+  sql: ABS(beta3y - beta5y) > 0.15 OR ABS(rsquared3y - rsquared5y) > 10
+  type: BOOLEAN
+  primary_key: false
+  description: "Style Drift (KB 79): TRUE when |Beta drift| > 0.15 OR |R-squared drift|\
+    \ > 10.\n\n[kb=79]\nA fund is considered to have drifted if its absolute Beta\
+    \ change exceeds 0.15 or its absolute R-Squared change exceeds 10. \u2014 A classification\
+    \ of how a fund's investment style has changed by comparing its recent risk characteristics\
+    \ (Beta, R-Squared) to its long-term history.\n[/kb=79]"
+  label: Style Drift
+  hidden: false
+  meta:
+    kb_id: 79
+measures: []
+aggregations: []
+joins:
+- target_model: funds
+  join_pairs:
+  - - investmentref
+    - tickersym
+  join_type: left
+filters: []
+description: Per-fund risk and risk-adjusted return metrics over 3, 5, and 10 year
+  windows (alpha, beta, R-squared, volatility, Sharpe, Treynor). One row per fund,
+  joined on investmentref = funds.tickersym.
+hidden: false

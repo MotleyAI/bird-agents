@@ -1,0 +1,86 @@
+version: 6
+name: data_source_and_quality
+sql_table: data_source_and_quality
+query_variables: {}
+data_source: organ_transplant
+columns:
+- name: q_match_registry
+  sql: q_match_registry
+  type: TEXT
+  primary_key: true
+  description: FK to transplant_matching.match_rec_registry.
+  hidden: false
+- name: data_src_val
+  sql: data_src_val
+  type: TEXT
+  primary_key: false
+  description: Data source name (raw with case noise).
+  hidden: false
+- name: dq_score_val
+  sql: dq_score_val
+  type: INT
+  primary_key: false
+  description: Data quality score (0-1).
+  hidden: false
+  format:
+    type: integer
+- name: dc_score_val
+  sql: dc_score_val
+  type: INT
+  primary_key: false
+  description: Data completeness score (0-1).
+  hidden: false
+  format:
+    type: integer
+- name: verif_stat_val
+  sql: verif_stat_val
+  type: TEXT
+  primary_key: false
+  description: Verification status (raw with case noise).
+  hidden: false
+- name: last_up_ts
+  sql: last_up_ts
+  type: TEXT
+  primary_key: false
+  description: Last update date (text 'yyyy/mm/dd').
+  hidden: false
+- name: next_rev_dt
+  sql: next_rev_dt
+  type: TEXT
+  primary_key: false
+  description: Next review date (text 'dd/mm/yyyy').
+  hidden: false
+- name: q_don_ref
+  sql: q_don_ref
+  type: TEXT
+  primary_key: false
+  description: FK to demographics.
+  hidden: false
+- name: q_rec_ref
+  sql: q_rec_ref
+  type: TEXT
+  primary_key: false
+  description: FK to recipients_demographics.
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: demographics
+  join_pairs:
+  - - q_don_ref
+    - contrib_registry
+  join_type: left
+- target_model: transplant_matching
+  join_pairs:
+  - - q_match_registry
+    - match_rec_registry
+  join_type: left
+- target_model: recipients_demographics
+  join_pairs:
+  - - q_rec_ref
+    - recip_registry
+  join_type: left
+filters: []
+description: Per-match data provenance + quality scores. Source name, quality score,
+  completeness, verification status, last update, next review date.
+hidden: false

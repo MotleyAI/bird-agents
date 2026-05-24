@@ -1,0 +1,114 @@
+version: 6
+name: risk_efficient_position
+source_queries:
+- version: 3
+  name: rar_stage
+  source_model: risk_adjusted_return
+  measures:
+  - formula: rar_value:max
+    name: rar_v
+  dimensions:
+  - name: recordvault
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: orders
+    joins:
+    - target_model: rar_stage
+      join_pairs:
+      - - recordvault
+        - recordvault
+    - target_model: riskandmargin
+      join_pairs:
+      - - recordvault
+        - ordervault
+    columns:
+    - name: is_risk_efficient
+      type: BOOLEAN
+      sql: rar_stage.rar_v > 1.5 AND (ABS(riskandmargin__orders.dealquote - CASE riskandmargin.risk_margin_profile
+        ->> '$.position.posedge' WHEN 'Long' THEN CAST(riskandmargin.risk_margin_profile
+        ->> '$.price_levels.stopquote' AS REAL) ELSE CAST(riskandmargin.risk_margin_profile
+        ->> '$.price_levels.trigquote' AS REAL) END) / NULLIF(ABS(riskandmargin__orders.dealquote
+        - CASE riskandmargin.risk_margin_profile ->> '$.position.posedge' WHEN 'Long'
+        THEN CAST(riskandmargin.risk_margin_profile ->> '$.price_levels.trigquote'
+        AS REAL) ELSE CAST(riskandmargin.risk_margin_profile ->> '$.price_levels.stopquote'
+        AS REAL) END), 0)) < 0.5
+  dimensions:
+  - name: recordvault
+  - name: is_risk_efficient
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.is_risk_efficient\"\
+  \ AS is_risk_efficient FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\"\
+  ,\n  rar_stage.rar_v > 1.5\n  AND (\n    ABS(\n      riskandmargin__orders.dealquote\
+  \ - CASE riskandmargin.risk_margin_profile ->> '$.position.posedge'\n        WHEN\
+  \ 'Long'\n        THEN CAST(riskandmargin.risk_margin_profile ->> '$.price_levels.stopquote'\
+  \ AS REAL)\n        ELSE CAST(riskandmargin.risk_margin_profile ->> '$.price_levels.trigquote'\
+  \ AS REAL)\n      END\n    ) / NULLIF(\n      ABS(\n        riskandmargin__orders.dealquote\
+  \ - CASE riskandmargin.risk_margin_profile ->> '$.position.posedge'\n          WHEN\
+  \ 'Long'\n          THEN CAST(riskandmargin.risk_margin_profile ->> '$.price_levels.trigquote'\
+  \ AS REAL)\n          ELSE CAST(riskandmargin.risk_margin_profile ->> '$.price_levels.stopquote'\
+  \ AS REAL)\n        END\n      ),\n      0\n    )\n  ) < 0.5 AS \"orders.is_risk_efficient\"\
+  \nFROM orders AS orders\nLEFT JOIN (\n  (\n    SELECT\n      \"risk_adjusted_return.recordvault\"\
+  \ AS recordvault,\n      \"risk_adjusted_return.rar_v\" AS rar_v\n    FROM (\n \
+  \     SELECT\n        risk_adjusted_return.recordvault AS \"risk_adjusted_return.recordvault\"\
+  ,\n        MAX(risk_adjusted_return.rar_value) AS \"risk_adjusted_return.rar_v\"\
+  \n      FROM (\n        SELECT\n          \"orders.recordvault\" AS recordvault,\n\
+  \          \"orders.userlink\" AS userlink,\n          \"orders.rar_value\" AS rar_value\n\
+  \        FROM (\n          SELECT\n            orders.recordvault AS \"orders.recordvault\"\
+  ,\n            orders.userlink AS \"orders.userlink\",\n            realline_per_user.realline_total\
+  \ / NULLIF(\n              (\n                riskandmargin.risk_margin_profile\
+  \ ->> '$.position.possum'\n              ) * vol_per_pair.vol_avg * 0.01 * (\n \
+  \               riskandmargin.risk_margin_profile ->> '$.position.posriskrate'\n\
+  \              ),\n              0\n            ) AS \"orders.rar_value\"\n    \
+  \      FROM orders AS orders\n          LEFT JOIN (\n            (\n           \
+  \   SELECT\n                \"marketstats.marketdata.mktcombo\" AS marketdata__mktcombo,\n\
+  \                \"marketstats.vol_avg\" AS vol_avg\n              FROM (\n    \
+  \            SELECT\n                  marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\
+  \ AS \"marketstats.marketdata.mktcombo\",\n                  AVG(marketstats.volmeter)\
+  \ AS \"marketstats.vol_avg\"\n                FROM marketstats AS marketstats\n\
+  \                LEFT JOIN marketdata AS marketdata\n                  ON marketstats.mdlink\
+  \ = marketdata.marketdatanode\n                GROUP BY\n                  marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo'\n              ) AS _inner\n            )\n        \
+  \  ) AS vol_per_pair\n            ON orders.mktnote = vol_per_pair.marketdata__mktcombo\n\
+  \          LEFT JOIN (\n            (\n              SELECT\n                \"\
+  accountbalances.usertag\" AS usertag,\n                \"accountbalances.realline_total\"\
+  \ AS realline_total\n              FROM (\n                SELECT\n            \
+  \      accountbalances.usertag AS \"accountbalances.usertag\",\n               \
+  \   SUM(accountbalances.realline) AS \"accountbalances.realline_total\"\n      \
+  \          FROM accountbalances AS accountbalances\n                GROUP BY\n \
+  \                 accountbalances.usertag\n              ) AS _inner\n         \
+  \   )\n          ) AS realline_per_user\n            ON orders.userlink = realline_per_user.usertag\n\
+  \          LEFT JOIN riskandmargin AS riskandmargin\n            ON orders.recordvault\
+  \ = riskandmargin.ordervault\n        ) AS _inner\n      ) AS risk_adjusted_return\n\
+  \      GROUP BY\n        risk_adjusted_return.recordvault\n    ) AS _inner\n  )\n\
+  ) AS rar_stage\n  ON orders.recordvault = rar_stage.recordvault\nLEFT JOIN riskandmargin\
+  \ AS riskandmargin\n  ON orders.recordvault = riskandmargin.ordervault\nLEFT JOIN\
+  \ orders AS riskandmargin__orders\n  ON riskandmargin.ordervault = riskandmargin__orders.recordvault)\
+  \ AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_risk_efficient
+  sql: is_risk_efficient
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Risk-Efficient Position (KB #45) per order: Risk-Adjusted Return > 1.5\
+  \ AND Risk-to-Reward Ratio < 0.5. RAR (KB #30) comes from the risk_adjusted_return\
+  \ model; Risk-to-Reward Ratio (KB #38) comes from riskandmargin.risk_to_reward_ratio.\n\
+  \n[kb=45]\nA position where the Risk-Adjusted Return exceeds 1.5 and the Risk-to-Reward\
+  \ Ratio is less than 0.5, indicating strong returns relative to risk exposure and\
+  \ favorable potential profit compared to potential loss. \u2014 Identifies positions\
+  \ with favorable risk-adjusted characteristics.\n[/kb=45]"
+hidden: false
+meta:
+  kb_id: 45

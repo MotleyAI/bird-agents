@@ -1,0 +1,169 @@
+version: 6
+name: transportinfo
+sql_table: transportinfo
+query_variables: {}
+data_source: vaccine
+columns:
+- name: vehiclereg
+  sql: vehiclereg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: vehiclekind
+  sql: vehiclekind
+  type: TEXT
+  primary_key: false
+  description: "Vehicle type. 'Reefer Container' is a self-powered refrigeration unit\
+    \ maintaining -20 C to +30 C with R-134a refrigerant and an independent power\
+    \ supply lasting 72 hours (KB #25).\n\n[kb=25]\nSelf-powered refrigeration unit\
+    \ maintaining -20\xB0C to +30\xB0C with R-134a refrigerant and independent power\
+    \ supply lasting 72 hours. \u2014 Illustrates specialized container type\n[/kb=25]"
+  label: 'VehicleKind: ''Reefer Container'''
+  hidden: false
+  meta:
+    kb_id: 25
+- name: vehtempc
+  sql: vehtempc
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: speedkm
+  sql: speedkm
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: distdonekm
+  sql: distdonekm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: distleftkm
+  sql: distleftkm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: eta
+  sql: eta
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: departsite
+  sql: departsite
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: currentsite
+  sql: currentsite
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: destsite
+  sql: destsite
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: gpsflag
+  sql: gpsflag
+  type: TEXT
+  primary_key: false
+  description: "GPS tracking status. 'Active' indicates GPS tracking is operational\
+    \ and accurately reporting location data (KB #28).\n\n[kb=28]\nIndicates that\
+    \ GPS tracking is operational and accurately reporting location data. \u2014 Illustrates\
+    \ active location tracking\n[/kb=28]"
+  label: 'GPSFlag: ''Active'''
+  hidden: false
+  meta:
+    kb_id: 28
+- name: latvalue
+  sql: latvalue
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: lonvalue
+  sql: lonvalue
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: altmeter
+  sql: altmeter
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: locupdatemin
+  sql: locupdatemin
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: locupdatemark
+  sql: locupdatemark
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: transmode
+  sql: transmode
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: carrlabel
+  sql: carrlabel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: carrcert
+  sql: carrcert
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shiptransit
+  sql: shiptransit
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: containtransit
+  sql: containtransit
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rcp
+  sql: CAST(distdonekm AS REAL) / NULLIF(distdonekm + distleftkm, 0) * 100
+  type: DOUBLE
+  primary_key: false
+  description: "Route Completion Percentage (RCP). Percentage of route completed:\
+    \ DistDoneKm / (DistDoneKm + DistLeftKm) * 100 (KB #4).\n\n[kb=4]\nRCP = \\frac{DistDoneKm}{DistDoneKm\
+    \ + DistLeftKm} \\times 100 \u2014 Calculates the percentage of route completed.\n\
+    [/kb=4]"
+  label: Route Completion Percentage (RCP)
+  hidden: false
+  meta:
+    kb_id: 4
+measures: []
+aggregations: []
+joins:
+- target_model: container
+  join_pairs:
+  - - containtransit
+    - containregistry
+  join_type: left
+- target_model: vaccine_shipments
+  join_pairs:
+  - - shiptransit
+    - shipmentregistry
+  join_type: left
+filters: []
+hidden: false

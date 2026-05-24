@@ -1,0 +1,51 @@
+version: 6
+name: sbp_avg
+source_queries:
+- version: 3
+  source_model:
+    source_name: vehicles
+    columns:
+    - name: k
+      sql: '1'
+      type: DOUBLE
+  measures:
+  - formula: sbp_score:avg
+  dimensions:
+  - name: k
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vehicles.k\" AS k, \"vehicles.sbp_score_avg\" AS sbp_score_avg\
+  \ FROM (SELECT\n  1 AS \"vehicles.k\",\n  AVG(\n    CASE\n      WHEN LOWER(TRIM(veh_qual))\
+  \ = 'validated'\n      THEN 9\n      WHEN LOWER(TRIM(veh_qual)) = 'qualified'\n\
+  \      THEN 7\n      ELSE 5\n    END\n  ) AS \"vehicles.sbp_score_avg\"\nFROM vehicles\
+  \ AS vehicles\nGROUP BY\n  1) AS _inner"
+data_source: cold_chain_pharma_compliance
+columns:
+- name: k
+  sql: k
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: sbp_score_avg
+  sql: sbp_score_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'Supplier Backup Presence proxy (KB #30, SCRS sub-score, 0-10): Validated
+    vehicle = 9, Qualified = 7, else = 5. Used inside Supply Chain Resilience Score;
+    heuristic from the gold task solution because the schema does not store SBP directly.'
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Fleet-wide Supplier Backup Presence average for SCRS (KB #30). Hidden\
+  \ helper.\n\n[kb=30]\nSCRS = 0.4 \\times ART + 0.3 \\times RRD + 0.2 \\times SBP\
+  \ + 0.1 \\times SMC, \\text{where ART is Alternative Route Availability (0-10),\
+  \ RRD is Redundant Resources Depth (0-10), SBP is Supplier Backup Presence (0-10),\
+  \ and SMC is Stock Management Capability (0-10).} \u2014 Measures a cold chain's\
+  \ ability to maintain integrity despite disruptions.\n[/kb=30]"
+hidden: true
+meta:
+  kb_id: 30

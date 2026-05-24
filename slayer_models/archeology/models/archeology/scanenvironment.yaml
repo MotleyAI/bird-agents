@@ -1,0 +1,144 @@
+version: 6
+name: scanenvironment
+sql_table: scanenvironment
+query_variables: {}
+data_source: archeology
+columns:
+- name: airregistry
+  sql: airregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: zoneref
+  sql: zoneref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: equipref
+  sql: equipref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ambictemp
+  sql: ambictemp
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: humepct
+  sql: humepct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: illumelux
+  sql: illumelux
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: geosignal
+  sql: geosignal
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: trackstatus
+  sql: trackstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: linkstatus
+  sql: linkstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: photomap
+  sql: photomap
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: imgcount
+  sql: imgcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: esi
+  sql: 100 - 2.5 * abs(ambictemp - 20) - power(abs((humepct - 50) / 2.0), 1.5) - 600.0
+    / (illumelux + 100)
+  type: DOUBLE
+  primary_key: false
+  description: "Environmental Suitability Index (ESI, KB #7): 100 - 2.5*|AmbicTemp-20|\
+    \ - |(HumePct-50)/2|^1.5 - 600/(IllumeLux+100). Higher = more ideal scanning conditions.\n\
+    \n[kb=7]\nESI = 100 - 2.5 \\times \\left|AmbicTemp - 20\\right| - \\left|\\frac{HumePct\
+    \ - 50}{2}\\right|^{1.5} - \\frac{600}{IllumeLux + 100}, \\text{ where higher\
+    \ values indicate more ideal scanning conditions adjusted for relative importance.}\
+    \ \u2014 Evaluates how suitable environmental conditions were for scanning operations\
+    \ using weighted parameters.\n[/kb=7]"
+  label: Environmental Suitability Index (ESI)
+  hidden: false
+  meta:
+    kb_id: 7
+- name: is_optimal_scanning_conditions
+  sql: CASE WHEN (100 - 2.5 * abs(ambictemp - 20) - power(abs((humepct - 50) / 2.0),
+    1.5) - 600.0 / (illumelux + 100)) > 85 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Optimal Scanning Conditions (KB #15): ESI > 85 \u2014 moderate temperature,\
+    \ humidity ~50%, good illumination minimize environmental interference.\n\n[kb=15]\n\
+    Conditions with ESI > 85, where ESI is the Environmental Suitability Index (knowledge\
+    \ #7), characterized by moderate temperature, humidity around 50%, and good illumination,\
+    \ minimizing environmental interference with scanning accuracy. \u2014 Defines\
+    \ the environmental conditions considered optimal for archaeological scanning\
+    \ based on instrument sensitivity profiles.\n[/kb=15]"
+  label: Optimal Scanning Conditions
+  hidden: false
+  meta:
+    kb_id: 15
+- name: eccs_class
+  sql: CASE WHEN (100 - 2.5 * abs(ambictemp - 20) - power(abs((humepct - 50) / 2.0),
+    1.5) - 600.0 / (illumelux + 100)) > 85 THEN 'Optimal Scanning Conditions' WHEN
+    (100 - 2.5 * abs(ambictemp - 20) - power(abs((humepct - 50) / 2.0), 1.5) - 600.0
+    / (illumelux + 100)) >= 70 THEN 'Good Scanning Conditions' WHEN (100 - 2.5 * abs(ambictemp
+    - 20) - power(abs((humepct - 50) / 2.0), 1.5) - 600.0 / (illumelux + 100)) >=
+    50 THEN 'Acceptable Scanning Conditions' ELSE 'Challenging Scanning Conditions'
+    END
+  type: TEXT
+  primary_key: false
+  description: "Environmental Condition Classification System (ECCS, KB #50): four-tier\
+    \ ESI classification \u2014 Optimal (>85), Good (70-85), Acceptable (50-70), Challenging\
+    \ (<50).\n\n[kb=50]\nA four-tier classification where 'Optimal Scanning Conditions'\
+    \ have ESI > 85, 'Good Scanning Conditions' have ESI between 70-85, 'Acceptable\
+    \ Scanning Conditions' have ESI between 50-70, and 'Challenging Scanning Conditions'\
+    \ have ESI < 50. This classification guides scanning schedule planning and equipment\
+    \ selection to maximize data quality. \u2014 A comprehensive classification system\
+    \ for archaeological site environments based on their suitability for scanning\
+    \ operations.\n[/kb=50]"
+  label: Environmental Condition Classification System (ECCS)
+  hidden: false
+  meta:
+    kb_id: 50
+measures: []
+aggregations: []
+joins:
+- target_model: equipment
+  join_pairs:
+  - - equipref
+    - equipregistry
+  join_type: left
+- target_model: sites
+  join_pairs:
+  - - zoneref
+    - zoneregistry
+  join_type: left
+filters: []
+description: 'Environmental conditions during scanning. Hosts the Environmental Suitability
+  Index (ESI, KB #7), Optimal Scanning Conditions predicate (KB #15), and the Environmental
+  Condition Classification System (ECCS, KB #50).'
+hidden: false

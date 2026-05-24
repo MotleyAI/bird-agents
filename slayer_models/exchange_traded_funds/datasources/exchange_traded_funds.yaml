@@ -1,0 +1,4 @@
+version: 1
+name: exchange_traded_funds
+type: sqlite
+connection_string: sqlite:////home/james/Dropbox/SLayer/mini-interact/exchange_traded_funds/exchange_traded_funds.sqlite

@@ -1,0 +1,66 @@
+version: 6
+name: signal_is_high_confidence
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signaldecoding
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: is_high_confidence
+      type: BOOLEAN
+      sql: CASE WHEN ((1 - signalprobabilities.falseposprob) * signaldecoding.decodeconf
+        * signalclassification.classconf * (CASE WHEN (snrratio - 0.1 * ABS(noisefloordbm))
+        > 0 THEN (snrratio - 0.1 * ABS(noisefloordbm)) / 10.0 + 0.5 ELSE 0.1 END))
+        > 0.8 THEN 1 ELSE 0 END
+  dimensions:
+  - name: signalregistry
+  - name: is_high_confidence
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_high_confidence\"\
+  \ AS is_high_confidence FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
+  ,\n  CASE\n    WHEN (\n      (\n        1 - signalprobabilities.falseposprob\n \
+  \     ) * signaldecoding.decodeconf * signalclassification.classconf * (\n     \
+  \   CASE\n          WHEN (\n            signals.snrratio - 0.1 * ABS(signals.noisefloordbm)\n\
+  \          ) > 0\n          THEN (\n            signals.snrratio - 0.1 * ABS(signals.noisefloordbm)\n\
+  \          ) / 10.0 + 0.5\n          ELSE 0.1\n        END\n      )\n    ) > 0.8\n\
+  \    THEN 1\n    ELSE 0\n  END AS \"signals.is_high_confidence\"\nFROM signals AS\
+  \ signals\nLEFT JOIN signaldecoding AS signaldecoding\n  ON signals.signalregistry\
+  \ = signaldecoding.signalref\nLEFT JOIN signalprobabilities AS signalprobabilities\n\
+  \  ON signals.signalregistry = signalprobabilities.signalref\nLEFT JOIN signalclassification\
+  \ AS signalclassification\n  ON signals.signalregistry = signalclassification.signalref)\
+  \ AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_high_confidence
+  sql: is_high_confidence
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "High Confidence Signals predicate per signal.\n\n[kb=54]\nSignals where\
+  \ $\\text{CCS} > 0.8$ \u2014 Signal with Confirmation Confidence Score (CCS) > 0.8,\
+  \ indicating high reliability.\n[/kb=54]"
+hidden: false
+meta:
+  kb_id: 54

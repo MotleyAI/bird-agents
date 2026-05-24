@@ -1,0 +1,39 @@
+version: 6
+name: observationalconditions
+sql_table: observationalconditions
+query_variables: {}
+data_source: alien
+columns:
+- name: signalref
+  sql: signalref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: obstime
+  sql: obstime
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: obsdate
+  sql: obsdate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: obsdurhrs
+  sql: obsdurhrs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins:
+- target_model: signals
+  join_pairs:
+  - - signalref
+    - signalregistry
+  join_type: left
+filters: []
+description: Per-signal observation timing and duration (date, time, hours observed).
+hidden: false

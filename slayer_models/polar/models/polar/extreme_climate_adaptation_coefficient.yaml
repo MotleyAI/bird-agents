@@ -1,0 +1,138 @@
+version: 6
+name: extreme_climate_adaptation_coefficient
+source_queries:
+- version: 3
+  name: weather_per_eq
+  source_model:
+    source_name: weatherandstructure
+    columns:
+    - name: ext_temp_factor
+      type: DOUBLE
+      sql: CASE WHEN externaltemperaturec < -30 THEN 0.7 WHEN externaltemperaturec
+        < -15 THEN 0.85 ELSE 1.0 END
+  measures:
+  - formula: ssf:avg
+    name: ssf
+  - formula: ext_temp_factor:avg
+    name: ext_factor
+  dimensions:
+  - name: opmainteqref
+    model: operationmaintenance
+  whole_periods_only: false
+- version: 3
+  name: tie_per_eq
+  source_model: thermalsolarwindandgrid
+  measures:
+  - formula: tie:avg
+    name: tie
+  dimensions:
+  - name: thermaleqref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: weather_per_eq
+    joins:
+    - target_model: tie_per_eq
+      join_pairs:
+      - - operationmaintenance__opmainteqref
+        - thermaleqref
+  measures:
+  - formula: ssf:avg * (1 + tie_per_eq.tie:avg * 0.5) * ext_factor:avg
+    name: ecac
+  dimensions:
+  - name: operationmaintenance__opmainteqref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"weather_per_eq.operationmaintenance__opmainteqref\" AS\
+  \ operationmaintenance__opmainteqref, \"weather_per_eq.ext_factor_avg\" AS ext_factor_avg,\
+  \ \"weather_per_eq.ssf_avg\" AS ssf_avg, \"weather_per_eq.ecac\" AS ecac, \"weather_per_eq.tie_per_eq.tie_avg\"\
+  \ AS tie_per_eq__tie_avg FROM (WITH _base AS (\nSELECT\n  weather_per_eq.operationmaintenance__opmainteqref\
+  \ AS \"weather_per_eq.operationmaintenance__opmainteqref\",\n  AVG(weather_per_eq.ext_factor)\
+  \ AS \"weather_per_eq.ext_factor_avg\",\n  AVG(weather_per_eq.ssf) AS \"weather_per_eq.ssf_avg\"\
+  \nFROM (\n  SELECT\n    \"weatherandstructure.operationmaintenance.opmainteqref\"\
+  \ AS operationmaintenance__opmainteqref,\n    \"weatherandstructure.ssf\" AS ssf,\n\
+  \    \"weatherandstructure.ext_factor\" AS ext_factor\n  FROM (\n    SELECT\n  \
+  \    operationmaintenance.opmainteqref AS \"weatherandstructure.operationmaintenance.opmainteqref\"\
+  ,\n      AVG(\n        (\n          100 - weatherandstructure.structuralloadpercent\n\
+  \        ) / 100.0 * CASE\n          WHEN weatherandstructure.snowloadkgm2 > 100\
+  \ OR weatherandstructure.windspeedms > 20\n          THEN 0.5\n          WHEN weatherandstructure.snowloadkgm2\
+  \ > 50 OR weatherandstructure.windspeedms > 10\n          THEN 0.8\n          ELSE\
+  \ 1.0\n        END\n      ) AS \"weatherandstructure.ssf\",\n      AVG(\n      \
+  \  CASE\n          WHEN weatherandstructure.externaltemperaturec < -30\n       \
+  \   THEN 0.7\n          WHEN weatherandstructure.externaltemperaturec < -15\n  \
+  \        THEN 0.85\n          ELSE 1.0\n        END\n      ) AS \"weatherandstructure.ext_factor\"\
+  \n    FROM weatherandstructure AS weatherandstructure\n    LEFT JOIN operationmaintenance\
+  \ AS operationmaintenance\n      ON weatherandstructure.weatheropmaintref = operationmaintenance.opmaintregistry\n\
+  \    GROUP BY\n      operationmaintenance.opmainteqref\n  ) AS _inner\n) AS weather_per_eq\n\
+  GROUP BY\n  weather_per_eq.operationmaintenance__opmainteqref\n),\n_cm_weather_per_eq__tie_per_eq__tie_avg\
+  \ AS (\nSELECT\n  AVG(tie_per_eq.tie) AS \"weather_per_eq.tie_per_eq.tie_avg\"\n\
+  FROM (\n  SELECT\n    \"thermalsolarwindandgrid.thermaleqref\" AS thermaleqref,\n\
+  \    \"thermalsolarwindandgrid.tie\" AS tie\n  FROM (\n    SELECT\n      thermalsolarwindandgrid.thermaleqref\
+  \ AS \"thermalsolarwindandgrid.thermaleqref\",\n      AVG(\n        (\n        \
+  \  CASE thermalsolarwindandgrid.insulationstatus\n            WHEN 'Good'\n    \
+  \        THEN 0.9\n            WHEN 'Fair'\n            THEN 0.6\n            WHEN\
+  \ 'Poor'\n            THEN 0.3\n            ELSE 0.0\n          END\n        ) -\
+  \ thermalsolarwindandgrid.heatlossratekwh / 10.0\n      ) AS \"thermalsolarwindandgrid.tie\"\
+  \n    FROM thermalsolarwindandgrid AS thermalsolarwindandgrid\n    GROUP BY\n  \
+  \    thermalsolarwindandgrid.thermaleqref\n  ) AS _inner\n) AS tie_per_eq\n),\n\
+  _combined AS (\nSELECT _base.\"weather_per_eq.operationmaintenance__opmainteqref\"\
+  , _base.\"weather_per_eq.ext_factor_avg\", _base.\"weather_per_eq.ssf_avg\", _cm_weather_per_eq__tie_per_eq__tie_avg.\"\
+  weather_per_eq.tie_per_eq.tie_avg\"\nFROM _base\nCROSS JOIN _cm_weather_per_eq__tie_per_eq__tie_avg\n\
+  ),\nstep1 AS (\nSELECT\n    \"weather_per_eq.ext_factor_avg\",\n    \"weather_per_eq.operationmaintenance__opmainteqref\"\
+  ,\n    \"weather_per_eq.ssf_avg\",\n    \"weather_per_eq.tie_per_eq.tie_avg\",\n\
+  \    \"weather_per_eq.ssf_avg\" * (1 + \"weather_per_eq.tie_per_eq.tie_avg\" * 0.5)\
+  \ * \"weather_per_eq.ext_factor_avg\" AS \"weather_per_eq.ecac\"\nFROM _combined\n\
+  )\nSELECT\n    \"weather_per_eq.ecac\",\n    \"weather_per_eq.ext_factor_avg\",\n\
+  \    \"weather_per_eq.operationmaintenance__opmainteqref\",\n    \"weather_per_eq.ssf_avg\"\
+  ,\n    \"weather_per_eq.tie_per_eq.tie_avg\"\nFROM step1) AS _inner"
+data_source: polar
+columns:
+- name: operationmaintenance__opmainteqref
+  sql: operationmaintenance__opmainteqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ext_factor_avg
+  sql: ext_factor_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: ssf_avg
+  sql: ssf_avg
+  type: DOUBLE
+  primary_key: false
+  description: "Structural Safety Factor (KB #3): (100 \u2212 structuralloadpercent)/100\
+    \ \xD7 weather multiplier."
+  hidden: false
+  format:
+    type: float
+- name: ecac
+  sql: ecac
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tie_per_eq__tie_avg
+  sql: tie_per_eq__tie_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Extreme Climate Adaptation Coefficient (KB #36): ECAC = SSF x (1 + TIE\
+  \ x 0.5) x CASE on externaltemperaturec (0.7 if <-30, 0.85 if <-15, else 1.0). Peer-join\
+  \ via equipment (R-MULTISTAGE; weather grouped via opmaintenance to reach equipment).\n\
+  \n[kb=36]\nECAC = SSF \xD7 (1 + TIE \xD7 0.5) \xD7 \\begin{cases} 0.7 & \\text{if\
+  \ externaltemperaturec < -30} \\\\ 0.85 & \\text{if externaltemperaturec < -15}\
+  \ \\\\ 1.0 & \\text{otherwise} \\end{cases} \u2014 Evaluates equipment adaptation\
+  \ capability under extreme climate conditions\n[/kb=36]"
+hidden: false
+meta:
+  kb_id: 36

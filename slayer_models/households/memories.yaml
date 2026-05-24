@@ -1,0 +1,578 @@
+- version: 1
+  id: 1
+  learning: "KB 12 \u2014 Expenditure Ratio\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 12\n  knowledge: \"Expenditure Ratio\"\n  description: \"Calculates the\
+    \ household's expenditure coefficient relative to its income bracket.\"\n  definition:\
+    \ \"Calculated as the expenditure coefficient divided by a numeric mapping of\
+    \ income bracket.\"\n  type: calculation_knowledge\n  children_knowledge: [2]\n\
+    \nReason: The numerator (`socioeconomic__Expend_Coeff`, stored as TEXT but holding\
+    \ floats) is in the schema, but the denominator requires a numeric mapping from\
+    \ `socioeconomic__Income_Bracket` text values (R$ range strings like \"More than\
+    \ R$ 1,760 and less than R$ 2,640\") to scalars. Neither the KB nor the schema\
+    \ specifies that mapping (lower bound? midpoint? ordinal rank?), so any encoded\
+    \ ratio would burn in an arbitrary policy.\n\nStatus: deferred \u2014 AMBIGUOUS-PROSE\n\
+    \nClarifying questions:\n  Q1: How should each Income_Bracket R$ range string\
+    \ map to a numeric value (use the lower bound, the midpoint, or an ordinal rank\
+    \ 1..N)?\n  Q2: How should NULL Income_Bracket rows be treated \u2014 excluded,\
+    \ mapped to 0, or kept as NULL?\n\nRelated KB ids:\n  - KB 2 (Income Classification)\
+    \ \u2014 source column with unspecified numeric mapping\n  - KB 19 (Socioeconomic\
+    \ Index) \u2014 consumes Expenditure Ratio as one term\n  - KB 28 (Economically\
+    \ Stable Household) \u2014 consumes \"low Expenditure Ratio\"\n\nRelevant entities:\n\
+    \  - households.households.socioeconomic__Income_Bracket\n  - households.households.socioeconomic__Expend_Coeff"
+  entities:
+  - households.households.socioeconomic__Income_Bracket
+  - households.households.socioeconomic__Expend_Coeff
+  query: null
+  created_at: '2026-05-13T17:45:17.191782Z'
+- version: 1
+  id: 2
+  learning: "KB 16 \u2014 Service Support Score\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 16\n  knowledge: \"Service Support Score\"\n  description: \"Calculates\
+    \ a score for social service support based on domestic help and social assistance\
+    \ status.\"\n  definition: \"A weighted score combining domestic help availability\
+    \ and social assistance participation status (Yes/No).\"\n  type: calculation_knowledge\n\
+    \  children_knowledge: [8, 9]\n\nReason: The two source columns (`service_types.domestichelp`\
+    \ multi-category text; `service_types.socsupport` Yes/No) are in the schema, but\
+    \ the KB does not specify (a) the numeric score for each domestichelp value (Full-time\
+    \ / Part-time / Occasional / None / Live-in / NULL), (b) the score for socsupport\
+    \ Yes vs No, nor (c) the weights w1, w2 combining the two helpers.\n\nStatus:\
+    \ deferred \u2014 AMBIGUOUS-PROSE\n\nClarifying questions:\n  Q1: What numeric\
+    \ score should each domestichelp value (and NULL) receive?\n  Q2: What weights\
+    \ w1, w2 should combine the domestic-help score and the social-support score?\n\
+    \  Q3: Should households with NULL domestichelp be excluded or scored as 0?\n\n\
+    Related KB ids:\n  - KB 8 (Domestic Help Availability) \u2014 categorical source\n\
+    \  - KB 9 (Social Support Status) \u2014 Yes/No source\n  - KB 27 (Well-Equipped\
+    \ Household) \u2014 consumes \"high Service Support Score\"\n  - KB 30 (Self-Sufficient\
+    \ Household) \u2014 combines the same helpers under different rules\n\nRelevant\
+    \ entities:\n  - households.service_types.domestichelp\n  - households.service_types.socsupport\n\
+    \  - households.service_types.is_supported_household"
+  entities:
+  - households.service_types.domestichelp
+  - households.service_types.socsupport
+  - households.service_types.is_supported_household
+  query: null
+  created_at: '2026-05-13T17:45:21.779845Z'
+- version: 1
+  id: 3
+  learning: "KB 18 \u2014 Mobility Score\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 18\n  knowledge: \"Mobility Score\"\n  description: \"Calculates a household's\
+    \ mobility based on vehicle ownership and newest vehicle age.\"\n  definition:\
+    \ \"The product of the vehicle count and a numeric mapping of the newest vehicle\
+    \ year.\"\n  type: calculation_knowledge\n  children_knowledge: [10, 14]\n\nReason:\
+    \ Vehicle count is operationalised by KB 14 (`vehicle_ownership_index`). The second\
+    \ factor requires a numeric mapping of `vehicleinventory__Newest_Year` \u2014\
+    \ a free-text column whose sample values are mixed-case ranges and informal tokens\
+    \ ('2010 TO 2013', 'after 2014', 'nOt apPLIcaBlE', NULL). KB 10 illustrates the\
+    \ values but does not specify the numeric scale, so any product would silently\
+    \ encode an arbitrary mapping.\n\nStatus: deferred \u2014 AMBIGUOUS-PROSE\n\n\
+    Clarifying questions:\n  Q1: What numeric score should each Newest_Year range\
+    \ map to (midpoint year, age in years from a reference date, or an ordinal rank)?\n\
+    \  Q2: How should NULL or 'not applicable' Newest_Year values factor into the\
+    \ product \u2014 zero, NULL, or excluded?\n\nRelated KB ids:\n  - KB 10 (Vehicle\
+    \ Year Range) \u2014 text-range source\n  - KB 14 (Vehicle Ownership Index) \u2014\
+    \ vehicle-count factor (encoded)\n  - KB 23 (Mobile Household) \u2014 consumes\
+    \ Mobility Score\n\nRelevant entities:\n  - households.transportation_assets.vehicleinventory__Newest_Year\n\
+    \  - households.transportation_assets.vehicle_ownership_index"
+  entities:
+  - households.transportation_assets.vehicleinventory__Newest_Year
+  - households.transportation_assets.vehicle_ownership_index
+  query: null
+  created_at: '2026-05-13T17:45:27.246136Z'
+- version: 1
+  id: 4
+  learning: "KB 19 \u2014 Socioeconomic Index\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 19\n  knowledge: \"Socioeconomic Index\"\n  description: \"Calculates a\
+    \ composite index for household socioeconomic status.\"\n  definition: \"Calculated\
+    \ as a weighted sum of income score, expenditure ratio, and tenure score.\"\n\
+    \  type: calculation_knowledge\n  children_knowledge: [1, 12]\n\nReason: Requires\
+    \ three derived scalars and three weights: (a) an income score derived from `socioeconomic__Income_Bracket`\
+    \ text ranges (mapping unspecified \u2014 see KB 12), (b) the Expenditure Ratio\
+    \ (KB 12 \u2014 itself deferred), (c) a tenure score from `socioeconomic__Tenure_Type`\
+    \ (OWNED/RENTED/OCCUPIED/NULL \u2014 no numeric mapping in KB or schema), plus\
+    \ (d) the three weights. None of these are specified.\n\nStatus: deferred \u2014\
+    \ AMBIGUOUS-PROSE\n\nClarifying questions:\n  Q1: What numeric score should each\
+    \ Tenure_Type value (OWNED, RENTED, OCCUPIED, NULL) receive?\n  Q2: What numeric\
+    \ mapping should each Income_Bracket text value receive?\n  Q3: What weights w1,\
+    \ w2, w3 should combine income score, expenditure ratio, and tenure score?\n\n\
+    Related KB ids:\n  - KB 1 (Household Tenure Status) \u2014 tenure source\n  -\
+    \ KB 2 (Income Classification) \u2014 income source\n  - KB 12 (Expenditure Ratio)\
+    \ \u2014 middle term, itself deferred\n  - KB 28 (Economically Stable Household)\
+    \ \u2014 consumes \"high Socioeconomic Index\"\n\nRelevant entities:\n  - households.households.socioeconomic__Tenure_Type\n\
+    \  - households.households.socioeconomic__Income_Bracket\n  - households.households.socioeconomic__Expend_Coeff"
+  entities:
+  - households.households.socioeconomic__Tenure_Type
+  - households.households.socioeconomic__Income_Bracket
+  - households.households.socioeconomic__Expend_Coeff
+  query: null
+  created_at: '2026-05-13T17:45:32.477608Z'
+- version: 1
+  id: 5
+  learning: "KB 21 \u2014 Affluent Household\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 21\n  knowledge: \"Affluent Household\"\n  description: \"Defines a household\
+    \ with high socioeconomic status.\"\n  definition: \"A household with a 'Tenure_Type'\
+    \ of 'OWNED' and an 'Income_Bracket' of either 'High Income' or 'Very High Income'.\"\
+    \n  type: domain_knowledge\n  children_knowledge: [1, 2]\n\nReason: Tenure_Type='OWNED'\
+    \ is checkable (with LOWER+TRIM to handle mixed-case sample values 'OWNED'/'Owned'/'owned'),\
+    \ but Income_Bracket sample values are R$ range strings (e.g. \"More than R$ 4,400\
+    \ and less than R$ 8,800\"), not the KB-named ordinal labels 'High Income' / 'Very\
+    \ High Income'. The mapping from R$ ranges to the KB labels is not documented\
+    \ anywhere in the schema or column meanings.\n\nStatus: deferred \u2014 AMBIGUOUS-PROSE\n\
+    \nClarifying questions:\n  Q1: Which R$ Income_Bracket strings correspond to 'High\
+    \ Income' and 'Very High Income'?\n  Q2: Should a case-insensitive match be used\
+    \ for Tenure_Type ('OWNED'/'Owned'/'owned' all qualify as owner-occupied)?\n\n\
+    Related KB ids:\n  - KB 1 (Household Tenure Status) \u2014 Tenure_Type source\n\
+    \  - KB 2 (Income Classification) \u2014 Income_Bracket source\n  - KB 42 (Economically\
+    \ Independent Household) \u2014 also references \"high Income Classification\"\
+    \ without a threshold\n\nRelevant entities:\n  - households.households.socioeconomic__Tenure_Type\n\
+    \  - households.households.socioeconomic__Income_Bracket"
+  entities:
+  - households.households.socioeconomic__Tenure_Type
+  - households.households.socioeconomic__Income_Bracket
+  query: null
+  created_at: '2026-05-13T17:45:42.995745Z'
+- version: 1
+  id: 6
+  learning: "KB 22 \u2014 Urban Household\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 22\n  knowledge: \"Urban Household\"\n  description: \"Defines a household\
+    \ located in an urban area based on infrastructure.\"\n  definition: \"A household\
+    \ with 'Municipal Piped' Water Access Type and high-quality Road Surface Quality.\"\
+    \n  type: domain_knowledge\n  children_knowledge: [3, 4]\n\nReason: The literal\
+    \ 'Municipal Piped' does not appear among the sample `wateraccess` values, which\
+    \ are richer free-text variants ('Yes, available at least in one room', 'Yes,\
+    \ but only connected to a tap outside of the house (in the property)'). No documented\
+    \ mapping exists from those variants to the KB's 'Municipal Piped' category. \"\
+    High-quality road surface\" is also underspecified \u2014 KB 4 only distinguishes\
+    \ Asphalt/Concrete (score 4) vs others (score 1), and the KB does not state whether\
+    \ \"high quality\" means score=4 or some other cutoff.\n\nStatus: deferred \u2014\
+    \ AMBIGUOUS-PROSE\n\nClarifying questions:\n  Q1: Which `wateraccess` sample values\
+    \ should map to 'Municipal Piped'?\n  Q2: Does \"high-quality Road Surface Quality\"\
+    \ mean `roadsurface_score = 4` (Asphalt/Concrete) or a different threshold?\n\n\
+    Related KB ids:\n  - KB 3 (Water Access Type) \u2014 encoded as wateraccess_score\n\
+    \  - KB 4 (Road Surface Quality) \u2014 encoded as roadsurface_score\n\nRelevant\
+    \ entities:\n  - households.infrastructure.wateraccess\n  - households.infrastructure.roadsurface\n\
+    \  - households.infrastructure.wateraccess_score\n  - households.infrastructure.roadsurface_score"
+  entities:
+  - households.infrastructure.wateraccess
+  - households.infrastructure.roadsurface
+  - households.infrastructure.wateraccess_score
+  - households.infrastructure.roadsurface_score
+  query: null
+  created_at: '2026-05-13T17:45:48.693720Z'
+- version: 1
+  id: 7
+  learning: "KB 23 \u2014 Mobile Household\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 23\n  knowledge: \"Mobile Household\"\n  description: \"Defines a household\
+    \ with high mobility based on vehicle ownership.\"\n  definition: \"A household\
+    \ with a high Vehicle Ownership Index and a recent Vehicle Year Range.\"\n  type:\
+    \ domain_knowledge\n  children_knowledge: [10, 14]\n\nReason: VOI is encoded (KB\
+    \ 14, `transportation_assets.vehicle_ownership_index`) but the KB does not specify\
+    \ a \"high\" threshold. \"Recent Vehicle Year Range\" likewise has no numeric\
+    \ or categorical definition \u2014 KB 10 only illustrates that the column holds\
+    \ free-text ranges ('1995 to 1999', '2010 TO 2013', 'after 2014', NULL).\n\nStatus:\
+    \ deferred \u2014 AMBIGUOUS-PROSE\n\nClarifying questions:\n  Q1: What VOI numeric\
+    \ threshold counts as \"high\" (e.g. >= 1, >= 2, top quartile)?\n  Q2: Which Newest_Year\
+    \ values count as \"recent\" (e.g. {'after 2014'}, {'2010 TO 2013', 'after 2014'},\
+    \ or another set)?\n\nRelated KB ids:\n  - KB 10 (Vehicle Year Range) \u2014 Newest_Year\
+    \ source\n  - KB 14 (Vehicle Ownership Index) \u2014 VOI source (encoded)\n  -\
+    \ KB 18 (Mobility Score) \u2014 sibling concept, also deferred\n\nRelevant entities:\n\
+    \  - households.transportation_assets.vehicle_ownership_index\n  - households.transportation_assets.vehicleinventory__Newest_Year"
+  entities:
+  - households.transportation_assets.vehicle_ownership_index
+  - households.transportation_assets.vehicleinventory__Newest_Year
+  query: null
+  created_at: '2026-05-13T17:45:53.649978Z'
+- version: 1
+  id: 8
+  learning: "KB 25 \u2014 Crowded Household\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 25\n  knowledge: \"Crowded Household\"\n  description: \"Defines a household\
+    \ with high occupancy relative to its capacity.\"\n  definition: \"A household\
+    \ with Household Density greater than a threshold.\"\n  type: domain_knowledge\n\
+    \  children_knowledge: [11]\n\nReason: Household Density is encoded (KB 11, `properties.household_density`\
+    \ = residentcount / Room_Count), but the KB references the threshold verbatim\
+    \ as \"a threshold\" without giving a number. Picking any specific cutoff (1.5,\
+    \ 2, 3 residents-per-bedroom) would silently encode an arbitrary policy.\n\nStatus:\
+    \ deferred \u2014 AMBIGUOUS-PROSE\n\nClarifying questions:\n  Q1: What numeric\
+    \ value for household_density (residents-per-bedroom) defines \"crowded\"?\n\n\
+    Related KB ids:\n  - KB 11 (Household Density) \u2014 density source (encoded)\n\
+    \  - KB 29 (Comfortable Living Household) \u2014 uses density-related thresholds\
+    \ that KB 29 DOES specify (LCS > 3 AND bathroom_ratio > 0.5)\n\nRelevant entities:\n\
+    \  - households.properties.household_density"
+  entities:
+  - households.properties.household_density
+  query: null
+  created_at: '2026-05-13T17:45:57.369328Z'
+- version: 1
+  id: 9
+  learning: "KB 26 \u2014 Modern Dwelling\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 26\n  knowledge: \"Modern Dwelling\"\n  description: \"Defines a dwelling\
+    \ with modern amenities and structure.\"\n  definition: \"A dwelling with specific\
+    \ Dwelling Type and active Cable TV Status.\"\n  type: domain_knowledge\n  children_knowledge:\
+    \ [6, 7]\n\nReason: The KB says \"specific Dwelling Type\" without naming which\
+    \ dwelling types qualify as modern. \"Active Cable TV Status\" can plausibly map\
+    \ to the cablestatus availability values {avail, available, yes} per KB 7, but\
+    \ the dwelling-type qualifier is fully unspecified.\n\nStatus: deferred \u2014\
+    \ AMBIGUOUS-PROSE\n\nClarifying questions:\n  Q1: Which Dwelling_Class values\
+    \ qualify a dwelling as \"modern\" (e.g. {'Apartment', 'Condominium'} vs the catch-all)?\n\
+    \  Q2: Should \"active Cable TV Status\" be any of {'avail', 'available', 'yes'}\
+    \ (case-insensitive) or a stricter subset?\n\nRelated KB ids:\n  - KB 6 (Dwelling\
+    \ Type) \u2014 Dwelling_Class source\n  - KB 7 (Cable TV Status) \u2014 cablestatus\
+    \ source\n  - KB 43 (Well-Maintained Dwelling) \u2014 sibling, also references\
+    \ cablestatus\n\nRelevant entities:\n  - households.properties.dwelling_specs__Dwelling_Class\n\
+    \  - households.amenities.cablestatus"
+  entities:
+  - households.properties.dwelling_specs__Dwelling_Class
+  - households.amenities.cablestatus
+  query: null
+  created_at: '2026-05-13T17:46:05.721059Z'
+- version: 1
+  id: 10
+  learning: "KB 27 \u2014 Well-Equipped Household\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 27\n  knowledge: \"Well-Equipped Household\"\n  description: \"Defines\
+    \ a household with high infrastructure and service support.\"\n  definition: \"\
+    A household with a high Infrastructure Quality Score and a high Service Support\
+    \ Score.\"\n  type: domain_knowledge\n  children_knowledge: [13, 16]\n\nReason:\
+    \ Infrastructure Quality Score is encoded (KB 13, `infrastructure.infrastructure_quality_score`,\
+    \ range 1..4) but the \"high\" threshold is unspecified. Service Support Score\
+    \ is KB 16 \u2014 itself deferred because the weights and per-category scores\
+    \ are unspecified.\n\nStatus: deferred \u2014 AMBIGUOUS-PROSE\n\nClarifying questions:\n\
+    \  Q1: What numeric infrastructure_quality_score threshold counts as \"high\"\
+    \ (e.g. >= 3, >= 3.5, == 4)?\n  Q2: Once KB 16 (Service Support Score) is resolved,\
+    \ what threshold defines \"high SSS\"?\n\nRelated KB ids:\n  - KB 13 (Infrastructure\
+    \ Quality Score) \u2014 encoded\n  - KB 16 (Service Support Score) \u2014 deferred\
+    \ (parent)\n\nRelevant entities:\n  - households.infrastructure.infrastructure_quality_score\n\
+    \  - households.service_types.domestichelp\n  - households.service_types.socsupport"
+  entities:
+  - households.infrastructure.infrastructure_quality_score
+  - households.service_types.domestichelp
+  - households.service_types.socsupport
+  query: null
+  created_at: '2026-05-13T17:46:09.966918Z'
+- version: 1
+  id: 11
+  learning: "KB 28 \u2014 Economically Stable Household\n\nKB item (verbatim from\
+    \ households_kb.jsonl):\n  id: 28\n  knowledge: \"Economically Stable Household\"\
+    \n  description: \"Defines a household with balanced socioeconomic metrics.\"\n\
+    \  definition: \"A household with a high Socioeconomic Index and a low Expenditure\
+    \ Ratio.\"\n  type: domain_knowledge\n  children_knowledge: [12, 19]\n\nReason:\
+    \ Both inputs are deferred \u2014 Socioeconomic Index (KB 19) and Expenditure\
+    \ Ratio (KB 12) require numeric mappings for Income_Bracket and Tenure_Type that\
+    \ the schema does not carry. Even if the parents were resolved, \"high\" and \"\
+    low\" thresholds for the resulting scalars are also unspecified.\n\nStatus: deferred\
+    \ \u2014 AMBIGUOUS-PROSE\n\nClarifying questions:\n  Q1: Once KB 12 / KB 19 are\
+    \ resolved, what thresholds define \"high Socioeconomic Index\" and \"low Expenditure\
+    \ Ratio\"?\n\nRelated KB ids:\n  - KB 12 (Expenditure Ratio) \u2014 deferred parent\n\
+    \  - KB 19 (Socioeconomic Index) \u2014 deferred parent\n\nRelevant entities:\n\
+    \  - households.households.socioeconomic__Income_Bracket\n  - households.households.socioeconomic__Tenure_Type\n\
+    \  - households.households.socioeconomic__Expend_Coeff"
+  entities:
+  - households.households.socioeconomic__Income_Bracket
+  - households.households.socioeconomic__Tenure_Type
+  - households.households.socioeconomic__Expend_Coeff
+  query: null
+  created_at: '2026-05-13T17:46:14.383270Z'
+- version: 1
+  id: 12
+  learning: "KB 30 \u2014 Self-Sufficient Household\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 30\n  knowledge: \"Self-Sufficient Household\"\n  description: \"Defines\
+    \ a household with minimal reliance on external support.\"\n  definition: \"A\
+    \ household with limited Domestic Help Availability, social support status of\
+    \ 'No', and high Vehicle Ownership Index.\"\n  type: domain_knowledge\n  children_knowledge:\
+    \ [8, 9, 14]\n\nReason: Two of three conditions are operationalisable: `socsupport\
+    \ = 'No'` (case-insensitive) and `vehicle_ownership_index` (encoded). The first\
+    \ condition \u2014 \"limited Domestic Help Availability\" \u2014 does not state\
+    \ which values of `service_types.domestichelp` qualify as \"limited\" (KB 8 illustrates\
+    \ Full-time / Part-time / Occasional / None / Live-in but does not rank them).\
+    \ The \"high VOI\" threshold is also unspecified.\n\nStatus: deferred \u2014 AMBIGUOUS-PROSE\n\
+    \nClarifying questions:\n  Q1: Which domestichelp values count as \"limited\"\
+    \ (e.g. {'None'}, {'None', 'Occasional'}, or excluding {'Full-time', 'Live-in'})?\n\
+    \  Q2: What VOI threshold counts as \"high\"?\n\nRelated KB ids:\n  - KB 8 (Domestic\
+    \ Help Availability) \u2014 domestichelp source\n  - KB 9 (Social Support Status)\
+    \ \u2014 socsupport source\n  - KB 14 (Vehicle Ownership Index) \u2014 VOI source\
+    \ (encoded)\n  - KB 16 (Service Support Score) \u2014 sibling, uses same two helpers\n\
+    \  - KB 23 (Mobile Household) \u2014 uses \"high VOI\" with same unresolved threshold\n\
+    \nRelevant entities:\n  - households.service_types.domestichelp\n  - households.service_types.socsupport\n\
+    \  - households.transportation_assets.vehicle_ownership_index"
+  entities:
+  - households.service_types.domestichelp
+  - households.service_types.socsupport
+  - households.transportation_assets.vehicle_ownership_index
+  query: null
+  created_at: '2026-05-13T17:46:19.324859Z'
+- version: 1
+  id: 13
+  learning: "KB 31 \u2014 Purge Incomplete Transport Data\n\nKB item (verbatim from\
+    \ households_kb.jsonl):\n  id: 31\n  knowledge: \"Purge Incomplete Transport Data\"\
+    \n  description: \"An action to remove transportation asset records that are linked\
+    \ to households with missing or incomplete core economic data.\"\n  definition:\
+    \ \"Delete records from the transportation assets data for any household where\
+    \ the income classification is NULL.\"\n  type: domain_knowledge\n  children_knowledge:\
+    \ [2]\n\nReason: KB describes a DELETE workflow against `transportation_assets`\
+    \ filtered by NULL `socioeconomic__Income_Bracket` on the linked household. SLayer\
+    \ models describe queryable shape (SELECT semantics) and carry no DML primitive.\n\
+    \nStatus: deferred \u2014 DML\n\nRelated KB ids:\n  - KB 2 (Income Classification)\
+    \ \u2014 filter column\n  - KB 32 (Register New Household) \u2014 sibling DML\n\
+    \  - KB 33 (Update Vehicle Inventory) \u2014 sibling DML\n\nRelevant entities:\n\
+    \  - households.transportation_assets\n  - households.households.socioeconomic__Income_Bracket"
+  entities:
+  - households.transportation_assets
+  - households.households.socioeconomic__Income_Bracket
+  query: null
+  created_at: '2026-05-13T17:46:27.577096Z'
+- version: 1
+  id: 14
+  learning: "KB 32 \u2014 Register New Household\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 32\n  knowledge: \"Register New Household\"\n  description: \"An action\
+    \ to add a new household's primary record into the database system.\"\n  definition:\
+    \ \"Insert a new record into the household data with all required information.\"\
+    \n  type: domain_knowledge\n  children_knowledge: -1\n\nReason: KB describes an\
+    \ INSERT workflow into the `households` table. SLayer models describe queryable\
+    \ shape (SELECT semantics) and carry no DML primitive.\n\nStatus: deferred \u2014\
+    \ DML\n\nRelated KB ids:\n  - KB 31 (Purge Incomplete Transport Data) \u2014 sibling\
+    \ DML\n  - KB 33 (Update Vehicle Inventory) \u2014 sibling DML\n\nRelevant entities:\n\
+    \  - households.households"
+  entities:
+  - households.households
+  query: null
+  created_at: '2026-05-13T17:46:29.557563Z'
+- version: 1
+  id: 15
+  learning: "KB 33 \u2014 Update Vehicle Inventory\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 33\n  knowledge: \"Update Vehicle Inventory\"\n  description: \"An action\
+    \ to modify a household's vehicle records, typically after acquiring or selling\
+    \ a vehicle.\"\n  definition: \"Update the vehicle inventory data for a specific\
+    \ household, modifying fields such as newest vehicle year or vehicle counts.\"\
+    \n  type: domain_knowledge\n  children_knowledge: [10, 14]\n\nReason: KB describes\
+    \ an UPDATE workflow against `transportation_assets.vehicleinventory` (a JSONB\
+    \ blob). SLayer models describe queryable shape (SELECT semantics) and carry no\
+    \ DML primitive.\n\nStatus: deferred \u2014 DML\n\nRelated KB ids:\n  - KB 10\
+    \ (Vehicle Year Range) \u2014 Newest_Year sub-field\n  - KB 14 (Vehicle Ownership\
+    \ Index) \u2014 vehicle_counts.* sub-fields\n  - KB 31 / KB 32 \u2014 sibling\
+    \ DML\n\nRelevant entities:\n  - households.transportation_assets.vehicleinventory\n\
+    \  - households.transportation_assets.vehicleinventory__Newest_Year\n  - households.transportation_assets.vehicle_ownership_index"
+  entities:
+  - households.transportation_assets.vehicleinventory
+  - households.transportation_assets.vehicleinventory__Newest_Year
+  - households.transportation_assets.vehicle_ownership_index
+  query: null
+  created_at: '2026-05-13T17:46:33.313146Z'
+- version: 1
+  id: 16
+  learning: "KB 34 \u2014 Residential Zone Types\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 34\n  knowledge: \"Residential Zone Types\"\n  description: \"Illustrates\
+    \ the types of residential zones based on geographic classification.\"\n  definition:\
+    \ \"Includes 'Urban' (densely populated city areas), 'Suburban' (residential outskirts),\
+    \ 'Rural' (sparsely populated countryside), and 'Mixed' (transitional areas).\
+    \ Null indicates unclassified or pending zoning.\"\n  type: value_illustration\n\
+    \  children_knowledge: -1\n\nReason: The schema has no `residential_zone` column.\
+    \ `locations` carries only `regioncode` (text) and `zonenum` (int); `households.locregion`\
+    \ and `households.loczone` are foreign-key references with no documented categorical\
+    \ mapping to Urban / Suburban / Rural / Mixed. KB 45 states that `loczone = 1`\
+    \ defines an Urban Zone (encoded as `households.is_urban_zone`); no comparable\
+    \ mappings exist for Suburban, Rural, or Mixed.\n\nStatus: deferred \u2014 SCHEMA-GAP\n\
+    \nClarifying questions:\n  Q1: Which `loczone` numeric values (or which `regioncode`\
+    \ strings) correspond to each of Urban / Suburban / Rural / Mixed?\n  Q2: Is the\
+    \ zone classification derivable from other columns (e.g. infrastructure quality),\
+    \ or does it require a new column?\n\nRelated KB ids:\n  - KB 40 (High-Mobility\
+    \ Urban Household) \u2014 cites KB 34 as a child\n  - KB 45 (Urban Zone) \u2014\
+    \ encodes the Urban case as loczone = 1\n\nRelevant entities:\n  - households.locations\n\
+    \  - households.locations.zonenum\n  - households.locations.regioncode\n  - households.households.loczone\n\
+    \  - households.households.is_urban_zone"
+  entities:
+  - households.locations
+  - households.locations.zonenum
+  - households.locations.regioncode
+  - households.households.loczone
+  - households.households.is_urban_zone
+  query: null
+  created_at: '2026-05-13T17:46:39.042140Z'
+- version: 1
+  id: 17
+  learning: "KB 35 \u2014 Utility Access Level\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 35\n  knowledge: \"Utility Access Level\"\n  description: \"Illustrates\
+    \ the level of utility connectivity available to households.\"\n  definition:\
+    \ \"Includes 'Full' (all utilities like water and cable available), 'Partial'\
+    \ (some utilities available), 'Basic' (only essential utilities like water), and\
+    \ 'None' (no utility access). Null indicates unassessed connectivity.\"\n  type:\
+    \ value_illustration\n  children_knowledge: [3, 7]\n\nReason: The schema has no\
+    \ `utility_access_level` column. KB 3 (`infrastructure.wateraccess`) and KB 7\
+    \ (`amenities.cablestatus`) cover individual utilities, but there is no documented\
+    \ rule for combining them into the Full / Partial / Basic / None bands.\n\nStatus:\
+    \ deferred \u2014 SCHEMA-GAP\n\nClarifying questions:\n  Q1: How should `wateraccess`\
+    \ + `cablestatus` combine into Full / Partial / Basic / None (e.g. Full = both\
+    \ available, Basic = only water, etc.)?\n  Q2: Are other utility columns (electricity,\
+    \ gas, sewer) intended but missing from the schema, or is the level derived solely\
+    \ from water + cable?\n\nRelated KB ids:\n  - KB 3 (Water Access Type) \u2014\
+    \ water source\n  - KB 7 (Cable TV Status) \u2014 cable source\n  - KB 41 (Stable\
+    \ Infrastructure Household) \u2014 cites KB 35 as a child\n\nRelevant entities:\n\
+    \  - households.infrastructure.wateraccess\n  - households.amenities.cablestatus"
+  entities:
+  - households.infrastructure.wateraccess
+  - households.amenities.cablestatus
+  query: null
+  created_at: '2026-05-13T17:46:46.935887Z'
+- version: 1
+  id: 18
+  learning: "KB 37 \u2014 Social Assistance Participation\n\nKB item (verbatim from\
+    \ households_kb.jsonl):\n  id: 37\n  knowledge: \"Social Assistance Participation\"\
+    \n  description: \"Indicates household participation in social assistance programs.\"\
+    \n  definition: \"Simple Yes/No indicator showing whether the household accepts\
+    \ social assistance, part of a unique constraint combination.\"\n  type: value_illustration\n\
+    \  children_knowledge: [9]\n\nReason: Verbatim restatement of KB 9 (Social Support\
+    \ Status). Both describe `service_types.socsupport` as a binary Yes/No indicator.\
+    \ KB 9 is encoded as a description on `service_types.socsupport` with `meta.kb_id\
+    \ = 9`; KB 37 carries no additional semantics.\n\nStatus: not-applicable \u2014\
+    \ duplicate of KB 9\n\nRelated KB ids:\n  - KB 9 (Social Support Status) \u2014\
+    \ primary, encoded with meta.kb_id=9 on households.service_types.socsupport\n\
+    \  - KB 24 (Supported Household) \u2014 operationalises socsupport='Yes' as households.service_types.is_supported_household\n\
+    \nRelevant entities:\n  - households.service_types.socsupport"
+  entities:
+  - households.service_types.socsupport
+  query: null
+  created_at: '2026-05-13T17:46:50.727540Z'
+- version: 1
+  id: 19
+  learning: "KB 38 \u2014 Dwelling Condition Status\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 38\n  knowledge: \"Dwelling Condition Status\"\n  description: \"Illustrates\
+    \ the maintenance and condition categories of residential properties.\"\n  definition:\
+    \ \"Includes 'Excellent' (well-maintained), 'Good' (minor repairs needed), 'Fair'\
+    \ (moderate repairs needed), 'Poor' (significant repairs needed). Null indicates\
+    \ unassessed condition.\"\n  type: value_illustration\n  children_knowledge: -1\n\
+    \nReason: The schema has no dwelling-condition column. `properties` carries structural\
+    \ attributes (Dwelling_Class, Bath_Count, Room_Count) and FKs only; there is no\
+    \ maintenance / quality column to host Excellent / Good / Fair / Poor.\n\nStatus:\
+    \ deferred \u2014 SCHEMA-GAP\n\nClarifying questions:\n  Q1: Should this column\
+    \ be added to `properties`, or derived from another signal (e.g. infrastructure\
+    \ quality + dwelling type)?\n  Q2: Is the condition assessed elsewhere (a separate\
+    \ table not present in this schema)?\n\nRelated KB ids:\n  - KB 43 (Well-Maintained\
+    \ Dwelling) \u2014 cites KB 38 as a child\n\nRelevant entities:\n  - households.properties\n\
+    \  - households.properties.dwelling_specs__Dwelling_Class"
+  entities:
+  - households.properties
+  - households.properties.dwelling_specs__Dwelling_Class
+  query: null
+  created_at: '2026-05-13T17:46:54.533194Z'
+- version: 1
+  id: 20
+  learning: "KB 39 \u2014 Compact Household\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 39\n  knowledge: \"Compact Household\"\n  description: \"Defines a household\
+    \ with minimal space requirements and high efficiency.\"\n  definition: \"A household\
+    \ with specific Dwelling Type and a small resident count.\"\n  type: domain_knowledge\n\
+    \  children_knowledge: [6]\n\nReason: \"Specific Dwelling Type\" does not name\
+    \ which dwelling types qualify (KB 6 illustrates Brickwork house / Apartment /\
+    \ Condominium but does not rank them by compactness). \"Small resident count\"\
+    \ lacks a numeric threshold (e.g. residentcount <= 2 vs <= 3).\n\nStatus: deferred\
+    \ \u2014 AMBIGUOUS-PROSE\n\nClarifying questions:\n  Q1: Which Dwelling_Class\
+    \ values qualify as \"specific\" for a compact household (e.g. {'Apartment'})?\n\
+    \  Q2: What residentcount threshold counts as \"small\" (<= 1, <= 2, <= 3)?\n\n\
+    Related KB ids:\n  - KB 6 (Dwelling Type) \u2014 Dwelling_Class source\n\nRelevant\
+    \ entities:\n  - households.properties.dwelling_specs__Dwelling_Class\n  - households.households.residentcount"
+  entities:
+  - households.properties.dwelling_specs__Dwelling_Class
+  - households.households.residentcount
+  query: null
+  created_at: '2026-05-13T17:46:58.379492Z'
+- version: 1
+  id: 21
+  learning: "KB 40 \u2014 High-Mobility Urban Household\n\nKB item (verbatim from\
+    \ households_kb.jsonl):\n  id: 40\n  knowledge: \"High-Mobility Urban Household\"\
+    \n  description: \"Defines a household in an urban area with significant transportation\
+    \ assets.\"\n  definition: \"A household with specific Residential Zone Type and\
+    \ Vehicle Type Distribution.\"\n  type: domain_knowledge\n  children_knowledge:\
+    \ [34, 36]\n\nReason: Cascades from KB 34 (Residential Zone Types) which is itself\
+    \ deferred SCHEMA-GAP \u2014 the schema has no `residential_zone` column and KB\
+    \ 45 only operationalises the Urban case (loczone = 1). \"Specific Vehicle Type\
+    \ Distribution\" (KB 36) is also unspecified \u2014 KB 36 describes the JSONB\
+    \ structure but does not state which vehicle-type composition counts as \"high\
+    \ mobility\".\n\nStatus: deferred \u2014 SCHEMA-GAP\n\nClarifying questions:\n\
+    \  Q1: Once KB 34 is resolved, which Residential Zone Type values qualify (presumably\
+    \ Urban)?\n  Q2: What Vehicle Type Distribution shape counts as \"high mobility\"\
+    \ (e.g. Auto_Count >= 2, or any non-zero counts across all three types)?\n\nRelated\
+    \ KB ids:\n  - KB 34 (Residential Zone Types) \u2014 deferred parent\n  - KB 36\
+    \ (Vehicle Type Distribution) \u2014 encoded as descriptive metadata on vehicleinventory\n\
+    \  - KB 45 (Urban Zone) \u2014 encodes the Urban case\n\nRelevant entities:\n\
+    \  - households.households.loczone\n  - households.households.is_urban_zone\n\
+    \  - households.transportation_assets.vehicleinventory\n  - households.transportation_assets.vehicle_ownership_index"
+  entities:
+  - households.households.loczone
+  - households.households.is_urban_zone
+  - households.transportation_assets.vehicleinventory
+  - households.transportation_assets.vehicle_ownership_index
+  query: null
+  created_at: '2026-05-13T17:47:06.934204Z'
+- version: 1
+  id: 22
+  learning: "KB 41 \u2014 Stable Infrastructure Household\n\nKB item (verbatim from\
+    \ households_kb.jsonl):\n  id: 41\n  knowledge: \"Stable Infrastructure Household\"\
+    \n  description: \"Defines a household with reliable and high-quality infrastructure.\"\
+    \n  definition: \"A household with a specific Utility Access Level and Road Surface\
+    \ Quality.\"\n  type: domain_knowledge\n  children_knowledge: [4, 35]\n\nReason:\
+    \ Cascades from KB 35 (Utility Access Level), which is itself deferred SCHEMA-GAP\
+    \ \u2014 there is no `utility_access_level` column and the rule for combining\
+    \ wateraccess + cablestatus into Full / Partial / Basic / None is unspecified.\
+    \ \"Specific\" Road Surface Quality value(s) for qualification are also unspecified\
+    \ (KB 4 only distinguishes score 4 vs 1).\n\nStatus: deferred \u2014 SCHEMA-GAP\n\
+    \nClarifying questions:\n  Q1: Once KB 35 is resolved, which Utility Access Level\
+    \ values count (Full only, or {Full, Partial})?\n  Q2: Does \"specific Road Surface\
+    \ Quality\" mean roadsurface_score = 4 (Asphalt/Concrete)?\n\nRelated KB ids:\n\
+    \  - KB 4 (Road Surface Quality) \u2014 encoded as roadsurface_score\n  - KB 35\
+    \ (Utility Access Level) \u2014 deferred parent\n\nRelevant entities:\n  - households.infrastructure.roadsurface\n\
+    \  - households.infrastructure.roadsurface_score\n  - households.infrastructure.wateraccess\n\
+    \  - households.amenities.cablestatus"
+  entities:
+  - households.infrastructure.roadsurface
+  - households.infrastructure.roadsurface_score
+  - households.infrastructure.wateraccess
+  - households.amenities.cablestatus
+  query: null
+  created_at: '2026-05-13T17:47:11.829336Z'
+- version: 1
+  id: 23
+  learning: "KB 42 \u2014 Economically Independent Household\n\nKB item (verbatim\
+    \ from households_kb.jsonl):\n  id: 42\n  knowledge: \"Economically Independent\
+    \ Household\"\n  description: \"Defines a household with minimal reliance on external\
+    \ financial support.\"\n  definition: \"A household with high Income Classification\
+    \ and social support status of 'No'.\",\n  type: domain_knowledge\n  children_knowledge:\
+    \ [2, 9]\n\nReason: `socsupport = 'No'` is checkable (case-insensitive against\
+    \ service_types.socsupport). \"High Income Classification\" is not actionable\
+    \ because the Income_Bracket sample values are R$ range strings (e.g. \"More than\
+    \ R$ 4,400 and less than R$ 8,800\"), not the ordinal labels KB 2 names ('Low\
+    \ Income' \u2026 'Very High Income'). The mapping from R$ ranges to the \"high\"\
+    \ band is undocumented.\n\nStatus: deferred \u2014 AMBIGUOUS-PROSE\n\nClarifying\
+    \ questions:\n  Q1: Which R$ Income_Bracket strings count as \"high Income Classification\"\
+    ?\n  Q2: If the canonical labels (KB 2) are derived from a future mapping, should\
+    \ \"high\" mean only 'Very High Income', or {'High Income', 'Very High Income'}?\n\
+    \nRelated KB ids:\n  - KB 2 (Income Classification) \u2014 Income_Bracket source\n\
+    \  - KB 9 (Social Support Status) \u2014 socsupport source (encoded)\n  - KB 21\
+    \ (Affluent Household) \u2014 similar income-threshold ambiguity\n\nRelevant entities:\n\
+    \  - households.households.socioeconomic__Income_Bracket\n  - households.service_types.socsupport\n\
+    \  - households.service_types.is_supported_household"
+  entities:
+  - households.households.socioeconomic__Income_Bracket
+  - households.service_types.socsupport
+  - households.service_types.is_supported_household
+  query: null
+  created_at: '2026-05-13T17:47:17.045111Z'
+- version: 1
+  id: 24
+  learning: "KB 43 \u2014 Well-Maintained Dwelling\n\nKB item (verbatim from households_kb.jsonl):\n\
+    \  id: 43\n  knowledge: \"Well-Maintained Dwelling\"\n  description: \"Defines\
+    \ a residential unit in excellent or good condition with modern amenities.\"\n\
+    \  definition: \"A dwelling with specific Dwelling Condition Status and Cable\
+    \ TV Status.\"\n  type: domain_knowledge\n  children_knowledge: [7, 38]\n\nReason:\
+    \ Cascades from KB 38 (Dwelling Condition Status), which is itself deferred SCHEMA-GAP\
+    \ \u2014 there is no dwelling-condition column in the schema, so 'Excellent' /\
+    \ 'Good' / 'Fair' / 'Poor' cannot be matched. The cablestatus side could be derived\
+    \ from KB 7's value list, but the dwelling-condition side blocks the rule entirely.\n\
+    \nStatus: deferred \u2014 SCHEMA-GAP\n\nClarifying questions:\n  Q1: Once KB 38\
+    \ is resolved (a condition column is added or derived), which condition values\
+    \ qualify ({'Excellent'}, {'Excellent', 'Good'})?\n  Q2: Does \"specific Cable\
+    \ TV Status\" mean any availability value ({'avail', 'available', 'yes'}) or only\
+    \ one?\n\nRelated KB ids:\n  - KB 7 (Cable TV Status) \u2014 cablestatus source\n\
+    \  - KB 38 (Dwelling Condition Status) \u2014 deferred parent\n  - KB 26 (Modern\
+    \ Dwelling) \u2014 sibling, also references cablestatus\n\nRelevant entities:\n\
+    \  - households.amenities.cablestatus\n  - households.properties.dwelling_specs__Dwelling_Class"
+  entities:
+  - households.amenities.cablestatus
+  - households.properties.dwelling_specs__Dwelling_Class
+  query: null
+  created_at: '2026-05-13T17:47:21.952883Z'

@@ -1,0 +1,159 @@
+version: 6
+name: spatially_complex_site
+source_queries:
+- version: 3
+  name: pc_per_arcref
+  source_model: scanpointcloud
+  measures:
+  - formula: totalpts:avg
+    name: totalpts
+  - formula: pointdense:avg
+    name: pointdense
+  - formula: clouddense:avg
+    name: clouddense
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  name: sp_per_arcref
+  source_model: scanspatial
+  measures:
+  - formula: aream2:avg
+    name: area_m2
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  name: sdi_per_arcref
+  source_model:
+    source_name: pc_per_arcref
+    joins:
+    - target_model: sp_per_arcref
+      join_pairs:
+      - - arcref
+        - arcref
+  measures:
+  - formula: totalpts:avg / (sp_per_arcref.area_m2:avg * 10000.0) * sqrt(pointdense:avg
+      / clouddense:avg)
+    name: sdi
+  dimensions:
+  - name: arcref
+  - name: area_m2
+    model: sp_per_arcref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: sdi_per_arcref
+    columns:
+    - name: is_spatially_complex_site
+      type: BOOLEAN
+      sql: CASE WHEN sp_per_arcref__area_m2 > 100 AND sdi > 50 THEN 1 ELSE 0 END
+  measures:
+  - formula: sdi:avg
+    name: sdi
+  - formula: sp_per_arcref__area_m2:avg
+    name: area_m2
+  dimensions:
+  - name: arcref
+  - name: is_spatially_complex_site
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"sdi_per_arcref.arcref\" AS arcref, \"sdi_per_arcref.is_spatially_complex_site\"\
+  \ AS is_spatially_complex_site, \"sdi_per_arcref.sdi\" AS sdi, \"sdi_per_arcref.area_m2\"\
+  \ AS area_m2 FROM (SELECT\n  sdi_per_arcref.arcref AS \"sdi_per_arcref.arcref\"\
+  ,\n  CASE\n    WHEN sdi_per_arcref.sp_per_arcref__area_m2 > 100 AND sdi_per_arcref.sdi\
+  \ > 50\n    THEN 1\n    ELSE 0\n  END AS \"sdi_per_arcref.is_spatially_complex_site\"\
+  ,\n  AVG(sdi_per_arcref.sdi) AS \"sdi_per_arcref.sdi\",\n  AVG(sdi_per_arcref.sp_per_arcref__area_m2)\
+  \ AS \"sdi_per_arcref.area_m2\"\nFROM (\n  SELECT\n    \"pc_per_arcref.arcref\"\
+  \ AS arcref,\n    \"pc_per_arcref.sp_per_arcref.area_m2\" AS sp_per_arcref__area_m2,\n\
+  \    \"pc_per_arcref.totalpts_avg\" AS totalpts_avg,\n    \"pc_per_arcref.pointdense_avg\"\
+  \ AS pointdense_avg,\n    \"pc_per_arcref.clouddense_avg\" AS clouddense_avg,\n\
+  \    \"pc_per_arcref.sdi\" AS sdi,\n    \"pc_per_arcref.sp_per_arcref.area_m2_avg\"\
+  \ AS sp_per_arcref__area_m2_avg\n  FROM (\n    WITH _base AS (\n      SELECT\n \
+  \       pc_per_arcref.arcref AS \"pc_per_arcref.arcref\",\n        sp_per_arcref.area_m2\
+  \ AS \"pc_per_arcref.sp_per_arcref.area_m2\",\n        AVG(pc_per_arcref.totalpts)\
+  \ AS \"pc_per_arcref.totalpts_avg\",\n        AVG(pc_per_arcref.pointdense) AS \"\
+  pc_per_arcref.pointdense_avg\",\n        AVG(pc_per_arcref.clouddense) AS \"pc_per_arcref.clouddense_avg\"\
+  \n      FROM (\n        SELECT\n          \"scanpointcloud.arcref\" AS arcref,\n\
+  \          \"scanpointcloud.totalpts\" AS totalpts,\n          \"scanpointcloud.pointdense\"\
+  \ AS pointdense,\n          \"scanpointcloud.clouddense\" AS clouddense\n      \
+  \  FROM (\n          SELECT\n            scanpointcloud.arcref AS \"scanpointcloud.arcref\"\
+  ,\n            AVG(scanpointcloud.totalpts) AS \"scanpointcloud.totalpts\",\n  \
+  \          AVG(scanpointcloud.pointdense) AS \"scanpointcloud.pointdense\",\n  \
+  \          AVG(scanpointcloud.clouddense) AS \"scanpointcloud.clouddense\"\n   \
+  \       FROM scanpointcloud AS scanpointcloud\n          GROUP BY\n            scanpointcloud.arcref\n\
+  \        ) AS _inner\n      ) AS pc_per_arcref\n      LEFT JOIN (\n        (\n \
+  \         SELECT\n            \"scanspatial.arcref\" AS arcref,\n            \"\
+  scanspatial.area_m2\" AS area_m2\n          FROM (\n            SELECT\n       \
+  \       scanspatial.arcref AS \"scanspatial.arcref\",\n              AVG(scanspatial.aream2)\
+  \ AS \"scanspatial.area_m2\"\n            FROM scanspatial AS scanspatial\n    \
+  \        GROUP BY\n              scanspatial.arcref\n          ) AS _inner\n   \
+  \     )\n      ) AS sp_per_arcref\n        ON pc_per_arcref.arcref = sp_per_arcref.arcref\n\
+  \      GROUP BY\n        pc_per_arcref.arcref,\n        sp_per_arcref.area_m2\n\
+  \    ), _cm_pc_per_arcref__sp_per_arcref__area_m2_avg AS (\n      SELECT\n     \
+  \   sp_per_arcref.area_m2 AS \"pc_per_arcref.sp_per_arcref.area_m2\",\n        AVG(sp_per_arcref.area_m2)\
+  \ AS \"pc_per_arcref.sp_per_arcref.area_m2_avg\"\n      FROM (\n        SELECT\n\
+  \          \"scanspatial.arcref\" AS arcref,\n          \"scanspatial.area_m2\"\
+  \ AS area_m2\n        FROM (\n          SELECT\n            scanspatial.arcref AS\
+  \ \"scanspatial.arcref\",\n            AVG(scanspatial.aream2) AS \"scanspatial.area_m2\"\
+  \n          FROM scanspatial AS scanspatial\n          GROUP BY\n            scanspatial.arcref\n\
+  \        ) AS _inner\n      ) AS sp_per_arcref\n      GROUP BY\n        sp_per_arcref.area_m2\n\
+  \    ), _combined AS (\n      SELECT\n        _base.\"pc_per_arcref.arcref\",\n\
+  \        _base.\"pc_per_arcref.sp_per_arcref.area_m2\",\n        _base.\"pc_per_arcref.totalpts_avg\"\
+  ,\n        _base.\"pc_per_arcref.pointdense_avg\",\n        _base.\"pc_per_arcref.clouddense_avg\"\
+  ,\n        _cm_pc_per_arcref__sp_per_arcref__area_m2_avg.\"pc_per_arcref.sp_per_arcref.area_m2_avg\"\
+  \n      FROM _base\n      LEFT JOIN _cm_pc_per_arcref__sp_per_arcref__area_m2_avg\n\
+  \        ON _base.\"pc_per_arcref.sp_per_arcref.area_m2\" = _cm_pc_per_arcref__sp_per_arcref__area_m2_avg.\"\
+  pc_per_arcref.sp_per_arcref.area_m2\"\n    ), step1 AS (\n      SELECT\n       \
+  \ \"pc_per_arcref.arcref\",\n        \"pc_per_arcref.clouddense_avg\",\n       \
+  \ \"pc_per_arcref.pointdense_avg\",\n        \"pc_per_arcref.sp_per_arcref.area_m2\"\
+  ,\n        \"pc_per_arcref.sp_per_arcref.area_m2_avg\",\n        \"pc_per_arcref.totalpts_avg\"\
+  ,\n        \"pc_per_arcref.totalpts_avg\" / (\n          \"pc_per_arcref.sp_per_arcref.area_m2_avg\"\
+  \ * 10000.0\n        ) * SQRT(\"pc_per_arcref.pointdense_avg\" / \"pc_per_arcref.clouddense_avg\"\
+  ) AS \"pc_per_arcref.sdi\"\n      FROM _combined\n    )\n    SELECT\n      \"pc_per_arcref.arcref\"\
+  ,\n      \"pc_per_arcref.clouddense_avg\",\n      \"pc_per_arcref.pointdense_avg\"\
+  ,\n      \"pc_per_arcref.sdi\",\n      \"pc_per_arcref.sp_per_arcref.area_m2\",\n\
+  \      \"pc_per_arcref.sp_per_arcref.area_m2_avg\",\n      \"pc_per_arcref.totalpts_avg\"\
+  \n    FROM step1\n  ) AS _inner\n) AS sdi_per_arcref\nGROUP BY\n  sdi_per_arcref.arcref,\n\
+  \  CASE\n    WHEN sdi_per_arcref.sp_per_arcref__area_m2 > 100 AND sdi_per_arcref.sdi\
+  \ > 50\n    THEN 1\n    ELSE 0\n  END) AS _inner"
+data_source: archeology
+columns:
+- name: arcref
+  sql: arcref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_spatially_complex_site
+  sql: is_spatially_complex_site
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+- name: sdi
+  sql: sdi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: area_m2
+  sql: area_m2
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Spatially Complex Site (KB #40): AreaM2 > 100 AND SDI > 50. Sites with\
+  \ complex spatial characteristics requiring specialized scanning approaches.\n\n\
+  [kb=40]\nA site with AreaM2 > 100 and SDI > 50, where SDI is the Spatial Density\
+  \ Index, requiring strategic planning for comprehensive documentation with multiple\
+  \ scanning stations and methodologies to capture complex spatial relationships.\
+  \ \u2014 Defines sites with complex spatial characteristics requiring specialized\
+  \ scanning approaches based on dimensional analysis.\n[/kb=40]"
+hidden: false
+meta:
+  kb_id: 40

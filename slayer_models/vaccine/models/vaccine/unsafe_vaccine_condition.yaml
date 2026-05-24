@@ -1,0 +1,137 @@
+version: 6
+name: unsafe_vaccine_condition
+source_queries:
+- version: 3
+  name: agg_per_container_uvc
+  source_model: sensordata
+  measures:
+  - formula: tss:avg
+    name: tss
+  - formula: cei:avg
+    name: cei
+  - formula: trs:avg
+    name: trs
+  - formula: cri:avg
+    name: cri
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: vaccinedetails
+    joins:
+    - target_model: agg_per_container_uvc
+      join_pairs:
+      - - containvac
+        - containlink
+    columns:
+    - name: vsi
+      type: DOUBLE
+      sql: ((JULIANDAY(expireday) - JULIANDAY('now')) * agg_per_container_uvc.tss)
+        / 365.0 * agg_per_container_uvc.cei * (1 - agg_per_container_uvc.trs)
+    - name: ces
+      type: DOUBLE
+      sql: ser * agg_per_container_uvc.cei * (1 - agg_per_container_uvc.cri)
+    - name: is_unsafe_vaccine_condition
+      type: BOOLEAN
+      sql: CASE WHEN (((JULIANDAY(expireday) - JULIANDAY('now')) * agg_per_container_uvc.tss)
+        / 365.0 * agg_per_container_uvc.cei * (1 - agg_per_container_uvc.trs)) < 0.4
+        AND (ser * agg_per_container_uvc.cei * (1 - agg_per_container_uvc.cri)) <
+        0.5 THEN 1 ELSE 0 END
+  dimensions:
+  - name: vacregistry
+  - name: containvac
+  - name: vsi
+  - name: ces
+  - name: is_unsafe_vaccine_condition
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
+  \ AS containvac, \"vaccinedetails.vsi\" AS vsi, \"vaccinedetails.ces\" AS ces, \"\
+  vaccinedetails.is_unsafe_vaccine_condition\" AS is_unsafe_vaccine_condition FROM\
+  \ (SELECT\n  vaccinedetails.vacregistry AS \"vaccinedetails.vacregistry\",\n  vaccinedetails.containvac\
+  \ AS \"vaccinedetails.containvac\",\n  (\n    (\n      JULIANDAY(vaccinedetails.expireday)\
+  \ - JULIANDAY('now')\n    ) * agg_per_container_uvc.tss\n  ) / 365.0 * agg_per_container_uvc.cei\
+  \ * (\n    1 - agg_per_container_uvc.trs\n  ) AS \"vaccinedetails.vsi\",\n  vaccinedetails.ser\
+  \ * agg_per_container_uvc.cei * (\n    1 - agg_per_container_uvc.cri\n  ) AS \"\
+  vaccinedetails.ces\",\n  CASE\n    WHEN (\n      (\n        (\n          JULIANDAY(vaccinedetails.expireday)\
+  \ - JULIANDAY('now')\n        ) * agg_per_container_uvc.tss\n      ) / 365.0 * agg_per_container_uvc.cei\
+  \ * (\n        1 - agg_per_container_uvc.trs\n      )\n    ) < 0.4\n    AND (\n\
+  \      vaccinedetails.ser * agg_per_container_uvc.cei * (\n        1 - agg_per_container_uvc.cri\n\
+  \      )\n    ) < 0.5\n    THEN 1\n    ELSE 0\n  END AS \"vaccinedetails.is_unsafe_vaccine_condition\"\
+  \nFROM vaccinedetails AS vaccinedetails\nLEFT JOIN (\n  (\n    SELECT\n      \"\
+  sensordata.containlink\" AS containlink,\n      \"sensordata.tss\" AS tss,\n   \
+  \   \"sensordata.cei\" AS cei,\n      \"sensordata.trs\" AS trs,\n      \"sensordata.cri\"\
+  \ AS cri\n    FROM (\n      SELECT\n        sensordata.containlink AS \"sensordata.containlink\"\
+  ,\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          ) * COALESCE(sensordata.tempstabidx, 1)\n       \
+  \ ) AS \"sensordata.tss\",\n        AVG(\n          (\n            (\n         \
+  \     1 - COALESCE(CAST(sensordata.tempdevcount AS REAL) / 100, 0)\n           \
+  \ ) * (\n              1 - COALESCE(CAST(sensordata.critevents AS REAL) / 10, 0)\n\
+  \            ) * COALESCE(sensordata.tempstabidx, 1)\n          ) * (\n        \
+  \    COALESCE(container.coolremainpct, 0) / 100.0\n          ) * (\n           \
+  \ 1 - (\n              (\n                100 - container.coolremainpct\n      \
+  \        ) / NULLIF(JULIANDAY('now') - JULIANDAY(container.refilllatest), 0)\n \
+  \           ) / 20.0\n          )\n        ) AS \"sensordata.cei\",\n        AVG(\n\
+  \          (\n            (\n              1 - (\n                (\n          \
+  \        1 - COALESCE(CAST(sensordata.tempdevcount AS REAL) / 100, 0)\n        \
+  \        ) * (\n                  1 - COALESCE(CAST(sensordata.critevents AS REAL)\
+  \ / 10, 0)\n                ) * COALESCE(sensordata.tempstabidx, 1)\n          \
+  \    )\n            ) * (\n              1 - COALESCE(container.coolremainpct, 0)\
+  \ / 100\n            )\n          ) * (\n            1 - (\n              (\n  \
+  \              1 - COALESCE(CAST(sensordata.handleevents AS REAL) / 100, 0)\n  \
+  \            ) * (\n                1 - COALESCE(CAST(sensordata.critevents AS REAL)\
+  \ / 10, 0)\n              )\n            )\n          ) * (\n            1 + ABS(sensordata.tempnowc\
+  \ - sensordata.storetempc) / NULLIF(sensordata.temptolc, 0) * sensordata.tempdevcount\n\
+  \          )\n        ) AS \"sensordata.trs\",\n        AVG(\n          (\n    \
+  \        1 - (\n              (\n                1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n              ) * (\n                1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n              ) * COALESCE(sensordata.tempstabidx, 1)\n   \
+  \         )\n          ) * (\n            1 - COALESCE(container.coolremainpct,\
+  \ 0) / 100\n          )\n        ) AS \"sensordata.cri\"\n      FROM sensordata\
+  \ AS sensordata\n      LEFT JOIN container AS container\n        ON sensordata.containlink\
+  \ = container.containregistry\n      GROUP BY\n        sensordata.containlink\n\
+  \    ) AS _inner\n  )\n) AS agg_per_container_uvc\n  ON vaccinedetails.containvac\
+  \ = agg_per_container_uvc.containlink) AS _inner"
+data_source: vaccine
+columns:
+- name: vacregistry
+  sql: vacregistry
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: containvac
+  sql: containvac
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vsi
+  sql: vsi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: ces
+  sql: ces
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_unsafe_vaccine_condition
+  sql: is_unsafe_vaccine_condition
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Unsafe Vaccine Condition (KB #44). One row per vaccinedetails record\
+  \ with is_unsafe_vaccine_condition boolean = VSI < 0.4 AND CES < 0.5. VSI (KB #39)\
+  \ and CES (KB #36) are computed inline from per-container peer aggregates of TSS\
+  \ / CEI / TRS / CRI plus SER on vaccinedetails.\n\n[kb=44]\nA condition where VSI\
+  \ < 0.4 and CES < 0.5 \u2014 Identifies potentially compromised vaccines.\n[/kb=44]"
+hidden: false
+meta:
+  kb_id: 44

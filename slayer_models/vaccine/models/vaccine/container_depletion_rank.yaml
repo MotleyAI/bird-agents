@@ -1,0 +1,56 @@
+version: 6
+name: container_depletion_rank
+source_queries:
+- version: 3
+  source_model:
+    source_name: container
+    columns:
+    - name: depletion_rank
+      type: DOUBLE
+      sql: RANK() OVER (ORDER BY (100 - coolremainpct) / NULLIF(julianday('now') -
+        julianday(refilllatest), 0) DESC)
+  dimensions:
+  - name: containregistry
+  - name: cdr
+  - name: depletion_rank
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"container.containregistry\" AS containregistry, \"container.cdr\"\
+  \ AS cdr, \"container.depletion_rank\" AS depletion_rank FROM (SELECT\n  container.containregistry\
+  \ AS \"container.containregistry\",\n  (\n    100 - coolremainpct\n  ) / NULLIF(JULIANDAY('now')\
+  \ - JULIANDAY(refilllatest), 0) AS \"container.cdr\",\n  RANK() OVER (\n    ORDER\
+  \ BY (\n      100 - coolremainpct\n    ) / NULLIF(JULIANDAY('now') - JULIANDAY(refilllatest),\
+  \ 0) DESC\n  ) AS \"container.depletion_rank\"\nFROM container AS container) AS\
+  \ _inner"
+data_source: vaccine
+columns:
+- name: containregistry
+  sql: containregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cdr
+  sql: cdr
+  type: DOUBLE
+  primary_key: false
+  description: 'Coolant Depletion Rate (CDR). How quickly coolant is being depleted,
+    in percentage points per day: (100 - CoolRemainPct) / (Current_Date - RefillLatest)
+    (KB #1).'
+  hidden: false
+- name: depletion_rank
+  sql: depletion_rank
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Container Depletion Rank (KB #62). Containers ranked in descending order\
+  \ of CDR (Coolant Depletion Rate). Backing query computes the rank window-function\
+  \ over the container table.\n\n[kb=62]\nRank assigned to containers based on descending\
+  \ order of CDR \u2014 Ranks containers based on the rate of coolant depletion.\n\
+  [/kb=62]"
+hidden: false
+meta:
+  kb_id: 62

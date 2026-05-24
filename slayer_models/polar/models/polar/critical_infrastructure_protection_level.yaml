@@ -1,0 +1,148 @@
+version: 6
+name: critical_infrastructure_protection_level
+source_queries:
+- version: 3
+  name: ssf_p_eq_cipl
+  source_model: weatherandstructure
+  measures:
+  - formula: ssf:avg
+    name: ssf
+  dimensions:
+  - name: opmainteqref
+    model: operationmaintenance
+  whole_periods_only: false
+- version: 3
+  name: loss_p_eq_cipl
+  source_model: operationmaintenance
+  measures:
+  - formula: loss:avg
+    name: loss
+  dimensions:
+  - name: opmainteqref
+  whole_periods_only: false
+- version: 3
+  name: ospi_p_eq_cipl
+  source_model: equipment
+  measures:
+  - formula: ospi:avg
+    name: ospi
+  dimensions:
+  - name: equipmentcode
+  whole_periods_only: false
+- version: 3
+  name: joined_cipl
+  source_model:
+    source_name: ospi_p_eq_cipl
+    joins:
+    - target_model: ssf_p_eq_cipl
+      join_pairs:
+      - - equipmentcode
+        - operationmaintenance__opmainteqref
+    - target_model: loss_p_eq_cipl
+      join_pairs:
+      - - equipmentcode
+        - opmainteqref
+  measures:
+  - formula: ospi:avg
+    name: ospi_v
+  - formula: ssf_p_eq_cipl.ssf:avg
+    name: ssf_v
+  - formula: loss_p_eq_cipl.loss:avg
+    name: loss_v
+  dimensions:
+  - name: equipmentcode
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: joined_cipl
+    columns:
+    - name: cipl_level
+      type: TEXT
+      sql: CASE WHEN ssf_v > 0.8 AND loss_v > 0.85 AND ospi_v > 0.9 THEN 'A' WHEN
+        ssf_v > 0.7 AND loss_v > 0.75 AND ospi_v > 0.8 THEN 'B' ELSE 'C' END
+  dimensions:
+  - name: equipmentcode
+  - name: cipl_level
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"joined_cipl.equipmentcode\" AS equipmentcode, \"joined_cipl.cipl_level\"\
+  \ AS cipl_level FROM (SELECT\n  joined_cipl.equipmentcode AS \"joined_cipl.equipmentcode\"\
+  ,\n  CASE\n    WHEN joined_cipl.ssf_v > 0.8 AND joined_cipl.loss_v > 0.85 AND joined_cipl.ospi_v\
+  \ > 0.9\n    THEN 'A'\n    WHEN joined_cipl.ssf_v > 0.7 AND joined_cipl.loss_v >\
+  \ 0.75 AND joined_cipl.ospi_v > 0.8\n    THEN 'B'\n    ELSE 'C'\n  END AS \"joined_cipl.cipl_level\"\
+  \nFROM (\n  SELECT\n    \"ospi_p_eq_cipl.equipmentcode\" AS equipmentcode,\n   \
+  \ \"ospi_p_eq_cipl.ospi_v\" AS ospi_v,\n    \"ospi_p_eq_cipl.ssf_p_eq_cipl.ssf_avg\"\
+  \ AS ssf_p_eq_cipl__ssf_avg,\n    \"ospi_p_eq_cipl.loss_p_eq_cipl.loss_avg\" AS\
+  \ loss_p_eq_cipl__loss_avg\n  FROM (\n    WITH _base AS (\n      SELECT\n      \
+  \  ospi_p_eq_cipl.equipmentcode AS \"ospi_p_eq_cipl.equipmentcode\",\n        AVG(ospi_p_eq_cipl.ospi)\
+  \ AS \"ospi_p_eq_cipl.ospi_v\"\n      FROM (\n        SELECT\n          \"equipment.equipmentcode\"\
+  \ AS equipmentcode,\n          \"equipment.ospi\" AS ospi\n        FROM (\n    \
+  \      SELECT\n            equipment.equipmentcode AS \"equipment.equipmentcode\"\
+  ,\n            AVG(\n              equipment.safetyindex * (\n                (\n\
+  \                  equipment.performanceindex + equipment.reliabilityindex\n   \
+  \             ) / 2.0 * (\n                  1 - equipment.environmentalimpactindex\
+  \ / 10.0\n                )\n              ) * 0.8\n            ) AS \"equipment.ospi\"\
+  \n          FROM equipment AS equipment\n          GROUP BY\n            equipment.equipmentcode\n\
+  \        ) AS _inner\n      ) AS ospi_p_eq_cipl\n      GROUP BY\n        ospi_p_eq_cipl.equipmentcode\n\
+  \    ), _cm_ospi_p_eq_cipl__ssf_p_eq_cipl__ssf_avg AS (\n      SELECT\n        AVG(ssf_p_eq_cipl.ssf)\
+  \ AS \"ospi_p_eq_cipl.ssf_p_eq_cipl.ssf_avg\"\n      FROM (\n        SELECT\n  \
+  \        \"weatherandstructure.operationmaintenance.opmainteqref\" AS operationmaintenance__opmainteqref,\n\
+  \          \"weatherandstructure.ssf\" AS ssf\n        FROM (\n          SELECT\n\
+  \            operationmaintenance.opmainteqref AS \"weatherandstructure.operationmaintenance.opmainteqref\"\
+  ,\n            AVG(\n              (\n                100 - weatherandstructure.structuralloadpercent\n\
+  \              ) / 100.0 * CASE\n                WHEN weatherandstructure.snowloadkgm2\
+  \ > 100 OR weatherandstructure.windspeedms > 20\n                THEN 0.5\n    \
+  \            WHEN weatherandstructure.snowloadkgm2 > 50 OR weatherandstructure.windspeedms\
+  \ > 10\n                THEN 0.8\n                ELSE 1.0\n              END\n\
+  \            ) AS \"weatherandstructure.ssf\"\n          FROM weatherandstructure\
+  \ AS weatherandstructure\n          LEFT JOIN operationmaintenance AS operationmaintenance\n\
+  \            ON weatherandstructure.weatheropmaintref = operationmaintenance.opmaintregistry\n\
+  \          GROUP BY\n            operationmaintenance.opmainteqref\n        ) AS\
+  \ _inner\n      ) AS ssf_p_eq_cipl\n    ), _cm_ospi_p_eq_cipl__loss_p_eq_cipl__loss_avg\
+  \ AS (\n      SELECT\n        AVG(loss_p_eq_cipl.loss) AS \"ospi_p_eq_cipl.loss_p_eq_cipl.loss_avg\"\
+  \n      FROM (\n        SELECT\n          \"operationmaintenance.opmainteqref\"\
+  \ AS opmainteqref,\n          \"operationmaintenance.loss\" AS loss\n        FROM\
+  \ (\n          SELECT\n            operationmaintenance.opmainteqref AS \"operationmaintenance.opmainteqref\"\
+  ,\n            AVG(\n              0.5 * (\n                (\n                \
+  \  equipment.performanceindex + equipment.reliabilityindex\n                ) /\
+  \ 2.0 * (\n                  1 - equipment.environmentalimpactindex / 10.0\n   \
+  \             )\n              ) + 0.5 * (\n                CASE operationmaintenance.operationalstatus\n\
+  \                  WHEN 'Active'\n                  THEN 10\n                  WHEN\
+  \ 'Standby'\n                  THEN 5\n                  ELSE 0\n              \
+  \  END * (\n                  1 - operationmaintenance.operationhours * 1.0 / NULLIF(operationmaintenance.maintenancecyclehours,\
+  \ 0)\n                )\n              ) * (\n                1 - operationmaintenance.operationhours\
+  \ / 20000.0\n              )\n            ) AS \"operationmaintenance.loss\"\n \
+  \         FROM operationmaintenance AS operationmaintenance\n          LEFT JOIN\
+  \ equipment AS equipment\n            ON operationmaintenance.opmainteqref = equipment.equipmentcode\n\
+  \          GROUP BY\n            operationmaintenance.opmainteqref\n        ) AS\
+  \ _inner\n      ) AS loss_p_eq_cipl\n    )\n    SELECT\n      _base.\"ospi_p_eq_cipl.equipmentcode\"\
+  ,\n      _base.\"ospi_p_eq_cipl.ospi_v\",\n      _cm_ospi_p_eq_cipl__ssf_p_eq_cipl__ssf_avg.\"\
+  ospi_p_eq_cipl.ssf_p_eq_cipl.ssf_avg\",\n      _cm_ospi_p_eq_cipl__loss_p_eq_cipl__loss_avg.\"\
+  ospi_p_eq_cipl.loss_p_eq_cipl.loss_avg\"\n    FROM _base\n    CROSS JOIN _cm_ospi_p_eq_cipl__ssf_p_eq_cipl__ssf_avg\n\
+  \    CROSS JOIN _cm_ospi_p_eq_cipl__loss_p_eq_cipl__loss_avg\n  ) AS _inner\n) AS\
+  \ joined_cipl) AS _inner"
+data_source: polar
+columns:
+- name: equipmentcode
+  sql: equipmentcode
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cipl_level
+  sql: cipl_level
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Critical Infrastructure Protection Level (KB #46): A (SSF > 0.8, LOSS\
+  \ > 0.85, OSPI > 0.9), B (SSF > 0.7, LOSS > 0.75, OSPI > 0.8), or C otherwise. R-MULTISTAGE:\
+  \ aggregates SSF/LOSS/OSPI per equipment then classifies.\n\n[kb=46]\nInfrastructure\
+  \ is assigned protection level 'A' (SSF > 0.8, LOSS > 0.85, and OSPI > 0.9), 'B'\
+  \ (SSF > 0.7, LOSS > 0.75, and OSPI > 0.8), or 'C' (other cases). \u2014 Determines\
+  \ the protection level for polar critical infrastructure\n[/kb=46]"
+hidden: false
+meta:
+  kb_id: 46

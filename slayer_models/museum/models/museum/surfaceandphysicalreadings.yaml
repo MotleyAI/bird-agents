@@ -1,0 +1,191 @@
+version: 6
+name: surfaceandphysicalreadings
+sql_table: surfaceandphysicalreadings
+query_variables: {}
+data_source: museum
+columns:
+- name: surfphysregistry
+  sql: surfphysregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: envreadref
+  sql: envreadref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: vibralvlmms2
+  sql: vibralvlmms2
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: noisedb
+  sql: noisedb
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: dustaccummgm2
+  sql: dustaccummgm2
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: microbialcountcfu
+  sql: microbialcountcfu
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: moldriskidx
+  sql: moldriskidx
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: pestactivitylvl
+  sql: pestactivitylvl
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: pesttrapcount
+  sql: pesttrapcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: pestspeciesdetected
+  sql: pestspeciesdetected
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: surfaceph
+  sql: surfaceph
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: matmoistcontent
+  sql: matmoistcontent
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: saltcrystalrisk
+  sql: saltcrystalrisk
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: metalcorroderate
+  sql: metalcorroderate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: organicdegradidx
+  sql: organicdegradidx
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: colorchangedeltae
+  sql: colorchangedeltae
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: surfacetempc
+  sql: surfacetempc
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: surfacerh
+  sql: surfacerh
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: condenserisk
+  sql: condenserisk
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: thermalimgstatus
+  sql: thermalimgstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: structstability
+  sql: structstability
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: crackmonitor
+  sql: crackmonitor
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: deformmm
+  sql: deformmm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: wtchangepct
+  sql: wtchangepct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: surfdustcoverage
+  sql: surfdustcoverage
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: o2concentration
+  sql: o2concentration
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: n2concentration
+  sql: n2concentration
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins:
+- target_model: environmentalreadingscore
+  join_pairs:
+  - - envreadref
+    - envreadregistry
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,175 @@
+version: 6
+name: news_users
+sql_table: users
+query_variables: {}
+data_source: news
+columns:
+- name: userkey
+  sql: userkey
+  type: INT
+  primary_key: true
+  description: Primary key.
+  hidden: false
+- name: regmoment
+  sql: regmoment
+  type: DATE
+  primary_key: false
+  description: Registration date.
+  hidden: false
+- name: typelabel
+  sql: typelabel
+  type: TEXT
+  primary_key: false
+  description: 'User type enum: Trial, Premium, Free.'
+  hidden: false
+- name: seglabel
+  sql: seglabel
+  type: TEXT
+  primary_key: false
+  description: 'User segment: New, Dormant, Active, Regular.'
+  hidden: false
+- name: substatus
+  sql: substatus
+  type: TEXT
+  primary_key: false
+  description: 'Subscription status: Premium, Enterprise, Basic, etc. Used in KB #6
+    statusWeight and KB #17 USV.'
+  hidden: false
+- name: subdays
+  sql: subdays
+  type: INT
+  primary_key: false
+  description: 'Days the user has been subscribed. Drives KB #17 USV.'
+  hidden: false
+- name: ageval
+  sql: ageval
+  type: INT
+  primary_key: false
+  description: 'User age in years. Drives KB #30 UDS.'
+  hidden: false
+- name: gendlbl
+  sql: gendlbl
+  type: TEXT
+  primary_key: false
+  description: 'Gender: M, F, Other. Drives KB #7 genderFactor.'
+  hidden: false
+- name: occulbl
+  sql: occulbl
+  type: TEXT
+  primary_key: false
+  description: 'Occupation: Retired, Professional, Other, Student. Drives KB #8 occupationFactor.'
+  hidden: false
+- name: testgrp
+  sql: testgrp
+  type: TEXT
+  primary_key: false
+  description: "A/B test group: Control, Variant_A, Variant_B (KB #12 ABTCA: users\
+    \ assigned to predetermined groups for controlled comparisons of experimental\
+    \ feature performance across cohorts).\n\n[kb=12]\nUsers are assigned to predetermined\
+    \ groups to facilitate controlled comparisons of experimental feature performance\
+    \ across cohorts. \u2014 Defines segmentation criteria for splitting users into\
+    \ cohorts for A/B testing experiments.\n[/kb=12]"
+  label: AB Testing Cohort Analysis (ABTCA)
+  hidden: false
+  meta:
+    kb_id: 12
+- name: user_preferences
+  sql: user_preferences
+  type: TEXT
+  primary_key: false
+  description: JSON column with interests, activity_level, preference_score, satisfaction_score,
+    and a feedback sub-object (type, value, category).
+  hidden: false
+- name: status_weight
+  sql: CASE LOWER(TRIM(substatus)) WHEN 'premium' THEN 2.0 WHEN 'enterprise' THEN
+    3.0 WHEN 'basic' THEN 1.0 ELSE 0.5 END
+  type: DOUBLE
+  primary_key: false
+  description: "statusWeight (KB #6): Premium=2.0, Enterprise=3.0, Basic=1.0, others=0.5.\n\
+    \n[kb=6]\n'Premium' = 2.0, 'Enterprise' = 3.0, 'Basic' = 1.0, and others = 0.5.\
+    \ It reflects the assumed revenue or importance of the subscription tier. \u2014\
+    \ A weight assigned to different subscription tiers to reflect their business\
+    \ value.\n[/kb=6]"
+  label: statusWeight
+  hidden: false
+  meta:
+    kb_id: 6
+- name: gender_factor
+  sql: CASE WHEN UPPER(TRIM(gendlbl)) IN ('M','F','MALE','FEMALE') THEN 1.0 ELSE 0.8
+    END
+  type: DOUBLE
+  primary_key: false
+  description: "genderFactor (KB #7): 1.0 for Male/Female, 0.8 otherwise.\n\n[kb=7]\n\
+    Assigned as 1.0 for Male, Female, and 0.8 otherwise. It standardizes the gender\
+    \ effect on demographic impact. \u2014 A weighting value used to balance gender\
+    \ representation in demographic scoring.\n[/kb=7]"
+  label: genderFactor
+  hidden: false
+  meta:
+    kb_id: 7
+- name: occupation_factor
+  sql: CASE LOWER(TRIM(occulbl)) WHEN 'professional' THEN 1.5 WHEN 'retired' THEN
+    1.2 WHEN 'student' THEN 0.7 ELSE 1.0 END
+  type: DOUBLE
+  primary_key: false
+  description: "occupationFactor (KB #8): Professional=1.5, Retired=1.2, Student=0.7,\
+    \ Other=1.0.\n\n[kb=8]\n'Professional' = 1.5, 'Retired' = 1.2, 'Student' = 0.7,\
+    \ 'Other' = 1.0. These values are based on segmentation assumptions or business\
+    \ rules. \u2014 A multiplier that reflects how user occupation contributes to\
+    \ their demographic value.\n[/kb=8]"
+  label: occupationFactor
+  hidden: false
+  meta:
+    kb_id: 8
+- name: user_subscription_value
+  sql: subdays * (CASE LOWER(TRIM(substatus)) WHEN 'premium' THEN 2.0 WHEN 'enterprise'
+    THEN 3.0 WHEN 'basic' THEN 1.0 ELSE 0.5 END)
+  type: DOUBLE
+  primary_key: false
+  description: "User Subscription Value (USV, KB #17) = subdays \xD7 statusWeight.\n\
+    \n[kb=17]\nUSV = subdays \\times statusWeight, \\text{ where statusWeight is a\
+    \ multiplier defined by the subscription status (for example, Premium, Enterprise,\
+    \ or Basic).} \u2014 Evaluates the relative value of a user's subscription based\
+    \ on subscription duration and status.\n[/kb=17]"
+  label: User Subscription Value (USV)
+  hidden: false
+  meta:
+    kb_id: 17
+- name: user_demographic_score
+  sql: ageval * (CASE WHEN UPPER(TRIM(gendlbl)) IN ('M','F','MALE','FEMALE') THEN
+    1.0 ELSE 0.8 END) * (CASE LOWER(TRIM(occulbl)) WHEN 'professional' THEN 1.5 WHEN
+    'retired' THEN 1.2 WHEN 'student' THEN 0.7 ELSE 1.0 END)
+  type: DOUBLE
+  primary_key: false
+  description: "User Demographic Score (UDS, KB #30) = ageval \xD7 genderFactor \xD7\
+    \ occupationFactor.\n\n[kb=30]\nUDS = ageval \\times genderFactor \\times occupationFactor,\
+    \ \\text{ where genderFactor and occupationFactor are weights derived from segmentation\
+    \ studies.} \u2014 Measures the impact of user demographics by combining age with\
+    \ factors related to gender and occupation.\n[/kb=30]"
+  label: User Demographic Score (UDS)
+  hidden: false
+  meta:
+    kb_id: 30
+measures:
+- formula: '*:count * 100.0 / *:count(group_by_clear=[''testgrp''])'
+  name: cohort_percentage
+  label: Cohort Percentage
+  description: "Cohort Percentage (KB #55): proportion of each test group within monthly\
+    \ registrations \xD7 100. Use with dimensions=[testgrp] and a month time-dimension\
+    \ on regmoment.\n\n[kb=55]\n(Group registrations / Total monthly registrations)\
+    \ * 100 \u2014 Calculates the proportional representation of each test group within\
+    \ monthly registration cohorts\n[/kb=55]"
+  meta:
+    kb_id: 55
+aggregations: []
+joins: []
+filters: []
+description: "News DB: User accounts (subscription, demographics, segmentation, A/B\
+  \ test group, JSON preferences/feedback). Reference for KB #11 PP, KB #12 ABTCA,\
+  \ KB #13 ECP - all prose-only.\n\n[kb=13]\nUsers exhibiting steady engagement metrics\
+  \ over a series of sessions, irrespective of content type, are likely to display\
+  \ higher lifetime value. \u2014 States that consistent engagement across multiple\
+  \ sessions is a key indicator of long-term user loyalty.\n[/kb=13]"
+hidden: false
+meta:
+  kb_id: 13

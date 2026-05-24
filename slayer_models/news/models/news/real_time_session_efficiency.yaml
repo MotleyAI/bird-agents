@@ -1,0 +1,90 @@
+version: 6
+name: real_time_session_efficiency
+source_queries:
+- version: 3
+  name: cie_per_session
+  source_model: news_interactions
+  measures:
+  - formula: seqval:avg
+    name: cie
+  dimensions:
+  - name: seshlink2
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: news_sessions
+    joins:
+    - target_model: cie_per_session
+      join_pairs:
+      - - seshkey
+        - seshlink2
+  measures:
+  - formula: cie_per_session.cie:avg / session_bounce_rate_adjustment:avg
+    name: rtse
+  dimensions:
+  - name: seshkey
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"news_sessions.seshkey\" AS seshkey, \"news_sessions.session_bounce_rate_adjustment_avg\"\
+  \ AS session_bounce_rate_adjustment_avg, \"news_sessions.rtse\" AS rtse, \"news_sessions.cie_per_session.cie_avg\"\
+  \ AS cie_per_session__cie_avg FROM (WITH _base AS (\nSELECT\n  news_sessions.seshkey\
+  \ AS \"news_sessions.seshkey\",\n  AVG(news_sessions.bncrate * (\n    1.0 - news_sessions.ctrval\
+  \ / 100.0\n  )) AS \"news_sessions.session_bounce_rate_adjustment_avg\"\nFROM sessions\
+  \ AS news_sessions\nGROUP BY\n  news_sessions.seshkey\n),\n_cm_news_sessions__cie_per_session__cie_avg\
+  \ AS (\nSELECT\n  AVG(cie_per_session.cie) AS \"news_sessions.cie_per_session.cie_avg\"\
+  \nFROM (\n  SELECT\n    \"news_interactions.seshlink2\" AS seshlink2,\n    \"news_interactions.cie\"\
+  \ AS cie\n  FROM (\n    SELECT\n      news_interactions.seshlink2 AS \"news_interactions.seshlink2\"\
+  ,\n      AVG(news_interactions.seqval) AS \"news_interactions.cie\"\n    FROM interactions\
+  \ AS news_interactions\n    GROUP BY\n      news_interactions.seshlink2\n  ) AS\
+  \ _inner\n) AS cie_per_session\n),\n_combined AS (\nSELECT _base.\"news_sessions.seshkey\"\
+  , _base.\"news_sessions.session_bounce_rate_adjustment_avg\", _cm_news_sessions__cie_per_session__cie_avg.\"\
+  news_sessions.cie_per_session.cie_avg\"\nFROM _base\nCROSS JOIN _cm_news_sessions__cie_per_session__cie_avg\n\
+  ),\nstep1 AS (\nSELECT\n    \"news_sessions.cie_per_session.cie_avg\",\n    \"news_sessions.seshkey\"\
+  ,\n    \"news_sessions.session_bounce_rate_adjustment_avg\",\n    \"news_sessions.cie_per_session.cie_avg\"\
+  \ / \"news_sessions.session_bounce_rate_adjustment_avg\" AS \"news_sessions.rtse\"\
+  \nFROM _combined\n)\nSELECT\n    \"news_sessions.cie_per_session.cie_avg\",\n  \
+  \  \"news_sessions.rtse\",\n    \"news_sessions.seshkey\",\n    \"news_sessions.session_bounce_rate_adjustment_avg\"\
+  \nFROM step1) AS _inner"
+data_source: news
+columns:
+- name: seshkey
+  sql: seshkey
+  type: DOUBLE
+  primary_key: false
+  description: Primary key.
+  hidden: false
+- name: session_bounce_rate_adjustment_avg
+  sql: session_bounce_rate_adjustment_avg
+  type: DOUBLE
+  primary_key: false
+  description: "Session Bounce Rate Adjustment (SBRA, KB #3) = bncrate \xD7 (1 - ctrval/100)."
+  hidden: false
+  format:
+    type: float
+- name: rtse
+  sql: rtse
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: cie_per_session__cie_avg
+  sql: cie_per_session__cie_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Real-Time Session Efficiency (RTSE, KB #31) = CIE / SBRA, where CIE\
+  \ is Content Interaction Efficiency (avg seqval per session over interactions) and\
+  \ SBRA is the Session Bounce Rate Adjustment.\n\n[kb=31]\nRTSE = \\frac{CIE}{SBRA},\
+  \ where CIE denotes the Content Interaction Efficiency and SBRA is the Session Bounce\
+  \ Rate Adjustment. \u2014 Evaluates session efficiency by balancing interaction\
+  \ outcomes against bounce adjustments.\n[/kb=31]"
+hidden: false
+meta:
+  kb_id: 31

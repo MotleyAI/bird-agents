@@ -1,0 +1,196 @@
+version: 6
+name: dataflow
+sql_table: dataflow
+query_variables: {}
+data_source: cross_db
+columns:
+- name: recordregistry
+  sql: recordregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: flowstamp
+  sql: flowstamp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: flowtag
+  sql: flowtag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: orignation
+  sql: orignation
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: destnation
+  sql: destnation
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: origactor
+  sql: origactor
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: destactor
+  sql: destactor
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: chanproto
+  sql: chanproto
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: chanfreq
+  sql: chanfreq
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: datasizemb
+  sql: datasizemb
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: durmin
+  sql: durmin
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: bwidthpct
+  sql: bwidthpct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: successpct
+  sql: successpct
+  type: DOUBLE
+  primary_key: false
+  description: "Success rate (0\u2013100%) of data transfer attempts. KB #20: 95%\
+    \ indicates reliable transfers; <80% suggests frequent failures.\n\n[kb=20]\n\
+    Ranges from 0 to 100%. A SuccessPct of 95% indicates reliable transfers, while\
+    \ <80% suggests frequent failures, from DataFlow. \u2014 Illustrates the success\
+    \ rate of data transfers.\n[/kb=20]"
+  label: DataFlow.SuccessPct
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 20
+- name: errtally
+  sql: errtally
+  type: INT
+  primary_key: false
+  description: "Total errors observed for this data flow. KB #27: 0 = flawless; >10\
+    \ suggests reliability issues.\n\n[kb=27]\nInteger \u2265 0. An ErrTally of 0\
+    \ indicates flawless transfers, while >10 suggests reliability issues, from DataFlow.\
+    \ \u2014 Illustrates the count of errors in data transfers.\n[/kb=27]"
+  label: DataFlow.ErrTally
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 27
+- name: rtrytally
+  sql: rtrytally
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: dte
+  sql: successpct * 1.0 / (errtally + 1)
+  type: DOUBLE
+  primary_key: false
+  description: "Data Transfer Efficiency (DTE) \u2014 KB #0: SuccessPct / (ErrTally\
+    \ + 1).\n\n[kb=0]\nDTE = \\frac{\\text{SuccessPct}}{\\text{ErrTally} + 1} \u2014\
+    \ Measures the efficiency of data transfers based on success rate and error count.\n\
+    [/kb=0]"
+  label: Data Transfer Efficiency (DTE)
+  hidden: false
+  meta:
+    kb_id: 0
+- name: bsi
+  sql: bwidthpct * datasizemb * 1.0 / NULLIF(durmin, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Bandwidth Saturation Index (BSI) \u2014 KB #1: BwidthPct \xD7 DataSizeMB\
+    \ / DurMin.\n\n[kb=1]\nBSI = \\text{BwidthPct} \\times \\frac{\\text{DataSizeMB}}{\\\
+    text{DurMin}} \u2014 Quantifies how close a data flow is to saturating available\
+    \ bandwidth.\n[/kb=1]"
+  label: Bandwidth Saturation Index (BSI)
+  hidden: false
+  meta:
+    kb_id: 1
+- name: dfrs
+  sql: (successpct * 1.0 / (errtally + 1)) * (1 - (rtrytally * 1.0 / (errtally + 1)))
+  type: DOUBLE
+  primary_key: false
+  description: "Data Flow Reliability Score (DFRS) \u2014 KB #30: DTE \xD7 (1 \u2212\
+    \ RtryTally / (ErrTally + 1)).\n\n[kb=30]\nDFRS = \\text{DTE} \\times (1 - \\\
+    text{RtryTally} / (\\text{ErrTally} + 1)) \u2014 Quantifies the reliability of\
+    \ a data flow based on success rate and retry attempts.\n[/kb=30]"
+  label: Data Flow Reliability Score (DFRS)
+  hidden: false
+  meta:
+    kb_id: 30
+- name: dfsi
+  sql: ((successpct * 1.0 / (errtally + 1)) * (1 - (rtrytally * 1.0 / (errtally +
+    1)))) * (successpct * 1.0 / (errtally + 1))
+  type: DOUBLE
+  primary_key: false
+  description: "Data Flow Stability Index (DFSI) \u2014 KB #50: DFRS \xD7 SuccessPct\
+    \ / (ErrTally + 1).\n\n[kb=50]\nDFSI = \\text{DFRS} \\times \\frac{\\text{SuccessPct}}{\\\
+    text{ErrTally} + 1} \u2014 Quantifies the stability of data flows by balancing\
+    \ reliability and error recovery.\n[/kb=50]"
+  label: Data Flow Stability Index (DFSI)
+  hidden: false
+  meta:
+    kb_id: 50
+- name: is_cross_border
+  sql: orignation != destnation
+  type: BOOLEAN
+  primary_key: false
+  description: "Cross-Border Data Flow (KB #75): TRUE iff OrigNation != DestNation.\n\
+    \n[kb=75]\nA data flow where OrigNation != DestNation \u2014 Identifies data flows\
+    \ where the origin and destination nations differ.\n[/kb=75]"
+  label: Cross-Border Data Flow
+  hidden: false
+  meta:
+    kb_id: 75
+- name: transfer_path
+  sql: orignation || ' -> ' || destnation
+  type: TEXT
+  primary_key: false
+  description: "Transfer Path (KB #70): 'OrigNation -> DestNation' string.\n\n[kb=70]\n\
+    A string concatenating OrigNation and DestNation as 'OrigNation -> DestNation'\
+    \ \u2014 Describes the data flow path from origin to destination nation.\n[/kb=70]"
+  label: Transfer Path
+  hidden: false
+  meta:
+    kb_id: 70
+- name: is_overloaded_data_flow
+  sql: (bwidthpct * datasizemb * 1.0 / NULLIF(durmin, 0)) > 50 AND (successpct * 1.0
+    / (errtally + 1)) < 1.0
+  type: BOOLEAN
+  primary_key: false
+  description: "Overloaded Data Flow (KB #18): BSI > 50 AND DTE < 1.0.\n\n[kb=18]\n\
+    A data flow where BSI > 50 and DTE < 1.0 \u2014 Flags data flows with high bandwidth\
+    \ saturation and low efficiency.\n[/kb=18]"
+  label: Overloaded Data Flow
+  hidden: false
+  meta:
+    kb_id: 18
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

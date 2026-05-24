@@ -1,0 +1,81 @@
+version: 6
+name: vehicles
+sql_table: vehicles
+query_variables: {}
+data_source: cold_chain_pharma_compliance
+columns:
+- name: vehref
+  sql: vehref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: carrierbond
+  sql: carrierbond
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vehtype
+  sql: vehtype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: veh_qual
+  sql: veh_qual
+  type: TEXT
+  primary_key: false
+  description: "Cold Chain Vehicle Qualification Status (KB #24): 'Validated' (fully\
+    \ validated through performance and temperature mapping), 'Qualified' (basic qualification),\
+    \ 'Unqualified' (not formally qualified for pharmaceutical transport).\n\n[kb=24]\n\
+    Vehicles can be classified as: 'Validated' (fully validated through performance\
+    \ and temperature mapping studies), 'Qualified' (basic qualification but not fully\
+    \ validated), 'Unqualified' (not formally qualified for pharmaceutical transport).\
+    \ \u2014 Illustrates the validation levels of vehicles used in pharmaceutical\
+    \ transport.\n[/kb=24]"
+  label: Cold Chain Vehicle Qualification Status
+  hidden: false
+  meta:
+    kb_id: 24
+- name: temp_mon_sys
+  sql: temp_mon_sys
+  type: TEXT
+  primary_key: false
+  description: "Vehicle Temperature Monitoring Type (KB #58): 'Continuous' (uninterrupted),\
+    \ 'Interval' (periodic), 'None' (no active monitoring). NULL means monitoring\
+    \ type was not specified.\n\n[kb=58]\nVehicle temperature monitoring types include:\
+    \ 'Continuous' (uninterrupted monitoring throughout transport), 'Interval' (periodic\
+    \ checks at predetermined times), 'None' (no active monitoring), with null values\
+    \ indicating monitoring type was not specified in documentation. \u2014 Methods\
+    \ used to monitor temperatures in transport vehicles.\n[/kb=58]"
+  label: Vehicle Temperature Monitoring Types
+  hidden: false
+  meta:
+    kb_id: 58
+- name: sbp_score
+  sql: CASE WHEN LOWER(TRIM(veh_qual)) = 'validated' THEN 9 WHEN LOWER(TRIM(veh_qual))
+    = 'qualified' THEN 7 ELSE 5 END
+  type: DOUBLE
+  primary_key: false
+  description: "Supplier Backup Presence proxy (KB #30, SCRS sub-score, 0-10): Validated\
+    \ vehicle = 9, Qualified = 7, else = 5. Used inside Supply Chain Resilience Score;\
+    \ heuristic from the gold task solution because the schema does not store SBP\
+    \ directly.\n\n[kb=30]\nSCRS = 0.4 \\times ART + 0.3 \\times RRD + 0.2 \\times\
+    \ SBP + 0.1 \\times SMC, \\text{where ART is Alternative Route Availability (0-10),\
+    \ RRD is Redundant Resources Depth (0-10), SBP is Supplier Backup Presence (0-10),\
+    \ and SMC is Stock Management Capability (0-10).} \u2014 Measures a cold chain's\
+    \ ability to maintain integrity despite disruptions.\n[/kb=30]"
+  label: Supply Chain Resilience Score (SCRS)
+  hidden: false
+  meta:
+    kb_id: 30
+measures: []
+aggregations: []
+joins:
+- target_model: carriers
+  join_pairs:
+  - - carrierbond
+    - carriertag
+  join_type: left
+filters: []
+description: Vehicles used in pharmaceutical cold-chain transport, joined to their
+  owning carrier.
+hidden: false

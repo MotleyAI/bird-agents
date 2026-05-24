@@ -1,0 +1,64 @@
+version: 6
+name: virtualidols
+sql_table: virtualidols
+query_variables: {}
+data_source: virtual
+columns:
+- name: entityreg
+  sql: entityreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: nametag
+  sql: nametag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: kindtag
+  sql: kindtag
+  type: TEXT
+  primary_key: false
+  description: "Idol type (KB #2). '2D' = two-dimensional animated, anime-style, limited\
+    \ interactivity; '3D' = three-dimensional modeled, natural movements, complex\
+    \ performances; 'AI Generated' = AI-created characters, high uniqueness, requires\
+    \ consistency monitoring; 'Mixed Reality' = interacts with real-world elements,\
+    \ highest technical threshold.\n\n[kb=2]\n'2D' represents two-dimensional animated\
+    \ characters, suitable for anime-style performances with limited interactivity;\
+    \ '3D' refers to three-dimensional modeled characters with more natural movements\
+    \ capable of complex performances; 'AI Generated' indicates characters created\
+    \ using AI technology with high uniqueness but requiring consistency monitoring;\
+    \ 'Mixed Reality' describes characters that can interact with real-world elements,\
+    \ requiring the highest technical threshold. \u2014 Explains technical and performance\
+    \ characteristics of different virtual idol types\n[/kb=2]"
+  label: virtualidols.kindtag
+  hidden: false
+  meta:
+    kb_id: 2
+- name: debdate
+  sql: debdate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: assocgroup
+  sql: assocgroup
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: genretag
+  sql: genretag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: primlang
+  sql: primlang
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Catalog of virtual idols (entityreg PK). Holds idol metadata: name,
+  kind/type (2D, 3D, AI Generated, Mixed Reality), debut date, group/affiliation,
+  genre, primary language.'
+hidden: false

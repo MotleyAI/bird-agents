@@ -1,0 +1,77 @@
+version: 6
+name: multi_idol_supporters
+source_queries:
+- version: 3
+  name: fan_distinct_idols
+  source_model: interactions
+  measures:
+  - formula: interactidolpivot:count_distinct
+    name: n_idols
+  dimensions:
+  - name: interactfanpivot
+  whole_periods_only: false
+- version: 3
+  name: fan_engrate
+  source_model: engagement
+  measures:
+  - formula: engrate:max
+    name: engrate_v
+  dimensions:
+  - name: memberfanpivot
+    model: membershipandspending
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: fans
+    joins:
+    - target_model: fan_distinct_idols
+      join_pairs:
+      - - userregistry
+        - interactfanpivot
+    - target_model: fan_engrate
+      join_pairs:
+      - - userregistry
+        - membershipandspending__memberfanpivot
+  dimensions:
+  - name: userregistry
+  filters:
+  - fan_distinct_idols.n_idols >= 2
+  - fan_engrate.engrate_v > 0.4
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"fans.userregistry\" AS userregistry FROM (SELECT\n  fans.userregistry\
+  \ AS \"fans.userregistry\"\nFROM fans AS fans\nLEFT JOIN (\n  (\n    SELECT\n  \
+  \    \"engagement.membershipandspending.memberfanpivot\" AS membershipandspending__memberfanpivot,\n\
+  \      \"engagement.engrate_v\" AS engrate_v\n    FROM (\n      SELECT\n       \
+  \ membershipandspending.memberfanpivot AS \"engagement.membershipandspending.memberfanpivot\"\
+  ,\n        MAX(engagement.engrate) AS \"engagement.engrate_v\"\n      FROM engagement\
+  \ AS engagement\n      LEFT JOIN membershipandspending AS membershipandspending\n\
+  \        ON engagement.engagememberpivot = membershipandspending.memberreg\n   \
+  \   GROUP BY\n        membershipandspending.memberfanpivot\n    ) AS _inner\n  )\n\
+  ) AS fan_engrate\n  ON fans.userregistry = fan_engrate.membershipandspending__memberfanpivot\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"interactions.interactfanpivot\" AS interactfanpivot,\n\
+  \      \"interactions.n_idols\" AS n_idols\n    FROM (\n      SELECT\n        interactions.interactfanpivot\
+  \ AS \"interactions.interactfanpivot\",\n        COUNT(DISTINCT interactions.interactidolpivot)\
+  \ AS \"interactions.n_idols\"\n      FROM interactions AS interactions\n      GROUP\
+  \ BY\n        interactions.interactfanpivot\n    ) AS _inner\n  )\n) AS fan_distinct_idols\n\
+  \  ON fans.userregistry = fan_distinct_idols.interactfanpivot\nWHERE\n  fan_distinct_idols.n_idols\
+  \ >= 2 AND fan_engrate.engrate_v > 0.4) AS _inner"
+data_source: virtual
+columns:
+- name: userregistry
+  sql: userregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "[kb=29]\nA fan who has interacted (interactfanpivot appears multiple\
+  \ times with different interactidolpivot values) with at least 2 different idols,\
+  \ with engrate > 0.4 for each. These fans spread their support across the platform\
+  \ ecosystem rather than focusing on a single idol. \u2014 Identifies fans who support\
+  \ multiple virtual idols on the platform\n[/kb=29]"
+hidden: false
+meta:
+  kb_id: 29

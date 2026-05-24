@@ -1,0 +1,105 @@
+version: 6
+name: alerts
+sql_table: alerts
+query_variables: {}
+data_source: solar
+columns:
+- name: alertreg
+  sql: alertreg
+  type: TEXT
+  primary_key: true
+  description: VARCHAR(50) PRIMARY KEY uniquely identifying each alert record.
+  hidden: false
+- name: compreg
+  sql: compreg
+  type: TEXT
+  primary_key: false
+  description: UUID REFERENCES Plant(GrowRegistry), referencing which plant component
+    triggered the alert.
+  hidden: false
+  sampled: '> 20 distinct'
+- name: deviceref
+  sql: deviceref
+  type: TEXT
+  primary_key: false
+  description: VARCHAR(50) REFERENCES Panel(PaneMark), linking alert to a specific
+    panel if needed.
+  hidden: false
+  sampled: '> 20 distinct'
+- name: incidentref
+  sql: incidentref
+  type: TEXT
+  primary_key: false
+  description: VARCHAR(50) REFERENCES Performance(PerfRegistry), linking alert to
+    performance data if relevant.
+  hidden: false
+  sampled: '> 20 distinct'
+- name: alertmoment
+  sql: alertmoment
+  type: TIMESTAMP
+  primary_key: false
+  description: TIMESTAMP logging when the alert was generated (e.g., '2023-07-20 14:05:00').
+  hidden: false
+  sampled: '> 20 distinct'
+- name: alertstat
+  sql: alertstat
+  type: TEXT
+  primary_key: false
+  description: "VARCHAR(50) summarizing the alert\u2019s status or severity (was 'AlertStatus').\
+    \ Possible enumerations: 'Warning', 'Critical'."
+  hidden: false
+  sampled: None, Critical, Warning
+- name: alertcnt
+  sql: alertcnt
+  type: INT
+  primary_key: false
+  description: SMALLINT counting how many times this alert occurred (was 'AlertCount')
+    (e.g., 3).
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: maintprior
+  sql: maintprior
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(50) describing the maintenance priority (was ''MaintenancePriority'').
+    Possible enumerations: ''High'', ''Medium'', ''Low''.'
+  hidden: false
+  sampled: High, Low, Medium
+- name: replaceprior
+  sql: replaceprior
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(50) indicating the replacement priority (was ''ReplacementPriority'').
+    Possible enumerations: ''High'', ''Medium'', ''Low''.'
+  hidden: false
+  sampled: High, Low, Medium
+- name: optpotential
+  sql: optpotential
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(100) reflecting any optimization potential (was ''OptimizationPotential'').
+    Possible enumerations: ''Medium'', ''High'', ''Low''.'
+  hidden: false
+  sampled: High, Low, Medium
+measures: []
+aggregations: []
+joins:
+- target_model: plant
+  join_pairs:
+  - - compreg
+    - growregistry
+  join_type: left
+- target_model: panel
+  join_pairs:
+  - - deviceref
+    - panemark
+  join_type: left
+- target_model: performance
+  join_pairs:
+  - - incidentref
+    - perfregistry
+  join_type: left
+filters: []
+hidden: false

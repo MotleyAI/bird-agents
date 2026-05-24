@@ -1,0 +1,139 @@
+version: 6
+name: environmental_impact_factor
+source_queries:
+- version: 3
+  name: pc_per_arcref
+  source_model: scanpointcloud
+  measures:
+  - formula: sqs:avg
+    name: sqs
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  name: env_per_zone
+  source_model: scanenvironment
+  measures:
+  - formula: esi:avg
+    name: esi
+  dimensions:
+  - name: zoneref
+  whole_periods_only: false
+- version: 3
+  name: scans_keyed
+  source_model:
+    source_name: scans
+    joins:
+    - target_model: pc_per_arcref
+      join_pairs:
+      - - arcref
+        - arcref
+    - target_model: env_per_zone
+      join_pairs:
+      - - zoneref
+        - zoneref
+  dimensions:
+  - name: questregistry
+  - name: arcref
+  - name: zoneref
+  - name: sqs
+    model: pc_per_arcref
+  - name: esi
+    model: env_per_zone
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: scans_keyed
+    columns:
+    - name: eif
+      type: DOUBLE
+      sql: pc_per_arcref__sqs / (env_per_zone__esi + 10) * 100
+  measures:
+  - formula: eif:avg
+    name: eif
+  dimensions:
+  - name: questregistry
+  - name: arcref
+  - name: zoneref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"scans_keyed.questregistry\" AS questregistry, \"scans_keyed.arcref\"\
+  \ AS arcref, \"scans_keyed.zoneref\" AS zoneref, \"scans_keyed.eif\" AS eif FROM\
+  \ (SELECT\n  scans_keyed.questregistry AS \"scans_keyed.questregistry\",\n  scans_keyed.arcref\
+  \ AS \"scans_keyed.arcref\",\n  scans_keyed.zoneref AS \"scans_keyed.zoneref\",\n\
+  \  AVG(scans_keyed.pc_per_arcref__sqs / (\n    scans_keyed.env_per_zone__esi + 10\n\
+  \  ) * 100) AS \"scans_keyed.eif\"\nFROM (\n  SELECT\n    \"scans.questregistry\"\
+  \ AS questregistry,\n    \"scans.arcref\" AS arcref,\n    \"scans.zoneref\" AS zoneref,\n\
+  \    \"scans.pc_per_arcref.sqs\" AS pc_per_arcref__sqs,\n    \"scans.env_per_zone.esi\"\
+  \ AS env_per_zone__esi\n  FROM (\n    SELECT\n      scans.questregistry AS \"scans.questregistry\"\
+  ,\n      scans.arcref AS \"scans.arcref\",\n      scans.zoneref AS \"scans.zoneref\"\
+  ,\n      pc_per_arcref.sqs AS \"scans.pc_per_arcref.sqs\",\n      env_per_zone.esi\
+  \ AS \"scans.env_per_zone.esi\"\n    FROM scans AS scans\n    LEFT JOIN (\n    \
+  \  (\n        SELECT\n          \"scanpointcloud.arcref\" AS arcref,\n         \
+  \ \"scanpointcloud.sqs\" AS sqs\n        FROM (\n          SELECT\n            scanpointcloud.arcref\
+  \ AS \"scanpointcloud.arcref\",\n            AVG(\n              (\n           \
+  \     CASE\n                  WHEN (\n                    (\n                  \
+  \    LOG10(scanpointcloud.scanresolmm * 1000.0) / LOG10(scanpointcloud.pointdense)\n\
+  \                    ) * 5.0\n                  ) > 0\n                  THEN POWER(\n\
+  \                    10.0 / (\n                      (\n                       \
+  \ LOG10(scanpointcloud.scanresolmm * 1000.0) / LOG10(scanpointcloud.pointdense)\n\
+  \                      ) * 5.0\n                    ),\n                    1.5\n\
+  \                  )\n                  ELSE NULL\n                END\n       \
+  \       ) * (\n                (\n                  scanpointcloud.coverpct * (\n\
+  \                    1 + (\n                      scanpointcloud.lappct / 100.0\n\
+  \                    ) * (\n                      1 - scanpointcloud.coverpct /\
+  \ 100.0\n                    )\n                  )\n                ) / 100.0\n\
+  \              ) * POWER(1 - scanpointcloud.noisedb / 30.0, 2)\n            ) AS\
+  \ \"scanpointcloud.sqs\"\n          FROM scanpointcloud AS scanpointcloud\n    \
+  \      GROUP BY\n            scanpointcloud.arcref\n        ) AS _inner\n      )\n\
+  \    ) AS pc_per_arcref\n      ON scans.arcref = pc_per_arcref.arcref\n    LEFT\
+  \ JOIN (\n      (\n        SELECT\n          \"scanenvironment.zoneref\" AS zoneref,\n\
+  \          \"scanenvironment.esi\" AS esi\n        FROM (\n          SELECT\n  \
+  \          scanenvironment.zoneref AS \"scanenvironment.zoneref\",\n           \
+  \ AVG(\n              100 - 2.5 * ABS(scanenvironment.ambictemp - 20) - POWER(ABS((\n\
+  \                scanenvironment.humepct - 50\n              ) / 2.0), 1.5) - 600.0\
+  \ / (\n                scanenvironment.illumelux + 100\n              )\n      \
+  \      ) AS \"scanenvironment.esi\"\n          FROM scanenvironment AS scanenvironment\n\
+  \          GROUP BY\n            scanenvironment.zoneref\n        ) AS _inner\n\
+  \      )\n    ) AS env_per_zone\n      ON scans.zoneref = env_per_zone.zoneref\n\
+  \  ) AS _inner\n) AS scans_keyed\nGROUP BY\n  scans_keyed.questregistry,\n  scans_keyed.arcref,\n\
+  \  scans_keyed.zoneref) AS _inner"
+data_source: archeology
+columns:
+- name: questregistry
+  sql: questregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: arcref
+  sql: arcref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: zoneref
+  sql: zoneref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: eif
+  sql: eif
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Environmental Impact Factor (EIF, KB #31): SQS / (ESI + 10) * 100. Values\
+  \ closer to 100 indicate minimal environmental interference. Multistage anchored\
+  \ at scans which has both arcref (project, for SQS) and zoneref (site, for ESI).\n\
+  \n[kb=31]\nEIF = \\frac{SQS}{\\text{ESI} + 10} \\times 100, \\text{ where SQS is\
+  \ the Scan Quality Score and ESI is the Environmental Suitability Index. Values\
+  \ closer to 100 indicate minimal environmental interference with data acquisition.}\
+  \ \u2014 Quantifies how environmental conditions affected scan quality using statistical\
+  \ correlation analysis.\n[/kb=31]"
+hidden: false
+meta:
+  kb_id: 31

@@ -1,0 +1,101 @@
+version: 6
+name: customer_loyalty_network
+source_queries:
+- version: 3
+  name: tx_per_vendor_buyer
+  source_model: transactions
+  measures:
+  - formula: '*:count'
+    name: tx_count
+  dimensions:
+  - name: vendref
+    model: products
+  - name: buyref
+  whole_periods_only: false
+- version: 3
+  name: loyal_buyers_per_vendor
+  source_model: tx_per_vendor_buyer
+  measures:
+  - formula: '*:count'
+    name: loyal_buyer_count
+  dimensions:
+  - name: products__vendref
+  filters:
+  - tx_count > 5
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: vendors
+    joins:
+    - target_model: loyal_buyers_per_vendor
+      join_pairs:
+      - - vendregistry
+        - products__vendref
+    columns:
+    - name: is_customer_loyalty_network
+      type: DOUBLE
+      sql: CASE WHEN vendors.vrs > 90 AND COALESCE(loyal_buyers_per_vendor.loyal_buyer_count,
+        0) >= 1 AND vendors.vendrate > 4.8 AND vendors.vendchecklvl IN ('Advanced','Premium')
+        THEN 1 ELSE 0 END
+  dimensions:
+  - name: vendregistry
+  - name: is_customer_loyalty_network
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vendors.vendregistry\" AS vendregistry, \"vendors.is_customer_loyalty_network\"\
+  \ AS is_customer_loyalty_network FROM (SELECT\n  vendors.vendregistry AS \"vendors.vendregistry\"\
+  ,\n  CASE\n    WHEN (\n      (\n        vendors.vendrate * 10\n      ) + (\n   \
+  \     vendors.vendsucccount * 1.0 / NULLIF(vendors.vendtxcount, 0)\n      ) * 50\
+  \ + (\n        CASE vendors.vendchecklvl\n          WHEN 'Basic'\n          THEN\
+  \ 1\n          WHEN 'Advanced'\n          THEN 2\n          WHEN 'Premium'\n   \
+  \       THEN 3\n          ELSE 0\n        END\n      ) * 15 - (\n        vendors.venddisputecount\
+  \ * 1.0 / NULLIF(vendors.vendtxcount, 0)\n      ) * 100\n    ) > 90\n    AND COALESCE(loyal_buyers_per_vendor.loyal_buyer_count,\
+  \ 0) >= 1\n    AND vendors.vendrate > 4.8\n    AND vendors.vendchecklvl IN ('Advanced',\
+  \ 'Premium')\n    THEN 1\n    ELSE 0\n  END AS \"vendors.is_customer_loyalty_network\"\
+  \nFROM vendors AS vendors\nLEFT JOIN (\n  (\n    SELECT\n      \"tx_per_vendor_buyer.products__vendref\"\
+  \ AS products__vendref,\n      \"tx_per_vendor_buyer.loyal_buyer_count\" AS loyal_buyer_count\n\
+  \    FROM (\n      SELECT\n        tx_per_vendor_buyer.products__vendref AS \"tx_per_vendor_buyer.products__vendref\"\
+  ,\n        COUNT(*) AS \"tx_per_vendor_buyer.loyal_buyer_count\"\n      FROM (\n\
+  \        SELECT\n          \"transactions.products.vendref\" AS products__vendref,\n\
+  \          \"transactions.buyref\" AS buyref,\n          \"transactions.tx_count\"\
+  \ AS tx_count\n        FROM (\n          SELECT\n            products.vendref AS\
+  \ \"transactions.products.vendref\",\n            transactions.buyref AS \"transactions.buyref\"\
+  ,\n            COUNT(*) AS \"transactions.tx_count\"\n          FROM transactions\
+  \ AS transactions\n          LEFT JOIN products AS products\n            ON transactions.prodref\
+  \ = products.prodregistry\n          GROUP BY\n            products.vendref,\n \
+  \           transactions.buyref\n        ) AS _inner\n      ) AS tx_per_vendor_buyer\n\
+  \      WHERE\n        tx_per_vendor_buyer.tx_count > 5\n      GROUP BY\n       \
+  \ tx_per_vendor_buyer.products__vendref\n    ) AS _inner\n  )\n) AS loyal_buyers_per_vendor\n\
+  \  ON vendors.vendregistry = loyal_buyers_per_vendor.products__vendref) AS _inner"
+data_source: cybermarket
+columns:
+- name: vendregistry
+  sql: vendregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_customer_loyalty_network
+  sql: is_customer_loyalty_network
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Customer Loyalty Network (KB #47): vendor-customer networks with VRS\
+  \ > 90, having at least one buyer with > 5 repeated transactions (per-(vendor,buyer)\
+  \ aggregate), vendrate > 4.8, vendchecklvl in (Advanced, Premium). Transactions\
+  \ reach the vendor through products.vendref (transactions.prodref \u2192 products.vendref).\
+  \ Multistage: stage 1 aggregates transactions by (products.vendref, buyref) to a\
+  \ per-pair tx count; stage 2 counts loyal-buyer pairs (tx_count > 5) per vendor;\
+  \ stage 3 anchors at vendors and applies the four-condition boolean.\n\n[kb=47]\n\
+  A network centered on a vendor with VRS > 90, having repeated transactions with\
+  \ the same buyers (> 5 transactions per buyer), receiving exceptionally high ratings\
+  \ (vendrate > 4.8), and 'Advanced' or 'Premium' verification level as defined in\
+  \ the vendor verification system. These networks often indicate established trust\
+  \ circles warranting deeper investigation. \u2014 Identifies vendor-customer networks\
+  \ with unusual loyalty patterns\n[/kb=47]"
+hidden: false
+meta:
+  kb_id: 47

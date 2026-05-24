@@ -1,0 +1,120 @@
+version: 6
+name: fragile_stability_patients
+source_queries:
+- version: 3
+  name: missappt_per_patient
+  source_model: encounters
+  measures:
+  - formula: missappt:avg
+    name: avg_missappt
+  dimensions:
+  - name: patref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: assessmentsocialanddiagnosis
+    joins:
+    - target_model: missappt_per_patient
+      join_pairs:
+      - - assessmentbasics.patownerref
+        - patref
+  dimensions:
+  - name: asdkey
+  - name: patownerref
+    model: assessmentbasics
+  - name: is_stable_recovery
+  - name: sse_per_row
+  - name: avg_missappt
+    model: missappt_per_patient
+  filters:
+  - is_stable_recovery = TRUE
+  - (missappt_per_patient.avg_missappt > 2 OR sse_per_row < 3)
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"assessmentsocialanddiagnosis.asdkey\" AS asdkey, \"assessmentsocialanddiagnosis.assessmentbasics.patownerref\"\
+  \ AS assessmentbasics__patownerref, \"assessmentsocialanddiagnosis.is_stable_recovery\"\
+  \ AS is_stable_recovery, \"assessmentsocialanddiagnosis.sse_per_row\" AS sse_per_row,\
+  \ \"assessmentsocialanddiagnosis.missappt_per_patient.avg_missappt\" AS missappt_per_patient__avg_missappt\
+  \ FROM (SELECT\n  assessmentsocialanddiagnosis.asdkey AS \"assessmentsocialanddiagnosis.asdkey\"\
+  ,\n  assessmentbasics.patownerref AS \"assessmentsocialanddiagnosis.assessmentbasics.patownerref\"\
+  ,\n  assessmentsocialanddiagnosis.recstatus = 'Stable'\n  AND EXISTS(\n    SELECT\n\
+  \      1\n    FROM treatmentoutcomes AS tox\n    JOIN treatmentbasics AS tb\n  \
+  \    ON tox.txref = tb.txkey\n    JOIN encounters AS e\n      ON tb.encref = e.enckey\n\
+  \    WHERE\n      e.abref = assessmentsocialanddiagnosis.asdkey\n      AND tox.funcimpv\
+  \ IN ('Moderate', 'Significant')\n  ) AS \"assessmentsocialanddiagnosis.is_stable_recovery\"\
+  ,\n  (\n    CASE assessmentsocialanddiagnosis.socsup\n      WHEN 'Strong'\n    \
+  \  THEN 3\n      WHEN 'Moderate'\n      THEN 2\n      WHEN 'Limited'\n      THEN\
+  \ 1\n      ELSE NULL\n    END\n  ) + (\n    CASE assessmentsocialanddiagnosis.relqual\n\
+  \      WHEN 'Good'\n      THEN 3\n      WHEN 'Fair'\n      THEN 2\n      WHEN 'Poor'\n\
+  \      THEN 1\n      WHEN 'Conflicted'\n      THEN 0\n      ELSE NULL\n    END\n\
+  \  ) AS \"assessmentsocialanddiagnosis.sse_per_row\",\n  missappt_per_patient.avg_missappt\
+  \ AS \"assessmentsocialanddiagnosis.missappt_per_patient.avg_missappt\"\nFROM assessmentsocialanddiagnosis\
+  \ AS assessmentsocialanddiagnosis\nLEFT JOIN assessmentbasics AS assessmentbasics\n\
+  \  ON assessmentsocialanddiagnosis.asdkey = assessmentbasics.abkey\nLEFT JOIN (\n\
+  \  (\n    SELECT\n      \"encounters.patref\" AS patref,\n      \"encounters.avg_missappt\"\
+  \ AS avg_missappt\n    FROM (\n      SELECT\n        encounters.patref AS \"encounters.patref\"\
+  ,\n        AVG(encounters.missappt) AS \"encounters.avg_missappt\"\n      FROM encounters\
+  \ AS encounters\n      GROUP BY\n        encounters.patref\n    ) AS _inner\n  )\n\
+  ) AS missappt_per_patient\n  ON assessmentsocialanddiagnosis.assessmentbasics.patownerref\
+  \ = missappt_per_patient.patref\nWHERE\n  assessmentsocialanddiagnosis.recstatus\
+  \ = 'Stable'\n  AND EXISTS(\n    SELECT\n      1\n    FROM treatmentoutcomes AS\
+  \ tox\n    JOIN treatmentbasics AS tb\n      ON tox.txref = tb.txkey\n    JOIN encounters\
+  \ AS e\n      ON tb.encref = e.enckey\n    WHERE\n      e.abref = assessmentsocialanddiagnosis.asdkey\n\
+  \      AND tox.funcimpv IN ('Moderate', 'Significant')\n  ) = assessmentsocialanddiagnosis.TRUE\n\
+  \  AND (\n    missappt_per_patient.avg_missappt > 2\n    OR (\n      CASE assessmentsocialanddiagnosis.socsup\n\
+  \        WHEN 'Strong'\n        THEN 3\n        WHEN 'Moderate'\n        THEN 2\n\
+  \        WHEN 'Limited'\n        THEN 1\n        ELSE NULL\n      END\n    ) + (\n\
+  \      CASE assessmentsocialanddiagnosis.relqual\n        WHEN 'Good'\n        THEN\
+  \ 3\n        WHEN 'Fair'\n        THEN 2\n        WHEN 'Poor'\n        THEN 1\n\
+  \        WHEN 'Conflicted'\n        THEN 0\n        ELSE NULL\n      END\n    )\
+  \ < 3\n  )) AS _inner"
+data_source: mental
+columns:
+- name: asdkey
+  sql: asdkey
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: assessmentbasics__patownerref
+  sql: assessmentbasics__patownerref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_stable_recovery
+  sql: is_stable_recovery
+  type: BOOLEAN
+  primary_key: false
+  description: 'Stable Recovery Patient (KB #13): recstatus=''Stable'' AND any linked
+    treatmentoutcome has funcimpv in {Moderate, Significant}.'
+  hidden: false
+- name: sse_per_row
+  sql: sse_per_row
+  type: DOUBLE
+  primary_key: false
+  description: 'Per-row Social Support Effectiveness contribution: socsup_score +
+    relqual_score.'
+  hidden: false
+- name: missappt_per_patient__avg_missappt
+  sql: missappt_per_patient__avg_missappt
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Patients meeting Fragile Stability profile (KB #56): is_stable_recovery\
+  \ (KB #13) AND (avg missappt > 2 across their encounters OR per-row SSE < 3). Stage\
+  \ 1 aggregates missappt per patient. Stage 2 anchors at assessmentsocialanddiagnosis\
+  \ (which carries is_stable_recovery and per-row SSE), joined to stage 1 by patient\
+  \ (via assessmentbasics.patownerref).\n\n[kb=56]\nA patient meeting Stable Recovery\
+  \ Patient criteria BUT having an average missappt > 2 across their encounters OR\
+  \ an individual SSE score < 3. \\text{Combines Stable Recovery Patient status with\
+  \ risk factors related to MAR and SSE}. \u2014 Identifies patients currently classified\
+  \ as 'Stable Recovery' but who exhibit risk factors like frequent missed appointments\
+  \ or low social support, suggesting potential for destabilization.\n[/kb=56]"
+hidden: false
+meta:
+  kb_id: 56

@@ -1,0 +1,59 @@
+version: 6
+name: signal_spei
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signaldecoding
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: spei
+      type: DOUBLE
+      sql: (signaldecoding.decodeiters * signaldecoding.proctimehrs) / (((signaldecoding.compressratio
+        * signalclassification.complexidx * signalclassification.entropyval) / 10.0)
+        * signalclassification.complexidx)
+  dimensions:
+  - name: signalregistry
+  - name: spei
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.spei\"\
+  \ AS spei FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\",\n\
+  \  (\n    signaldecoding.decodeiters * signaldecoding.proctimehrs\n  ) / (\n   \
+  \ (\n      (\n        signaldecoding.compressratio * signalclassification.complexidx\
+  \ * signalclassification.entropyval\n      ) / 10.0\n    ) * signalclassification.complexidx\n\
+  \  ) AS \"signals.spei\"\nFROM signals AS signals\nLEFT JOIN signaldecoding AS signaldecoding\n\
+  \  ON signals.signalregistry = signaldecoding.signalref\nLEFT JOIN signalclassification\
+  \ AS signalclassification\n  ON signals.signalregistry = signalclassification.signalref)\
+  \ AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: spei
+  sql: spei
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Signal Processing Efficiency Index (SPEI) per signal.\n\n[kb=34]\n$\\\
+  text{SPEI} = \\frac{\\text{DecodeIters} \\times \\text{ProcTimeHrs}}{\\text{ECI}\
+  \ \\times \\text{ComplexIdx}}$, where ECI (Encoding Complexity Index) provides the\
+  \ complexity component to normalize processing time and iterations. \u2014 Evaluates\
+  \ the computational efficiency of signal processing relative to complexity.\n[/kb=34]"
+hidden: false
+meta:
+  kb_id: 34

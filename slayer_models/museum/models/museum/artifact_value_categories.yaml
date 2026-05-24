@@ -1,0 +1,81 @@
+version: 6
+name: artifact_value_categories
+sql: SELECT s.artref AS artref, s.insvalueusd AS insvalueusd, r.histsignrating AS
+  histsignrating, r.cultscore AS cultscore, NTILE(10) OVER (ORDER BY r.histsignrating
+  DESC) AS hist_decile, NTILE(10) OVER (ORDER BY r.cultscore DESC) AS cult_decile,
+  CASE WHEN s.insvalueusd > 1000000 OR (NTILE(10) OVER (ORDER BY r.histsignrating
+  DESC) = 1 AND NTILE(10) OVER (ORDER BY r.cultscore DESC) = 1) THEN 1 ELSE 0 END
+  AS is_high_value_full, CASE WHEN s.insvalueusd > 1000000 THEN 'Monetary High-Value'
+  WHEN NTILE(10) OVER (ORDER BY r.histsignrating DESC) = 1 AND NTILE(10) OVER (ORDER
+  BY r.cultscore DESC) = 1 THEN 'Cultural/Historical High-Value' ELSE 'Other' END
+  AS value_category FROM artifactsecurityaccess s JOIN artifactratings r ON s.ratingref
+  = r.ratingrecordregistry
+query_variables: {}
+data_source: museum
+columns:
+- name: artref
+  sql: artref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: insvalueusd
+  sql: insvalueusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: histsignrating
+  sql: histsignrating
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: cultscore
+  sql: cultscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: hist_decile
+  sql: hist_decile
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: cult_decile
+  sql: cult_decile
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_high_value_full
+  sql: is_high_value_full
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=11]\nAn artifact is considered high-value when its InsValueUSD\
+    \ exceeds $1,000,000 OR when both HistSignRating and CultScore are in the top\
+    \ 10% of all artifacts. \u2014 Identifies artifacts with exceptional historical,\
+    \ cultural, or monetary value requiring special attention.\n[/kb=11]"
+  label: High-Value Artifact
+  hidden: false
+  meta:
+    kb_id: 11
+- name: value_category
+  sql: value_category
+  type: TEXT
+  primary_key: false
+  description: "[kb=51]\nAn artifact falls into 'Monetary High-Value' category when\
+    \ its InsValueUSD exceeds $1,000,000. It qualifies as 'Cultural/Historical High-Value'\
+    \ when both its HistSignRating and CultScore are in the top 10% of all artifacts\
+    \ (percentile rank = 1). Otherwise 'Other'. \u2014 Classification system for categorizing\
+    \ high-value artifacts based on their monetary or cultural/historical significance.\n\
+    [/kb=51]"
+  label: High-Value Category
+  hidden: false
+  meta:
+    kb_id: 51
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Per-artifact High-Value classification (KB #11, #51). NTILE(10) over
+  the full population gives top-10% deciles for HistSignRating and CultScore. Computed
+  as a SQL-backed model since percentile rank requires a window-over-population evaluation
+  that can''t be inlined as a per-row column expression.'
+hidden: false
+meta: {}

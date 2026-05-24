@@ -1,0 +1,276 @@
+version: 6
+name: environment
+sql_table: environment
+query_variables: {}
+data_source: solar
+columns:
+- name: envregistry
+  sql: envregistry
+  type: TEXT
+  primary_key: true
+  description: VARCHAR(50) PRIMARY KEY uniquely identifying each environment record.
+  hidden: false
+- name: arearegistry
+  sql: arearegistry
+  type: TEXT
+  primary_key: false
+  description: UUID REFERENCES Plant(GrowRegistry), referencing which plant area is
+    monitored.
+  hidden: false
+- name: envmoment
+  sql: envmoment
+  type: TIMESTAMP
+  primary_key: false
+  description: TIMESTAMP noting when these environmental readings were taken (e.g.,
+    '2023-07-15 10:30:00').
+  hidden: false
+- name: celltempc
+  sql: celltempc
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=23]\nMeasured in degrees Celsius, representing the actual temperature\
+    \ of the solar cells during operation. Typically ranges from 40\xB0C to 70\xB0\
+    C depending on ambient conditions and panel design, with temperatures above 80\xB0\
+    C potentially causing accelerated degradation. \u2014 Illustrates the operational\
+    \ temperature of solar cells.\n[/kb=23]"
+  label: CellTempC (Cell Temperature)
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 23
+- name: ambtempc
+  sql: ambtempc
+  type: DOUBLE
+  primary_key: false
+  description: "NUMERIC(7,3) ambient temperature in \xB0C (was 'AmbientTemperatureC')\
+    \ (e.g., 35.600)."
+  hidden: false
+  format:
+    type: float
+- name: soillosspct
+  sql: soillosspct
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=25]\nExpressed as a percentage of power output lost due to soiling.\
+    \ Clean panels have values near 0%, while heavily soiled panels in dusty environments\
+    \ may experience losses exceeding 15%. Typical values in maintained systems range\
+    \ from 2% to 5%. \u2014 Illustrates the impact of soiling on panel performance.\n\
+    [/kb=25]"
+  label: SoilingLossPct (Soiling Loss Percentage)
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 25
+- name: dustdengm2
+  sql: dustdengm2
+  type: DOUBLE
+  primary_key: false
+  description: "DECIMAL(7,3) dust density in g/m\xB2 (was 'DustDensityGM2') (e.g.,\
+    \ 0.100)."
+  hidden: false
+  format:
+    type: float
+- name: cleancycledays
+  sql: cleancycledays
+  type: INT
+  primary_key: false
+  description: SMALLINT indicating the scheduled cleaning cycle in days (was 'CleaningCycleDays')
+    (e.g., 30).
+  hidden: false
+  format:
+    type: integer
+- name: lastcleandt
+  sql: lastcleandt
+  type: DATE
+  primary_key: false
+  description: DATE for when the last cleaning happened (was 'LastCleaningDate') (e.g.,
+    '2023-06-01').
+  hidden: false
+- name: relhumpct
+  sql: relhumpct
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(7,3) relative humidity percentage (was 'RelativeHumidityPercent')
+    (e.g., 35.500).
+  hidden: false
+  format:
+    type: float
+- name: windspdms
+  sql: windspdms
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(7,3) wind speed in m/s (was 'WindSpeedMS') (e.g., 3.200).
+  hidden: false
+  format:
+    type: float
+- name: winddirdeg
+  sql: winddirdeg
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(7,3) wind direction in degrees (was 'WindDirectionDegrees')
+    (e.g., 180.000).
+  hidden: false
+  format:
+    type: float
+- name: preciptmm
+  sql: preciptmm
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(6,2) precipitation in mm (was 'PrecipitationMM') (e.g., 12.50).
+  hidden: false
+  format:
+    type: float
+- name: airpresshpa
+  sql: airpresshpa
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(6,2) air pressure in hPa (was 'AirPressureHPA') (e.g., 1013.25).
+  hidden: false
+  format:
+    type: float
+- name: uv_idx
+  sql: uv_idx
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(7,3) UV index reading (was 'UVIndex') (e.g., 7.500).
+  hidden: false
+  format:
+    type: float
+- name: cloudcovpct
+  sql: cloudcovpct
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(7,3) cloud coverage percentage (was 'CloudCoveragePercent')
+    (e.g., 20.250).
+  hidden: false
+  format:
+    type: float
+- name: snowcovpct
+  sql: snowcovpct
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(7,3) snow coverage percentage (was 'SnowCoveragePercent') (e.g.,
+    0.000).
+  hidden: false
+  format:
+    type: float
+- name: irradiance_conditions
+  sql: irradiance_conditions
+  type: TEXT
+  primary_key: false
+  description: JSONB column. Groups irradiance-related environmental measurements,
+    including global, direct, diffuse, and plane-of-array irradiance, along with spectral
+    mismatch.
+  hidden: false
+  meta:
+    jsonb: true
+- name: irradiance_conditions__specmisfac
+  sql: JSON_EXTRACT(irradiance_conditions, '$.specmisfac')
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(7,3) spectral mismatch factor (was 'SpectralMismatchFactor')
+    (e.g., 1.020).
+  label: Specmisfac
+  hidden: false
+  meta:
+    derived_from:
+      json_col: irradiance_conditions
+      path:
+      - specmisfac
+- name: irradiance_conditions__irradiance_types__3
+  sql: JSON_EXTRACT(irradiance_conditions, '$.irradiance_types[3]')
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=28]\nMeasured in watts per square meter (W/m\xB2), representing\
+    \ the solar energy reaching the panel surface. Typical daytime values range from\
+    \ 200 W/m\xB2 on heavily overcast days to 1000+ W/m\xB2 under clear sky conditions\
+    \ at solar noon. \u2014 Illustrates the solar energy actually reaching the panel\
+    \ surface. NUMERIC(7,3) plane-of-array irradiance in W/m\xB2 (was 'POAIrradianceWM2')\
+    \ (e.g., 980.450). Stored as the 4th element (index 3) of irradiance_conditions.irradiance_types;\
+    \ the JSON sidecar uses an array of [global, direct, diffuse, POA].\n[/kb=28]"
+  label: POAIrradianceWM2 (Plane-of-Array Irradiance)
+  hidden: false
+  meta:
+    kb_id: 28
+    derived_from:
+      json_col: irradiance_conditions
+      path:
+      - irradiance_types
+      - '3'
+- name: soiling_impact_factor
+  sql: soillosspct / NULLIF(dustdengm2, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=6]\nSIF = SoilingLossPercent / DustDensityGM2, where higher values\
+    \ indicate greater sensitivity to dust accumulation. \u2014 Sensitivity of soiling\
+    \ loss to dust density; higher values indicate greater performance sensitivity\
+    \ to dust accumulation.\n[/kb=6]"
+  label: Soiling Impact Factor (SIF)
+  hidden: false
+  meta:
+    kb_id: 6
+- name: needs_cleaning_threshold
+  sql: CASE WHEN soillosspct > 5 OR dustdengm2 > 0.15 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=13]\nCleaning should be performed when Soiling Loss Percentage\
+    \ exceeds 5% or when Dust Density exceeds 0.15 g/m\xB2, whichever occurs first.\
+    \ \u2014 A threshold indicating when solar panels need cleaning based on soiling\
+    \ and dust levels.\n[/kb=13]"
+  label: Soiling Cleaning Threshold
+  hidden: false
+  meta:
+    kb_id: 13
+- name: in_optimal_performance_window
+  sql: CASE WHEN celltempc BETWEEN 25 AND 45 AND irradiance_conditions__irradiance_types__3
+    > 800 AND soillosspct < 2 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=15]\nThe optimal performance window occurs when cell temperature\
+    \ is between 25-45\xB0C, POA irradiance exceeds 800 W/m\xB2, and soiling loss\
+    \ is less than 2%. \u2014 Ideal conditions for maximum solar panel performance.\n\
+    [/kb=15]"
+  label: Optimal Performance Window
+  hidden: false
+  meta:
+    kb_id: 15
+- name: weather_severity_index
+  sql: ((CASE WHEN ambtempc > 35 THEN ambtempc - 35 ELSE 0 END) / 10.0) + (relhumpct
+    / 100.0) + (windspdms / 10.0) + (preciptmm / 10.0)
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=18]\nA composite index calculated from extreme values of temperature,\
+    \ humidity, wind speed, and precipitation, where higher values indicate more severe\
+    \ operating conditions and increased risk of performance issues. \u2014 Quantifies\
+    \ severity of weather conditions affecting solar panel performance. NOTE: the\
+    \ KB defines the index conceptually but does not pin the exact formula; this encoding\
+    \ uses normalised contributions from above-comfort temperature, humidity, wind\
+    \ speed, and precipitation.\n[/kb=18]"
+  label: Weather Severity Index
+  hidden: false
+  meta:
+    kb_id: 18
+- name: high_risk_weather_condition
+  sql: CASE WHEN weather_severity_index > 7 AND celltempc > 45 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=43]\nWeather conditions are considered high-risk when the Weather\
+    \ Severity Index exceeds 7.0 and Cell Temperature exceeds the upper limit of the\
+    \ Optimal Performance Window. \u2014 Identifies weather conditions that pose elevated\
+    \ risk to solar panel operation.\n[/kb=43]"
+  label: High-Risk Weather Condition
+  hidden: false
+  meta:
+    kb_id: 43
+measures: []
+aggregations: []
+joins:
+- target_model: plant
+  join_pairs:
+  - - arearegistry
+    - growregistry
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,95 @@
+version: 6
+name: extreme_operating_conditions
+source_queries:
+- version: 3
+  source_model:
+    source_name: extreme_climate_adaptation_coefficient
+    columns:
+    - name: is_eoc_flag
+      type: DOUBLE
+      sql: CASE WHEN ssf_avg > 0.65 AND ecac > 0.8 THEN 1 ELSE 0 END
+  dimensions:
+  - name: operationmaintenance__opmainteqref
+  - name: is_eoc_flag
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"extreme_climate_adaptation_coefficient.operationmaintenance__opmainteqref\"\
+  \ AS operationmaintenance__opmainteqref, \"extreme_climate_adaptation_coefficient.is_eoc_flag\"\
+  \ AS is_eoc_flag FROM (SELECT\n  extreme_climate_adaptation_coefficient.operationmaintenance__opmainteqref\
+  \ AS \"extreme_climate_adaptation_coefficient.operationmaintenance__opmainteqref\"\
+  ,\n  CASE\n    WHEN extreme_climate_adaptation_coefficient.ssf_avg > 0.65\n    AND\
+  \ extreme_climate_adaptation_coefficient.ecac > 0.8\n    THEN 1\n    ELSE 0\n  END\
+  \ AS \"extreme_climate_adaptation_coefficient.is_eoc_flag\"\nFROM (\n  SELECT\n\
+  \    \"weather_per_eq.operationmaintenance__opmainteqref\" AS operationmaintenance__opmainteqref,\n\
+  \    \"weather_per_eq.ext_factor_avg\" AS ext_factor_avg,\n    \"weather_per_eq.ssf_avg\"\
+  \ AS ssf_avg,\n    \"weather_per_eq.ecac\" AS ecac,\n    \"weather_per_eq.tie_per_eq.tie_avg\"\
+  \ AS tie_per_eq__tie_avg\n  FROM (\n    WITH _base AS (\n      SELECT\n        weather_per_eq.operationmaintenance__opmainteqref\
+  \ AS \"weather_per_eq.operationmaintenance__opmainteqref\",\n        AVG(weather_per_eq.ext_factor)\
+  \ AS \"weather_per_eq.ext_factor_avg\",\n        AVG(weather_per_eq.ssf) AS \"weather_per_eq.ssf_avg\"\
+  \n      FROM (\n        SELECT\n          \"weatherandstructure.operationmaintenance.opmainteqref\"\
+  \ AS operationmaintenance__opmainteqref,\n          \"weatherandstructure.ssf\"\
+  \ AS ssf,\n          \"weatherandstructure.ext_factor\" AS ext_factor\n        FROM\
+  \ (\n          SELECT\n            operationmaintenance.opmainteqref AS \"weatherandstructure.operationmaintenance.opmainteqref\"\
+  ,\n            AVG(\n              (\n                100 - weatherandstructure.structuralloadpercent\n\
+  \              ) / 100.0 * CASE\n                WHEN weatherandstructure.snowloadkgm2\
+  \ > 100 OR weatherandstructure.windspeedms > 20\n                THEN 0.5\n    \
+  \            WHEN weatherandstructure.snowloadkgm2 > 50 OR weatherandstructure.windspeedms\
+  \ > 10\n                THEN 0.8\n                ELSE 1.0\n              END\n\
+  \            ) AS \"weatherandstructure.ssf\",\n            AVG(\n             \
+  \ CASE\n                WHEN weatherandstructure.externaltemperaturec < -30\n  \
+  \              THEN 0.7\n                WHEN weatherandstructure.externaltemperaturec\
+  \ < -15\n                THEN 0.85\n                ELSE 1.0\n              END\n\
+  \            ) AS \"weatherandstructure.ext_factor\"\n          FROM weatherandstructure\
+  \ AS weatherandstructure\n          LEFT JOIN operationmaintenance AS operationmaintenance\n\
+  \            ON weatherandstructure.weatheropmaintref = operationmaintenance.opmaintregistry\n\
+  \          GROUP BY\n            operationmaintenance.opmainteqref\n        ) AS\
+  \ _inner\n      ) AS weather_per_eq\n      GROUP BY\n        weather_per_eq.operationmaintenance__opmainteqref\n\
+  \    ), _cm_weather_per_eq__tie_per_eq__tie_avg AS (\n      SELECT\n        AVG(tie_per_eq.tie)\
+  \ AS \"weather_per_eq.tie_per_eq.tie_avg\"\n      FROM (\n        SELECT\n     \
+  \     \"thermalsolarwindandgrid.thermaleqref\" AS thermaleqref,\n          \"thermalsolarwindandgrid.tie\"\
+  \ AS tie\n        FROM (\n          SELECT\n            thermalsolarwindandgrid.thermaleqref\
+  \ AS \"thermalsolarwindandgrid.thermaleqref\",\n            AVG(\n             \
+  \ (\n                CASE thermalsolarwindandgrid.insulationstatus\n           \
+  \       WHEN 'Good'\n                  THEN 0.9\n                  WHEN 'Fair'\n\
+  \                  THEN 0.6\n                  WHEN 'Poor'\n                  THEN\
+  \ 0.3\n                  ELSE 0.0\n                END\n              ) - thermalsolarwindandgrid.heatlossratekwh\
+  \ / 10.0\n            ) AS \"thermalsolarwindandgrid.tie\"\n          FROM thermalsolarwindandgrid\
+  \ AS thermalsolarwindandgrid\n          GROUP BY\n            thermalsolarwindandgrid.thermaleqref\n\
+  \        ) AS _inner\n      ) AS tie_per_eq\n    ), _combined AS (\n      SELECT\n\
+  \        _base.\"weather_per_eq.operationmaintenance__opmainteqref\",\n        _base.\"\
+  weather_per_eq.ext_factor_avg\",\n        _base.\"weather_per_eq.ssf_avg\",\n  \
+  \      _cm_weather_per_eq__tie_per_eq__tie_avg.\"weather_per_eq.tie_per_eq.tie_avg\"\
+  \n      FROM _base\n      CROSS JOIN _cm_weather_per_eq__tie_per_eq__tie_avg\n \
+  \   ), step1 AS (\n      SELECT\n        \"weather_per_eq.ext_factor_avg\",\n  \
+  \      \"weather_per_eq.operationmaintenance__opmainteqref\",\n        \"weather_per_eq.ssf_avg\"\
+  ,\n        \"weather_per_eq.tie_per_eq.tie_avg\",\n        \"weather_per_eq.ssf_avg\"\
+  \ * (\n          1 + \"weather_per_eq.tie_per_eq.tie_avg\" * 0.5\n        ) * \"\
+  weather_per_eq.ext_factor_avg\" AS \"weather_per_eq.ecac\"\n      FROM _combined\n\
+  \    )\n    SELECT\n      \"weather_per_eq.ecac\",\n      \"weather_per_eq.ext_factor_avg\"\
+  ,\n      \"weather_per_eq.operationmaintenance__opmainteqref\",\n      \"weather_per_eq.ssf_avg\"\
+  ,\n      \"weather_per_eq.tie_per_eq.tie_avg\"\n    FROM step1\n  ) AS _inner\n\
+  ) AS extreme_climate_adaptation_coefficient) AS _inner"
+data_source: polar
+columns:
+- name: operationmaintenance__opmainteqref
+  sql: operationmaintenance__opmainteqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_eoc_flag
+  sql: is_eoc_flag
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Extreme Operating Conditions (KB #40): equipment 'operates safely under\
+  \ extreme conditions' iff SSF > 0.65 AND ECAC > 0.8. Built on top of ECAC multistage\
+  \ model (R-MULTISTAGE).\n\n[kb=40]\nEquipment is considered to 'operate safely under\
+  \ extreme conditions' when its SSF > 0.65 and ECAC > 0.8. \u2014 Defines the extreme\
+  \ environmental conditions under which equipment can safely operate\n[/kb=40]"
+hidden: false
+meta:
+  kb_id: 40

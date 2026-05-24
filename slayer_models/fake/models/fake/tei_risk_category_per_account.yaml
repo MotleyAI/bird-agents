@@ -1,0 +1,97 @@
+version: 6
+name: tei_risk_category_per_account
+source_queries:
+- version: 3
+  name: tei_per_account
+  source_model: moderationaction
+  measures:
+  - formula: tei:avg
+    name: tei_v
+  dimensions:
+  - name: account_id
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: tei_per_account
+    columns:
+    - name: tei_quartile
+      type: DOUBLE
+      sql: NTILE(4) OVER (ORDER BY tei_per_account.tei_v ASC)
+    - name: tei_risk_category
+      type: TEXT
+      sql: CASE NTILE(4) OVER (ORDER BY tei_per_account.tei_v ASC) WHEN 1 THEN 'Low
+        Risk' WHEN 2 THEN 'Moderate Risk' WHEN 3 THEN 'High Risk' WHEN 4 THEN 'Very
+        High Risk' END
+  dimensions:
+  - name: account_id
+  - name: tei_v
+  - name: tei_quartile
+  - name: tei_risk_category
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"tei_per_account.account_id\" AS account_id, \"tei_per_account.tei_v\"\
+  \ AS tei_v, \"tei_per_account.tei_quartile\" AS tei_quartile, \"tei_per_account.tei_risk_category\"\
+  \ AS tei_risk_category FROM (SELECT\n  tei_per_account.account_id AS \"tei_per_account.account_id\"\
+  ,\n  tei_per_account.tei_v AS \"tei_per_account.tei_v\",\n  NTILE(4) OVER (ORDER\
+  \ BY tei_per_account.tei_v ASC) AS \"tei_per_account.tei_quartile\",\n  CASE NTILE(4)\
+  \ OVER (ORDER BY tei_per_account.tei_v ASC)\n    WHEN 1\n    THEN 'Low Risk'\n \
+  \   WHEN 2\n    THEN 'Moderate Risk'\n    WHEN 3\n    THEN 'High Risk'\n    WHEN\
+  \ 4\n    THEN 'Very High Risk'\n  END AS \"tei_per_account.tei_risk_category\"\n\
+  FROM (\n  SELECT\n    \"moderationaction.account_id\" AS account_id,\n    \"moderationaction.tei_v\"\
+  \ AS tei_v\n  FROM (\n    SELECT\n      contentbehavior__sessionbehavior__profile.profaccref\
+  \ AS \"moderationaction.account_id\",\n      AVG(\n        0.4 * securitydetection__technicalinfo.vpnratio\
+  \ + 0.3 * (\n          CAST(securitydetection__technicalinfo.proxycount AS REAL)\
+  \ / 10\n        ) + 0.3 * (\n          CAST(securitydetection__technicalinfo.ipcountrynum\
+  \ AS REAL) / 20\n        )\n      ) AS \"moderationaction.tei_v\"\n    FROM moderationaction\
+  \ AS moderationaction\n    LEFT JOIN contentbehavior AS contentbehavior\n      ON\
+  \ moderationaction.macntref = contentbehavior.cntref\n    LEFT JOIN securitydetection\
+  \ AS securitydetection\n      ON moderationaction.masedetref = securitydetection.secdetkey\n\
+  \    LEFT JOIN technicalinfo AS securitydetection__technicalinfo\n      ON securitydetection.sectechref\
+  \ = securitydetection__technicalinfo.techkey\n    LEFT JOIN sessionbehavior AS contentbehavior__sessionbehavior\n\
+  \      ON contentbehavior.cntsessref = contentbehavior__sessionbehavior.sessref\n\
+  \    LEFT JOIN profile AS contentbehavior__sessionbehavior__profile\n      ON contentbehavior__sessionbehavior.sessprofref\
+  \ = contentbehavior__sessionbehavior__profile.profkey\n    GROUP BY\n      contentbehavior__sessionbehavior__profile.profaccref\n\
+  \  ) AS _inner\n) AS tei_per_account) AS _inner"
+data_source: fake
+columns:
+- name: account_id
+  sql: account_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row account identifier resolved through the moderationaction \u2192\
+    \ contentbehavior \u2192 sessionbehavior \u2192 profile join chain. Convenience\
+    \ handle for grouping/multistage; equals the underlying account.accindex."
+  hidden: false
+- name: tei_v
+  sql: tei_v
+  type: DOUBLE
+  primary_key: false
+  description: 'Technical Evasion Index (KB #7): 0.4*vpnratio + 0.3*proxycount/10
+    + 0.3*ipcountrynum/20.'
+  hidden: false
+  format:
+    type: float
+- name: tei_quartile
+  sql: tei_quartile
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: tei_risk_category
+  sql: tei_risk_category
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "TEI Risk Category per account (KB #79). Maps the account's TEI Quartile\
+  \ (KB #70) to a categorical label: 'Low Risk' (Quartile 1), 'Moderate Risk' (Quartile\
+  \ 2), 'High Risk' (Quartile 3), 'Very High Risk' (Quartile 4).\n\n[kb=79]\nA category\
+  \ assigned as 'Low Risk' (Quartile 1), 'Moderate Risk' (Quartile 2), 'High Risk'\
+  \ (Quartile 3), or 'Very High Risk' (Quartile 4) based on the account's calculated\
+  \ TEI Quartile. \u2014 A categorical risk level assigned based on an account's TEI\
+  \ Quartile.\n[/kb=79]"
+hidden: false
+meta:
+  kb_id: 79

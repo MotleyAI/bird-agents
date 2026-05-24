@@ -1,0 +1,79 @@
+version: 6
+name: driver_standings
+sql_table: driver_standings
+query_variables: {}
+data_source: sports_events
+columns:
+- name: drv_stnd
+  sql: drv_stnd
+  type: INT
+  primary_key: true
+  description: Unique standings record identifier.
+  hidden: false
+  format:
+    type: integer
+- name: rlink
+  sql: rlink
+  type: INT
+  primary_key: false
+  description: Foreign key to races (the race after which this standing was computed).
+  hidden: false
+  format:
+    type: integer
+- name: drive_link
+  sql: drive_link
+  type: INT
+  primary_key: false
+  description: Foreign key to drivers.
+  hidden: false
+  format:
+    type: integer
+- name: acc_pt
+  sql: acc_pt
+  type: INT
+  primary_key: false
+  description: Driver's cumulative season points after this race. NULL = not yet scored
+    or tally not updated.
+  hidden: false
+  format:
+    type: integer
+- name: px
+  sql: px
+  type: INT
+  primary_key: false
+  description: Driver's championship rank in standings. NULL = not computed.
+  hidden: false
+  format:
+    type: integer
+- name: px_desc
+  sql: px_desc
+  type: TEXT
+  primary_key: false
+  description: Descriptive rank label.
+  hidden: false
+- name: topmark
+  sql: topmark
+  type: INT
+  primary_key: false
+  description: Total wins by the driver at this point in the season. NULL = not entered.
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins:
+- target_model: drivers
+  join_pairs:
+  - - drive_link
+    - drv_main
+  join_type: left
+- target_model: races
+  join_pairs:
+  - - rlink
+    - rak_id
+  join_type: left
+filters: []
+description: Cumulative driver championship standings, snapshotted at race-time. One
+  row per (race, driver) where the cumulative season points/position were recorded.
+  Sparse coverage (not every race x driver combo has a standings row).
+hidden: false

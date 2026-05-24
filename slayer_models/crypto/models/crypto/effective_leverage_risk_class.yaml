@@ -1,0 +1,66 @@
+version: 6
+name: effective_leverage_risk_class
+source_queries:
+- version: 3
+  source_model:
+    source_name: effective_leverage
+    columns:
+    - name: el_risk_class
+      type: TEXT
+      sql: CASE WHEN el_value > 20 THEN 'High Risk' ELSE 'Normal' END
+  dimensions:
+  - name: recordvault
+  - name: userlink
+  - name: el_risk_class
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"effective_leverage.recordvault\" AS recordvault, \"effective_leverage.userlink\"\
+  \ AS userlink, \"effective_leverage.el_risk_class\" AS el_risk_class FROM (SELECT\n\
+  \  effective_leverage.recordvault AS \"effective_leverage.recordvault\",\n  effective_leverage.userlink\
+  \ AS \"effective_leverage.userlink\",\n  CASE WHEN effective_leverage.el_value >\
+  \ 20 THEN 'High Risk' ELSE 'Normal' END AS \"effective_leverage.el_risk_class\"\n\
+  FROM (\n  SELECT\n    \"orders.recordvault\" AS recordvault,\n    \"orders.userlink\"\
+  \ AS userlink,\n    \"orders.el_value\" AS el_value\n  FROM (\n    SELECT\n    \
+  \  orders.recordvault AS \"orders.recordvault\",\n      orders.userlink AS \"orders.userlink\"\
+  ,\n      (\n        CAST(riskandmargin.risk_margin_profile ->> '$.position.posmagn'\
+  \ AS REAL)\n      ) * (\n        riskandmargin.risk_margin_profile ->> '$.position.possum'\n\
+  \      ) / NULLIF(wallet_per_user.wallet_total, 0) AS \"orders.el_value\"\n    FROM\
+  \ orders AS orders\n    LEFT JOIN riskandmargin AS riskandmargin\n      ON orders.recordvault\
+  \ = riskandmargin.ordervault\n    LEFT JOIN (\n      (\n        SELECT\n       \
+  \   \"accountbalances.usertag\" AS usertag,\n          \"accountbalances.wallet_total\"\
+  \ AS wallet_total\n        FROM (\n          SELECT\n            accountbalances.usertag\
+  \ AS \"accountbalances.usertag\",\n            SUM(accountbalances.walletsum) AS\
+  \ \"accountbalances.wallet_total\"\n          FROM accountbalances AS accountbalances\n\
+  \          GROUP BY\n            accountbalances.usertag\n        ) AS _inner\n\
+  \      )\n    ) AS wallet_per_user\n      ON orders.userlink = wallet_per_user.usertag\n\
+  \  ) AS _inner\n) AS effective_leverage) AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: userlink
+  sql: userlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: el_risk_class
+  sql: el_risk_class
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Effective Leverage Risk Classification (KB #52): a position is labeled\
+  \ as 'High Risk' if its Effective Leverage exceeds 20, otherwise as 'Normal'. Joins\
+  \ to the effective_leverage model on recordvault to read el_value.\n\n[kb=52]\n\
+  A position is labeled as 'High Risk' if its Effective Leverage exceeds 20, otherwise\
+  \ as 'Normal'. \u2014 Categorizes positions based on their effective leverage to\
+  \ determine risk exposure.\n[/kb=52]"
+hidden: false
+meta:
+  kb_id: 52

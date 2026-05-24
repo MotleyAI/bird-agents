@@ -1,0 +1,203 @@
+version: 6
+name: orbital_characteristics
+sql_table: orbital_characteristics
+query_variables: {}
+data_source: planets_data
+columns:
+- name: orbitalref
+  sql: orbitalref
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: bodylink
+  sql: bodylink
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: period
+  sql: period
+  type: INT
+  primary_key: false
+  description: "Orbital period in days (KB #45). 'Hot Jupiters' have a few-day periods;\
+    \ distant orbits can take thousands of years.\n\n[kb=45]\nMeasured in days. 'Hot\
+    \ Jupiters' can have periods of only a few days, while planets in very distant\
+    \ orbits can have periods of many thousands of years. \u2014 Illustrates the value\
+    \ for the time a planet takes to complete one orbit around its star.\n[/kb=45]"
+  label: Orbital Period Value
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 45
+- name: semimajor
+  sql: semimajor
+  type: INT
+  primary_key: false
+  description: Semi-major axis in AU. Range 0.0044..2500 AU.
+  hidden: false
+  format:
+    type: integer
+  meta: {}
+- name: eccentricity
+  sql: eccentricity
+  type: INT
+  primary_key: false
+  description: "Orbital eccentricity (KB #46). 0 = circular, approaches 1 = elongated/comet-like.\n\
+    \n[kb=46]\nA dimensionless value from 0 to <1. An eccentricity of 0 is a perfect\
+    \ circle. A value of 0.1 indicates a slightly elliptical orbit, while a value\
+    \ of 0.7 indicates a very elongated, comet-like orbit. \u2014 Illustrates the\
+    \ value describing how much an orbit deviates from a perfect circle.\n[/kb=46]"
+  label: Orbital Eccentricity Value
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 46
+- name: inclination
+  sql: inclination
+  type: INT
+  primary_key: false
+  description: Orbital inclination in degrees relative to sky plane. 0 = face-on,
+    180 = retrograde.
+  hidden: false
+  format:
+    type: integer
+  meta: {}
+- name: equilibrium_temperature
+  sql: CAST(json_extract(planets__stars.stellarprops, '$.physical.Temp_Value') AS
+    REAL) * sqrt(CAST(json_extract(planets__stars.stellarprops, '$.physical.Radius_Value')
+    AS REAL) * 0.00465047 / (2.0 * NULLIF(semimajor, 0)))
+  type: DOUBLE
+  primary_key: false
+  description: "Planetary equilibrium temperature in Kelvin (KB #5): T_eq = T_star\
+    \ * sqrt(R_star / (2a)). Inlines stellar temperature/radius from JSON (1 R_sun\
+    \ = 0.00465047 AU).\n\n[kb=5]\nThe equilibrium temperature ($T_{eq}$) of a planet\
+    \ is calculated as: $T_{eq} = T_{\\star} \\sqrt{\\frac{R_{\\star}}{2a}}$, where\
+    \ $T_{\\star}$ is the star's temperature, $R_{\\star}$ is the star's radius, and\
+    \ $a$ is the planet's semi-major axis. \u2014 Estimates a planet's surface temperature\
+    \ based on the energy it receives from its star.\n[/kb=5]"
+  label: Planetary Equilibrium Temperature
+  hidden: false
+  meta:
+    kb_id: 5
+- name: orbital_velocity
+  sql: sqrt(6.6743e-11 * CAST(json_extract(planets__stars.stellarprops, '$.physical.Mass_Value')
+    AS REAL) * 1.989e30 / NULLIF(semimajor * 1.496e11, 0))
+  type: DOUBLE
+  primary_key: false
+  description: "Orbital velocity in m/s (KB #11): v_orb = sqrt(G * M_star / a). Inlines\
+    \ stellar mass from JSON (1 M_sun = 1.989e30 kg, 1 AU = 1.496e11 m).\n\n[kb=11]\n\
+    Assuming a circular orbit, the orbital velocity ($v_{orb}$) is: $v_{orb} = \\\
+    sqrt{\\frac{GM_{\\star}}{a}}$, where $M_{\\star}$ is the mass of the star and\
+    \ $a$ is the semi-major axis. \u2014 Calculates the average speed of a planet\
+    \ as it orbits its host star.\n[/kb=11]"
+  label: Orbital Velocity
+  hidden: false
+  meta:
+    kb_id: 11
+- name: kepler_stellar_mass
+  sql: pow(semimajor, 3) / NULLIF(pow(period / 365.25, 2), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Stellar mass in solar masses inferred from Kepler's Third Law (KB\
+    \ #15): M_star = a^3 / P^2, with a in AU and P in years (period stored in days,\
+    \ divide by 365.25).\n\n[kb=15]\nThe mass of the star ($M_{\\star}$) in solar\
+    \ masses can be derived from Kepler's Third Law: $M_{\\star} = \\frac{a^3}{P^2}$,\
+    \ where $a$ is the semi-major axis in AU and $P$ is the orbital period in years.\
+    \ \u2014 Uses a planet's orbital properties to calculate the mass of its host\
+    \ star.\n[/kb=15]"
+  label: Kepler's Third Law Verification
+  hidden: false
+  meta:
+    kb_id: 15
+- name: goldilocks_value
+  sql: (semimajor - sqrt((pow(CAST(json_extract(planets__stars.stellarprops, '$.physical.Radius_Value')
+    AS REAL), 2) * pow(CAST(json_extract(planets__stars.stellarprops, '$.physical.Temp_Value')
+    AS REAL) / 5778.0, 4)) / 1.1)) / NULLIF(sqrt((pow(CAST(json_extract(planets__stars.stellarprops,
+    '$.physical.Radius_Value') AS REAL), 2) * pow(CAST(json_extract(planets__stars.stellarprops,
+    '$.physical.Temp_Value') AS REAL) / 5778.0, 4)) / 0.53) - sqrt((pow(CAST(json_extract(planets__stars.stellarprops,
+    '$.physical.Radius_Value') AS REAL), 2) * pow(CAST(json_extract(planets__stars.stellarprops,
+    '$.physical.Temp_Value') AS REAL) / 5778.0, 4)) / 1.1), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Goldilocks Value (KB #14): G = (a - r_i) / (r_o - r_i). 0.5 = perfectly\
+    \ centered in habitable zone. Inlines the HZ boundary formulas (KB #6, #7) since\
+    \ cross-table column-of-column references aren't resolved by SLayer.\n\n[kb=14]\n\
+    A Goldilocks Value ($G$) can be defined as: $G = \\frac{a - r_i}{r_o - r_i}$,\
+    \ where $a$ is the planet's semi-major axis, and $r_i$ and $r_o$ are the Habitable\
+    \ Zone Inner Boundary and Outer Boundary. A value of 0.5 is perfectly centered.\
+    \ \u2014 Quantifies how centered a planet is within its star's habitable zone.\n\
+    [/kb=14]"
+  label: Goldilocks Value
+  hidden: false
+  meta:
+    kb_id: 14
+- name: is_short_period
+  sql: period < 10
+  type: BOOLEAN
+  primary_key: false
+  description: "Short-Period Planet (KB #22): orbital period < 10 days.\n\n[kb=22]\n\
+    A planet with an orbital period of less than 10 days. \u2014 A planet that orbits\
+    \ its host star in a very short amount of time.\n[/kb=22]"
+  label: Short-Period Planet
+  hidden: false
+  meta:
+    kb_id: 22
+- name: is_high_eccentricity
+  sql: eccentricity > 0.25
+  type: BOOLEAN
+  primary_key: false
+  description: "High Eccentricity Planet (KB #27): orbital eccentricity > 0.25.\n\n\
+    [kb=27]\nA planet with an orbital eccentricity greater than 0.25. \u2014 A planet\
+    \ with a highly elliptical orbit, leading to significant temperature variations.\n\
+    [/kb=27]"
+  label: High Eccentricity Planet
+  hidden: false
+  meta:
+    kb_id: 27
+- name: is_retrograde
+  sql: inclination > 90
+  type: BOOLEAN
+  primary_key: false
+  description: "Retrograde Orbit (KB #31): orbital inclination > 90 degrees.\n\n[kb=31]\n\
+    A planet with an orbital inclination greater than 90 degrees. \u2014 A planet\
+    \ that orbits its star in the opposite direction to the star's rotation.\n[/kb=31]"
+  label: Retrograde Orbit
+  hidden: false
+  meta:
+    kb_id: 31
+- name: is_in_habitable_zone
+  sql: semimajor BETWEEN sqrt((pow(CAST(json_extract(planets__stars.stellarprops,
+    '$.physical.Radius_Value') AS REAL), 2) * pow(CAST(json_extract(planets__stars.stellarprops,
+    '$.physical.Temp_Value') AS REAL) / 5778.0, 4)) / 1.1) AND sqrt((pow(CAST(json_extract(planets__stars.stellarprops,
+    '$.physical.Radius_Value') AS REAL), 2) * pow(CAST(json_extract(planets__stars.stellarprops,
+    '$.physical.Temp_Value') AS REAL) / 5778.0, 4)) / 0.53)
+  type: BOOLEAN
+  primary_key: false
+  description: "Planet in Habitable Zone (KB #25): semi-major axis falls between r_i\
+    \ and r_o. Inlines the HZ boundary formulas (KB #6, #7).\n\n[kb=25]\nA planet\
+    \ whose semi-major axis ($a$) falls between the Habitable Zone Inner Boundary\
+    \ ($r_i$) and the Habitable Zone Outer Boundary ($r_o$). \u2014 A planet orbiting\
+    \ within a star's habitable zone, where conditions might be right for liquid water.\n\
+    [/kb=25]"
+  label: Planet in Habitable Zone
+  hidden: false
+  meta:
+    kb_id: 25
+measures: []
+aggregations: []
+joins:
+- target_model: planets
+  join_pairs:
+  - - bodylink
+    - planetref
+  join_type: left
+filters: []
+description: 'Planet orbital characteristics (one row per planet): orbital period,
+  semi-major axis, eccentricity, inclination. Joins to planets via bodylink, which
+  reaches stars transitively.'
+hidden: false

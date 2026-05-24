@@ -1,0 +1,97 @@
+version: 6
+name: signal_is_observation_verified
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signaldecoding
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: telescopes
+      join_pairs:
+      - - telescref
+        - telescregistry
+    - target_model: telescopes.observatories
+      join_pairs:
+      - - observstation
+        - observstation
+    columns:
+    - name: is_observation_verified
+      type: BOOLEAN
+      sql: CASE WHEN ((1 - signalprobabilities.falseposprob) * signaldecoding.decodeconf
+        * signalclassification.classconf * (CASE WHEN (snrratio - 0.1 * ABS(noisefloordbm))
+        > 0 THEN (snrratio - 0.1 * ABS(noisefloordbm)) / 10.0 + 0.5 ELSE 0.1 END))
+        > 0.8 AND (telescopes__observatories.atmostransparency * (1 - telescopes__observatories.humidityrate
+        / 100.0) * (1 - 0.02 * telescopes__observatories.windspeedms)) > 0.85 AND
+        telescopes__observatories.lunarstage IN ('New', 'First Quarter') AND telescopes__observatories.lunardistdeg
+        > 45 AND telescopes__observatories.solarstatus IN ('Low', 'Moderate') AND
+        ((telescopes__observatories.atmostransparency * (1 - telescopes__observatories.humidityrate
+        / 100.0) * (1 - 0.02 * telescopes__observatories.windspeedms)) * (1 - ((1
+        - telescopes__observatories.lunardistdeg / 180.0) * (1 - telescopes__observatories.atmostransparency)))
+        * (CASE WHEN telescopes.pointaccarc < 2 THEN 1 ELSE 2.0 / telescopes.pointaccarc
+        END)) > 0.85 THEN 1 ELSE 0 END
+  dimensions:
+  - name: signalregistry
+  - name: is_observation_verified
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_observation_verified\"\
+  \ AS is_observation_verified FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
+  ,\n  CASE\n    WHEN (\n      (\n        1 - signalprobabilities.falseposprob\n \
+  \     ) * signaldecoding.decodeconf * signalclassification.classconf * (\n     \
+  \   CASE\n          WHEN (\n            signals.snrratio - 0.1 * ABS(signals.noisefloordbm)\n\
+  \          ) > 0\n          THEN (\n            signals.snrratio - 0.1 * ABS(signals.noisefloordbm)\n\
+  \          ) / 10.0 + 0.5\n          ELSE 0.1\n        END\n      )\n    ) > 0.8\n\
+  \    AND (\n      telescopes__observatories.atmostransparency * (\n        1 - telescopes__observatories.humidityrate\
+  \ / 100.0\n      ) * (\n        1 - 0.02 * telescopes__observatories.windspeedms\n\
+  \      )\n    ) > 0.85\n    AND telescopes__observatories.lunarstage IN ('New',\
+  \ 'First Quarter')\n    AND telescopes__observatories.lunardistdeg > 45\n    AND\
+  \ telescopes__observatories.solarstatus IN ('Low', 'Moderate')\n    AND (\n    \
+  \  (\n        telescopes__observatories.atmostransparency * (\n          1 - telescopes__observatories.humidityrate\
+  \ / 100.0\n        ) * (\n          1 - 0.02 * telescopes__observatories.windspeedms\n\
+  \        )\n      ) * (\n        1 - (\n          (\n            1 - telescopes__observatories.lunardistdeg\
+  \ / 180.0\n          ) * (\n            1 - telescopes__observatories.atmostransparency\n\
+  \          )\n        )\n      ) * (\n        CASE WHEN telescopes.pointaccarc <\
+  \ 2 THEN 1 ELSE 2.0 / telescopes.pointaccarc END\n      )\n    ) > 0.85\n    THEN\
+  \ 1\n    ELSE 0\n  END AS \"signals.is_observation_verified\"\nFROM signals AS signals\n\
+  LEFT JOIN signaldecoding AS signaldecoding\n  ON signals.signalregistry = signaldecoding.signalref\n\
+  LEFT JOIN telescopes AS telescopes\n  ON signals.telescref = telescopes.telescregistry\n\
+  LEFT JOIN signalclassification AS signalclassification\n  ON signals.signalregistry\
+  \ = signalclassification.signalref\nLEFT JOIN signalprobabilities AS signalprobabilities\n\
+  \  ON signals.signalregistry = signalprobabilities.signalref\nLEFT JOIN observatories\
+  \ AS telescopes__observatories\n  ON telescopes.observstation = telescopes__observatories.observstation)\
+  \ AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_observation_verified
+  sql: is_observation_verified
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Observation-Verified Signal predicate per signal.\n\n[kb=48]\nSignals\
+  \ observed under Optimal Observing Window (OOW) conditions with $\\text{OQF} > 0.85$\
+  \ and $\\text{CCS} > 0.8$, indicating high-quality observations with multiple verification\
+  \ methods applied. \u2014 Defines signals that have undergone rigorous verification\
+  \ processes.\n[/kb=48]"
+hidden: false
+meta:
+  kb_id: 48

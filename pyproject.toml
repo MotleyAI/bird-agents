@@ -1,0 +1,81 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bird-interact-agents"
+version = "0.1.0"
+description = "Pluggable agent benchmarks for BIRD-Interact (SLayer + raw SQL modes)"
+requires-python = ">=3.11,<4.0"
+license = "MIT"
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.2",
+    "litellm>=1.0",
+    "anthropic>=0.40",
+]
+
+[project.optional-dependencies]
+claude-sdk = ["claude-agent-sdk>=0.1.68"]
+pydantic-ai = [
+    "pydantic-ai>=1.0",
+    "httpx[socks]",
+]
+smolagents = ["smolagents>=1.0"]
+agno = ["agno>=2.0"]
+mcp-agent = ["mcp-agent>=0.0.16"]
+slayer = ["motley-slayer[embedding-search]>=0.6.9"]
+# `original` brings in the upstream BIRD-Interact mini_interact_agent harness
+# so we can call its main.py directly via `uv run python -m batch_run_bird_interact.main`.
+original = ["mini-interact-agent"]
+cloud = [
+    "ray[default]>=2.30",
+    "google-cloud-storage>=2.18",
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+]
+all = [
+    "claude-agent-sdk>=0.1.68",
+    "pydantic-ai>=1.0",
+    "smolagents>=1.0",
+    "agno>=2.0",
+    "mcp-agent>=0.0.16",
+    "motley-slayer[embedding-search]>=0.6.9",
+    "mini-interact-agent",
+    "ray[default]>=2.30",
+    "google-cloud-storage>=2.18",
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "sqlglot",  # used by scripts/verify_audited_gold.py + SAR-audit comparison
+    "openai",   # used by SAR-audit tests' OpenAI-not-instantiated guard
+]
+
+# Upstream `mini-interact-agent` harness, installed from the MotleyAI fork
+# (pinned to a sha so installs are reproducible). Only resolved when the
+# `original` or `all` extras are requested. Replaces the previous sibling
+# `../BIRD-Interact/` editable-path install so worktrees work without setup.
+[tool.uv.sources]
+mini-interact-agent = { git = "https://github.com/MotleyAI/BIRD-Interact.git", subdirectory = "mini_interact/knowledge_based/mini_interact_agent", rev = "6b897950780d123c8e8057d15f7d3f1b92819962" }
+
+[project.scripts]
+bird-interact = "bird_interact_agents.run:main"
+bird-interact-cloud = "bird_interact_agents.cloud.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bird_interact_agents"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# The default run excludes `integration` tests — those spawn real subprocesses
+# (the `slayer` CLI ingest, the compare-results script) and dominate wall-time
+# (~130s of a ~200s suite). Run them with `pytest -m integration`, or run
+# everything with `pytest -o addopts=""`.
+addopts = "-m 'not integration'"
+markers = [
+    "integration: spawns real subprocesses / hits external resources (slow); excluded from the default run.",
+]

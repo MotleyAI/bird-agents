@@ -1,0 +1,83 @@
+version: 6
+name: vaccine_shipments
+sql_table: shipments
+query_variables: {}
+data_source: vaccine
+columns:
+- name: shipmentregistry
+  sql: shipmentregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: timemark
+  sql: timemark
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: routealign
+  sql: routealign
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: customsflag
+  sql: customsflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: qualcheck
+  sql: qualcheck
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: integritymark
+  sql: integritymark
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: contamlevel
+  sql: contamlevel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sterilemark
+  sql: sterilemark
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: packagestate
+  sql: packagestate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sealflag
+  sql: sealflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tampersign
+  sql: tampersign
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_compromised
+  sql: CASE WHEN integritymark = 'Compromised' OR sealflag = 'Broken' OR tampersign
+    = 'Confirmed' THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Compromised Shipment flag. True when IntegrityMark='Compromised' OR\
+    \ SealFlag='Broken' OR TamperSign='Confirmed' (KB #11).\n\n[kb=11]\nA shipment\
+    \ with IntegrityMark='Compromised' or SealFlag='Broken' or TamperSign='Confirmed'\
+    \ \u2014 Identifies shipments with serious integrity issues.\n[/kb=11]"
+  label: Compromised Shipment
+  hidden: false
+  meta:
+    kb_id: 11
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: Vaccine shipments. One row per logged vaccine shipment (the SQL table
+  'shipments' in the vaccine SQLite datasource). Named with a 'vaccine_' prefix to
+  disambiguate from the cold_chain_pharma_compliance datasource's identically-named
+  table.
+hidden: false

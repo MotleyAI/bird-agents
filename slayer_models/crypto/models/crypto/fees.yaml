@@ -1,0 +1,66 @@
+version: 6
+name: fees
+sql_table: fees
+query_variables: {}
+data_source: crypto
+columns:
+- name: feesnode
+  sql: feesnode
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: feerange
+  sql: feerange
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: feerate
+  sql: feerate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: feetotal
+  sql: feetotal
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: feecoin
+  sql: feecoin
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rebrate
+  sql: rebrate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: rebtotal
+  sql: rebtotal
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: orderslink
+  sql: orderslink
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: orders
+  join_pairs:
+  - - orderslink
+    - recordvault
+  join_type: left
+filters: []
+hidden: false

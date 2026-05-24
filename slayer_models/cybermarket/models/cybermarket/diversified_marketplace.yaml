@@ -1,0 +1,86 @@
+version: 6
+name: diversified_marketplace
+source_queries:
+- version: 3
+  source_model:
+    source_name: markets
+    joins:
+    - target_model: market_diversification_score
+      join_pairs:
+      - - mktregistry
+        - mktregistry
+    columns:
+    - name: is_diversified_marketplace
+      type: DOUBLE
+      sql: CASE WHEN COALESCE(market_diversification_score.mds, 0) > 65 AND COALESCE(market_diversification_score.distinct_prodsubcat_count_col,
+        0) >= 15 AND markets.vendcount > 200 AND markets.mktclass = 'Marketplace'
+        THEN 1 ELSE 0 END
+  dimensions:
+  - name: mktregistry
+  - name: is_diversified_marketplace
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"markets.mktregistry\" AS mktregistry, \"markets.is_diversified_marketplace\"\
+  \ AS is_diversified_marketplace FROM (SELECT\n  markets.mktregistry AS \"markets.mktregistry\"\
+  ,\n  CASE\n    WHEN COALESCE(market_diversification_score.mds, 0) > 65\n    AND\
+  \ COALESCE(market_diversification_score.distinct_prodsubcat_count_col, 0) >= 15\n\
+  \    AND markets.vendcount > 200\n    AND markets.mktclass = 'Marketplace'\n   \
+  \ THEN 1\n    ELSE 0\n  END AS \"markets.is_diversified_marketplace\"\nFROM markets\
+  \ AS markets\nLEFT JOIN (\n  (\n    SELECT\n      \"markets.mktregistry\" AS mktregistry,\n\
+  \      \"markets.mds\" AS mds,\n      \"markets.distinct_prodsubcat_count_col\"\
+  \ AS distinct_prodsubcat_count_col\n    FROM (\n      SELECT\n        markets.mktregistry\
+  \ AS \"markets.mktregistry\",\n        (\n          COALESCE(subcat_per_market.distinct_prodsubcat_count,\
+  \ 0) * 1.0 / 5\n        ) + (\n          markets.vendcount * 1.0 / 50\n        )\
+  \ + (\n          (\n            COALESCE(tx_per_market.tx_count, 0) * 1.0 / NULLIF(markets.vendcount,\
+  \ 0)\n          ) * 0.5\n        ) - (\n          (\n            CASE markets.mktclass\n\
+  \              WHEN 'Forum'\n              THEN 1\n              WHEN 'Service'\n\
+  \              THEN 2\n              WHEN 'Marketplace'\n              THEN 4\n\
+  \              WHEN 'Exchange'\n              THEN 3\n              ELSE 0\n   \
+  \         END\n          ) * 1.0 / 10\n        ) AS \"markets.mds\",\n        COALESCE(subcat_per_market.distinct_prodsubcat_count,\
+  \ 0) AS \"markets.distinct_prodsubcat_count_col\"\n      FROM markets AS markets\n\
+  \      LEFT JOIN (\n        (\n          SELECT\n            \"transactions.mktref\"\
+  \ AS mktref,\n            \"transactions.tx_count\" AS tx_count\n          FROM\
+  \ (\n            SELECT\n              transactions.mktref AS \"transactions.mktref\"\
+  ,\n              COUNT(*) AS \"transactions.tx_count\"\n            FROM transactions\
+  \ AS transactions\n            GROUP BY\n              transactions.mktref\n   \
+  \       ) AS _inner\n        )\n      ) AS tx_per_market\n        ON markets.mktregistry\
+  \ = tx_per_market.mktref\n      LEFT JOIN (\n        (\n          SELECT\n     \
+  \       \"products.vendors.mktref\" AS vendors__mktref,\n            \"products.distinct_prodsubcat_count\"\
+  \ AS distinct_prodsubcat_count\n          FROM (\n            SELECT\n         \
+  \     vendors.mktref AS \"products.vendors.mktref\",\n              COUNT(DISTINCT\
+  \ products.prodsubcat) AS \"products.distinct_prodsubcat_count\"\n            FROM\
+  \ products AS products\n            LEFT JOIN vendors AS vendors\n             \
+  \ ON products.vendref = vendors.vendregistry\n            GROUP BY\n           \
+  \   vendors.mktref\n          ) AS _inner\n        )\n      ) AS subcat_per_market\n\
+  \        ON markets.mktregistry = subcat_per_market.vendors__mktref\n    ) AS _inner\n\
+  \  )\n) AS market_diversification_score\n  ON markets.mktregistry = market_diversification_score.mktregistry)\
+  \ AS _inner"
+data_source: cybermarket
+columns:
+- name: mktregistry
+  sql: mktregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_diversified_marketplace
+  sql: is_diversified_marketplace
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Diversified Marketplace (KB #45): MDS > 65, COUNT(DISTINCT prodsubcat)\
+  \ >= 15, vendcount > 200, mktclass='Marketplace'. Multistage: anchors at markets,\
+  \ joins market_diversification_score (KB #35) on mktregistry, applies the four-condition\
+  \ boolean using mds, distinct_prodsubcat_count_col, markets.vendcount, and markets.mktclass.\n\
+  \n[kb=45]\nA market with MDS > 65, at least 15 distinct product categories (COUNT(DISTINCT\
+  \ prodsubcat) >= 15), high vendor count (vendcount > 200), and 'Marketplace' classification\
+  \ (mktclass = 'Marketplace') as defined in the market classification system. These\
+  \ markets typically present challenging enforcement targets due to their diversified\
+  \ nature. \u2014 Identifies markets with exceptional product and vendor diversity\n\
+  [/kb=45]"
+hidden: false
+meta:
+  kb_id: 45

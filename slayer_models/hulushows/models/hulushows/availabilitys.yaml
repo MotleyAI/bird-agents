@@ -1,0 +1,271 @@
+version: 6
+name: availabilitys
+sql_table: availabilitys
+query_variables: {}
+data_source: hulushows
+columns:
+- name: content_key
+  sql: content_key
+  type: INT
+  primary_key: true
+  description: "PK \u2014 1:1 with core.content_key."
+  hidden: false
+  format:
+    type: integer
+- name: cache_time
+  sql: cache_time
+  type: TEXT
+  primary_key: false
+  description: "Last cache/update timestamp. KB 9 documents that this field can carry\
+    \ multiple date formats ('2024-12-08', 'Dec 8, 2024', '08/12/24', ISO-8601). Sample\
+    \ data here is ISO-8601 with timezone.\n\n[kb=9]\nIncludes examples like '2024-12-08',\
+    \ 'Dec 8, 2024', '08/12/24', and ISO-8601 format. \u2014 Lists typical formats\
+    \ used in content caching timestamps.\n[/kb=9]"
+  label: Cache Time Formats
+  hidden: false
+  meta:
+    kb_id: 9
+- name: auth_name
+  sql: auth_name
+  type: TEXT
+  primary_key: false
+  description: Authentication / authorization tier required to access content. NULL
+    for general-access content.
+  hidden: false
+- name: accessflags
+  sql: accessflags
+  type: TEXT
+  primary_key: false
+  description: "JSONB column with all platform-access boolean flags. Fields: Web_Only,\
+    \ Movie_Flag (KB 5 \u2014 multiple formats), COPPA_Comp, Showtime_Only (KB 18),\
+    \ Subscriber_Only (KB 10/42). KB 4 / KB 8 note that booleans appear in many encodings\
+    \ ('TRUE'/'FALSE', 'Yes'/'No', '1'/'0', 'Y'/'N')."
+  hidden: false
+  meta: {}
+- name: movie_flag_raw
+  sql: accessflags ->> '$.Movie_Flag'
+  type: TEXT
+  primary_key: false
+  description: Raw Movie_Flag string from accessflags JSON (KB 5).
+  hidden: false
+- name: is_movie
+  sql: LOWER(TRIM(CAST(accessflags ->> '$.Movie_Flag' AS TEXT))) IN ('true', 'yes',
+    'y', '1', 'movie')
+  type: BOOLEAN
+  primary_key: false
+  description: "Movie indicator (KB 5): TRUE when Movie_Flag is one of TRUE/Yes/Y/1/'Movie'.\n\
+    \n[kb=5]\nCan appear as 'TRUE', 'FALSE', 'Y', 'N', 'Movie', 'Series'. These values\
+    \ signal whether content is a movie. \u2014 Describes how movie content is labeled.\n\
+    [/kb=5]"
+  label: Movie Identifier Formats
+  hidden: false
+  meta:
+    kb_id: 5
+- name: is_subscriber_only
+  sql: LOWER(TRIM(CAST(accessflags ->> '$.Subscriber_Only' AS TEXT))) IN ('true',
+    'yes', 'y', '1')
+  type: BOOLEAN
+  primary_key: false
+  description: "Subscriber-Only Content (KB 10): TRUE when Subscriber_Only is true\
+    \ (in any of its KB 8 boolean encodings).\n\n[kb=10]\nContent marked as only accessible\
+    \ to paying users is considered subscriber-only. \u2014 Defines content that is\
+    \ not available in the free tier.\n[/kb=10]"
+  label: Subscriber-Only Content
+  hidden: false
+  meta:
+    kb_id: 10
+- name: is_showtime_only
+  sql: LOWER(TRIM(CAST(accessflags ->> '$.Showtime_Only' AS TEXT))) IN ('true', 'yes',
+    'y', '1')
+  type: BOOLEAN
+  primary_key: false
+  description: "Showtime Exclusive (KB 18): TRUE when Showtime_Only is true.\n\n[kb=18]\n\
+    Content where the 'showtime-only' flag is true is Showtime exclusive. \u2014 Indicates\
+    \ content only accessible to Showtime subscribers.\n[/kb=18]"
+  label: Showtime Exclusive
+  hidden: false
+  meta:
+    kb_id: 18
+- name: is_web_only
+  sql: LOWER(TRIM(CAST(accessflags ->> '$.Web_Only' AS TEXT))) IN ('true', 'yes',
+    'y', '1')
+  type: BOOLEAN
+  primary_key: false
+  description: TRUE when Web_Only is true (web-only content).
+  hidden: false
+- name: is_coppa_compliant
+  sql: LOWER(TRIM(CAST(accessflags ->> '$.COPPA_Comp' AS TEXT))) IN ('true', 'yes',
+    'y', '1')
+  type: BOOLEAN
+  primary_key: false
+  description: TRUE when COPPA_Comp is true (COPPA-compliant for children).
+  hidden: false
+- name: is_premium_access
+  sql: LOWER(TRIM(CAST(accessflags ->> '$.Subscriber_Only' AS TEXT))) IN ('true',
+    'yes', 'y', '1') OR LOWER(TRIM(CAST(accessflags ->> '$.Showtime_Only' AS TEXT)))
+    IN ('true', 'yes', 'y', '1')
+  type: BOOLEAN
+  primary_key: false
+  description: "Premium Access Content (KB 42): TRUE when Subscriber_Only OR Showtime_Only\
+    \ is true.\n\n[kb=42]\nDefined as content with is subscriber_only = TRUE or available\
+    \ only on Showtime tiers. \u2014 Refers to shows exclusively available to paying\
+    \ subscribers or special access tiers.\n[/kb=42]"
+  label: Premium Access Content
+  hidden: false
+  meta:
+    kb_id: 42
+- name: subscriber_only_int
+  sql: CASE WHEN LOWER(TRIM(CAST(accessflags ->> '$.Subscriber_Only' AS TEXT))) IN
+    ('true', 'yes', 'y', '1') THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Integer flag (0/1) for is_subscriber_only \u2014 used in PES (KB 37)\
+    \ and other ratios.\n\n[kb=37]\nPES = \\frac{\\text{Subscriber OnlyContent}}{\\\
+    text{Total Content}}, based on access restrictions. \u2014 Measures exclusivity\
+    \ of a show to premium access tiers.\n[/kb=37]"
+  label: Premium Exclusivity Score (PES)
+  hidden: false
+  meta:
+    kb_id: 37
+- name: movie_flag_text
+  sql: CAST(accessflags ->> '$.Movie_Flag' AS TEXT)
+  type: TEXT
+  primary_key: false
+  description: Movie_Flag value as text (used in BVRR distinct counting).
+  hidden: false
+- name: subscriber_only_text
+  sql: CAST(accessflags ->> '$.Subscriber_Only' AS TEXT)
+  type: TEXT
+  primary_key: false
+  description: Subscriber_Only as text.
+  hidden: false
+- name: showtime_only_text
+  sql: CAST(accessflags ->> '$.Showtime_Only' AS TEXT)
+  type: TEXT
+  primary_key: false
+  description: Showtime_Only as text.
+  hidden: false
+- name: web_only_text
+  sql: CAST(accessflags ->> '$.Web_Only' AS TEXT)
+  type: TEXT
+  primary_key: false
+  description: Web_Only as text.
+  hidden: false
+- name: coppa_comp_text
+  sql: CAST(accessflags ->> '$.COPPA_Comp' AS TEXT)
+  type: TEXT
+  primary_key: false
+  description: COPPA_Comp as text.
+  hidden: false
+- name: all_boolean_values_concat
+  sql: CAST(accessflags ->> '$.Movie_Flag' AS TEXT) || '|' || CAST(accessflags ->>
+    '$.Subscriber_Only' AS TEXT) || '|' || CAST(accessflags ->> '$.Showtime_Only'
+    AS TEXT) || '|' || CAST(accessflags ->> '$.Web_Only' AS TEXT) || '|' || CAST(accessflags
+    ->> '$.COPPA_Comp' AS TEXT)
+  type: TEXT
+  primary_key: false
+  description: "Pipe-joined concatenation of the 5 boolean accessflags values (helper\
+    \ for BVRR uniqueness counting). Operationalises KB 8 (Boolean Value Variants)\
+    \ \u2014 captures the various boolean encodings ('Yes'/'No', 'TRUE'/'FALSE', '1'/'0')\
+    \ across all 5 flags.\n\n[kb=8]\nCan appear as strings ('Yes', 'No'), booleans\
+    \ ('TRUE', 'FALSE'), or numerics ('1', '0'). \u2014 Indicates the diversity in\
+    \ how true/false values appear across fields.\n[/kb=8]"
+  label: Boolean Value Variants
+  hidden: false
+  meta:
+    kb_id: 8
+- name: movie_with_logo_int
+  sql: CASE WHEN LOWER(TRIM(CAST(accessflags ->> '$.Movie_Flag' AS TEXT))) IN ('true',
+    'yes', 'y', '1', 'movie') AND LOWER(TRIM(CAST(core__companies.brandingassets ->>
+    '$.HasLogo_Flag' AS TEXT))) IN ('true', 'yes', 'y', '1') THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Helper for KB 52 (HRUR): 1 when this row is a movie AND its studio's\
+    \ HasLogo_Flag indicates a high-res logo. Reaches the studio's branding via core.companies\
+    \ (auto-FK).\n\n[kb=52]\nHRUR = \\frac{\\text{HighResLogos for Movies}}{\\text{Total\
+    \ Movies}}, based on the presence of high-quality logo indicators and labels showing\
+    \ whether content is a movie \u2014 Measures how effectively high-res logos are\
+    \ used relative to movie content.\n[/kb=52]"
+  label: High-Resolution Utilization Rate (HRUR)
+  hidden: false
+  meta:
+    kb_id: 52
+- name: movie_int
+  sql: CASE WHEN LOWER(TRIM(CAST(accessflags ->> '$.Movie_Flag' AS TEXT))) IN ('true',
+    'yes', 'y', '1', 'movie') THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: Integer 0/1 of is_movie.
+  hidden: false
+- name: boolean_unique_values_per_field_helper
+  sql: '1'
+  type: DOUBLE
+  primary_key: false
+  description: "Marker helper for KB 54 / 61 \u2014 BVRR / Redundant Boolean Format\
+    \ are computed at query time from the *_text count_distincts on this model."
+  hidden: true
+  meta: {}
+measures:
+- formula: 1.0 * subscriber_only_int:sum / *:count
+  name: premium_exclusivity_score
+  description: 'Premium Exclusivity Score (PES, KB 37): share of content where Subscriber_Only=TRUE.
+    KB definition is Subscriber_OnlyContent / Total Content.'
+- formula: subscriber_only_int:sum
+  name: subscriber_only_count
+  description: Count of subscriber-only content rows (KB 10).
+- formula: (movie_flag_text:count_distinct + subscriber_only_text:count_distinct +
+    showtime_only_text:count_distinct + web_only_text:count_distinct + coppa_comp_text:count_distinct)
+    / 5.0 / NULLIF(*:count, 0)
+  name: boolean_value_redundancy_rate
+  label: Boolean Value Redundancy Rate (BVRR)
+  description: "Boolean Value Redundancy Rate (BVRR, KB 54): KB defines as Unique\
+    \ Representations / Total Boolean Fields. We compute it as (sum of distinct values\
+    \ per boolean field) / (5 fields) / total rows \u2014 a normalised diversity ratio\
+    \ across the 5 access-flag booleans. Lower = more redundant; higher = each row\
+    \ contributes its own representation.\n\n[kb=54]\nBVRR = \\frac{\\text{Unique\
+    \ Representations}}{\\text{Total Boolean Fields}}, by comparing the variety of\
+    \ true/false indicators used \u2014 Estimates how many redundant encodings of\
+    \ booleans are present.\n[/kb=54]"
+  meta:
+    kb_id: 54
+- formula: (movie_flag_text:count_distinct + subscriber_only_text:count_distinct +
+    showtime_only_text:count_distinct + web_only_text:count_distinct + coppa_comp_text:count_distinct)
+    / 5.0
+  name: boolean_unique_values_per_field
+  description: Average distinct text encodings per boolean accessflag field. Used
+    by KB 54/61.
+- formula: (movie_flag_text:count_distinct + subscriber_only_text:count_distinct +
+    showtime_only_text:count_distinct + web_only_text:count_distinct + coppa_comp_text:count_distinct)
+    / 5.0
+  name: is_redundant_boolean_format
+  label: Redundant Boolean Format
+  description: "Redundant Boolean Format flag (KB 61): same calc as boolean_unique_values_per_field;\
+    \ agent compares against a threshold (KB 61: 'BVRR > threshold').\n\n[kb=61]\n\
+    Identified by BVRR > threshold, by checking for repeated ways of marking true\
+    \ or false values \u2014 Flags fields that store boolean values in multiple redundant\
+    \ encodings.\n[/kb=61]"
+  meta:
+    kb_id: 61
+- formula: 1.0 * movie_with_logo_int:sum / NULLIF(movie_int:sum, 0)
+  name: high_resolution_utilization_rate
+  description: 'High-Resolution Utilization Rate (HRUR, KB 52): HighResLogos for Movies
+    / Total Movies. Numerator = count of movie rows whose studio has HasLogo_Flag
+    true; denominator = total movie rows.'
+- formula: movie_with_logo_int:sum
+  name: movies_with_logo_count
+  description: 'Helper count: movies with high-res logo (KB 52).'
+- formula: movie_int:sum
+  name: movies_count
+  description: 'Helper count: total movies (KB 52).'
+aggregations: []
+joins:
+- target_model: core
+  join_pairs:
+  - - content_key
+    - content_key
+  join_type: left
+filters: []
+description: One row per content_key with platform-availability flags. The accessflags
+  JSONB blob carries the boolean access controls (Web_Only, Movie_Flag, COPPA_Comp,
+  Showtime_Only, Subscriber_Only).
+hidden: false

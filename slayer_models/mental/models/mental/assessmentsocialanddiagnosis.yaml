@@ -1,0 +1,290 @@
+version: 6
+name: assessmentsocialanddiagnosis
+sql_table: assessmentsocialanddiagnosis
+query_variables: {}
+data_source: mental
+columns:
+- name: asdkey
+  sql: asdkey
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: recstatus
+  sql: recstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: socsup
+  sql: socsup
+  type: TEXT
+  primary_key: false
+  description: "Social support level enum (Limited, Moderate, Strong). Limited = minimal\
+    \ support, Moderate = some, Strong = robust.\n\n[kb=28]\nRanges from Limited to\
+    \ Strong. Limited indicates minimal support, Moderate indicates some support,\
+    \ and Strong indicates robust support. \u2014 Illustrates the value of social\
+    \ support levels.\n[/kb=28]"
+  label: Social Support Level
+  hidden: false
+  meta:
+    kb_id: 28
+- name: faminv
+  sql: faminv
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: relqual
+  sql: relqual
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: workfunc
+  sql: workfunc
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: socfunc
+  sql: socfunc
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: adlfunc
+  sql: adlfunc
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: strslvl
+  sql: strslvl
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: copskill
+  sql: copskill
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: resscr
+  sql: resscr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: inlevel
+  sql: inlevel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: motivlevel
+  sql: motivlevel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: primdx
+  sql: primdx
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: secdx
+  sql: secdx
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: dxdurm
+  sql: dxdurm
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: prevhosp
+  sql: prevhosp
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: lasthospdt
+  sql: lasthospdt
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: qolscr
+  sql: qolscr
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: funcimp
+  sql: funcimp
+  type: TEXT
+  primary_key: false
+  description: "Functional impairment enum (Mild, Moderate, Severe). Mild = minimal\
+    \ impact on daily life, Moderate = noticeable impact, Severe = significant disruption.\n\
+    \n[kb=25]\nRanges from Mild to Severe. Mild indicates minimal impact on daily\
+    \ life, Moderate indicates noticeable impact, and Severe indicates significant\
+    \ disruption. \u2014 Illustrates the value of functional impairment levels.\n\
+    [/kb=25]"
+  label: Functional Impairment
+  hidden: false
+  meta:
+    kb_id: 25
+- name: funcimp_score
+  sql: CASE funcimp WHEN 'Severe' THEN 3 WHEN 'Moderate' THEN 2 WHEN 'Mild' THEN 1
+    ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric functional impairment score: Severe=3, Moderate=2, Mild=1.\n\
+    \n[kb=6]\nPFIS = \\frac{\\sum_{i \\in assessmentsocialanddiagnosis} funcimp\\\
+    _score_i} {|assessmentsocialanddiagnosis|}, \\text{where } funcimp\\_score = \\\
+    begin{cases} 3 & \\text{if } funcimp = Severe \\\\ 2 & \\text{if } funcimp = Moderate\
+    \ \\\\ 1 & \\text{if } funcimp = Mild \\end{cases} \u2014 Calculates an average\
+    \ functional impairment score across patients.\n[/kb=6]"
+  label: Patient Functional Impairment Score (PFIS)
+  hidden: false
+  meta:
+    kb_id: 6
+- name: socsup_score
+  sql: CASE socsup WHEN 'Strong' THEN 3 WHEN 'Moderate' THEN 2 WHEN 'Limited' THEN
+    1 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric social support score: Strong=3, Moderate=2, Limited=1.'
+  hidden: false
+- name: relqual_score
+  sql: CASE relqual WHEN 'Good' THEN 3 WHEN 'Fair' THEN 2 WHEN 'Poor' THEN 1 WHEN
+    'Conflicted' THEN 0 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric relationship quality score: Good=3, Fair=2, Poor=1, Conflicted=0.'
+  hidden: false
+- name: sse_per_row
+  sql: (CASE socsup WHEN 'Strong' THEN 3 WHEN 'Moderate' THEN 2 WHEN 'Limited' THEN
+    1 ELSE NULL END) + (CASE relqual WHEN 'Good' THEN 3 WHEN 'Fair' THEN 2 WHEN 'Poor'
+    THEN 1 WHEN 'Conflicted' THEN 0 ELSE NULL END)
+  type: DOUBLE
+  primary_key: false
+  description: "Per-row Social Support Effectiveness contribution: socsup_score +\
+    \ relqual_score.\n\n[kb=8]\nSSE = \\frac{\\sum_{i \\in assessmentsocialanddiagnosis}\
+    \ (socsup\\_score_i + relqual\\_score_i)} {|assessmentsocialanddiagnosis|}, \\\
+    text{where } socsup\\_score = \\begin{cases} 3 & \\text{if } socsup = Strong \\\
+    \\ 2 & \\text{if } socsup = Moderate \\\\ 1 & \\text{if } socsup = Limited \\\
+    end{cases}, \\text{and } relqual\\_score = \\begin{cases} 3 & \\text{if } relqual\
+    \ = Good \\\\ 2 & \\text{if } relqual = Fair \\\\ 1 & \\text{if } relqual = Poor\
+    \ \\\\ 0 & \\text{if } relqual = Conflicted \\end{cases} \u2014 Evaluates the\
+    \ effectiveness of social support based on social support level and relationship\
+    \ quality.\n[/kb=8]"
+  label: Social Support Effectiveness (SSE)
+  hidden: false
+  meta:
+    kb_id: 8
+- name: is_stable_recovery
+  sql: recstatus = 'Stable' AND EXISTS (SELECT 1 FROM treatmentoutcomes tox JOIN treatmentbasics
+    tb ON tox.txref = tb.txkey JOIN encounters e ON tb.encref = e.enckey WHERE e.abref
+    = assessmentsocialanddiagnosis.asdkey AND tox.funcimpv IN ('Moderate', 'Significant'))
+  type: BOOLEAN
+  primary_key: false
+  description: "Stable Recovery Patient (KB #13): recstatus='Stable' AND any linked\
+    \ treatmentoutcome has funcimpv in {Moderate, Significant}.\n\n[kb=13]\nA patient\
+    \ with recstatus = Stable and funcimpv \\in \\{Moderate, Significant\\} \u2014\
+    \ Identifies patients showing stable recovery with good functional outcomes.\n\
+    [/kb=13]"
+  label: Stable Recovery Patient
+  hidden: false
+  meta:
+    kb_id: 13
+- name: is_high_social_support
+  sql: ((CASE socsup WHEN 'Strong' THEN 3 WHEN 'Moderate' THEN 2 WHEN 'Limited' THEN
+    1 ELSE NULL END) + (CASE relqual WHEN 'Good' THEN 3 WHEN 'Fair' THEN 2 WHEN 'Poor'
+    THEN 1 WHEN 'Conflicted' THEN 0 ELSE NULL END)) >= 5
+  type: BOOLEAN
+  primary_key: false
+  description: "High Social Support Patient (KB #16): per-row SSE >= 5.\n\n[kb=16]\n\
+    A patient with SSE \\geq 5 \u2014 Identifies patients with strong social support\
+    \ and good relationship quality.\n[/kb=16]"
+  label: High Social Support Patient
+  hidden: false
+  meta:
+    kb_id: 16
+- name: is_strong_recovery_capital
+  sql: ((CASE socsup WHEN 'Strong' THEN 3 WHEN 'Moderate' THEN 2 WHEN 'Limited' THEN
+    1 ELSE NULL END) + (CASE relqual WHEN 'Good' THEN 3 WHEN 'Fair' THEN 2 WHEN 'Poor'
+    THEN 1 WHEN 'Conflicted' THEN 0 ELSE NULL END)) >= 5 AND funcimp = 'Mild'
+  type: BOOLEAN
+  primary_key: false
+  description: "Patient with Strong Recovery Capital (KB #42): per-row SSE >= 5 AND\
+    \ funcimp='Mild' (score=1).\n\n[kb=42]\nA patient where SSE \\geq 5 and their\
+    \ funcimp value corresponds to a score of 1 (Mild), potentially indicating strong\
+    \ basis for sustained recovery. Relates to concepts measured by SSE and PFIS.\
+    \ \u2014 Identifies patients demonstrating high social support effectiveness coupled\
+    \ with low functional impairment.\n[/kb=42]"
+  label: Patient with Strong Recovery Capital
+  hidden: false
+  meta:
+    kb_id: 42
+- name: is_high_crisis_low_support
+  sql: ((CASE socsup WHEN 'Strong' THEN 3 WHEN 'Moderate' THEN 2 WHEN 'Limited' THEN
+    1 ELSE NULL END) + (CASE relqual WHEN 'Good' THEN 3 WHEN 'Fair' THEN 2 WHEN 'Poor'
+    THEN 1 WHEN 'Conflicted' THEN 0 ELSE NULL END)) < 3 AND EXISTS (SELECT 1 FROM
+    treatmentbasics tb JOIN encounters e ON tb.encref = e.enckey WHERE e.abref = assessmentsocialanddiagnosis.asdkey
+    AND tb.crisisint > 2)
+  type: BOOLEAN
+  primary_key: false
+  description: "High Crisis & Low Support Profile (KB #47): per-row SSE < 3 AND linked\
+    \ treatmentbasics has crisisint > 2.\n\n[kb=47]\nA patient where their individual\
+    \ crisisint count (from treatmentbasics table) > 2 AND their individual SSE score\
+    \ (calculated from assessmentsocialanddiagnosis) < 3. \\text{This profile relates\
+    \ to high contribution to CIF and low individual SSE}. \u2014 Identifies patients\
+    \ characterized by frequent crisis interventions and weak social support systems.\n\
+    [/kb=47]"
+  label: Patient with High Crisis & Low Support Profile
+  hidden: false
+  meta:
+    kb_id: 47
+measures:
+- formula: funcimp_score:avg
+  name: pfis
+  label: Patient Functional Impairment Score (PFIS)
+  description: "Patient Functional Impairment Score (PFIS) \u2014 average funcimp_score\
+    \ across assessments.\n\n[kb=6]\nPFIS = \\frac{\\sum_{i \\in assessmentsocialanddiagnosis}\
+    \ funcimp\\_score_i} {|assessmentsocialanddiagnosis|}, \\text{where } funcimp\\\
+    _score = \\begin{cases} 3 & \\text{if } funcimp = Severe \\\\ 2 & \\text{if }\
+    \ funcimp = Moderate \\\\ 1 & \\text{if } funcimp = Mild \\end{cases} \u2014 Calculates\
+    \ an average functional impairment score across patients.\n[/kb=6]"
+  meta:
+    kb_id: 6
+- formula: sse_per_row:avg
+  name: sse
+  label: Social Support Effectiveness (SSE)
+  description: "Social Support Effectiveness (SSE) \u2014 average of (socsup_score\
+    \ + relqual_score) across assessments.\n\n[kb=8]\nSSE = \\frac{\\sum_{i \\in assessmentsocialanddiagnosis}\
+    \ (socsup\\_score_i + relqual\\_score_i)} {|assessmentsocialanddiagnosis|}, \\\
+    text{where } socsup\\_score = \\begin{cases} 3 & \\text{if } socsup = Strong \\\
+    \\ 2 & \\text{if } socsup = Moderate \\\\ 1 & \\text{if } socsup = Limited \\\
+    end{cases}, \\text{and } relqual\\_score = \\begin{cases} 3 & \\text{if } relqual\
+    \ = Good \\\\ 2 & \\text{if } relqual = Fair \\\\ 1 & \\text{if } relqual = Poor\
+    \ \\\\ 0 & \\text{if } relqual = Conflicted \\end{cases} \u2014 Evaluates the\
+    \ effectiveness of social support based on social support level and relationship\
+    \ quality.\n[/kb=8]"
+  meta:
+    kb_id: 8
+aggregations: []
+joins:
+- target_model: assessmentbasics
+  join_pairs:
+  - - asdkey
+    - abkey
+  join_type: left
+- target_model: encounters
+  join_pairs:
+  - - asdkey
+    - abref
+  join_type: left
+filters: []
+description: Per-assessment social and diagnosis record. 1:1 with assessmentbasics.
+  Holds recovery status, social support, family involvement, relationship quality,
+  functional levels (work/social/ADL), coping/insight/motivation, primary/secondary
+  diagnoses, hospitalisation history, quality-of-life score, and functional impairment.
+hidden: false

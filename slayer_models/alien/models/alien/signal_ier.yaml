@@ -1,0 +1,56 @@
+version: 6
+name: signal_ier
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: ier
+      type: DOUBLE
+      sql: signalclassification.entropyval / (signalprobabilities.natsrcprob * 0.9
+        + 0.1)
+  dimensions:
+  - name: signalregistry
+  - name: ier
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.ier\"\
+  \ AS ier FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\",\n\
+  \  signalclassification.entropyval / (\n    signalprobabilities.natsrcprob * 0.9\
+  \ + 0.1\n  ) AS \"signals.ier\"\nFROM signals AS signals\nLEFT JOIN signalprobabilities\
+  \ AS signalprobabilities\n  ON signals.signalregistry = signalprobabilities.signalref\n\
+  LEFT JOIN signalclassification AS signalclassification\n  ON signals.signalregistry\
+  \ = signalclassification.signalref) AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ier
+  sql: ier
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Information Entropy Ratio (IER) per signal.\n\n[kb=33]\n$\\text{IER}\
+  \ = \\frac{\\text{EntropyVal}}{\\text{NatSrcProb} \\times 0.9 + 0.1}$, where values\
+  \ significantly greater than 1 suggest non-natural information content. Uses NatSrcProb\
+  \ as a baseline for expected natural entropy. \u2014 Compares signal entropy to\
+  \ expected natural background entropy.\n[/kb=33]"
+hidden: false
+meta:
+  kb_id: 33

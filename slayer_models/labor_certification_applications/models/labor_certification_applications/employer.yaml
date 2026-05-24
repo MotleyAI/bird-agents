@@ -1,0 +1,92 @@
+version: 6
+name: employer
+sql_table: employer
+query_variables: {}
+data_source: labor_certification_applications
+columns:
+- name: corphandle
+  sql: corphandle
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: zipref
+  sql: zipref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: employer_contact_info
+  sql: employer_contact_info
+  type: TEXT
+  primary_key: false
+  description: "JSON column with employer phone, address, naics_code, alternate_name.\
+    \ NAICS (KB #6) is a 6-digit North American Industry Classification System code\
+    \ identifying the employer's primary industry sector.\n\n[kb=6]\nThe North American\
+    \ Industry Classification System (NAICS) code is a 6-digit code that identifies\
+    \ the employer's primary industry sector. For example, code 541511 represents\
+    \ 'Custom Computer Programming Services', while 561320 represents 'Temporary Help\
+    \ Services'. These codes help categorize employers by industry for statistical\
+    \ and regulatory purposes. The NAICS code is part of the employer's profile information.\
+    \ \u2014 Illustrates the purpose and meaning of NAICS codes in the context of\
+    \ visa applications.\n[/kb=6]"
+  label: NAICS Code Purpose
+  hidden: false
+  meta:
+    kb_id: 6
+- name: naics_code
+  sql: CAST(employer_contact_info ->> '$.naics_code' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: "NAICS code (KB #6) extracted from employer_contact_info JSON.\n\n\
+    [kb=6]\nThe North American Industry Classification System (NAICS) code is a 6-digit\
+    \ code that identifies the employer's primary industry sector. For example, code\
+    \ 541511 represents 'Custom Computer Programming Services', while 561320 represents\
+    \ 'Temporary Help Services'. These codes help categorize employers by industry\
+    \ for statistical and regulatory purposes. The NAICS code is part of the employer's\
+    \ profile information. \u2014 Illustrates the purpose and meaning of NAICS codes\
+    \ in the context of visa applications.\n[/kb=6]"
+  label: NAICS Code Purpose
+  hidden: false
+  meta:
+    kb_id: 6
+- name: naics_2digit
+  sql: SUBSTR(CAST(CAST(employer_contact_info ->> '$.naics_code' AS INTEGER) AS TEXT),
+    1, 2)
+  type: TEXT
+  primary_key: false
+  description: "First two digits of NAICS code (industry sector).\n\n[kb=6]\nThe North\
+    \ American Industry Classification System (NAICS) code is a 6-digit code that\
+    \ identifies the employer's primary industry sector. For example, code 541511\
+    \ represents 'Custom Computer Programming Services', while 561320 represents 'Temporary\
+    \ Help Services'. These codes help categorize employers by industry for statistical\
+    \ and regulatory purposes. The NAICS code is part of the employer's profile information.\
+    \ \u2014 Illustrates the purpose and meaning of NAICS codes in the context of\
+    \ visa applications.\n[/kb=6]"
+  label: NAICS Code Purpose
+  hidden: false
+  meta:
+    kb_id: 6
+- name: city
+  sql: employer_contact_info ->> '$.address.city'
+  type: TEXT
+  primary_key: false
+  description: Employer city extracted from JSON.
+  hidden: false
+- name: state
+  sql: employer_contact_info ->> '$.address.state'
+  type: TEXT
+  primary_key: false
+  description: Employer state extracted from JSON.
+  hidden: false
+- name: alternate_name
+  sql: employer_contact_info ->> '$.alternate_name'
+  type: TEXT
+  primary_key: false
+  description: Alternate (trade) name of the employer.
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: Employer (sponsoring company) profile. NAICS code is embedded in the
+  JSON contact info column.
+hidden: false

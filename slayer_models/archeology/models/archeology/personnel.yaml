@@ -1,0 +1,31 @@
+version: 6
+name: personnel
+sql_table: personnel
+query_variables: {}
+data_source: archeology
+columns:
+- name: crewregistry
+  sql: crewregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: crewlabel
+  sql: crewlabel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: leadregistry
+  sql: leadregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: leadlabel
+  sql: leadlabel
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

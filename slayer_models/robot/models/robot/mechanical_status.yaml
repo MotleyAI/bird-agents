@@ -1,0 +1,185 @@
+version: 6
+name: mechanical_status
+sql_table: mechanical_status
+query_variables: {}
+data_source: robot
+columns:
+- name: mechactref
+  sql: mechactref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: mechoperref
+  sql: mechoperref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: mechdetref
+  sql: mechdetref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: brk1statval
+  sql: brk1statval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: brk2statval
+  sql: brk2statval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: brk3statval
+  sql: brk3statval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: brk4statval
+  sql: brk4statval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: brk5statval
+  sql: brk5statval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: brk6statval
+  sql: brk6statval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: enc1statval
+  sql: enc1statval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: enc2statval
+  sql: enc2statval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: enc3statval
+  sql: enc3statval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: enc4statval
+  sql: enc4statval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: enc5statval
+  sql: enc5statval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: enc6statval
+  sql: enc6statval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: gb1tempval
+  sql: gb1tempval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: gb2tempval
+  sql: gb2tempval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: gb3tempval
+  sql: gb3tempval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: gb4tempval
+  sql: gb4tempval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: gb5tempval
+  sql: gb5tempval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: gb6tempval
+  sql: gb6tempval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: gb1vibval
+  sql: gb1vibval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: gb2vibval
+  sql: gb2vibval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: gb3vibval
+  sql: gb3vibval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: gb4vibval
+  sql: gb4vibval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: gb5vibval
+  sql: gb5vibval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: gb6vibval
+  sql: gb6vibval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins:
+- target_model: actuation_data
+  join_pairs:
+  - - mechactref
+    - actreg
+  join_type: left
+- target_model: robot_details
+  join_pairs:
+  - - mechdetref
+    - botdetreg
+  join_type: left
+- target_model: operation
+  join_pairs:
+  - - mechoperref
+    - operreg
+  join_type: left
+filters: []
+hidden: false

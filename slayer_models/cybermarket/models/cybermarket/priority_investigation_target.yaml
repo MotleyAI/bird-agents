@@ -1,0 +1,128 @@
+version: 6
+name: priority_investigation_target
+source_queries:
+- version: 3
+  name: investigation_with_tx
+  source_model: investigation
+  dimensions:
+  - name: investregistry
+  - name: ips
+  - name: lawinterest
+  - name: mktref
+    model: riskanalysis.transactions
+  - name: is_suspicious_transaction_pattern
+    model: riskanalysis.transactions
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: investigation_with_tx
+    joins:
+    - target_model: high_risk_market
+      join_pairs:
+      - - riskanalysis__transactions__mktref
+        - mktregistry
+    columns:
+    - name: is_priority_investigation_target
+      type: DOUBLE
+      sql: CASE WHEN investigation_with_tx.ips > 200 AND investigation_with_tx.lawinterest
+        = 'High' AND COALESCE(investigation_with_tx.riskanalysis__transactions__is_suspicious_transaction_pattern,
+        0) = 1 AND COALESCE(high_risk_market.is_high_risk_market, 0) = 1 THEN 1 ELSE
+        0 END
+  dimensions:
+  - name: investregistry
+  - name: is_priority_investigation_target
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"investigation_with_tx.investregistry\" AS investregistry,\
+  \ \"investigation_with_tx.is_priority_investigation_target\" AS is_priority_investigation_target\
+  \ FROM (SELECT\n  investigation_with_tx.investregistry AS \"investigation_with_tx.investregistry\"\
+  ,\n  CASE\n    WHEN investigation_with_tx.ips > 200\n    AND investigation_with_tx.lawinterest\
+  \ = 'High'\n    AND COALESCE(\n      investigation_with_tx.riskanalysis__transactions__is_suspicious_transaction_pattern,\n\
+  \      0\n    ) = 1\n    AND COALESCE(high_risk_market.is_high_risk_market, 0) =\
+  \ 1\n    THEN 1\n    ELSE 0\n  END AS \"investigation_with_tx.is_priority_investigation_target\"\
+  \nFROM (\n  SELECT\n    \"investigation.investregistry\" AS investregistry,\n  \
+  \  \"investigation.ips\" AS ips,\n    \"investigation.lawinterest\" AS lawinterest,\n\
+  \    \"investigation.riskanalysis.transactions.mktref\" AS riskanalysis__transactions__mktref,\n\
+  \    \"investigation.riskanalysis.transactions.is_suspicious_transaction_pattern\"\
+  \ AS riskanalysis__transactions__is_suspicious_transaction_pattern\n  FROM (\n \
+  \   SELECT\n      investigation.investregistry AS \"investigation.investregistry\"\
+  ,\n      (\n        (\n          CASE investigation.lawinterest\n            WHEN\
+  \ 'Low'\n            THEN 1\n            WHEN 'Medium'\n            THEN 2\n   \
+  \         WHEN 'High'\n            THEN 3\n            WHEN 'Unknown'\n        \
+  \    THEN 2\n            ELSE 2\n          END\n        ) * 30\n      ) + (\n  \
+  \      (\n          CASE investigation.regrisklvl\n            WHEN 'Low'\n    \
+  \        THEN 1\n            WHEN 'Medium'\n            THEN 2\n            WHEN\
+  \ 'High'\n            THEN 3\n            WHEN 'Unknown'\n            THEN 2\n \
+  \           ELSE 2\n          END\n        ) * 20\n      ) + (\n        riskanalysis.fraudprob\
+  \ * 100\n      ) - (\n        investigation.compliancescore * 0.5\n      ) + (\n\
+  \        investigation.notescount * 2\n      ) AS \"investigation.ips\",\n     \
+  \ investigation.lawinterest AS \"investigation.lawinterest\",\n      riskanalysis__transactions.mktref\
+  \ AS \"investigation.riskanalysis.transactions.mktref\",\n      (\n        (\n \
+  \         riskanalysis__transactions.payamtusd * 1.0 / 1000\n        ) * (\n   \
+  \       riskanalysis__transactions.txfinishhrs * 1.0 / 24\n        ) * (\n     \
+  \     1 + riskanalysis__transactions.escrowhrs * 1.0 / 100\n        ) * (\n    \
+  \      1 - riskanalysis__transactions__markets.esccomprate * 1.0 / 100\n       \
+  \ )\n      ) > 75\n      AND riskanalysis__transactions.paymethod = 'Crypto_B'\n\
+  \      AND (\n        riskanalysis__transactions.escrowused = 'No'\n        OR riskanalysis__transactions.escrowhrs\
+  \ < 24\n      )\n      AND riskanalysis__transactions.routecomplexity = 'Complex'\
+  \ AS \"investigation.riskanalysis.transactions.is_suspicious_transaction_pattern\"\
+  \n    FROM investigation AS investigation\n    LEFT JOIN riskanalysis AS riskanalysis\n\
+  \      ON investigation.riskref = riskanalysis.riskregistry\n    LEFT JOIN transactions\
+  \ AS riskanalysis__transactions\n      ON riskanalysis.txref = riskanalysis__transactions.txregistry\n\
+  \    LEFT JOIN markets AS riskanalysis__transactions__markets\n      ON riskanalysis__transactions.mktref\
+  \ = riskanalysis__transactions__markets.mktregistry\n  ) AS _inner\n) AS investigation_with_tx\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"markets.mktregistry\" AS mktregistry,\n  \
+  \    \"markets.is_high_risk_market\" AS is_high_risk_market\n    FROM (\n      SELECT\n\
+  \        markets.mktregistry AS \"markets.mktregistry\",\n        CASE\n       \
+  \   WHEN (\n            (\n              markets.dlyflow * 1.0 / 1000\n        \
+  \    ) + (\n              markets.esccomprate * 0.2\n            ) + (\n       \
+  \       markets.interscore * 0.3\n            ) + (\n              markets.vendcount\
+  \ * 0.1\n            ) - (\n              markets.mktspan * 1.0 / 100\n        \
+  \    )\n          ) > 500\n          AND markets.vendcount > 100\n          AND\
+  \ markets.dlyflow > 5000\n          AND COALESCE(high_alerts_per_market.high_alert_count,\
+  \ 0) >= 1\n          THEN 1\n          ELSE 0\n        END AS \"markets.is_high_risk_market\"\
+  \n      FROM markets AS markets\n      LEFT JOIN (\n        (\n          SELECT\n\
+  \            \"securitymonitoring.communication.transactions.mktref\" AS communication__transactions__mktref,\n\
+  \            \"securitymonitoring.high_alert_count\" AS high_alert_count\n     \
+  \     FROM (\n            SELECT\n              communication__transactions.mktref\
+  \ AS \"securitymonitoring.communication.transactions.mktref\",\n              COUNT(*)\
+  \ AS \"securitymonitoring.high_alert_count\"\n            FROM securitymonitoring\
+  \ AS securitymonitoring\n            LEFT JOIN communication AS communication\n\
+  \              ON securitymonitoring.commref = communication.commregistry\n    \
+  \        LEFT JOIN transactions AS communication__transactions\n              ON\
+  \ communication.txref = communication__transactions.txregistry\n            WHERE\n\
+  \              securitymonitoring.alertsev = 'High'\n            GROUP BY\n    \
+  \          communication__transactions.mktref\n          ) AS _inner\n        )\n\
+  \      ) AS high_alerts_per_market\n        ON markets.mktregistry = high_alerts_per_market.communication__transactions__mktref\n\
+  \    ) AS _inner\n  )\n) AS high_risk_market\n  ON investigation_with_tx.riskanalysis__transactions__mktref\
+  \ = high_risk_market.mktregistry) AS _inner"
+data_source: cybermarket
+columns:
+- name: investregistry
+  sql: investregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_priority_investigation_target
+  sql: is_priority_investigation_target
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Priority Investigation Target (KB #25): IPS > 200, lawinterest='High',\
+  \ involves a Suspicious Transaction Pattern (KB #22, on the linked transaction reached\
+  \ via riskanalysis.txref), and connected to a High-Risk Market (KB #20, via the\
+  \ linked transaction's mktref). Multistage: stage 1 collapses investigation/riskanalysis/transactions\
+  \ to the per-investigation grain, projecting ips/lawinterest/is_suspicious_transaction_pattern/mktref.\
+  \ Stage 2 joins high_risk_market on the linked transaction's market, then applies\
+  \ the four-condition boolean.\n\n[kb=25]\nAn investigation with IPS > 200, high\
+  \ law enforcement interest (lawinterest = 'High'), involving a suspicious transaction\
+  \ pattern, and connected to a high-risk market. These cases represent the highest\
+  \ priority for resource allocation and immediate intervention. \u2014 Identifies\
+  \ cases requiring immediate investigative attention\n[/kb=25]"
+hidden: false
+meta:
+  kb_id: 25

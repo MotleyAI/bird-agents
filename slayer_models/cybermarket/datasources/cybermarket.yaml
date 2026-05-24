@@ -1,0 +1,4 @@
+version: 1
+name: cybermarket
+type: sqlite
+connection_string: sqlite:////home/james/Dropbox/SLayer/mini-interact/cybermarket/cybermarket.sqlite

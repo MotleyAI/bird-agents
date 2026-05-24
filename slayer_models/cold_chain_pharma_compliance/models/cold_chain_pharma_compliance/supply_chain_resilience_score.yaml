@@ -1,0 +1,84 @@
+version: 6
+name: supply_chain_resilience_score
+source_queries:
+- version: 3
+  source_model:
+    source_name: art_avg
+    joins:
+    - target_model: rrd_avg
+      join_pairs:
+      - - k
+        - k
+    - target_model: sbp_avg
+      join_pairs:
+      - - k
+        - k
+    - target_model: smc_avg
+      join_pairs:
+      - - k
+        - k
+    columns:
+    - name: scrs
+      type: DOUBLE
+      sql: 0.4 * art_score_avg + 0.3 * rrd_avg.rrd_score_avg + 0.2 * sbp_avg.sbp_score_avg
+        + 0.1 * smc_avg.smc_score_avg
+  dimensions:
+  - name: scrs
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"art_avg.scrs\" AS scrs FROM (SELECT\n  0.4 * art_score_avg\
+  \ + 0.3 * rrd_avg.rrd_score_avg + 0.2 * sbp_avg.sbp_score_avg + 0.1 * smc_avg.smc_score_avg\
+  \ AS \"art_avg.scrs\"\nFROM (\n  SELECT\n    \"shipments.k\" AS k,\n    \"shipments.art_score_avg\"\
+  \ AS art_score_avg\n  FROM (\n    SELECT\n      1 AS \"shipments.k\",\n      AVG(\n\
+  \        CASE\n          WHEN LOWER(TRIM(shipment_overview ->> '$.route.risk_note'))\
+  \ = 'low'\n          THEN 8\n          WHEN LOWER(TRIM(shipment_overview ->> '$.route.risk_note'))\
+  \ = 'medium'\n          THEN 5\n          WHEN LOWER(TRIM(shipment_overview ->>\
+  \ '$.route.risk_note')) = 'high'\n          THEN 2\n          ELSE 4\n        END\n\
+  \      ) AS \"shipments.art_score_avg\"\n    FROM shipments AS shipments\n    GROUP\
+  \ BY\n      1\n  ) AS _inner\n) AS art_avg\nLEFT JOIN (\n  (\n    SELECT\n     \
+  \ \"carriers.k\" AS k,\n      \"carriers.rrd_score_avg\" AS rrd_score_avg\n    FROM\
+  \ (\n      SELECT\n        1 AS \"carriers.k\",\n        AVG(\n          CASE\n\
+  \            WHEN LOWER(TRIM(carriercert)) = 'both'\n            THEN 10\n     \
+  \       WHEN LOWER(TRIM(carriercert)) IN ('gdp', 'ceiv pharma')\n            THEN\
+  \ 8\n            ELSE 4\n          END\n        ) AS \"carriers.rrd_score_avg\"\n\
+  \      FROM carriers AS carriers\n      GROUP BY\n        1\n    ) AS _inner\n \
+  \ )\n) AS rrd_avg\n  ON art_avg.k = rrd_avg.k\nLEFT JOIN (\n  (\n    SELECT\n  \
+  \    \"vehicles.k\" AS k,\n      \"vehicles.sbp_score_avg\" AS sbp_score_avg\n \
+  \   FROM (\n      SELECT\n        1 AS \"vehicles.k\",\n        AVG(\n         \
+  \ CASE\n            WHEN LOWER(TRIM(veh_qual)) = 'validated'\n            THEN 9\n\
+  \            WHEN LOWER(TRIM(veh_qual)) = 'qualified'\n            THEN 7\n    \
+  \        ELSE 5\n          END\n        ) AS \"vehicles.sbp_score_avg\"\n      FROM\
+  \ vehicles AS vehicles\n      GROUP BY\n        1\n    ) AS _inner\n  )\n) AS sbp_avg\n\
+  \  ON art_avg.k = sbp_avg.k\nLEFT JOIN (\n  (\n    SELECT\n      \"qualitycompliance.k\"\
+  \ AS k,\n      \"qualitycompliance.smc_score_avg\" AS smc_score_avg\n    FROM (\n\
+  \      SELECT\n        1 AS \"qualitycompliance.k\",\n        AVG(\n          CASE\n\
+  \            WHEN LOWER(TRIM(qc_checklist ->> '$.gdp_quality.gdp_compliance')) =\
+  \ 'full'\n            THEN 9\n            WHEN LOWER(TRIM(qc_checklist ->> '$.gdp_quality.gdp_compliance'))\
+  \ = 'partial'\n            THEN 6\n            ELSE 3\n          END\n        )\
+  \ AS \"qualitycompliance.smc_score_avg\"\n      FROM qualitycompliance AS qualitycompliance\n\
+  \      GROUP BY\n        1\n    ) AS _inner\n  )\n) AS smc_avg\n  ON art_avg.k =\
+  \ smc_avg.k) AS _inner"
+data_source: cold_chain_pharma_compliance
+columns:
+- name: scrs
+  sql: scrs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Supply Chain Resilience Score (SCRS, KB #30): 0.4*ART + 0.3*RRD + 0.2*SBP\
+  \ + 0.1*SMC where each sub-score is the fleet-wide average of a per-row proxy: ART\
+  \ from shipments.art_score, RRD from carriers.rrd_score, SBP from vehicles.sbp_score,\
+  \ SMC from qualitycompliance.smc_score. Single-row model returning the headline\
+  \ number. Heuristic encoding because none of ART/RRD/SBP/SMC is stored directly.\n\
+  \n[kb=30]\nSCRS = 0.4 \\times ART + 0.3 \\times RRD + 0.2 \\times SBP + 0.1 \\times\
+  \ SMC, \\text{where ART is Alternative Route Availability (0-10), RRD is Redundant\
+  \ Resources Depth (0-10), SBP is Supplier Backup Presence (0-10), and SMC is Stock\
+  \ Management Capability (0-10).} \u2014 Measures a cold chain's ability to maintain\
+  \ integrity despite disruptions.\n[/kb=30]"
+hidden: false
+meta:
+  kb_id: 30

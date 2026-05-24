@@ -1,0 +1,111 @@
+version: 6
+name: market_impact_cost
+source_queries:
+- version: 3
+  name: latest_mkteffect
+  source_model:
+    source_name: systemmonitoring
+    columns:
+    - name: join_key
+      type: DOUBLE
+      sql: '1'
+  dimensions:
+  - name: mkteffect
+  - name: join_key
+  order:
+  - column:
+      name: systemmonitoringpivot
+    direction: desc
+  limit: 1
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: orders
+    columns:
+    - name: join_key
+      type: DOUBLE
+      sql: '1'
+    joins:
+    - target_model: latest_mkteffect
+      join_pairs:
+      - - join_key
+        - join_key
+  measures:
+  - formula: dealcount:max * dealquote:max * latest_mkteffect.mkteffect:max * 0.01
+    name: mic
+  dimensions:
+  - name: recordvault
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.dealcount_max\"\
+  \ AS dealcount_max, \"orders.dealquote_max\" AS dealquote_max, \"orders.mic\" AS\
+  \ mic, \"orders.latest_mkteffect.mkteffect_max\" AS latest_mkteffect__mkteffect_max\
+  \ FROM (WITH _base AS (\nSELECT\n  orders.recordvault AS \"orders.recordvault\"\
+  ,\n  MAX(orders.dealcount) AS \"orders.dealcount_max\",\n  MAX(orders.dealquote)\
+  \ AS \"orders.dealquote_max\"\nFROM orders AS orders\nGROUP BY\n  orders.recordvault\n\
+  ),\n_cm_orders__latest_mkteffect__mkteffect_max AS (\nSELECT\n  MAX(latest_mkteffect.mkteffect)\
+  \ AS \"orders.latest_mkteffect.mkteffect_max\"\nFROM (\n  SELECT\n    \"systemmonitoring.mkteffect\"\
+  \ AS mkteffect,\n    \"systemmonitoring.join_key\" AS join_key\n  FROM (\n    SELECT\n\
+  \      systemmonitoring.mkteffect AS \"systemmonitoring.mkteffect\",\n      1 AS\
+  \ \"systemmonitoring.join_key\"\n    FROM systemmonitoring AS systemmonitoring\n\
+  \    ORDER BY\n      \"systemmonitoring.systemmonitoringpivot\" DESC\n    LIMIT\
+  \ 1\n  ) AS _inner\n) AS latest_mkteffect\n),\n_combined AS (\nSELECT _base.\"orders.recordvault\"\
+  , _base.\"orders.dealcount_max\", _base.\"orders.dealquote_max\", _cm_orders__latest_mkteffect__mkteffect_max.\"\
+  orders.latest_mkteffect.mkteffect_max\"\nFROM _base\nCROSS JOIN _cm_orders__latest_mkteffect__mkteffect_max\n\
+  ),\nstep1 AS (\nSELECT\n    \"orders.dealcount_max\",\n    \"orders.dealquote_max\"\
+  ,\n    \"orders.latest_mkteffect.mkteffect_max\",\n    \"orders.recordvault\",\n\
+  \    \"orders.dealcount_max\" * \"orders.dealquote_max\" * \"orders.latest_mkteffect.mkteffect_max\"\
+  \ * 0.01 AS \"orders.mic\"\nFROM _combined\n)\nSELECT\n    \"orders.dealcount_max\"\
+  ,\n    \"orders.dealquote_max\",\n    \"orders.latest_mkteffect.mkteffect_max\"\
+  ,\n    \"orders.mic\",\n    \"orders.recordvault\"\nFROM step1) AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: dealcount_max
+  sql: dealcount_max
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: dealquote_max
+  sql: dealquote_max
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mic
+  sql: mic
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: latest_mkteffect__mkteffect_max
+  sql: latest_mkteffect__mkteffect_max
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Market Impact Cost (KB #4) per order: dealcount \xD7 dealquote \xD7\
+  \ mkteffect \xD7 0.01. dealcount/dealquote come from orders; mkteffect is taken\
+  \ from the most-recent systemmonitoring row (global system-wide latest). Implemented\
+  \ as a multistage with a 1-row scalar (latest mkteffect) cross-joined via a constant\
+  \ key onto the orders row-level data, per the W4c crypto.md hint.\n\n[kb=4]\nMIC\
+  \ = dealcount \\times dealquote \\times mkteffect \\times 0.01, \\text{where } dealcount\
+  \ \\text{ is the order quantity, } dealquote \\text{ is the limit or stop price,\
+  \ and } mkteffect \\text{ is the approximating internal market impact.} \u2014 Estimates\
+  \ the market impact cost of executing a large order.\n[/kb=4]"
+hidden: false
+meta:
+  kb_id: 4

@@ -1,0 +1,183 @@
+version: 6
+name: clinical
+sql_table: clinical
+query_variables: {}
+data_source: organ_transplant
+columns:
+- name: clin_recip_registry
+  sql: clin_recip_registry
+  type: TEXT
+  primary_key: true
+  description: FK to recipients_demographics.recip_registry.
+  hidden: false
+- name: diag_detail
+  sql: diag_detail
+  type: TEXT
+  primary_key: false
+  description: Primary diagnosis prose.
+  hidden: false
+- name: wait_time
+  sql: wait_time
+  type: TEXT
+  primary_key: false
+  description: Waiting list duration text, e.g. '104 days'. See wait_days. KB Recipient
+    Wait Time Ratio.
+  hidden: false
+- name: med_urgency
+  sql: med_urgency
+  type: TEXT
+  primary_key: false
+  description: "Medical urgency tier raw text. Values: 'Status 1A', 'Status 1B', 'Status\
+    \ 2', 'Status 3', or noisy '2'/'3'. See med_urgency_normalized for cleaned text\
+    \ and med_urgency_value for KB 25 numeric mapping. KB Medical Urgency Tiers (KB\
+    \ 45) \u2014 Status 1A is the highest urgency (ICU), 1B is lower-but-urgent, lower\
+    \ statuses (e.g. Status 2) are for more stable patients.\n\n[kb=45]\nPatients\
+    \ are prioritized based on their risk of dying while on the waitlist. Status 1A\
+    \ is the highest urgency, reserved for critically ill patients in the ICU. Status\
+    \ 1B is a lower, but still urgent, category. Lower statuses (e.g., Status 2) are\
+    \ for more stable patients. \u2014 Illustrates the hierarchy of transplant urgency\
+    \ statuses.\n[/kb=45]"
+  label: Medical Urgency Tiers
+  hidden: false
+  meta:
+    kb_id: 45
+- name: prev_tx_count
+  sql: prev_tx_count
+  type: TEXT
+  primary_key: false
+  description: Previous transplants prose. See prev_tx_n.
+  hidden: false
+- name: dial_status
+  sql: dial_status
+  type: TEXT
+  primary_key: false
+  description: Dialysis status text. NULL when not on dialysis.
+  hidden: false
+- name: dial_duration
+  sql: dial_duration
+  type: TEXT
+  primary_key: false
+  description: Dialysis duration text, e.g. '45 months'.
+  hidden: false
+- name: comorbid_detail
+  sql: comorbid_detail
+  type: TEXT
+  primary_key: false
+  description: "Comma-separated comorbidity list. KB Comorbidity. Use comorbidity_count\
+    \ for the cardinal count.\n\n[kb=33]\nIn transplantation, a recipient's pre-existing\
+    \ conditions (e.g., diabetes, heart disease) are considered comorbidities. They\
+    \ can increase the complexity and risk of the transplant procedure. \u2014 The\
+    \ presence of one or more additional diseases or conditions co-occurring with\
+    \ a primary disease or condition.\n[/kb=33]"
+  label: Comorbidity
+  hidden: false
+  meta:
+    kb_id: 33
+- name: wait_days
+  sql: CAST(substr(wait_time, 1, instr(wait_time, ' ') - 1) AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Wait time on the list in days (parsed).
+  hidden: false
+- name: wait_time_ratio
+  sql: CAST(substr(wait_time, 1, instr(wait_time, ' ') - 1) AS REAL) / 365.0
+  type: DOUBLE
+  primary_key: false
+  description: "Recipient Wait Time Ratio = wait_days / 365.0 (KB Recipient Wait Time\
+    \ Ratio).\n\n[kb=5]\nThe recipient's wait time in days converted to years. Formula:\
+    \ $R_{wait} = \\frac{T_{recipient_wait_days}}{365.0}$ \u2014 Calculates the ratio\
+    \ of a recipient's waiting time to the average waiting time for their specific\
+    \ organ and blood type.\n[/kb=5]"
+  label: Recipient Wait Time Ratio
+  hidden: false
+  meta:
+    kb_id: 5
+- name: med_urgency_normalized
+  sql: CASE WHEN med_urgency IN ('Status 1A') THEN 'Status 1A' WHEN med_urgency IN
+    ('Status 1B') THEN 'Status 1B' WHEN med_urgency IN ('Status 2', '2') THEN 'Status
+    2' WHEN med_urgency IN ('Status 3', '3') THEN 'Status 3' ELSE med_urgency END
+  type: TEXT
+  primary_key: false
+  description: "med_urgency with the noisy '2'/'3' values folded back to 'Status 2'/'Status\
+    \ 3'.\n\n[kb=25]\nA tiered system that reflects how critically ill a patient is.\
+    \ For calculation purposes, statuses are mapped to numerical values: Status 1A\
+    \ is assigned a value of 5, Status 1B is 4, Status 2 is 3, and Status 3 is 2.\
+    \ All other statuses are assigned a value of 1. \u2014 A classification system\
+    \ used to prioritize patients on the transplant waiting list based on their immediate\
+    \ need and risk of mortality.\n[/kb=25]"
+  label: Medical Urgency Status
+  hidden: false
+  meta:
+    kb_id: 25
+- name: med_urgency_value
+  sql: CASE WHEN med_urgency = 'Status 1A' THEN 5 WHEN med_urgency = 'Status 1B' THEN
+    4 WHEN med_urgency IN ('Status 2', '2') THEN 3 WHEN med_urgency IN ('Status 3',
+    '3') THEN 2 ELSE 1 END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric mapping per KB Medical Urgency Status: 1A=5, 1B=4, 2=3, 3=2,\
+    \ else 1.\n\n[kb=25]\nA tiered system that reflects how critically ill a patient\
+    \ is. For calculation purposes, statuses are mapped to numerical values: Status\
+    \ 1A is assigned a value of 5, Status 1B is 4, Status 2 is 3, and Status 3 is\
+    \ 2. All other statuses are assigned a value of 1. \u2014 A classification system\
+    \ used to prioritize patients on the transplant waiting list based on their immediate\
+    \ need and risk of mortality.\n[/kb=25]"
+  label: Medical Urgency Status
+  hidden: false
+  meta:
+    kb_id: 25
+- name: prev_tx_n
+  sql: CAST(substr(prev_tx_count, 1, instr(prev_tx_count, ' ') - 1) AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Number of previous transplants (parsed leading int).
+  hidden: false
+- name: dial_months
+  sql: CAST(substr(dial_duration, 1, instr(dial_duration, ' ') - 1) AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Dialysis duration in months (parsed).
+  hidden: false
+- name: comorbidity_count
+  sql: CASE WHEN comorbid_detail IS NULL OR comorbid_detail = '' THEN 0 ELSE (length(comorbid_detail)
+    - length(replace(comorbid_detail, ',', '')) + 1) END
+  type: DOUBLE
+  primary_key: false
+  description: "Number of comma-delimited comorbidities listed (KB Comorbidity).\n\
+    \n[kb=33]\nIn transplantation, a recipient's pre-existing conditions (e.g., diabetes,\
+    \ heart disease) are considered comorbidities. They can increase the complexity\
+    \ and risk of the transplant procedure. \u2014 The presence of one or more additional\
+    \ diseases or conditions co-occurring with a primary disease or condition.\n[/kb=33]"
+  label: Comorbidity
+  hidden: false
+  meta:
+    kb_id: 33
+- name: patient_urgency_score
+  sql: 0.7 * (CASE WHEN med_urgency = 'Status 1A' THEN 5 WHEN med_urgency = 'Status
+    1B' THEN 4 WHEN med_urgency IN ('Status 2', '2') THEN 3 WHEN med_urgency IN ('Status
+    3', '3') THEN 2 ELSE 1 END) + 0.3 * (CAST(substr(wait_time, 1, instr(wait_time,
+    ' ') - 1) AS REAL) / 365.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Patient Urgency Score = 0.7 * Status_medical + 0.3 * R_wait (KB Patient\
+    \ Urgency Score).\n\n[kb=14]\nA composite score based on the recipient's medical\
+    \ urgency status and their Recipient Wait Time Ratio. Formula: $S_{urgency} =\
+    \ 0.7 \\times Status_{medical} + 0.3 \\times R_{wait}$ \u2014 A score that quantifies\
+    \ the urgency of a recipient's need for a transplant.\n[/kb=14]"
+  label: Patient Urgency Score
+  hidden: false
+  meta:
+    kb_id: 14
+measures: []
+aggregations: []
+joins:
+- target_model: recipients_demographics
+  join_pairs:
+  - - clin_recip_registry
+    - recip_registry
+  join_type: left
+filters: []
+description: 'Recipient clinical status: diagnosis, wait time, medical urgency tier,
+  prior-tx count, dialysis status, comorbidities. One row per recipient. KB Comorbidity
+  / Medical Urgency Status.'
+hidden: false

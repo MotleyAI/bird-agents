@@ -1,0 +1,180 @@
+version: 6
+name: logger_reliability_score
+source_queries:
+- version: 3
+  name: mcs_per_shipment_lrs
+  source_model: regulatoryandmaintenance
+  measures:
+  - formula: mcs:avg
+    name: mcs
+  dimensions:
+  - name: shipgov
+  whole_periods_only: false
+- version: 3
+  name: tss_tbs_per_container_lrs
+  source_model: sensordata
+  measures:
+  - formula: tss:avg
+    name: tss
+  - formula: tbs:avg
+    name: tbs
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  name: lhi_per_container_lrs
+  source_model: datalogger
+  measures:
+  - formula: lhi:avg
+    name: lhi
+  dimensions:
+  - name: containlog
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: container
+    joins:
+    - target_model: mcs_per_shipment_lrs
+      join_pairs:
+      - - shipown
+        - shipgov
+    - target_model: lhi_per_container_lrs
+      join_pairs:
+      - - containregistry
+        - containlog
+    - target_model: tss_tbs_per_container_lrs
+      join_pairs:
+      - - containregistry
+        - containlink
+    columns:
+    - name: cmr
+      type: DOUBLE
+      sql: (1 - mcs_per_shipment_lrs.mcs) * (1 + tss_tbs_per_container_lrs.tbs / 5.0)
+        * (1 - lhi_per_container_lrs.lhi)
+    - name: lrs
+      type: DOUBLE
+      sql: lhi_per_container_lrs.lhi * (1 - ((1 - mcs_per_shipment_lrs.mcs) * (1 +
+        tss_tbs_per_container_lrs.tbs / 5.0) * (1 - lhi_per_container_lrs.lhi))) *
+        tss_tbs_per_container_lrs.tss
+  dimensions:
+  - name: containregistry
+  - name: shipown
+  - name: lhi
+    model: lhi_per_container_lrs
+  - name: tss
+    model: tss_tbs_per_container_lrs
+  - name: tbs
+    model: tss_tbs_per_container_lrs
+  - name: mcs
+    model: mcs_per_shipment_lrs
+  - name: cmr
+  - name: lrs
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"container.containregistry\" AS containregistry, \"container.shipown\"\
+  \ AS shipown, \"container.lhi_per_container_lrs.lhi\" AS lhi_per_container_lrs__lhi,\
+  \ \"container.tss_tbs_per_container_lrs.tss\" AS tss_tbs_per_container_lrs__tss,\
+  \ \"container.tss_tbs_per_container_lrs.tbs\" AS tss_tbs_per_container_lrs__tbs,\
+  \ \"container.mcs_per_shipment_lrs.mcs\" AS mcs_per_shipment_lrs__mcs, \"container.cmr\"\
+  \ AS cmr, \"container.lrs\" AS lrs FROM (SELECT\n  container.containregistry AS\
+  \ \"container.containregistry\",\n  container.shipown AS \"container.shipown\",\n\
+  \  lhi_per_container_lrs.lhi AS \"container.lhi_per_container_lrs.lhi\",\n  tss_tbs_per_container_lrs.tss\
+  \ AS \"container.tss_tbs_per_container_lrs.tss\",\n  tss_tbs_per_container_lrs.tbs\
+  \ AS \"container.tss_tbs_per_container_lrs.tbs\",\n  mcs_per_shipment_lrs.mcs AS\
+  \ \"container.mcs_per_shipment_lrs.mcs\",\n  (\n    1 - mcs_per_shipment_lrs.mcs\n\
+  \  ) * (\n    1 + tss_tbs_per_container_lrs.tbs / 5.0\n  ) * (\n    1 - lhi_per_container_lrs.lhi\n\
+  \  ) AS \"container.cmr\",\n  lhi_per_container_lrs.lhi * (\n    1 - (\n      (\n\
+  \        1 - mcs_per_shipment_lrs.mcs\n      ) * (\n        1 + tss_tbs_per_container_lrs.tbs\
+  \ / 5.0\n      ) * (\n        1 - lhi_per_container_lrs.lhi\n      )\n    )\n  )\
+  \ * tss_tbs_per_container_lrs.tss AS \"container.lrs\"\nFROM container AS container\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"regulatoryandmaintenance.shipgov\" AS shipgov,\n\
+  \      \"regulatoryandmaintenance.mcs\" AS mcs\n    FROM (\n      SELECT\n     \
+  \   regulatoryandmaintenance.shipgov AS \"regulatoryandmaintenance.shipgov\",\n\
+  \        AVG(\n          regulatoryandmaintenance.compscore * (\n            1 -\
+  \ COALESCE(CAST(regulatoryandmaintenance.incidents AS REAL) / 10, 0)\n         \
+  \ )\n        ) AS \"regulatoryandmaintenance.mcs\"\n      FROM regulatoryandmaintenance\
+  \ AS regulatoryandmaintenance\n      GROUP BY\n        regulatoryandmaintenance.shipgov\n\
+  \    ) AS _inner\n  )\n) AS mcs_per_shipment_lrs\n  ON container.shipown = mcs_per_shipment_lrs.shipgov\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"datalogger.containlog\" AS containlog,\n \
+  \     \"datalogger.lhi\" AS lhi\n    FROM (\n      SELECT\n        datalogger.containlog\
+  \ AS \"datalogger.containlog\",\n        AVG(\n          container.batterypct /\
+  \ 100.0 * (\n            1 - COALESCE(CAST(datalogger.memusepct AS REAL) / 100,\
+  \ 0)\n          ) * COALESCE(datalogger.datapct, 0) / 100.0\n        ) AS \"datalogger.lhi\"\
+  \n      FROM datalogger AS datalogger\n      LEFT JOIN container AS container\n\
+  \        ON datalogger.containlog = container.containregistry\n      GROUP BY\n\
+  \        datalogger.containlog\n    ) AS _inner\n  )\n) AS lhi_per_container_lrs\n\
+  \  ON container.containregistry = lhi_per_container_lrs.containlog\nLEFT JOIN (\n\
+  \  (\n    SELECT\n      \"sensordata.containlink\" AS containlink,\n      \"sensordata.tss\"\
+  \ AS tss,\n      \"sensordata.tbs\" AS tbs\n    FROM (\n      SELECT\n        sensordata.containlink\
+  \ AS \"sensordata.containlink\",\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          ) * COALESCE(sensordata.tempstabidx, 1)\n       \
+  \ ) AS \"sensordata.tss\",\n        AVG(\n          ABS(sensordata.tempnowc - sensordata.storetempc)\
+  \ / NULLIF(sensordata.temptolc, 0) * sensordata.tempdevcount\n        ) AS \"sensordata.tbs\"\
+  \n      FROM sensordata AS sensordata\n      GROUP BY\n        sensordata.containlink\n\
+  \    ) AS _inner\n  )\n) AS tss_tbs_per_container_lrs\n  ON container.containregistry\
+  \ = tss_tbs_per_container_lrs.containlink) AS _inner"
+data_source: vaccine
+columns:
+- name: containregistry
+  sql: containregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shipown
+  sql: shipown
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lhi_per_container_lrs__lhi
+  sql: lhi_per_container_lrs__lhi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tss_tbs_per_container_lrs__tss
+  sql: tss_tbs_per_container_lrs__tss
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tss_tbs_per_container_lrs__tbs
+  sql: tss_tbs_per_container_lrs__tbs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mcs_per_shipment_lrs__mcs
+  sql: mcs_per_shipment_lrs__mcs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: cmr
+  sql: cmr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: lrs
+  sql: lrs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Logger Reliability Score (LRS, KB #34). One row per container with LRS\
+  \ = LHI * (1 - CMR) * TSS, where LHI (KB #6) and CMR (KB #32) are computed inline\
+  \ (CMR uses MCS from regulatoryandmaintenance, TBS from sensordata, LHI from datalogger)\
+  \ and TSS (KB #0) is averaged over sensordata rows for the container. The Logger\
+  \ Critical State classification (KB #45) lives on a sibling model `logger_critical_state`.\n\
+  \n[kb=34]\nLRS = \text{LHI} \\times (1 - \\text{CMR}) \\times \\text{TSS} \u2014\
+  \ Comprehensive score for logger reliability.\n[/kb=34]"
+hidden: false
+meta:
+  kb_id: 34

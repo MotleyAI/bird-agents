@@ -1,0 +1,243 @@
+version: 6
+name: investigation
+sql_table: investigation
+query_variables: {}
+data_source: cybermarket
+columns:
+- name: investregistry
+  sql: investregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: investstat
+  sql: investstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lawinterest
+  sql: lawinterest
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: regrisklvl
+  sql: regrisklvl
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: compliancescore
+  sql: compliancescore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: investpriority
+  sql: investpriority
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: resptimemins
+  sql: resptimemins
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: escalationlevel
+  sql: escalationlevel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: casestatus
+  sql: casestatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: resolutiontimehours
+  sql: resolutiontimehours
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: actiontaken
+  sql: actiontaken
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: followuprequired
+  sql: followuprequired
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: reviewfrequency
+  sql: reviewfrequency
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: nextreviewdate
+  sql: nextreviewdate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: notescount
+  sql: notescount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: dataretentionstatus
+  sql: dataretentionstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lastupdated
+  sql: lastupdated
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: updatefrequencyhours
+  sql: updatefrequencyhours
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: secref
+  sql: secref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: riskref
+  sql: riskref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lawinterest_numeric
+  sql: CASE lawinterest WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3
+    WHEN 'Unknown' THEN 2 ELSE 2 END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric mapping of lawinterest used by IPS: Low=1, Medium=2, High=3,\
+    \ Unknown=2.\n\n[kb=8]\n'Low' indicates minimal risk patterns with transparent\
+    \ transaction flows and consistent monetary behavior; 'Medium' suggests some unusual\
+    \ patterns warranting monitoring but insufficient evidence for immediate action;\
+    \ 'High' represents significant red flags such as rapid fund transfers, unusual\
+    \ transaction chains, or known high-risk wallet associations; 'Unknown' indicates\
+    \ insufficient data to properly assess risk, itself often considered a risk indicator\
+    \ due to potential deliberate obfuscation. \u2014 Explains the significance of\
+    \ money laundering risk classification\n[/kb=8]"
+  label: cybermarket|riskanalysis|moneyrisk
+  hidden: false
+  meta:
+    kb_id: 8
+- name: regrisklvl_numeric
+  sql: CASE regrisklvl WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 WHEN
+    'Unknown' THEN 2 ELSE 2 END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric mapping of regrisklvl used by IPS: Low=1, Medium=2, High=3,\
+    \ Unknown=2.\n\n[kb=8]\n'Low' indicates minimal risk patterns with transparent\
+    \ transaction flows and consistent monetary behavior; 'Medium' suggests some unusual\
+    \ patterns warranting monitoring but insufficient evidence for immediate action;\
+    \ 'High' represents significant red flags such as rapid fund transfers, unusual\
+    \ transaction chains, or known high-risk wallet associations; 'Unknown' indicates\
+    \ insufficient data to properly assess risk, itself often considered a risk indicator\
+    \ due to potential deliberate obfuscation. \u2014 Explains the significance of\
+    \ money laundering risk classification\n[/kb=8]"
+  label: cybermarket|riskanalysis|moneyrisk
+  hidden: false
+  meta:
+    kb_id: 8
+- name: ips
+  sql: ((CASE lawinterest WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN
+    3 WHEN 'Unknown' THEN 2 ELSE 2 END) * 30) + ((CASE regrisklvl WHEN 'Low' THEN
+    1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 WHEN 'Unknown' THEN 2 ELSE 2 END) *
+    20) + (riskanalysis.fraudprob * 100) - (compliancescore * 0.5) + (notescount *
+    2)
+  type: DOUBLE
+  primary_key: false
+  description: "Investigation Priority Score (IPS): 30*lawinterest_numeric + 20*regrisklvl_numeric\
+    \ + 100*fraudprob (from linked riskanalysis via riskref) - 0.5*compliancescore\
+    \ + 2*notescount. Higher = higher priority.\n\n[kb=18]\nIPS = (lawinterest\\_numeric\
+    \ \\times 30) + (regrisklvl\\_numeric \\times 20) + (fraudprob \\times 100) -\
+    \ (compliancescore \\times 0.5) + (notescount \\times 2), \\text{where lawinterest\\\
+    _numeric and regrisklvl\\_numeric map Low=1, Medium=2, High=3, Unknown=2, and\
+    \ higher scores indicate higher priority.} \u2014 Determines how urgently an investigation\
+    \ should be handled\n[/kb=18]"
+  label: Investigation Priority Score (IPS)
+  hidden: false
+  meta:
+    kb_id: 18
+- name: cpra
+  sql: (riskanalysis__communication.keymatchcount * 3) + (1 * 10) + (((riskanalysis.fraudprob
+    * 100) + (riskanalysis.wallrisksc * 0.5) - (riskanalysis.wallage * 1.0 / 30) +
+    (riskanalysis.wallturnrt * 10) + (riskanalysis.txvel * 1.0 / 10)) * 0.2) + ((riskanalysis__transactions__markets.mktspan
+    * 1.0 / 365) * 5) - (compliancescore * 1.0 / 20)
+  type: DOUBLE
+  primary_key: false
+  description: "Cross-Platform Risk Amplification (CPRA, KB #38): keymatchcount*3\
+    \ + COUNT(DISTINCT mktref)*10 + WRI*0.2 + (mktspan/365)*5 - compliancescore/20.\
+    \ Schema shortfall: `riskanalysis` is per-transaction and the schema has no cross-market\
+    \ entity identity, so COUNT(DISTINCT mktref) per entity literal-fits to 1 (per\
+    \ W4c hint). keymatchcount comes from the linked communication, WRI from riskanalysis,\
+    \ mktspan from the linked transaction's market, and compliancescore from this\
+    \ investigation.\n\n[kb=38]\nCPRA = (keymatchcount \\times 3) + (COUNT(DISTINCT\
+    \ mktref) \\times 10) + (WRI \\times 0.2) + (\\frac{mktspan}{365} \\times 5) -\
+    \ (\\frac{compliancescore}{20}), \\text{where WRI is defined by the Wallet Risk\
+    \ Index, platformcount is the count of distinct markets an entity operates on,\
+    \ and higher values indicate greater cross-platform risk.} \u2014 Measures how\
+    \ risk increases when an entity operates across multiple platforms\n[/kb=38]"
+  label: Cross-Platform Risk Amplification (CPRA)
+  hidden: false
+  meta:
+    kb_id: 38
+- name: is_multi_platform_threat_entity
+  sql: ((riskanalysis__communication.keymatchcount * 3) + (1 * 10) + (((riskanalysis.fraudprob
+    * 100) + (riskanalysis.wallrisksc * 0.5) - (riskanalysis.wallage * 1.0 / 30) +
+    (riskanalysis.wallturnrt * 10) + (riskanalysis.txvel * 1.0 / 10)) * 0.2) + ((riskanalysis__transactions__markets.mktspan
+    * 1.0 / 365) * 5) - (compliancescore * 1.0 / 20)) > 80 AND riskanalysis__communication.keymatchcount
+    > 30 AND ((riskanalysis.fraudprob * 100) + (riskanalysis.wallrisksc * 0.5) - (riskanalysis.wallage
+    * 1.0 / 30) + (riskanalysis.wallturnrt * 10) + (riskanalysis.txvel * 1.0 / 10))
+    > 70
+  type: BOOLEAN
+  primary_key: false
+  description: "Multi-Platform Threat Entity (KB #48): CPRA > 80, displays Cross-Platform\
+    \ Operator characteristics (KB #29: keymatchcount > 30 with cross-market identity),\
+    \ WRI > 70, plus consistent OPSEC across platforms. Encoded on investigation so\
+    \ it can reach communication / transactions / markets. Schema shortfall: cross-market\
+    \ entity identity is not expressible (same issue as KB #29 / #38) \u2014 the 'operating\
+    \ on >=3 markets' part of the Cross-Platform Operator predicate cannot be checked\
+    \ against the current schema, and the 'consistent OPSEC across platforms' clause\
+    \ is purely cross-row temporal / aggregate semantics that don't fit a row-level\
+    \ boolean. The literal-fit predicate keeps the keymatchcount and WRI thresholds\
+    \ and lets cross-market identity collapse to 1, matching the literal-fit choice\
+    \ for CPRA / VNC.\n\n[kb=48]\nAn entity with CPRA > 80, displaying Cross-Platform\
+    \ Operator characteristics, with high Wallet Risk Index scores (WRI > 70), and\
+    \ consistently employing the same operational security tactics across platforms.\
+    \ These entities represent priority targets for coordinated investigation efforts\
+    \ due to their expanded reach. \u2014 Identifies high-risk entities operating\
+    \ across multiple cybermarket platforms\n[/kb=48]"
+  label: Multi-Platform Threat Entity
+  hidden: false
+  meta:
+    kb_id: 48
+measures: []
+aggregations: []
+joins:
+- target_model: riskanalysis
+  join_pairs:
+  - - riskref
+    - riskregistry
+  join_type: left
+- target_model: securitymonitoring
+  join_pairs:
+  - - secref
+    - secmonregistry
+  join_type: left
+filters: []
+description: Investigation case records, tied to a security-monitoring record (secref)
+  and a risk profile (riskref). Captures status, law-enforcement / regulatory interest,
+  compliance score, escalation, action taken, and review cadence.
+hidden: false

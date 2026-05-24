@@ -1,0 +1,12 @@
+[
+  {
+    "name": "doubleword/Qwen/Qwen3-VL-235B-A22B-Instruct-FP8",
+    "input_per_m": 0.50,
+    "output_per_m": 1.50
+  },
+  {
+    "name": "doubleword/Qwen/Qwen3-VL-30B-A3B-Instruct-FP8",
+    "input_per_m": 0.10,
+    "output_per_m": 0.30
+  }
+]

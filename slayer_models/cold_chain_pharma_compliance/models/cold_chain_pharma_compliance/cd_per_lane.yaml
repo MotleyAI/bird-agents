@@ -1,0 +1,50 @@
+version: 6
+name: cd_per_lane
+source_queries:
+- version: 3
+  source_model: qualitycompliance
+  measures:
+  - formula: is_customs_delayed:sum
+  dimensions:
+  - name: route_string
+    model: shipments
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"qualitycompliance.shipments.route_string\" AS shipments__route_string,\
+  \ \"qualitycompliance.is_customs_delayed_sum\" AS is_customs_delayed_sum FROM (SELECT\n\
+  \  shipment_overview ->> '$.route.route_string' AS \"qualitycompliance.shipments.route_string\"\
+  ,\n  SUM(\n    CASE\n      WHEN qc_checklist -> '$.customs_and_regulatory.custom_clearance_status'\
+  \ = 'Delayed'\n      THEN 1\n      ELSE 0\n    END\n  ) AS \"qualitycompliance.is_customs_delayed_sum\"\
+  \nFROM qualitycompliance AS qualitycompliance\nLEFT JOIN shipments AS shipments\n\
+  \  ON qualitycompliance.reckeyqc = shipments.reckey\nGROUP BY\n  shipment_overview\
+  \ ->> '$.route.route_string') AS _inner"
+data_source: cold_chain_pharma_compliance
+columns:
+- name: shipments__route_string
+  sql: shipments__route_string
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_customs_delayed_sum
+  sql: is_customs_delayed_sum
+  type: DOUBLE
+  primary_key: false
+  description: 'Customs-delay indicator for Lane Risk Potential (KB #36): 1 when custom_clearance_status=''Delayed''
+    on this shipment, 0 otherwise. Used to compute CD (count of customs delays per
+    lane).'
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Per-lane customs-delay count helper for Lane Risk Potential (LRP, KB\
+  \ #36). Aggregates qualitycompliance by shipments.route_string. Hidden \u2014 used\
+  \ internally by lane_risk_potential.\n\n[kb=36]\nLRP = \\frac{TE_{total} + SD_{total}\
+  \ + CD_{total}}{N_{shipments}}, \\text{where } TE_{total} \\text{ is the total count\
+  \ of temperature excursions, } SD_{total} \\text{ is the total count of shipping\
+  \ delays, } CD_{total} \\text{ is the total count of customs delays, and } N_{shipments}\
+  \ \\text{ is the number of shipments on that lane.} \u2014 Quantifies the risk associated\
+  \ with a specific shipping route based on historical performance.\n[/kb=36]"
+hidden: true
+meta:
+  kb_id: 36

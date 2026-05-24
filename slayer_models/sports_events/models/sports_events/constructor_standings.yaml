@@ -1,0 +1,78 @@
+version: 6
+name: constructor_standings
+sql_table: constructor_standings
+query_variables: {}
+data_source: sports_events
+columns:
+- name: cstnds
+  sql: cstnds
+  type: INT
+  primary_key: true
+  description: Unique standings record identifier.
+  hidden: false
+  format:
+    type: integer
+- name: rref
+  sql: rref
+  type: INT
+  primary_key: false
+  description: Foreign key to races.
+  hidden: false
+  format:
+    type: integer
+- name: contunit
+  sql: contunit
+  type: INT
+  primary_key: false
+  description: Foreign key to constructors.
+  hidden: false
+  format:
+    type: integer
+- name: scr_tot
+  sql: scr_tot
+  type: INT
+  primary_key: false
+  description: Constructor's cumulative season points after this race.
+  hidden: false
+  format:
+    type: integer
+- name: posno
+  sql: posno
+  type: INT
+  primary_key: false
+  description: Constructor's rank in the standings.
+  hidden: false
+  format:
+    type: integer
+- name: poslab
+  sql: poslab
+  type: TEXT
+  primary_key: false
+  description: Position text label.
+  hidden: false
+- name: trophy_w
+  sql: trophy_w
+  type: INT
+  primary_key: false
+  description: Total wins by the constructor at this point in the season.
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins:
+- target_model: constructors
+  join_pairs:
+  - - contunit
+    - cstr_key
+  join_type: left
+- target_model: races
+  join_pairs:
+  - - rref
+    - rak_id
+  join_type: left
+filters: []
+description: Cumulative constructor championship standings, snapshotted at race-time.
+  One row per (race, constructor) where the cumulative season points/position were
+  recorded.
+hidden: false

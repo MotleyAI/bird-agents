@@ -1,0 +1,134 @@
+version: 6
+name: vaccine_safety_index
+source_queries:
+- version: 3
+  name: agg_per_container_vsi
+  source_model: sensordata
+  measures:
+  - formula: tss:avg
+    name: tss
+  - formula: cei:avg
+    name: cei
+  - formula: trs:avg
+    name: trs
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: vaccinedetails
+    joins:
+    - target_model: agg_per_container_vsi
+      join_pairs:
+      - - containvac
+        - containlink
+    columns:
+    - name: vsi
+      type: DOUBLE
+      sql: ((JULIANDAY(expireday) - JULIANDAY('now')) * agg_per_container_vsi.tss)
+        / 365.0 * agg_per_container_vsi.cei * (1 - agg_per_container_vsi.trs)
+  dimensions:
+  - name: vacregistry
+  - name: containvac
+  - name: tss
+    model: agg_per_container_vsi
+  - name: cei
+    model: agg_per_container_vsi
+  - name: trs
+    model: agg_per_container_vsi
+  - name: vsi
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
+  \ AS containvac, \"vaccinedetails.agg_per_container_vsi.tss\" AS agg_per_container_vsi__tss,\
+  \ \"vaccinedetails.agg_per_container_vsi.cei\" AS agg_per_container_vsi__cei, \"\
+  vaccinedetails.agg_per_container_vsi.trs\" AS agg_per_container_vsi__trs, \"vaccinedetails.vsi\"\
+  \ AS vsi FROM (SELECT\n  vaccinedetails.vacregistry AS \"vaccinedetails.vacregistry\"\
+  ,\n  vaccinedetails.containvac AS \"vaccinedetails.containvac\",\n  agg_per_container_vsi.tss\
+  \ AS \"vaccinedetails.agg_per_container_vsi.tss\",\n  agg_per_container_vsi.cei\
+  \ AS \"vaccinedetails.agg_per_container_vsi.cei\",\n  agg_per_container_vsi.trs\
+  \ AS \"vaccinedetails.agg_per_container_vsi.trs\",\n  (\n    (\n      JULIANDAY(vaccinedetails.expireday)\
+  \ - JULIANDAY('now')\n    ) * agg_per_container_vsi.tss\n  ) / 365.0 * agg_per_container_vsi.cei\
+  \ * (\n    1 - agg_per_container_vsi.trs\n  ) AS \"vaccinedetails.vsi\"\nFROM vaccinedetails\
+  \ AS vaccinedetails\nLEFT JOIN (\n  (\n    SELECT\n      \"sensordata.containlink\"\
+  \ AS containlink,\n      \"sensordata.tss\" AS tss,\n      \"sensordata.cei\" AS\
+  \ cei,\n      \"sensordata.trs\" AS trs\n    FROM (\n      SELECT\n        sensordata.containlink\
+  \ AS \"sensordata.containlink\",\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          ) * COALESCE(sensordata.tempstabidx, 1)\n       \
+  \ ) AS \"sensordata.tss\",\n        AVG(\n          (\n            (\n         \
+  \     1 - COALESCE(CAST(sensordata.tempdevcount AS REAL) / 100, 0)\n           \
+  \ ) * (\n              1 - COALESCE(CAST(sensordata.critevents AS REAL) / 10, 0)\n\
+  \            ) * COALESCE(sensordata.tempstabidx, 1)\n          ) * (\n        \
+  \    COALESCE(container.coolremainpct, 0) / 100.0\n          ) * (\n           \
+  \ 1 - (\n              (\n                100 - container.coolremainpct\n      \
+  \        ) / NULLIF(JULIANDAY('now') - JULIANDAY(container.refilllatest), 0)\n \
+  \           ) / 20.0\n          )\n        ) AS \"sensordata.cei\",\n        AVG(\n\
+  \          (\n            (\n              1 - (\n                (\n          \
+  \        1 - COALESCE(CAST(sensordata.tempdevcount AS REAL) / 100, 0)\n        \
+  \        ) * (\n                  1 - COALESCE(CAST(sensordata.critevents AS REAL)\
+  \ / 10, 0)\n                ) * COALESCE(sensordata.tempstabidx, 1)\n          \
+  \    )\n            ) * (\n              1 - COALESCE(container.coolremainpct, 0)\
+  \ / 100\n            )\n          ) * (\n            1 - (\n              (\n  \
+  \              1 - COALESCE(CAST(sensordata.handleevents AS REAL) / 100, 0)\n  \
+  \            ) * (\n                1 - COALESCE(CAST(sensordata.critevents AS REAL)\
+  \ / 10, 0)\n              )\n            )\n          ) * (\n            1 + ABS(sensordata.tempnowc\
+  \ - sensordata.storetempc) / NULLIF(sensordata.temptolc, 0) * sensordata.tempdevcount\n\
+  \          )\n        ) AS \"sensordata.trs\"\n      FROM sensordata AS sensordata\n\
+  \      LEFT JOIN container AS container\n        ON sensordata.containlink = container.containregistry\n\
+  \      GROUP BY\n        sensordata.containlink\n    ) AS _inner\n  )\n) AS agg_per_container_vsi\n\
+  \  ON vaccinedetails.containvac = agg_per_container_vsi.containlink) AS _inner"
+data_source: vaccine
+columns:
+- name: vacregistry
+  sql: vacregistry
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: containvac
+  sql: containvac
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: agg_per_container_vsi__tss
+  sql: agg_per_container_vsi__tss
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: agg_per_container_vsi__cei
+  sql: agg_per_container_vsi__cei
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: agg_per_container_vsi__trs
+  sql: agg_per_container_vsi__trs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: vsi
+  sql: vsi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Vaccine Safety Index (VSI, KB #39). One row per vaccinedetails record\
+  \ with VSI = VVP / 365 * CEI * (1 - TRS), where VVP (KB #3) is computed inline as\
+  \ (ExpireDay - Current_Date) * avg(TSS) per container, CEI (KB #31), TRS (KB #30)\
+  \ are averaged over sensordata rows for the container. The Unsafe Vaccine Condition\
+  \ classification (KB #44) lives on a sibling model `unsafe_vaccine_condition`.\n\
+  \n[kb=39]\nVSI = \\frac{\text{VVP}}{365} \\times \\text{CEI} \\times (1 - \\text{TRS})\
+  \ \u2014 Overall safety index for vaccine shipment.\n[/kb=39]"
+hidden: false
+meta:
+  kb_id: 39

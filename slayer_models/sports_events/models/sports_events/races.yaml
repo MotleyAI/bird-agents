@@ -1,0 +1,166 @@
+version: 6
+name: races
+sql_table: races
+query_variables: {}
+data_source: sports_events
+columns:
+- name: rak_id
+  sql: rak_id
+  type: INT
+  primary_key: true
+  description: Unique race identifier.
+  hidden: false
+  format:
+    type: integer
+- name: yr
+  sql: yr
+  type: INT
+  primary_key: false
+  description: Year of the race.
+  hidden: false
+  format:
+    type: integer
+- name: rnum
+  sql: rnum
+  type: INT
+  primary_key: false
+  description: Round number within the season.
+  hidden: false
+  format:
+    type: integer
+- name: trkbind
+  sql: trkbind
+  type: INT
+  primary_key: false
+  description: Foreign key to circuits.
+  hidden: false
+  format:
+    type: integer
+- name: event_schedule
+  sql: event_schedule
+  type: TEXT
+  primary_key: false
+  description: JSONB column. Groups all date and time-related fields for a race weekend
+    schedule including practice, qualifying, and sprint sessions.
+  hidden: false
+  meta: {}
+- name: event_name
+  sql: json_extract(event_schedule, '$.event_name')
+  type: TEXT
+  primary_key: false
+  description: Official event name (extracted).
+  hidden: false
+- name: date_set
+  sql: REPLACE(json_extract(event_schedule, '$.date_set'), '/', '-')
+  type: DATE
+  primary_key: false
+  description: Main race date (extracted; '/' replaced with '-' for ISO format).
+  hidden: false
+- name: start_time
+  sql: json_extract(event_schedule, '$.start_time')
+  type: TEXT
+  primary_key: false
+  description: "Race start time (extracted). KB #7 (Indeterminate Event Timings):\
+    \ NULL means the time is To Be Determined (TBD), not applicable, or not yet published.\n\
+    \n[kb=7]\nWhen the date or time for any session (practice, qualifying, sprint,\
+    \ or race) is not provided, it signifies that the schedule for that session is\
+    \ To Be Determined (TBD), not applicable for the event, or not yet published.\
+    \ \u2014 Clarifies the meaning of unavailable date or time information for any\
+    \ race weekend session.\n[/kb=7]"
+  label: Indeterminate Event Timings
+  hidden: false
+  meta:
+    kb_id: 7
+- name: details_url
+  sql: json_extract(event_schedule, '$.details_url')
+  type: TEXT
+  primary_key: false
+  description: URL to additional race details (extracted).
+  hidden: false
+- name: fp1_date
+  sql: REPLACE(json_extract(event_schedule, '$.sessions.fp1.date'), '/', '-')
+  type: DATE
+  primary_key: false
+  description: "Free Practice 1 date (extracted). KB #0 (Race Weekend Structure):\
+    \ a typical weekend has up to three Free Practice sessions, plus Qualifying and\
+    \ the Grand Prix Race; some weekends also include a Sprint. NULL = not scheduled\
+    \ / TBD (per KB #7).\n\n[kb=0]\nA typical race weekend consists of several sessions:\
+    \ up to three Free Practice sessions for teams to tune their cars, a Qualifying\
+    \ session to determine the starting order for the main race, and the Grand Prix\
+    \ Race itself. Some weekends also include a Sprint session. \u2014 Illustrates\
+    \ the standard sequence of sessions that constitute a championship race weekend.\n\
+    [/kb=0]"
+  label: Race Weekend Structure
+  hidden: false
+  meta:
+    kb_id: 0
+- name: fp2_date
+  sql: REPLACE(json_extract(event_schedule, '$.sessions.fp2.date'), '/', '-')
+  type: DATE
+  primary_key: false
+  description: 'Free Practice 2 date (extracted). NULL = not scheduled / TBD (KB #7).'
+  hidden: false
+- name: fp3_date
+  sql: REPLACE(json_extract(event_schedule, '$.sessions.fp3.date'), '/', '-')
+  type: DATE
+  primary_key: false
+  description: 'Free Practice 3 date (extracted). NULL = not scheduled / TBD (KB #7).'
+  hidden: false
+- name: qualifying_date
+  sql: REPLACE(json_extract(event_schedule, '$.sessions.qualifying.date'), '/', '-')
+  type: DATE
+  primary_key: false
+  description: "Qualifying session date (extracted). KB #1 (Qualifying Format Explained):\
+    \ the qualifying session is split into Q1/Q2/Q3 knockout segments to determine\
+    \ the starting grid; only the session-level date is exposed here. NULL = TBD.\n\
+    \n[kb=1]\nQualifying is divided into three parts: Q1, Q2, and Q3. In Q1, all drivers\
+    \ compete, and the slowest are eliminated. The remaining drivers proceed to Q2,\
+    \ where more are eliminated. The final top drivers advance to Q3 to compete for\
+    \ Pole Position. \u2014 Illustrates the multi-stage knockout system used in qualifying\
+    \ to set the race starting grid.\n[/kb=1]"
+  label: Qualifying Format Explained
+  hidden: false
+  meta:
+    kb_id: 1
+- name: sprint_date
+  sql: REPLACE(json_extract(event_schedule, '$.sessions.sprint.date'), '/', '-')
+  type: DATE
+  primary_key: false
+  description: 'Sprint session date (extracted). NULL = no sprint for this event or
+    date not released (KB #2, KB #7).'
+  hidden: false
+- name: has_sprint
+  sql: json_extract(event_schedule, '$.sessions.sprint.date') IS NOT NULL
+  type: BOOLEAN
+  primary_key: false
+  description: "TRUE iff the weekend includes a Sprint session (KB #2 Sprint Session\
+    \ Explained: a shorter race with its own abbreviated qualifying, awarding fewer\
+    \ championship points and setting the grid for the main race).\n\n[kb=2]\nA Sprint\
+    \ is a shorter race held on some race weekends. It has its own abbreviated qualifying\
+    \ and awards fewer championship points than the main Grand Prix. Its result determines\
+    \ the starting grid for the main race. The inclusion of a Sprint session modifies\
+    \ the standard Race Weekend Structure. \u2014 Illustrates the concept of a Sprint\
+    \ session within a race weekend.\n[/kb=2]"
+  label: Sprint Session Explained
+  hidden: false
+  meta:
+    kb_id: 2
+measures: []
+aggregations: []
+joins:
+- target_model: circuits
+  join_pairs:
+  - - trkbind
+    - cctkey
+  join_type: left
+filters: []
+description: 'F1 race weekends. One row per Grand Prix. The event_schedule JSONB column
+  groups date/time fields for the race weekend''s sessions (FP1/FP2/FP3, qualifying,
+  sprint). KB #0 documents that a typical race weekend has up to 3 Free Practice sessions,
+  a Qualifying session, and the Grand Prix Race (some weekends also include a Sprint).
+  KB #1 documents the multi-stage Q1/Q2/Q3 qualifying knockout. KB #2 documents the
+  Sprint Session: a shorter race that has its own abbreviated qualifying, awards fewer
+  championship points and sets the grid for the main race. KB #7 documents that NULL
+  date/time fields mean the schedule is To Be Determined (TBD), not applicable, or
+  not yet published.'
+hidden: false

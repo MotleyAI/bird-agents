@@ -1,0 +1,46 @@
+version: 6
+name: news_interactionmetrics
+sql_table: interactionmetrics
+query_variables: {}
+data_source: news
+columns:
+- name: intmetkey
+  sql: intmetkey
+  type: INT
+  primary_key: true
+  description: Primary key (also FK to interactions.intkey).
+  hidden: false
+- name: interaction_behavior
+  sql: interaction_behavior
+  type: TEXT
+  primary_key: false
+  description: "JSON column: nested scroll/time_spent/conversion sub-objects plus\
+    \ exit_type, next_action, bounce_status, click_seconds. New rows default to the\
+    \ KB #60 template (scroll depth/speed/percentage 0; exit_type 'Natural'; conversion\
+    \ {value:0,status:'None'}; time_spent zeros; next_action 'None'; bounce_status\
+    \ 'No'; click_seconds 0).\n\n[kb=60]\nA JSON structure: jsonb_build_object('scroll',\
+    \ jsonb_build_object('depth', 0, 'speed', 0.0, 'percentage', 0), 'exit_type',\
+    \ 'Natural', 'conversion', jsonb_build_object('value', 0, 'status', 'None'), 'time_spent',\
+    \ jsonb_build_object('viewport_time', 0, 'attention_time', 0, 'reading_seconds',\
+    \ 0, 'duration_seconds', 0), 'next_action', 'None', 'bounce_status', 'No', 'click_seconds',\
+    \ 0) \u2014 A standardized set of initial values assigned to interaction behavior\
+    \ metrics when a new interaction record is created.\n[/kb=60]"
+  label: Interaction Default Values
+  hidden: false
+  meta:
+    kb_id: 60
+measures: []
+aggregations: []
+joins:
+- target_model: news_interactions
+  join_pairs:
+  - - intmetkey
+    - intkey
+  join_type: left
+filters: []
+description: 'News DB: Per-interaction behavior metrics. The JSON `interaction_behavior`
+  field captures scroll {depth/speed/percentage}, time_spent {viewport/attention/reading/duration},
+  click_seconds, conversion {value/status}, exit_type, next_action, and bounce_status.
+  KB #60 documents the default-value template populated when a new interaction record
+  is created.'
+hidden: false

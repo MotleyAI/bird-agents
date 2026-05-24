@@ -1,0 +1,145 @@
+version: 6
+name: automated_spam_network
+source_queries:
+- version: 3
+  name: account_scores
+  source_model: moderationaction
+  measures:
+  - formula: bbi:avg
+    name: bbi_v
+  - formula: abs_score:avg
+    name: abs_v
+  - formula: is_content_farm:max
+    name: is_cf
+  - formula: clustsize:max
+    name: clustsize_v
+  dimensions:
+  - name: account_id
+  - name: cluster_id
+  whole_periods_only: false
+- version: 3
+  source_model: account_scores
+  measures:
+  - formula: bbi_v:avg
+    name: avg_bbi
+  - formula: abs_v:avg
+    name: avg_abs
+  - formula: is_cf:min
+    name: all_content_farm
+  - formula: clustsize_v:max
+    name: max_clustsize
+  - formula: '*:count'
+    name: member_count
+  dimensions:
+  - name: cluster_id
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"account_scores.cluster_id\" AS cluster_id, \"account_scores.avg_bbi\"\
+  \ AS avg_bbi, \"account_scores.avg_abs\" AS avg_abs, \"account_scores.all_content_farm\"\
+  \ AS all_content_farm, \"account_scores.max_clustsize\" AS max_clustsize, \"account_scores.member_count\"\
+  \ AS member_count FROM (SELECT\n  account_scores.cluster_id AS \"account_scores.cluster_id\"\
+  ,\n  AVG(account_scores.bbi_v) AS \"account_scores.avg_bbi\",\n  AVG(account_scores.abs_v)\
+  \ AS \"account_scores.avg_abs\",\n  MIN(account_scores.is_cf) AS \"account_scores.all_content_farm\"\
+  ,\n  MAX(account_scores.clustsize_v) AS \"account_scores.max_clustsize\",\n  COUNT(*)\
+  \ AS \"account_scores.member_count\"\nFROM (\n  SELECT\n    \"moderationaction.account_id\"\
+  \ AS account_id,\n    \"moderationaction.cluster_id\" AS cluster_id,\n    \"moderationaction.bbi_v\"\
+  \ AS bbi_v,\n    \"moderationaction.abs_v\" AS abs_v,\n    \"moderationaction.is_cf\"\
+  \ AS is_cf,\n    \"moderationaction.clustsize_v\" AS clustsize_v\n  FROM (\n   \
+  \ SELECT\n      contentbehavior__sessionbehavior__profile.profaccref AS \"moderationaction.account_id\"\
+  ,\n      contentbehavior__sessionbehavior__profile__account.platident AS \"moderationaction.cluster_id\"\
+  ,\n      AVG(\n        0.4 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.behavior_scores.botlikscore') + 0.3 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.behavior_scores.autobehavscore') + 0.3 * (\n          1 - securitydetection__technicalinfo__messaginganalysis.convnatval\n\
+  \        )\n      ) AS \"moderationaction.bbi_v\",\n      AVG(\n        0.4 * (\n\
+  \          0.4 * JSON_EXTRACT(securitydetection.detection_score_profile, '$.behavior_scores.botlikscore')\
+  \ + 0.3 * JSON_EXTRACT(securitydetection.detection_score_profile, '$.behavior_scores.autobehavscore')\
+  \ + 0.3 * (\n            1 - securitydetection__technicalinfo__messaginganalysis.convnatval\n\
+  \          )\n        ) + 0.3 * (\n          0.4 * securitydetection__technicalinfo.vpnratio\
+  \ + 0.3 * (\n            CAST(securitydetection__technicalinfo.proxycount AS REAL)\
+  \ / 10\n          ) + 0.3 * (\n            CAST(securitydetection__technicalinfo.ipcountrynum\
+  \ AS REAL) / 20\n          )\n        ) + 0.3 * (\n          1 - (\n           \
+  \ 0.3 * moderationaction.authenscore + 0.3 * contentbehavior.cntuniqscore + 0.4\
+  \ * securitydetection__technicalinfo__messaginganalysis.convnatval\n          )\n\
+  \        )\n      ) AS \"moderationaction.abs_v\",\n      MAX(\n        CASE\n \
+  \         WHEN (\n            0.4 * (\n              1 - contentbehavior.cntuniqscore\n\
+  \            ) + 0.3 * contentbehavior.mediareratio + 0.3 * (\n              1 -\
+  \ securitydetection__technicalinfo__messaginganalysis.txtuniq\n            )\n \
+  \         ) > 0.7\n          AND contentbehavior.postfreq > 50\n          THEN 1\n\
+  \          ELSE 0\n        END\n      ) AS \"moderationaction.is_cf\",\n      MAX(moderationaction.clustsize)\
+  \ AS \"moderationaction.clustsize_v\"\n    FROM moderationaction AS moderationaction\n\
+  \    LEFT JOIN contentbehavior AS contentbehavior\n      ON moderationaction.macntref\
+  \ = contentbehavior.cntref\n    LEFT JOIN securitydetection AS securitydetection\n\
+  \      ON moderationaction.masedetref = securitydetection.secdetkey\n    LEFT JOIN\
+  \ technicalinfo AS securitydetection__technicalinfo\n      ON securitydetection.sectechref\
+  \ = securitydetection__technicalinfo.techkey\n    LEFT JOIN sessionbehavior AS contentbehavior__sessionbehavior\n\
+  \      ON contentbehavior.cntsessref = contentbehavior__sessionbehavior.sessref\n\
+  \    LEFT JOIN messaginganalysis AS securitydetection__technicalinfo__messaginganalysis\n\
+  \      ON securitydetection__technicalinfo.techmsgref = securitydetection__technicalinfo__messaginganalysis.msgkey\n\
+  \    LEFT JOIN profile AS contentbehavior__sessionbehavior__profile\n      ON contentbehavior__sessionbehavior.sessprofref\
+  \ = contentbehavior__sessionbehavior__profile.profkey\n    LEFT JOIN account AS\
+  \ contentbehavior__sessionbehavior__profile__account\n      ON contentbehavior__sessionbehavior__profile.profaccref\
+  \ = contentbehavior__sessionbehavior__profile__account.accindex\n    GROUP BY\n\
+  \      contentbehavior__sessionbehavior__profile.profaccref,\n      contentbehavior__sessionbehavior__profile__account.platident\n\
+  \  ) AS _inner\n) AS account_scores\nGROUP BY\n  account_scores.cluster_id) AS _inner"
+data_source: fake
+columns:
+- name: cluster_id
+  sql: cluster_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row cluster identifier resolved through the moderationaction \u2192\
+    \ contentbehavior \u2192 sessionbehavior \u2192 profile \u2192 account join chain.\
+    \ Equals account.platident; per KB #80, this is the cluster identifier used to\
+    \ group accounts in cluster-level rules (Bot Network, Amplification Network, ...)."
+  hidden: false
+- name: avg_bbi
+  sql: avg_bbi
+  type: DOUBLE
+  primary_key: false
+  description: 'Bot Behavior Index (KB #3): 0.4*botlikscore + 0.3*autobehavscore +
+    0.3*(1-convnatval). botlikscore observed in 0-100; KB-implied composite assumes
+    0-1, so values may exceed 1.'
+  hidden: false
+  format:
+    type: float
+- name: avg_abs
+  sql: avg_abs
+  type: DOUBLE
+  primary_key: false
+  description: 'Automated Behavior Score (KB #35): 0.4*BBI + 0.3*TEI + 0.3*(1-CAS-authenticity).'
+  hidden: false
+  format:
+    type: float
+- name: all_content_farm
+  sql: all_content_farm
+  type: DOUBLE
+  primary_key: false
+  description: 'Content Farm predicate (KB #13): CMS > 0.7 AND postfreq > 50.'
+  hidden: false
+- name: max_clustsize
+  sql: max_clustsize
+  type: DOUBLE
+  primary_key: false
+  description: Size of the related account cluster.
+  hidden: false
+  format:
+    type: integer
+- name: member_count
+  sql: member_count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Automated Spam Network (KB #45): a Bot Network (KB #11; avg_bbi > 0.7\
+  \ AND max_clustsize > 10) where avg_abs > 0.8 AND all_content_farm = 1 (every cluster\
+  \ member is a Content Farm: CMS > 0.7 AND postfreq > 50).\n\n[kb=45]\nA Bot Network\
+  \ where average ABS > 0.8 and all accounts are Content Farms \u2014 Identifies automated\
+  \ spam distribution networks.\n[/kb=45]"
+hidden: false
+meta:
+  kb_id: 45

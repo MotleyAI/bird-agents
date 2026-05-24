@@ -1,0 +1,159 @@
+version: 6
+name: resource_intensive_model
+source_queries:
+- version: 3
+  name: mesh_per_zone
+  source_model: scanmesh
+  measures:
+  - formula: facetverts:avg
+    name: facetverts
+  - formula: facetfaces:avg
+    name: facetfaces
+  - formula: mcr:avg
+    name: mcr
+  dimensions:
+  - name: zoneref
+  whole_periods_only: false
+- version: 3
+  name: pc_per_arcref
+  source_model: scanpointcloud
+  measures:
+  - formula: totalpts:avg
+    name: totalpts
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  name: scans_keyed
+  source_model:
+    source_name: scans
+    joins:
+    - target_model: mesh_per_zone
+      join_pairs:
+      - - zoneref
+        - zoneref
+    - target_model: pc_per_arcref
+      join_pairs:
+      - - arcref
+        - arcref
+  dimensions:
+  - name: questregistry
+  - name: arcref
+  - name: zoneref
+  - name: facetverts
+    model: mesh_per_zone
+  - name: facetfaces
+    model: mesh_per_zone
+  - name: mcr
+    model: mesh_per_zone
+  - name: totalpts
+    model: pc_per_arcref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: scans_keyed
+    columns:
+    - name: mpr
+      type: DOUBLE
+      sql: (mesh_per_zone__facetverts * 1.0 / pc_per_arcref__totalpts) * 100 * power(mesh_per_zone__mcr
+        / 10.0, 0.3)
+    - name: is_resource_intensive_model
+      type: BOOLEAN
+      sql: CASE WHEN mesh_per_zone__facetfaces > 2000000 AND ((mesh_per_zone__facetverts
+        * 1.0 / pc_per_arcref__totalpts) * 100 * power(mesh_per_zone__mcr / 10.0,
+        0.3)) < 15 THEN 1 ELSE 0 END
+  measures:
+  - formula: mpr:avg
+    name: mpr
+  dimensions:
+  - name: questregistry
+  - name: arcref
+  - name: zoneref
+  - name: is_resource_intensive_model
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"scans_keyed.questregistry\" AS questregistry, \"scans_keyed.arcref\"\
+  \ AS arcref, \"scans_keyed.zoneref\" AS zoneref, \"scans_keyed.is_resource_intensive_model\"\
+  \ AS is_resource_intensive_model, \"scans_keyed.mpr\" AS mpr FROM (SELECT\n  scans_keyed.questregistry\
+  \ AS \"scans_keyed.questregistry\",\n  scans_keyed.arcref AS \"scans_keyed.arcref\"\
+  ,\n  scans_keyed.zoneref AS \"scans_keyed.zoneref\",\n  CASE\n    WHEN scans_keyed.mesh_per_zone__facetfaces\
+  \ > 2000000\n    AND (\n      (\n        scans_keyed.mesh_per_zone__facetverts *\
+  \ 1.0 / scans_keyed.pc_per_arcref__totalpts\n      ) * 100 * POWER(scans_keyed.mesh_per_zone__mcr\
+  \ / 10.0, 0.3)\n    ) < 15\n    THEN 1\n    ELSE 0\n  END AS \"scans_keyed.is_resource_intensive_model\"\
+  ,\n  AVG(\n    (\n      scans_keyed.mesh_per_zone__facetverts * 1.0 / scans_keyed.pc_per_arcref__totalpts\n\
+  \    ) * 100 * POWER(scans_keyed.mesh_per_zone__mcr / 10.0, 0.3)\n  ) AS \"scans_keyed.mpr\"\
+  \nFROM (\n  SELECT\n    \"scans.questregistry\" AS questregistry,\n    \"scans.arcref\"\
+  \ AS arcref,\n    \"scans.zoneref\" AS zoneref,\n    \"scans.mesh_per_zone.facetverts\"\
+  \ AS mesh_per_zone__facetverts,\n    \"scans.mesh_per_zone.facetfaces\" AS mesh_per_zone__facetfaces,\n\
+  \    \"scans.mesh_per_zone.mcr\" AS mesh_per_zone__mcr,\n    \"scans.pc_per_arcref.totalpts\"\
+  \ AS pc_per_arcref__totalpts\n  FROM (\n    SELECT\n      scans.questregistry AS\
+  \ \"scans.questregistry\",\n      scans.arcref AS \"scans.arcref\",\n      scans.zoneref\
+  \ AS \"scans.zoneref\",\n      mesh_per_zone.facetverts AS \"scans.mesh_per_zone.facetverts\"\
+  ,\n      mesh_per_zone.facetfaces AS \"scans.mesh_per_zone.facetfaces\",\n     \
+  \ mesh_per_zone.mcr AS \"scans.mesh_per_zone.mcr\",\n      pc_per_arcref.totalpts\
+  \ AS \"scans.pc_per_arcref.totalpts\"\n    FROM scans AS scans\n    LEFT JOIN (\n\
+  \      (\n        SELECT\n          \"scanmesh.zoneref\" AS zoneref,\n         \
+  \ \"scanmesh.facetverts\" AS facetverts,\n          \"scanmesh.facetfaces\" AS facetfaces,\n\
+  \          \"scanmesh.mcr\" AS mcr\n        FROM (\n          SELECT\n         \
+  \   scanmesh.zoneref AS \"scanmesh.zoneref\",\n            AVG(scanmesh.facetverts)\
+  \ AS \"scanmesh.facetverts\",\n            AVG(scanmesh.facetfaces) AS \"scanmesh.facetfaces\"\
+  ,\n            AVG(\n              (\n                scanmesh.facetfaces * 1.0\
+  \ / (\n                  scanmesh.facetverts * scanmesh.facetresmm * scanmesh.facetresmm\n\
+  \                )\n              ) * 1000.0\n            ) AS \"scanmesh.mcr\"\n\
+  \          FROM scanmesh AS scanmesh\n          GROUP BY\n            scanmesh.zoneref\n\
+  \        ) AS _inner\n      )\n    ) AS mesh_per_zone\n      ON scans.zoneref =\
+  \ mesh_per_zone.zoneref\n    LEFT JOIN (\n      (\n        SELECT\n          \"\
+  scanpointcloud.arcref\" AS arcref,\n          \"scanpointcloud.totalpts\" AS totalpts\n\
+  \        FROM (\n          SELECT\n            scanpointcloud.arcref AS \"scanpointcloud.arcref\"\
+  ,\n            AVG(scanpointcloud.totalpts) AS \"scanpointcloud.totalpts\"\n   \
+  \       FROM scanpointcloud AS scanpointcloud\n          GROUP BY\n            scanpointcloud.arcref\n\
+  \        ) AS _inner\n      )\n    ) AS pc_per_arcref\n      ON scans.arcref = pc_per_arcref.arcref\n\
+  \  ) AS _inner\n) AS scans_keyed\nGROUP BY\n  scans_keyed.questregistry,\n  scans_keyed.arcref,\n\
+  \  scans_keyed.zoneref,\n  CASE\n    WHEN scans_keyed.mesh_per_zone__facetfaces\
+  \ > 2000000\n    AND (\n      (\n        scans_keyed.mesh_per_zone__facetverts *\
+  \ 1.0 / scans_keyed.pc_per_arcref__totalpts\n      ) * 100 * POWER(scans_keyed.mesh_per_zone__mcr\
+  \ / 10.0, 0.3)\n    ) < 15\n    THEN 1\n    ELSE 0\n  END) AS _inner"
+data_source: archeology
+columns:
+- name: questregistry
+  sql: questregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: arcref
+  sql: arcref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: zoneref
+  sql: zoneref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_resource_intensive_model
+  sql: is_resource_intensive_model
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+- name: mpr
+  sql: mpr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Resource-Intensive Model (KB #47): FacetFaces > 2,000,000 AND MPR <\
+  \ 15 (KB #36). Indicates 3D models requiring substantial computing resources. Multistage\
+  \ extending mesh_to_point_ratio.\n\n[kb=47]\nA model with FacetFaces > 2,000,000\
+  \ and MPR < 15, where MPR is Mesh-to-Point Ratio, requiring specialized hardware\
+  \ for effective interaction and analytical software optimized for large-scale geometric\
+  \ processing with hierarchical level-of-detail implementation. \u2014 Identifies\
+  \ 3D models requiring substantial computing resources for visualization and analysis\
+  \ based on complexity metrics.\n[/kb=47]"
+hidden: false
+meta:
+  kb_id: 47

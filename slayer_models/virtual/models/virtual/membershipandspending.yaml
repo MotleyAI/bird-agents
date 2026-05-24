@@ -1,0 +1,71 @@
+version: 6
+name: membershipandspending
+sql_table: membershipandspending
+query_variables: {}
+data_source: virtual
+columns:
+- name: memberreg
+  sql: memberreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: memberfanpivot
+  sql: memberfanpivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: membkind
+  sql: membkind
+  type: TEXT
+  primary_key: false
+  description: "Membership tier (KB #3). 'Free' = ~10 hrs/month basic content; 'Basic'\
+    \ (~$5/mo) = reduced ads + extra content; 'Premium' (~$10-15/mo) = ad-free + exclusive\
+    \ content + priority viewing; 'Diamond' (>$25/mo) = all benefits + 1-on-1 interactions\
+    \ + physical merchandise.\n\n[kb=3]\n'Free' users can access only basic content\
+    \ with approximately 10 hours of viewable content per month; 'Basic' members (about\
+    \ $5 monthly) receive reduced ads and access to additional content; 'Premium'\
+    \ members (about $10-15 monthly) get ad-free experience, exclusive content, and\
+    \ priority viewing; 'Diamond' members (above $25 monthly) receive all benefits\
+    \ plus 1-on-1 interaction opportunities and physical merchandise. \u2014 Explains\
+    \ the benefit differences between membership types\n[/kb=3]"
+  label: membershipandspending.membkind
+  hidden: false
+  meta:
+    kb_id: 3
+- name: membdays
+  sql: membdays
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: spendusd
+  sql: spendusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: spendfreq
+  sql: spendfreq
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: paymethod
+  sql: paymethod
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: fans
+  join_pairs:
+  - - memberfanpivot
+    - userregistry
+  join_type: left
+filters: []
+description: Membership tier and spend per fan (1:1 with fans via memberfanpivot).
+  Holds membership type (membkind), days as member (membdays), total spend USD (spendusd),
+  spending frequency, payment method.
+hidden: false

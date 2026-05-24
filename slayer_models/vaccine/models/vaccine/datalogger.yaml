@@ -1,0 +1,191 @@
+version: 6
+name: datalogger
+sql_table: datalogger
+query_variables: {}
+data_source: vaccine
+columns:
+- name: loggerreg
+  sql: loggerreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: logflag
+  sql: logflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: loginterval
+  sql: loginterval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: transmitflag
+  sql: transmitflag
+  type: TEXT
+  primary_key: false
+  description: "Data transmission status. 'Real-time' indicates data is being transmitted\
+    \ to the central system without delay as it is collected (KB #23).\n\n[kb=23]\n\
+    Indicates data is being transmitted to the central system without delay as it\
+    \ is collected. \u2014 Illustrates immediate data transmission\n[/kb=23]"
+  label: 'TransmitFlag: ''Real-time'''
+  hidden: false
+  meta:
+    kb_id: 23
+- name: datauptime
+  sql: datauptime
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: datapct
+  sql: datapct
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: batteryswap
+  sql: batteryswap
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: firmvers
+  sql: firmvers
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: softupdate
+  sql: softupdate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: syshealth
+  sql: syshealth
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: memusepct
+  sql: memusepct
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: storecapmb
+  sql: storecapmb
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: storeremainmb
+  sql: storeremainmb
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: netsignal
+  sql: netsignal
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: commproto
+  sql: commproto
+  type: TEXT
+  primary_key: false
+  description: Communication protocol used by the data logger (raw enum). See is_commproto_rf
+    / is_commproto_satellite for KB-illustrated values.
+  hidden: false
+  meta: {}
+- name: syncflag
+  sql: syncflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: syncfreqhr
+  sql: syncfreqhr
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: containlog
+  sql: containlog
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shiplog
+  sql: shiplog
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lhi
+  sql: container.batterypct / 100.0 * (1 - COALESCE(CAST(memusepct AS REAL) / 100,
+    0)) * COALESCE(datapct, 0) / 100.0
+  type: DOUBLE
+  primary_key: false
+  description: "Logger Health Index (LHI). Overall health score for the data logger:\
+    \ BatteryPct/100 * (1 - MemUsePct/100) * DataPct/100 (KB #6). BatteryPct comes\
+    \ from the joined container row.\n\n[kb=6]\nLHI = \\frac{BatteryPct}{100} \\times\
+    \ (1 - \\frac{MemUsePct}{100}) \\times \\frac{DataPct}{100} \u2014 Overall health\
+    \ score for data logger.\n[/kb=6]"
+  label: Logger Health Index (LHI)
+  hidden: false
+  meta:
+    kb_id: 6
+- name: is_logger_failure_risk
+  sql: CASE WHEN (container.batterypct / 100.0 * (1 - COALESCE(CAST(memusepct AS REAL)
+    / 100, 0)) * COALESCE(datapct, 0) / 100.0) < 0.3 OR (container.batterypct < 20
+    AND container.pwrbackupflag = 'Not Available') THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Logger Failure Risk flag. True when LHI < 0.3 OR (BatteryPct < 20\
+    \ AND PwrBackupFlag = 'Not Available') (KB #15). BatteryPct and PwrBackupFlag\
+    \ come from the joined container row.\n\n[kb=15]\nA logger where LHI < 0.3 or\
+    \ (BatteryPct < 20 and PwrBackupFlag='Not Available') \u2014 Identifies loggers\
+    \ at risk of failure.\n[/kb=15]"
+  label: Logger Failure Risk
+  hidden: false
+  meta:
+    kb_id: 15
+- name: is_commproto_rf
+  sql: CASE WHEN commproto = 'RF' THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "True when CommProto = 'RF': uses 433MHz ISM band radio frequency transmission\
+    \ with FSK modulation for short-range data exchange below 100m (KB #22).\n\n[kb=22]\n\
+    Uses 433MHz ISM band radio frequency transmission with FSK modulation for short-range\
+    \ data exchange below 100m. \u2014 Illustrates RF communication protocol\n[/kb=22]"
+  label: 'CommProto: ''RF'''
+  hidden: false
+  meta:
+    kb_id: 22
+- name: is_commproto_satellite
+  sql: CASE WHEN commproto = 'Satellite' THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "True when CommProto = 'Satellite': uses satellite networks for global\
+    \ coverage and reliable data transmission (KB #26).\n\n[kb=26]\nIndicates the\
+    \ system is using satellite networks for global coverage and reliable data transmission.\
+    \ \u2014 Illustrates satellite communication mode\n[/kb=26]"
+  label: 'CommProto: ''Satellite'''
+  hidden: false
+  meta:
+    kb_id: 26
+measures: []
+aggregations: []
+joins:
+- target_model: container
+  join_pairs:
+  - - containlog
+    - containregistry
+  join_type: left
+- target_model: vaccine_shipments
+  join_pairs:
+  - - shiplog
+    - shipmentregistry
+  join_type: left
+filters: []
+hidden: false

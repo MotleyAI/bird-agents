@@ -1,0 +1,155 @@
+version: 6
+name: communication
+sql_table: communication
+query_variables: {}
+data_source: polar
+columns:
+- name: commregistry
+  sql: commregistry
+  type: INT
+  primary_key: true
+  hidden: false
+- name: commeqref
+  sql: commeqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: commlocref
+  sql: commlocref
+  type: INT
+  primary_key: false
+  hidden: false
+- name: radiofrequencymhz
+  sql: radiofrequencymhz
+  type: INT
+  primary_key: false
+  hidden: false
+- name: antennastatus
+  sql: antennastatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: bluetoothstatus
+  sql: bluetoothstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: commopmaintref
+  sql: commopmaintref
+  type: INT
+  primary_key: false
+  hidden: false
+- name: signalmetrics
+  sql: signalmetrics
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: signal_latency_ms
+  sql: json_extract(signalmetrics, '$.latency_ms')
+  type: DOUBLE
+  primary_key: false
+  description: Latency in ms (extracted from signalmetrics JSON).
+  hidden: false
+- name: signal_radio_strength_dbm
+  sql: json_extract(signalmetrics, '$.radio_strength_dbm')
+  type: DOUBLE
+  primary_key: false
+  description: Radio signal strength dBm (extracted from signalmetrics JSON).
+  hidden: false
+- name: signal_satellite_status
+  sql: json_extract(signalmetrics, '$.satellite_status')
+  type: TEXT
+  primary_key: false
+  description: Satellite connection status (extracted from signalmetrics JSON).
+  hidden: false
+- name: cri
+  sql: (CASE antennastatus WHEN 'Normal' THEN 10 WHEN 'Warning' THEN 5 WHEN 'Error'
+    THEN 0 ELSE 0 END) * (1 - json_extract(signalmetrics, '$.latency_ms') / 1000.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Communication Reliability Index (KB #4): antennastatus multiplier\
+    \ x (1 - latency_ms/1000).\n\n[kb=4]\nCRI = \\begin{cases} 0 & \\text{if antennastatus\
+    \ = 'Error'} \\\\ 5 & \\text{if antennastatus = 'Warning'} \\\\ 10 & \\text{if\
+    \ antennastatus = 'Normal'} \\\\ 0 & \\text{otherwise} \\end{cases} \\times (1\
+    \ - \\frac{signalmetrics.latency\\_ms}{1000}), \\text{ where lower latency and\
+    \ better antenna status result in higher reliability.} \u2014 Assesses the reliability\
+    \ of communication systems based on signal metrics and antenna status.\n[/kb=4]"
+  label: Communication Reliability Index (CRI)
+  hidden: false
+  meta:
+    kb_id: 4
+- name: bscsi
+  sql: ((CASE antennastatus WHEN 'Normal' THEN 10 WHEN 'Warning' THEN 5 WHEN 'Error'
+    THEN 0 ELSE 0 END) * (1 - json_extract(signalmetrics, '$.latency_ms') / 1000.0))
+    * (1 + 0.2 * json_extract(signalmetrics, '$.radio_strength_dbm') / 100.0) * (1
+    - 0.01 * (1000 - json_extract(signalmetrics, '$.latency_ms')))
+  type: DOUBLE
+  primary_key: false
+  description: "Base Station Communication Stability Index (KB #32): CRI x radio-strength\
+    \ factor x latency factor.\n\n[kb=32]\nBSCSI = CRI \xD7 (1 + 0.2 \xD7 signalmetrics.radio_strength_dbm\
+    \ \xF7 100) \xD7 (1 - 0.01 \xD7 (1000 - signalmetrics.latency_ms)) \u2014 Evaluates\
+    \ the stability and reliability of polar base station communication systems\n\
+    [/kb=32]"
+  label: Base Station Communication Stability Index (BSCSI)
+  hidden: false
+  meta:
+    kb_id: 32
+- name: is_reliable_coverage
+  sql: ((CASE antennastatus WHEN 'Normal' THEN 10 WHEN 'Warning' THEN 5 WHEN 'Error'
+    THEN 0 ELSE 0 END) * (1 - json_extract(signalmetrics, '$.latency_ms') / 1000.0))
+    > 7 AND json_extract(signalmetrics, '$.satellite_status') = 'Connected'
+  type: BOOLEAN
+  primary_key: false
+  description: "Communication Zone Status (KB #14) 'Reliable Coverage': CRI > 7 AND\
+    \ satellite_status='Connected'. (KB also requires emergency-channel support -\
+    \ deferred since not in schema.)\n\n[kb=14]\nA zone is classified as having 'Reliable\
+    \ Coverage' when equipment within it maintains a CRI > 7, has active satellite\
+    \ connections (signalmetrics.satellite_status = 'Connected'), and supports emergency\
+    \ beacon functionality (emergencybeaconstatus != 'Inactive'). \u2014 Evaluates\
+    \ the communication coverage and reliability in different operational zones.\n\
+    [/kb=14]"
+  label: Communication Zone Status
+  hidden: false
+  meta:
+    kb_id: 14
+- name: communication_resilience
+  sql: CASE WHEN ((CASE antennastatus WHEN 'Normal' THEN 10 WHEN 'Warning' THEN 5
+    WHEN 'Error' THEN 0 ELSE 0 END) * (1 - json_extract(signalmetrics, '$.latency_ms')
+    / 1000.0)) > 0.8 AND ((CASE antennastatus WHEN 'Normal' THEN 10 WHEN 'Warning'
+    THEN 5 WHEN 'Error' THEN 0 ELSE 0 END) * (1 - json_extract(signalmetrics, '$.latency_ms')
+    / 1000.0)) * (1 + 0.2 * json_extract(signalmetrics, '$.radio_strength_dbm') /
+    100.0) * (1 - 0.01 * (1000 - json_extract(signalmetrics, '$.latency_ms'))) > 0.85
+    THEN 'High' WHEN ((CASE antennastatus WHEN 'Normal' THEN 10 WHEN 'Warning' THEN
+    5 WHEN 'Error' THEN 0 ELSE 0 END) * (1 - json_extract(signalmetrics, '$.latency_ms')
+    / 1000.0)) > 0.6 AND ((CASE antennastatus WHEN 'Normal' THEN 10 WHEN 'Warning'
+    THEN 5 WHEN 'Error' THEN 0 ELSE 0 END) * (1 - json_extract(signalmetrics, '$.latency_ms')
+    / 1000.0)) * (1 + 0.2 * json_extract(signalmetrics, '$.radio_strength_dbm') /
+    100.0) * (1 - 0.01 * (1000 - json_extract(signalmetrics, '$.latency_ms'))) > 0.7
+    THEN 'Medium' ELSE 'Low' END
+  type: TEXT
+  primary_key: false
+  description: "Communication Network Resilience Assessment (KB #45): High/Medium/Low\
+    \ based on CRI + BSCSI thresholds.\n\n[kb=45]\nCommunication networks are assessed\
+    \ as having 'High Resilience' (CRI > 0.8 and BSCSI > 0.85), 'Medium Resilience'\
+    \ (CRI > 0.6 and BSCSI > 0.7), or 'Low Resilience' (other cases). \u2014 Assesses\
+    \ the resilience and interference resistance of polar communication networks\n\
+    [/kb=45]"
+  label: Communication Network Resilience Assessment (CNRA)
+  hidden: false
+  meta:
+    kb_id: 45
+measures: []
+aggregations: []
+joins:
+- target_model: equipment
+  join_pairs:
+  - - commeqref
+    - equipmentcode
+  join_type: left
+- target_model: location
+  join_pairs:
+  - - commlocref
+    - locationregistry
+  join_type: left
+filters: []
+hidden: false

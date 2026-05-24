@@ -1,0 +1,93 @@
+version: 6
+name: worksite_diversity_index
+source_queries:
+- version: 3
+  name: ws_workers
+  source_model: case_worksite
+  measures:
+  - formula: wsheads:sum
+  dimensions:
+  - name: homefirm
+  - name: ws_addr1
+  - name: wscity
+  - name: wsstate
+  - name: wszip
+  whole_periods_only: false
+- version: 3
+  name: ws_share_sq
+  source_model:
+    source_name: ws_workers
+    columns:
+    - name: share_sq
+      type: DOUBLE
+      sql: (wsheads_sum * 1.0 / SUM(wsheads_sum) OVER (PARTITION BY homefirm)) * (wsheads_sum
+        * 1.0 / SUM(wsheads_sum) OVER (PARTITION BY homefirm))
+  dimensions:
+  - name: homefirm
+  - name: share_sq
+  whole_periods_only: false
+- version: 3
+  source_model: ws_share_sq
+  measures:
+  - formula: 1.0 - share_sq:sum
+    name: wdi
+  dimensions:
+  - name: homefirm
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"ws_share_sq.homefirm\" AS homefirm, \"ws_share_sq.share_sq_sum\"\
+  \ AS share_sq_sum, \"ws_share_sq.wdi\" AS wdi FROM (WITH base AS (\nSELECT\n  ws_share_sq.homefirm\
+  \ AS \"ws_share_sq.homefirm\",\n  SUM(ws_share_sq.share_sq) AS \"ws_share_sq.share_sq_sum\"\
+  \nFROM (\n  SELECT\n    \"ws_workers.homefirm\" AS homefirm,\n    \"ws_workers.share_sq\"\
+  \ AS share_sq\n  FROM (\n    SELECT\n      ws_workers.homefirm AS \"ws_workers.homefirm\"\
+  ,\n      (\n        wsheads_sum * 1.0 / SUM(wsheads_sum) OVER (PARTITION BY homefirm)\n\
+  \      ) * (\n        wsheads_sum * 1.0 / SUM(wsheads_sum) OVER (PARTITION BY homefirm)\n\
+  \      ) AS \"ws_workers.share_sq\"\n    FROM (\n      SELECT\n        \"case_worksite.homefirm\"\
+  \ AS homefirm,\n        \"case_worksite.ws_addr1\" AS ws_addr1,\n        \"case_worksite.wscity\"\
+  \ AS wscity,\n        \"case_worksite.wsstate\" AS wsstate,\n        \"case_worksite.wszip\"\
+  \ AS wszip,\n        \"case_worksite.wsheads_sum\" AS wsheads_sum\n      FROM (\n\
+  \        SELECT\n          cases.homefirm AS \"case_worksite.homefirm\",\n     \
+  \     case_worksite.ws_addr1 AS \"case_worksite.ws_addr1\",\n          case_worksite.wscity\
+  \ AS \"case_worksite.wscity\",\n          case_worksite.wsstate AS \"case_worksite.wsstate\"\
+  ,\n          case_worksite.wszip AS \"case_worksite.wszip\",\n          SUM(case_worksite.wsheads)\
+  \ AS \"case_worksite.wsheads_sum\"\n        FROM case_worksite AS case_worksite\n\
+  \        LEFT JOIN cases AS cases\n          ON case_worksite.dockkey = cases.filekey\n\
+  \        GROUP BY\n          cases.homefirm,\n          case_worksite.ws_addr1,\n\
+  \          case_worksite.wscity,\n          case_worksite.wsstate,\n          case_worksite.wszip\n\
+  \      ) AS _inner\n    ) AS ws_workers\n  ) AS _inner\n) AS ws_share_sq\nGROUP\
+  \ BY\n  ws_share_sq.homefirm\n),\nstep1 AS (\nSELECT\n    \"ws_share_sq.homefirm\"\
+  ,\n    \"ws_share_sq.share_sq_sum\",\n    1.0 - \"ws_share_sq.share_sq_sum\" AS\
+  \ \"ws_share_sq.wdi\"\nFROM base\n)\nSELECT\n    \"ws_share_sq.homefirm\",\n   \
+  \ \"ws_share_sq.share_sq_sum\",\n    \"ws_share_sq.wdi\"\nFROM step1) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: homefirm
+  sql: homefirm
+  type: TEXT
+  primary_key: false
+  description: Employer (homefirm) for the case, denormalized via cases join.
+  hidden: false
+- name: share_sq_sum
+  sql: share_sq_sum
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: wdi
+  sql: wdi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Worksite Diversity Index per employer (KB #27): WDI = 1 - sum((workers_at_worksite_i\
+  \ / total_workers)^2). Per-employer rows.\n\n[kb=27]\nWDI = 1 - sum((Number of Workers\
+  \ at Worksite i / Total Workers)^2) for all worksites. Worksite and worker information\
+  \ are included in the application data. \u2014 Measures the diversity of an employer's\
+  \ worksites across different geographic areas.\n[/kb=27]"
+hidden: false
+meta:
+  kb_id: 27

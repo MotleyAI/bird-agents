@@ -1,0 +1,87 @@
+version: 6
+name: latest_bot_likelihood_score
+source_queries:
+- version: 3
+  name: ranked_detections
+  source_model: securitydetection
+  dimensions:
+  - name: account_id
+  - name: detecttime
+  - name: botlikscore
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: ranked_detections
+    columns:
+    - name: rn
+      type: DOUBLE
+      sql: ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY detecttime DESC)
+  dimensions:
+  - name: account_id
+  - name: botlikscore
+  - name: rn
+  filters:
+  - rn = 1
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"ranked_detections.account_id\" AS account_id, \"ranked_detections.botlikscore\"\
+  \ AS botlikscore, \"ranked_detections.rn\" AS rn FROM (SELECT *\nFROM (\nWITH base\
+  \ AS (\nSELECT\n  ranked_detections.account_id AS \"ranked_detections.account_id\"\
+  ,\n  ranked_detections.botlikscore AS \"ranked_detections.botlikscore\",\n  ROW_NUMBER()\
+  \ OVER (\n    PARTITION BY ranked_detections.account_id\n    ORDER BY ranked_detections.detecttime\
+  \ DESC\n  ) AS \"ranked_detections.rn\",\n  ROW_NUMBER() OVER (PARTITION BY account_id\
+  \ ORDER BY detecttime DESC) AS \"ranked_detections.rn\"\nFROM (\n  SELECT\n    \"\
+  securitydetection.account_id\" AS account_id,\n    \"securitydetection.detecttime\"\
+  \ AS detecttime,\n    \"securitydetection.botlikscore\" AS botlikscore\n  FROM (\n\
+  \    SELECT\n      technicalinfo__networkmetrics__sessionbehavior__profile.profaccref\
+  \ AS \"securitydetection.account_id\",\n      securitydetection.detecttime AS \"\
+  securitydetection.detecttime\",\n      JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.behavior_scores.botlikscore') AS \"securitydetection.botlikscore\"\n    FROM\
+  \ securitydetection AS securitydetection\n    LEFT JOIN technicalinfo AS technicalinfo\n\
+  \      ON securitydetection.sectechref = technicalinfo.techkey\n    LEFT JOIN networkmetrics\
+  \ AS technicalinfo__networkmetrics\n      ON technicalinfo.technetref = technicalinfo__networkmetrics.netkey\n\
+  \    LEFT JOIN sessionbehavior AS technicalinfo__networkmetrics__sessionbehavior\n\
+  \      ON technicalinfo__networkmetrics.netsessref = technicalinfo__networkmetrics__sessionbehavior.sessref\n\
+  \    LEFT JOIN profile AS technicalinfo__networkmetrics__sessionbehavior__profile\n\
+  \      ON technicalinfo__networkmetrics__sessionbehavior.sessprofref = technicalinfo__networkmetrics__sessionbehavior__profile.profkey\n\
+  \  ) AS _inner\n) AS ranked_detections\n)\nSELECT\n    \"ranked_detections.account_id\"\
+  ,\n    \"ranked_detections.botlikscore\",\n    \"ranked_detections.rn\"\nFROM base\n\
+  ) AS _filtered\nWHERE \"ranked_detections.rn\" = 1) AS _inner"
+data_source: fake
+columns:
+- name: account_id
+  sql: account_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row account identifier resolved through the securitydetection\
+    \ \u2192 technicalinfo \u2192 networkmetrics \u2192 sessionbehavior \u2192 profile\
+    \ join chain. Convenience handle for grouping/multistage; equals the underlying\
+    \ account.accindex."
+  hidden: false
+- name: botlikscore
+  sql: botlikscore
+  type: DOUBLE
+  primary_key: false
+  description: 'Bot-likelihood score (KB #29). Range 0-100; >70 strongly indicates
+    bot behavior.'
+  hidden: false
+- name: rn
+  sql: rn
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Latest Bot Likelihood Score (KB #71): per-account botlikscore at the\
+  \ row with max detecttime. Stage 1 selects detections with account_id; stage 2 applies\
+  \ ROW_NUMBER window per account ordered by detecttime DESC; final filter rn=1 keeps\
+  \ just the latest row per account. Query for lbs per account: SELECT account_id,\
+  \ botlikscore as lbs.\n\n[kb=71]\nLBS_a = \\text{botlikscore}(\\max_{t \\in T_a}\
+  \ \\text{detecttime}_t) where T_a is the set of all detection timestamps for account\
+  \ a \u2014 The most recent bot likelihood score for an account based on security\
+  \ detection timestamps.\n[/kb=71]"
+hidden: false
+meta:
+  kb_id: 71

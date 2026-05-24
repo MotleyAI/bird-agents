@@ -1,0 +1,125 @@
+version: 6
+name: rgb
+sql_table: rgb
+query_variables: {}
+data_source: gaming
+columns:
+- name: rgbregistry
+  sql: rgbregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: rgbmechref
+  sql: rgbmechref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rgbaudref
+  sql: rgbaudref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rgbbright
+  sql: rgbbright
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: rgbcoloracc
+  sql: rgbcoloracc
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: rgbrfrate
+  sql: rgbrfrate
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: rgbmodes
+  sql: rgbmodes
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rgbzones
+  sql: rgbzones
+  type: INT
+  primary_key: false
+  description: "Independently controllable RGB zones (KB #28: single-zone basic, 3-5\
+    \ directional, 10+ complex patterns, 100+ per-key max customization).\n\n[kb=28]\n\
+    Measured as distinct independently controllable lighting areas. Single-zone devices\
+    \ offer basic lighting effects, 3-5 zones allow for moderate customization like\
+    \ directional effects, 10+ zones enable complex patterns and game-reactive lighting,\
+    \ while per-key RGB (often 100+ zones) provides maximum customization with unique\
+    \ effects for individual keys or areas. \u2014 Illustrates the customization potential\
+    \ of RGB lighting zones in gaming peripherals.\n[/kb=28]"
+  label: RgbZones (RGB Lighting Zones)
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 28
+- name: rgbcolors
+  sql: rgbcolors
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: riq
+  sql: (rgbbright * 1.0 / 100) * (rgbcoloracc * 1.0 / 10) * (0.5 + rgbzones * 1.0
+    / 20)
+  type: DOUBLE
+  primary_key: false
+  description: "RGB Implementation Quality (RIQ) \u2014 brightness/100 \xD7 color\
+    \ accuracy/10 \xD7 (0.5 + zones/20).\n\n[kb=6]\nRIQ = \\frac{RgbBright}{100} \\\
+    times \\frac{RgbColorAcc}{10} \\times \\left(0.5 + \\frac{RgbZones}{20}\\right),\
+    \ \\text{ where higher values indicate premium RGB lighting with accurate colors\
+    \ and extensive customization options.} \u2014 Evaluates the quality of RGB implementation\
+    \ based on brightness, color accuracy, and lighting zones.\n[/kb=6]"
+  label: RGB Implementation Quality (RIQ)
+  hidden: false
+  meta:
+    kb_id: 6
+- name: rgb_quality_class
+  sql: CASE WHEN ((rgbbright * 1.0 / 100) * (rgbcoloracc * 1.0 / 10) * (0.5 + rgbzones
+    * 1.0 / 20)) > 8.0 THEN 'Premium RGB Implementation' WHEN ((rgbbright * 1.0 /
+    100) * (rgbcoloracc * 1.0 / 10) * (0.5 + rgbzones * 1.0 / 20)) >= 6.0 THEN 'High-Quality
+    RGB' WHEN ((rgbbright * 1.0 / 100) * (rgbcoloracc * 1.0 / 10) * (0.5 + rgbzones
+    * 1.0 / 20)) >= 3.0 THEN 'Standard RGB' ELSE 'Basic RGB' END
+  type: TEXT
+  primary_key: false
+  description: "RGB Quality Classification (KB #51): 'Premium' RIQ > 8.0, 'High-Quality'\
+    \ 6.0-8.0, 'Standard' 3.0-5.9, 'Basic' < 3.0.\n\n[kb=51]\nA classification system\
+    \ that segments gaming devices into four RGB quality categories: 'Premium RGB\
+    \ Implementation' (RIQ > 8.0) indicating exceptional color accuracy and customization\
+    \ capabilities, 'High-Quality RGB' (RIQ between 6.0 and 8.0) for advanced lighting\
+    \ effects with good color reproduction, 'Standard RGB' (RIQ between 3.0 and 5.9)\
+    \ suitable for basic customization needs, and 'Basic RGB' (RIQ < 3.0) offering\
+    \ limited lighting features, providing standardized comparison metrics for RGB\
+    \ lighting quality across gaming peripherals. \u2014 A systematic framework for\
+    \ categorizing the quality of RGB lighting implementations in gaming peripherals\
+    \ based on the RGB Implementation Quality (RIQ) score.\n[/kb=51]"
+  label: RGB Quality Classification
+  hidden: false
+  meta:
+    kb_id: 51
+measures: []
+aggregations: []
+joins:
+- target_model: audioandmedia
+  join_pairs:
+  - - rgbaudref
+    - audregistry
+  join_type: left
+- target_model: mechanical
+  join_pairs:
+  - - rgbmechref
+    - mechregistry
+  join_type: left
+filters: []
+hidden: false

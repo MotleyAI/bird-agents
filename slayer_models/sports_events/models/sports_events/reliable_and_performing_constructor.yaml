@@ -1,0 +1,87 @@
+version: 6
+name: reliable_and_performing_constructor
+sql: "WITH season_metrics AS (\n  SELECT\n    cr.unitnode AS unitnode,\n    r.yr AS\
+  \ yr,\n    SUM(cr.scoreval) AS season_total_points,\n    SUM(CASE WHEN cr.st_mark\
+  \ IS NULL THEN 1 ELSE 0 END) AS finishes,\n    COUNT(*) AS starts,\n    SUM(cr.scoreval)\
+  \ * SUM(CASE WHEN cr.st_mark IS NULL THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0)\
+  \ AS cps,\n    100.0 * SUM(CASE WHEN cr.st_mark IS NULL THEN 1.0 ELSE 0.0 END) /\
+  \ NULLIF(COUNT(*), 0) AS reliability_pct\n  FROM constructor_results cr\n  JOIN\
+  \ races r ON cr.matchref = r.rak_id\n  GROUP BY cr.unitnode, r.yr\n)\nSELECT\n \
+  \ unitnode,\n  yr,\n  season_total_points,\n  finishes,\n  starts,\n  cps,\n  reliability_pct,\n\
+  \  RANK() OVER (PARTITION BY yr ORDER BY cps DESC) AS cps_season_rank,\n  CASE WHEN\
+  \ reliability_pct > 95 AND RANK() OVER (PARTITION BY yr ORDER BY cps DESC) <= 3\
+  \ THEN 1 ELSE 0 END AS is_reliable_and_performing\nFROM season_metrics"
+query_variables: {}
+data_source: sports_events
+columns:
+- name: unitnode
+  sql: unitnode
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to constructors.
+  hidden: false
+- name: yr
+  sql: yr
+  type: DOUBLE
+  primary_key: false
+  description: Year of the season.
+  hidden: false
+- name: season_total_points
+  sql: season_total_points
+  type: DOUBLE
+  primary_key: false
+  description: 'Constructor''s total race points in the season (KB #25).'
+  hidden: false
+- name: finishes
+  sql: finishes
+  type: DOUBLE
+  primary_key: false
+  description: Number of races classified as a finish (st_mark IS NULL).
+  hidden: false
+- name: starts
+  sql: starts
+  type: DOUBLE
+  primary_key: false
+  description: Number of constructor_results rows = race starts in the season.
+  hidden: false
+- name: cps
+  sql: cps
+  type: DOUBLE
+  primary_key: false
+  description: "Constructor's Performance Score (KB #31): season points \xD7 reliability."
+  hidden: false
+- name: reliability_pct
+  sql: reliability_pct
+  type: DOUBLE
+  primary_key: false
+  description: 'Constructor Reliability Rate (KB #27) as a percentage.'
+  hidden: false
+- name: cps_season_rank
+  sql: cps_season_rank
+  type: DOUBLE
+  primary_key: false
+  description: Rank of CPS within the season (1 = best).
+  hidden: false
+- name: is_reliable_and_performing
+  sql: is_reliable_and_performing
+  type: BOOLEAN
+  primary_key: false
+  description: "Reliable and Performing Constructor (KB #45): TRUE iff Reliability\
+    \ Rate > 95% AND CPS season rank <= 3.\n\n[kb=45]\nA team is a Reliable and Performing\
+    \ Constructor if their Constructor Reliability Rate is above 95% and their Constructor's\
+    \ Performance Score (CPS) is in the top three for the season. \u2014 Defines a\
+    \ team that demonstrates both exceptional reliability and strong on-track performance.\n\
+    [/kb=45]"
+  label: Reliable and Performing Constructor
+  hidden: false
+  meta:
+    kb_id: 45
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Reliable and Performing Constructor (KB #45): a team where Constructor
+  Reliability Rate > 95% AND Constructor''s Performance Score (CPS) ranks in the top
+  3 for the season. Built as custom SQL: aggregates constructor_results to (constructor,
+  year), then ranks CPS with a window function.'
+hidden: false

@@ -1,0 +1,98 @@
+version: 6
+name: patients
+sql_table: patients
+query_variables: {}
+data_source: mental
+columns:
+- name: patkey
+  sql: patkey
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: patage
+  sql: patage
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: patgender
+  sql: patgender
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: pateth
+  sql: pateth
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: edulevel
+  sql: edulevel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: empstat
+  sql: empstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: maristat
+  sql: maristat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: livingarr
+  sql: livingarr
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: insurtype
+  sql: insurtype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: insurstat
+  sql: insurstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: disabstat
+  sql: disabstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: housestable
+  sql: housestable
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cultfactor
+  sql: cultfactor
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: stigmaimp
+  sql: stigmaimp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: finstress
+  sql: finstress
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: clinleadref
+  sql: clinleadref
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: clinicians
+  join_pairs:
+  - - clinleadref
+    - clinkey
+  join_type: left
+filters: []
+hidden: false

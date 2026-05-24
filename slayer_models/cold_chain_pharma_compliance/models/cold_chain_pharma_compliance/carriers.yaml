@@ -1,0 +1,52 @@
+version: 6
+name: carriers
+sql_table: carriers
+query_variables: {}
+data_source: cold_chain_pharma_compliance
+columns:
+- name: carriertag
+  sql: carriertag
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: carriercert
+  sql: carriercert
+  type: TEXT
+  primary_key: false
+  description: "GDP Certification Status (KB #4): 'None' (no certification), 'GDP'\
+    \ (Good Distribution Practice certified), 'CEIV Pharma' (IATA Center of Excellence\
+    \ for Independent Validators), or 'Both'. NULL means pending certification status\
+    \ verification.\n\n[kb=4]\nCarriers can have one of the following certification\
+    \ statuses: 'None' (no certification), 'GDP' (Good Distribution Practice certified),\
+    \ 'CEIV Pharma' (IATA Center of Excellence for Independent Validators certification),\
+    \ or 'Both' (having both GDP and CEIV Pharma certifications). Null values indicate\
+    \ pending certification status verification. \u2014 Illustrates the certification\
+    \ levels for carriers in Good Distribution Practice.\n[/kb=4]"
+  label: GDP Certification Status
+  hidden: false
+  meta:
+    kb_id: 4
+- name: rrd_score
+  sql: CASE WHEN LOWER(TRIM(carriercert)) = 'both' THEN 10 WHEN LOWER(TRIM(carriercert))
+    IN ('gdp', 'ceiv pharma') THEN 8 ELSE 4 END
+  type: DOUBLE
+  primary_key: false
+  description: "Redundant Resources Depth proxy (KB #30, SCRS sub-score, 0-10): Both\
+    \ certifications = 10, single GDP or CEIV Pharma = 8, else = 4. Used inside Supply\
+    \ Chain Resilience Score; heuristic from the gold task solution because the schema\
+    \ does not store RRD directly.\n\n[kb=30]\nSCRS = 0.4 \\times ART + 0.3 \\times\
+    \ RRD + 0.2 \\times SBP + 0.1 \\times SMC, \\text{where ART is Alternative Route\
+    \ Availability (0-10), RRD is Redundant Resources Depth (0-10), SBP is Supplier\
+    \ Backup Presence (0-10), and SMC is Stock Management Capability (0-10).} \u2014\
+    \ Measures a cold chain's ability to maintain integrity despite disruptions.\n\
+    [/kb=30]"
+  label: Supply Chain Resilience Score (SCRS)
+  hidden: false
+  meta:
+    kb_id: 30
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: Carriers (logistics service providers) operating in the cold chain.
+hidden: false

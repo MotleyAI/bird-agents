@@ -1,0 +1,54 @@
+version: 6
+name: holdings
+sql_table: holdings
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: holdref
+  sql: holdref
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: instrumentref
+  sql: instrumentref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: securitykey
+  sql: securitykey
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: holdingpct
+  sql: holdingpct
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: positionrank
+  sql: positionrank
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins:
+- target_model: funds
+  join_pairs:
+  - - instrumentref
+    - tickersym
+  join_type: left
+- target_model: securities
+  join_pairs:
+  - - securitykey
+    - securityref
+  join_type: left
+filters: []
+hidden: false

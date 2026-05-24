@@ -1,0 +1,139 @@
+version: 6
+name: content_manipulation_ring
+source_queries:
+- version: 3
+  name: account_scores
+  source_model: moderationaction
+  measures:
+  - formula: cms:avg
+    name: cms_v
+  - formula: cas_coordinated:avg
+    name: cas_coord_v
+  - formula: linkacctnum:max
+    name: linkacctnum_v
+  - formula: is_sockpuppet_member:max
+    name: is_sockpuppet
+  dimensions:
+  - name: account_id
+  - name: cluster_id
+  whole_periods_only: false
+- version: 3
+  source_model: account_scores
+  measures:
+  - formula: cms_v:min
+    name: min_cms
+  - formula: cas_coord_v:avg
+    name: avg_cas_coord
+  - formula: linkacctnum_v:max
+    name: max_linkacctnum
+  - formula: is_sockpuppet:min
+    name: all_sockpuppet
+  - formula: '*:count'
+    name: member_count
+  dimensions:
+  - name: cluster_id
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"account_scores.cluster_id\" AS cluster_id, \"account_scores.min_cms\"\
+  \ AS min_cms, \"account_scores.avg_cas_coord\" AS avg_cas_coord, \"account_scores.max_linkacctnum\"\
+  \ AS max_linkacctnum, \"account_scores.all_sockpuppet\" AS all_sockpuppet, \"account_scores.member_count\"\
+  \ AS member_count FROM (SELECT\n  account_scores.cluster_id AS \"account_scores.cluster_id\"\
+  ,\n  MIN(account_scores.cms_v) AS \"account_scores.min_cms\",\n  AVG(account_scores.cas_coord_v)\
+  \ AS \"account_scores.avg_cas_coord\",\n  MAX(account_scores.linkacctnum_v) AS \"\
+  account_scores.max_linkacctnum\",\n  MIN(account_scores.is_sockpuppet) AS \"account_scores.all_sockpuppet\"\
+  ,\n  COUNT(*) AS \"account_scores.member_count\"\nFROM (\n  SELECT\n    \"moderationaction.account_id\"\
+  \ AS account_id,\n    \"moderationaction.cluster_id\" AS cluster_id,\n    \"moderationaction.cms_v\"\
+  \ AS cms_v,\n    \"moderationaction.cas_coord_v\" AS cas_coord_v,\n    \"moderationaction.linkacctnum_v\"\
+  \ AS linkacctnum_v,\n    \"moderationaction.is_sockpuppet\" AS is_sockpuppet\n \
+  \ FROM (\n    SELECT\n      contentbehavior__sessionbehavior__profile.profaccref\
+  \ AS \"moderationaction.account_id\",\n      contentbehavior__sessionbehavior__profile__account.platident\
+  \ AS \"moderationaction.cluster_id\",\n      AVG(\n        0.4 * (\n          1\
+  \ - contentbehavior.cntuniqscore\n        ) + 0.3 * contentbehavior.mediareratio\
+  \ + 0.3 * (\n          1 - securitydetection__technicalinfo__messaginganalysis.txtuniq\n\
+  \        )\n      ) AS \"moderationaction.cms_v\",\n      AVG(\n        0.5 * moderationaction.coordscore\
+  \ + 0.3 * moderationaction.netinflscore + 0.2 * (\n          CAST(moderationaction.clustsize\
+  \ AS REAL) / 100\n        )\n      ) AS \"moderationaction.cas_coord_v\",\n    \
+  \  MAX(moderationaction.linkacctnum) AS \"moderationaction.linkacctnum_v\",\n  \
+  \    MAX(\n        CASE\n          WHEN moderationaction.linkacctnum > 5\n     \
+  \     AND (\n            0.5 * moderationaction.coordscore + 0.3 * moderationaction.netinflscore\
+  \ + 0.2 * (\n              CAST(moderationaction.clustsize AS REAL) / 100\n    \
+  \        )\n          ) > 0.8\n          THEN 1\n          ELSE 0\n        END\n\
+  \      ) AS \"moderationaction.is_sockpuppet\"\n    FROM moderationaction AS moderationaction\n\
+  \    LEFT JOIN contentbehavior AS contentbehavior\n      ON moderationaction.macntref\
+  \ = contentbehavior.cntref\n    LEFT JOIN securitydetection AS securitydetection\n\
+  \      ON moderationaction.masedetref = securitydetection.secdetkey\n    LEFT JOIN\
+  \ technicalinfo AS securitydetection__technicalinfo\n      ON securitydetection.sectechref\
+  \ = securitydetection__technicalinfo.techkey\n    LEFT JOIN sessionbehavior AS contentbehavior__sessionbehavior\n\
+  \      ON contentbehavior.cntsessref = contentbehavior__sessionbehavior.sessref\n\
+  \    LEFT JOIN messaginganalysis AS securitydetection__technicalinfo__messaginganalysis\n\
+  \      ON securitydetection__technicalinfo.techmsgref = securitydetection__technicalinfo__messaginganalysis.msgkey\n\
+  \    LEFT JOIN profile AS contentbehavior__sessionbehavior__profile\n      ON contentbehavior__sessionbehavior.sessprofref\
+  \ = contentbehavior__sessionbehavior__profile.profkey\n    LEFT JOIN account AS\
+  \ contentbehavior__sessionbehavior__profile__account\n      ON contentbehavior__sessionbehavior__profile.profaccref\
+  \ = contentbehavior__sessionbehavior__profile__account.accindex\n    GROUP BY\n\
+  \      contentbehavior__sessionbehavior__profile.profaccref,\n      contentbehavior__sessionbehavior__profile__account.platident\n\
+  \  ) AS _inner\n) AS account_scores\nGROUP BY\n  account_scores.cluster_id) AS _inner"
+data_source: fake
+columns:
+- name: cluster_id
+  sql: cluster_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row cluster identifier resolved through the moderationaction \u2192\
+    \ contentbehavior \u2192 sessionbehavior \u2192 profile \u2192 account join chain.\
+    \ Equals account.platident; per KB #80, this is the cluster identifier used to\
+    \ group accounts in cluster-level rules (Bot Network, Amplification Network, ...)."
+  hidden: false
+- name: min_cms
+  sql: min_cms
+  type: DOUBLE
+  primary_key: false
+  description: 'Content Manipulation Score (KB #8): 0.4*(1-cntuniqscore) + 0.3*mediareratio
+    + 0.3*(1-txtuniq).'
+  hidden: false
+  format:
+    type: float
+- name: avg_cas_coord
+  sql: avg_cas_coord
+  type: DOUBLE
+  primary_key: false
+  description: 'Coordinated Activity Score (KB #6): 0.5*coordscore + 0.3*netinflscore
+    + 0.2*clustsize/100.'
+  hidden: false
+  format:
+    type: float
+- name: max_linkacctnum
+  sql: max_linkacctnum
+  type: DOUBLE
+  primary_key: false
+  description: Linked / sockpuppet account count.
+  hidden: false
+  format:
+    type: integer
+- name: all_sockpuppet
+  sql: all_sockpuppet
+  type: DOUBLE
+  primary_key: false
+  description: 'Sockpuppet Network member predicate (KB #14): linkacctnum > 5 AND
+    CAS_coord > 0.8.'
+  hidden: false
+- name: member_count
+  sql: member_count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Content Manipulation Ring (KB #44): a Sockpuppet Network (KB #14) where\
+  \ all accounts have CMS > 0.7. Filter: all_sockpuppet = 1 (every member is a Sockpuppet\
+  \ member, i.e. linkacctnum > 5 AND CAS_coord > 0.8 per row) AND min_cms > 0.7 (every\
+  \ account in the cluster has CMS > 0.7).\n\n[kb=44]\nA Sockpuppet Network where\
+  \ all accounts have CMS > 0.7 \u2014 Identifies coordinated content manipulation\
+  \ groups.\n[/kb=44]"
+hidden: false
+meta:
+  kb_id: 44

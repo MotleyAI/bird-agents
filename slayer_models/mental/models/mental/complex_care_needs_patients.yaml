@@ -1,0 +1,260 @@
+version: 6
+name: complex_care_needs_patients
+source_queries:
+- version: 3
+  name: high_risk_facilities
+  source_model: facility_metrics
+  dimensions:
+  - name: fackey
+  filters:
+  - asr_per_fac__srp > 20
+  - asd_per_fac__pfis > 2.5
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: assessmentsymptomsandrisk
+    joins:
+    - target_model: high_risk_facilities
+      join_pairs:
+      - - asrkey
+        - fackey
+  dimensions:
+  - name: asrkey
+  - name: subuse
+  - name: facid
+    model: encounters
+  filters:
+  - subuse IN ('Opioids', 'Multiple')
+  - encounters.facid = high_risk_facilities.fackey
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"assessmentsymptomsandrisk.asrkey\" AS asrkey, \"assessmentsymptomsandrisk.subuse\"\
+  \ AS subuse, \"assessmentsymptomsandrisk.encounters.facid\" AS encounters__facid\
+  \ FROM (SELECT\n  assessmentsymptomsandrisk.asrkey AS \"assessmentsymptomsandrisk.asrkey\"\
+  ,\n  assessmentsymptomsandrisk.subuse AS \"assessmentsymptomsandrisk.subuse\",\n\
+  \  encounters.facid AS \"assessmentsymptomsandrisk.encounters.facid\"\nFROM assessmentsymptomsandrisk\
+  \ AS assessmentsymptomsandrisk\nLEFT JOIN encounters AS encounters\n  ON assessmentsymptomsandrisk.asrkey\
+  \ = encounters.abref\nLEFT JOIN (\n  (\n    SELECT\n      \"facility_metrics.fackey\"\
+  \ AS fackey\n    FROM (\n      SELECT\n        facility_metrics.fackey AS \"facility_metrics.fackey\"\
+  \n      FROM (\n        SELECT\n          \"fac_stage.fackey\" AS fackey,\n    \
+  \      \"fac_stage.frai\" AS frai,\n          \"fac_stage.asr_per_fac.apsf\" AS\
+  \ asr_per_fac__apsf,\n          \"fac_stage.asr_per_fac.agsf\" AS asr_per_fac__agsf,\n\
+  \          \"fac_stage.asr_per_fac.srp\" AS asr_per_fac__srp,\n          \"fac_stage.asd_per_fac.pfis\"\
+  \ AS asd_per_fac__pfis,\n          \"fac_stage.asd_per_fac.sse_avg\" AS asd_per_fac__sse_avg,\n\
+  \          \"fac_stage.tb_per_fac.tes\" AS tb_per_fac__tes,\n          \"fac_stage.tb_per_fac.cif\"\
+  \ AS tb_per_fac__cif,\n          \"fac_stage.tox_per_fac.tar\" AS tox_per_fac__tar,\n\
+  \          \"fac_stage.tox_per_fac.theralliance_avg\" AS tox_per_fac__theralliance_avg,\n\
+  \          \"fac_stage.tox_per_fac.funcimpv_avg\" AS tox_per_fac__funcimpv_avg,\n\
+  \          \"fac_stage.enc_per_fac.mar\" AS enc_per_fac__mar\n        FROM (\n \
+  \         SELECT\n            fac_stage.fackey AS \"fac_stage.fackey\",\n      \
+  \      fac_stage.frai AS \"fac_stage.frai\",\n            asr_per_fac.apsf AS \"\
+  fac_stage.asr_per_fac.apsf\",\n            asr_per_fac.agsf AS \"fac_stage.asr_per_fac.agsf\"\
+  ,\n            asr_per_fac.srp AS \"fac_stage.asr_per_fac.srp\",\n            asd_per_fac.pfis\
+  \ AS \"fac_stage.asd_per_fac.pfis\",\n            asd_per_fac.sse_avg AS \"fac_stage.asd_per_fac.sse_avg\"\
+  ,\n            tb_per_fac.tes AS \"fac_stage.tb_per_fac.tes\",\n            tb_per_fac.cif\
+  \ AS \"fac_stage.tb_per_fac.cif\",\n            tox_per_fac.tar AS \"fac_stage.tox_per_fac.tar\"\
+  ,\n            tox_per_fac.theralliance_avg AS \"fac_stage.tox_per_fac.theralliance_avg\"\
+  ,\n            tox_per_fac.funcimpv_avg AS \"fac_stage.tox_per_fac.funcimpv_avg\"\
+  ,\n            enc_per_fac.mar AS \"fac_stage.enc_per_fac.mar\"\n          FROM\
+  \ (\n            SELECT\n              \"facilities.fackey\" AS fackey,\n      \
+  \        \"facilities.frai\" AS frai\n            FROM (\n              SELECT\n\
+  \                facilities.fackey AS \"facilities.fackey\",\n                AVG(\n\
+  \                  CASE facilities.support_and_resources ->> '$.community_resources'\n\
+  \                    WHEN 'Comprehensive'\n                    THEN 3\n        \
+  \            WHEN 'Adequate'\n                    THEN 2\n                    WHEN\
+  \ 'Limited'\n                    THEN 1\n                    ELSE NULL\n       \
+  \           END\n                ) AS \"facilities.frai\"\n              FROM facilities\
+  \ AS facilities\n              GROUP BY\n                facilities.fackey\n   \
+  \         ) AS _inner\n          ) AS fac_stage\n          LEFT JOIN (\n       \
+  \     (\n              SELECT\n                \"encounters.facid\" AS facid,\n\
+  \                \"encounters.patref_count_distinct\" AS patref_count_distinct,\n\
+  \                \"encounters.missappt_sum\" AS missappt_sum,\n                \"\
+  encounters.mar\" AS mar\n              FROM (\n                WITH base AS (\n\
+  \                  SELECT\n                    encounters.facid AS \"encounters.facid\"\
+  ,\n                    COUNT(DISTINCT encounters.patref) AS \"encounters.patref_count_distinct\"\
+  ,\n                    SUM(encounters.missappt) AS \"encounters.missappt_sum\"\n\
+  \                  FROM encounters AS encounters\n                  GROUP BY\n \
+  \                   encounters.facid\n                ), step1 AS (\n          \
+  \        SELECT\n                    \"encounters.facid\",\n                   \
+  \ \"encounters.missappt_sum\",\n                    \"encounters.patref_count_distinct\"\
+  ,\n                    \"encounters.missappt_sum\" * 1.0 / \"encounters.patref_count_distinct\"\
+  \ AS \"encounters.mar\"\n                  FROM base\n                )\n      \
+  \          SELECT\n                  \"encounters.facid\",\n                  \"\
+  encounters.mar\",\n                  \"encounters.missappt_sum\",\n            \
+  \      \"encounters.patref_count_distinct\"\n                FROM step1\n      \
+  \        ) AS _inner\n            )\n          ) AS enc_per_fac\n            ON\
+  \ fac_stage.fackey = enc_per_fac.facid\n          LEFT JOIN (\n            (\n \
+  \             SELECT\n                \"treatmentbasics.encounters.facid\" AS encounters__facid,\n\
+  \                \"treatmentbasics.tes\" AS tes,\n                \"treatmentbasics.crisisint_sum\"\
+  \ AS crisisint_sum,\n                \"treatmentbasics.cif\" AS cif,\n         \
+  \       \"treatmentbasics.encounters.patref_count_distinct\" AS encounters__patref_count_distinct\n\
+  \              FROM (\n                WITH _base AS (\n                  SELECT\n\
+  \                    encounters.facid AS \"treatmentbasics.encounters.facid\",\n\
+  \                    AVG(\n                      CASE treatmentbasics.therapy_details\
+  \ ->> '$.engagement'\n                        WHEN 'High'\n                    \
+  \    THEN 3\n                        WHEN 'Medium'\n                        THEN\
+  \ 2\n                        WHEN 'Low'\n                        THEN 1\n      \
+  \                  WHEN 'Non-compliant'\n                        THEN 0\n      \
+  \                  ELSE NULL\n                      END\n                    ) AS\
+  \ \"treatmentbasics.tes\",\n                    SUM(treatmentbasics.crisisint) AS\
+  \ \"treatmentbasics.crisisint_sum\"\n                  FROM treatmentbasics AS treatmentbasics\n\
+  \                  LEFT JOIN encounters AS encounters\n                    ON treatmentbasics.encref\
+  \ = encounters.enckey\n                  GROUP BY\n                    encounters.facid\n\
+  \                ), _cm_treatmentbasics__encounters__patref_count_distinct AS (\n\
+  \                  SELECT\n                    encounters.facid AS \"treatmentbasics.encounters.facid\"\
+  ,\n                    COUNT(DISTINCT encounters.patref) AS \"treatmentbasics.encounters.patref_count_distinct\"\
+  \n                  FROM encounters AS encounters\n                  GROUP BY\n\
+  \                    encounters.facid\n                ), _combined AS (\n     \
+  \             SELECT\n                    _base.\"treatmentbasics.encounters.facid\"\
+  ,\n                    _base.\"treatmentbasics.tes\",\n                    _base.\"\
+  treatmentbasics.crisisint_sum\",\n                    _cm_treatmentbasics__encounters__patref_count_distinct.\"\
+  treatmentbasics.encounters.patref_count_distinct\"\n                  FROM _base\n\
+  \                  LEFT JOIN _cm_treatmentbasics__encounters__patref_count_distinct\n\
+  \                    ON _base.\"treatmentbasics.encounters.facid\" = _cm_treatmentbasics__encounters__patref_count_distinct.\"\
+  treatmentbasics.encounters.facid\"\n                ), step1 AS (\n            \
+  \      SELECT\n                    \"treatmentbasics.crisisint_sum\",\n        \
+  \            \"treatmentbasics.encounters.facid\",\n                    \"treatmentbasics.encounters.patref_count_distinct\"\
+  ,\n                    \"treatmentbasics.tes\",\n                    \"treatmentbasics.crisisint_sum\"\
+  \ * 1.0 / \"treatmentbasics.encounters.patref_count_distinct\" AS \"treatmentbasics.cif\"\
+  \n                  FROM _combined\n                )\n                SELECT\n\
+  \                  \"treatmentbasics.cif\",\n                  \"treatmentbasics.crisisint_sum\"\
+  ,\n                  \"treatmentbasics.encounters.facid\",\n                  \"\
+  treatmentbasics.encounters.patref_count_distinct\",\n                  \"treatmentbasics.tes\"\
+  \n                FROM step1\n              ) AS _inner\n            )\n       \
+  \   ) AS tb_per_fac\n            ON fac_stage.fackey = tb_per_fac.encounters__facid\n\
+  \          LEFT JOIN (\n            (\n              SELECT\n                \"\
+  assessmentsymptomsandrisk.encounters.facid\" AS encounters__facid,\n           \
+  \     \"assessmentsymptomsandrisk.apsf\" AS apsf,\n                \"assessmentsymptomsandrisk.agsf\"\
+  \ AS agsf,\n                \"assessmentsymptomsandrisk._count\" AS _count,\n  \
+  \              \"assessmentsymptomsandrisk.high_severe_suicrisk_helper_count\" AS\
+  \ high_severe_suicrisk_helper_count,\n                \"assessmentsymptomsandrisk.srp\"\
+  \ AS srp\n              FROM (\n                WITH base AS (\n               \
+  \   SELECT\n                    encounters.facid AS \"assessmentsymptomsandrisk.encounters.facid\"\
+  ,\n                    AVG(\n                      CAST(assessmentsymptomsandrisk.mental_health_scores\
+  \ ->> '$.depression.phq9_score' AS INTEGER)\n                    ) AS \"assessmentsymptomsandrisk.apsf\"\
+  ,\n                    AVG(\n                      CAST(assessmentsymptomsandrisk.mental_health_scores\
+  \ ->> '$.anxiety.gad7_score' AS INTEGER)\n                    ) AS \"assessmentsymptomsandrisk.agsf\"\
+  ,\n                    COUNT(*) AS \"assessmentsymptomsandrisk._count\",\n     \
+  \               COUNT(\n                      CASE\n                        WHEN\
+  \ assessmentsymptomsandrisk.suicrisk IN ('High', 'Severe')\n                   \
+  \     THEN assessmentsymptomsandrisk.asrkey\n                      END\n       \
+  \             ) AS \"assessmentsymptomsandrisk.high_severe_suicrisk_helper_count\"\
+  \n                  FROM assessmentsymptomsandrisk AS assessmentsymptomsandrisk\n\
+  \                  LEFT JOIN encounters AS encounters\n                    ON assessmentsymptomsandrisk.asrkey\
+  \ = encounters.abref\n                  GROUP BY\n                    encounters.facid\n\
+  \                ), step1 AS (\n                  SELECT\n                    \"\
+  assessmentsymptomsandrisk._count\",\n                    \"assessmentsymptomsandrisk.agsf\"\
+  ,\n                    \"assessmentsymptomsandrisk.apsf\",\n                   \
+  \ \"assessmentsymptomsandrisk.encounters.facid\",\n                    \"assessmentsymptomsandrisk.high_severe_suicrisk_helper_count\"\
+  ,\n                    \"assessmentsymptomsandrisk.high_severe_suicrisk_helper_count\"\
+  \ * 100.0 / \"assessmentsymptomsandrisk._count\" AS \"assessmentsymptomsandrisk.srp\"\
+  \n                  FROM base\n                )\n                SELECT\n     \
+  \             \"assessmentsymptomsandrisk._count\",\n                  \"assessmentsymptomsandrisk.agsf\"\
+  ,\n                  \"assessmentsymptomsandrisk.apsf\",\n                  \"assessmentsymptomsandrisk.encounters.facid\"\
+  ,\n                  \"assessmentsymptomsandrisk.high_severe_suicrisk_helper_count\"\
+  ,\n                  \"assessmentsymptomsandrisk.srp\"\n                FROM step1\n\
+  \              ) AS _inner\n            )\n          ) AS asr_per_fac\n        \
+  \    ON fac_stage.fackey = asr_per_fac.encounters__facid\n          LEFT JOIN (\n\
+  \            (\n              SELECT\n                \"assessmentsocialanddiagnosis.encounters.facid\"\
+  \ AS encounters__facid,\n                \"assessmentsocialanddiagnosis.pfis\" AS\
+  \ pfis,\n                \"assessmentsocialanddiagnosis.sse_avg\" AS sse_avg\n \
+  \             FROM (\n                SELECT\n                  encounters.facid\
+  \ AS \"assessmentsocialanddiagnosis.encounters.facid\",\n                  AVG(\n\
+  \                    CASE assessmentsocialanddiagnosis.funcimp\n               \
+  \       WHEN 'Severe'\n                      THEN 3\n                      WHEN\
+  \ 'Moderate'\n                      THEN 2\n                      WHEN 'Mild'\n\
+  \                      THEN 1\n                      ELSE NULL\n               \
+  \     END\n                  ) AS \"assessmentsocialanddiagnosis.pfis\",\n     \
+  \             AVG(\n                    (\n                      CASE assessmentsocialanddiagnosis.socsup\n\
+  \                        WHEN 'Strong'\n                        THEN 3\n       \
+  \                 WHEN 'Moderate'\n                        THEN 2\n            \
+  \            WHEN 'Limited'\n                        THEN 1\n                  \
+  \      ELSE NULL\n                      END\n                    ) + (\n       \
+  \               CASE assessmentsocialanddiagnosis.relqual\n                    \
+  \    WHEN 'Good'\n                        THEN 3\n                        WHEN 'Fair'\n\
+  \                        THEN 2\n                        WHEN 'Poor'\n         \
+  \               THEN 1\n                        WHEN 'Conflicted'\n            \
+  \            THEN 0\n                        ELSE NULL\n                      END\n\
+  \                    )\n                  ) AS \"assessmentsocialanddiagnosis.sse_avg\"\
+  \n                FROM assessmentsocialanddiagnosis AS assessmentsocialanddiagnosis\n\
+  \                LEFT JOIN encounters AS encounters\n                  ON assessmentsocialanddiagnosis.asdkey\
+  \ = encounters.abref\n                GROUP BY\n                  encounters.facid\n\
+  \              ) AS _inner\n            )\n          ) AS asd_per_fac\n        \
+  \    ON fac_stage.fackey = asd_per_fac.encounters__facid\n          LEFT JOIN (\n\
+  \            (\n              SELECT\n                \"treatmentoutcomes.treatmentbasics.encounters.facid\"\
+  \ AS treatmentbasics__encounters__facid,\n                \"treatmentoutcomes._count\"\
+  \ AS _count,\n                \"treatmentoutcomes.high_med_adh_helper_count\" AS\
+  \ high_med_adh_helper_count,\n                \"treatmentoutcomes.theralliance_avg\"\
+  \ AS theralliance_avg,\n                \"treatmentoutcomes.funcimpv_avg\" AS funcimpv_avg,\n\
+  \                \"treatmentoutcomes.tar\" AS tar\n              FROM (\n      \
+  \          WITH base AS (\n                  SELECT\n                    treatmentbasics__encounters.facid\
+  \ AS \"treatmentoutcomes.treatmentbasics.encounters.facid\",\n                 \
+  \   COUNT(*) AS \"treatmentoutcomes._count\",\n                    COUNT(\n    \
+  \                  CASE\n                        WHEN treatmentoutcomes.txadh IN\
+  \ ('High', 'Medium')\n                        THEN treatmentoutcomes.txoutkey\n\
+  \                      END\n                    ) AS \"treatmentoutcomes.high_med_adh_helper_count\"\
+  ,\n                    AVG(\n                      CASE treatmentoutcomes.theralliance\n\
+  \                        WHEN 'Strong'\n                        THEN 3\n       \
+  \                 WHEN 'Moderate'\n                        THEN 2\n            \
+  \            WHEN 'Weak'\n                        THEN 1\n                     \
+  \   WHEN 'Poor'\n                        THEN 0\n                        ELSE NULL\n\
+  \                      END\n                    ) AS \"treatmentoutcomes.theralliance_avg\"\
+  ,\n                    AVG(\n                      CASE treatmentoutcomes.funcimpv\n\
+  \                        WHEN 'Significant'\n                        THEN 3\n  \
+  \                      WHEN 'Moderate'\n                        THEN 2\n       \
+  \                 WHEN 'Minimal'\n                        THEN 1\n             \
+  \           ELSE NULL\n                      END\n                    ) AS \"treatmentoutcomes.funcimpv_avg\"\
+  \n                  FROM treatmentoutcomes AS treatmentoutcomes\n              \
+  \    LEFT JOIN treatmentbasics AS treatmentbasics\n                    ON treatmentoutcomes.txref\
+  \ = treatmentbasics.txkey\n                  LEFT JOIN encounters AS treatmentbasics__encounters\n\
+  \                    ON treatmentbasics.encref = treatmentbasics__encounters.enckey\n\
+  \                  GROUP BY\n                    treatmentbasics__encounters.facid\n\
+  \                ), step1 AS (\n                  SELECT\n                    \"\
+  treatmentoutcomes._count\",\n                    \"treatmentoutcomes.funcimpv_avg\"\
+  ,\n                    \"treatmentoutcomes.high_med_adh_helper_count\",\n      \
+  \              \"treatmentoutcomes.theralliance_avg\",\n                    \"treatmentoutcomes.treatmentbasics.encounters.facid\"\
+  ,\n                    \"treatmentoutcomes.high_med_adh_helper_count\" * 1.0 / \"\
+  treatmentoutcomes._count\" AS \"treatmentoutcomes.tar\"\n                  FROM\
+  \ base\n                )\n                SELECT\n                  \"treatmentoutcomes._count\"\
+  ,\n                  \"treatmentoutcomes.funcimpv_avg\",\n                  \"treatmentoutcomes.high_med_adh_helper_count\"\
+  ,\n                  \"treatmentoutcomes.tar\",\n                  \"treatmentoutcomes.theralliance_avg\"\
+  ,\n                  \"treatmentoutcomes.treatmentbasics.encounters.facid\"\n  \
+  \              FROM step1\n              ) AS _inner\n            )\n          )\
+  \ AS tox_per_fac\n            ON fac_stage.fackey = tox_per_fac.treatmentbasics__encounters__facid\n\
+  \        ) AS _inner\n      ) AS facility_metrics\n      WHERE\n        facility_metrics.asr_per_fac__srp\
+  \ > 20\n        AND facility_metrics.asd_per_fac__pfis > 2.5\n    ) AS _inner\n\
+  \  )\n) AS high_risk_facilities\n  ON assessmentsymptomsandrisk.asrkey = high_risk_facilities.fackey\n\
+  WHERE\n  assessmentsymptomsandrisk.subuse IN ('Opioids', 'Multiple')\n  AND encounters.facid\
+  \ = high_risk_facilities.fackey) AS _inner"
+data_source: mental
+columns:
+- name: asrkey
+  sql: asrkey
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: subuse
+  sql: subuse
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: encounters__facid
+  sql: encounters__facid
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Patients meeting Complex Care Needs criteria (KB #12): SRP > 20% AND\
+  \ PFIS > 2.5 (at the patient's facility) AND subuse in {Opioids, Multiple} on the\
+  \ patient's row. Multistage: stage 1 = facility_metrics filtered by SRP>20 AND PFIS>2.5;\
+  \ stage 2 = assessmentsymptomsandrisk rows with subuse in {Opioids, Multiple}, joined\
+  \ to encounters to get facid, joined to stage 1 on facid==fackey.\n\n[kb=12]\nA\
+  \ patient with SRP > 20\\% and PFIS > 2.5 and subuse \\in \\{Opioids, Multiple\\\
+  } \u2014 Identifies patients requiring intensive care coordination due to multiple\
+  \ risk factors.\n[/kb=12]"
+hidden: false
+meta:
+  kb_id: 12

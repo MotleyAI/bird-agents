@@ -1,0 +1,80 @@
+version: 6
+name: account_inactivity
+source_queries:
+- version: 3
+  name: last_detect_per_account
+  source_model: securitydetection
+  measures:
+  - formula: detecttime:max
+    name: last_proxy
+  dimensions:
+  - name: account_id
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: last_detect_per_account
+    columns:
+    - name: is_inactive
+      type: DOUBLE
+      sql: CASE WHEN last_proxy < date('now', '-90 days') THEN 1 ELSE 0 END
+  dimensions:
+  - name: account_id
+  - name: last_proxy
+  - name: is_inactive
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"last_detect_per_account.account_id\" AS account_id, \"\
+  last_detect_per_account.last_proxy\" AS last_proxy, \"last_detect_per_account.is_inactive\"\
+  \ AS is_inactive FROM (SELECT\n  last_detect_per_account.account_id AS \"last_detect_per_account.account_id\"\
+  ,\n  last_detect_per_account.last_proxy AS \"last_detect_per_account.last_proxy\"\
+  ,\n  CASE\n    WHEN last_detect_per_account.last_proxy < DATE('now', '-90 days')\n\
+  \    THEN 1\n    ELSE 0\n  END AS \"last_detect_per_account.is_inactive\"\nFROM\
+  \ (\n  SELECT\n    \"securitydetection.account_id\" AS account_id,\n    \"securitydetection.last_proxy\"\
+  \ AS last_proxy\n  FROM (\n    SELECT\n      technicalinfo__networkmetrics__sessionbehavior__profile.profaccref\
+  \ AS \"securitydetection.account_id\",\n      MAX(securitydetection.detecttime)\
+  \ AS \"securitydetection.last_proxy\"\n    FROM securitydetection AS securitydetection\n\
+  \    LEFT JOIN technicalinfo AS technicalinfo\n      ON securitydetection.sectechref\
+  \ = technicalinfo.techkey\n    LEFT JOIN networkmetrics AS technicalinfo__networkmetrics\n\
+  \      ON technicalinfo.technetref = technicalinfo__networkmetrics.netkey\n    LEFT\
+  \ JOIN sessionbehavior AS technicalinfo__networkmetrics__sessionbehavior\n     \
+  \ ON technicalinfo__networkmetrics.netsessref = technicalinfo__networkmetrics__sessionbehavior.sessref\n\
+  \    LEFT JOIN profile AS technicalinfo__networkmetrics__sessionbehavior__profile\n\
+  \      ON technicalinfo__networkmetrics__sessionbehavior.sessprofref = technicalinfo__networkmetrics__sessionbehavior__profile.profkey\n\
+  \    GROUP BY\n      technicalinfo__networkmetrics__sessionbehavior__profile.profaccref\n\
+  \  ) AS _inner\n) AS last_detect_per_account) AS _inner"
+data_source: fake
+columns:
+- name: account_id
+  sql: account_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row account identifier resolved through the securitydetection\
+    \ \u2192 technicalinfo \u2192 networkmetrics \u2192 sessionbehavior \u2192 profile\
+    \ join chain. Convenience handle for grouping/multistage; equals the underlying\
+    \ account.accindex."
+  hidden: false
+- name: last_proxy
+  sql: last_proxy
+  type: DOUBLE
+  primary_key: false
+  description: 'Detection timestamp. KB #84 ''last activity proxy time'' = max(detecttime)
+    per account.'
+  hidden: false
+- name: is_inactive
+  sql: is_inactive
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Account Inactivity (KB #86): an account is Inactive when last_activity_proxy_time\
+  \ (KB #84, max(detecttime) of associated security detections) < CURRENT_DATE - 90\
+  \ days. is_inactive=1 when the predicate holds.\n\n[kb=86]\nCondition met when:\
+  \ \\text{last activity proxy time} < (\\text{CURRENT_DATE} - \\text{'90 days'})\
+  \ \u2014 A condition indicating that an account has not demonstrated recent activity\
+  \ based on available data proxies.\n[/kb=86]"
+hidden: false
+meta:
+  kb_id: 86

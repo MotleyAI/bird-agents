@@ -1,0 +1,114 @@
+version: 6
+name: container_alert_status
+source_queries:
+- version: 3
+  name: agg_per_container_cas
+  source_model: sensordata
+  measures:
+  - formula: cei:avg
+    name: cei
+  - formula: cri:avg
+    name: cri
+  - formula: trs:avg
+    name: trs
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: vaccinedetails
+    joins:
+    - target_model: agg_per_container_cas
+      join_pairs:
+      - - containvac
+        - containlink
+    columns:
+    - name: ces
+      type: DOUBLE
+      sql: ser * agg_per_container_cas.cei * (1 - agg_per_container_cas.cri)
+    - name: is_container_alert
+      type: BOOLEAN
+      sql: CASE WHEN (ser * agg_per_container_cas.cei * (1 - agg_per_container_cas.cri))
+        < 0.4 AND agg_per_container_cas.trs > 0.7 THEN 1 ELSE 0 END
+  dimensions:
+  - name: vacregistry
+  - name: containvac
+  - name: ces
+  - name: is_container_alert
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
+  \ AS containvac, \"vaccinedetails.ces\" AS ces, \"vaccinedetails.is_container_alert\"\
+  \ AS is_container_alert FROM (SELECT\n  vaccinedetails.vacregistry AS \"vaccinedetails.vacregistry\"\
+  ,\n  vaccinedetails.containvac AS \"vaccinedetails.containvac\",\n  vaccinedetails.ser\
+  \ * agg_per_container_cas.cei * (\n    1 - agg_per_container_cas.cri\n  ) AS \"\
+  vaccinedetails.ces\",\n  CASE\n    WHEN (\n      vaccinedetails.ser * agg_per_container_cas.cei\
+  \ * (\n        1 - agg_per_container_cas.cri\n      )\n    ) < 0.4\n    AND agg_per_container_cas.trs\
+  \ > 0.7\n    THEN 1\n    ELSE 0\n  END AS \"vaccinedetails.is_container_alert\"\n\
+  FROM vaccinedetails AS vaccinedetails\nLEFT JOIN (\n  (\n    SELECT\n      \"sensordata.containlink\"\
+  \ AS containlink,\n      \"sensordata.cei\" AS cei,\n      \"sensordata.cri\" AS\
+  \ cri,\n      \"sensordata.trs\" AS trs\n    FROM (\n      SELECT\n        sensordata.containlink\
+  \ AS \"sensordata.containlink\",\n        AVG(\n          (\n            (\n   \
+  \           1 - COALESCE(CAST(sensordata.tempdevcount AS REAL) / 100, 0)\n     \
+  \       ) * (\n              1 - COALESCE(CAST(sensordata.critevents AS REAL) /\
+  \ 10, 0)\n            ) * COALESCE(sensordata.tempstabidx, 1)\n          ) * (\n\
+  \            COALESCE(container.coolremainpct, 0) / 100.0\n          ) * (\n   \
+  \         1 - (\n              (\n                100 - container.coolremainpct\n\
+  \              ) / NULLIF(JULIANDAY('now') - JULIANDAY(container.refilllatest),\
+  \ 0)\n            ) / 20.0\n          )\n        ) AS \"sensordata.cei\",\n    \
+  \    AVG(\n          (\n            1 - (\n              (\n                1 -\
+  \ COALESCE(CAST(sensordata.tempdevcount AS REAL) / 100, 0)\n              ) * (\n\
+  \                1 - COALESCE(CAST(sensordata.critevents AS REAL) / 10, 0)\n   \
+  \           ) * COALESCE(sensordata.tempstabidx, 1)\n            )\n          )\
+  \ * (\n            1 - COALESCE(container.coolremainpct, 0) / 100\n          )\n\
+  \        ) AS \"sensordata.cri\",\n        AVG(\n          (\n            (\n  \
+  \            1 - (\n                (\n                  1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n                ) * (\n                  1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n                ) * COALESCE(sensordata.tempstabidx, 1)\n \
+  \             )\n            ) * (\n              1 - COALESCE(container.coolremainpct,\
+  \ 0) / 100\n            )\n          ) * (\n            1 - (\n              (\n\
+  \                1 - COALESCE(CAST(sensordata.handleevents AS REAL) / 100, 0)\n\
+  \              ) * (\n                1 - COALESCE(CAST(sensordata.critevents AS\
+  \ REAL) / 10, 0)\n              )\n            )\n          ) * (\n            1\
+  \ + ABS(sensordata.tempnowc - sensordata.storetempc) / NULLIF(sensordata.temptolc,\
+  \ 0) * sensordata.tempdevcount\n          )\n        ) AS \"sensordata.trs\"\n \
+  \     FROM sensordata AS sensordata\n      LEFT JOIN container AS container\n  \
+  \      ON sensordata.containlink = container.containregistry\n      GROUP BY\n \
+  \       sensordata.containlink\n    ) AS _inner\n  )\n) AS agg_per_container_cas\n\
+  \  ON vaccinedetails.containvac = agg_per_container_cas.containlink) AS _inner"
+data_source: vaccine
+columns:
+- name: vacregistry
+  sql: vacregistry
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: containvac
+  sql: containvac
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ces
+  sql: ces
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_container_alert
+  sql: is_container_alert
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Container Alert Status (KB #48). One row per vaccinedetails record with\
+  \ is_container_alert boolean = CES < 0.4 AND TRS > 0.7. CES (KB #36) is computed\
+  \ inline from SER (vaccinedetails) and per-container averages of CEI (KB #31), CRI\
+  \ (KB #2), TRS (KB #30) over sensordata.\n\n[kb=48]\nA status where CES < 0.4 and\
+  \ TRS > 0.7 \u2014 Identifies containers requiring urgent attention.\n[/kb=48]"
+hidden: false
+meta:
+  kb_id: 48

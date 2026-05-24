@@ -1,0 +1,102 @@
+version: 6
+name: system_controller
+sql_table: system_controller
+query_variables: {}
+data_source: robot
+columns:
+- name: systemoverseeractuation
+  sql: systemoverseeractuation
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: systemoverseeroperation
+  sql: systemoverseeroperation
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: systemoverseerrobot
+  sql: systemoverseerrobot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: controller_metrics
+  sql: controller_metrics
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: load_value
+  sql: json_extract(controller_metrics, '$.load_value')
+  type: DOUBLE
+  primary_key: false
+  description: "System / CPU load value of the supervisory controller (0-100%) (KB\
+    \ #29).\n\n[kb=29]\nController load is a measure of CPU or system load, typically\
+    \ ranging from 0 to 100%. \u2014 Illustrates the load value of the system controller.\n\
+    [/kb=29]"
+  label: Controller Load
+  hidden: false
+  meta:
+    kb_id: 29
+- name: row_controller_stress
+  sql: COALESCE(CAST(json_extract(controller_metrics, '$.load_value') AS REAL), 0)
+    + COALESCE(CAST(json_extract(controller_metrics, '$.thermal_level') AS REAL),
+    0)
+  type: DOUBLE
+  primary_key: false
+  description: "Row-level helper for CSI (KB #36): per-row sum of load_value + thermal_level\
+    \ from controller_metrics JSON.\n\n[kb=36]\nFor a given robot R, CSI = \\frac{\\\
+    sum_{sc \\in \\text{system_controller} \\mid \\text{systemoverseerrobot = R}}\
+    \ (controller_metrics->>'load_value'::float + controller_metrics->>'thermal_level'::float)}{\\\
+    text{|}\\{sc \\in \\text{system_controller} \\mid \\text{systemoverseerrobot =\
+    \ R}\\}|}, \\text{where JSONB fields load_value and thermal_level are averaged.}\
+    \ \u2014 Measures controller stress based on load and thermal metrics.\n[/kb=36]"
+  label: Controller Stress Index (CSI)
+  hidden: false
+  meta:
+    kb_id: 36
+measures:
+- formula: row_controller_stress:avg
+  name: csi
+  label: Controller Stress Index (CSI)
+  description: "Controller Stress Index (KB #36) \u2014 avg across system_controller\
+    \ rows of (load_value + thermal_level) from controller_metrics JSON. Group by\
+    \ systemoverseerrobot for per-robot.\n\n[kb=36]\nFor a given robot R, CSI = \\\
+    frac{\\sum_{sc \\in \\text{system_controller} \\mid \\text{systemoverseerrobot\
+    \ = R}} (controller_metrics->>'load_value'::float + controller_metrics->>'thermal_level'::float)}{\\\
+    text{|}\\{sc \\in \\text{system_controller} \\mid \\text{systemoverseerrobot =\
+    \ R}\\}|}, \\text{where JSONB fields load_value and thermal_level are averaged.}\
+    \ \u2014 Measures controller stress based on load and thermal metrics.\n[/kb=36]"
+  meta:
+    kb_id: 36
+- formula: row_controller_stress:avg > 100
+  name: is_controller_overload_risk
+  label: Controller Overload Risk
+  description: "Controller Overload Risk (KB #46) \u2014 true if CSI > 100. KB also\
+    \ requires NO > 2 (count of operations across the robot's operation rows); to\
+    \ apply that part, the agent should additionally filter / co-group with operation.no\
+    \ > 2. Group by systemoverseerrobot for per-robot CSI portion.\n\n[kb=46]\nA robot\
+    \ R has Controller Overload Risk if CSI > 100 and NO > 2. \u2014 Indicates robots\
+    \ with stressed controllers.\n[/kb=46]"
+  meta:
+    kb_id: 46
+aggregations: []
+joins:
+- target_model: actuation_data
+  join_pairs:
+  - - systemoverseeractuation
+    - actreg
+  join_type: left
+- target_model: operation
+  join_pairs:
+  - - systemoverseeroperation
+    - operreg
+  join_type: left
+- target_model: robot_details
+  join_pairs:
+  - - systemoverseerrobot
+    - botdetreg
+  join_type: left
+filters: []
+description: Per-actuation system controller telemetry. Holds a JSONB controller_metrics
+  blob with load, memory, thermal, cabinet conditions. Joined to robot_details via
+  systemoverseerrobot.
+hidden: false

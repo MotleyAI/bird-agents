@@ -1,0 +1,151 @@
+version: 6
+name: scanprocessing
+sql_table: scanprocessing
+query_variables: {}
+data_source: archeology
+columns:
+- name: flowregistry
+  sql: flowregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: equipref
+  sql: equipref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: zoneref
+  sql: zoneref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: flowsoft
+  sql: flowsoft
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: flowhrs
+  sql: flowhrs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: proccpu
+  sql: proccpu
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: memusagegb
+  sql: memusagegb
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: procgpu
+  sql: procgpu
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: stashloc
+  sql: stashloc
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: safebak
+  sql: safebak
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: datalevel
+  sql: datalevel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: metabench
+  sql: metabench
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: coordframe
+  sql: coordframe
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: elevref
+  sql: elevref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: remaingb
+  sql: remaingb
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: stationlink
+  sql: stationlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: camcal
+  sql: camcal
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lensdist
+  sql: lensdist
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: colortune
+  sql: colortune
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: flowstage
+  sql: flowstage
+  type: TEXT
+  primary_key: false
+  description: "Processing Stage (KB #27). Sequential workflow: 'Raw' (unprocessed)\
+    \ \u2192 'Aligned' (multiple scans registered) \u2192 'Cleaned' (noise/artifacts\
+    \ removed) \u2192 'Meshed' (point cloud \u2192 polygon mesh) \u2192 'Textured'\
+    \ (surface textures applied). Each stage is a discrete processing milestone.\n\
+    \n[kb=27]\nA sequential classification system with defined stages: 'Raw' (unprocessed\
+    \ scan data), 'Aligned' (multiple scans registered together), 'Cleaned' (noise\
+    \ and artifacts removed), 'Meshed' (point cloud converted to polygon mesh), and\
+    \ 'Textured' (surface textures applied to mesh). Each stage represents a discrete\
+    \ processing milestone. \u2014 Illustrates the progression of data processing\
+    \ in archaeological scanning workflows.\n[/kb=27]"
+  label: FlowStage (Processing Stage)
+  hidden: false
+  meta:
+    kb_id: 27
+- name: fmtver
+  sql: fmtver
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: equipment
+  join_pairs:
+  - - equipref
+    - equipregistry
+  join_type: left
+- target_model: sites
+  join_pairs:
+  - - zoneref
+    - zoneregistry
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,82 @@
+version: 6
+name: scanfeatures
+sql_table: scanfeatures
+query_variables: {}
+data_source: archeology
+columns:
+- name: traitregistry
+  sql: traitregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: zoneref
+  sql: zoneref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: equipref
+  sql: equipref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: traitextract
+  sql: traitextract
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: traitcount
+  sql: traitcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: articount
+  sql: articount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: structkind
+  sql: structkind
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: matkind
+  sql: matkind
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: huestudy
+  sql: huestudy
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: texturestudy
+  sql: texturestudy
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: patternnote
+  sql: patternnote
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: equipment
+  join_pairs:
+  - - equipref
+    - equipregistry
+  join_type: left
+- target_model: sites
+  join_pairs:
+  - - zoneref
+    - zoneregistry
+  join_type: left
+filters: []
+hidden: false

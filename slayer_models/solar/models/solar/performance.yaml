@@ -1,0 +1,140 @@
+version: 6
+name: performance
+sql_table: performance
+query_variables: {}
+data_source: solar
+columns:
+- name: perfregistry
+  sql: perfregistry
+  type: TEXT
+  primary_key: true
+  description: VARCHAR(50) PRIMARY KEY uniquely identifying each performance record.
+  hidden: false
+- name: solmodref
+  sql: solmodref
+  type: TEXT
+  primary_key: false
+  description: VARCHAR(50) REFERENCES Panel(PaneMark), linking performance data to
+    a panel.
+  hidden: false
+- name: perfmoment
+  sql: perfmoment
+  type: TIMESTAMP
+  primary_key: false
+  description: TIMESTAMP noting when these performance metrics were recorded (e.g.,
+    '2023-07-15 10:30:00').
+  hidden: false
+- name: measpoww
+  sql: measpoww
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(9,3) logging the measured power in watts (was 'MeasuredPowerW')
+    (e.g., 595.000).
+  hidden: false
+  format:
+    type: float
+- name: powlossw
+  sql: powlossw
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(8,3) detailing power loss in watts (was 'PowerLossW') (e.g.,
+    10.500).
+  hidden: false
+  format:
+    type: float
+- name: efficiency_profile
+  sql: efficiency_profile
+  type: TEXT
+  primary_key: false
+  description: JSONB column. Captures efficiency and degradation metrics for a solar
+    panel, including current efficiency, losses, and degradation rates.
+  hidden: false
+  meta:
+    jsonb: true
+- name: efficiency_profile__current_efficiency__curreffpct
+  sql: JSON_EXTRACT(efficiency_profile, '$.current_efficiency.curreffpct')
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(7,3) representing the current measured efficiency percentage
+    (was 'CurrentEfficiencyPercent') (e.g., 18.750).
+  label: Curreffpct
+  hidden: false
+  meta:
+    derived_from:
+      json_col: efficiency_profile
+      path:
+      - current_efficiency
+      - curreffpct
+- name: efficiency_profile__current_efficiency__efflosspct
+  sql: JSON_EXTRACT(efficiency_profile, '$.current_efficiency.efflosspct')
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(7,3) indicating the efficiency loss percentage (was 'EfficiencyLossPercent')
+    (e.g., 1.250).
+  label: Efflosspct
+  hidden: false
+  meta:
+    derived_from:
+      json_col: efficiency_profile
+      path:
+      - current_efficiency
+      - efflosspct
+- name: efficiency_profile__degradation__anndegrate
+  sql: JSON_EXTRACT(efficiency_profile, '$.degradation.anndegrate')
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=26]\nExpressed as a percentage, representing how much a panel's\
+    \ output decreases per year. Quality silicon panels typically degrade at 0.5%\
+    \ to 0.7% annually, while lower quality or certain thin-film technologies may\
+    \ degrade at rates above 1% annually. \u2014 Illustrates how solar panels lose\
+    \ efficiency over time.\n[/kb=26]"
+  label: AnnDegRate (Annual Degradation Rate)
+  hidden: false
+  meta:
+    kb_id: 26
+    derived_from:
+      json_col: efficiency_profile
+      path:
+      - degradation
+      - anndegrate
+- name: efficiency_profile__degradation__cumdegpct
+  sql: JSON_EXTRACT(efficiency_profile, '$.degradation.cumdegpct')
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=27]\nExpressed as a percentage, representing total performance\
+    \ degradation since installation. New panels start at 0%, while panels approaching\
+    \ end-of-life may have values of 15-20% or higher, with manufacturer warranties\
+    \ typically covering degradation up to 20% over 25 years. \u2014 Illustrates the\
+    \ total efficiency loss of a solar panel over its lifetime.\n[/kb=27]"
+  label: CumDegPct (Cumulative Degradation Percentage)
+  hidden: false
+  meta:
+    kb_id: 27
+    derived_from:
+      json_col: efficiency_profile
+      path:
+      - degradation
+      - cumdegpct
+- name: panel_performance_ratio
+  sql: measpoww * 100.0 / NULLIF(panel.powratew, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=0]\nPPR = MeasuredPowerW / PowerRatedW \xD7 100%, where MeasuredPowerW\
+    \ is the measured power output and PowerRatedW is the rated power of the panel.\
+    \ \u2014 The ratio of a panel's measured power output to its rated power, expressed\
+    \ as a percentage; higher values indicate better performance relative to specifications.\n\
+    [/kb=0]"
+  label: Panel Performance Ratio (PPR)
+  hidden: false
+  meta:
+    kb_id: 0
+measures: []
+aggregations: []
+joins:
+- target_model: panel
+  join_pairs:
+  - - solmodref
+    - panemark
+  join_type: left
+filters: []
+hidden: false

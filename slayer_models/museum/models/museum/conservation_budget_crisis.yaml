@@ -1,0 +1,66 @@
+version: 6
+name: conservation_budget_crisis
+sql: SELECT (SELECT SUM((((r.histsignrating + r.researchvalrating + r.cultscore) *
+  (10 - CASE a.conservestatus WHEN 'Excellent' THEN 1 WHEN 'Good' THEN 3 WHEN 'Fair'
+  THEN 5 WHEN 'Poor' THEN 7 WHEN 'Critical' THEN 10 ELSE NULL END)) / 30.0) * (CASE
+  LOWER(TRIM(c.budgetallocstatus)) WHEN 'adequate' THEN 1.0 WHEN 'review required'
+  THEN 0.5 WHEN 'insufficient' THEN 0.0 ELSE NULL END)) FROM conservationandmaintenance
+  c JOIN artifactscore a ON c.artrefmaintained = a.artregistry JOIN artifactratings
+  r ON c.artrefmaintained = r.artref) / NULLIF((SELECT SUM(CASE LOWER(TRIM(c2.budgetallocstatus))
+  WHEN 'adequate' THEN 1.0 WHEN 'review required' THEN 0.5 WHEN 'insufficient' THEN
+  0.0 ELSE NULL END) FROM conservationandmaintenance c2), 0) / NULLIF((SELECT COUNT(*)
+  FROM conservationandmaintenance), 0) AS cbe_value, (SELECT COUNT(*) FROM conservationandmaintenance
+  c3 JOIN artifactscore a3 ON c3.artrefmaintained = a3.artregistry WHERE a3.conservestatus
+  = 'Critical' AND LOWER(TRIM(c3.budgetallocstatus)) = 'insufficient') AS n_critical_insufficient
+query_variables: {}
+data_source: museum
+columns:
+- name: cbe_value
+  sql: cbe_value
+  type: DOUBLE
+  primary_key: false
+  description: "Global CBE (KB #9) computed over all artifacts.\n\n[kb=9]\nCBE = \\\
+    frac{\\sum_{i \\in artifacts} (CPI_i \\times BudgetRatio_i)}{|artifacts|}, \\\
+    text{where BudgetRatio is the proportion of total conservation budget allocated\
+    \ to each artifact} \u2014 Measures the efficiency of conservation budget allocation\
+    \ relative to artifact importance.\n[/kb=9]"
+  label: Conservation Budget Efficiency (CBE)
+  hidden: false
+  meta:
+    kb_id: 9
+- name: n_critical_insufficient
+  sql: n_critical_insufficient
+  type: DOUBLE
+  primary_key: false
+  description: "Count of artifacts with ConserveStatus='Critical' AND BudgetAllocStatus='Insufficient'\
+    \ (KB #17 second leg).\n\n[kb=17]\nOccurs when CBE < 0.5 AND at least one artifact\
+    \ has ConserveStatus='Critical' and BudgetAllocStatus='Insufficient'. \u2014 Identifies\
+    \ when conservation budget allocation is insufficient for high-priority artifacts.\n\
+    [/kb=17]"
+  label: Conservation Budget Crisis
+  hidden: false
+  meta:
+    kb_id: 17
+- name: is_budget_crisis
+  sql: CASE WHEN cbe_value < 0.5 AND n_critical_insufficient >= 1 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Conservation Budget Crisis (KB #17): CBE < 0.5 AND >=1 artifact with\
+    \ ConserveStatus='Critical' AND BudgetAllocStatus='Insufficient'.\n\n[kb=17]\n\
+    Occurs when CBE < 0.5 AND at least one artifact has ConserveStatus='Critical'\
+    \ and BudgetAllocStatus='Insufficient'. \u2014 Identifies when conservation budget\
+    \ allocation is insufficient for high-priority artifacts.\n[/kb=17]"
+  label: Conservation Budget Crisis
+  hidden: false
+  meta:
+    kb_id: 17
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Conservation Budget Crisis indicator (KB #17): one-row model exposing
+  the global CBE value and the count of artifacts with ConserveStatus=''Critical''
+  AND BudgetAllocStatus=''Insufficient''. is_budget_crisis = (cbe_value < 0.5) AND
+  (n_critical_insufficient >= 1). Encoded as a SQL-backed model since the predicate
+  is a population-level scalar that cannot sit on a row of any host table.'
+hidden: false

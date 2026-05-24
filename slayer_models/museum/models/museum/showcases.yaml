@@ -1,0 +1,125 @@
+version: 6
+name: showcases
+sql_table: showcases
+query_variables: {}
+data_source: museum
+columns:
+- name: showcasereg
+  sql: showcasereg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: hallref
+  sql: hallref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: airtightness
+  sql: airtightness
+  type: INT
+  primary_key: false
+  description: "Showcase airtightness (KB #26): REAL value typically ranging 0.01\
+    \ (extremely airtight, <0.01 air changes/day) to 5.0 (poor, multiple changes/day).\
+    \ Museum-grade typically <0.1.\n\n[kb=26]\nA REAL value typically ranging from\
+    \ 0.01 (extremely airtight, less than 0.01 air changes per day) to 5.0 (poor airtightness,\
+    \ multiple air changes per day). Museum-grade showcases typically maintain values\
+    \ below 0.1. \u2014 Illustrates showcase airtightness measurement.\n[/kb=26]"
+  label: Showcases.Airtightness
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 26
+- name: showcasematerial
+  sql: showcasematerial
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sealcondition
+  sql: sealcondition
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: maintstatus
+  sql: maintstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: filterstatus
+  sql: filterstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: silicagelstatus
+  sql: silicagelstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: silicagelchangedate
+  sql: silicagelchangedate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: humiditybuffercap
+  sql: humiditybuffercap
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: pollutantabsorbcap
+  sql: pollutantabsorbcap
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: leakrate
+  sql: leakrate
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: pressurepa
+  sql: pressurepa
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: inertgassysstatus
+  sql: inertgassysstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: firesuppresssys
+  sql: firesuppresssys
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: empowerstatus
+  sql: empowerstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: backupsysstatus
+  sql: backupsysstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: exhibitionhalls
+  join_pairs:
+  - - hallref
+    - hallrecord
+  join_type: left
+- target_model: environmentalreadingscore
+  join_pairs:
+  - - showcasereg
+    - showcaseref
+  join_type: left
+filters: []
+hidden: false

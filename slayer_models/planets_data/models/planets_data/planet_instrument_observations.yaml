@@ -1,0 +1,44 @@
+version: 6
+name: planet_instrument_observations
+sql_table: planet_instrument_observations
+query_variables: {}
+data_source: planets_data
+columns:
+- name: obsref
+  sql: obsref
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: subjectlink
+  sql: subjectlink
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: facilitylink
+  sql: facilitylink
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins:
+- target_model: instruments_surveys
+  join_pairs:
+  - - facilitylink
+    - instrumentref
+  join_type: left
+- target_model: planets
+  join_pairs:
+  - - subjectlink
+    - planetref
+  join_type: left
+filters: []
+description: Many-to-many link table joining planets to observational facilities (instruments_surveys).
+  One row per planet x facility observation.
+hidden: false

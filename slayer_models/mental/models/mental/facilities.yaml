@@ -1,0 +1,144 @@
+version: 6
+name: facilities
+sql_table: facilities
+query_variables: {}
+data_source: mental
+columns:
+- name: fackey
+  sql: fackey
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: rsource
+  sql: rsource
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: envstress
+  sql: envstress
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lifeimpact
+  sql: lifeimpact
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: seasonpat
+  sql: seasonpat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: leglissue
+  sql: leglissue
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ssystemchg
+  sql: ssystemchg
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: support_and_resources
+  sql: support_and_resources
+  type: TEXT
+  primary_key: false
+  description: "JSONB facility-resources column. Subfields: support_services (string\
+    \ list), community_resources (Limited/Adequate/Comprehensive), emergency_contact,\
+    \ plans.{safety_plan_status, crisis_plan_status}.\n\n[kb=24]\nRanges from Limited\
+    \ to Comprehensive. Limited indicates few or no resources, Adequate indicates\
+    \ sufficient resources, and Comprehensive indicates extensive resources. \u2014\
+    \ Illustrates the value of community resource availability.\n[/kb=24]"
+  label: Community Resources
+  hidden: false
+  meta:
+    kb_id: 24
+- name: community_resources
+  sql: support_and_resources ->> '$.community_resources'
+  type: TEXT
+  primary_key: false
+  description: Community resources enum (Limited, Adequate, Comprehensive). Limited
+    = few/none, Adequate = sufficient, Comprehensive = extensive.
+  hidden: false
+- name: support_services
+  sql: support_and_resources ->> '$.support_services'
+  type: TEXT
+  primary_key: false
+  description: Available/recommended support services (comma-separated).
+  hidden: false
+- name: emergency_contact
+  sql: support_and_resources ->> '$.emergency_contact'
+  type: TEXT
+  primary_key: false
+  description: Emergency contact info.
+  hidden: false
+- name: safety_plan_status
+  sql: support_and_resources ->> '$.plans.safety_plan_status'
+  type: TEXT
+  primary_key: false
+  description: Safety plan status (Needs Update, In Place, Not Needed).
+  hidden: false
+- name: crisis_plan_status
+  sql: support_and_resources ->> '$.plans.crisis_plan_status'
+  type: TEXT
+  primary_key: false
+  description: Crisis plan status (Needs Update, In Place, Not Needed).
+  hidden: false
+- name: resource_score
+  sql: CASE support_and_resources ->> '$.community_resources' WHEN 'Comprehensive'
+    THEN 3 WHEN 'Adequate' THEN 2 WHEN 'Limited' THEN 1 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric community-resource score: Comprehensive=3, Adequate=2, Limited=1.\n\
+    \n[kb=5]\nFRAI = \\frac{\\sum_{i \\in facilities} resource\\_score_i} {|facilities|},\
+    \ \\text{where } resource\\_score = \\begin{cases} 3 & \\text{if } support\\_and\\\
+    _resources['community\\_resources'] = Comprehensive \\\\ 2 & \\text{if } support\\\
+    _and\\_resources['community\\_resources'] = Adequate \\\\ 1 & \\text{if } support\\\
+    _and\\_resources['community\\_resources'] = Limited \\end{cases}, \\text{and }\
+    \ support\\_and\\_resources \\text{ is the JSONB column in the facilities table}\
+    \ \u2014 Quantifies the adequacy of community resources available at a facility.\n\
+    [/kb=5]"
+  label: Facility Resource Adequacy Index (FRAI)
+  hidden: false
+  meta:
+    kb_id: 5
+- name: is_resource_supported
+  sql: (CASE support_and_resources ->> '$.community_resources' WHEN 'Comprehensive'
+    THEN 3 WHEN 'Adequate' THEN 2 WHEN 'Limited' THEN 1 ELSE NULL END) >= 2
+  type: BOOLEAN
+  primary_key: false
+  description: "Resource-Supported Facility (KB #15): resource_score >= 2 (Adequate\
+    \ or Comprehensive community resources).\n\n[kb=15]\nA facility with resource_score\
+    \ \\geq 2 \\text{where } resource_score = \\begin{cases} 3 & \\text{if } support\\\
+    _and\\_resources['community\\_resources'] = Comprehensive \\\\ 2 & \\text{if }\
+    \ support\\_and\\_resources['community\\_resources'] = Adequate \\\\ 1 & \\text{if\
+    \ } support\\_and\\_resources['community\\_resources'] = Limited \\end{cases}.\
+    \ \u2014 Identifies facilities with adequate or comprehensive community resources.\n\
+    [/kb=15]"
+  label: Resource-Supported Facility
+  hidden: false
+  meta:
+    kb_id: 15
+measures:
+- formula: resource_score:avg
+  name: frai
+  label: Facility Resource Adequacy Index (FRAI)
+  description: "Facility Resource Adequacy Index (FRAI) \u2014 average resource_score\
+    \ across facilities.\n\n[kb=5]\nFRAI = \\frac{\\sum_{i \\in facilities} resource\\\
+    _score_i} {|facilities|}, \\text{where } resource\\_score = \\begin{cases} 3 &\
+    \ \\text{if } support\\_and\\_resources['community\\_resources'] = Comprehensive\
+    \ \\\\ 2 & \\text{if } support\\_and\\_resources['community\\_resources'] = Adequate\
+    \ \\\\ 1 & \\text{if } support\\_and\\_resources['community\\_resources'] = Limited\
+    \ \\end{cases}, \\text{and } support\\_and\\_resources \\text{ is the JSONB column\
+    \ in the facilities table} \u2014 Quantifies the adequacy of community resources\
+    \ available at a facility.\n[/kb=5]"
+  meta:
+    kb_id: 5
+aggregations: []
+joins: []
+filters: []
+description: Mental health facility. Holds referral source, environmental stress,
+  life-event impact, seasonal pattern, legal issues, support-system change, and a
+  JSONB support_and_resources column with community-resource level, support services,
+  emergency contact, and crisis/safety plan statuses.
+hidden: false

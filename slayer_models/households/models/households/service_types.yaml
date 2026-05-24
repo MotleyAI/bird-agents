@@ -1,0 +1,63 @@
+version: 6
+name: service_types
+sql_table: service_types
+query_variables: {}
+data_source: households
+columns:
+- name: serviceref
+  sql: serviceref
+  type: INT
+  primary_key: true
+  description: A SERIAL primary key uniquely identifying each social service type
+    or package configuration available to households. Ex. 1,2,3
+  hidden: false
+  format:
+    type: integer
+- name: domestichelp
+  sql: domestichelp
+  type: TEXT
+  primary_key: false
+  description: "Domestic worker service availability for households. Sample values\
+    \ include 'No domestic workers', 'Yes, occasional', and richer free-text variants.\
+    \ NULL indicates informal or undisclosed arrangements.\n\n[kb=8]\nIncludes 'Full-time'\
+    \ (daily), 'Part-time' (periodic), 'Occasional' (as-needed), 'None' (no help),\
+    \ and 'Live-in' (resident worker). Null indicates informal or undisclosed arrangements.\
+    \ \u2014 Illustrates the types of domestic worker services for households.\n[/kb=8]"
+  label: Domestic Help Availability
+  hidden: false
+  meta:
+    kb_id: 8
+  sampled: " No domestic workers,  Yes, occasional,  Yes, regular, No\tdomestic workers,\
+    \ No  domestic workers, No domestic workers, No domestic workers , Yes,\toccasional,\
+    \ Yes,\tregular, Yes,  occasional, Yes, living-in, Yes, occasional, Yes, occasional\
+    \ , Yes, regular, Yes, regular "
+- name: socsupport
+  sql: socsupport
+  type: TEXT
+  primary_key: false
+  description: "Social assistance program participation indicator (binary Yes/No).\
+    \ Part of unique constraint combination.\n\n[kb=9]\nBinary indicator where 'Yes'\
+    \ means the household accepts social assistance and 'No' means it does not. Part\
+    \ of unique constraint combination. \u2014 Indicates whether a household participates\
+    \ in social assistance programs.\n[/kb=9]"
+  label: Social Support Status
+  hidden: false
+  meta:
+    kb_id: 9
+  sampled: ' No,  Yes, No, No , Yes, Yes '
+- name: is_supported_household
+  sql: CASE WHEN LOWER(TRIM(socsupport)) = 'yes' THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=24]\nA household with social support status marked as 'Yes'. \u2014\
+    \ Defines a household receiving social assistance.\n[/kb=24]"
+  label: Supported Household
+  hidden: false
+  meta:
+    kb_id: 24
+  sampled: 0, 1
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

@@ -1,0 +1,55 @@
+version: 6
+name: signal_is_cip
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: is_cip
+      type: BOOLEAN
+      sql: CASE WHEN ((1 - ABS(freqdrifthzs) / (freqmhz * 1000.0)) * sigdursec / (1
+        + doppshifthz / 1000.0)) > 0.8 AND signalclassification.entropyval BETWEEN
+        0.4 AND 0.8 AND modindex > 0.5 THEN 1 ELSE 0 END
+  dimensions:
+  - name: signalregistry
+  - name: is_cip
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_cip\"\
+  \ AS is_cip FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
+  ,\n  CASE\n    WHEN (\n      (\n        1 - ABS(signals.freqdrifthzs) / (\n    \
+  \      signals.freqmhz * 1000.0\n        )\n      ) * signals.sigdursec / (\n  \
+  \      1 + signals.doppshifthz / 1000.0\n      )\n    ) > 0.8\n    AND signalclassification.entropyval\
+  \ BETWEEN 0.4 AND 0.8\n    AND signals.modindex > 0.5\n    THEN 1\n    ELSE 0\n\
+  \  END AS \"signals.is_cip\"\nFROM signals AS signals\nLEFT JOIN signalclassification\
+  \ AS signalclassification\n  ON signals.signalregistry = signalclassification.signalref)\
+  \ AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_cip
+  sql: is_cip
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Coherent Information Pattern (CIP) predicate per signal.\n\n[kb=11]\n\
+  Signals characterized by high signal stability ($\\text{SSM} > 0.8$), organized\
+  \ information structure ($\\text{EntropyVal}$ between 0.4-0.8), and consistent modulation\
+  \ ($\\text{ModType}$ with $\\text{ModIndex} > 0.5$). \u2014 Identifies signals showing\
+  \ patterns consistent with deliberate information transmission.\n[/kb=11]"
+hidden: false
+meta:
+  kb_id: 11

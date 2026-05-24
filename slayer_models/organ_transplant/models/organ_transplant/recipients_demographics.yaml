@@ -1,0 +1,111 @@
+version: 6
+name: recipients_demographics
+sql_table: recipients_demographics
+query_variables: {}
+data_source: organ_transplant
+columns:
+- name: recip_registry
+  sql: recip_registry
+  type: TEXT
+  primary_key: true
+  description: Recipient primary key.
+  hidden: false
+- name: age_count
+  sql: age_count
+  type: INT
+  primary_key: false
+  description: Recipient age in years.
+  hidden: false
+  format:
+    type: integer
+- name: gend_type
+  sql: gend_type
+  type: TEXT
+  primary_key: false
+  description: Recipient gender (F/M).
+  hidden: false
+- name: blood_class
+  sql: blood_class
+  type: TEXT
+  primary_key: false
+  description: Recipient ABO blood type code (A+, A-, AB+, AB-, B+, B-, O+, O-).
+  hidden: false
+- name: ht_cm
+  sql: ht_cm
+  type: INT
+  primary_key: false
+  description: Recipient height in cm.
+  hidden: false
+  format:
+    type: integer
+- name: wt_kg
+  sql: wt_kg
+  type: INT
+  primary_key: false
+  description: Recipient weight in kg.
+  hidden: false
+  format:
+    type: integer
+- name: bmi_val
+  sql: bmi_val
+  type: INT
+  primary_key: false
+  description: "Recipient BMI as stored. KB Body Mass Index (BMI): weight_kg / height_m^2.\n\
+    \n[kb=0]\nBMI is calculated as weight in kilograms divided by the square of height\
+    \ in meters. Formula: $BMI = \\frac{weight_{kg}}{height_m^2}$ \u2014 Calculates\
+    \ a person's body mass index from their weight and height.\n[/kb=0]"
+  label: Body Mass Index (BMI)
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 0
+- name: ethn_grp
+  sql: ethn_grp
+  type: TEXT
+  primary_key: false
+  description: Recipient ethnicity.
+  hidden: false
+- name: recip_bmi_computed
+  sql: wt_kg * 1.0 / pow(ht_cm / 100.0, 2)
+  type: DOUBLE
+  primary_key: false
+  description: "Recipient BMI re-computed via KB formula weight_kg / height_m^2.\n\
+    \n[kb=0]\nBMI is calculated as weight in kilograms divided by the square of height\
+    \ in meters. Formula: $BMI = \\frac{weight_{kg}}{height_m^2}$ \u2014 Calculates\
+    \ a person's body mass index from their weight and height.\n[/kb=0]"
+  label: Body Mass Index (BMI)
+  hidden: false
+  meta:
+    kb_id: 0
+- name: recip_bmi_category
+  sql: CASE WHEN bmi_val < 18.5 THEN 'Underweight' WHEN bmi_val < 25 THEN 'Normal'
+    WHEN bmi_val < 30 THEN 'Overweight' ELSE 'Obese' END
+  type: TEXT
+  primary_key: false
+  description: "Standard BMI bands.\n\n[kb=40]\nBMI provides a general indicator of\
+    \ body fatness. A value < 18.5 is considered underweight, 18.5-24.9 is normal\
+    \ weight, 25.0-29.9 is overweight, and > 30.0 indicates obesity. This is a factor\
+    \ in Size Compatibility Score. \u2014 Illustrates the standard weight status categories\
+    \ based on BMI values.\n[/kb=40]"
+  label: Body Mass Index (BMI) Categories
+  hidden: false
+  meta:
+    kb_id: 40
+measures: []
+aggregations: []
+joins:
+- target_model: clinical
+  join_pairs:
+  - - recip_registry
+    - clin_recip_registry
+  join_type: left
+- target_model: recipients_immunology
+  join_pairs:
+  - - recip_registry
+    - immu_recip_registry
+  join_type: left
+filters: []
+description: Transplant recipient demographics, keyed by recip_registry. Age, gender,
+  blood type, height, weight, BMI, ethnicity.
+hidden: false

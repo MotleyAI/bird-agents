@@ -1,0 +1,52 @@
+version: 6
+name: rrd_avg
+source_queries:
+- version: 3
+  source_model:
+    source_name: carriers
+    columns:
+    - name: k
+      sql: '1'
+      type: DOUBLE
+  measures:
+  - formula: rrd_score:avg
+  dimensions:
+  - name: k
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"carriers.k\" AS k, \"carriers.rrd_score_avg\" AS rrd_score_avg\
+  \ FROM (SELECT\n  1 AS \"carriers.k\",\n  AVG(\n    CASE\n      WHEN LOWER(TRIM(carriercert))\
+  \ = 'both'\n      THEN 10\n      WHEN LOWER(TRIM(carriercert)) IN ('gdp', 'ceiv\
+  \ pharma')\n      THEN 8\n      ELSE 4\n    END\n  ) AS \"carriers.rrd_score_avg\"\
+  \nFROM carriers AS carriers\nGROUP BY\n  1) AS _inner"
+data_source: cold_chain_pharma_compliance
+columns:
+- name: k
+  sql: k
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: rrd_score_avg
+  sql: rrd_score_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'Redundant Resources Depth proxy (KB #30, SCRS sub-score, 0-10): Both
+    certifications = 10, single GDP or CEIV Pharma = 8, else = 4. Used inside Supply
+    Chain Resilience Score; heuristic from the gold task solution because the schema
+    does not store RRD directly.'
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Fleet-wide Redundant Resources Depth average for SCRS (KB #30). Hidden\
+  \ helper.\n\n[kb=30]\nSCRS = 0.4 \\times ART + 0.3 \\times RRD + 0.2 \\times SBP\
+  \ + 0.1 \\times SMC, \\text{where ART is Alternative Route Availability (0-10),\
+  \ RRD is Redundant Resources Depth (0-10), SBP is Supplier Backup Presence (0-10),\
+  \ and SMC is Stock Management Capability (0-10).} \u2014 Measures a cold chain's\
+  \ ability to maintain integrity despite disruptions.\n[/kb=30]"
+hidden: true
+meta:
+  kb_id: 30

@@ -1,0 +1,86 @@
+version: 6
+name: true_cost_of_execution
+source_queries:
+- version: 3
+  name: depth_per_pair
+  source_model: marketdata
+  measures:
+  - formula: bidunits:avg
+    name: bidunits_avg
+  - formula: askunits:avg
+    name: askunits_avg
+  - formula: spreadband:avg
+    name: spreadband_avg
+  dimensions:
+  - name: mktcombo
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: orders
+    joins:
+    - target_model: fees
+      join_pairs:
+      - - recordvault
+        - orderslink
+    - target_model: depth_per_pair
+      join_pairs:
+      - - mktnote
+        - mktcombo
+    columns:
+    - name: tcoe
+      type: DOUBLE
+      sql: fees.feetotal + (dealcount * dealquote * (dealcount / NULLIF(CASE WHEN
+        dealedge = 'Buy' THEN depth_per_pair.askunits_avg ELSE depth_per_pair.bidunits_avg
+        END, 0) * depth_per_pair.spreadband_avg) * 0.01)
+  dimensions:
+  - name: recordvault
+  - name: tcoe
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.tcoe\"\
+  \ AS tcoe FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\",\n  fees.feetotal\
+  \ + (\n    orders.dealcount * orders.dealquote * (\n      orders.dealcount / NULLIF(\n\
+  \        CASE\n          WHEN orders.dealedge = 'Buy'\n          THEN depth_per_pair.askunits_avg\n\
+  \          ELSE depth_per_pair.bidunits_avg\n        END,\n        0\n      ) *\
+  \ depth_per_pair.spreadband_avg\n    ) * 0.01\n  ) AS \"orders.tcoe\"\nFROM orders\
+  \ AS orders\nLEFT JOIN fees AS fees\n  ON orders.recordvault = fees.orderslink\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"marketdata.mktcombo\" AS mktcombo,\n     \
+  \ \"marketdata.bidunits_avg\" AS bidunits_avg,\n      \"marketdata.askunits_avg\"\
+  \ AS askunits_avg,\n      \"marketdata.spreadband_avg\" AS spreadband_avg\n    FROM\
+  \ (\n      SELECT\n        marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\
+  \ AS \"marketdata.mktcombo\",\n        AVG(marketdata.quote_depth_snapshot ->> '$.depth.bidunits')\
+  \ AS \"marketdata.bidunits_avg\",\n        AVG(marketdata.quote_depth_snapshot ->>\
+  \ '$.depth.askunits') AS \"marketdata.askunits_avg\",\n        AVG(marketdata.quote_depth_snapshot\
+  \ ->> '$.spread.spreadband') AS \"marketdata.spreadband_avg\"\n      FROM marketdata\
+  \ AS marketdata\n      GROUP BY\n        marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\n\
+  \    ) AS _inner\n  )\n) AS depth_per_pair\n  ON orders.mktnote = depth_per_pair.mktcombo)\
+  \ AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tcoe
+  sql: tcoe
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "True Cost of Execution (KB #31) per order: feetotal + (dealcount \xD7\
+  \ dealquote \xD7 Slippage Impact \xD7 0.01). feetotal comes from fees (joined via\
+  \ fees.orderslink \u2192 orders.recordvault); Slippage Impact (KB #1) is inlined:\
+  \ dealcount / (askunits or bidunits, by dealedge) \xD7 spreadband, with depth columns\
+  \ per-pair from marketdata joined via orders.mktnote = mktcombo.\n\n[kb=31]\nTrue\
+  \ Cost of Execution = feetotal + (dealcount \\times dealquote \\times Slippage Impact\
+  \ \\times 0.01), \\text{where } feetotal \\text{ is the total fee charged and }\
+  \ Slippage Impact \\text{ is the expected price slippage impact for the order size.}\
+  \ \u2014 Calculates the total cost of order execution including fees and slippage.\n\
+  [/kb=31]"
+hidden: false
+meta:
+  kb_id: 31

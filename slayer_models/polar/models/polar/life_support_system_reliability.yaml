@@ -1,0 +1,108 @@
+version: 6
+name: life_support_system_reliability
+source_queries:
+- version: 3
+  name: ors_per_eq
+  source_model: operationmaintenance
+  measures:
+  - formula: ors:avg
+    name: ors
+  dimensions:
+  - name: opmainteqref
+  whole_periods_only: false
+- version: 3
+  name: tie_per_eq
+  source_model: thermalsolarwindandgrid
+  measures:
+  - formula: tie:avg
+    name: tie
+  dimensions:
+  - name: thermaleqref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: ors_per_eq
+    joins:
+    - target_model: tie_per_eq
+      join_pairs:
+      - - opmainteqref
+        - thermaleqref
+  measures:
+  - formula: 0.7 * ors:avg + 0.3 * tie_per_eq.tie:avg
+    name: lssr
+  dimensions:
+  - name: opmainteqref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"ors_per_eq.opmainteqref\" AS opmainteqref, \"ors_per_eq.ors_avg\"\
+  \ AS ors_avg, \"ors_per_eq.lssr\" AS lssr, \"ors_per_eq.tie_per_eq.tie_avg\" AS\
+  \ tie_per_eq__tie_avg FROM (WITH _base AS (\nSELECT\n  ors_per_eq.opmainteqref AS\
+  \ \"ors_per_eq.opmainteqref\",\n  AVG(ors_per_eq.ors) AS \"ors_per_eq.ors_avg\"\n\
+  FROM (\n  SELECT\n    \"operationmaintenance.opmainteqref\" AS opmainteqref,\n \
+  \   \"operationmaintenance.ors\" AS ors\n  FROM (\n    SELECT\n      operationmaintenance.opmainteqref\
+  \ AS \"operationmaintenance.opmainteqref\",\n      AVG(\n        CASE operationmaintenance.operationalstatus\n\
+  \          WHEN 'Active'\n          THEN 10\n          WHEN 'Standby'\n        \
+  \  THEN 5\n          ELSE 0\n        END * (\n          1 - operationmaintenance.operationhours\
+  \ * 1.0 / NULLIF(operationmaintenance.maintenancecyclehours, 0)\n        )\n   \
+  \   ) AS \"operationmaintenance.ors\"\n    FROM operationmaintenance AS operationmaintenance\n\
+  \    GROUP BY\n      operationmaintenance.opmainteqref\n  ) AS _inner\n) AS ors_per_eq\n\
+  GROUP BY\n  ors_per_eq.opmainteqref\n),\n_cm_ors_per_eq__tie_per_eq__tie_avg AS\
+  \ (\nSELECT\n  AVG(tie_per_eq.tie) AS \"ors_per_eq.tie_per_eq.tie_avg\"\nFROM (\n\
+  \  SELECT\n    \"thermalsolarwindandgrid.thermaleqref\" AS thermaleqref,\n    \"\
+  thermalsolarwindandgrid.tie\" AS tie\n  FROM (\n    SELECT\n      thermalsolarwindandgrid.thermaleqref\
+  \ AS \"thermalsolarwindandgrid.thermaleqref\",\n      AVG(\n        (\n        \
+  \  CASE thermalsolarwindandgrid.insulationstatus\n            WHEN 'Good'\n    \
+  \        THEN 0.9\n            WHEN 'Fair'\n            THEN 0.6\n            WHEN\
+  \ 'Poor'\n            THEN 0.3\n            ELSE 0.0\n          END\n        ) -\
+  \ thermalsolarwindandgrid.heatlossratekwh / 10.0\n      ) AS \"thermalsolarwindandgrid.tie\"\
+  \n    FROM thermalsolarwindandgrid AS thermalsolarwindandgrid\n    GROUP BY\n  \
+  \    thermalsolarwindandgrid.thermaleqref\n  ) AS _inner\n) AS tie_per_eq\n),\n\
+  _combined AS (\nSELECT _base.\"ors_per_eq.opmainteqref\", _base.\"ors_per_eq.ors_avg\"\
+  , _cm_ors_per_eq__tie_per_eq__tie_avg.\"ors_per_eq.tie_per_eq.tie_avg\"\nFROM _base\n\
+  CROSS JOIN _cm_ors_per_eq__tie_per_eq__tie_avg\n),\nstep1 AS (\nSELECT\n    \"ors_per_eq.opmainteqref\"\
+  ,\n    \"ors_per_eq.ors_avg\",\n    \"ors_per_eq.tie_per_eq.tie_avg\",\n    0.7\
+  \ * \"ors_per_eq.ors_avg\" + 0.3 * \"ors_per_eq.tie_per_eq.tie_avg\" AS \"ors_per_eq.lssr\"\
+  \nFROM _combined\n)\nSELECT\n    \"ors_per_eq.lssr\",\n    \"ors_per_eq.opmainteqref\"\
+  ,\n    \"ors_per_eq.ors_avg\",\n    \"ors_per_eq.tie_per_eq.tie_avg\"\nFROM step1)\
+  \ AS _inner"
+data_source: polar
+columns:
+- name: opmainteqref
+  sql: opmainteqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ors_avg
+  sql: ors_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'Operational Readiness Score (KB #1): 10 x (1 - operationhours/maintenancecyclehours)
+    if Active, 5 x (...) if Standby, 0 otherwise.'
+  hidden: false
+  format:
+    type: float
+- name: lssr
+  sql: lssr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tie_per_eq__tie_avg
+  sql: tie_per_eq__tie_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Life Support System Reliability (KB #33): LSSR = 0.7 x ORS + 0.3 x TIE.\
+  \ Peer-join via equipment (R-MULTISTAGE).\n\n[kb=33]\nLSSR = 0.7 \xD7 ORS + 0.3\
+  \ \xD7 TIE \u2014 Evaluates the reliability of life support systems under polar\
+  \ conditions\n[/kb=33]"
+hidden: false
+meta:
+  kb_id: 33

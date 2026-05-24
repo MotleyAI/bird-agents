@@ -1,0 +1,86 @@
+version: 6
+name: over_leveraged_position
+source_queries:
+- version: 3
+  name: vol_per_pair
+  source_model: marketstats
+  measures:
+  - formula: volmeter:avg
+    name: vol_avg
+  dimensions:
+  - name: mktcombo
+    model: marketdata
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: orders
+    joins:
+    - target_model: riskandmargin
+      join_pairs:
+      - - recordvault
+        - ordervault
+    - target_model: vol_per_pair
+      join_pairs:
+      - - mktnote
+        - marketdata__mktcombo
+    columns:
+    - name: leverage_x_vol
+      type: DOUBLE
+      sql: riskandmargin.posmagn_n * vol_per_pair.vol_avg
+    - name: is_over_leveraged
+      type: BOOLEAN
+      sql: (riskandmargin.posmagn_n * vol_per_pair.vol_avg) > 500
+  dimensions:
+  - name: recordvault
+  - name: leverage_x_vol
+  - name: is_over_leveraged
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.leverage_x_vol\"\
+  \ AS leverage_x_vol, \"orders.is_over_leveraged\" AS is_over_leveraged FROM (SELECT\n\
+  \  orders.recordvault AS \"orders.recordvault\",\n  (\n    CAST(riskandmargin.risk_margin_profile\
+  \ ->> '$.position.posmagn' AS REAL)\n  ) * vol_per_pair.vol_avg AS \"orders.leverage_x_vol\"\
+  ,\n  (\n    (\n      CAST(riskandmargin.risk_margin_profile ->> '$.position.posmagn'\
+  \ AS REAL)\n    ) * vol_per_pair.vol_avg\n  ) > 500 AS \"orders.is_over_leveraged\"\
+  \nFROM orders AS orders\nLEFT JOIN riskandmargin AS riskandmargin\n  ON orders.recordvault\
+  \ = riskandmargin.ordervault\nLEFT JOIN (\n  (\n    SELECT\n      \"marketstats.marketdata.mktcombo\"\
+  \ AS marketdata__mktcombo,\n      \"marketstats.vol_avg\" AS vol_avg\n    FROM (\n\
+  \      SELECT\n        marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\
+  \ AS \"marketstats.marketdata.mktcombo\",\n        AVG(marketstats.volmeter) AS\
+  \ \"marketstats.vol_avg\"\n      FROM marketstats AS marketstats\n      LEFT JOIN\
+  \ marketdata AS marketdata\n        ON marketstats.mdlink = marketdata.marketdatanode\n\
+  \      GROUP BY\n        marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\n\
+  \    ) AS _inner\n  )\n) AS vol_per_pair\n  ON orders.mktnote = vol_per_pair.marketdata__mktcombo)\
+  \ AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: leverage_x_vol
+  sql: leverage_x_vol
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_over_leveraged
+  sql: is_over_leveraged
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Over-Leveraged Position (KB #13) per order: posmagn \xD7 volmeter >\
+  \ 500. posmagn is per-order (riskandmargin); volmeter is per-pair, computed as the\
+  \ average of marketstats.volmeter grouped by the trading pair (marketdata.mktcombo).\
+  \ Joined to orders via orders.mktnote = pair. The 'is_over_leveraged' boolean expresses\
+  \ the predicate; 'leverage_x_vol' carries the raw product.\n\n[kb=13]\nA position\
+  \ where the leverage (posmagn) multiplied by the volatility measure (volmeter) exceeds\
+  \ 500, indicating high risk exposure. \u2014 Identifies positions with excessive\
+  \ leverage relative to market volatility.\n[/kb=13]"
+hidden: false
+meta:
+  kb_id: 13

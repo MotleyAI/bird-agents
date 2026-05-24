@@ -1,0 +1,106 @@
+version: 6
+name: scanregistration
+sql_table: scanregistration
+query_variables: {}
+data_source: archeology
+columns:
+- name: logregistry
+  sql: logregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: crewref
+  sql: crewref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: arcref
+  sql: arcref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: logaccumm
+  sql: logaccumm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: refmark
+  sql: refmark
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ctrlpts
+  sql: ctrlpts
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: logmethod
+  sql: logmethod
+  type: TEXT
+  primary_key: false
+  description: "Registration Method (KB #28). Values: 'ICP' (Iterative Closest Point),\
+    \ 'Target-based' (alignment via physical reference markers), 'Hybrid' (automatic\
+    \ + manual), 'SLAM' (Simultaneous Localization and Mapping). Each has distinct\
+    \ accuracy characteristics.\n\n[kb=28]\nA categorization of alignment techniques\
+    \ with specific methodologies: 'ICP' (Iterative Closest Point algorithm for point\
+    \ cloud alignment), 'Target-based' (alignment using physical reference markers),\
+    \ 'Hybrid' (combination of automatic and manual alignment), and 'SLAM' (Simultaneous\
+    \ Localization and Mapping for real-time registration). Each method has distinct\
+    \ accuracy characteristics and use cases. \u2014 Illustrates different scan registration\
+    \ methodologies in archaeological documentation.\n[/kb=28]"
+  label: LogMethod (Registration Method)
+  hidden: false
+  meta:
+    kb_id: 28
+- name: transform
+  sql: transform
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: errscale
+  sql: errscale
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: errvalmm
+  sql: errvalmm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: is_registration_quality_threshold_met
+  sql: CASE WHEN logaccumm < 1.0 AND errvalmm < 2.0 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Registration Quality Threshold (KB #18): LogAccuMm < 1.0 AND ErrValMm\
+    \ < 2.0 \u2014 sufficient accuracy for reliable spatial analysis.\n\n[kb=18]\n\
+    A registration with LogAccuMm < 1.0 and ErrValMm < 2.0, ensuring sufficient accuracy\
+    \ for reliable spatial analysis with maximum tolerable error below the significant\
+    \ feature size threshold. \u2014 Defines the quality threshold for scan registration\
+    \ in archaeological documentation based on error propagation analysis.\n[/kb=18]"
+  label: Registration Quality Threshold
+  hidden: false
+  meta:
+    kb_id: 18
+measures: []
+aggregations: []
+joins:
+- target_model: projects
+  join_pairs:
+  - - arcref
+    - arcregistry
+  join_type: left
+- target_model: personnel
+  join_pairs:
+  - - crewref
+    - crewregistry
+  join_type: left
+filters: []
+description: 'Per-scan registration / alignment logs. Hosts the Registration Quality
+  Threshold predicate (KB #18).'
+hidden: false

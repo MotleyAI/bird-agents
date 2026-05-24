@@ -1,0 +1,110 @@
+version: 6
+name: customer_with_clv_quartile
+source_queries:
+- version: 3
+  source_model:
+    source_name: credit_accounts_and_history
+    columns:
+    - name: clv_quartile
+      type: DOUBLE
+      sql: NTILE(4) OVER (ORDER BY credit_accounts_and_history.custlifeval DESC)
+    - name: is_high_value_customer
+      type: DOUBLE
+      sql: CASE WHEN NTILE(4) OVER (ORDER BY credit_accounts_and_history.custlifeval
+        DESC) = 1 AND credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.tenureyrs
+        > 5 AND credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.crossratio
+        > 0.5 THEN 1 ELSE 0 END
+  dimensions:
+  - name: histcompref
+  - name: clv_quartile
+  - name: is_high_value_customer
+  - name: tenureyrs
+    model: credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record
+  - name: crossratio
+    model: credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record
+  - name: custlifeval
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"credit_accounts_and_history.histcompref\" AS histcompref,\
+  \ \"credit_accounts_and_history.clv_quartile\" AS clv_quartile, \"credit_accounts_and_history.is_high_value_customer\"\
+  \ AS is_high_value_customer, \"credit_accounts_and_history.credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record.tenureyrs\"\
+  \ AS credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record__tenureyrs,\
+  \ \"credit_accounts_and_history.credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record.crossratio\"\
+  \ AS credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record__crossratio,\
+  \ \"credit_accounts_and_history.custlifeval\" AS custlifeval FROM (SELECT\n  credit_accounts_and_history.histcompref\
+  \ AS \"credit_accounts_and_history.histcompref\",\n  NTILE(4) OVER (ORDER BY credit_accounts_and_history.custlifeval\
+  \ DESC) AS \"credit_accounts_and_history.clv_quartile\",\n  CASE\n    WHEN NTILE(4)\
+  \ OVER (ORDER BY credit_accounts_and_history.custlifeval DESC) = 1\n    AND credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.tenureyrs\
+  \ > 5\n    AND credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.crossratio\
+  \ > 0.5\n    THEN 1\n    ELSE 0\n  END AS \"credit_accounts_and_history.is_high_value_customer\"\
+  ,\n  credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.tenureyrs\
+  \ AS \"credit_accounts_and_history.credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record.tenureyrs\"\
+  ,\n  credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.crossratio\
+  \ AS \"credit_accounts_and_history.credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record.crossratio\"\
+  ,\n  credit_accounts_and_history.custlifeval AS \"credit_accounts_and_history.custlifeval\"\
+  \nFROM credit_accounts_and_history AS credit_accounts_and_history\nLEFT JOIN credit_and_compliance\
+  \ AS credit_and_compliance\n  ON credit_accounts_and_history.histcompref = credit_and_compliance.compbankref\n\
+  LEFT JOIN bank_and_transactions AS credit_and_compliance__bank_and_transactions\n\
+  \  ON credit_and_compliance.compbankref = credit_and_compliance__bank_and_transactions.bankexpref\n\
+  LEFT JOIN expenses_and_assets AS credit_and_compliance__bank_and_transactions__expenses_and_assets\n\
+  \  ON credit_and_compliance__bank_and_transactions.bankexpref = credit_and_compliance__bank_and_transactions__expenses_and_assets.expemplref\n\
+  LEFT JOIN employment_and_income AS credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income\n\
+  \  ON credit_and_compliance__bank_and_transactions__expenses_and_assets.expemplref\
+  \ = credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.emplcoreref\n\
+  LEFT JOIN core_record AS credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record\n\
+  \  ON credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.emplcoreref\
+  \ = credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.coreregistry)\
+  \ AS _inner"
+data_source: credit
+columns:
+- name: histcompref
+  sql: histcompref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: clv_quartile
+  sql: clv_quartile
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_high_value_customer
+  sql: is_high_value_customer
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record__tenureyrs
+  sql: credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record__tenureyrs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record__crossratio
+  sql: credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record__crossratio
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: custlifeval
+  sql: custlifeval
+  type: DOUBLE
+  primary_key: false
+  description: Customer Lifetime Value (CLV). Total worth of customer over the relationship;
+    factors product usage, tenure, profitability, expected future transactions.
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "High-Value Customer (KB 12): customer_with_clv_quartile is a query-backed\
+  \ model that computes per-customer CLV quartile via NTILE(4) and exposes an `is_high_value_customer`\
+  \ flag (1 when quartile=1 AND tenureyrs > 5 AND crossratio > 0.5, else 0).\n\n[kb=12]\n\
+  A customer with custlifeval in the top quartile, tenureyrs > 5, and crossratio >\
+  \ 0.5. \u2014 Identifies customers with significant value to the institution.\n\
+  [/kb=12]"
+hidden: false
+meta:
+  kb_id: 12

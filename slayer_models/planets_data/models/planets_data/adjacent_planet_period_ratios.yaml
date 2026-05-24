@@ -1,0 +1,101 @@
+version: 6
+name: adjacent_planet_period_ratios
+source_queries:
+- version: 3
+  name: with_lag
+  source_model:
+    source_name: orbital_characteristics
+    columns:
+    - name: hostlink
+      type: DOUBLE
+      sql: planets.hostlink
+    - name: period_inner
+      type: DOUBLE
+      sql: LAG(period) OVER (PARTITION BY planets.hostlink ORDER BY period ASC)
+    - name: period_outer
+      type: DOUBLE
+      sql: period
+    - name: period_ratio
+      type: DOUBLE
+      sql: period * 1.0 / NULLIF(LAG(period) OVER (PARTITION BY planets.hostlink ORDER
+        BY period ASC), 0)
+  dimensions:
+  - name: bodylink
+  - name: hostlink
+  - name: period_inner
+  - name: period_outer
+  - name: period_ratio
+  whole_periods_only: false
+- version: 3
+  source_model: with_lag
+  dimensions:
+  - name: bodylink
+  - name: hostlink
+  - name: period_inner
+  - name: period_outer
+  - name: period_ratio
+  filters:
+  - period_inner is not None
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"with_lag.bodylink\" AS bodylink, \"with_lag.hostlink\"\
+  \ AS hostlink, \"with_lag.period_inner\" AS period_inner, \"with_lag.period_outer\"\
+  \ AS period_outer, \"with_lag.period_ratio\" AS period_ratio FROM (SELECT\n  with_lag.bodylink\
+  \ AS \"with_lag.bodylink\",\n  with_lag.hostlink AS \"with_lag.hostlink\",\n  with_lag.period_inner\
+  \ AS \"with_lag.period_inner\",\n  with_lag.period_outer AS \"with_lag.period_outer\"\
+  ,\n  with_lag.period_ratio AS \"with_lag.period_ratio\"\nFROM (\n  SELECT\n    \"\
+  orbital_characteristics.bodylink\" AS bodylink,\n    \"orbital_characteristics.hostlink\"\
+  \ AS hostlink,\n    \"orbital_characteristics.period_inner\" AS period_inner,\n\
+  \    \"orbital_characteristics.period_outer\" AS period_outer,\n    \"orbital_characteristics.period_ratio\"\
+  \ AS period_ratio\n  FROM (\n    SELECT\n      orbital_characteristics.bodylink\
+  \ AS \"orbital_characteristics.bodylink\",\n      planets.hostlink AS \"orbital_characteristics.hostlink\"\
+  ,\n      LAG(period) OVER (PARTITION BY planets.hostlink ORDER BY period ASC) AS\
+  \ \"orbital_characteristics.period_inner\",\n      orbital_characteristics.period\
+  \ AS \"orbital_characteristics.period_outer\",\n      period * 1.0 / NULLIF(LAG(period)\
+  \ OVER (PARTITION BY planets.hostlink ORDER BY period ASC), 0) AS \"orbital_characteristics.period_ratio\"\
+  \n    FROM orbital_characteristics AS orbital_characteristics\n    LEFT JOIN planets\
+  \ AS planets\n      ON orbital_characteristics.bodylink = planets.planetref\n  )\
+  \ AS _inner\n) AS with_lag\nWHERE\n  NOT with_lag.period_inner IS NULL) AS _inner"
+data_source: planets_data
+columns:
+- name: bodylink
+  sql: bodylink
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: hostlink
+  sql: hostlink
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: period_inner
+  sql: period_inner
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: period_outer
+  sql: period_outer
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: period_ratio
+  sql: period_ratio
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Per-planet (excluding the innermost in each system) ratio of this planet's\
+  \ orbital period to the next-inner planet's orbital period. Encodes KB #17 Orbital\
+  \ Period Ratio. Uses LAG within each host star, ordered by period ascending; rows\
+  \ where there is no inner sibling are dropped.\n\n[kb=17]\nFor two planets, an outer\
+  \ planet with period $P_{out}$ and an inner planet with period $P_{in}$, the ratio\
+  \ is: $R_{period} = \\frac{P_{out}}{P_{in}}$. \u2014 Calculates the ratio of the\
+  \ orbital periods of two adjacent planets in a system.\n[/kb=17]"
+hidden: false
+meta:
+  kb_id: 17

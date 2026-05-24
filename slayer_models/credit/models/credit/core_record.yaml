@@ -1,0 +1,195 @@
+version: 6
+name: core_record
+sql_table: core_record
+query_variables: {}
+data_source: credit
+columns:
+- name: coreregistry
+  sql: coreregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: timemark
+  sql: timemark
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: clientref
+  sql: clientref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: appref
+  sql: appref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: modelline
+  sql: modelline
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: scoredate
+  sql: scoredate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: nextcheck
+  sql: nextcheck
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: dataqscore
+  sql: dataqscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: confscore
+  sql: confscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: overridestat
+  sql: overridestat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: overridenote
+  sql: overridenote
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: decidestat
+  sql: decidestat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: decidedate
+  sql: decidedate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: agespan
+  sql: agespan
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: gendlabel
+  sql: gendlabel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: maritalform
+  sql: maritalform
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: depcount
+  sql: depcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: resdform
+  sql: resdform
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: addrstab
+  sql: addrstab
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: phonestab
+  sql: phonestab
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: emailstab
+  sql: emailstab
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: clientseg
+  sql: clientseg
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tenureyrs
+  sql: tenureyrs
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: crossratio
+  sql: crossratio
+  type: DOUBLE
+  primary_key: false
+  description: "Cross-sell ratio (0-1). Below 0.2 indicates minimal product relationships,\
+    \ 0.2-0.5 moderate opportunity, above 0.5 strong relationship with high additional\
+    \ sales potential.\n\n[kb=27]\nCross-sell ratio (crossratio) ranges from 0-1.\
+    \ Values below 0.2 indicate minimal product relationships, 0.2-0.5 indicates moderate\
+    \ opportunity, and above 0.5 indicates strong existing relationship with high\
+    \ additional sales potential. \u2014 Illustrates what different cross-sell ratio\
+    \ values indicate.\n[/kb=27]"
+  label: Cross-Sell Ratio Meaning
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 27
+- name: profitscore
+  sql: profitscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: churnrate
+  sql: churnrate
+  type: DOUBLE
+  primary_key: false
+  description: "Churn rate (0-1). Below 0.1 low attrition risk, 0.1-0.2 moderate,\
+    \ 0.2-0.3 high, above 0.3 severe (immediate relationship intervention).\n\n[kb=29]\n\
+    Churn rate (churnrate) ranges from 0-1. Values below 0.1 indicate low attrition\
+    \ risk, 0.1-0.2 indicates moderate risk, 0.2-0.3 indicates high risk, and above\
+    \ 0.3 indicates severe risk of customer loss requiring immediate relationship\
+    \ management intervention. \u2014 Illustrates what different churn rate values\
+    \ indicate about customer retention risk.\n[/kb=29]"
+  label: Churn Rate Significance
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 29
+- name: cohort_quarter
+  sql: strftime('%Y', date(scoredate, '-' || tenureyrs || ' years')) || '-Q' || ((CAST(strftime('%m',
+    date(scoredate, '-' || tenureyrs || ' years')) AS INTEGER) - 1) / 3 + 1)
+  type: TEXT
+  primary_key: false
+  description: "Cohort quarter when the customer started with the institution: scoredate\
+    \ minus tenureyrs years, formatted as YYYY-Q[1-4].\n\n[kb=51]\nQuarter of the\
+    \ year when the customer started with the institution (scoring date minus tenure\
+    \ years) \u2014 Quarter of the year when the customer started with the institution.\n\
+    [/kb=51]"
+  label: Cohort Quarter
+  hidden: false
+  meta:
+    kb_id: 51
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

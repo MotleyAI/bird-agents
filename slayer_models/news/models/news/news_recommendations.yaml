@@ -1,0 +1,116 @@
+version: 6
+name: news_recommendations
+sql_table: recommendations
+query_variables: {}
+data_source: news
+columns:
+- name: reckey
+  sql: reckey
+  type: INT
+  primary_key: true
+  description: Primary key.
+  hidden: false
+- name: alglabel
+  sql: alglabel
+  type: TEXT
+  primary_key: false
+  description: 'Algorithm: Contextual, Content-based, Collaborative, Hybrid.'
+  hidden: false
+- name: stratlabel
+  sql: stratlabel
+  type: TEXT
+  primary_key: false
+  description: 'Strategy: Trending, Editorial, Similar, Personalized.'
+  hidden: false
+- name: posval
+  sql: posval
+  type: INT
+  primary_key: false
+  description: "Position/rank in the list. KB #28: a recommendation placed in position\
+    \ 3 may benefit from higher prominence than lower-ranked placements.\n\n[kb=28]\n\
+    A recommendation placed in position 3, for example, may benefit from higher prominence\
+    \ compared to lower-ranked placements. \u2014 Depicts the effect of recommendation\
+    \ placement on user visibility and engagement.\n[/kb=28]"
+  label: Recommendation Position Illustration
+  hidden: false
+  meta:
+    kb_id: 28
+- name: recpage
+  sql: recpage
+  type: TEXT
+  primary_key: false
+  description: Page where the recommendation is shown.
+  hidden: false
+- name: recsec
+  sql: recsec
+  type: TEXT
+  primary_key: false
+  description: Section where the recommendation is shown.
+  hidden: false
+- name: recscore
+  sql: recscore
+  type: DOUBLE
+  primary_key: false
+  description: "Recommendation relevance score (0..1). KB #11 PP (Personalization\
+    \ Priority): content that strongly matches user preferences and exhibits high\
+    \ interaction rates is prioritized in personalized recommendations \u2014 recscore\
+    \ is the per-recommendation prioritization signal.\n\n[kb=11]\nContent that strongly\
+    \ matches user preferences and exhibits high interaction rates is prioritized\
+    \ in personalized recommendations. \u2014 Establishes criteria for prioritizing\
+    \ content that aligns closely with individual user preferences based on prior\
+    \ interactions.\n[/kb=11]"
+  label: Personalization Priority (PP)
+  hidden: false
+  meta:
+    kb_id: 11
+- name: confval
+  sql: confval
+  type: DOUBLE
+  primary_key: false
+  description: Algorithm confidence score (0..1).
+  hidden: false
+- name: divval
+  sql: divval
+  type: DOUBLE
+  primary_key: false
+  description: Diversity score.
+  hidden: false
+- name: novval
+  sql: novval
+  type: DOUBLE
+  primary_key: false
+  description: Novelty score.
+  hidden: false
+- name: seryval
+  sql: seryval
+  type: DOUBLE
+  primary_key: false
+  description: Serendipity score.
+  hidden: false
+- name: artlink
+  sql: artlink
+  type: INT
+  primary_key: false
+  description: FK to news_articles.artkey.
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: news_articles
+  join_pairs:
+  - - artlink
+    - artkey
+  join_type: left
+filters: []
+description: "News DB: Recommendation records (one per shown recommendation): algorithm,\
+  \ strategy, position, page/section, recommendation score, confidence, diversity,\
+  \ novelty, serendipity, FK to articles. KB #15 CRS (Content Recommendation Strategy):\
+  \ recommendation strategies are developed by jointly considering content relevance,\
+  \ user behavior analytics, and system performance metrics \u2014 captured by the\
+  \ strategy/algorithm/score fields on this model.\n\n[kb=15]\nRecommendation strategies\
+  \ are developed by jointly considering content relevance, user behavior analytics,\
+  \ and system performance metrics. \u2014 Outlines the strategic framework used to\
+  \ select and rank recommended articles.\n[/kb=15]"
+hidden: false
+meta:
+  kb_id: 15

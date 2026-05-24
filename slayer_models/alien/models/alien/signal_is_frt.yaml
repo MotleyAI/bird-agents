@@ -1,0 +1,52 @@
+version: 6
+name: signal_is_frt
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: is_frt
+      type: BOOLEAN
+      sql: CASE WHEN sigdursec < 0.1 AND sigstrdb > 15 AND bwhz > 1000000 AND signalclassification.repeatcount
+        = 1 THEN 1 ELSE 0 END
+  dimensions:
+  - name: signalregistry
+  - name: is_frt
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_frt\"\
+  \ AS is_frt FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
+  ,\n  CASE\n    WHEN signals.sigdursec < 0.1\n    AND signals.sigstrdb > 15\n   \
+  \ AND signals.bwhz > 1000000\n    AND signalclassification.repeatcount = 1\n   \
+  \ THEN 1\n    ELSE 0\n  END AS \"signals.is_frt\"\nFROM signals AS signals\nLEFT\
+  \ JOIN signalclassification AS signalclassification\n  ON signals.signalregistry\
+  \ = signalclassification.signalref) AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_frt
+  sql: is_frt
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Fast Radio Transient (FRT) predicate per signal.\n\n[kb=19]\nSignals\
+  \ with extremely short duration ($\\text{SigDurSec} < 0.1$), high signal strength\
+  \ ($\\text{SigStrDb} > 15$), broad bandwidth ($\\text{BwHz} > 1000000$), and no\
+  \ periodicity ($\\text{RepeatCount} = 1$). \u2014 Defines a specific class of brief,\
+  \ high-energy radio emissions.\n[/kb=19]"
+hidden: false
+meta:
+  kb_id: 19

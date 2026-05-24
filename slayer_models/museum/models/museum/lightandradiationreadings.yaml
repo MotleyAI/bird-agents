@@ -1,0 +1,82 @@
+version: 6
+name: lightandradiationreadings
+sql_table: lightandradiationreadings
+query_variables: {}
+data_source: museum
+columns:
+- name: lightradregistry
+  sql: lightradregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: envreadref
+  sql: envreadref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: lightlux
+  sql: lightlux
+  type: INT
+  primary_key: false
+  description: "[kb=29]\nValues in lux range from near-dark (5-10 lux) to typical\
+    \ indoor lighting (300-500 lux). Conservation standards recommend 50 lux for highly\
+    \ sensitive materials, 150-200 lux for paintings and wood, and up to 300 lux for\
+    \ stone and metal. Daylight can exceed 10,000 lux and should be filtered. \u2014\
+    \ Illustrates light intensity measurements and their conservation implications.\n\
+    [/kb=29]"
+  label: LightAndRadiationReadings.LightLux
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 29
+- name: uvuwcm2
+  sql: uvuwcm2
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: irwm2
+  sql: irwm2
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: visibleexplxh
+  sql: visibleexplxh
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: light_exposure_threshold_band
+  sql: CASE WHEN lightlux > 200 THEN 'Exceeds Medium-Sensitivity Threshold' WHEN lightlux
+    > 50 THEN 'Exceeds High-Sensitivity Threshold' ELSE 'Within High-Sensitivity Threshold'
+    END
+  type: TEXT
+  primary_key: false
+  description: "[kb=53]\nHigh sensitivity artifacts (textiles, paper) must not exceed\
+    \ 50 lux; Medium sensitivity (paintings, wood) must not exceed 200 lux. Based\
+    \ on conservation research about light-induced deterioration rates. \u2014 Defines\
+    \ maximum safe light exposure levels for artifacts based on material sensitivity\n\
+    [/kb=53]"
+  label: Light Exposure Thresholds
+  hidden: false
+  meta:
+    kb_id: 53
+measures: []
+aggregations: []
+joins:
+- target_model: environmentalreadingscore
+  join_pairs:
+  - - envreadref
+    - envreadregistry
+  join_type: left
+filters: []
+hidden: false

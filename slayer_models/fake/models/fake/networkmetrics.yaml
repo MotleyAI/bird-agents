@@ -1,0 +1,106 @@
+version: 6
+name: networkmetrics
+sql_table: networkmetrics
+query_variables: {}
+data_source: fake
+columns:
+- name: netkey
+  sql: netkey
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: netsessref
+  sql: netsessref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: network_engagement_metrics
+  sql: network_engagement_metrics
+  type: TEXT
+  primary_key: false
+  description: "JSONB column grouping connection metrics (follownum, followgrowrate,\
+    \ followinggrowrate, connqualscore, ...), engagement metrics (engauth, engrate,\
+    \ ...) and interaction metrics (interactdiv, interactreci, tempinteractpat). Sub-fields\
+    \ extracted as separate columns; see KB #22 (engauth).\n\n[kb=22]\nRanges from\
+    \ 0 to 1. Scores above 0.9 indicate highly authentic engagement, while scores\
+    \ below 0.4 suggest artificial or automated engagement. \u2014 Illustrates engagement\
+    \ authenticity score.\n[/kb=22]"
+  label: networkmetrics.network_engagement_metrics.engagement_metrics.engauth
+  hidden: false
+  meta:
+    kb_id: 22
+- name: follownum
+  sql: json_extract(network_engagement_metrics, '$.connection_metrics.follownum')
+  type: DOUBLE
+  primary_key: false
+  description: Follower count.
+  hidden: false
+- name: followingnum
+  sql: json_extract(network_engagement_metrics, '$.connection_metrics.followingnum')
+  type: DOUBLE
+  primary_key: false
+  description: Following count.
+  hidden: false
+- name: followgrowrate
+  sql: json_extract(network_engagement_metrics, '$.connection_metrics.followgrowrate')
+  type: DOUBLE
+  primary_key: false
+  description: 'Follower growth rate (component of NGV, KB #2).'
+  hidden: false
+- name: followinggrowrate
+  sql: json_extract(network_engagement_metrics, '$.connection_metrics.followinggrowrate')
+  type: DOUBLE
+  primary_key: false
+  description: 'Following growth rate (component of NGV, KB #2).'
+  hidden: false
+- name: connqualscore
+  sql: json_extract(network_engagement_metrics, '$.connection_metrics.connqualscore')
+  type: DOUBLE
+  primary_key: false
+  description: 'Connection-quality score (component of NIC, KB #51).'
+  hidden: false
+- name: engauth
+  sql: json_extract(network_engagement_metrics, '$.engagement_metrics.engauth')
+  type: DOUBLE
+  primary_key: false
+  description: 'Engagement authenticity (KB #22). Range 0-1; >0.9 highly authentic,
+    <0.4 artificial / automated.'
+  hidden: false
+- name: engrate
+  sql: json_extract(network_engagement_metrics, '$.engagement_metrics.engrate')
+  type: DOUBLE
+  primary_key: false
+  description: Engagement rate.
+  hidden: false
+- name: interactdiv
+  sql: json_extract(network_engagement_metrics, '$.interaction_metrics.interactdiv')
+  type: DOUBLE
+  primary_key: false
+  description: 'Interaction diversity (component of NIC, KB #51).'
+  hidden: false
+- name: tempinteractpat
+  sql: json_extract(network_engagement_metrics, '$.interaction_metrics.tempinteractpat')
+  type: TEXT
+  primary_key: false
+  description: 'Temporal interaction pattern enum (Natural / Periodic / Random / Automated).
+    KB #17 (Engagement Manipulator) checks tempinteractpat=''Automated''.'
+  hidden: false
+- name: interactreci
+  sql: json_extract(network_engagement_metrics, '$.interaction_metrics.interactreci')
+  type: DOUBLE
+  primary_key: false
+  description: Interaction reciprocity.
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: sessionbehavior
+  join_pairs:
+  - - netsessref
+    - sessref
+  join_type: left
+filters: []
+description: Per-session network engagement metrics. The `network_engagement_metrics`
+  JSONB column groups connection growth, engagement quality, and interaction diversity;
+  commonly-referenced KB sub-fields are extracted as columns.
+hidden: false

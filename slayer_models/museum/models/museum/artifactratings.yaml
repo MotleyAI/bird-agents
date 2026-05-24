@@ -1,0 +1,202 @@
+version: 6
+name: artifactratings
+sql_table: artifactratings
+query_variables: {}
+data_source: museum
+columns:
+- name: ratingrecordregistry
+  sql: ratingrecordregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: artref
+  sql: artref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: histsignrating
+  sql: histsignrating
+  type: INT
+  primary_key: false
+  description: "Historical significance rating (KB #22): 1-10. 1-3 = minor; 4-7 =\
+    \ moderate; 8-10 = exceptional importance fundamentally contributing to understanding\
+    \ past cultures.\n\n[kb=22]\nA SMALLINT typically ranging from 1-10, where 1-3\
+    \ indicates minor historical significance, 4-7 indicates moderate significance,\
+    \ and 8-10 indicates exceptional historical importance that fundamentally contributes\
+    \ to our understanding of past cultures or events. \u2014 Illustrates the historical\
+    \ significance rating scale.\n[/kb=22]"
+  label: ArtifactRatings.HistSignRating
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 22
+- name: researchvalrating
+  sql: researchvalrating
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: exhibitvalrating
+  sql: exhibitvalrating
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: cultscore
+  sql: cultscore
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: publicaccessrating
+  sql: publicaccessrating
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: eduvaluerating
+  sql: eduvaluerating
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: conservediff
+  sql: conservediff
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: treatcomplexity
+  sql: treatcomplexity
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: matstability
+  sql: matstability
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: deteriorrate
+  sql: deteriorrate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: conservestatus_score
+  sql: CASE artifactscore.conservestatus WHEN 'Excellent' THEN 1 WHEN 'Good' THEN
+    3 WHEN 'Fair' THEN 5 WHEN 'Poor' THEN 7 WHEN 'Critical' THEN 10 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric mapping of ConserveStatus per KB #0: Excellent=1, Good=3,\
+    \ Fair=5, Poor=7, Critical=10.\n\n[kb=0]\nCPI = \\frac{(HistSignRating + ResearchValRating\
+    \ + CultScore) \\times (10 - ConserveStatus)}{30}, \\text{where ConserveStatus\
+    \ is numerically mapped: Excellent=1, Good=3, Fair=5, Poor=7, Critical=10} \u2014\
+    \ Calculates the overall conservation priority for an artifact based on multiple\
+    \ factors.\n[/kb=0]"
+  label: Conservation Priority Index (CPI)
+  hidden: false
+  meta:
+    kb_id: 0
+- name: cpi
+  sql: ((histsignrating + researchvalrating + cultscore) * (10 - CASE artifactscore.conservestatus
+    WHEN 'Excellent' THEN 1 WHEN 'Good' THEN 3 WHEN 'Fair' THEN 5 WHEN 'Poor' THEN
+    7 WHEN 'Critical' THEN 10 ELSE NULL END)) / 30.0
+  type: DOUBLE
+  primary_key: false
+  description: "Conservation Priority Index (KB #0): (HistSignRating + ResearchValRating\
+    \ + CultScore) * (10 - ConserveStatus_score) / 30. Higher = more urgent.\n\n[kb=0]\n\
+    CPI = \\frac{(HistSignRating + ResearchValRating + CultScore) \\times (10 - ConserveStatus)}{30},\
+    \ \\text{where ConserveStatus is numerically mapped: Excellent=1, Good=3, Fair=5,\
+    \ Poor=7, Critical=10} \u2014 Calculates the overall conservation priority for\
+    \ an artifact based on multiple factors.\n[/kb=0]"
+  label: Conservation Priority Index (CPI)
+  hidden: false
+  meta:
+    kb_id: 0
+- name: is_high_priority
+  sql: ((histsignrating + researchvalrating + cultscore) * (10 - CASE artifactscore.conservestatus
+    WHEN 'Excellent' THEN 1 WHEN 'Good' THEN 3 WHEN 'Fair' THEN 5 WHEN 'Poor' THEN
+    7 WHEN 'Critical' THEN 10 ELSE NULL END)) / 30.0 > 7
+  type: BOOLEAN
+  primary_key: false
+  description: "Conservation Priority Level 'High Priority' (KB #56): CPI > 7.\n\n\
+    [kb=56]\n'High Priority': CPI > 7 (Artifacts requiring immediate conservation\
+    \ attention); 'Medium Priority': 4 < CPI \u2264 7 (Artifacts needing monitoring\
+    \ and planned conservation); 'Low Priority': CPI \u2264 4 (Artifacts in stable\
+    \ condition). \u2014 Classifies artifacts into priority levels based on their\
+    \ CPI scores\n[/kb=56]"
+  label: Conservation Priority Level
+  hidden: false
+  meta:
+    kb_id: 56
+- name: is_medium_priority
+  sql: ((histsignrating + researchvalrating + cultscore) * (10 - CASE artifactscore.conservestatus
+    WHEN 'Excellent' THEN 1 WHEN 'Good' THEN 3 WHEN 'Fair' THEN 5 WHEN 'Poor' THEN
+    7 WHEN 'Critical' THEN 10 ELSE NULL END)) / 30.0 > 4 AND ((histsignrating + researchvalrating
+    + cultscore) * (10 - CASE artifactscore.conservestatus WHEN 'Excellent' THEN 1
+    WHEN 'Good' THEN 3 WHEN 'Fair' THEN 5 WHEN 'Poor' THEN 7 WHEN 'Critical' THEN
+    10 ELSE NULL END)) / 30.0 <= 7
+  type: BOOLEAN
+  primary_key: false
+  description: "Conservation Priority Level 'Medium Priority' (KB #56): 4 < CPI <=\
+    \ 7.\n\n[kb=56]\n'High Priority': CPI > 7 (Artifacts requiring immediate conservation\
+    \ attention); 'Medium Priority': 4 < CPI \u2264 7 (Artifacts needing monitoring\
+    \ and planned conservation); 'Low Priority': CPI \u2264 4 (Artifacts in stable\
+    \ condition). \u2014 Classifies artifacts into priority levels based on their\
+    \ CPI scores\n[/kb=56]"
+  label: Conservation Priority Level
+  hidden: false
+  meta:
+    kb_id: 56
+- name: is_low_priority
+  sql: ((histsignrating + researchvalrating + cultscore) * (10 - CASE artifactscore.conservestatus
+    WHEN 'Excellent' THEN 1 WHEN 'Good' THEN 3 WHEN 'Fair' THEN 5 WHEN 'Poor' THEN
+    7 WHEN 'Critical' THEN 10 ELSE NULL END)) / 30.0 <= 4
+  type: BOOLEAN
+  primary_key: false
+  description: "Conservation Priority Level 'Low Priority' (KB #56): CPI <= 4.\n\n\
+    [kb=56]\n'High Priority': CPI > 7 (Artifacts requiring immediate conservation\
+    \ attention); 'Medium Priority': 4 < CPI \u2264 7 (Artifacts needing monitoring\
+    \ and planned conservation); 'Low Priority': CPI \u2264 4 (Artifacts in stable\
+    \ condition). \u2014 Classifies artifacts into priority levels based on their\
+    \ CPI scores\n[/kb=56]"
+  label: Conservation Priority Level
+  hidden: false
+  meta:
+    kb_id: 56
+- name: priority_level
+  sql: CASE WHEN ((histsignrating + researchvalrating + cultscore) * (10 - CASE artifactscore.conservestatus
+    WHEN 'Excellent' THEN 1 WHEN 'Good' THEN 3 WHEN 'Fair' THEN 5 WHEN 'Poor' THEN
+    7 WHEN 'Critical' THEN 10 ELSE NULL END)) / 30.0 > 7 THEN 'High Priority' WHEN
+    ((histsignrating + researchvalrating + cultscore) * (10 - CASE artifactscore.conservestatus
+    WHEN 'Excellent' THEN 1 WHEN 'Good' THEN 3 WHEN 'Fair' THEN 5 WHEN 'Poor' THEN
+    7 WHEN 'Critical' THEN 10 ELSE NULL END)) / 30.0 > 4 THEN 'Medium Priority' ELSE
+    'Low Priority' END
+  type: TEXT
+  primary_key: false
+  description: "Conservation Priority Level label (KB #56): High Priority (CPI > 7),\
+    \ Medium (4 < CPI <= 7), Low (CPI <= 4).\n\n[kb=56]\n'High Priority': CPI > 7\
+    \ (Artifacts requiring immediate conservation attention); 'Medium Priority': 4\
+    \ < CPI \u2264 7 (Artifacts needing monitoring and planned conservation); 'Low\
+    \ Priority': CPI \u2264 4 (Artifacts in stable condition). \u2014 Classifies artifacts\
+    \ into priority levels based on their CPI scores\n[/kb=56]"
+  label: Conservation Priority Level
+  hidden: false
+  meta:
+    kb_id: 56
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artref
+    - artregistry
+  join_type: left
+filters: []
+hidden: false

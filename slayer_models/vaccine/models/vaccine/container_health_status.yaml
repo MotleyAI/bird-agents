@@ -1,0 +1,142 @@
+version: 6
+name: container_health_status
+source_queries:
+- version: 3
+  name: agg_per_container_chs
+  source_model:
+    source_name: sensordata
+    columns:
+    - name: is_within_year_chs
+      type: BOOLEAN
+      sql: CASE WHEN julianday(alerttime) >= julianday('now', '-1 year') THEN 1 ELSE
+        0 END
+  measures:
+  - formula: tss:avg
+    name: tss_avg
+  - formula: tbs:max
+    name: tbs_max
+  - formula: tss:min
+    name: tss_min
+  dimensions:
+  - name: containlink
+  filters:
+  - is_within_year_chs = 1
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: container
+    joins:
+    - target_model: agg_per_container_chs
+      join_pairs:
+      - - containregistry
+        - containlink
+    columns:
+    - name: tss_avg_year
+      type: DOUBLE
+      sql: agg_per_container_chs.tss_avg
+    - name: tbs_max_year
+      type: DOUBLE
+      sql: agg_per_container_chs.tbs_max
+    - name: tss_current_min
+      type: DOUBLE
+      sql: agg_per_container_chs.tss_min
+    - name: cri_for_chs
+      type: DOUBLE
+      sql: (1 - COALESCE(agg_per_container_chs.tss_avg, 0)) * (1 - COALESCE(coolremainpct,
+        0) / 100)
+    - name: container_health_status
+      type: TEXT
+      sql: CASE WHEN ((1 - COALESCE(agg_per_container_chs.tss_avg, 0)) * (1 - COALESCE(coolremainpct,
+        0) / 100)) > 0.6 OR agg_per_container_chs.tss_min < 0.4 THEN 'Critical' WHEN
+        agg_per_container_chs.tss_avg >= 0.7 AND agg_per_container_chs.tbs_max <=
+        1.0 THEN 'Stable' WHEN agg_per_container_chs.tss_avg < 0.4 OR agg_per_container_chs.tbs_max
+        > 1.5 THEN 'Unstable' WHEN agg_per_container_chs.tss_avg >= 0.4 AND agg_per_container_chs.tbs_max
+        <= 1.5 THEN 'Moderate' ELSE 'Unknown' END
+  dimensions:
+  - name: containregistry
+  - name: tss_avg_year
+  - name: tbs_max_year
+  - name: tss_current_min
+  - name: container_health_status
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"container.containregistry\" AS containregistry, \"container.tss_avg_year\"\
+  \ AS tss_avg_year, \"container.tbs_max_year\" AS tbs_max_year, \"container.tss_current_min\"\
+  \ AS tss_current_min, \"container.container_health_status\" AS container_health_status\
+  \ FROM (SELECT\n  container.containregistry AS \"container.containregistry\",\n\
+  \  agg_per_container_chs.tss_avg AS \"container.tss_avg_year\",\n  agg_per_container_chs.tbs_max\
+  \ AS \"container.tbs_max_year\",\n  agg_per_container_chs.tss_min AS \"container.tss_current_min\"\
+  ,\n  CASE\n    WHEN (\n      (\n        1 - COALESCE(agg_per_container_chs.tss_avg,\
+  \ 0)\n      ) * (\n        1 - COALESCE(container.coolremainpct, 0) / 100\n    \
+  \  )\n    ) > 0.6\n    OR agg_per_container_chs.tss_min < 0.4\n    THEN 'Critical'\n\
+  \    WHEN agg_per_container_chs.tss_avg >= 0.7 AND agg_per_container_chs.tbs_max\
+  \ <= 1.0\n    THEN 'Stable'\n    WHEN agg_per_container_chs.tss_avg < 0.4 OR agg_per_container_chs.tbs_max\
+  \ > 1.5\n    THEN 'Unstable'\n    WHEN agg_per_container_chs.tss_avg >= 0.4 AND\
+  \ agg_per_container_chs.tbs_max <= 1.5\n    THEN 'Moderate'\n    ELSE 'Unknown'\n\
+  \  END AS \"container.container_health_status\"\nFROM container AS container\nLEFT\
+  \ JOIN (\n  (\n    SELECT\n      \"sensordata.containlink\" AS containlink,\n  \
+  \    \"sensordata.tss_avg\" AS tss_avg,\n      \"sensordata.tbs_max\" AS tbs_max,\n\
+  \      \"sensordata.tss_min\" AS tss_min\n    FROM (\n      SELECT\n        sensordata.containlink\
+  \ AS \"sensordata.containlink\",\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          ) * COALESCE(sensordata.tempstabidx, 1)\n       \
+  \ ) AS \"sensordata.tss_avg\",\n        MAX(\n          ABS(sensordata.tempnowc\
+  \ - sensordata.storetempc) / NULLIF(sensordata.temptolc, 0) * sensordata.tempdevcount\n\
+  \        ) AS \"sensordata.tbs_max\",\n        MIN(\n          (\n            1\
+  \ - COALESCE(CAST(sensordata.tempdevcount AS REAL) / 100, 0)\n          ) * (\n\
+  \            1 - COALESCE(CAST(sensordata.critevents AS REAL) / 10, 0)\n       \
+  \   ) * COALESCE(sensordata.tempstabidx, 1)\n        ) AS \"sensordata.tss_min\"\
+  \n      FROM sensordata AS sensordata\n      WHERE\n        CASE\n          WHEN\
+  \ JULIANDAY(sensordata.alerttime) >= JULIANDAY('now', '-1 year')\n          THEN\
+  \ 1\n          ELSE 0\n        END = 1\n      GROUP BY\n        sensordata.containlink\n\
+  \    ) AS _inner\n  )\n) AS agg_per_container_chs\n  ON container.containregistry\
+  \ = agg_per_container_chs.containlink) AS _inner"
+data_source: vaccine
+columns:
+- name: containregistry
+  sql: containregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tss_avg_year
+  sql: tss_avg_year
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: tbs_max_year
+  sql: tbs_max_year
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: tss_current_min
+  sql: tss_current_min
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: container_health_status
+  sql: container_health_status
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Container Health Status (KB #10). Four-level classification per container\
+  \ based on CRI (KB #2), avg/min TSS (KB #0), and max TBS (KB #9) over sensordata\
+  \ readings in the past 1 year (filtered by alerttime). Levels (evaluated in order,\
+  \ first match wins): Critical (CRI > 0.6 OR current min TSS < 0.4); Stable (avg\
+  \ TSS >= 0.7 AND max TBS <= 1.0); Unstable (avg TSS < 0.4 OR max TBS > 1.5); Moderate\
+  \ (avg TSS >= 0.4 AND max TBS <= 1.5). The 'past 1 year' window is encoded as the\
+  \ stage filter alerttime >= date('now', '-1 year'); switch to an R-VAR anchor variable\
+  \ if the agent prefers explicit anchor-date control.\n\n[kb=10]\nFour-level classification\
+  \ based on CRI, TSS, and TBS:\n- Critical: CRI > 0.6 OR current TSS < 0.4\n- Unstable:\
+  \ Average TSS < 0.4 OR maximum TBS > 1.5 over the past 1 year, and not Critical\n\
+  - Moderate: Average TSS >= 0.4 AND maximum TBS <= 1.5 over the past 1 year, and\
+  \ not Critical\n- Stable: Average TSS >= 0.7 AND maximum TBS <= 1.0 over the past\
+  \ 1 year, and not Critical \u2014 Classifies containers based on overall risk and\
+  \ temperature stability to prioritize immediate action and monitor operational trends.\n\
+  [/kb=10]"
+hidden: false
+meta:
+  kb_id: 10

@@ -1,0 +1,61 @@
+version: 6
+name: signal_is_technosignature
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: is_technosignature
+      type: BOOLEAN
+      sql: CASE WHEN signalprobabilities.techsigprob > 0.7 AND signalprobabilities.natsrcprob
+        < 0.3 AND signalprobabilities.artsrcprob < 50 AND (bwhz / (centerfreqmhz *
+        1000000.0)) < 0.001 AND signalclassification.infodense > 0.8 THEN 1 ELSE 0
+        END
+  dimensions:
+  - name: signalregistry
+  - name: is_technosignature
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_technosignature\"\
+  \ AS is_technosignature FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
+  ,\n  CASE\n    WHEN signalprobabilities.techsigprob > 0.7\n    AND signalprobabilities.natsrcprob\
+  \ < 0.3\n    AND signalprobabilities.artsrcprob < 50\n    AND (\n      signals.bwhz\
+  \ / (\n        signals.centerfreqmhz * 1000000.0\n      )\n    ) < 0.001\n    AND\
+  \ signalclassification.infodense > 0.8\n    THEN 1\n    ELSE 0\n  END AS \"signals.is_technosignature\"\
+  \nFROM signals AS signals\nLEFT JOIN signalprobabilities AS signalprobabilities\n\
+  \  ON signals.signalregistry = signalprobabilities.signalref\nLEFT JOIN signalclassification\
+  \ AS signalclassification\n  ON signals.signalregistry = signalclassification.signalref)\
+  \ AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_technosignature
+  sql: is_technosignature
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Technosignature predicate per signal.\n\n[kb=10]\nA signal with $\\\
+  text{TechSigProb} > 0.7$, $\\text{NatSrcProb} < 0.3$, and $\\text{ArtSrcProb} <\
+  \ 50$ that exhibits narrow bandwidth ($\\text{BFR} < 0.001$) and high information\
+  \ density ($\\text{InfoDense} > 0.8$). \u2014 Defines the concept of signals that\
+  \ indicate technological activity.\n[/kb=10]"
+hidden: false
+meta:
+  kb_id: 10

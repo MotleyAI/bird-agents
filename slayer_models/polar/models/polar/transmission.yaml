@@ -1,0 +1,82 @@
+version: 6
+name: transmission
+sql_table: transmission
+query_variables: {}
+data_source: polar
+columns:
+- name: transregistry
+  sql: transregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: transeqref
+  sql: transeqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: transengfluidsref
+  sql: transengfluidsref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: transmissiontemperaturec
+  sql: transmissiontemperaturec
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: transmissionpressurekpa
+  sql: transmissionpressurekpa
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: transmissiongear
+  sql: transmissiongear
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: differentialtemperaturec
+  sql: differentialtemperaturec
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: axletemperaturec
+  sql: axletemperaturec
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: transopmaintref
+  sql: transopmaintref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins:
+- target_model: engineandfluids
+  join_pairs:
+  - - transengfluidsref
+    - engineregistry
+  join_type: left
+- target_model: equipment
+  join_pairs:
+  - - transeqref
+    - equipmentcode
+  join_type: left
+filters: []
+hidden: false

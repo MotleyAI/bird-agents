@@ -1,0 +1,104 @@
+version: 6
+name: risk_adjusted_return
+source_queries:
+- version: 3
+  name: realline_per_user
+  source_model: accountbalances
+  measures:
+  - formula: realline:sum
+    name: realline_total
+  dimensions:
+  - name: usertag
+  whole_periods_only: false
+- version: 3
+  name: vol_per_pair
+  source_model: marketstats
+  measures:
+  - formula: volmeter:avg
+    name: vol_avg
+  dimensions:
+  - name: mktcombo
+    model: marketdata
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: orders
+    joins:
+    - target_model: vol_per_pair
+      join_pairs:
+      - - mktnote
+        - marketdata__mktcombo
+    - target_model: realline_per_user
+      join_pairs:
+      - - userlink
+        - usertag
+    - target_model: riskandmargin
+      join_pairs:
+      - - recordvault
+        - ordervault
+    columns:
+    - name: rar_value
+      type: DOUBLE
+      sql: realline_per_user.realline_total / NULLIF((riskandmargin.risk_margin_profile
+        ->> '$.position.possum') * vol_per_pair.vol_avg * 0.01 * (riskandmargin.risk_margin_profile
+        ->> '$.position.posriskrate'), 0)
+  dimensions:
+  - name: recordvault
+  - name: userlink
+  - name: rar_value
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.userlink\"\
+  \ AS userlink, \"orders.rar_value\" AS rar_value FROM (SELECT\n  orders.recordvault\
+  \ AS \"orders.recordvault\",\n  orders.userlink AS \"orders.userlink\",\n  realline_per_user.realline_total\
+  \ / NULLIF(\n    (\n      riskandmargin.risk_margin_profile ->> '$.position.possum'\n\
+  \    ) * vol_per_pair.vol_avg * 0.01 * (\n      riskandmargin.risk_margin_profile\
+  \ ->> '$.position.posriskrate'\n    ),\n    0\n  ) AS \"orders.rar_value\"\nFROM\
+  \ orders AS orders\nLEFT JOIN (\n  (\n    SELECT\n      \"marketstats.marketdata.mktcombo\"\
+  \ AS marketdata__mktcombo,\n      \"marketstats.vol_avg\" AS vol_avg\n    FROM (\n\
+  \      SELECT\n        marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\
+  \ AS \"marketstats.marketdata.mktcombo\",\n        AVG(marketstats.volmeter) AS\
+  \ \"marketstats.vol_avg\"\n      FROM marketstats AS marketstats\n      LEFT JOIN\
+  \ marketdata AS marketdata\n        ON marketstats.mdlink = marketdata.marketdatanode\n\
+  \      GROUP BY\n        marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\n\
+  \    ) AS _inner\n  )\n) AS vol_per_pair\n  ON orders.mktnote = vol_per_pair.marketdata__mktcombo\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"accountbalances.usertag\" AS usertag,\n  \
+  \    \"accountbalances.realline_total\" AS realline_total\n    FROM (\n      SELECT\n\
+  \        accountbalances.usertag AS \"accountbalances.usertag\",\n        SUM(accountbalances.realline)\
+  \ AS \"accountbalances.realline_total\"\n      FROM accountbalances AS accountbalances\n\
+  \      GROUP BY\n        accountbalances.usertag\n    ) AS _inner\n  )\n) AS realline_per_user\n\
+  \  ON orders.userlink = realline_per_user.usertag\nLEFT JOIN riskandmargin AS riskandmargin\n\
+  \  ON orders.recordvault = riskandmargin.ordervault) AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: userlink
+  sql: userlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rar_value
+  sql: rar_value
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Risk-Adjusted Return (KB #30) per order: realline / (PVaR \xD7 posriskrate),\
+  \ where realline is the realized PnL, PVaR is the Position Value at Risk, and posriskrate\
+  \ is the position risk ratio. PVaR is reconstructed from riskandmargin.possum and\
+  \ the per-pair-avg volmeter (\xD7 0.01); realline is summed per user from accountbalances;\
+  \ posriskrate is per-order from riskandmargin.\n\n[kb=30]\nRisk-Adjusted Return\
+  \ = \\frac{realline}{PVaR \\times posriskrate}, \\text{where } realline \\text{\
+  \ is the realized PnL, } PVaR \\text{ is the Position Value at Risk, and } posriskrate\
+  \ \\text{ is the position risk ratio.} \u2014 Calculates return on position adjusted\
+  \ for risk exposure.\n[/kb=30]"
+hidden: false
+meta:
+  kb_id: 30

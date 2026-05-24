@@ -1,0 +1,102 @@
+version: 6
+name: return_channel_cost_index
+source_queries:
+- version: 3
+  name: avg_fee_per_channel
+  source_model: returns
+  measures:
+  - formula: shipping_fee:avg
+    name: channel_avg_fee
+  dimensions:
+  - name: return_channel
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: returns
+    joins:
+    - target_model: avg_fee_per_channel
+      join_pairs:
+      - - return_channel
+        - return_channel
+  measures:
+  - formula: shipping_fee:avg / avg_fee_per_channel.channel_avg_fee:avg
+    name: rcci
+  dimensions:
+  - name: casenum
+  - name: return_channel
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"returns.casenum\" AS casenum, \"returns.return_channel\"\
+  \ AS return_channel, \"returns.shipping_fee_avg\" AS shipping_fee_avg, \"returns.rcci\"\
+  \ AS rcci, \"returns.avg_fee_per_channel.channel_avg_fee_avg\" AS avg_fee_per_channel__channel_avg_fee_avg\
+  \ FROM (WITH _base AS (\nSELECT\n  returns.casenum AS \"returns.casenum\",\n  returns.return_channel\
+  \ AS \"returns.return_channel\",\n  AVG(CAST(JSON_EXTRACT(returns.return_details,\
+  \ '$.shipping.fee') AS REAL)) AS \"returns.shipping_fee_avg\"\nFROM returns AS returns\n\
+  GROUP BY\n  returns.casenum,\n  returns.return_channel\n),\n_cm_returns__avg_fee_per_channel__channel_avg_fee_avg\
+  \ AS (\nSELECT\n  AVG(avg_fee_per_channel.channel_avg_fee) AS \"returns.avg_fee_per_channel.channel_avg_fee_avg\"\
+  \nFROM (\n  SELECT\n    \"returns.return_channel\" AS return_channel,\n    \"returns.channel_avg_fee\"\
+  \ AS channel_avg_fee\n  FROM (\n    SELECT\n      returns.return_channel AS \"returns.return_channel\"\
+  ,\n      AVG(CAST(JSON_EXTRACT(returns.return_details, '$.shipping.fee') AS REAL))\
+  \ AS \"returns.channel_avg_fee\"\n    FROM returns AS returns\n    GROUP BY\n  \
+  \    returns.return_channel\n  ) AS _inner\n) AS avg_fee_per_channel\n),\n_combined\
+  \ AS (\nSELECT _base.\"returns.casenum\", _base.\"returns.return_channel\", _base.\"\
+  returns.shipping_fee_avg\", _cm_returns__avg_fee_per_channel__channel_avg_fee_avg.\"\
+  returns.avg_fee_per_channel.channel_avg_fee_avg\"\nFROM _base\nCROSS JOIN _cm_returns__avg_fee_per_channel__channel_avg_fee_avg\n\
+  ),\nstep1 AS (\nSELECT\n    \"returns.avg_fee_per_channel.channel_avg_fee_avg\"\
+  ,\n    \"returns.casenum\",\n    \"returns.return_channel\",\n    \"returns.shipping_fee_avg\"\
+  ,\n    \"returns.shipping_fee_avg\" / \"returns.avg_fee_per_channel.channel_avg_fee_avg\"\
+  \ AS \"returns.rcci\"\nFROM _combined\n)\nSELECT\n    \"returns.avg_fee_per_channel.channel_avg_fee_avg\"\
+  ,\n    \"returns.casenum\",\n    \"returns.rcci\",\n    \"returns.return_channel\"\
+  ,\n    \"returns.shipping_fee_avg\"\nFROM step1) AS _inner"
+data_source: reverse_logistics
+columns:
+- name: casenum
+  sql: casenum
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: return_channel
+  sql: return_channel
+  type: TEXT
+  primary_key: false
+  description: "Return Channels \u2014 pathway through which the customer sent the\
+    \ item back. 'Store' (in-person retail outlet), 'Courier' (doorstep pickup), 'Mail'\
+    \ (national post), 'Locker' (automated drop-box), 'Pickup' (retailer-scheduled\
+    \ collection for oversized/fragile goods)."
+  hidden: false
+- name: shipping_fee_avg
+  sql: shipping_fee_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'Shipping Fee (S_f): cost charged by the logistics provider for transporting
+    the returned item.'
+  hidden: false
+  format:
+    type: float
+- name: rcci
+  sql: rcci
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: avg_fee_per_channel__channel_avg_fee_avg
+  sql: avg_fee_per_channel__channel_avg_fee_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Return Channel Cost Index (RCCI) = S_f / mean(S_f for the same Return_Channel).\
+  \ Relative shipping expense of a return channel compared to its historical average.\
+  \ KB #9.\n\n[kb=9]\n$$RCCI = \\frac{S_f}{\\overline{S_{channel}}}$$ where $S_f$\
+  \ is Shipping Fee and $\\overline{S_{channel}}$ is average Shipping Fee for the\
+  \ same Return Channel. \u2014 Relative shipping expense of a return channel compared\
+  \ to its historical average.\n[/kb=9]"
+hidden: false
+meta:
+  kb_id: 9

@@ -1,0 +1,78 @@
+version: 6
+name: products
+sql_table: products
+query_variables: {}
+data_source: cybermarket
+columns:
+- name: prodregistry
+  sql: prodregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: prodtheme
+  sql: prodtheme
+  type: TEXT
+  primary_key: false
+  description: "Product theme classification, used for enforcement risk: 'Digital'\
+    \ = software, credentials, virtual goods (no shipping); 'Data' = databases, PII,\
+    \ IP packages; 'Service' = activities (hacking, docs, technical assistance); 'Physical'\
+    \ = tangible goods requiring shipment (highest exposure-risk category).\n\n[kb=4]\n\
+    'Digital' products include software, account credentials, and virtual goods requiring\
+    \ no physical shipping; 'Data' encompasses information packages like databases,\
+    \ personal information, and intellectual property; 'Service' refers to activities\
+    \ rather than tangible products, including hacking, documentation, or technical\
+    \ assistance; 'Physical' indicates tangible goods requiring actual shipment through\
+    \ delivery networks, representing the highest exposure risk category. \u2014 Clarifies\
+    \ product theme classifications and their enforcement implications\n[/kb=4]"
+  label: cybermarket|products|prodtheme
+  hidden: false
+  meta:
+    kb_id: 4
+- name: prodsubcat
+  sql: prodsubcat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: prodlistdays
+  sql: prodlistdays
+  type: INT
+  primary_key: false
+  hidden: false
+- name: prodpriceusd
+  sql: prodpriceusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: prodqty
+  sql: prodqty
+  type: INT
+  primary_key: false
+  hidden: false
+- name: vendref
+  sql: vendref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: buyref
+  sql: buyref
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: vendors
+  join_pairs:
+  - - vendref
+    - vendregistry
+  join_type: left
+- target_model: buyers
+  join_pairs:
+  - - buyref
+    - buyregistry
+  join_type: left
+filters: []
+description: Cybermarket product / service listings, joined to vendor (vendref) and
+  optionally to a reserving buyer (buyref). prodtheme classifies the listing and is
+  a key driver of regulatory exposure.
+hidden: false

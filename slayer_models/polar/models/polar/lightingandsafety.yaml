@@ -1,0 +1,95 @@
+version: 6
+name: lightingandsafety
+sql_table: lightingandsafety
+query_variables: {}
+data_source: polar
+columns:
+- name: lightregistry
+  sql: lightregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: lighteqref
+  sql: lighteqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lightingstatus
+  sql: lightingstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lightingintensitypercent
+  sql: lightingintensitypercent
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: externallightstatus
+  sql: externallightstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: emergencylightstatus
+  sql: emergencylightstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: emergencystopstatus
+  sql: emergencystopstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: alarmstatus
+  sql: alarmstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: safetysystemstatus
+  sql: safetysystemstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lifesupportstatus
+  sql: lifesupportstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: oxygensupplystatus
+  sql: oxygensupplystatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: medicalequipmentstatus
+  sql: medicalequipmentstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: wastemanagementstatus
+  sql: wastemanagementstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: watersupplystatus
+  sql: watersupplystatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: safetysensors
+  sql: safetysensors
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: equipment
+  join_pairs:
+  - - lighteqref
+    - equipmentcode
+  join_type: left
+filters: []
+hidden: false

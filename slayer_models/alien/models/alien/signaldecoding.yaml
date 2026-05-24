@@ -1,0 +1,104 @@
+version: 6
+name: signaldecoding
+sql_table: signaldecoding
+query_variables: {}
+data_source: alien
+columns:
+- name: signalref
+  sql: signalref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: encodetype
+  sql: encodetype
+  type: TEXT
+  primary_key: false
+  description: "Encoding Type. encodetype='Frequency Hopping' describes a transmission\
+    \ technique where the signal rapidly switches frequencies according to a predetermined\
+    \ sequence. Detection would be characterized by discontinuous spectral features\
+    \ that follow a pattern. This technique is used on Earth to secure communications\
+    \ and reduce interference.\n\n[kb=28]\nDescribes a transmission technique where\
+    \ the signal rapidly switches frequencies according to a predetermined sequence.\
+    \ Detection would be characterized by discontinuous spectral features that follow\
+    \ a pattern. This technique is used on Earth to secure communications and reduce\
+    \ interference. \u2014 Illustrates a sophisticated encoding method used in telecommunications.\n\
+    [/kb=28]"
+  label: 'EncodeType: Frequency Hopping'
+  hidden: false
+  meta:
+    kb_id: 28
+- name: compressratio
+  sql: compressratio
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: errcorrlvl
+  sql: errcorrlvl
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: decodeconf
+  sql: decodeconf
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: decodemethod
+  sql: decodemethod
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: decodestat
+  sql: decodestat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: decodeiters
+  sql: decodeiters
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: proctimehrs
+  sql: proctimehrs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: compresources
+  sql: compresources
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: analysisdp
+  sql: analysisdp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: veriflvl
+  sql: veriflvl
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: confirmstat
+  sql: confirmstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: signals
+  join_pairs:
+  - - signalref
+    - signalregistry
+  join_type: left
+filters: []
+description: 'Per-signal decoding metadata: encoding type, compression, error correction,
+  decoding method/confidence/iterations and verification status.'
+hidden: false

@@ -1,0 +1,42 @@
+version: 6
+name: rollups
+sql_table: rollups
+query_variables: {}
+data_source: hulushows
+columns:
+- name: tierkey
+  sql: tierkey
+  type: INT
+  primary_key: true
+  description: PK for the tier.
+  hidden: false
+  format:
+    type: integer
+- name: tiertype
+  sql: tiertype
+  type: TEXT
+  primary_key: false
+  description: "Tier label (KB 3): 'free', 'subscriber', 'current', 'free_on_web',\
+    \ 'subscriber_on_device', 'auth_on_web', 'showtime'.\n\n[kb=3]\nCommon values\
+    \ include 'free', 'subscriber', 'current', 'free on website', 'auth on website',\
+    \ 'subscriber on device', and 'show time'. \u2014 Represents different content\
+    \ access levels for viewers.\n[/kb=3]"
+  label: Subscription Tier Values
+  hidden: false
+  meta:
+    kb_id: 3
+- name: is_showtime_tier
+  sql: LOWER(tiertype) = 'showtime'
+  type: BOOLEAN
+  primary_key: false
+  description: TRUE iff tiertype='showtime' (used by KB 18 / KB 42 with the show-rollup
+    join).
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Subscription/availability tiers (one row per tier). The seven canonical\
+  \ tiers are 'free', 'subscriber', 'current', 'free_on_web', 'subscriber_on_device',\
+  \ 'auth_on_web', 'showtime' \u2014 see KB 3."
+hidden: false

@@ -1,0 +1,237 @@
+version: 6
+name: news_articles
+sql_table: articles
+query_variables: {}
+data_source: news
+columns:
+- name: artkey
+  sql: artkey
+  type: INT
+  primary_key: true
+  description: Primary key.
+  hidden: false
+- name: catlabel
+  sql: catlabel
+  type: TEXT
+  primary_key: false
+  description: 'Category: Entertainment, Business, Sports, News, Technology.'
+  hidden: false
+- name: subcatlbl
+  sql: subcatlbl
+  type: TEXT
+  primary_key: false
+  description: 'Sub-category: International, Opinion, Local, Feature.'
+  hidden: false
+- name: pubtime
+  sql: pubtime
+  type: TIMESTAMP
+  primary_key: false
+  description: Publication timestamp.
+  hidden: false
+- name: authname
+  sql: authname
+  type: TEXT
+  primary_key: false
+  description: Author name.
+  hidden: false
+- name: srcref
+  sql: srcref
+  type: TEXT
+  primary_key: false
+  description: Source/publication reference.
+  hidden: false
+- name: wordlen
+  sql: wordlen
+  type: INT
+  primary_key: false
+  description: "Article word count. KB #22: higher word counts (e.g. 1200) generally\
+    \ correlate with longer reading times and may affect retention.\n\n[kb=22]\nHigher\
+    \ word counts, such as 1200 words, generally correlate with longer estimated reading\
+    \ times and may affect reader retention. \u2014 Demonstrates how the number of\
+    \ words in an article influences reading time and engagement.\n[/kb=22]"
+  label: Article Word Count Illustration
+  hidden: false
+  meta:
+    kb_id: 22
+- name: readsec
+  sql: readsec
+  type: INT
+  primary_key: false
+  description: Estimated reading time in seconds.
+  hidden: false
+- name: difflevel
+  sql: difflevel
+  type: TEXT
+  primary_key: false
+  description: 'Reading difficulty: Basic, Intermediate, Advanced.'
+  hidden: false
+- name: freshscore
+  sql: freshscore
+  type: DOUBLE
+  primary_key: false
+  description: Freshness score (0..1).
+  hidden: false
+- name: qualscore
+  sql: qualscore
+  type: DOUBLE
+  primary_key: false
+  description: Quality score (0..1).
+  hidden: false
+- name: sentscore
+  sql: sentscore
+  type: DOUBLE
+  primary_key: false
+  description: Sentiment score (-1..1).
+  hidden: false
+- name: contrscore
+  sql: contrscore
+  type: DOUBLE
+  primary_key: false
+  description: Controversy score (0..1).
+  hidden: false
+- name: tagset
+  sql: tagset
+  type: TEXT
+  primary_key: false
+  description: Tags/keywords.
+  hidden: false
+- name: conttype
+  sql: conttype
+  type: TEXT
+  primary_key: false
+  description: 'Content type: Article, Gallery, Video, Interactive.'
+  hidden: false
+- name: contformat
+  sql: contformat
+  type: TEXT
+  primary_key: false
+  description: "Format variation: Mobile, Text, HTML, AMP (KB #29 illustrates how\
+    \ display adjustments cater to diverse contexts and devices).\n\n[kb=29]\nVariations\
+    \ such as 'Mobile', 'Text', 'HTML', or 'AMP' show how display adjustments cater\
+    \ to diverse user contexts and device capabilities. \u2014 Highlights how different\
+    \ content formats influence user consumption and engagement.\n[/kb=29]"
+  label: Content Format Variation Illustration
+  hidden: false
+  meta:
+    kb_id: 29
+- name: accscore
+  sql: accscore
+  type: DOUBLE
+  primary_key: false
+  description: "Accessibility score (0..1). KB #24 illustrates: scores like 0.9 signal\
+    \ high compliance with usability standards.\n\n[kb=24]\nAn accessibility score\
+    \ like 90.00 demonstrates a high level of compliance with usability standards,\
+    \ ensuring that content is accessible to a wide range of users. \u2014 Explains\
+    \ how accessibility scores reflect the ease-of-use and inclusivity of content.\n\
+    [/kb=24]"
+  label: Accessibility Score Illustration
+  hidden: false
+  meta:
+    kb_id: 24
+- name: mediacount
+  sql: mediacount
+  type: INT
+  primary_key: false
+  description: Number of media elements.
+  hidden: false
+- name: vidsec
+  sql: vidsec
+  type: INT
+  primary_key: false
+  description: Video duration in seconds.
+  hidden: false
+- name: paywall
+  sql: paywall
+  type: TEXT
+  primary_key: false
+  description: 'Paywall status: Metered, Premium, Free.'
+  hidden: false
+- name: authref
+  sql: authref
+  type: INT
+  primary_key: false
+  description: FK to news_users.userkey (when the author is also a user).
+  hidden: false
+- name: engagement_metrics
+  sql: engagement_metrics
+  type: TEXT
+  primary_key: false
+  description: 'JSON: social.shares/comments, average_rating, completion_rate, engagement_rate,
+    popularity_score.'
+  hidden: false
+- name: article_quality_index
+  sql: (qualscore + freshscore + sentscore - contrscore) / 3.0
+  type: DOUBLE
+  primary_key: false
+  description: "Article Quality Index (AQI, KB #1) = (qualscore + freshscore + sentscore\
+    \ - contrscore) / 3.\n\n[kb=1]\nAQI = \\frac{(qualscore + freshscore + sentscore\
+    \ - contrscore)}{3}, \\text{ where each score is normalized on a uniform scale.}\
+    \ \u2014 Determines the quality index of an article by integrating quality score,\
+    \ freshness, sentiment, and controversy factors.\n[/kb=1]"
+  label: Article Quality Index (AQI)
+  hidden: false
+  meta:
+    kb_id: 1
+- name: readability_weight
+  sql: CASE LOWER(TRIM(difflevel)) WHEN 'basic' THEN 1.0 WHEN 'intermediate' THEN
+    1.5 WHEN 'advanced' THEN 2.0 ELSE 1.2 END
+  type: DOUBLE
+  primary_key: false
+  description: "Readability weight w (KB #56) for difficulty level: Basic=1, Intermediate=1.5,\
+    \ Advanced=2, others=1.2.\n\n[kb=56]\nDifficulty levels are assigned weights:\
+    \ Basic = 1, Intermediate = 1.5, Advanced = 2, Others = 1.2. \u2014 Defines difficulty-based\
+    \ weighting for readability calculations.\n[/kb=56]"
+  label: Readability Weight Mapping
+  hidden: false
+  meta:
+    kb_id: 56
+- name: article_readability_score
+  sql: (readsec * log10(NULLIF(wordlen, 0))) / (CASE LOWER(TRIM(difflevel)) WHEN 'basic'
+    THEN 1.0 WHEN 'intermediate' THEN 1.5 WHEN 'advanced' THEN 2.0 ELSE 1.2 END)
+  type: DOUBLE
+  primary_key: false
+  description: "Article Readability Score (ARS, KB #5) = readsec \xD7 log10(wordlen)\
+    \ / readability_weight.\n\n[kb=5]\nARS = \\frac{readsec \\times \\log(wordlen)}{w},\
+    \ \\text{ where w is a weight factor assigned according to the article difficulty\
+    \ level (e.g., 1 for Basic, 1.5 for Intermediate, 2 for Advanced, 1.2 for others).}\
+    \ \u2014 Calculates the readability of an article by correlating estimated reading\
+    \ time with word count and difficulty factor.\n[/kb=5]"
+  label: Article Readability Score (ARS)
+  hidden: false
+  meta:
+    kb_id: 5
+- name: readability_segment
+  sql: CASE WHEN ((readsec * log10(NULLIF(wordlen, 0))) / (CASE LOWER(TRIM(difflevel))
+    WHEN 'basic' THEN 1.0 WHEN 'intermediate' THEN 1.5 WHEN 'advanced' THEN 2.0 ELSE
+    1.2 END)) < 50 THEN 'Low' WHEN ((readsec * log10(NULLIF(wordlen, 0))) / (CASE
+    LOWER(TRIM(difflevel)) WHEN 'basic' THEN 1.0 WHEN 'intermediate' THEN 1.5 WHEN
+    'advanced' THEN 2.0 ELSE 1.2 END)) <= 100 THEN 'Medium' ELSE 'High' END
+  type: TEXT
+  primary_key: false
+  description: "Readability segmentation (KB #57): Low if ARS<50, Medium if 50\u2264\
+    ARS\u2264100, High if ARS>100.\n\n[kb=57]\nLow readability: ARS < 50, Medium readability:\
+    \ 50 \u2264 ARS \u2264 100, High readability: ARS > 100. \u2014 Classifies articles\
+    \ into readability categories based on calculated readability scores.\n[/kb=57]"
+  label: Readability Segmentation
+  hidden: false
+  meta:
+    kb_id: 57
+measures: []
+aggregations: []
+joins:
+- target_model: news_users
+  join_pairs:
+  - - authref
+    - userkey
+  join_type: left
+filters: []
+description: "News DB: Articles with quality, freshness, sentiment, controversy, accessibility\
+  \ scores; difficulty level, content type/format, paywall status, and a JSON `engagement_metrics`\
+  \ blob (popularity, engagement rate, completion rate, social shares/comments, average\
+  \ rating).\n\n[kb=10]\nPremium articles are required to satisfy a defined quality\
+  \ threshold and demonstrate superior engagement metrics to enhance user satisfaction.\
+  \ \u2014 Specifies that articles marked as Premium must meet higher quality and\
+  \ engagement benchmarks.\n[/kb=10]"
+hidden: false
+meta:
+  kb_id: 10

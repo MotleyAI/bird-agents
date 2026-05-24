@@ -1,0 +1,318 @@
+version: 6
+name: news_sessions
+sql_table: sessions
+query_variables: {}
+data_source: news
+columns:
+- name: seshkey
+  sql: seshkey
+  type: INT
+  primary_key: true
+  description: Primary key.
+  hidden: false
+- name: userel
+  sql: userel
+  type: INT
+  primary_key: false
+  description: FK to news_users.userkey.
+  hidden: false
+- name: devrel
+  sql: devrel
+  type: INT
+  primary_key: false
+  description: FK to news_devices.devkey.
+  hidden: false
+- name: seshstart
+  sql: seshstart
+  type: TIMESTAMP
+  primary_key: false
+  description: Session start timestamp.
+  hidden: false
+- name: seshdur
+  sql: seshdur
+  type: INT
+  primary_key: false
+  description: "Session duration in seconds. KB #18 SSAD (Short Session Anomaly Detection):\
+    \ sessions with a duration significantly below the average, accompanied by low\
+    \ engagement and minimal page views, are flagged as anomalies \u2014 detected\
+    \ via low seshdur combined with low engscore/seshviews.\n\n[kb=18]\nSessions with\
+    \ a duration significantly below the average, accompanied by low engagement and\
+    \ minimal page views, are flagged as anomalies. \u2014 Identifies sessions with\
+    \ unusually short durations that may signal disengagement or testing anomalies.\n\
+    [/kb=18]"
+  label: Short Session Anomaly Detection (SSAD)
+  hidden: false
+  meta:
+    kb_id: 18
+- name: seshviews
+  sql: seshviews
+  type: INT
+  primary_key: false
+  description: Articles/pages viewed in session.
+  hidden: false
+- name: bncrate
+  sql: bncrate
+  type: DOUBLE
+  primary_key: false
+  description: Raw session bounce rate (0..1).
+  hidden: false
+- name: seshdepth
+  sql: seshdepth
+  type: INT
+  primary_key: false
+  description: Navigation depth (number of screens).
+  hidden: false
+- name: engscore
+  sql: engscore
+  type: DOUBLE
+  primary_key: false
+  description: Session engagement score (0..1).
+  hidden: false
+- name: seshrecs
+  sql: seshrecs
+  type: INT
+  primary_key: false
+  description: Recommendations shown to the user.
+  hidden: false
+- name: seshclicks
+  sql: seshclicks
+  type: INT
+  primary_key: false
+  description: Recommendation clicks.
+  hidden: false
+- name: ctrval
+  sql: ctrval
+  type: DOUBLE
+  primary_key: false
+  description: Click-through rate for recommendations (raw value).
+  hidden: false
+- name: langcode
+  sql: langcode
+  type: TEXT
+  primary_key: false
+  description: 'Language code: en, fr, es, de, zh.'
+  hidden: false
+- name: tzoffset
+  sql: tzoffset
+  type: TEXT
+  primary_key: false
+  description: Time-zone offset.
+  hidden: false
+- name: ipaddr
+  sql: ipaddr
+  type: TEXT
+  primary_key: false
+  description: IP address.
+  hidden: false
+- name: geoctry
+  sql: geoctry
+  type: TEXT
+  primary_key: false
+  description: "Country (KB #26 illustrates geo-location data: 'San Francisco' or\
+    \ 'USA' provide context for regional content consumption).\n\n[kb=26]\nGeo-location\
+    \ indicators like 'San Francisco' or 'USA' provide context for regional content\
+    \ consumption and market-specific performance trends. \u2014 Illustrates how geographical\
+    \ data aids in localizing content and understanding regional behavior patterns.\n\
+    [/kb=26]"
+  label: Geo-Location Data Illustration
+  hidden: false
+  meta:
+    kb_id: 26
+- name: georeg
+  sql: georeg
+  type: TEXT
+  primary_key: false
+  description: Region/state.
+  hidden: false
+- name: geocity
+  sql: geocity
+  type: TEXT
+  primary_key: false
+  description: City.
+  hidden: false
+- name: expref
+  sql: expref
+  type: TEXT
+  primary_key: false
+  description: A/B experiment ID.
+  hidden: false
+- name: persver
+  sql: persver
+  type: TEXT
+  primary_key: false
+  description: Personalization version (v1..v5).
+  hidden: false
+- name: recset
+  sql: recset
+  type: TEXT
+  primary_key: false
+  description: Recommendation-set identifier.
+  hidden: false
+- name: relscore
+  sql: relscore
+  type: DOUBLE
+  primary_key: false
+  description: Overall content relevance for the session (0..1).
+  hidden: false
+- name: persacc
+  sql: persacc
+  type: DOUBLE
+  primary_key: false
+  description: Personalization accuracy (0..1).
+  hidden: false
+- name: recutil
+  sql: recutil
+  type: DOUBLE
+  primary_key: false
+  description: 'Recommendation utility/value (0..1). Used by KB #2 RRS (deferred).'
+  hidden: false
+- name: user_engagement_rate
+  sql: (seshviews * engscore) * 1.0 / NULLIF(seshdur, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "User Engagement Rate (UER, KB #0) = seshviews \xD7 engscore / seshdur.\n\
+    \n[kb=0]\nUER = \\frac{\\text{seshviews} \\times \\text{engscore}}{\\text{seshdur}},\
+    \ \\text{ where seshviews is the number of articles viewed and seshdur is the\
+    \ duration in seconds.} \u2014 Calculates the engagement rate of a user during\
+    \ a session by combining engagement score, page views, and session duration.\n\
+    [/kb=0]"
+  label: User Engagement Rate (UER)
+  hidden: false
+  meta:
+    kb_id: 0
+- name: session_bounce_rate_adjustment
+  sql: bncrate * (1.0 - ctrval / 100.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Session Bounce Rate Adjustment (SBRA, KB #3) = bncrate \xD7 (1 - ctrval/100).\n\
+    \n[kb=3]\nSBRA = bncrate \\times \\left(1 - \\frac{ctrval}{100}\\right), \\text{\
+    \ where bncrate is the bounce rate and ctrval is the click-through rate percentage.}\
+    \ \u2014 Adjusts the raw session bounce rate by factoring in the click-through\
+    \ rate to better understand session quality.\n[/kb=3]"
+  label: Session Bounce Rate Adjustment (SBRA)
+  hidden: false
+  meta:
+    kb_id: 3
+- name: rctr
+  sql: CASE WHEN seshrecs > 0 THEN seshclicks * 1.0 / seshrecs ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Recommendation Click-Through Rate (RCTR, KB #58) = seshclicks/seshrecs\
+    \ when seshrecs>0. Computed at the session grain.\n\n[kb=58]\nRCTR = (clicks /\
+    \ recommendations) when recommendations are greater than zero. \u2014 Defines\
+    \ RCTR as the ratio of clicks to total recommendations.\n[/kb=58]"
+  label: Recommendation Click-Through Rate (RCTR)
+  hidden: false
+  meta:
+    kb_id: 58
+- name: elite_user_interaction_metric
+  sql: (seshclicks + seshviews) * (engscore / 100.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Elite User Interaction Metric (EUIM, KB #59) = (seshclicks + seshviews)\
+    \ \xD7 (engscore / 100).\n\n[kb=59]\nEUIM = (seshclicks + seshviews) * (engscore\
+    \ / 100), where a higher value indicates more elite or intense user interaction.\
+    \ \u2014 A newly defined metric to identify elite user interactions by combining\
+    \ session clicks, views, and engagement score.\n[/kb=59]"
+  label: Elite User Interaction Metric (EUIM)
+  hidden: false
+  meta:
+    kb_id: 59
+- name: bounce_percentile
+  sql: PERCENT_RANK() OVER (ORDER BY bncrate * (1.0 - ctrval / 100.0))
+  type: DOUBLE
+  primary_key: false
+  description: "Bounce Percentile (KB #52): PERCENT_RANK() over all sessions ordered\
+    \ by adjusted_bounce_rate (SBRA) ascending.\n\n[kb=52]\nA percentile ranking computed\
+    \ using PERCENT_RANK() over all sessions ordered by adjusted_bounce_rate. \u2014\
+    \ Ranks sessions by their adjusted bounce rate relative to all other sessions.\n\
+    [/kb=52]"
+  label: Bounce Percentile
+  hidden: false
+  meta:
+    kb_id: 52
+- name: ctr_percentile
+  sql: PERCENT_RANK() OVER (ORDER BY ctrval DESC)
+  type: DOUBLE
+  primary_key: false
+  description: "CTR Percentile (KB #53): PERCENT_RANK() over all sessions ordered\
+    \ by ctrval descending.\n\n[kb=53]\nA percentile ranking computed using PERCENT_RANK()\
+    \ over all sessions ordered by ctrval in descending order. \u2014 Ranks sessions\
+    \ by their click-through rate relative to all other sessions.\n[/kb=53]"
+  label: CTR Percentile
+  hidden: false
+  meta:
+    kb_id: 53
+- name: performance_segment
+  sql: CASE WHEN PERCENT_RANK() OVER (ORDER BY bncrate * (1.0 - ctrval / 100.0)) <
+    0.25 AND PERCENT_RANK() OVER (ORDER BY ctrval DESC) < 0.25 THEN 'High Bounce,
+    Low CTR' WHEN PERCENT_RANK() OVER (ORDER BY bncrate * (1.0 - ctrval / 100.0))
+    < 0.25 AND PERCENT_RANK() OVER (ORDER BY ctrval DESC) >= 0.75 THEN 'High Bounce,
+    High CTR' WHEN PERCENT_RANK() OVER (ORDER BY bncrate * (1.0 - ctrval / 100.0))
+    >= 0.75 AND PERCENT_RANK() OVER (ORDER BY ctrval DESC) < 0.25 THEN 'Low Bounce,
+    Low CTR' WHEN PERCENT_RANK() OVER (ORDER BY bncrate * (1.0 - ctrval / 100.0))
+    >= 0.75 AND PERCENT_RANK() OVER (ORDER BY ctrval DESC) >= 0.75 THEN 'Low Bounce,
+    High CTR' ELSE 'Average Performance' END
+  type: TEXT
+  primary_key: false
+  description: "Performance Segment (KB #54): classification using bounce/ctr percentiles.\
+    \ Combinations of <0.25 (High Bounce / Low CTR) and >=0.75 (Low Bounce / High\
+    \ CTR), else 'Average Performance'.\n\n[kb=54]\nA classification of sessions into\
+    \ performance categories based on specific percentile criteria: 'High Bounce,\
+    \ Low CTR' (bounce_percentile < 0.25, ctr_percentile < 0.25), 'High Bounce, High\
+    \ CTR' (bounce_percentile < 0.25, ctr_percentile >= 0.75), 'Low Bounce, Low CTR'\
+    \ (bounce_percentile >= 0.75, ctr_percentile < 0.25), 'Low Bounce, High CTR' (bounce_percentile\
+    \ >= 0.75, ctr_percentile >= 0.75), or 'Average Performance' for all other combinations.\
+    \ \u2014 Categorizes sessions based on their relative bounce rate and CTR performance\
+    \ using percentile rankings.\n[/kb=54]"
+  label: Performance Segment
+  hidden: false
+  meta:
+    kb_id: 54
+- name: composite_user_activity_score
+  sql: ((seshviews * engscore * 1.0 / NULLIF(seshdur, 0)) + (news_users.ageval * (CASE
+    WHEN UPPER(TRIM(news_users.gendlbl)) IN ('M','F','MALE','FEMALE') THEN 1.0 ELSE
+    0.8 END) * (CASE LOWER(TRIM(news_users.occulbl)) WHEN 'professional' THEN 1.5
+    WHEN 'retired' THEN 1.2 WHEN 'student' THEN 0.7 ELSE 1.0 END)) + (news_users.subdays
+    * (CASE LOWER(TRIM(news_users.substatus)) WHEN 'premium' THEN 2.0 WHEN 'enterprise'
+    THEN 3.0 WHEN 'basic' THEN 1.0 ELSE 0.5 END))) / 3.0
+  type: DOUBLE
+  primary_key: false
+  description: "Composite User Activity Score (CUAS, KB #50) = (UER + UDS + USV) /\
+    \ 3. Computed at the session grain (UER per-session; UDS/USV inlined from joined\
+    \ news_users columns).\n\n[kb=50]\nCUAS = \\frac{UER + UDS + USV}{3}, where UER\
+    \ is the User Engagement Rate, UDS is the User Demographic Score, and USV is the\
+    \ User Subscription Value. \u2014 Integrates multiple user activity metrics into\
+    \ one composite score.\n[/kb=50]"
+  label: Composite User Activity Score (CUAS)
+  hidden: false
+  meta:
+    kb_id: 50
+measures: []
+aggregations: []
+joins:
+- target_model: news_users
+  join_pairs:
+  - - userel
+    - userkey
+  join_type: left
+- target_model: news_devices
+  join_pairs:
+  - - devrel
+    - devkey
+  join_type: left
+filters: []
+description: "News DB: User browsing sessions: duration, page views, bounce rate,\
+  \ engagement score, recommendations shown/clicked, click-through rate, geo, language,\
+  \ A/B experiment ref, personalization version, plus relevance/personalization/recommendation-utility\
+  \ scores. KB #16 UBP (User Behavior Paradigm): by analyzing metrics such as session\
+  \ duration, bounce rates, and interaction sequences, common behavioral patterns\
+  \ are identified which inform future personalization efforts \u2014 captured by\
+  \ the session-grain fields (seshdur, bncrate, seshviews, seshdepth, engscore) on\
+  \ this model.\n\n[kb=16]\nBy analyzing metrics such as session duration, bounce\
+  \ rates, and interaction sequences, common behavioral patterns are identified which\
+  \ inform future personalization efforts. \u2014 Describes typical patterns observed\
+  \ in user interactions within the platform.\n[/kb=16]"
+hidden: false
+meta:
+  kb_id: 16

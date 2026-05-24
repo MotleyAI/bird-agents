@@ -1,0 +1,133 @@
+version: 6
+name: equipment
+sql_table: equipment
+query_variables: {}
+data_source: polar
+columns:
+- name: equipmentcode
+  sql: equipmentcode
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: equipmenttype
+  sql: equipmenttype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: equipmentmodel
+  sql: equipmentmodel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: manufacturer
+  sql: manufacturer
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: servicelifeyears
+  sql: servicelifeyears
+  type: INT
+  primary_key: false
+  hidden: false
+- name: equipmentutilizationpercent
+  sql: equipmentutilizationpercent
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: reliabilityindex
+  sql: reliabilityindex
+  type: DOUBLE
+  primary_key: false
+  description: "Reliability index 0-1. <0.5 = frequent failures, 0.5-0.8 = good standard,\
+    \ >0.8 = excellent (KB #20).\n\n[kb=20]\nThe reliability index typically ranges\
+    \ from 0 to 1, where values below 0.5 indicate equipment that fails frequently\
+    \ and requires constant maintenance, values between 0.5-0.8 represent equipment\
+    \ with occasional failures that require regular maintenance, and values above\
+    \ 0.8 indicate highly reliable equipment with minimal downtime. \u2014 Illustrates\
+    \ the significance of reliability index measurements in equipment durability.\n\
+    [/kb=20]"
+  label: reliabilityindex
+  hidden: false
+  meta:
+    kb_id: 20
+- name: performanceindex
+  sql: performanceindex
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: efficiencyindex
+  sql: efficiencyindex
+  type: INT
+  primary_key: false
+  hidden: false
+- name: safetyindex
+  sql: safetyindex
+  type: DOUBLE
+  primary_key: false
+  description: "Safety index 0-1. <0.5 = significant safety concerns, 0.5-0.7 = standard\
+    \ (KB #28).\n\n[kb=28]\nSafety index typically ranges from 0 to 1, where values\
+    \ below 0.5 indicate equipment with significant safety concerns requiring immediate\
+    \ attention or limited operation, values between 0.5-0.7 represent equipment with\
+    \ acceptable safety for normal operations with appropriate precautions, and values\
+    \ above 0.7 indicate equipment with excellent safety features suitable for all\
+    \ operational conditions including those with elevated risks. \u2014 Illustrates\
+    \ the significance of safety index ratings for operational risk assessment.\n\
+    [/kb=28]"
+  label: safetyindex
+  hidden: false
+  meta:
+    kb_id: 28
+- name: environmentalimpactindex
+  sql: environmentalimpactindex
+  type: INT
+  primary_key: false
+  hidden: false
+- name: eer
+  sql: (performanceindex + reliabilityindex) / 2.0 * (1 - environmentalimpactindex
+    / 10.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Equipment Efficiency Rating (KB #0): mean of perf/reliability x (1\
+    \ - env-impact/10).\n\n[kb=0]\nEER = \\frac{performanceindex + reliabilityindex}{2}\
+    \ \\times (1 - \\frac{environmentalimpactindex}{10}), \\text{ where higher values\
+    \ indicate more efficient equipment with better performance and lower environmental\
+    \ impact.} \u2014 A composite metric that evaluates the overall efficiency of\
+    \ equipment based on performance, reliability, and environmental impact.\n[/kb=0]"
+  label: Equipment Efficiency Rating (EER)
+  hidden: false
+  meta:
+    kb_id: 0
+- name: ospi
+  sql: safetyindex * ((performanceindex + reliabilityindex) / 2.0 * (1 - environmentalimpactindex
+    / 10.0)) * 0.8
+  type: DOUBLE
+  primary_key: false
+  description: "Overall Safety Performance Index (KB #30): safetyindex x EER x 0.8.\n\
+    \n[kb=30]\nOSPI = safetyindex \xD7 EER \xD7 0.8 \u2014 Comprehensively evaluates\
+    \ equipment's overall safety performance based on safety index and equipment efficiency\
+    \ rating\n[/kb=30]"
+  label: Overall Safety Performance Index (OSPI)
+  hidden: false
+  meta:
+    kb_id: 30
+- name: is_critical_equipment
+  sql: equipmenttype = 'Safety' AND safetyindex > 0.8
+  type: BOOLEAN
+  primary_key: false
+  description: "Critical Equipment (KB #11): Safety-typed equipment with safetyindex\
+    \ > 0.8. (KB also names life-critical system associations - deferred to query-time\
+    \ joins.)\n\n[kb=11]\nEquipment is designated as 'Critical' if it belongs to the\
+    \ 'Safety' equipment type, has a safety index > 0.8, and is associated with any\
+    \ of these life-critical systems: lifesupportstatus, oxygensupplystatus, or heater\
+    \ systems where temperatures are below freezing (externaltemperaturec < 0). \u2014\
+    \ Identifies equipment that is essential for life support and safety in polar\
+    \ environments.\n[/kb=11]"
+  label: Critical Equipment
+  hidden: false
+  meta:
+    kb_id: 11
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

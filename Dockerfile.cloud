@@ -1,0 +1,75 @@
+FROM python:3.11-slim
+
+# Base tooling — uv on system Python. `rsync` + `openssh-client` are
+# required by Ray's autoscaler: it runs `rsync -e 'docker exec -i' …`
+# from the host INTO this container to mount bootstrap files at
+# cluster-up time, and that needs rsync available on both sides.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl ca-certificates build-essential \
+        rsync openssh-client \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir uv
+
+WORKDIR /app/bird-interact-agents
+
+# Activate the venv that `uv sync` creates so every subsequent command
+# (including the Ray Jobs entrypoint at runtime) resolves `python` to the
+# venv's interpreter — without this, the cluster's `python ray_app.py`
+# falls back to the system interpreter and the cloud deps aren't visible.
+ENV VIRTUAL_ENV=/app/bird-interact-agents/.venv \
+    PATH=/app/bird-interact-agents/.venv/bin:$PATH
+
+# Ray's autoscaler runs commands inside this container via
+# `docker exec -it … bash --login -c -i …`. `bash --login` re-reads
+# /etc/profile (and friends), which **clobbers the PATH we set above**
+# with the system default, hiding `ray`/`python` from the venv.
+# Drop a /etc/profile.d snippet so login + interactive shells see the
+# venv too. Also mirror in /etc/bash.bashrc for non-login interactive
+# shells. Without this: `bash: ray: command not found` on `ray start`.
+RUN printf 'export VIRTUAL_ENV=%s\nexport PATH=%s/bin:$PATH\n' \
+        "$VIRTUAL_ENV" "$VIRTUAL_ENV" > /etc/profile.d/venv.sh \
+    && chmod +x /etc/profile.d/venv.sh \
+    && printf 'export VIRTUAL_ENV=%s\nexport PATH=%s/bin:$PATH\n' \
+        "$VIRTUAL_ENV" "$VIRTUAL_ENV" >> /etc/bash.bashrc
+
+# CODE-LAYERS  ──────────────────────────────────────────────────────────────
+# Python deps install FIRST (physically) so `slayer ingest` in DATA-LAYERS
+# has the package available. The sentinel split below still puts these
+# inputs under `code_hash` for the image-tag computation.
+
+COPY pyproject.toml uv.lock /app/bird-interact-agents/
+# `--no-install-project` installs only the dependencies — the project
+# itself can't be installed yet because src/ isn't copied. This step is
+# cached as long as pyproject.toml + uv.lock are unchanged.
+RUN uv sync --extra all --extra dev --no-install-project
+
+COPY src/ /app/bird-interact-agents/src/
+# Now register the project itself in the venv (editable, fast — no
+# deps to resolve since `--no-deps`). Without this step the venv has
+# every dependency but NOT `bird_interact_agents`, so `python
+# ray_app.py` inside the Ray Jobs container fails with
+# `ModuleNotFoundError: No module named 'bird_interact_agents'`.
+RUN uv pip install --no-deps -e .
+
+# DATA-LAYERS  ──────────────────────────────────────────────────────────────
+# Bake dataset + slayer models + audited-gold sidecars into the image.
+# `mini-interact/` lives as a sibling of the repo, NOT inside it — pulled
+# in via BuildKit's `--build-context mini-interact=<sibling-path>` arg
+# that `image.build_and_push` sets at build time.
+
+COPY --from=mini-interact . /data/mini-interact/
+COPY slayer_models/ /data/slayer_models/
+COPY audited_gold/ /app/bird-interact-agents/audited_gold/
+
+# TODO(slayer-mode): pre-ingest each per-DB SLayer model into
+# /data/slayer_dbs/<db>.sqlite. The CLI is `slayer ingest --datasource <db>`
+# per database — not a single root sweep — so a `for d in slayer_models/*/; do`
+# loop is needed. Skipped while raw-mode smokes. Until this lands, slayer-mode
+# tasks FAIL LOUDLY: `_setup_per_task_slayer` raises FileNotFoundError when the
+# baked DB is missing (it does NOT fall back to an empty SQLite stub, which
+# would make every task silently fail its queries).
+
+ENV BIRD_DB_PATH=/data/mini-interact \
+    BIRD_DATA_PATH=/data/mini-interact/mini_interact.jsonl \
+    BIRD_RESULTS_ROOT=/tmp/results \
+    BIRD_INTERACT_AGENTS_CLOUD=1

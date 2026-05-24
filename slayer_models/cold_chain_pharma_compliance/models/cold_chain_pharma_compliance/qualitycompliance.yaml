@@ -1,0 +1,246 @@
+version: 6
+name: qualitycompliance
+sql_table: qualitycompliance
+query_variables: {}
+data_source: cold_chain_pharma_compliance
+columns:
+- name: reckeyqc
+  sql: reckeyqc
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: qc_checklist
+  sql: qc_checklist
+  type: TEXT
+  primary_key: false
+  description: JSON blob bundling seal integrity, product/pack condition, documentation
+    and regulatory checks plus release status.
+  hidden: false
+- name: seal_status
+  sql: json_extract(qc_checklist, '$.security.seal_status')
+  type: TEXT
+  primary_key: false
+  description: 'Security seal status: Intact / Broken / Suspicious. NULL means seal
+    status not captured.'
+  hidden: false
+- name: security_incident
+  sql: json_extract(qc_checklist, '$.security.security_incident')
+  type: TEXT
+  primary_key: false
+  description: "Security incident severity (KB #39, Security Incident Severity Scale):\
+    \ 0 (no concerns), 1 (minor procedural deviation), 2 (moderate), 3 (clear evidence\
+    \ of attempted tampering), 4 (confirmed breach with product access). NULL means\
+    \ security assessment not performed.\n\n[kb=39]\nSecurity incidents are classified\
+    \ on a scale of 0-4: '0' (No security concerns), '1' (Minor procedural deviation),\
+    \ '2' (Moderate security concern without evidence of tampering), '3' (Clear evidence\
+    \ of attempted tampering), '4' (Confirmed breach with product access), with null\
+    \ values indicating security assessment was not performed. \u2014 Categorizes\
+    \ security events during pharmaceutical transport by their severity.\n[/kb=39]"
+  label: Security Incident Severity Scale
+  hidden: false
+  meta:
+    kb_id: 39
+- name: product_intact_check
+  sql: json_extract(qc_checklist, '$.product_integrity.product_intact_check')
+  type: TEXT
+  primary_key: false
+  description: 'Product-integrity check result: Passed/Conditional/Failed.'
+  hidden: false
+- name: pack_condition
+  sql: json_extract(qc_checklist, '$.product_integrity.pack_condition')
+  type: TEXT
+  primary_key: false
+  description: 'Packaging condition assessment: Good/Damaged/Compromised.'
+  hidden: false
+- name: label_condition
+  sql: json_extract(qc_checklist, '$.product_integrity.label_condition')
+  type: TEXT
+  primary_key: false
+  description: 'Label condition assessment: Clear/Damaged/Illegible.'
+  hidden: false
+- name: documentation_complete
+  sql: json_extract(qc_checklist, '$.documentation.documentation_complete')
+  type: TEXT
+  primary_key: false
+  description: 'Documentation completeness status: Complete/Partial/Incomplete.'
+  hidden: false
+- name: certification_status
+  sql: json_extract(qc_checklist, '$.documentation.certification_status')
+  type: TEXT
+  primary_key: false
+  description: 'Certification status at reception: Complete/Expired/Missing.'
+  hidden: false
+- name: custom_clearance_status
+  sql: json_extract(qc_checklist, '$.customs_and_regulatory.custom_clearance_status')
+  type: TEXT
+  primary_key: false
+  description: 'Customs-clearance status: Cleared/Pending/Delayed.'
+  hidden: false
+- name: import_permit_status
+  sql: json_extract(qc_checklist, '$.customs_and_regulatory.import_permit_status')
+  type: TEXT
+  primary_key: false
+  description: 'Import-permit compliance status: Valid/Pending/Not Required.'
+  hidden: false
+- name: regulatory_compliance_status
+  sql: json_extract(qc_checklist, '$.customs_and_regulatory.regulatory_compliance_status')
+  type: TEXT
+  primary_key: false
+  description: "Regulatory Compliance Status (KB #21): 'Compliant' (meets all regulatory\
+    \ requirements), 'Non-compliant' (fails one or more critical requirements), 'Under\
+    \ Review' (compliance being assessed). NULL means status not yet determined.\n\
+    \n[kb=21]\nCompliance statuses are defined as: 'Compliant' (meets all regulatory\
+    \ requirements), 'Non-compliant' (fails to meet one or more critical requirements),\
+    \ 'Under Review' (compliance being assessed), or null (compliance status not yet\
+    \ determined). \u2014 Explains the different compliance status classifications\
+    \ used in quality assessment.\n[/kb=21]"
+  label: Regulatory Compliance Status Definitions
+  hidden: false
+  meta:
+    kb_id: 21
+- name: sop_compliance
+  sql: json_extract(qc_checklist, '$.gdp_quality.sop_compliance')
+  type: TEXT
+  primary_key: false
+  description: 'Standard operating procedure compliance status: Full/Partial/Non-compliant.'
+  hidden: false
+- name: gdp_compliance
+  sql: json_extract(qc_checklist, '$.gdp_quality.gdp_compliance')
+  type: TEXT
+  primary_key: false
+  description: 'Good distribution practice compliance status: Full/Partial/Non-compliant.'
+  hidden: false
+- name: quality_agreement_status
+  sql: json_extract(qc_checklist, '$.gdp_quality.quality_agreement_status')
+  type: TEXT
+  primary_key: false
+  description: "Quality Agreement Status (KB #14): 'Active' (current agreement in\
+    \ force), 'Expired' (lapsed), 'Pending' (under review), or null (no formal agreement).\n\
+    \n[kb=14]\nQuality agreements can have the following statuses: 'Active' (current\
+    \ agreement in force), 'Expired' (agreement has lapsed), 'Pending' (agreement\
+    \ under review), or null (no formal agreement exists). \u2014 Illustrates the\
+    \ current state of quality agreements between parties in the cold chain.\n[/kb=14]"
+  label: Quality Agreement Status
+  hidden: false
+  meta:
+    kb_id: 14
+- name: quality_review_status
+  sql: json_extract(qc_checklist, '$.gdp_quality.quality_review_status')
+  type: TEXT
+  primary_key: false
+  description: 'Quality review status: Approved/Pending/Rejected.'
+  hidden: false
+- name: responsible_person
+  sql: json_extract(qc_checklist, '$.gdp_quality.responsible_person')
+  type: TEXT
+  primary_key: false
+  description: Responsible quality person.
+  hidden: false
+- name: quality_approval_ts
+  sql: json_extract(qc_checklist, '$.gdp_quality.quality_approval_ts')
+  type: TIMESTAMP
+  primary_key: false
+  description: Timestamp of quality approval.
+  hidden: false
+- name: product_release_status
+  sql: json_extract(qc_checklist, '$.release.product_release_status')
+  type: TEXT
+  primary_key: false
+  description: "Product release decision (KB #34, Product Release Decision Framework).\
+    \ 'Released' (meets all criteria), 'Released with CAPA' (essential criteria met\
+    \ but corrective action required), 'Quarantined' (further investigation required),\
+    \ 'Rejected' (failed critical criteria).\n\n[kb=34]\nA decision framework considering:\
+    \ 1) Presence of temperature excursions, 2) Stability data for specific excursion\
+    \ profiles, 3) Package integrity, 4) Product appearance, and 5) Analytical testing\
+    \ results if required. Products can be 'Released' (meets all criteria), 'Released\
+    \ with CAPA' (meets essential criteria but requires corrective action), 'Quarantined'\
+    \ (requires further investigation), or 'Rejected' (failed critical criteria).\
+    \ \u2014 Structured approach for determining if temperature-sensitive products\
+    \ can be released for use after transport.\n[/kb=34]"
+  label: Product Release Decision Framework
+  hidden: false
+  meta:
+    kb_id: 34
+- name: release_ts
+  sql: json_extract(qc_checklist, '$.release.release_ts')
+  type: TIMESTAMP
+  primary_key: false
+  description: Product release timestamp.
+  hidden: false
+- name: quarantine_reason
+  sql: json_extract(qc_checklist, '$.release.quarantine_reason')
+  type: TEXT
+  primary_key: false
+  description: 'Reason for quarantine if applicable: Damage / Documentation / Temperature
+    Deviation. NULL means product not quarantined.'
+  hidden: false
+- name: is_customs_delayed
+  sql: CASE WHEN json_extract(qc_checklist, '$.customs_and_regulatory.custom_clearance_status')
+    = 'Delayed' THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Customs-delay indicator for Lane Risk Potential (KB #36): 1 when custom_clearance_status='Delayed'\
+    \ on this shipment, 0 otherwise. Used to compute CD (count of customs delays per\
+    \ lane).\n\n[kb=36]\nLRP = \\frac{TE_{total} + SD_{total} + CD_{total}}{N_{shipments}},\
+    \ \\text{where } TE_{total} \\text{ is the total count of temperature excursions,\
+    \ } SD_{total} \\text{ is the total count of shipping delays, } CD_{total} \\\
+    text{ is the total count of customs delays, and } N_{shipments} \\text{ is the\
+    \ number of shipments on that lane.} \u2014 Quantifies the risk associated with\
+    \ a specific shipping route based on historical performance.\n[/kb=36]"
+  label: Lane Risk Potential (LRP)
+  hidden: false
+  meta:
+    kb_id: 36
+- name: smc_score
+  sql: CASE WHEN LOWER(TRIM(qc_checklist ->> '$.gdp_quality.gdp_compliance')) = 'full'
+    THEN 9 WHEN LOWER(TRIM(qc_checklist ->> '$.gdp_quality.gdp_compliance')) = 'partial'
+    THEN 6 ELSE 3 END
+  type: DOUBLE
+  primary_key: false
+  description: "Stock Management Capability proxy (KB #30, SCRS sub-score, 0-10):\
+    \ GDP compliance Full = 9, Partial = 6, else = 3. Used inside Supply Chain Resilience\
+    \ Score; heuristic from the gold task solution because the schema does not store\
+    \ SMC directly.\n\n[kb=30]\nSCRS = 0.4 \\times ART + 0.3 \\times RRD + 0.2 \\\
+    times SBP + 0.1 \\times SMC, \\text{where ART is Alternative Route Availability\
+    \ (0-10), RRD is Redundant Resources Depth (0-10), SBP is Supplier Backup Presence\
+    \ (0-10), and SMC is Stock Management Capability (0-10).} \u2014 Measures a cold\
+    \ chain's ability to maintain integrity despite disruptions.\n[/kb=30]"
+  label: Supply Chain Resilience Score (SCRS)
+  hidden: false
+  meta:
+    kb_id: 30
+- name: is_critical_path_complete
+  sql: CASE WHEN documentation_complete = 'Complete' AND seal_status = 'Intact' AND
+    product_intact_check = 'Passed' THEN 1 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Batch Release Critical Path Elements indicator (KB #51): the critical-path\
+    \ prerequisites for a Released decision include complete temperature history with\
+    \ no unexplained gaps, confirmation that any excursions were within stability\
+    \ budgets, intact security seals (or acceptable explanation), complete chain of\
+    \ custody documentation, and acceptable visual inspection. This proxy returns\
+    \ 1 when documentation is Complete, the seal is Intact, and product_intact_check\
+    \ is Passed \u2014 the three critical path facts directly observable on this model.\n\
+    \n[kb=51]\nCritical path elements include: Complete temperature history with no\
+    \ unexplained gaps, Confirmation that any excursions were within stability budgets,\
+    \ Intact security seals or acceptable explanation for compromised seals, Complete\
+    \ chain of custody documentation, and Acceptable visual inspection results. \u2014\
+    \ The essential components required before a temperature-sensitive product batch\
+    \ can be released.\n[/kb=51]"
+  label: Batch Release Critical Path Elements
+  hidden: false
+  meta:
+    kb_id: 51
+measures: []
+aggregations: []
+joins:
+- target_model: shipments
+  join_pairs:
+  - - reckeyqc
+    - reckey
+  join_type: left
+filters: []
+description: Per-shipment quality-compliance checklist. Holds the qc_checklist JSON
+  blob with seal/security, product integrity, documentation, customs and regulatory,
+  GDP/quality and release sub-objects.
+hidden: false

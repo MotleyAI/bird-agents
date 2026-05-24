@@ -1,0 +1,248 @@
+version: 6
+name: audioandmedia
+sql_table: audioandmedia
+query_variables: {}
+data_source: gaming
+columns:
+- name: audregistry
+  sql: audregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: auddevref
+  sql: auddevref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: audperfref
+  sql: audperfref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sndleveldb
+  sql: sndleveldb
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: sndsig
+  sql: sndsig
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: noiseisodb
+  sql: noiseisodb
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: audlatms
+  sql: audlatms
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: micsensedb
+  sql: micsensedb
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: micfreqresp
+  sql: micfreqresp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: spkimpohm
+  sql: spkimpohm
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: spksensedb
+  sql: spksensedb
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: thdpct
+  sql: thdpct
+  type: DOUBLE
+  primary_key: false
+  description: "Total harmonic distortion (KB #26: <0.1% audiophile, 0.1-0.5% excellent\
+    \ gaming, 0.5-1.0% acceptable, >1.0% noticeable).\n\n[kb=26]\nMeasured as a percentage,\
+    \ representing audio signal distortion at high volumes. Values below 0.1% indicate\
+    \ audiophile-grade reproduction with imperceptible distortion, 0.1-0.5% represents\
+    \ excellent gaming audio quality, 0.5-1.0% is acceptable for most gaming scenarios,\
+    \ while values above 1.0% may produce noticeable distortion during intense gaming\
+    \ sequences. \u2014 Illustrates the impact of harmonic distortion measurements\
+    \ on audio quality in gaming headsets.\n[/kb=26]"
+  label: ThdPct (Total Harmonic Distortion)
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 26
+- name: freqresp
+  sql: freqresp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: drvszmm
+  sql: drvszmm
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: surrsnd
+  sql: surrsnd
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: eqcount
+  sql: eqcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: micmon
+  sql: micmon
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: noisecanc
+  sql: noisecanc
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: btversion
+  sql: btversion
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: btrangem
+  sql: btrangem
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: btlatms
+  sql: btlatms
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: multidev
+  sql: multidev
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: autoslpmin
+  sql: autoslpmin
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: wakems
+  sql: wakems
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: aqi
+  sql: (1 - thdpct * 1.0 / 2) * (spksensedb * 1.0 / 100) * (1 - audlatms * 1.0 / 100)
+    * 10
+  type: DOUBLE
+  primary_key: false
+  description: "Audio Quality Index (AQI) \u2014 (1 - ThdPct/2) \xD7 SpkSenseDb/100\
+    \ \xD7 (1 - AudLatMs/100) \xD7 10. Higher = better quality with minimal distortion.\n\
+    \n[kb=4]\nAQI = \\left(1 - \\frac{ThdPct}{2}\\right) \\times \\frac{SpkSenseDb}{100}\
+    \ \\times \\left(1 - \\frac{AudLatMs}{100}\\right) \\times 10, \\text{ where higher\
+    \ values indicate better overall audio quality with minimal distortion.} \u2014\
+    \ A comprehensive metric for evaluating audio device quality based on frequency\
+    \ response, distortion, and sensitivity.\n[/kb=4]"
+  label: Audio Quality Index (AQI)
+  hidden: false
+  meta:
+    kb_id: 4
+- name: is_audiophile_gaming_headset
+  sql: ((1 - thdpct * 1.0 / 2) * (spksensedb * 1.0 / 100) * (1 - audlatms * 1.0 /
+    100) * 10) > 8.0 AND freqresp LIKE '10%-22%' AND thdpct < 0.5 AND noiseisodb >
+    15
+  type: BOOLEAN
+  primary_key: false
+  description: "Audiophile Gaming Headset (KB #12): AQI > 8.0 AND FreqResp covers\
+    \ 10Hz-22kHz AND ThdPct < 0.5 AND NoiseIsoDb > 15.\n\n[kb=12]\nA headset with\
+    \ AQI > 8.0, FreqResp covering at least '10Hz-22kHz', ThdPct < 0.5%, and NoiseIsoDb\
+    \ > 15, delivering exceptional sound clarity, detail, and isolation for immersive\
+    \ gaming experiences. \u2014 Defines the standards for premium audio quality in\
+    \ gaming headsets suitable for audiophiles.\n[/kb=12]"
+  label: Audiophile Gaming Headset
+  hidden: false
+  meta:
+    kb_id: 12
+- name: is_streaming_optimized
+  sql: micsensedb < -45 AND (micfreqresp LIKE '50%-18%' OR micfreqresp LIKE '50%-2%')
+    AND deviceidentity.mcresptime < 1.0 AND deviceidentity.profcount >= 5
+  type: BOOLEAN
+  primary_key: false
+  description: "Streaming-Optimized Device (KB #15): MicSenseDb < -45 AND MicFreqResp\
+    \ covers '50Hz-18kHz' AND McRespTime < 1.0 AND ProfCount >= 5.\n\n[kb=15]\nA device\
+    \ with MicSenseDb < -45, MicFreqResp covering at least '50Hz-18kHz', McRespTime\
+    \ < 1.0, and ProfCount \u2265 5, allowing streamers to capture high-quality audio\
+    \ while maintaining flexible device configurations. \u2014 Identifies devices\
+    \ specifically designed for content creators and streamers with appropriate features.\n\
+    [/kb=15]"
+  label: Streaming-Optimized Device
+  hidden: false
+  meta:
+    kb_id: 15
+- name: is_subpar_audio_device
+  sql: ((1 - thdpct * 1.0 / 2) * (spksensedb * 1.0 / 100) * (1 - audlatms * 1.0 /
+    100) * 10) <= 8.0 OR thdpct >= 0.5 OR noiseisodb <= 15 OR freqresp NOT LIKE '10%-22%'
+  type: BOOLEAN
+  primary_key: false
+  description: "Subpar Audio Device (KB #52): AQI <= 8.0 OR ThdPct >= 0.5 OR NoiseIsoDb\
+    \ <= 15 OR FreqResp NOT covering 10Hz-22kHz.\n\n[kb=52]\nAudio devices with one\
+    \ or more critical quality deficiencies: AQI score of 8.0 or lower, total harmonic\
+    \ distortion (ThdPct) of 0.5% or higher, noise isolation (NoiseIsoDb) of 15dB\
+    \ or lower, or frequency response not covering the full 10Hz-22kHz range required\
+    \ for immersive gaming audio experiences. These devices are candidates for improvement\
+    \ or reclassification to non-audiophile product categories. \u2014 Identifies\
+    \ audio devices that fail to meet audiophile gaming standards and need improvement\
+    \ or removal from premium product lines\n[/kb=52]"
+  label: Subpar Audio Device Identification
+  hidden: false
+  meta:
+    kb_id: 52
+measures: []
+aggregations: []
+joins:
+- target_model: deviceidentity
+  join_pairs:
+  - - auddevref
+    - devregistry
+  join_type: left
+- target_model: performance
+  join_pairs:
+  - - audperfref
+    - perfregistry
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,200 @@
+version: 6
+name: whale_driven_market
+source_queries:
+- version: 3
+  name: ai_per_pair
+  source_model:
+    source_name: analyticsindicators
+    columns:
+    - name: is_high_whalemotion
+      type: DOUBLE
+      sql: CASE WHEN analyticsindicators.market_sentiment_indicators ->> '$.big_players.whalemotion'
+        = 'High' THEN 1 ELSE 0 END
+    - name: is_sm_dominant_bull
+      type: DOUBLE
+      sql: CASE WHEN (analyticsindicators.market_sentiment_indicators ->> '$.flow.smartforce')
+        > 0 AND (analyticsindicators.market_sentiment_indicators ->> '$.flow.smartforce')
+        > 1.2 * (analyticsindicators.market_sentiment_indicators ->> '$.flow.retailflow')
+        AND (analyticsindicators.market_sentiment_indicators ->> '$.flow.smartforce')
+        > 1.2 * (analyticsindicators.market_sentiment_indicators ->> '$.flow.instflow')
+        THEN 1 ELSE 0 END
+    - name: is_sm_dominant_bear
+      type: DOUBLE
+      sql: CASE WHEN (analyticsindicators.market_sentiment_indicators ->> '$.flow.smartforce')
+        < 0 AND (analyticsindicators.market_sentiment_indicators ->> '$.flow.retailflow')
+        > 1.2 * (analyticsindicators.market_sentiment_indicators ->> '$.flow.smartforce')
+        AND (analyticsindicators.market_sentiment_indicators ->> '$.flow.instflow')
+        > 1.2 * (analyticsindicators.market_sentiment_indicators ->> '$.flow.smartforce')
+        THEN 1 ELSE 0 END
+  measures:
+  - formula: is_high_whalemotion:max
+    name: any_high_whalemotion
+  - formula: is_sm_dominant_bull:max
+    name: any_sm_bull
+  - formula: is_sm_dominant_bear:max
+    name: any_sm_bear
+  dimensions:
+  - name: mktcombo
+    model: marketdata
+  whole_periods_only: false
+- version: 3
+  name: whale_per_pair
+  source_model:
+    source_name: whale_order
+    joins:
+    - target_model: orders
+      join_pairs:
+      - - recordvault
+        - recordvault
+    columns:
+    - name: is_whale_buy
+      type: DOUBLE
+      sql: CASE WHEN whale_order.is_whale_order = 1 AND orders.dealedge = 'Buy' THEN
+        1 ELSE 0 END
+    - name: is_whale_sell
+      type: DOUBLE
+      sql: CASE WHEN whale_order.is_whale_order = 1 AND orders.dealedge = 'Sell' THEN
+        1 ELSE 0 END
+  measures:
+  - formula: is_whale_buy:max
+    name: any_whale_buy
+  - formula: is_whale_sell:max
+    name: any_whale_sell
+  dimensions:
+  - name: mktnote
+    model: orders
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: ai_per_pair
+    joins:
+    - target_model: whale_per_pair
+      join_pairs:
+      - - marketdata__mktcombo
+        - orders__mktnote
+    columns:
+    - name: is_whale_driven
+      type: DOUBLE
+      sql: CASE WHEN ai_per_pair.any_high_whalemotion = 1 AND ((ai_per_pair.any_sm_bull
+        = 1 AND whale_per_pair.any_whale_buy = 1) OR (ai_per_pair.any_sm_bear = 1
+        AND whale_per_pair.any_whale_sell = 1)) THEN 1 ELSE 0 END
+  dimensions:
+  - name: marketdata__mktcombo
+  - name: any_high_whalemotion
+  - name: any_sm_bull
+  - name: any_sm_bear
+  - name: is_whale_driven
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"ai_per_pair.marketdata__mktcombo\" AS marketdata__mktcombo,\
+  \ \"ai_per_pair.any_high_whalemotion\" AS any_high_whalemotion, \"ai_per_pair.any_sm_bull\"\
+  \ AS any_sm_bull, \"ai_per_pair.any_sm_bear\" AS any_sm_bear, \"ai_per_pair.is_whale_driven\"\
+  \ AS is_whale_driven FROM (SELECT\n  ai_per_pair.marketdata__mktcombo AS \"ai_per_pair.marketdata__mktcombo\"\
+  ,\n  ai_per_pair.any_high_whalemotion AS \"ai_per_pair.any_high_whalemotion\",\n\
+  \  ai_per_pair.any_sm_bull AS \"ai_per_pair.any_sm_bull\",\n  ai_per_pair.any_sm_bear\
+  \ AS \"ai_per_pair.any_sm_bear\",\n  CASE\n    WHEN ai_per_pair.any_high_whalemotion\
+  \ = 1\n    AND (\n      (\n        ai_per_pair.any_sm_bull = 1 AND whale_per_pair.any_whale_buy\
+  \ = 1\n      )\n      OR (\n        ai_per_pair.any_sm_bear = 1 AND whale_per_pair.any_whale_sell\
+  \ = 1\n      )\n    )\n    THEN 1\n    ELSE 0\n  END AS \"ai_per_pair.is_whale_driven\"\
+  \nFROM (\n  SELECT\n    \"analyticsindicators.marketdata.mktcombo\" AS marketdata__mktcombo,\n\
+  \    \"analyticsindicators.any_high_whalemotion\" AS any_high_whalemotion,\n   \
+  \ \"analyticsindicators.any_sm_bull\" AS any_sm_bull,\n    \"analyticsindicators.any_sm_bear\"\
+  \ AS any_sm_bear\n  FROM (\n    SELECT\n      marketdata.quote_depth_snapshot ->>\
+  \ '$.metadata.mktcombo' AS \"analyticsindicators.marketdata.mktcombo\",\n      MAX(\n\
+  \        CASE\n          WHEN analyticsindicators.market_sentiment_indicators ->>\
+  \ '$.big_players.whalemotion' = 'High'\n          THEN 1\n          ELSE 0\n   \
+  \     END\n      ) AS \"analyticsindicators.any_high_whalemotion\",\n      MAX(\n\
+  \        CASE\n          WHEN (\n            analyticsindicators.market_sentiment_indicators\
+  \ ->> '$.flow.smartforce'\n          ) > 0\n          AND (\n            analyticsindicators.market_sentiment_indicators\
+  \ ->> '$.flow.smartforce'\n          ) > 1.2 * (\n            analyticsindicators.market_sentiment_indicators\
+  \ ->> '$.flow.retailflow'\n          )\n          AND (\n            analyticsindicators.market_sentiment_indicators\
+  \ ->> '$.flow.smartforce'\n          ) > 1.2 * (\n            analyticsindicators.market_sentiment_indicators\
+  \ ->> '$.flow.instflow'\n          )\n          THEN 1\n          ELSE 0\n     \
+  \   END\n      ) AS \"analyticsindicators.any_sm_bull\",\n      MAX(\n        CASE\n\
+  \          WHEN (\n            analyticsindicators.market_sentiment_indicators ->>\
+  \ '$.flow.smartforce'\n          ) < 0\n          AND (\n            analyticsindicators.market_sentiment_indicators\
+  \ ->> '$.flow.retailflow'\n          ) > 1.2 * (\n            analyticsindicators.market_sentiment_indicators\
+  \ ->> '$.flow.smartforce'\n          )\n          AND (\n            analyticsindicators.market_sentiment_indicators\
+  \ ->> '$.flow.instflow'\n          ) > 1.2 * (\n            analyticsindicators.market_sentiment_indicators\
+  \ ->> '$.flow.smartforce'\n          )\n          THEN 1\n          ELSE 0\n   \
+  \     END\n      ) AS \"analyticsindicators.any_sm_bear\"\n    FROM analyticsindicators\
+  \ AS analyticsindicators\n    LEFT JOIN marketdata AS marketdata\n      ON analyticsindicators.mdataref\
+  \ = marketdata.marketdatanode\n    GROUP BY\n      marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo'\n  ) AS _inner\n) AS ai_per_pair\nLEFT JOIN (\n  (\n\
+  \    SELECT\n      \"whale_order.orders.mktnote\" AS orders__mktnote,\n      \"\
+  whale_order.any_whale_buy\" AS any_whale_buy,\n      \"whale_order.any_whale_sell\"\
+  \ AS any_whale_sell\n    FROM (\n      SELECT\n        orders.mktnote AS \"whale_order.orders.mktnote\"\
+  ,\n        MAX(\n          CASE\n            WHEN whale_order.is_whale_order = 1\
+  \ AND orders.dealedge = 'Buy'\n            THEN 1\n            ELSE 0\n        \
+  \  END\n        ) AS \"whale_order.any_whale_buy\",\n        MAX(\n          CASE\n\
+  \            WHEN whale_order.is_whale_order = 1 AND orders.dealedge = 'Sell'\n\
+  \            THEN 1\n            ELSE 0\n          END\n        ) AS \"whale_order.any_whale_sell\"\
+  \n      FROM (\n        SELECT\n          \"orders.recordvault\" AS recordvault,\n\
+  \          \"orders.is_whale_order\" AS is_whale_order\n        FROM (\n       \
+  \   SELECT\n            orders.recordvault AS \"orders.recordvault\",\n        \
+  \    orders.dealcount > 0.10 * (\n              CASE\n                WHEN orders.dealedge\
+  \ = 'Buy'\n                THEN depth_per_pair.askunits_avg\n                ELSE\
+  \ depth_per_pair.bidunits_avg\n              END\n            ) AS \"orders.is_whale_order\"\
+  \n          FROM orders AS orders\n          LEFT JOIN (\n            (\n      \
+  \        SELECT\n                \"marketdata.mktcombo\" AS mktcombo,\n        \
+  \        \"marketdata.bidunits_avg\" AS bidunits_avg,\n                \"marketdata.askunits_avg\"\
+  \ AS askunits_avg\n              FROM (\n                SELECT\n              \
+  \    marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo' AS \"marketdata.mktcombo\"\
+  ,\n                  AVG(marketdata.quote_depth_snapshot ->> '$.depth.bidunits')\
+  \ AS \"marketdata.bidunits_avg\",\n                  AVG(marketdata.quote_depth_snapshot\
+  \ ->> '$.depth.askunits') AS \"marketdata.askunits_avg\"\n                FROM marketdata\
+  \ AS marketdata\n                GROUP BY\n                  marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo'\n              ) AS _inner\n            )\n        \
+  \  ) AS depth_per_pair\n            ON orders.mktnote = depth_per_pair.mktcombo\n\
+  \        ) AS _inner\n      ) AS whale_order\n      LEFT JOIN orders AS orders\n\
+  \        ON whale_order.recordvault = orders.recordvault\n      GROUP BY\n     \
+  \   orders.mktnote\n    ) AS _inner\n  )\n) AS whale_per_pair\n  ON ai_per_pair.marketdata__mktcombo\
+  \ = whale_per_pair.orders__mktnote) AS _inner"
+data_source: crypto
+columns:
+- name: marketdata__mktcombo
+  sql: marketdata__mktcombo
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: any_high_whalemotion
+  sql: any_high_whalemotion
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: any_sm_bull
+  sql: any_sm_bull
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: any_sm_bear
+  sql: any_sm_bear
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_whale_driven
+  sql: is_whale_driven
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Whale-Driven Market (KB #46) per-pair: whalemotion is 'High' AND there\
+  \ is at least one Whale Order (KB #10) in the same direction as Smart Money Flow\
+  \ (KB #15). Direction mapping: smartforce > 0 with smart money dominant (smartforce\
+  \ > 1.2\xD7 retailflow AND smartforce > 1.2\xD7 instflow) \u2192 'Buy' direction;\
+  \ smartforce < 0 with smart money dominant inversely (retailflow > 1.2\xD7 smartforce\
+  \ AND instflow > 1.2\xD7 smartforce) \u2192 'Sell' direction. Stage 1 aggregates\
+  \ analyticsindicators per mktcombo (joined to marketdata for the pair key) into\
+  \ any_high_whalemotion, any_sm_bull, any_sm_bear. Stage 2 aggregates whale_order\
+  \ joined to orders per mktnote into any_whale_buy and any_whale_sell. Stage 3 joins\
+  \ on mktcombo and emits is_whale_driven.\n\n[kb=46]\nMarket conditions where whalemotion\
+  \ is 'High' and there is at least one Whale Order in the same direction as the Smart\
+  \ Money Flow, indicating coordinated activity among large market participants. \u2014\
+  \ Identifies periods where large traders significantly influence price direction.\n\
+  [/kb=46]"
+hidden: false
+meta:
+  kb_id: 46

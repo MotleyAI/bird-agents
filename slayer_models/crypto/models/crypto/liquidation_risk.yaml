@@ -1,0 +1,88 @@
+version: 6
+name: liquidation_risk
+source_queries:
+- version: 3
+  name: midquote_per_pair
+  source_model: marketstats
+  measures:
+  - formula: marketdata.midquote:avg
+    name: midquote_avg
+  dimensions:
+  - name: mktcombo
+    model: marketdata
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: orders
+    joins:
+    - target_model: riskandmargin
+      join_pairs:
+      - - recordvault
+        - ordervault
+    - target_model: midquote_per_pair
+      join_pairs:
+      - - mktnote
+        - marketdata__mktcombo
+    columns:
+    - name: is_liquidation_high_risk
+      type: BOOLEAN
+      sql: ABS(midquote_per_pair.marketdata__midquote_avg - riskandmargin.liqquote)
+        / NULLIF(riskandmargin.liqquote, 0) <= 0.05
+  dimensions:
+  - name: recordvault
+  - name: is_liquidation_high_risk
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.is_liquidation_high_risk\"\
+  \ AS is_liquidation_high_risk FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\"\
+  ,\n  ABS(\n    midquote_per_pair.marketdata__midquote_avg - (\n      riskandmargin.risk_margin_profile\
+  \ ->> '$.price_levels.liqquote'\n    )\n  ) / NULLIF((\n    riskandmargin.risk_margin_profile\
+  \ ->> '$.price_levels.liqquote'\n  ), 0) <= 0.05 AS \"orders.is_liquidation_high_risk\"\
+  \nFROM orders AS orders\nLEFT JOIN riskandmargin AS riskandmargin\n  ON orders.recordvault\
+  \ = riskandmargin.ordervault\nLEFT JOIN (\n  (\n    SELECT\n      \"marketstats.marketdata.mktcombo\"\
+  \ AS marketdata__mktcombo,\n      \"marketstats.marketdata.midquote_avg\" AS marketdata__midquote_avg\n\
+  \    FROM (\n      WITH _base AS (\n        SELECT\n          marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo' AS \"marketstats.marketdata.mktcombo\"\n        FROM\
+  \ marketstats AS marketstats\n        LEFT JOIN marketdata AS marketdata\n     \
+  \     ON marketstats.mdlink = marketdata.marketdatanode\n        GROUP BY\n    \
+  \      marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\n      ), _cm_marketstats__marketdata__midquote_avg\
+  \ AS (\n        SELECT\n          marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\
+  \ AS \"marketstats.marketdata.mktcombo\",\n          AVG(marketdata.quote_depth_snapshot\
+  \ ->> '$.quotes.midquote') AS \"marketstats.marketdata.midquote_avg\"\n        FROM\
+  \ marketdata AS marketdata\n        GROUP BY\n          marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo'\n      )\n      SELECT\n        _base.\"marketstats.marketdata.mktcombo\"\
+  ,\n        _cm_marketstats__marketdata__midquote_avg.\"marketstats.marketdata.midquote_avg\"\
+  \n      FROM _base\n      LEFT JOIN _cm_marketstats__marketdata__midquote_avg\n\
+  \        ON _base.\"marketstats.marketdata.mktcombo\" = _cm_marketstats__marketdata__midquote_avg.\"\
+  marketstats.marketdata.mktcombo\"\n    ) AS _inner\n  )\n) AS midquote_per_pair\n\
+  \  ON orders.mktnote = midquote_per_pair.marketdata__mktcombo) AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_liquidation_high_risk
+  sql: is_liquidation_high_risk
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Liquidation Risk Level (KB #11) \u2014 partial encoding. The KB defines\
+  \ the 'High Risk' band as: position's market price within 5% of liqquote. This model\
+  \ exposes the boolean `is_liquidation_high_risk` per order, computed as |midquote\
+  \ \u2212 liqquote| / liqquote \u2264 0.05, where midquote is the per-pair-average\
+  \ from marketdata (joined via marketstats), liqquote is per-row riskandmargin.liqquote,\
+  \ and the order-to-pair link is orders.mktnote = marketdata.mktcombo. The KB's 'Safe'\
+  \ vs 'Moderate' bands are not quantitatively defined, so they aren't encoded.\n\n\
+  [kb=11]\nPositions are categorized as 'Safe', 'Moderate', or 'High Risk' based on\
+  \ how close the current market price is to the liqquote (liquidation price). A position\
+  \ is 'High Risk' when market price is within 5% of liqquote. \u2014 Categorizes\
+  \ positions based on their proximity to liquidation.\n[/kb=11]"
+hidden: false
+meta:
+  kb_id: 11

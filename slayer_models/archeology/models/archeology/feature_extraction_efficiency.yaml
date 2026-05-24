@@ -1,0 +1,197 @@
+version: 6
+name: feature_extraction_efficiency
+source_queries:
+- version: 3
+  name: feat_per_zone
+  source_model: scanfeatures
+  measures:
+  - formula: traitcount:avg
+    name: traitcount
+  - formula: articount:avg
+    name: articount
+  dimensions:
+  - name: zoneref
+  whole_periods_only: false
+- version: 3
+  name: pc_per_arcref
+  source_model: scanpointcloud
+  measures:
+  - formula: clouddense:avg
+    name: clouddense
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  name: pcdr_per_arcref
+  source_model: point_cloud_density_ratio
+  measures:
+  - formula: pcdr:avg
+    name: pcdr
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  name: scans_keyed
+  source_model:
+    source_name: scans
+    joins:
+    - target_model: feat_per_zone
+      join_pairs:
+      - - zoneref
+        - zoneref
+    - target_model: pc_per_arcref
+      join_pairs:
+      - - arcref
+        - arcref
+    - target_model: pcdr_per_arcref
+      join_pairs:
+      - - arcref
+        - arcref
+  dimensions:
+  - name: questregistry
+  - name: arcref
+  - name: zoneref
+  - name: traitcount
+    model: feat_per_zone
+  - name: articount
+    model: feat_per_zone
+  - name: clouddense
+    model: pc_per_arcref
+  - name: pcdr
+    model: pcdr_per_arcref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: scans_keyed
+    columns:
+    - name: fee
+      type: DOUBLE
+      sql: (feat_per_zone__traitcount + feat_per_zone__articount) / (pcdr_per_arcref__pcdr
+        * sqrt(pc_per_arcref__clouddense)) * 1000.0
+  measures:
+  - formula: fee:avg
+    name: fee
+  dimensions:
+  - name: questregistry
+  - name: arcref
+  - name: zoneref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"scans_keyed.questregistry\" AS questregistry, \"scans_keyed.arcref\"\
+  \ AS arcref, \"scans_keyed.zoneref\" AS zoneref, \"scans_keyed.fee\" AS fee FROM\
+  \ (SELECT\n  scans_keyed.questregistry AS \"scans_keyed.questregistry\",\n  scans_keyed.arcref\
+  \ AS \"scans_keyed.arcref\",\n  scans_keyed.zoneref AS \"scans_keyed.zoneref\",\n\
+  \  AVG(\n    (\n      scans_keyed.feat_per_zone__traitcount + scans_keyed.feat_per_zone__articount\n\
+  \    ) / (\n      scans_keyed.pcdr_per_arcref__pcdr * SQRT(scans_keyed.pc_per_arcref__clouddense)\n\
+  \    ) * 1000.0\n  ) AS \"scans_keyed.fee\"\nFROM (\n  SELECT\n    \"scans.questregistry\"\
+  \ AS questregistry,\n    \"scans.arcref\" AS arcref,\n    \"scans.zoneref\" AS zoneref,\n\
+  \    \"scans.feat_per_zone.traitcount\" AS feat_per_zone__traitcount,\n    \"scans.feat_per_zone.articount\"\
+  \ AS feat_per_zone__articount,\n    \"scans.pc_per_arcref.clouddense\" AS pc_per_arcref__clouddense,\n\
+  \    \"scans.pcdr_per_arcref.pcdr\" AS pcdr_per_arcref__pcdr\n  FROM (\n    SELECT\n\
+  \      scans.questregistry AS \"scans.questregistry\",\n      scans.arcref AS \"\
+  scans.arcref\",\n      scans.zoneref AS \"scans.zoneref\",\n      feat_per_zone.traitcount\
+  \ AS \"scans.feat_per_zone.traitcount\",\n      feat_per_zone.articount AS \"scans.feat_per_zone.articount\"\
+  ,\n      pc_per_arcref.clouddense AS \"scans.pc_per_arcref.clouddense\",\n     \
+  \ pcdr_per_arcref.pcdr AS \"scans.pcdr_per_arcref.pcdr\"\n    FROM scans AS scans\n\
+  \    LEFT JOIN (\n      (\n        SELECT\n          \"point_cloud_density_ratio.arcref\"\
+  \ AS arcref,\n          \"point_cloud_density_ratio.pcdr\" AS pcdr\n        FROM\
+  \ (\n          SELECT\n            point_cloud_density_ratio.arcref AS \"point_cloud_density_ratio.arcref\"\
+  ,\n            AVG(point_cloud_density_ratio.pcdr) AS \"point_cloud_density_ratio.pcdr\"\
+  \n          FROM (\n            SELECT\n              \"pc_per_arcref.arcref\" AS\
+  \ arcref,\n              \"pc_per_arcref.totalpts_avg\" AS totalpts_avg,\n     \
+  \         \"pc_per_arcref.clouddense_avg\" AS clouddense_avg,\n              \"\
+  pc_per_arcref.pcdr\" AS pcdr,\n              \"pc_per_arcref.sp_per_arcref.aream2_avg\"\
+  \ AS sp_per_arcref__aream2_avg\n            FROM (\n              WITH _base AS\
+  \ (\n                SELECT\n                  pc_per_arcref.arcref AS \"pc_per_arcref.arcref\"\
+  ,\n                  AVG(pc_per_arcref.totalpts) AS \"pc_per_arcref.totalpts_avg\"\
+  ,\n                  AVG(pc_per_arcref.clouddense) AS \"pc_per_arcref.clouddense_avg\"\
+  \n                FROM (\n                  SELECT\n                    \"scanpointcloud.arcref\"\
+  \ AS arcref,\n                    \"scanpointcloud.totalpts\" AS totalpts,\n   \
+  \                 \"scanpointcloud.clouddense\" AS clouddense\n                \
+  \  FROM (\n                    SELECT\n                      scanpointcloud.arcref\
+  \ AS \"scanpointcloud.arcref\",\n                      AVG(scanpointcloud.totalpts)\
+  \ AS \"scanpointcloud.totalpts\",\n                      AVG(scanpointcloud.clouddense)\
+  \ AS \"scanpointcloud.clouddense\"\n                    FROM scanpointcloud AS scanpointcloud\n\
+  \                    GROUP BY\n                      scanpointcloud.arcref\n   \
+  \               ) AS _inner\n                ) AS pc_per_arcref\n              \
+  \  GROUP BY\n                  pc_per_arcref.arcref\n              ), _cm_pc_per_arcref__sp_per_arcref__aream2_avg\
+  \ AS (\n                SELECT\n                  AVG(sp_per_arcref.aream2) AS \"\
+  pc_per_arcref.sp_per_arcref.aream2_avg\"\n                FROM (\n             \
+  \     SELECT\n                    \"scanspatial.arcref\" AS arcref,\n          \
+  \          \"scanspatial.aream2\" AS aream2\n                  FROM (\n        \
+  \            SELECT\n                      scanspatial.arcref AS \"scanspatial.arcref\"\
+  ,\n                      AVG(scanspatial.aream2) AS \"scanspatial.aream2\"\n   \
+  \                 FROM scanspatial AS scanspatial\n                    GROUP BY\n\
+  \                      scanspatial.arcref\n                  ) AS _inner\n     \
+  \           ) AS sp_per_arcref\n              ), _combined AS (\n              \
+  \  SELECT\n                  _base.\"pc_per_arcref.arcref\",\n                 \
+  \ _base.\"pc_per_arcref.totalpts_avg\",\n                  _base.\"pc_per_arcref.clouddense_avg\"\
+  ,\n                  _cm_pc_per_arcref__sp_per_arcref__aream2_avg.\"pc_per_arcref.sp_per_arcref.aream2_avg\"\
+  \n                FROM _base\n                CROSS JOIN _cm_pc_per_arcref__sp_per_arcref__aream2_avg\n\
+  \              ), step1 AS (\n                SELECT\n                  \"pc_per_arcref.arcref\"\
+  ,\n                  \"pc_per_arcref.clouddense_avg\",\n                  \"pc_per_arcref.sp_per_arcref.aream2_avg\"\
+  ,\n                  \"pc_per_arcref.totalpts_avg\",\n                  \"pc_per_arcref.totalpts_avg\"\
+  \ / (\n                    \"pc_per_arcref.clouddense_avg\" * \"pc_per_arcref.sp_per_arcref.aream2_avg\"\
+  \n                  ) AS \"pc_per_arcref.pcdr\"\n                FROM _combined\n\
+  \              )\n              SELECT\n                \"pc_per_arcref.arcref\"\
+  ,\n                \"pc_per_arcref.clouddense_avg\",\n                \"pc_per_arcref.pcdr\"\
+  ,\n                \"pc_per_arcref.sp_per_arcref.aream2_avg\",\n               \
+  \ \"pc_per_arcref.totalpts_avg\"\n              FROM step1\n            ) AS _inner\n\
+  \          ) AS point_cloud_density_ratio\n          GROUP BY\n            point_cloud_density_ratio.arcref\n\
+  \        ) AS _inner\n      )\n    ) AS pcdr_per_arcref\n      ON scans.arcref =\
+  \ pcdr_per_arcref.arcref\n    LEFT JOIN (\n      (\n        SELECT\n          \"\
+  scanpointcloud.arcref\" AS arcref,\n          \"scanpointcloud.clouddense\" AS clouddense\n\
+  \        FROM (\n          SELECT\n            scanpointcloud.arcref AS \"scanpointcloud.arcref\"\
+  ,\n            AVG(scanpointcloud.clouddense) AS \"scanpointcloud.clouddense\"\n\
+  \          FROM scanpointcloud AS scanpointcloud\n          GROUP BY\n         \
+  \   scanpointcloud.arcref\n        ) AS _inner\n      )\n    ) AS pc_per_arcref\n\
+  \      ON scans.arcref = pc_per_arcref.arcref\n    LEFT JOIN (\n      (\n      \
+  \  SELECT\n          \"scanfeatures.zoneref\" AS zoneref,\n          \"scanfeatures.traitcount\"\
+  \ AS traitcount,\n          \"scanfeatures.articount\" AS articount\n        FROM\
+  \ (\n          SELECT\n            scanfeatures.zoneref AS \"scanfeatures.zoneref\"\
+  ,\n            AVG(scanfeatures.traitcount) AS \"scanfeatures.traitcount\",\n  \
+  \          AVG(scanfeatures.articount) AS \"scanfeatures.articount\"\n         \
+  \ FROM scanfeatures AS scanfeatures\n          GROUP BY\n            scanfeatures.zoneref\n\
+  \        ) AS _inner\n      )\n    ) AS feat_per_zone\n      ON scans.zoneref =\
+  \ feat_per_zone.zoneref\n  ) AS _inner\n) AS scans_keyed\nGROUP BY\n  scans_keyed.questregistry,\n\
+  \  scans_keyed.arcref,\n  scans_keyed.zoneref) AS _inner"
+data_source: archeology
+columns:
+- name: questregistry
+  sql: questregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: arcref
+  sql: arcref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: zoneref
+  sql: zoneref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fee
+  sql: fee
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Feature Extraction Efficiency (FEE, KB #32): (TraitCount + ArtiCount)\
+  \ / (PCDR * sqrt(CloudDense)) * 10^3, where PCDR is the Point Cloud Density Ratio\
+  \ (KB #2). Multistage anchored at scans, joining scanfeatures (per zoneref), scanpointcloud\
+  \ (per arcref) for CloudDense, and point_cloud_density_ratio (per arcref) for PCDR.\n\
+  \n[kb=32]\nFEE = \\frac{TraitCount + ArtiCount}{PCDR \\times \\sqrt{CloudDense}}\
+  \ \\times 10^3, \\text{ where PCDR is the Point Cloud Density Ratio and higher values\
+  \ indicate more effective feature extraction from point cloud data relative to spatial\
+  \ distribution efficiency.} \u2014 Measures the efficiency of feature identification\
+  \ in scan data relative to point cloud density and complexity.\n[/kb=32]"
+hidden: false
+meta:
+  kb_id: 32

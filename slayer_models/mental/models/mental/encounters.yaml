@@ -1,0 +1,136 @@
+version: 6
+name: encounters
+sql_table: encounters
+query_variables: {}
+data_source: mental
+columns:
+- name: enckey
+  sql: enckey
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: timemark
+  sql: timemark
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: abref
+  sql: abref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: patref
+  sql: patref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: clinid
+  sql: clinid
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: facid
+  sql: facid
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: missappt
+  sql: missappt
+  type: DOUBLE
+  primary_key: false
+  description: "Missed appointment count for this encounter (e.g. 0 = perfect attendance,\
+    \ 5 = frequent absences).\n\n[kb=29]\nA numeric value indicating the number of\
+    \ missed appointments. A value of 0 indicates perfect attendance, while higher\
+    \ values (e.g., 5) indicate frequent absences. \u2014 Illustrates the value of\
+    \ the missed appointment count.\n[/kb=29]"
+  label: Missed Appointment Count
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 29
+- name: txbarrier
+  sql: txbarrier
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: nxapptdt
+  sql: nxapptdt
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: dqscore
+  sql: dqscore
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: assesscomplete
+  sql: assesscomplete
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_stale_outcome
+  sql: julianday('now') - julianday(timemark) > 60
+  type: BOOLEAN
+  primary_key: false
+  description: "Stale Treatment Outcome Records (KB #62): TRUE iff the encounter's\
+    \ timemark is more than 60 days old. Used to flag outcomes linked to old encounters.\n\
+    \n[kb=62]\nRecords in the `treatmentoutcomes` table where the `timemark` of the\
+    \ linked encounter in the `encounters` table is older than a defined interval\
+    \ (e.g., 60 days). \u2014 Treatment outcome records associated with encounters\
+    \ that occurred before a specific time threshold (e.g., older than 60 days).\n\
+    [/kb=62]"
+  label: Stale Treatment Outcome Records
+  hidden: false
+  meta:
+    kb_id: 62
+- name: is_high_appt_adherence
+  sql: missappt < 1
+  type: BOOLEAN
+  primary_key: false
+  description: "High Appointment Adherence (KB #19): per-encounter missappt < 1.\n\
+    \n[kb=19]\nA patient with MAR < 1 \u2014 Identifies patients with low missed appointment\
+    \ rates.\n[/kb=19]"
+  label: High Appointment Adherence
+  hidden: false
+  meta:
+    kb_id: 19
+measures:
+- formula: missappt:sum * 1.0 / patref:count_distinct
+  name: mar
+  label: Missed Appointment Rate (MAR)
+  description: "Missed Appointment Rate (MAR) \u2014 sum of missappt across encounters\
+    \ divided by the count of distinct patients.\n\n[kb=9]\nMAR = \\frac{\\sum_{i\
+    \ \\in encounters} missappt_i} {|patients|} \u2014 Calculates the average number\
+    \ of missed appointments per patient at a facility.\n[/kb=9]"
+  meta:
+    kb_id: 9
+aggregations: []
+joins:
+- target_model: assessmentbasics
+  join_pairs:
+  - - abref
+    - abkey
+  join_type: left
+- target_model: patients
+  join_pairs:
+  - - patref
+    - patkey
+  join_type: left
+- target_model: facilities
+  join_pairs:
+  - - facid
+    - fackey
+  join_type: left
+- target_model: clinicians
+  join_pairs:
+  - - clinid
+    - clinkey
+  join_type: left
+filters: []
+description: Per-encounter record. Links a patient to an assessment, clinician, and
+  facility; records missed-appointment count, treatment barrier, next appointment
+  date, and a data-quality score. timemark is the encounter timestamp.
+hidden: false

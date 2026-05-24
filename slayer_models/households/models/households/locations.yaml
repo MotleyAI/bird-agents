@@ -1,0 +1,29 @@
+version: 6
+name: locations
+sql_table: locations
+query_variables: {}
+data_source: households
+columns:
+- name: regioncode
+  sql: regioncode
+  type: TEXT
+  primary_key: true
+  description: 'Administrative region code or identifier representing the geographic
+    administrative division where households are located. Forms part of composite
+    primary key with ZoneNum. EX. Taguatinga,Samambaia '
+  hidden: false
+- name: zonenum
+  sql: zonenum
+  type: INT
+  primary_key: true
+  description: Macrozone numerical identifier representing specific geographic zones
+    within administrative regions for detailed location classification. Forms part
+    of composite primary key with RegionCode. EX.315,222,332
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

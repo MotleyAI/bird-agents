@@ -1,0 +1,65 @@
+version: 6
+name: signal_is_anomalous_quantum
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signaladvancedphenomena
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: is_anomalous_quantum
+      type: BOOLEAN
+      sql: CASE WHEN signaladvancedphenomena.quanteffects IN ('Significant', 'Observed')
+        AND signalprobabilities.anomscore > 8 AND (modindex * (1 + ((1 - ABS(freqdrifthzs)
+        / (freqmhz * 1000.0)) * sigdursec / (1 + doppshifthz / 1000.0))) * (CASE modtype
+        WHEN 'AM' THEN 2 WHEN 'FM' THEN 1.5 ELSE 1 END)) > 2.0 THEN 1 ELSE 0 END
+  dimensions:
+  - name: signalregistry
+  - name: is_anomalous_quantum
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_anomalous_quantum\"\
+  \ AS is_anomalous_quantum FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
+  ,\n  CASE\n    WHEN signaladvancedphenomena.quanteffects IN ('Significant', 'Observed')\n\
+  \    AND signalprobabilities.anomscore > 8\n    AND (\n      signals.modindex *\
+  \ (\n        1 + (\n          (\n            1 - ABS(signals.freqdrifthzs) / (\n\
+  \              signals.freqmhz * 1000.0\n            )\n          ) * signals.sigdursec\
+  \ / (\n            1 + signals.doppshifthz / 1000.0\n          )\n        )\n  \
+  \    ) * (\n        CASE signals.modtype WHEN 'AM' THEN 2 WHEN 'FM' THEN 1.5 ELSE\
+  \ 1 END\n      )\n    ) > 2.0\n    THEN 1\n    ELSE 0\n  END AS \"signals.is_anomalous_quantum\"\
+  \nFROM signals AS signals\nLEFT JOIN signaladvancedphenomena AS signaladvancedphenomena\n\
+  \  ON signals.signalregistry = signaladvancedphenomena.signalref\nLEFT JOIN signalprobabilities\
+  \ AS signalprobabilities\n  ON signals.signalregistry = signalprobabilities.signalref)\
+  \ AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_anomalous_quantum
+  sql: is_anomalous_quantum
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Anomalous Quantum Signal predicate per signal.\n\n[kb=49]\nSignals with\
+  \ $\\text{QuantEffects}$ indicating anomalous behavior, $\\text{AnomScore} > 8$,\
+  \ and unusually high $\\text{MCS} (> 2.0)$, suggesting either unknown natural quantum\
+  \ phenomena or extremely advanced transmission technologies beyond current human\
+  \ capabilities. \u2014 Describes signals exhibiting quantum properties inconsistent\
+  \ with current physics models.\n[/kb=49]"
+hidden: false
+meta:
+  kb_id: 49

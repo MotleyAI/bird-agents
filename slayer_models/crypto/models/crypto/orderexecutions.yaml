@@ -1,0 +1,95 @@
+version: 6
+name: orderexecutions
+sql_table: orderexecutions
+query_variables: {}
+data_source: crypto
+columns:
+- name: orderexecmark
+  sql: orderexecmark
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: fillcount
+  sql: fillcount
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: remaincount
+  sql: remaincount
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: fillquote
+  sql: fillquote
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: fillsum
+  sql: fillsum
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: expirespot
+  sql: expirespot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cancelnote
+  sql: cancelnote
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: exectune
+  sql: exectune
+  type: TEXT
+  primary_key: false
+  description: "Execution-style enum (KB #29): 'Maker' = added liquidity (no immediate\
+    \ match), 'Taker' = removed liquidity (immediately matched).\n\n[kb=29]\nAn enum\
+    \ with values 'Maker' or 'Taker'. 'Maker' indicates the order added liquidity\
+    \ to the order book by not matching immediately. 'Taker' indicates the order removed\
+    \ liquidity from the order book by matching with existing orders immediately upon\
+    \ placement. \u2014 Illustrates the meaning of different values for the exectune\
+    \ enum.\n[/kb=29]"
+  label: exectune
+  hidden: false
+  meta:
+    kb_id: 29
+- name: ordersmark
+  sql: ordersmark
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: order_fill_rate
+  sql: (orders.dealcount - remaincount) / NULLIF(orders.dealcount, 0) * 100
+  type: DOUBLE
+  primary_key: false
+  description: "Order Fill Rate (KB #8): (dealcount \u2212 remaincount) / dealcount\
+    \ \xD7 100. Percentage of the order that has been filled.\n\n[kb=8]\nOrder Fill\
+    \ Rate = \\frac{dealcount - remaincount}{dealcount} \\times 100, \\text{where\
+    \ } dealcount \\text{ is the order quantity and } remaincount \\text{ is how many\
+    \ units remain unfilled.} \u2014 Calculates the percentage of an order that has\
+    \ been filled.\n[/kb=8]"
+  label: Order Fill Rate
+  hidden: false
+  meta:
+    kb_id: 8
+measures: []
+aggregations: []
+joins:
+- target_model: orders
+  join_pairs:
+  - - ordersmark
+    - recordvault
+  join_type: left
+filters: []
+hidden: false

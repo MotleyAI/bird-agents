@@ -1,0 +1,4 @@
+version: 1
+name: alien
+type: sqlite
+connection_string: sqlite:////home/james/Dropbox/SLayer/mini-interact/alien/alien.sqlite

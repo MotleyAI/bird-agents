@@ -1,0 +1,351 @@
+version: 6
+name: actuation_data
+sql_table: actuation_data
+query_variables: {}
+data_source: robot
+columns:
+- name: actreg
+  sql: actreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: actoperref
+  sql: actoperref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: actdetref
+  sql: actdetref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: actrecref
+  sql: actrecref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tcpxval
+  sql: tcpxval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tcpyval
+  sql: tcpyval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: tcpzval
+  sql: tcpzval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: tcp_rxval
+  sql: tcp_rxval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tcp_ryval
+  sql: tcp_ryval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: tcp_rzval
+  sql: tcp_rzval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: tcpspeedval
+  sql: tcpspeedval
+  type: DOUBLE
+  primary_key: false
+  description: "Tool Center Point linear speed (mm/s). Higher speeds may be required\
+    \ for some applications but can affect precision (KB #23).\n\n[kb=23]\nTCP speed\
+    \ is measured in mm/s. Higher speeds may be required for certain applications\
+    \ but can affect precision. \u2014 Illustrates the speed of the Tool Center Point.\n\
+    [/kb=23]"
+  label: TCP Speed
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 23
+- name: tcpaccelval
+  sql: tcpaccelval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: pathaccmmval
+  sql: pathaccmmval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: poserrmmval
+  sql: poserrmmval
+  type: INT
+  primary_key: false
+  description: "Position error (mm). Lower values indicate higher precision (KB #22).\n\
+    \n[kb=22]\nPosition error is measured in millimeters. Lower values indicate higher\
+    \ precision. \u2014 Illustrates the position error in robot actuations.\n[/kb=22]"
+  label: Position Error
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 22
+- name: orienterrdegval
+  sql: orienterrdegval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: payloadwval
+  sql: payloadwval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: payloadival
+  sql: payloadival
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: m1currval
+  sql: m1currval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: m2currval
+  sql: m2currval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: m3currval
+  sql: m3currval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: m4currval
+  sql: m4currval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: m5currval
+  sql: m5currval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: m6currval
+  sql: m6currval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: m1voltval
+  sql: m1voltval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: m2voltval
+  sql: m2voltval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: m3voltval
+  sql: m3voltval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: m4voltval
+  sql: m4voltval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: m5voltval
+  sql: m5voltval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: m6voltval
+  sql: m6voltval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: row_payload_ratio
+  sql: payloadwval * 1.0 / NULLIF(robot_details.payloadcapkg, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Row-level payload weight relative to robot's payload capacity \u2014\
+    \ helper for PUR (KB #39).\n\n[kb=39]\nFor a given robot R, PUR = \\frac{\\sum_{ad\
+    \ \\in \\text{actuation_data} \\mid \\text{actdetref = R}} payloadwval}{\\text{(robot_details.payloadcapkg\
+    \ where botdetref = R)} \\cdot \\text{|}\\{ad \\in \\text{actuation_data} \\mid\
+    \ \\text{actdetref = R}\\}|}, \\text{where RAY adjusts for age-related capacity\
+    \ changes if applicable.} \u2014 Measures how close the robot operates to its\
+    \ payload capacity.\n[/kb=39]"
+  label: Payload Utilization Ratio (PUR)
+  hidden: false
+  meta:
+    kb_id: 39
+- name: is_aged_over_one
+  sql: ((julianday(robot_details__robot_record.rects) - julianday(robot_details.instdateval))
+    / 365.25) > 1
+  type: BOOLEAN
+  primary_key: false
+  description: 'Row-level: is the owning robot older than 1 year (RAY>1)? Helper for
+    KB #49 Overloaded.'
+  hidden: true
+measures:
+- formula: poserrmmval:avg
+  name: ape
+  label: Average Position Error (APE)
+  description: "Average Position Error (APE) (KB #3) \u2014 mean poserrmmval across\
+    \ actuation_data rows. Group by actdetref for per-robot.\n\n[kb=3]\nFor a given\
+    \ robot R, APE = \\frac{\\sum_{ad \\in \\text{actuation_data} \\mid \\text{actdetref\
+    \ = R}} poserrmmval}{|\\{ad \\in \\text{actuation_data} \\mid \\text{actdetref\
+    \ = R}\\}|} \u2014 Calculates the average position error across all actuations\
+    \ for a specific robot.\n[/kb=3]"
+  meta:
+    kb_id: 3
+- formula: tcpspeedval:avg
+  name: atcs
+  label: Average TCP Speed (ATCS)
+  description: "Average TCP Speed (ATCS) (KB #4) \u2014 mean tcpspeedval across actuation_data\
+    \ rows. Group by actdetref for per-robot.\n\n[kb=4]\nFor a given robot R, ATCS\
+    \ = \\frac{\\sum_{ad \\in \\text{actuation_data} \\mid \\text{actdetref = R}}\
+    \ tcpspeedval}{|\\{ad \\in \\text{actuation_data} \\mid \\text{actdetref = R}\\\
+    }|} \u2014 Calculates the average speed of the Tool Center Point across all actuations\
+    \ for a specific robot.\n[/kb=4]"
+  meta:
+    kb_id: 4
+- formula: row_payload_ratio:avg
+  name: pur
+  label: Payload Utilization Ratio (PUR)
+  description: "Payload Utilization Ratio (KB #39) \u2014 mean of (payloadwval / robot_details.payloadcapkg)\
+    \ across actuation_data rows. Equivalent to \u03A3payloadwval / (payloadcapkg\
+    \ \xB7 |rows|). Group by actdetref for per-robot.\n\n[kb=39]\nFor a given robot\
+    \ R, PUR = \\frac{\\sum_{ad \\in \\text{actuation_data} \\mid \\text{actdetref\
+    \ = R}} payloadwval}{\\text{(robot_details.payloadcapkg where botdetref = R)}\
+    \ \\cdot \\text{|}\\{ad \\in \\text{actuation_data} \\mid \\text{actdetref = R}\\\
+    }|}, \\text{where RAY adjusts for age-related capacity changes if applicable.}\
+    \ \u2014 Measures how close the robot operates to its payload capacity.\n[/kb=39]"
+  meta:
+    kb_id: 39
+- formula: tcpspeedval:avg > 1000
+  name: is_fast_robot
+  label: Fast Robot
+  description: "Fast Robot (KB #14) \u2014 true if ATCS > 1000. Group by actdetref\
+    \ for per-robot.\n\n[kb=14]\nThe robot is fast if ATCS > 1000. \u2014 Indicates\
+    \ if the robot operates at high speed based on average TCP speed.\n[/kb=14]"
+  meta:
+    kb_id: 14
+- formula: poserrmmval:avg < 0.1
+  name: is_high_precision
+  label: Precision Category
+  description: "Precision Category (KB #13) \u2014 'High Precision' bucket: APE <\
+    \ 0.1. Group by actdetref. The other buckets are is_medium_precision and is_low_precision;\
+    \ exactly one is true per robot.\n\n[kb=13]\nIf APE < 0.1, 'High Precision'; else\
+    \ if APE < 0.5, 'Medium Precision'; else 'Low Precision'. \u2014 Categorizes the\
+    \ precision of the robot based on average position error.\n[/kb=13]"
+  meta:
+    kb_id: 13
+- formula: poserrmmval:avg >= 0.1 and poserrmmval:avg < 0.5
+  name: is_medium_precision
+  label: Precision Category
+  description: "Precision Category (KB #13) \u2014 'Medium Precision' bucket: 0.1\
+    \ \u2264 APE < 0.5.\n\n[kb=13]\nIf APE < 0.1, 'High Precision'; else if APE <\
+    \ 0.5, 'Medium Precision'; else 'Low Precision'. \u2014 Categorizes the precision\
+    \ of the robot based on average position error.\n[/kb=13]"
+  meta:
+    kb_id: 13
+- formula: poserrmmval:avg >= 0.5
+  name: is_low_precision
+  label: Precision Category
+  description: "Precision Category (KB #13) \u2014 'Low Precision' bucket: APE \u2265\
+    \ 0.5.\n\n[kb=13]\nIf APE < 0.1, 'High Precision'; else if APE < 0.5, 'Medium\
+    \ Precision'; else 'Low Precision'. \u2014 Categorizes the precision of the robot\
+    \ based on average position error.\n[/kb=13]"
+  meta:
+    kb_id: 13
+- formula: row_payload_ratio:avg > 0.9 and is_aged_over_one:max > 0
+  name: is_overloaded
+  label: Overloaded Robot
+  description: "Overloaded Robot (KB #49) \u2014 true if PUR > 0.9 AND RAY > 1. Group\
+    \ by actdetref.\n\n[kb=49]\nA robot R is Overloaded if PUR > 0.9 and RAY > 1.\
+    \ \u2014 Flags robots operating near or beyond payload capacity.\n[/kb=49]"
+  meta:
+    kb_id: 49
+- formula: percent_rank(ape, partition_by=actuation_data.robot_details.ctrltypeval)
+  name: ape_rank
+  label: APE Rank
+  description: "APE Rank (KB #53) \u2014 PERCENT_RANK over Average Position Error\
+    \ within each controller type, descending. Group by actdetref and include robot_details.ctrltypeval\
+    \ as a dimension; percent_rank partitions on it.\n\n[kb=53]\nFor a given robot\
+    \ R, APE Rank = \\text{PERCENT_RANK}() \\text{ OVER } (\\text{PARTITION BY } ctrltypeval\
+    \ \\text{ ORDER BY } APE \\text{ DESC}) \u2014 Ranks the Average Position Error\
+    \ within each controller type to assess relative precision.\n[/kb=53]"
+  meta:
+    kb_id: 53
+aggregations: []
+joins:
+- target_model: robot_details
+  join_pairs:
+  - - actdetref
+    - botdetreg
+  join_type: left
+- target_model: operation
+  join_pairs:
+  - - actoperref
+    - operreg
+  join_type: left
+- target_model: robot_record
+  join_pairs:
+  - - actrecref
+    - recreg
+  join_type: left
+filters: []
+description: 'Per-actuation telemetry: TCP pose/speed/accel, position/orientation
+  error, payload, motor currents/voltages. One row per actuation event, joined to
+  robot_details via actdetref.'
+hidden: false

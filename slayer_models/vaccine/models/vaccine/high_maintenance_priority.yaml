@@ -1,0 +1,180 @@
+version: 6
+name: high_maintenance_priority
+source_queries:
+- version: 3
+  name: mcs_per_shipment_hmp
+  source_model: regulatoryandmaintenance
+  measures:
+  - formula: mcs:avg
+    name: mcs
+  dimensions:
+  - name: shipgov
+  whole_periods_only: false
+- version: 3
+  name: agg_per_container_hmp
+  source_model: sensordata
+  measures:
+  - formula: tss:avg
+    name: tss
+  - formula: hqi:avg
+    name: hqi
+  - formula: cri:avg
+    name: cri
+  - formula: tbs:avg
+    name: tbs
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  name: lhi_per_container_hmp
+  source_model: datalogger
+  measures:
+  - formula: lhi:avg
+    name: lhi
+  dimensions:
+  - name: containlog
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: vaccinedetails
+    joins:
+    - target_model: agg_per_container_hmp
+      join_pairs:
+      - - containvac
+        - containlink
+    - target_model: lhi_per_container_hmp
+      join_pairs:
+      - - containvac
+        - containlog
+    - target_model: mcs_per_shipment_hmp
+      join_pairs:
+      - - shipinject
+        - shipgov
+    columns:
+    - name: cmr
+      type: DOUBLE
+      sql: (1 - mcs_per_shipment_hmp.mcs) * (1 + agg_per_container_hmp.tbs / 5.0)
+        * (1 - lhi_per_container_hmp.lhi)
+    - name: qmi
+      type: DOUBLE
+      sql: mcs_per_shipment_hmp.mcs * (((JULIANDAY(expireday) - JULIANDAY('now'))
+        * agg_per_container_hmp.tss) / 365.0 * agg_per_container_hmp.hqi * (1 - agg_per_container_hmp.cri))
+        * (1 - agg_per_container_hmp.tbs / 10.0)
+    - name: is_high_maintenance_priority
+      type: BOOLEAN
+      sql: CASE WHEN ((1 - mcs_per_shipment_hmp.mcs) * (1 + agg_per_container_hmp.tbs
+        / 5.0) * (1 - lhi_per_container_hmp.lhi)) > 0.7 AND (mcs_per_shipment_hmp.mcs
+        * (((JULIANDAY(expireday) - JULIANDAY('now')) * agg_per_container_hmp.tss)
+        / 365.0 * agg_per_container_hmp.hqi * (1 - agg_per_container_hmp.cri)) * (1
+        - agg_per_container_hmp.tbs / 10.0)) < 0.4 THEN 1 ELSE 0 END
+  dimensions:
+  - name: vacregistry
+  - name: containvac
+  - name: shipinject
+  - name: cmr
+  - name: qmi
+  - name: is_high_maintenance_priority
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
+  \ AS containvac, \"vaccinedetails.shipinject\" AS shipinject, \"vaccinedetails.cmr\"\
+  \ AS cmr, \"vaccinedetails.qmi\" AS qmi, \"vaccinedetails.is_high_maintenance_priority\"\
+  \ AS is_high_maintenance_priority FROM (SELECT\n  vaccinedetails.vacregistry AS\
+  \ \"vaccinedetails.vacregistry\",\n  vaccinedetails.containvac AS \"vaccinedetails.containvac\"\
+  ,\n  vaccinedetails.shipinject AS \"vaccinedetails.shipinject\",\n  (\n    1 - mcs_per_shipment_hmp.mcs\n\
+  \  ) * (\n    1 + agg_per_container_hmp.tbs / 5.0\n  ) * (\n    1 - lhi_per_container_hmp.lhi\n\
+  \  ) AS \"vaccinedetails.cmr\",\n  mcs_per_shipment_hmp.mcs * (\n    (\n      (\n\
+  \        JULIANDAY(vaccinedetails.expireday) - JULIANDAY('now')\n      ) * agg_per_container_hmp.tss\n\
+  \    ) / 365.0 * agg_per_container_hmp.hqi * (\n      1 - agg_per_container_hmp.cri\n\
+  \    )\n  ) * (\n    1 - agg_per_container_hmp.tbs / 10.0\n  ) AS \"vaccinedetails.qmi\"\
+  ,\n  CASE\n    WHEN (\n      (\n        1 - mcs_per_shipment_hmp.mcs\n      ) *\
+  \ (\n        1 + agg_per_container_hmp.tbs / 5.0\n      ) * (\n        1 - lhi_per_container_hmp.lhi\n\
+  \      )\n    ) > 0.7\n    AND (\n      mcs_per_shipment_hmp.mcs * (\n        (\n\
+  \          (\n            JULIANDAY(vaccinedetails.expireday) - JULIANDAY('now')\n\
+  \          ) * agg_per_container_hmp.tss\n        ) / 365.0 * agg_per_container_hmp.hqi\
+  \ * (\n          1 - agg_per_container_hmp.cri\n        )\n      ) * (\n       \
+  \ 1 - agg_per_container_hmp.tbs / 10.0\n      )\n    ) < 0.4\n    THEN 1\n    ELSE\
+  \ 0\n  END AS \"vaccinedetails.is_high_maintenance_priority\"\nFROM vaccinedetails\
+  \ AS vaccinedetails\nLEFT JOIN (\n  (\n    SELECT\n      \"sensordata.containlink\"\
+  \ AS containlink,\n      \"sensordata.tss\" AS tss,\n      \"sensordata.hqi\" AS\
+  \ hqi,\n      \"sensordata.cri\" AS cri,\n      \"sensordata.tbs\" AS tbs\n    FROM\
+  \ (\n      SELECT\n        sensordata.containlink AS \"sensordata.containlink\"\
+  ,\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          ) * COALESCE(sensordata.tempstabidx, 1)\n       \
+  \ ) AS \"sensordata.tss\",\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.handleevents\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          )\n        ) AS \"sensordata.hqi\",\n        AVG(\n\
+  \          (\n            1 - (\n              (\n                1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n              ) * (\n                1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n              ) * COALESCE(sensordata.tempstabidx, 1)\n   \
+  \         )\n          ) * (\n            1 - COALESCE(container.coolremainpct,\
+  \ 0) / 100\n          )\n        ) AS \"sensordata.cri\",\n        AVG(\n      \
+  \    ABS(sensordata.tempnowc - sensordata.storetempc) / NULLIF(sensordata.temptolc,\
+  \ 0) * sensordata.tempdevcount\n        ) AS \"sensordata.tbs\"\n      FROM sensordata\
+  \ AS sensordata\n      LEFT JOIN container AS container\n        ON sensordata.containlink\
+  \ = container.containregistry\n      GROUP BY\n        sensordata.containlink\n\
+  \    ) AS _inner\n  )\n) AS agg_per_container_hmp\n  ON vaccinedetails.containvac\
+  \ = agg_per_container_hmp.containlink\nLEFT JOIN (\n  (\n    SELECT\n      \"regulatoryandmaintenance.shipgov\"\
+  \ AS shipgov,\n      \"regulatoryandmaintenance.mcs\" AS mcs\n    FROM (\n     \
+  \ SELECT\n        regulatoryandmaintenance.shipgov AS \"regulatoryandmaintenance.shipgov\"\
+  ,\n        AVG(\n          regulatoryandmaintenance.compscore * (\n            1\
+  \ - COALESCE(CAST(regulatoryandmaintenance.incidents AS REAL) / 10, 0)\n       \
+  \   )\n        ) AS \"regulatoryandmaintenance.mcs\"\n      FROM regulatoryandmaintenance\
+  \ AS regulatoryandmaintenance\n      GROUP BY\n        regulatoryandmaintenance.shipgov\n\
+  \    ) AS _inner\n  )\n) AS mcs_per_shipment_hmp\n  ON vaccinedetails.shipinject\
+  \ = mcs_per_shipment_hmp.shipgov\nLEFT JOIN (\n  (\n    SELECT\n      \"datalogger.containlog\"\
+  \ AS containlog,\n      \"datalogger.lhi\" AS lhi\n    FROM (\n      SELECT\n  \
+  \      datalogger.containlog AS \"datalogger.containlog\",\n        AVG(\n     \
+  \     container.batterypct / 100.0 * (\n            1 - COALESCE(CAST(datalogger.memusepct\
+  \ AS REAL) / 100, 0)\n          ) * COALESCE(datalogger.datapct, 0) / 100.0\n  \
+  \      ) AS \"datalogger.lhi\"\n      FROM datalogger AS datalogger\n      LEFT\
+  \ JOIN container AS container\n        ON datalogger.containlog = container.containregistry\n\
+  \      GROUP BY\n        datalogger.containlog\n    ) AS _inner\n  )\n) AS lhi_per_container_hmp\n\
+  \  ON vaccinedetails.containvac = lhi_per_container_hmp.containlog) AS _inner"
+data_source: vaccine
+columns:
+- name: vacregistry
+  sql: vacregistry
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: containvac
+  sql: containvac
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: shipinject
+  sql: shipinject
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cmr
+  sql: cmr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: qmi
+  sql: qmi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_high_maintenance_priority
+  sql: is_high_maintenance_priority
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "High Maintenance Priority (KB #42). One row per vaccinedetails record\
+  \ with is_high_maintenance_priority boolean = CMR > 0.7 AND QMI < 0.4. CMR (KB #32)\
+  \ and QMI (KB #37) are computed inline from per-shipment / per-container peer aggregates\
+  \ of MCS / TBS / LHI / TSS / HQI / CRI.\n\n[kb=42]\nEquipment where CMR > 0.7 and\
+  \ QMI < 0.4 \u2014 Identifies equipment requiring urgent maintenance.\n[/kb=42]"
+hidden: false
+meta:
+  kb_id: 42

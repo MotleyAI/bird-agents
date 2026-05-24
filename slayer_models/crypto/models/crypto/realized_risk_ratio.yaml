@@ -1,0 +1,112 @@
+version: 6
+name: realized_risk_ratio
+source_queries:
+- version: 3
+  name: realline_per_user
+  source_model: accountbalances
+  measures:
+  - formula: realline:sum
+    name: realline_total
+  dimensions:
+  - name: usertag
+  whole_periods_only: false
+- version: 3
+  name: vol_per_pair
+  source_model: marketstats
+  measures:
+  - formula: volmeter:avg
+    name: vol_avg
+  dimensions:
+  - name: mktcombo
+    model: marketdata
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: orders
+    joins:
+    - target_model: vol_per_pair
+      join_pairs:
+      - - mktnote
+        - marketdata__mktcombo
+    - target_model: realline_per_user
+      join_pairs:
+      - - userlink
+        - usertag
+    - target_model: riskandmargin
+      join_pairs:
+      - - recordvault
+        - ordervault
+    columns:
+    - name: pvar
+      type: DOUBLE
+      sql: (riskandmargin.risk_margin_profile ->> '$.position.possum') * vol_per_pair.vol_avg
+        * 0.01
+    - name: rrr
+      type: DOUBLE
+      sql: realline_per_user.realline_total / NULLIF((riskandmargin.risk_margin_profile
+        ->> '$.position.possum') * vol_per_pair.vol_avg * 0.01, 0)
+  dimensions:
+  - name: recordvault
+  - name: userlink
+  - name: pvar
+  - name: rrr
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.userlink\"\
+  \ AS userlink, \"orders.pvar\" AS pvar, \"orders.rrr\" AS rrr FROM (SELECT\n  orders.recordvault\
+  \ AS \"orders.recordvault\",\n  orders.userlink AS \"orders.userlink\",\n  (\n \
+  \   riskandmargin.risk_margin_profile ->> '$.position.possum'\n  ) * vol_per_pair.vol_avg\
+  \ * 0.01 AS \"orders.pvar\",\n  realline_per_user.realline_total / NULLIF(\n   \
+  \ (\n      riskandmargin.risk_margin_profile ->> '$.position.possum'\n    ) * vol_per_pair.vol_avg\
+  \ * 0.01,\n    0\n  ) AS \"orders.rrr\"\nFROM orders AS orders\nLEFT JOIN (\n  (\n\
+  \    SELECT\n      \"marketstats.marketdata.mktcombo\" AS marketdata__mktcombo,\n\
+  \      \"marketstats.vol_avg\" AS vol_avg\n    FROM (\n      SELECT\n        marketdata.quote_depth_snapshot\
+  \ ->> '$.metadata.mktcombo' AS \"marketstats.marketdata.mktcombo\",\n        AVG(marketstats.volmeter)\
+  \ AS \"marketstats.vol_avg\"\n      FROM marketstats AS marketstats\n      LEFT\
+  \ JOIN marketdata AS marketdata\n        ON marketstats.mdlink = marketdata.marketdatanode\n\
+  \      GROUP BY\n        marketdata.quote_depth_snapshot ->> '$.metadata.mktcombo'\n\
+  \    ) AS _inner\n  )\n) AS vol_per_pair\n  ON orders.mktnote = vol_per_pair.marketdata__mktcombo\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"accountbalances.usertag\" AS usertag,\n  \
+  \    \"accountbalances.realline_total\" AS realline_total\n    FROM (\n      SELECT\n\
+  \        accountbalances.usertag AS \"accountbalances.usertag\",\n        SUM(accountbalances.realline)\
+  \ AS \"accountbalances.realline_total\"\n      FROM accountbalances AS accountbalances\n\
+  \      GROUP BY\n        accountbalances.usertag\n    ) AS _inner\n  )\n) AS realline_per_user\n\
+  \  ON orders.userlink = realline_per_user.usertag\nLEFT JOIN riskandmargin AS riskandmargin\n\
+  \  ON orders.recordvault = riskandmargin.ordervault) AS _inner"
+data_source: crypto
+columns:
+- name: recordvault
+  sql: recordvault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: userlink
+  sql: userlink
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: pvar
+  sql: pvar
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: rrr
+  sql: rrr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Realized Risk Ratio (KB #6) per order: RRR = realline / PVaR, where\
+  \ realline is the realized PnL and PVaR is the Position Value at Risk. PVaR (KB\
+  \ #2) = possum \xD7 volmeter \xD7 0.01 (rebuilt here from riskandmargin.possum and\
+  \ the per-pair-avg volmeter). realline is summed per user from accountbalances (peer-join\
+  \ via users: orders.userlink \u2192 users.userstamp; accountbalances.usertag \u2192\
+  \ users.userstamp).\n\n[kb=6]\nRRR = \\frac{realline}{PVaR}, \\text{where } realline\
+  \ \\text{ is the realized PnL and } PVaR \\text{ is the Position Value at Risk.}\
+  \ \u2014 Calculates the ratio of realized PnL to position value at risk.\n[/kb=6]"
+hidden: false
+meta:
+  kb_id: 6

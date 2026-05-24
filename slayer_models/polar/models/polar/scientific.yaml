@@ -1,0 +1,86 @@
+version: 6
+name: scientific
+sql_table: scientific
+query_variables: {}
+data_source: polar
+columns:
+- name: sciregistry
+  sql: sciregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: scieqref
+  sql: scieqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: scientificequipmentstatus
+  sql: scientificequipmentstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: dataloggingstatus
+  sql: dataloggingstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sensorstatus
+  sql: sensorstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: calibrationstatus
+  sql: calibrationstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: measurementaccuracypercent
+  sql: measurementaccuracypercent
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: ser
+  sql: measurementaccuracypercent * CASE calibrationstatus WHEN 'Valid' THEN 1.0 WHEN
+    'Due' THEN 0.7 WHEN 'Expired' THEN 0.3 ELSE 0.0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Scientific Equipment Reliability (KB #8): accuracy% \xD7 calibration\
+    \ multiplier.\n\n[kb=8]\nSER = measurementaccuracypercent \\times \\begin{cases}\
+    \ 1.0 & \\text{if calibrationstatus = 'Valid'} \\\\ 0.7 & \\text{if calibrationstatus\
+    \ = 'Due'} \\\\ 0.3 & \\text{if calibrationstatus = 'Expired'} \\end{cases}, \\\
+    text{ where valid calibration and high accuracy result in more reliable scientific\
+    \ data.} \u2014 Quantifies the reliability of scientific equipment based on calibration\
+    \ status and measurement accuracy.\n[/kb=8]"
+  label: Scientific Equipment Reliability (SER)
+  hidden: false
+  meta:
+    kb_id: 8
+- name: is_research_grade
+  sql: (measurementaccuracypercent * CASE calibrationstatus WHEN 'Valid' THEN 1.0
+    WHEN 'Due' THEN 0.7 WHEN 'Expired' THEN 0.3 ELSE 0.0 END) > 0.9 AND calibrationstatus
+    = 'Valid'
+  type: BOOLEAN
+  primary_key: false
+  description: "Scientific Data Reliability (KB #16): TRUE iff SER > 0.9 AND calibration='Valid'.\n\
+    \n[kb=16]\nScientific data is classified as 'Research Grade' when collected by\
+    \ equipment with SER > 0.9, with valid calibration status, and under appropriate\
+    \ environmental conditions for the equipment type. \u2014 Classifies scientific\
+    \ data based on equipment reliability and calibration status.\n[/kb=16]"
+  label: Scientific Data Reliability Classification
+  hidden: false
+  meta:
+    kb_id: 16
+measures: []
+aggregations: []
+joins:
+- target_model: equipment
+  join_pairs:
+  - - scieqref
+    - equipmentcode
+  join_type: left
+filters: []
+hidden: false

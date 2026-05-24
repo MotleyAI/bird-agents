@@ -1,0 +1,172 @@
+version: 6
+name: electrical
+sql_table: electrical
+query_variables: {}
+data_source: solar
+columns:
+- name: elecregistry
+  sql: elecregistry
+  type: TEXT
+  primary_key: true
+  description: VARCHAR(50) PRIMARY KEY uniquely identifying each electrical record.
+  hidden: false
+- name: engyunitref
+  sql: engyunitref
+  type: TEXT
+  primary_key: false
+  description: VARCHAR(50) REFERENCES Panel(PaneMark), tying this electrical record
+    to a panel.
+  hidden: false
+- name: efflogref
+  sql: efflogref
+  type: TEXT
+  primary_key: false
+  description: VARCHAR(50) REFERENCES Performance(PerfRegistry), linking to a performance
+    record if relevant.
+  hidden: false
+- name: iscinita
+  sql: iscinita
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(7,3) short-circuit current (Isc) at initial measurement (was
+    'IscInitialA') (e.g., 9.200).
+  hidden: false
+  format:
+    type: float
+- name: isccurra
+  sql: isccurra
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(7,3) current Isc measurement (was 'IscCurrentA') (e.g., 8.950).
+  hidden: false
+  format:
+    type: float
+- name: vocinitv
+  sql: vocinitv
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(7,3) open-circuit voltage (Voc) initially (was 'VocInitialV')
+    (e.g., 49.000).
+  hidden: false
+  format:
+    type: float
+- name: voccurrv
+  sql: voccurrv
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(7,3) current Voc measurement (was 'VocCurrentV') (e.g., 48.500).
+  hidden: false
+  format:
+    type: float
+- name: impinita
+  sql: impinita
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(7,3) current at maximum power initially (was 'ImpInitialA')
+    (e.g., 8.700).
+  hidden: false
+  format:
+    type: float
+- name: impcurra
+  sql: impcurra
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(7,3) current Imp measurement (was 'ImpCurrentA') (e.g., 8.450).
+  hidden: false
+  format:
+    type: float
+- name: vmpinitv
+  sql: vmpinitv
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(7,3) voltage at maximum power initially (was 'VmpInitialV')
+    (e.g., 46.500).
+  hidden: false
+  format:
+    type: float
+- name: vmpcurrv
+  sql: vmpcurrv
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(6,2) current Vmp measurement (was 'VmpCurrentV') (e.g., 46.12).
+  hidden: false
+  format:
+    type: float
+- name: ffactorinit
+  sql: ffactorinit
+  type: DOUBLE
+  primary_key: false
+  description: "Initial fill factor at panel commissioning; current fill factor\
+    \ is in ffactorcurr.\n\n[kb=24]\nA dimensionless value between 0 and 1 representing\
+    \ the ratio of maximum power point (Vmp \xD7 Imp) to open-circuit voltage times\
+    \ short-circuit current (Voc \xD7 Isc). High-quality commercial panels typically\
+    \ have fill factors between 0.75 and 0.85. \u2014 Illustrates a key indicator\
+    \ of solar cell quality.\n[/kb=24]"
+  label: FillFactor (Fill Factor)
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 24
+- name: ffactorcurr
+  sql: ffactorcurr
+  type: DOUBLE
+  primary_key: false
+  description: "Current snapshot; initial fill factor is in ffactorinit.\n\n[kb=24]\n\
+    A dimensionless value between 0 and 1 representing the ratio of maximum power\
+    \ point (Vmp \xD7 Imp) to open-circuit voltage times short-circuit current (Voc\
+    \ \xD7 Isc). High-quality commercial panels typically have fill factors between\
+    \ 0.75 and 0.85. \u2014 Illustrates a key indicator of solar cell quality.\n[/kb=24]"
+  label: "FillFactor (Fill Factor) \u2014 current snapshot"
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 24
+- name: seriesresohm
+  sql: seriesresohm
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(7,3) series resistance in ohms (was 'SeriesResistanceOhm')
+    (e.g., 0.300).
+  hidden: false
+  format:
+    type: float
+- name: shuntresohm
+  sql: shuntresohm
+  type: DOUBLE
+  primary_key: false
+  description: DECIMAL(4,1) shunt resistance in ohms (was 'ShuntResistanceOhm') (e.g.,
+    400.0).
+  hidden: false
+  format:
+    type: float
+- name: electrical_degradation_index
+  sql: (ffactorinit - ffactorcurr) / NULLIF(ffactorinit, 0) + (vocinitv - voccurrv)
+    / NULLIF(vocinitv, 0) + (iscinita - isccurra) / NULLIF(iscinita, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=38]\nEDI = (FillFactorInitial - FillFactorCurrent)/FillFactorInitial\
+    \ + (VocInitialV - VocCurrV)/VocInitialV + (IscInitialA - IscCurrA)/IscInitialA,\
+    \ where higher values indicate more severe degradation. \u2014 A composite of\
+    \ three normalized electrical-parameter losses (fill factor, open-circuit voltage,\
+    \ short-circuit current); higher values indicate more severe degradation.\n[/kb=38]"
+  label: Electrical Degradation Index (EDI)
+  hidden: false
+  meta:
+    kb_id: 38
+measures: []
+aggregations: []
+joins:
+- target_model: performance
+  join_pairs:
+  - - efflogref
+    - perfregistry
+  join_type: left
+- target_model: panel
+  join_pairs:
+  - - engyunitref
+    - panemark
+  join_type: left
+filters: []
+hidden: false

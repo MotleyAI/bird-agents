@@ -1,0 +1,75 @@
+version: 6
+name: signaladvancedphenomena
+sql_table: signaladvancedphenomena
+query_variables: {}
+data_source: alien
+columns:
+- name: signalref
+  sql: signalref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: intermedeffects
+  sql: intermedeffects
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: gravlens
+  sql: gravlens
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: quanteffects
+  sql: quanteffects
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: encryptevid
+  sql: encryptevid
+  type: TEXT
+  primary_key: false
+  description: "Encryption Evidence. encryptevid='Strong' (a.k.a. 'Strong Pattern')\
+    \ indicates detection of non-random, internally consistent patterns that resist\
+    \ simple decoding but show hallmarks of designed encryption or encoding. Characterized\
+    \ by high EntropyVal (> 0.7) combined with structural regularity that defies natural\
+    \ explanation.\n\n[kb=27]\nIndicates detection of non-random, internally consistent\
+    \ patterns that resist simple decoding but show hallmarks of designed encryption\
+    \ or encoding. Characterized by high $\\text{EntropyVal} (> 0.7)$ combined with\
+    \ structural regularity that defies natural explanation. \u2014 Illustrates characteristics\
+    \ suggesting deliberate signal encoding.\n[/kb=27]"
+  label: 'EncryptEvid: Strong Pattern'
+  hidden: false
+  meta:
+    kb_id: 27
+- name: langstruct
+  sql: langstruct
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: msgcontent
+  sql: msgcontent
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cultsig
+  sql: cultsig
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sciimpact
+  sql: sciimpact
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: signals
+  join_pairs:
+  - - signalref
+    - signalregistry
+  join_type: left
+filters: []
+description: 'Per-signal advanced phenomena: interstellar medium effects, gravitational
+  lensing, quantum effects, encryption / language structure / message content evidence.'
+hidden: false

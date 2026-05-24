@@ -1,0 +1,38 @@
+version: 6
+name: family_exchanges
+sql_table: family_exchanges
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: connectref
+  sql: connectref
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: familyref
+  sql: familyref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: exchangeref
+  sql: exchangeref
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: exchanges
+  join_pairs:
+  - - exchangeref
+    - marketcode
+  join_type: left
+- target_model: families
+  join_pairs:
+  - - familyref
+    - groupname
+  join_type: left
+filters: []
+hidden: false

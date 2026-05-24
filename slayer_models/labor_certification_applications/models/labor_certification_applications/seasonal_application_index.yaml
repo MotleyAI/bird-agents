@@ -1,0 +1,66 @@
+version: 6
+name: seasonal_application_index
+source_queries:
+- version: 3
+  name: month_apps
+  source_model: cases
+  measures:
+  - formula: '*:count'
+  dimensions:
+  - name: recv_month
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: month_apps
+    columns:
+    - name: sai
+      type: DOUBLE
+      sql: _count * 1.0 / AVG(_count) OVER ()
+  dimensions:
+  - name: recv_month
+  - name: _count
+  - name: sai
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"month_apps.recv_month\" AS recv_month, \"month_apps._count\"\
+  \ AS _count, \"month_apps.sai\" AS sai FROM (SELECT\n  month_apps.recv_month AS\
+  \ \"month_apps.recv_month\",\n  month_apps._count AS \"month_apps._count\",\n  _count\
+  \ * 1.0 / AVG(_count) OVER () AS \"month_apps.sai\"\nFROM (\n  SELECT\n    \"cases.recv_month\"\
+  \ AS recv_month,\n    \"cases._count\" AS _count\n  FROM (\n    SELECT\n      CAST(SUBSTRING(recvday,\
+  \ 6, 2) AS INTEGER) AS \"cases.recv_month\",\n      COUNT(*) AS \"cases._count\"\
+  \n    FROM cases AS cases\n    GROUP BY\n      CAST(SUBSTRING(recvday, 6, 2) AS\
+  \ INTEGER)\n  ) AS _inner\n) AS month_apps) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: recv_month
+  sql: recv_month
+  type: DOUBLE
+  primary_key: false
+  description: 'Month of receipt (1-12), parsed from recvday ''YYYY/MM/DD''. Used
+    for KB #23/50 seasonal analysis.'
+  hidden: false
+- name: _count
+  sql: _count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: sai
+  sql: sai
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Seasonal Application Index by month (KB #23): apps_in_month / avg_monthly_apps.\
+  \ Per-month rows. NOTE: dataset has all rows on 2023-12-21 so values are degenerate.\n\
+  \n[kb=23]\nSAI = (Number of Applications in Month / Average Monthly Applications).\
+  \ Application receipt dates are tracked as part of the application data. \u2014\
+  \ Measures the concentration of applications in different months of the year.\n\
+  [/kb=23]"
+hidden: false
+meta:
+  kb_id: 23

@@ -1,0 +1,156 @@
+version: 6
+name: qualifying_specialist
+source_queries:
+- version: 3
+  name: best_qual_per_driver
+  source_model: qualifying
+  dimensions:
+  - name: qualkey
+  - name: rbind
+  - name: pilotrec
+  - name: corptag
+  - name: px_pos
+  - name: best_qualifying_seconds
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: best_qual_per_driver
+    columns:
+    - name: pole_seconds
+      type: DOUBLE
+      sql: MIN(best_qualifying_seconds) OVER (PARTITION BY rbind)
+    - name: qualifying_time_deficit_to_pole
+      type: DOUBLE
+      sql: best_qualifying_seconds - MIN(best_qualifying_seconds) OVER (PARTITION
+        BY rbind)
+    - name: is_qualifying_specialist
+      type: BOOLEAN
+      sql: (best_qualifying_seconds - MIN(best_qualifying_seconds) OVER (PARTITION
+        BY rbind)) < 0.2
+  dimensions:
+  - name: qualkey
+  - name: rbind
+  - name: pilotrec
+  - name: corptag
+  - name: px_pos
+  - name: best_qualifying_seconds
+  - name: pole_seconds
+  - name: qualifying_time_deficit_to_pole
+  - name: is_qualifying_specialist
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"best_qual_per_driver.qualkey\" AS qualkey, \"best_qual_per_driver.rbind\"\
+  \ AS rbind, \"best_qual_per_driver.pilotrec\" AS pilotrec, \"best_qual_per_driver.corptag\"\
+  \ AS corptag, \"best_qual_per_driver.px_pos\" AS px_pos, \"best_qual_per_driver.best_qualifying_seconds\"\
+  \ AS best_qualifying_seconds, \"best_qual_per_driver.pole_seconds\" AS pole_seconds,\
+  \ \"best_qual_per_driver.qualifying_time_deficit_to_pole\" AS qualifying_time_deficit_to_pole,\
+  \ \"best_qual_per_driver.is_qualifying_specialist\" AS is_qualifying_specialist\
+  \ FROM (SELECT\n  best_qual_per_driver.qualkey AS \"best_qual_per_driver.qualkey\"\
+  ,\n  best_qual_per_driver.rbind AS \"best_qual_per_driver.rbind\",\n  best_qual_per_driver.pilotrec\
+  \ AS \"best_qual_per_driver.pilotrec\",\n  best_qual_per_driver.corptag AS \"best_qual_per_driver.corptag\"\
+  ,\n  best_qual_per_driver.px_pos AS \"best_qual_per_driver.px_pos\",\n  best_qual_per_driver.best_qualifying_seconds\
+  \ AS \"best_qual_per_driver.best_qualifying_seconds\",\n  MIN(best_qual_per_driver.best_qualifying_seconds)\
+  \ OVER (PARTITION BY best_qual_per_driver.rbind) AS \"best_qual_per_driver.pole_seconds\"\
+  ,\n  best_qual_per_driver.best_qualifying_seconds - MIN(best_qual_per_driver.best_qualifying_seconds)\
+  \ OVER (PARTITION BY best_qual_per_driver.rbind) AS \"best_qual_per_driver.qualifying_time_deficit_to_pole\"\
+  ,\n  (\n    best_qual_per_driver.best_qualifying_seconds - MIN(best_qual_per_driver.best_qualifying_seconds)\
+  \ OVER (PARTITION BY best_qual_per_driver.rbind)\n  ) < 0.2 AS \"best_qual_per_driver.is_qualifying_specialist\"\
+  \nFROM (\n  SELECT\n    \"qualifying.qualkey\" AS qualkey,\n    \"qualifying.rbind\"\
+  \ AS rbind,\n    \"qualifying.pilotrec\" AS pilotrec,\n    \"qualifying.corptag\"\
+  \ AS corptag,\n    \"qualifying.px_pos\" AS px_pos,\n    \"qualifying.best_qualifying_seconds\"\
+  \ AS best_qualifying_seconds\n  FROM (\n    SELECT\n      qualifying.qualkey AS\
+  \ \"qualifying.qualkey\",\n      qualifying.rbind AS \"qualifying.rbind\",\n   \
+  \   qualifying.pilotrec AS \"qualifying.pilotrec\",\n      qualifying.corptag AS\
+  \ \"qualifying.corptag\",\n      qualifying.px_pos AS \"qualifying.px_pos\",\n \
+  \     MIN(\n        COALESCE(\n          CASE\n            WHEN qualifying.q1_r\
+  \ IS NULL OR INSTR(qualifying.q1_r, ':') = 0\n            THEN NULL\n          \
+  \  ELSE CAST(SUBSTRING(qualifying.q1_r, 1, INSTR(qualifying.q1_r, ':') - 1) AS REAL)\
+  \ * 60 + CAST(SUBSTRING(qualifying.q1_r, INSTR(qualifying.q1_r, ':') + 1) AS REAL)\n\
+  \          END,\n          1e18\n        ),\n        COALESCE(\n          CASE\n\
+  \            WHEN qualifying.q2_r IS NULL OR INSTR(qualifying.q2_r, ':') = 0\n \
+  \           THEN NULL\n            ELSE CAST(SUBSTRING(qualifying.q2_r, 1, INSTR(qualifying.q2_r,\
+  \ ':') - 1) AS REAL) * 60 + CAST(SUBSTRING(qualifying.q2_r, INSTR(qualifying.q2_r,\
+  \ ':') + 1) AS REAL)\n          END,\n          1e18\n        ),\n        COALESCE(\n\
+  \          CASE\n            WHEN qualifying.q3_r IS NULL OR INSTR(qualifying.q3_r,\
+  \ ':') = 0\n            THEN NULL\n            ELSE CAST(SUBSTRING(qualifying.q3_r,\
+  \ 1, INSTR(qualifying.q3_r, ':') - 1) AS REAL) * 60 + CAST(SUBSTRING(qualifying.q3_r,\
+  \ INSTR(qualifying.q3_r, ':') + 1) AS REAL)\n          END,\n          1e18\n  \
+  \      )\n      ) AS \"qualifying.best_qualifying_seconds\"\n    FROM qualifying\
+  \ AS qualifying\n  ) AS _inner\n) AS best_qual_per_driver) AS _inner"
+data_source: sports_events
+columns:
+- name: qualkey
+  sql: qualkey
+  type: DOUBLE
+  primary_key: false
+  description: Unique qualifying record identifier.
+  hidden: false
+  format:
+    type: integer
+- name: rbind
+  sql: rbind
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to races.
+  hidden: false
+  format:
+    type: integer
+- name: pilotrec
+  sql: pilotrec
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to drivers.
+  hidden: false
+  format:
+    type: integer
+- name: corptag
+  sql: corptag
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to constructors.
+  hidden: false
+  format:
+    type: integer
+- name: px_pos
+  sql: px_pos
+  type: DOUBLE
+  primary_key: false
+  description: 'Final qualifying position (1 = Pole Position, KB #10).'
+  hidden: false
+  format:
+    type: integer
+- name: best_qualifying_seconds
+  sql: best_qualifying_seconds
+  type: DOUBLE
+  primary_key: false
+  description: 'Driver''s best qualifying time (across Q1/Q2/Q3) in seconds. Used
+    as T_driver in KB #28 Qualifying Time Deficit to Pole.'
+  hidden: false
+- name: pole_seconds
+  sql: pole_seconds
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: qualifying_time_deficit_to_pole
+  sql: qualifying_time_deficit_to_pole
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_qualifying_specialist
+  sql: is_qualifying_specialist
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Qualifying Specialist (KB #41): one row per (race, driver) qualifying\
+  \ entry; is_qualifying_specialist is TRUE iff the driver's Qualifying Time Deficit\
+  \ to Pole (KB #28) is less than 0.2 seconds.\n\n[kb=41]\nA driver is a Qualifying\
+  \ Specialist if their Qualifying Time Deficit to Pole is less than 0.2 seconds.\
+  \ \u2014 Defines a driver who excels in qualifying but may not maintain the same\
+  \ relative pace during the race.\n[/kb=41]"
+hidden: false
+meta:
+  kb_id: 41

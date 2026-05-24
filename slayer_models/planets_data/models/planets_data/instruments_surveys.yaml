@@ -1,0 +1,52 @@
+version: 6
+name: instruments_surveys
+sql_table: instruments_surveys
+query_variables: {}
+data_source: planets_data
+columns:
+- name: instrumentref
+  sql: instrumentref
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: facilityname
+  sql: facilityname
+  type: TEXT
+  primary_key: false
+  description: 'Observational facility code: ''ttv'' (Transit Timing Variations method
+    per KB #50), ''kep'' (Kepler Space Telescope per KB #39), ''k2'' (K2 mission).'
+  hidden: false
+  meta: {}
+- name: is_kepler_facility
+  sql: facilityname = 'kep'
+  type: BOOLEAN
+  primary_key: false
+  description: "Kepler Mission facility (KB #39): facility code 'kep'.\n\n[kb=39]\n\
+    A planet whose observation record is linked to the 'kep' facility. \u2014 Identifies\
+    \ a planet discovered by the Kepler Space Telescope.\n[/kb=39]"
+  label: Kepler Mission Discovery
+  hidden: false
+  meta:
+    kb_id: 39
+- name: is_ttv_facility
+  sql: facilityname = 'ttv'
+  type: BOOLEAN
+  primary_key: false
+  description: "Transit Timing Variations facility (KB #50): facility code 'ttv'.\n\
+    \n[kb=50]\nA planet whose observation record is linked to the 'ttv' facility.\
+    \ \u2014 A method of exoplanet detection that infers the presence of planets by\
+    \ observing variations in the timing of a known transiting planet's transit across\
+    \ its star.\n[/kb=50]"
+  label: Transit Timing Variation (TTV) Method
+  hidden: false
+  meta:
+    kb_id: 50
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: Observational facility / survey program records. facilityname is one
+  of 'ttv' (Transit Timing Variations), 'kep' (Kepler mission), 'k2' (K2 mission).
+hidden: false

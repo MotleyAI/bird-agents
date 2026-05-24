@@ -1,0 +1,140 @@
+version: 6
+name: sites
+sql_table: sites
+query_variables: {}
+data_source: archeology
+columns:
+- name: zoneregistry
+  sql: zoneregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: zonelabel
+  sql: zonelabel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: digunit
+  sql: digunit
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: gridtrace
+  sql: gridtrace
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: geox
+  sql: geox
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: geoy
+  sql: geoy
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: heightm
+  sql: heightm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: depthc
+  sql: depthc
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: phasefactor
+  sql: phasefactor
+  type: TEXT
+  primary_key: false
+  description: "Cultural / Historical Period (KB #25). Examples: 'Neolithic' (10,000-4,500\
+    \ BCE), 'Bronze Age' (3,300-1,200 BCE), 'Roman' (27 BCE-476 CE), 'Medieval' (476-1453\
+    \ CE). Determines applicable research methodologies, conservation approaches,\
+    \ and contextual interpretation frameworks.\n\n[kb=25]\nClassifies archaeological\
+    \ sites into standardized chronological/cultural periods. Values like 'Neolithic'\
+    \ (10,000-4,500 BCE), 'Bronze Age' (3,300-1,200 BCE), 'Roman' (27 BCE-476 CE),\
+    \ or 'Medieval' (476-1453 CE) determine applicable research methodologies, conservation\
+    \ approaches, and contextual interpretation frameworks. \u2014 Illustrates the\
+    \ significance of cultural period classification in archaeological sites.\n[/kb=25]"
+  label: PhaseFactor (Cultural Period)
+  hidden: false
+  meta:
+    kb_id: 25
+- name: guessdate
+  sql: guessdate
+  type: TEXT
+  primary_key: false
+  description: "Estimated Date (KB #29). Free-form labels like '3500-3000 BCE', '1st\
+    \ c. CE', or 'ca. 1450 CE' for chronological placement. Precision varies from\
+    \ specific years to century-level estimates.\n\n[kb=29]\nValues like '3500-3000\
+    \ BCE', '1st c. CE', or 'ca. 1450 CE' represent estimated chronological placement\
+    \ based on excavation findings. Precision varies from specific years to century-level\
+    \ estimates depending on available evidence and dating methodologies employed.\
+    \ \u2014 Illustrates dating conventions in archaeological classification for chronological\
+    \ placement.\n[/kb=29]"
+  label: GuessDate (Estimated Dating)
+  hidden: false
+  meta:
+    kb_id: 29
+- name: typesite
+  sql: typesite
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: presstat
+  sql: presstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: guardhint
+  sql: guardhint
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: entrystat
+  sql: entrystat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: saferank
+  sql: saferank
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: insurstat
+  sql: insurstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: riskeval
+  sql: riskeval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: healtheval
+  sql: healtheval
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: envhaz
+  sql: envhaz
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Archaeological site catalog (Sites table). Carries cultural/historical
+  period (PhaseFactor, KB #25), estimated dating (GuessDate, KB #29), and preservation
+  status (PresStat).'
+hidden: false

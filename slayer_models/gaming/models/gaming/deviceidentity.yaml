@@ -1,0 +1,588 @@
+version: 6
+name: deviceidentity
+sql_table: deviceidentity
+query_variables: {}
+data_source: gaming
+columns:
+- name: devregistry
+  sql: devregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: devsessionref
+  sql: devsessionref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: makername
+  sql: makername
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: modnum
+  sql: modnum
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fwver
+  sql: fwver
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: conntype
+  sql: conntype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: wlrangem
+  sql: wlrangem
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: wlinterf
+  sql: wlinterf
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: wlchanhop
+  sql: wlchanhop
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: wllatvar
+  sql: wllatvar
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: pwridlemw
+  sql: pwridlemw
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: pwractmw
+  sql: pwractmw
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: pwrrgbmw
+  sql: pwrrgbmw
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: brdmemmb
+  sql: brdmemmb
+  type: INT
+  primary_key: false
+  description: "Onboard memory in MB for profiles/macros (KB #29: 1MB stores 1-3 basic\
+    \ profiles, 4-8MB 5+ detailed, 16MB+ tournament-grade).\n\n[kb=29]\nMeasured in\
+    \ megabytes, representing storage for device configurations. Values of 1MB typically\
+    \ store 1-3 basic profiles with limited macros, 4-8MB allows for 5+ detailed profiles\
+    \ with complex macros and lighting effects, while 16MB+ enables tournament players\
+    \ to store numerous game-specific configurations with extensive customization\
+    \ independent of software. \u2014 Illustrates the significance of onboard memory\
+    \ capacity for storing gaming profiles and settings.\n[/kb=29]"
+  label: BrdMemMB (Onboard Memory)
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 29
+- name: profcount
+  sql: profcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: mcresptime
+  sql: mcresptime
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mcexecspeed
+  sql: mcexecspeed
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mctimacc
+  sql: mctimacc
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: dpires
+  sql: dpires
+  type: INT
+  primary_key: false
+  description: "DPI resolution (KB #22: 800-1600 pro FPS precision, 12000+ for MOBA/strategy\
+    \ fast cursor coverage).\n\n[kb=22]\nMeasured in dots per inch, representing sensor\
+    \ tracking precision. Values around 800-1600 are typically used by professional\
+    \ FPS players for precision, while 12000+ allows for extremely fast cursor movement\
+    \ with minimal physical motion, beneficial for MOBAs and strategy games that require\
+    \ covering large screen areas quickly. \u2014 Illustrates the impact of DPI resolution\
+    \ settings on mouse sensitivity and precision.\n[/kb=22]"
+  label: DpiRes (DPI Resolution)
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 22
+- name: dpisteps
+  sql: dpisteps
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: senstype
+  sql: senstype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sensres
+  sql: sensres
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: spi
+  sql: (dpires * 1.0 / 1000) * (1 - mcresptime * 1.0 / 10) * 10
+  type: DOUBLE
+  primary_key: false
+  description: "Sensor Performance Index (SPI) \u2014 composite of DPI resolution,\
+    \ microcontroller response time. Higher = better balanced resolution and responsiveness.\n\
+    \n[kb=0]\nSPI = \\frac{DpiRes}{1000} \\times \\left(1 - \\frac{McRespTime}{10}\\\
+    right) \\times 10, \\text{ where higher values indicate better overall sensor\
+    \ performance with balanced resolution and responsiveness.} \u2014 A composite\
+    \ metric that evaluates overall sensor quality based on resolution, accuracy,\
+    \ and response time.\n[/kb=0]"
+  label: Sensor Performance Index (SPI)
+  hidden: false
+  meta:
+    kb_id: 0
+- name: ber
+  sql: (testsessions.battlifeh * testsessions.battcapmah) * 1.0 / NULLIF(pwractmw
+    * 10, 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Battery Efficiency Ratio (BER) \u2014 battery life \xD7 capacity /\
+    \ (active power \xD7 10). Joins to testsessions for battlifeh/battcapmah.\n\n\
+    [kb=1]\nBER = \\frac{BattLifeH \\times BattCapMah}{PwrActMw \\times 10}, \\text{\
+    \ where higher values indicate more efficient power management and battery utilization.}\
+    \ \u2014 Measures how efficiently a device uses its battery capacity relative\
+    \ to its power draw under active conditions.\n[/kb=1]"
+  label: Battery Efficiency Ratio (BER)
+  hidden: false
+  meta:
+    kb_id: 1
+- name: wpr
+  sql: (wlrangem * 1.0 / 10) * (1 - wllatvar * 1.0 / 5) * (1 + wlchanhop * 1.0 / 2)
+    * ((testsessions.wlsignal + 100) * 1.0 / 100)
+  type: DOUBLE
+  primary_key: false
+  description: "Wireless Performance Rating (WPR) \u2014 range, latency variance,\
+    \ channel hopping, signal strength. Joins to testsessions for wlsignal.\n\n[kb=8]\n\
+    WPR = \\frac{WlRangeM}{10} \\times \\left(1 - \\frac{WlLatVar}{5}\\right) \\times\
+    \ \\left(1 + \\frac{WlChanHop}{2}\\right) \\times \\frac{WlSignal + 100}{100},\
+    \ \\text{ where higher values indicate more reliable wireless performance with\
+    \ better range and stability.} \u2014 Rates the quality of wireless connectivity\
+    \ based on range, latency, and interference handling.\n[/kb=8]"
+  label: Wireless Performance Rating (WPR)
+  hidden: false
+  meta:
+    kb_id: 8
+- name: wpe
+  sql: ((wlrangem * 1.0 / 10) * (1 - wllatvar * 1.0 / 5) * (1 + wlchanhop * 1.0 /
+    2) * ((testsessions.wlsignal + 100) * 1.0 / 100)) * sqrt(((testsessions.battlifeh
+    * testsessions.battcapmah) * 1.0 / NULLIF(pwractmw * 10, 0)) / 5.0) * (1 - wllatvar
+    * 1.0 / 3) * 2
+  type: DOUBLE
+  primary_key: false
+  description: "Wireless Performance Efficiency (WPE) = WPR \xD7 sqrt(BER/5) \xD7\
+    \ (1 - WlLatVar/3) \xD7 2. Inlined to avoid self-reference.\n\n[kb=35]\nWPE =\
+    \ WPR \\times \\sqrt{\\frac{BER}{5}} \\times \\left(1 - \\frac{WlLatVar}{3}\\\
+    right) \\times 2 \u2014 Evaluates the efficiency of wireless performance relative\
+    \ to battery consumption for untethered gaming devices.\n[/kb=35]"
+  label: Wireless Performance Efficiency (WPE)
+  hidden: false
+  meta:
+    kb_id: 35
+- name: battery_efficiency_class
+  sql: CASE WHEN ((testsessions.battlifeh * testsessions.battcapmah) * 1.0 / NULLIF(pwractmw
+    * 10, 0)) > 7.5 THEN 'Excellent Efficiency' WHEN ((testsessions.battlifeh * testsessions.battcapmah)
+    * 1.0 / NULLIF(pwractmw * 10, 0)) >= 5.0 THEN 'Good Efficiency' WHEN ((testsessions.battlifeh
+    * testsessions.battcapmah) * 1.0 / NULLIF(pwractmw * 10, 0)) >= 2.5 THEN 'Average
+    Efficiency' ELSE 'Poor Efficiency' END
+  type: TEXT
+  primary_key: false
+  description: "Battery Efficiency Classification (KB #50): 'Excellent' BER > 7.5,\
+    \ 'Good' 5.0-7.5, 'Average' 2.5-4.9, 'Poor' < 2.5.\n\n[kb=50]\nA classification\
+    \ system that segments wireless gaming devices into four efficiency categories:\
+    \ 'Excellent Efficiency' (BER > 7.5) indicating marathon gaming capability, 'Good\
+    \ Efficiency' (BER between 5.0 and 7.5) for extended gaming sessions, 'Average\
+    \ Efficiency' (BER between 2.5 and 4.9) suitable for regular gameplay, and 'Poor\
+    \ Efficiency' (BER < 2.5) requiring frequent recharging, providing standardized\
+    \ comparison metrics across different gaming peripherals. \u2014 A categorical\
+    \ framework for evaluating and classifying the battery efficiency of gaming devices\
+    \ based on their Battery Efficiency Ratio (BER).\n[/kb=50]"
+  label: Battery Efficiency Classification
+  hidden: false
+  meta:
+    kb_id: 50
+- name: is_premium_gaming_mouse
+  sql: ((dpires * 1.0 / 1000) * (1 - mcresptime * 1.0 / 10) * 10) > 7.5 AND dpires
+    >= 16000 AND testsessions.pollratehz >= 1000
+  type: BOOLEAN
+  primary_key: false
+  description: "Premium Gaming Mouse (KB #10) \u2014 partial: SPI > 7.5 AND DpiRes\
+    \ >= 16000 AND PollRateHz >= 1000. KB also requires CI > 8.0 (on mechanical, peer-table);\
+    \ applies to mouse devices specifically.\n\n[kb=10]\nA mouse with SPI > 7.5, DpiRes\
+    \ \u2265 16000, PollRateHz \u2265 1000, and CI > 8.0, offering exceptional precision\
+    \ and comfort for competitive gaming scenarios. \u2014 Defines the criteria for\
+    \ a high-end gaming mouse based on sensor performance and ergonomics.\n[/kb=10]"
+  label: Premium Gaming Mouse
+  hidden: false
+  meta:
+    kb_id: 10
+- name: is_extended_battery_life_device
+  sql: ((testsessions.battlifeh * testsessions.battcapmah) * 1.0 / NULLIF(pwractmw
+    * 10, 0)) > 7.5 AND testsessions.battlifeh > 30 AND testsessions.qchgflag = 1
+    AND pwridlemw < 100
+  type: BOOLEAN
+  primary_key: false
+  description: "Extended Battery Life Device (KB #13): BER > 7.5 AND BattLifeH > 30\
+    \ AND QChgFlag = 1 AND PwrIdleMw < 100.\n\n[kb=13]\nA device with BER > 7.5, BattLifeH\
+    \ > 30, QChgFlag = true, and PwrIdleMw < 100, enabling marathon gaming sessions\
+    \ with minimal charging interruptions. \u2014 Identifies devices with exceptionally\
+    \ efficient battery performance for extended gaming sessions.\n[/kb=13]"
+  label: Extended Battery Life Device
+  hidden: false
+  meta:
+    kb_id: 13
+- name: is_premium_wireless_solution
+  sql: ((wlrangem * 1.0 / 10) * (1 - wllatvar * 1.0 / 5) * (1 + wlchanhop * 1.0 /
+    2) * ((testsessions.wlsignal + 100) * 1.0 / 100)) > 9.0 AND conntype = 'Wireless
+    2.4GHz' AND testsessions.latms < 2.5 AND testsessions.battlifeh > 24
+  type: BOOLEAN
+  primary_key: false
+  description: "Premium Wireless Solution (KB #18): WPR > 9.0 AND ConnType='Wireless\
+    \ 2.4GHz' AND LatMs < 2.5 AND BattLifeH > 24.\n\n[kb=18]\nA device with WPR >\
+    \ 9.0, ConnType = 'Wireless 2.4GHz', LatMs < 2.5, and BattLifeH > 24, eliminating\
+    \ common wireless drawbacks while maintaining the convenience of cable-free operation.\
+    \ \u2014 Defines high-end wireless gaming devices with performance comparable\
+    \ to wired alternatives.\n[/kb=18]"
+  label: Premium Wireless Solution
+  hidden: false
+  meta:
+    kb_id: 18
+- name: is_extended_tournament_wireless
+  sql: (((wlrangem * 1.0 / 10) * (1 - wllatvar * 1.0 / 5) * (1 + wlchanhop * 1.0 /
+    2) * ((testsessions.wlsignal + 100) * 1.0 / 100)) * sqrt(((testsessions.battlifeh
+    * testsessions.battcapmah) * 1.0 / NULLIF(pwractmw * 10, 0)) / 5.0) * (1 - wllatvar
+    * 1.0 / 3) * 2) > 8.5 AND ((testsessions.battlifeh * testsessions.battcapmah)
+    * 1.0 / NULLIF(pwractmw * 10, 0)) > 7.0 AND testsessions.battlifeh > 40 AND testsessions.latms
+    < 2.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Extended Tournament Ready Wireless (KB #45): WPE > 8.5 AND BER > 7.0\
+    \ AND BattLifeH > 40 AND LatMs < 2.5.\n\n[kb=45]\nA wireless device with WPE >\
+    \ 8.5, BER > 7.0, BattLifeH > 40, and LatMs < 2.5, providing reliable, tournament-grade\
+    \ performance throughout extended competition days without requiring recharging\
+    \ or experiencing degraded responsiveness. \u2014 Defines wireless devices suitable\
+    \ for full-day tournament use without connectivity or battery concerns.\n[/kb=45]"
+  label: Extended Tournament Ready Wireless
+  hidden: false
+  meta:
+    kb_id: 45
+- name: gdvi
+  sql: (((dpires * 1.0 / 1000) * (1 - mcresptime * 1.0 / 10) * 10) * 0.3) + (((testsessions.pollratehz
+    * 1.0 / 100) * (1 - (testsessions.inplagms + testsessions.resptimems) * 1.0 /
+    30) * 10) * 0.3) + ((((interactionandcontrol__physicaldurability.drophtm * 1.0
+    / 2) + (interactionandcontrol__physicaldurability.bendforce * 1.0 / 100) + (interactionandcontrol__physicaldurability.twistdeg
+    * 1.0 / 90)) * (interactionandcontrol__physicaldurability.usbconndur * 1.0 / 10000)
+    * 10) * 0.2) + (((mechanical.ergorate * 1.0 / 10) * (1 + (CASE WHEN mechanical.wristflag
+    = 1 THEN 1 ELSE 0 END) * 1.0 / 5) * (1 - ABS(mechanical.palmangle - 15) * 1.0
+    / 45) * 10) * 0.2)
+  type: DOUBLE
+  primary_key: false
+  description: "Gaming Device Value Index (GDVI) = SPI*0.3 + IRS*0.3 + DS*0.2 + CI*0.2.\
+    \ Inlined natural columns across joins (testsessions, interactionandcontrol\u2192\
+    physicaldurability, mechanical).\n\n[kb=9]\nGDVI = \\left(SPI \\times 0.3\\right)\
+    \ + \\left(IRS \\times 0.3\\right) + \\left(DS \\times 0.2\\right) + \\left(CI\
+    \ \\times 0.2\\right), \\text{ where higher values indicate better overall device\
+    \ quality across multiple dimensions.} \u2014 A comprehensive metric evaluating\
+    \ overall gaming device value considering performance, durability, and comfort.\n\
+    [/kb=9]"
+  label: Gaming Device Value Index (GDVI)
+  hidden: false
+  meta:
+    kb_id: 9
+- name: cgpi
+  sql: (((testsessions.pollratehz * 1.0 / 100) * (1 - (testsessions.inplagms + testsessions.resptimems)
+    * 1.0 / 30) * 10) * 0.4) + (((dpires * 1.0 / 1000) * (1 - mcresptime * 1.0 / 10)
+    * 10) * 0.3) + (((log10(mechanical.swtchdur) * 1.0 / 7) * mechanical.swtchcons
+    * (1 - mechanical.keychatter * 1.0 / 2)) * 0.2) + ((((interactionandcontrol.joyprec
+    + interactionandcontrol.dpadacc) * 1.0 / 20) * (1 - testsessions.inplagms * 1.0
+    / 10) * 10) * 0.1)
+  type: DOUBLE
+  primary_key: false
+  description: "CGPI = IRS*0.4 + SPI*0.3 + SPR*0.2 + RAI*0.1. Inlined natural columns.\n\
+    \n[kb=30]\nCGPI = \\left(IRS \\times 0.4\\right) + \\left(SPI \\times 0.3\\right)\
+    \ + \\left(SPR \\times 0.2\\right) + \\left(RAI \\times 0.1\\right) \u2014 A comprehensive\
+    \ metric evaluating a device's suitability for competitive gaming based on response\
+    \ time, accuracy, and durability.\n[/kb=30]"
+  label: Competitive Gaming Performance Index (CGPI)
+  hidden: false
+  meta:
+    kb_id: 30
+- name: iec
+  sql: (((1 - audioandmedia.thdpct * 1.0 / 2) * (audioandmedia.spksensedb * 1.0 /
+    100) * (1 - audioandmedia.audlatms * 1.0 / 100) * 10) * 0.5) + (((interactionandcontrol.hapstr
+    * 1.0 / 10) * (1 + interactionandcontrol.vibmodes * 1.0 / 10) * (1 + LENGTH(interactionandcontrol.forcefeed)
+    * 1.0 / 20)) * 0.3) + (((interactionandcontrol__physicaldurability__rgb.rgbbright
+    * 1.0 / 100) * (interactionandcontrol__physicaldurability__rgb.rgbcoloracc * 1.0
+    / 10) * (0.5 + interactionandcontrol__physicaldurability__rgb.rgbzones * 1.0 /
+    20)) * 0.2)
+  type: DOUBLE
+  primary_key: false
+  description: "IEC = AQI*0.5 + HFQ*0.3 + RIQ*0.2. Inlined natural columns.\n\n[kb=33]\n\
+    IEC = \\left(AQI \\times 0.5\\right) + \\left(HFQ \\times 0.3\\right) + \\left(RIQ\
+    \ \\times 0.2\\right) \u2014 Quantifies how well a device contributes to gaming\
+    \ immersion through audio quality, haptic feedback, and visual elements.\n[/kb=33]"
+  label: Immersion Enhancement Coefficient (IEC)
+  hidden: false
+  meta:
+    kb_id: 33
+- name: gvs
+  sql: ((profcount + 1) * 1.0 / 3) * ((((testsessions.pollratehz * 1.0 / 100) * (1
+    - (testsessions.inplagms + testsessions.resptimems) * 1.0 / 30) * 10) * 0.4) +
+    (((dpires * 1.0 / 1000) * (1 - mcresptime * 1.0 / 10) * 10) * 0.3) + (((log10(mechanical.swtchdur)
+    * 1.0 / 7) * mechanical.swtchcons * (1 - mechanical.keychatter * 1.0 / 2)) * 0.2)
+    + ((((interactionandcontrol.joyprec + interactionandcontrol.dpadacc) * 1.0 / 20)
+    * (1 - testsessions.inplagms * 1.0 / 10) * 10) * 0.1)) * 0.6 + ((((1 - audioandmedia.thdpct
+    * 1.0 / 2) * (audioandmedia.spksensedb * 1.0 / 100) * (1 - audioandmedia.audlatms
+    * 1.0 / 100) * 10) * 0.5) + (((interactionandcontrol.hapstr * 1.0 / 10) * (1 +
+    interactionandcontrol.vibmodes * 1.0 / 10) * (1 + LENGTH(interactionandcontrol.forcefeed)
+    * 1.0 / 20)) * 0.3) + (((interactionandcontrol__physicaldurability__rgb.rgbbright
+    * 1.0 / 100) * (interactionandcontrol__physicaldurability__rgb.rgbcoloracc * 1.0
+    / 10) * (0.5 + interactionandcontrol__physicaldurability__rgb.rgbzones * 1.0 /
+    20)) * 0.2)) * 0.4
+  type: DOUBLE
+  primary_key: false
+  description: "GVS = (ProfCount+1)/3 * CGPI*0.6 + IEC*0.4. KB precedence ambiguous;\
+    \ encoded as ((p+1)/3 * CGPI * 0.6) + (IEC * 0.4).\n\n[kb=36]\nGVS = \\frac{ProfCount\
+    \ + 1}{3} \\times \\left(CGPI \\times 0.6\\right) + \\left(IEC \\times 0.4\\right)\
+    \ \u2014 Assesses a device's versatility across different gaming genres and use\
+    \ cases based on adaptability and feature set.\n[/kb=36]"
+  label: Gaming Versatility Score (GVS)
+  hidden: false
+  meta:
+    kb_id: 36
+- name: par
+  sql: (((((testsessions.pollratehz * 1.0 / 100) * (1 - (testsessions.inplagms + testsessions.resptimems)
+    * 1.0 / 30) * 10) * 0.4) + (((dpires * 1.0 / 1000) * (1 - mcresptime * 1.0 / 10)
+    * 10) * 0.3) + (((log10(mechanical.swtchdur) * 1.0 / 7) * mechanical.swtchcons
+    * (1 - mechanical.keychatter * 1.0 / 2)) * 0.2) + ((((interactionandcontrol.joyprec
+    + interactionandcontrol.dpadacc) * 1.0 / 20) * (1 - testsessions.inplagms * 1.0
+    / 10) * 10) * 0.1)) * 1.0 / 10) * (1 + profcount * 1.0 / 5) * ((((dpires * 1.0
+    / 1000) * (1 - mcresptime * 1.0 / 10) * 10) + ((testsessions.pollratehz * 1.0
+    / 100) * (1 - (testsessions.inplagms + testsessions.resptimems) * 1.0 / 30) *
+    10)) * 1.0 / 15)
+  type: DOUBLE
+  primary_key: false
+  description: "PAR = CGPI/10 * (1 + ProfCount/5) * (SPI+IRS)/15.\n\n[kb=38]\nPAR\
+    \ = \\frac{CGPI}{10} \\times \\left(1 + \\frac{ProfCount}{5}\\right) \\times \\\
+    left(\\frac{SPI + IRS}{15}\\right) \u2014 Quantifies the level of professional\
+    \ gamer adoption and tournament presence of a device based on performance metrics\
+    \ and pro-level features.\n[/kb=38]"
+  label: Professional Adoption Rating (PAR)
+  hidden: false
+  meta:
+    kb_id: 38
+- name: vpi
+  sql: ((((dpires * 1.0 / 1000) * (1 - mcresptime * 1.0 / 10) * 10) * 0.3 + ((testsessions.pollratehz
+    * 1.0 / 100) * (1 - (testsessions.inplagms + testsessions.resptimems) * 1.0 /
+    30) * 10) * 0.3 + (((interactionandcontrol__physicaldurability.drophtm * 1.0 /
+    2) + (interactionandcontrol__physicaldurability.bendforce * 1.0 / 100) + (interactionandcontrol__physicaldurability.twistdeg
+    * 1.0 / 90)) * (interactionandcontrol__physicaldurability.usbconndur * 1.0 / 10000)
+    * 10) * 0.2 + ((mechanical.ergorate * 1.0 / 10) * (1 + (CASE WHEN mechanical.wristflag
+    = 1 THEN 1 ELSE 0 END) * 1.0 / 5) * (1 - ABS(mechanical.palmangle - 15) * 1.0
+    / 45) * 10) * 0.2) * 0.4) + (((mechanical.ergorate * 1.0 / 10) * (1 + (CASE WHEN
+    mechanical.wristflag = 1 THEN 1 ELSE 0 END) * 1.0 / 5) * (1 - ABS(mechanical.palmangle
+    - 15) * 1.0 / 45) * 10) * (1 + (mechanical.ergorate - 5) * 1.0 / 10) * (1 - ABS(mechanical.palmangle
+    - 15) * 1.0 / 30) * (1 + (mechanical.ergorate * (CASE WHEN mechanical.wristflag
+    = 1 THEN 1 ELSE 0 END)) * 1.0 / 50)) * 0.3 + ((((interactionandcontrol__physicaldurability.drophtm
+    * 1.0 / 2) + (interactionandcontrol__physicaldurability.bendforce * 1.0 / 100)
+    + (interactionandcontrol__physicaldurability.twistdeg * 1.0 / 90)) * (interactionandcontrol__physicaldurability.usbconndur
+    * 1.0 / 10000) * 10) * (1 + (CASE interactionandcontrol__physicaldurability.dustres
+    WHEN 'IPX0' THEN 0 WHEN 'IPX1' THEN 1 WHEN 'IPX2' THEN 2 WHEN 'IPX3' THEN 3 ELSE
+    0 END + CASE interactionandcontrol__physicaldurability.waterres WHEN 'IPX0' THEN
+    0 WHEN 'IPX1' THEN 1 WHEN 'IPX2' THEN 2 WHEN 'IPX3' THEN 3 WHEN 'IPX4' THEN 4
+    WHEN 'IPX5' THEN 5 WHEN 'IPX6' THEN 6 WHEN 'IPX7' THEN 7 WHEN 'IPX8' THEN 8 ELSE
+    0 END) * 1.0 / 6) * (1 - (100 - interactionandcontrol__physicaldurability.bendforce)
+    * 1.0 / 200)) * 0.2 + (((((testsessions.pollratehz * 1.0 / 100) * (1 - (testsessions.inplagms
+    + testsessions.resptimems) * 1.0 / 30) * 10) * 0.4) + (((dpires * 1.0 / 1000)
+    * (1 - mcresptime * 1.0 / 10) * 10) * 0.3) + (((log10(mechanical.swtchdur) * 1.0
+    / 7) * mechanical.swtchcons * (1 - mechanical.keychatter * 1.0 / 2)) * 0.2) +
+    ((((interactionandcontrol.joyprec + interactionandcontrol.dpadacc) * 1.0 / 20)
+    * (1 - testsessions.inplagms * 1.0 / 10) * 10) * 0.1)) * 1.0 / 10 * (1 + profcount
+    * 1.0 / 5) * ((((dpires * 1.0 / 1000) * (1 - mcresptime * 1.0 / 10) * 10) + ((testsessions.pollratehz
+    * 1.0 / 100) * (1 - (testsessions.inplagms + testsessions.resptimems) * 1.0 /
+    30) * 10)) * 1.0 / 15)) * 0.1
+  type: DOUBLE
+  primary_key: false
+  description: "VPI = GDVI*0.4 + ESF*0.3 + PER*0.2 + PAR*0.1. Fully inlined natural\
+    \ columns across joins.\n\n[kb=39]\nVPI = \\left(GDVI \\times 0.4\\right) + \\\
+    left(ESF \\times 0.3\\right) + \\left(PER \\times 0.2\\right) + \\left(PAR \\\
+    times 0.1\\right) \u2014 A comprehensive metric evaluating a gaming device's overall\
+    \ value by balancing performance, durability, ergonomics, and professional adoption.\n\
+    [/kb=39]"
+  label: Value Proposition Index (VPI)
+  hidden: false
+  meta:
+    kb_id: 39
+- name: is_tournament_standard
+  sql: ((((testsessions.pollratehz * 1.0 / 100) * (1 - (testsessions.inplagms + testsessions.resptimems)
+    * 1.0 / 30) * 10) * 0.4) + (((dpires * 1.0 / 1000) * (1 - mcresptime * 1.0 / 10)
+    * 10) * 0.3) + (((log10(mechanical.swtchdur) * 1.0 / 7) * mechanical.swtchcons
+    * (1 - mechanical.keychatter * 1.0 / 2)) * 0.2) + ((((interactionandcontrol.joyprec
+    + interactionandcontrol.dpadacc) * 1.0 / 20) * (1 - testsessions.inplagms * 1.0
+    / 10) * 10) * 0.1)) > 8.0 AND testsessions.latms < 2.0 AND testsessions.pollratehz
+    >= 1000 AND (conntype != 'Wireless 2.4GHz' OR wllatvar < 1.0)
+  type: BOOLEAN
+  primary_key: false
+  description: "Tournament Standard Device (KB #40): CGPI > 8.0 AND LatMs < 2.0 AND\
+    \ PollRateHz >= 1000 AND (WlLatVar < 1.0 if wireless).\n\n[kb=40]\nA device that\
+    \ meets the CGPI > 8.0, LatMs < 2.0, PollRateHz \u2265 1000, and WlLatVar < 1.0\
+    \ if wireless, supporting the precision and reliability demands of tournament\
+    \ play with consistent performance across extended match durations. \u2014 Defines\
+    \ the minimum requirements for devices used in formal esports tournaments and\
+    \ professional competitions.\n[/kb=40]"
+  label: Tournament Standard Device
+  hidden: false
+  meta:
+    kb_id: 40
+- name: is_pro_multigenre
+  sql: (((profcount + 1) * 1.0 / 3) * ((((testsessions.pollratehz * 1.0 / 100) * (1
+    - (testsessions.inplagms + testsessions.resptimems) * 1.0 / 30) * 10) * 0.4) +
+    (((dpires * 1.0 / 1000) * (1 - mcresptime * 1.0 / 10) * 10) * 0.3) + (((log10(mechanical.swtchdur)
+    * 1.0 / 7) * mechanical.swtchcons * (1 - mechanical.keychatter * 1.0 / 2)) * 0.2)
+    + ((((interactionandcontrol.joyprec + interactionandcontrol.dpadacc) * 1.0 / 20)
+    * (1 - testsessions.inplagms * 1.0 / 10) * 10) * 0.1)) * 0.6 + ((((1 - audioandmedia.thdpct
+    * 1.0 / 2) * (audioandmedia.spksensedb * 1.0 / 100) * (1 - audioandmedia.audlatms
+    * 1.0 / 100) * 10) * 0.5) + (((interactionandcontrol.hapstr * 1.0 / 10) * (1 +
+    interactionandcontrol.vibmodes * 1.0 / 10) * (1 + LENGTH(interactionandcontrol.forcefeed)
+    * 1.0 / 20)) * 0.3) + (((interactionandcontrol__physicaldurability__rgb.rgbbright
+    * 1.0 / 100) * (interactionandcontrol__physicaldurability__rgb.rgbcoloracc * 1.0
+    / 10) * (0.5 + interactionandcontrol__physicaldurability__rgb.rgbzones * 1.0 /
+    20)) * 0.2)) * 0.4) > 8.5 AND profcount >= 4 AND ((((testsessions.pollratehz *
+    1.0 / 100) * (1 - (testsessions.inplagms + testsessions.resptimems) * 1.0 / 30)
+    * 10) * 0.4) + (((dpires * 1.0 / 1000) * (1 - mcresptime * 1.0 / 10) * 10) * 0.3)
+    + (((log10(mechanical.swtchdur) * 1.0 / 7) * mechanical.swtchcons * (1 - mechanical.keychatter
+    * 1.0 / 2)) * 0.2) + ((((interactionandcontrol.joyprec + interactionandcontrol.dpadacc)
+    * 1.0 / 20) * (1 - testsessions.inplagms * 1.0 / 10) * 10) * 0.1)) > 7.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Professional Multi-Genre Setup (KB #42): GVS > 8.5 AND ProfCount >=\
+    \ 4 AND CGPI > 7.5.\n\n[kb=42]\nA device or device set with GVS > 8.5, ProfCount\
+    \ \u2265 4, and CGPI > 7.5, providing the adaptability and precision required\
+    \ by players who compete across FPS, MOBA, RTS, and other competitive genres.\
+    \ \u2014 Identifies device configurations specifically optimized for players who\
+    \ compete across multiple game genres at a high level.\n[/kb=42]"
+  label: Professional Multi-Genre Setup
+  hidden: false
+  meta:
+    kb_id: 42
+- name: is_premium_immersive
+  sql: (((((1 - audioandmedia.thdpct * 1.0 / 2) * (audioandmedia.spksensedb * 1.0
+    / 100) * (1 - audioandmedia.audlatms * 1.0 / 100) * 10) * 0.5) + (((interactionandcontrol.hapstr
+    * 1.0 / 10) * (1 + interactionandcontrol.vibmodes * 1.0 / 10) * (1 + LENGTH(interactionandcontrol.forcefeed)
+    * 1.0 / 20)) * 0.3) + (((interactionandcontrol__physicaldurability__rgb.rgbbright
+    * 1.0 / 100) * (interactionandcontrol__physicaldurability__rgb.rgbcoloracc * 1.0
+    / 10) * (0.5 + interactionandcontrol__physicaldurability__rgb.rgbzones * 1.0 /
+    20)) * 0.2))) > 8.0 AND ((1 - audioandmedia.thdpct * 1.0 / 2) * (audioandmedia.spksensedb
+    * 1.0 / 100) * (1 - audioandmedia.audlatms * 1.0 / 100) * 10) > 7.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Premium Immersive Experience Device (KB #44): IEC > 8.0 AND AQI >\
+    \ 7.5 AND HFQ > 8.0 (if applicable) AND RIQ > 7.0 (if applicable).\n\n[kb=44]\n\
+    A device with IEC > 8.0, AQI > 7.5, HFQ > 8.0 if applicable, and RIQ > 7.0 if\
+    \ featuring lighting, designed to maximize player immersion in atmospheric and\
+    \ narrative-driven games. \u2014 Identifies devices specifically optimized to\
+    \ enhance gaming immersion through superior sensory feedback.\n[/kb=44]"
+  label: Premium Immersive Experience Device
+  hidden: false
+  meta:
+    kb_id: 44
+- name: is_pro_player_certified
+  sql: (((((testsessions.pollratehz * 1.0 / 100) * (1 - (testsessions.inplagms + testsessions.resptimems)
+    * 1.0 / 30) * 10) * 0.4) + (((dpires * 1.0 / 1000) * (1 - mcresptime * 1.0 / 10)
+    * 10) * 0.3) + (((log10(mechanical.swtchdur) * 1.0 / 7) * mechanical.swtchcons
+    * (1 - mechanical.keychatter * 1.0 / 2)) * 0.2) + ((((interactionandcontrol.joyprec
+    + interactionandcontrol.dpadacc) * 1.0 / 20) * (1 - testsessions.inplagms * 1.0
+    / 10) * 10) * 0.1)) * 1.0 / 10 * (1 + profcount * 1.0 / 5) * ((((dpires * 1.0
+    / 1000) * (1 - mcresptime * 1.0 / 10) * 10) + ((testsessions.pollratehz * 1.0
+    / 100) * (1 - (testsessions.inplagms + testsessions.resptimems) * 1.0 / 30) *
+    10)) * 1.0 / 15)) > 8.5 AND ((((testsessions.pollratehz * 1.0 / 100) * (1 - (testsessions.inplagms
+    + testsessions.resptimems) * 1.0 / 30) * 10) * 0.4) + (((dpires * 1.0 / 1000)
+    * (1 - mcresptime * 1.0 / 10) * 10) * 0.3) + (((log10(mechanical.swtchdur) * 1.0
+    / 7) * mechanical.swtchcons * (1 - mechanical.keychatter * 1.0 / 2)) * 0.2) +
+    ((((interactionandcontrol.joyprec + interactionandcontrol.dpadacc) * 1.0 / 20)
+    * (1 - testsessions.inplagms * 1.0 / 10) * 10) * 0.1)) > 8.0
+  type: BOOLEAN
+  primary_key: false
+  description: "Pro-Player Performance Certified (KB #48): PAR > 8.5 AND CGPI > 8.0.\
+    \ The 'specialized features matching competitive requirements for at least two\
+    \ major esports titles' clause is qualitative and not encoded.\n\n[kb=48]\nA device\
+    \ with PAR > 8.5, CGPI > 8.0, and specialized features matching competitive requirements\
+    \ for at least two major esports titles, representing equipment that has proven\
+    \ its performance capabilities in professional tournament environments. \u2014\
+    \ Identifies devices that have been validated through professional player testing\
+    \ and competition use at the highest levels.\n[/kb=48]"
+  label: Pro-Player Performance Certified
+  hidden: false
+  meta:
+    kb_id: 48
+measures: []
+aggregations: []
+joins:
+- target_model: testsessions
+  join_pairs:
+  - - devsessionref
+    - sessionregistry
+  join_type: left
+- target_model: mechanical
+  join_pairs:
+  - - devregistry
+    - mechdevref
+  join_type: left
+- target_model: audioandmedia
+  join_pairs:
+  - - devregistry
+    - auddevref
+  join_type: left
+- target_model: interactionandcontrol
+  join_pairs:
+  - - devregistry
+    - interactdevref
+  join_type: left
+filters: []
+hidden: false

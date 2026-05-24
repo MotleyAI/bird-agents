@@ -1,0 +1,199 @@
+version: 6
+name: polar_base_energy_security_status
+source_queries:
+- version: 3
+  name: rec_pbess
+  source_model:
+    source_name: thermalsolarwindandgrid
+    columns:
+    - name: rec_h2_ok_flag
+      type: DOUBLE
+      sql: CASE WHEN ((json_extract(renewablemetrics, '$.solar.output_w') + json_extract(renewablemetrics,
+        '$.wind.output_w')) * 100.0 / NULLIF(fuelcelloutputw + json_extract(renewablemetrics,
+        '$.solar.output_w') + json_extract(renewablemetrics, '$.wind.output_w'), 0))
+        > 65 AND hydrogenlevelpercent > 70 THEN 1 ELSE 0 END
+  measures:
+  - formula: rec_h2_ok_flag:min
+    name: rec_h2_ok
+  dimensions:
+  - name: thermaleqref
+  whole_periods_only: false
+- version: 3
+  name: esi_pbess
+  source_model:
+    source_name: powerbattery
+    columns:
+    - name: esi_batt_ok_flag
+      type: DOUBLE
+      sql: CASE WHEN (energyefficiencypercent * CASE powersource WHEN 'Solar' THEN
+        1.5 WHEN 'Wind' THEN 1.5 WHEN 'Hybrid' THEN 1.2 WHEN 'Battery' THEN 1.0 WHEN
+        'Diesel' THEN 0.7 ELSE 0 END) > 0.7 AND json_extract(batterystatus, '$.level_percent')
+        > 75 THEN 1 ELSE 0 END
+  measures:
+  - formula: esi_batt_ok_flag:min
+    name: esi_batt_ok
+  dimensions:
+  - name: pwrbatteqref
+  whole_periods_only: false
+- version: 3
+  name: rssi_pbess
+  source_model:
+    source_name: resource_self_sufficiency_index
+    columns:
+    - name: rssi_ok_flag
+      type: DOUBLE
+      sql: CASE WHEN rssi > 0.75 THEN 1 ELSE 0 END
+  measures:
+  - formula: rssi_ok_flag:min
+    name: rssi_ok
+  dimensions:
+  - name: thermaleqref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: rec_pbess
+    joins:
+    - target_model: esi_pbess
+      join_pairs:
+      - - thermaleqref
+        - pwrbatteqref
+    - target_model: rssi_pbess
+      join_pairs:
+      - - thermaleqref
+        - thermaleqref
+  measures:
+  - formula: rec_h2_ok:min * esi_pbess.esi_batt_ok:min * rssi_pbess.rssi_ok:min
+    name: is_energy_secure
+  dimensions:
+  - name: thermaleqref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"rec_pbess.thermaleqref\" AS thermaleqref, \"rec_pbess.rec_h2_ok_min\"\
+  \ AS rec_h2_ok_min, \"rec_pbess.is_energy_secure\" AS is_energy_secure, \"rec_pbess.rssi_pbess.rssi_ok_min\"\
+  \ AS rssi_pbess__rssi_ok_min, \"rec_pbess.esi_pbess.esi_batt_ok_min\" AS esi_pbess__esi_batt_ok_min\
+  \ FROM (WITH _base AS (\nSELECT\n  rec_pbess.thermaleqref AS \"rec_pbess.thermaleqref\"\
+  ,\n  MIN(rec_pbess.rec_h2_ok) AS \"rec_pbess.rec_h2_ok_min\"\nFROM (\n  SELECT\n\
+  \    \"thermalsolarwindandgrid.thermaleqref\" AS thermaleqref,\n    \"thermalsolarwindandgrid.rec_h2_ok\"\
+  \ AS rec_h2_ok\n  FROM (\n    SELECT\n      thermalsolarwindandgrid.thermaleqref\
+  \ AS \"thermalsolarwindandgrid.thermaleqref\",\n      MIN(\n        CASE\n     \
+  \     WHEN (\n            (\n              JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics,\
+  \ '$.solar.output_w') + JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics, '$.wind.output_w')\n\
+  \            ) * 100.0 / NULLIF(\n              thermalsolarwindandgrid.fuelcelloutputw\
+  \ + JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics, '$.solar.output_w') +\
+  \ JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics, '$.wind.output_w'),\n \
+  \             0\n            )\n          ) > 65\n          AND thermalsolarwindandgrid.hydrogenlevelpercent\
+  \ > 70\n          THEN 1\n          ELSE 0\n        END\n      ) AS \"thermalsolarwindandgrid.rec_h2_ok\"\
+  \n    FROM thermalsolarwindandgrid AS thermalsolarwindandgrid\n    GROUP BY\n  \
+  \    thermalsolarwindandgrid.thermaleqref\n  ) AS _inner\n) AS rec_pbess\nGROUP\
+  \ BY\n  rec_pbess.thermaleqref\n),\n_cm_rec_pbess__rssi_pbess__rssi_ok_min AS (\n\
+  SELECT\n  MIN(rssi_pbess.rssi_ok) AS \"rec_pbess.rssi_pbess.rssi_ok_min\"\nFROM\
+  \ (\n  SELECT\n    \"resource_self_sufficiency_index.thermaleqref\" AS thermaleqref,\n\
+  \    \"resource_self_sufficiency_index.rssi_ok\" AS rssi_ok\n  FROM (\n    SELECT\n\
+  \      resource_self_sufficiency_index.thermaleqref AS \"resource_self_sufficiency_index.thermaleqref\"\
+  ,\n      MIN(CASE WHEN resource_self_sufficiency_index.rssi > 0.75 THEN 1 ELSE 0\
+  \ END) AS \"resource_self_sufficiency_index.rssi_ok\"\n    FROM (\n      SELECT\n\
+  \        \"rec_per_eq.thermaleqref\" AS thermaleqref,\n        \"rec_per_eq.rec_avg\"\
+  \ AS rec_avg,\n        \"rec_per_eq.rssi\" AS rssi,\n        \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\
+  \ AS wrmi_per_eq__wrmi_avg\n      FROM (\n        WITH _base AS (\n          SELECT\n\
+  \            rec_per_eq.thermaleqref AS \"rec_per_eq.thermaleqref\",\n         \
+  \   AVG(rec_per_eq.rec) AS \"rec_per_eq.rec_avg\"\n          FROM (\n          \
+  \  SELECT\n              \"thermalsolarwindandgrid.thermaleqref\" AS thermaleqref,\n\
+  \              \"thermalsolarwindandgrid.rec\" AS rec\n            FROM (\n    \
+  \          SELECT\n                thermalsolarwindandgrid.thermaleqref AS \"thermalsolarwindandgrid.thermaleqref\"\
+  ,\n                AVG(\n                  (\n                    JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics,\
+  \ '$.solar.output_w') + JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics, '$.wind.output_w')\n\
+  \                  ) * 100.0 / NULLIF(\n                    thermalsolarwindandgrid.fuelcelloutputw\
+  \ + JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics, '$.solar.output_w') +\
+  \ JSON_EXTRACT(thermalsolarwindandgrid.renewablemetrics, '$.wind.output_w'),\n \
+  \                   0\n                  )\n                ) AS \"thermalsolarwindandgrid.rec\"\
+  \n              FROM thermalsolarwindandgrid AS thermalsolarwindandgrid\n      \
+  \        GROUP BY\n                thermalsolarwindandgrid.thermaleqref\n      \
+  \      ) AS _inner\n          ) AS rec_per_eq\n          GROUP BY\n            rec_per_eq.thermaleqref\n\
+  \        ), _cm_rec_per_eq__wrmi_per_eq__wrmi_avg AS (\n          SELECT\n     \
+  \       AVG(wrmi_per_eq.wrmi) AS \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\n         \
+  \ FROM (\n            SELECT\n              \"waterandwaste.watereqref\" AS watereqref,\n\
+  \              \"waterandwaste.wrmi\" AS wrmi\n            FROM (\n            \
+  \  SELECT\n                waterandwaste.watereqref AS \"waterandwaste.watereqref\"\
+  ,\n                AVG(\n                  waterandwaste.waterlevelpercent * (\n\
+  \                    waterandwaste.waterqualityindex / 100.0\n                 \
+  \ ) * (\n                    1 - waterandwaste.wastetanklevelpercent / 100.0\n \
+  \                 )\n                ) AS \"waterandwaste.wrmi\"\n             \
+  \ FROM waterandwaste AS waterandwaste\n              GROUP BY\n                waterandwaste.watereqref\n\
+  \            ) AS _inner\n          ) AS wrmi_per_eq\n        ), _combined AS (\n\
+  \          SELECT\n            _base.\"rec_per_eq.thermaleqref\",\n            _base.\"\
+  rec_per_eq.rec_avg\",\n            _cm_rec_per_eq__wrmi_per_eq__wrmi_avg.\"rec_per_eq.wrmi_per_eq.wrmi_avg\"\
+  \n          FROM _base\n          CROSS JOIN _cm_rec_per_eq__wrmi_per_eq__wrmi_avg\n\
+  \        ), step1 AS (\n          SELECT\n            \"rec_per_eq.rec_avg\",\n\
+  \            \"rec_per_eq.thermaleqref\",\n            \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\
+  ,\n            0.6 * \"rec_per_eq.rec_avg\" + 0.4 * \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\
+  \ AS \"rec_per_eq.rssi\"\n          FROM _combined\n        )\n        SELECT\n\
+  \          \"rec_per_eq.rec_avg\",\n          \"rec_per_eq.rssi\",\n          \"\
+  rec_per_eq.thermaleqref\",\n          \"rec_per_eq.wrmi_per_eq.wrmi_avg\"\n    \
+  \    FROM step1\n      ) AS _inner\n    ) AS resource_self_sufficiency_index\n \
+  \   GROUP BY\n      resource_self_sufficiency_index.thermaleqref\n  ) AS _inner\n\
+  ) AS rssi_pbess\n),\n_cm_rec_pbess__esi_pbess__esi_batt_ok_min AS (\nSELECT\n  MIN(esi_pbess.esi_batt_ok)\
+  \ AS \"rec_pbess.esi_pbess.esi_batt_ok_min\"\nFROM (\n  SELECT\n    \"powerbattery.pwrbatteqref\"\
+  \ AS pwrbatteqref,\n    \"powerbattery.esi_batt_ok\" AS esi_batt_ok\n  FROM (\n\
+  \    SELECT\n      powerbattery.pwrbatteqref AS \"powerbattery.pwrbatteqref\",\n\
+  \      MIN(\n        CASE\n          WHEN (\n            powerbattery.energyefficiencypercent\
+  \ * CASE powerbattery.powersource\n              WHEN 'Solar'\n              THEN\
+  \ 1.5\n              WHEN 'Wind'\n              THEN 1.5\n              WHEN 'Hybrid'\n\
+  \              THEN 1.2\n              WHEN 'Battery'\n              THEN 1.0\n\
+  \              WHEN 'Diesel'\n              THEN 0.7\n              ELSE 0\n   \
+  \         END\n          ) > 0.7\n          AND JSON_EXTRACT(powerbattery.batterystatus,\
+  \ '$.level_percent') > 75\n          THEN 1\n          ELSE 0\n        END\n   \
+  \   ) AS \"powerbattery.esi_batt_ok\"\n    FROM powerbattery AS powerbattery\n \
+  \   GROUP BY\n      powerbattery.pwrbatteqref\n  ) AS _inner\n) AS esi_pbess\n),\n\
+  _combined AS (\nSELECT _base.\"rec_pbess.thermaleqref\", _base.\"rec_pbess.rec_h2_ok_min\"\
+  , _cm_rec_pbess__rssi_pbess__rssi_ok_min.\"rec_pbess.rssi_pbess.rssi_ok_min\", _cm_rec_pbess__esi_pbess__esi_batt_ok_min.\"\
+  rec_pbess.esi_pbess.esi_batt_ok_min\"\nFROM _base\nCROSS JOIN _cm_rec_pbess__rssi_pbess__rssi_ok_min\n\
+  CROSS JOIN _cm_rec_pbess__esi_pbess__esi_batt_ok_min\n),\nstep1 AS (\nSELECT\n \
+  \   \"rec_pbess.esi_pbess.esi_batt_ok_min\",\n    \"rec_pbess.rec_h2_ok_min\",\n\
+  \    \"rec_pbess.rssi_pbess.rssi_ok_min\",\n    \"rec_pbess.thermaleqref\",\n  \
+  \  \"rec_pbess.rec_h2_ok_min\" * \"rec_pbess.esi_pbess.esi_batt_ok_min\" * \"rec_pbess.rssi_pbess.rssi_ok_min\"\
+  \ AS \"rec_pbess.is_energy_secure\"\nFROM _combined\n)\nSELECT\n    \"rec_pbess.esi_pbess.esi_batt_ok_min\"\
+  ,\n    \"rec_pbess.is_energy_secure\",\n    \"rec_pbess.rec_h2_ok_min\",\n    \"\
+  rec_pbess.rssi_pbess.rssi_ok_min\",\n    \"rec_pbess.thermaleqref\"\nFROM step1)\
+  \ AS _inner"
+data_source: polar
+columns:
+- name: thermaleqref
+  sql: thermaleqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rec_h2_ok_min
+  sql: rec_h2_ok_min
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_energy_secure
+  sql: is_energy_secure
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: rssi_pbess__rssi_ok_min
+  sql: rssi_pbess__rssi_ok_min
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: esi_pbess__esi_batt_ok_min
+  sql: esi_pbess__esi_batt_ok_min
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Polar Base Energy Security Status (KB #48): 'energy secure' iff REC\
+  \ > 65 AND ESI > 0.7 AND RSSI > 0.75 AND batterystatus.level_percent > 75 AND hydrogenlevelpercent\
+  \ > 70. R-MULTISTAGE.\n\n[kb=48]\nA polar base is assessed as being in an 'energy\
+  \ secure' state when it maintains REC > 65%, ESI > 0.7, and RSSI > 0.75, with batterystatus.level_percent\
+  \ > 75 and hydrogenlevelpercent > 70. \u2014 Determines the security status of energy\
+  \ supply for polar bases\n[/kb=48]"
+hidden: false
+meta:
+  kb_id: 48

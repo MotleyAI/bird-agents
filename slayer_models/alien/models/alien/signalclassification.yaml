@@ -1,0 +1,121 @@
+version: 6
+name: signalclassification
+sql_table: signalclassification
+query_variables: {}
+data_source: alien
+columns:
+- name: signalref
+  sql: signalref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: sigclasstype
+  sql: sigclasstype
+  type: TEXT
+  primary_key: false
+  description: "Classification Type. sigclasstype='Broadband Transient' describes\
+    \ short-duration signals (SigDurSec typically < 5) that span a large portion of\
+    \ the spectrum (BFR > 0.1). Examples include solar radio bursts, lightning discharges,\
+    \ and certain types of cosmic explosions like Fast Radio Bursts (FRBs).\n\n[kb=25]\n\
+    Describes short-duration signals ($\\text{SigDurSec}$ typically $< 5$) that span\
+    \ a large portion of the spectrum ($\\text{BFR} > 0.1$). Examples include solar\
+    \ radio bursts, lightning discharges, and certain types of cosmic explosions like\
+    \ Fast Radio Bursts (FRBs). \u2014 Illustrates a class of brief signals covering\
+    \ wide frequency ranges.\n[/kb=25]"
+  label: 'SigClassType: Broadband Transient'
+  hidden: false
+  meta:
+    kb_id: 25
+- name: sigpattern
+  sql: sigpattern
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: repeatcount
+  sql: repeatcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: periodsec
+  sql: periodsec
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: complexidx
+  sql: complexidx
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: entropyval
+  sql: entropyval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: infodense
+  sql: infodense
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: classconf
+  sql: classconf
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: scr
+  sql: (complexidx * infodense) / log10(signals.bwhz)
+  type: DOUBLE
+  primary_key: false
+  description: "Signal Complexity Ratio (SCR) = (ComplexIdx * InfoDense) / log10(BwHz).\
+    \ ComplexIdx and InfoDense are local; BwHz is reached through the signalclassification.signalref\
+    \ \u2192 signals FK. log10 is provided as a SQLite UDF by SLayer 0.4.2. Higher\
+    \ values suggest potential artificial origin rather than natural phenomena.\n\n\
+    [kb=2]\n$\\text{SCR} = \\frac{\\text{ComplexIdx} \\times \\text{InfoDense}}{\\\
+    log(\\text{BwHz})}$, where higher values suggest potential artificial origin rather\
+    \ than natural phenomena. \u2014 Measures the relationship between signal complexity\
+    \ and information density.\n[/kb=2]"
+  label: Signal Complexity Ratio (SCR)
+  hidden: false
+  meta:
+    kb_id: 2
+- name: prc
+  sql: (CASE WHEN repeatcount > 1 THEN 1 + log10(repeatcount) ELSE 0.5 END) * (CASE
+    WHEN entropyval < 0.9 THEN 1 ELSE 0.3 END) * ((complexidx * infodense) / log10(signals.bwhz))
+  type: DOUBLE
+  primary_key: false
+  description: "Pattern Recognition Confidence (PRC) = (RepeatCount>1 ? 1+log10(RepeatCount)\
+    \ : 0.5) * (EntropyVal<0.9 ? 1 : 0.3) * SCR. SCR is the local signalclassification.scr\
+    \ column inlined as its formula (since referencing a derived sibling column inside\
+    \ a Column.sql expression isn't guaranteed to resolve at SQL-generation time).\n\
+    \n[kb=38]\n$\\text{PRC} = (\\text{RepeatCount} > 1 ? 1 + \\log_{10}(\\text{RepeatCount})\
+    \ : 0.5) \\times (\\text{EntropyVal} < 0.9 ? 1 : 0.3) \\times \\text{SCR}$, where\
+    \ SCR (Signal Complexity Ratio) provides complexity weighting. \u2014 Measures\
+    \ confidence in identified signal patterns based on multiple factors.\n[/kb=38]"
+  label: Pattern Recognition Confidence (PRC)
+  hidden: false
+  meta:
+    kb_id: 38
+measures: []
+aggregations: []
+joins:
+- target_model: signals
+  join_pairs:
+  - - signalref
+    - signalregistry
+  join_type: left
+filters: []
+description: 'Per-signal classification metadata: signal type (artificial / natural
+  / candidate), pattern, periodicity, complexity / entropy / information density,
+  and class confidence.'
+hidden: false

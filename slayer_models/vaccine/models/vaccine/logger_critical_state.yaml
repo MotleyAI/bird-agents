@@ -1,0 +1,149 @@
+version: 6
+name: logger_critical_state
+source_queries:
+- version: 3
+  name: mcs_per_shipment_lcs
+  source_model: regulatoryandmaintenance
+  measures:
+  - formula: mcs:avg
+    name: mcs
+  dimensions:
+  - name: shipgov
+  whole_periods_only: false
+- version: 3
+  name: tss_tbs_per_container_lcs
+  source_model: sensordata
+  measures:
+  - formula: tss:avg
+    name: tss
+  - formula: tbs:avg
+    name: tbs
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  name: lhi_per_container_lcs
+  source_model: datalogger
+  measures:
+  - formula: lhi:avg
+    name: lhi
+  dimensions:
+  - name: containlog
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: container
+    joins:
+    - target_model: mcs_per_shipment_lcs
+      join_pairs:
+      - - shipown
+        - shipgov
+    - target_model: lhi_per_container_lcs
+      join_pairs:
+      - - containregistry
+        - containlog
+    - target_model: tss_tbs_per_container_lcs
+      join_pairs:
+      - - containregistry
+        - containlink
+    columns:
+    - name: cmr
+      type: DOUBLE
+      sql: (1 - mcs_per_shipment_lcs.mcs) * (1 + tss_tbs_per_container_lcs.tbs / 5.0)
+        * (1 - lhi_per_container_lcs.lhi)
+    - name: lrs
+      type: DOUBLE
+      sql: lhi_per_container_lcs.lhi * (1 - ((1 - mcs_per_shipment_lcs.mcs) * (1 +
+        tss_tbs_per_container_lcs.tbs / 5.0) * (1 - lhi_per_container_lcs.lhi))) *
+        tss_tbs_per_container_lcs.tss
+    - name: is_logger_critical_state
+      type: BOOLEAN
+      sql: CASE WHEN (lhi_per_container_lcs.lhi * (1 - ((1 - mcs_per_shipment_lcs.mcs)
+        * (1 + tss_tbs_per_container_lcs.tbs / 5.0) * (1 - lhi_per_container_lcs.lhi)))
+        * tss_tbs_per_container_lcs.tss) < 0.3 AND ((1 - mcs_per_shipment_lcs.mcs)
+        * (1 + tss_tbs_per_container_lcs.tbs / 5.0) * (1 - lhi_per_container_lcs.lhi))
+        > 0.8 THEN 1 ELSE 0 END
+  dimensions:
+  - name: containregistry
+  - name: cmr
+  - name: lrs
+  - name: is_logger_critical_state
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"container.containregistry\" AS containregistry, \"container.cmr\"\
+  \ AS cmr, \"container.lrs\" AS lrs, \"container.is_logger_critical_state\" AS is_logger_critical_state\
+  \ FROM (SELECT\n  container.containregistry AS \"container.containregistry\",\n\
+  \  (\n    1 - mcs_per_shipment_lcs.mcs\n  ) * (\n    1 + tss_tbs_per_container_lcs.tbs\
+  \ / 5.0\n  ) * (\n    1 - lhi_per_container_lcs.lhi\n  ) AS \"container.cmr\",\n\
+  \  lhi_per_container_lcs.lhi * (\n    1 - (\n      (\n        1 - mcs_per_shipment_lcs.mcs\n\
+  \      ) * (\n        1 + tss_tbs_per_container_lcs.tbs / 5.0\n      ) * (\n   \
+  \     1 - lhi_per_container_lcs.lhi\n      )\n    )\n  ) * tss_tbs_per_container_lcs.tss\
+  \ AS \"container.lrs\",\n  CASE\n    WHEN (\n      lhi_per_container_lcs.lhi * (\n\
+  \        1 - (\n          (\n            1 - mcs_per_shipment_lcs.mcs\n        \
+  \  ) * (\n            1 + tss_tbs_per_container_lcs.tbs / 5.0\n          ) * (\n\
+  \            1 - lhi_per_container_lcs.lhi\n          )\n        )\n      ) * tss_tbs_per_container_lcs.tss\n\
+  \    ) < 0.3\n    AND (\n      (\n        1 - mcs_per_shipment_lcs.mcs\n      )\
+  \ * (\n        1 + tss_tbs_per_container_lcs.tbs / 5.0\n      ) * (\n        1 -\
+  \ lhi_per_container_lcs.lhi\n      )\n    ) > 0.8\n    THEN 1\n    ELSE 0\n  END\
+  \ AS \"container.is_logger_critical_state\"\nFROM container AS container\nLEFT JOIN\
+  \ (\n  (\n    SELECT\n      \"regulatoryandmaintenance.shipgov\" AS shipgov,\n \
+  \     \"regulatoryandmaintenance.mcs\" AS mcs\n    FROM (\n      SELECT\n      \
+  \  regulatoryandmaintenance.shipgov AS \"regulatoryandmaintenance.shipgov\",\n \
+  \       AVG(\n          regulatoryandmaintenance.compscore * (\n            1 -\
+  \ COALESCE(CAST(regulatoryandmaintenance.incidents AS REAL) / 10, 0)\n         \
+  \ )\n        ) AS \"regulatoryandmaintenance.mcs\"\n      FROM regulatoryandmaintenance\
+  \ AS regulatoryandmaintenance\n      GROUP BY\n        regulatoryandmaintenance.shipgov\n\
+  \    ) AS _inner\n  )\n) AS mcs_per_shipment_lcs\n  ON container.shipown = mcs_per_shipment_lcs.shipgov\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"datalogger.containlog\" AS containlog,\n \
+  \     \"datalogger.lhi\" AS lhi\n    FROM (\n      SELECT\n        datalogger.containlog\
+  \ AS \"datalogger.containlog\",\n        AVG(\n          container.batterypct /\
+  \ 100.0 * (\n            1 - COALESCE(CAST(datalogger.memusepct AS REAL) / 100,\
+  \ 0)\n          ) * COALESCE(datalogger.datapct, 0) / 100.0\n        ) AS \"datalogger.lhi\"\
+  \n      FROM datalogger AS datalogger\n      LEFT JOIN container AS container\n\
+  \        ON datalogger.containlog = container.containregistry\n      GROUP BY\n\
+  \        datalogger.containlog\n    ) AS _inner\n  )\n) AS lhi_per_container_lcs\n\
+  \  ON container.containregistry = lhi_per_container_lcs.containlog\nLEFT JOIN (\n\
+  \  (\n    SELECT\n      \"sensordata.containlink\" AS containlink,\n      \"sensordata.tss\"\
+  \ AS tss,\n      \"sensordata.tbs\" AS tbs\n    FROM (\n      SELECT\n        sensordata.containlink\
+  \ AS \"sensordata.containlink\",\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          ) * COALESCE(sensordata.tempstabidx, 1)\n       \
+  \ ) AS \"sensordata.tss\",\n        AVG(\n          ABS(sensordata.tempnowc - sensordata.storetempc)\
+  \ / NULLIF(sensordata.temptolc, 0) * sensordata.tempdevcount\n        ) AS \"sensordata.tbs\"\
+  \n      FROM sensordata AS sensordata\n      GROUP BY\n        sensordata.containlink\n\
+  \    ) AS _inner\n  )\n) AS tss_tbs_per_container_lcs\n  ON container.containregistry\
+  \ = tss_tbs_per_container_lcs.containlink) AS _inner"
+data_source: vaccine
+columns:
+- name: containregistry
+  sql: containregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cmr
+  sql: cmr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: lrs
+  sql: lrs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_logger_critical_state
+  sql: is_logger_critical_state
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Logger Critical State (KB #45). One row per container with is_logger_critical_state\
+  \ boolean = LRS < 0.3 AND CMR > 0.8. LRS (KB #34) and CMR (KB #32) are computed\
+  \ inline from per-container peer aggregates of MCS / TBS / LHI / TSS.\n\n[kb=45]\n\
+  A logger where LRS < 0.3 and CMR > 0.8 \u2014 Identifies critically failing loggers.\n\
+  [/kb=45]"
+hidden: false
+meta:
+  kb_id: 45

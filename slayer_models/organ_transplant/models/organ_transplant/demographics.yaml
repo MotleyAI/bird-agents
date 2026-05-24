@@ -1,0 +1,144 @@
+version: 6
+name: demographics
+sql_table: demographics
+query_variables: {}
+data_source: organ_transplant
+columns:
+- name: contrib_registry
+  sql: contrib_registry
+  type: TEXT
+  primary_key: true
+  description: Donor primary key.
+  hidden: false
+- name: age_count
+  sql: age_count
+  type: TEXT
+  primary_key: false
+  description: Donor age (text, e.g. '57 years, mature donor'). Use donor_age_years
+    for the numeric value.
+  hidden: false
+- name: blood_class
+  sql: blood_class
+  type: TEXT
+  primary_key: false
+  description: Donor ABO blood type (raw text with descriptive suffix, e.g. 'A+ common
+    type ...'). See blood_type_code.
+  hidden: false
+- name: nation_ref
+  sql: nation_ref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: physicalstats
+  sql: physicalstats
+  type: TEXT
+  primary_key: false
+  description: 'Raw JSON: {Height_Cm, Weight_Kg, Bmi_Value, Gender_Type, Ethnicity}.
+    See parsed sibling columns.'
+  hidden: false
+- name: donor_age_years
+  sql: CAST(substr(age_count, 1, instr(age_count, ' ') - 1) AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Donor age in years parsed from age_count.
+  hidden: false
+- name: blood_type_code
+  sql: CASE WHEN blood_class LIKE 'AB+%' THEN 'AB+' WHEN blood_class LIKE 'AB-%' THEN
+    'AB-' WHEN blood_class LIKE 'A+%' THEN 'A+' WHEN blood_class LIKE 'A-%' THEN 'A-'
+    WHEN blood_class LIKE 'B+%' THEN 'B+' WHEN blood_class LIKE 'B-%' THEN 'B-' WHEN
+    blood_class LIKE 'O+%' THEN 'O+' WHEN blood_class LIKE 'O-%' THEN 'O-' END
+  type: TEXT
+  primary_key: false
+  description: Parsed donor ABO+Rh blood type code.
+  hidden: false
+- name: donor_height_cm
+  sql: CAST(json_extract(physicalstats, '$.Height_Cm') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Donor height in cm (parsed from physicalstats JSON).
+  hidden: false
+- name: donor_weight_kg
+  sql: CAST(json_extract(physicalstats, '$.Weight_Kg') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Donor weight in kg (parsed from physicalstats JSON).
+  hidden: false
+- name: donor_bmi_value
+  sql: CAST(json_extract(physicalstats, '$.Bmi_Value') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Donor BMI as reported in physicalstats JSON. KB Body Mass Index (BMI):\
+    \ weight_kg / height_m^2.\n\n[kb=0]\nBMI is calculated as weight in kilograms\
+    \ divided by the square of height in meters. Formula: $BMI = \\frac{weight_{kg}}{height_m^2}$\
+    \ \u2014 Calculates a person's body mass index from their weight and height.\n\
+    [/kb=0]"
+  label: Body Mass Index (BMI)
+  hidden: false
+  meta:
+    kb_id: 0
+- name: donor_bmi_computed
+  sql: CAST(json_extract(physicalstats, '$.Weight_Kg') AS REAL) / pow(CAST(json_extract(physicalstats,
+    '$.Height_Cm') AS REAL) / 100.0, 2)
+  type: DOUBLE
+  primary_key: false
+  description: "Donor BMI re-computed via the KB formula weight_kg / (height_m^2).\
+    \ Use to validate physicalstats.Bmi_Value.\n\n[kb=0]\nBMI is calculated as weight\
+    \ in kilograms divided by the square of height in meters. Formula: $BMI = \\frac{weight_{kg}}{height_m^2}$\
+    \ \u2014 Calculates a person's body mass index from their weight and height.\n\
+    [/kb=0]"
+  label: Body Mass Index (BMI)
+  hidden: false
+  meta:
+    kb_id: 0
+- name: donor_bmi_category
+  sql: CASE WHEN CAST(json_extract(physicalstats, '$.Bmi_Value') AS REAL) < 18.5 THEN
+    'Underweight' WHEN CAST(json_extract(physicalstats, '$.Bmi_Value') AS REAL) <
+    25 THEN 'Normal' WHEN CAST(json_extract(physicalstats, '$.Bmi_Value') AS REAL)
+    < 30 THEN 'Overweight' ELSE 'Obese' END
+  type: TEXT
+  primary_key: false
+  description: "Standard BMI bands: <18.5 underweight, 18.5-24.9 normal, 25-29.9 overweight,\
+    \ >=30 obese.\n\n[kb=40]\nBMI provides a general indicator of body fatness. A\
+    \ value < 18.5 is considered underweight, 18.5-24.9 is normal weight, 25.0-29.9\
+    \ is overweight, and > 30.0 indicates obesity. This is a factor in Size Compatibility\
+    \ Score. \u2014 Illustrates the standard weight status categories based on BMI\
+    \ values.\n[/kb=40]"
+  label: Body Mass Index (BMI) Categories
+  hidden: false
+  meta:
+    kb_id: 40
+- name: donor_gender
+  sql: json_extract(physicalstats, '$.Gender_Type')
+  type: TEXT
+  primary_key: false
+  description: Donor gender (M/F).
+  hidden: false
+- name: donor_ethnicity
+  sql: json_extract(physicalstats, '$.Ethnicity')
+  type: TEXT
+  primary_key: false
+  description: Donor ethnicity.
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: medical_history
+  join_pairs:
+  - - contrib_registry
+    - contrib_med_registry
+  join_type: left
+- target_model: function_and_recovery
+  join_pairs:
+  - - contrib_registry
+    - recov_don_registry
+  join_type: left
+- target_model: hla_info
+  join_pairs:
+  - - contrib_registry
+    - immu_don_registry
+  join_type: left
+filters: []
+description: 'Donor demographics: one row per organ donor, keyed by contrib_registry.
+  Holds donor age, ABO blood type, nationality, and a JSON physicalstats blob (height,
+  weight, BMI, gender, ethnicity).'
+hidden: false

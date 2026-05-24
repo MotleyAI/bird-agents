@@ -1,0 +1,82 @@
+version: 6
+name: visa_dependent_industry
+source_queries:
+- version: 3
+  name: industry_apps
+  source_model: cases
+  measures:
+  - formula: '*:count'
+    name: _count
+  dimensions:
+  - name: naics_code
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: industry_apps
+    columns:
+    - name: industry_share
+      sql: _count * 1.0 / SUM(_count) OVER ()
+      type: DOUBLE
+    - name: is_visa_dependent
+      sql: _count * 1.0 / SUM(_count) OVER () > 0.15
+      type: BOOLEAN
+  dimensions:
+  - name: naics_code
+  - name: _count
+  - name: industry_share
+  - name: is_visa_dependent
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"industry_apps.naics_code\" AS naics_code, \"industry_apps._count\"\
+  \ AS _count, \"industry_apps.industry_share\" AS industry_share, \"industry_apps.is_visa_dependent\"\
+  \ AS is_visa_dependent FROM (SELECT\n  industry_apps.naics_code AS \"industry_apps.naics_code\"\
+  ,\n  industry_apps._count AS \"industry_apps._count\",\n  industry_apps._count *\
+  \ 1.0 / SUM(industry_apps._count) OVER () AS \"industry_apps.industry_share\",\n\
+  \  industry_apps._count * 1.0 / SUM(industry_apps._count) OVER () > 0.15 AS \"industry_apps.is_visa_dependent\"\
+  \nFROM (\n  SELECT\n    \"cases.naics_code\" AS naics_code,\n    \"cases._count\"\
+  \ AS _count\n  FROM (\n    SELECT\n      CAST(employer.employer_contact_info ->>\
+  \ '$.naics_code' AS INTEGER) AS \"cases.naics_code\",\n      COUNT(*) AS \"cases._count\"\
+  \n    FROM cases AS cases\n    LEFT JOIN employer AS employer\n      ON cases.homefirm\
+  \ = employer.corphandle\n    GROUP BY\n      CAST(employer.employer_contact_info\
+  \ ->> '$.naics_code' AS INTEGER)\n  ) AS _inner\n) AS industry_apps) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: naics_code
+  sql: naics_code
+  type: DOUBLE
+  primary_key: false
+  description: 'Employer NAICS code (KB #6) resolved via the employer join.'
+  hidden: false
+- name: _count
+  sql: _count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: industry_share
+  sql: industry_share
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_visa_dependent
+  sql: is_visa_dependent
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Visa-Dependent Industry per NAICS code (KB #42). Strict definition uses\
+  \ visa-applications-as-fraction-of-workforce >15%, but the schema has no workforce\
+  \ column; this implements a proxy using share of all applications attributable to\
+  \ the industry (apps_in_industry / total_apps > 0.15). Per-NAICS rows.\n\n[kb=42]\n\
+  An industry is considered visa-dependent if the percentage of visa applications\
+  \ relative to the total workforce exceeds 15%, indicating significant reliance on\
+  \ foreign talent. Industry information is determined by the employer's NAICS code.\
+  \ \u2014 Defines industries that heavily rely on foreign workers through visa programs.\n\
+  [/kb=42]"
+hidden: false
+meta:
+  kb_id: 42

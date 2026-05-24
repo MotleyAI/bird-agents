@@ -1,0 +1,210 @@
+version: 6
+name: credit_and_compliance
+sql_table: credit_and_compliance
+query_variables: {}
+data_source: credit
+columns:
+- name: compbankref
+  sql: compbankref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: sancresult
+  sql: sancresult
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: pepresult
+  sql: pepresult
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: legalstat
+  sql: legalstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: regcompliance
+  sql: regcompliance
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: credscore
+  sql: credscore
+  type: INT
+  primary_key: false
+  description: "Credit score (300-850). 300-579 Poor, 580-669 Fair, 670-739 Good,\
+    \ 740-799 Very Good, 800-850 Excellent. Higher = lower credit risk.\n\n[kb=20]\n\
+    Credit scores (credscore) typically range from 300-850. 300-579: Poor, 580-669:\
+    \ Fair, 670-739: Good, 740-799: Very Good, 800-850: Excellent, Otherwise: Unknown.\
+    \ Higher scores indicate lower credit risk. \u2014 Illustrates the meaning of\
+    \ different credit score ranges.\n[/kb=20]"
+  label: Credit Score Categories
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 20
+- name: risklev
+  sql: risklev
+  type: TEXT
+  primary_key: false
+  description: "Risk level enum (Low/Medium/High/Very High). 'Low' = minimal risk,\
+    \ 'Medium' = moderate (standard monitoring), 'High' = significant risk (enhanced\
+    \ monitoring), 'Very High' = severe risk (active intervention).\n\n[kb=25]\nRisk\
+    \ level (risklev) values indicate likelihood of default or financial difficulty.\
+    \ 'Low' indicates minimal risk, 'Medium' indicates moderate risk requiring standard\
+    \ monitoring, 'High' indicates significant risk requiring enhanced monitoring,\
+    \ and 'Very High' indicates severe risk requiring active intervention. \u2014\
+    \ Illustrates what different risk level classifications mean.\n[/kb=25]"
+  label: Risk Level Classifications
+  hidden: false
+  meta:
+    kb_id: 25
+- name: defhist
+  sql: defhist
+  type: TEXT
+  primary_key: false
+  description: "Default-history payment classification. Possible values: Excellent\
+    \ (no late payments), Good (minimal late), Fair (occasional missed), Poor (regular\
+    \ missed), Current (up to date), Past (historical data). Same enum reused for\
+    \ cardpayhist, loanpayhist, mortpayhist, rentpayhist.\n\n[kb=26]\nPayment history\
+    \ (defhist, mortpayhist, rentpayhist, cardpayhist, loanpayhist) classifications\
+    \ indicate reliability. 'Excellent' indicates no late payments, 'Good' indicates\
+    \ minimal late payments, 'Fair' indicates occasional missed payments, 'Poor' indicates\
+    \ regular missed payments, 'Current' indicates being up to date, and 'Past' indicates\
+    \ historical data. \u2014 Illustrates what different payment history classifications\
+    \ indicate.\n[/kb=26]"
+  label: Payment History Quality
+  hidden: false
+  meta:
+    kb_id: 26
+- name: delinqcount
+  sql: delinqcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: latepaycount
+  sql: latepaycount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: collacc
+  sql: collacc
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: choffs
+  sql: choffs
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: bankr
+  sql: bankr
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: taxlien
+  sql: taxlien
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: civiljudge
+  sql: civiljudge
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: credinq
+  sql: credinq
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: hardinq
+  sql: hardinq
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: softinq
+  sql: softinq
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: credrepdisp
+  sql: credrepdisp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: credageyrs
+  sql: credageyrs
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: oldaccage
+  sql: oldaccage
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: credscore_category
+  sql: CASE WHEN credscore BETWEEN 300 AND 579 THEN 'Poor' WHEN credscore BETWEEN
+    580 AND 669 THEN 'Fair' WHEN credscore BETWEEN 670 AND 739 THEN 'Good' WHEN credscore
+    BETWEEN 740 AND 799 THEN 'Very Good' WHEN credscore BETWEEN 800 AND 850 THEN 'Excellent'
+    ELSE 'Unknown' END
+  type: TEXT
+  primary_key: false
+  description: "Credit score category: Poor/Fair/Good/Very Good/Excellent/Unknown\
+    \ per KB 20 bands.\n\n[kb=20]\nCredit scores (credscore) typically range from\
+    \ 300-850. 300-579: Poor, 580-669: Fair, 670-739: Good, 740-799: Very Good, 800-850:\
+    \ Excellent, Otherwise: Unknown. Higher scores indicate lower credit risk. \u2014\
+    \ Illustrates the meaning of different credit score ranges.\n[/kb=20]"
+  label: Credit Score Categories
+  hidden: false
+  meta:
+    kb_id: 20
+- name: risklev_score
+  sql: CASE risklev WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 WHEN
+    'Very High' THEN 4 END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric encoding of risklev for use in composite scores: Low=1, Medium=2,\
+    \ High=3, Very High=4.\n\n[kb=8]\nRAR = profitscore \xD7 (1 - \\frac{risklev}{4}),\
+    \ \\text{where risklev is converted to a numeric scale: Low=1, Medium=2, High=3,\
+    \ Very High=4} \u2014 Measures the profitability of a customer relationship adjusted\
+    \ for credit risk.\n[/kb=8]"
+  label: Risk-Adjusted Return (RAR)
+  hidden: false
+  meta:
+    kb_id: 8
+measures: []
+aggregations: []
+joins:
+- target_model: bank_and_transactions
+  join_pairs:
+  - - compbankref
+    - bankexpref
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,59 @@
+version: 6
+name: signal_ccs_approx
+source_queries:
+- version: 3
+  source_model:
+    source_name: signals
+    joins:
+    - target_model: signaldecoding
+      join_pairs:
+      - - signalregistry
+        - signalref
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+    columns:
+    - name: ccs_approx
+      type: number
+      sql: (1 - signalprobabilities.falseposprob) * signaldecoding.decodeconf * (CASE
+        WHEN (signals.snrratio - 0.1 * ABS(signals.noisefloordbm)) > 0 THEN (signals.snrratio
+        - 0.1 * ABS(signals.noisefloordbm)) / 10.0 + 0.5 ELSE 0.1 END)
+  dimensions:
+  - name: signalregistry
+  - name: ccs_approx
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.ccs_approx\"\
+  \ AS ccs_approx FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
+  ,\n  CAST((\n    1 - signalprobabilities.falseposprob\n  ) * signaldecoding.decodeconf\
+  \ * (\n    CASE\n      WHEN (\n        signals.snrratio - 0.1 * ABS(signals.noisefloordbm)\n\
+  \      ) > 0\n      THEN (\n        signals.snrratio - 0.1 * ABS(signals.noisefloordbm)\n\
+  \      ) / 10.0 + 0.5\n      ELSE 0.1\n    END\n  ) AS REAL) AS \"signals.ccs_approx\"\
+  \nFROM signals AS signals\nLEFT JOIN signaldecoding AS signaldecoding\n  ON signals.signalregistry\
+  \ = signaldecoding.signalref\nLEFT JOIN signalprobabilities AS signalprobabilities\n\
+  \  ON signals.signalregistry = signalprobabilities.signalref) AS _inner"
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ccs_approx
+  sql: ccs_approx
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "CCS Approximation per signal.\n\n[kb=47]\n$(1 - \\text{FalsePosProb})\
+  \ \\times \\text{DecodeConf} \\times (\\text{SNR} - 0.1 \\times |\\text{NoiseFloorDbm}|\
+  \ > 0 ? \\frac{\\text{SNR} - 0.1 \\times |\\text{NoiseFloorDbm}|}{10} + 0.5 : 0.1)$\
+  \ \u2014 Simplified CCS calculation using direct signal-to-noise ratio values when\
+  \ full Signal-to-Noise Quality Indicator (SNQI) data is unavailable.\n[/kb=47]"
+hidden: false
+meta:
+  kb_id: 47

@@ -1,0 +1,67 @@
+version: 6
+name: qualifying_to_race_pace_differential
+sql: "SELECT\n  lt.rc_index AS rc_index,\n  lt.wheel_unit AS wheel_unit,\n  AVG(lt.msec_val\
+  \ / 1000.0) AS avg_race_lap_seconds,\n  q.best_q_seconds AS best_qualifying_seconds,\n\
+  \  AVG(lt.msec_val / 1000.0) - q.best_q_seconds AS qrd\nFROM lap_times lt\nLEFT\
+  \ JOIN (\n  SELECT rbind, pilotrec,\n    MIN(COALESCE(\n      CASE WHEN q1_r IS\
+  \ NULL OR INSTR(q1_r, ':') = 0 THEN NULL\n        ELSE CAST(SUBSTR(q1_r, 1, INSTR(q1_r,\
+  \ ':') - 1) AS REAL) * 60 + CAST(SUBSTR(q1_r, INSTR(q1_r, ':') + 1) AS REAL) END,\n\
+  \      CASE WHEN q2_r IS NULL OR INSTR(q2_r, ':') = 0 THEN NULL\n        ELSE CAST(SUBSTR(q2_r,\
+  \ 1, INSTR(q2_r, ':') - 1) AS REAL) * 60 + CAST(SUBSTR(q2_r, INSTR(q2_r, ':') +\
+  \ 1) AS REAL) END,\n      CASE WHEN q3_r IS NULL OR INSTR(q3_r, ':') = 0 THEN NULL\n\
+  \        ELSE CAST(SUBSTR(q3_r, 1, INSTR(q3_r, ':') - 1) AS REAL) * 60 + CAST(SUBSTR(q3_r,\
+  \ INSTR(q3_r, ':') + 1) AS REAL) END\n    )) AS best_q_seconds\n  FROM qualifying\
+  \ GROUP BY rbind, pilotrec\n) q ON q.rbind = lt.rc_index AND q.pilotrec = lt.wheel_unit\n\
+  GROUP BY lt.rc_index, lt.wheel_unit, q.best_q_seconds"
+query_variables: {}
+data_source: sports_events
+columns:
+- name: rc_index
+  sql: rc_index
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to races.
+  hidden: false
+- name: wheel_unit
+  sql: wheel_unit
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to drivers.
+  hidden: false
+- name: avg_race_lap_seconds
+  sql: avg_race_lap_seconds
+  type: DOUBLE
+  primary_key: false
+  description: Driver's average race lap time in seconds.
+  hidden: false
+- name: best_qualifying_seconds
+  sql: best_qualifying_seconds
+  type: DOUBLE
+  primary_key: false
+  description: Driver's best qualifying lap (across Q1/Q2/Q3) in seconds for this
+    race.
+  hidden: false
+- name: qrd
+  sql: qrd
+  type: DOUBLE
+  primary_key: false
+  description: "Qualifying to Race Pace Differential (KB #34): avg_race_lap_seconds\
+    \ - best_qualifying_seconds.\n\n[kb=34]\nQRD = \\bar{T}_{lap} - T_{qualifying},\
+    \ \\text{where } \\bar{T}_{lap} \\text{ is the Driver's Average Lap Time and }\
+    \ T_{qualifying} \\text{ is their fastest qualifying lap from which the Qualifying\
+    \ Time Deficit to Pole is measured.} \u2014 Compares a driver's raw qualifying\
+    \ pace to their average race pace to analyze performance drop-off or improvement.\n\
+    [/kb=34]"
+  label: Qualifying to Race Pace Differential
+  hidden: false
+  meta:
+    kb_id: 34
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Qualifying to Race Pace Differential (KB #34): QRD = driver''s average
+  race lap time (seconds) minus their best qualifying lap (seconds), per (race, driver).
+  Built directly as a custom SQL model joining lap_times to a per-(race, driver) best-qualifying-time
+  subquery. Uses KB #21 / KB #23 / KB #28.'
+hidden: false

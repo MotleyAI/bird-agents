@@ -1,0 +1,33 @@
+version: 6
+name: bond_ratings
+sql_table: bond_ratings
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: ratekey
+  sql: ratekey
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: creditmark
+  sql: creditmark
+  type: TEXT
+  primary_key: false
+  description: "Credit Quality (KB 29): creditworthiness of the bonds a fund holds.\
+    \ 'us_government' is the highest quality. 'aaa' / 'aa' are high-grade investment\
+    \ quality. Ratings 'bbb' and below ('bb', 'b', 'below_b') are speculative / high-yield.\n\
+    \n[kb=29]\nIndicates the creditworthiness of the bonds a fund holds. 'Government'\
+    \ is the highest quality. 'AAA' and 'AA' are considered high-grade investment\
+    \ quality. Ratings below 'BBB' are considered speculative or high-yield. \u2014\
+    \ Illustrates the credit quality of bond holdings.\n[/kb=29]"
+  label: Credit Quality
+  hidden: false
+  meta:
+    kb_id: 29
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

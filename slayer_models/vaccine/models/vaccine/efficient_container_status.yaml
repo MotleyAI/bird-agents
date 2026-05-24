@@ -1,0 +1,110 @@
+version: 6
+name: efficient_container_status
+source_queries:
+- version: 3
+  name: ser_per_container
+  source_model: vaccinedetails
+  measures:
+  - formula: ser:avg
+    name: ser
+  dimensions:
+  - name: containvac
+  whole_periods_only: false
+- version: 3
+  name: tss_per_container
+  source_model: sensordata
+  measures:
+  - formula: tss:avg
+    name: tss
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: container
+    joins:
+    - target_model: ser_per_container
+      join_pairs:
+      - - containregistry
+        - containvac
+    - target_model: tss_per_container
+      join_pairs:
+      - - containregistry
+        - containlink
+    columns:
+    - name: is_efficient_container
+      type: BOOLEAN
+      sql: CASE WHEN ser_per_container.ser > 0.8 AND tss_per_container.tss > 0.9 THEN
+        1 ELSE 0 END
+  dimensions:
+  - name: containregistry
+  - name: ser
+    model: ser_per_container
+  - name: tss
+    model: tss_per_container
+  - name: is_efficient_container
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"container.containregistry\" AS containregistry, \"container.ser_per_container.ser\"\
+  \ AS ser_per_container__ser, \"container.tss_per_container.tss\" AS tss_per_container__tss,\
+  \ \"container.is_efficient_container\" AS is_efficient_container FROM (SELECT\n\
+  \  container.containregistry AS \"container.containregistry\",\n  ser_per_container.ser\
+  \ AS \"container.ser_per_container.ser\",\n  tss_per_container.tss AS \"container.tss_per_container.tss\"\
+  ,\n  CASE\n    WHEN ser_per_container.ser > 0.8 AND tss_per_container.tss > 0.9\n\
+  \    THEN 1\n    ELSE 0\n  END AS \"container.is_efficient_container\"\nFROM container\
+  \ AS container\nLEFT JOIN (\n  (\n    SELECT\n      \"vaccinedetails.containvac\"\
+  \ AS containvac,\n      \"vaccinedetails.ser\" AS ser\n    FROM (\n      SELECT\n\
+  \        vaccinedetails.containvac AS \"vaccinedetails.containvac\",\n        AVG(CAST(vaccinedetails.vialtally\
+  \ AS REAL) * 10 / NULLIF(container.volliters, 0)) AS \"vaccinedetails.ser\"\n  \
+  \    FROM vaccinedetails AS vaccinedetails\n      LEFT JOIN container AS container\n\
+  \        ON vaccinedetails.containvac = container.containregistry\n      GROUP BY\n\
+  \        vaccinedetails.containvac\n    ) AS _inner\n  )\n) AS ser_per_container\n\
+  \  ON container.containregistry = ser_per_container.containvac\nLEFT JOIN (\n  (\n\
+  \    SELECT\n      \"sensordata.containlink\" AS containlink,\n      \"sensordata.tss\"\
+  \ AS tss\n    FROM (\n      SELECT\n        sensordata.containlink AS \"sensordata.containlink\"\
+  ,\n        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          ) * COALESCE(sensordata.tempstabidx, 1)\n       \
+  \ ) AS \"sensordata.tss\"\n      FROM sensordata AS sensordata\n      GROUP BY\n\
+  \        sensordata.containlink\n    ) AS _inner\n  )\n) AS tss_per_container\n\
+  \  ON container.containregistry = tss_per_container.containlink) AS _inner"
+data_source: vaccine
+columns:
+- name: containregistry
+  sql: containregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ser_per_container__ser
+  sql: ser_per_container__ser
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tss_per_container__tss
+  sql: tss_per_container__tss
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: is_efficient_container
+  sql: is_efficient_container
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Efficient Container status (KB #18). One row per container with the\
+  \ per-container average SER (Storage Efficiency Ratio, KB #5) and average TSS (Temperature\
+  \ Stability Score, KB #0), plus is_efficient_container boolean = SER > 0.8 AND TSS\
+  \ > 0.9. SER and TSS live on peer children of container (vaccinedetails / sensordata)\
+  \ and are aggregated per container before the composite predicate is evaluated.\n\
+  \n[kb=18]\nA container where SER > 0.8 and TSS > 0.9 \u2014 Identifies efficiently\
+  \ utilized containers.\n[/kb=18]"
+hidden: false
+meta:
+  kb_id: 18

@@ -1,0 +1,110 @@
+version: 6
+name: registration_accuracy_ratio
+source_queries:
+- version: 3
+  name: pc_per_arcref
+  source_model: scanpointcloud
+  measures:
+  - formula: scanresolmm:avg
+    name: scanresolmm
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  name: reg_per_arcref
+  source_model: scanregistration
+  measures:
+  - formula: logaccumm:avg
+    name: logaccumm
+  - formula: errvalmm:avg
+    name: errvalmm
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  name: merged
+  source_model:
+    source_name: pc_per_arcref
+    joins:
+    - target_model: reg_per_arcref
+      join_pairs:
+      - - arcref
+        - arcref
+  dimensions:
+  - name: arcref
+  - name: scanresolmm
+  - name: logaccumm
+    model: reg_per_arcref
+  - name: errvalmm
+    model: reg_per_arcref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: merged
+    columns:
+    - name: rar
+      type: DOUBLE
+      sql: scanresolmm / (reg_per_arcref__logaccumm * sqrt(1 + reg_per_arcref__errvalmm
+        / reg_per_arcref__logaccumm))
+  measures:
+  - formula: rar:avg
+    name: rar
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"merged.arcref\" AS arcref, \"merged.rar\" AS rar FROM\
+  \ (SELECT\n  merged.arcref AS \"merged.arcref\",\n  AVG(\n    merged.scanresolmm\
+  \ / (\n      merged.reg_per_arcref__logaccumm * SQRT(1 + merged.reg_per_arcref__errvalmm\
+  \ / merged.reg_per_arcref__logaccumm)\n    )\n  ) AS \"merged.rar\"\nFROM (\n  SELECT\n\
+  \    \"pc_per_arcref.arcref\" AS arcref,\n    \"pc_per_arcref.scanresolmm\" AS scanresolmm,\n\
+  \    \"pc_per_arcref.reg_per_arcref.logaccumm\" AS reg_per_arcref__logaccumm,\n\
+  \    \"pc_per_arcref.reg_per_arcref.errvalmm\" AS reg_per_arcref__errvalmm\n  FROM\
+  \ (\n    SELECT\n      pc_per_arcref.arcref AS \"pc_per_arcref.arcref\",\n     \
+  \ pc_per_arcref.scanresolmm AS \"pc_per_arcref.scanresolmm\",\n      reg_per_arcref.logaccumm\
+  \ AS \"pc_per_arcref.reg_per_arcref.logaccumm\",\n      reg_per_arcref.errvalmm\
+  \ AS \"pc_per_arcref.reg_per_arcref.errvalmm\"\n    FROM (\n      SELECT\n     \
+  \   \"scanpointcloud.arcref\" AS arcref,\n        \"scanpointcloud.scanresolmm\"\
+  \ AS scanresolmm\n      FROM (\n        SELECT\n          scanpointcloud.arcref\
+  \ AS \"scanpointcloud.arcref\",\n          AVG(scanpointcloud.scanresolmm) AS \"\
+  scanpointcloud.scanresolmm\"\n        FROM scanpointcloud AS scanpointcloud\n  \
+  \      GROUP BY\n          scanpointcloud.arcref\n      ) AS _inner\n    ) AS pc_per_arcref\n\
+  \    LEFT JOIN (\n      (\n        SELECT\n          \"scanregistration.arcref\"\
+  \ AS arcref,\n          \"scanregistration.logaccumm\" AS logaccumm,\n         \
+  \ \"scanregistration.errvalmm\" AS errvalmm\n        FROM (\n          SELECT\n\
+  \            scanregistration.arcref AS \"scanregistration.arcref\",\n         \
+  \   AVG(scanregistration.logaccumm) AS \"scanregistration.logaccumm\",\n       \
+  \     AVG(scanregistration.errvalmm) AS \"scanregistration.errvalmm\"\n        \
+  \  FROM scanregistration AS scanregistration\n          GROUP BY\n            scanregistration.arcref\n\
+  \        ) AS _inner\n      )\n    ) AS reg_per_arcref\n      ON pc_per_arcref.arcref\
+  \ = reg_per_arcref.arcref\n  ) AS _inner\n) AS merged\nGROUP BY\n  merged.arcref)\
+  \ AS _inner"
+data_source: archeology
+columns:
+- name: arcref
+  sql: arcref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rar
+  sql: rar
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Registration Accuracy Ratio (RAR, KB #33): ScanResolMm / (LogAccuMm\
+  \ * sqrt(1 + ErrValMm/LogAccuMm)). Values > 1 indicate registration accuracy exceeds\
+  \ scan resolution. Multistage: scanpointcloud + scanregistration joined on arcref.\n\
+  \n[kb=33]\nRAR = \\frac{ScanResolMm}{LogAccuMm \\times \\sqrt{1 + \\frac{ErrValMm}{LogAccuMm}}},\
+  \ \\text{ where values > 1 indicate registration accuracy exceeds scan resolution,\
+  \ a desirable outcome for precise spatial analysis.} \u2014 Evaluates registration\
+  \ accuracy relative to scan resolution using propagation of uncertainty principles.\n\
+  [/kb=33]"
+hidden: false
+meta:
+  kb_id: 33

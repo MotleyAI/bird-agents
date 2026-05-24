@@ -1,0 +1,178 @@
+version: 6
+name: cross_platform_threat
+source_queries:
+- version: 3
+  name: account_scores
+  source_model: moderationaction
+  measures:
+  - formula: is_high_risk_account:max
+    name: is_hra
+  - formula: cpri:avg
+    name: cpri_v
+  - formula: is_sockpuppet_member:max
+    name: is_sock
+  dimensions:
+  - name: account_id
+  - name: cluster_id
+  whole_periods_only: false
+- version: 3
+  name: cluster_sockpuppet
+  source_model: account_scores
+  measures:
+  - formula: is_sock:max
+    name: any_sock
+  dimensions:
+  - name: cluster_id
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: account_scores
+    joins:
+    - target_model: cluster_sockpuppet
+      join_pairs:
+      - - cluster_id
+        - cluster_id
+  measures:
+  - formula: cluster_sockpuppet.any_sock:max
+    name: cluster_in_sockpuppet
+  dimensions:
+  - name: account_id
+  - name: cluster_id
+  - name: is_hra
+  - name: cpri_v
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"account_scores.account_id\" AS account_id, \"account_scores.cluster_id\"\
+  \ AS cluster_id, \"account_scores.is_hra\" AS is_hra, \"account_scores.cpri_v\"\
+  \ AS cpri_v, \"account_scores.cluster_sockpuppet.any_sock_max\" AS cluster_sockpuppet__any_sock_max\
+  \ FROM (WITH _base AS (\nSELECT\n  account_scores.account_id AS \"account_scores.account_id\"\
+  ,\n  account_scores.cluster_id AS \"account_scores.cluster_id\",\n  account_scores.is_hra\
+  \ AS \"account_scores.is_hra\",\n  account_scores.cpri_v AS \"account_scores.cpri_v\"\
+  \nFROM (\n  SELECT\n    \"moderationaction.account_id\" AS account_id,\n    \"moderationaction.cluster_id\"\
+  \ AS cluster_id,\n    \"moderationaction.is_hra\" AS is_hra,\n    \"moderationaction.cpri_v\"\
+  \ AS cpri_v,\n    \"moderationaction.is_sock\" AS is_sock\n  FROM (\n    SELECT\n\
+  \      contentbehavior__sessionbehavior__profile.profaccref AS \"moderationaction.account_id\"\
+  ,\n      contentbehavior__sessionbehavior__profile__account.platident AS \"moderationaction.cluster_id\"\
+  ,\n      MAX(\n        CASE\n          WHEN (\n            0.4 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.overall.riskval') + 0.3 * (\n              1 - moderationaction.trustval\n\
+  \            ) + 0.3 * moderationaction.impactval\n          ) > 0.8\n         \
+  \ AND JSON_EXTRACT(securitydetection.detection_score_profile, '$.overall.threatlvl')\
+  \ = 'Critical'\n          THEN 1\n          ELSE 0\n        END\n      ) AS \"moderationaction.is_hra\"\
+  ,\n      AVG(\n        (\n          0.4 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.overall.riskval') + 0.3 * (\n            1 - moderationaction.trustval\n  \
+  \        ) + 0.3 * moderationaction.impactval\n        ) * (\n          1 + 0.2\
+  \ * securitydetection__technicalinfo.ipcountrynum\n        )\n      ) AS \"moderationaction.cpri_v\"\
+  ,\n      MAX(\n        CASE\n          WHEN moderationaction.linkacctnum > 5\n \
+  \         AND (\n            0.5 * moderationaction.coordscore + 0.3 * moderationaction.netinflscore\
+  \ + 0.2 * (\n              CAST(moderationaction.clustsize AS REAL) / 100\n    \
+  \        )\n          ) > 0.8\n          THEN 1\n          ELSE 0\n        END\n\
+  \      ) AS \"moderationaction.is_sock\"\n    FROM moderationaction AS moderationaction\n\
+  \    LEFT JOIN contentbehavior AS contentbehavior\n      ON moderationaction.macntref\
+  \ = contentbehavior.cntref\n    LEFT JOIN securitydetection AS securitydetection\n\
+  \      ON moderationaction.masedetref = securitydetection.secdetkey\n    LEFT JOIN\
+  \ technicalinfo AS securitydetection__technicalinfo\n      ON securitydetection.sectechref\
+  \ = securitydetection__technicalinfo.techkey\n    LEFT JOIN sessionbehavior AS contentbehavior__sessionbehavior\n\
+  \      ON contentbehavior.cntsessref = contentbehavior__sessionbehavior.sessref\n\
+  \    LEFT JOIN profile AS contentbehavior__sessionbehavior__profile\n      ON contentbehavior__sessionbehavior.sessprofref\
+  \ = contentbehavior__sessionbehavior__profile.profkey\n    LEFT JOIN account AS\
+  \ contentbehavior__sessionbehavior__profile__account\n      ON contentbehavior__sessionbehavior__profile.profaccref\
+  \ = contentbehavior__sessionbehavior__profile__account.accindex\n    GROUP BY\n\
+  \      contentbehavior__sessionbehavior__profile.profaccref,\n      contentbehavior__sessionbehavior__profile__account.platident\n\
+  \  ) AS _inner\n) AS account_scores\nGROUP BY\n  account_scores.account_id,\n  account_scores.cluster_id,\n\
+  \  account_scores.is_hra,\n  account_scores.cpri_v\n), _cm_account_scores__cluster_sockpuppet__any_sock_max\
+  \ AS (\nSELECT\n  MAX(cluster_sockpuppet.any_sock) AS \"account_scores.cluster_sockpuppet.any_sock_max\"\
+  \nFROM (\n  SELECT\n    \"account_scores.cluster_id\" AS cluster_id,\n    \"account_scores.any_sock\"\
+  \ AS any_sock\n  FROM (\n    SELECT\n      account_scores.cluster_id AS \"account_scores.cluster_id\"\
+  ,\n      MAX(account_scores.is_sock) AS \"account_scores.any_sock\"\n    FROM (\n\
+  \      SELECT\n        \"moderationaction.account_id\" AS account_id,\n        \"\
+  moderationaction.cluster_id\" AS cluster_id,\n        \"moderationaction.is_hra\"\
+  \ AS is_hra,\n        \"moderationaction.cpri_v\" AS cpri_v,\n        \"moderationaction.is_sock\"\
+  \ AS is_sock\n      FROM (\n        SELECT\n          contentbehavior__sessionbehavior__profile.profaccref\
+  \ AS \"moderationaction.account_id\",\n          contentbehavior__sessionbehavior__profile__account.platident\
+  \ AS \"moderationaction.cluster_id\",\n          MAX(\n            CASE\n      \
+  \        WHEN (\n                0.4 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.overall.riskval') + 0.3 * (\n                  1 - moderationaction.trustval\n\
+  \                ) + 0.3 * moderationaction.impactval\n              ) > 0.8\n \
+  \             AND JSON_EXTRACT(securitydetection.detection_score_profile, '$.overall.threatlvl')\
+  \ = 'Critical'\n              THEN 1\n              ELSE 0\n            END\n  \
+  \        ) AS \"moderationaction.is_hra\",\n          AVG(\n            (\n    \
+  \          0.4 * JSON_EXTRACT(securitydetection.detection_score_profile, '$.overall.riskval')\
+  \ + 0.3 * (\n                1 - moderationaction.trustval\n              ) + 0.3\
+  \ * moderationaction.impactval\n            ) * (\n              1 + 0.2 * securitydetection__technicalinfo.ipcountrynum\n\
+  \            )\n          ) AS \"moderationaction.cpri_v\",\n          MAX(\n  \
+  \          CASE\n              WHEN moderationaction.linkacctnum > 5\n         \
+  \     AND (\n                0.5 * moderationaction.coordscore + 0.3 * moderationaction.netinflscore\
+  \ + 0.2 * (\n                  CAST(moderationaction.clustsize AS REAL) / 100\n\
+  \                )\n              ) > 0.8\n              THEN 1\n              ELSE\
+  \ 0\n            END\n          ) AS \"moderationaction.is_sock\"\n        FROM\
+  \ moderationaction AS moderationaction\n        LEFT JOIN contentbehavior AS contentbehavior\n\
+  \          ON moderationaction.macntref = contentbehavior.cntref\n        LEFT JOIN\
+  \ securitydetection AS securitydetection\n          ON moderationaction.masedetref\
+  \ = securitydetection.secdetkey\n        LEFT JOIN technicalinfo AS securitydetection__technicalinfo\n\
+  \          ON securitydetection.sectechref = securitydetection__technicalinfo.techkey\n\
+  \        LEFT JOIN sessionbehavior AS contentbehavior__sessionbehavior\n       \
+  \   ON contentbehavior.cntsessref = contentbehavior__sessionbehavior.sessref\n \
+  \       LEFT JOIN profile AS contentbehavior__sessionbehavior__profile\n       \
+  \   ON contentbehavior__sessionbehavior.sessprofref = contentbehavior__sessionbehavior__profile.profkey\n\
+  \        LEFT JOIN account AS contentbehavior__sessionbehavior__profile__account\n\
+  \          ON contentbehavior__sessionbehavior__profile.profaccref = contentbehavior__sessionbehavior__profile__account.accindex\n\
+  \        GROUP BY\n          contentbehavior__sessionbehavior__profile.profaccref,\n\
+  \          contentbehavior__sessionbehavior__profile__account.platident\n      )\
+  \ AS _inner\n    ) AS account_scores\n    GROUP BY\n      account_scores.cluster_id\n\
+  \  ) AS _inner\n) AS cluster_sockpuppet\n)\nSELECT _base.\"account_scores.account_id\"\
+  , _base.\"account_scores.cluster_id\", _base.\"account_scores.is_hra\", _base.\"\
+  account_scores.cpri_v\", _cm_account_scores__cluster_sockpuppet__any_sock_max.\"\
+  account_scores.cluster_sockpuppet.any_sock_max\"\nFROM _base\nCROSS JOIN _cm_account_scores__cluster_sockpuppet__any_sock_max)\
+  \ AS _inner"
+data_source: fake
+columns:
+- name: account_id
+  sql: account_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row account identifier resolved through the moderationaction \u2192\
+    \ contentbehavior \u2192 sessionbehavior \u2192 profile join chain. Convenience\
+    \ handle for grouping/multistage; equals the underlying account.accindex."
+  hidden: false
+- name: cluster_id
+  sql: cluster_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row cluster identifier resolved through the moderationaction \u2192\
+    \ contentbehavior \u2192 sessionbehavior \u2192 profile \u2192 account join chain.\
+    \ Equals account.platident; per KB #80, this is the cluster identifier used to\
+    \ group accounts in cluster-level rules (Bot Network, Amplification Network, ...)."
+  hidden: false
+- name: is_hra
+  sql: is_hra
+  type: DOUBLE
+  primary_key: false
+  description: 'High-Risk Account predicate (KB #10): SRS > 0.8 AND threatlvl=''Critical''.
+    1=true.'
+  hidden: false
+- name: cpri_v
+  sql: cpri_v
+  type: DOUBLE
+  primary_key: false
+  description: 'Cross-Platform Risk Index (KB #30): SRS * (1 + 0.2 * ipcountrynum).
+    Inlines SRS to avoid cross-column reference inside Column.sql.'
+  hidden: false
+  format:
+    type: float
+- name: cluster_sockpuppet__any_sock_max
+  sql: cluster_sockpuppet__any_sock_max
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Cross-Platform Threat (KB #46): an account that is a High-Risk Account\
+  \ (KB #10; is_hra = 1) AND has cpri_v > 0.9 AND is part of a Sockpuppet Network\
+  \ cluster (cluster_in_sockpuppet = 1, i.e. \u22651 cluster member is a Sockpuppet\
+  \ member).\n\n[kb=46]\nA High-Risk Account with CPRI > 0.9 and is part of a Sockpuppet\
+  \ Network \u2014 Identifies threats operating across multiple platforms.\n[/kb=46]"
+hidden: false
+meta:
+  kb_id: 46

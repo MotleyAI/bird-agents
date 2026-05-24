@@ -1,0 +1,167 @@
+version: 6
+name: employment_and_income
+sql_table: employment_and_income
+query_variables: {}
+data_source: credit
+columns:
+- name: emplcoreref
+  sql: emplcoreref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: emplstat
+  sql: emplstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: empllen
+  sql: empllen
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: joblabel
+  sql: joblabel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: indsector
+  sql: indsector
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: employerref
+  sql: employerref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: annlincome
+  sql: annlincome
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: mthincome
+  sql: mthincome
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: incverify
+  sql: incverify
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: incstabscore
+  sql: incstabscore
+  type: INT
+  primary_key: false
+  description: "Income Stability Score. Ranges 0-10. Below 3 indicates highly variable\
+    \ income, 3-6 moderate stability, above 6 highly stable income sources.\n\n[kb=21]\n\
+    Income stability (incstabscore) ranges from 0-10. Scores below 3 indicate highly\
+    \ variable income, 3-6 indicates moderate stability, and above 6 indicates highly\
+    \ stable income sources. \u2014 Illustrates the meaning of income stability scores.\n\
+    [/kb=21]"
+  label: Income Stability Score
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 21
+- name: addincome
+  sql: addincome
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: addincomesrc
+  sql: addincomesrc
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: hshincome
+  sql: hshincome
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: emplstable
+  sql: emplstable
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: indrisklvl
+  sql: indrisklvl
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: occrisklvl
+  sql: occrisklvl
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: incsrcrisk
+  sql: incsrcrisk
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: georisk
+  sql: georisk
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: demrisk
+  sql: demrisk
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: edulevel
+  sql: edulevel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: debincratio
+  sql: debincratio
+  type: DOUBLE
+  primary_key: false
+  description: "Debt-to-Income Ratio (DTI). Stored directly in this column.\n\n[kb=0]\n\
+    DTI = \\frac{\\text{Total Monthly Debt Payments}}{\\text{Monthly Income}} = debincratio\
+    \ \u2014 Calculates the proportion of a customer's monthly income that goes toward\
+    \ debt payments.\n[/kb=0]"
+  label: Debt-to-Income Ratio (DTI)
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 0
+- name: debincratio_band
+  sql: CASE WHEN debincratio < 0.36 THEN 'Excellent' WHEN debincratio < 0.43 THEN
+    'Good' WHEN debincratio < 0.50 THEN 'Concerning' ELSE 'Risky' END
+  type: TEXT
+  primary_key: false
+  description: "DTI interpretation band derived from debincratio.\n\n[kb=22]\nDebt-to-Income\
+    \ ratio (debincratio) ranges from 0-1 (or above). Below 0.36 is typically considered\
+    \ excellent, 0.36-0.43 is good, 0.43-0.50 is concerning, and above 0.50 is risky\
+    \ for new credit approval. \u2014 Illustrates what different debt-to-income ratios\
+    \ mean for lending decisions.\n[/kb=22]"
+  label: Debt-to-Income Ratio Interpretation
+  hidden: false
+  meta:
+    kb_id: 22
+measures: []
+aggregations: []
+joins:
+- target_model: core_record
+  join_pairs:
+  - - emplcoreref
+    - coreregistry
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,332 @@
+version: 6
+name: stars
+sql_table: stars
+query_variables: {}
+data_source: planets_data
+columns:
+- name: stellarref
+  sql: stellarref
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: hostplname
+  sql: hostplname
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: stellardist
+  sql: stellardist
+  type: INT
+  primary_key: false
+  description: "Distance to host star in parsecs (KB #40). Range ~3.21 to 8500 pc.\n\
+    \n[kb=40]\nMeasured in parsecs (pc), where 1 parsec equals about 3.26 light-years.\
+    \ Values range from nearby stars like Proxima Centauri (~1.3 pc) to stars thousands\
+    \ of parsecs away. \u2014 Illustrates the value for the distance to a star system.\n\
+    [/kb=40]"
+  label: Stellar Distance Value
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 40
+- name: compcount
+  sql: compcount
+  type: INT
+  primary_key: false
+  description: Number of confirmed planetary companions for this host star (range
+    1..7).
+  hidden: false
+  format:
+    type: integer
+  meta: {}
+- name: coordsys
+  sql: coordsys
+  type: TEXT
+  primary_key: false
+  description: JSONB with RA_Text/RA_Decimal (right ascension) and Dec_Text/Dec_Decimal
+    (declination).
+  hidden: false
+  meta: {}
+- name: stellarprops
+  sql: stellarprops
+  type: TEXT
+  primary_key: false
+  description: JSONB grouping photometry (Opt_Mag, Mag_Blend, Photo_Band) and physical
+    properties (Temp_Value, Temp_Blend, Mass_Value, Mass_Blend, Radius_Value, Rad_Blend)
+    for the host star. The kb_id annotations live on the helper columns that extract
+    specific sub-fields (opt_mag/stellar_temp/stellar_mass/stellar_radius for KB 41-44;
+    mag_blend/temp_blend/mass_blend/rad_blend for KB 38).
+  hidden: false
+  meta: {}
+- name: ra_decimal
+  sql: CAST(json_extract(coordsys, '$.RA_Decimal') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Right Ascension in decimal degrees (0..360), extracted from coordsys
+    JSON.
+  hidden: false
+- name: dec_decimal
+  sql: CAST(json_extract(coordsys, '$.Dec_Decimal') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Declination in decimal degrees (-90..+90), extracted from coordsys
+    JSON.
+  hidden: false
+- name: ra_text
+  sql: json_extract(coordsys, '$.RA_Text')
+  type: TEXT
+  primary_key: false
+  description: Right Ascension in sexagesimal format (e.g. '12h20m43.03s').
+  hidden: false
+- name: dec_text
+  sql: json_extract(coordsys, '$.Dec_Text')
+  type: TEXT
+  primary_key: false
+  description: Declination in sexagesimal format (e.g. '+17d47m34.3s').
+  hidden: false
+- name: stellar_mass
+  sql: CAST(json_extract(stellarprops, '$.physical.Mass_Value') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Stellar mass in solar masses (KB #43). Extracted from stellarprops\
+    \ JSON.\n\n[kb=43]\nMeasured in solar masses ($M_{\\odot}$), where 1 is the mass\
+    \ of our Sun. Most known host stars range from low-mass red dwarfs (~0.1 $M_{\\\
+    odot}$) to stars several times more massive than the Sun. \u2014 Illustrates the\
+    \ value for a star's mass.\n[/kb=43]"
+  label: Stellar Mass Value
+  hidden: false
+  meta:
+    kb_id: 43
+- name: stellar_radius
+  sql: CAST(json_extract(stellarprops, '$.physical.Radius_Value') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Stellar radius in solar radii (KB #44). Extracted from stellarprops\
+    \ JSON.\n\n[kb=44]\nMeasured in solar radii ($R_{\\odot}$), where 1 is the radius\
+    \ of our Sun. Values range from small neutron stars to giant stars like Betelgeuse,\
+    \ which would extend beyond the orbit of Mars if in our solar system. \u2014 Illustrates\
+    \ the value for a star's radius.\n[/kb=44]"
+  label: Stellar Radius Value
+  hidden: false
+  meta:
+    kb_id: 44
+- name: stellar_temp
+  sql: CAST(json_extract(stellarprops, '$.physical.Temp_Value') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Effective stellar temperature in Kelvin (KB #42). Extracted from stellarprops\
+    \ JSON.\n\n[kb=42]\nMeasured in Kelvin (K). Cool red dwarfs can be around 3,000\
+    \ K, a Sun-like star is about 5,800 K, and very hot blue stars can exceed 30,000\
+    \ K. \u2014 Illustrates the value for a star's effective surface temperature.\n\
+    [/kb=42]"
+  label: Stellar Temperature Value
+  hidden: false
+  meta:
+    kb_id: 42
+- name: opt_mag
+  sql: CAST(json_extract(stellarprops, '$.photometry.Opt_Mag') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Apparent optical magnitude (KB #41). Smaller is brighter. Extracted\
+    \ from stellarprops JSON.\n\n[kb=41]\nThis is a logarithmic scale where smaller\
+    \ numbers are brighter. A magnitude of 1.0 is 100 times brighter than a magnitude\
+    \ of 6.0. The brightest stars have negative magnitudes (e.g., Sirius is -1.46).\
+    \ \u2014 Illustrates the value for a star's brightness as seen from Earth.\n[/kb=41]"
+  label: Apparent Magnitude Value
+  hidden: false
+  meta:
+    kb_id: 41
+- name: mag_blend
+  sql: CAST(json_extract(stellarprops, '$.photometry.Mag_Blend') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Blended Measurement quality flag for optical magnitude (KB #38): 1\
+    \ = blended (light from stellar companions affects accuracy), 0 = clean. Extracted\
+    \ from stellarprops JSON.\n\n[kb=38]\nA quality flag indicating that a measurement's\
+    \ value is affected by light from stellar companions, potentially reducing its\
+    \ accuracy. \u2014 Indicates a parameter measurement (like brightness or temperature)\
+    \ is potentially contaminated by the light of nearby, unresolved stars.\n[/kb=38]"
+  label: Blended Measurement
+  hidden: false
+  meta:
+    kb_id: 38
+- name: temp_blend
+  sql: CAST(json_extract(stellarprops, '$.physical.Temp_Blend') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Blended Measurement quality flag for effective temperature (KB #38):\
+    \ 1 = blended, 0 = clean. Extracted from stellarprops JSON.\n\n[kb=38]\nA quality\
+    \ flag indicating that a measurement's value is affected by light from stellar\
+    \ companions, potentially reducing its accuracy. \u2014 Indicates a parameter\
+    \ measurement (like brightness or temperature) is potentially contaminated by\
+    \ the light of nearby, unresolved stars.\n[/kb=38]"
+  label: Blended Measurement
+  hidden: false
+  meta:
+    kb_id: 38
+- name: mass_blend
+  sql: CAST(json_extract(stellarprops, '$.physical.Mass_Blend') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Blended Measurement quality flag for stellar mass (KB #38): 1 = blended,\
+    \ 0 = clean. Extracted from stellarprops JSON.\n\n[kb=38]\nA quality flag indicating\
+    \ that a measurement's value is affected by light from stellar companions, potentially\
+    \ reducing its accuracy. \u2014 Indicates a parameter measurement (like brightness\
+    \ or temperature) is potentially contaminated by the light of nearby, unresolved\
+    \ stars.\n[/kb=38]"
+  label: Blended Measurement
+  hidden: false
+  meta:
+    kb_id: 38
+- name: rad_blend
+  sql: CAST(json_extract(stellarprops, '$.physical.Rad_Blend') AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Blended Measurement quality flag for stellar radius (KB #38): 1 =\
+    \ blended, 0 = clean. Extracted from stellarprops JSON.\n\n[kb=38]\nA quality\
+    \ flag indicating that a measurement's value is affected by light from stellar\
+    \ companions, potentially reducing its accuracy. \u2014 Indicates a parameter\
+    \ measurement (like brightness or temperature) is potentially contaminated by\
+    \ the light of nearby, unresolved stars.\n[/kb=38]"
+  label: Blended Measurement
+  hidden: false
+  meta:
+    kb_id: 38
+- name: photo_band
+  sql: json_extract(stellarprops, '$.photometry.Photo_Band')
+  type: TEXT
+  primary_key: false
+  description: Photometric band used for magnitude measurement (e.g. 'V (Johnson)',
+    'Kepler-band').
+  hidden: false
+- name: distance_lightyears
+  sql: stellardist * 3.26156
+  type: DOUBLE
+  primary_key: false
+  description: "Distance to the star in light-years (KB #0): D_ly = D_pc x 3.26156.\n\
+    \n[kb=0]\nGiven the distance in parsecs ($D_{pc}$), the distance in light-years\
+    \ ($D_{ly}$) is calculated as: $D_{ly} = D_{pc} \\times 3.26156$ \u2014 Converts\
+    \ the distance of a celestial object from parsecs to light-years.\n[/kb=0]"
+  label: Distance in Light-Years
+  hidden: false
+  meta:
+    kb_id: 0
+- name: stellar_luminosity
+  sql: pow(CAST(json_extract(stellarprops, '$.physical.Radius_Value') AS REAL), 2)
+    * pow(CAST(json_extract(stellarprops, '$.physical.Temp_Value') AS REAL) / 5778.0,
+    4)
+  type: DOUBLE
+  primary_key: false
+  description: "Stellar luminosity in solar units (KB #3) via Stefan-Boltzmann: L\
+    \ = (R/Rsun)^2 * (T/Tsun)^4 with Tsun=5778 K.\n\n[kb=3]\nLuminosity ($L_{\\star}$)\
+    \ relative to the Sun is estimated using the Stefan-Boltzmann law: $L_{\\star}\
+    \ = \\left( \\frac{R_{\\star}}{R_{\\odot}} \\right)^2 \\left( \\frac{T_{\\star}}{T_{\\\
+    odot}} \\right)^4$, where $R_{\\star}$ is the star's radius, $T_{\\star}$ is its\
+    \ effective temperature, and $T_{\\odot}$ is the Sun's effective temperature (~5778\
+    \ K). \u2014 Calculates a star's luminosity relative to the Sun using its temperature\
+    \ and radius.\n[/kb=3]"
+  label: Stellar Luminosity
+  hidden: false
+  meta:
+    kb_id: 3
+- name: hz_inner_boundary
+  sql: sqrt((pow(CAST(json_extract(stellarprops, '$.physical.Radius_Value') AS REAL),
+    2) * pow(CAST(json_extract(stellarprops, '$.physical.Temp_Value') AS REAL) / 5778.0,
+    4)) / 1.1)
+  type: DOUBLE
+  primary_key: false
+  description: "Habitable Zone inner boundary in AU (KB #6): r_i = sqrt(L_star / 1.1).\n\
+    \n[kb=6]\nThe inner boundary of the habitable zone ($r_i$) in AU is estimated\
+    \ based on the star's luminosity ($L_{\\star}$): $r_i \\approx \\sqrt{L_{\\star}\
+    \ / 1.1}$. This relies on the Stellar Luminosity. \u2014 Calculates the inner\
+    \ edge of a star's habitable zone, where a planet would be too hot for liquid\
+    \ water.\n[/kb=6]"
+  label: Habitable Zone Inner Boundary
+  hidden: false
+  meta:
+    kb_id: 6
+- name: hz_outer_boundary
+  sql: sqrt((pow(CAST(json_extract(stellarprops, '$.physical.Radius_Value') AS REAL),
+    2) * pow(CAST(json_extract(stellarprops, '$.physical.Temp_Value') AS REAL) / 5778.0,
+    4)) / 0.53)
+  type: DOUBLE
+  primary_key: false
+  description: "Habitable Zone outer boundary in AU (KB #7): r_o = sqrt(L_star / 0.53).\n\
+    \n[kb=7]\nThe outer boundary of the habitable zone ($r_o$) in AU is estimated\
+    \ based on the star's luminosity ($L_{\\star}$): $r_o \\approx \\sqrt{L_{\\star}\
+    \ / 0.53}$. This relies on the Stellar Luminosity. \u2014 Calculates the outer\
+    \ edge of a star's habitable zone, where a planet would be too cold for liquid\
+    \ water.\n[/kb=7]"
+  label: Habitable Zone Outer Boundary
+  hidden: false
+  meta:
+    kb_id: 7
+- name: stellar_density
+  sql: CAST(json_extract(stellarprops, '$.physical.Mass_Value') AS REAL) / ((4.0/3.0)
+    * 3.141592653589793 * pow(CAST(json_extract(stellarprops, '$.physical.Radius_Value')
+    AS REAL), 3))
+  type: DOUBLE
+  primary_key: false
+  description: "Average stellar density (KB #12) in solar units: rho = M / (4/3 *\
+    \ pi * R^3).\n\n[kb=12]\nThe average density of a star ($\\rho_{\\star}$) is its\
+    \ mass divided by its volume: $\\rho_{\\star} = \\frac{M_{\\star}}{\\frac{4}{3}\\\
+    pi R_{\\star}^3}$, where $M_{\\star}$ and $R_{\\star}$ are the star's mass and\
+    \ radius. \u2014 Calculates the average density of a star.\n[/kb=12]"
+  label: Stellar Density
+  hidden: false
+  meta:
+    kb_id: 12
+- name: gravitational_parameter
+  sql: 6.6743e-11 * CAST(json_extract(stellarprops, '$.physical.Mass_Value') AS REAL)
+    * 1.989e30
+  type: DOUBLE
+  primary_key: false
+  description: "Standard gravitational parameter mu = G * M_star (KB #19). G = 6.6743e-11\
+    \ N m^2/kg^2; M_star converted from solar masses to kg (1 M_sun = 1.989e30 kg).\
+    \ Units: m^3/s^2.\n\n[kb=19]\nThe standard gravitational parameter is $\\mu =\
+    \ G M_{\\star}$, where G is the gravitational constant and $M_{\\star}$ is the\
+    \ mass of the star. \u2014 Calculates the standard gravitational parameter for\
+    \ a star, a constant used in orbital mechanics.\n[/kb=19]"
+  label: "Gravitational Parameter (\u03BC)"
+  hidden: false
+  meta:
+    kb_id: 19
+- name: is_multi_planetary
+  sql: compcount > 1
+  type: BOOLEAN
+  primary_key: false
+  description: "Multi-planetary System (KB #28): the star hosts more than one confirmed\
+    \ planet.\n\n[kb=28]\nAny star system with a total number of confirmed planetary\
+    \ companions greater than 1. \u2014 A star that hosts more than one confirmed\
+    \ planet.\n[/kb=28]"
+  label: Multi-planetary System
+  hidden: false
+  meta:
+    kb_id: 28
+- name: hr_diagram_position
+  sql: '''('' || CAST(json_extract(stellarprops, ''$.physical.Temp_Value'') AS REAL)
+    || '', '' || (pow(CAST(json_extract(stellarprops, ''$.physical.Radius_Value'')
+    AS REAL), 2) * pow(CAST(json_extract(stellarprops, ''$.physical.Temp_Value'')
+    AS REAL) / 5778.0, 4)) || '')'''
+  type: TEXT
+  primary_key: false
+  description: "Hertzsprung-Russell diagram coordinate (KB #13): (T_star, L_star).\
+    \ Pair encoded as '(T, L)' string for grouping.\n\n[kb=13]\nThe position is a\
+    \ coordinate pair ($T_{\\star}$, $L_{\\star}$) where $T_{\\star}$ is the star's\
+    \ effective temperature and $L_{\\star}$ is its calculated Stellar Luminosity.\
+    \ \u2014 Determines a star's position on the HR diagram based on its temperature\
+    \ and luminosity.\n[/kb=13]"
+  label: Hertzsprung-Russell (HR) Diagram Position
+  hidden: false
+  meta:
+    kb_id: 13
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: Host stars (one row per star). hostplname is the star system name. coordsys/stellarprops
+  are JSONB blobs holding RA/Dec coordinates and stellar physical properties (temperature,
+  mass, radius, photometry).
+hidden: false

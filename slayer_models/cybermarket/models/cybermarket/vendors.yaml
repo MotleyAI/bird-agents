@@ -1,0 +1,234 @@
+version: 6
+name: vendors
+sql_table: vendors
+query_variables: {}
+data_source: cybermarket
+columns:
+- name: vendregistry
+  sql: vendregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: vendspan
+  sql: vendspan
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: vendrate
+  sql: vendrate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: vendtxcount
+  sql: vendtxcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: vendsucccount
+  sql: vendsucccount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: venddisputecount
+  sql: venddisputecount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: vendplacecount
+  sql: vendplacecount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: vendpaymethods
+  sql: vendpaymethods
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: vendchecklvl
+  sql: vendchecklvl
+  type: TEXT
+  primary_key: false
+  description: "Vendor verification tier: 'Basic' = minimal (email + captcha) with\
+    \ limited platform history; 'Advanced' = additional ID consistency checks + longer\
+    \ positive history; 'Premium' = highest tier, verifiable identity elements + extended\
+    \ positive transaction record with minimal disputes.\n\n[kb=7]\n'Basic' vendors\
+    \ have completed minimal verification steps, typically only email and captcha\
+    \ verification with limited platform history; 'Advanced' vendors have undergone\
+    \ additional verification including identification consistency checks and longer\
+    \ positive platform history; 'Premium' vendors represent the highest verification\
+    \ tier, having submitted verifiable identity elements and maintained extended\
+    \ positive transaction records with minimal disputes. \u2014 Illustrates the vendor\
+    \ verification system and trustworthiness indicators\n[/kb=7]"
+  label: cybermarket|vendors|vendchecklvl
+  hidden: false
+  meta:
+    kb_id: 7
+- name: vendlastmoment
+  sql: vendlastmoment
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: mktref
+  sql: mktref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vti
+  sql: (vendsucccount * 1.0 / NULLIF(vendtxcount, 0)) * 100 - (venddisputecount *
+    1.0 / NULLIF(vendtxcount, 0)) * 50 + (vendrate * 5)
+  type: DOUBLE
+  primary_key: false
+  description: "Vendor Trust Index (VTI): (vendsucccount/vendtxcount)*100 - (venddisputecount/vendtxcount)*50\
+    \ + 5*vendrate. Higher = more trustworthy vendor.\n\n[kb=11]\nVTI = \\frac{vendsucccount}{vendtxcount}\
+    \ \\times 100 - \\frac{venddisputecount}{vendtxcount} \\times 50 + (vendrate \\\
+    times 5), \\text{where higher scores indicate more trustworthy vendors.} \u2014\
+    \ Measures vendor reliability based on transaction history\n[/kb=11]"
+  label: Vendor Trust Index (VTI)
+  hidden: false
+  meta:
+    kb_id: 11
+- name: vendchecklvl_numeric
+  sql: CASE vendchecklvl WHEN 'Basic' THEN 1 WHEN 'Advanced' THEN 2 WHEN 'Premium'
+    THEN 3 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric mapping of vendchecklvl: Basic=1, Advanced=2, Premium=3, else=0\
+    \ (used by VRS).\n\n[kb=7]\n'Basic' vendors have completed minimal verification\
+    \ steps, typically only email and captcha verification with limited platform history;\
+    \ 'Advanced' vendors have undergone additional verification including identification\
+    \ consistency checks and longer positive platform history; 'Premium' vendors represent\
+    \ the highest verification tier, having submitted verifiable identity elements\
+    \ and maintained extended positive transaction records with minimal disputes.\
+    \ \u2014 Illustrates the vendor verification system and trustworthiness indicators\n\
+    [/kb=7]"
+  label: cybermarket|vendors|vendchecklvl
+  hidden: false
+  meta:
+    kb_id: 7
+- name: vrs
+  sql: (vendrate * 10) + (vendsucccount * 1.0 / NULLIF(vendtxcount, 0)) * 50 + (CASE
+    vendchecklvl WHEN 'Basic' THEN 1 WHEN 'Advanced' THEN 2 WHEN 'Premium' THEN 3
+    ELSE 0 END) * 15 - (venddisputecount * 1.0 / NULLIF(vendtxcount, 0)) * 100
+  type: DOUBLE
+  primary_key: false
+  description: "Vendor Relationship Strength (VRS): 10*vendrate + (vendsucccount/vendtxcount)*50\
+    \ + 15*vendchecklvl_numeric - (venddisputecount/vendtxcount)*100. Higher = stronger\
+    \ vendor-customer relationships.\n\n[kb=37]\nVRS = (vendrate \\times 10) + \\\
+    frac{vendsucccount}{vendtxcount} \\times 50 + (vendchecklvl_numeric \\times 15)\
+    \ - \\frac{venddisputecount}{vendtxcount} \\times 100, \\text{where vendchecklvl_numeric\
+    \ maps Basic=1, Advanced=2, Premium=3, else=0 according to the vendor verification\
+    \ system, and higher scores represent stronger vendor-customer relationships.}\
+    \ \u2014 Measures the strength of relationships between a vendor and their customers\n\
+    [/kb=37]"
+  label: Vendor Relationship Strength (VRS)
+  hidden: false
+  meta:
+    kb_id: 37
+- name: is_trusted_vendor
+  sql: ((vendsucccount * 1.0 / NULLIF(vendtxcount, 0)) * 100 - (venddisputecount *
+    1.0 / NULLIF(vendtxcount, 0)) * 50 + (vendrate * 5)) > 80 AND vendchecklvl IN
+    ('Advanced', 'Premium') AND (venddisputecount * 1.0 / NULLIF(vendtxcount, 0))
+    < 0.05 AND vendspan > 90
+  type: BOOLEAN
+  primary_key: false
+  description: "Trusted Vendor (KB #21): VTI > 80, vendchecklvl Advanced/Premium,\
+    \ dispute rate < 5%, vendspan > 90 days.\n\n[kb=21]\nA vendor with VTI > 80, vendchecklvl\
+    \ of 'Advanced' or 'Premium', a dispute rate below 5% of total transactions, and\
+    \ an active history exceeding 90 days. These vendors represent stabilizing forces\
+    \ within markets and typically pose lower immediate enforcement priorities. \u2014\
+    \ Identifies vendors with established positive reputation\n[/kb=21]"
+  label: Trusted Vendor
+  hidden: false
+  meta:
+    kb_id: 21
+- name: vnc
+  sql: (1 * 5) + (vendtxcount * 1.0 / 50) + (((vendsucccount * 1.0 / NULLIF(vendtxcount,
+    0)) * 100 - (venddisputecount * 1.0 / NULLIF(vendtxcount, 0)) * 50 + (vendrate
+    * 5)) * 0.1) - (1 - (CASE markets.sizecluster WHEN 'Small' THEN 1 WHEN 'Medium'
+    THEN 2 WHEN 'Large' THEN 3 WHEN 'Mega' THEN 4 ELSE 0 END)) * 10
+  type: DOUBLE
+  primary_key: false
+  description: "Vendor Network Centrality (VNC, KB #31): COUNT(DISTINCT mktref) *\
+    \ 5 + vendtxcount/50 + VTI*0.1 - (1 - sizecluster_numeric)*10. Schema shortfall:\
+    \ vendregistry is unique per (vendor, market), so COUNT(DISTINCT mktref) per vendor\
+    \ row resolves to 1 (literal-fit per W4c hint). The intended cross-market vendor\
+    \ identity is not expressible against the current schema; this encoding uses the\
+    \ value 1 in place of that count.\n\n[kb=31]\nVNC = (COUNT(DISTINCT mktref) \\\
+    times 5) + \\frac{vendtxcount}{50} + (VTI \\times 0.1) - (1 - sizecluster_numeric)\
+    \ \\times 10, \\text{where sizecluster_numeric maps Small=1, Medium=2, Large=3,\
+    \ Mega=4 as described in the market size classification, and higher scores indicate\
+    \ more central market positioning.} \u2014 Measures a vendor's connectedness within\
+    \ the market ecosystem\n[/kb=31]"
+  label: Vendor Network Centrality (VNC)
+  hidden: false
+  meta:
+    kb_id: 31
+- name: sizecluster_numeric
+  sql: CASE markets.sizecluster WHEN 'Small' THEN 1 WHEN 'Medium' THEN 2 WHEN 'Large'
+    THEN 3 WHEN 'Mega' THEN 4 ELSE 0 END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric mapping of the linked market's sizecluster used by VNC: Small=1,\
+    \ Medium=2, Large=3, Mega=4.\n\n[kb=31]\nVNC = (COUNT(DISTINCT mktref) \\times\
+    \ 5) + \\frac{vendtxcount}{50} + (VTI \\times 0.1) - (1 - sizecluster_numeric)\
+    \ \\times 10, \\text{where sizecluster_numeric maps Small=1, Medium=2, Large=3,\
+    \ Mega=4 as described in the market size classification, and higher scores indicate\
+    \ more central market positioning.} \u2014 Measures a vendor's connectedness within\
+    \ the market ecosystem\n[/kb=31]"
+  label: Vendor Network Centrality (VNC)
+  hidden: false
+  meta:
+    kb_id: 31
+- name: is_market_kingpin
+  sql: ((1 * 5) + (vendtxcount * 1.0 / 50) + (((vendsucccount * 1.0 / NULLIF(vendtxcount,
+    0)) * 100 - (venddisputecount * 1.0 / NULLIF(vendtxcount, 0)) * 50 + (vendrate
+    * 5)) * 0.1) - (1 - (CASE markets.sizecluster WHEN 'Small' THEN 1 WHEN 'Medium'
+    THEN 2 WHEN 'Large' THEN 3 WHEN 'Mega' THEN 4 ELSE 0 END)) * 10) > 85 AND 1 >=
+    3 AND vendchecklvl = 'Premium' AND ((vendsucccount * 1.0 / NULLIF(vendtxcount,
+    0)) * 100 - (venddisputecount * 1.0 / NULLIF(vendtxcount, 0)) * 50 + (vendrate
+    * 5)) > 80 AND vendchecklvl IN ('Advanced', 'Premium') AND (venddisputecount *
+    1.0 / NULLIF(vendtxcount, 0)) < 0.05 AND vendspan > 90
+  type: BOOLEAN
+  primary_key: false
+  description: "Market Kingpin (KB #41): VNC > 85, COUNT(DISTINCT mktref) >= 3, vendchecklvl='Premium',\
+    \ plus Trusted Vendor characteristics (KB #21). Schema shortfall: COUNT(DISTINCT\
+    \ mktref) per vendor row literal-fits to 1, so `1 >= 3` is always false and this\
+    \ flag is identically 0 against the current schema \u2014 same identity-mapping\
+    \ issue as VNC (KB #31). Encoded for verifier coverage; produces no positives\
+    \ until cross-market vendor identity is added.\n\n[kb=41]\nA vendor with VNC >\
+    \ 85, operating on at least 3 different markets (COUNT(DISTINCT mktref) >= 3),\
+    \ with 'Premium' verification level (vendchecklvl = 'Premium'), and displaying\
+    \ the characteristics of a Trusted Vendor. These operators represent significant\
+    \ intelligence targets due to their wide-reaching influence. \u2014 Identifies\
+    \ vendors with exceptional influence and reach across multiple markets\n[/kb=41]"
+  label: Market Kingpin
+  hidden: false
+  meta:
+    kb_id: 41
+measures: []
+aggregations: []
+joins:
+- target_model: markets
+  join_pairs:
+  - - mktref
+    - mktregistry
+  join_type: left
+filters: []
+description: 'Cybermarket vendors. One row per vendor on a market (mktref FK). Activity
+  metrics: vendspan (days active), vendtxcount, vendsucccount, venddisputecount, vendplacecount
+  (listings), vendpaymethods. vendchecklvl is the verification tier.'
+hidden: false

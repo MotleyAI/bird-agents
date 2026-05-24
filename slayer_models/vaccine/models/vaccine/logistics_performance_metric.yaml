@@ -1,0 +1,114 @@
+version: 6
+name: logistics_performance_metric
+source_queries:
+- version: 3
+  name: trs_hqi_per_vehicle_lpm
+  source_model: sensordata
+  measures:
+  - formula: trs:avg
+    name: trs
+  - formula: hqi:avg
+    name: hqi
+  dimensions:
+  - name: vehsenseref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: transportinfo
+    joins:
+    - target_model: trs_hqi_per_vehicle_lpm
+      join_pairs:
+      - - vehiclereg
+        - vehsenseref
+    columns:
+    - name: lpm
+      type: DOUBLE
+      sql: (CAST(distdonekm AS REAL) / NULLIF(distdonekm + distleftkm, 0) * 100) *
+        trs_hqi_per_vehicle_lpm.hqi / NULLIF(sqrt(1 + trs_hqi_per_vehicle_lpm.trs),
+        0)
+  dimensions:
+  - name: vehiclereg
+  - name: rcp
+  - name: trs
+    model: trs_hqi_per_vehicle_lpm
+  - name: hqi
+    model: trs_hqi_per_vehicle_lpm
+  - name: lpm
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"transportinfo.vehiclereg\" AS vehiclereg, \"transportinfo.rcp\"\
+  \ AS rcp, \"transportinfo.trs_hqi_per_vehicle_lpm.trs\" AS trs_hqi_per_vehicle_lpm__trs,\
+  \ \"transportinfo.trs_hqi_per_vehicle_lpm.hqi\" AS trs_hqi_per_vehicle_lpm__hqi,\
+  \ \"transportinfo.lpm\" AS lpm FROM (SELECT\n  transportinfo.vehiclereg AS \"transportinfo.vehiclereg\"\
+  ,\n  CAST(transportinfo.distdonekm AS REAL) / NULLIF(transportinfo.distdonekm +\
+  \ transportinfo.distleftkm, 0) * 100 AS \"transportinfo.rcp\",\n  trs_hqi_per_vehicle_lpm.trs\
+  \ AS \"transportinfo.trs_hqi_per_vehicle_lpm.trs\",\n  trs_hqi_per_vehicle_lpm.hqi\
+  \ AS \"transportinfo.trs_hqi_per_vehicle_lpm.hqi\",\n  (\n    CAST(transportinfo.distdonekm\
+  \ AS REAL) / NULLIF(transportinfo.distdonekm + transportinfo.distleftkm, 0) * 100\n\
+  \  ) * trs_hqi_per_vehicle_lpm.hqi / NULLIF(SQRT(1 + trs_hqi_per_vehicle_lpm.trs),\
+  \ 0) AS \"transportinfo.lpm\"\nFROM transportinfo AS transportinfo\nLEFT JOIN (\n\
+  \  (\n    SELECT\n      \"sensordata.vehsenseref\" AS vehsenseref,\n      \"sensordata.trs\"\
+  \ AS trs,\n      \"sensordata.hqi\" AS hqi\n    FROM (\n      SELECT\n        sensordata.vehsenseref\
+  \ AS \"sensordata.vehsenseref\",\n        AVG(\n          (\n            (\n   \
+  \           1 - (\n                (\n                  1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n                ) * (\n                  1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n                ) * COALESCE(sensordata.tempstabidx, 1)\n \
+  \             )\n            ) * (\n              1 - COALESCE(container.coolremainpct,\
+  \ 0) / 100\n            )\n          ) * (\n            1 - (\n              (\n\
+  \                1 - COALESCE(CAST(sensordata.handleevents AS REAL) / 100, 0)\n\
+  \              ) * (\n                1 - COALESCE(CAST(sensordata.critevents AS\
+  \ REAL) / 10, 0)\n              )\n            )\n          ) * (\n            1\
+  \ + ABS(sensordata.tempnowc - sensordata.storetempc) / NULLIF(sensordata.temptolc,\
+  \ 0) * sensordata.tempdevcount\n          )\n        ) AS \"sensordata.trs\",\n\
+  \        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.handleevents\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          )\n        ) AS \"sensordata.hqi\"\n      FROM sensordata\
+  \ AS sensordata\n      LEFT JOIN container AS container\n        ON sensordata.containlink\
+  \ = container.containregistry\n      GROUP BY\n        sensordata.vehsenseref\n\
+  \    ) AS _inner\n  )\n) AS trs_hqi_per_vehicle_lpm\n  ON transportinfo.vehiclereg\
+  \ = trs_hqi_per_vehicle_lpm.vehsenseref) AS _inner"
+data_source: vaccine
+columns:
+- name: vehiclereg
+  sql: vehiclereg
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rcp
+  sql: rcp
+  type: DOUBLE
+  primary_key: false
+  description: 'Route Completion Percentage (RCP). Percentage of route completed:
+    DistDoneKm / (DistDoneKm + DistLeftKm) * 100 (KB #4).'
+  hidden: false
+- name: trs_hqi_per_vehicle_lpm__trs
+  sql: trs_hqi_per_vehicle_lpm__trs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: trs_hqi_per_vehicle_lpm__hqi
+  sql: trs_hqi_per_vehicle_lpm__hqi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: lpm
+  sql: lpm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Logistics Performance Metric (LPM, KB #54). One row per vehicle with\
+  \ LPM = RCP * HQI / sqrt(1 + TRS), where RCP (KB #4) is on transportinfo and HQI\
+  \ (KB #8) and TRS (KB #30) are averaged over sensordata rows for the vehicle.\n\n\
+  [kb=54]\nLPM = \\text{RCP} \\cdot \\frac{\\text{HQI}}{\\sqrt{1 + \\text{TRS}}} \u2014\
+  \ Evaluates overall logistics efficiency with temporal considerations.\n[/kb=54]"
+hidden: false
+meta:
+  kb_id: 54

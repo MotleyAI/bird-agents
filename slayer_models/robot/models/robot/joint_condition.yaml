@@ -1,0 +1,311 @@
+version: 6
+name: joint_condition
+sql_table: joint_condition
+query_variables: {}
+data_source: robot
+columns:
+- name: jcondoperref
+  sql: jcondoperref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: jcrecref
+  sql: jcrecref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: jcdetref
+  sql: jcdetref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: j1tempval
+  sql: j1tempval
+  type: DOUBLE
+  primary_key: false
+  description: "Joint 1 temperature (\xB0C). Typical operating range 20-60\xB0C; >60\xB0\
+    C indicates potential issues (KB #20).\n\n[kb=20]\nJoint temperatures are measured\
+    \ in degrees Celsius. Typical operating temperatures range from 20\xB0C to 60\xB0\
+    C. Temperatures above 60\xB0C may indicate potential issues. \u2014 Illustrates\
+    \ the temperature values of robot joints.\n[/kb=20]"
+  label: Joint Temperature
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 20
+- name: j2tempval
+  sql: j2tempval
+  type: INT
+  primary_key: false
+  description: "Joint 2 temperature (\xB0C). Typical operating range 20-60\xB0C; >60\xB0\
+    C indicates potential issues (KB #20).\n\n[kb=20]\nJoint temperatures are measured\
+    \ in degrees Celsius. Typical operating temperatures range from 20\xB0C to 60\xB0\
+    C. Temperatures above 60\xB0C may indicate potential issues. \u2014 Illustrates\
+    \ the temperature values of robot joints.\n[/kb=20]"
+  label: Joint Temperature
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 20
+- name: j3tempval
+  sql: j3tempval
+  type: DOUBLE
+  primary_key: false
+  description: "Joint 3 temperature (\xB0C). Typical operating range 20-60\xB0C; >60\xB0\
+    C indicates potential issues (KB #20).\n\n[kb=20]\nJoint temperatures are measured\
+    \ in degrees Celsius. Typical operating temperatures range from 20\xB0C to 60\xB0\
+    C. Temperatures above 60\xB0C may indicate potential issues. \u2014 Illustrates\
+    \ the temperature values of robot joints.\n[/kb=20]"
+  label: Joint Temperature
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 20
+- name: j4tempval
+  sql: j4tempval
+  type: INT
+  primary_key: false
+  description: "Joint 4 temperature (\xB0C). Typical operating range 20-60\xB0C; >60\xB0\
+    C indicates potential issues (KB #20).\n\n[kb=20]\nJoint temperatures are measured\
+    \ in degrees Celsius. Typical operating temperatures range from 20\xB0C to 60\xB0\
+    C. Temperatures above 60\xB0C may indicate potential issues. \u2014 Illustrates\
+    \ the temperature values of robot joints.\n[/kb=20]"
+  label: Joint Temperature
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 20
+- name: j5tempval
+  sql: j5tempval
+  type: DOUBLE
+  primary_key: false
+  description: "Joint 5 temperature (\xB0C). Typical operating range 20-60\xB0C; >60\xB0\
+    C indicates potential issues (KB #20).\n\n[kb=20]\nJoint temperatures are measured\
+    \ in degrees Celsius. Typical operating temperatures range from 20\xB0C to 60\xB0\
+    C. Temperatures above 60\xB0C may indicate potential issues. \u2014 Illustrates\
+    \ the temperature values of robot joints.\n[/kb=20]"
+  label: Joint Temperature
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 20
+- name: j6tempval
+  sql: j6tempval
+  type: INT
+  primary_key: false
+  description: "Joint 6 temperature (\xB0C). Typical operating range 20-60\xB0C; >60\xB0\
+    C indicates potential issues (KB #20).\n\n[kb=20]\nJoint temperatures are measured\
+    \ in degrees Celsius. Typical operating temperatures range from 20\xB0C to 60\xB0\
+    C. Temperatures above 60\xB0C may indicate potential issues. \u2014 Illustrates\
+    \ the temperature values of robot joints.\n[/kb=20]"
+  label: Joint Temperature
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 20
+- name: j1vibval
+  sql: j1vibval
+  type: DOUBLE
+  primary_key: false
+  description: "Joint 1 vibration amplitude (mm/s). Higher values may indicate wear\
+    \ or misalignment (KB #21).\n\n[kb=21]\nVibration levels are measured in units\
+    \ such as mm/s. Higher values may indicate wear or misalignment. \u2014 Illustrates\
+    \ the vibration levels of robot joints.\n[/kb=21]"
+  label: Vibration Level
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 21
+- name: j2vibval
+  sql: j2vibval
+  type: INT
+  primary_key: false
+  description: "Joint 2 vibration (mm/s). Higher values may indicate wear or misalignment\
+    \ (KB #21).\n\n[kb=21]\nVibration levels are measured in units such as mm/s. Higher\
+    \ values may indicate wear or misalignment. \u2014 Illustrates the vibration levels\
+    \ of robot joints.\n[/kb=21]"
+  label: Vibration Level
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 21
+- name: j3vibval
+  sql: j3vibval
+  type: INT
+  primary_key: false
+  description: "Joint 3 vibration (mm/s). Higher values may indicate wear or misalignment\
+    \ (KB #21).\n\n[kb=21]\nVibration levels are measured in units such as mm/s. Higher\
+    \ values may indicate wear or misalignment. \u2014 Illustrates the vibration levels\
+    \ of robot joints.\n[/kb=21]"
+  label: Vibration Level
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 21
+- name: j4vibval
+  sql: j4vibval
+  type: DOUBLE
+  primary_key: false
+  description: "Joint 4 vibration (mm/s). Higher values may indicate wear or misalignment\
+    \ (KB #21).\n\n[kb=21]\nVibration levels are measured in units such as mm/s. Higher\
+    \ values may indicate wear or misalignment. \u2014 Illustrates the vibration levels\
+    \ of robot joints.\n[/kb=21]"
+  label: Vibration Level
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 21
+- name: j5vibval
+  sql: j5vibval
+  type: INT
+  primary_key: false
+  description: "Joint 5 vibration (mm/s). Higher values may indicate wear or misalignment\
+    \ (KB #21).\n\n[kb=21]\nVibration levels are measured in units such as mm/s. Higher\
+    \ values may indicate wear or misalignment. \u2014 Illustrates the vibration levels\
+    \ of robot joints.\n[/kb=21]"
+  label: Vibration Level
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 21
+- name: j6vibval
+  sql: j6vibval
+  type: INT
+  primary_key: false
+  description: "Joint 6 vibration (mm/s). Higher values may indicate wear or misalignment\
+    \ (KB #21).\n\n[kb=21]\nVibration levels are measured in units such as mm/s. Higher\
+    \ values may indicate wear or misalignment. \u2014 Illustrates the vibration levels\
+    \ of robot joints.\n[/kb=21]"
+  label: Vibration Level
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 21
+- name: j1backval
+  sql: j1backval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: j2backval
+  sql: j2backval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: j3backval
+  sql: j3backval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: j4backval
+  sql: j4backval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: j5backval
+  sql: j5backval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: j6backval
+  sql: j6backval
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: row_max_joint_temp
+  sql: MAX(j1tempval, j2tempval, j3tempval, j4tempval, j5tempval, j6tempval)
+  type: DOUBLE
+  primary_key: false
+  description: "Row-level max across the 6 joint temperatures \u2014 helper for MJT\
+    \ (KB #2).\n\n[kb=2]\nFor a given robot R, MJT = \\max_{jc \\in \\text{joint_condition}\
+    \ \\mid \\text{jcdetref = R}} \\max(jc.j1tempval, jc.j2tempval, jc.j3tempval,\
+    \ jc.j4tempval, jc.j5tempval, jc.j6tempval) \u2014 Finds the maximum temperature\
+    \ recorded for any joint across all operations for a specific robot.\n[/kb=2]"
+  label: Maximum Joint Temperature (MJT)
+  hidden: false
+  meta:
+    kb_id: 2
+measures:
+- formula: j1tempval:avg
+  name: aj1t
+  label: Average Joint 1 Temperature (AJ1T)
+  description: "Average Joint 1 Temperature (AJ1T) (KB #1) \u2014 mean j1tempval across\
+    \ all joint_condition rows. Group by jcdetref to get per-robot value.\n\n[kb=1]\n\
+    For a given robot R, AJ1T = \\frac{\\sum_{jc \\in \\text{joint_condition} \\mid\
+    \ \\text{jcdetref = R}} j1tempval}{|\\{jc \\in \\text{joint_condition} \\mid \\\
+    text{jcdetref = R}\\}|} \u2014 Calculates the average temperature of Joint 1 across\
+    \ all operations for a specific robot.\n[/kb=1]"
+  meta:
+    kb_id: 1
+- formula: row_max_joint_temp:max
+  name: mjt
+  label: Maximum Joint Temperature (MJT)
+  description: "Maximum Joint Temperature (MJT) (KB #2) \u2014 max across all joints\
+    \ across all rows. Group by jcdetref for per-robot.\n\n[kb=2]\nFor a given robot\
+    \ R, MJT = \\max_{jc \\in \\text{joint_condition} \\mid \\text{jcdetref = R}}\
+    \ \\max(jc.j1tempval, jc.j2tempval, jc.j3tempval, jc.j4tempval, jc.j5tempval,\
+    \ jc.j6tempval) \u2014 Finds the maximum temperature recorded for any joint across\
+    \ all operations for a specific robot.\n[/kb=2]"
+  meta:
+    kb_id: 2
+- formula: j1tempval:avg > 50
+  name: is_high_temp_j1
+  label: High Temperature Joint 1
+  description: "High Temperature Joint 1 (KB #11) \u2014 true if AJ1T > 50. Group\
+    \ by jcdetref for per-robot.\n\n[kb=11]\nJoint 1 has high temperature if AJ1T\
+    \ > 50. \u2014 Indicates if Joint 1 has a high average temperature.\n[/kb=11]"
+  meta:
+    kb_id: 11
+- formula: row_max_joint_temp:max > 70
+  name: is_overheating_risk
+  label: Overheating Risk
+  description: "Overheating Risk (KB #12) \u2014 true if MJT > 70. Group by jcdetref\
+    \ for per-robot.\n\n[kb=12]\nThere is an overheating risk if MJT > 70. \u2014\
+    \ Indicates if there is a risk of overheating based on maximum joint temperature.\n\
+    [/kb=12]"
+  meta:
+    kb_id: 12
+aggregations: []
+joins:
+- target_model: robot_details
+  join_pairs:
+  - - jcdetref
+    - botdetreg
+  join_type: left
+- target_model: operation
+  join_pairs:
+  - - jcondoperref
+    - operreg
+  join_type: left
+- target_model: robot_record
+  join_pairs:
+  - - jcrecref
+    - recreg
+  join_type: left
+filters: []
+description: Per-operation snapshot of each robot joint's mechanical condition (temperature,
+  vibration, backlash). Multiple rows per robot, joined to robot_details via jcdetref.
+hidden: false

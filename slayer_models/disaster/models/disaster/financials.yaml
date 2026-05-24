@@ -1,0 +1,171 @@
+version: 6
+name: financials
+sql_table: financials
+query_variables: {}
+data_source: disaster
+columns:
+- name: financeregistry
+  sql: financeregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: findistref
+  sql: findistref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: finopsref
+  sql: finopsref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: budgetallotusd
+  sql: budgetallotusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: fundsutilpct
+  sql: fundsutilpct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: costbeneusd
+  sql: costbeneusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: opscostsusd
+  sql: opscostsusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: transportcostsusd
+  sql: transportcostsusd
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: storagecostsusd
+  sql: storagecostsusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: personnelcostsusd
+  sql: personnelcostsusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: fundingstate
+  sql: fundingstate
+  type: TEXT
+  primary_key: false
+  description: "Financial-resource condition for operations (KB #4). Adequate = sufficient\
+    \ funds; Limited = funding constraints affecting some activities; Critical = severe\
+    \ shortages threatening essential operations.\n\n[kb=4]\nAdequate means sufficient\
+    \ funds available for current operations, Limited indicates funding constraints\
+    \ affecting some activities, and Critical represents severe funding shortages\
+    \ threatening essential operations \u2014 Illustrates the financial resource condition\
+    \ for operations\n[/kb=4]"
+  label: fundingstate
+  hidden: false
+  meta:
+    kb_id: 4
+- name: donorcommitmentsusd
+  sql: donorcommitmentsusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: resourcegapsusd
+  sql: resourcegapsusd
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: fsr
+  sql: (donorcommitmentsusd * 1.0 / NULLIF(budgetallotusd, 0)) * (1 - fundsutilpct
+    / 100.0) - (resourcegapsusd * 1.0 / NULLIF(budgetallotusd, 0))
+  type: DOUBLE
+  primary_key: false
+  description: "Financial Sustainability Ratio (FSR, KB #18): (donorcommitmentsusd/budgetallotusd)\
+    \ * (1 - fundsutilpct/100) - resourcegapsusd/budgetallotusd.\n\n[kb=18]\nFSR =\
+    \ \\frac{donorcommitmentsusd}{budgetallotusd} \\times \\left(1 - \\frac{fundsutilpct}{100}\\\
+    right) - \\frac{resourcegapsusd}{budgetallotusd} \u2014 Assesses the financial\
+    \ sustainability of disaster response operations\n[/kb=18]"
+  label: Financial Sustainability Ratio (FSR)
+  hidden: false
+  meta:
+    kb_id: 18
+- name: is_financial_crisis_risk
+  sql: fundsutilpct > 80 AND fundingstate = 'Critical' AND ((donorcommitmentsusd *
+    1.0 / NULLIF(budgetallotusd, 0)) * (1 - fundsutilpct / 100.0) - (resourcegapsusd
+    * 1.0 / NULLIF(budgetallotusd, 0))) < 0.2
+  type: BOOLEAN
+  primary_key: false
+  description: "Financial Crisis Risk (KB #27): fundsutilpct>80 AND fundingstate='Critical'\
+    \ AND FSR<0.2.\n\n[kb=27]\nOperations where fundsutilpct > 80 AND fundingstate\
+    \ is 'Critical' AND FSR < 0.2, indicating severe financial strain that threatens\
+    \ operational continuity \u2014 Identifies operations at risk of financial collapse\n\
+    [/kb=27]"
+  label: Financial Crisis Risk
+  hidden: false
+  meta:
+    kb_id: 27
+- name: fem
+  sql: (beneficiariesandassessments.benefeedbackscore * 1.0 / NULLIF(costbeneusd,
+    0)) * ((donorcommitmentsusd * 1.0 / NULLIF(budgetallotusd, 0)) * (1 - fundsutilpct
+    / 100.0) - (resourcegapsusd * 1.0 / NULLIF(budgetallotusd, 0))) * (1 + (transportation.deliverysuccessrate
+    / 100.0 * (1 - transportation.avgdeliveryhours / 24.0) * (1 + transportation.distributionpoints
+    / 10.0)) / 10.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Financial Efficiency Metric (FEM, KB #35): (benefeedbackscore/costbeneusd)\
+    \ * FSR * (1 + OEI/10).\n\n[kb=35]\nFEM = \\frac{benefeedbackscore}{costbeneusd}\
+    \ \\times FSR \\times \\left(1 + \\frac{OEI}{10}\\right), \\text{ where higher\
+    \ scores represent more efficient use of financial resources} \u2014 Measures\
+    \ the cost-effectiveness of disaster operations\n[/kb=35]"
+  label: Financial Efficiency Metric (FEM)
+  hidden: false
+  meta:
+    kb_id: 35
+measures: []
+aggregations: []
+joins:
+- target_model: disasterevents
+  join_pairs:
+  - - findistref
+    - distregistry
+  join_type: left
+- target_model: operations
+  join_pairs:
+  - - finopsref
+    - opsregistry
+  join_type: left
+- target_model: transportation
+  join_pairs:
+  - - findistref
+    - transportdistref
+  join_type: left
+- target_model: beneficiariesandassessments
+  join_pairs:
+  - - finopsref
+    - beneopsref
+  join_type: left
+filters: []
+description: Financial profile per (disaster, operation); 1:1 with operations.
+hidden: false

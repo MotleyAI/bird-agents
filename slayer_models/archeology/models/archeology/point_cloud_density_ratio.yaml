@@ -1,0 +1,113 @@
+version: 6
+name: point_cloud_density_ratio
+source_queries:
+- version: 3
+  name: pc_per_arcref
+  source_model: scanpointcloud
+  measures:
+  - formula: totalpts:avg
+    name: totalpts
+  - formula: clouddense:avg
+    name: clouddense
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  name: sp_per_arcref
+  source_model: scanspatial
+  measures:
+  - formula: aream2:avg
+    name: aream2
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: pc_per_arcref
+    joins:
+    - target_model: sp_per_arcref
+      join_pairs:
+      - - arcref
+        - arcref
+  measures:
+  - formula: totalpts:avg / (clouddense:avg * sp_per_arcref.aream2:avg)
+    name: pcdr
+  dimensions:
+  - name: arcref
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"pc_per_arcref.arcref\" AS arcref, \"pc_per_arcref.totalpts_avg\"\
+  \ AS totalpts_avg, \"pc_per_arcref.clouddense_avg\" AS clouddense_avg, \"pc_per_arcref.pcdr\"\
+  \ AS pcdr, \"pc_per_arcref.sp_per_arcref.aream2_avg\" AS sp_per_arcref__aream2_avg\
+  \ FROM (WITH _base AS (\nSELECT\n  pc_per_arcref.arcref AS \"pc_per_arcref.arcref\"\
+  ,\n  AVG(pc_per_arcref.totalpts) AS \"pc_per_arcref.totalpts_avg\",\n  AVG(pc_per_arcref.clouddense)\
+  \ AS \"pc_per_arcref.clouddense_avg\"\nFROM (\n  SELECT\n    \"scanpointcloud.arcref\"\
+  \ AS arcref,\n    \"scanpointcloud.totalpts\" AS totalpts,\n    \"scanpointcloud.clouddense\"\
+  \ AS clouddense\n  FROM (\n    SELECT\n      scanpointcloud.arcref AS \"scanpointcloud.arcref\"\
+  ,\n      AVG(scanpointcloud.totalpts) AS \"scanpointcloud.totalpts\",\n      AVG(scanpointcloud.clouddense)\
+  \ AS \"scanpointcloud.clouddense\"\n    FROM scanpointcloud AS scanpointcloud\n\
+  \    GROUP BY\n      scanpointcloud.arcref\n  ) AS _inner\n) AS pc_per_arcref\n\
+  GROUP BY\n  pc_per_arcref.arcref\n),\n_cm_pc_per_arcref__sp_per_arcref__aream2_avg\
+  \ AS (\nSELECT\n  AVG(sp_per_arcref.aream2) AS \"pc_per_arcref.sp_per_arcref.aream2_avg\"\
+  \nFROM (\n  SELECT\n    \"scanspatial.arcref\" AS arcref,\n    \"scanspatial.aream2\"\
+  \ AS aream2\n  FROM (\n    SELECT\n      scanspatial.arcref AS \"scanspatial.arcref\"\
+  ,\n      AVG(scanspatial.aream2) AS \"scanspatial.aream2\"\n    FROM scanspatial\
+  \ AS scanspatial\n    GROUP BY\n      scanspatial.arcref\n  ) AS _inner\n) AS sp_per_arcref\n\
+  ),\n_combined AS (\nSELECT _base.\"pc_per_arcref.arcref\", _base.\"pc_per_arcref.totalpts_avg\"\
+  , _base.\"pc_per_arcref.clouddense_avg\", _cm_pc_per_arcref__sp_per_arcref__aream2_avg.\"\
+  pc_per_arcref.sp_per_arcref.aream2_avg\"\nFROM _base\nCROSS JOIN _cm_pc_per_arcref__sp_per_arcref__aream2_avg\n\
+  ),\nstep1 AS (\nSELECT\n    \"pc_per_arcref.arcref\",\n    \"pc_per_arcref.clouddense_avg\"\
+  ,\n    \"pc_per_arcref.sp_per_arcref.aream2_avg\",\n    \"pc_per_arcref.totalpts_avg\"\
+  ,\n    \"pc_per_arcref.totalpts_avg\" / (\"pc_per_arcref.clouddense_avg\" * \"pc_per_arcref.sp_per_arcref.aream2_avg\"\
+  ) AS \"pc_per_arcref.pcdr\"\nFROM _combined\n)\nSELECT\n    \"pc_per_arcref.arcref\"\
+  ,\n    \"pc_per_arcref.clouddense_avg\",\n    \"pc_per_arcref.pcdr\",\n    \"pc_per_arcref.sp_per_arcref.aream2_avg\"\
+  ,\n    \"pc_per_arcref.totalpts_avg\"\nFROM step1) AS _inner"
+data_source: archeology
+columns:
+- name: arcref
+  sql: arcref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: totalpts_avg
+  sql: totalpts_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: clouddense_avg
+  sql: clouddense_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: pcdr
+  sql: pcdr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: sp_per_arcref__aream2_avg
+  sql: sp_per_arcref__aream2_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Point Cloud Density Ratio (PCDR, KB #2): TotalPts / (CloudDense * AreaM2).\
+  \ Higher = more efficient/spatially-consistent scanning. Multistage: scanpointcloud\
+  \ (per arcref) joined to scanspatial (per arcref) on the shared project key.\n\n\
+  [kb=2]\nPCDR = \\frac{TotalPts}{CloudDense \\times AreaM2}, \\text{ where higher\
+  \ values suggest more efficient and spatially consistent scanning techniques.} \u2014\
+  \ Evaluates the relationship between total points and cloud density, used to assess\
+  \ scan efficiency and data distribution.\n[/kb=2]"
+hidden: false
+meta:
+  kb_id: 2

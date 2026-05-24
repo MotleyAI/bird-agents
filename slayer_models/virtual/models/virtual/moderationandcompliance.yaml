@@ -1,0 +1,80 @@
+version: 6
+name: moderationandcompliance
+sql_table: moderationandcompliance
+query_variables: {}
+data_source: virtual
+columns:
+- name: modreg
+  sql: modreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: moderationinteractpivot
+  sql: moderationinteractpivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: moderationsocialpivot
+  sql: moderationsocialpivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rptcount
+  sql: rptcount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: warncount
+  sql: warncount
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: violhist
+  sql: violhist
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: modstat
+  sql: modstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: contcomp
+  sql: contcomp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ageverif
+  sql: ageverif
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: payverif
+  sql: payverif
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: idverif
+  sql: idverif
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: interactions
+  join_pairs:
+  - - moderationinteractpivot
+    - activityreg
+  join_type: left
+- target_model: socialcommunity
+  join_pairs:
+  - - moderationsocialpivot
+    - socialreg
+  join_type: left
+filters: []
+hidden: false

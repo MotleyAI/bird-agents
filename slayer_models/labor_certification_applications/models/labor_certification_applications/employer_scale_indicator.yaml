@@ -1,0 +1,76 @@
+version: 6
+name: employer_scale_indicator
+source_queries:
+- version: 3
+  name: emp_apps
+  source_model: cases
+  measures:
+  - formula: '*:count'
+  dimensions:
+  - name: homefirm
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: emp_apps
+    columns:
+    - name: esi
+      type: DOUBLE
+      sql: _count * 1.0 / AVG(_count) OVER ()
+    - name: size_class
+      type: TEXT
+      sql: CASE WHEN _count < 5 THEN 'Small-scale' WHEN _count <= 25 THEN 'Medium-scale'
+        ELSE 'Large-scale' END
+  dimensions:
+  - name: homefirm
+  - name: _count
+  - name: esi
+  - name: size_class
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"emp_apps.homefirm\" AS homefirm, \"emp_apps._count\"\
+  \ AS _count, \"emp_apps.esi\" AS esi, \"emp_apps.size_class\" AS size_class FROM\
+  \ (SELECT\n  emp_apps.homefirm AS \"emp_apps.homefirm\",\n  emp_apps._count AS \"\
+  emp_apps._count\",\n  emp_apps._count * 1.0 / AVG(emp_apps._count) OVER () AS \"\
+  emp_apps.esi\",\n  CASE\n    WHEN emp_apps._count < 5\n    THEN 'Small-scale'\n\
+  \    WHEN emp_apps._count <= 25\n    THEN 'Medium-scale'\n    ELSE 'Large-scale'\n\
+  \  END AS \"emp_apps.size_class\"\nFROM (\n  SELECT\n    \"cases.homefirm\" AS homefirm,\n\
+  \    \"cases._count\" AS _count\n  FROM (\n    SELECT\n      cases.homefirm AS \"\
+  cases.homefirm\",\n      COUNT(*) AS \"cases._count\"\n    FROM cases AS cases\n\
+  \    GROUP BY\n      cases.homefirm\n  ) AS _inner\n) AS emp_apps) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: homefirm
+  sql: homefirm
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: _count
+  sql: _count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: esi
+  sql: esi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: size_class
+  sql: size_class
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Employer Scale Indicator per employer (KB #30): apps_per_employer /\
+  \ avg_apps_per_employer. Companion model `employer_size_classification` carries\
+  \ the size-class buckets (KB #46).\n\n[kb=30]\nESI = (Employer Number of Applications\
+  \ / Average Applications per Employer). Employer and application information are\
+  \ tracked as part of the application data. \u2014 Quantifies the relative size of\
+  \ an employer based on number of visa applications.\n[/kb=30]"
+hidden: false
+meta:
+  kb_id: 30

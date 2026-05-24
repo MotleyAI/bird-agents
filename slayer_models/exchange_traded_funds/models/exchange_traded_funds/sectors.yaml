@@ -1,0 +1,23 @@
+version: 6
+name: sectors
+sql_table: sectors
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: secid
+  sql: secid
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: industrytag
+  sql: industrytag
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

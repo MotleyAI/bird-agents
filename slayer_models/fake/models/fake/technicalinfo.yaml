@@ -1,0 +1,113 @@
+version: 6
+name: technicalinfo
+sql_table: technicalinfo
+query_variables: {}
+data_source: fake
+columns:
+- name: techkey
+  sql: techkey
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: technetref
+  sql: technetref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: techmsgref
+  sql: techmsgref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: regip
+  sql: regip
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: iprepscore
+  sql: iprepscore
+  type: DOUBLE
+  primary_key: false
+  description: "IP reputation score (KB #25). Range 0-1; >0.8 trusted IPs; <0.3 malicious\
+    \ / compromised.\n\n[kb=25]\nRanges from 0 to 1. Scores above 0.8 indicate trusted\
+    \ IPs, while scores below 0.3 suggest potentially malicious or compromised IPs.\
+    \ \u2014 Illustrates IP reputation scoring.\n[/kb=25]"
+  label: technicalinfo.iprepscore
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 25
+- name: ipcountrynum
+  sql: ipcountrynum
+  type: INT
+  primary_key: false
+  description: 'Number of distinct countries the registration IP is associated with.
+    Component of TEI (KB #7): 0.3 * ipcountrynum/20. KB #16 (VPN Abuser) checks ipcountrynum
+    >= 3.'
+  hidden: false
+  format:
+    type: integer
+- name: vpnratio
+  sql: vpnratio
+  type: DOUBLE
+  primary_key: false
+  description: 'Fraction of sessions where VPN was detected. Component of TEI (KB
+    #7): 0.4 * vpnratio.'
+  hidden: false
+  format:
+    type: float
+- name: proxycount
+  sql: proxycount
+  type: INT
+  primary_key: false
+  description: 'Number of proxy detections. Component of TEI (KB #7): 0.3 * proxycount/10.'
+  hidden: false
+  format:
+    type: integer
+- name: torflag
+  sql: torflag
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: devtotal
+  sql: devtotal
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: devtypedist
+  sql: devtypedist
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: browserdiv
+  sql: browserdiv
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: uaconsval
+  sql: uaconsval
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins:
+- target_model: messaginganalysis
+  join_pairs:
+  - - techmsgref
+    - msgkey
+  join_type: left
+- target_model: networkmetrics
+  join_pairs:
+  - - technetref
+    - netkey
+  join_type: left
+filters: []
+hidden: false

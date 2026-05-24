@@ -1,0 +1,167 @@
+version: 6
+name: chassisandvehicle
+sql_table: chassisandvehicle
+query_variables: {}
+data_source: polar
+columns:
+- name: chassisregistry
+  sql: chassisregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: chassiseqref
+  sql: chassiseqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: chassistransref
+  sql: chassistransref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: brakepadwearpercent
+  sql: brakepadwearpercent
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: brakefluidlevelpercent
+  sql: brakefluidlevelpercent
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: brakepressurekpa
+  sql: brakepressurekpa
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: tracktensionkn
+  sql: tracktensionkn
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: trackwearpercent
+  sql: trackwearpercent
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: suspensionheightmm
+  sql: suspensionheightmm
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: vehiclespeedkmh
+  sql: vehiclespeedkmh
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: vehicleloadkg
+  sql: vehicleloadkg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: vehicleangledegrees
+  sql: vehicleangledegrees
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: vehicleheadingdegrees
+  sql: vehicleheadingdegrees
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: chassisengref
+  sql: chassisengref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: tiremetrics
+  sql: tiremetrics
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tire_pressure_kpa
+  sql: json_extract(tiremetrics, '$.pressure_kpa')
+  type: DOUBLE
+  primary_key: false
+  description: Tire pressure (kPa, extracted from tiremetrics JSON).
+  hidden: false
+- name: vpc
+  sql: (1 - (brakepadwearpercent + trackwearpercent) / 200.0) * (vehiclespeedkmh /
+    50.0) * (engineandfluids.engineloadpercent / 100.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Vehicle Performance Coefficient (KB #5): wear / speed / engine-load\
+    \ product. Cross-table to engineandfluids for engineloadpercent.\n\n[kb=5]\nVPC\
+    \ = (1 - \\frac{brakepadwearpercent + trackwearpercent}{200}) \\times \\frac{vehiclespeedkmh}{50}\
+    \ \\times \\frac{engineloadpercent}{100}, \\text{ where lower wear percentages\
+    \ and optimal engine load contribute to better performance.} \u2014 A metric that\
+    \ evaluates vehicle performance based on mechanical condition and operational\
+    \ efficiency.\n[/kb=5]"
+  label: Vehicle Performance Coefficient (VPC)
+  hidden: false
+  meta:
+    kb_id: 5
+- name: is_safe_for_operation
+  sql: ((1 - (brakepadwearpercent + trackwearpercent) / 200.0) * (vehiclespeedkmh
+    / 50.0) * (engineandfluids.engineloadpercent / 100.0)) > 0.6 AND brakefluidlevelpercent
+    > 50 AND brakepadwearpercent < 70 AND json_extract(tiremetrics, '$.pressure_kpa')
+    > 200
+  type: BOOLEAN
+  primary_key: false
+  description: "Vehicle Operational Safety Threshold (KB #15): VPC > 0.6 AND brakefluidlevel\
+    \ > 50 AND brakepadwear < 70 AND tire_pressure > 200.\n\n[kb=15]\nA vehicle is\
+    \ considered 'Safe for Operation' when it maintains a VPC > 0.6, has brake fluid\
+    \ levels above 50%, brake pad wear below 70%, adequate tire pressure (tiremetrics.pressure_kpa\
+    \ > 200), and is operated within recommended load limits (vehicleloadkg within\
+    \ manufacturer specifications). \u2014 Defines the safety threshold for vehicle\
+    \ operations based on multiple safety factors.\n[/kb=15]"
+  label: Vehicle Operational Safety Threshold
+  hidden: false
+  meta:
+    kb_id: 15
+measures: []
+aggregations: []
+joins:
+- target_model: engineandfluids
+  join_pairs:
+  - - chassisengref
+    - engineregistry
+  join_type: left
+- target_model: equipment
+  join_pairs:
+  - - chassiseqref
+    - equipmentcode
+  join_type: left
+- target_model: transmission
+  join_pairs:
+  - - chassistransref
+    - transregistry
+  join_type: left
+filters: []
+hidden: false

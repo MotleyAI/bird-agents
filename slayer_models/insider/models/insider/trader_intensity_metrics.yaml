@@ -1,0 +1,109 @@
+version: 6
+name: trader_intensity_metrics
+sql: "SELECT\n  t.tradereg,\n  t.voldaily * 1.0 / NULLIF(t.acctbal, 0) AS dtr,\n \
+  \ CAST(json_extract(t.trading_performance, '$.risklevel.levratio') AS REAL) AS tle,\n\
+  \  (t.voldaily * 1.0 / NULLIF(t.acctbal, 0)) * CAST(json_extract(t.trading_performance,\
+  \ '$.risklevel.levratio') AS REAL) AS rat,\n  AVG(CASE WHEN tr.cancelpct >= 1.0\
+  \ THEN NULL ELSE tr.modfreq * 1.0 / (1.0 - tr.cancelpct) END) AS avg_omi,\n  AVG(\n\
+  \    (0.2 * (CAST(json_extract(tr.risk_indicators, '$.spoofprob') AS REAL) / 100.0))\n\
+  \    + (0.2 * (CAST(json_extract(tr.risk_indicators, '$.frontscore') AS REAL) /\
+  \ 100.0))\n    + (0.2 * CAST(json_extract(tr.risk_indicators, '$.qstuffindex') AS\
+  \ REAL))\n    + (0.2 * (CASE json_extract(tr.risk_indicators, '$.washsus') WHEN\
+  \ 'Low' THEN 0.1 WHEN 'Medium' THEN 0.5 WHEN 'High' THEN 1.0 ELSE 0 END))\n    +\
+  \ (0.2 * (CASE json_extract(tr.risk_indicators, '$.layerind') WHEN 'None' THEN 0.0\
+  \ WHEN 'Suspected' THEN 0.5 WHEN 'Confirmed' THEN 1.0 ELSE 0 END))\n  ) AS avg_sai\n\
+  FROM trader t\nLEFT JOIN transactionrecord tr ON tr.trdref = t.tradereg\nGROUP BY\
+  \ t.tradereg, t.voldaily, t.acctbal, t.trading_performance"
+query_variables: {}
+data_source: insider
+columns:
+- name: tradereg
+  sql: tradereg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: dtr
+  sql: dtr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: tle
+  sql: tle
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: rat
+  sql: rat
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: avg_omi
+  sql: avg_omi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: avg_sai
+  sql: avg_sai
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: ati
+  sql: dtr * tle * avg_omi
+  type: DOUBLE
+  primary_key: false
+  description: "Aggressive Trading Intensity (ATI = DTR * TLE * avg(OMI)) \u2014 KB\
+    \ #36.\n\n[kb=36]\nATI = \\text{DTR} \\times \\text{TLE} \\times \\text{OMI}.\
+    \ \u2014 Measures intensity by combining high turnover, leverage, and order modification\
+    \ frequency.\n[/kb=36]"
+  label: Aggressive Trading Intensity (ATI)
+  hidden: false
+  meta:
+    kb_id: 36
+- name: swt
+  sql: avg_sai * dtr
+  type: DOUBLE
+  primary_key: false
+  description: "Suspicion-Weighted Turnover (SWT = avg(SAI) * DTR) \u2014 KB #37.\n\
+    \n[kb=37]\nSWT = \\text{SAI} \\times \\text{DTR} \\\\ \\text{where SAI is Suspicious\
+    \ Activity Index  and DTR is Daily Turnover Rate .} \u2014 Calculates daily turnover\
+    \ weighted by the Suspicious Activity Index.\n[/kb=37]"
+  label: Suspicion-Weighted Turnover (SWT)
+  hidden: false
+  meta:
+    kb_id: 37
+- name: is_high_velocity_suspicion
+  sql: rat > 1.0 AND avg_sai > 0.6
+  type: BOOLEAN
+  primary_key: false
+  description: "High Velocity Suspicion Trader (KB #66): RAT > 1.0 AND avg(SAI) >\
+    \ 0.6.\n\n[kb=66]\nA trader with a high Risk-Adjusted Turnover (RAT)  (e.g., >\
+    \ 1.0) AND a high Suspicious Activity Index (SAI)  (e.g., > 0.6). \u2014 Identifies\
+    \ traders exhibiting both high risk-adjusted turnover and a high suspicious activity\
+    \ index.\n[/kb=66]"
+  label: High Velocity Suspicion Trader
+  hidden: false
+  meta:
+    kb_id: 66
+- name: ass
+  sql: avg_sai * (dtr * tle * avg_omi)
+  type: DOUBLE
+  primary_key: false
+  description: "Aggressive Suspicion Score (ASS = SAI * ATI) \u2014 KB #54. Uses avg(SAI)\
+    \ per trader and ATI = DTR * TLE * avg(OMI).\n\n[kb=54]\nASS = \\text{SAI} \\\
+    times \\text{ATI} \u2014 Combines overall suspicious activity index with aggressive\
+    \ trading intensity, identifying traders who are both suspicious and trade aggressively.\n\
+    [/kb=54]"
+  label: Aggressive Suspicion Score (ASS)
+  hidden: false
+  meta:
+    kb_id: 54
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Per-trader intensity metrics combining trader-level DTR/TLE with averaged
+  per-transaction OMI/SAI. Encodes KB #36 (ATI = DTR * TLE * avg(OMI)), KB #37 (SWT
+  = avg(SAI) * DTR), and KB #66 (High Velocity Suspicion Trader: RAT > 1.0 AND avg(SAI)
+  > 0.6).'
+hidden: false
+meta: {}

@@ -1,0 +1,31 @@
+version: 6
+name: additionalnotes
+sql_table: additionalnotes
+query_variables: {}
+data_source: virtual
+columns:
+- name: notesreg
+  sql: notesreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: notesretainpivot
+  sql: notesretainpivot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: noteinfo
+  sql: noteinfo
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: retentionandinfluence
+  join_pairs:
+  - - notesretainpivot
+    - retreg
+  join_type: left
+filters: []
+hidden: false

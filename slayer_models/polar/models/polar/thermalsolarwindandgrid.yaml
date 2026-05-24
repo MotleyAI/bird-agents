@@ -1,0 +1,218 @@
+version: 6
+name: thermalsolarwindandgrid
+sql_table: thermalsolarwindandgrid
+query_variables: {}
+data_source: polar
+columns:
+- name: thermalregistry
+  sql: thermalregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: thermaleqref
+  sql: thermaleqref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: thermalcommref
+  sql: thermalcommref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: thermalimagingstatus
+  sql: thermalimagingstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: insulationstatus
+  sql: insulationstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: heatlossratekwh
+  sql: heatlossratekwh
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: solarpanelstatus
+  sql: solarpanelstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: windturbinestatus
+  sql: windturbinestatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: powergridstatus
+  sql: powergridstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: powerqualityindex
+  sql: powerqualityindex
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: backuppowerstatus
+  sql: backuppowerstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fuelcellstatus
+  sql: fuelcellstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fuelcelloutputw
+  sql: fuelcelloutputw
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: fuelcellefficiencypercent
+  sql: fuelcellefficiencypercent
+  type: DOUBLE
+  primary_key: false
+  description: "Fuel cell efficiency %. <50 older/degraded, 50\u201370 standard modern,\
+    \ >70 high-end (KB #29).\n\n[kb=29]\nFuel cell efficiency percentages typically\
+    \ range from 40% to 90%. Values below 50% represent older or degraded fuel cell\
+    \ technology, 50-70% indicate standard efficiency modern fuel cells suitable for\
+    \ general applications, and values above 70% represent high-performance fuel cells\
+    \ with optimal conversion of chemical energy to electrical power with minimal\
+    \ waste heat generation. \u2014 Illustrates the technical significance of fuel\
+    \ cell efficiency ratings.\n[/kb=29]"
+  label: fuelcellefficiencypercent
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 29
+- name: hydrogenlevelpercent
+  sql: hydrogenlevelpercent
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: oxygenlevelpercent
+  sql: oxygenlevelpercent
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: thermalpowerref
+  sql: thermalpowerref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: renewablemetrics
+  sql: renewablemetrics
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: tie
+  sql: (CASE insulationstatus WHEN 'Good' THEN 0.9 WHEN 'Fair' THEN 0.6 WHEN 'Poor'
+    THEN 0.3 ELSE 0.0 END) - heatlossratekwh / 10.0
+  type: DOUBLE
+  primary_key: false
+  description: "Thermal Insulation Efficiency (KB #6): status base (Good=0.9, Fair=0.6,\
+    \ Poor=0.3) \u2212 heatlossratekwh/10.\n\n[kb=6]\nTIE = \\begin{cases} 0.9 - \\\
+    frac{heatlossratekwh}{10} & \\text{if insulationstatus = 'Good'} \\\\ 0.6 - \\\
+    frac{heatlossratekwh}{10} & \\text{if insulationstatus = 'Fair'} \\\\ 0.3 - \\\
+    frac{heatlossratekwh}{10} & \\text{if insulationstatus = 'Poor'} \\end{cases},\
+    \ \\text{ where lower heat loss and better insulation result in higher efficiency.}\
+    \ \u2014 Measures how effectively a structure retains heat based on insulation\
+    \ status and heat loss rate.\n[/kb=6]"
+  label: Thermal Insulation Efficiency (TIE)
+  hidden: false
+  meta:
+    kb_id: 6
+- name: rec
+  sql: (json_extract(renewablemetrics, '$.solar.output_w') + json_extract(renewablemetrics,
+    '$.wind.output_w')) * 100.0 / NULLIF(fuelcelloutputw + json_extract(renewablemetrics,
+    '$.solar.output_w') + json_extract(renewablemetrics, '$.wind.output_w'), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Renewable Energy Contribution (KB #9): (solar+wind)/(solar+wind+fuelcell)\
+    \ \xD7 100, %.\n\n[kb=9]\nREC = \\frac{renewablemetrics.solar.output\\_w + renewablemetrics.wind.output\\\
+    _w}{fuelcelloutputw + renewablemetrics.solar.output\\_w + renewablemetrics.wind.output\\\
+    _w} \\times 100, \\text{ where higher values indicate greater reliance on renewable\
+    \ energy.} \u2014 Calculates the percentage contribution of renewable energy sources\
+    \ to the total power generation.\n[/kb=9]"
+  label: Renewable Energy Contribution (REC)
+  hidden: false
+  meta:
+    kb_id: 9
+- name: is_energy_sustainable
+  sql: ((json_extract(renewablemetrics, '$.solar.output_w') + json_extract(renewablemetrics,
+    '$.wind.output_w')) * 100.0 / NULLIF(fuelcelloutputw + json_extract(renewablemetrics,
+    '$.solar.output_w') + json_extract(renewablemetrics, '$.wind.output_w'), 0)) >
+    70
+  type: BOOLEAN
+  primary_key: false
+  description: "Sustainable Energy Operation (KB #19) - Energy-Sustainable when REC\
+    \ > 70% (KB also requires '48 hours of power reserves' which is not in schema).\n\
+    \n[kb=19]\nAn operation is considered 'Energy-Sustainable' when it maintains a\
+    \ REC above 70% (meaning more than 70% of energy comes from renewable sources)\
+    \ while maintaining full operational capability and adequate power reserves for\
+    \ at least 48 hours in case of emergency. \u2014 Defines the conditions for energy-sustainable\
+    \ operations in polar environments.\n[/kb=19]"
+  label: Sustainable Energy Operation
+  hidden: false
+  meta:
+    kb_id: 19
+- name: energy_sustainability_level
+  sql: CASE WHEN ((json_extract(renewablemetrics, '$.solar.output_w') + json_extract(renewablemetrics,
+    '$.wind.output_w')) * 100.0 / NULLIF(fuelcelloutputw + json_extract(renewablemetrics,
+    '$.solar.output_w') + json_extract(renewablemetrics, '$.wind.output_w'), 0)) >
+    70 THEN 'Energy-Sustainable' WHEN ((json_extract(renewablemetrics, '$.solar.output_w')
+    + json_extract(renewablemetrics, '$.wind.output_w')) * 100.0 / NULLIF(fuelcelloutputw
+    + json_extract(renewablemetrics, '$.solar.output_w') + json_extract(renewablemetrics,
+    '$.wind.output_w'), 0)) > 50 THEN 'Moderately Sustainable' ELSE 'Low Sustainability'
+    END
+  type: TEXT
+  primary_key: false
+  description: "Energy Sustainability Classification System (KB #52): 3-tier classification\
+    \ on REC. Energy-Sustainable (REC > 70), Moderately Sustainable (50 < REC <= 70),\
+    \ Low Sustainability (REC <= 50).\n\n[kb=52]\nOperations are classified into three\
+    \ sustainability levels: 'Energy-Sustainable' WHEN (REC > 70); 'Moderately Sustainable'\
+    \ WHEN (REC > 50 AND REC <= 70); 'Low Sustainability' WHEN (REC <= 50). \u2014\
+    \ A comprehensive classification system that categorizes operational energy sustainability\
+    \ based on renewable energy contribution percentages.\n[/kb=52]"
+  label: Energy Sustainability Classification System (ESCS)
+  hidden: false
+  meta:
+    kb_id: 52
+measures: []
+aggregations: []
+joins:
+- target_model: communication
+  join_pairs:
+  - - thermalcommref
+    - commregistry
+  join_type: left
+- target_model: equipment
+  join_pairs:
+  - - thermaleqref
+    - equipmentcode
+  join_type: left
+- target_model: powerbattery
+  join_pairs:
+  - - thermalpowerref
+    - powerbattregistry
+  join_type: left
+filters: []
+hidden: false

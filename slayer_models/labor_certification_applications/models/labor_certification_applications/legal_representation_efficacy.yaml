@@ -1,0 +1,65 @@
+version: 6
+name: legal_representation_efficacy
+source_queries:
+- version: 3
+  name: att_split
+  source_model: cases
+  measures:
+  - formula: is_certified:sum
+  - formula: '*:count'
+  dimensions:
+  - name: has_attorney
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: att_split
+    columns:
+    - name: approval_rate
+      type: DOUBLE
+      sql: is_certified_sum * 100.0 / NULLIF(_count, 0)
+  dimensions:
+  - name: has_attorney
+  - name: approval_rate
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"att_split.has_attorney\" AS has_attorney, \"att_split.approval_rate\"\
+  \ AS approval_rate FROM (SELECT\n  att_split.has_attorney AS \"att_split.has_attorney\"\
+  ,\n  is_certified_sum * 100.0 / NULLIF(_count, 0) AS \"att_split.approval_rate\"\
+  \nFROM (\n  SELECT\n    \"cases.has_attorney\" AS has_attorney,\n    \"cases.is_certified_sum\"\
+  \ AS is_certified_sum,\n    \"cases._count\" AS _count\n  FROM (\n    SELECT\n \
+  \     CASE\n        WHEN filekey IN (\n          SELECT\n            docketkey\n\
+  \          FROM case_attorney\n        )\n        THEN 1\n        ELSE 0\n     \
+  \ END AS \"cases.has_attorney\",\n      SUM(CASE WHEN LOWER(TRIM(statustag)) = 'certified'\
+  \ THEN 1 ELSE 0 END) AS \"cases.is_certified_sum\",\n      COUNT(*) AS \"cases._count\"\
+  \n    FROM cases AS cases\n    GROUP BY\n      CASE\n        WHEN filekey IN (\n\
+  \          SELECT\n            docketkey\n          FROM case_attorney\n       \
+  \ )\n        THEN 1\n        ELSE 0\n      END\n  ) AS _inner\n) AS att_split) AS\
+  \ _inner"
+data_source: labor_certification_applications
+columns:
+- name: has_attorney
+  sql: has_attorney
+  type: DOUBLE
+  primary_key: false
+  description: '1 if case has at least one attorney. KB #26.'
+  hidden: false
+- name: approval_rate
+  sql: approval_rate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Legal Representation Efficacy (KB #59): difference in approval rate\
+  \ between attorney-represented and self-represented cases. Single-row model with\
+  \ classification: High Impact (>10% diff), Moderate Impact (5-10%), Minimal Impact\
+  \ (<5%).\n\n[kb=59]\nLegal representation efficacy is measured by comparing the\
+  \ approval rate of applications with attorney representation to those without. High\
+  \ Impact is defined as over 10% higher approval rate, Moderate Impact as 5-10% higher,\
+  \ and Minimal Impact as less than 5% difference. \u2014 Evaluates the effectiveness\
+  \ of legal representation in visa applications.\n[/kb=59]"
+hidden: false
+meta:
+  kb_id: 59

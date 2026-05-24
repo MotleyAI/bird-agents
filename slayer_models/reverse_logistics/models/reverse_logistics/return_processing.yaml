@@ -1,0 +1,139 @@
+version: 6
+name: return_processing
+sql_table: return_processing
+query_variables: {}
+data_source: reverse_logistics
+columns:
+- name: loccode
+  sql: loccode
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: procprio
+  sql: procprio
+  type: TEXT
+  primary_key: false
+  description: "Processing Priorities \u2014 'Bulk' (palletised/batch in low-demand\
+    \ periods), 'Standard' (default 3-5 day SLA), 'Express' (expedited for VIP/high-value/premium).\n\
+    \n[kb=28]\nUse 'Bulk' for palletised or batch returns processed during low-demand\
+    \ periods; 'Standard' for default SLA (e.g., 3-5 days); 'Express' for expedited\
+    \ for VIP customers, high resale value, or paid premium. \u2014 Queue categories\
+    \ dictating speed of return handling.\n[/kb=28]"
+  label: Processing Priorities
+  hidden: false
+  meta:
+    kb_id: 28
+- name: procstate
+  sql: procstate
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: proctime
+  sql: proctime
+  type: INT
+  primary_key: false
+  description: "Processing time PT_i (calendar time spent processing this return at\
+    \ the facility). Source column for the Average Processing Time (APT) measure (KB\
+    \ #5).\n\n[kb=5]\n$$APT = \\frac{\\sum_{i=1}^{n} PT_i}{n}$$ where $PT_i$ is the\
+    \ processing time of each case. \u2014 Mean calendar time spent processing a batch\
+    \ of returns at a given facility.\n[/kb=5]"
+  label: Average Processing Time (APT)
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 5
+- name: handreq
+  sql: handreq
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: needsquar
+  sql: needsquar
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: quardays
+  sql: quardays
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: handling_notes
+  sql: handling_notes
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: dispaction
+  sql: dispaction
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: dispreason
+  sql: dispreason
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: needsrelabel
+  sql: needsrelabel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: repairfeas
+  sql: repairfeas
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: estrepairhrs
+  sql: estrepairhrs
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: partsavail
+  sql: partsavail
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: policycomp
+  sql: policycomp
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: exceptmade
+  sql: exceptmade
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: excepttype
+  sql: excepttype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: apprlevel
+  sql: apprlevel
+  type: TEXT
+  primary_key: false
+  description: "Approval Levels \u2014 hierarchy of sign-off required. 'Automatic',\
+    \ 'Manager', 'Supervisor'.\n\n[kb=25]\nThere 3 levels: 'Automatic', 'Manager'\
+    \ and 'Supervisor'. \u2014 Hierarchy of sign-off required for exceptional processing\
+    \ steps.\n[/kb=25]"
+  label: Approval Levels
+  hidden: false
+  meta:
+    kb_id: 25
+measures:
+- formula: proctime:avg
+  name: average_processing_time
+  label: Average Processing Time (APT)
+  description: Average Processing Time (APT) = (sum of PT_i) / n. Mean calendar time
+    spent processing a batch of returns at a given facility.
+aggregations: []
+joins: []
+filters: []
+description: "Operational handling state for returns at a processing location. NOTE:\
+  \ keyed by loccode, with no FK to the returns table \u2014 cannot be linked to a\
+  \ specific return case."
+hidden: false

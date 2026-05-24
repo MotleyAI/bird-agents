@@ -1,0 +1,306 @@
+version: 6
+name: signals
+sql_table: signals
+query_variables: {}
+data_source: alien
+columns:
+- name: signalregistry
+  sql: signalregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: timemark
+  sql: timemark
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: telescref
+  sql: telescref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: detectinstr
+  sql: detectinstr
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: signalclass
+  sql: signalclass
+  type: TEXT
+  primary_key: false
+  description: "Signal Type / classification. signalclass='Narrowband' describes signals\
+    \ occupying a very narrow portion of the spectrum (typically BFR < 0.0001). Often\
+    \ associated with technological origins as natural sources rarely produce such\
+    \ spectrally confined emissions. Particularly interesting in SETI research.\n\n\
+    [kb=22]\nDescribes signals occupying a very narrow portion of the spectrum (typically\
+    \ $\\text{BFR} < 0.0001$). Often associated with technological origins as natural\
+    \ sources rarely produce such spectrally confined emissions. These signals are\
+    \ particularly interesting in SETI research. \u2014 Illustrates characteristics\
+    \ of narrowband signal detections.\n[/kb=22]"
+  label: 'SignalClass: Narrowband'
+  hidden: false
+  meta:
+    kb_id: 22
+- name: sigstrdb
+  sql: sigstrdb
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: freqmhz
+  sql: freqmhz
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: bwhz
+  sql: bwhz
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: centerfreqmhz
+  sql: centerfreqmhz
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: freqdrifthzs
+  sql: freqdrifthzs
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: doppshifthz
+  sql: doppshifthz
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: sigdursec
+  sql: sigdursec
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: pulsepersec
+  sql: pulsepersec
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: pulsewidms
+  sql: pulsewidms
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: modtype
+  sql: modtype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: modindex
+  sql: modindex
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: carrierfreqmhz
+  sql: carrierfreqmhz
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: phaseshiftdeg
+  sql: phaseshiftdeg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: polarmode
+  sql: polarmode
+  type: TEXT
+  primary_key: false
+  description: "Polarization Mode. polarmode='Circular' describes electromagnetic\
+    \ waves where the electric field vector rotates in a circular pattern as the wave\
+    \ propagates. Circular polarization maintaining high purity across frequency (indicated\
+    \ by PolarAngleDeg stability) is rare in natural sources and may indicate technological\
+    \ origin.\n\n[kb=26]\nDescribes electromagnetic waves where the electric field\
+    \ vector rotates in a circular pattern as the wave propagates. Circular polarization\
+    \ maintaining high purity across frequency (indicated by $\\text{PolarAngleDeg}$\
+    \ stability) is rare in natural sources and may indicate technological origin.\
+    \ \u2014 Illustrates circular polarization in detected signals.\n[/kb=26]"
+  label: 'PolarMode: Circular'
+  hidden: false
+  meta:
+    kb_id: 26
+- name: polarangledeg
+  sql: polarangledeg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: snrratio
+  sql: snrratio
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: noisefloordbm
+  sql: noisefloordbm
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: interflvl
+  sql: interflvl
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: rfistat
+  sql: rfistat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: atmointerf
+  sql: atmointerf
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: snqi
+  sql: snrratio - 0.1 * ABS(noisefloordbm)
+  type: DOUBLE
+  primary_key: false
+  description: "Signal-to-Noise Quality Indicator (SNQI) = SnrRatio - 0.1 * |NoiseFloorDbm|.\
+    \ Higher values indicate better detection quality; positive values generally indicate\
+    \ analyzable signals.\n\n[kb=0]\n$\\text{SNQI} = \\text{SnrRatio} - 0.1 \\times\
+    \ |\\text{NoiseFloorDbm}|$, where higher values indicate better detection quality.\
+    \ Positive values generally indicate analyzable signals. \u2014 Combines SNR and\
+    \ noise floor to provide a unified signal quality metric.\n[/kb=0]"
+  label: Signal-to-Noise Quality Indicator (SNQI)
+  hidden: false
+  meta:
+    kb_id: 0
+- name: bfr
+  sql: bwhz / (centerfreqmhz * 1000000.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Bandwidth-Frequency Ratio (BFR) = BwHz / (CenterFreqMhz * 1e6). Narrow\
+    \ ratios (<0.001) often indicate technological signals; wider ratios suggest natural\
+    \ phenomena. Same formula referenced as both KB 4 (BFR) and KB 51 (Bandwidth-to-Frequency\
+    \ Ratio).\n\n[kb=4]\n$\\text{BFR} = \\frac{\\text{BwHz}}{\\text{CenterFreqMhz}\
+    \ \\times 10^6}$, where narrow ratios ($<0.001$) often indicate technological\
+    \ signals while wider ratios suggest natural phenomena. \u2014 Measures the proportion\
+    \ of bandwidth to center frequency, helping identify signal type.\n[/kb=4]"
+  label: Bandwidth-Frequency Ratio (BFR)
+  hidden: false
+  meta:
+    kb_id: 4
+- name: ssm
+  sql: (1 - ABS(freqdrifthzs) / (freqmhz * 1000.0)) * sigdursec / (1 + doppshifthz
+    / 1000.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Signal Stability Metric (SSM) = (1 - |FreqDriftHzs|/(FreqMhz*1000))\
+    \ * SigDurSec / (1 + DoppShiftHz/1000). Higher values indicate more stable signals\
+    \ typical of fixed transmitters.\n\n[kb=7]\n$\\text{SSM} = (1 - \\frac{|\\text{FreqDriftHzs}|}{\\\
+    text{FreqMhz} \\times 1000}) \\times \\frac{\\text{SigDurSec}}{1 + \\frac{\\text{DoppShiftHz}}{1000}}$,\
+    \ where higher values indicate more stable signals typical of fixed transmitters.\
+    \ \u2014 Quantifies overall temporal and spectral stability of a signal.\n[/kb=7]"
+  label: Signal Stability Metric (SSM)
+  hidden: false
+  meta:
+    kb_id: 7
+- name: mcs
+  sql: modindex * (1 + ((1 - ABS(freqdrifthzs) / (freqmhz * 1000.0)) * sigdursec /
+    (1 + doppshifthz / 1000.0))) * (CASE modtype WHEN 'AM' THEN 2 WHEN 'FM' THEN 1.5
+    ELSE 1 END)
+  type: DOUBLE
+  primary_key: false
+  description: "Modulation Complexity Score (MCS) = ModIndex * (1 + SSM) * M_factor,\
+    \ with M_factor = 2 for AM, 1.5 for FM, else 1. Quantifies sophistication of signal\
+    \ modulation, weighting stable modulations higher.\n\n[kb=30]\n$\\text{MCS} =\
+    \ \\text{ModIndex} \\times (1 + \\text{SSM}) \\times M_{\\text{factor}}$, where\
+    \ $M_{\\text{factor}}$ is 2 for $\\text{ModType} = \\text{'AM'}$, 1.5 for 'FM',\
+    \ and 1 for other types. Incorporates Signal Stability Metric (SSM) to weight\
+    \ stable modulations higher. \u2014 Quantifies the sophistication of signal modulation\
+    \ based on type and stability.\n[/kb=30]"
+  label: Modulation Complexity Score (MCS)
+  hidden: false
+  meta:
+    kb_id: 30
+- name: is_analyzable
+  sql: CASE WHEN (snrratio - 0.1 * ABS(noisefloordbm)) > 0 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Analyzable Signals: signals with SNQI > 0 are considered analyzable\
+    \ / of sufficient quality for further analysis.\n\n[kb=50]\nSignals with SNQI\
+    \ > 0 are considered analyzable. \u2014 Signals of sufficient quality to be considered\
+    \ useful for further analysis.\n[/kb=50]"
+  label: Analyzable Signals
+  hidden: false
+  meta:
+    kb_id: 50
+- name: is_ntm
+  sql: CASE WHEN (bwhz / (centerfreqmhz * 1000000.0)) < 0.0001 AND ABS(freqdrifthzs)
+    < 0.1 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Narrowband Technological Marker (NTM): signals with extremely narrow\
+    \ bandwidth (BFR < 0.0001) and stable frequency (|FreqDriftHzs| < 0.1).\n\n[kb=15]\n\
+    Signals with extremely narrow bandwidth ($\\text{BFR} < 0.0001$), stable frequency\
+    \ ($\\text{FreqDriftHzs} < 0.1$). \u2014 Identifies a specific signature associated\
+    \ with technological transmission.\n[/kb=15]"
+  label: Narrowband Technological Marker (NTM)
+  hidden: false
+  meta:
+    kb_id: 15
+- name: ntm_class
+  sql: CASE WHEN (bwhz / (centerfreqmhz * 1000000.0)) < 0.0001 AND ABS(freqdrifthzs)
+    < 0.1 AND modtype NOT IN ('Unknown') THEN 'Strong NTM' WHEN (bwhz / (centerfreqmhz
+    * 1000000.0)) < 0.0005 AND ABS(freqdrifthzs) < 0.5 AND modtype NOT IN ('Unknown')
+    THEN 'Moderate NTM' ELSE 'Not NTM' END
+  type: TEXT
+  primary_key: false
+  description: "NTM Classification System: 'Strong NTM' (BFR<0.0001 AND |FreqDriftHzs|<0.1\
+    \ AND non-natural modulation), 'Moderate NTM' (BFR<0.0005 AND |FreqDriftHzs|<0.5\
+    \ AND non-natural modulation), or 'Not NTM'. Non-natural modulation is interpreted\
+    \ here as ModType IN (AM, FM, PM, QAM) \u2014 i.e. ModType <> 'Unknown'.\n\n[kb=39]\n\
+    Three-tier classification: 'Strong NTM' (BFR < 0.0001 AND FreqDriftHzs < 0.1 AND\
+    \ non-natural modulation), 'Moderate NTM' (BFR < 0.0005 AND FreqDriftHzs < 0.5\
+    \ AND non-natural modulation), and 'Not NTM' (all other signals). \u2014 A tiered\
+    \ classification system for Narrowband Technological Markers based on signal characteristics.\n\
+    [/kb=39]"
+  label: NTM Classification System
+  hidden: false
+  meta:
+    kb_id: 39
+measures: []
+aggregations: []
+joins:
+- target_model: telescopes
+  join_pairs:
+  - - telescref
+    - telescregistry
+  join_type: left
+filters: []
+description: "Detected signals \u2014 the central fact table. Each row is a signal\
+  \ observation with its frequency-domain characteristics (BwHz, FreqMhz, ModType,\
+  \ etc.) and quality metrics (SnrRatio, NoiseFloorDbm)."
+hidden: false

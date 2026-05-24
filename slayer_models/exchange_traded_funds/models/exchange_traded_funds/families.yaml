@@ -1,0 +1,72 @@
+version: 6
+name: families
+sql_table: families
+query_variables: {}
+data_source: exchange_traded_funds
+columns:
+- name: famcode
+  sql: famcode
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: groupname
+  sql: groupname
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: avg_beta3y
+  sql: (SELECT AVG(rm.beta3y) FROM funds f JOIN risk_metrics rm ON rm.investmentref
+    = f.tickersym WHERE f.parentgroup = families.groupname AND rm.beta3y IS NOT NULL)
+  type: DOUBLE
+  primary_key: false
+  description: Family's average 3Y Beta across all its funds.
+  hidden: false
+- name: n_alpha_generators
+  sql: (SELECT COUNT(*) FROM funds f JOIN risk_metrics rm ON rm.investmentref = f.tickersym
+    WHERE f.parentgroup = families.groupname AND rm.alpha5y > 0)
+  type: DOUBLE
+  primary_key: false
+  description: Number of Alpha Generators (5Y alpha > 0) in this family.
+  hidden: false
+- name: is_top_tier_family
+  sql: (SELECT AVG(rm.beta3y) FROM funds f JOIN risk_metrics rm ON rm.investmentref
+    = f.tickersym WHERE f.parentgroup = families.groupname AND rm.beta3y IS NOT NULL)
+    < 1.0 AND (SELECT COUNT(*) FROM funds f JOIN risk_metrics rm ON rm.investmentref
+    = f.tickersym WHERE f.parentgroup = families.groupname AND rm.alpha5y > 0) >=
+    5
+  type: BOOLEAN
+  primary_key: false
+  description: "Top-Tier Family (KB 88): avg 3Y Beta < 1.0 AND \u22655 alpha-generating\
+    \ funds.\n\n[kb=88]\nA fund family is 'Top-Tier' if its average 3-year beta is\
+    \ less than 1.0 and it manages 5 or more alpha-generating funds. \u2014 A classification\
+    \ for a fund family that exhibits desirable risk-return characteristics, specifically\
+    \ low market risk and a proven ability to generate alpha.\n[/kb=88]"
+  label: Top-Tier Family
+  hidden: false
+  meta:
+    kb_id: 88
+- name: family_sector_concentration_profile
+  sql: (SELECT s.industrytag FROM sectors s JOIN sector_allocations sa ON sa.sectorlink
+    = s.secid JOIN funds f ON f.tickersym = sa.productlink WHERE f.parentgroup = families.groupname
+    GROUP BY s.industrytag ORDER BY AVG(sa.weightpct) DESC LIMIT 1)
+  type: TEXT
+  primary_key: false
+  description: "Family Sector Concentration Profile (KB 87): the economic sector with\
+    \ the highest average weight across all funds in this family.\n\n[kb=87]\nFor\
+    \ each fund family, this profile is the economic sector with the highest average\
+    \ weight across all of the family's funds. \u2014 An analytical profile that identifies\
+    \ the single economic sector a fund family has the highest average allocation\
+    \ to, across all its funds.\n[/kb=87]"
+  label: Family Sector Concentration Profile
+  hidden: false
+  meta:
+    kb_id: 87
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'Fund families / asset management companies. PK: famcode. Business key:
+  groupname.'
+hidden: false

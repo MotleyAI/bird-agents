@@ -1,0 +1,647 @@
+version: 6
+name: facility_metrics
+source_queries:
+- version: 3
+  name: fac_stage
+  source_model: facilities
+  measures:
+  - formula: resource_score:avg
+    name: frai
+  dimensions:
+  - name: fackey
+  whole_periods_only: false
+- version: 3
+  name: asr_per_fac
+  source_model: assessmentsymptomsandrisk
+  measures:
+  - formula: phq9_score:avg
+    name: apsf
+  - formula: gad7_score:avg
+    name: agsf
+  - formula: high_severe_suicrisk_helper:count * 100.0 / *:count
+    name: srp
+  dimensions:
+  - name: facid
+    model: encounters
+  whole_periods_only: false
+- version: 3
+  name: asd_per_fac
+  source_model: assessmentsocialanddiagnosis
+  measures:
+  - formula: funcimp_score:avg
+    name: pfis
+  - formula: sse_per_row:avg
+    name: sse_avg
+  dimensions:
+  - name: facid
+    model: encounters
+  whole_periods_only: false
+- version: 3
+  name: tb_per_fac
+  source_model: treatmentbasics
+  measures:
+  - formula: engagement_score:avg
+    name: tes
+  - formula: crisisint:sum * 1.0 / encounters.patref:count_distinct
+    name: cif
+  dimensions:
+  - name: facid
+    model: encounters
+  whole_periods_only: false
+- version: 3
+  name: tox_per_fac
+  source_model: treatmentoutcomes
+  measures:
+  - formula: high_med_adh_helper:count * 1.0 / *:count
+    name: tar
+  - formula: theralliance_score:avg
+    name: theralliance_avg
+  - formula: funcimpv_score:avg
+    name: funcimpv_avg
+  dimensions:
+  - name: facid
+    model: treatmentbasics.encounters
+  whole_periods_only: false
+- version: 3
+  name: enc_per_fac
+  source_model: encounters
+  measures:
+  - formula: missappt:sum * 1.0 / patref:count_distinct
+    name: mar
+  dimensions:
+  - name: facid
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: fac_stage
+    joins:
+    - target_model: asr_per_fac
+      join_pairs:
+      - - fackey
+        - encounters__facid
+    - target_model: asd_per_fac
+      join_pairs:
+      - - fackey
+        - encounters__facid
+    - target_model: tb_per_fac
+      join_pairs:
+      - - fackey
+        - encounters__facid
+    - target_model: tox_per_fac
+      join_pairs:
+      - - fackey
+        - treatmentbasics__encounters__facid
+    - target_model: enc_per_fac
+      join_pairs:
+      - - fackey
+        - facid
+  dimensions:
+  - name: fackey
+  - name: frai
+  - name: apsf
+    model: asr_per_fac
+  - name: agsf
+    model: asr_per_fac
+  - name: srp
+    model: asr_per_fac
+  - name: pfis
+    model: asd_per_fac
+  - name: sse_avg
+    model: asd_per_fac
+  - name: tes
+    model: tb_per_fac
+  - name: cif
+    model: tb_per_fac
+  - name: tar
+    model: tox_per_fac
+  - name: theralliance_avg
+    model: tox_per_fac
+  - name: funcimpv_avg
+    model: tox_per_fac
+  - name: mar
+    model: enc_per_fac
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"fac_stage.fackey\" AS fackey, \"fac_stage.frai\" AS frai,\
+  \ \"fac_stage.asr_per_fac.apsf\" AS asr_per_fac__apsf, \"fac_stage.asr_per_fac.agsf\"\
+  \ AS asr_per_fac__agsf, \"fac_stage.asr_per_fac.srp\" AS asr_per_fac__srp, \"fac_stage.asd_per_fac.pfis\"\
+  \ AS asd_per_fac__pfis, \"fac_stage.asd_per_fac.sse_avg\" AS asd_per_fac__sse_avg,\
+  \ \"fac_stage.tb_per_fac.tes\" AS tb_per_fac__tes, \"fac_stage.tb_per_fac.cif\"\
+  \ AS tb_per_fac__cif, \"fac_stage.tox_per_fac.tar\" AS tox_per_fac__tar, \"fac_stage.tox_per_fac.theralliance_avg\"\
+  \ AS tox_per_fac__theralliance_avg, \"fac_stage.tox_per_fac.funcimpv_avg\" AS tox_per_fac__funcimpv_avg,\
+  \ \"fac_stage.enc_per_fac.mar\" AS enc_per_fac__mar FROM (SELECT\n  fac_stage.fackey\
+  \ AS \"fac_stage.fackey\",\n  fac_stage.frai AS \"fac_stage.frai\",\n  asr_per_fac.apsf\
+  \ AS \"fac_stage.asr_per_fac.apsf\",\n  asr_per_fac.agsf AS \"fac_stage.asr_per_fac.agsf\"\
+  ,\n  asr_per_fac.srp AS \"fac_stage.asr_per_fac.srp\",\n  asd_per_fac.pfis AS \"\
+  fac_stage.asd_per_fac.pfis\",\n  asd_per_fac.sse_avg AS \"fac_stage.asd_per_fac.sse_avg\"\
+  ,\n  tb_per_fac.tes AS \"fac_stage.tb_per_fac.tes\",\n  tb_per_fac.cif AS \"fac_stage.tb_per_fac.cif\"\
+  ,\n  tox_per_fac.tar AS \"fac_stage.tox_per_fac.tar\",\n  tox_per_fac.theralliance_avg\
+  \ AS \"fac_stage.tox_per_fac.theralliance_avg\",\n  tox_per_fac.funcimpv_avg AS\
+  \ \"fac_stage.tox_per_fac.funcimpv_avg\",\n  enc_per_fac.mar AS \"fac_stage.enc_per_fac.mar\"\
+  \nFROM (\n  SELECT\n    \"facilities.fackey\" AS fackey,\n    \"facilities.frai\"\
+  \ AS frai\n  FROM (\n    SELECT\n      facilities.fackey AS \"facilities.fackey\"\
+  ,\n      AVG(\n        CASE facilities.support_and_resources ->> '$.community_resources'\n\
+  \          WHEN 'Comprehensive'\n          THEN 3\n          WHEN 'Adequate'\n \
+  \         THEN 2\n          WHEN 'Limited'\n          THEN 1\n          ELSE NULL\n\
+  \        END\n      ) AS \"facilities.frai\"\n    FROM facilities AS facilities\n\
+  \    GROUP BY\n      facilities.fackey\n  ) AS _inner\n) AS fac_stage\nLEFT JOIN\
+  \ (\n  (\n    SELECT\n      \"encounters.facid\" AS facid,\n      \"encounters.patref_count_distinct\"\
+  \ AS patref_count_distinct,\n      \"encounters.missappt_sum\" AS missappt_sum,\n\
+  \      \"encounters.mar\" AS mar\n    FROM (\n      WITH base AS (\n        SELECT\n\
+  \          encounters.facid AS \"encounters.facid\",\n          COUNT(DISTINCT encounters.patref)\
+  \ AS \"encounters.patref_count_distinct\",\n          SUM(encounters.missappt) AS\
+  \ \"encounters.missappt_sum\"\n        FROM encounters AS encounters\n        GROUP\
+  \ BY\n          encounters.facid\n      ), step1 AS (\n        SELECT\n        \
+  \  \"encounters.facid\",\n          \"encounters.missappt_sum\",\n          \"encounters.patref_count_distinct\"\
+  ,\n          \"encounters.missappt_sum\" * 1.0 / \"encounters.patref_count_distinct\"\
+  \ AS \"encounters.mar\"\n        FROM base\n      )\n      SELECT\n        \"encounters.facid\"\
+  ,\n        \"encounters.mar\",\n        \"encounters.missappt_sum\",\n        \"\
+  encounters.patref_count_distinct\"\n      FROM step1\n    ) AS _inner\n  )\n) AS\
+  \ enc_per_fac\n  ON fac_stage.fackey = enc_per_fac.facid\nLEFT JOIN (\n  (\n   \
+  \ SELECT\n      \"treatmentbasics.encounters.facid\" AS encounters__facid,\n   \
+  \   \"treatmentbasics.tes\" AS tes,\n      \"treatmentbasics.crisisint_sum\" AS\
+  \ crisisint_sum,\n      \"treatmentbasics.cif\" AS cif,\n      \"treatmentbasics.encounters.patref_count_distinct\"\
+  \ AS encounters__patref_count_distinct\n    FROM (\n      WITH _base AS (\n    \
+  \    SELECT\n          encounters.facid AS \"treatmentbasics.encounters.facid\"\
+  ,\n          AVG(\n            CASE treatmentbasics.therapy_details ->> '$.engagement'\n\
+  \              WHEN 'High'\n              THEN 3\n              WHEN 'Medium'\n\
+  \              THEN 2\n              WHEN 'Low'\n              THEN 1\n        \
+  \      WHEN 'Non-compliant'\n              THEN 0\n              ELSE NULL\n   \
+  \         END\n          ) AS \"treatmentbasics.tes\",\n          SUM(treatmentbasics.crisisint)\
+  \ AS \"treatmentbasics.crisisint_sum\"\n        FROM treatmentbasics AS treatmentbasics\n\
+  \        LEFT JOIN encounters AS encounters\n          ON treatmentbasics.encref\
+  \ = encounters.enckey\n        GROUP BY\n          encounters.facid\n      ), _cm_treatmentbasics__encounters__patref_count_distinct\
+  \ AS (\n        SELECT\n          encounters.facid AS \"treatmentbasics.encounters.facid\"\
+  ,\n          COUNT(DISTINCT encounters.patref) AS \"treatmentbasics.encounters.patref_count_distinct\"\
+  \n        FROM encounters AS encounters\n        GROUP BY\n          encounters.facid\n\
+  \      ), _combined AS (\n        SELECT\n          _base.\"treatmentbasics.encounters.facid\"\
+  ,\n          _base.\"treatmentbasics.tes\",\n          _base.\"treatmentbasics.crisisint_sum\"\
+  ,\n          _cm_treatmentbasics__encounters__patref_count_distinct.\"treatmentbasics.encounters.patref_count_distinct\"\
+  \n        FROM _base\n        LEFT JOIN _cm_treatmentbasics__encounters__patref_count_distinct\n\
+  \          ON _base.\"treatmentbasics.encounters.facid\" = _cm_treatmentbasics__encounters__patref_count_distinct.\"\
+  treatmentbasics.encounters.facid\"\n      ), step1 AS (\n        SELECT\n      \
+  \    \"treatmentbasics.crisisint_sum\",\n          \"treatmentbasics.encounters.facid\"\
+  ,\n          \"treatmentbasics.encounters.patref_count_distinct\",\n          \"\
+  treatmentbasics.tes\",\n          \"treatmentbasics.crisisint_sum\" * 1.0 / \"treatmentbasics.encounters.patref_count_distinct\"\
+  \ AS \"treatmentbasics.cif\"\n        FROM _combined\n      )\n      SELECT\n  \
+  \      \"treatmentbasics.cif\",\n        \"treatmentbasics.crisisint_sum\",\n  \
+  \      \"treatmentbasics.encounters.facid\",\n        \"treatmentbasics.encounters.patref_count_distinct\"\
+  ,\n        \"treatmentbasics.tes\"\n      FROM step1\n    ) AS _inner\n  )\n) AS\
+  \ tb_per_fac\n  ON fac_stage.fackey = tb_per_fac.encounters__facid\nLEFT JOIN (\n\
+  \  (\n    SELECT\n      \"assessmentsymptomsandrisk.encounters.facid\" AS encounters__facid,\n\
+  \      \"assessmentsymptomsandrisk.apsf\" AS apsf,\n      \"assessmentsymptomsandrisk.agsf\"\
+  \ AS agsf,\n      \"assessmentsymptomsandrisk._count\" AS _count,\n      \"assessmentsymptomsandrisk.high_severe_suicrisk_helper_count\"\
+  \ AS high_severe_suicrisk_helper_count,\n      \"assessmentsymptomsandrisk.srp\"\
+  \ AS srp\n    FROM (\n      WITH base AS (\n        SELECT\n          encounters.facid\
+  \ AS \"assessmentsymptomsandrisk.encounters.facid\",\n          AVG(\n         \
+  \   CAST(assessmentsymptomsandrisk.mental_health_scores ->> '$.depression.phq9_score'\
+  \ AS INTEGER)\n          ) AS \"assessmentsymptomsandrisk.apsf\",\n          AVG(\n\
+  \            CAST(assessmentsymptomsandrisk.mental_health_scores ->> '$.anxiety.gad7_score'\
+  \ AS INTEGER)\n          ) AS \"assessmentsymptomsandrisk.agsf\",\n          COUNT(*)\
+  \ AS \"assessmentsymptomsandrisk._count\",\n          COUNT(\n            CASE\n\
+  \              WHEN assessmentsymptomsandrisk.suicrisk IN ('High', 'Severe')\n \
+  \             THEN assessmentsymptomsandrisk.asrkey\n            END\n         \
+  \ ) AS \"assessmentsymptomsandrisk.high_severe_suicrisk_helper_count\"\n       \
+  \ FROM assessmentsymptomsandrisk AS assessmentsymptomsandrisk\n        LEFT JOIN\
+  \ encounters AS encounters\n          ON assessmentsymptomsandrisk.asrkey = encounters.abref\n\
+  \        GROUP BY\n          encounters.facid\n      ), step1 AS (\n        SELECT\n\
+  \          \"assessmentsymptomsandrisk._count\",\n          \"assessmentsymptomsandrisk.agsf\"\
+  ,\n          \"assessmentsymptomsandrisk.apsf\",\n          \"assessmentsymptomsandrisk.encounters.facid\"\
+  ,\n          \"assessmentsymptomsandrisk.high_severe_suicrisk_helper_count\",\n\
+  \          \"assessmentsymptomsandrisk.high_severe_suicrisk_helper_count\" * 100.0\
+  \ / \"assessmentsymptomsandrisk._count\" AS \"assessmentsymptomsandrisk.srp\"\n\
+  \        FROM base\n      )\n      SELECT\n        \"assessmentsymptomsandrisk._count\"\
+  ,\n        \"assessmentsymptomsandrisk.agsf\",\n        \"assessmentsymptomsandrisk.apsf\"\
+  ,\n        \"assessmentsymptomsandrisk.encounters.facid\",\n        \"assessmentsymptomsandrisk.high_severe_suicrisk_helper_count\"\
+  ,\n        \"assessmentsymptomsandrisk.srp\"\n      FROM step1\n    ) AS _inner\n\
+  \  )\n) AS asr_per_fac\n  ON fac_stage.fackey = asr_per_fac.encounters__facid\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"assessmentsocialanddiagnosis.encounters.facid\"\
+  \ AS encounters__facid,\n      \"assessmentsocialanddiagnosis.pfis\" AS pfis,\n\
+  \      \"assessmentsocialanddiagnosis.sse_avg\" AS sse_avg\n    FROM (\n      SELECT\n\
+  \        encounters.facid AS \"assessmentsocialanddiagnosis.encounters.facid\",\n\
+  \        AVG(\n          CASE assessmentsocialanddiagnosis.funcimp\n           \
+  \ WHEN 'Severe'\n            THEN 3\n            WHEN 'Moderate'\n            THEN\
+  \ 2\n            WHEN 'Mild'\n            THEN 1\n            ELSE NULL\n      \
+  \    END\n        ) AS \"assessmentsocialanddiagnosis.pfis\",\n        AVG(\n  \
+  \        (\n            CASE assessmentsocialanddiagnosis.socsup\n             \
+  \ WHEN 'Strong'\n              THEN 3\n              WHEN 'Moderate'\n         \
+  \     THEN 2\n              WHEN 'Limited'\n              THEN 1\n             \
+  \ ELSE NULL\n            END\n          ) + (\n            CASE assessmentsocialanddiagnosis.relqual\n\
+  \              WHEN 'Good'\n              THEN 3\n              WHEN 'Fair'\n  \
+  \            THEN 2\n              WHEN 'Poor'\n              THEN 1\n         \
+  \     WHEN 'Conflicted'\n              THEN 0\n              ELSE NULL\n       \
+  \     END\n          )\n        ) AS \"assessmentsocialanddiagnosis.sse_avg\"\n\
+  \      FROM assessmentsocialanddiagnosis AS assessmentsocialanddiagnosis\n     \
+  \ LEFT JOIN encounters AS encounters\n        ON assessmentsocialanddiagnosis.asdkey\
+  \ = encounters.abref\n      GROUP BY\n        encounters.facid\n    ) AS _inner\n\
+  \  )\n) AS asd_per_fac\n  ON fac_stage.fackey = asd_per_fac.encounters__facid\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"treatmentoutcomes.treatmentbasics.encounters.facid\"\
+  \ AS treatmentbasics__encounters__facid,\n      \"treatmentoutcomes._count\" AS\
+  \ _count,\n      \"treatmentoutcomes.high_med_adh_helper_count\" AS high_med_adh_helper_count,\n\
+  \      \"treatmentoutcomes.theralliance_avg\" AS theralliance_avg,\n      \"treatmentoutcomes.funcimpv_avg\"\
+  \ AS funcimpv_avg,\n      \"treatmentoutcomes.tar\" AS tar\n    FROM (\n      WITH\
+  \ base AS (\n        SELECT\n          treatmentbasics__encounters.facid AS \"treatmentoutcomes.treatmentbasics.encounters.facid\"\
+  ,\n          COUNT(*) AS \"treatmentoutcomes._count\",\n          COUNT(\n     \
+  \       CASE\n              WHEN treatmentoutcomes.txadh IN ('High', 'Medium')\n\
+  \              THEN treatmentoutcomes.txoutkey\n            END\n          ) AS\
+  \ \"treatmentoutcomes.high_med_adh_helper_count\",\n          AVG(\n           \
+  \ CASE treatmentoutcomes.theralliance\n              WHEN 'Strong'\n           \
+  \   THEN 3\n              WHEN 'Moderate'\n              THEN 2\n              WHEN\
+  \ 'Weak'\n              THEN 1\n              WHEN 'Poor'\n              THEN 0\n\
+  \              ELSE NULL\n            END\n          ) AS \"treatmentoutcomes.theralliance_avg\"\
+  ,\n          AVG(\n            CASE treatmentoutcomes.funcimpv\n              WHEN\
+  \ 'Significant'\n              THEN 3\n              WHEN 'Moderate'\n         \
+  \     THEN 2\n              WHEN 'Minimal'\n              THEN 1\n             \
+  \ ELSE NULL\n            END\n          ) AS \"treatmentoutcomes.funcimpv_avg\"\n\
+  \        FROM treatmentoutcomes AS treatmentoutcomes\n        LEFT JOIN treatmentbasics\
+  \ AS treatmentbasics\n          ON treatmentoutcomes.txref = treatmentbasics.txkey\n\
+  \        LEFT JOIN encounters AS treatmentbasics__encounters\n          ON treatmentbasics.encref\
+  \ = treatmentbasics__encounters.enckey\n        GROUP BY\n          treatmentbasics__encounters.facid\n\
+  \      ), step1 AS (\n        SELECT\n          \"treatmentoutcomes._count\",\n\
+  \          \"treatmentoutcomes.funcimpv_avg\",\n          \"treatmentoutcomes.high_med_adh_helper_count\"\
+  ,\n          \"treatmentoutcomes.theralliance_avg\",\n          \"treatmentoutcomes.treatmentbasics.encounters.facid\"\
+  ,\n          \"treatmentoutcomes.high_med_adh_helper_count\" * 1.0 / \"treatmentoutcomes._count\"\
+  \ AS \"treatmentoutcomes.tar\"\n        FROM base\n      )\n      SELECT\n     \
+  \   \"treatmentoutcomes._count\",\n        \"treatmentoutcomes.funcimpv_avg\",\n\
+  \        \"treatmentoutcomes.high_med_adh_helper_count\",\n        \"treatmentoutcomes.tar\"\
+  ,\n        \"treatmentoutcomes.theralliance_avg\",\n        \"treatmentoutcomes.treatmentbasics.encounters.facid\"\
+  \n      FROM step1\n    ) AS _inner\n  )\n) AS tox_per_fac\n  ON fac_stage.fackey\
+  \ = tox_per_fac.treatmentbasics__encounters__facid) AS _inner"
+data_source: mental
+columns:
+- name: fackey
+  sql: fackey
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: frai
+  sql: frai
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric community-resource score: Comprehensive=3, Adequate=2, Limited=1.'
+  hidden: false
+  format:
+    type: float
+- name: asr_per_fac__apsf
+  sql: asr_per_fac__apsf
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: asr_per_fac__agsf
+  sql: asr_per_fac__agsf
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: asr_per_fac__srp
+  sql: asr_per_fac__srp
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: asd_per_fac__pfis
+  sql: asd_per_fac__pfis
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: asd_per_fac__sse_avg
+  sql: asd_per_fac__sse_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tb_per_fac__tes
+  sql: tb_per_fac__tes
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tb_per_fac__cif
+  sql: tb_per_fac__cif
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tox_per_fac__tar
+  sql: tox_per_fac__tar
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tox_per_fac__theralliance_avg
+  sql: tox_per_fac__theralliance_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tox_per_fac__funcimpv_avg
+  sql: tox_per_fac__funcimpv_avg
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: enc_per_fac__mar
+  sql: enc_per_fac__mar
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures:
+- formula: (asr_per_fac__apsf:avg + asr_per_fac__agsf:avg) / 2.0
+  name: ssi
+  label: Symptom Severity Index (SSI)
+  description: "Symptom Severity Index (SSI) per facility = (APSF + AGSF) / 2. KB\
+    \ #30 (per-facility instance; bare measure on assessmentsymptomsandrisk also carries\
+    \ kb_id 30).\n\n[kb=30]\nSSI = \\frac{APSF + AGSF}{2}, \\text{using Average PHQ-9\
+    \ Score (APSF) and Average GAD-7 Score (AGSF)} \u2014 Calculates a combined average\
+    \ symptom severity score for a facility, based on depression and anxiety.\n[/kb=30]"
+  meta:
+    kb_id: 30
+- formula: (tb_per_fac__tes:avg + tox_per_fac__tar:avg * 3) / 2.0
+  name: eas
+  label: Engagement-Adherence Score (EAS)
+  description: "Engagement-Adherence Score (EAS) per facility = (TES + TAR*3) / 2.\
+    \ KB #31.\n\n[kb=31]\nEAS = \\frac{TES + (TAR \\times 3)}{2}, \\text{normalizing\
+    \ Treatment Adherence Rate (TAR) to the Therapy Engagement Score (TES) scale (0-3)}\
+    \ \u2014 Computes a composite score reflecting patient participation and adherence\
+    \ to treatment plans at a facility.\n[/kb=31]"
+  meta:
+    kb_id: 31
+- formula: (asr_per_fac__srp:avg / 100.0) * 5 + asd_per_fac__pfis:avg
+  name: frpi
+  label: Facility Risk Profile Index (FRPI)
+  description: "Facility Risk Profile Index (FRPI) = (SRP/100)*5 + PFIS. KB #32.\n\
+    \n[kb=32]\nFRPI = (\\frac{SRP}{100} \\times 5) + PFIS, \\text{weighting Suicide\
+    \ Risk Prevalence (SRP) and combining with Patient Functional Impairment Score\
+    \ (PFIS)} \u2014 Generates an index indicating the overall risk level associated\
+    \ with the patient population at a facility.\n[/kb=32]"
+  meta:
+    kb_id: 32
+- formula: 1.0 / (1 + tb_per_fac__cif:avg + enc_per_fac__mar:avg)
+  name: psm
+  label: Patient Stability Metric (PSM)
+  description: "Patient Stability Metric (PSM) = 1 / (1 + CIF + MAR) per facility.\
+    \ KB #33.\n\n[kb=33]\nPSM = \\frac{1}{1 + CIF + MAR}, \\text{where higher values\
+    \ indicate greater stability based on Crisis Intervention Frequency (CIF) and\
+    \ Missed Appointment Rate (MAR)} \u2014 Calculates an index reflecting patient\
+    \ stability, inversely related to crisis frequency and missed appointments.\n\
+    [/kb=33]"
+  meta:
+    kb_id: 33
+- formula: asd_per_fac__pfis:avg - frai:avg
+  name: rdd
+  label: Resource-Demand Differential (RDD)
+  description: "Resource-Demand Differential (RDD) = PFIS - FRAI per facility. KB\
+    \ #34.\n\n[kb=34]\nRDD = PFIS - FRAI, \\text{comparing Patient Functional Impairment\
+    \ Score (PFIS) to Facility Resource Adequacy Index (FRAI)} \u2014 Measures the\
+    \ potential gap between average patient functional needs and available facility\
+    \ resources.\n[/kb=34]"
+  meta:
+    kb_id: 34
+- formula: (asd_per_fac__sse_avg:avg + frai:avg) / 2.0
+  name: sesi
+  label: Socio-Environmental Support Index (SESI)
+  description: "Socio-Environmental Support Index (SESI) = (avg(SSE) + FRAI) / 2 per\
+    \ facility. KB #35.\n\n[kb=35]\nSESI = \\frac{SSE_{avg} + FRAI}{2}, \\text{combining\
+    \ average Social Support Effectiveness (SSE) across patients with Facility Resource\
+    \ Adequacy Index (FRAI)} \u2014 Computes a composite index reflecting the quality\
+    \ of the patient's social environment and the facility's resource context.\n[/kb=35]"
+  meta:
+    kb_id: 35
+- formula: tox_per_fac__tar:avg / asd_per_fac__pfis:avg
+  name: aer
+  label: Adherence Effectiveness Ratio (AER)
+  description: "Adherence Effectiveness Ratio (AER) = TAR / PFIS per facility. KB\
+    \ #36.\n\n[kb=36]\nAER = \\frac{TAR}{PFIS}, \\text{using Treatment Adherence Rate\
+    \ (TAR) and Patient Functional Impairment Score (PFIS) (handle PFIS=0)} \u2014\
+    \ Calculates a ratio comparing treatment adherence rate to the average functional\
+    \ impairment, suggesting potential treatment impact relative to need.\n[/kb=36]"
+  meta:
+    kb_id: 36
+- formula: (3 - tb_per_fac__tes:avg) * (1 + enc_per_fac__mar:avg)
+  name: edi
+  label: Engagement Deficit Index (EDI)
+  description: "Engagement Deficit Index (EDI) = (3 - TES) * (1 + MAR) per facility.\
+    \ KB #37.\n\n[kb=37]\nEDI = (3 - TES) \\times (1 + MAR), \\text{calculating the\
+    \ gap from maximum Therapy Engagement Score (TES) weighted by Missed Appointment\
+    \ Rate (MAR)} \u2014 Quantifies the degree of patient disengagement, considering\
+    \ both therapy engagement scores and appointment attendance.\n[/kb=37]"
+  meta:
+    kb_id: 37
+- formula: (asr_per_fac__apsf:avg / 27.0) + (asr_per_fac__srp:avg / 100.0) + (asd_per_fac__pfis:avg
+    / 3.0)
+  name: cfrs
+  label: Comprehensive Facility Risk Score (CFRS)
+  description: "Comprehensive Facility Risk Score (CFRS) = APSF/27 + SRP/100 + PFIS/3.\
+    \ KB #38.\n\n[kb=38]\nCFRS = \\frac{APSF}{27} + \\frac{SRP}{100} + \\frac{PFIS}{3},\
+    \ \\text{normalizing Average PHQ-9 Score (APSF), Suicide Risk Prevalence (SRP),\
+    \ and Patient Functional Impairment Score (PFIS) to a 0-1 scale and summing} \u2014\
+    \ A normalized index assessing overall facility risk based on combined depression\
+    \ severity, suicide risk prevalence, and functional impairment.\n[/kb=38]"
+  meta:
+    kb_id: 38
+- formula: tb_per_fac__cif:avg / (asd_per_fac__sse_avg:avg + 1)
+  name: sspi
+  label: Support System Pressure Index (SSPI)
+  description: "Support System Pressure Index (SSPI) = CIF / (avg(SSE) + 1). KB #39.\n\
+    \n[kb=39]\nSSPI = \\frac{CIF}{SSE_{avg} + 1}, \\text{calculating Crisis Intervention\
+    \ Frequency (CIF) relative to average Social Support Effectiveness (SSE) (adding\
+    \ 1 to avoid division by zero)} \u2014 Index assessing the pressure on support\
+    \ systems based on crisis frequency relative to social support effectiveness.\n\
+    [/kb=39]"
+  meta:
+    kb_id: 39
+- formula: eas / (ssi + 1)
+  name: cipi
+  label: Clinical Improvement Potential Index (CIPI)
+  description: "Clinical Improvement Potential Index (CIPI) = EAS / (SSI + 1). KB\
+    \ #50.\n\n[kb=50]\nCIPI = \\frac{EAS}{SSI + 1}, \\text{using Engagement-Adherence\
+    \ Score (EAS) and Symptom Severity Index (SSI). Higher values suggest higher engagement\
+    \ relative to current symptom burden.} \u2014 Calculates a ratio comparing patient\
+    \ engagement/adherence to overall symptom severity at a facility, suggesting potential\
+    \ responsiveness to intervention.\n[/kb=50]"
+  meta:
+    kb_id: 50
+- formula: psm * frai:avg
+  name: fei
+  label: Facility Efficiency Index (FEI)
+  description: "Facility Efficiency Index (FEI) = PSM * FRAI per facility. KB #51.\n\
+    \n[kb=51]\nFEI = PSM \\times FRAI, \\text{multiplying Patient Stability Metric\
+    \ (PSM) by Facility Resource Adequacy Index (FRAI). Higher scores suggest better\
+    \ stability achieved per resource level.} \u2014 Estimates facility efficiency\
+    \ by relating the achieved patient stability metric to the available facility\
+    \ resource adequacy.\n[/kb=51]"
+  meta:
+    kb_id: 51
+- formula: (tox_per_fac__theralliance_avg:avg + tb_per_fac__tes:avg) / 2.0
+  name: taes
+  label: Therapeutic Alliance & Engagement Score (TAES)
+  description: "Therapeutic Alliance & Engagement Score (TAES) = (avg(theralliance_score)\
+    \ + TES) / 2. KB #52.\n\n[kb=52]\nTAES = \\frac{Average(theralliance\\_score)\
+    \ + TES}{2}, \\text{where } theralliance\\_score = \\begin{cases} 3 & \\text{if\
+    \ } theralliance = Strong \\\\ 2 & \\text{if } theralliance = Moderate \\\\ 1\
+    \ & \\text{if } theralliance = Weak \\\\ 0 & \\text{if } theralliance = Poor \\\
+    end{cases}, \\text{averaged across treatmentoutcomes, combined with Therapy Engagement\
+    \ Score (TES)}. \u2014 Computes a combined score reflecting both the average clinician-reported\
+    \ therapeutic alliance and the calculated therapy engagement score for a facility.\n\
+    [/kb=52]"
+  meta:
+    kb_id: 52
+- formula: tox_per_fac__funcimpv_avg:avg * tox_per_fac__tar:avg
+  name: rti
+  label: Recovery Trajectory Index (RTI)
+  description: "Recovery Trajectory Index (RTI) = avg(funcimpv_score) * TAR per facility.\
+    \ KB #53.\n\n[kb=53]\nRTI = \\frac{\\sum_{i \\in treatmentoutcomes} (funcimpv\\\
+    _score_i)}{|treatmentoutcomes|} \\times TAR, \\text{where } funcimpv\\_score =\
+    \ \\begin{cases} 3 & \\text{if } funcimpv = Significant \\\\ 2 & \\text{if } funcimpv\
+    \ = Moderate \\\\ 1 & \\text{if } funcimpv = Minimal \\end{cases} \u2014 Estimates\
+    \ the effectiveness of treatment adherence in achieving functional improvement\
+    \ at a facility.\n[/kb=53]"
+  meta:
+    kb_id: 53
+- formula: tb_per_fac__cif:avg / (tox_per_fac__tar:avg + 0.01)
+  name: car
+  label: Crisis Adherence Ratio (CAR)
+  description: "Crisis Adherence Ratio (CAR) = CIF / (TAR + 0.01). KB #54.\n\n[kb=54]\n\
+    CAR = \\frac{CIF}{TAR + 0.01}, \\text{dividing Crisis Intervention Frequency (CIF)\
+    \ by Treatment Adherence Rate (TAR) (adjusted to prevent division by zero). Higher\
+    \ values indicate more crises relative to adherence levels.} \u2014 Calculates\
+    \ the ratio of crisis intervention frequency to the treatment adherence rate,\
+    \ indicating crises occurring per unit of adherence.\n[/kb=54]"
+  meta:
+    kb_id: 54
+- formula: frai:corr(other=tox_per_fac__tar)
+  name: craa
+  label: Correlation Between Resource Adequacy and Adherence (CRAA)
+  description: "Correlation between Resource Adequacy and Adherence (CRAA) = CORR(resource_score,\
+    \ TAR) across facilities. KB #60.\n\n[kb=60]\nCRAA = \\text{CORR}(resource\\_score,\
+    \ tar), \\text{where } resource\\_score \\text{ is the facility's resource adequacy\
+    \ score, and } tar \\text{ is the treatment adherence rate for the facility.}\
+    \ \u2014 Measures the correlation between individual facility resource adequacy\
+    \ scores and treatment adherence rates.\n[/kb=60]"
+  meta:
+    kb_id: 60
+- formula: ((asr_per_fac__srp:avg / 100.0) * 5 + asd_per_fac__pfis:avg) > 4.5 AND
+    frai:avg < 1.5
+  name: is_high_need_under_resourced
+  label: High-Need, Under-Resourced Facility
+  description: "High-Need, Under-Resourced Facility (KB #40): FRPI > 4.5 AND FRAI\
+    \ < 1.5.\n\n[kb=40]\nA facility where FRPI > 4.5 and FRAI < 1.5, \\text{indicating\
+    \ high Facility Risk Profile Index (FRPI) and low Facility Resource Adequacy Index\
+    \ (FRAI)} \u2014 Identifies facilities facing significant aggregate patient risk\
+    \ without adequate community resources.\n[/kb=40]"
+  meta:
+    kb_id: 40
+- formula: ((tb_per_fac__tes:avg + tox_per_fac__tar:avg * 3) / 2.0) > 2.0 AND asd_per_fac__pfis:avg
+    > 2.0
+  name: is_engaged_high_impairment
+  label: Facility with Engaged but High-Impairment Population
+  description: "Facility with Engaged but High-Impairment Population (KB #41): EAS\
+    \ > 2.0 AND PFIS > 2.0.\n\n[kb=41]\nA facility where EAS > 2.0 and PFIS > 2.0,\
+    \ \\text{showing high Engagement-Adherence Score (EAS) alongside high Patient\
+    \ Functional Impairment Score (PFIS)} \u2014 Identifies facilities where the patient\
+    \ population is generally engaged and adherent but continues to struggle with\
+    \ high functional impairment.\n[/kb=41]"
+  meta:
+    kb_id: 41
+- formula: ((tb_per_fac__tes:avg + tox_per_fac__tar:avg * 3) / 2.0) < 1.5 AND enc_per_fac__mar:avg
+    > 2.5
+  name: is_attrition_risk
+  label: Facility Attrition Risk Indicator
+  description: "Facility Attrition Risk Indicator (KB #43): EAS < 1.5 AND MAR > 2.5.\n\
+    \n[kb=43]\nA facility where EAS < 1.5 and MAR > 2.5, \\text{based on low Engagement-Adherence\
+    \ Score (EAS) and high Missed Appointment Rate (MAR)} \u2014 Identifies facilities\
+    \ potentially experiencing high patient dropout, characterized by low engagement/adherence\
+    \ and high missed appointment rates.\n[/kb=43]"
+  meta:
+    kb_id: 43
+- formula: frai:avg >= 2.0 AND asd_per_fac__sse_avg:avg >= 4.5
+  name: is_well_resourced_high_support
+  label: Well-Resourced High-Support Environment
+  description: "Well-Resourced High-Support Environment (KB #44): FRAI >= 2.0 AND\
+    \ avg(SSE) >= 4.5.\n\n[kb=44]\nA facility where FRAI \\geq 2.0 and the average\
+    \ SSE \\geq 4.5, \\text{indicating high Facility Resource Adequacy Index (FRAI)\
+    \ and high average Social Support Effectiveness (SSE)} \u2014 Identifies facilities\
+    \ that are well-resourced and serve a patient population with generally high levels\
+    \ of social support effectiveness.\n[/kb=44]"
+  meta:
+    kb_id: 44
+- formula: tb_per_fac__tes:avg > 2.2 AND tox_per_fac__tar:avg < 0.6
+  name: is_treatment_inertia
+  label: Facility with Potential Treatment Inertia
+  description: "Facility with Potential Treatment Inertia (KB #46): TES > 2.2 AND\
+    \ TAR < 0.6.\n\n[kb=46]\nA facility where TES > 2.2 and TAR < 0.6, \\text{based\
+    \ on Therapy Engagement Score (TES) and Treatment Adherence Rate (TAR)} \u2014\
+    \ Identifies facilities where patients seem engaged in therapy (high TES) but\
+    \ struggle with overall treatment adherence (low TAR), suggesting potential systemic\
+    \ barriers or resistance.\n[/kb=46]"
+  meta:
+    kb_id: 46
+- formula: tox_per_fac__tar:avg > 0.75 AND enc_per_fac__mar:avg < 1.0
+  name: is_strong_retention
+  label: Facility Demonstrating Strong Patient Retention
+  description: "Facility Demonstrating Strong Patient Retention (KB #48): TAR > 0.75\
+    \ AND MAR < 1.0.\n\n[kb=48]\nA facility where TAR > 0.75 and MAR < 1.0, \\text{based\
+    \ on Treatment Adherence Rate (TAR) and Missed Appointment Rate (MAR)} \u2014\
+    \ Identifies facilities showing positive performance indicators related to high\
+    \ patient adherence and low missed appointment rates.\n[/kb=48]"
+  meta:
+    kb_id: 48
+- formula: ((tb_per_fac__tes:avg + tox_per_fac__tar:avg * 3) / 2.0) > 2.5 AND ((asr_per_fac__apsf:avg
+    + asr_per_fac__agsf:avg) / 2.0) > 15
+  name: is_high_clinical_leverage
+  label: Facility with High Clinical Leverage Potential
+  description: "Facility with High Clinical Leverage Potential (KB #55): EAS > 2.5\
+    \ AND SSI > 15.\n\n[kb=55]\nA facility where EAS > 2.5 AND SSI > 15, \\text{indicating\
+    \ high Engagement-Adherence Score (EAS) alongside a high Symptom Severity Index\
+    \ (SSI).} \u2014 Identifies facilities with a highly engaged and adherent patient\
+    \ population that still experiences significant symptom severity, suggesting readiness\
+    \ for potentially more intensive or alternative interventions.\n[/kb=55]"
+  meta:
+    kb_id: 55
+- formula: tb_per_fac__tes:avg > 2.0 AND (tox_per_fac__funcimpv_avg:avg * tox_per_fac__tar:avg)
+    < 0.8
+  name: is_engagement_outcome_disconnect
+  label: Facility with Potential Engagement-Outcome Disconnect
+  description: "Facility with Potential Engagement-Outcome Disconnect (KB #58): TES\
+    \ > 2.0 AND RTI < 0.8.\n\n[kb=58]\nA facility where TES > 2.0 AND RTI < 0.8, \\\
+    text{indicating high Therapy Engagement Score (TES) but a low Recovery Trajectory\
+    \ Index (RTI).} \u2014 Identifies facilities where high therapy engagement scores\
+    \ do not seem to translate into expected functional improvements or recovery progression.\n\
+    [/kb=58]"
+  meta:
+    kb_id: 58
+- formula: (asd_per_fac__pfis:avg - frai:avg) > 1.0 AND (((tb_per_fac__tes:avg + tox_per_fac__tar:avg
+    * 3) / 2.0) < 1.5 AND enc_per_fac__mar:avg > 2.5)
+  name: is_systemically_stressed
+  label: Systemically Stressed Facility Environment
+  description: "Systemically Stressed Facility Environment (KB #59): RDD > 1.0 AND\
+    \ Facility Attrition Risk Indicator (KB #43).\n\n[kb=59]\nA facility where RDD\
+    \ > 1.0 AND meeting criteria for Facility Attrition Risk Indicator. \\text{Combines\
+    \ a high Resource-Demand Differential (RDD) with indicators of high attrition\
+    \ risk.} \u2014 Identifies facilities potentially facing overwhelming systemic\
+    \ stress, characterized by a significant gap between patient needs and resources,\
+    \ compounded by high patient attrition risk.\n[/kb=59]"
+  meta:
+    kb_id: 59
+aggregations: []
+joins: []
+filters: []
+description: 'Per-facility composite metrics: APSF, AGSF, SRP, SSI, PFIS, SSE, TES,
+  CIF, TAR, MAR, FRAI, theralliance_avg, funcimpv_avg. Multistage DAG: each peer is
+  aggregated to one row per facility in its own stage; final stage anchors at fac_stage
+  (facilities aggregated by fackey to surface FRAI) and joins all peer stages on facid==fackey.'
+hidden: false

@@ -1,0 +1,94 @@
+version: 6
+name: attorney_performance_rating
+source_queries:
+- version: 3
+  name: att_rates
+  source_model: case_attorney
+  measures:
+  - formula: is_case_certified:sum
+  - formula: '*:count'
+  dimensions:
+  - name: counselmail
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: att_rates
+    columns:
+    - name: approval_rate
+      type: DOUBLE
+      sql: is_case_certified_sum * 100.0 / NULLIF(_count, 0)
+    - name: performance_rating
+      type: TEXT
+      sql: CASE WHEN is_case_certified_sum * 100.0 / NULLIF(_count, 0) > 95 THEN 'High
+        Performer' WHEN is_case_certified_sum * 100.0 / NULLIF(_count, 0) >= 85 THEN
+        'Standard Performer' ELSE 'Underperformer' END
+  dimensions:
+  - name: counselmail
+  - name: is_case_certified_sum
+  - name: _count
+  - name: approval_rate
+  - name: performance_rating
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"att_rates.counselmail\" AS counselmail, \"att_rates.is_case_certified_sum\"\
+  \ AS is_case_certified_sum, \"att_rates._count\" AS _count, \"att_rates.approval_rate\"\
+  \ AS approval_rate, \"att_rates.performance_rating\" AS performance_rating FROM\
+  \ (SELECT\n  att_rates.counselmail AS \"att_rates.counselmail\",\n  att_rates.is_case_certified_sum\
+  \ AS \"att_rates.is_case_certified_sum\",\n  att_rates._count AS \"att_rates._count\"\
+  ,\n  is_case_certified_sum * 100.0 / NULLIF(_count, 0) AS \"att_rates.approval_rate\"\
+  ,\n  CASE\n    WHEN is_case_certified_sum * 100.0 / NULLIF(_count, 0) > 95\n   \
+  \ THEN 'High Performer'\n    WHEN is_case_certified_sum * 100.0 / NULLIF(_count,\
+  \ 0) >= 85\n    THEN 'Standard Performer'\n    ELSE 'Underperformer'\n  END AS \"\
+  att_rates.performance_rating\"\nFROM (\n  SELECT\n    \"case_attorney.counselmail\"\
+  \ AS counselmail,\n    \"case_attorney.is_case_certified_sum\" AS is_case_certified_sum,\n\
+  \    \"case_attorney._count\" AS _count\n  FROM (\n    SELECT\n      case_attorney.counselmail\
+  \ AS \"case_attorney.counselmail\",\n      SUM(CASE WHEN LOWER(TRIM(cases.statustag))\
+  \ = 'certified' THEN 1 ELSE 0 END) AS \"case_attorney.is_case_certified_sum\",\n\
+  \      COUNT(*) AS \"case_attorney._count\"\n    FROM case_attorney AS case_attorney\n\
+  \    LEFT JOIN cases AS cases\n      ON case_attorney.docketkey = cases.filekey\n\
+  \    GROUP BY\n      case_attorney.counselmail\n  ) AS _inner\n) AS att_rates) AS\
+  \ _inner"
+data_source: labor_certification_applications
+columns:
+- name: counselmail
+  sql: counselmail
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_case_certified_sum
+  sql: is_case_certified_sum
+  type: DOUBLE
+  primary_key: false
+  description: '1 if joined case is certified, else 0. Resolved via the cases join.
+    KB #24.'
+  hidden: false
+- name: _count
+  sql: _count
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: approval_rate
+  sql: approval_rate
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: performance_rating
+  sql: performance_rating
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Attorney Performance Rating per attorney (KB #52): High Performer (>95%\
+  \ approval), Standard (85-95%), Underperformer (<85%). Per-attorney rows.\n\n[kb=52]\n\
+  Attorneys are rated as High Performers (over 95% approval rate), Standard Performers\
+  \ (85-95% approval rate), or Underperformers (below 85% approval rate), based on\
+  \ their application outcomes. \u2014 Categorizes attorneys based on their application\
+  \ success rates.\n[/kb=52]"
+hidden: false
+meta:
+  kb_id: 52

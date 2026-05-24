@@ -1,0 +1,318 @@
+version: 6
+name: sensitivitydata
+sql_table: sensitivitydata
+query_variables: {}
+data_source: museum
+columns:
+- name: sensitivityregistry
+  sql: sensitivityregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: artref
+  sql: artref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: envsensitivity
+  sql: envsensitivity
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lightsensitivity
+  sql: lightsensitivity
+  type: TEXT
+  primary_key: false
+  description: "Light/UV sensitivity classification (KB #23): 'Low' (tolerates up\
+    \ to 300 lux, e.g. stone), 'Medium' (limited to 150-200 lux, e.g. oil paintings),\
+    \ 'High' (50 lux or less, e.g. textiles, paper).\n\n[kb=23]\nValues include 'Low'\
+    \ (can tolerate up to 300 lux, like stone artifacts), 'Medium' (should be limited\
+    \ to 150-200 lux, like oil paintings), and 'High' (restricted to 50 lux or less,\
+    \ like textiles and works on paper). \u2014 Illustrates light sensitivity classifications\
+    \ and their implications.\n[/kb=23]"
+  label: SensitivityData.LightSensitivity
+  hidden: false
+  meta:
+    kb_id: 23
+- name: tempsensitivity
+  sql: tempsensitivity
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: humiditysensitivity
+  sql: humiditysensitivity
+  type: TEXT
+  primary_key: false
+  description: "Humidity sensitivity classification (KB #24): 'Low' (30-65% RH, e.g.\
+    \ stone), 'Medium' (40-60% RH, e.g. wood), 'High' (45-55% RH minimal fluctuation,\
+    \ e.g. lacquer).\n\n[kb=24]\nValues include 'Low' (can tolerate 30-65% RH, like\
+    \ stone artifacts), 'Medium' (requires 40-60% RH, like wood), and 'High' (requires\
+    \ 45-55% RH with minimal fluctuation, like lacquer work). \u2014 Illustrates humidity\
+    \ sensitivity classifications and their implications.\n[/kb=24]"
+  label: SensitivityData.HumiditySensitivity
+  hidden: false
+  meta:
+    kb_id: 24
+- name: vibrasensitivity
+  sql: vibrasensitivity
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: pollutantsensitivity
+  sql: pollutantsensitivity
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: pestsensitivity
+  sql: pestsensitivity
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: handlesensitivity
+  sql: handlesensitivity
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: transportsensitivity
+  sql: transportsensitivity
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: displaysensitivity
+  sql: displaysensitivity
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: storagesensitivity
+  sql: storagesensitivity
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: envsensweight
+  sql: CASE LOWER(TRIM(envsensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5 WHEN
+    'high' THEN 10 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric weight for EnvSensitivity per KB #1: Low=1, Medium=5, High=10.\n\
+    \n[kb=1]\nEnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity: Low=1, Medium=5,\
+    \ High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity: Low=1,\
+    \ Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\n[/kb=1]"
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+- name: lightsensweight
+  sql: CASE LOWER(TRIM(lightsensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5 WHEN
+    'high' THEN 10 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric weight for LightSensitivity per KB #1: Low=1, Medium=5, High=10.\n\
+    \n[kb=1]\nEnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity: Low=1, Medium=5,\
+    \ High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity: Low=1,\
+    \ Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\n[/kb=1]"
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+- name: tempsensweight
+  sql: CASE LOWER(TRIM(tempsensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5 WHEN
+    'high' THEN 10 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric weight for TempSensitivity per KB #1: Low=1, Medium=5, High=10.\n\
+    \n[kb=1]\nEnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity: Low=1, Medium=5,\
+    \ High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity: Low=1,\
+    \ Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\n[/kb=1]"
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+- name: humidsensweight
+  sql: CASE LOWER(TRIM(humiditysensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN
+    5 WHEN 'high' THEN 10 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric weight for HumiditySensitivity per KB #1: Low=1, Medium=5,\
+    \ High=10.\n\n[kb=1]\nEnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity:\
+    \ Low=1, Medium=5, High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity:\
+    \ Low=1, Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\n\
+    [/kb=1]"
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+- name: vibrasensweight
+  sql: CASE LOWER(TRIM(vibrasensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5 WHEN
+    'high' THEN 10 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric weight for VibraSensitivity per KB #1 mapping (Low=1, Medium=5,\
+    \ High=10), extended to all SensitivityData fields.\n\n[kb=1]\nEnvSensitivity:\
+    \ Low=1, Medium=5, High=10; LightSensitivity: Low=1, Medium=5, High=10; TempSensitivity:\
+    \ Low=1, Medium=5, High=10; HumiditySensitivity: Low=1, Medium=5, High=10 \u2014\
+    \ Numerical weights for sensitivity calculations\n[/kb=1]"
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+- name: pollutantsensweight
+  sql: CASE LOWER(TRIM(pollutantsensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN
+    5 WHEN 'high' THEN 10 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric weight for PollutantSensitivity per KB #1 extended mapping.\n\
+    \n[kb=1]\nEnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity: Low=1, Medium=5,\
+    \ High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity: Low=1,\
+    \ Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\n[/kb=1]"
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+- name: pestsensweight
+  sql: CASE LOWER(TRIM(pestsensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5 WHEN
+    'high' THEN 10 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric weight for PestSensitivity per KB #1 extended mapping.\n\n\
+    [kb=1]\nEnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity: Low=1, Medium=5,\
+    \ High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity: Low=1,\
+    \ Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\n[/kb=1]"
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+- name: handlesensweight
+  sql: CASE LOWER(TRIM(handlesensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5
+    WHEN 'high' THEN 10 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric weight for HandleSensitivity per KB #1 extended mapping.\n\
+    \n[kb=1]\nEnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity: Low=1, Medium=5,\
+    \ High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity: Low=1,\
+    \ Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\n[/kb=1]"
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+- name: transportsensweight
+  sql: CASE LOWER(TRIM(transportsensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN
+    5 WHEN 'high' THEN 10 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric weight for TransportSensitivity per KB #1 extended mapping.\n\
+    \n[kb=1]\nEnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity: Low=1, Medium=5,\
+    \ High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity: Low=1,\
+    \ Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\n[/kb=1]"
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+- name: displaysensweight
+  sql: CASE LOWER(TRIM(displaysensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5
+    WHEN 'high' THEN 10 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric weight for DisplaySensitivity per KB #1 extended mapping.\n\
+    \n[kb=1]\nEnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity: Low=1, Medium=5,\
+    \ High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity: Low=1,\
+    \ Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\n[/kb=1]"
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+- name: storagesensweight
+  sql: CASE LOWER(TRIM(storagesensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5
+    WHEN 'high' THEN 10 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric weight for StorageSensitivity per KB #1 extended mapping.\n\
+    \n[kb=1]\nEnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity: Low=1, Medium=5,\
+    \ High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity: Low=1,\
+    \ Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\n[/kb=1]"
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+- name: erf
+  sql: (CASE LOWER(TRIM(envsensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5 WHEN
+    'high' THEN 10 ELSE NULL END + CASE LOWER(TRIM(lightsensitivity)) WHEN 'low' THEN
+    1 WHEN 'medium' THEN 5 WHEN 'high' THEN 10 ELSE NULL END + CASE LOWER(TRIM(tempsensitivity))
+    WHEN 'low' THEN 1 WHEN 'medium' THEN 5 WHEN 'high' THEN 10 ELSE NULL END + CASE
+    LOWER(TRIM(humiditysensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5 WHEN 'high'
+    THEN 10 ELSE NULL END) / 4.0
+  type: DOUBLE
+  primary_key: false
+  description: "Environmental Risk Factor (KB #2): mean of the 4 explicitly named\
+    \ sensitivity weights (Env, Light, Temp, Humid). Higher = more environmental risk.\
+    \ Note: the literal KB lists 4 names plus 'etc.'; some gold queries simplify to\
+    \ envsensweight only -- see envsensweight column for that single-aspect variant.\n\
+    \n[kb=2]\nERF = \\frac{\\sum_{i \\in sensitivities} SensWeight_i}{|sensitivities|},\
+    \ \\text{where sensitivities includes EnvSensitivity, LightSensitivity, TempSensitivity,\
+    \ etc, with value mapping based on Sensitivity Weight Values.} \u2014 Quantifies\
+    \ the overall environmental risk to an artifact based on its sensitivities.\n\
+    [/kb=2]"
+  label: Environmental Risk Factor (ERF)
+  hidden: false
+  meta:
+    kb_id: 2
+- name: high_sens_count
+  sql: (CASE WHEN LOWER(TRIM(envsensitivity))='high' THEN 1 ELSE 0 END + CASE WHEN
+    LOWER(TRIM(lightsensitivity))='high' THEN 1 ELSE 0 END + CASE WHEN LOWER(TRIM(tempsensitivity))='high'
+    THEN 1 ELSE 0 END + CASE WHEN LOWER(TRIM(humiditysensitivity))='high' THEN 1 ELSE
+    0 END + CASE WHEN LOWER(TRIM(vibrasensitivity))='high' THEN 1 ELSE 0 END + CASE
+    WHEN LOWER(TRIM(pollutantsensitivity))='high' THEN 1 ELSE 0 END + CASE WHEN LOWER(TRIM(pestsensitivity))='high'
+    THEN 1 ELSE 0 END + CASE WHEN LOWER(TRIM(handlesensitivity))='high' THEN 1 ELSE
+    0 END + CASE WHEN LOWER(TRIM(transportsensitivity))='high' THEN 1 ELSE 0 END +
+    CASE WHEN LOWER(TRIM(displaysensitivity))='high' THEN 1 ELSE 0 END + CASE WHEN
+    LOWER(TRIM(storagesensitivity))='high' THEN 1 ELSE 0 END)
+  type: DOUBLE
+  primary_key: false
+  description: 'Number of sensitivity columns with value ''High'' (used by KB #14
+    Accelerated Deterioration Scenario which checks >=2 high).'
+  hidden: false
+- name: dsd
+  sql: 36.0 * (10 - (CASE LOWER(TRIM(lightsensitivity)) WHEN 'low' THEN 1 WHEN 'medium'
+    THEN 5 WHEN 'high' THEN 10 ELSE NULL END)) * (10 - (CASE LOWER(TRIM(tempsensitivity))
+    WHEN 'low' THEN 1 WHEN 'medium' THEN 5 WHEN 'high' THEN 10 ELSE NULL END)) * (10
+    - (CASE LOWER(TRIM(humiditysensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN
+    5 WHEN 'high' THEN 10 ELSE NULL END)) / 1000.0
+  type: DOUBLE
+  primary_key: false
+  description: "Display Safety Duration (KB #4): BaseDuration(=36 months) * (10 -\
+    \ LightSensWeight) * (10 - TempSensWeight) * (10 - HumidSensWeight) / 1000. Recommended\
+    \ max display duration in months.\n\n[kb=4]\nDSD = \\frac{BaseDuration \\times\
+    \ (10 - LightSensWeight) \\times (10 - TempSensWeight) \\times (10 - HumidSensWeight)}{1000},\
+    \ \\text{where BaseDuration=36 months, and SensWeight uses Sensitivity Weight\
+    \ Values.} \u2014 Calculates the recommended maximum display duration for an artifact\
+    \ based on its sensitivities.\n[/kb=4]"
+  label: Display Safety Duration (DSD)
+  hidden: false
+  meta:
+    kb_id: 4
+- name: is_organic_vulnerable
+  sql: LOWER(TRIM(artifactscore.mattype)) IN ('wood', 'textile', 'paper') AND LOWER(TRIM(envsensitivity))
+    = 'high'
+  type: BOOLEAN
+  primary_key: false
+  description: "Organic Material Vulnerability (KB #20): MatType in {Wood, Textile,\
+    \ Paper} AND EnvSensitivity = 'High'. Requires specialized environmental controls.\n\
+    \n[kb=20]\nArtifacts with MatType='Wood', 'Textile', or 'Paper' AND EnvSensitivity='High'\
+    \ require specialized environmental controls with narrower humidity and temperature\
+    \ ranges than inorganic materials. \u2014 Identifies organic materials requiring\
+    \ special environmental conditions.\n[/kb=20]"
+  label: Organic Material Vulnerability
+  hidden: false
+  meta:
+    kb_id: 20
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artref
+    - artregistry
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,51 @@
+version: 6
+name: customers
+sql_table: customers
+query_variables: {}
+data_source: reverse_logistics
+columns:
+- name: profilenum
+  sql: profilenum
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: seg_category
+  sql: seg_category
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: geographyzone
+  sql: geographyzone
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: return_behavior_profile
+  sql: return_behavior_profile
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: total_returns
+  sql: CAST(json_extract(return_behavior_profile, '$.total_returns') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: "Total Returns (T_r): lifetime count of items the customer has returned\
+    \ to the business.\n\n[kb=17]\nCumulative tally of processed return cases associated\
+    \ with a single customer account. \u2014 Lifetime count of items a customer has\
+    \ returned to the business.\n[/kb=17]"
+  label: Total Returns
+  hidden: false
+  meta:
+    kb_id: 17
+- name: return_frequency_score
+  sql: CAST(json_extract(return_behavior_profile, '$.return_frequency_score') AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Customer's frequency score based on return behavior.
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: Customer profile, including segmentation, geography, and historical return-behaviour
+  metadata.
+hidden: false

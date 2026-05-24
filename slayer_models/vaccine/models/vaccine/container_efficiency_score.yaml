@@ -1,0 +1,122 @@
+version: 6
+name: container_efficiency_score
+source_queries:
+- version: 3
+  name: cei_cri_per_container
+  source_model: sensordata
+  measures:
+  - formula: cei:avg
+    name: cei
+  - formula: cri:avg
+    name: cri
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: vaccinedetails
+    joins:
+    - target_model: cei_cri_per_container
+      join_pairs:
+      - - containvac
+        - containlink
+    columns:
+    - name: ces
+      type: DOUBLE
+      sql: ser * cei_cri_per_container.cei * (1 - cei_cri_per_container.cri)
+  dimensions:
+  - name: vacregistry
+  - name: containvac
+  - name: ser
+  - name: cei
+    model: cei_cri_per_container
+  - name: cri
+    model: cei_cri_per_container
+  - name: ces
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
+  \ AS containvac, \"vaccinedetails.ser\" AS ser, \"vaccinedetails.cei_cri_per_container.cei\"\
+  \ AS cei_cri_per_container__cei, \"vaccinedetails.cei_cri_per_container.cri\" AS\
+  \ cei_cri_per_container__cri, \"vaccinedetails.ces\" AS ces FROM (SELECT\n  vaccinedetails.vacregistry\
+  \ AS \"vaccinedetails.vacregistry\",\n  vaccinedetails.containvac AS \"vaccinedetails.containvac\"\
+  ,\n  CAST(vaccinedetails.vialtally AS REAL) * 10 / NULLIF(container.volliters, 0)\
+  \ AS \"vaccinedetails.ser\",\n  cei_cri_per_container.cei AS \"vaccinedetails.cei_cri_per_container.cei\"\
+  ,\n  cei_cri_per_container.cri AS \"vaccinedetails.cei_cri_per_container.cri\",\n\
+  \  vaccinedetails.ser * cei_cri_per_container.cei * (\n    1 - cei_cri_per_container.cri\n\
+  \  ) AS \"vaccinedetails.ces\"\nFROM vaccinedetails AS vaccinedetails\nLEFT JOIN\
+  \ container AS container\n  ON vaccinedetails.containvac = container.containregistry\n\
+  LEFT JOIN (\n  (\n    SELECT\n      \"sensordata.containlink\" AS containlink,\n\
+  \      \"sensordata.cei\" AS cei,\n      \"sensordata.cri\" AS cri\n    FROM (\n\
+  \      SELECT\n        sensordata.containlink AS \"sensordata.containlink\",\n \
+  \       AVG(\n          (\n            (\n              1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n            ) * (\n              1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n            ) * COALESCE(sensordata.tempstabidx, 1)\n     \
+  \     ) * (\n            COALESCE(container.coolremainpct, 0) / 100.0\n        \
+  \  ) * (\n            1 - (\n              (\n                100 - container.coolremainpct\n\
+  \              ) / NULLIF(JULIANDAY('now') - JULIANDAY(container.refilllatest),\
+  \ 0)\n            ) / 20.0\n          )\n        ) AS \"sensordata.cei\",\n    \
+  \    AVG(\n          (\n            1 - (\n              (\n                1 -\
+  \ COALESCE(CAST(sensordata.tempdevcount AS REAL) / 100, 0)\n              ) * (\n\
+  \                1 - COALESCE(CAST(sensordata.critevents AS REAL) / 10, 0)\n   \
+  \           ) * COALESCE(sensordata.tempstabidx, 1)\n            )\n          )\
+  \ * (\n            1 - COALESCE(container.coolremainpct, 0) / 100\n          )\n\
+  \        ) AS \"sensordata.cri\"\n      FROM sensordata AS sensordata\n      LEFT\
+  \ JOIN container AS container\n        ON sensordata.containlink = container.containregistry\n\
+  \      GROUP BY\n        sensordata.containlink\n    ) AS _inner\n  )\n) AS cei_cri_per_container\n\
+  \  ON vaccinedetails.containvac = cei_cri_per_container.containlink) AS _inner"
+data_source: vaccine
+columns:
+- name: vacregistry
+  sql: vacregistry
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: containvac
+  sql: containvac
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ser
+  sql: ser
+  type: DOUBLE
+  primary_key: false
+  description: 'Storage Efficiency Ratio (SER). How efficiently container volume is
+    utilized: VialTally * 10 / VolLiters (KB #5). Reaches container.volliters via
+    the FK join.'
+  hidden: false
+- name: cei_cri_per_container__cei
+  sql: cei_cri_per_container__cei
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: cei_cri_per_container__cri
+  sql: cei_cri_per_container__cri
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: ces
+  sql: ces
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Container Efficiency Score (CES, KB #36). One row per vaccinedetails\
+  \ record with CES = SER * CEI * (1 - CRI), where SER (KB #5) is on vaccinedetails\
+  \ and CEI (KB #31), CRI (KB #2) are averaged over sensordata rows for the container.\
+  \ The Severe Container Risk (KB #41) and Container Alert Status (KB #48) classifications\
+  \ live on sibling models `severe_container_risk` and `container_alert_status`.\n\
+  \n[kb=36]\nCES = \\text{SER} \\times \\text{CEI} \\times (1 - \\text{CRI}) \u2014\
+  \ Overall container efficiency considering multiple metrics.\n[/kb=36]"
+hidden: false
+meta:
+  kb_id: 36

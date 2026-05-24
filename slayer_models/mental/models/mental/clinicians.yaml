@@ -1,0 +1,71 @@
+version: 6
+name: clinicians
+sql_table: clinicians
+query_variables: {}
+data_source: mental
+columns:
+- name: clinkey
+  sql: clinkey
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: clinconf
+  sql: clinconf
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: assesslim
+  sql: assesslim
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: docustat
+  sql: docustat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: billcode
+  sql: billcode
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: nxtrevdt
+  sql: nxtrevdt
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: carecoord
+  sql: carecoord
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: refneed
+  sql: refneed
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fuptype
+  sql: fuptype
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fupfreq
+  sql: fupfreq
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: facconnect
+  sql: facconnect
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: facilities
+  join_pairs:
+  - - facconnect
+    - fackey
+  join_type: left
+filters: []
+hidden: false

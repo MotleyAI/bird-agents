@@ -1,0 +1,93 @@
+version: 6
+name: supplies
+sql_table: supplies
+query_variables: {}
+data_source: disaster
+columns:
+- name: supplyregistry
+  sql: supplyregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: supplydistref
+  sql: supplydistref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: supplyhubref
+  sql: supplyhubref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: resourceinventory
+  sql: resourceinventory
+  type: TEXT
+  primary_key: false
+  description: JSON with essentials.{food_tons, water_liters}, medical (units), shelter.{units,
+    blankets}, hygiene_kits, power.{generators, fuel_liters}.
+  hidden: false
+- name: food_tons
+  sql: CAST(resourceinventory ->> '$.essentials.food_tons' AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Food supply in tons.
+  hidden: false
+- name: water_liters
+  sql: CAST(resourceinventory ->> '$.essentials.water_liters' AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Water supply in liters.
+  hidden: false
+- name: medical_units
+  sql: CAST(resourceinventory ->> '$.medical' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Medical supply units.
+  hidden: false
+- name: shelter_units
+  sql: CAST(resourceinventory ->> '$.shelter.units' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Shelter kits/tents.
+  hidden: false
+- name: blankets
+  sql: CAST(resourceinventory ->> '$.shelter.blankets' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Blankets count.
+  hidden: false
+- name: hygiene_kits
+  sql: CAST(resourceinventory ->> '$.hygiene_kits' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Hygiene kits.
+  hidden: false
+- name: generators
+  sql: CAST(resourceinventory ->> '$.power.generators' AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: Power generators.
+  hidden: false
+- name: fuel_liters
+  sql: CAST(resourceinventory ->> '$.power.fuel_liters' AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: Fuel reserve in liters.
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: disasterevents
+  join_pairs:
+  - - supplydistref
+    - distregistry
+  join_type: left
+- target_model: distributionhubs
+  join_pairs:
+  - - supplyhubref
+    - hubregistry
+  join_type: left
+filters: []
+description: Supply inventory per (disaster, hub); 1:1 with operations through the
+  shared distregistry.
+hidden: false

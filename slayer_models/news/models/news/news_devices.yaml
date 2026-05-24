@@ -1,0 +1,112 @@
+version: 6
+name: news_devices
+sql_table: devices
+query_variables: {}
+data_source: news
+columns:
+- name: devkey
+  sql: devkey
+  type: INT
+  primary_key: true
+  description: Primary key.
+  hidden: false
+- name: devtype
+  sql: devtype
+  type: TEXT
+  primary_key: false
+  description: 'Device type enum: iOS, Windows, MacOS, Android.'
+  hidden: false
+- name: brwtype
+  sql: brwtype
+  type: TEXT
+  primary_key: false
+  description: 'Browser: Safari, Edge, Chrome, Firefox.'
+  hidden: false
+- name: osver
+  sql: osver
+  type: TEXT
+  primary_key: false
+  description: "OS version (KB #21 illustrates: values like 'Windows10.0.19042' provide\
+    \ insights into compatibility and performance benchmarks).\n\n[kb=21]\nOS version\
+    \ details like 'Windows10.0.19042' provide insights into potential compatibility\
+    \ issues and performance benchmarks. \u2014 Depicts the relevance of the operating\
+    \ system version in assessing device performance and compatibility.\n[/kb=21]"
+  label: Device OS Version Illustration
+  hidden: false
+  meta:
+    kb_id: 21
+- name: appver
+  sql: appver
+  type: TEXT
+  primary_key: false
+  description: "App version (KB #25 illustrates: versions like 'v3.1.2' suggest iterative\
+    \ improvements that enhance UI performance and stability).\n\n[kb=25]\nVersions\
+    \ such as 'v3.1.2' suggest iterative improvements that enhance user interface\
+    \ performance and overall application stability. \u2014 Assesses the importance\
+    \ of keeping app versions updated to improve interface quality and functionality.\n\
+    [/kb=25]"
+  label: App Version Quality Illustration
+  hidden: false
+  meta:
+    kb_id: 25
+- name: scrres
+  sql: scrres
+  type: TEXT
+  primary_key: false
+  description: "Screen resolution (KB #20 illustrates: values like '1920x1080' indicate\
+    \ clarity and detail of the display, impacting readability and visual appeal).\n\
+    \n[kb=20]\nScreen resolution values such as '1920x1080' indicate the clarity and\
+    \ detail of the display, impacting readability and visual appeal. \u2014 Illustrates\
+    \ the significance of device screen resolution on overall user experience.\n[/kb=20]"
+  label: Screen Resolution Illustration
+  hidden: false
+  meta:
+    kb_id: 20
+- name: vpsize
+  sql: vpsize
+  type: TEXT
+  primary_key: false
+  description: Viewport size in the browser/app.
+  hidden: false
+- name: conntype
+  sql: conntype
+  type: TEXT
+  primary_key: false
+  description: 'Connection type: Cable, 5G, 4G, WiFi.'
+  hidden: false
+- name: netspd
+  sql: netspd
+  type: DOUBLE
+  primary_key: false
+  description: "Network speed in Mbps. KB #23 illustrates: speeds (e.g. 25.75 Mbps)\
+    \ help assess buffering, latency and overall delivery quality.\n\n[kb=23]\nNetwork\
+    \ speeds measured in Mbps (for example, 25.75 Mbps) help assess potential buffering,\
+    \ latency issues, and overall user experience during content consumption. \u2014\
+    \ Shows the impact of network speed on the quality of content delivery.\n[/kb=23]"
+  label: Network Speed Illustration
+  hidden: false
+  meta:
+    kb_id: 23
+- name: uselink
+  sql: uselink
+  type: INT
+  primary_key: false
+  description: FK to news_users.userkey.
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: news_users
+  join_pairs:
+  - - uselink
+    - userkey
+  join_type: left
+filters: []
+description: "News DB: Devices used by users (OS, browser, screen resolution, viewport,\
+  \ connection type and network speed).\n\n[kb=14]\nA device connection meets optimal\
+  \ standards if it delivers network speed and connection quality above preset thresholds,\
+  \ facilitating smooth content consumption. \u2014 Defines the benchmark criteria\
+  \ for acceptable network performance to ensure reliable content delivery.\n[/kb=14]"
+hidden: false
+meta:
+  kb_id: 14

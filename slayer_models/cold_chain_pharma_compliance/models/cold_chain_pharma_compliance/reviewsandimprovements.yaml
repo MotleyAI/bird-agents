@@ -1,0 +1,220 @@
+version: 6
+name: reviewsandimprovements
+sql_table: reviewsandimprovements
+query_variables: {}
+data_source: cold_chain_pharma_compliance
+columns:
+- name: reckeyrev
+  sql: reckeyrev
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: procimprove
+  sql: procimprove
+  type: TEXT
+  primary_key: false
+  description: "Process improvement actions: Yes / No / In Progress. KB #56 (GDP Corrective\
+    \ Action Categories) names the standard CAPA buckets recorded here: Training Enhancement,\
+    \ Documentation Update, Process Modification, Equipment Upgrade, Supplier Management,\
+    \ Transport Adjustment, Monitoring Improvement, Regulatory Compliance Actions.\n\
+    \n[kb=56]\nGDP corrective action categories include: Training Enhancement, Documentation\
+    \ Update, Process Modification, Equipment Upgrade, Supplier Management, Transport\
+    \ Adjustment, Monitoring Improvement, and Regulatory Compliance Actions. \u2014\
+    \ Standard categories for corrective actions in Good Distribution Practice.\n\
+    [/kb=56]"
+  label: GDP Corrective Action Categories
+  hidden: false
+  meta:
+    kb_id: 56
+- name: trainneeds
+  sql: trainneeds
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sop_update
+  sql: sop_update
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vendorimpact
+  sql: vendorimpact
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: nextshipchg
+  sql: nextshipchg
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: monfreqchg
+  sql: monfreqchg
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: routeriskreassess
+  sql: routeriskreassess
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: packspecrev
+  sql: packspecrev
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: lanequalstat
+  sql: lanequalstat
+  type: TEXT
+  primary_key: false
+  description: "Transport lane quality status: 'Valid', 'Invalid', 'Review Required'.\
+    \ KB #54 (Serialization Maturity Model) classifies tracking maturity Level 0-4\
+    \ from 'no serialization' through 'end-to-end serialized supply chain with real-time\
+    \ visibility' \u2014 lane qualification status is the schema's nearest indicator\
+    \ of supply-chain visibility maturity.\n\n[kb=54]\nSerialization maturity levels\
+    \ are: Level 0 (No serialization), Level 1 (Batch-level tracking only), Level\
+    \ 2 (Package-level serialization without systematic verification), Level 3 (Verified\
+    \ package-level serialization), and Level 4 (End-to-end serialized supply chain\
+    \ with real-time visibility). \u2014 Framework for assessing pharmaceutical tracking\
+    \ and tracing capabilities.\n[/kb=54]"
+  label: Serialization Maturity Model
+  hidden: false
+  meta:
+    kb_id: 54
+- name: techupgrade
+  sql: techupgrade
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: costoptpot
+  sql: costoptpot
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sustainimpact
+  sql: sustainimpact
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: carbonkg
+  sql: carbonkg
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: energyscore
+  sql: energyscore
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: docformat
+  sql: docformat
+  type: TEXT
+  primary_key: false
+  description: "Review document format: Paper / Electronic / Hybrid. KB #53 (Validation\
+    \ Documentation Requirements) lists the master plan, qualifications, mapping studies,\
+    \ and final report that this review record references.\n\n[kb=53]\nRequired validation\
+    \ documents include: Validation Master Plan, Risk Assessment, User Requirements\
+    \ Specification, Design Qualification, Installation Qualification, Operational\
+    \ Qualification, Performance Qualification, Temperature Mapping Studies, and Final\
+    \ Validation Report. \u2014 The essential documentation needed to validate cold\
+    \ chain processes and equipment.\n[/kb=53]"
+  label: Validation Documentation Requirements
+  hidden: false
+  meta:
+    kb_id: 53
+- name: dataintegrity
+  sql: dataintegrity
+  type: TEXT
+  primary_key: false
+  description: "Data integrity verification status: 'Verified' / 'Under Review' /\
+    \ 'Compromised'. KB #59 (Data Integrity Components) describes the ALCOA+ principles\
+    \ \u2014 Attributable, Legible, Contemporaneous, Original, Accurate, plus Complete,\
+    \ Consistent, Enduring, Available \u2014 used to classify integrity at this stage.\n\
+    \n[kb=59]\nData integrity components include the ALCOA+ principles: Attributable\
+    \ (traceable to individual/system), Legible (readable and permanent), Contemporaneous\
+    \ (recorded at time of activity), Original (source data or certified copy), Accurate\
+    \ (error-free), plus Complete (all data included), Consistent (expected sequence\
+    \ followed), Enduring (preserved for required period), and Available (accessible\
+    \ when needed). \u2014 Essential elements that ensure cold chain data is reliable\
+    \ for decision-making.\n[/kb=59]"
+  label: Data Integrity Components
+  hidden: false
+  meta:
+    kb_id: 59
+- name: audittrailcomplete
+  sql: audittrailcomplete
+  type: TEXT
+  primary_key: false
+  description: "Audit-trail completeness percent. KB #46 (Quality Management System\
+    \ Maturity Model) ranks QMS at Level 1 (Basic, minimal documentation) up to Level\
+    \ 5 (Optimized, fully integrated continuous improvement). audittrailcomplete is\
+    \ the closest column-level proxy for the documentation-and-audit dimension of\
+    \ the maturity model.\n\n[kb=46]\nQMS maturity levels range from Level 1 (Basic:\
+    \ minimal documentation and reactive approaches) to Level 5 (Optimized: fully\
+    \ integrated systems with continuous improvement). Intermediate levels include\
+    \ Level 2 (Developing: standard procedures established), Level 3 (Defined: processes\
+    \ are well-documented and followed), and Level 4 (Managed: processes are measured\
+    \ and controlled). \u2014 Framework for assessing the sophistication of a cold\
+    \ chain quality management system.\n[/kb=46]"
+  label: Quality Management System Maturity Model
+  hidden: false
+  meta:
+    kb_id: 46
+- name: e_sigstat
+  sql: e_sigstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: sysaccessctrl
+  sql: sysaccessctrl
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: databackupstat
+  sql: databackupstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: reportgenstat
+  sql: reportgenstat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: distlist
+  sql: distlist
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: archivestat
+  sql: archivestat
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: reviewnotes
+  sql: reviewnotes
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: nextrevts
+  sql: nextrevts
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: closestat
+  sql: closestat
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins:
+- target_model: shipments
+  join_pairs:
+  - - reckeyrev
+    - reckey
+  join_type: left
+filters: []
+description: 'Per-shipment post-mortem review and process improvement record. Carries
+  data-integrity (KB #59 ALCOA+ context), document-format and audit-trail metrics
+  linked back to the shipment.'
+hidden: false

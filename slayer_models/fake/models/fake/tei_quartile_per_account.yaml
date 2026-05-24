@@ -1,0 +1,83 @@
+version: 6
+name: tei_quartile_per_account
+source_queries:
+- version: 3
+  name: tei_per_account
+  source_model: moderationaction
+  measures:
+  - formula: tei:avg
+    name: tei_v
+  dimensions:
+  - name: account_id
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: tei_per_account
+    columns:
+    - name: tei_quartile
+      type: DOUBLE
+      sql: NTILE(4) OVER (ORDER BY tei_per_account.tei_v ASC)
+  dimensions:
+  - name: account_id
+  - name: tei_v
+  - name: tei_quartile
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"tei_per_account.account_id\" AS account_id, \"tei_per_account.tei_v\"\
+  \ AS tei_v, \"tei_per_account.tei_quartile\" AS tei_quartile FROM (SELECT\n  tei_per_account.account_id\
+  \ AS \"tei_per_account.account_id\",\n  tei_per_account.tei_v AS \"tei_per_account.tei_v\"\
+  ,\n  NTILE(4) OVER (ORDER BY tei_per_account.tei_v ASC) AS \"tei_per_account.tei_quartile\"\
+  \nFROM (\n  SELECT\n    \"moderationaction.account_id\" AS account_id,\n    \"moderationaction.tei_v\"\
+  \ AS tei_v\n  FROM (\n    SELECT\n      contentbehavior__sessionbehavior__profile.profaccref\
+  \ AS \"moderationaction.account_id\",\n      AVG(\n        0.4 * securitydetection__technicalinfo.vpnratio\
+  \ + 0.3 * (\n          CAST(securitydetection__technicalinfo.proxycount AS REAL)\
+  \ / 10\n        ) + 0.3 * (\n          CAST(securitydetection__technicalinfo.ipcountrynum\
+  \ AS REAL) / 20\n        )\n      ) AS \"moderationaction.tei_v\"\n    FROM moderationaction\
+  \ AS moderationaction\n    LEFT JOIN contentbehavior AS contentbehavior\n      ON\
+  \ moderationaction.macntref = contentbehavior.cntref\n    LEFT JOIN securitydetection\
+  \ AS securitydetection\n      ON moderationaction.masedetref = securitydetection.secdetkey\n\
+  \    LEFT JOIN technicalinfo AS securitydetection__technicalinfo\n      ON securitydetection.sectechref\
+  \ = securitydetection__technicalinfo.techkey\n    LEFT JOIN sessionbehavior AS contentbehavior__sessionbehavior\n\
+  \      ON contentbehavior.cntsessref = contentbehavior__sessionbehavior.sessref\n\
+  \    LEFT JOIN profile AS contentbehavior__sessionbehavior__profile\n      ON contentbehavior__sessionbehavior.sessprofref\
+  \ = contentbehavior__sessionbehavior__profile.profkey\n    GROUP BY\n      contentbehavior__sessionbehavior__profile.profaccref\n\
+  \  ) AS _inner\n) AS tei_per_account) AS _inner"
+data_source: fake
+columns:
+- name: account_id
+  sql: account_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row account identifier resolved through the moderationaction \u2192\
+    \ contentbehavior \u2192 sessionbehavior \u2192 profile join chain. Convenience\
+    \ handle for grouping/multistage; equals the underlying account.accindex."
+  hidden: false
+- name: tei_v
+  sql: tei_v
+  type: DOUBLE
+  primary_key: false
+  description: 'Technical Evasion Index (KB #7): 0.4*vpnratio + 0.3*proxycount/10
+    + 0.3*ipcountrynum/20.'
+  hidden: false
+  format:
+    type: float
+- name: tei_quartile
+  sql: tei_quartile
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "TEI Quartile per account (KB #70). Q_TEI = NTILE(4) OVER (ORDER BY TEI\
+  \ ASC) per account. Q=1 if TEI in [0, P25] (lowest TEI), Q=2 if (P25, P50], Q=3\
+  \ if (P50, P75], Q=4 if (P75, P100] (highest TEI), where P_n are percentiles of\
+  \ TEI.\n\n[kb=70]\nQ_{TEI} = \begin{cases} 1 & \text{if TEI} in [0, P_{25}] \\ 2\
+  \ & \text{if TEI} in (P_{25}, P_{50}] \\ 3 & \text{if TEI} in (P_{50}, P_{75}] \\\
+  \ 4 & \text{if TEI} in (P_{75}, P_{100}] \\end{cases} where P_n represents the nth\
+  \ percentile of TEI values \u2014 Categorizes accounts into four groups based on\
+  \ their TEI values.\n[/kb=70]"
+hidden: false
+meta:
+  kb_id: 70

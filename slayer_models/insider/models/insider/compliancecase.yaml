@@ -1,0 +1,299 @@
+version: 6
+name: compliancecase
+sql_table: compliancecase
+query_variables: {}
+data_source: insider
+columns:
+- name: compreg
+  sql: compreg
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: transref
+  sql: transref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: regfilestat
+  sql: regfilestat
+  type: TEXT
+  primary_key: false
+  description: Status of mandatory regulatory filings (Delayed / Missing / Current).
+  hidden: false
+- name: disclosecmp
+  sql: disclosecmp
+  type: TEXT
+  primary_key: false
+  description: Disclosure compliance status (Full / Non-compliant / Partial).
+  hidden: false
+- name: brokrepstat
+  sql: brokrepstat
+  type: TEXT
+  primary_key: false
+  description: Broker-dealer reporting standing (Incomplete / Late / Complete).
+  hidden: false
+- name: exchnotif
+  sql: exchnotif
+  type: TEXT
+  primary_key: false
+  description: Exchange notifications issued (Warning / Inquiry).
+  hidden: false
+- name: prevviol
+  sql: prevviol
+  type: INT
+  primary_key: false
+  description: Count of previous compliance violations on record.
+  hidden: false
+  format:
+    type: integer
+- name: comprate
+  sql: comprate
+  type: TEXT
+  primary_key: false
+  description: "Compliance Rating Grade (KB #71): A = excellent compliance; B = good\
+    \ with minor issues; C = significant deficiencies needing attention; D = serious\
+    \ or repeated failures requiring immediate action.\n\n[kb=71]\n`comprate`: The\
+    \ compliance rating grade. 'A' represents excellent compliance. 'B' indicates\
+    \ good compliance with minor issues. 'C' suggests significant compliance deficiencies\
+    \ needing attention. 'D' signifies serious or repeated compliance failures requiring\
+    \ immediate action. \u2014 Explains the overall compliance assessment grade assigned\
+    \ in compliance cases.\n[/kb=71]"
+  label: Compliance Rating Grade
+  hidden: false
+  meta:
+    kb_id: 71
+- name: risksc
+  sql: risksc
+  type: DOUBLE
+  primary_key: false
+  description: Composite compliance risk score.
+  hidden: false
+  format:
+    type: float
+- name: alertlvl
+  sql: alertlvl
+  type: TEXT
+  primary_key: false
+  description: Current alert severity (Low / Medium / High / Critical).
+  hidden: false
+- name: invstprior
+  sql: invstprior
+  type: TEXT
+  primary_key: false
+  description: Priority assigned for investigation (Low / Medium / High).
+  hidden: false
+- name: casestat
+  sql: casestat
+  type: TEXT
+  primary_key: false
+  description: Lifecycle state of the compliance case (Investigation / Monitoring
+    / Closed).
+  hidden: false
+- name: revfreq
+  sql: revfreq
+  type: TEXT
+  primary_key: false
+  description: Frequency of periodic reviews (Daily / Weekly / Monthly).
+  hidden: false
+- name: lastrevdt
+  sql: lastrevdt
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: nextrevdt
+  sql: nextrevdt
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: monitint
+  sql: monitint
+  type: TEXT
+  primary_key: false
+  description: Ongoing monitoring intensity level (Standard / Enhanced / Intensive).
+  hidden: false
+- name: survsys
+  sql: survsys
+  type: TEXT
+  primary_key: false
+  description: Surveillance system(s) producing the alert (Primary / Secondary / Multiple).
+  hidden: false
+- name: detectmth
+  sql: detectmth
+  type: TEXT
+  primary_key: false
+  description: How the behaviour was detected (Automated / Manual / Hybrid).
+  hidden: false
+- name: fposrate
+  sql: fposrate
+  type: DOUBLE
+  primary_key: false
+  description: False-positive rate of the detection model (percentage).
+  hidden: false
+  format:
+    type: float
+- name: modelconf
+  sql: modelconf
+  type: DOUBLE
+  primary_key: false
+  description: Confidence score returned by the detection algorithm.
+  hidden: false
+  format:
+    type: float
+- name: abhvref
+  sql: abhvref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: comprate_value
+  sql: CASE comprate WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 WHEN 'D' THEN
+    4 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: 'Numeric grade derived from comprate (A=1, B=2, C=3, D=4) for use in
+    KB #32 (CHS).'
+  hidden: false
+- name: alert_level_multiplier
+  sql: CASE alertlvl WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 WHEN
+    'Critical' THEN 4 ELSE NULL END
+  type: DOUBLE
+  primary_key: false
+  description: 'AlertLevelMultiplier (KB #33): Low=1, Medium=2, High=3, Critical=4.'
+  hidden: false
+- name: crs
+  sql: prevviol * 1.0 / MAX(1.0, transactionrecord__trader.acctdays / 365.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Compliance Recidivism Score (CRS = prevviol / Max(1, acctdays/365))\
+    \ \u2014 KB #5. acctdays joined from transactionrecord.trader.\n\n[kb=5]\nCRS\
+    \ = \\frac{\\text{prevviol}}{\\text{Max}(1, \\frac{\\text{acctdays}}{365})} \\\
+    text{ (joining compliancecase to trader via transactionrecord)} \u2014 Calculates\
+    \ a score indicating the tendency for repeat compliance issues, adjusted for account\
+    \ age.\n[/kb=5]"
+  label: Compliance Recidivism Score (CRS)
+  hidden: false
+  meta:
+    kb_id: 5
+- name: chs
+  sql: 1.0 / (1.0 + (prevviol * 1.0 / MAX(1.0, transactionrecord__trader.acctdays
+    / 365.0)) * (CASE comprate WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 WHEN
+    'D' THEN 4 ELSE 0 END))
+  type: DOUBLE
+  primary_key: false
+  description: "Compliance Health Score (CHS = 1 / (1 + CRS * ComplianceRatingValue))\
+    \ \u2014 KB #32.\n\n[kb=32]\nCHS = \\frac{1}{1 + \\text{CRS} \\times \\text{ComplianceRatingValue}}\
+    \ \u2014 Inverse score reflecting compliance history severity, penalizing high\
+    \ recidivism and poor ratings.\n[/kb=32]"
+  label: Compliance Health Score (CHS)
+  hidden: false
+  meta:
+    kb_id: 32
+- name: is_elevated_regulatory_scrutiny
+  sql: (alertlvl = 'High' OR alertlvl = 'Critical') AND invstprior = 'High' AND monitint
+    = 'Intensive'
+  type: BOOLEAN
+  primary_key: false
+  description: "Elevated Regulatory Scrutiny (KB #14): alertlvl IN ('High','Critical')\
+    \ AND invstprior='High' AND monitint='Intensive'.\n\n[kb=14]\nA case is under\
+    \ Elevated Regulatory Scrutiny if `alertlvl` is 'High' or 'Critical' AND `invstprior`\
+    \ is 'High' AND `monitint` is 'Intensive'. \u2014 Identifies compliance cases\
+    \ under intense review or investigation.\n[/kb=14]"
+  label: Elevated Regulatory Scrutiny
+  hidden: false
+  meta:
+    kb_id: 14
+- name: is_problematic_compliance_history
+  sql: prevviol > 3 OR comprate = 'C' OR comprate = 'D' OR (prevviol * 1.0 / MAX(1.0,
+    transactionrecord__trader.acctdays / 365.0)) > 1.0
+  type: BOOLEAN
+  primary_key: false
+  description: "Problematic Compliance History (KB #15): prevviol>3 OR comprate IN\
+    \ ('C','D') OR CRS>1.0.\n\n[kb=15]\nA trader has a Problematic Compliance History\
+    \ if they have `prevviol` > 3 OR their `comprate` is 'C' or 'D' OR their CRS >\
+    \ 1.0. \u2014 Identifies traders with a poor track record of compliance.\n[/kb=15]"
+  label: Problematic Compliance History
+  hidden: false
+  meta:
+    kb_id: 15
+- name: is_chronic_compliance_violator
+  sql: (prevviol > 3 OR comprate = 'C' OR comprate = 'D' OR (prevviol * 1.0 / MAX(1.0,
+    transactionrecord__trader.acctdays / 365.0)) > 1.0) AND (prevviol * 1.0 / MAX(1.0,
+    transactionrecord__trader.acctdays / 365.0)) > 1.5
+  type: BOOLEAN
+  primary_key: false
+  description: "Chronic Compliance Violator (KB #44): Problematic Compliance History\
+    \ AND CRS > 1.5.\n\n[kb=44]\nA trader identified as having a Problematic Compliance\
+    \ History  AND whose Compliance Recidivism Score (CRS)  is greater than 1.5. \u2014\
+    \ Identifies traders with a problematic history and a high recidivism score.\n\
+    [/kb=44]"
+  label: Chronic Compliance Violator
+  hidden: false
+  meta:
+    kb_id: 44
+- name: is_confirmed_manipulator_under_scrutiny
+  sql: (json_extract(transactionrecord.risk_indicators, '$.layerind') = 'Confirmed'
+    OR (CAST(json_extract(transactionrecord.risk_indicators, '$.spoofprob') AS REAL)
+    > 0.75 AND (CASE WHEN transactionrecord.cancelpct >= 1.0 THEN NULL ELSE transactionrecord.modfreq
+    * 1.0 / (1.0 - transactionrecord.cancelpct) END) > 1.0)) AND ((alertlvl = 'High'
+    OR alertlvl = 'Critical') AND invstprior = 'High' AND monitint = 'Intensive')
+  type: BOOLEAN
+  primary_key: false
+  description: "Confirmed Manipulator Under Scrutiny (KB #42): Market Manipulation\
+    \ Pattern: Layering/Spoofing (joined transaction) AND Elevated Regulatory Scrutiny\
+    \ (this case).\n\n[kb=42]\nA trader exhibiting a confirmed Market Manipulation\
+    \ Pattern: Layering/Spoofing  AND whose case status is Elevated Regulatory Scrutiny\
+    \ . \u2014 Identifies traders with confirmed manipulative patterns whose cases\
+    \ are under high scrutiny.\n[/kb=42]"
+  label: Confirmed Manipulator Under Scrutiny
+  hidden: false
+  meta:
+    kb_id: 42
+- name: is_severe_chronic_violator_case
+  sql: ((alertlvl = 'High' OR alertlvl = 'Critical') AND invstprior = 'High' AND monitint
+    = 'Intensive') AND ((prevviol > 3 OR comprate = 'C' OR comprate = 'D' OR (prevviol
+    * 1.0 / MAX(1.0, transactionrecord__trader.acctdays / 365.0)) > 1.0) AND (prevviol
+    * 1.0 / MAX(1.0, transactionrecord__trader.acctdays / 365.0)) > 1.5)
+  type: BOOLEAN
+  primary_key: false
+  description: "Severe Chronic Violator Case (KB #68): Elevated Regulatory Scrutiny\
+    \ AND Chronic Compliance Violator.\n\n[kb=68]\nA compliance case flagged for Elevated\
+    \ Regulatory Scrutiny  AND involving a trader identified as a Chronic Compliance\
+    \ Violator . \u2014 Identifies compliance cases under elevated scrutiny involving\
+    \ traders flagged as chronic compliance violators.\n[/kb=68]"
+  label: Severe Chronic Violator Case
+  hidden: false
+  meta:
+    kb_id: 68
+- name: is_high_scrutiny_wash_trading_case
+  sql: ((alertlvl = 'High' OR alertlvl = 'Critical') AND invstprior = 'High' AND monitint
+    = 'Intensive') AND (json_extract(transactionrecord.risk_indicators, '$.washsus')
+    = 'High' AND transactionrecord__trader.voldaily > 1000000)
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Scrutiny Wash Trading Case (KB #63): Elevated Regulatory Scrutiny\
+    \ AND High-Volume Wash Trading Concern.\n\n[kb=63]\nA compliance case flagged\
+    \ for Elevated Regulatory Scrutiny  AND linked to a High-Volume Wash Trading Concern\
+    \ . \u2014 Identifies compliance cases involving high-volume wash trading concerns\
+    \ that are also under elevated regulatory scrutiny.\n[/kb=63]"
+  label: High-Scrutiny Wash Trading Case
+  hidden: false
+  meta:
+    kb_id: 63
+measures: []
+aggregations: []
+joins:
+- target_model: advancedbehavior
+  join_pairs:
+  - - abhvref
+    - abhvreg
+  join_type: left
+- target_model: transactionrecord
+  join_pairs:
+  - - transref
+    - transreg
+  join_type: left
+filters: []
+description: Compliance-case record opened against a transaction. PK = `compreg`,
+  FK = `transref` -> transactionrecord, FK = `abhvref` -> advancedbehavior. Carries
+  the alert level, monitoring intensity, prior-violation count, and the overall compliance
+  rating for the trader.
+hidden: false

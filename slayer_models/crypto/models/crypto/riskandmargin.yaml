@@ -1,0 +1,260 @@
+version: 6
+name: riskandmargin
+sql_table: riskandmargin
+query_variables: {}
+data_source: crypto
+columns:
+- name: riskandmarginpivot
+  sql: riskandmarginpivot
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: ordervault
+  sql: ordervault
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: risk_margin_profile
+  sql: risk_margin_profile
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: levscale
+  sql: risk_margin_profile ->> '$.leverage.levscale'
+  type: TEXT
+  primary_key: false
+  description: Account leverage setting enum ('1', '2', '3', '5', '10', '20', '50',
+    '100').
+  hidden: false
+- name: margform
+  sql: risk_margin_profile ->> '$.leverage.margform'
+  type: TEXT
+  primary_key: false
+  description: 'Margin mode enum: ''Isolated'' or ''Cross''.'
+  hidden: false
+- name: inithold
+  sql: risk_margin_profile ->> '$.margin_thresholds.inithold'
+  type: DOUBLE
+  primary_key: false
+  description: Initial margin required.
+  hidden: false
+- name: mainthold
+  sql: risk_margin_profile ->> '$.margin_thresholds.mainthold'
+  type: DOUBLE
+  primary_key: false
+  description: Maintenance margin threshold.
+  hidden: false
+- name: liqquote
+  sql: risk_margin_profile ->> '$.price_levels.liqquote'
+  type: DOUBLE
+  primary_key: false
+  description: Liquidation price estimate.
+  hidden: false
+- name: stopquote
+  sql: risk_margin_profile ->> '$.price_levels.stopquote'
+  type: DOUBLE
+  primary_key: false
+  description: Stop price.
+  hidden: false
+- name: trigquote
+  sql: risk_margin_profile ->> '$.price_levels.trigquote'
+  type: DOUBLE
+  primary_key: false
+  description: Advanced trigger price.
+  hidden: false
+- name: traildiff
+  sql: risk_margin_profile ->> '$.price_levels.traildiff'
+  type: DOUBLE
+  primary_key: false
+  description: Trailing delta.
+  hidden: false
+- name: viscount
+  sql: risk_margin_profile ->> '$.iceberg.viscount'
+  type: DOUBLE
+  primary_key: false
+  description: Iceberg visible portion.
+  hidden: false
+- name: icebcount
+  sql: risk_margin_profile ->> '$.iceberg.icebcount'
+  type: DOUBLE
+  primary_key: false
+  description: Iceberg hidden portion.
+  hidden: false
+- name: liqfactor
+  sql: risk_margin_profile ->> '$.risk_factors.liqfactor'
+  type: TEXT
+  primary_key: false
+  description: Liquidation-risk label (string).
+  hidden: false
+- name: cpfactor
+  sql: risk_margin_profile ->> '$.risk_factors.cpfactor'
+  type: TEXT
+  primary_key: false
+  description: Counterparty-risk label.
+  hidden: false
+- name: setfactor
+  sql: risk_margin_profile ->> '$.risk_factors.setfactor'
+  type: TEXT
+  primary_key: false
+  description: Settlement-risk label.
+  hidden: false
+- name: custfactor
+  sql: risk_margin_profile ->> '$.risk_factors.custfactor'
+  type: TEXT
+  primary_key: false
+  description: Custody-risk label.
+  hidden: false
+- name: netfactor
+  sql: risk_margin_profile ->> '$.risk_factors.netfactor'
+  type: TEXT
+  primary_key: false
+  description: Network-risk label.
+  hidden: false
+- name: regfactor
+  sql: risk_margin_profile ->> '$.risk_factors.regfactor'
+  type: TEXT
+  primary_key: false
+  description: Regulatory-risk label.
+  hidden: false
+- name: poscount
+  sql: risk_margin_profile ->> '$.position.poscount'
+  type: DOUBLE
+  primary_key: false
+  description: Position size in base units.
+  hidden: false
+- name: possum
+  sql: risk_margin_profile ->> '$.position.possum'
+  type: DOUBLE
+  primary_key: false
+  description: Notional value of position.
+  hidden: false
+- name: posedge
+  sql: risk_margin_profile ->> '$.position.posedge'
+  type: TEXT
+  primary_key: false
+  description: "Position direction enum (KB #23): 'Long' = profits from price increases,\
+    \ 'Short' = profits from price decreases.\n\n[kb=23]\nAn enum with values 'Long'\
+    \ or 'Short'. 'Long' indicates a position that profits from price increases of\
+    \ the underlying asset. 'Short' indicates a position that profits from price decreases\
+    \ of the underlying asset. \u2014 Illustrates the meaning of different values\
+    \ for the posedge enum.\n[/kb=23]"
+  label: posedge
+  hidden: false
+  meta:
+    kb_id: 23
+- name: posmagn
+  sql: risk_margin_profile ->> '$.position.posmagn'
+  type: TEXT
+  primary_key: false
+  description: "Position leverage multiplier enum (KB #24): values '1','2','3','5','10','20','50','100'.\
+    \ E.g. '10' = 10\xD7 leverage, amplifying P&L by that factor.\n\n[kb=24]\nAn enum\
+    \ with values '1', '2', '3', '5', '10', '20', '50', or '100', representing leverage\
+    \ multipliers. For example, '10' means the position uses 10x leverage, amplifying\
+    \ both potential profits and losses by a factor of 10 compared to an unleveraged\
+    \ position. \u2014 Illustrates the meaning of different values for the posmagn\
+    \ enum.\n[/kb=24]"
+  label: posmagn
+  hidden: false
+  meta:
+    kb_id: 24
+- name: posriskrate
+  sql: risk_margin_profile ->> '$.position.posriskrate'
+  type: DOUBLE
+  primary_key: false
+  description: Position risk ratio.
+  hidden: false
+- name: margrate
+  sql: risk_margin_profile ->> '$.margin_rates.margrate'
+  type: DOUBLE
+  primary_key: false
+  description: Margin ratio.
+  hidden: false
+- name: margcallquote
+  sql: risk_margin_profile ->> '$.margin_rates.margcallquote'
+  type: DOUBLE
+  primary_key: false
+  description: Margin-call trigger price.
+  hidden: false
+- name: bkptquote
+  sql: risk_margin_profile ->> '$.margin_rates.bkptquote'
+  type: DOUBLE
+  primary_key: false
+  description: Bankruptcy / forced-liquidation price.
+  hidden: false
+- name: collsum
+  sql: risk_margin_profile ->> '$.collateral.collsum'
+  type: DOUBLE
+  primary_key: false
+  description: Collateral amount posted.
+  hidden: false
+- name: collcoin
+  sql: risk_margin_profile ->> '$.collateral.collcoin'
+  type: TEXT
+  primary_key: false
+  description: Collateral currency enum (USDT, USDC, BTC, ETH).
+  hidden: false
+- name: collrate
+  sql: risk_margin_profile ->> '$.collateral.collrate'
+  type: DOUBLE
+  primary_key: false
+  description: Collateral ratio.
+  hidden: false
+- name: insfundshare
+  sql: risk_margin_profile ->> '$.collateral.insfundshare'
+  type: DOUBLE
+  primary_key: false
+  description: Portion allocated from the insurance fund.
+  hidden: false
+- name: risk_to_reward_ratio
+  sql: ABS(orders.dealquote - CASE risk_margin_profile ->> '$.position.posedge' WHEN
+    'Long' THEN CAST(risk_margin_profile ->> '$.price_levels.stopquote' AS REAL) ELSE
+    CAST(risk_margin_profile ->> '$.price_levels.trigquote' AS REAL) END) / NULLIF(ABS(orders.dealquote
+    - CASE risk_margin_profile ->> '$.position.posedge' WHEN 'Long' THEN CAST(risk_margin_profile
+    ->> '$.price_levels.trigquote' AS REAL) ELSE CAST(risk_margin_profile ->> '$.price_levels.stopquote'
+    AS REAL) END), 0)
+  type: DOUBLE
+  primary_key: false
+  description: "Risk-to-Reward Ratio (KB #38): |entryquote \u2212 risk_side| / |entryquote\
+    \ \u2212 reward_side|, where for Long the risk side is stopquote and reward is\
+    \ trigquote (and vice versa for Short). 'entryquote' is taken as orders.dealquote\
+    \ (the order's limit/stop price) reachable via the riskandmargin\u2192orders join.\n\
+    \n[kb=38]\nRisk-to-Reward Ratio = \\frac{|entryquote - (posedge == 'Long' ? stopquote\
+    \ : trigquote)|}{|entryquote - (posedge == 'Long' ? trigquote : stopquote)|},\
+    \ \\text{where } entryquote \\text{ is the entry price, } stopquote \\text{ is\
+    \ the stop price, } trigquote \\text{ is the advanced trigger price, and } posedge\
+    \ \\text{ determines position direction (Long or Short).} \u2014 Calculates the\
+    \ ratio of potential risk to potential reward for a position.\n[/kb=38]"
+  label: Risk-to-Reward Ratio
+  hidden: false
+  meta:
+    kb_id: 38
+- name: posmagn_n
+  sql: CAST(risk_margin_profile ->> '$.position.posmagn' AS REAL)
+  type: DOUBLE
+  primary_key: false
+  description: "Numeric form of posmagn (leverage multiplier), so it can be used in\
+    \ arithmetic.\n\n[kb=24]\nAn enum with values '1', '2', '3', '5', '10', '20',\
+    \ '50', or '100', representing leverage multipliers. For example, '10' means the\
+    \ position uses 10x leverage, amplifying both potential profits and losses by\
+    \ a factor of 10 compared to an unleveraged position. \u2014 Illustrates the meaning\
+    \ of different values for the posmagn enum.\n[/kb=24]"
+  label: posmagn
+  hidden: false
+  meta:
+    kb_id: 24
+measures: []
+aggregations: []
+joins:
+- target_model: orders
+  join_pairs:
+  - - ordervault
+    - recordvault
+  join_type: left
+filters: []
+description: 'Per-order risk and margin profile: leverage settings, position sizing,
+  margin thresholds, liquidation/stop levels, iceberg layout, multi-faceted risk labels,
+  and collateral. The `risk_margin_profile` JSON field is decomposed into row-level
+  columns below.'
+hidden: false

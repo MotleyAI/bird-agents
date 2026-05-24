@@ -1,0 +1,140 @@
+version: 6
+name: artifactsecurityaccess
+sql_table: artifactsecurityaccess
+query_variables: {}
+data_source: museum
+columns:
+- name: secrecordregistry
+  sql: secrecordregistry
+  type: INT
+  primary_key: true
+  hidden: false
+  format:
+    type: integer
+- name: artref
+  sql: artref
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: ratingref
+  sql: ratingref
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: loanstatus
+  sql: loanstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: insvalueusd
+  sql: insvalueusd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: seclevel
+  sql: seclevel
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: accessrestrictions
+  sql: accessrestrictions
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: docustatus
+  sql: docustatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: photodocu
+  sql: photodocu
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: condreportstatus
+  sql: condreportstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: conserverecstatus
+  sql: conserverecstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: researchaccessstatus
+  sql: researchaccessstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: digitalrecstatus
+  sql: digitalrecstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: is_arv
+  sql: insvalueusd > 1000000
+  type: BOOLEAN
+  primary_key: false
+  description: "Artifact Rarity & Valuation (KB #55): InsValueUSD > $1,000,000. Note:\
+    \ in current dataset insvalueusd max is ~997K, so no rows match.\n\n[kb=55]\n\
+    Artifacts are categorized as ARV if their insurance value exceed $1,000,000. \u2014\
+    \ Establishes criteria for identifying artifacts of exceptional rarity and valuation\
+    \ that demand heightened preservation measures and limited public access.\n[/kb=55]"
+  label: Artifact Rarity & Valuation (ARV)
+  hidden: false
+  meta:
+    kb_id: 55
+- name: is_monetary_high_value
+  sql: insvalueusd > 1000000
+  type: BOOLEAN
+  primary_key: false
+  description: 'Monetary High-Value classification (KB #51): InsValueUSD > $1,000,000.'
+  hidden: false
+- name: is_high_value
+  sql: insvalueusd > 1000000
+  type: BOOLEAN
+  primary_key: false
+  description: "High-Value Artifact (KB #11) - monetary leg only: InsValueUSD > $1,000,000.\
+    \ The full KB definition also includes the 'top 10%% of HistSign + CultScore'\
+    \ branch -- see is_high_value_full on the high_value_artifacts query-backed model\
+    \ for the complete predicate including percentile rank.\n\n[kb=11]\nAn artifact\
+    \ is considered high-value when its InsValueUSD exceeds $1,000,000 OR when both\
+    \ HistSignRating and CultScore are in the top 10% of all artifacts. \u2014 Identifies\
+    \ artifacts with exceptional historical, cultural, or monetary value requiring\
+    \ special attention.\n[/kb=11]"
+  label: High-Value Artifact
+  hidden: false
+  meta:
+    kb_id: 11
+- name: is_dynasty_value
+  sql: artifactratings.researchvalrating > 8 AND LOWER(TRIM(artifactscore.artdynasty))
+    IN ('ming', 'han', 'tang')
+  type: BOOLEAN
+  primary_key: false
+  description: "Dynasty Value Artifact (KB #18): ArtDynasty in {Ming, Han, Tang} AND\
+    \ ResearchValRating > 8.\n\n[kb=18]\nArtifacts from 'Ming', 'Han', or 'Tang' dynasties\
+    \ that also have ResearchValRating > 8. \u2014 Identifies artifacts from historically\
+    \ significant dynasties with higher research and cultural value.\n[/kb=18]"
+  label: Dynasty Value Artifact
+  hidden: false
+  meta:
+    kb_id: 18
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artref
+    - artregistry
+  join_type: left
+- target_model: artifactratings
+  join_pairs:
+  - - ratingref
+    - ratingrecordregistry
+  join_type: left
+filters: []
+hidden: false

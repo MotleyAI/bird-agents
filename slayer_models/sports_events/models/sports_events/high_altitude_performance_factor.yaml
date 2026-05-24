@@ -1,0 +1,100 @@
+version: 6
+name: high_altitude_performance_factor
+source_queries:
+- version: 3
+  source_model:
+    source_name: lap_times
+    columns:
+    - name: lap_seconds_high_altitude_only
+      type: DOUBLE
+      sql: CASE WHEN CAST(json_extract(races__circuits.location_metadata, '$.coordinates.elevation_m')
+        AS REAL) > 800 THEN msec_val / 1000.0 ELSE NULL END
+      description: 'Lap time in seconds, only when the lap was run at a High-Altitude
+        Circuit (KB #14, elevation > 800 m).'
+  measures:
+  - formula: lap_seconds_high_altitude_only:avg / lap_seconds:avg
+    name: high_altitude_performance_factor
+  - formula: lap_seconds:avg
+    name: season_avg_lap_seconds
+  - formula: lap_seconds_high_altitude_only:avg
+    name: high_altitude_avg_lap_seconds
+  dimensions:
+  - name: wheel_unit
+  - name: yr
+    model: races
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"lap_times.wheel_unit\" AS wheel_unit, \"lap_times.races.yr\"\
+  \ AS races__yr, \"lap_times.lap_seconds_high_altitude_only_avg\" AS lap_seconds_high_altitude_only_avg,\
+  \ \"lap_times.lap_seconds_avg\" AS lap_seconds_avg, \"lap_times.high_altitude_performance_factor\"\
+  \ AS high_altitude_performance_factor FROM (WITH base AS (\nSELECT\n  lap_times.wheel_unit\
+  \ AS \"lap_times.wheel_unit\",\n  races.yr AS \"lap_times.races.yr\",\n  AVG(\n\
+  \    CASE\n      WHEN CAST(races__circuits.location_metadata -> '$.coordinates.elevation_m'\
+  \ AS REAL) > 800\n      THEN msec_val / 1000.0\n      ELSE NULL\n    END\n  ) AS\
+  \ \"lap_times.lap_seconds_high_altitude_only_avg\",\n  AVG(msec_val / 1000.0) AS\
+  \ \"lap_times.lap_seconds_avg\"\nFROM lap_times AS lap_times\nLEFT JOIN races AS\
+  \ races\n  ON lap_times.rc_index = races.rak_id\nLEFT JOIN circuits AS races__circuits\n\
+  \  ON races.trkbind = races__circuits.cctkey\nGROUP BY\n  lap_times.wheel_unit,\n\
+  \  races.yr\n),\nstep1 AS (\nSELECT\n    \"lap_times.lap_seconds_avg\",\n    \"\
+  lap_times.lap_seconds_high_altitude_only_avg\",\n    \"lap_times.races.yr\",\n \
+  \   \"lap_times.wheel_unit\",\n    \"lap_times.lap_seconds_high_altitude_only_avg\"\
+  \ / \"lap_times.lap_seconds_avg\" AS \"lap_times.high_altitude_performance_factor\"\
+  \nFROM base\n)\nSELECT\n    \"lap_times.high_altitude_performance_factor\",\n  \
+  \  \"lap_times.lap_seconds_avg\",\n    \"lap_times.lap_seconds_high_altitude_only_avg\"\
+  ,\n    \"lap_times.races.yr\",\n    \"lap_times.wheel_unit\"\nFROM step1) AS _inner"
+data_source: sports_events
+columns:
+- name: wheel_unit
+  sql: wheel_unit
+  type: DOUBLE
+  primary_key: false
+  description: Foreign key to drivers.
+  hidden: false
+  format:
+    type: integer
+- name: races__yr
+  sql: races__yr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: lap_seconds_high_altitude_only_avg
+  sql: lap_seconds_high_altitude_only_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'Lap time in seconds, only when the lap was run at a High-Altitude
+    Circuit (KB #14, elevation > 800 m).'
+  hidden: false
+  format:
+    type: float
+- name: lap_seconds_avg
+  sql: lap_seconds_avg
+  type: DOUBLE
+  primary_key: false
+  description: 'Lap Time in Seconds (KB #21): T_seconds = T_milliseconds / 1000.'
+  hidden: false
+  format:
+    type: float
+- name: high_altitude_performance_factor
+  sql: high_altitude_performance_factor
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "High-Altitude Performance Factor (KB #35) per (driver, season): driver's\
+  \ average lap time at High-Altitude Circuits divided by the driver's overall season\
+  \ average lap time. Built as a single-stage query against lap_times that joins to\
+  \ races+circuits and uses two filtered AVG branches.\n\n[kb=35]\nHAPF = \\frac{\\\
+  text{Driver's Average Lap Time at High-Altitude Circuit}}{\\text{Driver's Season\
+  \ Average Lap Time}}, \\text{which evaluates performance specifically at a High-Altitude\
+  \ Circuit.} \u2014 Quantifies a driver's relative performance at circuits with unique\
+  \ atmospheric conditions.\n[/kb=35]"
+hidden: false
+meta:
+  kb_id: 35

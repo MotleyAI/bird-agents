@@ -1,0 +1,108 @@
+version: 6
+name: drivers
+sql_table: drivers
+query_variables: {}
+data_source: sports_events
+columns:
+- name: drv_main
+  sql: drv_main
+  type: INT
+  primary_key: true
+  description: Unique driver identifier.
+  hidden: false
+  format:
+    type: integer
+- name: driver_identity
+  sql: driver_identity
+  type: TEXT
+  primary_key: false
+  description: "JSONB column. Consolidates driver identity, nationality, and references:\
+    \ code (3-letter), name.{first_name,surname}, info_link, reference, birth_date,\
+    \ nationality, racing_number. Per KB #5, NULL code or racing_number means not\
+    \ officially assigned / not in dataset.\n\n[kb=5]\nWhen a driver's permanent number\
+    \ or three-letter identifier code is unavailable, it indicates that one has not\
+    \ been officially assigned or it is not present in the dataset. \u2014 Clarifies\
+    \ the meaning of a missing permanent racing number or identification code for\
+    \ a driver.\n[/kb=5]"
+  label: Data Unavailability for Driver Identification
+  hidden: false
+  meta:
+    kb_id: 5
+- name: driver_code
+  sql: json_extract(driver_identity, '$.code')
+  type: TEXT
+  primary_key: false
+  description: 'Three-letter driver code (extracted). NULL = no FIA code assigned
+    (KB #5).'
+  hidden: false
+- name: racing_number
+  sql: json_extract(driver_identity, '$.racing_number')
+  type: TEXT
+  primary_key: false
+  description: 'Permanent racing number (extracted). NULL = not assigned (KB #5).'
+  hidden: false
+- name: first_name
+  sql: json_extract(driver_identity, '$.name.first_name')
+  type: TEXT
+  primary_key: false
+  description: Driver first name (extracted).
+  hidden: false
+- name: surname
+  sql: json_extract(driver_identity, '$.name.surname')
+  type: TEXT
+  primary_key: false
+  description: Driver surname (extracted).
+  hidden: false
+- name: reference
+  sql: json_extract(driver_identity, '$.reference')
+  type: TEXT
+  primary_key: false
+  description: Driver reference code (extracted).
+  hidden: false
+- name: birth_date
+  sql: json_extract(driver_identity, '$.birth_date')
+  type: DATE
+  primary_key: false
+  description: Driver date of birth, ISO format (extracted).
+  hidden: false
+- name: nationality
+  sql: json_extract(driver_identity, '$.nationality')
+  type: TEXT
+  primary_key: false
+  description: Driver nationality (extracted).
+  hidden: false
+- name: info_link
+  sql: json_extract(driver_identity, '$.info_link')
+  type: TEXT
+  primary_key: false
+  description: Driver info page link (extracted).
+  hidden: false
+- name: driver_age
+  sql: CAST((julianday('now') - julianday(json_extract(driver_identity, '$.birth_date')))
+    / 365.25 AS INTEGER)
+  type: DOUBLE
+  primary_key: false
+  description: "Driver Age (KB #20): floor((today - birth_date) / 365.25). Returns\
+    \ NULL when birth_date is missing.\n\n[kb=20]\nAge = \\lfloor \\frac{Date_{current}\
+    \ - Date_{birth}}{365.25} \\rfloor \u2014 Calculates the current age of a driver\
+    \ based on their birth date.\n[/kb=20]"
+  label: Driver Age
+  hidden: false
+  meta:
+    kb_id: 20
+- name: is_veteran
+  sql: CAST((julianday('now') - julianday(json_extract(driver_identity, '$.birth_date')))
+    / 365.25 AS INTEGER) >= 35
+  type: BOOLEAN
+  primary_key: false
+  description: 'Helper: TRUE iff driver_age >= 35 (Veteran threshold from KB #49).'
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: 'F1 drivers. One row per driver. Identity data is held in the JSONB-style
+  driver_identity column; convenience extracted columns are exposed below. Per KB
+  #5, missing permanent racing_number or three-letter code indicates one has not been
+  officially assigned or it is not present in the dataset.'
+hidden: false

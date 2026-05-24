@@ -1,0 +1,177 @@
+version: 6
+name: signalprobabilities
+sql_table: signalprobabilities
+query_variables: {}
+data_source: alien
+columns:
+- name: signalref
+  sql: signalref
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: falseposprob
+  sql: falseposprob
+  type: DOUBLE
+  primary_key: false
+  description: "False Positive Probability. FalsePosProb < 0.01 indicates less than\
+    \ 1% probability that the signal is a false detection or artifact. Such low false\
+    \ positive probability typically results from multiple independent confirmations,\
+    \ excellent signal strength (high SnrRatio), and elimination of all known terrestrial\
+    \ and instrumental sources.\n\n[kb=29]\nIndicates less than 1% probability that\
+    \ the signal is a false detection or artifact. Such low false positive probability\
+    \ typically results from multiple independent confirmations, excellent signal\
+    \ strength (high $\\text{SnrRatio}$), and elimination of all known terrestrial\
+    \ and instrumental sources. \u2014 Illustrates extremely high confidence in signal\
+    \ detection.\n[/kb=29]"
+  label: 'FalsePosProb: <0.01'
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 29
+- name: sigunique
+  sql: sigunique
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: simindex
+  sql: simindex
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: corrscore
+  sql: corrscore
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: anomscore
+  sql: anomscore
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: techsigprob
+  sql: techsigprob
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: biosigprob
+  sql: biosigprob
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: natsrcprob
+  sql: natsrcprob
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: artsrcprob
+  sql: artsrcprob
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tols
+  sql: techsigprob * (1 - natsrcprob) * sigunique * (0.5 + anomscore / 10.0)
+  type: DOUBLE
+  primary_key: false
+  description: "Technological Origin Likelihood Score (TOLS) = TechSigProb * (1 -\
+    \ NatSrcProb) * SigUnique * (0.5 + AnomScore/10). Values above 0.75 warrant further\
+    \ investigation as potential technosignatures.\n\n[kb=3]\n$\\text{TOLS} = \\text{TechSigProb}\
+    \ \\times (1 - \\text{NatSrcProb}) \\times \\text{SigUnique} \\times (0.5 + \\\
+    frac{\\text{AnomScore}}{10})$, where values above 0.75 warrant further investigation\
+    \ as potential technosignatures. \u2014 Combines multiple factors to estimate\
+    \ likelihood of technological origin.\n[/kb=3]"
+  label: Technological Origin Likelihood Score (TOLS)
+  hidden: false
+  meta:
+    kb_id: 3
+- name: rpi
+  sql: (techsigprob * 4 + biosigprob / 100.0 + sigunique * 2 + anomscore / 2.0) *
+    (1 - falseposprob)
+  type: DOUBLE
+  primary_key: false
+  description: "Research Priority Index (RPI) = (TechSigProb*4 + BioSigProb/100 +\
+    \ SigUnique*2 + AnomScore/2) * (1 - FalsePosProb). Values above 3 indicate high\
+    \ research priority.\n\n[kb=8]\n$\\text{RPI} = (\\text{TechSigProb} \\times 4\
+    \ + \\frac{\\text{BioSigProb}}{100} + \\text{SigUnique} \\times 2 + \\frac{\\\
+    text{AnomScore}}{2}) \\times (1 - \\text{FalsePosProb})$, where values above 3\
+    \ indicate high research priority. \u2014 Helps researchers prioritize signals\
+    \ for follow-up based on multiple factors.\n[/kb=8]"
+  label: Research Priority Index (RPI)
+  hidden: false
+  meta:
+    kb_id: 8
+- name: tols_category
+  sql: CASE WHEN (techsigprob * (1 - natsrcprob) * sigunique * (0.5 + anomscore /
+    10.0)) < 0.25 THEN 'Low' WHEN (techsigprob * (1 - natsrcprob) * sigunique * (0.5
+    + anomscore / 10.0)) < 0.75 THEN 'Medium' ELSE 'High' END
+  type: TEXT
+  primary_key: false
+  description: "TOLS Category: 'Low' if TOLS < 0.25, 'Medium' if TOLS < 0.75, 'High'\
+    \ otherwise.\n\n[kb=52]\nCategorized as 'Low' if TOLS < 0.25, 'Medium' if TOLS\
+    \ < 0.75, and 'High' otherwise. \u2014 Classification of signals based on TOLS\
+    \ thresholds.\n[/kb=52]"
+  label: TOLS Category
+  hidden: false
+  meta:
+    kb_id: 52
+- name: is_too
+  sql: CASE WHEN ((techsigprob * 4 + biosigprob / 100.0 + sigunique * 2 + anomscore
+    / 2.0) * (1 - falseposprob)) > 3.5 AND techsigprob > 0.8 AND anomscore > 5 THEN
+    1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Target of Opportunity (TOO): high-value signals with RPI>3.5 AND TechSigProb>0.8\
+    \ AND AnomScore>5 that have not been previously documented or explained by known\
+    \ phenomena (the latter clause is prose-only \u2014 the column captures the data-evaluable\
+    \ predicate).\n\n[kb=12]\nAny signal with $\\text{RPI} > 3.5$, $\\text{TechSigProb}\
+    \ > 0.8$, and $\\text{AnomScore} > 5$ that has not been previously documented\
+    \ or explained by known phenomena. \u2014 Identifies high-value signals requiring\
+    \ immediate follow-up observation.\n[/kb=12]"
+  label: Target of Opportunity (TOO)
+  hidden: false
+  meta:
+    kb_id: 12
+- name: is_potential_biosignature
+  sql: CASE WHEN biosigprob > 0.6 AND techsigprob < 0.4 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "Potential Biosignature: signals with BioSigProb>0.6 AND TechSigProb<0.4\
+    \ (the additional clause about spectral features matching known biological emission\
+    \ patterns is prose-only and not encoded here).\n\n[kb=17]\nSignals with $\\text{BioSigProb}\
+    \ > 0.6$, $\\text{TechSigProb} < 0.4$, and spectral features that match known\
+    \ biological emission patterns, often associated with specific molecular transitions.\
+    \ \u2014 Defines characteristics of signals potentially associated with biological\
+    \ processes.\n[/kb=17]"
+  label: Potential Biosignature
+  hidden: false
+  meta:
+    kb_id: 17
+measures: []
+aggregations: []
+joins:
+- target_model: signals
+  join_pairs:
+  - - signalref
+    - signalregistry
+  join_type: left
+filters: []
+description: 'Per-signal probabilistic scores: false positive probability, signal
+  uniqueness, similarity / correlation / anomaly scores, and origin probabilities
+  (technosignature / biosignature / natural / artificial).'
+hidden: false

@@ -1,0 +1,274 @@
+version: 6
+name: network_security_threat
+source_queries:
+- version: 3
+  name: account_scores
+  source_model: moderationaction
+  measures:
+  - formula: nts:avg
+    name: nts_v
+  - formula: bbi:avg
+    name: bbi_v
+  - formula: clustsize:max
+    name: clustsize_v
+  dimensions:
+  - name: account_id
+  - name: cluster_id
+  whole_periods_only: false
+- version: 3
+  name: cluster_scores
+  source_model: account_scores
+  measures:
+  - formula: bbi_v:avg
+    name: avg_bbi
+  - formula: clustsize_v:max
+    name: max_clustsize
+  dimensions:
+  - name: cluster_id
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: account_scores
+    joins:
+    - target_model: cluster_scores
+      join_pairs:
+      - - cluster_id
+        - cluster_id
+  measures:
+  - formula: cluster_scores.avg_bbi:max
+    name: cluster_avg_bbi
+  - formula: cluster_scores.max_clustsize:max
+    name: cluster_max_clustsize
+  dimensions:
+  - name: account_id
+  - name: cluster_id
+  - name: nts_v
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"account_scores.account_id\" AS account_id, \"account_scores.cluster_id\"\
+  \ AS cluster_id, \"account_scores.nts_v\" AS nts_v, \"account_scores.cluster_scores.avg_bbi_max\"\
+  \ AS cluster_scores__avg_bbi_max, \"account_scores.cluster_scores.max_clustsize_max\"\
+  \ AS cluster_scores__max_clustsize_max FROM (WITH _base AS (\nSELECT\n  account_scores.account_id\
+  \ AS \"account_scores.account_id\",\n  account_scores.cluster_id AS \"account_scores.cluster_id\"\
+  ,\n  account_scores.nts_v AS \"account_scores.nts_v\"\nFROM (\n  SELECT\n    \"\
+  moderationaction.account_id\" AS account_id,\n    \"moderationaction.cluster_id\"\
+  \ AS cluster_id,\n    \"moderationaction.nts_v\" AS nts_v,\n    \"moderationaction.bbi_v\"\
+  \ AS bbi_v,\n    \"moderationaction.clustsize_v\" AS clustsize_v\n  FROM (\n   \
+  \ SELECT\n      contentbehavior__sessionbehavior__profile.profaccref AS \"moderationaction.account_id\"\
+  ,\n      contentbehavior__sessionbehavior__profile__account.platident AS \"moderationaction.cluster_id\"\
+  ,\n      AVG(\n        (\n          0.3 * moderationaction.credscore + 0.3 * moderationaction.reputscore\
+  \ + 0.4 * JSON_EXTRACT(contentbehavior__sessionbehavior__profile.profile_composition,\
+  \ '$.completeness')\n        ) * (\n          1 - SQRT(\n            (\n       \
+  \       CAST(JSON_EXTRACT(\n                securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \                '$.connection_metrics.followgrowrate'\n              ) AS REAL)\n\
+  \            ) * (\n              CAST(JSON_EXTRACT(\n                securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \                '$.connection_metrics.followgrowrate'\n              ) AS REAL)\n\
+  \            ) + (\n              CAST(JSON_EXTRACT(\n                securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \                '$.connection_metrics.followinggrowrate'\n              ) AS REAL)\n\
+  \            ) * (\n              CAST(JSON_EXTRACT(\n                securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \                '$.connection_metrics.followinggrowrate'\n              ) AS REAL)\n\
+  \            )\n          )\n        ) * (\n          1 - (\n            (\n   \
+  \           0.4 * JSON_EXTRACT(securitydetection.detection_score_profile, '$.behavior_scores.botlikscore')\
+  \ + 0.3 * JSON_EXTRACT(securitydetection.detection_score_profile, '$.behavior_scores.autobehavscore')\
+  \ + 0.3 * (\n                1 - securitydetection__technicalinfo__messaginganalysis.convnatval\n\
+  \              )\n            ) * (\n              0.5 * moderationaction.coordscore\
+  \ + 0.3 * moderationaction.netinflscore + 0.2 * (\n                CAST(moderationaction.clustsize\
+  \ AS REAL) / 100\n              )\n            ) * (\n              CAST(moderationaction.clustsize\
+  \ AS REAL) / 100\n            )\n          )\n        )\n      ) AS \"moderationaction.nts_v\"\
+  ,\n      AVG(\n        0.4 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.behavior_scores.botlikscore') + 0.3 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.behavior_scores.autobehavscore') + 0.3 * (\n          1 - securitydetection__technicalinfo__messaginganalysis.convnatval\n\
+  \        )\n      ) AS \"moderationaction.bbi_v\",\n      MAX(moderationaction.clustsize)\
+  \ AS \"moderationaction.clustsize_v\"\n    FROM moderationaction AS moderationaction\n\
+  \    LEFT JOIN contentbehavior AS contentbehavior\n      ON moderationaction.macntref\
+  \ = contentbehavior.cntref\n    LEFT JOIN securitydetection AS securitydetection\n\
+  \      ON moderationaction.masedetref = securitydetection.secdetkey\n    LEFT JOIN\
+  \ technicalinfo AS securitydetection__technicalinfo\n      ON securitydetection.sectechref\
+  \ = securitydetection__technicalinfo.techkey\n    LEFT JOIN sessionbehavior AS contentbehavior__sessionbehavior\n\
+  \      ON contentbehavior.cntsessref = contentbehavior__sessionbehavior.sessref\n\
+  \    LEFT JOIN messaginganalysis AS securitydetection__technicalinfo__messaginganalysis\n\
+  \      ON securitydetection__technicalinfo.techmsgref = securitydetection__technicalinfo__messaginganalysis.msgkey\n\
+  \    LEFT JOIN networkmetrics AS securitydetection__technicalinfo__networkmetrics\n\
+  \      ON securitydetection__technicalinfo.technetref = securitydetection__technicalinfo__networkmetrics.netkey\n\
+  \    LEFT JOIN profile AS contentbehavior__sessionbehavior__profile\n      ON contentbehavior__sessionbehavior.sessprofref\
+  \ = contentbehavior__sessionbehavior__profile.profkey\n    LEFT JOIN account AS\
+  \ contentbehavior__sessionbehavior__profile__account\n      ON contentbehavior__sessionbehavior__profile.profaccref\
+  \ = contentbehavior__sessionbehavior__profile__account.accindex\n    GROUP BY\n\
+  \      contentbehavior__sessionbehavior__profile.profaccref,\n      contentbehavior__sessionbehavior__profile__account.platident\n\
+  \  ) AS _inner\n) AS account_scores\nGROUP BY\n  account_scores.account_id,\n  account_scores.cluster_id,\n\
+  \  account_scores.nts_v\n), _cm_account_scores__cluster_scores__avg_bbi_max AS (\n\
+  SELECT\n  MAX(cluster_scores.avg_bbi) AS \"account_scores.cluster_scores.avg_bbi_max\"\
+  \nFROM (\n  SELECT\n    \"account_scores.cluster_id\" AS cluster_id,\n    \"account_scores.avg_bbi\"\
+  \ AS avg_bbi,\n    \"account_scores.max_clustsize\" AS max_clustsize\n  FROM (\n\
+  \    SELECT\n      account_scores.cluster_id AS \"account_scores.cluster_id\",\n\
+  \      AVG(account_scores.bbi_v) AS \"account_scores.avg_bbi\",\n      MAX(account_scores.clustsize_v)\
+  \ AS \"account_scores.max_clustsize\"\n    FROM (\n      SELECT\n        \"moderationaction.account_id\"\
+  \ AS account_id,\n        \"moderationaction.cluster_id\" AS cluster_id,\n     \
+  \   \"moderationaction.nts_v\" AS nts_v,\n        \"moderationaction.bbi_v\" AS\
+  \ bbi_v,\n        \"moderationaction.clustsize_v\" AS clustsize_v\n      FROM (\n\
+  \        SELECT\n          contentbehavior__sessionbehavior__profile.profaccref\
+  \ AS \"moderationaction.account_id\",\n          contentbehavior__sessionbehavior__profile__account.platident\
+  \ AS \"moderationaction.cluster_id\",\n          AVG(\n            (\n         \
+  \     0.3 * moderationaction.credscore + 0.3 * moderationaction.reputscore + 0.4\
+  \ * JSON_EXTRACT(contentbehavior__sessionbehavior__profile.profile_composition,\
+  \ '$.completeness')\n            ) * (\n              1 - SQRT(\n              \
+  \  (\n                  CAST(JSON_EXTRACT(\n                    securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \                    '$.connection_metrics.followgrowrate'\n                  )\
+  \ AS REAL)\n                ) * (\n                  CAST(JSON_EXTRACT(\n      \
+  \              securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \                    '$.connection_metrics.followgrowrate'\n                  )\
+  \ AS REAL)\n                ) + (\n                  CAST(JSON_EXTRACT(\n      \
+  \              securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \                    '$.connection_metrics.followinggrowrate'\n                \
+  \  ) AS REAL)\n                ) * (\n                  CAST(JSON_EXTRACT(\n   \
+  \                 securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \                    '$.connection_metrics.followinggrowrate'\n                \
+  \  ) AS REAL)\n                )\n              )\n            ) * (\n         \
+  \     1 - (\n                (\n                  0.4 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.behavior_scores.botlikscore') + 0.3 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.behavior_scores.autobehavscore') + 0.3 * (\n                    1 - securitydetection__technicalinfo__messaginganalysis.convnatval\n\
+  \                  )\n                ) * (\n                  0.5 * moderationaction.coordscore\
+  \ + 0.3 * moderationaction.netinflscore + 0.2 * (\n                    CAST(moderationaction.clustsize\
+  \ AS REAL) / 100\n                  )\n                ) * (\n                 \
+  \ CAST(moderationaction.clustsize AS REAL) / 100\n                )\n          \
+  \    )\n            )\n          ) AS \"moderationaction.nts_v\",\n          AVG(\n\
+  \            0.4 * JSON_EXTRACT(securitydetection.detection_score_profile, '$.behavior_scores.botlikscore')\
+  \ + 0.3 * JSON_EXTRACT(securitydetection.detection_score_profile, '$.behavior_scores.autobehavscore')\
+  \ + 0.3 * (\n              1 - securitydetection__technicalinfo__messaginganalysis.convnatval\n\
+  \            )\n          ) AS \"moderationaction.bbi_v\",\n          MAX(moderationaction.clustsize)\
+  \ AS \"moderationaction.clustsize_v\"\n        FROM moderationaction AS moderationaction\n\
+  \        LEFT JOIN contentbehavior AS contentbehavior\n          ON moderationaction.macntref\
+  \ = contentbehavior.cntref\n        LEFT JOIN securitydetection AS securitydetection\n\
+  \          ON moderationaction.masedetref = securitydetection.secdetkey\n      \
+  \  LEFT JOIN technicalinfo AS securitydetection__technicalinfo\n          ON securitydetection.sectechref\
+  \ = securitydetection__technicalinfo.techkey\n        LEFT JOIN sessionbehavior\
+  \ AS contentbehavior__sessionbehavior\n          ON contentbehavior.cntsessref =\
+  \ contentbehavior__sessionbehavior.sessref\n        LEFT JOIN messaginganalysis\
+  \ AS securitydetection__technicalinfo__messaginganalysis\n          ON securitydetection__technicalinfo.techmsgref\
+  \ = securitydetection__technicalinfo__messaginganalysis.msgkey\n        LEFT JOIN\
+  \ networkmetrics AS securitydetection__technicalinfo__networkmetrics\n         \
+  \ ON securitydetection__technicalinfo.technetref = securitydetection__technicalinfo__networkmetrics.netkey\n\
+  \        LEFT JOIN profile AS contentbehavior__sessionbehavior__profile\n      \
+  \    ON contentbehavior__sessionbehavior.sessprofref = contentbehavior__sessionbehavior__profile.profkey\n\
+  \        LEFT JOIN account AS contentbehavior__sessionbehavior__profile__account\n\
+  \          ON contentbehavior__sessionbehavior__profile.profaccref = contentbehavior__sessionbehavior__profile__account.accindex\n\
+  \        GROUP BY\n          contentbehavior__sessionbehavior__profile.profaccref,\n\
+  \          contentbehavior__sessionbehavior__profile__account.platident\n      )\
+  \ AS _inner\n    ) AS account_scores\n    GROUP BY\n      account_scores.cluster_id\n\
+  \  ) AS _inner\n) AS cluster_scores\n), _cm_account_scores__cluster_scores__max_clustsize_max\
+  \ AS (\nSELECT\n  MAX(cluster_scores.max_clustsize) AS \"account_scores.cluster_scores.max_clustsize_max\"\
+  \nFROM (\n  SELECT\n    \"account_scores.cluster_id\" AS cluster_id,\n    \"account_scores.avg_bbi\"\
+  \ AS avg_bbi,\n    \"account_scores.max_clustsize\" AS max_clustsize\n  FROM (\n\
+  \    SELECT\n      account_scores.cluster_id AS \"account_scores.cluster_id\",\n\
+  \      AVG(account_scores.bbi_v) AS \"account_scores.avg_bbi\",\n      MAX(account_scores.clustsize_v)\
+  \ AS \"account_scores.max_clustsize\"\n    FROM (\n      SELECT\n        \"moderationaction.account_id\"\
+  \ AS account_id,\n        \"moderationaction.cluster_id\" AS cluster_id,\n     \
+  \   \"moderationaction.nts_v\" AS nts_v,\n        \"moderationaction.bbi_v\" AS\
+  \ bbi_v,\n        \"moderationaction.clustsize_v\" AS clustsize_v\n      FROM (\n\
+  \        SELECT\n          contentbehavior__sessionbehavior__profile.profaccref\
+  \ AS \"moderationaction.account_id\",\n          contentbehavior__sessionbehavior__profile__account.platident\
+  \ AS \"moderationaction.cluster_id\",\n          AVG(\n            (\n         \
+  \     0.3 * moderationaction.credscore + 0.3 * moderationaction.reputscore + 0.4\
+  \ * JSON_EXTRACT(contentbehavior__sessionbehavior__profile.profile_composition,\
+  \ '$.completeness')\n            ) * (\n              1 - SQRT(\n              \
+  \  (\n                  CAST(JSON_EXTRACT(\n                    securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \                    '$.connection_metrics.followgrowrate'\n                  )\
+  \ AS REAL)\n                ) * (\n                  CAST(JSON_EXTRACT(\n      \
+  \              securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \                    '$.connection_metrics.followgrowrate'\n                  )\
+  \ AS REAL)\n                ) + (\n                  CAST(JSON_EXTRACT(\n      \
+  \              securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \                    '$.connection_metrics.followinggrowrate'\n                \
+  \  ) AS REAL)\n                ) * (\n                  CAST(JSON_EXTRACT(\n   \
+  \                 securitydetection__technicalinfo__networkmetrics.network_engagement_metrics,\n\
+  \                    '$.connection_metrics.followinggrowrate'\n                \
+  \  ) AS REAL)\n                )\n              )\n            ) * (\n         \
+  \     1 - (\n                (\n                  0.4 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.behavior_scores.botlikscore') + 0.3 * JSON_EXTRACT(securitydetection.detection_score_profile,\
+  \ '$.behavior_scores.autobehavscore') + 0.3 * (\n                    1 - securitydetection__technicalinfo__messaginganalysis.convnatval\n\
+  \                  )\n                ) * (\n                  0.5 * moderationaction.coordscore\
+  \ + 0.3 * moderationaction.netinflscore + 0.2 * (\n                    CAST(moderationaction.clustsize\
+  \ AS REAL) / 100\n                  )\n                ) * (\n                 \
+  \ CAST(moderationaction.clustsize AS REAL) / 100\n                )\n          \
+  \    )\n            )\n          ) AS \"moderationaction.nts_v\",\n          AVG(\n\
+  \            0.4 * JSON_EXTRACT(securitydetection.detection_score_profile, '$.behavior_scores.botlikscore')\
+  \ + 0.3 * JSON_EXTRACT(securitydetection.detection_score_profile, '$.behavior_scores.autobehavscore')\
+  \ + 0.3 * (\n              1 - securitydetection__technicalinfo__messaginganalysis.convnatval\n\
+  \            )\n          ) AS \"moderationaction.bbi_v\",\n          MAX(moderationaction.clustsize)\
+  \ AS \"moderationaction.clustsize_v\"\n        FROM moderationaction AS moderationaction\n\
+  \        LEFT JOIN contentbehavior AS contentbehavior\n          ON moderationaction.macntref\
+  \ = contentbehavior.cntref\n        LEFT JOIN securitydetection AS securitydetection\n\
+  \          ON moderationaction.masedetref = securitydetection.secdetkey\n      \
+  \  LEFT JOIN technicalinfo AS securitydetection__technicalinfo\n          ON securitydetection.sectechref\
+  \ = securitydetection__technicalinfo.techkey\n        LEFT JOIN sessionbehavior\
+  \ AS contentbehavior__sessionbehavior\n          ON contentbehavior.cntsessref =\
+  \ contentbehavior__sessionbehavior.sessref\n        LEFT JOIN messaginganalysis\
+  \ AS securitydetection__technicalinfo__messaginganalysis\n          ON securitydetection__technicalinfo.techmsgref\
+  \ = securitydetection__technicalinfo__messaginganalysis.msgkey\n        LEFT JOIN\
+  \ networkmetrics AS securitydetection__technicalinfo__networkmetrics\n         \
+  \ ON securitydetection__technicalinfo.technetref = securitydetection__technicalinfo__networkmetrics.netkey\n\
+  \        LEFT JOIN profile AS contentbehavior__sessionbehavior__profile\n      \
+  \    ON contentbehavior__sessionbehavior.sessprofref = contentbehavior__sessionbehavior__profile.profkey\n\
+  \        LEFT JOIN account AS contentbehavior__sessionbehavior__profile__account\n\
+  \          ON contentbehavior__sessionbehavior__profile.profaccref = contentbehavior__sessionbehavior__profile__account.accindex\n\
+  \        GROUP BY\n          contentbehavior__sessionbehavior__profile.profaccref,\n\
+  \          contentbehavior__sessionbehavior__profile__account.platident\n      )\
+  \ AS _inner\n    ) AS account_scores\n    GROUP BY\n      account_scores.cluster_id\n\
+  \  ) AS _inner\n) AS cluster_scores\n)\nSELECT _base.\"account_scores.account_id\"\
+  , _base.\"account_scores.cluster_id\", _base.\"account_scores.nts_v\", _cm_account_scores__cluster_scores__avg_bbi_max.\"\
+  account_scores.cluster_scores.avg_bbi_max\", _cm_account_scores__cluster_scores__max_clustsize_max.\"\
+  account_scores.cluster_scores.max_clustsize_max\"\nFROM _base\nCROSS JOIN _cm_account_scores__cluster_scores__avg_bbi_max\n\
+  CROSS JOIN _cm_account_scores__cluster_scores__max_clustsize_max) AS _inner"
+data_source: fake
+columns:
+- name: account_id
+  sql: account_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row account identifier resolved through the moderationaction \u2192\
+    \ contentbehavior \u2192 sessionbehavior \u2192 profile join chain. Convenience\
+    \ handle for grouping/multistage; equals the underlying account.accindex."
+  hidden: false
+- name: cluster_id
+  sql: cluster_id
+  type: TEXT
+  primary_key: false
+  description: "Per-row cluster identifier resolved through the moderationaction \u2192\
+    \ contentbehavior \u2192 sessionbehavior \u2192 profile \u2192 account join chain.\
+    \ Equals account.platident; per KB #80, this is the cluster identifier used to\
+    \ group accounts in cluster-level rules (Bot Network, Amplification Network, ...)."
+  hidden: false
+- name: nts_v
+  sql: nts_v
+  type: DOUBLE
+  primary_key: false
+  description: 'Network Trust Score (KB #36): PCI * (1-NGV) * (1-CBR). All inlined.'
+  hidden: false
+  format:
+    type: float
+- name: cluster_scores__avg_bbi_max
+  sql: cluster_scores__avg_bbi_max
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: cluster_scores__max_clustsize_max
+  sql: cluster_scores__max_clustsize_max
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Network Security Threat (KB #43): an account with nts_v < 0.3 AND that\
+  \ is part of a Bot Network (cluster_avg_bbi > 0.7 AND cluster_max_clustsize > 10).\
+  \ Apply nts_v < 0.3, cluster_avg_bbi > 0.7, cluster_max_clustsize > 10 at query\
+  \ time.\n\n[kb=43]\nAn account with NTS < 0.3 and is part of a Bot Network \u2014\
+  \ Identifies accounts posing network-level security risks.\n[/kb=43]"
+hidden: false
+meta:
+  kb_id: 43

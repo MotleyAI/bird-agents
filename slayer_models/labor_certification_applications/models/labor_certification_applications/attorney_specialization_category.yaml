@@ -1,0 +1,122 @@
+version: 6
+name: attorney_specialization_category
+source_queries:
+- version: 3
+  name: att_visa_counts
+  source_model: case_attorney
+  measures:
+  - formula: '*:count'
+  dimensions:
+  - name: counselmail
+  - name: visacls
+  whole_periods_only: false
+- version: 3
+  name: att_totals
+  source_model: att_visa_counts
+  measures:
+  - formula: _count:sum
+  - formula: visacls:count_distinct
+  - formula: _count:max
+  dimensions:
+  - name: counselmail
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: att_totals
+    columns:
+    - name: dominant_visa_pct
+      type: DOUBLE
+      sql: _count_max * 100.0 / NULLIF(_count_sum, 0)
+    - name: specialization_category
+      type: TEXT
+      sql: CASE WHEN visacls_count_distinct = 1 THEN 'Exclusive Specialists' WHEN
+        _count_max * 100.0 / NULLIF(_count_sum, 0) > 80 THEN 'Specialists' WHEN visacls_count_distinct
+        BETWEEN 2 AND 3 THEN 'Hybrid Practitioners' ELSE 'Generalists' END
+  dimensions:
+  - name: counselmail
+  - name: _count_sum
+  - name: visacls_count_distinct
+  - name: _count_max
+  - name: dominant_visa_pct
+  - name: specialization_category
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"att_totals.counselmail\" AS counselmail, \"att_totals._count_sum\"\
+  \ AS _count_sum, \"att_totals.visacls_count_distinct\" AS visacls_count_distinct,\
+  \ \"att_totals._count_max\" AS _count_max, \"att_totals.dominant_visa_pct\" AS dominant_visa_pct,\
+  \ \"att_totals.specialization_category\" AS specialization_category FROM (SELECT\n\
+  \  att_totals.counselmail AS \"att_totals.counselmail\",\n  att_totals._count_sum\
+  \ AS \"att_totals._count_sum\",\n  att_totals.visacls_count_distinct AS \"att_totals.visacls_count_distinct\"\
+  ,\n  att_totals._count_max AS \"att_totals._count_max\",\n  _count_max * 100.0 /\
+  \ NULLIF(_count_sum, 0) AS \"att_totals.dominant_visa_pct\",\n  CASE\n    WHEN visacls_count_distinct\
+  \ = 1\n    THEN 'Exclusive Specialists'\n    WHEN _count_max * 100.0 / NULLIF(_count_sum,\
+  \ 0) > 80\n    THEN 'Specialists'\n    WHEN visacls_count_distinct BETWEEN 2 AND\
+  \ 3\n    THEN 'Hybrid Practitioners'\n    ELSE 'Generalists'\n  END AS \"att_totals.specialization_category\"\
+  \nFROM (\n  SELECT\n    \"att_visa_counts.counselmail\" AS counselmail,\n    \"\
+  att_visa_counts._count_sum\" AS _count_sum,\n    \"att_visa_counts.visacls_count_distinct\"\
+  \ AS visacls_count_distinct,\n    \"att_visa_counts._count_max\" AS _count_max\n\
+  \  FROM (\n    SELECT\n      att_visa_counts.counselmail AS \"att_visa_counts.counselmail\"\
+  ,\n      SUM(att_visa_counts._count) AS \"att_visa_counts._count_sum\",\n      COUNT(DISTINCT\
+  \ att_visa_counts.visacls) AS \"att_visa_counts.visacls_count_distinct\",\n    \
+  \  MAX(att_visa_counts._count) AS \"att_visa_counts._count_max\"\n    FROM (\n \
+  \     SELECT\n        \"case_attorney.counselmail\" AS counselmail,\n        \"\
+  case_attorney.visacls\" AS visacls,\n        \"case_attorney._count\" AS _count\n\
+  \      FROM (\n        SELECT\n          case_attorney.counselmail AS \"case_attorney.counselmail\"\
+  ,\n          cases.visacls AS \"case_attorney.visacls\",\n          COUNT(*) AS\
+  \ \"case_attorney._count\"\n        FROM case_attorney AS case_attorney\n      \
+  \  LEFT JOIN cases AS cases\n          ON case_attorney.docketkey = cases.filekey\n\
+  \        GROUP BY\n          case_attorney.counselmail,\n          cases.visacls\n\
+  \      ) AS _inner\n    ) AS att_visa_counts\n    GROUP BY\n      att_visa_counts.counselmail\n\
+  \  ) AS _inner\n) AS att_totals) AS _inner"
+data_source: labor_certification_applications
+columns:
+- name: counselmail
+  sql: counselmail
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: _count_sum
+  sql: _count_sum
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: visacls_count_distinct
+  sql: visacls_count_distinct
+  type: DOUBLE
+  primary_key: false
+  description: 'Visa class for the case (KB #1) via cases join, denormalized.'
+  hidden: false
+  format:
+    type: integer
+- name: _count_max
+  sql: _count_max
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: dominant_visa_pct
+  sql: dominant_visa_pct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: specialization_category
+  sql: specialization_category
+  type: TEXT
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Attorney Specialization Category per attorney (KB #45). Per-attorney\
+  \ rows.\n\n[kb=45]\nAttorneys are classified as Specialists (over 80% of cases in\
+  \ one visa type), Generalists (even distribution across visa types), or Hybrid Practitioners\
+  \ (significant experience in 2-3 visa categories). Attorney and visa type information\
+  \ are tracked as part of the application process. \u2014 Categorizes attorneys based\
+  \ on their visa application specialization patterns.\n[/kb=45]"
+hidden: false
+meta:
+  kb_id: 45

@@ -1,0 +1,201 @@
+version: 6
+name: testsessions
+sql_table: testsessions
+query_variables: {}
+data_source: gaming
+columns:
+- name: sessionregistry
+  sql: sessionregistry
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: stampmoment
+  sql: stampmoment
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: devscope
+  sql: devscope
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: cpuusepct
+  sql: cpuusepct
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: memusemb
+  sql: memusemb
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: driverstatus
+  sql: driverstatus
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: fwupdur
+  sql: fwupdur
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: wlsignal
+  sql: wlsignal
+  type: DOUBLE
+  primary_key: false
+  description: "Wireless signal strength in dBm (KB #25: -30 excellent, -90 poor;\
+    \ > -50 optimal, -50 to -70 good, < -70 occasional disconnects).\n\n[kb=25]\n\
+    Typically measured in dBm, with values ranging from -30 (excellent) to -90 (poor).\
+    \ Signal strength above -50dBm indicates optimal performance with minimal interference,\
+    \ -50 to -70dBm represents good connectivity suitable for most gaming, while below\
+    \ -70dBm may experience occasional disconnections or increased latency in challenging\
+    \ environments. \u2014 Illustrates the importance of wireless signal strength\
+    \ measurements for stable connectivity.\n[/kb=25]"
+  label: WlSignal (Wireless Signal Strength)
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 25
+- name: battlevel
+  sql: battlevel
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: battcapmah
+  sql: battcapmah
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: battlifeh
+  sql: battlifeh
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: chgtimemin
+  sql: chgtimemin
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: qchgflag
+  sql: qchgflag
+  type: INT
+  primary_key: false
+  hidden: false
+  format:
+    type: integer
+- name: usbpwrline
+  sql: usbpwrline
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: latms
+  sql: latms
+  type: DOUBLE
+  primary_key: false
+  description: "Overall latency in ms (KB #20: < 1.0ms enables split-second reactions;\
+    \ > 5.0ms is noticeable input delay).\n\n[kb=20]\nMeasured in milliseconds, representing\
+    \ the delay between user input and system response. Values below 1.0ms enable\
+    \ split-second reactions in fast-paced competitive games, while values above 5.0ms\
+    \ can create noticeable input delay that impacts performance in timing-critical\
+    \ scenarios. \u2014 Illustrates the significance of latency measurements in gaming\
+    \ peripherals for competitive play.\n[/kb=20]"
+  label: LatMs (Latency)
+  hidden: false
+  format:
+    type: float
+  meta:
+    kb_id: 20
+- name: inplagms
+  sql: inplagms
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: pollratehz
+  sql: pollratehz
+  type: INT
+  primary_key: false
+  description: "Polling rate in Hz (KB #21: 125Hz office, 500Hz casual, 1000Hz competitive,\
+    \ 4000Hz+ pro esports).\n\n[kb=21]\nMeasured in Hertz (times per second), representing\
+    \ how often the device reports its state to the computer. Values of 125Hz are\
+    \ standard for office peripherals, 500Hz is good for casual gaming, 1000Hz is\
+    \ preferred for competitive play, and 4000Hz+ represents cutting-edge technology\
+    \ offering ultra-responsive input for professional esports. \u2014 Illustrates\
+    \ the importance of polling rate in gaming device responsiveness.\n[/kb=21]"
+  label: PollRateHz (Polling Rate)
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 21
+- name: dbtimems
+  sql: dbtimems
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: resptimems
+  sql: resptimems
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: clkregms
+  sql: clkregms
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: irs
+  sql: (pollratehz * 1.0 / 100) * (1 - (inplagms + resptimems) * 1.0 / 30) * 10
+  type: DOUBLE
+  primary_key: false
+  description: "Input Responsiveness Score (IRS) \u2014 polling rate, input lag, response\
+    \ time. Higher = more responsive input.\n\n[kb=2]\nIRS = \\frac{PollRateHz}{100}\
+    \ \\times \\left(1 - \\frac{InpLagMs + RespTimeMs}{30}\\right) \\times 10, \\\
+    text{ where higher values indicate more responsive input with minimal lag.} \u2014\
+    \ Quantifies the overall input responsiveness of a device considering polling\
+    \ rate, latency, and response time.\n[/kb=2]"
+  label: Input Responsiveness Score (IRS)
+  hidden: false
+  meta:
+    kb_id: 2
+- name: is_minimal_input_latency
+  sql: inplagms < 1.0 AND pollratehz >= 1000 AND latms < 2.0
+  type: BOOLEAN
+  primary_key: false
+  description: "Minimal Input Latency (KB #17), session-level subset: InpLagMs < 1.0\
+    \ AND PollRateHz >= 1000 AND LatMs < 2.0. Full KB also requires ClkLat < 0.8 (on\
+    \ performance, accessible from session via the performance \u2192 testsessions\
+    \ FK).\n\n[kb=17]\nA device with InpLagMs < 1.0, PollRateHz \u2265 1000, LatMs\
+    \ < 2.0, and ClkLat < 0.8, providing almost instantaneous input recognition critical\
+    \ for competitive FPS and fighting games. \u2014 Identifies devices with exceptionally\
+    \ low input latency suitable for reaction-critical games.\n[/kb=17]"
+  label: Minimal Input Latency
+  hidden: false
+  meta:
+    kb_id: 17
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

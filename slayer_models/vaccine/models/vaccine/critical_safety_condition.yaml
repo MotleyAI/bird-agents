@@ -1,0 +1,211 @@
+version: 6
+name: critical_safety_condition
+source_queries:
+- version: 3
+  name: agg_per_container_csc
+  source_model: sensordata
+  measures:
+  - formula: tss:avg
+    name: tss
+  - formula: cei:avg
+    name: cei
+  - formula: trs:avg
+    name: trs
+  - formula: hqi:avg
+    name: hqi
+  dimensions:
+  - name: containlink
+  whole_periods_only: false
+- version: 3
+  name: vsi_per_shipment
+  source_model:
+    source_name: vaccinedetails
+    joins:
+    - target_model: agg_per_container_csc
+      join_pairs:
+      - - containvac
+        - containlink
+    columns:
+    - name: vsi_inline
+      type: DOUBLE
+      sql: ((julianday(expireday) - julianday('now')) * agg_per_container_csc.tss)
+        / 365.0 * agg_per_container_csc.cei * (1 - agg_per_container_csc.trs)
+  measures:
+  - formula: vsi_inline:avg
+    name: vsi
+  dimensions:
+  - name: shipinject
+  whole_periods_only: false
+- version: 3
+  name: tsr_per_shipment
+  source_model: transportinfo
+  measures:
+  - formula: rcp:avg
+    name: rcp
+  dimensions:
+  - name: shiptransit
+  whole_periods_only: false
+- version: 3
+  name: agg_per_vehicle_csc
+  source_model: sensordata
+  measures:
+  - formula: trs:avg
+    name: trs
+  - formula: hqi:avg
+    name: hqi
+  dimensions:
+  - name: vehsenseref
+  whole_periods_only: false
+- version: 3
+  source_model:
+    source_name: vaccine_shipments
+    joins:
+    - target_model: vsi_per_shipment
+      join_pairs:
+      - - shipmentregistry
+        - shipinject
+    - target_model: transportinfo
+      join_pairs:
+      - - shipmentregistry
+        - shiptransit
+    - target_model: agg_per_vehicle_csc
+      join_pairs:
+      - - shipmentregistry
+        - vehsenseref
+    columns:
+    - name: tsr_value
+      type: DOUBLE
+      sql: (CAST(transportinfo.distdonekm AS REAL) / NULLIF(transportinfo.distdonekm
+        + transportinfo.distleftkm, 0) * 100) / 100.0 * (1 - agg_per_vehicle_csc.trs)
+        * agg_per_vehicle_csc.hqi
+    - name: is_critical_safety_condition
+      type: BOOLEAN
+      sql: CASE WHEN vsi_per_shipment.vsi < 0.3 AND ((CAST(transportinfo.distdonekm
+        AS REAL) / NULLIF(transportinfo.distdonekm + transportinfo.distleftkm, 0)
+        * 100) / 100.0 * (1 - agg_per_vehicle_csc.trs) * agg_per_vehicle_csc.hqi)
+        < 0.4 THEN 1 ELSE 0 END
+  dimensions:
+  - name: shipmentregistry
+  - name: vsi
+    model: vsi_per_shipment
+  - name: tsr_value
+  - name: is_critical_safety_condition
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"vaccine_shipments.shipmentregistry\" AS shipmentregistry,\
+  \ \"vaccine_shipments.vsi_per_shipment.vsi\" AS vsi_per_shipment__vsi, \"vaccine_shipments.tsr_value\"\
+  \ AS tsr_value, \"vaccine_shipments.is_critical_safety_condition\" AS is_critical_safety_condition\
+  \ FROM (SELECT\n  vaccine_shipments.shipmentregistry AS \"vaccine_shipments.shipmentregistry\"\
+  ,\n  vsi_per_shipment.vsi AS \"vaccine_shipments.vsi_per_shipment.vsi\",\n  (\n\
+  \    CAST(transportinfo.distdonekm AS REAL) / NULLIF(transportinfo.distdonekm +\
+  \ transportinfo.distleftkm, 0) * 100\n  ) / 100.0 * (\n    1 - agg_per_vehicle_csc.trs\n\
+  \  ) * agg_per_vehicle_csc.hqi AS \"vaccine_shipments.tsr_value\",\n  CASE\n   \
+  \ WHEN vsi_per_shipment.vsi < 0.3\n    AND (\n      (\n        CAST(transportinfo.distdonekm\
+  \ AS REAL) / NULLIF(transportinfo.distdonekm + transportinfo.distleftkm, 0) * 100\n\
+  \      ) / 100.0 * (\n        1 - agg_per_vehicle_csc.trs\n      ) * agg_per_vehicle_csc.hqi\n\
+  \    ) < 0.4\n    THEN 1\n    ELSE 0\n  END AS \"vaccine_shipments.is_critical_safety_condition\"\
+  \nFROM shipments AS vaccine_shipments\nLEFT JOIN (\n  (\n    SELECT\n      \"vaccinedetails.shipinject\"\
+  \ AS shipinject,\n      \"vaccinedetails.vsi\" AS vsi\n    FROM (\n      SELECT\n\
+  \        vaccinedetails.shipinject AS \"vaccinedetails.shipinject\",\n        AVG(\n\
+  \          (\n            (\n              JULIANDAY(vaccinedetails.expireday) -\
+  \ JULIANDAY('now')\n            ) * agg_per_container_csc.tss\n          ) / 365.0\
+  \ * agg_per_container_csc.cei * (\n            1 - agg_per_container_csc.trs\n \
+  \         )\n        ) AS \"vaccinedetails.vsi\"\n      FROM vaccinedetails AS vaccinedetails\n\
+  \      LEFT JOIN (\n        (\n          SELECT\n            \"sensordata.containlink\"\
+  \ AS containlink,\n            \"sensordata.tss\" AS tss,\n            \"sensordata.cei\"\
+  \ AS cei,\n            \"sensordata.trs\" AS trs,\n            \"sensordata.hqi\"\
+  \ AS hqi\n          FROM (\n            SELECT\n              sensordata.containlink\
+  \ AS \"sensordata.containlink\",\n              AVG(\n                (\n      \
+  \            1 - COALESCE(CAST(sensordata.tempdevcount AS REAL) / 100, 0)\n    \
+  \            ) * (\n                  1 - COALESCE(CAST(sensordata.critevents AS\
+  \ REAL) / 10, 0)\n                ) * COALESCE(sensordata.tempstabidx, 1)\n    \
+  \          ) AS \"sensordata.tss\",\n              AVG(\n                (\n   \
+  \               (\n                    1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n                  ) * (\n                    1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n                  ) * COALESCE(sensordata.tempstabidx, 1)\n\
+  \                ) * (\n                  COALESCE(container.coolremainpct, 0) /\
+  \ 100.0\n                ) * (\n                  1 - (\n                    (\n\
+  \                      100 - container.coolremainpct\n                    ) / NULLIF(JULIANDAY('now')\
+  \ - JULIANDAY(container.refilllatest), 0)\n                  ) / 20.0\n        \
+  \        )\n              ) AS \"sensordata.cei\",\n              AVG(\n       \
+  \         (\n                  (\n                    1 - (\n                  \
+  \    (\n                        1 - COALESCE(CAST(sensordata.tempdevcount AS REAL)\
+  \ / 100, 0)\n                      ) * (\n                        1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n                      ) * COALESCE(sensordata.tempstabidx,\
+  \ 1)\n                    )\n                  ) * (\n                    1 - COALESCE(container.coolremainpct,\
+  \ 0) / 100\n                  )\n                ) * (\n                  1 - (\n\
+  \                    (\n                      1 - COALESCE(CAST(sensordata.handleevents\
+  \ AS REAL) / 100, 0)\n                    ) * (\n                      1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n                    )\n                  )\n              \
+  \  ) * (\n                  1 + ABS(sensordata.tempnowc - sensordata.storetempc)\
+  \ / NULLIF(sensordata.temptolc, 0) * sensordata.tempdevcount\n                )\n\
+  \              ) AS \"sensordata.trs\",\n              AVG(\n                (\n\
+  \                  1 - COALESCE(CAST(sensordata.handleevents AS REAL) / 100, 0)\n\
+  \                ) * (\n                  1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n                )\n              ) AS \"sensordata.hqi\"\n\
+  \            FROM sensordata AS sensordata\n            LEFT JOIN container AS container\n\
+  \              ON sensordata.containlink = container.containregistry\n         \
+  \   GROUP BY\n              sensordata.containlink\n          ) AS _inner\n    \
+  \    )\n      ) AS agg_per_container_csc\n        ON vaccinedetails.containvac =\
+  \ agg_per_container_csc.containlink\n      GROUP BY\n        vaccinedetails.shipinject\n\
+  \    ) AS _inner\n  )\n) AS vsi_per_shipment\n  ON vaccine_shipments.shipmentregistry\
+  \ = vsi_per_shipment.shipinject\nLEFT JOIN transportinfo AS transportinfo\n  ON\
+  \ vaccine_shipments.shipmentregistry = transportinfo.shiptransit\nLEFT JOIN (\n\
+  \  (\n    SELECT\n      \"sensordata.vehsenseref\" AS vehsenseref,\n      \"sensordata.trs\"\
+  \ AS trs,\n      \"sensordata.hqi\" AS hqi\n    FROM (\n      SELECT\n        sensordata.vehsenseref\
+  \ AS \"sensordata.vehsenseref\",\n        AVG(\n          (\n            (\n   \
+  \           1 - (\n                (\n                  1 - COALESCE(CAST(sensordata.tempdevcount\
+  \ AS REAL) / 100, 0)\n                ) * (\n                  1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n                ) * COALESCE(sensordata.tempstabidx, 1)\n \
+  \             )\n            ) * (\n              1 - COALESCE(container.coolremainpct,\
+  \ 0) / 100\n            )\n          ) * (\n            1 - (\n              (\n\
+  \                1 - COALESCE(CAST(sensordata.handleevents AS REAL) / 100, 0)\n\
+  \              ) * (\n                1 - COALESCE(CAST(sensordata.critevents AS\
+  \ REAL) / 10, 0)\n              )\n            )\n          ) * (\n            1\
+  \ + ABS(sensordata.tempnowc - sensordata.storetempc) / NULLIF(sensordata.temptolc,\
+  \ 0) * sensordata.tempdevcount\n          )\n        ) AS \"sensordata.trs\",\n\
+  \        AVG(\n          (\n            1 - COALESCE(CAST(sensordata.handleevents\
+  \ AS REAL) / 100, 0)\n          ) * (\n            1 - COALESCE(CAST(sensordata.critevents\
+  \ AS REAL) / 10, 0)\n          )\n        ) AS \"sensordata.hqi\"\n      FROM sensordata\
+  \ AS sensordata\n      LEFT JOIN container AS container\n        ON sensordata.containlink\
+  \ = container.containregistry\n      GROUP BY\n        sensordata.vehsenseref\n\
+  \    ) AS _inner\n  )\n) AS agg_per_vehicle_csc\n  ON vaccine_shipments.shipmentregistry\
+  \ = agg_per_vehicle_csc.vehsenseref) AS _inner"
+data_source: vaccine
+columns:
+- name: shipmentregistry
+  sql: shipmentregistry
+  type: TEXT
+  primary_key: false
+  hidden: false
+- name: vsi_per_shipment__vsi
+  sql: vsi_per_shipment__vsi
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  format:
+    type: float
+- name: tsr_value
+  sql: tsr_value
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+- name: is_critical_safety_condition
+  sql: is_critical_safety_condition
+  type: BOOLEAN
+  primary_key: false
+  hidden: false
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "Critical Safety Condition (KB #49). One row per shipment with is_critical_safety_condition\
+  \ boolean = VSI < 0.3 AND TSR < 0.4. VSI (KB #39) is averaged across the shipment's\
+  \ vaccinedetails records (per-record VSI computed inline). TSR (KB #35) is computed\
+  \ per shipment from the joined transportinfo row using per-vehicle aggregates of\
+  \ TRS (KB #30) and HQI (KB #8) over sensordata.\n\n[kb=49]\nA condition where VSI\
+  \ < 0.3 and TSR < 0.4 \u2014 Identifies critically unsafe overall conditions.\n\
+  [/kb=49]"
+hidden: false
+meta:
+  kb_id: 49
