@@ -469,22 +469,28 @@ async def ensure_db_reference(
     target = reference_root / db
     marker = target / _MARKER
 
-    # Reuse path FIRST — never builds/touches the cache.
+    # Reuse path FIRST — never builds/touches the cache (load-bearing for cloud
+    # combo 3, which downloads only the reference, never the cache).
     if not force and marker.is_file():
         return _reuse_reference(target, db)
 
+    # Materialise (or reuse) the phases-1-3 cache OUTSIDE the reference lock.
+    # ``ensure_db_cache`` acquires the SAME per-db ``_get_lock(db)`` internally,
+    # and asyncio.Lock is NOT reentrant — calling it while holding that lock
+    # would self-deadlock on a first/forced build (CodeRabbit). It has its own
+    # concurrency control, so calling it here (before the lock) is safe.
+    cache_entry = await ensure_db_cache(
+        db, cache_root=cache_root, mini_interact_root=mini_interact_root,
+    )
+    fp = cache_entry.fingerprint
+    kb_rows = cache_entry.kb_rows
+    reference_root.mkdir(parents=True, exist_ok=True)
+
     async with _get_lock(db):
-        # Double-check under the lock — a peer may have built it while we waited.
+        # Double-check under the lock — a peer may have built the reference
+        # while we waited (or while ensure_db_cache ran).
         if not force and marker.is_file():
             return _reuse_reference(target, db)
-
-        # Build path: only NOW materialise (or reuse) the phases-1-3 cache.
-        cache_entry = await ensure_db_cache(
-            db, cache_root=cache_root, mini_interact_root=mini_interact_root,
-        )
-        fp = cache_entry.fingerprint
-        kb_rows = cache_entry.kb_rows
-        reference_root.mkdir(parents=True, exist_ok=True)
 
         results = await _build_reference(
             db=db, fp=fp, cache_entry=cache_entry, kb_rows=kb_rows,

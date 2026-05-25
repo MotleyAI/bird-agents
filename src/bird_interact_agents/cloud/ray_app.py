@@ -79,6 +79,16 @@ def download_slayer_setup(run_id: str, cfg: dict[str, Any], *, client) -> None:
     tmp = Path(tempfile.mkdtemp(prefix=f".{dest_root.name}.dl-", dir=str(parent)))
     try:
         _gcs.download_prefix(prefix, tmp, client=client)
+        # A missing/empty prefix (failed or partial upload, wrong prefix) must
+        # NOT be cached as a complete download — that would permanently wedge
+        # every task against an empty setup with no retry (Codex). Fail loudly
+        # so the run surfaces the bad upload instead.
+        if not any(p.is_file() for p in tmp.rglob("*")):
+            raise FileNotFoundError(
+                f"slayer setup download found no files under gs://"
+                f"{_gcs.BUCKET_NAME}/{prefix} for run {run_id} — the submit "
+                f"upload is missing/empty; refusing to cache an empty setup"
+            )
         (tmp / ".download_complete").write_text("ok")  # marker LAST
         try:
             os.rename(tmp, dest_root)

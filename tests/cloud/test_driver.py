@@ -467,6 +467,21 @@ def test_mint_run_id_is_gce_label_safe() -> None:
             assert "_" not in rid, "no underscores (instance-name regex forbids them)"
 
 
+def test_mint_run_id_fits_gce_instance_name() -> None:
+    """Ray wraps the run-id into a GCE node name `ray-<run_id>-worker-<uuid>`
+    and asserts the `ray-<run_id>-worker` label is <= 55 chars (its
+    INSTANCE_NAME limit). The long `pydantic_ai_otf_encode` /
+    `pydantic_ai_recursive` slugs tripped this once DEV-1468 made them
+    cloud-submittable in slayer mode — the slug is now length-capped."""
+    for fw in (
+        "pydantic_ai_otf_encode", "pydantic_ai_recursive", "smolagents",
+        "claude_sdk", "mcp_agent", "agno", "pydantic_ai",
+    ):
+        rid = driver.mint_run_id(fw, "slayer")  # "slayer" is the longer qm
+        # Both the head and worker node-name labels must fit; worker is longer.
+        assert len(f"ray-{rid}-worker") <= 55, (fw, rid, len(rid))
+
+
 def test_build_manifest_propagates_all_knobs() -> None:
     args = FakeSubmitArgs(
         framework="pydantic_ai_recursive",
@@ -594,6 +609,11 @@ def _setup_slayer_submit(
     monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
     monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda: otf_cache)
     monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: otf_ref)
+    # read_api_keys_from_local_env now fails fast on a missing required key
+    # (incl. OPENAI for slayer); set them so a successful submit doesn't raise
+    # in an env without these vars.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
     # download/wait/fetch never run under detach in these tests.
     monkeypatch.setattr(driver, "wait_until_done", MagicMock())
     monkeypatch.setattr(driver, "fetch", MagicMock())
@@ -670,7 +690,7 @@ def test_submit_missing_local_artifact_raises_before_cluster(
         framework="pydantic_ai_recursive", query_mode="slayer", mode="a-interact",
         slayer_setup="on-the-fly", instance_ids=("db_a_1",), detach=True,
     )
-    with pytest.raises(Exception):  # noqa: B017 — any clear submit-time error
+    with pytest.raises(FileNotFoundError):
         driver.submit(args)
     mocks["image"].build_and_push.assert_not_called()
     mocks["cluster"].up.assert_not_called()
@@ -689,7 +709,7 @@ def test_submit_pre_encoded_missing_dir_raises(monkeypatch, tmp_path):
         framework="pydantic_ai_recursive", query_mode="slayer", mode="c-interact",
         slayer_setup="pre-encoded", instance_ids=("db_a_1",), detach=True,
     )
-    with pytest.raises(Exception):  # noqa: B017
+    with pytest.raises(FileNotFoundError):
         driver.submit(args)
     mocks["cluster"].up.assert_not_called()
 
@@ -707,7 +727,7 @@ def test_submit_pre_encoded_empty_dir_raises(monkeypatch, tmp_path):
         framework="pydantic_ai_recursive", query_mode="slayer", mode="c-interact",
         slayer_setup="pre-encoded", instance_ids=("db_a_1",), detach=True,
     )
-    with pytest.raises(Exception):  # noqa: B017
+    with pytest.raises(FileNotFoundError):
         driver.submit(args)
     mocks["cluster"].up.assert_not_called()
 
@@ -724,7 +744,7 @@ def test_submit_otf_encode_missing_reference_raises(monkeypatch, tmp_path):
         framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
         slayer_setup="on-the-fly", instance_ids=("db_a_1",), detach=True,
     )
-    with pytest.raises(Exception):  # noqa: B017
+    with pytest.raises(FileNotFoundError):
         driver.submit(args)
     mocks["cluster"].up.assert_not_called()
 
@@ -792,6 +812,21 @@ def test_read_api_keys_excludes_openai_for_raw(monkeypatch):
     assert "OPENAI_API_KEY" not in keys
 
 
+def test_read_api_keys_raises_on_missing_required_key(monkeypatch):
+    """Fail fast on a missing required key instead of silently dropping it —
+    otherwise `resubmit` (no prereq check) surfaces opaque actor auth failures
+    (CodeRabbit)."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(driver.PrereqError) as exc:
+        driver.read_api_keys_from_local_env(
+            "anthropic/claude-sonnet-4-5", "anthropic/claude-haiku-4-5-20251001",
+            query_mode="slayer",  # requires OPENAI_API_KEY
+        )
+    assert "OPENAI_API_KEY" in str(exc.value)
+    assert "export OPENAI_API_KEY=" in exc.value.remediation
+
+
 def test_build_manifest_carries_slayer_fields() -> None:
     args = FakeSubmitArgs(
         framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
@@ -810,6 +845,9 @@ def test_resubmit_carries_slayer_fields_and_does_not_reupload(
     manifest, but does NOT re-upload — the setup is already in GCS under the
     run prefix and the actor downloads it."""
     mocks = _patch_collaborators(monkeypatch)
+    # read_api_keys (called by resubmit) now fails fast on missing keys.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
     yaml_path = Path("/tmp/resubmit-cluster.yaml")
     mocks["cluster"].render_from_manifest.return_value = yaml_path
     mocks["cluster"].head_address.return_value = "http://localhost:8265"

@@ -224,6 +224,38 @@ async def test_reuse_does_not_call_ensure_db_cache(
     assert entry.reference_dir == tmp_path / "slayer_models_otf" / DB
 
 
+async def test_no_self_deadlock_when_cache_takes_same_lock(
+    fake_cache, tmp_path, monkeypatch,
+):
+    """Regression (CodeRabbit CRITICAL): ``ensure_db_reference`` must NOT hold
+    the per-db ``_get_lock(db)`` while calling ``ensure_db_cache``, which
+    acquires the SAME non-reentrant lock. We wrap the fake cache so it takes
+    the real lock (mimicking the production cache); a fresh build must COMPLETE,
+    not hang. Under the old code (cache called inside the reference lock) this
+    times out."""
+    import asyncio
+
+    from bird_interact_agents.slayer_otf import reference_build
+    from bird_interact_agents.slayer_otf.cache import _get_lock
+
+    inner = reference_build.ensure_db_cache  # the fake installed by fake_cache
+
+    async def lock_taking_cache(db, *, cache_root, mini_interact_root):
+        async with _get_lock(db):  # the real ensure_db_cache takes this lock
+            return await inner(
+                db, cache_root=cache_root, mini_interact_root=mini_interact_root,
+            )
+
+    monkeypatch.setattr(reference_build, "ensure_db_cache", lock_taking_cache)
+
+    record: list[int] = []
+    entry = await asyncio.wait_for(
+        _build(tmp_path, _encoded_build_encoder(record)), timeout=10,
+    )
+    assert sorted(record) == [1, 2, 3]
+    assert (entry.reference_dir / "_reference_fp.txt").exists()
+
+
 async def test_reuse_loads_kb_rows_from_reference_dir(fake_cache, tmp_path):
     """On reuse, kb_rows come from the on-disk ``_kb_rows.json`` in the
     reference dir (self-contained loader), not from a fresh cache build."""

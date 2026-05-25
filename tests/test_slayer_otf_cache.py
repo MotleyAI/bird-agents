@@ -403,9 +403,13 @@ async def test_cross_process_race_rename_onto_marked_dir_is_success(
     entry = await otf_cache.ensure_db_cache(
         DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
     )
-    # No exception; returns the (peer's) target dir.
+    # No exception; returns the (peer's) target dir AND the peer's on-disk
+    # metadata — not our local fp/kb_rows — so CacheEntry matches cache_dir
+    # (CodeRabbit).
     assert entry.cache_dir == target
     assert (target / MARKER).is_file()
+    assert entry.fingerprint == "peerfp"
+    assert entry.kb_rows == []
 
 
 async def test_concurrent_calls_for_same_db_build_once(

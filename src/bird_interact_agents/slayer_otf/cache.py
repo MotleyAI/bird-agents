@@ -293,7 +293,11 @@ async def ensure_db_cache(
             except OSError:
                 if not marker.is_file():
                     raise
+                # A peer won the rename; the target is THEIR complete dir.
+                # Return their on-disk fp/kb_rows (ours may differ) so the
+                # CacheEntry matches cache_dir's actual contents (CodeRabbit).
                 shutil.rmtree(tmp_dir, ignore_errors=True)
+                return _load_cache_entry(target)
         except BaseException:
             # Clean up the half-built tmp on any failure — keep the cache
             # root tidy and the next call's double-check honest.

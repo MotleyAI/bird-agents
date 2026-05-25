@@ -532,6 +532,26 @@ def test_download_slayer_setup_rename_error_without_marker_reraises(
     assert not (dest_root / ".download_complete").exists()
 
 
+def test_download_slayer_setup_empty_prefix_raises(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """A missing/empty GCS prefix (failed/partial upload, wrong prefix) must
+    NOT be cached as a complete download — it must raise so the bad upload
+    surfaces, never permanently wedging tasks against an empty setup (Codex)."""
+    client, _store = fake_gcs_bucket  # empty store → no blobs under the prefix
+    dest_root = tmp_path / "data" / "slayer_otf_cache"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(dest_root))
+    cfg = {
+        "query_mode": "slayer", "slayer_setup": "on-the-fly",
+        "framework": "pydantic_ai_recursive",
+    }
+    with pytest.raises(FileNotFoundError):
+        ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+    # Nothing cached — a retry (after fixing the upload) can still run.
+    assert not (dest_root / ".download_complete").exists()
+    assert not dest_root.exists()
+
+
 def test_local_actor_uses_injected_gcs_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

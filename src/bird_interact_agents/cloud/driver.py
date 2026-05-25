@@ -17,6 +17,9 @@ from bird_interact_agents.cloud import collation as _collation
 # `driver.gcs` still get the real pure mapping — only the I/O helpers
 # (`gcs.upload_dir_prefix` etc.) need to be mockable.
 from bird_interact_agents.cloud.gcs import slayer_artifact_name
+# Imported by NAME so it survives tests that mock `driver.prereqs` (the
+# raise in read_api_keys_from_local_env must use the real exception class).
+from bird_interact_agents.cloud.prereqs import PrereqError
 
 
 logger = logging.getLogger(__name__)
@@ -68,14 +71,26 @@ def submitter_repo_root() -> Path:
 # ---------------------------------------------------------------------------
 
 
+# Cap the framework slug so the run-id, after Ray wraps it as a GCE node name
+# `ray-<run_id>-worker-<uuid>`, stays under Ray's INSTANCE_NAME limit (the
+# `name_label` `ray-<run_id>-worker` must be <= 55). ts(13)+seps(3)+query_mode
+# (<=6 "slayer")+token(6) = 28 fixed, so a 12-char slug keeps run_id <= 40 and
+# `ray-<run_id>-worker` <= 51. (The long `pydantic_ai_otf_encode` /
+# `pydantic_ai_recursive` slugs are 19 chars and tripped the assertion once
+# DEV-1468 made them cloud-submittable in slayer mode.)
+_RUN_ID_SLUG_MAXLEN = 12
+
+
 def mint_run_id(framework: str, query_mode: str) -> str:
     """Mint a run-id that's also a valid GCE label value AND instance-name
     fragment: lowercase letters / digits / `-` only. The timestamp uses
     `t` (lowercase) as the date/time separator because uppercase `T` is
     forbidden in GCE label values (`The value can only contain lowercase
-    letters, numeric characters, underscores and dashes`)."""
+    letters, numeric characters, underscores and dashes`). The framework slug
+    is length-capped so Ray's `ray-<run_id>-worker-<uuid>` GCE node name fits
+    the 63-char instance-name limit (Ray asserts the prefix is <= 55)."""
     ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dt%H%M")
-    slug = framework.replace("_", "").lower()
+    slug = framework.replace("_", "").lower()[:_RUN_ID_SLUG_MAXLEN]
     return f"{ts}-{slug}-{query_mode.lower()}-{secrets.token_hex(3)}"
 
 
@@ -88,11 +103,20 @@ def read_api_keys_from_local_env(
     for model in (agent_model, user_sim_model):
         needed.update(prereqs._required_api_keys(model))
     # DEV-1468: slayer mode needs OPENAI_API_KEY for channel-3 embeddings,
-    # regardless of the agent/user-sim providers (prereqs.check enforces its
-    # presence; here we deliver it to the actors).
+    # regardless of the agent/user-sim providers.
     if query_mode == "slayer":
         needed.add("OPENAI_API_KEY")
-    return {k: os.environ[k] for k in needed if k in os.environ}
+    # Fail fast on a missing required key instead of silently dropping it —
+    # `resubmit` does NOT run prereq checks, so an absent key would otherwise
+    # surface much later as an opaque per-actor auth failure (CodeRabbit).
+    missing = [k for k in sorted(needed) if not os.environ.get(k)]
+    if missing:
+        cmds = "\n".join(f"export {k}=<your-key>" for k in missing)
+        raise PrereqError(
+            f"missing API key env vars for job submission: {missing}",
+            remediation=cmds,
+        )
+    return {k: os.environ[k] for k in needed}
 
 
 def build_manifest(args, *, image_uri: str, run_id: str) -> dict:
