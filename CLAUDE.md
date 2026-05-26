@@ -101,6 +101,74 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   `uv run bird-interact-cloud list` / `fetch <run-id>` / `kill <run-id>` /
   `resubmit <run-id>` for the rest of the lifecycle.
 
+## Waiting on a cloud run to finish — use `driver.wait_until_done`, never bash
+
+Polling for a run's terminal state from a bash loop is a maintenance trap.
+The output of `bird-interact-cloud list` is positional (`run_id  combo
+state  done/total`), so an awk-column off-by-one (`$4` vs `$3`) makes the
+loop silently never terminate — once burned in DEV-1470 because the loop
+compared `done|error` against `0/1` instead of against `live`.
+
+The canonical primitive is already in the driver and was used by
+`driver.submit` (non-detached path) from day one:
+
+```bash
+env -u SSH_AUTH_SOCK uv run python -c "
+from bird_interact_agents.cloud import driver, gcs
+client = gcs.default_gcs_client()
+manifest = gcs.read_manifest('<RUN-ID>', client=client)
+result = driver.wait_until_done('<RUN-ID>', manifest, poll_interval_s=30.0)
+print(f'TERMINAL: {result.terminal_state}  {result.hint!r}')
+"
+```
+
+It handles stall detection, no-progress deadline, headless cluster, and
+returns a single `WaitResult` with the terminal state. No bash, no column
+juggling. Use this (or a future `bird-interact-cloud wait <run-id>`
+subcommand wrapping it) instead of an ad-hoc shell poll.
+
+## Cheap end-to-end smoke for `pydantic_ai_otf_encode + on-the-fly` (DEV-1470)
+
+Validates the full upload-back + merge round-trip — the deterministic
+cache stays local, the LLM stage runs in the cloud, the encoded reference
+comes back into the warm cache. Pick a DB with no committed reference (or
+nuke a local one); the cache for that DB MUST be present locally because
+`_check_slayer_setup_present` enforces `_cache_fp.txt` as REQUIRED:
+
+```bash
+# 1. Nuke local artefacts for the test DB.
+rm -rf /path/to/main-checkout/slayer_models_otf/<db>
+rm -rf /path/to/main-checkout/slayer_otf_cache/<db>
+
+# 2. Build the deterministic cache locally (no LLMs, fast).
+env -u SSH_AUTH_SOCK uv run python -c "
+import asyncio
+from bird_interact_agents.slayer_otf.cache import ensure_db_cache
+from bird_interact_agents import paths
+asyncio.run(ensure_db_cache('<db>',
+    cache_root=paths.slayer_otf_cache_root(),
+    mini_interact_root=paths.mini_interact_root(), force=False))
+"
+
+# 3. Submit otf_encode (cloud does the LLM stage).
+env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
+  --framework pydantic_ai_otf_encode --query-mode slayer \
+  --agent-model anthropic/claude-haiku-4-5-20251001 \
+  --user-sim-model anthropic/claude-haiku-4-5-20251001 \
+  --mode a-interact --slayer-setup on-the-fly \
+  --instance-ids <db>_1 \
+  --workers 1 --actors-per-worker 1 \
+  --worker-type e2-standard-4 --max-runtime-hours 2 --detach
+
+# 4. Wait via `driver.wait_until_done` (see note above), then:
+env -u SSH_AUTH_SOCK uv run bird-interact-cloud fetch <run-id>
+```
+
+The fetch prints `merged slayer_models_otf/<db>: N files updated, 0 skipped`
+and `<main-checkout>/slayer_models_otf/<db>/_reference_fp.txt` reappears
+with the cloud-built fingerprint and content. Per-run merge audit lives at
+`<results>/cloud/<run-id>/merge_report.json`.
+
 ## Debugging the cloud runner: pull live state, don't guess
 
 When a `bird-interact-cloud` run fails on GCE, **do not iterate by editing
