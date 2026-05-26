@@ -468,18 +468,20 @@ def test_mint_run_id_is_gce_label_safe() -> None:
 
 
 def test_mint_run_id_fits_gce_instance_name() -> None:
-    """Ray wraps the run-id into a GCE node name `ray-<run_id>-worker-<uuid>`
-    and asserts the `ray-<run_id>-worker` label is <= 55 chars (its
-    INSTANCE_NAME limit). The long `pydantic_ai_otf_encode` /
-    `pydantic_ai_recursive` slugs tripped this once DEV-1468 made them
-    cloud-submittable in slayer mode — the slug is now length-capped."""
+    """Ray composes the GCE name as ``ray-<run_id>-worker-<uuid8>-compute``
+    (worst case: worker > head, compute > tpu). GCP's compute-instance regex
+    rejects names > 63 chars (Ray's internal 55 assertion is loose vs that).
+    The long ``pydantic_ai_otf_encode`` / ``pydantic_ai_recursive`` slugs
+    tripped GCP once DEV-1468 made them cloud-submittable in slayer mode —
+    the slug is now dynamically capped from GCP's 63-char limit."""
     for fw in (
         "pydantic_ai_otf_encode", "pydantic_ai_recursive", "smolagents",
         "claude_sdk", "mcp_agent", "agno", "pydantic_ai",
     ):
-        rid = driver.mint_run_id(fw, "slayer")  # "slayer" is the longer qm
-        # Both the head and worker node-name labels must fit; worker is longer.
-        assert len(f"ray-{rid}-worker") <= 55, (fw, rid, len(rid))
+        for qm in ("raw", "slayer"):  # "slayer" is the longer / tighter qm
+            rid = driver.mint_run_id(fw, qm)
+            worst_full = f"ray-{rid}-worker-12345678-compute"
+            assert len(worst_full) <= 63, (fw, qm, rid, len(worst_full))
 
 
 def test_build_manifest_propagates_all_knobs() -> None:

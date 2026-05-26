@@ -71,14 +71,16 @@ def submitter_repo_root() -> Path:
 # ---------------------------------------------------------------------------
 
 
-# Cap the framework slug so the run-id, after Ray wraps it as a GCE node name
-# `ray-<run_id>-worker-<uuid>`, stays under Ray's INSTANCE_NAME limit (the
-# `name_label` `ray-<run_id>-worker` must be <= 55). ts(13)+seps(3)+query_mode
-# (<=6 "slayer")+token(6) = 28 fixed, so a 12-char slug keeps run_id <= 40 and
-# `ray-<run_id>-worker` <= 51. (The long `pydantic_ai_otf_encode` /
-# `pydantic_ai_recursive` slugs are 19 chars and tripped the assertion once
-# DEV-1468 made them cloud-submittable in slayer mode.)
-_RUN_ID_SLUG_MAXLEN = 12
+# GCP's compute-instance-name regex caps the FULL name at 63 chars
+# (`[a-z]([-a-z0-9]{0,61}[a-z0-9])?` → 1+61+1 = 63). Ray composes the name as
+# `ray-<run_id>-worker-<uuid8>-compute` (worst case: "worker" 6 > "head" 4;
+# "compute" 7 > "tpu" 3), so 4 + len(run_id) + 7 + 9 + 8 = 28 + len(run_id).
+# Ray's INTERNAL assertion (`name_label <= 55`, INSTANCE_NAME_MAX_LEN-1-UUID)
+# is off-by-one and looser than GCP's real 63 — observed: Ray accepted a
+# 50-char label but GCP rejected the resulting 66-char name. So compute the
+# slug cap from GCP's true 63 limit, not Ray's 55.
+_INSTANCE_NAME_MAX = 63
+_NAME_OVERHEAD = 28  # ray- + -worker + -<uuid8> + -compute
 
 
 def mint_run_id(framework: str, query_mode: str) -> str:
@@ -87,11 +89,18 @@ def mint_run_id(framework: str, query_mode: str) -> str:
     `t` (lowercase) as the date/time separator because uppercase `T` is
     forbidden in GCE label values (`The value can only contain lowercase
     letters, numeric characters, underscores and dashes`). The framework slug
-    is length-capped so Ray's `ray-<run_id>-worker-<uuid>` GCE node name fits
-    the 63-char instance-name limit (Ray asserts the prefix is <= 55)."""
+    is length-capped so Ray's `ray-<run_id>-worker-<uuid8>-compute` GCE name
+    fits GCP's 63-char compute-instance-name limit."""
     ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dt%H%M")
-    slug = framework.replace("_", "").lower()[:_RUN_ID_SLUG_MAXLEN]
-    return f"{ts}-{slug}-{query_mode.lower()}-{secrets.token_hex(3)}"
+    qm = query_mode.lower()
+    token = secrets.token_hex(3)
+    # run_id format: <ts>-<slug>-<qm>-<token> (3 dashes). Cap the slug so
+    # the full GCE instance name fits 63.
+    slug_max = max(
+        1, _INSTANCE_NAME_MAX - _NAME_OVERHEAD - len(ts) - len(qm) - len(token) - 3
+    )
+    slug = framework.replace("_", "").lower()[:slug_max]
+    return f"{ts}-{slug}-{qm}-{token}"
 
 
 def read_api_keys_from_local_env(
