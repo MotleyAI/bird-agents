@@ -132,9 +132,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         tag = image.image_tag(
             repo_root,
             paths.mini_interact_root(),
+            paths.audited_gold_root(),
             allow_dirty=False,
         )
-        uri = image.build_and_push(tag, repo_root, force=ns.force)
+        uri = image.build_and_push(
+            tag, repo_root,
+            audited_gold_root=paths.audited_gold_root(),
+            force=ns.force,
+        )
         print(uri)
         return 0
     return 0

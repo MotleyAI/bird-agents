@@ -1570,15 +1570,16 @@ def test_download_slayer_setup_otf_encode_optional_reference_skipped_on_restart(
     assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"seed-fp"
 
 
-def test_download_slayer_setup_optional_seed_merges_per_file_newest_mtime(
+def test_download_slayer_setup_optional_seed_does_not_clobber_local(
     monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
 ):
-    """M1 — when optional seed exists in GCS AND the local reference root
-    already has files for the same db (from a prior actor's cloud build), the
-    download must MERGE file-by-file (newest mtime wins), NOT atomic-replace
-    the existing dir."""
-    import os
-
+    """Codex r2 — when local dst already exists (cloud-built reference from
+    a prior actor on this VM, OR a crashed mid-merge), the optional seed
+    MUST NOT overwrite it. The `src_mtime` available at download time is
+    the local-write time, not the cloud-upload time (GCS doesn't preserve
+    that for slayer-setup uploads), so any mtime comparison is broken.
+    Correct semantics: don't clobber; cross-process flock + the
+    `.optional_seed_download_complete` marker make this race-safe."""
     client, store = fake_gcs_bucket
     cache_root = tmp_path / "data" / "slayer_otf_cache"
     ref_root = tmp_path / "data" / "slayer_models_otf"
@@ -1588,79 +1589,36 @@ def test_download_slayer_setup_optional_seed_merges_per_file_newest_mtime(
     cpfx = f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache"
     rpfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
     store[f"{cpfx}/db_a/_cache_fp.txt"] = b"cache-fp"
-    # Seed in GCS — but OLD.
-    store[f"{rpfx}/db_a/_reference_fp.txt"] = b"seed-old-fp"
-    store[f"{rpfx}/db_a/models/x.yaml"] = b"SEED-OLD\n"
+    store[f"{rpfx}/db_a/_reference_fp.txt"] = b"seed-fp"
+    store[f"{rpfx}/db_a/models/x.yaml"] = b"SEED-CONTENT\n"
     store[f"{rpfx}/db_a/models/y.yaml"] = b"SEED-Y\n"
 
-    # Local already has a NEWER cloud-built x.yaml.
+    # Local already has a cloud-built x.yaml (from a prior actor on this
+    # VM). MUST NOT be overwritten by the seed.
     local_db = ref_root / "db_a"
     (local_db / "models").mkdir(parents=True)
-    (local_db / "models" / "x.yaml").write_bytes(b"LOCAL-NEW\n")
-    future_mtime = time.time() + 10_000
-    os.utime(local_db / "models" / "x.yaml", (future_mtime, future_mtime))
+    (local_db / "models" / "x.yaml").write_bytes(b"CLOUD-BUILT\n")
 
     cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
            "framework": "pydantic_ai_otf_encode"}
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
 
-    # Local-newer x.yaml survives; seed's y.yaml lands fresh.
-    assert (local_db / "models" / "x.yaml").read_bytes() == b"LOCAL-NEW\n", (
-        "older seed must NOT overwrite newer local file (per-file mtime-wins)"
+    assert (local_db / "models" / "x.yaml").read_bytes() == b"CLOUD-BUILT\n", (
+        "seed merged on top of an existing local file — must not clobber"
     )
     assert (local_db / "models" / "y.yaml").read_bytes() == b"SEED-Y\n", (
-        "seed file absent locally must be downloaded"
+        "seed file absent locally must still be downloaded"
     )
 
 
-def test_optional_seed_merge_preserves_src_mtime(
-    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
-):
-    """CodeRabbit r2 — when the optional seed is merged file-by-file into an
-    existing root, the local dst MUST inherit the source's mtime, not the
-    download/replace time. Without this, a later actor restart's mtime
-    comparison reads the local-write time and can wrongly block a genuinely
-    newer seed/local reference from winning."""
-    import os
-
-    client, store = fake_gcs_bucket
-    cache_root = tmp_path / "data" / "slayer_otf_cache"
-    ref_root = tmp_path / "data" / "slayer_models_otf"
-    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(cache_root))
-    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(ref_root))
-
-    cpfx = f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache"
-    rpfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
-    store[f"{cpfx}/db_a/_cache_fp.txt"] = b"cache-fp"
-    store[f"{rpfx}/db_a/_reference_fp.txt"] = b"seed"
-    store[f"{rpfx}/db_a/models/x.yaml"] = b"seed-content\n"
-
-    # Capture the src mtime that the download will see (download_prefix
-    # writes the bytes with whatever mtime the OS sets at write-time; we
-    # just want to verify dst's mtime matches src's after merge).
-    cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
-           "framework": "pydantic_ai_otf_encode"}
-    # Spy on os.utime to assert the merge calls it before os.replace.
-    real_utime = os.utime
-    utime_calls: list[tuple[str, tuple[float, float]]] = []
-
-    def spy_utime(path, times):
-        utime_calls.append((str(path), times))
-        return real_utime(path, times)
-
-    monkeypatch.setattr(os, "utime", spy_utime)
-    ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
-
-    # The merge path must have stamped the tmp file with src_mtime.
-    seed_writes = [
-        c for c in utime_calls
-        if "seed-" in c[0] and c[1][0] == c[1][1]
-    ]
-    assert seed_writes, (
-        "optional seed merge did not call os.utime on the tmp file before "
-        f"os.replace — dst will inherit fetch-time mtime instead of src "
-        f"mtime. All utime calls: {utime_calls}"
-    )
+# NOTE: a round-1 test asserted that `_download_optional_seed` stamped the
+# tmp file with `src_mtime` before `os.replace` (mtime preservation across
+# replace). Codex r2 superseded that contract: the download's `src_mtime` is
+# the local-write time, not the original upload-time, so preserving it across
+# replace doesn't fix the comparison on a later run. The optional seed merge
+# now uses "don't clobber if dst exists" — see the test above
+# (`test_download_slayer_setup_optional_seed_does_not_clobber_local`) for the
+# replacement semantics. No mtime-related call needed.
 
 
 def test_download_slayer_setup_optional_seed_marker_makes_rerun_noop(

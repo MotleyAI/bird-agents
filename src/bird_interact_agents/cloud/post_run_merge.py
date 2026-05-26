@@ -206,21 +206,25 @@ def _merge_one_db(
         return 0, 0
 
     local_db = reference_root / db
-    files_updated = 0
-    files_skipped = 0
+    local_marker = local_db / _MARKER
+    marker_pick: tuple[float, Path] | None = picks.pop(_MARKER, None)
 
     with _per_db_merge_lock(reference_root, db):
-        local_marker = local_db / _MARKER
-        # Step 1: unlink local marker FIRST so concurrent readers see
-        # "marker absent ⇒ incomplete, rebuild".
-        if local_marker.exists():
-            try:
-                os.unlink(local_marker)
-            except FileNotFoundError:
-                pass
+        # Codex r2: capture local marker mtime + bytes BEFORE deciding
+        # anything. Without this, the previous implementation unlinked the
+        # local marker before comparing marker mtimes — so an older cloud
+        # marker (or even a missing one) would always "win" the marker
+        # comparison and either downgrade the local marker or leave the
+        # tree marker-less (violating "marker present ⇒ content complete").
+        if local_marker.is_file():
+            local_marker_mtime = local_marker.stat().st_mtime
+            local_marker_bytes: bytes | None = local_marker.read_bytes()
+        else:
+            local_marker_mtime = 0.0
+            local_marker_bytes = None
 
-        # Step 2: per-file atomic merge (marker handled last).
-        marker_pick: tuple[float, Path] | None = picks.pop(_MARKER, None)
+        # Pre-compute per-file decisions (no writes yet).
+        content_ops: list[tuple[Path, Path, float, bool]] = []
         for rel, (source_mtime, sdir) in sorted(picks.items()):
             src = sdir / db / rel
             dst = local_db / rel
@@ -228,30 +232,60 @@ def _merge_one_db(
                 local_mtime = dst.stat().st_mtime
             except FileNotFoundError:
                 local_mtime = 0.0
-            if source_mtime > local_mtime:
+            content_ops.append((src, dst, source_mtime, source_mtime > local_mtime))
+
+        marker_will_replace = False
+        marker_source_mtime = 0.0
+        marker_src: Path | None = None
+        if marker_pick is not None:
+            marker_source_mtime, marker_sdir = marker_pick
+            marker_src = marker_sdir / db / _MARKER
+            marker_will_replace = marker_source_mtime > local_marker_mtime
+
+        any_content_change = any(will for *_x, will in content_ops)
+
+        # Skip the whole touch when nothing will actually change — preserves
+        # the marker-present-⇒-content-complete invariant against concurrent
+        # readers, since we never unlink the marker we leave in place.
+        if not any_content_change and not marker_will_replace:
+            skipped = len(content_ops) + (1 if marker_pick is not None else 0)
+            return 0, skipped
+
+        # SOMETHING will change. Unlink the local marker so any concurrent
+        # reader observes "marker absent ⇒ incomplete, rebuild" during the
+        # partial-content interval.
+        if local_marker_bytes is not None:
+            try:
+                os.unlink(local_marker)
+            except FileNotFoundError:
+                pass
+
+        files_updated = 0
+        files_skipped = 0
+        for src, dst, source_mtime, will_replace in content_ops:
+            if will_replace:
                 _atomic_replace(src, dst, source_mtime)
                 files_updated += 1
             else:
                 files_skipped += 1
 
-        # Step 3: marker LAST.
-        if marker_pick is not None:
-            source_mtime, sdir = marker_pick
-            src = sdir / db / _MARKER
-            try:
-                local_mtime = local_marker.stat().st_mtime
-            except FileNotFoundError:
-                local_mtime = 0.0
-            if source_mtime > local_mtime:
-                # M3: marker MUST be replaced atomically. Read the source
-                # bytes then write via tmp+rename so a reader can never
-                # observe a half-written marker. Codex r2: stamp with
-                # source_mtime so future merges compare against the correct
-                # value (not the laptop's fetch time).
-                _write_marker_atomic(src.read_bytes(), local_marker, source_mtime)
-                files_updated += 1
-            else:
+        # Marker LAST. Either write the cloud marker (it won the comparison)
+        # OR restore the local marker (cloud lost, but we'd unlinked it to
+        # protect partial-content readers — we MUST put it back so the
+        # invariant holds at the end of the merge).
+        if marker_will_replace and marker_src is not None:
+            _write_marker_atomic(
+                marker_src.read_bytes(), local_marker, marker_source_mtime,
+            )
+            files_updated += 1
+        else:
+            if marker_pick is not None:
                 files_skipped += 1
+            if local_marker_bytes is not None:
+                # Restore the local marker we unlinked.
+                _write_marker_atomic(
+                    local_marker_bytes, local_marker, local_marker_mtime,
+                )
 
     return files_updated, files_skipped
 

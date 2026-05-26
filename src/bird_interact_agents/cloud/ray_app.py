@@ -193,23 +193,24 @@ def _download_optional_seed(
                 for src in db_files:
                     rel = src.relative_to(tmp)
                     dst = dest_root / rel
-                    src_mtime = src.stat().st_mtime
-                    try:
-                        local_mtime = dst.stat().st_mtime
-                    except FileNotFoundError:
-                        local_mtime = 0.0
-                    if src_mtime <= local_mtime:
-                        continue  # local is newer (e.g. cloud-built); keep
+                    # Codex r2: "don't clobber" semantics. The downloaded
+                    # `src_mtime` is the DOWNLOAD time, not the original
+                    # upload-time mtime (driver doesn't preserve it through
+                    # GCS for the slayer-setup uploads), so a strict
+                    # source-mtime-wins comparison is fundamentally broken
+                    # for this code path. Instead: if dst already exists
+                    # (cloud-built reference from a prior actor on this VM,
+                    # OR a previously crashed mid-merge), KEEP it. The
+                    # cross-process flock + the `.optional_seed_download_complete`
+                    # marker make this safe — encoder output cannot be
+                    # overwritten by a later seed merge.
+                    if dst.exists():
+                        continue
                     dst.parent.mkdir(parents=True, exist_ok=True)
-                    # Atomic per-file replace. CR/Codex r2: stamp the tmp
-                    # with `src_mtime` BEFORE the replace so dst inherits
-                    # the source's mtime (not "now"). Without this, the
-                    # next actor restart's mtime comparison reads the
-                    # local-write time and can block a genuinely newer
-                    # seed from winning.
+                    # Atomic per-file write (no pre-existing dst to race
+                    # against; just tmp+rename for crash safety).
                     tmp_dst = dst.parent / f".{dst.name}.seed-{os.getpid()}"
                     tmp_dst.write_bytes(src.read_bytes())
-                    os.utime(tmp_dst, (src_mtime, src_mtime))
                     os.replace(tmp_dst, dst)
         marker.write_text("ok")
     finally:

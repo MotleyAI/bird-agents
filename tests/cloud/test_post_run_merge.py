@@ -536,6 +536,80 @@ def test_second_merge_sees_newer_cloud_after_first_landed(tmp_path: Path):
     assert merged["files_updated"] >= 2
 
 
+def test_older_cloud_marker_does_not_downgrade_newer_local(tmp_path: Path):
+    """Codex r2 — when the cloud shard has an OLDER marker (and older
+    content), the merger MUST NOT downgrade the local marker. Previously
+    the merger unlinked the local marker FIRST, then compared cloud's
+    marker mtime against (the now-missing) local marker — so the older
+    cloud marker would always win the comparison, writing a stale marker
+    on top of newer local content (invariant violation)."""
+    import os
+    run_dir = tmp_path / "run"
+    ref_root = tmp_path / "ref"
+    _make_local(ref_root, "db_a", {
+        "models/x.yaml": (b"NEW-LOCAL\n", 5000.0),
+        "_reference_fp.txt": (b"fp-NEW-LOCAL", 5000.0),
+    })
+    _make_shard(run_dir, "host-1", "db_a", {
+        "models/x.yaml": (b"OLD-CLOUD\n", 2000.0),
+        "_reference_fp.txt": (b"fp-OLD-CLOUD", 2000.0),
+    })
+
+    report = post_run_merge.merge_post_run_into_warm_cache(
+        run_dir=run_dir, reference_root=ref_root,
+    )
+
+    # Both local content AND local marker untouched.
+    assert (ref_root / "db_a" / "models" / "x.yaml").read_bytes() == b"NEW-LOCAL\n"
+    assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"fp-NEW-LOCAL", (
+        "merger downgraded the local marker even though every content file "
+        "was skipped — invariant 'marker present ⇒ content complete' violated"
+    )
+    # Marker mtime preserved.
+    assert abs(os.stat(ref_root / "db_a" / "_reference_fp.txt").st_mtime - 5000.0) < 1.0
+    [merged] = report["merged_dbs"]
+    assert merged["files_updated"] == 0
+    assert merged["files_skipped"] >= 2
+
+
+def test_partial_cloud_win_restores_local_marker_when_marker_loses(tmp_path: Path):
+    """Codex r2 — mixed scenario: cloud wins SOME content files (newer for
+    some files) but LOSES the marker (local marker is newer than cloud's).
+    The merger MUST end with a valid marker on disk. With the round-1
+    "always unlink first" pattern, the local marker would be unlinked and
+    then never restored when the cloud lost — leaving a marker-less tree.
+
+    Concretely: cloud has `x.yaml` newer (3000 > local 1000), but cloud's
+    marker is older (2000 < local 5000). After merge: x.yaml is replaced
+    with cloud, but the marker MUST be the local one (restored)."""
+    run_dir = tmp_path / "run"
+    ref_root = tmp_path / "ref"
+    _make_local(ref_root, "db_a", {
+        "models/x.yaml": (b"local-old-x\n", 1000.0),
+        "models/y.yaml": (b"local-stay-y\n", 9000.0),
+        "_reference_fp.txt": (b"fp-LOCAL-NEW-MARKER", 5000.0),
+    })
+    _make_shard(run_dir, "host-1", "db_a", {
+        "models/x.yaml": (b"cloud-newer-x\n", 3000.0),
+        "_reference_fp.txt": (b"fp-CLOUD-OLD-MARKER", 2000.0),
+    })
+
+    post_run_merge.merge_post_run_into_warm_cache(
+        run_dir=run_dir, reference_root=ref_root,
+    )
+    # x.yaml replaced with cloud's newer version.
+    assert (ref_root / "db_a" / "models" / "x.yaml").read_bytes() == b"cloud-newer-x\n"
+    # y.yaml untouched (not in any shard).
+    assert (ref_root / "db_a" / "models" / "y.yaml").read_bytes() == b"local-stay-y\n"
+    # Marker MUST be the local one (newer), even though we unlinked it
+    # mid-merge to guard concurrent readers.
+    assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"fp-LOCAL-NEW-MARKER", (
+        "local marker should have been restored after the merge (cloud's "
+        "marker was older and lost the comparison) — instead the marker "
+        "was either lost entirely or downgraded to cloud's"
+    )
+
+
 def test_module_docstring_documents_fingerprint_invariant():
     """L1 — cross-shard per-file picks are safe because all shards in one run
     have the same fingerprint (the dataset is static during a run). The
