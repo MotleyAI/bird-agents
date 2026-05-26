@@ -825,6 +825,120 @@ def test_build_reference_takes_cross_process_flock(tmp_path):
             p.join()
 
 
+def test_ensure_db_reference_reuses_peer_commit_when_markerless_scrap_exists(tmp_path):
+    """CR r2 — when a stale markerless `target` dir exists locally,
+    `ensure_db_reference` previously passed `force=force or target.exists()`
+    to `_build_reference`, which forwarded `force=True` into
+    `_build_reference_inside_lock`'s peer-reuse check (`if not force`),
+    DISABLING reuse. With a peer process committing a complete reference
+    during the flock wait, this caused rmtree of the peer's freshly
+    committed reference (lost work + redundant LLM encode).
+
+    After the fix: `_build_reference_inside_lock` always reuses a present
+    marker when the USER didn't explicitly request `force`. The scrap-clear
+    responsibility moved into `_commit_reference`, which is never reached
+    in this scenario."""
+    import asyncio
+    import multiprocessing
+    import time as _t
+    import fcntl  # noqa: F401
+
+    from bird_interact_agents.slayer_otf import reference_build
+
+    reference_root = tmp_path / "ref"
+    reference_root.mkdir(parents=True)
+    db = "db_a"
+    target = reference_root / db
+    sentinel = tmp_path / "holder_acquired.txt"
+
+    # Lay down stale markerless scrap locally — this triggers the buggy
+    # `force=True` plumbing in the pre-fix code.
+    target.mkdir(parents=True)
+    (target / "stale_scrap.txt").write_text("leftover from a prior crash")
+
+    # Holder process: hold flock + commit a complete reference, then release.
+    ctx = multiprocessing.get_context("spawn")
+    p = ctx.Process(
+        target=_holder_proc_commit_then_release,
+        args=((str(reference_root), db, str(target), str(sentinel)),),
+    )
+    p.start()
+    try:
+        deadline = _t.time() + 5.0
+        while not sentinel.exists() and _t.time() < deadline:
+            _t.sleep(0.05)
+        assert sentinel.exists(), "holder failed to acquire the lock"
+
+        # Stub the rest of the pipeline so `ensure_db_reference` reaches
+        # `_build_reference` via the under-lock path. The peer's commit
+        # MUST be honored when we acquire the flock.
+        encoder_invocations = {"n": 0}
+
+        def counting_build_encoder(_storage, _build_dir, _db, _sessions_dir):
+            encoder_invocations["n"] += 1
+
+            class _RunOne:
+                index_rows: list[dict] = []
+
+                async def __call__(self, *a, **kw):
+                    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+                        EncoderResult,
+                    )
+                    return EncoderResult(
+                        kb_id=0, status="encoded", entities=[], notes="",
+                    )
+            return _RunOne()
+
+        # Minimal ensure_db_cache stub so we don't depend on dataset on disk.
+        from bird_interact_agents.slayer_otf import cache as _cache
+        from bird_interact_agents.slayer_otf.cache import CacheEntry
+
+        cache_dir = tmp_path / "cache" / db
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "_cache_fp.txt").write_text("fp-x")
+        (cache_dir / "datasources").mkdir()
+
+        async def fake_ensure_db_cache(db_, *, cache_root, mini_interact_root,
+                                        force=False):
+            return CacheEntry(
+                cache_dir=cache_dir, fingerprint="fp-x", kb_rows=[],
+            )
+
+        import unittest.mock as _mock
+        with _mock.patch.object(
+            reference_build, "ensure_db_cache", side_effect=fake_ensure_db_cache,
+        ):
+            entry = asyncio.run(reference_build.ensure_db_reference(
+                db,
+                reference_root=reference_root,
+                cache_root=tmp_path / "cache",
+                mini_interact_root=tmp_path / "mini",
+                build_encoder=counting_build_encoder,
+                force=False,
+            ))
+
+        assert encoder_invocations["n"] == 0, (
+            f"`force=True` leaked from `target.exists()` plumbing — "
+            f"build_encoder invoked {encoder_invocations['n']}x even though "
+            f"a peer process committed the reference during the flock wait. "
+            f"The user did NOT request force; the peer's marker should have "
+            f"been honored."
+        )
+        # Peer's marker is intact and we returned a valid entry.
+        # NOTE: the stale `stale_scrap.txt` remains alongside the peer's
+        # committed files — that's by design. The contract is "marker
+        # present ⇒ content complete"; unreferenced stale files alongside a
+        # complete commit don't violate it. A user-requested rebuild
+        # (`force=True`) is the only path that rmtrees the target.
+        assert (target / "_reference_fp.txt").read_text() == "peer-committed-fp"
+        assert entry.reference_dir == target
+    finally:
+        p.join(timeout=10)
+        if p.is_alive():
+            p.terminate()
+            p.join()
+
+
 def test_build_reference_rechecks_marker_inside_flock(tmp_path):
     """Codex r2 — once `_build_reference_inside_lock` acquires the flock, it
     MUST re-check `target / _MARKER`. If a peer process committed a complete

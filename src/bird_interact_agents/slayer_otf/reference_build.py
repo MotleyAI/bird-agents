@@ -502,7 +502,17 @@ async def ensure_db_reference(
             db=db, fp=fp, cache_entry=cache_entry, kb_rows=kb_rows,
             reference_root=reference_root, target=target,
             mini_interact_root=mini_interact_root,
-            build_encoder=build_encoder, force=force or target.exists(),
+            build_encoder=build_encoder,
+            # CR r2 — pass the USER's `force` only, NOT `force or
+            # target.exists()`. The latter would mis-signal "user wants
+            # rebuild" whenever a stale markerless dir exists, which
+            # disables the under-flock peer-marker reuse path in
+            # `_build_reference_inside_lock` and causes a peer's freshly
+            # committed reference to be rmtree+rebuilt. `_commit_reference`
+            # has been updated to handle markerless-scrap on its own (it
+            # rmtrees a markerless target before the atomic rename), so we
+            # no longer need to overload `force` for that purpose.
+            force=force,
         )
         return ReferenceEntry(
             reference_dir=target, fingerprint=fp,
@@ -718,19 +728,27 @@ async def _resolve_datasource_for_build(
 
 def _commit_reference(tmp: Path, target: Path, *, force: bool) -> None:
     """Atomic-rename ``tmp`` onto ``target``. We only ever rename onto an
-    absent target; ``force`` with an existing target removes it first.
+    absent target; the pre-existing target is removed in two cases:
+      1. ``force=True`` — the user explicitly asked for a rebuild, so any
+         present complete reference is intentionally clobbered.
+      2. Target exists but is MARKERLESS (incomplete scrap from an earlier
+         crashed/aborted build). Clearing it lets the atomic rename succeed
+         without trying to merge into half-finished prior state.
 
-    KNOWN LIMITATION (cross-process, Codex finding — intentionally not hardened):
-    the ``force``/stale-rebuild path (rmtree-then-rename) is only safe within a
-    SINGLE process. ``ensure_db_reference``'s ``_get_lock(db)`` is an in-process
-    asyncio lock, so two SEPARATE ``run`` processes rebuilding the same DB's
-    reference at the same time can race — the loser's rmtree could remove the
-    winner's freshly committed reference after the winner's tasks began using it.
-    The OTF flow assumes single-process-per-run (each run owns its DBs); making
-    concurrent multi-process rebuilds of one DB safe would need an inter-process
-    file lock or a fully atomic replace. Not done here — documented instead."""
-    if force and target.exists():
-        shutil.rmtree(target, ignore_errors=True)
+    DEV-1470 + CR r2: the markerless-scrap clear is now owned here rather
+    than being signalled from `ensure_db_reference` via an overloaded
+    `force` flag — the previous `force=force or target.exists()` plumbing
+    leaked the "target exists" condition into `_build_reference_inside_lock`,
+    disabling its peer-marker reuse path and causing rmtree of a peer's
+    freshly-committed reference. With the under-flock peer reuse + this
+    self-contained markerless-clear, the H4 cross-process safety story is
+    complete: a peer's marker is honored under both force=False
+    (peer reuse) and force=True (no markerless rmtree of a marked dir).
+    """
+    if target.exists():
+        marker_present = (target / _MARKER).is_file()
+        if force or not marker_present:
+            shutil.rmtree(target, ignore_errors=True)
     try:
         os.rename(tmp, target)
     except OSError:

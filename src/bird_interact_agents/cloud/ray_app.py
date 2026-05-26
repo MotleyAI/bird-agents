@@ -152,13 +152,21 @@ def _download_optional_seed(
 
     * If the GCS prefix is empty: NO-OP (no marker, no rmtree). The cloud
       will encode any missing per-DB reference lazily.
-    * If non-empty: download into a tmp sibling, then MERGE file-by-file into
-      the existing ``dest_root`` using per-file ``newest-source-mtime-wins``
-      (so a cloud-built reference already present after an actor restart is
-      not clobbered by an older seed). Per-DB cross-process ``fcntl.flock``
-      on ``<dest_root>/<db>.build.lock`` (shared with the build lock — H4) so
-      an in-flight encoder writing to ``<dest_root>/<db>/`` doesn't race the
-      merge.
+    * If non-empty: download into a tmp sibling, then merge into the existing
+      ``dest_root`` using **don't-clobber-if-dst-exists** semantics (Codex r2,
+      revised from the original mtime-wins design):
+        - Any file already present locally — a cloud-built reference from a
+          prior actor on this VM, OR scrap from a crashed mid-merge — is
+          KEPT. The encoder's output is always preferred over the seed.
+        - Only files ABSENT locally are written from the seed, via tmp +
+          ``os.replace`` for crash safety.
+      Mtime-based comparison was abandoned because ``src.stat().st_mtime`` at
+      this point is the local download time (``gcs.download_prefix`` doesn't
+      preserve any GCS-side metadata), NOT the original upload-time mtime —
+      so a strict mtime-wins comparison was fundamentally broken.
+    * Per-DB cross-process ``fcntl.flock`` on ``<dest_root>/<db>.build.lock``
+      (shared with the build lock — H4) prevents an in-flight encoder writing
+      to ``<dest_root>/<db>/`` from racing this merge.
     * Idempotent across restart via the ``.optional_seed_download_complete``
       marker at the root.
     """
