@@ -10,17 +10,22 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import fcntl
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
 import threading
 import time
+import traceback
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Iterator
 
 from bird_interact_agents.cloud import gcs as _gcs
+from bird_interact_agents.cloud import upload_back as _upload_back
 
 
 # ---------------------------------------------------------------------------
@@ -37,38 +42,76 @@ def default_gcs_client():
 # ---------------------------------------------------------------------------
 
 
-def _slayer_download_target(cfg: dict[str, Any]) -> tuple[str, Path]:
-    """Return ``(artifact_name, dest_root)`` for the run's slayer combo.
+_ARTIFACT_ROOT_FN_NAME = {
+    "slayer_models": "slayer_models_root",
+    "slayer_otf_cache": "slayer_otf_cache_root",
+    "slayer_models_otf": "slayer_models_otf_root",
+}
 
-    ``dest_root`` is the env-override root the LOCAL per-task storage builders
-    read from (``BIRD_SLAYER_MODELS_ROOT`` / ``BIRD_OTF_CACHE_ROOT`` /
-    ``BIRD_SLAYER_MODELS_OTF_ROOT``, set in ``cluster.yaml.j2``), so a download
-    here lands exactly where ``run_one_task`` looks — no cloud-specific OTF
-    code."""
+
+def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
+    """Return ``[(artifact, dest_root, required), ...]`` for the run's combo.
+
+    DEV-1470: ``pydantic_ai_otf_encode + on-the-fly`` requires the
+    deterministic cache (``slayer_otf_cache``, input to the LLM encoder) and
+    has an OPTIONAL ``slayer_models_otf`` seed (skipped if absent in GCS;
+    merged into the existing root file-by-file if present, never atomic-
+    replace, so cloud-built references already on disk survive an actor
+    restart's re-download attempt — H3 / M3).
+    """
     from bird_interact_agents import paths
 
-    artifact = _gcs.slayer_artifact_name(cfg["slayer_setup"], cfg["framework"])
-    root_fn = {
-        "slayer_models": paths.slayer_models_root,
-        "slayer_otf_cache": paths.slayer_otf_cache_root,
-        "slayer_models_otf": paths.slayer_models_otf_root,
-    }[artifact]
-    return artifact, root_fn()
+    setup = cfg.get("slayer_setup")
+    fw = cfg.get("framework")
+    if setup == "pre-encoded":
+        artifacts = [("slayer_models", True)]
+    elif fw == "pydantic_ai_otf_encode":
+        artifacts = [
+            ("slayer_otf_cache", True),
+            ("slayer_models_otf", False),
+        ]
+    else:
+        artifacts = [("slayer_otf_cache", True)]
+    out: list[tuple[str, Path, bool]] = []
+    for artifact, required in artifacts:
+        root_fn = getattr(paths, _ARTIFACT_ROOT_FN_NAME[artifact])
+        out.append((artifact, root_fn(), required))
+    return out
 
 
-def download_slayer_setup(run_id: str, cfg: dict[str, Any], *, client) -> None:
-    """Download the run's uploaded slayer setup into its env-override root,
-    ONCE per worker process. No-op unless ``cfg['query_mode'] == 'slayer'``.
+def _slayer_download_target(cfg: dict[str, Any]) -> tuple[str, Path]:
+    """Back-compat single-artifact accessor for tests/code that still expects
+    one (artifact, root) pair. Returns the first artifact in the combo's
+    list — for combos with multiple artifacts (otf_encode + on-the-fly), that
+    is the REQUIRED cache."""
+    artifact, dest_root, _required = _slayer_artifacts_for(cfg)[0]
+    return artifact, dest_root
 
-    Atomic + root-level marker-gated (mirrors ``cache.py`` / ``reference_build``):
-    download the whole ``runs/<id>/slayer_setup/<artifact>/`` prefix into a
-    unique sibling tmp, write ``.download_complete`` LAST, then ``os.rename``
-    onto the (absent) ``dest_root``. On ``OSError`` (a peer worker on the same
-    VM won the rename) success iff ``dest_root/.download_complete`` exists, else
-    re-raise. Never pre-create ``dest_root``."""
-    if cfg.get("query_mode") != "slayer":
-        return
-    artifact, dest_root = _slayer_download_target(cfg)
+
+@contextmanager
+def _per_db_build_lock(reference_root: Path, db: str) -> Iterator[None]:
+    """Cross-process per-DB lock shared with the merger and
+    :func:`bird_interact_agents.slayer_otf.reference_build._build_reference`.
+    The optional seed download takes this lock so it cannot land on top of
+    an in-flight cloud encoder (H4)."""
+    reference_root.mkdir(parents=True, exist_ok=True)
+    lock_path = reference_root / f"{db}.build.lock"
+    with open(lock_path, "w") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+def _download_required_artifact(
+    *, run_id: str, artifact: str, dest_root: Path, client,
+) -> None:
+    """Required-artifact download: atomic via tmp + ``os.rename`` onto an
+    ABSENT ``dest_root``. Root-level ``.download_complete`` marker makes
+    repeated calls a no-op (idempotent across a VM's worker processes).
+    Empty GCS prefix is FATAL — a missing required upload must surface, not
+    silently cache as an empty setup."""
     marker = dest_root / ".download_complete"
     if marker.is_file():
         return
@@ -79,10 +122,6 @@ def download_slayer_setup(run_id: str, cfg: dict[str, Any], *, client) -> None:
     tmp = Path(tempfile.mkdtemp(prefix=f".{dest_root.name}.dl-", dir=str(parent)))
     try:
         _gcs.download_prefix(prefix, tmp, client=client)
-        # A missing/empty prefix (failed or partial upload, wrong prefix) must
-        # NOT be cached as a complete download — that would permanently wedge
-        # every task against an empty setup with no retry (Codex). Fail loudly
-        # so the run surfaces the bad upload instead.
         if not any(p.is_file() for p in tmp.rglob("*")):
             raise FileNotFoundError(
                 f"slayer setup download found no files under gs://"
@@ -100,6 +139,118 @@ def download_slayer_setup(run_id: str, cfg: dict[str, Any], *, client) -> None:
         if tmp.exists():
             shutil.rmtree(tmp, ignore_errors=True)
         raise
+
+
+_OPTIONAL_SEED_MARKER = ".optional_seed_download_complete"
+
+
+def _download_optional_seed(
+    *, run_id: str, artifact: str, dest_root: Path, client,
+) -> None:
+    """Optional-seed download (DEV-1470 for the ``slayer_models_otf`` artifact
+    under ``otf_encode + on-the-fly``):
+
+    * If the GCS prefix is empty: NO-OP (no marker, no rmtree). The cloud
+      will encode any missing per-DB reference lazily.
+    * If non-empty: download into a tmp sibling, then merge into the existing
+      ``dest_root`` using **don't-clobber-if-dst-exists** semantics (Codex r2,
+      revised from the original mtime-wins design):
+        - Any file already present locally — a cloud-built reference from a
+          prior actor on this VM, OR scrap from a crashed mid-merge — is
+          KEPT. The encoder's output is always preferred over the seed.
+        - Only files ABSENT locally are written from the seed, via tmp +
+          ``os.replace`` for crash safety.
+      Mtime-based comparison was abandoned because ``src.stat().st_mtime`` at
+      this point is the local download time (``gcs.download_prefix`` doesn't
+      preserve any GCS-side metadata), NOT the original upload-time mtime —
+      so a strict mtime-wins comparison was fundamentally broken.
+    * Per-DB cross-process ``fcntl.flock`` on ``<dest_root>/<db>.build.lock``
+      (shared with the build lock — H4) prevents an in-flight encoder writing
+      to ``<dest_root>/<db>/`` from racing this merge.
+    * Idempotent across restart via the ``.optional_seed_download_complete``
+      marker at the root.
+    """
+    marker = dest_root / _OPTIONAL_SEED_MARKER
+    if marker.is_file():
+        return
+
+    prefix = f"runs/{run_id}/slayer_setup/{artifact}/"
+    parent = dest_root.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix=f".{dest_root.name}.seed-", dir=str(parent)))
+    try:
+        _gcs.download_prefix(prefix, tmp, client=client)
+        files = [p for p in tmp.rglob("*") if p.is_file()]
+        if not files:
+            # Empty prefix → no seed, no marker (cloud will encode). The
+            # ABSENCE of the marker is intentional: lets a re-run attempt the
+            # download again, harmless when still empty.
+            return
+        # Group files by their top-level db dir (first path component
+        # relative to tmp). Each db's merge is done under its own build-lock.
+        dbs: dict[str, list[Path]] = {}
+        for p in files:
+            rel = p.relative_to(tmp)
+            db = rel.parts[0] if rel.parts else ""
+            if not db:
+                continue
+            dbs.setdefault(db, []).append(p)
+        dest_root.mkdir(parents=True, exist_ok=True)
+        for db, db_files in sorted(dbs.items()):
+            with _per_db_build_lock(dest_root, db):
+                for src in db_files:
+                    rel = src.relative_to(tmp)
+                    dst = dest_root / rel
+                    # Codex r2: "don't clobber" semantics. The downloaded
+                    # `src_mtime` is the DOWNLOAD time, not the original
+                    # upload-time mtime (driver doesn't preserve it through
+                    # GCS for the slayer-setup uploads), so a strict
+                    # source-mtime-wins comparison is fundamentally broken
+                    # for this code path. Instead: if dst already exists
+                    # (cloud-built reference from a prior actor on this VM,
+                    # OR a previously crashed mid-merge), KEEP it. The
+                    # cross-process flock + the `.optional_seed_download_complete`
+                    # marker make this safe — encoder output cannot be
+                    # overwritten by a later seed merge.
+                    if dst.exists():
+                        continue
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    # Atomic per-file write (no pre-existing dst to race
+                    # against; just tmp+rename for crash safety).
+                    tmp_dst = dst.parent / f".{dst.name}.seed-{os.getpid()}"
+                    tmp_dst.write_bytes(src.read_bytes())
+                    os.replace(tmp_dst, dst)
+        marker.write_text("ok")
+    finally:
+        if tmp.exists():
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+def download_slayer_setup(run_id: str, cfg: dict[str, Any], *, client) -> None:
+    """Download the run's uploaded slayer setup into each artifact's
+    env-override root, ONCE per worker process. No-op unless
+    ``cfg['query_mode'] == 'slayer'``.
+
+    DEV-1470: a combo can list multiple artifacts via :func:`_slayer_artifacts_for`,
+    each tagged REQUIRED or OPTIONAL. REQUIRED uses the atomic
+    ``tmp + os.rename`` path with the root-level ``.download_complete`` marker
+    (empty prefix is fatal). OPTIONAL uses :func:`_download_optional_seed`
+    (empty prefix → no-op; non-empty → per-DB cross-process locked file-merge
+    so an actor restart cannot clobber a previously cloud-built reference).
+    """
+    if cfg.get("query_mode") != "slayer":
+        return
+    for artifact, dest_root, required in _slayer_artifacts_for(cfg):
+        if required:
+            _download_required_artifact(
+                run_id=run_id, artifact=artifact, dest_root=dest_root,
+                client=client,
+            )
+        else:
+            _download_optional_seed(
+                run_id=run_id, artifact=artifact, dest_root=dest_root,
+                client=client,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -276,20 +427,29 @@ def _run_one_in_actor(
     attempt: int,
     gcs_client,
     cached_runner: Any = None,
+    uploaded_dbs: set[str] | None = None,
+    initial_seed_fp_by_db: dict[str, str] | None = None,
 ) -> str:
     """The per-task body that runs INSIDE the actor. Captures logs, invokes
     run_one_task (which resolves per-task SLayer storage from the downloaded
-    setup, exactly as the local path does), writes the row + log to GCS, and
-    returns the iid. The per-task log tmp dir is cleaned up before returning.
+    setup, exactly as the local path does), writes the row + log to GCS, then
+    fires the DEV-1470 upload-back triple (best-effort), and returns the iid.
 
     DEV-1468: there is no per-task ephemeral SLayer server anymore — the setup
     is downloaded once per worker (``download_slayer_setup`` in the actor
     ``__init__``) and ``run_one_task`` builds the per-task variant storage from
-    it (via ``cfg['slayer_storage_root']`` / ``slayer_setup``)."""
+    it (via ``cfg['slayer_storage_root']`` / ``slayer_setup``).
+
+    DEV-1470: after the row/log writes (and BEFORE wiping ``log_dir``), invoke
+    in order: ``upload_per_task_debug`` → ``upload_per_task_setup_sessions``
+    → ``upload_otf_reference_delta``. Any upload-back exception is swallowed
+    and logged to stderr — the per-task row already landed, and a logging
+    failure must never poison the actor."""
     iid = str(task_data.get("instance_id") or "")
     database = str(task_data.get("selected_database") or "")
     log_dir = Path(tempfile.mkdtemp(prefix="cloud_log_"))
     log_tmp = log_dir / "task.log"
+    task_start_ts = time.time()
 
     try:
         with fd_capture(log_tmp):
@@ -329,9 +489,90 @@ def _run_one_in_actor(
         log_bytes = b""
     if log_bytes:
         _gcs.write_log(run_id, iid, attempt, log_bytes, client=gcs_client)
+
+    # DEV-1470: best-effort upload-back triple. Each helper swallows its own
+    # exceptions, but we also wrap the whole block so a programming bug here
+    # never prevents the log tmp-dir cleanup.
+    try:
+        work_root = Path(tempfile.gettempdir()) / "bird_interact_slayer_otf"
+        _upload_back.upload_per_task_debug(
+            run_id=run_id, iid=iid, attempt=attempt,
+            work_root=work_root, client=gcs_client,
+        )
+        _upload_back.upload_per_task_setup_sessions(
+            run_id=run_id, iid=iid, attempt=attempt,
+            setup_sessions_root=work_root / "_setup_sessions",
+            task_start_ts=task_start_ts, client=gcs_client,
+        )
+        _upload_back.upload_otf_reference_delta(
+            run_id=run_id, cfg=cfg,
+            shard=f"{socket.gethostname()}-{os.getpid()}",
+            uploaded_dbs=uploaded_dbs if uploaded_dbs is not None else set(),
+            initial_seed_fp_by_db=initial_seed_fp_by_db or {},
+            client=gcs_client,
+        )
+    except Exception:  # noqa: BLE001
+        sys.stderr.write(
+            f"[upload_back] outer failure for {iid}: {traceback.format_exc()}\n"
+        )
+
     # Now safe to drop the log tmp dir.
     shutil.rmtree(log_dir, ignore_errors=True)
     return iid
+
+
+def _snapshot_initial_seed_fps(
+    run_id: str, cfg: dict[str, Any], *, client,
+) -> dict[str, str]:
+    """DEV-1470: snapshot per-DB seed fingerprints AUTHORITATIVELY from GCS,
+    NOT from the local on-disk state at ``paths.slayer_models_otf_root()``.
+
+    Codex r3 — reading from disk is wrong because the OTF reference root is
+    SHARED across actor processes on a VM. If a peer actor builds a cloud
+    reference for ``db_x`` and then dies before its post-task upload-back
+    runs, a REPLACEMENT actor on the same VM (and any other still-live
+    sibling actor that processes a task for ``db_x`` next) sees the local
+    file and would record the peer's cloud-built fp as "initial seed".
+    Then ``upload_otf_reference_delta`` would skip the upload because the
+    fingerprint appears unchanged — losing the only post-run shard for
+    ``db_x`` entirely, so ``fetch()`` couldn't merge it into the laptop
+    warm cache.
+
+    The GCS seed prefix (``runs/<run_id>/slayer_setup/slayer_models_otf/``)
+    is set by the driver at submit time, BEFORE any actor starts, and is
+    immutable for the run's duration. It is therefore the only authoritative
+    source for "what was actually seeded" — any local fingerprint NOT in
+    this snapshot is genuine cloud work that must be uploaded back.
+    Empty dict on any error (conservative: upload everything cloud-built,
+    slightly wasteful but never loses work).
+    """
+    if cfg.get("query_mode") != "slayer":
+        return {}
+    if cfg.get("framework") != "pydantic_ai_otf_encode":
+        return {}
+    prefix = f"runs/{run_id}/slayer_setup/slayer_models_otf/"
+    out: dict[str, str] = {}
+    try:
+        bucket = client.bucket(_gcs.BUCKET_NAME)
+        for blob in bucket.list_blobs(prefix=prefix):
+            name = blob.name
+            if not name.endswith("/_reference_fp.txt"):
+                continue
+            rel = name[len(prefix):]  # "<db>/_reference_fp.txt"
+            db = rel.split("/", 1)[0]
+            if not db:
+                continue
+            try:
+                out[db] = blob.download_as_bytes().decode().strip()
+            except Exception:  # noqa: BLE001
+                # Skip this db; others may still snapshot cleanly.
+                continue
+    except Exception:  # noqa: BLE001
+        # GCS unreachable / list failure → return what we have so far.
+        # Worst case: empty dict, which makes every cloud-built reference
+        # upload-eligible (wasteful, never loses data).
+        return out
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +607,14 @@ class _LocalActor:
         # artifacts at the env-override roots — exactly like local.
         if cfg.get("query_mode") == "slayer":
             download_slayer_setup(run_id, cfg, client=self.gcs_client)
+        # DEV-1470: per-actor state for upload_otf_reference_delta. Snapshot
+        # the seed fingerprints AFTER download (so we observe what download
+        # just landed); uploaded_dbs starts empty and grows on successful
+        # upload, so failed uploads remain eligible for retry on later tasks.
+        self.initial_seed_fp_by_db = _snapshot_initial_seed_fps(
+            run_id, cfg, client=self.gcs_client,
+        )
+        self.uploaded_dbs: set[str] = set()
         # CR#14: cache the framework runner across tasks for raw mode.
         # Slayer mode keeps per-task reconstruction because the storage
         # root rotates per task (per §4#5 isolation).
@@ -379,6 +628,8 @@ class _LocalActor:
             attempt=self.attempt,
             gcs_client=self.gcs_client,
             cached_runner=self._cached_runner,
+            uploaded_dbs=self.uploaded_dbs,
+            initial_seed_fp_by_db=self.initial_seed_fp_by_db,
         )
 
 
@@ -424,6 +675,11 @@ def _build_actor_class():
             # one VM converge.
             if cfg.get("query_mode") == "slayer":
                 download_slayer_setup(run_id, cfg, client=self.gcs_client)
+            # DEV-1470 — per-actor upload-back state. AFTER the download.
+            self.initial_seed_fp_by_db = _snapshot_initial_seed_fps(
+                run_id, cfg, client=self.gcs_client,
+            )
+            self.uploaded_dbs = set()
             # CR#14 — cache the framework runner across tasks for raw
             # mode. `_LocalActor` does the same in its __init__; without
             # mirroring it here, the real Ray production path was paying
@@ -438,6 +694,8 @@ def _build_actor_class():
                 attempt=self.attempt,
                 gcs_client=self.gcs_client,
                 cached_runner=self.cached_runner,
+                uploaded_dbs=self.uploaded_dbs,
+                initial_seed_fp_by_db=self.initial_seed_fp_by_db,
             )
 
     return WorkerActor

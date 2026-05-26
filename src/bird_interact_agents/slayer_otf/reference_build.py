@@ -32,14 +32,16 @@ so HARD-8 needs no embedding pruning.
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import json
 import logging
 import os
 import shutil
 import tempfile
 from collections import deque
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Iterator
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -500,7 +502,17 @@ async def ensure_db_reference(
             db=db, fp=fp, cache_entry=cache_entry, kb_rows=kb_rows,
             reference_root=reference_root, target=target,
             mini_interact_root=mini_interact_root,
-            build_encoder=build_encoder, force=force or target.exists(),
+            build_encoder=build_encoder,
+            # CR r2 — pass the USER's `force` only, NOT `force or
+            # target.exists()`. The latter would mis-signal "user wants
+            # rebuild" whenever a stale markerless dir exists, which
+            # disables the under-flock peer-marker reuse path in
+            # `_build_reference_inside_lock` and causes a peer's freshly
+            # committed reference to be rmtree+rebuilt. `_commit_reference`
+            # has been updated to handle markerless-scrap on its own (it
+            # rmtrees a markerless target before the atomic rename), so we
+            # no longer need to overload `force` for that purpose.
+            force=force,
         )
         return ReferenceEntry(
             reference_dir=target, fingerprint=fp,
@@ -508,10 +520,76 @@ async def ensure_db_reference(
         )
 
 
+@contextmanager
+def _per_db_build_flock(reference_root: Path, db: str) -> Iterator[None]:
+    """DEV-1470 / H4 — cross-process per-DB exclusive ``fcntl.flock`` on
+    ``<reference_root>/<db>.build.lock``.
+
+    ``_get_lock(db)`` is an in-process ``asyncio.Lock`` — sufficient for the
+    LOCAL flow (single process, multiple coroutines), but Ray actors are
+    SEPARATE PROCESSES on one VM, so two of them building the same DB can
+    both pass the marker check and race ``_commit_reference``'s
+    ``rmtree(target)``-then-rename — destroying a peer's freshly committed
+    reference. The cross-process flock here serialises those builds, and is
+    SHARED with the laptop-side
+    :func:`bird_interact_agents.cloud.post_run_merge.merge_post_run_into_warm_cache`
+    and the cloud-side optional-seed download
+    (:func:`bird_interact_agents.cloud.ray_app._download_optional_seed`), so
+    none of {encoder, seed download, fetch-time merge} can interleave on a
+    given ``(reference_root, db)``.
+
+    Cheap when uncontended; ``flock`` is automatically released on FD close
+    (and explicitly in the ``finally`` below)."""
+    reference_root.mkdir(parents=True, exist_ok=True)
+    lock_path = reference_root / f"{db}.build.lock"
+    with open(lock_path, "w") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
 async def _build_reference(
     *, db, fp, cache_entry, kb_rows, reference_root, target,
     mini_interact_root, build_encoder, force,
 ) -> list[Any]:
+    # DEV-1470 / H4 — take the cross-process per-DB flock BEFORE we touch
+    # `target` or run the encoder. The asyncio Lock in `ensure_db_reference`
+    # serializes WITHIN this process; the flock here serializes ACROSS Ray
+    # actor processes on one VM (and against the laptop-side merge / optional
+    # seed download). See `_per_db_build_flock` for the full rationale.
+    with _per_db_build_flock(reference_root, db):
+        return await _build_reference_inside_lock(
+            db=db, fp=fp, cache_entry=cache_entry, kb_rows=kb_rows,
+            reference_root=reference_root, target=target,
+            mini_interact_root=mini_interact_root,
+            build_encoder=build_encoder, force=force,
+        )
+
+
+async def _build_reference_inside_lock(
+    *, db, fp, cache_entry, kb_rows, reference_root, target,
+    mini_interact_root, build_encoder, force,
+) -> list[Any]:
+    # Codex r2: re-check the marker INSIDE the cross-process flock. A peer
+    # Ray actor process may have passed the marker check in
+    # `ensure_db_reference`, then blocked on this flock while we ran the
+    # encode. Once we acquire the lock and the peer has committed, we'd
+    # otherwise either (a) rmtree+rebuild on top of the peer's complete
+    # reference (`force=True` path) or (b) waste an entire LLM encode
+    # against a now-redundant target (`force=False` path). The asyncio
+    # `_get_lock(db)` only serializes within ONE process — the cross-process
+    # race is what this re-check closes.
+    marker = target / _MARKER
+    if not force and marker.is_file():
+        logger.info(
+            "OTF reference for %s committed by peer process while waiting "
+            "for cross-process build lock; reusing without rebuild",
+            db,
+        )
+        return _load_reference_entry(target).setup_results
+
     tmp = Path(tempfile.mkdtemp(prefix=f".{fp}.tmp-", dir=str(reference_root)))
     try:
         # 1. Copy phases-1-3 datasources/ + models/ into tmp.
@@ -650,19 +728,27 @@ async def _resolve_datasource_for_build(
 
 def _commit_reference(tmp: Path, target: Path, *, force: bool) -> None:
     """Atomic-rename ``tmp`` onto ``target``. We only ever rename onto an
-    absent target; ``force`` with an existing target removes it first.
+    absent target; the pre-existing target is removed in two cases:
+      1. ``force=True`` — the user explicitly asked for a rebuild, so any
+         present complete reference is intentionally clobbered.
+      2. Target exists but is MARKERLESS (incomplete scrap from an earlier
+         crashed/aborted build). Clearing it lets the atomic rename succeed
+         without trying to merge into half-finished prior state.
 
-    KNOWN LIMITATION (cross-process, Codex finding — intentionally not hardened):
-    the ``force``/stale-rebuild path (rmtree-then-rename) is only safe within a
-    SINGLE process. ``ensure_db_reference``'s ``_get_lock(db)`` is an in-process
-    asyncio lock, so two SEPARATE ``run`` processes rebuilding the same DB's
-    reference at the same time can race — the loser's rmtree could remove the
-    winner's freshly committed reference after the winner's tasks began using it.
-    The OTF flow assumes single-process-per-run (each run owns its DBs); making
-    concurrent multi-process rebuilds of one DB safe would need an inter-process
-    file lock or a fully atomic replace. Not done here — documented instead."""
-    if force and target.exists():
-        shutil.rmtree(target, ignore_errors=True)
+    DEV-1470 + CR r2: the markerless-scrap clear is now owned here rather
+    than being signalled from `ensure_db_reference` via an overloaded
+    `force` flag — the previous `force=force or target.exists()` plumbing
+    leaked the "target exists" condition into `_build_reference_inside_lock`,
+    disabling its peer-marker reuse path and causing rmtree of a peer's
+    freshly-committed reference. With the under-flock peer reuse + this
+    self-contained markerless-clear, the H4 cross-process safety story is
+    complete: a peer's marker is honored under both force=False
+    (peer reuse) and force=True (no markerless rmtree of a marked dir).
+    """
+    if target.exists():
+        marker_present = (target / _MARKER).is_file()
+        if force or not marker_present:
+            shutil.rmtree(target, ignore_errors=True)
     try:
         os.rename(tmp, target)
     except OSError:

@@ -247,6 +247,56 @@ def test_empty_instance_ids_file_rejected(tmp_path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_build_subcommand_passes_audited_gold_root_to_image_tag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    """DEV-1470 round 2 — `cli.main(["build"])` must pass `audited_gold_root`
+    to both `image.image_tag` and `image.build_and_push`. The driver path
+    was updated when the signatures became 3-positional, but the `build`
+    subcommand is a SECOND production caller and was missed — invoking it
+    pre-fix raises TypeError, which CI/users would hit immediately.
+    """
+    from bird_interact_agents.cloud import image as _image
+    from bird_interact_agents.cloud import driver as _driver
+    from bird_interact_agents import paths as _paths
+
+    monkeypatch.setattr(
+        _driver, "submitter_repo_root", lambda: tmp_path / "repo",
+    )
+    fake_mi = tmp_path / "mini-interact"
+    fake_ag = tmp_path / "main-checkout" / "audited_gold"
+    monkeypatch.setattr(_paths, "mini_interact_root", lambda: fake_mi)
+    monkeypatch.setattr(_paths, "audited_gold_root", lambda: fake_ag)
+
+    tag_calls: list[tuple] = []
+    push_calls: list[tuple] = []
+
+    def fake_image_tag(repo_root, mini_interact_root, audited_gold_root,
+                       *, allow_dirty):
+        tag_calls.append((repo_root, mini_interact_root, audited_gold_root,
+                          allow_dirty))
+        return "deadbeef-cafebabe"
+
+    def fake_build_and_push(tag, repo_root, *, audited_gold_root=None,
+                            force=False, **_kw):
+        push_calls.append((tag, repo_root, audited_gold_root, force))
+        return f"registry.example/x/runner:{tag}"
+
+    monkeypatch.setattr(_image, "image_tag", fake_image_tag)
+    monkeypatch.setattr(_image, "build_and_push", fake_build_and_push)
+
+    rc = cli.main(["build"])
+    assert rc == 0
+    assert len(tag_calls) == 1, "image_tag was not called by the build subcommand"
+    assert tag_calls[0][2] == fake_ag, (
+        f"image_tag missing audited_gold_root positional arg; got {tag_calls[0]}"
+    )
+    assert len(push_calls) == 1
+    assert push_calls[0][2] == fake_ag, (
+        f"build_and_push missing audited_gold_root kwarg; got {push_calls[0]}"
+    )
+
+
 @pytest.mark.parametrize("sub", ["submit", "fetch", "kill", "list", "build", "resubmit"])
 def test_subcommand_registered(sub: str) -> None:
     # All sub-commands at least parse to a known namespace. `fetch` / `kill`

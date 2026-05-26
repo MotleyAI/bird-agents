@@ -13,6 +13,7 @@ from pathlib import Path
 from bird_interact_agents import paths
 from bird_interact_agents.cloud import cluster, config, gcs, image, prereqs
 from bird_interact_agents.cloud import collation as _collation
+from bird_interact_agents.cloud import post_run_merge as _post_run_merge
 # Imported by NAME (not via the `gcs` module attr) so tests that mock
 # `driver.gcs` still get the real pure mapping — only the I/O helpers
 # (`gcs.upload_dir_prefix` etc.) need to be mockable.
@@ -192,24 +193,35 @@ def _dbs_for_instances(instance_ids) -> list[str]:
     return sorted(dbs)
 
 
-def _slayer_local_root(args) -> tuple[Path, str]:
-    """The local dir to ship + its GCS artifact-dir name for this combo.
+def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
+    """Return the local-dir → GCS-artifact-name uploads to ship for this
+    combo, each tagged ``required`` (must exist + non-empty) or optional
+    (uploaded only when present, as a "skip this encode" seed for the cloud).
 
-    pre-encoded ships the SUBMITTED worktree's committed ``slayer_models/``
-    (matches the code shipped from this checkout, incl. its gitignored
-    ``embeddings.db``); the OTF combos ship the main-checkout-anchored
-    ``paths.*`` dirs the local OTF agent reads/writes."""
-    artifact = slayer_artifact_name(args.slayer_setup, args.framework)
-    if args.slayer_setup == "pre-encoded":
-        return submitter_repo_root() / "slayer_models", artifact
-    if args.framework == "pydantic_ai_otf_encode":
-        return paths.slayer_models_otf_root(), artifact
-    return paths.slayer_otf_cache_root(), artifact
+    DEV-1470: for ``pydantic_ai_otf_encode + on-the-fly`` the deterministic
+    cache (``slayer_otf_cache``) is REQUIRED (it's the input to the LLM-driven
+    setup encoder, kept local because it's free to build); the per-DB
+    reference (``slayer_models_otf``) is OPTIONAL — if present, uploaded as a
+    seed so the cloud skips re-encoding that DB; if absent, the cloud encodes
+    lazily on first task.
+    """
+    setup = args.slayer_setup
+    fw = args.framework
+    if setup == "pre-encoded":
+        return [(submitter_repo_root() / "slayer_models", "slayer_models", True)]
+    if fw == "pydantic_ai_otf_encode":
+        return [
+            (paths.slayer_otf_cache_root(), "slayer_otf_cache", True),
+            (paths.slayer_models_otf_root(), "slayer_models_otf", False),
+        ]
+    # pydantic_ai_recursive + on-the-fly — cache only, no LLM-encoded reference.
+    return [(paths.slayer_otf_cache_root(), "slayer_otf_cache", True)]
 
 
 def _artifact_present(root: Path, db: str, artifact: str) -> bool:
-    """Presence semantics per combo: pre-encoded = a NON-EMPTY committed dir
-    (no marker); OTF layers = their completeness marker file is present."""
+    """Presence semantics per artifact: ``slayer_models`` = a NON-EMPTY
+    committed dir (no marker); OTF layers = their completeness marker file is
+    present."""
     db_dir = root / db
     if artifact == "slayer_models":
         return db_dir.is_dir() and any(db_dir.iterdir())
@@ -218,28 +230,72 @@ def _artifact_present(root: Path, db: str, artifact: str) -> bool:
 
 
 def _check_slayer_setup_present(args) -> list[str]:
-    """Fail-fast (BEFORE build/push/cluster): every selected DB's artifact must
-    exist locally. No in-cloud builds. Returns the db list to upload."""
+    """Fail-fast (BEFORE build/push/cluster): every REQUIRED artifact must be
+    present locally for every selected DB. Optional artifacts (e.g. the
+    ``slayer_models_otf`` seed under ``otf_encode + on-the-fly``) are not
+    required — the cloud will encode missing references on the fly.
+
+    Returns the db list to upload."""
     dbs = _dbs_for_instances(args.instance_ids)
-    root, artifact = _slayer_local_root(args)
-    missing = [db for db in dbs if not _artifact_present(root, db, artifact)]
-    if missing:
-        raise FileNotFoundError(
-            f"cloud slayer: local SLayer setup missing for {missing} under "
-            f"{root} (combo {args.slayer_setup}/{args.framework}); build it "
-            f"locally first — the cloud runner never builds setup in-cluster."
-        )
+    uploads = _slayer_uploads_for(args)
+    for root, artifact, required in uploads:
+        if not required:
+            continue
+        missing = [db for db in dbs if not _artifact_present(root, db, artifact)]
+        if missing:
+            marker_hint = {
+                "slayer_models": "non-empty <db>/ dir",
+                "slayer_otf_cache": "_cache_fp.txt",
+                "slayer_models_otf": "_reference_fp.txt",
+            }.get(artifact, artifact)
+            raise FileNotFoundError(
+                f"cloud slayer: required local setup missing for {missing} "
+                f"under {root} (combo {args.slayer_setup}/{args.framework}, "
+                f"artifact {artifact} expects {marker_hint}); build it "
+                f"locally first — the cloud runner never builds REQUIRED "
+                f"setup in-cluster."
+            )
     return dbs
 
 
 def _upload_slayer_setup(args, run_id: str, dbs: list[str]) -> None:
-    """Upload the combo's local dir PER selected DB to
-    ``runs/<run_id>/slayer_setup/<artifact>/<db>/``."""
-    root, artifact = _slayer_local_root(args)
+    """Upload every artifact's local dir PER selected DB to
+    ``runs/<run_id>/slayer_setup/<artifact>/<db>/``. Optional artifacts whose
+    local ``<db>/`` is absent are skipped — the cloud will encode the missing
+    reference on the fly."""
+    uploads = _slayer_uploads_for(args)
     client = default_gcs_client()
-    for db in dbs:
-        prefix = f"runs/{run_id}/slayer_setup/{artifact}/{db}"
-        gcs.upload_dir_prefix(root / db, prefix, client=client)
+    for root, artifact, required in uploads:
+        for db in dbs:
+            if not required and not _artifact_present(root, db, artifact):
+                # Optional seed absent for this db — cloud will encode.
+                continue
+            prefix = f"runs/{run_id}/slayer_setup/{artifact}/{db}"
+            gcs.upload_dir_prefix(root / db, prefix, client=client)
+
+
+def _instance_ids_sorted_by_db(instance_ids) -> list[str]:
+    """DEV-1470: sort iids by ``(selected_database, instance_id)`` so same-db
+    tasks are adjacent in the ActorPool dispatch order — a single actor then
+    typically does all encoding for a given DB and the cross-actor encode
+    race is rare. Unknown iids (absent from the dataset) sort to the end
+    grouped by their iid string so they still appear deterministically."""
+    import json as _json
+    wanted = list(instance_ids)
+    db_by_iid: dict[str, str] = {}
+    if wanted:
+        with paths.mini_interact_data_file().open() as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                td = _json.loads(line)
+                iid = td.get("instance_id")
+                if iid in wanted:
+                    db = td.get("selected_database") or ""
+                    db_by_iid[iid] = db
+    # Stable, deterministic sort by (db, iid). Unknown iids → ("", iid).
+    return sorted(wanted, key=lambda iid: (db_by_iid.get(iid, ""), iid))
 
 
 # ---------------------------------------------------------------------------
@@ -310,11 +366,13 @@ def submit(args) -> str:
     tag = image.image_tag(
         repo_root,
         paths.mini_interact_root(),
+        paths.audited_gold_root(),
         allow_dirty=args.allow_dirty,
     )
     image_uri = image.build_and_push(
         tag, repo_root,
         mini_interact_root=paths.mini_interact_root(),
+        audited_gold_root=paths.audited_gold_root(),
         force=False,
     )
     run_id = args.run_id or mint_run_id(args.framework, args.query_mode)
@@ -372,7 +430,9 @@ def _build_job_args(args, run_id: str, *, attempt: int) -> list[str]:
         "--patience", str(args.patience),
         "--max-depth", str(args.max_depth),
         "--num-actors", str(args.workers * args.actors_per_worker),
-        "--instance-ids", ",".join(args.instance_ids),
+        # DEV-1470: group same-db iids adjacently so a single actor typically
+        # does all encoding for a given DB.
+        "--instance-ids", ",".join(_instance_ids_sorted_by_db(args.instance_ids)),
     ]
     if args.strict:
         job_args.append("--strict")
@@ -470,6 +530,16 @@ def fetch(run_id: str) -> dict:
         import json
         manifest = json.loads(manifest_path.read_text())
     metrics = _collation.collate(dest, manifest)
+    # DEV-1470: promote per-DB cloud-encoded OTF references from
+    # <run_dir>/post_run/slayer_models_otf/<shard>/<db>/ into the global
+    # warm cache at paths.slayer_models_otf_root()/<db>/ (newest-mtime-wins
+    # per file, with the marker invariant preserved under a per-DB flock).
+    # No-op for runs without any post_run/ shards (raw, pre-encoded, recursive).
+    merge_report = _post_run_merge.merge_post_run_into_warm_cache(
+        run_dir=dest,
+        reference_root=paths.slayer_models_otf_root(),
+    )
+    metrics["merge_report"] = merge_report
     return metrics
 
 
@@ -569,7 +639,8 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
             manifest["render_inputs"]["workers"]
             * manifest["render_inputs"]["actors_per_worker"]
         ),
-        "--instance-ids", ",".join(missing),
+        # DEV-1470: db-grouped retries — same rule as submit.
+        "--instance-ids", ",".join(_instance_ids_sorted_by_db(missing)),
     ]
     if manifest.get("strict"):
         job_args.append("--strict")

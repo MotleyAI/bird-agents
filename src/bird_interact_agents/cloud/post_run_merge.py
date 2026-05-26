@@ -1,0 +1,416 @@
+"""DEV-1470: laptop-side merger that promotes per-DB cloud-encoded OTF
+references into the global warm cache.
+
+Called from :func:`bird_interact_agents.cloud.driver.fetch` after
+:func:`bird_interact_agents.cloud.collation.collate`. Walks
+``<run_dir>/post_run/slayer_models_otf/<shard>/<db>/`` across every shard, and
+for each db decides cloud-vs-local at the WHOLE-DB level using the
+``_reference_fp.txt`` marker as the binding tie-breaker (Codex round-5).
+
+Two-level merge rule
+--------------------
+The merger has TWO distinct decisions and uses different rules for each:
+
+1. **Cross-shard picks (within the cloud side)** — when multiple cloud
+   shards exist for the same db, pick the file with the max source_mtime
+   per relative path. Safe because of the single-fingerprint-per-run
+   invariant (L1) — see below.
+
+2. **Cloud-vs-local merge** — WHOLE-DB decision. If the cloud's chosen
+   ``_reference_fp.txt`` source_mtime is newer than the local marker's
+   mtime, the ENTIRE cloud reference wins as a unit: every picked file
+   (content + marker) is atomic-replaced even if some local files have
+   newer individual mtimes. Otherwise NOTHING is touched.
+
+   Why whole-db: the marker BINDS the content. Mixing files from
+   different fingerprints under one marker violates the
+   ``marker present ⇒ content matches fingerprint`` invariant that
+   downstream readers (:func:`bird_interact_agents.slayer_otf.reference_build._reuse_reference`,
+   :func:`bird_interact_agents.slayer_otf.cache.ensure_db_cache`) trust.
+   The previous per-file mtime-wins rule could let a newer cloud marker
+   win while one or more cloud payload files lost to newer local files
+   (or vice versa), producing a mixed-fingerprint tree marked complete
+   for the wrong fp.
+
+Single-fingerprint-per-run invariant (L1, Codex round-1)
+--------------------------------------------------------
+The per-DB reference fingerprint is
+:func:`bird_interact_agents.slayer_otf.cache.fingerprint_of` of the input
+dataset files (sqlite, KB jsonl, column meanings). These do NOT change during
+a run, so EVERY shard in a single run produces the SAME ``_reference_fp.txt``
+content. Cross-shard per-file picks therefore always assemble a coherent
+db — they never mix files from two *different* fingerprints within one run.
+Cross-run mixing never happens because each ``fetch(run_id)`` lands its
+shards in a per-run directory and the merger is scoped to that dir.
+
+Marker invariant (H1, Codex round-1)
+------------------------------------
+Other code paths (notably :func:`bird_interact_agents.slayer_otf.reference_build.ensure_db_reference`)
+treat ``_reference_fp.txt`` as the on-disk completeness gate: marker present
+⇒ content complete ⇒ safe to reuse. The merger preserves that invariant by:
+
+1. taking a CROSS-PROCESS ``fcntl.flock(LOCK_EX)`` on
+   ``<reference_root>/<db>.merge.lock`` (shared with
+   :func:`bird_interact_agents.slayer_otf.reference_build._build_reference`'s
+   build lock — H4), so two concurrent fetchers AND any in-flight encoder
+   serialize per-db;
+2. inside the lock, unlinking the local ``_reference_fp.txt`` FIRST (so any
+   concurrent reader observes "marker absent ⇒ rebuild" instead of "marker
+   present + partially-updated content");
+3. then atomically replacing each picked file via ``tmp + os.replace`` in the
+   parent dir;
+4. then writing the new ``_reference_fp.txt`` LAST — also via atomic
+   ``os.replace`` (M3).
+
+Shard completeness (M1, Codex round-1)
+--------------------------------------
+A shard upload is atomic from the merger's POV only when its
+``_upload_complete`` marker exists. Shards missing either ``_upload_complete``
+or the ``_source_mtimes.json`` sidecar are recorded in
+``ignored_shards`` and skipped.
+"""
+
+from __future__ import annotations
+
+import fcntl
+import json
+import os
+import tempfile
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Iterator
+
+_MARKER = "_reference_fp.txt"
+_SIDECAR = "_source_mtimes.json"
+_UPLOAD_COMPLETE = "_upload_complete"
+
+
+# ---------------------------------------------------------------------------
+# Per-DB cross-process lock
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def _per_db_merge_lock(reference_root: Path, db: str) -> Iterator[None]:
+    """Acquire ``fcntl.flock(LOCK_EX)`` on
+    ``<reference_root>/<db>.merge.lock`` — shared with
+    :func:`bird_interact_agents.slayer_otf.reference_build._build_reference`'s
+    build lock so an in-flight encoder cannot interleave with the merge."""
+    reference_root.mkdir(parents=True, exist_ok=True)
+    lock_path = reference_root / f"{db}.build.lock"
+    with open(lock_path, "w") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+# ---------------------------------------------------------------------------
+# Shard discovery
+# ---------------------------------------------------------------------------
+
+
+def _post_run_root(run_dir: Path) -> Path:
+    return run_dir / "post_run" / "slayer_models_otf"
+
+
+def _shard_dirs(run_dir: Path) -> list[Path]:
+    root = _post_run_root(run_dir)
+    if not root.is_dir():
+        return []
+    return sorted(p for p in root.iterdir() if p.is_dir())
+
+
+def _is_shard_complete(shard_dir: Path, db: str) -> bool:
+    """A shard's db slice is mergeable only when BOTH the ``_upload_complete``
+    marker and the ``_source_mtimes.json`` sidecar are present."""
+    db_dir = shard_dir / db
+    return (
+        (db_dir / _UPLOAD_COMPLETE).is_file()
+        and (db_dir / _SIDECAR).is_file()
+    )
+
+
+def _read_sidecar(shard_dir: Path, db: str) -> dict[str, float]:
+    try:
+        return json.loads((shard_dir / db / _SIDECAR).read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# Per-file atomic replace
+# ---------------------------------------------------------------------------
+
+
+def _atomic_replace(src: Path, dst: Path, source_mtime: float) -> None:
+    """Copy ``src``'s bytes into a tmp sibling of ``dst``, stamp the tmp with
+    ``source_mtime``, then ``os.replace`` onto ``dst``. Per-file atomicity: a
+    crash mid-copy leaves ``dst`` either untouched (its prior content) or
+    absent — never partial.
+
+    Codex r2: preserving ``source_mtime`` is load-bearing for the
+    newest-mtime-wins rule across runs. Without it, ``dst`` inherits the
+    laptop's fetch time, which is necessarily newer than the cloud's source
+    mtime — and a later fetch of a *genuinely newer* cloud reference would
+    be wrongly skipped because the comparison reads ``dst.stat().st_mtime``."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_str = tempfile.mkstemp(prefix=f".{dst.name}.merge-", dir=str(dst.parent))
+    tmp = Path(tmp_str)
+    try:
+        with os.fdopen(fd, "wb") as out:
+            out.write(src.read_bytes())
+        os.utime(tmp, (source_mtime, source_mtime))  # stamp BEFORE replace
+        os.replace(tmp, dst)
+    except BaseException:
+        if tmp.exists():
+            tmp.unlink()
+        raise
+
+
+def _write_marker_atomic(content: bytes, dst: Path, source_mtime: float) -> None:
+    """Write ``_reference_fp.txt`` via tmp + ``os.replace`` so a reader can
+    never observe a half-written marker (M3). Symmetric to ``_atomic_replace``
+    but takes raw bytes (no source file). Source mtime is preserved for the
+    same reason ``_atomic_replace`` preserves it."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_str = tempfile.mkstemp(prefix=f".{dst.name}.merge-", dir=str(dst.parent))
+    tmp = Path(tmp_str)
+    try:
+        with os.fdopen(fd, "wb") as out:
+            out.write(content)
+        os.utime(tmp, (source_mtime, source_mtime))  # stamp BEFORE replace
+        os.replace(tmp, dst)
+    except BaseException:
+        if tmp.exists():
+            tmp.unlink()
+        raise
+
+
+# ---------------------------------------------------------------------------
+# Per-DB merge
+# ---------------------------------------------------------------------------
+
+
+def _merge_one_db(
+    *, db: str, shard_dirs: list[Path], reference_root: Path,
+) -> tuple[int, int]:
+    """Merge a single db across all *complete* shards. Returns
+    ``(files_updated, files_skipped)``.
+
+    Strategy:
+      - Build ``picks: {rel_path: (max_source_mtime, shard_dir)}`` across all
+        complete shards.
+      - Under the per-db cross-process lock:
+          * unlink local ``_reference_fp.txt`` (if any) FIRST,
+          * per-file atomic-replace any rel_path whose source_mtime is newer
+            than the local target's mtime (treat missing local = 0),
+          * write the new ``_reference_fp.txt`` LAST (atomic replace).
+    """
+    # Build the per-file pick map across complete shards only.
+    picks: dict[str, tuple[float, Path]] = {}
+    for sdir in shard_dirs:
+        if not _is_shard_complete(sdir, db):
+            continue
+        sidecar = _read_sidecar(sdir, db)
+        for rel, mtime in sidecar.items():
+            try:
+                m = float(mtime)
+            except (TypeError, ValueError):
+                continue
+            cur = picks.get(rel)
+            if cur is None or m > cur[0]:
+                picks[rel] = (m, sdir)
+    # _upload_complete + _source_mtimes.json are scaffolding, not content.
+    picks.pop(_UPLOAD_COMPLETE, None)
+    picks.pop(_SIDECAR, None)
+
+    if not picks:
+        return 0, 0
+
+    local_db = reference_root / db
+    local_marker = local_db / _MARKER
+    marker_pick: tuple[float, Path] | None = picks.pop(_MARKER, None)
+
+    with _per_db_merge_lock(reference_root, db):
+        # Codex r5: cloud-vs-local must be a WHOLE-DB decision keyed off the
+        # marker, NOT a per-file mtime comparison. The previous per-file
+        # logic could let a newer cloud marker win while one or more cloud
+        # payload files lost to newer local files (or vice versa), leaving
+        # a mixed-fingerprint tree marked as complete for the wrong fp —
+        # violating the "marker present ⇒ content matches fingerprint"
+        # invariant that downstream readers (`_reuse_reference`,
+        # `cache.ensure_db_cache`) depend on.
+        #
+        # New rule: if the cloud's best `_reference_fp.txt` source_mtime is
+        # newer than the local marker's, the WHOLE cloud reference wins —
+        # every picked file (content + marker) is atomic-replaced. Else,
+        # nothing is touched. Per-file picks ACROSS shards are still
+        # mtime-wins (safe because all shards in a single run carry the
+        # same fingerprint per the L1 invariant in the module docstring).
+
+        if local_marker.is_file():
+            local_marker_mtime = local_marker.stat().st_mtime
+        else:
+            local_marker_mtime = 0.0
+
+        # No cloud marker for this db → cloud content cannot be trusted
+        # (no fingerprint to bind it to). Skip everything.
+        if marker_pick is None:
+            return 0, len(picks)
+
+        marker_source_mtime, marker_sdir = marker_pick
+        marker_src = marker_sdir / db / _MARKER
+
+        if marker_source_mtime <= local_marker_mtime:
+            # Local marker is at-least-as-new as any cloud marker → local
+            # reference is fresher (or same fingerprint). Don't touch
+            # anything. files_skipped accounts for the cloud picks we ignored.
+            return 0, len(picks) + 1
+
+        # Cloud wins the whole db. Unlink the local marker FIRST so any
+        # concurrent reader observes "marker absent ⇒ incomplete, rebuild"
+        # during the per-file replace window — preserves the invariant for
+        # readers that don't take the per-db merge flock (e.g. `_reuse_reference`
+        # is reads-only under the build flock, not the merge flock).
+        if local_marker.is_file():
+            try:
+                os.unlink(local_marker)
+            except FileNotFoundError:
+                pass
+
+        # Codex r6: delete LOCAL stale files that aren't in the cloud's
+        # picks before writing the new content + marker. Without this,
+        # `<db>/` ends up containing the cloud's picked files PLUS any
+        # old local files the cloud reference doesn't include — same
+        # class of mixed-fingerprint bug as r5 caught for content vs
+        # marker, just on the file-presence axis. The new marker (cloud's
+        # fp) would sit on top of leftover files from the prior fp,
+        # silently breaking the marker-binds-content invariant.
+        picked_relpaths = set(picks.keys()) | {_MARKER}
+        if local_db.is_dir():
+            for p in list(local_db.rglob("*")):
+                if not p.is_file():
+                    continue
+                rel = p.relative_to(local_db).as_posix()
+                if rel in picked_relpaths:
+                    continue
+                try:
+                    p.unlink()
+                except FileNotFoundError:
+                    pass
+            # Sweep empty subdirs left behind by stale-file removal,
+            # bottom-up. The local_db itself stays — it's about to be
+            # re-populated by the atomic replaces below.
+            for p in sorted(local_db.rglob("*"), reverse=True):
+                if p.is_dir() and p != local_db:
+                    try:
+                        p.rmdir()
+                    except OSError:
+                        pass  # not empty (e.g. still contains a picked file)
+
+        files_updated = 0
+        for rel, (source_mtime, sdir) in sorted(picks.items()):
+            src = sdir / db / rel
+            dst = local_db / rel
+            _atomic_replace(src, dst, source_mtime)
+            files_updated += 1
+
+        # Marker LAST.
+        _write_marker_atomic(
+            marker_src.read_bytes(), local_marker, marker_source_mtime,
+        )
+        files_updated += 1
+
+    return files_updated, 0
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+
+def merge_post_run_into_warm_cache(
+    *, run_dir: Path, reference_root: Path,
+) -> dict:
+    """Walk ``<run_dir>/post_run/slayer_models_otf/<shard>/<db>/`` across every
+    shard and merge into ``<reference_root>/<db>/`` using newest-source-mtime-wins.
+
+    See the module docstring for the marker / sharding / fingerprint
+    invariants the merge respects.
+
+    Returns a report dict::
+
+        {
+          "merged_dbs": [{"db": ..., "files_updated": int, "files_skipped": int}, ...],
+          "ignored_shards": [<shard_name>, ...],
+        }
+    """
+    run_dir = Path(run_dir)
+    reference_root = Path(reference_root)
+    shard_dirs = _shard_dirs(run_dir)
+
+    # Per-shard completeness: a shard is "fully ignored" iff NO db under it is
+    # complete (missing _upload_complete and/or _source_mtimes.json for every
+    # db). We still record it for the report. The per-db merger re-checks
+    # completeness, so a half-complete shard still contributes its complete
+    # db-slices.
+    ignored_shards: list[str] = []
+    dbs_seen: set[str] = set()
+    for sdir in shard_dirs:
+        any_complete = False
+        for db_dir in sorted(p for p in sdir.iterdir() if p.is_dir()):
+            db = db_dir.name
+            dbs_seen.add(db)
+            if _is_shard_complete(sdir, db):
+                any_complete = True
+        if not any_complete:
+            ignored_shards.append(sdir.name)
+
+    merged: list[dict] = []
+    skipped_dbs: list[dict] = []
+    for db in sorted(dbs_seen):
+        if not any(_is_shard_complete(sdir, db) for sdir in shard_dirs):
+            # Codex r7: this db appeared under some shard but has no
+            # complete slice anywhere. Without recording it explicitly,
+            # a partial-shard failure (e.g. actor uploaded db_a fully but
+            # died mid-db_b → db_b's slice is incomplete, db_a's isn't)
+            # would silently lose db_b's warm-cache artifact: db_a lands
+            # in `merged_dbs`, the shard isn't in `ignored_shards`
+            # (db_a's slice IS complete), and the user has no signal
+            # that db_b existed and was supposed to land.
+            skipped_dbs.append({
+                "db": db,
+                "reason": "no complete shard slice (incomplete upload)",
+            })
+            continue
+        files_updated, files_skipped = _merge_one_db(
+            db=db, shard_dirs=shard_dirs, reference_root=reference_root,
+        )
+        merged.append({
+            "db": db,
+            "files_updated": files_updated,
+            "files_skipped": files_skipped,
+        })
+
+    report = {
+        "merged_dbs": merged,
+        "skipped_dbs": skipped_dbs,
+        "ignored_shards": ignored_shards,
+    }
+
+    # Codex r6: persist the report to disk under `run_dir` so it survives
+    # past the `fetch()` return value (which the CLI currently discards).
+    # Without this, ignored shards and merge counts are visible only to
+    # direct Python callers — post-run merge failures become un-auditable.
+    # Best-effort: a logging-side write failure must NOT poison the
+    # already-completed merge.
+    try:
+        (run_dir / "merge_report.json").write_text(
+            json.dumps(report, indent=2) + "\n"
+        )
+    except OSError:
+        pass
+
+    return report

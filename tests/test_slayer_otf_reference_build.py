@@ -681,3 +681,359 @@ async def test_encode_all_reverse_deps_excludes_cyclic_parents():
     assert seen[6] == {7}          # only the acyclic parent surfaces
     # cycle members + transitive dependents are never scheduled (so absent here)
     assert 50 not in seen and 51 not in seen and 52 not in seen
+
+
+# ---------------------------------------------------------------------------
+# DEV-1470 — H4: cross-process per-DB build lock on `_build_reference`.
+# Two Ray actors are separate processes on one VM; without `fcntl.flock`,
+# `_commit_reference(force=True)` can rmtree a peer's freshly-committed
+# reference (the known-limitation comment at reference_build.py:651-663).
+# ---------------------------------------------------------------------------
+
+
+def _holder_proc(args):
+    """Acquire `<reference_root>/<db>.build.lock` and hold for `hold_s`, then
+    release. Signals readiness by writing a sentinel file."""
+    import fcntl
+
+    reference_root_str, db, hold_s, sentinel_path = args
+    from pathlib import Path as _P
+    import time as _t
+
+    reference_root = _P(reference_root_str)
+    reference_root.mkdir(parents=True, exist_ok=True)
+    lock_path = reference_root / f"{db}.build.lock"
+    f = open(lock_path, "w")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        _P(sentinel_path).write_text("locked")
+        _t.sleep(hold_s)
+    finally:
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        f.close()
+
+
+def _holder_proc_commit_then_release(args):
+    """Acquire the per-DB build flock, COMMIT a complete reference (marker +
+    minimal scaffolding files), then release. Models the in-cloud race the
+    Codex r2 fix addresses: a peer actor process finishes encoding while
+    another is blocked on this same flock; the blocked actor must observe
+    the freshly-committed marker once it acquires the lock and reuse instead
+    of re-encoding the whole KB."""
+    import fcntl
+    import json
+
+    reference_root_str, db, target_str, sentinel_path = args
+    from pathlib import Path as _P
+
+    reference_root = _P(reference_root_str)
+    target = _P(target_str)
+    reference_root.mkdir(parents=True, exist_ok=True)
+    lock_path = reference_root / f"{db}.build.lock"
+    f = open(lock_path, "w")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        _P(sentinel_path).write_text("locked")
+        # Commit a minimal complete reference: marker LAST, kb rows next to it.
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "_kb_rows.json").write_text(json.dumps([]))
+        (target / "_setup_results.json").write_text(json.dumps([]))
+        (target / "_reference_fp.txt").write_text("peer-committed-fp")
+    finally:
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        f.close()
+
+
+def test_build_reference_takes_cross_process_flock(tmp_path):
+    """H4 — `_build_reference` must acquire `fcntl.flock(LOCK_EX)` on
+    `<reference_root>/<db>.build.lock` BEFORE it touches `target` or runs the
+    encoder, so two concurrent Ray actor processes building the same DB
+    serialize instead of `rmtree`-ing each other's committed reference."""
+    import asyncio
+    import multiprocessing
+    import time as _t
+    import fcntl  # noqa: F401 — fail loudly if unavailable
+
+    from bird_interact_agents.slayer_otf import reference_build
+    from bird_interact_agents.slayer_otf.cache import CacheEntry
+
+    reference_root = tmp_path / "ref"
+    reference_root.mkdir(parents=True)
+    db = "db_a"
+    target = reference_root / db
+    sentinel = tmp_path / "holder_acquired.txt"
+
+    ctx = multiprocessing.get_context("spawn")
+    p = ctx.Process(
+        target=_holder_proc,
+        args=((str(reference_root), db, 2.0, str(sentinel)),),
+    )
+    p.start()
+    try:
+        # Wait for the holder to take the lock.
+        deadline = _t.time() + 5.0
+        while not sentinel.exists() and _t.time() < deadline:
+            _t.sleep(0.05)
+        assert sentinel.exists(), "holder failed to acquire the lock"
+
+        # Stub the encoder + cache so `_build_reference` runs quickly when it
+        # finally gets the lock; we only care that it BLOCKED until then.
+        cache_dir = tmp_path / "cache" / db
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "_cache_fp.txt").write_text("fp-x")
+        (cache_dir / "datasources").mkdir()
+        cache_entry = CacheEntry(
+            cache_dir=cache_dir, fingerprint="fp-x", kb_rows=[],
+        )
+
+        def fake_build_encoder(_storage, _build_dir, _db, _sessions_dir):
+            """Synchronous factory returning the encoder callable, matching
+            `_BuildEncoder = Callable[[Any, Path], _RunOne]` at
+            reference_build.py:71."""
+            class _RunOne:
+                def __init__(self):
+                    # Instance attribute, not class attribute — avoids the
+                    # mutable-default-shared-across-instances trap.
+                    self.index_rows: list[dict] = []
+
+                async def __call__(self, *a, **kw):
+                    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+                        EncoderResult,
+                    )
+                    return EncoderResult(
+                        kb_id=0, status="encoded", entities=[], notes="",
+                    )
+            return _RunOne()
+
+        async def run_build():
+            t0 = _t.time()
+            await reference_build._build_reference(
+                db=db, fp="fp-x", cache_entry=cache_entry, kb_rows=[],
+                reference_root=reference_root, target=target,
+                mini_interact_root=tmp_path / "mini",
+                build_encoder=fake_build_encoder,
+                force=False,
+            )
+            return _t.time() - t0
+
+        elapsed = asyncio.run(run_build())
+        assert elapsed >= 0.5, (
+            f"_build_reference did not block on cross-process flock "
+            f"(elapsed={elapsed:.3f}s); H4 race against peer rmtree remains open"
+        )
+    finally:
+        p.join(timeout=10)
+        if p.is_alive():
+            p.terminate()
+            p.join()
+
+
+def test_ensure_db_reference_reuses_peer_commit_when_markerless_scrap_exists(tmp_path):
+    """CR r2 — when a stale markerless `target` dir exists locally,
+    `ensure_db_reference` previously passed `force=force or target.exists()`
+    to `_build_reference`, which forwarded `force=True` into
+    `_build_reference_inside_lock`'s peer-reuse check (`if not force`),
+    DISABLING reuse. With a peer process committing a complete reference
+    during the flock wait, this caused rmtree of the peer's freshly
+    committed reference (lost work + redundant LLM encode).
+
+    After the fix: `_build_reference_inside_lock` always reuses a present
+    marker when the USER didn't explicitly request `force`. The scrap-clear
+    responsibility moved into `_commit_reference`, which is never reached
+    in this scenario."""
+    import asyncio
+    import multiprocessing
+    import time as _t
+    import fcntl  # noqa: F401
+
+    from bird_interact_agents.slayer_otf import reference_build
+
+    reference_root = tmp_path / "ref"
+    reference_root.mkdir(parents=True)
+    db = "db_a"
+    target = reference_root / db
+    sentinel = tmp_path / "holder_acquired.txt"
+
+    # Lay down stale markerless scrap locally — this triggers the buggy
+    # `force=True` plumbing in the pre-fix code.
+    target.mkdir(parents=True)
+    (target / "stale_scrap.txt").write_text("leftover from a prior crash")
+
+    # Holder process: hold flock + commit a complete reference, then release.
+    ctx = multiprocessing.get_context("spawn")
+    p = ctx.Process(
+        target=_holder_proc_commit_then_release,
+        args=((str(reference_root), db, str(target), str(sentinel)),),
+    )
+    p.start()
+    try:
+        deadline = _t.time() + 5.0
+        while not sentinel.exists() and _t.time() < deadline:
+            _t.sleep(0.05)
+        assert sentinel.exists(), "holder failed to acquire the lock"
+
+        # Stub the rest of the pipeline so `ensure_db_reference` reaches
+        # `_build_reference` via the under-lock path. The peer's commit
+        # MUST be honored when we acquire the flock.
+        encoder_invocations = {"n": 0}
+
+        def counting_build_encoder(_storage, _build_dir, _db, _sessions_dir):
+            encoder_invocations["n"] += 1
+
+            class _RunOne:
+                def __init__(self):
+                    # Instance attribute, not class attribute — avoids the
+                    # mutable-default-shared-across-instances trap.
+                    self.index_rows: list[dict] = []
+
+                async def __call__(self, *a, **kw):
+                    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+                        EncoderResult,
+                    )
+                    return EncoderResult(
+                        kb_id=0, status="encoded", entities=[], notes="",
+                    )
+            return _RunOne()
+
+        # Minimal ensure_db_cache stub so we don't depend on dataset on disk.
+        from bird_interact_agents.slayer_otf import cache as _cache
+        from bird_interact_agents.slayer_otf.cache import CacheEntry
+
+        cache_dir = tmp_path / "cache" / db
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "_cache_fp.txt").write_text("fp-x")
+        (cache_dir / "datasources").mkdir()
+
+        async def fake_ensure_db_cache(db_, *, cache_root, mini_interact_root,
+                                        force=False):
+            return CacheEntry(
+                cache_dir=cache_dir, fingerprint="fp-x", kb_rows=[],
+            )
+
+        import unittest.mock as _mock
+        with _mock.patch.object(
+            reference_build, "ensure_db_cache", side_effect=fake_ensure_db_cache,
+        ):
+            entry = asyncio.run(reference_build.ensure_db_reference(
+                db,
+                reference_root=reference_root,
+                cache_root=tmp_path / "cache",
+                mini_interact_root=tmp_path / "mini",
+                build_encoder=counting_build_encoder,
+                force=False,
+            ))
+
+        assert encoder_invocations["n"] == 0, (
+            f"`force=True` leaked from `target.exists()` plumbing — "
+            f"build_encoder invoked {encoder_invocations['n']}x even though "
+            f"a peer process committed the reference during the flock wait. "
+            f"The user did NOT request force; the peer's marker should have "
+            f"been honored."
+        )
+        # Peer's marker is intact and we returned a valid entry.
+        # NOTE: the stale `stale_scrap.txt` remains alongside the peer's
+        # committed files — that's by design. The contract is "marker
+        # present ⇒ content complete"; unreferenced stale files alongside a
+        # complete commit don't violate it. A user-requested rebuild
+        # (`force=True`) is the only path that rmtrees the target.
+        assert (target / "_reference_fp.txt").read_text() == "peer-committed-fp"
+        assert entry.reference_dir == target
+    finally:
+        p.join(timeout=10)
+        if p.is_alive():
+            p.terminate()
+            p.join()
+
+
+def test_build_reference_rechecks_marker_inside_flock(tmp_path):
+    """Codex r2 — once `_build_reference_inside_lock` acquires the flock, it
+    MUST re-check `target / _MARKER`. If a peer process committed a complete
+    reference while we were blocked on flock, we must REUSE it instead of
+    invoking the (expensive, LLM-driven) `build_encoder`.
+
+    Without the re-check, two Ray actor processes that both pass
+    `ensure_db_reference`'s asyncio-level marker check will BOTH run the
+    entire setup encode — wasting one whole LLM run per DB. The marker
+    re-check is the only defence inside the same process.
+    """
+    import asyncio
+    import multiprocessing
+    import time as _t
+    import fcntl  # noqa: F401 — fail loudly if unavailable
+
+    from bird_interact_agents.slayer_otf import reference_build
+    from bird_interact_agents.slayer_otf.cache import CacheEntry
+
+    reference_root = tmp_path / "ref"
+    reference_root.mkdir(parents=True)
+    db = "db_a"
+    target = reference_root / db
+    sentinel = tmp_path / "holder_acquired.txt"
+
+    ctx = multiprocessing.get_context("spawn")
+    p = ctx.Process(
+        target=_holder_proc_commit_then_release,
+        args=((str(reference_root), db, str(target), str(sentinel)),),
+    )
+    p.start()
+    try:
+        deadline = _t.time() + 5.0
+        while not sentinel.exists() and _t.time() < deadline:
+            _t.sleep(0.05)
+        assert sentinel.exists(), "holder failed to acquire the lock"
+
+        cache_dir = tmp_path / "cache" / db
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "_cache_fp.txt").write_text("fp-x")
+        (cache_dir / "datasources").mkdir()
+        cache_entry = CacheEntry(
+            cache_dir=cache_dir, fingerprint="fp-x", kb_rows=[],
+        )
+
+        encoder_invocations = {"n": 0}
+
+        def counting_build_encoder(_storage, _build_dir, _db, _sessions_dir):
+            encoder_invocations["n"] += 1
+
+            class _RunOne:
+                def __init__(self):
+                    # Instance attribute, not class attribute — avoids the
+                    # mutable-default-shared-across-instances trap.
+                    self.index_rows: list[dict] = []
+
+                async def __call__(self, *a, **kw):
+                    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+                        EncoderResult,
+                    )
+                    return EncoderResult(
+                        kb_id=0, status="encoded", entities=[], notes="",
+                    )
+            return _RunOne()
+
+        async def run_build():
+            return await reference_build._build_reference(
+                db=db, fp="fp-x", cache_entry=cache_entry, kb_rows=[],
+                reference_root=reference_root, target=target,
+                mini_interact_root=tmp_path / "mini",
+                build_encoder=counting_build_encoder,
+                force=False,
+            )
+
+        # The peer's commit is in flight; we block on flock until it
+        # finishes, then must see the marker and short-circuit.
+        results = asyncio.run(run_build())
+        assert encoder_invocations["n"] == 0, (
+            f"build_encoder was invoked {encoder_invocations['n']}x after "
+            f"peer process committed the reference — Codex r2 marker "
+            f"re-check is missing from _build_reference_inside_lock"
+        )
+        # Reused metadata loads from the peer's _setup_results.json (empty
+        # list in this fixture).
+        assert results == []
+        # And the peer's marker is intact.
+        assert (target / "_reference_fp.txt").read_text() == "peer-committed-fp"
+    finally:
+        p.join(timeout=10)
+        if p.is_alive():
+            p.terminate()
+            p.join()

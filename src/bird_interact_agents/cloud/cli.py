@@ -109,7 +109,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"submitted: {run_id}")
         return 0
     if ns.subcommand == "fetch":
-        driver.fetch(ns.run_id)
+        metrics = driver.fetch(ns.run_id)
+        # Codex r6: surface the merge report so post-run merge failures
+        # (ignored shards, skipped dbs) are visible at fetch time rather
+        # than buried in the on-disk merge_report.json.
+        merge_report = metrics.get("merge_report") or {}
+        merged_dbs = merge_report.get("merged_dbs") or []
+        skipped_dbs = merge_report.get("skipped_dbs") or []
+        ignored_shards = merge_report.get("ignored_shards") or []
+        if merged_dbs or skipped_dbs or ignored_shards:
+            for entry in merged_dbs:
+                print(
+                    f"merged slayer_models_otf/{entry['db']}: "
+                    f"{entry['files_updated']} files updated, "
+                    f"{entry['files_skipped']} skipped"
+                )
+            for entry in skipped_dbs:
+                # Codex r7: surface dbs that existed in shards but couldn't
+                # be merged (e.g. one actor uploaded fully but a peer died
+                # mid-upload for this db, and no other shard covers it).
+                print(
+                    f"SKIPPED slayer_models_otf/{entry['db']}: "
+                    f"{entry['reason']}"
+                )
+            if ignored_shards:
+                print(f"ignored {len(ignored_shards)} incomplete shard(s): "
+                      f"{', '.join(ignored_shards)}")
         return 0
     if ns.subcommand == "kill":
         driver.kill(ns.run_id)
@@ -132,9 +157,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         tag = image.image_tag(
             repo_root,
             paths.mini_interact_root(),
+            paths.audited_gold_root(),
             allow_dirty=False,
         )
-        uri = image.build_and_push(tag, repo_root, force=ns.force)
+        uri = image.build_and_push(
+            tag, repo_root,
+            audited_gold_root=paths.audited_gold_root(),
+            force=ns.force,
+        )
         print(uri)
         return 0
     return 0

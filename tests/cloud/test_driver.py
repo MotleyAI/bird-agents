@@ -631,9 +631,15 @@ def _setup_slayer_submit(
                 d.mkdir(parents=True)
                 (d / "_cache_fp.txt").write_text("fp")
             else:
-                d = otf_ref / db
-                d.mkdir(parents=True)
-                (d / "_reference_fp.txt").write_text("fp")
+                # DEV-1470: otf_encode now REQUIRES the deterministic cache
+                # (`_cache_fp.txt`); the reference is an OPTIONAL seed shipped
+                # only when present.
+                dc = otf_cache / db
+                dc.mkdir(parents=True)
+                (dc / "_cache_fp.txt").write_text("fp")
+                dr = otf_ref / db
+                dr.mkdir(parents=True)
+                (dr / "_reference_fp.txt").write_text("fp")
     return mocks, worktree, otf_cache, otf_ref
 
 
@@ -675,6 +681,15 @@ def test_submit_uploads_combo_dir_per_selected_db(
          f"runs/{run_id}/slayer_setup/{artifact}/{db}")
         for db in dbs
     }
+    if framework == "pydantic_ai_otf_encode":
+        # DEV-1470: otf_encode now ships BOTH the cache (required) and the
+        # reference (optional seed, present here). The parameterised artifact
+        # is the reference; the cache is additional.
+        expected |= {
+            (otf_cache / db,
+             f"runs/{run_id}/slayer_setup/slayer_otf_cache/{db}")
+            for db in dbs
+        }
     assert uploaded == expected, f"uploaded {uploaded}, expected {expected}"
 
 
@@ -734,21 +749,10 @@ def test_submit_pre_encoded_empty_dir_raises(monkeypatch, tmp_path):
     mocks["cluster"].up.assert_not_called()
 
 
-def test_submit_otf_encode_missing_reference_raises(monkeypatch, tmp_path):
-    """otf_encode presence = slayer_models_otf/<db>/_reference_fp.txt marker;
-    a missing reference must fail fast before the cluster."""
-    mocks, *_ = _setup_slayer_submit(
-        monkeypatch, tmp_path, framework="pydantic_ai_otf_encode",
-        slayer_setup="on-the-fly", mode="a-interact", dbs=["db_a"],
-        lay_down=False,
-    )
-    args = FakeSubmitArgs(
-        framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
-        slayer_setup="on-the-fly", instance_ids=("db_a_1",), detach=True,
-    )
-    with pytest.raises(FileNotFoundError):
-        driver.submit(args)
-    mocks["cluster"].up.assert_not_called()
+# DEV-1470 superseded the old "missing reference fails fast" contract for
+# `otf_encode + on-the-fly`: the REQUIRED artifact is now the deterministic
+# cache (`_cache_fp.txt`); the reference is an OPTIONAL seed. The replacement
+# test is `test_otf_encode_submit_requires_cache_marker` further down.
 
 
 def test_submit_dedups_uploads_when_instances_share_db(monkeypatch, tmp_path):
@@ -883,3 +887,349 @@ def test_resubmit_carries_slayer_fields_and_does_not_reupload(
     assert "--slayer-storage-root" in job_args
     # The crux: resubmit must NOT re-upload the setup.
     mocks["gcs"].upload_dir_prefix.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# DEV-1470 — otf_encode + on-the-fly: cache REQUIRED, reference OPTIONAL seed,
+# instance_ids sorted by (db, iid) for dispatch grouping, fetch merge hook.
+# ---------------------------------------------------------------------------
+
+
+def _setup_otf_encode_submit(monkeypatch, tmp_path, *, dbs, lay_down_cache=True,
+                              lay_down_reference=False):
+    """Like `_setup_slayer_submit` but for the otf_encode + on-the-fly combo
+    AFTER the DEV-1470 contract change: the REQUIRED artifact is the
+    deterministic cache (`_cache_fp.txt`), the reference is OPTIONAL seed."""
+    mocks = _patch_collaborators(monkeypatch)
+    data_file = _write_dataset(tmp_path, dbs)
+    worktree = tmp_path / "worktree"
+    otf_cache = tmp_path / "main" / "slayer_otf_cache"
+    otf_ref = tmp_path / "main" / "slayer_models_otf"
+
+    monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: data_file)
+    monkeypatch.setattr(driver.paths, "mini_interact_root", lambda: tmp_path / "mini")
+    monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
+    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda: otf_cache)
+    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: otf_ref)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setattr(driver, "wait_until_done", MagicMock())
+    monkeypatch.setattr(driver, "fetch", MagicMock())
+
+    for db in dbs:
+        if lay_down_cache:
+            d = otf_cache / db
+            d.mkdir(parents=True)
+            (d / "_cache_fp.txt").write_text(f"cache-fp-{db}")
+            (d / "datasources").mkdir()
+            (d / "datasources" / f"{db}.yaml").write_text(
+                f"connection_string: file://{db}\n"
+            )
+        if lay_down_reference:
+            d = otf_ref / db
+            d.mkdir(parents=True)
+            (d / "_reference_fp.txt").write_text(f"ref-fp-{db}")
+            (d / "models").mkdir()
+            (d / "models" / "x.yaml").write_text(f"name: {db}\n")
+    return mocks, otf_cache, otf_ref
+
+
+def test_otf_encode_submit_requires_cache_marker(monkeypatch, tmp_path):
+    """DEV-1470: for `otf_encode + on-the-fly` the REQUIRED local artifact is
+    `slayer_otf_cache/<db>/_cache_fp.txt`. A missing cache must fail-fast
+    before any cluster work, regardless of whether the reference is present."""
+    mocks, *_ = _setup_otf_encode_submit(
+        monkeypatch, tmp_path, dbs=["db_a"],
+        lay_down_cache=False, lay_down_reference=True,
+    )
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
+        slayer_setup="on-the-fly", instance_ids=("db_a_1",), detach=True,
+    )
+    with pytest.raises(FileNotFoundError) as exc:
+        driver.submit(args)
+    # The error must point at the CACHE artifact (the new contract), not the
+    # reference.
+    assert "_cache_fp.txt" in str(exc.value) or "slayer_otf_cache" in str(exc.value)
+    mocks["image"].build_and_push.assert_not_called()
+    mocks["cluster"].up.assert_not_called()
+
+
+def test_otf_encode_submit_accepts_missing_reference(monkeypatch, tmp_path):
+    """DEV-1470: the reference is now OPTIONAL — submit must succeed when
+    the cache is present but the reference is absent. The cloud will encode
+    the reference for any missing db lazily."""
+    mocks, _otf_cache, _otf_ref = _setup_otf_encode_submit(
+        monkeypatch, tmp_path, dbs=["db_a"],
+        lay_down_cache=True, lay_down_reference=False,
+    )
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
+        slayer_setup="on-the-fly", instance_ids=("db_a_1",), detach=True,
+    )
+    # Must NOT raise.
+    driver.submit(args)
+    mocks["cluster"].submit_job.assert_called_once()
+
+
+def test_otf_encode_submit_uploads_cache_required_and_reference_optional(
+    monkeypatch, tmp_path,
+):
+    """DEV-1470: when BOTH cache and reference exist locally for `otf_encode +
+    on-the-fly`, the driver uploads both — cache (input) + reference (seed,
+    so the cloud skips re-encoding that db)."""
+    mocks, otf_cache, otf_ref = _setup_otf_encode_submit(
+        monkeypatch, tmp_path, dbs=["db_a"],
+        lay_down_cache=True, lay_down_reference=True,
+    )
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
+        slayer_setup="on-the-fly", instance_ids=("db_a_1",), detach=True,
+    )
+    run_id = driver.submit(args)
+
+    calls = mocks["gcs"].upload_dir_prefix.call_args_list
+    uploaded = {(c.args[0], c.args[1]) for c in calls}
+    cache_prefix = f"runs/{run_id}/slayer_setup/slayer_otf_cache/db_a"
+    ref_prefix = f"runs/{run_id}/slayer_setup/slayer_models_otf/db_a"
+    assert (otf_cache / "db_a", cache_prefix) in uploaded, (
+        f"cache must be uploaded; got {uploaded}"
+    )
+    assert (otf_ref / "db_a", ref_prefix) in uploaded, (
+        f"reference seed must be uploaded when present; got {uploaded}"
+    )
+
+
+def test_otf_encode_submit_uploads_cache_only_when_no_local_reference(
+    monkeypatch, tmp_path,
+):
+    """When the local reference is absent, only the cache is uploaded."""
+    mocks, otf_cache, _otf_ref = _setup_otf_encode_submit(
+        monkeypatch, tmp_path, dbs=["db_a"],
+        lay_down_cache=True, lay_down_reference=False,
+    )
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
+        slayer_setup="on-the-fly", instance_ids=("db_a_1",), detach=True,
+    )
+    run_id = driver.submit(args)
+    calls = mocks["gcs"].upload_dir_prefix.call_args_list
+    uploaded = {(c.args[0], c.args[1]) for c in calls}
+    cache_prefix = f"runs/{run_id}/slayer_setup/slayer_otf_cache/db_a"
+    assert (otf_cache / "db_a", cache_prefix) in uploaded
+    # No reference upload.
+    assert all(not c.args[1].startswith(
+        f"runs/{run_id}/slayer_setup/slayer_models_otf/"
+    ) for c in calls), f"reference must not be uploaded; got {uploaded}"
+
+
+def test_otf_encode_submit_passes_partial_reference_seeds(
+    monkeypatch, tmp_path,
+):
+    """If the user has references for SOME of the selected DBs and not others,
+    upload the available ones as seeds and let the cloud encode the rest."""
+    mocks, _otf_cache, otf_ref = _setup_otf_encode_submit(
+        monkeypatch, tmp_path, dbs=["db_a", "db_b"],
+        lay_down_cache=True, lay_down_reference=False,
+    )
+    # Lay down a reference for db_a only.
+    (otf_ref / "db_a").mkdir(parents=True)
+    (otf_ref / "db_a" / "_reference_fp.txt").write_text("ref-fp-db_a")
+
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
+        slayer_setup="on-the-fly", instance_ids=("db_a_1", "db_b_1"), detach=True,
+    )
+    run_id = driver.submit(args)
+    prefixes = {c.args[1] for c in mocks["gcs"].upload_dir_prefix.call_args_list}
+    # db_a reference uploaded as seed.
+    assert f"runs/{run_id}/slayer_setup/slayer_models_otf/db_a" in prefixes
+    # db_b reference NOT uploaded (absent locally — cloud will build it).
+    assert f"runs/{run_id}/slayer_setup/slayer_models_otf/db_b" not in prefixes
+
+
+def test_submit_groups_instance_ids_by_database(monkeypatch, tmp_path):
+    """DEV-1470: same-db iids must be adjacent in the dispatch order so a
+    single actor typically does all encoding for a given DB (reducing the
+    cross-actor encode-race window). Achieved by sorting by (db, iid) in the
+    `--instance-ids` arg passed to ray_app.
+
+    Submit a permuted instance_ids list and assert the order in `--instance-ids`
+    has db-runs (all db_a's, then all db_b's, etc.) regardless of input order.
+    """
+    import json as _json
+    # Dataset with mixed iid→db mapping.
+    dataset = tmp_path / "mini_interact.jsonl"
+    rows = [
+        {"instance_id": "db_b_2", "selected_database": "db_b"},
+        {"instance_id": "db_a_2", "selected_database": "db_a"},
+        {"instance_id": "db_a_1", "selected_database": "db_a"},
+        {"instance_id": "db_b_1", "selected_database": "db_b"},
+    ]
+    dataset.write_text("\n".join(_json.dumps(r) for r in rows) + "\n")
+
+    mocks = _patch_collaborators(monkeypatch)
+    worktree = tmp_path / "worktree"
+    otf_cache = tmp_path / "main" / "slayer_otf_cache"
+    otf_ref = tmp_path / "main" / "slayer_models_otf"
+    monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: dataset)
+    monkeypatch.setattr(driver.paths, "mini_interact_root", lambda: tmp_path / "mini")
+    monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
+    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda: otf_cache)
+    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: otf_ref)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setattr(driver, "wait_until_done", MagicMock())
+    monkeypatch.setattr(driver, "fetch", MagicMock())
+    for db in ("db_a", "db_b"):
+        (otf_cache / db).mkdir(parents=True)
+        (otf_cache / db / "_cache_fp.txt").write_text("fp")
+
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
+        slayer_setup="on-the-fly",
+        # Deliberately interleaved order.
+        instance_ids=("db_b_2", "db_a_1", "db_b_1", "db_a_2"),
+        detach=True,
+    )
+    driver.submit(args)
+
+    job_args = mocks["cluster"].submit_job.call_args.kwargs["args"]
+    raw = job_args[job_args.index("--instance-ids") + 1]
+    ordered = raw.split(",")
+    # L1 — exact `(selected_database, instance_id)` ordering. Within each DB,
+    # iids sort ascending. Catches "grouped but unsorted within db" bugs.
+    assert ordered == ["db_a_1", "db_a_2", "db_b_1", "db_b_2"], (
+        f"--instance-ids must be sorted (db, iid), got {ordered}"
+    )
+
+
+def test_resubmit_groups_missing_instance_ids_by_database(monkeypatch, tmp_path):
+    """The same db-grouping must apply on resubmit so retries don't undo the
+    dispatch grouping."""
+    import json as _json
+    mocks = _patch_collaborators(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    dataset = tmp_path / "mini_interact.jsonl"
+    rows = [
+        {"instance_id": "db_b_1", "selected_database": "db_b"},
+        {"instance_id": "db_a_1", "selected_database": "db_a"},
+        {"instance_id": "db_a_2", "selected_database": "db_a"},
+        {"instance_id": "db_b_2", "selected_database": "db_b"},
+    ]
+    dataset.write_text("\n".join(_json.dumps(r) for r in rows) + "\n")
+    monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: dataset)
+    yaml_path = Path("/tmp/cluster.yaml")
+    mocks["cluster"].render_from_manifest.return_value = yaml_path
+    mocks["cluster"].head_address.return_value = "http://localhost:8265"
+    mocks["gcs"].read_manifest.return_value = {
+        "run_id": RUN_ID,
+        "framework": "pydantic_ai_otf_encode",
+        "query_mode": "slayer",
+        "mode": "a-interact",
+        "agent_model": "anthropic/claude-sonnet-4-5",
+        "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+        "instance_ids": ["db_b_1", "db_a_1", "db_a_2", "db_b_2"],
+        "patience": 3,
+        "strict": False,
+        "use_audited_gold_sql": False,
+        "max_depth": 3,
+        "prompt_cache": True,
+        "slayer_setup": "on-the-fly",
+        "slayer_storage_root": "/data/slayer_models",
+        "render_inputs": {"workers": 1, "actors_per_worker": 2},
+    }
+    # All four still missing (no completed rows) → all retried.
+    mocks["gcs"].list_attempts.return_value = {}
+    monkeypatch.setattr(driver, "wait_until_done", lambda *a, **k: None)
+    monkeypatch.setattr(driver, "fetch", lambda *a, **k: {})
+
+    driver.resubmit(RUN_ID)
+
+    job_args = mocks["cluster"].submit_job.call_args.kwargs["args"]
+    raw = job_args[job_args.index("--instance-ids") + 1]
+    ordered = raw.split(",")
+    # L1 — exact `(db, iid)` ordering on resubmit too.
+    assert ordered == ["db_a_1", "db_a_2", "db_b_1", "db_b_2"], (
+        f"resubmit --instance-ids must be sorted (db, iid), got {ordered}"
+    )
+
+
+def test_fetch_calls_post_run_merge_after_collation(monkeypatch, tmp_path):
+    """DEV-1470: `fetch(run_id)` must run `post_run_merge.merge_post_run_into_warm_cache`
+    AFTER `_collation.collate`, passing the local OTF reference root. The
+    merge promotes per-DB cloud-encoded shards from
+    `<run_dir>/post_run/slayer_models_otf/<shard>/<db>/` into the warm cache."""
+    from bird_interact_agents.cloud import post_run_merge as _prm
+    from bird_interact_agents.cloud import collation as _collation
+
+    mocks = _patch_collaborators(monkeypatch)
+    fake_results = tmp_path / "results"
+    monkeypatch.setattr(driver, "local_results_root", lambda: fake_results)
+    fake_ref_root = tmp_path / "warm" / "slayer_models_otf"
+    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: fake_ref_root)
+    mocks["gcs"].read_manifest.return_value = {
+        "run_id": RUN_ID, "instance_ids": ["db_a_1"],
+    }
+    # The real concurrent_download_prefix creates dest when there are blobs;
+    # mock it to create the empty dest so the manifest write_text below works.
+    def fake_download(run_id, dest, **kw):
+        Path(dest).mkdir(parents=True, exist_ok=True)
+    mocks["gcs"].concurrent_download_prefix.side_effect = fake_download
+    order: list[str] = []
+
+    def fake_collate(run_dir, manifest):
+        order.append("collate")
+        return {"phase_passes": 1}
+
+    def fake_merge(*, run_dir, reference_root):
+        order.append("merge")
+        assert reference_root == fake_ref_root, (
+            f"merger called with wrong reference_root: {reference_root!r} vs "
+            f"{fake_ref_root!r}"
+        )
+        return {"merged_dbs": [], "ignored_shards": []}
+
+    monkeypatch.setattr(_collation, "collate", fake_collate)
+    monkeypatch.setattr(_prm, "merge_post_run_into_warm_cache", fake_merge)
+
+    metrics = driver.fetch(RUN_ID)
+
+    assert order == ["collate", "merge"], (
+        f"merge must run AFTER collate; saw {order}"
+    )
+    # Merge report surfaced into metrics so the CLI can summarise it.
+    assert "merge_report" in metrics
+
+
+def test_fetch_continues_when_merge_returns_no_shards(monkeypatch, tmp_path):
+    """Most runs (raw mode, pre-encoded slayer, recursive) have no
+    post_run/ shards. The merger must return cleanly (empty report) and
+    `fetch` must still return the collated metrics."""
+    from bird_interact_agents.cloud import post_run_merge as _prm
+
+    mocks = _patch_collaborators(monkeypatch)
+    fake_results = tmp_path / "results"
+    monkeypatch.setattr(driver, "local_results_root", lambda: fake_results)
+    monkeypatch.setattr(
+        driver.paths, "slayer_models_otf_root",
+        lambda: tmp_path / "warm" / "slayer_models_otf",
+    )
+    mocks["gcs"].read_manifest.return_value = {
+        "run_id": RUN_ID, "instance_ids": ["db_a_1"],
+    }
+    def fake_download(run_id, dest, **kw):
+        Path(dest).mkdir(parents=True, exist_ok=True)
+    mocks["gcs"].concurrent_download_prefix.side_effect = fake_download
+    monkeypatch.setattr(
+        driver._collation, "collate",
+        lambda run_dir, manifest: {"phase_passes": 1},
+    )
+    # Empty merge report.
+    monkeypatch.setattr(
+        _prm, "merge_post_run_into_warm_cache",
+        lambda **kw: {"merged_dbs": [], "ignored_shards": []},
+    )
+    metrics = driver.fetch(RUN_ID)
+    assert metrics["merge_report"]["merged_dbs"] == []

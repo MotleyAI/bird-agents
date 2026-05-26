@@ -83,17 +83,31 @@ def _split_dockerfile_sections(repo_root: Path) -> dict[str, str]:
     return {"CODE": text[ci:di], "DATA": text[di:]}
 
 
-def data_hash(repo_root: Path, mini_interact_root: Path) -> str:
+def data_hash(
+    repo_root: Path,
+    mini_interact_root: Path,
+    audited_gold_root: Path,
+) -> str:
     """Content-based hash over the inputs that compose the DATA layers
     of `Dockerfile.cloud`: the mini-interact dataset, `audited_gold/`, and
     the Dockerfile's DATA section.
 
-    DEV-1468: `slayer_models/` is no longer baked (uploaded to GCS at submit),
-    and the image no longer runs `slayer ingest`, so neither the slayer-model
-    files nor the slayer-ingest CLI version are data-layer inputs anymore."""
+    Worktree-safe: BOTH ``mini_interact_root`` AND ``audited_gold_root`` are
+    passed in by the caller (driver resolves them via ``paths.*_root()``,
+    which anchor at the main checkout via git's common dir). The Dockerfile
+    pulls each in via BuildKit's ``--build-context`` so the build is runnable
+    from any git worktree, where these dirs don't physically live. The hash
+    key always uses the on-image path (``audited_gold/<rel>``) so the digest
+    is stable regardless of where the inputs live on the host.
+
+    DEV-1468: ``slayer_models/`` is no longer baked (uploaded to GCS at
+    submit), and the image no longer runs ``slayer ingest``, so neither the
+    slayer-model files nor the slayer-ingest CLI version are data-layer
+    inputs anymore."""
     h = hashlib.sha256()
 
-    # mini-interact dataset (sibling, filesystem walk — not git-tracked here)
+    # mini-interact dataset (sibling of the main checkout, filesystem walk —
+    # not git-tracked from here).
     for f in _iter_files_under(mini_interact_root):
         rel = f.relative_to(mini_interact_root)
         h.update(b"mi/")
@@ -102,16 +116,18 @@ def data_hash(repo_root: Path, mini_interact_root: Path) -> str:
         h.update(f.read_bytes())
         h.update(b"\x00")
 
-    # In-repo data inputs
-    for sub in ("audited_gold",):
-        sub_root = repo_root / sub
-        for f in _iter_files_under(sub_root):
-            rel = f.relative_to(repo_root)
-            h.update(b"repo/")
-            h.update(str(rel).encode())
-            h.update(b"\x00")
-            h.update(f.read_bytes())
-            h.update(b"\x00")
+    # audited_gold (main-checkout-anchored, gitignored). Keyed under
+    # ``audited_gold/<rel>`` to match the on-image path — hash is stable
+    # whether the caller resolves the root from main checkout or worktree
+    # (the bytes are identical either way; the path that produced them is
+    # not part of the digest).
+    for f in _iter_files_under(audited_gold_root):
+        rel = f.relative_to(audited_gold_root)
+        h.update(b"repo/")
+        h.update(f"audited_gold/{rel.as_posix()}".encode())
+        h.update(b"\x00")
+        h.update(f.read_bytes())
+        h.update(b"\x00")
 
     # Dockerfile DATA-LAYERS section
     sections = _split_dockerfile_sections(repo_root)
@@ -167,12 +183,16 @@ def code_hash(repo_root: Path, allow_dirty: bool) -> str:
 def image_tag(
     repo_root: Path,
     mini_interact_root: Path,
+    audited_gold_root: Path,
     *,
     allow_dirty: bool,
 ) -> str:
     """`<data_hash[:12]>-<code_hash[:12]>` (+ `-dirty` when `allow_dirty=True`
-    and the worktree is dirty)."""
-    dh = data_hash(repo_root, mini_interact_root)
+    and the worktree is dirty).
+
+    See :func:`data_hash` for why ``audited_gold_root`` is a separate input
+    (worktree-safety)."""
+    dh = data_hash(repo_root, mini_interact_root, audited_gold_root)
     ch = code_hash(repo_root, allow_dirty=allow_dirty)
     tag = f"{dh[:12]}-{ch[:12]}"
     if allow_dirty and _dirty_image_input_paths(repo_root):
@@ -217,9 +237,14 @@ def _dirty_image_input_paths(repo_root: Path) -> set[str]:
     # Image-input prefixes (anything that lands inside the docker image).
     # DEV-1468: slayer_models/ is uploaded to GCS at submit, not baked, so it
     # is no longer an image input — editing it must not block a submit.
+    # DEV-1470: ``audited_gold/`` lives in the main checkout (gitignored),
+    # NOT in the worktree, so editing it never appears in this worktree's
+    # ``git status --porcelain`` anyway — and the build now pulls it in
+    # via ``--build-context audited-gold=<paths.audited_gold_root()>``,
+    # which is content-hashed by :func:`data_hash` (so a content change
+    # rebuilds the image regardless of git tracking).
     input_prefixes = (
         "src/",
-        "audited_gold/",
         "uv.lock",
         "pyproject.toml",
         "Dockerfile.cloud",
@@ -244,6 +269,7 @@ def build_and_push(
     *,
     image_uri_prefix: str | None = None,
     mini_interact_root: Path | None = None,
+    audited_gold_root: Path | None = None,
     force: bool = False,
 ) -> str:
     """Build (if needed) and push the image, returning the full URI.
@@ -252,9 +278,16 @@ def build_and_push(
     `BIRD_INTERACT_CLOUD_*` env-var overrides take effect.
 
     `mini_interact_root` defaults to `paths.mini_interact_root()` — the
-    sibling dataset dir, which lives OUTSIDE the repo and is wired in
-    via BuildKit's `--build-context mini-interact=<path>` so the
-    Dockerfile's `COPY --from=mini-interact` can pull it in.
+    sibling dataset dir, which lives OUTSIDE the repo and is wired in via
+    BuildKit's ``--build-context mini-interact=<path>`` so the Dockerfile's
+    ``COPY --from=mini-interact`` can pull it in.
+
+    `audited_gold_root` defaults to `paths.audited_gold_root()` — the
+    gitignored audited-gold dir that lives in the MAIN checkout, NOT in
+    worktrees. Same BuildKit pattern as ``mini-interact``: wired in via
+    ``--build-context audited-gold=<path>`` so the Dockerfile's
+    ``COPY --from=audited-gold`` works from any worktree without the user
+    having to mirror the dir.
 
     Skip-if-exists: if `docker manifest inspect <uri>:<tag>` succeeds and
     `force=False`, we don't rebuild.
@@ -266,6 +299,8 @@ def build_and_push(
         image_uri_prefix = config.image_uri_prefix()
     if mini_interact_root is None:
         mini_interact_root = paths.mini_interact_root()
+    if audited_gold_root is None:
+        audited_gold_root = paths.audited_gold_root()
     uri = f"{image_uri_prefix}:{tag}"
     if not force:
         probe = subprocess.run(
@@ -279,6 +314,7 @@ def build_and_push(
         [
             "docker", "build",
             "--build-context", f"mini-interact={mini_interact_root}",
+            "--build-context", f"audited-gold={audited_gold_root}",
             "-t", uri,
             "-f", "Dockerfile.cloud",
             ".",
