@@ -32,14 +32,16 @@ so HARD-8 needs no embedding pruning.
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import json
 import logging
 import os
 import shutil
 import tempfile
 from collections import deque
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Iterator
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -508,7 +510,55 @@ async def ensure_db_reference(
         )
 
 
+@contextmanager
+def _per_db_build_flock(reference_root: Path, db: str) -> Iterator[None]:
+    """DEV-1470 / H4 — cross-process per-DB exclusive ``fcntl.flock`` on
+    ``<reference_root>/<db>.build.lock``.
+
+    ``_get_lock(db)`` is an in-process ``asyncio.Lock`` — sufficient for the
+    LOCAL flow (single process, multiple coroutines), but Ray actors are
+    SEPARATE PROCESSES on one VM, so two of them building the same DB can
+    both pass the marker check and race ``_commit_reference``'s
+    ``rmtree(target)``-then-rename — destroying a peer's freshly committed
+    reference. The cross-process flock here serialises those builds, and is
+    SHARED with the laptop-side
+    :func:`bird_interact_agents.cloud.post_run_merge.merge_post_run_into_warm_cache`
+    and the cloud-side optional-seed download
+    (:func:`bird_interact_agents.cloud.ray_app._download_optional_seed`), so
+    none of {encoder, seed download, fetch-time merge} can interleave on a
+    given ``(reference_root, db)``.
+
+    Cheap when uncontended; ``flock`` is automatically released on FD close
+    (and explicitly in the ``finally`` below)."""
+    reference_root.mkdir(parents=True, exist_ok=True)
+    lock_path = reference_root / f"{db}.build.lock"
+    with open(lock_path, "w") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
 async def _build_reference(
+    *, db, fp, cache_entry, kb_rows, reference_root, target,
+    mini_interact_root, build_encoder, force,
+) -> list[Any]:
+    # DEV-1470 / H4 — take the cross-process per-DB flock BEFORE we touch
+    # `target` or run the encoder. The asyncio Lock in `ensure_db_reference`
+    # serializes WITHIN this process; the flock here serializes ACROSS Ray
+    # actor processes on one VM (and against the laptop-side merge / optional
+    # seed download). See `_per_db_build_flock` for the full rationale.
+    with _per_db_build_flock(reference_root, db):
+        return await _build_reference_inside_lock(
+            db=db, fp=fp, cache_entry=cache_entry, kb_rows=kb_rows,
+            reference_root=reference_root, target=target,
+            mini_interact_root=mini_interact_root,
+            build_encoder=build_encoder, force=force,
+        )
+
+
+async def _build_reference_inside_lock(
     *, db, fp, cache_entry, kb_rows, reference_root, target,
     mini_interact_root, build_encoder, force,
 ) -> list[Any]:

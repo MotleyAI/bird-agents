@@ -681,3 +681,114 @@ async def test_encode_all_reverse_deps_excludes_cyclic_parents():
     assert seen[6] == {7}          # only the acyclic parent surfaces
     # cycle members + transitive dependents are never scheduled (so absent here)
     assert 50 not in seen and 51 not in seen and 52 not in seen
+
+
+# ---------------------------------------------------------------------------
+# DEV-1470 — H4: cross-process per-DB build lock on `_build_reference`.
+# Two Ray actors are separate processes on one VM; without `fcntl.flock`,
+# `_commit_reference(force=True)` can rmtree a peer's freshly-committed
+# reference (the known-limitation comment at reference_build.py:651-663).
+# ---------------------------------------------------------------------------
+
+
+def _holder_proc(args):
+    """Acquire `<reference_root>/<db>.build.lock` and hold for `hold_s`, then
+    release. Signals readiness by writing a sentinel file."""
+    import fcntl
+
+    reference_root_str, db, hold_s, sentinel_path = args
+    from pathlib import Path as _P
+    import time as _t
+
+    reference_root = _P(reference_root_str)
+    reference_root.mkdir(parents=True, exist_ok=True)
+    lock_path = reference_root / f"{db}.build.lock"
+    f = open(lock_path, "w")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        _P(sentinel_path).write_text("locked")
+        _t.sleep(hold_s)
+    finally:
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        f.close()
+
+
+def test_build_reference_takes_cross_process_flock(tmp_path):
+    """H4 — `_build_reference` must acquire `fcntl.flock(LOCK_EX)` on
+    `<reference_root>/<db>.build.lock` BEFORE it touches `target` or runs the
+    encoder, so two concurrent Ray actor processes building the same DB
+    serialize instead of `rmtree`-ing each other's committed reference."""
+    import asyncio
+    import multiprocessing
+    import time as _t
+    import fcntl  # noqa: F401 — fail loudly if unavailable
+
+    from bird_interact_agents.slayer_otf import reference_build
+    from bird_interact_agents.slayer_otf.cache import CacheEntry
+
+    reference_root = tmp_path / "ref"
+    reference_root.mkdir(parents=True)
+    db = "db_a"
+    target = reference_root / db
+    sentinel = tmp_path / "holder_acquired.txt"
+
+    ctx = multiprocessing.get_context("spawn")
+    p = ctx.Process(
+        target=_holder_proc,
+        args=((str(reference_root), db, 2.0, str(sentinel)),),
+    )
+    p.start()
+    try:
+        # Wait for the holder to take the lock.
+        deadline = _t.time() + 5.0
+        while not sentinel.exists() and _t.time() < deadline:
+            _t.sleep(0.05)
+        assert sentinel.exists(), "holder failed to acquire the lock"
+
+        # Stub the encoder + cache so `_build_reference` runs quickly when it
+        # finally gets the lock; we only care that it BLOCKED until then.
+        cache_dir = tmp_path / "cache" / db
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "_cache_fp.txt").write_text("fp-x")
+        (cache_dir / "datasources").mkdir()
+        cache_entry = CacheEntry(
+            cache_dir=cache_dir, fingerprint="fp-x", kb_rows=[],
+        )
+
+        def fake_build_encoder(_storage, _build_dir, _db, _sessions_dir):
+            """Synchronous factory returning the encoder callable, matching
+            `_BuildEncoder = Callable[[Any, Path], _RunOne]` at
+            reference_build.py:71."""
+            class _RunOne:
+                index_rows: list[dict] = []
+
+                async def __call__(self, *a, **kw):
+                    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+                        EncoderResult,
+                    )
+                    return EncoderResult(
+                        kb_id=0, status="encoded", entities=[], notes="",
+                    )
+            return _RunOne()
+
+        async def run_build():
+            t0 = _t.time()
+            await reference_build._build_reference(
+                db=db, fp="fp-x", cache_entry=cache_entry, kb_rows=[],
+                reference_root=reference_root, target=target,
+                mini_interact_root=tmp_path / "mini",
+                build_encoder=fake_build_encoder,
+                force=False,
+            )
+            return _t.time() - t0
+
+        elapsed = asyncio.run(run_build())
+        assert elapsed >= 0.5, (
+            f"_build_reference did not block on cross-process flock "
+            f"(elapsed={elapsed:.3f}s); H4 race against peer rmtree remains open"
+        )
+    finally:
+        p.join(timeout=10)
+        if p.is_alive():
+            p.terminate()
+            p.join()

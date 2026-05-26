@@ -426,6 +426,15 @@ def test_download_slayer_setup_lands_at_combo_root(
     store[f"{pfx}/db_a/embeddings.db"] = b"SQLite format 3\x00\xff"
     store[f"{pfx}/db_b/_marker"] = b"m2"
 
+    # DEV-1470: otf_encode now ALSO downloads the REQUIRED cache. Lay down a
+    # minimal cache prefix + point its env-override root, so the otf_encode
+    # case doesn't fail on the missing-cache fail-fast.
+    if framework == "pydantic_ai_otf_encode":
+        cache_root = tmp_path / "data" / "slayer_otf_cache"
+        monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(cache_root))
+        cpfx = f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache"
+        store[f"{cpfx}/db_a/_cache_fp.txt"] = b"cache-fp"
+
     cfg = {
         "query_mode": "slayer", "slayer_setup": slayer_setup,
         "framework": framework,
@@ -435,20 +444,34 @@ def test_download_slayer_setup_lands_at_combo_root(
     assert (dest_root / "db_a" / "models" / "db_a" / "x.yaml").read_text() == "name: x\n"
     assert (dest_root / "db_a" / "embeddings.db").read_bytes() == b"SQLite format 3\x00\xff"
     assert (dest_root / "db_b" / "_marker").read_bytes() == b"m2"
-    assert (dest_root / ".download_complete").is_file()
+    # DEV-1470: required artifacts use `.download_complete`; the optional
+    # `slayer_models_otf` seed uses `.optional_seed_download_complete` instead.
+    expected_marker = (
+        ".optional_seed_download_complete" if artifact == "slayer_models_otf"
+        else ".download_complete"
+    )
+    assert (dest_root / expected_marker).is_file(), (
+        f"expected {expected_marker} marker under {dest_root}"
+    )
 
 
 def test_download_slayer_setup_idempotent_under_two_actors(
     monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
 ):
     """Two racing in-process actors must not crash or corrupt the dest — the
-    root-level .download_complete marker makes the second call a no-op."""
+    root-level .download_complete marker (REQUIRED) and
+    .optional_seed_download_complete (OPTIONAL) make the second call a no-op."""
     client, store = fake_gcs_bucket
-    dest_root = tmp_path / "data" / "slayer_models_otf"
-    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(dest_root))
-    pfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
-    store[f"{pfx}/db_a/_reference_fp.txt"] = b"fp"
-    store[f"{pfx}/db_a/_kb_rows.json"] = b"[]"
+    # DEV-1470: otf_encode now has TWO artifacts. Set up both.
+    cache_root = tmp_path / "data" / "slayer_otf_cache"
+    ref_root = tmp_path / "data" / "slayer_models_otf"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(ref_root))
+    cpfx = f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache"
+    rpfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
+    store[f"{cpfx}/db_a/_cache_fp.txt"] = b"cache-fp"
+    store[f"{rpfx}/db_a/_reference_fp.txt"] = b"fp"
+    store[f"{rpfx}/db_a/_kb_rows.json"] = b"[]"
 
     cfg = {
         "query_mode": "slayer", "slayer_setup": "on-the-fly",
@@ -457,8 +480,9 @@ def test_download_slayer_setup_idempotent_under_two_actors(
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)  # must no-op
 
-    assert (dest_root / "db_a" / "_reference_fp.txt").read_bytes() == b"fp"
-    assert (dest_root / ".download_complete").is_file()
+    assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"fp"
+    assert (cache_root / ".download_complete").is_file()
+    assert (ref_root / ".optional_seed_download_complete").is_file()
 
 
 def test_download_slayer_setup_noop_in_raw(
@@ -1431,3 +1455,507 @@ def test_actor_uses_env_resolved_paths(
     _iid, data_dir = seen[0]
     # The actor passes the env-resolved BIRD_DB_PATH as `data_dir`.
     assert data_dir == str(mi)
+
+
+# ---------------------------------------------------------------------------
+# DEV-1470 — multi-artifact setup download for otf_encode + on-the-fly:
+# REQUIRED cache + OPTIONAL reference (no-op when empty, file-merge when present).
+# ---------------------------------------------------------------------------
+
+
+def test_download_slayer_setup_otf_encode_downloads_both_cache_and_reference(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """For `otf_encode + on-the-fly` the actor must download BOTH the required
+    deterministic cache (`slayer_otf_cache/`) AND the optional reference seed
+    (`slayer_models_otf/`) to their respective env-override roots."""
+    client, store = fake_gcs_bucket
+    cache_root = tmp_path / "data" / "slayer_otf_cache"
+    ref_root = tmp_path / "data" / "slayer_models_otf"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(ref_root))
+
+    cpfx = f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache"
+    rpfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
+    store[f"{cpfx}/db_a/_cache_fp.txt"] = b"cache-fp"
+    store[f"{cpfx}/db_a/_kb_rows.json"] = b"[]"
+    store[f"{rpfx}/db_a/_reference_fp.txt"] = b"ref-fp"
+    store[f"{rpfx}/db_a/models/x.yaml"] = b"name: x\n"
+
+    cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
+           "framework": "pydantic_ai_otf_encode"}
+    ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+
+    # Both roots populated, both markers written.
+    assert (cache_root / "db_a" / "_cache_fp.txt").read_bytes() == b"cache-fp"
+    assert (cache_root / ".download_complete").is_file()
+    assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"ref-fp"
+    assert (ref_root / "db_a" / "models" / "x.yaml").read_bytes() == b"name: x\n"
+
+
+def test_download_slayer_setup_otf_encode_optional_reference_empty_is_noop(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """M2/H3 — for `otf_encode + on-the-fly` an empty `slayer_models_otf/`
+    prefix means "no local seed, cloud will encode" and must NO-OP (no
+    marker, no raise, no rmtree). The REQUIRED cache prefix still raises
+    when empty (existing semantics)."""
+    client, store = fake_gcs_bucket
+    cache_root = tmp_path / "data" / "slayer_otf_cache"
+    ref_root = tmp_path / "data" / "slayer_models_otf"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(ref_root))
+
+    # Cache prefix present; reference prefix is EMPTY (no seed uploaded).
+    cpfx = f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache"
+    store[f"{cpfx}/db_a/_cache_fp.txt"] = b"cache-fp"
+
+    cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
+           "framework": "pydantic_ai_otf_encode"}
+    # MUST NOT raise — the optional artifact is allowed to be absent.
+    ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+
+    # Cache landed.
+    assert (cache_root / "db_a" / "_cache_fp.txt").read_bytes() == b"cache-fp"
+    assert (cache_root / ".download_complete").is_file()
+    # Reference root either absent or empty — must NOT carry the marker
+    # (the cloud will encode references into this root; a marker would
+    # prevent retries).
+    assert not (ref_root / ".download_complete").exists()
+
+
+def test_download_slayer_setup_otf_encode_optional_reference_skipped_on_restart(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """M3 — after an actor restart, `download_slayer_setup` MUST NOT clobber
+    cloud-built references that already exist under `ref_root/<db>/`. The
+    OPTIONAL download is gated by its own `.optional_seed_download_complete`
+    marker; once written it's idempotent. If the marker is absent but the
+    root has cloud-built content, re-download merges file-by-file (newest
+    mtime wins) instead of rmtree+rename."""
+    import os
+
+    client, store = fake_gcs_bucket
+    cache_root = tmp_path / "data" / "slayer_otf_cache"
+    ref_root = tmp_path / "data" / "slayer_models_otf"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(ref_root))
+
+    cpfx = f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache"
+    rpfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
+    store[f"{cpfx}/db_a/_cache_fp.txt"] = b"cache-fp"
+    # Seed for db_a present in GCS.
+    store[f"{rpfx}/db_a/_reference_fp.txt"] = b"seed-fp"
+    store[f"{rpfx}/db_a/models/x.yaml"] = b"name: SEED-OLD\n"
+
+    # Simulate a prior actor having built a CLOUD reference for db_b
+    # locally — must not be touched.
+    (ref_root / "db_b" / "models").mkdir(parents=True)
+    (ref_root / "db_b" / "models" / "y.yaml").write_bytes(b"CLOUD-BUILT\n")
+    (ref_root / "db_b" / "_reference_fp.txt").write_bytes(b"cloud-fp-b")
+    cloud_built_mtime = time.time() + 100
+    for p in (ref_root / "db_b").rglob("*"):
+        if p.is_file():
+            os.utime(p, (cloud_built_mtime, cloud_built_mtime))
+
+    cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
+           "framework": "pydantic_ai_otf_encode"}
+    # MUST NOT raise; cloud-built db_b must survive.
+    ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+
+    # db_b cloud-built reference UNTOUCHED.
+    assert (ref_root / "db_b" / "models" / "y.yaml").read_bytes() == b"CLOUD-BUILT\n"
+    assert (ref_root / "db_b" / "_reference_fp.txt").read_bytes() == b"cloud-fp-b"
+    # db_a SEED arrived (no prior local content for db_a).
+    assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"seed-fp"
+
+
+def test_download_slayer_setup_optional_seed_merges_per_file_newest_mtime(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """M1 — when optional seed exists in GCS AND the local reference root
+    already has files for the same db (from a prior actor's cloud build), the
+    download must MERGE file-by-file (newest mtime wins), NOT atomic-replace
+    the existing dir."""
+    import os
+
+    client, store = fake_gcs_bucket
+    cache_root = tmp_path / "data" / "slayer_otf_cache"
+    ref_root = tmp_path / "data" / "slayer_models_otf"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(ref_root))
+
+    cpfx = f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache"
+    rpfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
+    store[f"{cpfx}/db_a/_cache_fp.txt"] = b"cache-fp"
+    # Seed in GCS — but OLD.
+    store[f"{rpfx}/db_a/_reference_fp.txt"] = b"seed-old-fp"
+    store[f"{rpfx}/db_a/models/x.yaml"] = b"SEED-OLD\n"
+    store[f"{rpfx}/db_a/models/y.yaml"] = b"SEED-Y\n"
+
+    # Local already has a NEWER cloud-built x.yaml.
+    local_db = ref_root / "db_a"
+    (local_db / "models").mkdir(parents=True)
+    (local_db / "models" / "x.yaml").write_bytes(b"LOCAL-NEW\n")
+    future_mtime = time.time() + 10_000
+    os.utime(local_db / "models" / "x.yaml", (future_mtime, future_mtime))
+
+    cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
+           "framework": "pydantic_ai_otf_encode"}
+    ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+
+    # Local-newer x.yaml survives; seed's y.yaml lands fresh.
+    assert (local_db / "models" / "x.yaml").read_bytes() == b"LOCAL-NEW\n", (
+        "older seed must NOT overwrite newer local file (per-file mtime-wins)"
+    )
+    assert (local_db / "models" / "y.yaml").read_bytes() == b"SEED-Y\n", (
+        "seed file absent locally must be downloaded"
+    )
+
+
+def test_download_slayer_setup_optional_seed_marker_makes_rerun_noop(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """M1 — after a successful optional-seed merge, the helper must write a
+    `.optional_seed_download_complete` marker in the reference root. A second
+    call must observe the marker and no-op (no re-download, no re-merge)."""
+    client, store = fake_gcs_bucket
+    cache_root = tmp_path / "data" / "slayer_otf_cache"
+    ref_root = tmp_path / "data" / "slayer_models_otf"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(ref_root))
+
+    cpfx = f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache"
+    rpfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
+    store[f"{cpfx}/db_a/_cache_fp.txt"] = b"cache-fp"
+    store[f"{rpfx}/db_a/_reference_fp.txt"] = b"seed"
+    store[f"{rpfx}/db_a/models/x.yaml"] = b"seed-content\n"
+
+    cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
+           "framework": "pydantic_ai_otf_encode"}
+    ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+
+    marker = ref_root / ".optional_seed_download_complete"
+    assert marker.is_file(), (
+        "optional seed download must drop `.optional_seed_download_complete` "
+        "after a successful merge"
+    )
+
+    # Mutate the GCS seed content — a second call MUST NOT re-download it.
+    store[f"{rpfx}/db_a/models/x.yaml"] = b"NEW-SEED-MUST-NOT-LAND\n"
+    ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+    assert (ref_root / "db_a" / "models" / "x.yaml").read_bytes() == b"seed-content\n", (
+        "second call must no-op when the marker is present"
+    )
+
+
+def _otf_seed_lock_holder(args):
+    """Worker that takes `<ref_root>/<db>.build.lock` and holds it briefly."""
+    import fcntl
+    ref_root_str, db, hold_s, sentinel_path = args
+    from pathlib import Path as _P
+    import time as _t
+    ref_root = _P(ref_root_str)
+    ref_root.mkdir(parents=True, exist_ok=True)
+    lock_path = ref_root / f"{db}.build.lock"
+    f = open(lock_path, "w")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        _P(sentinel_path).write_text("locked")
+        _t.sleep(hold_s)
+    finally:
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        f.close()
+
+
+def test_optional_seed_download_blocks_on_per_db_build_lock(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """H4 — the optional reference seed download must take the SAME per-DB
+    `fcntl.flock` on `<ref_root>/<db>.build.lock` that `_build_reference`
+    holds, so a download cannot land on top of an in-progress cloud encoder
+    (which would clobber its writes). A peer process holding the lock must
+    cause the download to block until release."""
+    import multiprocessing
+    import time as _t
+    import fcntl  # noqa: F401 — fail loudly if unavailable
+
+    client, store = fake_gcs_bucket
+    cache_root = tmp_path / "data" / "slayer_otf_cache"
+    ref_root = tmp_path / "data" / "slayer_models_otf"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(ref_root))
+
+    cpfx = f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache"
+    rpfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
+    store[f"{cpfx}/db_a/_cache_fp.txt"] = b"cache-fp"
+    store[f"{rpfx}/db_a/_reference_fp.txt"] = b"seed"
+    store[f"{rpfx}/db_a/models/x.yaml"] = b"seed-content\n"
+
+    sentinel = tmp_path / "holder.txt"
+    ctx = multiprocessing.get_context("spawn")
+    p = ctx.Process(
+        target=_otf_seed_lock_holder,
+        args=((str(ref_root), "db_a", 2.0, str(sentinel)),),
+    )
+    p.start()
+    try:
+        deadline = _t.time() + 5.0
+        while not sentinel.exists() and _t.time() < deadline:
+            _t.sleep(0.05)
+        assert sentinel.exists(), "holder failed to acquire the lock"
+
+        cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
+               "framework": "pydantic_ai_otf_encode"}
+        t0 = _t.time()
+        ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+        elapsed = _t.time() - t0
+        assert elapsed >= 0.5, (
+            f"optional seed download did not block on the per-DB build lock "
+            f"(elapsed={elapsed:.3f}s) — H4 race against in-flight encoder remains open"
+        )
+    finally:
+        p.join(timeout=10)
+        if p.is_alive():
+            p.terminate()
+            p.join()
+
+
+def test_download_slayer_setup_otf_encode_missing_cache_still_raises(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """An empty REQUIRED cache prefix must still raise FileNotFoundError —
+    the change in DEV-1470 makes only the reference optional; the cache
+    remains required."""
+    client, _store = fake_gcs_bucket
+    cache_root = tmp_path / "data" / "slayer_otf_cache"
+    ref_root = tmp_path / "data" / "slayer_models_otf"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(ref_root))
+
+    cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
+           "framework": "pydantic_ai_otf_encode"}
+    with pytest.raises(FileNotFoundError):
+        ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+
+
+# ---------------------------------------------------------------------------
+# DEV-1470 — _run_one_in_actor wires upload-back AFTER row/log writes
+# ---------------------------------------------------------------------------
+
+
+def test_run_one_in_actor_invokes_upload_back_after_row_and_log(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket,
+):
+    """After the row + log writes, the actor must call (in order):
+      1. _gcs.write_row
+      2. _gcs.write_log
+      3. upload_back.upload_per_task_debug
+      4. upload_back.upload_per_task_setup_sessions
+      5. upload_back.upload_otf_reference_delta
+    BEFORE wiping the per-task log tmp dir. (H2: previously the test only
+    asserted the upload-back order, leaving the row-before-upload invariant
+    unproven.)"""
+    from bird_interact_agents.cloud import upload_back, gcs as _gcs
+
+    client, _store = fake_gcs_bucket
+    monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
+    monkeypatch.setattr(ray_app, "_maybe_build_cached_runner", lambda _cfg: None)
+    # Stub setup download — these tests exercise upload-back wiring, not the
+    # download path.
+    monkeypatch.setattr(ray_app, "download_slayer_setup", lambda *a, **k: None)
+
+    async def fake_run_one_task(task_data, **_kw):
+        return {
+            "instance_id": task_data["instance_id"], "database": "db_a",
+            "phase1_passed": True, "phase2_passed": True, "total_reward": 1.0,
+            "duration_s": 0.01, "error": None,
+        }
+    monkeypatch.setattr(
+        "bird_interact_agents.run.run_one_task", fake_run_one_task
+    )
+
+    order: list[str] = []
+    # Instrument BOTH the row/log writes and the upload-back calls so the
+    # full sequence is observable.
+    monkeypatch.setattr(
+        ray_app._gcs, "write_row",
+        lambda *a, **kw: order.append("write_row"),
+    )
+    monkeypatch.setattr(
+        ray_app._gcs, "write_log",
+        lambda *a, **kw: order.append("write_log"),
+    )
+    monkeypatch.setattr(
+        upload_back, "upload_per_task_debug",
+        lambda **kw: order.append("debug"),
+    )
+    monkeypatch.setattr(
+        upload_back, "upload_per_task_setup_sessions",
+        lambda **kw: order.append("setup_sessions"),
+    )
+    monkeypatch.setattr(
+        upload_back, "upload_otf_reference_delta",
+        lambda **kw: order.append("ref_delta"),
+    )
+
+    actor = ray_app._LocalActor(
+        {"framework": "pydantic_ai_otf_encode", "query_mode": "slayer",
+         "mode": "a-interact", "agent_model": "anthropic/claude-sonnet-4-5",
+         "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+         "patience": 3, "strict": False, "use_audited_gold_sql": False,
+         "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
+         "slayer_storage_root": "/data/slayer_models"},
+        RUN_ID, 1, gcs_client=client,
+    )
+    actor.run_one({"instance_id": "db_a_1", "selected_database": "db_a"})
+
+    # write_log may be skipped when log_tmp is empty; require row+log if log
+    # is non-empty, but in all cases write_row precedes any upload-back.
+    assert "write_row" in order, f"row never written: {order}"
+    row_idx = order.index("write_row")
+    debug_idx = order.index("debug")
+    setup_idx = order.index("setup_sessions")
+    ref_idx = order.index("ref_delta")
+    assert row_idx < debug_idx, (
+        f"upload-back ran before row write: {order}"
+    )
+    assert debug_idx < setup_idx < ref_idx, (
+        f"upload-back functions called in wrong order: {order}"
+    )
+    if "write_log" in order:
+        log_idx = order.index("write_log")
+        assert row_idx < log_idx < debug_idx, (
+            f"write_log out of order vs write_row/upload-back: {order}"
+        )
+
+
+def test_run_one_in_actor_swallows_upload_back_exceptions(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket,
+):
+    """An upload-back exception MUST NOT propagate — the per-task row already
+    landed before the hook; failing the actor here would corrupt the
+    in-flight ActorPool slot for no logging gain."""
+    from bird_interact_agents.cloud import upload_back
+
+    client, store = fake_gcs_bucket
+    monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
+    monkeypatch.setattr(ray_app, "_maybe_build_cached_runner", lambda _cfg: None)
+    # Stub setup download — this test exercises upload-back error handling,
+    # not the download path.
+    monkeypatch.setattr(ray_app, "download_slayer_setup", lambda *a, **k: None)
+
+    async def fake_run_one_task(task_data, **_kw):
+        return {
+            "instance_id": task_data["instance_id"], "database": "db_a",
+            "phase1_passed": True, "phase2_passed": True, "total_reward": 1.0,
+            "duration_s": 0.01, "error": None,
+        }
+    monkeypatch.setattr(
+        "bird_interact_agents.run.run_one_task", fake_run_one_task
+    )
+    monkeypatch.setattr(
+        upload_back, "upload_per_task_debug",
+        lambda **kw: (_ for _ in ()).throw(RuntimeError("simulated upload boom")),
+    )
+    monkeypatch.setattr(
+        upload_back, "upload_per_task_setup_sessions",
+        lambda **kw: None,
+    )
+    monkeypatch.setattr(
+        upload_back, "upload_otf_reference_delta",
+        lambda **kw: None,
+    )
+
+    actor = ray_app._LocalActor(
+        {"framework": "pydantic_ai_otf_encode", "query_mode": "slayer",
+         "mode": "a-interact", "agent_model": "anthropic/claude-sonnet-4-5",
+         "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+         "patience": 3, "strict": False, "use_audited_gold_sql": False,
+         "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
+         "slayer_storage_root": "/data/slayer_models"},
+        RUN_ID, 1, gcs_client=client,
+    )
+    # Must NOT raise.
+    actor.run_one({"instance_id": "db_a_1", "selected_database": "db_a"})
+    # Row still landed.
+    assert f"runs/{RUN_ID}/rows/db_a_1/attempt-1.json" in store
+
+
+def test_actor_captures_uploaded_dbs_and_initial_seed_fps(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """H2/H3 — the actor must, at init, snapshot the FINGERPRINTS of every
+    `_reference_fp.txt` present in the seed under `slayer_models_otf_root()`
+    AFTER `download_slayer_setup` has run (snapshotting BEFORE would miss
+    everything in the seed and incorrectly mark cloud-built references as
+    pre-existing — and then never upload them back). Test this by having the
+    fake `download_slayer_setup` CREATE the seed files: a snapshot taken
+    before would observe an empty root and assert against `{}`."""
+    from bird_interact_agents import paths as _paths
+
+    client, _store = fake_gcs_bucket
+    monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
+    monkeypatch.setattr(ray_app, "_maybe_build_cached_runner", lambda _cfg: None)
+
+    ref_root = tmp_path / "slayer_models_otf"
+    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda: ref_root)
+
+    def fake_download(run_id, cfg, *, client):  # noqa: ARG001
+        # The download is what populates the seed; the snapshot MUST observe
+        # what download just landed.
+        (ref_root / "db_a").mkdir(parents=True, exist_ok=True)
+        (ref_root / "db_a" / "_reference_fp.txt").write_text("seed-fp-A")
+        (ref_root / "db_b").mkdir(parents=True, exist_ok=True)
+        (ref_root / "db_b" / "_reference_fp.txt").write_text("seed-fp-B")
+
+    monkeypatch.setattr(ray_app, "download_slayer_setup", fake_download)
+
+    cfg = {
+        "framework": "pydantic_ai_otf_encode", "query_mode": "slayer",
+        "mode": "a-interact", "agent_model": "anthropic/claude-sonnet-4-5",
+        "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+        "patience": 3, "strict": False, "use_audited_gold_sql": False,
+        "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
+        "slayer_storage_root": "/data/slayer_models",
+    }
+    actor = ray_app._LocalActor(cfg, RUN_ID, 1, gcs_client=client)
+
+    assert hasattr(actor, "uploaded_dbs"), (
+        "actor must expose `uploaded_dbs` (set[str]) for per-actor retry tracking"
+    )
+    assert actor.uploaded_dbs == set()
+    assert hasattr(actor, "initial_seed_fp_by_db"), (
+        "actor must expose `initial_seed_fp_by_db` (dict[str, str]) snapshot"
+    )
+    # Snapshot must see what `download_slayer_setup` JUST laid down — proves
+    # the snapshot ran AFTER, not before.
+    assert actor.initial_seed_fp_by_db == {"db_a": "seed-fp-A", "db_b": "seed-fp-B"}
+
+
+def test_actor_initial_seed_fps_empty_when_no_seed(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """When the reference root is empty (no seeds uploaded), the snapshot is
+    an empty dict — every db the cloud encodes will get uploaded."""
+    from bird_interact_agents import paths as _paths
+
+    client, _store = fake_gcs_bucket
+    monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
+    monkeypatch.setattr(ray_app, "_maybe_build_cached_runner", lambda _cfg: None)
+    monkeypatch.setattr(ray_app, "download_slayer_setup", lambda *a, **k: None)
+
+    ref_root = tmp_path / "slayer_models_otf"  # absent
+    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda: ref_root)
+
+    cfg = {
+        "framework": "pydantic_ai_otf_encode", "query_mode": "slayer",
+        "mode": "a-interact", "agent_model": "anthropic/claude-sonnet-4-5",
+        "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+        "patience": 3, "strict": False, "use_audited_gold_sql": False,
+        "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
+        "slayer_storage_root": "/data/slayer_models",
+    }
+    actor = ray_app._LocalActor(cfg, RUN_ID, 1, gcs_client=client)
+    assert actor.initial_seed_fp_by_db == {}
+    assert actor.uploaded_dbs == set()
