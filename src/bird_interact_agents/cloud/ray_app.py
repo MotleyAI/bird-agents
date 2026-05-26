@@ -521,31 +521,57 @@ def _run_one_in_actor(
     return iid
 
 
-def _snapshot_initial_seed_fps(cfg: dict[str, Any]) -> dict[str, str]:
-    """DEV-1470: after ``download_slayer_setup`` has run, snapshot the
-    per-DB ``_reference_fp.txt`` content for every db present under
-    ``paths.slayer_models_otf_root()``. Drives
-    :func:`upload_back.upload_otf_reference_delta`'s skip-or-upload decision —
-    a db whose on-disk fp matches the seed snapshot wasn't rebuilt by this
-    actor and must NOT be uploaded back. Empty dict when the root is absent
-    (no seed → every cloud-built reference is genuinely new).
+def _snapshot_initial_seed_fps(
+    run_id: str, cfg: dict[str, Any], *, client,
+) -> dict[str, str]:
+    """DEV-1470: snapshot per-DB seed fingerprints AUTHORITATIVELY from GCS,
+    NOT from the local on-disk state at ``paths.slayer_models_otf_root()``.
+
+    Codex r3 — reading from disk is wrong because the OTF reference root is
+    SHARED across actor processes on a VM. If a peer actor builds a cloud
+    reference for ``db_x`` and then dies before its post-task upload-back
+    runs, a REPLACEMENT actor on the same VM (and any other still-live
+    sibling actor that processes a task for ``db_x`` next) sees the local
+    file and would record the peer's cloud-built fp as "initial seed".
+    Then ``upload_otf_reference_delta`` would skip the upload because the
+    fingerprint appears unchanged — losing the only post-run shard for
+    ``db_x`` entirely, so ``fetch()`` couldn't merge it into the laptop
+    warm cache.
+
+    The GCS seed prefix (``runs/<run_id>/slayer_setup/slayer_models_otf/``)
+    is set by the driver at submit time, BEFORE any actor starts, and is
+    immutable for the run's duration. It is therefore the only authoritative
+    source for "what was actually seeded" — any local fingerprint NOT in
+    this snapshot is genuine cloud work that must be uploaded back.
+    Empty dict on any error (conservative: upload everything cloud-built,
+    slightly wasteful but never loses work).
     """
     if cfg.get("query_mode") != "slayer":
         return {}
     if cfg.get("framework") != "pydantic_ai_otf_encode":
         return {}
-    from bird_interact_agents import paths
-    ref_root = paths.slayer_models_otf_root()
-    if not ref_root.is_dir():
-        return {}
+    prefix = f"runs/{run_id}/slayer_setup/slayer_models_otf/"
     out: dict[str, str] = {}
-    for db_dir in sorted(p for p in ref_root.iterdir() if p.is_dir()):
-        marker = db_dir / "_reference_fp.txt"
-        if marker.is_file():
+    try:
+        bucket = client.bucket(_gcs.BUCKET_NAME)
+        for blob in bucket.list_blobs(prefix=prefix):
+            name = blob.name
+            if not name.endswith("/_reference_fp.txt"):
+                continue
+            rel = name[len(prefix):]  # "<db>/_reference_fp.txt"
+            db = rel.split("/", 1)[0]
+            if not db:
+                continue
             try:
-                out[db_dir.name] = marker.read_text().strip()
-            except OSError:
-                pass
+                out[db] = blob.download_as_bytes().decode().strip()
+            except Exception:  # noqa: BLE001
+                # Skip this db; others may still snapshot cleanly.
+                continue
+    except Exception:  # noqa: BLE001
+        # GCS unreachable / list failure → return what we have so far.
+        # Worst case: empty dict, which makes every cloud-built reference
+        # upload-eligible (wasteful, never loses data).
+        return out
     return out
 
 
@@ -585,7 +611,9 @@ class _LocalActor:
         # the seed fingerprints AFTER download (so we observe what download
         # just landed); uploaded_dbs starts empty and grows on successful
         # upload, so failed uploads remain eligible for retry on later tasks.
-        self.initial_seed_fp_by_db = _snapshot_initial_seed_fps(cfg)
+        self.initial_seed_fp_by_db = _snapshot_initial_seed_fps(
+            run_id, cfg, client=self.gcs_client,
+        )
         self.uploaded_dbs: set[str] = set()
         # CR#14: cache the framework runner across tasks for raw mode.
         # Slayer mode keeps per-task reconstruction because the storage
@@ -648,7 +676,9 @@ def _build_actor_class():
             if cfg.get("query_mode") == "slayer":
                 download_slayer_setup(run_id, cfg, client=self.gcs_client)
             # DEV-1470 — per-actor upload-back state. AFTER the download.
-            self.initial_seed_fp_by_db = _snapshot_initial_seed_fps(cfg)
+            self.initial_seed_fp_by_db = _snapshot_initial_seed_fps(
+            run_id, cfg, client=self.gcs_client,
+        )
             self.uploaded_dbs = set()
             # CR#14 — cache the framework runner across tasks for raw
             # mode. `_LocalActor` does the same in its __init__; without

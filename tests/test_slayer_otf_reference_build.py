@@ -791,7 +791,10 @@ def test_build_reference_takes_cross_process_flock(tmp_path):
             `_BuildEncoder = Callable[[Any, Path], _RunOne]` at
             reference_build.py:71."""
             class _RunOne:
-                index_rows: list[dict] = []
+                def __init__(self):
+                    # Instance attribute, not class attribute — avoids the
+                    # mutable-default-shared-across-instances trap.
+                    self.index_rows: list[dict] = []
 
                 async def __call__(self, *a, **kw):
                     from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
@@ -878,7 +881,10 @@ def test_ensure_db_reference_reuses_peer_commit_when_markerless_scrap_exists(tmp
             encoder_invocations["n"] += 1
 
             class _RunOne:
-                index_rows: list[dict] = []
+                def __init__(self):
+                    # Instance attribute, not class attribute — avoids the
+                    # mutable-default-shared-across-instances trap.
+                    self.index_rows: list[dict] = []
 
                 async def __call__(self, *a, **kw):
                     from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
@@ -990,7 +996,10 @@ def test_build_reference_rechecks_marker_inside_flock(tmp_path):
             encoder_invocations["n"] += 1
 
             class _RunOne:
-                index_rows: list[dict] = []
+                def __init__(self):
+                    # Instance attribute, not class attribute — avoids the
+                    # mutable-default-shared-across-instances trap.
+                    self.index_rows: list[dict] = []
 
                 async def __call__(self, *a, **kw):
                     from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (

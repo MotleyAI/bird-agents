@@ -1890,34 +1890,28 @@ def test_run_one_in_actor_swallows_upload_back_exceptions(
     assert f"runs/{RUN_ID}/rows/db_a_1/attempt-1.json" in store
 
 
-def test_actor_captures_uploaded_dbs_and_initial_seed_fps(
+def test_actor_captures_uploaded_dbs_and_initial_seed_fps_from_gcs(
     monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
 ):
-    """H2/H3 — the actor must, at init, snapshot the FINGERPRINTS of every
-    `_reference_fp.txt` present in the seed under `slayer_models_otf_root()`
-    AFTER `download_slayer_setup` has run (snapshotting BEFORE would miss
-    everything in the seed and incorrectly mark cloud-built references as
-    pre-existing — and then never upload them back). Test this by having the
-    fake `download_slayer_setup` CREATE the seed files: a snapshot taken
-    before would observe an empty root and assert against `{}`."""
-    from bird_interact_agents import paths as _paths
-
-    client, _store = fake_gcs_bucket
+    """Codex r3 — the actor's initial seed-fp snapshot MUST come from the
+    canonical GCS seed prefix
+    (`runs/<run_id>/slayer_setup/slayer_models_otf/<db>/_reference_fp.txt`),
+    NOT from local disk under `paths.slayer_models_otf_root()`. The OTF
+    reference root is shared across actor processes on a VM; a peer actor
+    that died mid-task could have left cloud-built refs on disk that MUST
+    NOT be confused with seed state (otherwise upload_otf_reference_delta
+    would skip uploading them because the fp "matches the seed", losing
+    work). Read-from-GCS sidesteps this entirely."""
+    client, store = fake_gcs_bucket
     monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
     monkeypatch.setattr(ray_app, "_maybe_build_cached_runner", lambda _cfg: None)
+    monkeypatch.setattr(ray_app, "download_slayer_setup", lambda *a, **k: None)
 
-    ref_root = tmp_path / "slayer_models_otf"
-    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda: ref_root)
-
-    def fake_download(run_id, cfg, *, client):  # noqa: ARG001
-        # The download is what populates the seed; the snapshot MUST observe
-        # what download just landed.
-        (ref_root / "db_a").mkdir(parents=True, exist_ok=True)
-        (ref_root / "db_a" / "_reference_fp.txt").write_text("seed-fp-A")
-        (ref_root / "db_b").mkdir(parents=True, exist_ok=True)
-        (ref_root / "db_b" / "_reference_fp.txt").write_text("seed-fp-B")
-
-    monkeypatch.setattr(ray_app, "download_slayer_setup", fake_download)
+    # Seed two DBs in GCS, the canonical source.
+    pfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
+    store[f"{pfx}/db_a/_reference_fp.txt"] = b"seed-fp-A"
+    store[f"{pfx}/db_a/models/x.yaml"] = b"name: x\n"  # extra blobs OK
+    store[f"{pfx}/db_b/_reference_fp.txt"] = b"seed-fp-B"
 
     cfg = {
         "framework": "pydantic_ai_otf_encode", "query_mode": "slayer",
@@ -1936,9 +1930,70 @@ def test_actor_captures_uploaded_dbs_and_initial_seed_fps(
     assert hasattr(actor, "initial_seed_fp_by_db"), (
         "actor must expose `initial_seed_fp_by_db` (dict[str, str]) snapshot"
     )
-    # Snapshot must see what `download_slayer_setup` JUST laid down — proves
-    # the snapshot ran AFTER, not before.
     assert actor.initial_seed_fp_by_db == {"db_a": "seed-fp-A", "db_b": "seed-fp-B"}
+
+
+def test_actor_seed_snapshot_ignores_local_only_cloud_built_refs(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """Codex r3 regression — when a peer actor on the same VM previously
+    built (but didn't upload) a cloud reference for `db_x`, a REPLACEMENT
+    actor's seed snapshot MUST NOT include that local-only fingerprint.
+    Otherwise upload_otf_reference_delta would treat the cloud-built ref
+    as "matches initial seed" and skip the upload, losing the only post-run
+    shard for that DB.
+
+    Setup: GCS seed has db_a only. Local disk also has db_b (peer's
+    cloud-built ref from a crashed task). Snapshot must contain only db_a.
+    """
+    from bird_interact_agents import paths as _paths
+
+    client, store = fake_gcs_bucket
+    monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
+    monkeypatch.setattr(ray_app, "_maybe_build_cached_runner", lambda _cfg: None)
+    monkeypatch.setattr(ray_app, "download_slayer_setup", lambda *a, **k: None)
+
+    # GCS seed: only db_a.
+    pfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
+    store[f"{pfx}/db_a/_reference_fp.txt"] = b"seed-fp-A"
+
+    # Local disk: db_b ALSO present (e.g. left by a peer actor that built
+    # it from scratch and died before upload-back ran).
+    ref_root = tmp_path / "slayer_models_otf"
+    (ref_root / "db_b").mkdir(parents=True)
+    (ref_root / "db_b" / "_reference_fp.txt").write_text("peer-built-fp-B")
+    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda: ref_root)
+
+    cfg = {
+        "framework": "pydantic_ai_otf_encode", "query_mode": "slayer",
+        "mode": "a-interact", "agent_model": "anthropic/claude-sonnet-4-5",
+        "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+        "patience": 3, "strict": False, "use_audited_gold_sql": False,
+        "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
+        "slayer_storage_root": "/data/slayer_models",
+    }
+    actor = ray_app._LocalActor(cfg, RUN_ID, 1, gcs_client=client)
+
+    assert actor.initial_seed_fp_by_db == {"db_a": "seed-fp-A"}, (
+        "local-only db_b leaked into the seed snapshot; the replacement "
+        "actor would then skip its upload because the fingerprint appears "
+        "unchanged from 'seed' — losing the peer's cloud-built reference"
+    )
+    # `upload_otf_reference_delta` will now see db_b's local fp doesn't
+    # match `initial_seed_fp_by_db.get("db_b")` (None) and will upload it.
+    # Confirm by direct call.
+    from bird_interact_agents.cloud import upload_back
+    upload_back.upload_otf_reference_delta(
+        run_id=RUN_ID, cfg=cfg,
+        shard="host-replacement",
+        uploaded_dbs=actor.uploaded_dbs,
+        initial_seed_fp_by_db=actor.initial_seed_fp_by_db,
+        client=client,
+    )
+    assert "db_b" in actor.uploaded_dbs, (
+        "db_b was not uploaded — the seed snapshot leak caused the replacement "
+        "actor to lose the only post-run shard for the peer's cloud-built ref"
+    )
 
 
 def test_actor_initial_seed_fps_empty_when_no_seed(
