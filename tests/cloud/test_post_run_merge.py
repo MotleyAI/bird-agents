@@ -616,6 +616,95 @@ def test_cloud_marker_loses_no_files_touched_even_if_content_newer(tmp_path: Pat
     assert merged["files_skipped"] >= 2  # x.yaml + marker
 
 
+def test_cloud_wins_deletes_stale_local_files_not_in_picks(tmp_path: Path):
+    """Codex r6 — whole-db rule on the file-presence axis. When cloud
+    wins, LOCAL files that are NOT in the cloud shard's picks MUST be
+    deleted before the new marker is written. Otherwise the new marker
+    (cloud's fp) sits on top of leftover files from the prior local fp —
+    a mixed-fingerprint tree, same class of bug as the per-file mtime
+    mixing Codex r5 caught.
+
+    Setup: local has `legacy.yaml` (only in local fp); cloud has only
+    `current.yaml` + marker. After merge, `legacy.yaml` MUST be gone."""
+    run_dir = tmp_path / "run"
+    ref_root = tmp_path / "ref"
+    _make_local(ref_root, "db_a", {
+        "models/legacy.yaml": (b"local-only-from-prior-fp\n", 1000.0),
+        "models/current.yaml": (b"local-old-current\n", 1000.0),
+        "_reference_fp.txt": (b"fp-LOCAL", 1000.0),
+    })
+    _make_shard(run_dir, "host-1", "db_a", {
+        "models/current.yaml": (b"cloud-current\n", 2000.0),
+        "_reference_fp.txt": (b"fp-CLOUD", 2000.0),
+    })
+
+    post_run_merge.merge_post_run_into_warm_cache(
+        run_dir=run_dir, reference_root=ref_root,
+    )
+
+    assert not (ref_root / "db_a" / "models" / "legacy.yaml").exists(), (
+        "stale local file `legacy.yaml` survived the cloud-wins merge — "
+        "the new `_reference_fp.txt` (fp-CLOUD) is now sitting on top of "
+        "a file that only exists in fp-LOCAL, producing a mixed-fingerprint "
+        "tree marked complete for fp-CLOUD"
+    )
+    assert (ref_root / "db_a" / "models" / "current.yaml").read_bytes() == b"cloud-current\n"
+    assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"fp-CLOUD"
+
+
+def test_cloud_wins_removes_empty_subdirs_left_after_stale_purge(tmp_path: Path):
+    """Codex r6 — when stale local files leave their parent subdir empty
+    (because the cloud has no replacement under that subdir), the empty
+    subdir should also be swept. Otherwise `<db>/` accumulates dead dirs
+    over runs."""
+    run_dir = tmp_path / "run"
+    ref_root = tmp_path / "ref"
+    _make_local(ref_root, "db_a", {
+        "old_models/dead.yaml": (b"only in local fp\n", 1000.0),
+        "_reference_fp.txt": (b"fp-LOCAL", 1000.0),
+    })
+    _make_shard(run_dir, "host-1", "db_a", {
+        "_reference_fp.txt": (b"fp-CLOUD", 2000.0),
+    })
+
+    post_run_merge.merge_post_run_into_warm_cache(
+        run_dir=run_dir, reference_root=ref_root,
+    )
+    assert not (ref_root / "db_a" / "old_models" / "dead.yaml").exists()
+    assert not (ref_root / "db_a" / "old_models").exists(), (
+        "empty subdir `old_models/` left behind after stale-file purge"
+    )
+
+
+def test_merge_report_persisted_to_run_dir(tmp_path: Path):
+    """Codex r6 — the merge report MUST be written to
+    `<run_dir>/merge_report.json` so it survives past `fetch()`'s return
+    value (the CLI currently discards it). Without persistence, ignored
+    shards and merge counts are invisible to post-run audit."""
+    import json
+    run_dir = tmp_path / "run"
+    ref_root = tmp_path / "ref"
+    _make_shard(run_dir, "host-1", "db_a", {
+        "models/x.yaml": (b"x\n", 2000.0),
+        "_reference_fp.txt": (b"fp", 2000.0),
+    })
+    _make_shard(run_dir, "host-bad", "db_a", {
+        "models/x.yaml": (b"x\n", 2000.0),
+    }, write_complete=False)
+
+    report = post_run_merge.merge_post_run_into_warm_cache(
+        run_dir=run_dir, reference_root=ref_root,
+    )
+
+    persisted = json.loads((run_dir / "merge_report.json").read_text())
+    assert persisted == report, (
+        f"on-disk merge_report.json differs from returned report: "
+        f"disk={persisted!r} vs returned={report!r}"
+    )
+    # Sanity-check: the persisted report carries both axes.
+    assert persisted["merged_dbs"] and persisted["ignored_shards"]
+
+
 def test_cloud_marker_wins_replaces_all_files_even_when_some_content_older(tmp_path: Path):
     """Codex r5 — whole-db rule, mirror of the above. If the cloud's marker
     is NEWER than the local one, the cloud reference wins as a UNIT —

@@ -109,7 +109,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"submitted: {run_id}")
         return 0
     if ns.subcommand == "fetch":
-        driver.fetch(ns.run_id)
+        metrics = driver.fetch(ns.run_id)
+        # Codex r6: surface the merge report so post-run merge failures
+        # (ignored shards, skipped dbs) are visible at fetch time rather
+        # than buried in the on-disk merge_report.json.
+        merge_report = metrics.get("merge_report") or {}
+        merged_dbs = merge_report.get("merged_dbs") or []
+        ignored_shards = merge_report.get("ignored_shards") or []
+        if merged_dbs or ignored_shards:
+            for entry in merged_dbs:
+                print(
+                    f"merged slayer_models_otf/{entry['db']}: "
+                    f"{entry['files_updated']} files updated, "
+                    f"{entry['files_skipped']} skipped"
+                )
+            if ignored_shards:
+                print(f"ignored {len(ignored_shards)} incomplete shard(s): "
+                      f"{', '.join(ignored_shards)}")
         return 0
     if ns.subcommand == "kill":
         driver.kill(ns.run_id)

@@ -280,6 +280,36 @@ def _merge_one_db(
             except FileNotFoundError:
                 pass
 
+        # Codex r6: delete LOCAL stale files that aren't in the cloud's
+        # picks before writing the new content + marker. Without this,
+        # `<db>/` ends up containing the cloud's picked files PLUS any
+        # old local files the cloud reference doesn't include — same
+        # class of mixed-fingerprint bug as r5 caught for content vs
+        # marker, just on the file-presence axis. The new marker (cloud's
+        # fp) would sit on top of leftover files from the prior fp,
+        # silently breaking the marker-binds-content invariant.
+        picked_relpaths = set(picks.keys()) | {_MARKER}
+        if local_db.is_dir():
+            for p in list(local_db.rglob("*")):
+                if not p.is_file():
+                    continue
+                rel = p.relative_to(local_db).as_posix()
+                if rel in picked_relpaths:
+                    continue
+                try:
+                    p.unlink()
+                except FileNotFoundError:
+                    pass
+            # Sweep empty subdirs left behind by stale-file removal,
+            # bottom-up. The local_db itself stays — it's about to be
+            # re-populated by the atomic replaces below.
+            for p in sorted(local_db.rglob("*"), reverse=True):
+                if p.is_dir() and p != local_db:
+                    try:
+                        p.rmdir()
+                    except OSError:
+                        pass  # not empty (e.g. still contains a picked file)
+
         files_updated = 0
         for rel, (source_mtime, sdir) in sorted(picks.items()):
             src = sdir / db / rel
@@ -353,4 +383,19 @@ def merge_post_run_into_warm_cache(
             "files_skipped": files_skipped,
         })
 
-    return {"merged_dbs": merged, "ignored_shards": ignored_shards}
+    report = {"merged_dbs": merged, "ignored_shards": ignored_shards}
+
+    # Codex r6: persist the report to disk under `run_dir` so it survives
+    # past the `fetch()` return value (which the CLI currently discards).
+    # Without this, ignored shards and merge counts are visible only to
+    # direct Python callers — post-run merge failures become un-auditable.
+    # Best-effort: a logging-side write failure must NOT poison the
+    # already-completed merge.
+    try:
+        (run_dir / "merge_report.json").write_text(
+            json.dumps(report, indent=2) + "\n"
+        )
+    except OSError:
+        pass
+
+    return report
