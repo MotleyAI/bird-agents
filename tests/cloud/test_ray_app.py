@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import time
 from pathlib import Path
 
@@ -235,166 +234,322 @@ def test_drain_loop_handles_actor_error(
 
 
 # ---------------------------------------------------------------------------
-# T27 — SLayer mode: per-task ephemeral server (NOT one per actor).
+# T27 (DEV-1468) — SLayer mode mirrors local: no ephemeral server, no baked
+# DBs. The actor downloads the uploaded setup once per process; run_one_task
+# resolves per-task storage exactly as it does locally.
 # ---------------------------------------------------------------------------
 
 
-def test_slayer_server_is_per_task(
-    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, baked_slayer_dbs,
+def test_ephemeral_slayer_symbols_removed() -> None:
+    """The stubbed per-task SLayer server model is deleted — the cloud path
+    now mirrors local (per-task storage via run_one_task)."""
+    for sym in (
+        "EphemeralSlayerServer", "_setup_per_task_slayer", "SLAYER_DBS_DIR",
+    ):
+        assert not hasattr(ray_app, sym), f"{sym} must be removed (mirror local)"
+
+
+@pytest.mark.parametrize(
+    "framework, slayer_setup, mode",
+    [
+        ("pydantic_ai_recursive", "pre-encoded", "c-interact"),   # combo 1
+        ("pydantic_ai_recursive", "on-the-fly", "a-interact"),    # combo 2
+        ("pydantic_ai_otf_encode", "on-the-fly", "a-interact"),   # combo 3
+    ],
+)
+def test_slayer_combo_threads_kwargs_into_run_one_task(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket,
+    framework: str, slayer_setup: str, mode: str,
 ):
-    """Each task gets a *unique* per-task SQLite copy AND a fresh server.
-    A per-actor server pointed at the shared baked DB would silently pass
-    a boot-count assertion; the per-task path uniqueness is what rules it out.
-    """
+    """All 3 slayer combos thread query_mode='slayer', slayer_setup, and
+    slayer_storage_root into run_one_task — the cloud path is just local
+    run_one_task with the right kwargs (slayer_setup was the missing one)."""
     client, _store = fake_gcs_bucket
     monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
-    baked_slayer_dbs("db_a")
+    # The actor downloads setup in __init__; stub it (covered separately).
+    monkeypatch.setattr(ray_app, "download_slayer_setup", lambda *a, **k: None)
 
-    boots: list[str] = []
-    teardowns: list[str] = []
-    seen_storage_roots: list[str] = []
+    seen: list[dict] = []
 
-    class SlayerStub:
-        def __init__(self, sqlite_path: str):
-            boots.append(sqlite_path)
-            self.sqlite_path = sqlite_path
-
-        def close(self):
-            teardowns.append(self.sqlite_path)
-
-    monkeypatch.setattr(ray_app, "EphemeralSlayerServer", SlayerStub)
-
-    async def fake_run_one_task(task_data, slayer_storage_root=None, **_kw):
-        # The per-task path must be set AND unique per task.
-        assert slayer_storage_root is not None
-        seen_storage_roots.append(slayer_storage_root)
+    async def fake_run_one_task(task_data, **kw):
+        seen.append(kw)
         return {
-            "instance_id": task_data["instance_id"],
-            "database": "db_a",
-            "phase1_passed": True,
-            "phase2_passed": True,
-            "total_reward": 1.0,
-            "duration_s": 0.01,
-            "error": None,
+            "instance_id": task_data["instance_id"], "database": "db_a",
+            "phase1_passed": True, "phase2_passed": True, "total_reward": 1.0,
+            "duration_s": 0.01, "error": None,
         }
 
     monkeypatch.setattr(
         "bird_interact_agents.run.run_one_task", fake_run_one_task
     )
 
-    instance_ids = ["db_a_1", "db_a_2", "db_a_3"]
     ray_app.run_pool(
         run_id=RUN_ID,
-        instance_ids=instance_ids,
-        framework="pydantic_ai",
+        instance_ids=["db_a_1"],
+        framework=framework,
         query_mode="slayer",
-        mode="c-interact",
+        mode=mode,
         agent_model="anthropic/claude-sonnet-4-5",
-        num_actors=1,  # single actor → per-actor would give 1 boot
+        num_actors=1,
         attempt=1,
         task_data_by_id={
-            iid: {"instance_id": iid, "selected_database": "db_a"}
-            for iid in instance_ids
+            "db_a_1": {"instance_id": "db_a_1", "selected_database": "db_a"}
         },
+        slayer_setup=slayer_setup,
+        slayer_storage_root="/data/slayer_models",
         local_only=True,
     )
 
-    assert len(boots) == len(instance_ids)
-    assert len(teardowns) == len(instance_ids)
-    # Per-task: each boot must point at a distinct sqlite path.
-    assert len(set(boots)) == len(instance_ids), (
-        f"slayer boots reused the same sqlite path: {boots}"
-    )
-    # And the per-task storage root threaded into run_one_task is unique too.
-    assert len(set(seen_storage_roots)) == len(instance_ids)
+    assert len(seen) == 1
+    kw = seen[0]
+    assert kw["query_mode"] == "slayer"
+    assert kw["slayer_setup"] == slayer_setup
+    assert kw["slayer_storage_root"] == "/data/slayer_models"
 
 
-def test_slayer_server_teardown_on_task_exception(
-    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, baked_slayer_dbs
+def test_actor_downloads_slayer_setup_once_per_process(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket,
 ):
-    """Even if a task raises, the per-task SLayer server is torn down."""
+    """The actor must call download_slayer_setup in __init__ for slayer mode
+    (once per worker process), not per task."""
     client, _store = fake_gcs_bucket
     monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
-    baked_slayer_dbs("db_a")
 
-    boots: list[str] = []
-    teardowns: list[str] = []
+    calls: list[tuple] = []
 
-    class SlayerStub:
-        def __init__(self, sqlite_path: str):
-            boots.append(sqlite_path)
-            self.sqlite_path = sqlite_path
+    def fake_download(run_id, cfg, *, client):  # noqa: ARG001
+        calls.append((run_id, cfg.get("query_mode")))
 
-        def close(self):
-            teardowns.append(self.sqlite_path)
+    monkeypatch.setattr(ray_app, "download_slayer_setup", fake_download)
 
-    monkeypatch.setattr(ray_app, "EphemeralSlayerServer", SlayerStub)
-
-    async def fake_run_one_task(task_data, **_kwargs):
-        raise RuntimeError(f"boom on {task_data['instance_id']}")
+    async def fake_run_one_task(task_data, **_kw):
+        return {
+            "instance_id": task_data["instance_id"], "database": "db_a",
+            "phase1_passed": True, "phase2_passed": True, "total_reward": 1.0,
+            "duration_s": 0.01, "error": None,
+        }
 
     monkeypatch.setattr(
         "bird_interact_agents.run.run_one_task", fake_run_one_task
     )
 
-    instance_ids = ["db_a_1", "db_a_2"]
     ray_app.run_pool(
         run_id=RUN_ID,
-        instance_ids=instance_ids,
-        framework="pydantic_ai",
+        instance_ids=["db_a_1", "db_a_2", "db_a_3"],
+        framework="pydantic_ai_recursive",
         query_mode="slayer",
+        mode="a-interact",
+        agent_model="anthropic/claude-sonnet-4-5",
+        num_actors=1,  # one process → exactly one download
+        attempt=1,
+        task_data_by_id={
+            iid: {"instance_id": iid, "selected_database": "db_a"}
+            for iid in ("db_a_1", "db_a_2", "db_a_3")
+        },
+        slayer_setup="on-the-fly",
+        slayer_storage_root="/data/slayer_models",
+        local_only=True,
+    )
+
+    assert calls == [(RUN_ID, "slayer")], (
+        f"download must run once per process for slayer; got {calls}"
+    )
+
+
+def test_actor_does_not_download_in_raw_mode(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket,
+):
+    client, _store = fake_gcs_bucket
+    monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
+    calls: list = []
+    monkeypatch.setattr(
+        ray_app, "download_slayer_setup",
+        lambda *a, **k: calls.append(1),
+    )
+
+    async def fake_run_one_task(task_data, **_kw):
+        return {
+            "instance_id": task_data["instance_id"], "database": "db_a",
+            "phase1_passed": True, "phase2_passed": True, "total_reward": 1.0,
+            "duration_s": 0.01, "error": None,
+        }
+
+    monkeypatch.setattr(
+        "bird_interact_agents.run.run_one_task", fake_run_one_task
+    )
+    ray_app.run_pool(
+        run_id=RUN_ID,
+        instance_ids=["db_a_1"],
+        framework="pydantic_ai",
+        query_mode="raw",
         mode="c-interact",
         agent_model="anthropic/claude-sonnet-4-5",
         num_actors=1,
         attempt=1,
-        task_data_by_id={
-            iid: {"instance_id": iid, "selected_database": "db_a"}
-            for iid in instance_ids
-        },
+        task_data_by_id={"db_a_1": {"instance_id": "db_a_1", "selected_database": "db_a"}},
         local_only=True,
     )
-    assert len(teardowns) == len(boots) == len(instance_ids)
+    # The actor gates the download call on query_mode=="slayer", so raw mode
+    # must not invoke it at all (defence-in-depth: the helper also no-ops in
+    # raw — see test_download_slayer_setup_noop_in_raw).
+    assert calls == [], "raw mode must not download any slayer setup"
 
 
-def test_setup_per_task_slayer_fails_loudly_when_db_missing(
-    baked_slayer_dbs,
-) -> None:
-    """A missing baked DB means the image build / ingest is broken. Booting
-    a server against an empty stand-in would make every task silently fail
-    its queries, so `_setup_per_task_slayer` must raise instead (D1a)."""
-    baked_slayer_dbs("db_a")  # only db_a is baked
-    with pytest.raises(FileNotFoundError, match="db_missing"):
-        ray_app._setup_per_task_slayer("db_missing")
+# --- download_slayer_setup: lands at the per-combo env root, idempotent ----
 
 
-def test_setup_per_task_slayer_copies_baked_db(
-    monkeypatch: pytest.MonkeyPatch, baked_slayer_dbs,
-) -> None:
-    """Happy path: the baked DB is copied into a fresh per-task tmp dir and a
-    server is booted against the copy (not the shared baked original)."""
-    dbs_dir = baked_slayer_dbs("db_a")
+@pytest.mark.parametrize(
+    "framework, slayer_setup, artifact, env_var",
+    [
+        ("pydantic_ai_recursive", "pre-encoded", "slayer_models",
+         "BIRD_SLAYER_MODELS_ROOT"),
+        ("pydantic_ai_recursive", "on-the-fly", "slayer_otf_cache",
+         "BIRD_OTF_CACHE_ROOT"),
+        ("pydantic_ai_otf_encode", "on-the-fly", "slayer_models_otf",
+         "BIRD_SLAYER_MODELS_OTF_ROOT"),
+    ],
+)
+def test_download_slayer_setup_lands_at_combo_root(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+    framework: str, slayer_setup: str, artifact: str, env_var: str,
+):
+    """download_slayer_setup pulls the combo's uploaded dir to the env-override
+    root the local readers use, preserving nested paths + binary bytes, and
+    writes the .download_complete marker."""
+    client, store = fake_gcs_bucket
+    dest_root = tmp_path / "data" / artifact
+    monkeypatch.setenv(env_var, str(dest_root))
 
-    booted: list[str] = []
+    pfx = f"runs/{RUN_ID}/slayer_setup/{artifact}"
+    store[f"{pfx}/db_a/_marker"] = b"m"
+    store[f"{pfx}/db_a/models/db_a/x.yaml"] = b"name: x\n"
+    store[f"{pfx}/db_a/embeddings.db"] = b"SQLite format 3\x00\xff"
+    store[f"{pfx}/db_b/_marker"] = b"m2"
 
-    class _Stub:
-        def __init__(self, sqlite_path: str):
-            booted.append(sqlite_path)
+    cfg = {
+        "query_mode": "slayer", "slayer_setup": slayer_setup,
+        "framework": framework,
+    }
+    ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
 
-        def close(self):
-            pass
+    assert (dest_root / "db_a" / "models" / "db_a" / "x.yaml").read_text() == "name: x\n"
+    assert (dest_root / "db_a" / "embeddings.db").read_bytes() == b"SQLite format 3\x00\xff"
+    assert (dest_root / "db_b" / "_marker").read_bytes() == b"m2"
+    assert (dest_root / ".download_complete").is_file()
 
-    monkeypatch.setattr(ray_app, "EphemeralSlayerServer", _Stub)
 
-    server, storage_root = ray_app._setup_per_task_slayer("db_a")
-    try:
-        copied = Path(booted[0])
-        assert copied.exists()
-        # Copied to a per-task tmp dir, not served from the shared baked dir.
-        assert copied.parent != dbs_dir
-        assert copied.parent == Path(storage_root)
-        assert copied.read_bytes() == (dbs_dir / "db_a.sqlite").read_bytes()
-    finally:
-        server.close()
+def test_download_slayer_setup_idempotent_under_two_actors(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """Two racing in-process actors must not crash or corrupt the dest — the
+    root-level .download_complete marker makes the second call a no-op."""
+    client, store = fake_gcs_bucket
+    dest_root = tmp_path / "data" / "slayer_models_otf"
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(dest_root))
+    pfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
+    store[f"{pfx}/db_a/_reference_fp.txt"] = b"fp"
+    store[f"{pfx}/db_a/_kb_rows.json"] = b"[]"
+
+    cfg = {
+        "query_mode": "slayer", "slayer_setup": "on-the-fly",
+        "framework": "pydantic_ai_otf_encode",
+    }
+    ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+    ray_app.download_slayer_setup(RUN_ID, cfg, client=client)  # must no-op
+
+    assert (dest_root / "db_a" / "_reference_fp.txt").read_bytes() == b"fp"
+    assert (dest_root / ".download_complete").is_file()
+
+
+def test_download_slayer_setup_noop_in_raw(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """In raw mode the helper does nothing — it never touches the slayer
+    roots."""
+    client, store = fake_gcs_bucket
+    dest_root = tmp_path / "data" / "slayer_models"
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_ROOT", str(dest_root))
+    store[f"runs/{RUN_ID}/slayer_setup/slayer_models/db_a/x"] = b"x"
+
+    ray_app.download_slayer_setup(
+        RUN_ID, {"query_mode": "raw", "slayer_setup": "pre-encoded",
+                 "framework": "pydantic_ai"},
+        client=client,
+    )
+    assert not dest_root.exists()
+
+
+def test_download_slayer_setup_rename_race_is_success(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """If a peer process won the rename onto dest_root while we downloaded
+    (dest_root now exists + marked), our os.rename raises OSError; the helper
+    must treat that as success, not crash."""
+    client, store = fake_gcs_bucket
+    dest_root = tmp_path / "data" / "slayer_otf_cache"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(dest_root))
+    store[f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache/db_a/_cache_fp.txt"] = b"fp"
+
+    real_rename = os.rename
+
+    def racing_rename(src, dst):
+        if Path(dst) == dest_root and not dest_root.exists():
+            dest_root.mkdir(parents=True)
+            (dest_root / ".download_complete").write_text("peer")
+            raise OSError("Directory not empty")
+        return real_rename(src, dst)
+
+    monkeypatch.setattr(ray_app.os, "rename", racing_rename)
+    cfg = {
+        "query_mode": "slayer", "slayer_setup": "on-the-fly",
+        "framework": "pydantic_ai_recursive",
+    }
+    # Must not raise.
+    ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+    assert (dest_root / ".download_complete").is_file()
+
+
+def test_download_slayer_setup_rename_error_without_marker_reraises(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """A genuine os.rename failure (dest_root absent + no marker) must
+    propagate — not be silently swallowed as a race win."""
+    client, store = fake_gcs_bucket
+    dest_root = tmp_path / "data" / "slayer_otf_cache"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(dest_root))
+    store[f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache/db_a/_cache_fp.txt"] = b"fp"
+
+    def boom_rename(src, dst):
+        raise OSError("disk on fire")
+
+    monkeypatch.setattr(ray_app.os, "rename", boom_rename)
+    cfg = {
+        "query_mode": "slayer", "slayer_setup": "on-the-fly",
+        "framework": "pydantic_ai_recursive",
+    }
+    with pytest.raises(OSError, match="disk on fire"):
+        ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+    assert not (dest_root / ".download_complete").exists()
+
+
+def test_download_slayer_setup_empty_prefix_raises(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """A missing/empty GCS prefix (failed/partial upload, wrong prefix) must
+    NOT be cached as a complete download — it must raise so the bad upload
+    surfaces, never permanently wedging tasks against an empty setup (Codex)."""
+    client, _store = fake_gcs_bucket  # empty store → no blobs under the prefix
+    dest_root = tmp_path / "data" / "slayer_otf_cache"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(dest_root))
+    cfg = {
+        "query_mode": "slayer", "slayer_setup": "on-the-fly",
+        "framework": "pydantic_ai_recursive",
+    }
+    with pytest.raises(FileNotFoundError):
+        ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+    # Nothing cached — a retry (after fixing the upload) can still run.
+    assert not (dest_root / ".download_complete").exists()
+    assert not dest_root.exists()
 
 
 def test_local_actor_uses_injected_gcs_client(
@@ -935,14 +1090,13 @@ def test_actor_caches_runner_for_raw_mode(
 
 
 def test_actor_no_runner_cache_for_slayer_mode(
-    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, baked_slayer_dbs
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket
 ):
-    """Slayer mode rotates `slayer_storage_root` per task — caching the
-    runner would freeze it to one task's storage. The actor must skip
-    the cache."""
+    """Slayer mode rotates per-task storage — caching the runner would
+    freeze it. The actor must skip the cache (make_runner never called)."""
     client, _store = fake_gcs_bucket
     monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
-    baked_slayer_dbs("db_a")
+    monkeypatch.setattr(ray_app, "download_slayer_setup", lambda *a, **k: None)
 
     build_count = [0]
 
@@ -965,15 +1119,6 @@ def test_actor_no_runner_cache_for_slayer_mode(
         "bird_interact_agents.run.make_runner", fake_make_runner
     )
 
-    class _NoopSlayer:
-        def __init__(self, sqlite_path: str):
-            pass
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(ray_app, "EphemeralSlayerServer", _NoopSlayer)
-
     async def fake_run_one_task(task_data, **_kwargs):
         return {
             "instance_id": task_data["instance_id"],
@@ -992,9 +1137,9 @@ def test_actor_no_runner_cache_for_slayer_mode(
     ray_app.run_pool(
         run_id=RUN_ID,
         instance_ids=["db_a_1", "db_a_2"],
-        framework="pydantic_ai",
+        framework="pydantic_ai_recursive",
         query_mode="slayer",
-        mode="c-interact",
+        mode="a-interact",
         agent_model="anthropic/claude-sonnet-4-5",
         num_actors=1,
         attempt=1,
@@ -1002,6 +1147,8 @@ def test_actor_no_runner_cache_for_slayer_mode(
             iid: {"instance_id": iid, "selected_database": "db_a"}
             for iid in ("db_a_1", "db_a_2")
         },
+        slayer_setup="on-the-fly",
+        slayer_storage_root="/data/slayer_models",
         local_only=True,
     )
 
@@ -1022,27 +1169,15 @@ def test_actor_no_runner_cache_for_slayer_mode(
 
 def test_per_task_tmp_dirs_are_cleaned(
     monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
-    baked_slayer_dbs,
 ):
-    """After a task returns, the per-task SLayer SQLite tmp dir and log
-    tmp dir must be removed — without cleanup they accumulate and fill
-    worker disks on big runs (CR#11)."""
+    """After a task returns, the per-task log tmp dir must be removed —
+    without cleanup they accumulate and fill worker disks on big runs (CR#11).
+    DEV-1468: the per-task SLayer SQLite tmp dir is gone (no ephemeral
+    server), so the only per-task tmp is the `cloud_log_` dir; assert it (and
+    any stray `slayer_` dirs) are cleaned in slayer mode too."""
     client, _store = fake_gcs_bucket
     monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
-    baked_slayer_dbs("db_a")
-
-    boots: list[str] = []
-    teardowns: list[str] = []
-
-    class SlayerStub:
-        def __init__(self, sqlite_path: str):
-            boots.append(sqlite_path)
-            self.sqlite_path = sqlite_path
-
-        def close(self):
-            teardowns.append(self.sqlite_path)
-
-    monkeypatch.setattr(ray_app, "EphemeralSlayerServer", SlayerStub)
+    monkeypatch.setattr(ray_app, "download_slayer_setup", lambda *a, **k: None)
 
     # Force tmp dirs into a single tmp root so we can inspect what's left.
     monkeypatch.setenv("TMPDIR", str(tmp_path))
@@ -1065,9 +1200,9 @@ def test_per_task_tmp_dirs_are_cleaned(
     ray_app.run_pool(
         run_id=RUN_ID,
         instance_ids=["db_a_1", "db_a_2"],
-        framework="pydantic_ai",
+        framework="pydantic_ai_recursive",
         query_mode="slayer",
-        mode="c-interact",
+        mode="a-interact",
         agent_model="anthropic/claude-sonnet-4-5",
         num_actors=1,
         attempt=1,
@@ -1075,6 +1210,8 @@ def test_per_task_tmp_dirs_are_cleaned(
             iid: {"instance_id": iid, "selected_database": "db_a"}
             for iid in ("db_a_1", "db_a_2")
         },
+        slayer_setup="on-the-fly",
+        slayer_storage_root="/data/slayer_models",
         local_only=True,
     )
 

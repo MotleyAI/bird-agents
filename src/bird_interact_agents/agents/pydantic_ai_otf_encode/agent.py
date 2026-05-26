@@ -49,7 +49,6 @@ from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
     _build_projection_resolver,
     _build_query_constructor,
     _build_root_clarifier,
-    _slayer_client_factory,
 )
 from bird_interact_agents.agents.pydantic_ai_otf_encode.prompts import (
     PROJECTION_RESOLVER_PROMPT,
@@ -67,7 +66,6 @@ from bird_interact_agents.harness import (
     SampleStatus,
     finalize_result_row,
     load_db_data_if_needed,
-    resolve_task_storage_dir,
     slayer_mcp_stdio_config,
 )
 from bird_interact_agents.hard8_preprocessor import (
@@ -359,10 +357,6 @@ def _build_shared_slayer_server(slayer_storage_dir: str) -> MCPServerStdio:
     )
 
 
-def _otf_cache_root() -> Path:
-    return _paths.main_checkout_root() / "slayer_otf_cache"
-
-
 def _otf_work_dir(instance_id: str) -> Path:
     p = (
         Path(tempfile.gettempdir())
@@ -390,7 +384,7 @@ async def _resolve_otf_task_storage_dir(
     await ensure_db_reference(
         db_name,
         reference_root=reference_root,
-        cache_root=_otf_cache_root(),
+        cache_root=_paths.slayer_otf_cache_root(),
         mini_interact_root=Path(data_path_base),
         build_encoder=build_encoder,
     )

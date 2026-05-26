@@ -30,6 +30,12 @@ docker:
     - "--env BIRD_DATA_PATH=/data/mini-interact/mini_interact.jsonl"
     - "--env BIRD_RESULTS_ROOT=/tmp/results"
     - "--env BIRD_INTERACT_AGENTS_CLOUD=1"
+    # DEV-1468: the actor downloads the uploaded slayer setup into these roots
+    # (paths.*_root() honour them), so the in-cluster per-task storage builders
+    # find the artifacts exactly where the local path looks.
+    - "--env BIRD_SLAYER_MODELS_ROOT=/data/slayer_models"
+    - "--env BIRD_OTF_CACHE_ROOT=/data/slayer_otf_cache"
+    - "--env BIRD_SLAYER_MODELS_OTF_ROOT=/data/slayer_models_otf"
 
 available_node_types:
   ray-head-default:

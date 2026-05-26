@@ -62,7 +62,11 @@ def _isolate_paths(monkeypatch):
     monkeypatch.setenv; everything else sees a clean slate.
     """
     paths._main_checkout_root_cached.cache_clear()
-    for var in ("BIRD_DB_PATH", "BIRD_DATA_PATH", "BIRD_RESULTS_ROOT"):
+    for var in (
+        "BIRD_DB_PATH", "BIRD_DATA_PATH", "BIRD_RESULTS_ROOT",
+        "BIRD_SLAYER_MODELS_ROOT", "BIRD_OTF_CACHE_ROOT",
+        "BIRD_SLAYER_MODELS_OTF_ROOT",
+    ):
         monkeypatch.delenv(var, raising=False)
     yield
     paths._main_checkout_root_cached.cache_clear()
@@ -288,6 +292,76 @@ def test_slayer_models_otf_root_anchored_to_main(tmp_path, monkeypatch):
     main, wt = _setup_main_and_worktree(tmp_path, monkeypatch)
     assert paths.slayer_models_otf_root() == main / "slayer_models_otf"
     assert paths.slayer_models_otf_root() != wt / "slayer_models_otf"
+
+
+# ---------------------------------------------------------------------------
+# DEV-1468: slayer_otf_cache_root (NEW) + env overrides on the three slayer
+# artifact roots. The overrides are what the cloud actor uses to repoint each
+# root at the per-combo /data/... dir; they must be honoured AND harmless
+# locally (default unchanged when the env var is unset).
+# ---------------------------------------------------------------------------
+
+
+def test_slayer_otf_cache_root_anchored_to_main(tmp_path, monkeypatch):
+    """The phase-1-3 ingest cache root is a sibling of slayer_models under
+    the main checkout (shared across worktrees), replacing the duplicated
+    per-agent _otf_cache_root helpers."""
+    main, wt = _setup_main_and_worktree(tmp_path, monkeypatch)
+    assert paths.slayer_otf_cache_root() == main / "slayer_otf_cache"
+    assert paths.slayer_otf_cache_root() != wt / "slayer_otf_cache"
+
+
+def test_slayer_models_root_env_override(tmp_path, monkeypatch):
+    override = tmp_path / "elsewhere" / "slayer_models"
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_ROOT", str(override))
+    assert paths.slayer_models_root() == override
+
+
+def test_slayer_otf_cache_root_env_override(tmp_path, monkeypatch):
+    override = tmp_path / "data" / "slayer_otf_cache"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(override))
+    assert paths.slayer_otf_cache_root() == override
+
+
+def test_slayer_models_otf_root_env_override(tmp_path, monkeypatch):
+    override = tmp_path / "data" / "slayer_models_otf"
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(override))
+    assert paths.slayer_models_otf_root() == override
+
+
+def test_agents_no_longer_define_their_own_otf_cache_root():
+    """DEV-1468 (B): the duplicated per-agent ``_otf_cache_root`` helpers are
+    deleted — both agents must rely on the single ``paths.slayer_otf_cache_root``
+    so the cache root is defined in exactly one place (and is env-overridable
+    for the cloud download target)."""
+    from bird_interact_agents.agents.pydantic_ai_recursive import (
+        agent as recursive_agent,
+    )
+    from bird_interact_agents.agents.pydantic_ai_otf_encode import (
+        agent as otf_encode_agent,
+    )
+    assert not hasattr(recursive_agent, "_otf_cache_root"), (
+        "pydantic_ai_recursive must use paths.slayer_otf_cache_root()"
+    )
+    assert not hasattr(otf_encode_agent, "_otf_cache_root"), (
+        "pydantic_ai_otf_encode must use paths.slayer_otf_cache_root()"
+    )
+
+
+def test_slayer_root_env_overrides_win_when_default_would_fail(
+    tmp_path, monkeypatch,
+):
+    """Env overrides must resolve without touching git — so they work in a
+    wheel install / outside a checkout (the cloud container case)."""
+    not_a_repo = tmp_path / "not_a_repo"
+    not_a_repo.mkdir()
+    monkeypatch.setattr(paths, "_LOOKUP_DIR", not_a_repo)
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_ROOT", "/data/slayer_models")
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", "/data/slayer_otf_cache")
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", "/data/slayer_models_otf")
+    assert paths.slayer_models_root() == Path("/data/slayer_models")
+    assert paths.slayer_otf_cache_root() == Path("/data/slayer_otf_cache")
+    assert paths.slayer_models_otf_root() == Path("/data/slayer_models_otf")
 
 
 def test_results_root_default_anchored_to_main(tmp_path, monkeypatch):

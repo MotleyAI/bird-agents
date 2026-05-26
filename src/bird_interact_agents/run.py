@@ -115,6 +115,34 @@ def _validate_slayer_setup(
         )
 
 
+def _maybe_force_wipe_otf(*, otf_rebuild: bool, framework: str, dbs) -> None:
+    """``--otf-rebuild`` force-wipe: drop BOTH on-the-fly layers (the phase-1-3
+    cache AND the KB-encoded reference) for ``dbs``, for either on-the-fly
+    framework. No-op when the flag is off or the framework isn't on-the-fly.
+
+    Wiping both layers together is load-bearing: wiping only the reference
+    would let a stale cache be re-encoded into a "fresh" reference (Codex r2
+    High#3)."""
+    if not otf_rebuild:
+        return
+    if framework not in ("pydantic_ai_recursive", "pydantic_ai_otf_encode"):
+        return
+    from bird_interact_agents.slayer_otf.reference_build import (
+        purge_caches,
+        purge_references,
+    )
+
+    dbs = set(dbs)
+    removed_cache = purge_caches(paths.slayer_otf_cache_root(), dbs)
+    removed_ref = purge_references(paths.slayer_models_otf_root(), dbs)
+    logger.info(
+        "--otf-rebuild: wiped OTF cache for %s and reference for %s "
+        "(will rebuild from scratch)",
+        sorted(removed_cache) or "none present",
+        sorted(removed_ref) or "none present",
+    )
+
+
 async def run_oracle_task(task_data: dict, data_path_base: str) -> dict:
     """Submit ground-truth SQL directly — no LLM, validates eval pipeline."""
     from bird_interact_agents.agents._submit import (
@@ -560,7 +588,7 @@ async def run_evaluation(
     prompt_cache: bool = True,
     max_depth: int = 3,
     slayer_setup: str = "pre-encoded",
-    otf_rebuild_reference: bool = False,
+    otf_rebuild: bool = False,
 ) -> dict:
     """Run full evaluation across all tasks."""
     # Programmatic-caller mirror of the CLI fail-fast guard. The CLI
@@ -577,21 +605,15 @@ async def run_evaluation(
         wanted = set(filter_ids)
         tasks = [t for t in tasks if t.get("instance_id") in wanted]
 
-    # --otf-rebuild-reference: drop the db-level KB-encoded reference(s) for the
-    # DBs in this run ONCE, before the (possibly concurrent) task loop, so the
-    # lazy build regenerates each exactly once and all tasks reuse the fresh
-    # copy. Default off preserves/reuses the existing reference. OTF-only.
-    if otf_rebuild_reference and framework == "pydantic_ai_otf_encode":
-        from bird_interact_agents.slayer_otf.reference_build import (
-            purge_references,
-        )
-
-        dbs = {t.get("selected_database") for t in tasks if t.get("selected_database")}
-        removed = purge_references(paths.slayer_models_otf_root(), dbs)
-        logger.info(
-            "--otf-rebuild-reference: removed OTF reference(s) for %s "
-            "(will rebuild from scratch)", sorted(removed) or "none present",
-        )
+    # --otf-rebuild: force-wipe BOTH on-the-fly layers (cache + reference) for
+    # the DBs in this run ONCE, before the (possibly concurrent) task loop, so
+    # the lazy build regenerates each exactly once and all tasks reuse the fresh
+    # copy. Default off reuses whatever is present. On-the-fly frameworks only.
+    _maybe_force_wipe_otf(
+        otf_rebuild=otf_rebuild,
+        framework=framework,
+        dbs={t.get("selected_database") for t in tasks if t.get("selected_database")},
+    )
 
     audited_overlay_log: dict[str, str] = {}
     if use_audited_gold_sql:
@@ -965,17 +987,24 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--otf-rebuild-reference",
+        "--otf-rebuild",
+        dest="otf_rebuild",
         action="store_true",
         default=False,
         help=(
-            "Only with --framework pydantic_ai_otf_encode. Delete each run "
-            "DB's committed KB-encoded reference (slayer_models_otf/<db>/) "
-            "ONCE before the task loop so it is rebuilt from scratch. Default "
-            "OFF preserves (reuses) the existing reference when its fingerprint "
-            "matches (a changed KB/schema/--db-path rebuilds automatically). "
-            "Per-task scratch storage is always rebuilt regardless."
+            "On-the-fly slayer setup only. Force-wipe BOTH on-the-fly layers "
+            "(the phase-1-3 cache AND the KB-encoded reference) for each run "
+            "DB ONCE before the task loop, so they rebuild from scratch. "
+            "Default OFF reuses whatever is present (a changed KB/schema/DB is "
+            "NOT auto-detected — reingest is explicit via this flag)."
         ),
+    )
+    parser.add_argument(
+        # Backwards-compatible hidden alias for git/script continuity.
+        "--otf-rebuild-reference",
+        dest="otf_rebuild",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--slayer-setup",
@@ -1052,7 +1081,7 @@ def main() -> None:
             prompt_cache=args.prompt_cache,
             max_depth=args.max_depth,
             slayer_setup=args.slayer_setup,
-            otf_rebuild_reference=args.otf_rebuild_reference,
+            otf_rebuild=args.otf_rebuild,
         )
     )
 

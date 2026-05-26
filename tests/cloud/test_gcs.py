@@ -247,3 +247,124 @@ def test_concurrent_download_prefix_no_gsutil(
         (tmp_path / "rows" / "db_a_1" / "attempt-1.json").read_text()
     )
     assert back["instance_id"] == "db_a_1"
+
+
+# ---------------------------------------------------------------------------
+# DEV-1468 — upload_dir_prefix + download_prefix (slayer-setup delivery).
+# ---------------------------------------------------------------------------
+
+
+def _make_artifact_dir(root: Path) -> dict[str, bytes]:
+    """Lay down a believable per-DB SLayer artifact dir (markers, nested
+    YAML, and a BINARY embeddings.db). Returns {relpath: bytes} for asserts."""
+    files = {
+        "_cache_fp.txt": b"deadbeefcafe1234",
+        "_kb_rows.json": b'[{"id": 1}]',
+        "memories.yaml": b"- id: x\n",
+        "datasources/db.yaml": b"name: db\n",
+        "models/db/households.yaml": b"name: households\n",
+        # Binary blob with NUL bytes + a sqlite-ish header — must survive intact.
+        "embeddings.db": b"SQLite format 3\x00\x01\x02\x03\xff\xfe",
+    }
+    for rel, data in files.items():
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
+    return files
+
+
+def test_upload_dir_prefix_round_trip(fake_gcs_bucket, tmp_path: Path) -> None:
+    """upload_dir_prefix ships every file (incl. dot-free markers + binary
+    embeddings.db) under <prefix>/<relpath>; download_prefix restores them
+    byte-for-byte under dest/<relpath>."""
+    client, store = fake_gcs_bucket
+    src = tmp_path / "slayer_otf_cache" / "db"
+    src.mkdir(parents=True)
+    expected = _make_artifact_dir(src)
+
+    prefix = f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache/db"
+    gcs.upload_dir_prefix(src, prefix, client=client)
+
+    # Every file landed under the prefix with the right relative key.
+    for rel, data in expected.items():
+        assert store[f"{prefix}/{rel}"] == data
+
+    dest = tmp_path / "down" / "db"
+    gcs.download_prefix(prefix, dest, client=client)
+    for rel, data in expected.items():
+        assert (dest / rel).read_bytes() == data, f"{rel} round-trip mismatch"
+    # Binary integrity (NUL bytes preserved).
+    assert (dest / "embeddings.db").read_bytes() == expected["embeddings.db"]
+
+
+def test_upload_dir_prefix_preserves_nested_rel_paths(
+    fake_gcs_bucket, tmp_path: Path,
+) -> None:
+    client, store = fake_gcs_bucket
+    src = tmp_path / "ref" / "db"
+    (src / "models" / "db").mkdir(parents=True)
+    (src / "models" / "db" / "a.yaml").write_text("a\n")
+    (src / "top.txt").write_text("t\n")
+
+    prefix = "runs/r/slayer_setup/slayer_models_otf/db"
+    gcs.upload_dir_prefix(src, prefix, client=client)
+    assert f"{prefix}/models/db/a.yaml" in store
+    assert f"{prefix}/top.txt" in store
+    # No directory entries, only files.
+    assert all(not k.endswith("/") for k in store)
+
+
+def test_download_prefix_strips_prefix(fake_gcs_bucket, tmp_path: Path) -> None:
+    """download_prefix writes each blob to dest/<path-after-prefix>, dropping
+    the GCS prefix itself."""
+    client, store = fake_gcs_bucket
+    prefix = "runs/r/slayer_setup/slayer_models/db"
+    store[f"{prefix}/households.yaml"] = b"name: households\n"
+    store[f"{prefix}/sub/x.yaml"] = b"x\n"
+    # A sibling blob OUTSIDE the prefix must not be downloaded.
+    store["runs/r/slayer_setup/slayer_models/other_db/y.yaml"] = b"y\n"
+
+    dest = tmp_path / "out"
+    gcs.download_prefix(prefix, dest, client=client)
+    assert (dest / "households.yaml").read_bytes() == b"name: households\n"
+    assert (dest / "sub" / "x.yaml").read_bytes() == b"x\n"
+    assert not (dest / "y.yaml").exists()
+    assert not (dest.parent / "other_db").exists()
+
+
+def test_concurrent_download_prefix_is_a_thin_wrapper(
+    fake_gcs_bucket, tmp_path: Path,
+) -> None:
+    """concurrent_download_prefix(run_id, dest) must delegate to
+    download_prefix(f'runs/<run_id>/', dest) so the two share one code path."""
+    client, store = fake_gcs_bucket
+    store[f"runs/{RUN_ID}/manifest.json"] = b'{"run_id": "x"}'
+    store[f"runs/{RUN_ID}/rows/db_a_1/attempt-1.json"] = b'{"instance_id": "db_a_1"}'
+
+    dest = tmp_path / "dl"
+    gcs.concurrent_download_prefix(RUN_ID, dest, client=client)
+    assert (dest / "manifest.json").exists()
+    assert (dest / "rows" / "db_a_1" / "attempt-1.json").exists()
+
+
+def test_download_prefix_empty_is_noop(fake_gcs_bucket, tmp_path: Path) -> None:
+    """No blobs under the prefix → nothing downloaded (no crash)."""
+    client, _store = fake_gcs_bucket
+    dest = tmp_path / "out"
+    gcs.download_prefix("runs/does-not-exist/", dest, client=client)
+    assert not dest.exists() or not any(dest.iterdir())
+
+
+@pytest.mark.parametrize(
+    "slayer_setup, framework, expected",
+    [
+        ("pre-encoded", "pydantic_ai_recursive", "slayer_models"),
+        ("pre-encoded", "claude_sdk", "slayer_models"),
+        ("on-the-fly", "pydantic_ai_recursive", "slayer_otf_cache"),
+        ("on-the-fly", "pydantic_ai_otf_encode", "slayer_models_otf"),
+    ],
+)
+def test_slayer_artifact_name(slayer_setup, framework, expected) -> None:
+    """The combo → GCS artifact-dir-name mapping is the single source of truth
+    shared by the driver (upload) and the actor (download)."""
+    assert gcs.slayer_artifact_name(slayer_setup, framework) == expected

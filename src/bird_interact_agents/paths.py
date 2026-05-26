@@ -106,8 +106,31 @@ def sar_audited_gold_root() -> Path:
 
 
 def slayer_models_root() -> Path:
-    """Per-DB SLayer model YAML — committed, must live in the main checkout."""
+    """Per-DB SLayer model YAML — committed, must live in the main checkout.
+
+    Honours ``BIRD_SLAYER_MODELS_ROOT`` (harmless locally; the cloud actor
+    sets it to ``/data/slayer_models`` so the uploaded pre-encoded models
+    are found there).
+    """
+    override = os.environ.get("BIRD_SLAYER_MODELS_ROOT")
+    if override:
+        return Path(override).expanduser()
     return main_checkout_root() / "slayer_models"
+
+
+def slayer_otf_cache_root() -> Path:
+    """Per-DB phase-1-3 ingest cache root for the on-the-fly setup path.
+
+    Single source of truth (replaces the duplicated per-agent
+    ``_otf_cache_root`` helpers). Lives at ``<main_checkout>/slayer_otf_cache/``
+    so the cache is sandboxed-writable and shared across worktrees. Honours
+    ``BIRD_OTF_CACHE_ROOT`` (the cloud actor sets it to ``/data/slayer_otf_cache``
+    so the uploaded cache is found there).
+    """
+    override = os.environ.get("BIRD_OTF_CACHE_ROOT")
+    if override:
+        return Path(override).expanduser()
+    return main_checkout_root() / "slayer_otf_cache"
 
 
 def slayer_models_otf_root() -> Path:
@@ -116,7 +139,13 @@ def slayer_models_otf_root() -> Path:
     it is git-committable, and ``hard8_preprocessor.build_task_variant_storage``
     resolves the ``mini-interact`` dataset path identically). NEVER the same
     dir as ``slayer_models`` — hand-built committed models are never touched.
+
+    Honours ``BIRD_SLAYER_MODELS_OTF_ROOT`` (the cloud actor sets it to
+    ``/data/slayer_models_otf`` so the uploaded reference is found there).
     """
+    override = os.environ.get("BIRD_SLAYER_MODELS_OTF_ROOT")
+    if override:
+        return Path(override).expanduser()
     return main_checkout_root() / "slayer_models_otf"
 
 

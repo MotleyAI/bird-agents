@@ -359,9 +359,35 @@ async def _annotate_memories(
 # ---------------------------------------------------------------------------
 
 
-def _load_reference_entry(
-    target: Path, fingerprint: str, kb_rows: list[dict],
-) -> ReferenceEntry:
+_KB_ROWS = "_kb_rows.json"
+
+
+def _load_reference_entry(target: Path) -> ReferenceEntry:
+    """Build a :class:`ReferenceEntry` entirely from the on-disk reference dir.
+
+    Self-contained (Codex r2 Med#5): the ``_reference_fp.txt`` marker alone is
+    NOT sufficient — we also load + validate ``_kb_rows.json``. A present marker
+    with a missing/corrupt ``_kb_rows.json`` is corruption and is surfaced
+    loudly (``RuntimeError``), never silently rebuilt or reused. An EMPTY list
+    (``[]``) is accepted: a DB with zero KB rows is structurally valid.
+    """
+    marker = target / _MARKER
+    fingerprint = marker.read_text().strip()
+
+    kb_path = target / _KB_ROWS
+    try:
+        kb_rows = json.loads(kb_path.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        raise RuntimeError(
+            f"OTF reference at {target} has a completeness marker but its "
+            f"{_KB_ROWS} is missing/unreadable ({e}); the reference is corrupt "
+            f"— delete it (or pass --otf-rebuild) to rebuild"
+        ) from e
+    if not isinstance(kb_rows, list):
+        raise RuntimeError(
+            f"OTF reference at {target}: {_KB_ROWS} is not a JSON list"
+        )
+
     setup_results: list[Any] = []
     sr_path = target / _SETUP_RESULTS
     if sr_path.is_file():
@@ -386,17 +412,41 @@ def purge_references(reference_root: Path, dbs) -> list[str]:
     next :func:`ensure_db_reference` rebuilds them from scratch.
 
     The db-level KB-encoded reference is otherwise PRESERVED across runs (reused
-    when the fingerprint matches). The ``--otf-rebuild-reference`` run option
-    calls this ONCE before the task loop to explicitly drop it, so the lazy
-    build regenerates it and every task reuses the fresh copy (no per-task
+    whenever its completeness marker is present). The ``--otf-rebuild`` run
+    option calls this ONCE before the task loop to explicitly drop it, so the
+    lazy build regenerates it and every task reuses the fresh copy (no per-task
     ``force``, no concurrency window). Returns the db names actually removed."""
+    return _purge_dir(reference_root, dbs)
+
+
+def purge_caches(cache_root: Path, dbs) -> list[str]:
+    """Delete the per-DB phase-1-3 ingest cache dir(s) under ``cache_root``.
+
+    The cache layer of the ``--otf-rebuild`` force-wipe (DEV-1468): wiping the
+    reference alone would let a stale cache be re-encoded into a "fresh"
+    reference, so both layers are dropped together. Returns db names removed."""
+    return _purge_dir(cache_root, dbs)
+
+
+def _purge_dir(root: Path, dbs) -> list[str]:
     removed: list[str] = []
     for db in dbs:
-        target = Path(reference_root) / db
+        target = Path(root) / db
         if target.exists():
             shutil.rmtree(target, ignore_errors=True)
             removed.append(db)
     return removed
+
+
+def _reuse_reference(target: Path, db: str) -> ReferenceEntry:
+    """Reuse a present (marked) reference, emitting a one-line provenance
+    WARNING — the fingerprint is NOT re-checked (DEV-1468 consolidation)."""
+    logger.warning(
+        "reusing OTF reference for %s; fingerprint not re-checked; pass "
+        "--otf-rebuild to rebuild from scratch",
+        db,
+    )
+    return _load_reference_entry(target)
 
 
 async def ensure_db_reference(
@@ -409,32 +459,43 @@ async def ensure_db_reference(
     force: bool = False,
 ) -> ReferenceEntry:
     """Materialise (or reuse) the durable per-DB reference at
-    ``reference_root / db``. See module docstring for the lifecycle contract."""
+    ``reference_root / db``. See module docstring for the lifecycle contract.
+
+    DEV-1468: the reuse/marker check runs at the TOP, BEFORE ``ensure_db_cache``
+    — load-bearing for the cloud (combo 3 downloads ONLY the reference, never
+    the cache, so touching ``ensure_db_cache`` would trigger an in-cluster
+    ingest). Reuse is presence-gated on ``_reference_fp.txt``; the fingerprint
+    is no longer compared (it is provenance only)."""
+    target = reference_root / db
+    marker = target / _MARKER
+
+    # Reuse path FIRST — never builds/touches the cache (load-bearing for cloud
+    # combo 3, which downloads only the reference, never the cache).
+    if not force and marker.is_file():
+        return _reuse_reference(target, db)
+
+    # Materialise (or reuse) the phases-1-3 cache OUTSIDE the reference lock.
+    # ``ensure_db_cache`` acquires the SAME per-db ``_get_lock(db)`` internally,
+    # and asyncio.Lock is NOT reentrant — calling it while holding that lock
+    # would self-deadlock on a first/forced build (CodeRabbit). It has its own
+    # concurrency control, so calling it here (before the lock) is safe.
+    # Forward ``force`` so a reference rebuild also wipes a stale cache (Codex
+    # round-2: otherwise a forced reference can re-encode stale phase-1-3
+    # contents when only the reference layer is marker-absent).
     cache_entry = await ensure_db_cache(
         db, cache_root=cache_root, mini_interact_root=mini_interact_root,
+        force=force,
     )
     fp = cache_entry.fingerprint
     kb_rows = cache_entry.kb_rows
-    target = reference_root / db
-    marker = target / _MARKER
     reference_root.mkdir(parents=True, exist_ok=True)
 
-    # Fast path — reuse only a CURRENT reference. The fingerprint encodes the
-    # DB root + sqlite size/mtime + KB + column-meanings (see cache.fingerprint_of),
-    # so a marker mismatch means the reference was built against different inputs
-    # (changed KB/schema, or a different --db-path) and MUST be rebuilt, not
-    # reused (Codex finding) — otherwise a task gets models from one dataset and
-    # data resolved against another.
-    if not force and marker.is_file() and marker.read_text().strip() == fp:
-        return _load_reference_entry(target, fp, kb_rows)
-
     async with _get_lock(db):
-        # Double-check under the lock — a peer may have built a CURRENT one.
-        if not force and marker.is_file() and marker.read_text().strip() == fp:
-            return _load_reference_entry(target, fp, kb_rows)
+        # Double-check under the lock — a peer may have built the reference
+        # while we waited (or while ensure_db_cache ran).
+        if not force and marker.is_file():
+            return _reuse_reference(target, db)
 
-        # Rebuild. Overwrite any existing target (an explicit ``force`` or a
-        # stale one whose fingerprint no longer matches).
         results = await _build_reference(
             db=db, fp=fp, cache_entry=cache_entry, kb_rows=kb_rows,
             reference_root=reference_root, target=target,

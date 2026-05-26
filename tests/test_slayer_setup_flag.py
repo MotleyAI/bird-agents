@@ -303,6 +303,39 @@ async def test_run_evaluation_rejects_invalid_slayer_setup_programmatically(
     assert "framework" in msg
 
 
+# ---------------------------------------------------------------------------
+# DEV-1468 — --otf-rebuild (renamed from --otf-rebuild-reference, old name
+# kept as a hidden alias) is plumbed to run_evaluation as `otf_rebuild`.
+# ---------------------------------------------------------------------------
+
+
+def _otf_argv(tmp_path: Path, *extra: str) -> list[str]:
+    return _argv_base(tmp_path) + [
+        "--framework", "pydantic_ai_otf_encode",
+        "--query-mode", "slayer",
+        "--mode", "a-interact",
+        "--slayer-setup", "on-the-fly",
+        *extra,
+    ]
+
+
+def test_otf_rebuild_flag_plumbed(monkeypatch, tmp_path: Path):
+    kwargs = _drive_main(monkeypatch, _otf_argv(tmp_path, "--otf-rebuild"))
+    assert kwargs.get("otf_rebuild") is True
+
+
+def test_otf_rebuild_reference_alias_still_works(monkeypatch, tmp_path: Path):
+    """The old --otf-rebuild-reference name stays as a hidden alias for
+    git/script continuity; it sets the same `otf_rebuild` flag."""
+    kwargs = _drive_main(monkeypatch, _otf_argv(tmp_path, "--otf-rebuild-reference"))
+    assert kwargs.get("otf_rebuild") is True
+
+
+def test_otf_rebuild_default_false(monkeypatch, tmp_path: Path):
+    kwargs = _drive_main(monkeypatch, _otf_argv(tmp_path))
+    assert kwargs.get("otf_rebuild") is False
+
+
 def test_on_the_fly_rejects_non_a_interact_mode(
     monkeypatch, tmp_path: Path, capsys,
 ):

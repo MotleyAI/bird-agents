@@ -1,9 +1,9 @@
 """In-cluster Ray driver. Invoked via `ray job submit -- python ray_app.py
 <args>` from the laptop-side driver.
 
-Holds the WorkerActor + ActorPool dispatch loop, the per-task SLayer
-ephemeral-server lifecycle, the fd-level log capture, and the heartbeat
-writer.
+Holds the WorkerActor + ActorPool dispatch loop, the once-per-worker SLayer
+setup download (DEV-1468 — mirrors local; no per-task ephemeral server), the
+fd-level log capture, and the heartbeat writer.
 """
 
 from __future__ import annotations
@@ -33,49 +33,73 @@ def default_gcs_client():
 
 
 # ---------------------------------------------------------------------------
-# Per-task SLayer ephemeral server
+# SLayer setup download (DEV-1468 — once per worker process; mirrors local)
 # ---------------------------------------------------------------------------
 
 
-# Directory the Docker image bakes the per-database SLayer SQLite files into
-# (see `Dockerfile.cloud`). A module constant so tests can repoint it at a
-# fixture dir instead of the absolute container path.
-SLAYER_DBS_DIR = Path("/data/slayer_dbs")
+def _slayer_download_target(cfg: dict[str, Any]) -> tuple[str, Path]:
+    """Return ``(artifact_name, dest_root)`` for the run's slayer combo.
+
+    ``dest_root`` is the env-override root the LOCAL per-task storage builders
+    read from (``BIRD_SLAYER_MODELS_ROOT`` / ``BIRD_OTF_CACHE_ROOT`` /
+    ``BIRD_SLAYER_MODELS_OTF_ROOT``, set in ``cluster.yaml.j2``), so a download
+    here lands exactly where ``run_one_task`` looks — no cloud-specific OTF
+    code."""
+    from bird_interact_agents import paths
+
+    artifact = _gcs.slayer_artifact_name(cfg["slayer_setup"], cfg["framework"])
+    root_fn = {
+        "slayer_models": paths.slayer_models_root,
+        "slayer_otf_cache": paths.slayer_otf_cache_root,
+        "slayer_models_otf": paths.slayer_models_otf_root,
+    }[artifact]
+    return artifact, root_fn()
 
 
-class EphemeralSlayerServer:
-    """Holds a per-task SQLite copy of `/data/slayer_dbs/<db>.sqlite` and
-    spawns a local SLayer server bound to it. Tests stub this class."""
+def download_slayer_setup(run_id: str, cfg: dict[str, Any], *, client) -> None:
+    """Download the run's uploaded slayer setup into its env-override root,
+    ONCE per worker process. No-op unless ``cfg['query_mode'] == 'slayer'``.
 
-    def __init__(self, sqlite_path: str):
-        self.sqlite_path = sqlite_path
-        # Real impl would `subprocess.Popen(["slayer", "serve", ...])` here.
+    Atomic + root-level marker-gated (mirrors ``cache.py`` / ``reference_build``):
+    download the whole ``runs/<id>/slayer_setup/<artifact>/`` prefix into a
+    unique sibling tmp, write ``.download_complete`` LAST, then ``os.rename``
+    onto the (absent) ``dest_root``. On ``OSError`` (a peer worker on the same
+    VM won the rename) success iff ``dest_root/.download_complete`` exists, else
+    re-raise. Never pre-create ``dest_root``."""
+    if cfg.get("query_mode") != "slayer":
+        return
+    artifact, dest_root = _slayer_download_target(cfg)
+    marker = dest_root / ".download_complete"
+    if marker.is_file():
+        return
 
-    def close(self) -> None:
-        # Real impl would `proc.terminate()` and wait.
-        pass
-
-
-def _setup_per_task_slayer(database: str) -> tuple[EphemeralSlayerServer, str]:
-    """Copy `<SLAYER_DBS_DIR>/<db>.sqlite` to a unique tmp dir and boot a
-    server pointed at the copy. Returns (server, storage_root).
-
-    Fails loudly if the baked DB is missing: an empty stand-in would let the
-    SLayer server boot against an empty schema, so every task would silently
-    fail its queries instead of surfacing the real cause (a broken image
-    build / ingest). Tests repoint `SLAYER_DBS_DIR` at a fixture dir."""
-    src = SLAYER_DBS_DIR / f"{database}.sqlite"
-    if not src.exists():
-        raise FileNotFoundError(
-            f"baked SLayer DB not found: {src}. The image build must ingest "
-            f"every selected database into {SLAYER_DBS_DIR}/<db>.sqlite before "
-            f"slayer-mode tasks can run."
-        )
-    tmpdir = Path(tempfile.mkdtemp(prefix=f"slayer_{database}_"))
-    dst = tmpdir / f"{database}.sqlite"
-    shutil.copy2(src, dst)
-    server = EphemeralSlayerServer(str(dst))
-    return server, str(tmpdir)
+    prefix = f"runs/{run_id}/slayer_setup/{artifact}/"
+    parent = dest_root.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix=f".{dest_root.name}.dl-", dir=str(parent)))
+    try:
+        _gcs.download_prefix(prefix, tmp, client=client)
+        # A missing/empty prefix (failed or partial upload, wrong prefix) must
+        # NOT be cached as a complete download — that would permanently wedge
+        # every task against an empty setup with no retry (Codex). Fail loudly
+        # so the run surfaces the bad upload instead.
+        if not any(p.is_file() for p in tmp.rglob("*")):
+            raise FileNotFoundError(
+                f"slayer setup download found no files under gs://"
+                f"{_gcs.BUCKET_NAME}/{prefix} for run {run_id} — the submit "
+                f"upload is missing/empty; refusing to cache an empty setup"
+            )
+        (tmp / ".download_complete").write_text("ok")  # marker LAST
+        try:
+            os.rename(tmp, dest_root)
+        except OSError:
+            if not marker.is_file():
+                raise
+            shutil.rmtree(tmp, ignore_errors=True)
+    except BaseException:
+        if tmp.exists():
+            shutil.rmtree(tmp, ignore_errors=True)
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +238,7 @@ async def _run_one_task_async(
     max_depth: int,
     data_dir: str,
     slayer_storage_root: str | None,
+    slayer_setup: str = "pre-encoded",
     cached_runner: Any = None,
 ) -> dict:
     # Defer the import so monkeypatching `bird_interact_agents.run.run_one_task`
@@ -239,6 +264,7 @@ async def _run_one_task_async(
         prompt_cache=prompt_cache,
         max_depth=max_depth,
         slayer_storage_root=slayer_storage_root,
+        slayer_setup=slayer_setup,
     )
 
 
@@ -251,27 +277,23 @@ def _run_one_in_actor(
     gcs_client,
     cached_runner: Any = None,
 ) -> str:
-    """The per-task body that runs INSIDE the actor. Captures logs,
-    sets up per-task SLayer (if applicable), invokes run_one_task, writes
-    the row + log to GCS, and returns the iid. All per-task tmp dirs are
-    cleaned up before returning."""
+    """The per-task body that runs INSIDE the actor. Captures logs, invokes
+    run_one_task (which resolves per-task SLayer storage from the downloaded
+    setup, exactly as the local path does), writes the row + log to GCS, and
+    returns the iid. The per-task log tmp dir is cleaned up before returning.
+
+    DEV-1468: there is no per-task ephemeral SLayer server anymore — the setup
+    is downloaded once per worker (``download_slayer_setup`` in the actor
+    ``__init__``) and ``run_one_task`` builds the per-task variant storage from
+    it (via ``cfg['slayer_storage_root']`` / ``slayer_setup``)."""
     iid = str(task_data.get("instance_id") or "")
     database = str(task_data.get("selected_database") or "")
     log_dir = Path(tempfile.mkdtemp(prefix="cloud_log_"))
     log_tmp = log_dir / "task.log"
 
-    slayer_server: EphemeralSlayerServer | None = None
-    slayer_storage_root: str | None = None
-    slayer_tmp_dir: str | None = None
     try:
         with fd_capture(log_tmp):
             try:
-                if cfg["query_mode"] == "slayer":
-                    slayer_server, slayer_storage_root = _setup_per_task_slayer(
-                        database
-                    )
-                    slayer_tmp_dir = slayer_storage_root
-
                 data_dir = os.environ.get(
                     "BIRD_DB_PATH", cfg.get("data_dir", "/data/mini-interact")
                 )
@@ -290,23 +312,15 @@ def _run_one_in_actor(
                         prompt_cache=cfg["prompt_cache"],
                         max_depth=cfg["max_depth"],
                         data_dir=data_dir,
-                        slayer_storage_root=slayer_storage_root,
+                        slayer_storage_root=cfg.get("slayer_storage_root"),
+                        slayer_setup=cfg.get("slayer_setup", "pre-encoded"),
                         cached_runner=cached_runner,
                     )
                 )
             except Exception as e:  # noqa: BLE001
                 row = _build_error_row(iid, database, str(e))
     finally:
-        if slayer_server is not None:
-            try:
-                slayer_server.close()
-            except Exception:  # noqa: BLE001
-                pass
-        # Clean up the per-task tmp dirs — without this, every task leaves
-        # a SLayer SQLite copy + a log dir on the worker, filling disks on
-        # large runs.
-        if slayer_tmp_dir:
-            shutil.rmtree(slayer_tmp_dir, ignore_errors=True)
+        pass
 
     _gcs.write_row(run_id, iid, attempt, row, client=gcs_client)
     try:
@@ -347,6 +361,11 @@ class _LocalActor:
         self.run_id = run_id
         self.attempt = attempt
         self.gcs_client = gcs_client or default_gcs_client()
+        # DEV-1468: download the uploaded SLayer setup ONCE per process (gated
+        # on slayer mode) before any task runs, so run_one_task finds the
+        # artifacts at the env-override roots — exactly like local.
+        if cfg.get("query_mode") == "slayer":
+            download_slayer_setup(run_id, cfg, client=self.gcs_client)
         # CR#14: cache the framework runner across tasks for raw mode.
         # Slayer mode keeps per-task reconstruction because the storage
         # root rotates per task (per §4#5 isolation).
@@ -399,6 +418,12 @@ def _build_actor_class():
             # the driver (that raised PicklingError). Each actor builds
             # its own from the VM service-account metadata creds.
             self.gcs_client = default_gcs_client()
+            # DEV-1468: download the uploaded SLayer setup ONCE per worker
+            # process (gated on slayer mode) before any task runs. Mirrors
+            # `_LocalActor`; the root-level marker makes concurrent actors on
+            # one VM converge.
+            if cfg.get("query_mode") == "slayer":
+                download_slayer_setup(run_id, cfg, client=self.gcs_client)
             # CR#14 — cache the framework runner across tasks for raw
             # mode. `_LocalActor` does the same in its __init__; without
             # mirroring it here, the real Ray production path was paying
@@ -460,7 +485,10 @@ def drain_pool(
     leftover = list(leftover_iids or [])
     while pool.has_next():
         try:
-            done_iid = pool.get_next_unordered()
+            # Consume one completed result (advances the pool). The iid isn't
+            # needed here — the actor already wrote its per-task row; drain_pool
+            # only emits synthetic actor-lost rows on failure.
+            pool.get_next_unordered()
             if heartbeat is not None:
                 heartbeat.tick_done()
             if leftover and dispatch is not None:
@@ -507,6 +535,8 @@ def run_pool(
     use_audited_gold_sql: bool = False,
     prompt_cache: bool = True,
     max_depth: int = 3,
+    slayer_setup: str = "pre-encoded",
+    slayer_storage_root: str | None = None,
     ray_job_id: str = "local",
     gcs_client=None,
     heartbeat_interval_s: float = 30.0,
@@ -534,6 +564,8 @@ def run_pool(
         "use_audited_gold_sql": use_audited_gold_sql,
         "prompt_cache": prompt_cache,
         "max_depth": max_depth,
+        "slayer_setup": slayer_setup,
+        "slayer_storage_root": slayer_storage_root,
         "data_dir": os.environ.get("BIRD_DB_PATH", "/data/mini-interact"),
     }
 
@@ -812,6 +844,9 @@ def main(argv: list[str] | None = None) -> int:
                    action="store_false")
     p.add_argument("--max-depth", type=int, default=3)
     p.add_argument("--num-actors", type=int, default=4)
+    p.add_argument("--slayer-setup", default="pre-encoded",
+                   choices=("pre-encoded", "on-the-fly"))
+    p.add_argument("--slayer-storage-root", default="/data/slayer_models")
     p.add_argument("--instance-ids", required=True,
                    help="comma-separated list")
     p.add_argument(
@@ -846,6 +881,8 @@ def main(argv: list[str] | None = None) -> int:
         use_audited_gold_sql=args.use_audited_gold_sql,
         prompt_cache=args.prompt_cache,
         max_depth=args.max_depth,
+        slayer_setup=args.slayer_setup,
+        slayer_storage_root=args.slayer_storage_root,
         ray_job_id=args.ray_job_id,
         actor_env_vars=actor_env_vars,
     )

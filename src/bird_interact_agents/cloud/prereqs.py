@@ -236,10 +236,17 @@ def _required_api_keys(model: str) -> tuple[str, ...]:
     return ()
 
 
-def check_api_keys(*, agent_model: str, user_sim_model: str) -> None:
+def check_api_keys(
+    *, agent_model: str, user_sim_model: str, query_mode: str = "raw",
+) -> None:
     needed: set[str] = set()
     needed.update(_required_api_keys(agent_model))
     needed.update(_required_api_keys(user_sim_model))
+    # DEV-1468: slayer mode requires channel-3 embeddings (default
+    # openai/text-embedding-3-small), so OPENAI_API_KEY must be present and
+    # delivered to the actors regardless of the agent/user-sim providers.
+    if query_mode == "slayer":
+        needed.add("OPENAI_API_KEY")
     missing = [k for k in needed if not os.environ.get(k)]
     if missing:
         cmds = "\n".join(f"export {k}=<your-key>" for k in missing)
@@ -402,6 +409,7 @@ def check(args: Any) -> None:
     check_api_keys(
         agent_model=args.agent_model,
         user_sim_model=args.user_sim_model,
+        query_mode=getattr(args, "query_mode", "raw"),
     )
     check_submitter_iam()
     ensure_bucket_and_artifact_repo()

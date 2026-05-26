@@ -50,6 +50,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_submit.add_argument("--run-id", default=None)
     sp_submit.add_argument("--detach", action="store_true")
     sp_submit.add_argument("--allow-dirty", action="store_true")
+    sp_submit.add_argument(
+        "--slayer-setup", choices=("pre-encoded", "on-the-fly"),
+        default="pre-encoded",
+    )
+    sp_submit.add_argument(
+        "--slayer-storage-root", default="/data/slayer_models",
+    )
 
     for name in ("fetch", "kill", "resubmit"):
         spx = sub.add_parser(name)
@@ -64,20 +71,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     if ns.subcommand == "submit":
         if ns.detach and ns.allow_dirty:
             p.error("--detach and --allow-dirty are mutually exclusive")
-        # Cloud slayer mode isn't wired yet. The image doesn't ship the
-        # SLayer setup files and the in-cluster actor has no storage path to
-        # point the agent at, so slayer tasks would fail per-task mid-run
-        # (FileNotFoundError in `_setup_per_task_slayer`). Reject it at submit
-        # — fail fast and cheap, before building/pushing the image and
-        # bringing up a cluster. Tracked for a follow-up PR that ships the
-        # local SLayer setup (`slayer_models/`, `slayer_models_otf/`) into the
-        # image and reuses `run_one_task`'s per-task storage path (no
-        # cloud-specific slayer code). Remove this guard when that lands.
-        if ns.query_mode == "slayer":
-            p.error(
-                "cloud slayer mode is not yet implemented (tracked for a "
-                "follow-up PR); use --query-mode raw for now"
+        # Cloud slayer mode mirrors local: validate the
+        # (framework, query_mode, mode, slayer_setup) tuple via the SAME guard
+        # the local CLI uses, so an unsupported combo fails fast at submit —
+        # before building/pushing the image or bringing up a cluster — rather
+        # than per-task mid-run. (run._validate_slayer_setup raises ValueError;
+        # translate to the standard argparse exit-2 + stderr.)
+        from bird_interact_agents.run import _validate_slayer_setup
+        try:
+            _validate_slayer_setup(
+                slayer_setup=ns.slayer_setup, framework=ns.framework,
+                query_mode=ns.query_mode, mode=ns.mode,
             )
+        except ValueError as e:
+            p.error(str(e))
         if ns.instance_ids_file and not ns.instance_ids:
             with open(ns.instance_ids_file) as f:
                 ns.instance_ids = [
