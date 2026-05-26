@@ -479,8 +479,12 @@ async def ensure_db_reference(
     # and asyncio.Lock is NOT reentrant — calling it while holding that lock
     # would self-deadlock on a first/forced build (CodeRabbit). It has its own
     # concurrency control, so calling it here (before the lock) is safe.
+    # Forward ``force`` so a reference rebuild also wipes a stale cache (Codex
+    # round-2: otherwise a forced reference can re-encode stale phase-1-3
+    # contents when only the reference layer is marker-absent).
     cache_entry = await ensure_db_cache(
         db, cache_root=cache_root, mini_interact_root=mini_interact_root,
+        force=force,
     )
     fp = cache_entry.fingerprint
     kb_rows = cache_entry.kb_rows

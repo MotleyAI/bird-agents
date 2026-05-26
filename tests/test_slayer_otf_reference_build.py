@@ -79,7 +79,9 @@ def fake_cache(tmp_path, monkeypatch):
 
     entry = CacheEntry(cache_dir=cache_dir, fingerprint="fp_abc123", kb_rows=rows)
 
-    async def fake_ensure_db_cache(db, *, cache_root, mini_interact_root):
+    async def fake_ensure_db_cache(
+        db, *, cache_root, mini_interact_root, force=False,
+    ):
         return entry
 
     monkeypatch.setattr(
@@ -171,6 +173,39 @@ async def test_second_call_is_noop_reuse(fake_cache, tmp_path):
     assert sorted(first) == [1, 2, 3]
 
 
+async def test_force_is_forwarded_to_ensure_db_cache(
+    fake_cache, tmp_path, monkeypatch,
+):
+    """Codex (round-2): ``ensure_db_reference(force=True)`` must FORWARD force
+    to ``ensure_db_cache``, else a forced reference rebuild can encode stale
+    phase-1-3 cache contents (the CLI ``--otf-rebuild`` covers this via a
+    separate purge, but a programmatic ``force=True`` caller shouldn't get
+    that footgun)."""
+    from bird_interact_agents.slayer_otf import reference_build
+
+    inner = reference_build.ensure_db_cache
+    seen: dict = {}
+
+    async def recording_cache(db, *, cache_root, mini_interact_root, force=False):
+        seen["force"] = force
+        return await inner(
+            db, cache_root=cache_root, mini_interact_root=mini_interact_root,
+        )
+
+    monkeypatch.setattr(reference_build, "ensure_db_cache", recording_cache)
+
+    # First build (force=False) primes the marker + records seen["force"]=False.
+    await _build(tmp_path, _encoded_build_encoder([]))
+    assert seen["force"] is False
+
+    # Now force=True must reach ensure_db_cache too.
+    seen.clear()
+    await _build(tmp_path, _encoded_build_encoder([]), force=True)
+    assert seen.get("force") is True, (
+        "ensure_db_reference(force=True) must forward force to ensure_db_cache"
+    )
+
+
 async def test_force_rebuilds_even_when_present(fake_cache, tmp_path):
     record: list[int] = []
     await _build(tmp_path, _encoded_build_encoder(record))
@@ -240,10 +275,13 @@ async def test_no_self_deadlock_when_cache_takes_same_lock(
 
     inner = reference_build.ensure_db_cache  # the fake installed by fake_cache
 
-    async def lock_taking_cache(db, *, cache_root, mini_interact_root):
+    async def lock_taking_cache(
+        db, *, cache_root, mini_interact_root, force=False,
+    ):
         async with _get_lock(db):  # the real ensure_db_cache takes this lock
             return await inner(
                 db, cache_root=cache_root, mini_interact_root=mini_interact_root,
+                force=force,
             )
 
     monkeypatch.setattr(reference_build, "ensure_db_cache", lock_taking_cache)

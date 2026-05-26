@@ -17,9 +17,13 @@ from bird_interact_agents.cloud import collation as _collation
 # `driver.gcs` still get the real pure mapping — only the I/O helpers
 # (`gcs.upload_dir_prefix` etc.) need to be mockable.
 from bird_interact_agents.cloud.gcs import slayer_artifact_name
-# Imported by NAME so it survives tests that mock `driver.prereqs` (the
-# raise in read_api_keys_from_local_env must use the real exception class).
-from bird_interact_agents.cloud.prereqs import PrereqError
+# Imported by NAME so they survive tests that mock `driver.prereqs`. PrereqError
+# must be the real class for the raise in `read_api_keys_from_local_env`, and
+# `_required_api_keys` must be the REAL provider→key mapping so submit/resubmit
+# tests that mock `driver.prereqs` still exercise the actual key selection
+# (CodeRabbit) — otherwise the mock returns an empty MagicMock-iterable and
+# key-selection silently no-ops in those tests.
+from bird_interact_agents.cloud.prereqs import PrereqError, _required_api_keys
 
 
 logger = logging.getLogger(__name__)
@@ -110,7 +114,7 @@ def read_api_keys_from_local_env(
 
     needed: set[str] = set()
     for model in (agent_model, user_sim_model):
-        needed.update(prereqs._required_api_keys(model))
+        needed.update(_required_api_keys(model))
     # DEV-1468: slayer mode needs OPENAI_API_KEY for channel-3 embeddings,
     # regardless of the agent/user-sim providers.
     if query_mode == "slayer":
