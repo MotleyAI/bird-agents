@@ -677,8 +677,8 @@ def _build_actor_class():
                 download_slayer_setup(run_id, cfg, client=self.gcs_client)
             # DEV-1470 — per-actor upload-back state. AFTER the download.
             self.initial_seed_fp_by_db = _snapshot_initial_seed_fps(
-            run_id, cfg, client=self.gcs_client,
-        )
+                run_id, cfg, client=self.gcs_client,
+            )
             self.uploaded_dbs = set()
             # CR#14 — cache the framework runner across tasks for raw
             # mode. `_LocalActor` does the same in its __init__; without
