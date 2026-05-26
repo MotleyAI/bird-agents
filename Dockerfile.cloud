@@ -66,7 +66,12 @@ RUN uv pip install --no-deps -e .
 # image free of slayer-model churn.
 
 COPY --from=mini-interact . /data/mini-interact/
-COPY audited_gold/ /app/bird-interact-agents/audited_gold/
+# `audited_gold/` lives in the main checkout (gitignored, never tracked) — pulled
+# in via BuildKit's `--build-context audited-gold=<paths.audited_gold_root()>`
+# arg that `image.build_and_push` sets at build time. This keeps the cloud
+# build runnable from any git worktree (the dir doesn't exist there) without
+# requiring the user to manually mirror it.
+COPY --from=audited-gold . /app/bird-interact-agents/audited_gold/
 
 ENV BIRD_DB_PATH=/data/mini-interact \
     BIRD_DATA_PATH=/data/mini-interact/mini_interact.jsonl \

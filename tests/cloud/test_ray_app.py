@@ -1613,6 +1613,56 @@ def test_download_slayer_setup_optional_seed_merges_per_file_newest_mtime(
     )
 
 
+def test_optional_seed_merge_preserves_src_mtime(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
+):
+    """CodeRabbit r2 — when the optional seed is merged file-by-file into an
+    existing root, the local dst MUST inherit the source's mtime, not the
+    download/replace time. Without this, a later actor restart's mtime
+    comparison reads the local-write time and can wrongly block a genuinely
+    newer seed/local reference from winning."""
+    import os
+
+    client, store = fake_gcs_bucket
+    cache_root = tmp_path / "data" / "slayer_otf_cache"
+    ref_root = tmp_path / "data" / "slayer_models_otf"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(ref_root))
+
+    cpfx = f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache"
+    rpfx = f"runs/{RUN_ID}/slayer_setup/slayer_models_otf"
+    store[f"{cpfx}/db_a/_cache_fp.txt"] = b"cache-fp"
+    store[f"{rpfx}/db_a/_reference_fp.txt"] = b"seed"
+    store[f"{rpfx}/db_a/models/x.yaml"] = b"seed-content\n"
+
+    # Capture the src mtime that the download will see (download_prefix
+    # writes the bytes with whatever mtime the OS sets at write-time; we
+    # just want to verify dst's mtime matches src's after merge).
+    cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
+           "framework": "pydantic_ai_otf_encode"}
+    # Spy on os.utime to assert the merge calls it before os.replace.
+    real_utime = os.utime
+    utime_calls: list[tuple[str, tuple[float, float]]] = []
+
+    def spy_utime(path, times):
+        utime_calls.append((str(path), times))
+        return real_utime(path, times)
+
+    monkeypatch.setattr(os, "utime", spy_utime)
+    ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+
+    # The merge path must have stamped the tmp file with src_mtime.
+    seed_writes = [
+        c for c in utime_calls
+        if "seed-" in c[0] and c[1][0] == c[1][1]
+    ]
+    assert seed_writes, (
+        "optional seed merge did not call os.utime on the tmp file before "
+        f"os.replace — dst will inherit fetch-time mtime instead of src "
+        f"mtime. All utime calls: {utime_calls}"
+    )
+
+
 def test_download_slayer_setup_optional_seed_marker_makes_rerun_noop(
     monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket, tmp_path: Path,
 ):

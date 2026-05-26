@@ -562,6 +562,24 @@ async def _build_reference_inside_lock(
     *, db, fp, cache_entry, kb_rows, reference_root, target,
     mini_interact_root, build_encoder, force,
 ) -> list[Any]:
+    # Codex r2: re-check the marker INSIDE the cross-process flock. A peer
+    # Ray actor process may have passed the marker check in
+    # `ensure_db_reference`, then blocked on this flock while we ran the
+    # encode. Once we acquire the lock and the peer has committed, we'd
+    # otherwise either (a) rmtree+rebuild on top of the peer's complete
+    # reference (`force=True` path) or (b) waste an entire LLM encode
+    # against a now-redundant target (`force=False` path). The asyncio
+    # `_get_lock(db)` only serializes within ONE process — the cross-process
+    # race is what this re-check closes.
+    marker = target / _MARKER
+    if not force and marker.is_file():
+        logger.info(
+            "OTF reference for %s committed by peer process while waiting "
+            "for cross-process build lock; reusing without rebuild",
+            db,
+        )
+        return _load_reference_entry(target).setup_results
+
     tmp = Path(tempfile.mkdtemp(prefix=f".{fp}.tmp-", dir=str(reference_root)))
     try:
         # 1. Copy phases-1-3 datasources/ + models/ into tmp.

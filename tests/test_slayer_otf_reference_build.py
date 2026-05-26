@@ -713,6 +713,37 @@ def _holder_proc(args):
         f.close()
 
 
+def _holder_proc_commit_then_release(args):
+    """Acquire the per-DB build flock, COMMIT a complete reference (marker +
+    minimal scaffolding files), then release. Models the in-cloud race the
+    Codex r2 fix addresses: a peer actor process finishes encoding while
+    another is blocked on this same flock; the blocked actor must observe
+    the freshly-committed marker once it acquires the lock and reuse instead
+    of re-encoding the whole KB."""
+    import fcntl
+    import json
+
+    reference_root_str, db, target_str, sentinel_path = args
+    from pathlib import Path as _P
+
+    reference_root = _P(reference_root_str)
+    target = _P(target_str)
+    reference_root.mkdir(parents=True, exist_ok=True)
+    lock_path = reference_root / f"{db}.build.lock"
+    f = open(lock_path, "w")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        _P(sentinel_path).write_text("locked")
+        # Commit a minimal complete reference: marker LAST, kb rows next to it.
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "_kb_rows.json").write_text(json.dumps([]))
+        (target / "_setup_results.json").write_text(json.dumps([]))
+        (target / "_reference_fp.txt").write_text("peer-committed-fp")
+    finally:
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        f.close()
+
+
 def test_build_reference_takes_cross_process_flock(tmp_path):
     """H4 — `_build_reference` must acquire `fcntl.flock(LOCK_EX)` on
     `<reference_root>/<db>.build.lock` BEFORE it touches `target` or runs the
@@ -787,6 +818,97 @@ def test_build_reference_takes_cross_process_flock(tmp_path):
             f"_build_reference did not block on cross-process flock "
             f"(elapsed={elapsed:.3f}s); H4 race against peer rmtree remains open"
         )
+    finally:
+        p.join(timeout=10)
+        if p.is_alive():
+            p.terminate()
+            p.join()
+
+
+def test_build_reference_rechecks_marker_inside_flock(tmp_path):
+    """Codex r2 — once `_build_reference_inside_lock` acquires the flock, it
+    MUST re-check `target / _MARKER`. If a peer process committed a complete
+    reference while we were blocked on flock, we must REUSE it instead of
+    invoking the (expensive, LLM-driven) `build_encoder`.
+
+    Without the re-check, two Ray actor processes that both pass
+    `ensure_db_reference`'s asyncio-level marker check will BOTH run the
+    entire setup encode — wasting one whole LLM run per DB. The marker
+    re-check is the only defence inside the same process.
+    """
+    import asyncio
+    import multiprocessing
+    import time as _t
+    import fcntl  # noqa: F401 — fail loudly if unavailable
+
+    from bird_interact_agents.slayer_otf import reference_build
+    from bird_interact_agents.slayer_otf.cache import CacheEntry
+
+    reference_root = tmp_path / "ref"
+    reference_root.mkdir(parents=True)
+    db = "db_a"
+    target = reference_root / db
+    sentinel = tmp_path / "holder_acquired.txt"
+
+    ctx = multiprocessing.get_context("spawn")
+    p = ctx.Process(
+        target=_holder_proc_commit_then_release,
+        args=((str(reference_root), db, str(target), str(sentinel)),),
+    )
+    p.start()
+    try:
+        deadline = _t.time() + 5.0
+        while not sentinel.exists() and _t.time() < deadline:
+            _t.sleep(0.05)
+        assert sentinel.exists(), "holder failed to acquire the lock"
+
+        cache_dir = tmp_path / "cache" / db
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "_cache_fp.txt").write_text("fp-x")
+        (cache_dir / "datasources").mkdir()
+        cache_entry = CacheEntry(
+            cache_dir=cache_dir, fingerprint="fp-x", kb_rows=[],
+        )
+
+        encoder_invocations = {"n": 0}
+
+        def counting_build_encoder(_storage, _build_dir, _db, _sessions_dir):
+            encoder_invocations["n"] += 1
+
+            class _RunOne:
+                index_rows: list[dict] = []
+
+                async def __call__(self, *a, **kw):
+                    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+                        EncoderResult,
+                    )
+                    return EncoderResult(
+                        kb_id=0, status="encoded", entities=[], notes="",
+                    )
+            return _RunOne()
+
+        async def run_build():
+            return await reference_build._build_reference(
+                db=db, fp="fp-x", cache_entry=cache_entry, kb_rows=[],
+                reference_root=reference_root, target=target,
+                mini_interact_root=tmp_path / "mini",
+                build_encoder=counting_build_encoder,
+                force=False,
+            )
+
+        # The peer's commit is in flight; we block on flock until it
+        # finishes, then must see the marker and short-circuit.
+        results = asyncio.run(run_build())
+        assert encoder_invocations["n"] == 0, (
+            f"build_encoder was invoked {encoder_invocations['n']}x after "
+            f"peer process committed the reference — Codex r2 marker "
+            f"re-check is missing from _build_reference_inside_lock"
+        )
+        # Reused metadata loads from the peer's _setup_results.json (empty
+        # list in this fixture).
+        assert results == []
+        # And the peer's marker is intact.
+        assert (target / "_reference_fp.txt").read_text() == "peer-committed-fp"
     finally:
         p.join(timeout=10)
         if p.is_alive():

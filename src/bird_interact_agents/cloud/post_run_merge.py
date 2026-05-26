@@ -120,16 +120,24 @@ def _read_sidecar(shard_dir: Path, db: str) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 
 
-def _atomic_replace(src: Path, dst: Path) -> None:
-    """Copy ``src``'s bytes into a tmp sibling of ``dst`` and ``os.replace``
-    onto ``dst``. Per-file atomicity: a crash mid-copy leaves ``dst`` either
-    untouched (its prior content) or absent — never partial."""
+def _atomic_replace(src: Path, dst: Path, source_mtime: float) -> None:
+    """Copy ``src``'s bytes into a tmp sibling of ``dst``, stamp the tmp with
+    ``source_mtime``, then ``os.replace`` onto ``dst``. Per-file atomicity: a
+    crash mid-copy leaves ``dst`` either untouched (its prior content) or
+    absent — never partial.
+
+    Codex r2: preserving ``source_mtime`` is load-bearing for the
+    newest-mtime-wins rule across runs. Without it, ``dst`` inherits the
+    laptop's fetch time, which is necessarily newer than the cloud's source
+    mtime — and a later fetch of a *genuinely newer* cloud reference would
+    be wrongly skipped because the comparison reads ``dst.stat().st_mtime``."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_str = tempfile.mkstemp(prefix=f".{dst.name}.merge-", dir=str(dst.parent))
     tmp = Path(tmp_str)
     try:
         with os.fdopen(fd, "wb") as out:
             out.write(src.read_bytes())
+        os.utime(tmp, (source_mtime, source_mtime))  # stamp BEFORE replace
         os.replace(tmp, dst)
     except BaseException:
         if tmp.exists():
@@ -137,16 +145,18 @@ def _atomic_replace(src: Path, dst: Path) -> None:
         raise
 
 
-def _write_marker_atomic(content: bytes, dst: Path) -> None:
+def _write_marker_atomic(content: bytes, dst: Path, source_mtime: float) -> None:
     """Write ``_reference_fp.txt`` via tmp + ``os.replace`` so a reader can
     never observe a half-written marker (M3). Symmetric to ``_atomic_replace``
-    but takes raw bytes (no source file)."""
+    but takes raw bytes (no source file). Source mtime is preserved for the
+    same reason ``_atomic_replace`` preserves it."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_str = tempfile.mkstemp(prefix=f".{dst.name}.merge-", dir=str(dst.parent))
     tmp = Path(tmp_str)
     try:
         with os.fdopen(fd, "wb") as out:
             out.write(content)
+        os.utime(tmp, (source_mtime, source_mtime))  # stamp BEFORE replace
         os.replace(tmp, dst)
     except BaseException:
         if tmp.exists():
@@ -219,7 +229,7 @@ def _merge_one_db(
             except FileNotFoundError:
                 local_mtime = 0.0
             if source_mtime > local_mtime:
-                _atomic_replace(src, dst)
+                _atomic_replace(src, dst, source_mtime)
                 files_updated += 1
             else:
                 files_skipped += 1
@@ -235,8 +245,10 @@ def _merge_one_db(
             if source_mtime > local_mtime:
                 # M3: marker MUST be replaced atomically. Read the source
                 # bytes then write via tmp+rename so a reader can never
-                # observe a half-written marker.
-                _write_marker_atomic(src.read_bytes(), local_marker)
+                # observe a half-written marker. Codex r2: stamp with
+                # source_mtime so future merges compare against the correct
+                # value (not the laptop's fetch time).
+                _write_marker_atomic(src.read_bytes(), local_marker, source_mtime)
                 files_updated += 1
             else:
                 files_skipped += 1

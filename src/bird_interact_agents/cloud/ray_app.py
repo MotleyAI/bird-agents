@@ -201,9 +201,15 @@ def _download_optional_seed(
                     if src_mtime <= local_mtime:
                         continue  # local is newer (e.g. cloud-built); keep
                     dst.parent.mkdir(parents=True, exist_ok=True)
-                    # Atomic per-file replace.
+                    # Atomic per-file replace. CR/Codex r2: stamp the tmp
+                    # with `src_mtime` BEFORE the replace so dst inherits
+                    # the source's mtime (not "now"). Without this, the
+                    # next actor restart's mtime comparison reads the
+                    # local-write time and can block a genuinely newer
+                    # seed from winning.
                     tmp_dst = dst.parent / f".{dst.name}.seed-{os.getpid()}"
                     tmp_dst.write_bytes(src.read_bytes())
+                    os.utime(tmp_dst, (src_mtime, src_mtime))
                     os.replace(tmp_dst, dst)
         marker.write_text("ok")
     finally:

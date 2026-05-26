@@ -200,9 +200,18 @@ def upload_otf_reference_delta(
     the next task retries (H2 / M6 — otherwise an unlucky first-attempt
     failure permanently loses the warm-cache artifact).
 
-    No-op when ``cfg['query_mode'] != 'slayer'`` (raw mode never produces an
-    OTF reference)."""
-    if cfg.get("query_mode") != "slayer":
+    No-op for any combo that doesn't actually use ``paths.slayer_models_otf_root()``
+    (raw mode, pre-encoded slayer, recursive on-the-fly). Restricting to
+    ``otf_encode + on-the-fly`` is load-bearing: under the recursive combo
+    ``initial_seed_fp_by_db`` is ``{}`` (the optional seed download isn't
+    wired for that combo), so any stale ``slayer_models_otf/<db>/`` left on
+    a shared worker filesystem would otherwise pass the fingerprint check
+    and pollute the laptop warm cache (CodeRabbit)."""
+    if (
+        cfg.get("query_mode") != "slayer"
+        or cfg.get("framework") != "pydantic_ai_otf_encode"
+        or cfg.get("slayer_setup") != "on-the-fly"
+    ):
         return
     try:
         from bird_interact_agents import paths  # local import: tests stub `paths`

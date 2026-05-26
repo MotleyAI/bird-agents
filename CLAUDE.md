@@ -1,5 +1,33 @@
 # Project notes for bird-interact-agents
 
+## Worktree-safe by default — never depend on a path inside `repo_root`
+
+Every gitignored input or output (data dirs, encoded models, results,
+caches, references) lives in the MAIN checkout, NEVER in the worktree.
+The worktree only carries tracked source code; any reachable-from-Python
+data path is resolved via `bird_interact_agents.paths.*_root()` helpers
+(`audited_gold_root`, `slayer_models_otf_root`, `slayer_otf_cache_root`,
+`results_root`, …), which anchor at the main checkout via git's common dir.
+
+When adding ANY new code that reads or writes gitignored data, follow this
+rule:
+
+1. Add (or reuse) a `paths.*_root()` helper that returns the main-checkout
+   path. Never `repo_root / "<some-dir>"` and never `Path(__file__).parents[…]`.
+2. If the path needs to enter a docker build, wire it via BuildKit
+   `--build-context <name>=<paths.x_root()>` (mirroring how `mini-interact`
+   and `audited_gold` are passed), and `COPY --from=<name>` in
+   `Dockerfile.cloud`. Do NOT `COPY <dir>/` from the build context root —
+   that breaks the moment someone runs `bird-interact-cloud submit` from a
+   worktree.
+3. If you change a `build_and_push`-side signature, hash the content via
+   the explicit root arg in `image.data_hash`, not via the worktree path.
+
+The smoke for this contract is `tests/cloud/test_image.py::test_*audited_gold*`
+(worktree-safety regression tests). Symlinking gitignored data into a
+worktree is a workaround, not a fix — the next created worktree won't
+have the symlink and the build will break for the same reason.
+
 ## Always run project tools via `uv run` (never conda/system)
 
 The shell auto-activates conda env `motley3.11`, whose

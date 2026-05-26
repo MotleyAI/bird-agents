@@ -366,11 +366,13 @@ def submit(args) -> str:
     tag = image.image_tag(
         repo_root,
         paths.mini_interact_root(),
+        paths.audited_gold_root(),
         allow_dirty=args.allow_dirty,
     )
     image_uri = image.build_and_push(
         tag, repo_root,
         mini_interact_root=paths.mini_interact_root(),
+        audited_gold_root=paths.audited_gold_root(),
         force=False,
     )
     run_id = args.run_id or mint_run_id(args.framework, args.query_mode)

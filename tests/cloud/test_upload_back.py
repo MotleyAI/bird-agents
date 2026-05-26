@@ -462,6 +462,38 @@ def test_upload_otf_reference_delta_noop_when_query_mode_raw(
     assert store == {}
 
 
+def test_upload_otf_reference_delta_noop_for_non_otf_encode_slayer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_gcs_bucket,
+):
+    """CodeRabbit r2 — the helper must no-op for any slayer combo OTHER than
+    `otf_encode + on-the-fly`. Under recursive+on-the-fly or pre-encoded
+    slayer, `initial_seed_fp_by_db` is `{}`, so stale `slayer_models_otf/`
+    content on a shared worker FS would pass the fp-mismatch check and
+    pollute the laptop warm cache."""
+    client, store = fake_gcs_bucket
+    _make_otf_ref_root(monkeypatch, tmp_path, {"db_a": "stale-cloud-fp"})
+
+    for cfg in (
+        # recursive + on-the-fly
+        {"query_mode": "slayer", "slayer_setup": "on-the-fly",
+         "framework": "pydantic_ai_recursive"},
+        # pre-encoded (any framework)
+        {"query_mode": "slayer", "slayer_setup": "pre-encoded",
+         "framework": "pydantic_ai_otf_encode"},
+        {"query_mode": "slayer", "slayer_setup": "pre-encoded",
+         "framework": "pydantic_ai_recursive"},
+    ):
+        upload_back.upload_otf_reference_delta(
+            run_id=RUN_ID, cfg=cfg,
+            shard="host-1", uploaded_dbs=set(),
+            initial_seed_fp_by_db={}, client=client,
+        )
+    assert store == {}, (
+        f"OTF reference delta must not upload from any non-otf_encode slayer "
+        f"combo (stale content would pollute the warm cache); saw {sorted(store)}"
+    )
+
+
 def test_upload_otf_reference_delta_skips_incomplete_reference(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_gcs_bucket,
 ):

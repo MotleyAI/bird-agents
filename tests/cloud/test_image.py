@@ -24,25 +24,25 @@ from bird_interact_agents.cloud import image  # noqa: E402  (intentional import)
 def test_data_hash_stable_across_touches(fake_repo_root: Path,
                                          fake_mini_interact: Path) -> None:
     """Identical bytes ⇒ identical hash even after `touch` changes mtimes."""
-    h1 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h1 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     time.sleep(0.01)
     for p in list(fake_mini_interact.rglob("*")) + list(
         (fake_repo_root / "slayer_models").rglob("*")
     ) + list((fake_repo_root / "audited_gold").rglob("*")):
         if p.is_file():
             os.utime(p, None)
-    h2 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h2 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     assert h1 == h2
 
 
 def test_data_hash_changes_on_mini_interact_edit(
     fake_repo_root: Path, fake_mini_interact: Path
 ) -> None:
-    h1 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h1 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     (fake_mini_interact / "db_a" / "schema.sql").write_text(
         "CREATE TABLE t (x INT, y INT);\n"
     )
-    h2 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h2 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     assert h1 != h2
 
 
@@ -53,22 +53,22 @@ def test_data_hash_unchanged_on_slayer_models_edit(
     the image, so it is no longer a data-layer input. Editing it must NOT
     move data_hash (else every local slayer-model rebuild would force a full
     image rebuild for nothing)."""
-    h1 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h1 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     (fake_repo_root / "slayer_models" / "db_a" / "model.yaml").write_text(
         "models: [{name: extra}]\n"
     )
-    h2 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h2 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     assert h1 == h2
 
 
 def test_data_hash_changes_on_audited_gold_edit(
     fake_repo_root: Path, fake_mini_interact: Path
 ) -> None:
-    h1 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h1 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     (fake_repo_root / "audited_gold" / "db_a" / "db_a_audited.jsonl").write_text(
         '{"instance_id":"db_a_1","sol_sql":"SELECT 2"}\n'
     )
-    h2 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h2 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     assert h1 != h2
 
 
@@ -101,28 +101,28 @@ def test_real_dockerfile_no_longer_bakes_slayer_models_or_ingest() -> None:
 def test_data_hash_includes_dockerfile_data_section(
     fake_repo_root: Path, fake_mini_interact: Path
 ) -> None:
-    h1 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h1 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     df = (fake_repo_root / "Dockerfile.cloud").read_text()
     df_new = df.replace(
         "COPY mini-interact/ /data/mini-interact/\n",
         "COPY mini-interact/ /data/mini-interact/  # edited\n",
     )
     (fake_repo_root / "Dockerfile.cloud").write_text(df_new)
-    h2 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h2 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     assert h1 != h2
 
 
 def test_data_hash_ignores_dockerfile_code_section(
     fake_repo_root: Path, fake_mini_interact: Path
 ) -> None:
-    h1 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h1 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     df = (fake_repo_root / "Dockerfile.cloud").read_text()
     df_new = df.replace(
         "RUN uv sync --extra all --extra dev\n",
         "RUN uv sync --extra all --extra dev  # edited\n",
     )
     (fake_repo_root / "Dockerfile.cloud").write_text(df_new)
-    h2 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h2 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     assert h1 == h2
 
 
@@ -130,9 +130,9 @@ def test_data_hash_unchanged_on_unrelated_untracked_files(
     fake_repo_root: Path, fake_mini_interact: Path
 ) -> None:
     """Untracked files outside image-input paths don't move data_hash."""
-    h1 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h1 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     (fake_repo_root / "scratch.txt").write_text("notes\n")
-    h2 = image.data_hash(fake_repo_root, fake_mini_interact)
+    h2 = image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
     assert h1 == h2
 
 
@@ -243,9 +243,9 @@ def test_code_hash_ignores_data_files(
 def test_image_tag_composition(fake_repo_root: Path, fake_mini_interact: Path,
                                 make_git) -> None:
     make_git(status_porcelain="")
-    tag = image.image_tag(fake_repo_root, fake_mini_interact, allow_dirty=False)
+    tag = image.image_tag(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold", allow_dirty=False)
     expected = (
-        image.data_hash(fake_repo_root, fake_mini_interact)[:12]
+        image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")[:12]
         + "-"
         + image.code_hash(fake_repo_root, allow_dirty=False)[:12]
     )
@@ -256,8 +256,8 @@ def test_image_tag_composition(fake_repo_root: Path, fake_mini_interact: Path,
 def test_image_tag_idempotent(fake_repo_root: Path, fake_mini_interact: Path,
                                make_git) -> None:
     make_git(status_porcelain="")
-    a = image.image_tag(fake_repo_root, fake_mini_interact, allow_dirty=False)
-    b = image.image_tag(fake_repo_root, fake_mini_interact, allow_dirty=False)
+    a = image.image_tag(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold", allow_dirty=False)
+    b = image.image_tag(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold", allow_dirty=False)
     assert a == b
 
 
@@ -265,7 +265,7 @@ def test_image_tag_dirty_suffix(fake_repo_root: Path,
                                  fake_mini_interact: Path,
                                  make_git) -> None:
     make_git(status_porcelain=" M src/bird_interact_agents/run.py")
-    tag = image.image_tag(fake_repo_root, fake_mini_interact, allow_dirty=True)
+    tag = image.image_tag(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold", allow_dirty=True)
     assert tag.endswith("-dirty")
 
 
@@ -279,7 +279,7 @@ def test_dirty_worktree_refused_by_default(fake_repo_root: Path,
                                             make_git) -> None:
     make_git(status_porcelain=" M src/bird_interact_agents/run.py")
     with pytest.raises(image.DirtyWorktreeError):
-        image.image_tag(fake_repo_root, fake_mini_interact, allow_dirty=False)
+        image.image_tag(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold", allow_dirty=False)
 
 
 def test_dirty_worktree_ignores_unrelated_changes(fake_repo_root: Path,
@@ -287,7 +287,7 @@ def test_dirty_worktree_ignores_unrelated_changes(fake_repo_root: Path,
                                                     make_git) -> None:
     """Changes outside image-input paths shouldn't trip the dirty check."""
     make_git(status_porcelain=" M README.md")  # README isn't an image input
-    tag = image.image_tag(fake_repo_root, fake_mini_interact, allow_dirty=False)
+    tag = image.image_tag(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold", allow_dirty=False)
     assert "dirty" not in tag
 
 
@@ -298,7 +298,7 @@ def test_dirty_worktree_includes_untracked_input_files(
     # `??` is git's marker for untracked.
     make_git(status_porcelain="?? src/bird_interact_agents/scratch.py")
     with pytest.raises(image.DirtyWorktreeError):
-        image.image_tag(fake_repo_root, fake_mini_interact, allow_dirty=False)
+        image.image_tag(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold", allow_dirty=False)
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +311,7 @@ def test_data_hash_raises_when_dockerfile_missing(
 ) -> None:
     (fake_repo_root / "Dockerfile.cloud").unlink()
     with pytest.raises(image.DockerfileSentinelError):
-        image.data_hash(fake_repo_root, fake_mini_interact)
+        image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
 
 
 def test_data_hash_raises_when_sentinel_missing(
@@ -321,7 +321,7 @@ def test_data_hash_raises_when_sentinel_missing(
     text = dockerfile.read_text().replace("# DATA-LAYERS", "# nope")
     dockerfile.write_text(text)
     with pytest.raises(image.DockerfileSentinelError):
-        image.data_hash(fake_repo_root, fake_mini_interact)
+        image.data_hash(fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold")
 
 
 def test_code_hash_raises_on_git_failure(
@@ -367,3 +367,151 @@ def test_code_hash_not_a_git_repo_is_silent(
 # (T5 — `image_tag(..., detach=True)` rejection — lived here in v1 but was
 # the wrong API boundary; CLI mutual-exclusion is asserted in test_cli.py
 # `test_detach_and_allow_dirty_mutually_exclusive`.)
+
+
+# ---------------------------------------------------------------------------
+# DEV-1470: worktree-safety — `audited_gold/` lives in the MAIN checkout, NOT
+# in worktrees. The image build must (a) hash its contents from the explicit
+# `audited_gold_root` parameter (not `repo_root / audited_gold`), (b) wire it
+# to docker via `--build-context audited-gold=<path>`, and (c) not surface
+# edits to `audited_gold/` via the worktree's `git status` (it's gitignored,
+# so it can never appear there anyway — but the dirty-prefix list shouldn't
+# claim it does either).
+# ---------------------------------------------------------------------------
+
+
+def test_data_hash_uses_audited_gold_root_not_repo_subdir(
+    fake_repo_root: Path, fake_mini_interact: Path, tmp_path: Path,
+) -> None:
+    """The hash MUST reflect the bytes under the passed `audited_gold_root`,
+    NOT the (potentially absent) `repo_root / 'audited_gold'`. Worktree
+    callers pass `paths.audited_gold_root()` (main-checkout-anchored); the
+    worktree's own `audited_gold/` dir is empty or missing, but the hash
+    must NOT change because of that."""
+    # Real audited_gold lives at fake_repo_root/audited_gold (the fixture's
+    # default). Baseline hash with this co-located layout:
+    h_colocated = image.data_hash(
+        fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold",
+    )
+
+    # Now simulate a WORKTREE: pretend the worktree is a different dir that
+    # lacks the audited_gold subdir, but the canonical audited_gold root
+    # is still the original location.
+    worktree_root = tmp_path / "worktree"
+    worktree_root.mkdir()
+    # Worktree gets a copy of just the code-input scaffolding (uv.lock,
+    # pyproject.toml, Dockerfile.cloud, src/) — NOT audited_gold/.
+    for rel in ("uv.lock", "pyproject.toml", "Dockerfile.cloud"):
+        (worktree_root / rel).write_text((fake_repo_root / rel).read_text())
+    import shutil
+    shutil.copytree(fake_repo_root / "src", worktree_root / "src")
+
+    h_worktree = image.data_hash(
+        worktree_root, fake_mini_interact, fake_repo_root / "audited_gold",
+    )
+    assert h_colocated == h_worktree, (
+        "data_hash differs between main-checkout and worktree callers — the "
+        "function is leaking the repo_root path into the digest. Worktree "
+        "submits would force needless rebuilds (or, worse, pull from an "
+        "empty audited_gold and miss real data)."
+    )
+
+
+def test_data_hash_ignores_stray_audited_gold_under_worktree(
+    fake_repo_root: Path, fake_mini_interact: Path, tmp_path: Path,
+) -> None:
+    """If a stale or unrelated `audited_gold/` sits under the worktree's
+    `repo_root`, `data_hash` MUST IGNORE it — the only authoritative source
+    is the explicit `audited_gold_root` arg."""
+    worktree_root = tmp_path / "worktree"
+    worktree_root.mkdir()
+    for rel in ("uv.lock", "pyproject.toml", "Dockerfile.cloud"):
+        (worktree_root / rel).write_text((fake_repo_root / rel).read_text())
+    import shutil
+    shutil.copytree(fake_repo_root / "src", worktree_root / "src")
+    # Stale audited_gold sitting under the worktree — must NOT influence the hash.
+    (worktree_root / "audited_gold" / "db_a").mkdir(parents=True)
+    (worktree_root / "audited_gold" / "db_a" / "STALE.jsonl").write_text(
+        '{"instance_id":"STALE","sol_sql":"SELECT 999"}\n'
+    )
+
+    h_stale_present = image.data_hash(
+        worktree_root, fake_mini_interact, fake_repo_root / "audited_gold",
+    )
+    h_baseline = image.data_hash(
+        fake_repo_root, fake_mini_interact, fake_repo_root / "audited_gold",
+    )
+    assert h_stale_present == h_baseline, (
+        "data_hash reads from `worktree_root / 'audited_gold'` — that's the bug. "
+        "It must read ONLY from the explicit `audited_gold_root` argument."
+    )
+
+
+def test_build_and_push_wires_audited_gold_as_build_context(
+    fake_repo_root: Path, fake_mini_interact: Path, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`build_and_push` must pass `--build-context audited-gold=<path>` to
+    docker, mirroring `mini-interact`. Without this, the Dockerfile's
+    `COPY --from=audited-gold` fails in worktrees (the dir doesn't exist
+    locally) and the build aborts."""
+    import subprocess as _sp
+
+    captured: list[list[str]] = []
+
+    def fake_run(argv, *_a, **_kw):
+        captured.append(list(argv))
+        # `manifest inspect` returns non-zero → forces a build path
+        rc = 1 if argv[:3] == ["docker", "manifest", "inspect"] else 0
+        return _sp.CompletedProcess(argv, rc, stdout="", stderr="")
+
+    monkeypatch.setattr(_sp, "run", fake_run)
+    # Stub the config + paths resolution.
+    from bird_interact_agents.cloud import config as _config
+    monkeypatch.setattr(_config, "image_uri_prefix", lambda: "registry.example/x/runner")
+
+    audited_root = tmp_path / "main-checkout" / "audited_gold"
+    audited_root.mkdir(parents=True)
+    (audited_root / "db_a").mkdir()
+    (audited_root / "db_a" / "db_a_audited.jsonl").write_text('{"x":1}\n')
+
+    uri = image.build_and_push(
+        "deadbeef-cafebabe",
+        fake_repo_root,
+        mini_interact_root=fake_mini_interact,
+        audited_gold_root=audited_root,
+        force=False,
+    )
+    assert uri == "registry.example/x/runner:deadbeef-cafebabe"
+
+    # Find the docker build invocation and verify --build-context entries.
+    build_argv = next(a for a in captured if a[:2] == ["docker", "build"])
+    pairs: list[tuple[str, str]] = []
+    for i, tok in enumerate(build_argv):
+        if tok == "--build-context" and i + 1 < len(build_argv):
+            k, _, v = build_argv[i + 1].partition("=")
+            pairs.append((k, v))
+    assert ("audited-gold", str(audited_root)) in pairs, (
+        f"audited-gold build-context not passed; saw {pairs}"
+    )
+    assert ("mini-interact", str(fake_mini_interact)) in pairs, (
+        f"mini-interact build-context also missing; saw {pairs}"
+    )
+
+
+def test_dirty_input_paths_no_longer_includes_audited_gold(
+    fake_repo_root: Path, make_git,
+) -> None:
+    """`audited_gold/` is gitignored and lives in the MAIN checkout, not the
+    worktree. It's content-hashed via `data_hash(..., audited_gold_root=...)`
+    instead, so a status line under `audited_gold/` (impossible in practice
+    since it's gitignored) MUST NOT trip the dirty check. Regression for the
+    pre-DEV-1470 contract where editing audited_gold/ would block a submit."""
+    make_git(status_porcelain=" M audited_gold/db_a/db_a_audited.jsonl")
+    # allow_dirty=False — would raise if audited_gold/ were still an input
+    # prefix. With the DEV-1470 fix it sails through.
+    image.image_tag(
+        fake_repo_root, fake_repo_root / "mini-interact",
+        fake_repo_root / "audited_gold",
+        allow_dirty=False,
+    )

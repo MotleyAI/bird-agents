@@ -400,7 +400,7 @@ def test_per_file_atomic_replace_leaves_no_partial(tmp_path: Path):
 def _spawn_merge_holding_lock(args):
     """Worker that acquires the per-DB build lock (shared with the merger
     under the H4 resolution) and holds it for `hold_s`."""
-    run_dir, reference_root, db, hold_s, sentinel_path = args
+    _run_dir, reference_root, db, hold_s, sentinel_path = args
     import fcntl
 
     # H4 — merger and `_build_reference` share the SAME per-DB lock file
@@ -467,6 +467,73 @@ def test_merger_blocks_on_per_db_file_lock(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # Module docstring records the fingerprint-coherence invariant (L1)
 # ---------------------------------------------------------------------------
+
+
+def test_merged_files_inherit_source_mtime(tmp_path: Path):
+    """Codex r2 — after merge, the local file's mtime MUST equal the cloud
+    shard's `source_mtime` (NOT the laptop's fetch/merge time). Without this
+    a subsequent fetch can wrongly skip a genuinely-newer cloud reference
+    because `dst.stat().st_mtime` (= last merge time) > the new cloud's
+    `source_mtime`. Regression for the lost-mtime bug."""
+    import os
+    run_dir = tmp_path / "run"
+    ref_root = tmp_path / "ref"
+    source_mtime = 2000.0
+    marker_mtime = 2050.0
+    _make_shard(run_dir, "host-1", "db_a", {
+        "models/x.yaml": (b"cloud-new\n", source_mtime),
+        "_reference_fp.txt": (b"fp-cloud", marker_mtime),
+    })
+
+    post_run_merge.merge_post_run_into_warm_cache(
+        run_dir=run_dir, reference_root=ref_root,
+    )
+
+    got_mtime = os.stat(ref_root / "db_a" / "models" / "x.yaml").st_mtime
+    assert abs(got_mtime - source_mtime) < 1.0, (
+        f"merged file should carry source_mtime={source_mtime} but has "
+        f"{got_mtime} — the merger is leaking laptop-side fetch time into "
+        f"the dst mtime, which breaks newest-mtime-wins on the next fetch"
+    )
+    got_marker_mtime = os.stat(ref_root / "db_a" / "_reference_fp.txt").st_mtime
+    assert abs(got_marker_mtime - marker_mtime) < 1.0
+
+
+def test_second_merge_sees_newer_cloud_after_first_landed(tmp_path: Path):
+    """End-to-end regression: a first merge lands cloud_v1 with
+    source_mtime=2000. A later merge of cloud_v2 with source_mtime=3000 must
+    win because `dst.stat().st_mtime` was preserved at 2000 (not bumped to
+    'now'). Without the fix this test fails because dst.mtime > 3000 after
+    the first merge, blocking the v2 update."""
+    run_dir1 = tmp_path / "run1"
+    run_dir2 = tmp_path / "run2"
+    ref_root = tmp_path / "ref"
+
+    # First fetch: cloud_v1 lands.
+    _make_shard(run_dir1, "host-1", "db_a", {
+        "models/x.yaml": (b"v1\n", 2000.0),
+        "_reference_fp.txt": (b"fp-v1", 2000.0),
+    })
+    post_run_merge.merge_post_run_into_warm_cache(
+        run_dir=run_dir1, reference_root=ref_root,
+    )
+    assert (ref_root / "db_a" / "models" / "x.yaml").read_bytes() == b"v1\n"
+
+    # Second fetch: cloud_v2 has source_mtime=3000 (genuinely newer).
+    _make_shard(run_dir2, "host-1", "db_a", {
+        "models/x.yaml": (b"v2-NEWER\n", 3000.0),
+        "_reference_fp.txt": (b"fp-v2", 3000.0),
+    })
+    report = post_run_merge.merge_post_run_into_warm_cache(
+        run_dir=run_dir2, reference_root=ref_root,
+    )
+    assert (ref_root / "db_a" / "models" / "x.yaml").read_bytes() == b"v2-NEWER\n", (
+        "second merge failed to bring in newer cloud_v2 — dst.mtime was "
+        "stamped to laptop-fetch-time on first merge, beating cloud_v2's "
+        "source_mtime in the comparison"
+    )
+    [merged] = report["merged_dbs"]
+    assert merged["files_updated"] >= 2
 
 
 def test_module_docstring_documents_fingerprint_invariant():
