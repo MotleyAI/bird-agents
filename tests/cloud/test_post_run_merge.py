@@ -676,6 +676,50 @@ def test_cloud_wins_removes_empty_subdirs_left_after_stale_purge(tmp_path: Path)
     )
 
 
+def test_partial_shard_dbs_appear_in_skipped_dbs(tmp_path: Path):
+    """Codex r7 — when ONE shard has db_a complete but db_b incomplete
+    (e.g. actor uploaded db_a fully but died mid-db_b), the merger must
+    record db_b in `skipped_dbs` so the user can audit the loss. The old
+    schema only had `ignored_shards`, which marks a shard ONLY when EVERY
+    db slice under it is incomplete — so a partial shard's lost slice
+    silently vanished from the report."""
+    run_dir = tmp_path / "run"
+    ref_root = tmp_path / "ref"
+    # Same shard: db_a complete, db_b incomplete.
+    _make_shard(run_dir, "host-1", "db_a", {
+        "models/x.yaml": (b"db_a content\n", 2000.0),
+        "_reference_fp.txt": (b"fp-a", 2000.0),
+    })
+    _make_shard(run_dir, "host-1", "db_b", {
+        "models/y.yaml": (b"db_b partial\n", 2000.0),
+        "_reference_fp.txt": (b"fp-b", 2000.0),
+    }, write_complete=False)  # the missing marker is what makes it incomplete
+
+    report = post_run_merge.merge_post_run_into_warm_cache(
+        run_dir=run_dir, reference_root=ref_root,
+    )
+
+    # db_a merged.
+    assert [m["db"] for m in report["merged_dbs"]] == ["db_a"]
+    # db_b skipped, with a reason.
+    assert "skipped_dbs" in report, (
+        "report must carry `skipped_dbs` for partial-shard visibility"
+    )
+    skipped_names = [e["db"] for e in report["skipped_dbs"]]
+    assert "db_b" in skipped_names, (
+        f"db_b silently lost: the only shard's slice was incomplete, but "
+        f"the shard itself has another complete slice (db_a) so it doesn't "
+        f"appear in `ignored_shards`. Without `skipped_dbs` the user has "
+        f"no signal a warm-cache artifact was lost. Saw: {report!r}"
+    )
+    # The shard itself does NOT appear in ignored_shards (it has a complete
+    # slice for db_a).
+    assert report["ignored_shards"] == [], (
+        f"shard with at least one complete slice must not be in "
+        f"ignored_shards: {report['ignored_shards']!r}"
+    )
+
+
 def test_merge_report_persisted_to_run_dir(tmp_path: Path):
     """Codex r6 — the merge report MUST be written to
     `<run_dir>/merge_report.json` so it survives past `fetch()`'s return

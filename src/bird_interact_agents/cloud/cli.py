@@ -115,13 +115,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         # than buried in the on-disk merge_report.json.
         merge_report = metrics.get("merge_report") or {}
         merged_dbs = merge_report.get("merged_dbs") or []
+        skipped_dbs = merge_report.get("skipped_dbs") or []
         ignored_shards = merge_report.get("ignored_shards") or []
-        if merged_dbs or ignored_shards:
+        if merged_dbs or skipped_dbs or ignored_shards:
             for entry in merged_dbs:
                 print(
                     f"merged slayer_models_otf/{entry['db']}: "
                     f"{entry['files_updated']} files updated, "
                     f"{entry['files_skipped']} skipped"
+                )
+            for entry in skipped_dbs:
+                # Codex r7: surface dbs that existed in shards but couldn't
+                # be merged (e.g. one actor uploaded fully but a peer died
+                # mid-upload for this db, and no other shard covers it).
+                print(
+                    f"SKIPPED slayer_models_otf/{entry['db']}: "
+                    f"{entry['reason']}"
                 )
             if ignored_shards:
                 print(f"ignored {len(ignored_shards)} incomplete shard(s): "

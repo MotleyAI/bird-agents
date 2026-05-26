@@ -369,10 +369,21 @@ def merge_post_run_into_warm_cache(
             ignored_shards.append(sdir.name)
 
     merged: list[dict] = []
+    skipped_dbs: list[dict] = []
     for db in sorted(dbs_seen):
-        # Only attempt the merge if at least one shard has a complete slice
-        # for this db; otherwise leave the local dir untouched.
         if not any(_is_shard_complete(sdir, db) for sdir in shard_dirs):
+            # Codex r7: this db appeared under some shard but has no
+            # complete slice anywhere. Without recording it explicitly,
+            # a partial-shard failure (e.g. actor uploaded db_a fully but
+            # died mid-db_b → db_b's slice is incomplete, db_a's isn't)
+            # would silently lose db_b's warm-cache artifact: db_a lands
+            # in `merged_dbs`, the shard isn't in `ignored_shards`
+            # (db_a's slice IS complete), and the user has no signal
+            # that db_b existed and was supposed to land.
+            skipped_dbs.append({
+                "db": db,
+                "reason": "no complete shard slice (incomplete upload)",
+            })
             continue
         files_updated, files_skipped = _merge_one_db(
             db=db, shard_dirs=shard_dirs, reference_root=reference_root,
@@ -383,7 +394,11 @@ def merge_post_run_into_warm_cache(
             "files_skipped": files_skipped,
         })
 
-    report = {"merged_dbs": merged, "ignored_shards": ignored_shards}
+    report = {
+        "merged_dbs": merged,
+        "skipped_dbs": skipped_dbs,
+        "ignored_shards": ignored_shards,
+    }
 
     # Codex r6: persist the report to disk under `run_dir` so it survives
     # past the `fetch()` return value (which the CLI currently discards).
