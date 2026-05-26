@@ -361,9 +361,14 @@ def test_per_file_atomic_replace_leaves_no_partial(tmp_path: Path):
     ref_root = tmp_path / "ref"
     _make_local(ref_root, "db_a", {
         "models/x.yaml": (b"OLD-COMPLETE\n", 1000.0),
+        "_reference_fp.txt": (b"fp-old", 1000.0),
     })
+    # Cloud marker must be newer than local for the whole-db rule (Codex r5)
+    # to reach the per-file replace step. Without a marker, the merger
+    # short-circuits before any os.replace happens.
     _make_shard(run_dir, "host-1", "db_a", {
         "models/x.yaml": (b"NEW-CONTENT\n", 2000.0),
+        "_reference_fp.txt": (b"fp-new", 2000.0),
     })
 
     real_replace = os.replace
@@ -572,16 +577,17 @@ def test_older_cloud_marker_does_not_downgrade_newer_local(tmp_path: Path):
     assert merged["files_skipped"] >= 2
 
 
-def test_partial_cloud_win_restores_local_marker_when_marker_loses(tmp_path: Path):
-    """Codex r2 — mixed scenario: cloud wins SOME content files (newer for
-    some files) but LOSES the marker (local marker is newer than cloud's).
-    The merger MUST end with a valid marker on disk. With the round-1
-    "always unlink first" pattern, the local marker would be unlinked and
-    then never restored when the cloud lost — leaving a marker-less tree.
+def test_cloud_marker_loses_no_files_touched_even_if_content_newer(tmp_path: Path):
+    """Codex r5 — whole-db rule. If the cloud's `_reference_fp.txt` is
+    OLDER than the local marker, the merger MUST NOT touch ANY content
+    file, even if individual cloud content files have newer mtimes than
+    the local copies. The previous per-file logic would have replaced
+    `cloud_x.yaml` on top of local while keeping the local marker,
+    producing a mixed-fingerprint tree marked complete for the wrong fp.
 
-    Concretely: cloud has `x.yaml` newer (3000 > local 1000), but cloud's
-    marker is older (2000 < local 5000). After merge: x.yaml is replaced
-    with cloud, but the marker MUST be the local one (restored)."""
+    Setup: cloud has `x.yaml` mtime=3000 > local mtime=1000, but cloud's
+    marker mtime=2000 < local marker mtime=5000. Whole-db rule: cloud
+    loses, NOTHING is touched (no mixed-fingerprint state)."""
     run_dir = tmp_path / "run"
     ref_root = tmp_path / "ref"
     _make_local(ref_root, "db_a", {
@@ -594,20 +600,54 @@ def test_partial_cloud_win_restores_local_marker_when_marker_loses(tmp_path: Pat
         "_reference_fp.txt": (b"fp-CLOUD-OLD-MARKER", 2000.0),
     })
 
-    post_run_merge.merge_post_run_into_warm_cache(
+    report = post_run_merge.merge_post_run_into_warm_cache(
         run_dir=run_dir, reference_root=ref_root,
     )
-    # x.yaml replaced with cloud's newer version.
-    assert (ref_root / "db_a" / "models" / "x.yaml").read_bytes() == b"cloud-newer-x\n"
-    # y.yaml untouched (not in any shard).
-    assert (ref_root / "db_a" / "models" / "y.yaml").read_bytes() == b"local-stay-y\n"
-    # Marker MUST be the local one (newer), even though we unlinked it
-    # mid-merge to guard concurrent readers.
-    assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"fp-LOCAL-NEW-MARKER", (
-        "local marker should have been restored after the merge (cloud's "
-        "marker was older and lost the comparison) — instead the marker "
-        "was either lost entirely or downgraded to cloud's"
+    # NOTHING is touched — including the content file that would have
+    # "won" the per-file mtime comparison.
+    assert (ref_root / "db_a" / "models" / "x.yaml").read_bytes() == b"local-old-x\n", (
+        "cloud_x.yaml was replaced even though the cloud marker lost — "
+        "this leaves a mixed-fingerprint tree marked under fp-LOCAL-NEW-MARKER"
     )
+    assert (ref_root / "db_a" / "models" / "y.yaml").read_bytes() == b"local-stay-y\n"
+    assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"fp-LOCAL-NEW-MARKER"
+    [merged] = report["merged_dbs"]
+    assert merged["files_updated"] == 0
+    assert merged["files_skipped"] >= 2  # x.yaml + marker
+
+
+def test_cloud_marker_wins_replaces_all_files_even_when_some_content_older(tmp_path: Path):
+    """Codex r5 — whole-db rule, mirror of the above. If the cloud's marker
+    is NEWER than the local one, the cloud reference wins as a UNIT —
+    every picked content file is atomic-replaced even if its source_mtime
+    is older than the local file's. Otherwise a stale local file would
+    survive under the new cloud marker, producing a mixed-fingerprint
+    tree."""
+    run_dir = tmp_path / "run"
+    ref_root = tmp_path / "ref"
+    _make_local(ref_root, "db_a", {
+        # Local content with a deceptively-recent mtime (e.g. user touched
+        # the file post-fetch). The marker is OLDER though.
+        "models/x.yaml": (b"local-touched-x\n", 9000.0),
+        "_reference_fp.txt": (b"fp-LOCAL-OLD-MARKER", 1000.0),
+    })
+    _make_shard(run_dir, "host-1", "db_a", {
+        "models/x.yaml": (b"cloud-canonical-x\n", 3000.0),
+        "_reference_fp.txt": (b"fp-CLOUD-NEW-MARKER", 5000.0),
+    })
+
+    report = post_run_merge.merge_post_run_into_warm_cache(
+        run_dir=run_dir, reference_root=ref_root,
+    )
+    assert (ref_root / "db_a" / "models" / "x.yaml").read_bytes() == b"cloud-canonical-x\n", (
+        "local_x.yaml survived under the new cloud marker — this creates "
+        "a mixed-fingerprint tree marked complete for fp-CLOUD-NEW-MARKER "
+        "but with content from fp-LOCAL-OLD-MARKER"
+    )
+    assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"fp-CLOUD-NEW-MARKER"
+    [merged] = report["merged_dbs"]
+    assert merged["files_updated"] >= 2  # x.yaml + marker
+    assert merged["files_skipped"] == 0
 
 
 def test_module_docstring_documents_fingerprint_invariant():

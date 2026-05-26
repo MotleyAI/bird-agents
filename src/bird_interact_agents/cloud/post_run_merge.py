@@ -4,9 +4,33 @@ references into the global warm cache.
 Called from :func:`bird_interact_agents.cloud.driver.fetch` after
 :func:`bird_interact_agents.cloud.collation.collate`. Walks
 ``<run_dir>/post_run/slayer_models_otf/<shard>/<db>/`` across every shard, and
-for each db merges the union of files into
-``paths.slayer_models_otf_root()/<db>/`` using a per-file newest-source-mtime-wins
-rule.
+for each db decides cloud-vs-local at the WHOLE-DB level using the
+``_reference_fp.txt`` marker as the binding tie-breaker (Codex round-5).
+
+Two-level merge rule
+--------------------
+The merger has TWO distinct decisions and uses different rules for each:
+
+1. **Cross-shard picks (within the cloud side)** — when multiple cloud
+   shards exist for the same db, pick the file with the max source_mtime
+   per relative path. Safe because of the single-fingerprint-per-run
+   invariant (L1) — see below.
+
+2. **Cloud-vs-local merge** — WHOLE-DB decision. If the cloud's chosen
+   ``_reference_fp.txt`` source_mtime is newer than the local marker's
+   mtime, the ENTIRE cloud reference wins as a unit: every picked file
+   (content + marker) is atomic-replaced even if some local files have
+   newer individual mtimes. Otherwise NOTHING is touched.
+
+   Why whole-db: the marker BINDS the content. Mixing files from
+   different fingerprints under one marker violates the
+   ``marker present ⇒ content matches fingerprint`` invariant that
+   downstream readers (:func:`bird_interact_agents.slayer_otf.reference_build._reuse_reference`,
+   :func:`bird_interact_agents.slayer_otf.cache.ensure_db_cache`) trust.
+   The previous per-file mtime-wins rule could let a newer cloud marker
+   win while one or more cloud payload files lost to newer local files
+   (or vice versa), producing a mixed-fingerprint tree marked complete
+   for the wrong fp.
 
 Single-fingerprint-per-run invariant (L1, Codex round-1)
 --------------------------------------------------------
@@ -210,84 +234,66 @@ def _merge_one_db(
     marker_pick: tuple[float, Path] | None = picks.pop(_MARKER, None)
 
     with _per_db_merge_lock(reference_root, db):
-        # Codex r2: capture local marker mtime + bytes BEFORE deciding
-        # anything. Without this, the previous implementation unlinked the
-        # local marker before comparing marker mtimes — so an older cloud
-        # marker (or even a missing one) would always "win" the marker
-        # comparison and either downgrade the local marker or leave the
-        # tree marker-less (violating "marker present ⇒ content complete").
+        # Codex r5: cloud-vs-local must be a WHOLE-DB decision keyed off the
+        # marker, NOT a per-file mtime comparison. The previous per-file
+        # logic could let a newer cloud marker win while one or more cloud
+        # payload files lost to newer local files (or vice versa), leaving
+        # a mixed-fingerprint tree marked as complete for the wrong fp —
+        # violating the "marker present ⇒ content matches fingerprint"
+        # invariant that downstream readers (`_reuse_reference`,
+        # `cache.ensure_db_cache`) depend on.
+        #
+        # New rule: if the cloud's best `_reference_fp.txt` source_mtime is
+        # newer than the local marker's, the WHOLE cloud reference wins —
+        # every picked file (content + marker) is atomic-replaced. Else,
+        # nothing is touched. Per-file picks ACROSS shards are still
+        # mtime-wins (safe because all shards in a single run carry the
+        # same fingerprint per the L1 invariant in the module docstring).
+
         if local_marker.is_file():
             local_marker_mtime = local_marker.stat().st_mtime
-            local_marker_bytes: bytes | None = local_marker.read_bytes()
         else:
             local_marker_mtime = 0.0
-            local_marker_bytes = None
 
-        # Pre-compute per-file decisions (no writes yet).
-        content_ops: list[tuple[Path, Path, float, bool]] = []
-        for rel, (source_mtime, sdir) in sorted(picks.items()):
-            src = sdir / db / rel
-            dst = local_db / rel
-            try:
-                local_mtime = dst.stat().st_mtime
-            except FileNotFoundError:
-                local_mtime = 0.0
-            content_ops.append((src, dst, source_mtime, source_mtime > local_mtime))
+        # No cloud marker for this db → cloud content cannot be trusted
+        # (no fingerprint to bind it to). Skip everything.
+        if marker_pick is None:
+            return 0, len(picks)
 
-        marker_will_replace = False
-        marker_source_mtime = 0.0
-        marker_src: Path | None = None
-        if marker_pick is not None:
-            marker_source_mtime, marker_sdir = marker_pick
-            marker_src = marker_sdir / db / _MARKER
-            marker_will_replace = marker_source_mtime > local_marker_mtime
+        marker_source_mtime, marker_sdir = marker_pick
+        marker_src = marker_sdir / db / _MARKER
 
-        any_content_change = any(will for *_x, will in content_ops)
+        if marker_source_mtime <= local_marker_mtime:
+            # Local marker is at-least-as-new as any cloud marker → local
+            # reference is fresher (or same fingerprint). Don't touch
+            # anything. files_skipped accounts for the cloud picks we ignored.
+            return 0, len(picks) + 1
 
-        # Skip the whole touch when nothing will actually change — preserves
-        # the marker-present-⇒-content-complete invariant against concurrent
-        # readers, since we never unlink the marker we leave in place.
-        if not any_content_change and not marker_will_replace:
-            skipped = len(content_ops) + (1 if marker_pick is not None else 0)
-            return 0, skipped
-
-        # SOMETHING will change. Unlink the local marker so any concurrent
-        # reader observes "marker absent ⇒ incomplete, rebuild" during the
-        # partial-content interval.
-        if local_marker_bytes is not None:
+        # Cloud wins the whole db. Unlink the local marker FIRST so any
+        # concurrent reader observes "marker absent ⇒ incomplete, rebuild"
+        # during the per-file replace window — preserves the invariant for
+        # readers that don't take the per-db merge flock (e.g. `_reuse_reference`
+        # is reads-only under the build flock, not the merge flock).
+        if local_marker.is_file():
             try:
                 os.unlink(local_marker)
             except FileNotFoundError:
                 pass
 
         files_updated = 0
-        files_skipped = 0
-        for src, dst, source_mtime, will_replace in content_ops:
-            if will_replace:
-                _atomic_replace(src, dst, source_mtime)
-                files_updated += 1
-            else:
-                files_skipped += 1
-
-        # Marker LAST. Either write the cloud marker (it won the comparison)
-        # OR restore the local marker (cloud lost, but we'd unlinked it to
-        # protect partial-content readers — we MUST put it back so the
-        # invariant holds at the end of the merge).
-        if marker_will_replace and marker_src is not None:
-            _write_marker_atomic(
-                marker_src.read_bytes(), local_marker, marker_source_mtime,
-            )
+        for rel, (source_mtime, sdir) in sorted(picks.items()):
+            src = sdir / db / rel
+            dst = local_db / rel
+            _atomic_replace(src, dst, source_mtime)
             files_updated += 1
-        else:
-            if marker_pick is not None:
-                files_skipped += 1
-            if local_marker_bytes is not None:
-                # Restore the local marker we unlinked.
-                _write_marker_atomic(
-                    local_marker_bytes, local_marker, local_marker_mtime,
-                )
 
-    return files_updated, files_skipped
+        # Marker LAST.
+        _write_marker_atomic(
+            marker_src.read_bytes(), local_marker, marker_source_mtime,
+        )
+        files_updated += 1
+
+    return files_updated, 0
 
 
 # ---------------------------------------------------------------------------
