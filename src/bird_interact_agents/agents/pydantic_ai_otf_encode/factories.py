@@ -842,10 +842,28 @@ async def _format_deps_block(
                     f"  - KB {dep.kb_id} -> {ent.entity_ref} (kind={ent.kind})"
                 )
         else:
+            # Codex follow-up (PR #4): the defensive-defer prompt asks the
+            # encoder to "quote the reason verbatim from the deps block"
+            # so the dependent KB's notes distinguish "child deferred
+            # because ambiguous" from "child errored during encode". The
+            # status word alone (`deferred` / `error`) doesn't carry that
+            # signal — surface the child's `notes` (truncated) when
+            # present so the encoder has something concrete to quote.
+            reason = dep.error if dep.error else dep.status
+            notes = (dep.notes or "").strip()
+            if notes:
+                if len(notes) > _DEP_NOTES_MAXLEN:
+                    notes = notes[:_DEP_NOTES_MAXLEN].rstrip() + "…"
+                reason = f"{reason}: {notes}"
             lines.append(
-                f"  - KB {dep.kb_id} -> NOT encoded ({dep.error or dep.status})"
+                f"  - KB {dep.kb_id} -> NOT encoded ({reason})"
             )
     return "\n".join(lines) if lines else "(none)"
+
+
+# Trim long child-notes so a long-winded child can't blow up the parent's
+# prompt; ~200 chars is enough to convey the ambiguity statement.
+_DEP_NOTES_MAXLEN = 200
 
 
 # Trim long parent definitions so a KB with many parents can't blow up the

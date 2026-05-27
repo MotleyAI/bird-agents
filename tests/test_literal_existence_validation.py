@@ -340,8 +340,9 @@ async def test_create_model_validation_runs_when_host_not_in_storage(tmp_path):
 
 
 async def test_create_model_silently_skips_when_payload_has_no_columns(tmp_path):
-    """A degenerate create_model with no columns to resolve against → walker
-    returns no problems (best-effort skip; no false positive)."""
+    """A degenerate create_model with no columns to resolve against AND a
+    query whose source_model isn't in storage → walker returns no
+    problems (best-effort skip; no false positive)."""
     from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
         _collect_literal_problems,
     )
@@ -350,12 +351,152 @@ async def test_create_model_silently_skips_when_payload_has_no_columns(tmp_path)
     args = {
         "name": "empty_model",
         "data_source": DB,
-        # No columns / measures, but a backing-query stage WITH a literal
-        # the walker would otherwise check. The walker should skip
-        # silently because the payload has nothing to resolve names
-        # against.
+        # No columns / measures, and a backing-query stage whose
+        # source_model `src` doesn't exist in storage either → the walker
+        # has nothing to resolve names against.
         "query": {"source_model": "src", "dimensions": [],
                   "measures": [{"formula": "x = 'maybe':count"}], "limit": 0},
+    }
+    problems = await _collect_literal_problems(
+        "create_model", args, storage=storage, db=DB,
+    )
+    assert problems == []
+
+
+# ---------------------------------------------------------------------------
+# Codex follow-up: `create_model(query=[...])` backing-query stages —
+# R-MULTISTAGE / R-EXISTS write predicates inside query stages, whose
+# columns resolve against each stage's own `source_model` (NOT the outer
+# create_model's name). The walker must fire on these too.
+# ---------------------------------------------------------------------------
+
+
+async def test_create_model_single_stage_query_filter_is_scanned(tmp_path):
+    """`create_model(query={source_model: 'src', filters: [...], ...})`:
+    walker resolves the filter's columns against the stage's source_model
+    and flags missing literals."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    storage = await _new_storage(tmp_path)
+    # The stage's source_model exists in storage with a known sampled set.
+    await _add_model(storage, name="src", columns=[
+        Column(name="id", primary_key=True),
+        _col("status", sampled_values=["yes", "no"]),
+    ])
+
+    args = {
+        "name": "agg",
+        "data_source": DB,
+        "query": {
+            "source_model": "src",
+            "dimensions": [{"name": "id"}],
+            "filters": ["status = 'maybe'"],
+            "limit": 100,
+        },
+    }
+    problems = await _collect_literal_problems(
+        "create_model", args, storage=storage, db=DB,
+    )
+    assert len(problems) == 1, (
+        f"query-stage filter must be walked against the stage's "
+        f"source_model. got: {problems!r}"
+    )
+    assert "'maybe'" in problems[0]
+
+
+async def test_create_model_multistage_query_stages_each_resolve_per_source(tmp_path):
+    """Two-stage query — stage 1's filter references columns on
+    `stage_a`, stage 2's measure formula references columns on
+    `stage_b`. Each must resolve against its own source_model."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    storage = await _new_storage(tmp_path)
+    await _add_model(storage, name="stage_a", columns=[
+        Column(name="id", primary_key=True),
+        _col("a_status", sampled_values=["red", "blue"]),
+    ])
+    await _add_model(storage, name="stage_b", columns=[
+        Column(name="id", primary_key=True),
+        _col("b_kind", sampled_values=["alpha", "beta"]),
+    ])
+
+    args = {
+        "name": "agg",
+        "data_source": DB,
+        "query": [
+            {"source_model": "stage_a", "dimensions": [{"name": "id"}],
+             "filters": ["a_status = 'green'"], "limit": 0},
+            {"source_model": "stage_b", "dimensions": [{"name": "id"}],
+             "measures": [{"formula": "CASE WHEN b_kind = 'gamma' THEN 1 "
+                           "ELSE 0 END:sum"}],
+             "limit": 0},
+        ],
+    }
+    problems = await _collect_literal_problems(
+        "create_model", args, storage=storage, db=DB,
+    )
+    # Both stages' literals are caught, one problem each.
+    assert len(problems) == 2
+    joined = " | ".join(problems)
+    assert "'green'" in joined
+    assert "'gamma'" in joined
+
+
+async def test_create_model_query_stage_dimension_filter_is_scanned(tmp_path):
+    """A dimension-level `filter` clause inside a query stage carries the
+    same literal-existence risk as the top-level `filters` list."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    storage = await _new_storage(tmp_path)
+    await _add_model(storage, name="src", columns=[
+        Column(name="id", primary_key=True),
+        _col("flag", sampled_values=["on", "off"]),
+    ])
+
+    args = {
+        "name": "agg",
+        "data_source": DB,
+        "query": {
+            "source_model": "src",
+            "dimensions": [{"name": "id",
+                            "filter": "flag = 'maybe'"}],
+            "limit": 0,
+        },
+    }
+    problems = await _collect_literal_problems(
+        "create_model", args, storage=storage, db=DB,
+    )
+    assert len(problems) == 1
+    assert "'maybe'" in problems[0]
+
+
+async def test_create_model_query_stage_with_inline_source_model_skipped(tmp_path):
+    """When the stage's `source_model` is an inline ModelExtension dict
+    (not a model name string), the walker silently skips that stage —
+    the dict-shaped source can't be looked up in storage. No false
+    positives."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    storage = await _new_storage(tmp_path)
+
+    args = {
+        "name": "agg",
+        "data_source": DB,
+        "query": {
+            # inline source — a ModelExtension dict, not a string lookup.
+            "source_model": {"source_name": "src",
+                             "columns": [{"name": "z", "sql": "z"}]},
+            "filters": ["z = 'literal'"],
+            "limit": 0,
+        },
     }
     problems = await _collect_literal_problems(
         "create_model", args, storage=storage, db=DB,

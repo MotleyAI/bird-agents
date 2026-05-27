@@ -485,6 +485,55 @@ def _iter_target_sqls(name: str, tool_args: dict) -> list[str]:
         for m in tool_args.get("measures") or []:
             if isinstance(m, dict) and m.get("formula"):
                 out.append(str(m["formula"]))
+        # NB: `create_model(query=[...])` backing-query stages are NOT
+        # collected here — their column references resolve against each
+        # stage's own `source_model`, not the outer create_model's name.
+        # Those are scanned separately via `_iter_query_stage_targets`
+        # below, which pairs each query SQL with its stage's source_model
+        # for proper host resolution.
+    return out
+
+
+def _iter_query_stage_targets(
+    name: str, tool_args: dict,
+) -> list[tuple[str, str]]:
+    """Codex finding (PR #4 follow-up): walk `create_model(query=[stage1,
+    stage2, ...])` backing-query stages and yield ``(sql, source_model)``
+    pairs. Each stage's literals resolve against ITS source_model — not
+    the outer create_model's name — because the agent's SQL inside a
+    query-stage filter (e.g. ``"col = 'High Income'"``) references
+    columns of the stage's source table.
+
+    Only the string-form `source_model` (a model name lookup) is in
+    scope; inline ModelExtension `source_model` dicts are silently
+    skipped (they don't sit in storage and the synthetic-host trick is
+    overkill for stage-internal references).
+
+    Returns an empty list for anything other than `create_model` so the
+    caller can flatten unconditionally.
+    """
+    if name != "create_model":
+        return []
+    query = tool_args.get("query")
+    if query is None:
+        return []
+    stages = query if isinstance(query, list) else [query]
+    out: list[tuple[str, str]] = []
+    for stage in stages:
+        if not isinstance(stage, dict):
+            continue
+        src = stage.get("source_model")
+        if not isinstance(src, str) or not src:
+            continue
+        for f in stage.get("filters") or []:
+            if isinstance(f, str) and f:
+                out.append((f, src))
+        for m in stage.get("measures") or []:
+            if isinstance(m, dict) and m.get("formula"):
+                out.append((str(m["formula"]), src))
+        for d in stage.get("dimensions") or []:
+            if isinstance(d, dict) and d.get("filter"):
+                out.append((str(d["filter"]), src))
     return out
 
 
@@ -586,82 +635,114 @@ async def _collect_literal_problems(
         return problems
 
     sqls = _iter_target_sqls(name, tool_args)
-    if not sqls:
+    stage_targets = _iter_query_stage_targets(name, tool_args)
+    if not sqls and not stage_targets:
         return problems
 
-    # Resolve the host model ONCE up front (saves a `storage.get_model`
-    # round-trip per literal check, and keeps the existing agent-side test
-    # `test_write_gate_resolves_datasource_via_storage_fallback` from
-    # counting redundant calls). For ``create_model`` the host doesn't
-    # exist in storage yet (we ARE creating it), so synthesize a
-    # lightweight stand-in from ``tool_args`` so the bare-column walker
-    # can still resolve names against the proposed payload's columns and
-    # check their sampled metadata (which the agent may have copied from
-    # an upstream column's `sampled` text into the proposal). CodeRabbit
-    # PR #4 thread 1.
-    try:
-        host = await storage.get_model(host_name)
-    except Exception:  # noqa: BLE001 — best-effort
-        host = None
-    if host is None:
-        if name == "create_model":
-            host = _build_synthetic_host_from_create_args(tool_args)
-        if host is None:
-            return problems
-
-    for sql in sqls:
+    # Outer host: resolve the host model the proposed columns/measures
+    # live on (for ``edit_model`` it's in storage; for ``create_model``
+    # the new name doesn't exist yet — synthesize a stand-in from the
+    # payload's own columns so the bare-column walker can still resolve
+    # names — CodeRabbit PR #4 thread 1). One `storage.get_model` round-
+    # trip up front; this also pins the existing agent-side test
+    # `test_write_gate_resolves_datasource_via_storage_fallback`.
+    host: Any = None
+    if sqls:
         try:
-            tree = sqlglot.parse_one(sql, dialect="sqlite")
-        except Exception:  # noqa: BLE001 — unparseable is the existing gate's job
-            continue
-        if tree is None:
-            continue
-        # Walk every EQ / In expression in the tree.
-        for node in tree.walk():
-            if not isinstance(node, (sqlglot_exp.EQ, sqlglot_exp.In)):
-                continue
-            lhs_peeled = _peel_wrapper(node.this)
-            ref = _column_ref(lhs_peeled)
-            if ref is None:
-                continue
-            alias, col_name = ref
-            literals = _string_literals_under(node)
-            if not literals:
-                continue
-            col = await _resolve_column_via_host(
-                host, storage, host_name, alias, col_name,
-            )
-            if col is None:
-                continue
-            known = _sampled_set(col)
-            if known is None:
-                continue
-            # All-NULL column: every literal misses, emit a strong defer hint.
-            if not known:
-                literals_str = ", ".join(f"'{lit}'" for lit in literals)
-                qualified = f"{alias}.{col_name}" if alias else col_name
-                problems.append(
-                    f"column {qualified}: literal(s) {literals_str} cannot "
-                    f"match because the column has no values (all NULL / "
-                    f"empty). DEFER this KB and cite the empty column."
+            host = await storage.get_model(host_name)
+        except Exception:  # noqa: BLE001 — best-effort
+            host = None
+        if host is None and name == "create_model":
+            host = _build_synthetic_host_from_create_args(tool_args)
+        if host is not None:
+            for sql in sqls:
+                problems.extend(
+                    await _check_sql_literals(sql, host, storage, host_name)
                 )
-                continue
-            known_lc = {k.casefold() for k in known}
-            misses = [
-                lit for lit in literals if lit.casefold() not in known_lc
-            ]
-            if not misses:
-                continue
-            qualified = f"{alias}.{col_name}" if alias else col_name
-            misses_str = ", ".join(f"'{m}'" for m in misses)
-            known_str = ", ".join(f"'{v}'" for v in known)
-            problems.append(
-                f"column {qualified}: literal(s) {misses_str} do not occur "
-                f"in this column's sampled distinct values. Known values: "
-                f"{known_str}. Pick one that exists, or DEFER this KB with "
-                f"notes citing the failing literal(s) and the known set."
-            )
+
+    # Codex follow-up: query-backed model creation (`create_model(query=[
+    # stage1, stage2, ...])` from R-MULTISTAGE / R-EXISTS) — each stage's
+    # literals reference columns on the STAGE's `source_model`, not on
+    # the outer create_model's name. Resolve per-stage so the literal
+    # check actually fires against the right model. Independent of the
+    # outer-host loop above (a payload may have query stages but no
+    # top-level columns/measures, and vice versa).
+    for sql, src_model in stage_targets:
+        stage_host: Any
+        try:
+            stage_host = await storage.get_model(src_model)
+        except Exception:  # noqa: BLE001 — best-effort
+            stage_host = None
+        if stage_host is None:
+            continue
+        problems.extend(
+            await _check_sql_literals(sql, stage_host, storage, src_model)
+        )
     return problems
+
+
+async def _check_sql_literals(
+    sql: str, host: Any, storage: Any, host_name: str,
+) -> list[str]:
+    """Walk one SQL string for EQ / IN string-literal predicates and
+    return one problem per column whose literals miss the host's sampled
+    set. Pure helper extracted from `_collect_literal_problems` so the
+    same logic applies to both the outer-entity host AND per-stage hosts
+    in `create_model(query=[...])` payloads.
+
+    Best-effort: parse failures, unresolvable column refs, and missing
+    sampled metadata all yield NO problem (skip silently)."""
+    out: list[str] = []
+    try:
+        tree = sqlglot.parse_one(sql, dialect="sqlite")
+    except Exception:  # noqa: BLE001 — unparseable is the existing SQL gate's job
+        return out
+    if tree is None:
+        return out
+    for node in tree.walk():
+        if not isinstance(node, (sqlglot_exp.EQ, sqlglot_exp.In)):
+            continue
+        lhs_peeled = _peel_wrapper(node.this)
+        ref = _column_ref(lhs_peeled)
+        if ref is None:
+            continue
+        alias, col_name = ref
+        literals = _string_literals_under(node)
+        if not literals:
+            continue
+        col = await _resolve_column_via_host(
+            host, storage, host_name, alias, col_name,
+        )
+        if col is None:
+            continue
+        known = _sampled_set(col)
+        if known is None:
+            continue
+        if not known:
+            literals_str = ", ".join(f"'{lit}'" for lit in literals)
+            qualified = f"{alias}.{col_name}" if alias else col_name
+            out.append(
+                f"column {qualified}: literal(s) {literals_str} cannot "
+                f"match because the column has no values (all NULL / "
+                f"empty). DEFER this KB and cite the empty column."
+            )
+            continue
+        known_lc = {k.casefold() for k in known}
+        misses = [
+            lit for lit in literals if lit.casefold() not in known_lc
+        ]
+        if not misses:
+            continue
+        qualified = f"{alias}.{col_name}" if alias else col_name
+        misses_str = ", ".join(f"'{m}'" for m in misses)
+        known_str = ", ".join(f"'{v}'" for v in known)
+        out.append(
+            f"column {qualified}: literal(s) {misses_str} do not occur "
+            f"in this column's sampled distinct values. Known values: "
+            f"{known_str}. Pick one that exists, or DEFER this KB with "
+            f"notes citing the failing literal(s) and the known set."
+        )
+    return out
 
 
 async def _validate_and_call(

@@ -422,6 +422,58 @@ async def test_deps_block_marks_genuinely_missing_dep_not_encoded(tmp_path):
     assert "NOT encoded" in block
 
 
+async def test_deps_block_includes_deferred_child_notes(tmp_path):
+    """Codex follow-up (PR #4): the defensive-defer prompt tells the
+    encoder to "quote the reason verbatim from the deps block" so a
+    later per-task agent can distinguish "child deferred because
+    ambiguous" from "child errored during encode". The block must
+    surface the child's `notes` (when present) so the dependent KB has
+    a concrete reason to quote — `status="deferred"` on its own is the
+    same word for every clean defer and carries no signal."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+        EncoderResult,
+    )
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_deps_block,
+    )
+
+    storage = await _storage_with_tagged_column(tmp_path, kb_id=4)
+    dep = EncoderResult(
+        kb_id=99, status="deferred", entities=[],
+        notes="Sample-value mapping ambiguous: tier_label has no numeric "
+              "encoding in any column meaning.",
+    )
+    block = await _format_deps_block([dep], storage, DB)
+    assert "KB 99" in block
+    assert "NOT encoded" in block
+    # The child's notes — the actual ambiguity statement — must appear so
+    # the dependent KB can quote it.
+    assert "Sample-value mapping ambiguous" in block
+    assert "tier_label" in block
+
+
+async def test_deps_block_truncates_very_long_child_notes(tmp_path):
+    """A long-winded child note must be truncated so it can't blow up the
+    parent's prompt budget."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+        EncoderResult,
+    )
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_deps_block,
+    )
+
+    storage = await _storage_with_tagged_column(tmp_path, kb_id=4)
+    long_note = "x" * 1000
+    dep = EncoderResult(
+        kb_id=99, status="deferred", entities=[], notes=long_note,
+    )
+    block = await _format_deps_block([dep], storage, DB)
+    assert "KB 99" in block
+    assert "NOT encoded" in block
+    # Truncated — the rendered block has nowhere near 1000 x's in a row.
+    assert "x" * 250 not in block
+
+
 async def test_deps_block_empty_is_none(tmp_path):
     from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
         _format_deps_block,
