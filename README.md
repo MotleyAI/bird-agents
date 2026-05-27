@@ -120,14 +120,15 @@ simulator, no `ask_user` anywhere in the spawn tree.
    cache reads real sqlite files, so this step is mandatory:
 
    ```bash
-   cd livesqlbench-base-lite-sqlite
-   git lfs pull
+   (cd livesqlbench-base-lite-sqlite && git lfs pull)
    ```
 
-3. Materialise the stable per-DB `<db>.sqlite` (copies template →
-   stable; idempotent; refuses LFS pointers loudly):
+3. From the **bird-agents** checkout (where `scripts/` lives — not
+   the dataset dir), materialise the stable per-DB `<db>.sqlite`
+   (copies template → stable; idempotent; refuses LFS pointers loudly):
 
    ```bash
+   cd bird-agents
    uv run python scripts/prepare_livesqlbench.py
    ```
 

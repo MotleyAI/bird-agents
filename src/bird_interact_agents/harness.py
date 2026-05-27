@@ -324,14 +324,17 @@ def load_livesqlbench_tasks(
         wanted = set(filter_ids)
         select_rows = [r for r in select_rows if r.get("instance_id") in wanted]
 
-    # Step 7 — full-run assertion. Only when neither limit nor filter
+    # Step 7 — full-run check. Only when neither limit nor filter
     # narrows the set; otherwise a smaller count is expected by design.
+    # NOT an `assert` because production guards must survive `python -O`
+    # / `PYTHONOPTIMIZE`, which strips assertions (Codex review).
     if limit is None and filter_ids is None:
-        assert len(select_rows) == _LIVESQLBENCH_SELECT_FULL_RUN_COUNT, (
-            f"expected exactly {_LIVESQLBENCH_SELECT_FULL_RUN_COUNT} SELECT "
-            f"tasks on a full unfiltered LiveSQLBench run; got "
-            f"{len(select_rows)}. Has the dataset been truncated?"
-        )
+        if len(select_rows) != _LIVESQLBENCH_SELECT_FULL_RUN_COUNT:
+            raise ValueError(
+                f"expected exactly {_LIVESQLBENCH_SELECT_FULL_RUN_COUNT} "
+                f"SELECT tasks on a full unfiltered LiveSQLBench run; got "
+                f"{len(select_rows)}. Has the dataset been truncated?"
+            )
 
     # Step 8 — empty `sol_sql` fail-fast on the kept set.
     missing_gold = [

@@ -183,7 +183,9 @@ def test_loader_assertion_fires_on_short_full_run(tmp_path):
         tmp_path / "gold.jsonl",
         rows=[{"instance_id": "alien_1"}, {"instance_id": "alien_2"}],
     )
-    with pytest.raises(AssertionError):
+    # Codex review: the guard is a `raise ValueError`, not an `assert`,
+    # so it survives `python -O` (which strips assertions).
+    with pytest.raises(ValueError):
         load_livesqlbench_tasks(str(data), str(gold), limit=None)
 
 
