@@ -221,11 +221,35 @@ the user-sim is stochastic):
 - **KB 9 vs KB 37**: exactly one of them encodes a Column tagged
   `meta.kb_id` on `service_types.socsupport`. The other defers with
   notes "duplicate of KB <other>".
-- **Sampled-value caveats**: opportunistic — for a random sample of
-  value-illustration KBs (1, 6, 7, 8, 10), check whether the encoder's
-  `description` text or its deferral notes reference the real sampled
-  values seen in storage (forced indirectly by the validator's feedback
-  surface when literal-existence rejects a write).
+- **Sampled-value caveats** (post-S1-S5 cleanup, commit `3a05b06`):
+  KB 1, 2 (and KB 9 if encoded) MUST carry a 1-2 sentence
+  sampled-value caveat ABOVE the `[kb=N]` block when actual values
+  diverge from KB-described enums. Hand-audited exemplars used as
+  three-shot in `prompts.py::_STYLE_GUIDE`: `Tenure_Type` mixed case,
+  `Income_Bracket` R$-ranges vs ordinal labels, `Dwelling_Class`
+  mixed case. Deferred value-illustration KBs (6, 8) should
+  enumerate sampled values in `clarifying_questions`.
+- **Peer-KB block enrichment**: every kb-tagged peer entity in the
+  rendered prompt block MUST carry labeled markers `entity_ref=<db>.
+  <model>[.<leaf>]` AND `reachable_from_host: host(hops), …`. Use
+  `_collect_peer_kb_entries` (factories.py) to dump for inspection.
+
+## Full eval baseline — households (15 instances)
+
+After landing S1/S2/S4/S5/S6 (commit `3a05b06`), the post-cleanup OTF
+reference beats the hand-audited reference on the 15 households
+instances (Opus encoder, Sonnet user-sim, patience 500, audited gold):
+
+| Run                                          | P1 / 15 | Wallclock | Run ID |
+| --                                           | --      | --        | --     |
+| PRIOR hand-audited (May 22, 53-task batch)   | 8       | ~93m sum  | `20260522-1041_par_opus-4-7-agent_sonnet-sim_combined53_p500` |
+| NEW pat=3, no audit (bad defaults)           | 3       | ~80m sum  | `20260527t1443-pydanti-slayer-70eead` |
+| NEW pat=500, audited gold (pre-S1-S5)        | 7       | ~87m sum  | `20260527t1601-pydanti-slayer-dab346` |
+| **NEW post-S1-S5 cleanup**                   | **9**   | ~92m sum  | **`20260527t1922-pydanti-slayer-45372d`** |
+
+Movement vs hand-audited: +`households_3, _7` (improvements);
+−`households_17` (lone regression). Movement vs pre-S1-S5 baseline:
++`households_2, _7`, zero new regressions.
 
 ## Debugging the cloud runner: pull live state, don't guess
 
