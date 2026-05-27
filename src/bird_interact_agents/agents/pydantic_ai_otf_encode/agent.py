@@ -21,7 +21,6 @@ recursive adapter so the parity tests pass.
 from __future__ import annotations
 
 import logging
-import re
 import tempfile
 import time
 from pathlib import Path
@@ -326,12 +325,6 @@ async def _collect_validation_problems(
 _PEELABLE_WRAPPERS = (
     sqlglot_exp.Lower, sqlglot_exp.Upper, sqlglot_exp.Trim,
 )
-
-# Overflow / range patterns in the `sampled` text — when present, the
-# structured list isn't available so the literal-existence check skips.
-_OVERFLOW_PATTERN = re.compile(r"^>\s*\d+\s*distinct\b", re.IGNORECASE)
-_RANGE_PATTERN = re.compile(r"\.\.")  # "min .. max"
-
 
 def _peel_wrapper(node: Any) -> Any:
     """Peel safe text-normalising wrappers (LOWER/UPPER/TRIM, possibly
@@ -733,9 +726,16 @@ async def _check_sql_literals(
                 f"empty). DEFER this KB and cite the empty column."
             )
             continue
-        known_lc = {k.casefold() for k in known}
+        # Codex PR #4 finding M: the STYLE_GUIDE forces `LOWER(TRIM(...))`
+        # on every string compare, so both sides should be normalised the
+        # same way before membership-check. Strip + casefold both — that
+        # mirrors what SQLite's `LOWER(TRIM(<col>)) = '<lit>'` does at
+        # runtime and prevents false-positive rejections when a sampled
+        # value carries surrounding whitespace (e.g. `" yes "`).
+        known_lc = {k.strip().casefold() for k in known}
         misses = [
-            lit for lit in literals if lit.casefold() not in known_lc
+            lit for lit in literals
+            if lit.strip().casefold() not in known_lc
         ]
         if not misses:
             continue

@@ -608,6 +608,51 @@ async def test_walker_peels_lower_trim_upper(tmp_path, sql, expected_miss):
         assert problems == []
 
 
+async def test_lower_trim_predicate_strip_normalises_sampled_values(tmp_path):
+    """Codex PR #4 finding M: the STYLE_GUIDE forces `LOWER(TRIM(col))`
+    on every string compare. The validator must apply the same TRIM
+    normalisation to sampled values before membership check — otherwise
+    a column with `sampled_values=[" yes ", "no"]` (whitespace from the
+    underlying data) and agent SQL `LOWER(TRIM(col)) = 'yes'` would
+    be false-positive-rejected, even though the runtime predicate would
+    correctly match the stored `" yes "` value."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    storage = await _new_storage(tmp_path)
+    await _add_model(storage, name="m", columns=[
+        Column(name="id", primary_key=True),
+        # Sampled values carry surrounding whitespace — the raw stored
+        # form of the underlying SQLite column.
+        _col("col", sampled_values=[" yes ", " NO "]),
+    ])
+
+    # Agent's SQL matches the runtime normalisation; the validator must
+    # apply the same transformation to the sampled side before checking
+    # membership.
+    args = _edit_args("m", columns=[
+        {"name": "x", "type": "boolean",
+         "sql": "LOWER(TRIM(col)) = 'yes'"},
+    ])
+    problems = await _collect_literal_problems(
+        "edit_model", args, storage=storage, db=DB,
+    )
+    assert problems == [], (
+        f"strip-normalised sampled values should match the agent's "
+        f"trimmed literal. got: {problems!r}"
+    )
+
+    # IN-variant: both literals must match after strip-norm too.
+    args2 = _edit_args("m", columns=[
+        {"name": "y", "type": "boolean",
+         "sql": "LOWER(TRIM(col)) IN ('yes', 'no')"},
+    ])
+    assert await _collect_literal_problems(
+        "edit_model", args2, storage=storage, db=DB,
+    ) == []
+
+
 async def test_walker_peels_for_in_with_lower_trim(tmp_path):
     """Both literals in LOWER(TRIM(col)) IN ('a', 'b') must be checked."""
     from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
