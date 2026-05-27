@@ -706,7 +706,10 @@ async def test_otf_encode_real_resolver_passes_benchmark_to_paths(monkeypatch, t
         )
 
     async def fake_build_variant(*, canonical_storage_root, db_name,
-                                  deleted_kb_ids, work_dir, mini_interact_root):
+                                  deleted_kb_ids, work_dir, mini_interact_root,
+                                  db_root=None):
+        # DEV-1462 round-2: build_task_variant_storage gained a `db_root`
+        # kwarg (Codex finding); stub must accept it.
         out = Path(work_dir) / db_name
         out.mkdir(parents=True, exist_ok=True)
         return out

@@ -157,6 +157,136 @@ async def test_ensure_db_reference_threads_db_root_into_build_path(
     )
 
 
+# ---------------------------------------------------------------------------
+# Second-round Codex review: the per-task variant copy's connection_string
+# resolves through `resolve_committed_connection_string`, which still
+# preferred `$BIRD_DB_PATH` over the supplied root. The fix mirrors B5:
+# accept a `db_root` kwarg that overrides the env so a LiveSQLBench task's
+# MCP server queries the right sqlite at runtime even when conftest / CI
+# / dev shells set `$BIRD_DB_PATH` to mini-interact.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_committed_connection_string_db_root_overrides_env(
+    monkeypatch, tmp_path,
+):
+    """The runtime resolver MUST honour an explicit `db_root` kwarg over
+    `$BIRD_DB_PATH`. Without this, a per-task variant copy built against
+    the LiveSQLBench root silently re-resolves against `$BIRD_DB_PATH`
+    (mini-interact, the conftest/CI default) when the MCP server reads
+    the datasource at runtime."""
+    from bird_interact_agents.slayer_pipeline.portable_connection import (
+        resolve_committed_connection_string,
+    )
+
+    env_root = tmp_path / "mini_interact_env"
+    env_root.mkdir()
+    monkeypatch.setenv("BIRD_DB_PATH", str(env_root))
+
+    explicit = tmp_path / "livesqlbench"
+    explicit.mkdir()
+
+    rel = "sqlite:///alien/alien.sqlite"
+    out = resolve_committed_connection_string(rel, explicit, db_root=explicit)
+    # The output is an absolute sqlite URL re-anchored at `db_root`,
+    # NOT at `$BIRD_DB_PATH`.
+    assert str(explicit) in out, (
+        f"db_root MUST win over $BIRD_DB_PATH; resolved string {out!r} "
+        f"does not mention the explicit root {explicit!r}"
+    )
+    assert str(env_root) not in out, (
+        f"db_root MUST win over $BIRD_DB_PATH; resolved string {out!r} "
+        f"leaked the env root {env_root!r}"
+    )
+
+
+def test_resolve_committed_connection_string_back_compat_env_wins_when_no_db_root(
+    monkeypatch, tmp_path,
+):
+    """Back-compat: with no `db_root`, the legacy `$BIRD_DB_PATH`-wins
+    semantics stay. Mini-interact callers (no db_root) are unchanged."""
+    from bird_interact_agents.slayer_pipeline.portable_connection import (
+        resolve_committed_connection_string,
+    )
+
+    env_root = tmp_path / "via_env"
+    env_root.mkdir()
+    monkeypatch.setenv("BIRD_DB_PATH", str(env_root))
+
+    passed = tmp_path / "via_arg"
+    passed.mkdir()
+
+    rel = "sqlite:///alien/alien.sqlite"
+    out = resolve_committed_connection_string(rel, passed)
+    # No `db_root` kwarg → legacy precedence: env wins over passed root.
+    assert str(env_root) in out
+    assert str(passed) not in out
+
+
+@pytest.mark.asyncio
+async def test_build_task_variant_storage_db_root_threads_into_resolver(
+    monkeypatch, tmp_path,
+):
+    """`build_task_variant_storage` MUST forward its `db_root` kwarg into
+    `resolve_committed_connection_string` so the per-task variant
+    materialised at runtime points at the right sqlite even when
+    `$BIRD_DB_PATH` is set elsewhere. Spy on the resolver to verify the
+    threading."""
+    from bird_interact_agents import hard8_preprocessor as hp_mod
+    from bird_interact_agents.slayer_pipeline import (
+        portable_connection as portable_mod,
+    )
+
+    monkeypatch.setenv("BIRD_DB_PATH", str(tmp_path / "mini_via_env"))
+    livesqlbench_root = tmp_path / "livesqlbench"
+    livesqlbench_root.mkdir()
+
+    # Set up a minimal canonical storage with a datasource carrying a
+    # portable connection string.
+    from slayer.core.models import DatasourceConfig
+    from slayer.storage.yaml_storage import YAMLStorage
+    canonical_root = tmp_path / "ref"
+    canonical_db = canonical_root / "alien"
+    canonical_db.mkdir(parents=True)
+    src = YAMLStorage(base_dir=str(canonical_db))
+    await src.save_datasource(DatasourceConfig(
+        name="alien",
+        connection_string="sqlite:///alien/alien.sqlite",
+    ))
+
+    spy_calls: list = []
+    real_resolve = portable_mod.resolve_committed_connection_string
+
+    def spy_resolve(cs, mini, *, db_root=None):
+        spy_calls.append(db_root)
+        return real_resolve(cs, mini, db_root=db_root)
+
+    # build_task_variant_storage does `from ... import
+    # resolve_committed_connection_string` inside the function body, so
+    # the patch must hit the SOURCE module — patching the importing
+    # module misses it.
+    monkeypatch.setattr(
+        portable_mod, "resolve_committed_connection_string", spy_resolve,
+    )
+
+    work_dir = tmp_path / "work"
+    await hp_mod.build_task_variant_storage(
+        canonical_storage_root=canonical_root,
+        db_name="alien",
+        deleted_kb_ids=set(),
+        work_dir=work_dir,
+        mini_interact_root=livesqlbench_root,
+        db_root=livesqlbench_root,
+    )
+    assert spy_calls, (
+        "build_task_variant_storage MUST call resolve_committed_connection_string"
+    )
+    assert spy_calls == [livesqlbench_root], (
+        f"db_root not threaded into the resolver; saw {spy_calls!r}, "
+        f"expected [{livesqlbench_root!r}]"
+    )
+
+
 @pytest.mark.asyncio
 async def test_resolve_datasource_for_build_passes_db_root_to_effective_root(
     monkeypatch, tmp_path,

@@ -429,6 +429,17 @@ async def _resolve_otf_task_storage_dir(
         # (mini_interact_root=data_path_base above), so the per-task datasource
         # must resolve its portable connection string against the SAME root.
         mini_interact_root=Path(data_path_base),
+        # DEV-1462 round-2 — the SLayer MCP server reads the per-task
+        # variant's connection string at runtime, and the resolver in
+        # ``portable_connection.py`` still prefers ``$BIRD_DB_PATH`` over
+        # the supplied root by default. Pass ``db_root`` explicitly so the
+        # runtime resolve matches the build-time resolve from
+        # ``ensure_db_reference(db_root=...)`` above — without this, a
+        # LiveSQLBench task would correctly build/reuse the LiveSQLBench-
+        # scoped reference but silently query the mini-interact sqlite at
+        # runtime when ``$BIRD_DB_PATH`` is set to mini-interact (the
+        # common conftest/CI/shell case).
+        db_root=db_root_resolved,
     )
     return str(scratch), deleted
 

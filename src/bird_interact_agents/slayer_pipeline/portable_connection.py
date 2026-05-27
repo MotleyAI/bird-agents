@@ -65,11 +65,22 @@ def to_portable_connection_string(
 
 
 def resolve_committed_connection_string(
-    connection_string: str, mini_interact_root: Path
+    connection_string: str, mini_interact_root: Path,
+    *, db_root: Path | None = None,
 ) -> str:
     """Re-anchor a portable (relative) connection_string at the local
-    mini-interact root, returning an absolute SQLite URI. ``$BIRD_DB_PATH``
-    overrides the supplied root when set.
+    mini-interact root, returning an absolute SQLite URI.
+
+    Precedence (DEV-1462 / second-round Codex review): an explicit
+    ``db_root`` kwarg wins over ``$BIRD_DB_PATH``. Callers that know the
+    authoritative root (e.g. the otf_encode adapter handling a
+    LiveSQLBench run passes the harness's ``--db-path``) MUST be able to
+    override the env, because conftest + day-to-day shells often set
+    ``$BIRD_DB_PATH`` to the mini-interact root, which would otherwise
+    mis-anchor a LiveSQLBench per-task variant resolve at runtime.
+
+    Legacy precedence (no ``db_root``): ``$BIRD_DB_PATH`` wins over
+    ``mini_interact_root`` — back-compat with existing callers.
 
     Absolute connection strings are returned unchanged (so live storage
     and migration-from-old-yamls both pass through cleanly).
@@ -81,7 +92,10 @@ def resolve_committed_connection_string(
     if not connection_string.startswith(_SQLITE_PREFIX_RELATIVE):
         return connection_string
     rel_path = connection_string[len(_SQLITE_PREFIX_RELATIVE):]
-    env_root = os.environ.get("BIRD_DB_PATH")
-    root = Path(env_root).expanduser() if env_root else mini_interact_root
+    if db_root is not None:
+        root: Path = db_root
+    else:
+        env_root = os.environ.get("BIRD_DB_PATH")
+        root = Path(env_root).expanduser() if env_root else mini_interact_root
     abs_path = (root / rel_path).resolve()
     return f"{_SQLITE_PREFIX_ABSOLUTE}{abs_path.as_posix().lstrip('/')}"
