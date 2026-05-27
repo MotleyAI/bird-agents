@@ -38,53 +38,128 @@ __all__ = [
 _STYLE_GUIDE = """\
 ENCODER STYLE GUIDE (applies to every entity you write).
 
-STRING-NORM. For every predicate / CASE / filter that compares a TEXT column
-to a literal, wrap the column in LOWER(TRIM(<col>)) and the literal in
-lowercase. Use LIKE with a trailing % when sampled values or audit caveats
-show free-text variants (e.g. 'apartment%' matches 'apartment',
-'Apartment', 'APARTMENT House'). Apply universally — do not carve out
-exceptions for "values look case-uniform on first glance".
+STRING-NORM. For every predicate / CASE / filter that compares a TEXT
+column to a literal, wrap the column in `LOWER(TRIM(<col>))` and the
+literal in lowercase. Use `LIKE` with a trailing `%` when sampled
+values or audit caveats show free-text variants (e.g. `'apartment%'`
+matches `'apartment'`, `'Apartment'`, `'APARTMENT House'`). Apply
+universally — do not carve out exceptions for "values look
+case-uniform on first glance". Worked example: a Yes/No flag column
+that looks clean almost always carries `'Yes'/'yes'/'YES'/'no'/'No'`
+in real data; use `LOWER(TRIM(<col>)) = 'yes'`, never `<col> = 'Yes'`.
 
-CROSS-COLUMN REFERENCES. Prefer inlining `target_alias.col` via the
-existing join graph (call `inspect_model` on the host and read its
-`joins` before writing). Do NOT emit a correlated subquery
-`(SELECT ... FROM other WHERE ...)` or `EXISTS(SELECT ...)` when the
-host already reaches the target table via a declared join. Named
-cross-model helpers (e.g. another model's column referenced by name)
-are acceptable only when that helper has its own `meta.kb_id` and
-appears in the dependencies block above.
+CROSS-MODEL ACCESS. Inside `Column.sql`, you may reference base or
+derived columns of any model REACHABLE from the host via the declared
+join graph. Use the single-hop alias form `target_alias.col` (or the
+multi-hop `path__alias.col` form documented in the CROSS-TABLE
+REFERENCES section of this prompt). The EXISTING KB-TAGGED ENTITIES
+block below renders an `entity_ref=<db>.<model>[.<leaf>]` for each
+peer plus a `reachable_from_host: host(hops), host(hops), ...` map.
+Use `entity_ref` to identify WHICH peer you intend to reference and
+WHICH host owns it; in `Column.sql` itself, write the alias-qualified
+SQL form (`<host_alias>.<leaf>`), NOT the fully-qualified
+`<db>.<model>.<leaf>` form — those are documentation, not SQL.
 
-HOST-CHOICE. Before placing a new Column / Measure, enumerate the
-models the KB definition touches. Pick the host whose existing joins
-already reach EVERY other touched model — do NOT add a new
-`joins=[...]` entry when picking the OTHER end of an existing join
-would let you reach all referenced fields. Only add a join when no
-such host exists.
+You may NOT emit `SELECT ... FROM ... WHERE ...` subqueries
+(correlated or otherwise) inside `Column.sql`; you may NOT emit
+`EXISTS(SELECT ...)` either — those condition shapes belong inside a
+query stage of a query-backed model (R-MULTISTAGE / R-EXISTS), never
+directly inside a row-level Column expression. Counter-example
+(WRONG — KB 15 / OTF original): a ratio that uses a correlated
+subquery on the other table:
+
+    JSON_EXTRACT(dwelling_specs, '$.Bath_Count') / NULLIF(
+        (SELECT residentcount FROM households WHERE housenum=houselink), 0
+    )
+
+RIGHT — use the existing declared `properties -> households` join so
+SLayer's planner can resolve it:
+
+    JSON_EXTRACT(dwelling_specs, '$.Bath_Count') / NULLIF(
+        households.residentcount, 0
+    )
+
+NO INVENTED JOINS (in Column.sql / Measure formulas). When writing a
+derived Column or Measure: if a column you want to reference lives
+on a table NOT in the candidate host's `reachable_from_host` set
+above, CHANGE the host (see HOST-CHOICE). Do NOT add a new join
+clause inside `Column.sql` — the schema's declared joins are the
+only legal traversals from within row-level expressions. EXEMPTION:
+if your selected recipe is R-JOIN (the KB itself documents a missing
+schema-level relationship), that's the recipe whose specific job IS
+to register a new ModelJoin via `edit_model(joins=[...])` — apply
+the join at the model level, not embedded in a Column's SQL.
+
+HOST-CHOICE. Pick the host whose row corresponds 1:1 to the entity
+the KB describes (the KB's NATURAL GRANULARITY). Tie-break by
+MINIMISING the total join hops needed to reach every column the KB
+references — use the `reachable_from_host` map on each peer in the
+EXISTING KB-TAGGED ENTITIES block below. Never pick a host that
+requires an undeclared join.
+
+Worked example: KB 11 (Household Density = residents / rooms).
+Natural granularity is one household-property pair; both `properties`
+and `households` are 1:1 with it. Referenced columns:
+`properties.dwelling_specs.Room_Count` (lives on `properties`) and
+`households.residentcount` (lives on `households`). Both candidate
+hosts are 1 hop from each other via the declared
+`properties.houselink = households.housenum` reverse join → tied on
+hops. Break the tie toward the host that carries the STRUCTURAL
+column (Room_Count is part of dwelling specification; a property is
+"where" a household lives) → place on `properties`. The
+hand-audited reference makes exactly this choice.
 
 PEER-KB DEDUP. Before writing any entity, look at the EXISTING
-KB-TAGGED ENTITIES block above and the host's existing columns
-(`inspect_model`). If any existing column / measure description
+KB-TAGGED ENTITIES block below and the host's existing columns
+(via `inspect_model`). If any existing column / measure description
 carries `[kb=X]` for an X that describes the SAME schema fact as
-this KB, DEFER with notes "duplicate of KB X" — do NOT write a
+this KB, DEFER with notes `"duplicate of KB X"` — do NOT write a
 competing entity with your own kb_id. The lower-id KB is canonical
 because the topo sort runs lower ids first.
 
-INLINE-DON'T-NAME. When a calc_knowledge KB merely combines sibling
-component scores (definition mentions "average", "mean", "sum",
-"weighted", "combined", "composite", "the average of the individual
-scores for X, Y, Z"), INLINE the components' CASE logic into your
-own Column.sql instead of referencing children by `entity_ref`.
-This matches the hand-audited reference's KB 13 / 20 / 29 pattern
-and avoids cascading-defer chains. PEER-KB DEDUP and
-INLINE-DON'T-NAME tie-break: DEDUP decides whether to write a
-NEW NAMED ENTITY for the current KB; INLINE-DON'T-NAME governs
-the SQL of the entity you DO write — inlining another KB's logic
-into your own expression is encouraged when that KB is small and
-deterministic, NOT a duplicate write.
+SAMPLED-VALUE CAVEATS. When you write a Column that exposes a base
+column listed by a value_illustration KB, ALWAYS check the base
+column's actual sampled values (via `inspect_model` or via the
+validator's rejection list — see LITERAL-EXISTS in the SETUP encoder
+prompt). If the actual values diverge from the KB-described
+enum/labels (mixed case, free-text variants, ordinal labels missing
+from the data, R$-ranges where the KB describes ordinal labels,
+NULLs the KB doesn't mention), PREPEND a 1–2 sentence caveat to the
+Column's `description`, ABOVE the `[kb=N]` block, in the form:
+
+    "Sample values <concrete observation, quoting up to 3 verbatim
+    values>; <recommended downstream action, e.g. LOWER+TRIM, or
+    'define the mapping explicitly'>."
+
+Three exemplars (hand-audited reference):
+  * "Sample values mix case ('OWNED', 'Owned', 'owned'); downstream
+    callers should LOWER+TRIM before exact-equals matches."
+  * "The actual sample values are R$ amount ranges (e.g. 'More than
+    R$ 1,760 and less than R$ 2,640'), not the KB-described ordinal
+    labels ('Low Income' … 'Very High Income'). Any encoding that
+    needs to map this column to an ordinal score must define the
+    bracket→label mapping explicitly — the schema does not carry it."
+  * "Sample values are mixed-case ('Brickwork house', 'Apartment',
+    'apartment'); use LOWER for exact-match comparisons."
+
+If a KB cites SPECIFIC named literals AND those literals are absent
+from the column's sampled values, do NOT write the predicate
+(the validator will reject it anyway). DEFER with notes naming the
+failing literal and the known sampled set.
 
 EXISTING KB-TAGGED ENTITIES on this datasource (already written by
-lower-id KBs in the topo sort). If your KB describes the SAME
-schema fact as any of these, DEFER with notes "duplicate of KB X":
+lower-id KBs in the topo sort). Each line carries the canonical
+`entity_ref=<db>.<model>[.<leaf>]` (identifies WHICH peer + WHICH
+host owns it — use this to disambiguate by-name references and to
+pick a host in HOST-CHOICE) and a `reachable_from_host:` map showing
+which candidate hosts reach this peer via the declared join graph.
+The `entity_ref` form is documentation; do NOT paste the
+fully-qualified `<db>.<model>.<leaf>` form directly into
+`Column.sql`. In `Column.sql` use the alias-qualified single-hop
+form `target_alias.col` or the multi-hop `path__alias.col` per
+CROSS-MODEL ACCESS + CROSS-TABLE REFERENCES below. If your KB
+describes the SAME schema fact as any of these, DEFER with notes
+`"duplicate of KB X"`:
 
 {existing_kb_tagged_entities_block}
 """
@@ -270,8 +345,14 @@ recipe whose trigger matches:
     tunable params. Add an `Aggregation` with `formula=...` using
     `{{{{value}}}}` and named params.
   R-RESOLVE — KB references another KB by name. The dependency was
-    already encoded (see "Dependencies" above); reference its
-    `entity_ref` directly in your formula. Cycles are rejected at
+    already encoded (see "Dependencies" above); use its `entity_ref`
+    to identify the canonical peer + host, then write the formula
+    using the form appropriate to the surface: query measure /
+    dimension strings accept `model.col` / `model.subpath.col`
+    (dots), whereas raw `Column.sql` uses the alias-qualified
+    `target_alias.col` (single-hop) or `path__alias.col` (multi-hop)
+    per CROSS-TABLE REFERENCES. Do NOT paste the fully-qualified
+    `<db>.<model>.<leaf>` form into raw SQL. Cycles are rejected at
     save time.
   R-MULTISTAGE — composite that crosses an aggregation boundary
     (per-peer aggregate then row-level). Use
@@ -452,8 +533,12 @@ trigger matches:
     over one table → a `ModelMeasure` with `formula="<col>:<agg>"`.
   R-AGG — parameterised aggregation needing more than one column or tunable
     params → an `Aggregation` with `formula=...` using `{{{{value}}}}` + named params.
-  R-RESOLVE — KB references another KB by name → reference the dependency's
-    already-encoded entity_ref directly in your formula.
+  R-RESOLVE — KB references another KB by name → use the dependency's
+    `entity_ref` to identify the canonical peer + host; in query
+    measure/dimension strings write `model.col` (dots); in raw
+    `Column.sql` write the alias-qualified `target_alias.col` /
+    `path__alias.col` per CROSS-TABLE REFERENCES. Do NOT paste the
+    fully-qualified `<db>.<model>.<leaf>` form into raw SQL.
   R-MULTISTAGE — composite crossing an aggregation boundary → `create_model`
     with `query=[stage1, stage2, ...]` (last stage is the DAG root).
   R-WINDOW — quartile / rank / percentile / NTILE / argmin-by-time → a
@@ -472,12 +557,22 @@ above:
   multiple sibling components AND combines them (words: "average", "mean",
   "sum", "weighted", "combined", "composite", "the average of the individual
   scores for X, Y, Z"). Each LEAF value_illustration emits its own scoring
-  Column; the parent then INLINES or references those leaves. Worked examples:
+  Column; the parent REFERENCES those leaves by name. Use the EXISTING
+  KB-TAGGED ENTITIES block to identify each leaf's canonical
+  `entity_ref` and its host; then derive the SQL reference using the
+  alias-qualified `target_alias.col` (single-hop) or `path__alias.col`
+  (multi-hop) form appropriate to the parent's chosen host — do NOT
+  paste the documentation form `<db>.<model>.<leaf>` directly into
+  `Column.sql`. Do NOT inline the leaves' CASE expressions into the
+  parent's SQL — keep the DAG of refs; SLayer's planner resolves
+  them at query time. Worked examples:
     * KB 3 / 4 / 5 (Water / Road / Parking scores) -> KB 13 (Infrastructure
       Quality = average of the three). Each leaf emits its own column;
-      KB 13 inlines or refers to them.
+      KB 13's Column.sql references them by name through the host's
+      reachable join graph.
     * KB 6 (Dwelling Type) + KB 13 (Infra Score) -> KB 20 (Living
-      Condition Score = 50/50 of the two). Same pattern.
+      Condition Score = 50/50 of the two). Same pattern: KB 20
+      references both leaves by their entity_ref.
 
   CASE B (DEFER to parent — wrapper / rename / single-score parent). Parent
   in reverse-deps is a `calculation_knowledge` whose WHOLE definition IS the

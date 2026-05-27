@@ -32,7 +32,7 @@ import time
 from dataclasses import replace
 from typing import Any, Awaitable, Callable
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import UsageLimits
@@ -741,41 +741,120 @@ async def _live_tagged_entities(
     return out
 
 
-async def _format_existing_kb_tagged_entities_block(
+class PeerKbEntry(BaseModel):
+    """One ``meta.kb_id``-tagged peer entity currently in storage.
+
+    Used by ``_collect_peer_kb_entries`` (typed extraction) and by
+    ``_format_existing_kb_tagged_entities_block`` (renderer). The
+    encoder reads ``entity_ref`` to know what to copy verbatim when
+    composing cross-model SQL, and ``reachable_from_host`` to know
+    which candidate hosts can reach this peer via the declared join
+    graph (host-choice support — DEV-1478 plan §S2).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kb_id: int
+    kind: str  # "column" | "measure" | "aggregation" | "model"
+    host_model: str
+    leaf_name: str | None = None
+    entity_ref: str
+    # List of (host_model, hop_count) pairs; sorted (hops asc, name asc).
+    # The peer's own host is always present at hop 0; every other model
+    # whose declared joins (transitively) reach the host appears at its
+    # shortest distance.
+    reachable_from_host: tuple[tuple[str, int], ...]
+
+
+def _build_reverse_join_graph(models: list[Any]) -> dict[str, list[str]]:
+    """Build a graph keyed by TARGET model name. For each declared join
+    ``source.joins[*] -> target``, append ``source`` to ``graph[target]``.
+
+    BFS starting from a peer's host ``H`` over this reverse graph yields
+    every model that can reach ``H`` via declared joins, with the
+    shortest distance == hop count in the FORWARD join graph. This is
+    cheaper than running a separate forward BFS from each candidate
+    host.
+
+    Duplicate edges (a model declaring two ModelJoins to the same
+    target, or a single ModelJoin with a composite ``join_pairs``) do
+    NOT inflate hop counts because BFS uses a ``visited`` set; they
+    can appear twice in the adjacency list but each adjacent model is
+    enqueued only once.
+    """
+    graph: dict[str, list[str]] = {}
+    for m in models:
+        name = getattr(m, "name", None)
+        if name is None:
+            continue
+        graph.setdefault(name, [])
+    for m in models:
+        source = getattr(m, "name", None)
+        if source is None:
+            continue
+        for j in (getattr(m, "joins", None) or []):
+            target = getattr(j, "target_model", None)
+            if not target:
+                continue
+            graph.setdefault(target, []).append(source)
+    return graph
+
+
+def _bfs_reach_map(
+    host: str, reverse_graph: dict[str, list[str]],
+) -> tuple[tuple[str, int], ...]:
+    """BFS from ``host`` in the reverse join graph.
+
+    Returns a sorted tuple of ``(model_name, hops)`` pairs, where
+    ``hops`` is the shortest distance from ``model_name`` to ``host``
+    in the FORWARD join graph. The host itself is always present at
+    hop 0. Sort key is ``(hops asc, name asc)`` so the renderer
+    output is deterministic across rebuilds.
+    """
+    visited: dict[str, int] = {host: 0}
+    queue: list[tuple[str, int]] = [(host, 0)]
+    head = 0
+    while head < len(queue):
+        node, dist = queue[head]
+        head += 1
+        for neighbor in reverse_graph.get(node, []):
+            if neighbor in visited:
+                continue
+            visited[neighbor] = dist + 1
+            queue.append((neighbor, dist + 1))
+    return tuple(
+        sorted(visited.items(), key=lambda kv: (kv[1], kv[0]))
+    )
+
+
+async def _collect_peer_kb_entries(
     storage: Any, db: str, *, current_kb_id: int | None = None,
-) -> str:
-    """DEV-1478 PEER-KB DEDUP support: render every ``meta.kb_id``-tagged
-    Column / ModelMeasure / Aggregation currently in storage for ``db`` as
-    one line per entity, sorted ascending by ``kb_id``. The setup encoder
-    runner threads this into ``SETUP_ENCODER_PROMPT`` so the agent can
-    pattern-match its current KB against the canonical (lower-id) entities
-    that already encode the same schema fact and DEFER as a duplicate.
+) -> list[PeerKbEntry]:
+    """Walk ``db``'s models in storage, yield one ``PeerKbEntry`` per
+    ``meta.kb_id``-tagged peer entity (model / column / measure /
+    aggregation). Filter by strict-less-than ``current_kb_id`` when
+    supplied — same concurrency-correctness rule as the legacy block.
 
-    Codex follow-up (PR #4, second-pass review): setup encoders run
-    CONCURRENTLY via asyncio fan-out, so completion order doesn't match
-    topo-id order. A higher-id KB whose LLM finishes first could appear
-    in storage before a lower-id KB's encoder runs. Without filtering,
-    the lower-id KB would see the higher-id entity and might defer as
-    "duplicate of KB <higher>", inverting the canonical-id rule.
+    Reach map per peer is computed by BFS over the declared join
+    graph: the peer's own host is at hop 0; every model that declares
+    a join (transitively) to the peer's host appears at its shortest
+    distance. The peer's own host is ALWAYS included so the encoder
+    knows it can place a column on the same host and reference the
+    peer directly without crossing any join.
 
-    When ``current_kb_id`` is supplied, the block emits ONLY entities
-    whose ``kb_id < current_kb_id`` — strict-less-than so the rendering
-    matches the prompt's "lower-id is canonical" claim regardless of
-    concurrent completion order. When ``current_kb_id`` is None, the
-    block emits all kb-tagged entities (used by tests and any caller
-    that wants a full listing).
+    Best-effort: a storage hiccup yields ``[]`` rather than
+    propagating — this collector is an advisory hint, not a
+    correctness gate.
 
-    Returns ``"(none)"`` when no qualifying entities exist (e.g. the
-    first KB in the topo order). Best-effort — a storage hiccup yields
-    ``"(none)"`` rather than propagating; this block is an advisory
-    hint, not a correctness gate."""
-    rows: list[tuple[int, str]] = []
+    DEV-1478 plan §S2.
+    """
     if storage is None:
-        return "(none)"
+        return []
     try:
         names = await storage.list_models(data_source=db)
     except Exception:  # noqa: BLE001 — best-effort
-        return "(none)"
+        return []
+    models: list[Any] = []
     for name in names:
         try:
             model = await storage.get_model(name, data_source=db)
@@ -784,21 +863,30 @@ async def _format_existing_kb_tagged_entities_block(
                 model = await storage.get_model(name)
             except Exception:  # noqa: BLE001
                 continue
-        if model is None:
-            continue
-        model_meta = getattr(model, "meta", None)
-        model_kb = _meta_kb_id(model_meta)
+        if model is not None:
+            models.append(model)
+    reverse_graph = _build_reverse_join_graph(models)
+
+    out: list[PeerKbEntry] = []
+    for m in models:
+        host = m.name
+        reach = _bfs_reach_map(host, reverse_graph)
+        # Model-level tag.
+        model_kb = _meta_kb_id(getattr(m, "meta", None))
         if model_kb is not None and (
             current_kb_id is None or model_kb < current_kb_id
         ):
-            rows.append((
-                model_kb,
-                f"  - {db}.{name} (model) -> kb_id={model_kb}",
+            out.append(PeerKbEntry(
+                kb_id=model_kb, kind="model", host_model=host,
+                leaf_name=None,
+                entity_ref=f"{db}.{host}",
+                reachable_from_host=reach,
             ))
+        # Column / measure / aggregation leaves.
         for kind, items in (
-            ("column", getattr(model, "columns", None)),
-            ("measure", getattr(model, "measures", None)),
-            ("aggregation", getattr(model, "aggregations", None)),
+            ("column", getattr(m, "columns", None)),
+            ("measure", getattr(m, "measures", None)),
+            ("aggregation", getattr(m, "aggregations", None)),
         ):
             for item in items or []:
                 item_kb = _meta_kb_id(getattr(item, "meta", None))
@@ -806,19 +894,67 @@ async def _format_existing_kb_tagged_entities_block(
                     continue
                 if current_kb_id is not None and item_kb >= current_kb_id:
                     continue
-                rows.append((
-                    item_kb,
-                    f"  - {db}.{name}.{item.name} ({kind}) -> kb_id={item_kb}",
+                out.append(PeerKbEntry(
+                    kb_id=item_kb, kind=kind, host_model=host,
+                    leaf_name=item.name,
+                    entity_ref=f"{db}.{host}.{item.name}",
+                    reachable_from_host=reach,
                 ))
-    if not rows:
+    # Sort by (kb_id, entity_ref, kind) — deterministic, keeps the
+    # same-kb_id Column+Measure pairs (R-FILTER recipe output) in a
+    # stable order across rebuilds. entity_ref dominates the tie-break,
+    # so two entries with the same kb_id but different leaves stay
+    # together in alpha order.
+    out.sort(key=lambda e: (e.kb_id, e.entity_ref, e.kind))
+    return out
+
+
+async def _format_existing_kb_tagged_entities_block(
+    storage: Any, db: str, *, current_kb_id: int | None = None,
+) -> str:
+    """DEV-1478 PEER-KB DEDUP support: render every ``meta.kb_id``-tagged
+    Column / ModelMeasure / Aggregation / Model currently in storage
+    for ``db`` as one line per entity, sorted ascending by ``kb_id``.
+
+    Each line carries three labeled markers the encoder reads by key:
+
+    * ``kb_id=N`` — the canonical-id rule's match anchor (legacy).
+    * ``entity_ref=db.model[.leaf]`` — the verbatim cross-model
+      reference the encoder copies when writing R-RESOLVE-style SQL
+      (DEV-1478 plan §S2).
+    * ``reachable_from_host: host(hops), host(hops), ...`` — the set
+      of candidate host models that can reach this peer via the
+      declared join graph. The host-self entry is always at hop 0;
+      other hosts appear at their shortest-distance in the forward
+      join graph (DEV-1478 plan §S2).
+
+    Concurrency filter: when ``current_kb_id`` is supplied, the block
+    emits ONLY entities whose ``kb_id < current_kb_id`` — strict-less
+    so the "lower-id is canonical" claim holds even when peers finish
+    out of topo order under asyncio fan-out (Codex PR #4 follow-up).
+
+    Returns ``"(none)"`` when no qualifying entities exist (first KB
+    in topo, or a storage hiccup). Advisory hint, not a correctness
+    gate.
+    """
+    entries = await _collect_peer_kb_entries(
+        storage, db, current_kb_id=current_kb_id,
+    )
+    if not entries:
         return "(none)"
-    # CodeRabbit PR #4 nitpick: tie-break on the rendered line so entities
-    # sharing the same kb_id (e.g. R-FILTER produces a Column + a
-    # ModelMeasure both tagged with the same kb_id) appear in a
-    # deterministic order across rebuilds — keeping the formatted prompt
-    # stable.
-    rows.sort(key=lambda r: (r[0], r[1]))
-    return "\n".join(line for _, line in rows)
+    lines: list[str] = []
+    for e in entries:
+        head = f"  - {e.entity_ref} ({e.kind}) -> kb_id={e.kb_id}"
+        entity_ref_marker = f"entity_ref={e.entity_ref}"
+        if e.reachable_from_host:
+            reach = ", ".join(
+                f"{name}({hops})" for name, hops in e.reachable_from_host
+            )
+        else:
+            reach = "(unreachable)"
+        reach_marker = f"reachable_from_host: {reach}"
+        lines.append(f"{head}, {entity_ref_marker}, {reach_marker}")
+    return "\n".join(lines)
 
 
 def _meta_kb_id(meta: Any) -> int | None:
