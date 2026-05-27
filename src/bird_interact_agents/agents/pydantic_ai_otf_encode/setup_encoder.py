@@ -28,6 +28,7 @@ from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
 )
 from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
     _format_deps_block,
+    _format_existing_kb_tagged_entities_block,
     _format_reverse_deps_block,
     _make_prepare_tools,
     _meta_has_kb_id,
@@ -160,9 +161,15 @@ async def _run_setup_encoder(
     """
     deps_block = await _format_deps_block(deps_results, storage, db)
     reverse_deps_block = _format_reverse_deps_block(reverse_deps)
+    existing_kb_tagged_entities_block = (
+        await _format_existing_kb_tagged_entities_block(
+            storage, db, current_kb_id=kb_id,
+        )
+    )
     prompt = SETUP_ENCODER_PROMPT.format(
         db_name=db, kb_id=kb_id, kb_body=kb_body,
         deps_block=deps_block, reverse_deps_block=reverse_deps_block,
+        existing_kb_tagged_entities_block=existing_kb_tagged_entities_block,
     )
     started = time.monotonic()
     deps = EncoderCaptureDeps()

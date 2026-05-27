@@ -27,6 +27,7 @@ def test_mode_values_accepted(mode: str) -> None:
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
             "--mode", mode,
+            "--no-require-audited-gold",
         ]
     )
     assert ns.mode == mode
@@ -61,6 +62,7 @@ def test_pass_through_flags_parse() -> None:
             "--instance-ids", "db_a_1,db_a_2,db_a_3",
             "--mode", "c-interact",
             "--use-audited-gold-sql",
+            "--no-require-audited-gold",  # fake ids, skip the audit-gold guard
             "--max-depth", "5",
             "--no-prompt-cache",
             "--workers", "8",
@@ -73,6 +75,7 @@ def test_pass_through_flags_parse() -> None:
         ]
     )
     assert ns.use_audited_gold_sql is True
+    assert ns.require_audited_gold is False
     assert ns.max_depth == 5
     assert ns.prompt_cache is False
     assert ns.workers == 8
@@ -85,6 +88,94 @@ def test_pass_through_flags_parse() -> None:
     assert ns.instance_ids == ["db_a_1", "db_a_2", "db_a_3"]
 
 
+def test_default_patience_is_500() -> None:
+    """DEV-1478 follow-up: bird-interact-cloud default patience flipped
+    from 3 → 500. Patience 3 was producing apparent OTF regressions
+    that were actually just early-termination, not encoder failures."""
+    ns = cli.parse_args(
+        [
+            "submit",
+            "--framework", "pydantic_ai",
+            "--query-mode", "raw",
+            "--agent-model", "anthropic/claude-sonnet-4-5",
+            "--instance-ids", "db_a_1",
+            "--mode", "c-interact",
+            "--no-require-audited-gold",
+        ]
+    )
+    assert ns.patience == 500
+
+
+def test_default_use_audited_gold_sql_is_true() -> None:
+    """DEV-1478 follow-up: default flipped from False → True. Eval
+    against the original un-audited gold is unsound — the un-audited
+    rows include KB-described predicates the agent has no way to
+    ground."""
+    ns = cli.parse_args(
+        [
+            "submit",
+            "--framework", "pydantic_ai",
+            "--query-mode", "raw",
+            "--agent-model", "anthropic/claude-sonnet-4-5",
+            "--instance-ids", "db_a_1",
+            "--mode", "c-interact",
+            "--no-require-audited-gold",
+        ]
+    )
+    assert ns.use_audited_gold_sql is True
+
+
+def test_no_use_audited_gold_sql_opt_out() -> None:
+    """The BooleanOptionalAction emits a paired `--no-` form."""
+    ns = cli.parse_args(
+        [
+            "submit",
+            "--framework", "pydantic_ai",
+            "--query-mode", "raw",
+            "--agent-model", "anthropic/claude-sonnet-4-5",
+            "--instance-ids", "db_a_1",
+            "--mode", "c-interact",
+            "--no-use-audited-gold-sql",
+        ]
+    )
+    assert ns.use_audited_gold_sql is False
+
+
+def test_require_audited_gold_default_on() -> None:
+    """When --use-audited-gold-sql is on (default), the parser also
+    requires every instance_id to have an audited-gold entry; the
+    `db_a_1` fixture id has no entry, so the parser must reject."""
+    with pytest.raises(SystemExit):
+        cli.parse_args(
+            [
+                "submit",
+                "--framework", "pydantic_ai",
+                "--query-mode", "raw",
+                "--agent-model", "anthropic/claude-sonnet-4-5",
+                "--instance-ids", "db_a_1",
+                "--mode", "c-interact",
+            ]
+        )
+
+
+def test_require_audited_gold_disabled_when_use_audited_gold_off() -> None:
+    """If the user opts out of audited gold entirely, the
+    require-audited-gold guard is moot — accept any id."""
+    ns = cli.parse_args(
+        [
+            "submit",
+            "--framework", "pydantic_ai",
+            "--query-mode", "raw",
+            "--agent-model", "anthropic/claude-sonnet-4-5",
+            "--instance-ids", "db_a_1",
+            "--mode", "c-interact",
+            "--no-use-audited-gold-sql",
+        ]
+    )
+    assert ns.use_audited_gold_sql is False
+    assert ns.instance_ids == ["db_a_1"]
+
+
 def test_prompt_cache_default_on() -> None:
     ns = cli.parse_args(
         [
@@ -94,6 +185,7 @@ def test_prompt_cache_default_on() -> None:
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
             "--mode", "c-interact",
+            "--no-require-audited-gold",
         ]
     )
     assert ns.prompt_cache is True
@@ -132,6 +224,8 @@ def _slayer_argv(**over) -> list[str]:
         argv += ["--slayer-setup", over["slayer_setup"]]
     if "slayer_storage_root" in over:
         argv += ["--slayer-storage-root", over["slayer_storage_root"]]
+    # fake instance ids in fixture argv — skip the audited-gold guard.
+    argv += ["--no-require-audited-gold"]
     return argv
 
 
@@ -314,6 +408,7 @@ def test_subcommand_registered(sub: str) -> None:
                 "--agent-model", "anthropic/claude-sonnet-4-5",
                 "--instance-ids", "db_a_1",
                 "--mode", "c-interact",
+                "--no-require-audited-gold",
             ]
         )
     else:

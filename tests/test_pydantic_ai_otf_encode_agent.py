@@ -508,7 +508,14 @@ async def test_write_gate_blocks_on_value_error():
 async def test_write_gate_resolves_datasource_via_storage_fallback():
     """When the edit_model call omits ``data_source``, the gate must resolve it
     from ``storage.get_model(model_name).data_source`` so the health probe
-    targets the right datasource."""
+    targets the right datasource.
+
+    DEV-1478 added a literal-existence gate that ALSO consults
+    ``storage.get_model(host)`` to look up the host's columns (separately
+    from the datasource fallback). So the assertion below loosens from
+    "exactly one lookup" to "the host name appears as the first lookup
+    target" — preserving the original intent of pinning the SQL gate's
+    fallback behaviour."""
     from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
         _validate_and_call,
     )
@@ -523,7 +530,7 @@ async def test_write_gate_resolves_datasource_via_storage_fallback():
         storage=storage, engine=eng,
     )
     # The fallback consulted storage for the model's datasource …
-    assert storage.got == ["properties"]
+    assert storage.got and storage.got[0] == "properties"
     # … and the probe targeted that datasource.
     probe = eng.probe_query()
     assert probe is not None

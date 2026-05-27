@@ -308,6 +308,7 @@ dependencies = [
     { name = "litellm" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "sqlglot" },
 ]
 
 [package.optional-dependencies]
@@ -340,7 +341,6 @@ dev = [
     { name = "openai" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
-    { name = "sqlglot" },
 ]
 mcp-agent = [
     { name = "mcp-agent" },
@@ -376,8 +376,8 @@ requires-dist = [
     { name = "mcp-agent", marker = "extra == 'mcp-agent'", specifier = ">=0.0.16" },
     { name = "mini-interact-agent", marker = "extra == 'all'", git = "https://github.com/MotleyAI/BIRD-Interact.git?subdirectory=mini_interact%2Fknowledge_based%2Fmini_interact_agent&rev=6b897950780d123c8e8057d15f7d3f1b92819962" },
     { name = "mini-interact-agent", marker = "extra == 'original'", git = "https://github.com/MotleyAI/BIRD-Interact.git?subdirectory=mini_interact%2Fknowledge_based%2Fmini_interact_agent&rev=6b897950780d123c8e8057d15f7d3f1b92819962" },
-    { name = "motley-slayer", extras = ["embedding-search"], marker = "extra == 'all'", specifier = ">=0.6.9" },
-    { name = "motley-slayer", extras = ["embedding-search"], marker = "extra == 'slayer'", specifier = ">=0.6.9" },
+    { name = "motley-slayer", extras = ["embedding-search"], marker = "extra == 'all'", specifier = ">=0.6.10" },
+    { name = "motley-slayer", extras = ["embedding-search"], marker = "extra == 'slayer'", specifier = ">=0.6.10" },
     { name = "openai", marker = "extra == 'dev'" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-ai", marker = "extra == 'all'", specifier = ">=1.0" },
@@ -391,7 +391,7 @@ requires-dist = [
     { name = "ray", extras = ["default"], marker = "extra == 'cloud'", specifier = ">=2.30" },
     { name = "smolagents", marker = "extra == 'all'", specifier = ">=1.0" },
     { name = "smolagents", marker = "extra == 'smolagents'", specifier = ">=1.0" },
-    { name = "sqlglot", marker = "extra == 'dev'" },
+    { name = "sqlglot" },
 ]
 provides-extras = ["claude-sdk", "pydantic-ai", "smolagents", "agno", "mcp-agent", "slayer", "original", "cloud", "all", "dev"]
 
@@ -2337,7 +2337,7 @@ wheels = [
 
 [[package]]
 name = "motley-slayer"
-version = "0.6.9"
+version = "0.6.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "duckdb" },
@@ -2354,9 +2354,9 @@ dependencies = [
     { name = "tantivy" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/64/d3/f1de0ad0637115f595038bcb045eab11a81672396e5dbeab5f436a09aaf8/motley_slayer-0.6.9.tar.gz", hash = "sha256:1f7bcc54004e2d02e1b0effc769ac7a245eada56f530ee777beaf23c194abc24", size = 341865, upload-time = "2026-05-20T10:08:52.992Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/a7/013ef54029680a78a14e39e8667c4620584bb77e26be5925b5266908766c/motley_slayer-0.6.10.tar.gz", hash = "sha256:9aa3272ba0c8f835412f1d8b149ec253ac8ab24710095b59f1c4ac83185ace08", size = 406683, upload-time = "2026-05-27T13:42:29.161Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9b/f0/36af40513c5cb4b7c8a1a3ba64d079799731da29e34b217ac414e58f4b5e/motley_slayer-0.6.9-py3-none-any.whl", hash = "sha256:e02cc99927b13086045f6bc24b88c4a58c6f71b984cf865b5e424ccb8160bac1", size = 383751, upload-time = "2026-05-20T10:08:50.795Z" },
+    { url = "https://files.pythonhosted.org/packages/55/c3/4197b0e6438b78a837eb5871dc65bcef7d1117630b0d8de1ab56bbd1563e/motley_slayer-0.6.10-py3-none-any.whl", hash = "sha256:a4d6c92f077377dd4247aa760a45945b4b73260c0261384efdd93c860eaf0958", size = 455281, upload-time = "2026-05-27T13:42:27.39Z" },
 ]
 
 [package.optional-dependencies]

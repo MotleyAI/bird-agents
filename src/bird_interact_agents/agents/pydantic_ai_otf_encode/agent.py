@@ -26,6 +26,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import sqlglot
+from sqlglot import expressions as sqlglot_exp
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy.exc import SQLAlchemyError
@@ -308,6 +310,469 @@ async def _collect_validation_problems(
     return problems
 
 
+# ---------------------------------------------------------------------------
+# DEV-1478: literal-existence validation. Catches the broken-predicate
+# failure mode where the agent emits `<col> = '<literal>'` / `<col> IN (...)`
+# whose literals never occur in the column's stored distinct values
+# (Column.sampled_values, falling back to Column.sampled text).
+# ---------------------------------------------------------------------------
+
+
+# Wrapper functions whose argument is the "bare column" for literal-check
+# purposes (the encoder STYLE_GUIDE forces LOWER(TRIM(...))). Add new
+# wrappers conservatively — wrappers that ALTER the value (e.g. SUBSTR,
+# CAST to a different type) MUST NOT be peeled.
+_PEELABLE_WRAPPERS = (
+    sqlglot_exp.Lower, sqlglot_exp.Upper, sqlglot_exp.Trim,
+)
+
+def _peel_wrapper(node: Any) -> tuple[Any, bool]:
+    """Peel safe text-normalising wrappers (LOWER/UPPER/TRIM, possibly
+    nested) until a non-wrapper expression is reached.
+
+    Returns ``(inner_node, was_wrapped)`` — the bare inner expression and
+    a boolean recording whether ANY wrapper was stripped. The boolean
+    feeds the literal-existence check (Codex DEV-1478 follow-up): when
+    the LHS was un-normalized at the SQL level, the right-hand literal
+    must NOT be silently casefolded by the validator — otherwise the
+    validator accepts a broken predicate like ``col = 'Yes'`` against a
+    column whose sampled distinct values are ``['yes', 'no']`` (the
+    runtime returns zero rows even though the validator would pass).
+    """
+    cur = node
+    wrapped = False
+    while isinstance(cur, _PEELABLE_WRAPPERS):
+        cur = cur.this
+        wrapped = True
+    return cur, wrapped
+
+
+def _column_ref(node: Any) -> tuple[str | None, str] | None:
+    """If ``node`` is a `Column` (post-peeling), return
+    ``(alias_or_none, column_name)``. Else None.
+
+    sqlglot's `Column` has `.this` (the column name) and `.table` (the
+    alias / table-qualifier, or None for a bare column reference).
+    """
+    if not isinstance(node, sqlglot_exp.Column):
+        return None
+    name = node.this.name if hasattr(node.this, "name") else str(node.this)
+    table = node.table or None
+    return (table or None, name)
+
+
+async def _resolve_column_via_host(
+    host: Any, storage: Any, host_model_name: str,
+    alias: str | None, col_name: str, *, db: str | None = None,
+) -> Any:
+    """Resolve a column reference to a SLayer Column object (best-effort):
+
+      a. Bare column name → look up on the pre-fetched host model.
+      b. ``<alias>.<col>`` where ``<alias>`` matches the host's own name →
+         same as (a).
+      c. ``<alias>.<col>`` where ``<alias>`` matches one of the host's
+         ``joins[*].target_model`` → load the target via storage (scoped
+         to ``db`` when known so a same-named model in another datasource
+         doesn't shadow the right one) and look up ``<col>`` there.
+      d. Multi-hop ``<path>__<alias>.<col>`` is OUT of scope; returns None.
+
+    Returns None on any failure; caller treats None as "skip silently"
+    (no false-positive). ``host`` is the pre-resolved host SlayerModel —
+    the caller fetches it once at the top of the walk so cross-table
+    references don't trigger redundant ``storage.get_model`` calls (which
+    inflate test counts on agent-side validation tests).
+    """
+    if host is None:
+        return None
+    if alias is None or alias == host_model_name:
+        for c in getattr(host, "columns", None) or []:
+            if c.name == col_name:
+                return c
+        return None
+    for join in getattr(host, "joins", None) or []:
+        if getattr(join, "target_model", None) == alias:
+            if storage is None:
+                return None
+            try:
+                target = await _get_model_scoped(storage, alias, db)
+            except Exception:  # noqa: BLE001
+                return None
+            if target is None:
+                return None
+            for c in getattr(target, "columns", None) or []:
+                if c.name == col_name:
+                    return c
+            return None
+    return None
+
+
+async def _get_model_scoped(storage: Any, name: str, db: str | None) -> Any:
+    """Load a model by name, scoped to ``db`` when known so a same-named
+    model in a different datasource (YAMLStorage's priority resolution)
+    doesn't shadow the intended one. When ``db`` is empty/None, falls
+    back to the unscoped lookup the existing
+    `test_write_gate_resolves_datasource_via_storage_fallback` pins."""
+    if db:
+        try:
+            return await storage.get_model(name, data_source=db)
+        except TypeError:
+            # Older storage signatures without `data_source` kwarg.
+            return await storage.get_model(name)
+    return await storage.get_model(name)
+
+
+def _sampled_set(col: Any) -> list[str] | None:
+    """Return the set of known distinct values for ``col`` as a list, or
+    None if the literal-existence check should be skipped.
+
+    Source of truth is ``Column.sampled_values`` (DEV-1480's structured
+    field). When that's present (including ``[]`` for the "zero distinct"
+    case), use it directly.
+
+    When it's absent (older SLayer / not-yet-profiled columns), DO NOT
+    naive-split the human-readable ``Column.sampled`` text — fragments
+    of values that themselves contain commas (e.g. ``"R$ 1,000-3,000"``
+    or ``"Springfield, IL"``) would mis-fragment and produce false
+    positives, violating the validator's no-false-positive contract.
+    Skip the check entirely instead; DEV-1480 ships ``sampled_values``
+    and makes the check effective everywhere. (Codex PR #4 finding L.)
+    """
+    structured = getattr(col, "sampled_values", None)
+    if structured is not None:
+        return list(structured)
+    return None
+
+
+def _string_literals_under(eq_or_in: Any) -> list[str]:
+    """Extract string literals from an EQ or In expression's RHS. For EQ:
+    one literal (or none if not a string). For In: every Literal in
+    ``expressions`` that is a string. Non-string literals (numeric, etc.)
+    are out of scope — only string literals are checked."""
+    out: list[str] = []
+    if isinstance(eq_or_in, sqlglot_exp.EQ):
+        rhs = eq_or_in.expression
+        if isinstance(rhs, sqlglot_exp.Literal) and rhs.is_string:
+            out.append(rhs.this)
+    elif isinstance(eq_or_in, sqlglot_exp.In):
+        for e in eq_or_in.expressions or []:
+            if isinstance(e, sqlglot_exp.Literal) and e.is_string:
+                out.append(e.this)
+    return out
+
+
+def _iter_target_sqls(name: str, tool_args: dict) -> list[str]:
+    """Every SQL string the literal walker should scan from a proposed
+    edit_model / create_model payload."""
+    out: list[str] = []
+    if name == "edit_model":
+        for c in tool_args.get("columns") or []:
+            if isinstance(c, dict):
+                if c.get("sql"):
+                    out.append(str(c["sql"]))
+                if c.get("filter"):
+                    out.append(str(c["filter"]))
+        for m in tool_args.get("measures") or []:
+            if isinstance(m, dict) and m.get("formula"):
+                out.append(str(m["formula"]))
+    elif name == "create_model":
+        for c in tool_args.get("columns") or []:
+            if isinstance(c, dict):
+                if c.get("sql"):
+                    out.append(str(c["sql"]))
+                if c.get("filter"):
+                    out.append(str(c["filter"]))
+        for m in tool_args.get("measures") or []:
+            if isinstance(m, dict) and m.get("formula"):
+                out.append(str(m["formula"]))
+        # NB: `create_model(query=[...])` backing-query stages are NOT
+        # collected here — their column references resolve against each
+        # stage's own `source_model`, not the outer create_model's name.
+        # Those are scanned separately via `_iter_query_stage_targets`
+        # below, which pairs each query SQL with its stage's source_model
+        # for proper host resolution.
+    return out
+
+
+def _iter_query_stage_targets(
+    name: str, tool_args: dict,
+) -> list[tuple[str, str]]:
+    """Codex finding (PR #4 follow-up): walk `create_model(query=[stage1,
+    stage2, ...])` backing-query stages and yield ``(sql, source_model)``
+    pairs. Each stage's literals resolve against ITS source_model — not
+    the outer create_model's name — because the agent's SQL inside a
+    query-stage filter (e.g. ``"col = 'High Income'"``) references
+    columns of the stage's source table.
+
+    Only the string-form `source_model` (a model name lookup) is in
+    scope; inline ModelExtension `source_model` dicts are silently
+    skipped (they don't sit in storage and the synthetic-host trick is
+    overkill for stage-internal references).
+
+    Returns an empty list for anything other than `create_model` so the
+    caller can flatten unconditionally.
+    """
+    if name != "create_model":
+        return []
+    query = tool_args.get("query")
+    if query is None:
+        return []
+    stages = query if isinstance(query, list) else [query]
+    out: list[tuple[str, str]] = []
+    for stage in stages:
+        if not isinstance(stage, dict):
+            continue
+        src = stage.get("source_model")
+        if not isinstance(src, str) or not src:
+            continue
+        for f in stage.get("filters") or []:
+            if isinstance(f, str) and f:
+                out.append((f, src))
+        for m in stage.get("measures") or []:
+            # SlayerQuery measures accept BOTH dict-form
+            # `{"formula": "..."}` AND bare-string form `"col:sum"` or
+            # `"CASE WHEN col = 'x' THEN 1 ELSE 0 END:sum"`. Walk both.
+            if isinstance(m, dict) and m.get("formula"):
+                out.append((str(m["formula"]), src))
+            elif isinstance(m, str) and m:
+                out.append((m, src))
+        for d in stage.get("dimensions") or []:
+            if isinstance(d, dict) and d.get("filter"):
+                out.append((str(d["filter"]), src))
+    return out
+
+
+def _host_model_name(name: str, tool_args: dict) -> str | None:
+    """The host model the proposed entity will live on. For edit_model
+    it's ``model_name``; for create_model it's the new model's ``name``
+    (so cross-table refs in its columns resolve via joins on that name
+    if it exists)."""
+    if name == "edit_model":
+        return tool_args.get("model_name")
+    if name == "create_model":
+        return tool_args.get("name")
+    return None
+
+
+class _SyntheticColumn:
+    """A minimal Column stand-in for ``_resolve_column_via_host`` to find
+    when the host model doesn't exist in storage yet (``create_model``).
+    Carries only the fields the literal walker reads:
+    ``name``, ``sampled``, ``sampled_values``."""
+
+    __slots__ = ("name", "sampled", "sampled_values")
+
+    def __init__(
+        self, name: str, sampled: Any = None, sampled_values: Any = None,
+    ) -> None:
+        self.name = name
+        self.sampled = sampled
+        self.sampled_values = sampled_values
+
+
+class _SyntheticHost:
+    """Minimal host model stand-in for ``create_model`` payloads. Carries
+    only what ``_resolve_column_via_host`` reads: ``columns``, ``joins``.
+    Joins are empty because a not-yet-persisted model can't have edges
+    in the join graph; cross-table refs from a create_model payload
+    therefore silently skip (consistent with the best-effort policy)."""
+
+    __slots__ = ("columns", "joins")
+
+    def __init__(self, columns: list, joins: list | None = None) -> None:
+        self.columns = columns
+        self.joins = joins or []
+
+
+def _build_synthetic_host_from_create_args(tool_args: dict) -> Any:
+    """CodeRabbit PR #4 thread 1: when ``create_model`` fires for a model
+    that doesn't exist in storage yet, build a stand-in host from the
+    proposal's own columns so the bare-column walker can still resolve
+    references and check literal membership.
+
+    The synthetic columns carry whatever ``sampled`` / ``sampled_values``
+    the proposal happens to populate — usually nothing. In that case the
+    walker correctly skips (the column has no known set), preserving the
+    best-effort no-false-positive contract. The fix's value lies in the
+    rare cases where the agent DOES copy upstream sampled metadata into
+    the create_model payload (R-MULTISTAGE stages, R-EXISTS per-parent
+    stages, etc.), AND it lets the unparseable-SQL gate still fire.
+
+    Returns None when the payload has no columns at all (nothing to
+    resolve against)."""
+    cols_arg = tool_args.get("columns") or []
+    columns: list = []
+    for c in cols_arg:
+        if not isinstance(c, dict) or not c.get("name"):
+            continue
+        columns.append(_SyntheticColumn(
+            name=c["name"],
+            sampled=c.get("sampled"),
+            sampled_values=c.get("sampled_values"),
+        ))
+    if not columns:
+        return None
+    return _SyntheticHost(columns=columns)
+
+
+async def _collect_literal_problems(
+    name: str, tool_args: dict, *, storage: Any, db: str = "",
+) -> list[str]:
+    """DEV-1478: walk every SQL string in the proposed write, find
+    ``<col> = 'literal'`` and ``<col> IN ('a', 'b', ...)`` patterns
+    (peeling LOWER/UPPER/TRIM wrappers), and check membership against
+    the column's stored distinct values. Returns one problem string per
+    column-with-misses, listing the bad literals and the full known set.
+
+    Best-effort: parse failures, unresolvable column references, and
+    sampled-set absence all yield NO problem (skip silently). This
+    matches plan §C: never false-positive.
+
+    Codex follow-up: ``db`` is now used. Storage lookups are scoped to
+    the proposed write's ``data_source`` (when in args) so a same-named
+    model in a different datasource doesn't shadow the right one under
+    YAMLStorage's priority resolution. When ``data_source`` is absent
+    from args (the corner case the existing
+    ``test_write_gate_resolves_datasource_via_storage_fallback`` pins),
+    falls back to an unscoped lookup."""
+    problems: list[str] = []
+    host_name = _host_model_name(name, tool_args)
+    if not host_name or storage is None:
+        return problems
+
+    # Prefer the proposed write's data_source over the caller-supplied
+    # `db` arg — the agent's contract is to pass data_source on every
+    # write, and that's the authoritative scope for this lookup.
+    args_db = (tool_args or {}).get("data_source")
+    scope_db = str(args_db) if args_db else (db or None)
+
+    sqls = _iter_target_sqls(name, tool_args)
+    stage_targets = _iter_query_stage_targets(name, tool_args)
+    if not sqls and not stage_targets:
+        return problems
+
+    host: Any = None
+    if sqls:
+        try:
+            host = await _get_model_scoped(storage, host_name, scope_db)
+        except Exception:  # noqa: BLE001 — best-effort
+            host = None
+        if host is None and name == "create_model":
+            host = _build_synthetic_host_from_create_args(tool_args)
+        if host is not None:
+            for sql in sqls:
+                problems.extend(
+                    await _check_sql_literals(
+                        sql, host, storage, host_name, db=scope_db,
+                    )
+                )
+
+    # Codex follow-up: query-backed model creation
+    # (`create_model(query=[stage1, stage2, ...])`) — each stage's
+    # literals reference columns on the STAGE's `source_model`, not on
+    # the outer create_model's name. Resolve per-stage and scope to
+    # ``scope_db`` so the right datasource's model wins.
+    for sql, src_model in stage_targets:
+        stage_host: Any
+        try:
+            stage_host = await _get_model_scoped(storage, src_model, scope_db)
+        except Exception:  # noqa: BLE001 — best-effort
+            stage_host = None
+        if stage_host is None:
+            continue
+        problems.extend(
+            await _check_sql_literals(
+                sql, stage_host, storage, src_model, db=scope_db,
+            )
+        )
+    return problems
+
+
+async def _check_sql_literals(
+    sql: str, host: Any, storage: Any, host_name: str,
+    *, db: str | None = None,
+) -> list[str]:
+    """Walk one SQL string for EQ / IN string-literal predicates and
+    return one problem per column whose literals miss the host's sampled
+    set. Pure helper extracted from `_collect_literal_problems` so the
+    same logic applies to both the outer-entity host AND per-stage hosts
+    in `create_model(query=[...])` payloads. ``db`` scopes joined-target
+    storage lookups so a same-named model in another datasource doesn't
+    shadow the right one.
+
+    Best-effort: parse failures, unresolvable column refs, and missing
+    sampled metadata all yield NO problem (skip silently)."""
+    out: list[str] = []
+    try:
+        tree = sqlglot.parse_one(sql, dialect="sqlite")
+    except Exception:  # noqa: BLE001 — unparseable is the existing SQL gate's job
+        return out
+    if tree is None:
+        return out
+    for node in tree.walk():
+        if not isinstance(node, (sqlglot_exp.EQ, sqlglot_exp.In)):
+            continue
+        lhs_peeled, lhs_wrapped = _peel_wrapper(node.this)
+        ref = _column_ref(lhs_peeled)
+        if ref is None:
+            continue
+        alias, col_name = ref
+        literals = _string_literals_under(node)
+        if not literals:
+            continue
+        col = await _resolve_column_via_host(
+            host, storage, host_name, alias, col_name, db=db,
+        )
+        if col is None:
+            continue
+        known = _sampled_set(col)
+        if known is None:
+            continue
+        if not known:
+            literals_str = ", ".join(f"'{lit}'" for lit in literals)
+            qualified = f"{alias}.{col_name}" if alias else col_name
+            out.append(
+                f"column {qualified}: literal(s) {literals_str} cannot "
+                f"match because the column has no values (all NULL / "
+                f"empty). DEFER this KB and cite the empty column."
+            )
+            continue
+        # Codex DEV-1478 follow-up: only strip + casefold both sides
+        # when the LHS was actually wrapped by LOWER/UPPER/TRIM at the
+        # SQL level. The STYLE_GUIDE *encourages* `LOWER(TRIM(<col>))`
+        # but it is an LLM-level convention, not a runtime guarantee —
+        # silently normalising the validator's comparison would accept
+        # an unwrapped `col = 'Yes'` against sampled `['yes', 'no']`
+        # even though the SQLite runtime returns zero rows for that
+        # predicate. When the LHS was unwrapped, compare literals
+        # against `known` exactly.
+        #
+        # Codex PR #4 finding M (the original whitespace-tolerance
+        # motivation) still holds: when the encoder did wrap with
+        # LOWER+TRIM, both sides get normalised the same way so a
+        # sampled value `' yes '` matches a literal `'yes'`.
+        if lhs_wrapped:
+            known_compare = {k.strip().casefold() for k in known}
+            misses = [
+                lit for lit in literals
+                if lit.strip().casefold() not in known_compare
+            ]
+        else:
+            known_compare = set(known)
+            misses = [lit for lit in literals if lit not in known_compare]
+        if not misses:
+            continue
+        qualified = f"{alias}.{col_name}" if alias else col_name
+        misses_str = ", ".join(f"'{m}'" for m in misses)
+        known_str = ", ".join(f"'{v}'" for v in known)
+        out.append(
+            f"column {qualified}: literal(s) {misses_str} do not occur "
+            f"in this column's sampled distinct values. Known values: "
+            f"{known_str}. Pick one that exists, or DEFER this KB with "
+            f"notes citing the failing literal(s) and the known set."
+        )
+    return out
+
+
 async def _validate_and_call(
     call_tool, name: str, tool_args: dict, *, storage: Any, engine: Any,
 ):
@@ -317,18 +782,44 @@ async def _validate_and_call(
     SQL) BEFORE persisting. On failure the real write is NOT called — the error
     is returned so the agent self-corrects on its next turn; nothing invalid is
     ever saved. An unexpected harness error fails OPEN (the write proceeds) so a
-    bug here never blocks valid work."""
+    bug here never blocks valid work.
+
+    DEV-1478: also runs the literal-existence check via
+    ``_collect_literal_problems`` — string literals in ``=`` / ``IN``
+    predicates that don't occur in the column's sampled distinct values
+    are rejected with a feedback string that lists the valid values. SQL
+    and literal feedback are combined into ONE tool result so the agent
+    sees the full picture in a single turn."""
     if name not in _WRITE_TOOLS:
         return await call_tool(name, tool_args, None)
+    args = tool_args or {}
     try:
-        problems = await _collect_validation_problems(
-            name, tool_args or {}, storage=storage, engine=engine,
+        sql_problems = await _collect_validation_problems(
+            name, args, storage=storage, engine=engine,
         )
     except Exception:  # noqa: BLE001 — harness bug must never block a write
         logger.exception(
             "validate-before-persist harness error; allowing write %s", name,
         )
         return await call_tool(name, tool_args, None)
+    try:
+        literal_problems = await _collect_literal_problems(
+            name, args, storage=storage,
+        )
+    except Exception:  # noqa: BLE001 — literal-collector bug must fail OPEN
+        # CodeRabbit PR #4 thread 2 + Codex: do NOT short-circuit to
+        # `call_tool` here — `sql_problems` from the existing SQL gate may
+        # already be non-empty, and skipping straight to the write would
+        # turn a literal-collector harness bug into a bypass for known-
+        # invalid SQL. Drop only the literal gate's results; the
+        # `if problems:` check below still blocks the write when the SQL
+        # gate flagged anything.
+        logger.exception(
+            "literal-existence validation harness error; allowing write %s "
+            "(SQL-gate problems still enforced)", name,
+        )
+        literal_problems = []
+    problems = list(sql_problems) + list(literal_problems)
     if problems:
         return _validation_feedback(name, problems)
     return await call_tool(name, tool_args, None)
