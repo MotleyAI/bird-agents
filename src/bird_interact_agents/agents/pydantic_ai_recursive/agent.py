@@ -296,6 +296,18 @@ class PydanticAIRecursiveAgent:
                 "dataset='livesqlbench' (the loader stamps it); got "
                 f"dataset={task_data.get('dataset')!r}",
             )
+        # DEV-1462 — CodeRabbit close: ``_validate_slayer_setup`` rejects
+        # one-shot + pre-encoded at the CLI / ``run_evaluation`` /
+        # ``make_runner`` / ``run_one_task`` boundaries, but a caller that
+        # constructs ``PydanticAIRecursiveAgent(slayer_setup="pre-encoded")``
+        # directly and invokes ``run_task(eval_mode="one-shot", ...)`` would
+        # otherwise route LiveSQLBench through the legacy pre-encoded
+        # ``slayer_models/`` path. Belt-and-suspenders defensive check.
+        if is_one_shot and self.slayer_setup != "on-the-fly":
+            raise ValueError(
+                "--mode one-shot requires slayer_setup='on-the-fly'; "
+                f"got {self.slayer_setup!r}",
+            )
 
         db_name = task_data["selected_database"]
         instance_id = task_data["instance_id"]

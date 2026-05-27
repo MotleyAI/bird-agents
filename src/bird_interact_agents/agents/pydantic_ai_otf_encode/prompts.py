@@ -464,6 +464,24 @@ KB body:
 Already-encoded dependencies (use these `entity_ref`s in formulas):
 {deps_block}
 
+KB SELF-ANNOTATION (load-bearing — downstream `kb_to_slayer` resolves
+transitive deps via these tags, so dropping any of them makes a
+successfully-encoded KB look "not encoded" to dependents). Every
+entity you write MUST carry:
+  - `label` = the KB's `knowledge` field verbatim.
+  - `description` containing this canonical block (regenerable):
+
+      [kb={kb_id}]
+      <KB definition> — <KB description>
+      [/kb={kb_id}]
+
+  - `meta = {{"kb_id": {kb_id}}}` (singular int).
+
+If your recipe naturally produces multiple entities (R-FILTER produces
+one Column + one ModelMeasure, R-SPLIT-CALC-THRESH produces a calc +
+a classification), each entity carries its OWN `meta.kb_id = {kb_id}`
+— the verifier dedupes.
+
 Budget: {budget} bird-coins remaining. Call `submit_encoding` exactly
 once when done; reply briefly afterwards to finish.
 """

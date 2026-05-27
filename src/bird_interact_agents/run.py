@@ -19,6 +19,7 @@ from bird_interact_agents.harness import (
     finalize_result_row,
     load_db_data_if_needed,
     load_tasks,
+    materialize_task_db,
     SampleStatus,
 )
 from bird_interact_agents.results_db import (
@@ -226,6 +227,11 @@ async def run_oracle_task(task_data: dict, data_path_base: str) -> dict:
         sol_sql = ""
 
     load_db_data_if_needed(db_name, data_path_base)
+    # DEV-1462 B0: LiveSQLBench oracle runs need per-task DB isolation too —
+    # at --concurrency > 1, multiple oracle tasks on the same DB would
+    # otherwise race the shared <db>.sqlite that the OTF cache reads.
+    # No-op for mini-interact (no `dataset` marker).
+    materialize_task_db(task_data, data_path_base)
     status = SampleStatus(idx=0, original_data=task_data)
 
     observation, reward, p1, p2, finished = execute_submit_action(

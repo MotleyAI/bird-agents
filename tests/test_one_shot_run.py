@@ -192,6 +192,42 @@ async def test_recursive_one_shot_rejects_missing_livesqlbench_marker(
 
 
 @pytest.mark.asyncio
+async def test_recursive_one_shot_rejects_pre_encoded_slayer_setup(
+    monkeypatch, tmp_path,
+):
+    """CodeRabbit close: ``_validate_slayer_setup`` enforces one-shot ⟹
+    on-the-fly at the CLI / run_evaluation / make_runner / run_one_task
+    boundaries, but a caller that instantiates
+    ``PydanticAIRecursiveAgent(slayer_setup="pre-encoded")`` and calls
+    ``.run_task(eval_mode="one-shot", ...)`` directly would otherwise
+    route LiveSQLBench through the legacy pre-encoded
+    ``slayer_models/`` path. The defensive in-run_task check closes
+    that bypass."""
+    from bird_interact_agents.agents.pydantic_ai_recursive.agent import (
+        PydanticAIRecursiveAgent,
+    )
+
+    inst = PydanticAIRecursiveAgent(
+        model="anthropic/claude-sonnet-4-5", slayer_setup="pre-encoded",
+    )
+    with pytest.raises(ValueError) as exc_info:
+        await inst.run_task(
+            task_data={
+                "selected_database": "alien",
+                "instance_id": "alien_1",
+                "amb_user_query": "x",
+                "dataset": "livesqlbench",
+            },
+            data_path_base=str(tmp_path),
+            budget=30.0,
+            query_mode="slayer",
+            eval_mode="one-shot",
+        )
+    msg = str(exc_info.value).lower()
+    assert "one-shot" in msg and "on-the-fly" in msg
+
+
+@pytest.mark.asyncio
 async def test_recursive_one_shot_rejects_c_interact_and_oracle(
     monkeypatch, tmp_path,
 ):
