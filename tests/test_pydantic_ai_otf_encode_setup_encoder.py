@@ -695,6 +695,66 @@ async def test_existing_kb_tagged_entities_block_lists_tagged_columns(tmp_path):
     assert "kb_id=9" in block
 
 
+async def test_existing_kb_tagged_entities_block_filters_to_lower_kb_id(tmp_path):
+    """Codex follow-up (PR #4, second-pass review): setup encoders run
+    concurrently via asyncio fan-out — completion order doesn't match
+    topo-id order. The peer-KB block must filter to entities whose
+    kb_id is strictly less than the current KB's id so the rendered
+    "lower-id is canonical" claim in the prompt holds regardless of
+    concurrent completion order."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_existing_kb_tagged_entities_block,
+    )
+
+    storage = YAMLStorage(base_dir=str(tmp_path))
+    await storage.save_datasource(DatasourceConfig(
+        name=DB, type="sqlite", connection_string="sqlite:///x.sqlite",
+    ))
+    # Three tagged entities at kb_id ∈ {3, 10, 15}. When the current
+    # encoder is at kb_id=10, ONLY kb_id=3 should appear (strictly less
+    # than 10). kb_id=10 itself (same id, possibly a sibling write from
+    # a concurrent encoder) and kb_id=15 (a higher id that finished
+    # first under concurrency) must NOT appear.
+    await storage.save_model(SlayerModel(
+        name="m_lower", data_source=DB, sql_table="m_lower",
+        columns=[Column(name="id", primary_key=True),
+                 Column(name="c_lower", sql="1", meta={"kb_id": 3})],
+    ))
+    await storage.save_model(SlayerModel(
+        name="m_same", data_source=DB, sql_table="m_same",
+        columns=[Column(name="id", primary_key=True),
+                 Column(name="c_same", sql="1", meta={"kb_id": 10})],
+    ))
+    await storage.save_model(SlayerModel(
+        name="m_higher", data_source=DB, sql_table="m_higher",
+        columns=[Column(name="id", primary_key=True),
+                 Column(name="c_higher", sql="1", meta={"kb_id": 15})],
+    ))
+
+    # With current_kb_id=10 — only kb_id=3 qualifies.
+    block = await _format_existing_kb_tagged_entities_block(
+        storage, DB, current_kb_id=10,
+    )
+    assert "c_lower" in block
+    assert "kb_id=3" in block
+    assert "c_same" not in block, (
+        f"same-kb_id entries (concurrent sibling) must NOT leak in. "
+        f"block:\n{block}"
+    )
+    assert "c_higher" not in block, (
+        f"higher-kb_id entries (concurrent earlier-finisher) must NOT "
+        f"leak in. block:\n{block}"
+    )
+
+    # With current_kb_id=None (no filter) — all three appear.
+    block_all = await _format_existing_kb_tagged_entities_block(
+        storage, DB, current_kb_id=None,
+    )
+    assert "c_lower" in block_all
+    assert "c_same" in block_all
+    assert "c_higher" in block_all
+
+
 async def test_existing_kb_tagged_entities_block_sorted_by_kb_id(tmp_path):
     """Multiple tagged entities → output is sorted by kb_id ascending so the
     canonical (lower-id) entity appears first."""

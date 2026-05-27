@@ -162,7 +162,9 @@ async def _run_setup_encoder(
     deps_block = await _format_deps_block(deps_results, storage, db)
     reverse_deps_block = _format_reverse_deps_block(reverse_deps)
     existing_kb_tagged_entities_block = (
-        await _format_existing_kb_tagged_entities_block(storage, db)
+        await _format_existing_kb_tagged_entities_block(
+            storage, db, current_kb_id=kb_id,
+        )
     )
     prompt = SETUP_ENCODER_PROMPT.format(
         db_name=db, kb_id=kb_id, kb_body=kb_body,
