@@ -459,6 +459,7 @@ async def ensure_db_reference(
     mini_interact_root: Path,
     build_encoder: _BuildEncoder,
     force: bool = False,
+    db_root: Path | None = None,
 ) -> ReferenceEntry:
     """Materialise (or reuse) the durable per-DB reference at
     ``reference_root / db``. See module docstring for the lifecycle contract.
@@ -467,7 +468,13 @@ async def ensure_db_reference(
     — load-bearing for the cloud (combo 3 downloads ONLY the reference, never
     the cache, so touching ``ensure_db_cache`` would trigger an in-cluster
     ingest). Reuse is presence-gated on ``_reference_fp.txt``; the fingerprint
-    is no longer compared (it is provenance only)."""
+    is no longer compared (it is provenance only).
+
+    DEV-1462: ``db_root`` is the authoritative live-SQLite root for this run
+    — when provided it overrides ``$BIRD_DB_PATH`` in ``_effective_db_root``.
+    LiveSQLBench callers pass the harness's ``--db-path`` here so the
+    setup-encoder validation queries hit the right sqlite even when the
+    shell sets ``$BIRD_DB_PATH`` to the mini-interact root."""
     target = reference_root / db
     marker = target / _MARKER
 
@@ -503,6 +510,7 @@ async def ensure_db_reference(
             reference_root=reference_root, target=target,
             mini_interact_root=mini_interact_root,
             build_encoder=build_encoder,
+            db_root=db_root,
             # CR r2 — pass the USER's `force` only, NOT `force or
             # target.exists()`. The latter would mis-signal "user wants
             # rebuild" whenever a stale markerless dir exists, which
@@ -552,7 +560,7 @@ def _per_db_build_flock(reference_root: Path, db: str) -> Iterator[None]:
 
 async def _build_reference(
     *, db, fp, cache_entry, kb_rows, reference_root, target,
-    mini_interact_root, build_encoder, force,
+    mini_interact_root, build_encoder, force, db_root=None,
 ) -> list[Any]:
     # DEV-1470 / H4 — take the cross-process per-DB flock BEFORE we touch
     # `target` or run the encoder. The asyncio Lock in `ensure_db_reference`
@@ -565,12 +573,13 @@ async def _build_reference(
             reference_root=reference_root, target=target,
             mini_interact_root=mini_interact_root,
             build_encoder=build_encoder, force=force,
+            db_root=db_root,
         )
 
 
 async def _build_reference_inside_lock(
     *, db, fp, cache_entry, kb_rows, reference_root, target,
-    mini_interact_root, build_encoder, force,
+    mini_interact_root, build_encoder, force, db_root=None,
 ) -> list[Any]:
     # Codex r2: re-check the marker INSIDE the cross-process flock. A peer
     # Ray actor process may have passed the marker check in
@@ -607,7 +616,9 @@ async def _build_reference_inside_lock(
         # reference is portabilised again at step 6 so the on-disk artifact
         # stays machine-agnostic.
         storage = YAMLStorage(base_dir=str(tmp))
-        await _resolve_datasource_for_build(storage, db, mini_interact_root)
+        await _resolve_datasource_for_build(
+            storage, db, mini_interact_root, db_root=db_root,
+        )
 
         # 3. Preload the full KB as memories (no deletions at build time).
         mems = encode_kb_as_memories(db, kb_rows, deleted_kb_ids=set())
@@ -654,8 +665,12 @@ async def _build_reference_inside_lock(
         # 5b. PORTABILISE the datasource connection back to the relative form
         # so the committed reference is machine-agnostic (the live absolute
         # path from step 2 must never be committed). build_task_variant_storage
-        # re-resolves it at task time.
-        await _portabilise_datasource(storage, db, mini_interact_root)
+        # re-resolves it at task time. Pass the SAME `db_root` so the
+        # portable→absolute roundtrip stays consistent with step 2 (otherwise
+        # the committed reference could leak a machine-specific prefix).
+        await _portabilise_datasource(
+            storage, db, mini_interact_root, db_root=db_root,
+        )
 
         # 6. Persist setup results + marker (marker LAST).
         (tmp / _SETUP_RESULTS).write_text(
@@ -672,22 +687,40 @@ async def _build_reference_inside_lock(
         raise
 
 
-def _effective_db_root(mini_interact_root: Path) -> Path:
-    """The root the LIVE SQLite path is anchored at. ``$BIRD_DB_PATH`` wins (it
-    is what ``resolve_committed_connection_string`` honours), else
-    ``mini_interact_root``. The build-time resolve (step 2) and the
-    commit-time portabilise (step 5b) MUST agree on this root — otherwise an
-    absolute path resolved under ``$BIRD_DB_PATH`` can't be stripped back to
-    the portable relative form when those two roots differ, and the committed
-    reference leaks a machine-specific absolute path."""
+def _effective_db_root(
+    mini_interact_root: Path, *, db_root: Path | None = None,
+) -> Path:
+    """The root the LIVE SQLite path is anchored at.
+
+    Precedence (DEV-1462 / Codex #2): an explicit ``db_root`` kwarg wins
+    over ``$BIRD_DB_PATH`` — callers that know the authoritative root
+    (e.g. the otf_encode adapter handling a LiveSQLBench run passes the
+    harness's ``--db-path``) MUST be able to override the env, because
+    conftest + day-to-day shells set ``$BIRD_DB_PATH`` to the
+    mini-interact root, which would otherwise mis-anchor a LiveSQLBench
+    resolve.
+
+    Legacy precedence (no ``db_root``): ``$BIRD_DB_PATH`` wins over
+    ``mini_interact_root`` — what ``resolve_committed_connection_string``
+    honours. The build-time resolve (step 2) and the commit-time
+    portabilise (step 5b) MUST agree on this root — otherwise an absolute
+    path resolved under one root can't be stripped back to the portable
+    relative form when those two roots differ, and the committed reference
+    leaks a machine-specific absolute path. Because BOTH steps now call
+    this helper with the SAME ``db_root`` (threaded all the way from
+    ``ensure_db_reference``), they stay consistent under both branches.
+    """
+    if db_root is not None:
+        return db_root
     env_root = os.environ.get("BIRD_DB_PATH")
     return Path(env_root).expanduser() if env_root else mini_interact_root
 
 
 async def _portabilise_datasource(
     storage: YAMLStorage, db: str, mini_interact_root: Path,
+    *, db_root: Path | None = None,
 ) -> None:
-    root = _effective_db_root(mini_interact_root)
+    root = _effective_db_root(mini_interact_root, db_root=db_root)
     ds = await storage.get_datasource(db)
     if ds is None or ds.connection_string is None:
         return
@@ -700,6 +733,7 @@ async def _portabilise_datasource(
 
 async def _resolve_datasource_for_build(
     storage: YAMLStorage, db: str, mini_interact_root: Path,
+    *, db_root: Path | None = None,
 ) -> None:
     """Rewrite the datasource connection to a LIVE absolute SQLite path,
     re-anchored at THIS run's effective DB root, so the setup encoder can
@@ -711,10 +745,11 @@ async def _resolve_datasource_for_build(
     portabilise first (strip the effective-root prefix → relative) and then
     resolve (relative → absolute at the effective root), which re-anchors the
     path no matter which checkout last wrote the cache. The effective root is
-    ``$BIRD_DB_PATH`` or ``mini_interact_root`` (the latter is git-common-dir
-    based, so identical from the main checkout or any worktree).
+    the explicit ``db_root`` if provided (DEV-1462), else ``$BIRD_DB_PATH`` or
+    ``mini_interact_root`` (the latter is git-common-dir based, so identical
+    from the main checkout or any worktree).
     """
-    root = _effective_db_root(mini_interact_root)
+    root = _effective_db_root(mini_interact_root, db_root=db_root)
     ds = await storage.get_datasource(db)
     if ds is None or ds.connection_string is None:
         return

@@ -66,6 +66,10 @@ def _isolate_paths(monkeypatch):
         "BIRD_DB_PATH", "BIRD_DATA_PATH", "BIRD_RESULTS_ROOT",
         "BIRD_SLAYER_MODELS_ROOT", "BIRD_OTF_CACHE_ROOT",
         "BIRD_SLAYER_MODELS_OTF_ROOT",
+        # DEV-1462: livesqlbench-scoped overrides.
+        "BIRD_LIVESQLBENCH_ROOT", "BIRD_LIVESQLBENCH_DATA_FILE",
+        "BIRD_OTF_CACHE_ROOT_LIVESQLBENCH",
+        "BIRD_SLAYER_MODELS_OTF_ROOT_LIVESQLBENCH",
     ):
         monkeypatch.delenv(var, raising=False)
     yield
@@ -389,6 +393,242 @@ def test_results_root_env_override_wins_when_default_would_fail(
 def test_benchmarks_root_anchored_to_main(tmp_path, monkeypatch):
     main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
     assert paths.benchmarks_root() == main / ".benchmarks"
+
+
+# ---------------------------------------------------------------------------
+# DEV-1462: livesqlbench_root / livesqlbench_data_file — mirror the
+# mini-interact helpers. Same env-override pattern, same worktree-aware
+# default anchored at the main checkout's parent.
+# ---------------------------------------------------------------------------
+
+
+def test_livesqlbench_root_default_sibling_of_main(tmp_path, monkeypatch):
+    main = tmp_path / "main_repo"
+    _init_repo(main)
+    (tmp_path / "livesqlbench-base-lite-sqlite").mkdir()
+    monkeypatch.setattr(paths, "_LOOKUP_DIR", main)
+    assert (
+        paths.livesqlbench_root()
+        == (tmp_path / "livesqlbench-base-lite-sqlite").resolve()
+    )
+
+
+def test_livesqlbench_root_env_override(tmp_path, monkeypatch):
+    override = tmp_path / "elsewhere" / "livesqlbench"
+    override.mkdir(parents=True)
+    monkeypatch.setenv("BIRD_LIVESQLBENCH_ROOT", str(override))
+    assert paths.livesqlbench_root() == override
+
+
+def test_livesqlbench_root_env_override_wins_when_default_would_fail(
+    tmp_path, monkeypatch,
+):
+    not_a_repo = tmp_path / "not_a_repo"
+    not_a_repo.mkdir()
+    monkeypatch.setattr(paths, "_LOOKUP_DIR", not_a_repo)
+    override = tmp_path / "explicit_livesqlbench_path"
+    monkeypatch.setenv("BIRD_LIVESQLBENCH_ROOT", str(override))
+    assert paths.livesqlbench_root() == override
+
+
+def test_livesqlbench_root_from_worktree_points_at_main_sibling(
+    tmp_path, monkeypatch,
+):
+    main = tmp_path / "main_repo"
+    _init_repo(main)
+    wt = tmp_path / "wt"
+    subprocess.run(
+        ["git", "-C", str(main), "worktree", "add", "-q",
+         str(wt), "-b", "b1"],
+        check=True,
+    )
+    (tmp_path / "livesqlbench-base-lite-sqlite").mkdir()
+    monkeypatch.setattr(paths, "_LOOKUP_DIR", wt)
+    assert (
+        paths.livesqlbench_root()
+        == (tmp_path / "livesqlbench-base-lite-sqlite").resolve()
+    )
+
+
+def test_livesqlbench_data_file_env_override(tmp_path, monkeypatch):
+    f = tmp_path / "custom_lsb_tasks.jsonl"
+    f.write_text("")
+    monkeypatch.setenv("BIRD_LIVESQLBENCH_DATA_FILE", str(f))
+    assert paths.livesqlbench_data_file() == f
+
+
+def test_livesqlbench_data_file_default(tmp_path, monkeypatch):
+    main = tmp_path / "main_repo"
+    _init_repo(main)
+    (tmp_path / "livesqlbench-base-lite-sqlite").mkdir()
+    monkeypatch.setattr(paths, "_LOOKUP_DIR", main)
+    assert (
+        paths.livesqlbench_data_file()
+        == (
+            tmp_path / "livesqlbench-base-lite-sqlite"
+            / "livesqlbench_data_sqlite.jsonl"
+        ).resolve()
+    )
+
+
+# ---------------------------------------------------------------------------
+# DEV-1462: per-benchmark scoping of the two OTF root helpers
+# (`slayer_otf_cache_root` and `slayer_models_otf_root`). Adding the
+# `benchmark: str | None = None` kwarg must:
+#   * keep the legacy mini-interact path when omitted (back-compat, no
+#     caller breakage, no test breakage),
+#   * return a PARALLEL root for `benchmark="livesqlbench"`, and
+#   * honour PARALLEL env-var overrides
+#     (`BIRD_OTF_CACHE_ROOT_LIVESQLBENCH` etc.) independent of the
+#     mini-interact `BIRD_OTF_CACHE_ROOT`.
+# ---------------------------------------------------------------------------
+
+
+def test_slayer_otf_cache_root_default_kwarg_none_is_legacy(
+    tmp_path, monkeypatch,
+):
+    """`benchmark=None` (or the kwarg omitted entirely) MUST return the
+    legacy mini-interact root so the dev-1470 cloud upload/merge contract
+    is unchanged."""
+    main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
+    assert paths.slayer_otf_cache_root() == main / "slayer_otf_cache"
+    assert (
+        paths.slayer_otf_cache_root(benchmark=None) == main / "slayer_otf_cache"
+    )
+
+
+def test_slayer_otf_cache_root_livesqlbench_is_parallel_root(
+    tmp_path, monkeypatch,
+):
+    main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
+    assert (
+        paths.slayer_otf_cache_root(benchmark="livesqlbench")
+        == main / "slayer_otf_cache_livesqlbench"
+    )
+    # And it is DISJOINT from the legacy mini-interact root: the whole
+    # point of the per-benchmark separation is no collision on shared DB
+    # names (alien, cross_db, …).
+    assert (
+        paths.slayer_otf_cache_root(benchmark="livesqlbench")
+        != paths.slayer_otf_cache_root()
+    )
+
+
+def test_slayer_otf_cache_root_livesqlbench_env_override(tmp_path, monkeypatch):
+    override = tmp_path / "data" / "slayer_otf_cache_livesqlbench"
+    monkeypatch.setenv("BIRD_OTF_CACHE_ROOT_LIVESQLBENCH", str(override))
+    assert paths.slayer_otf_cache_root(benchmark="livesqlbench") == override
+
+
+def test_slayer_otf_cache_root_legacy_env_does_not_steer_livesqlbench(
+    tmp_path, monkeypatch,
+):
+    """Setting `BIRD_OTF_CACHE_ROOT` MUST NOT affect the livesqlbench-scoped
+    root — they are independent overrides for independent benchmarks."""
+    main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
+    monkeypatch.setenv(
+        "BIRD_OTF_CACHE_ROOT", str(tmp_path / "elsewhere" / "mini_only"),
+    )
+    # Mini-interact follows the override…
+    assert paths.slayer_otf_cache_root() == tmp_path / "elsewhere" / "mini_only"
+    # …but the livesqlbench root is unaffected.
+    assert (
+        paths.slayer_otf_cache_root(benchmark="livesqlbench")
+        == main / "slayer_otf_cache_livesqlbench"
+    )
+
+
+def test_slayer_otf_cache_root_livesqlbench_env_override_wins_when_default_would_fail(
+    tmp_path, monkeypatch,
+):
+    not_a_repo = tmp_path / "not_a_repo"
+    not_a_repo.mkdir()
+    monkeypatch.setattr(paths, "_LOOKUP_DIR", not_a_repo)
+    monkeypatch.setenv(
+        "BIRD_OTF_CACHE_ROOT_LIVESQLBENCH",
+        "/data/slayer_otf_cache_livesqlbench",
+    )
+    assert (
+        paths.slayer_otf_cache_root(benchmark="livesqlbench")
+        == Path("/data/slayer_otf_cache_livesqlbench")
+    )
+
+
+def test_slayer_models_otf_root_default_kwarg_none_is_legacy(
+    tmp_path, monkeypatch,
+):
+    main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
+    assert paths.slayer_models_otf_root() == main / "slayer_models_otf"
+    assert (
+        paths.slayer_models_otf_root(benchmark=None) == main / "slayer_models_otf"
+    )
+
+
+def test_slayer_models_otf_root_livesqlbench_is_parallel_root(
+    tmp_path, monkeypatch,
+):
+    main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
+    assert (
+        paths.slayer_models_otf_root(benchmark="livesqlbench")
+        == main / "slayer_models_otf_livesqlbench"
+    )
+    assert (
+        paths.slayer_models_otf_root(benchmark="livesqlbench")
+        != paths.slayer_models_otf_root()
+    )
+
+
+def test_slayer_models_otf_root_livesqlbench_env_override(tmp_path, monkeypatch):
+    override = tmp_path / "data" / "slayer_models_otf_livesqlbench"
+    monkeypatch.setenv(
+        "BIRD_SLAYER_MODELS_OTF_ROOT_LIVESQLBENCH", str(override),
+    )
+    assert paths.slayer_models_otf_root(benchmark="livesqlbench") == override
+
+
+def test_slayer_models_otf_root_legacy_env_does_not_steer_livesqlbench(
+    tmp_path, monkeypatch,
+):
+    main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
+    monkeypatch.setenv(
+        "BIRD_SLAYER_MODELS_OTF_ROOT",
+        str(tmp_path / "elsewhere" / "mini_only_models_otf"),
+    )
+    assert (
+        paths.slayer_models_otf_root()
+        == tmp_path / "elsewhere" / "mini_only_models_otf"
+    )
+    assert (
+        paths.slayer_models_otf_root(benchmark="livesqlbench")
+        == main / "slayer_models_otf_livesqlbench"
+    )
+
+
+def test_slayer_models_otf_root_livesqlbench_env_override_wins_when_default_would_fail(
+    tmp_path, monkeypatch,
+):
+    not_a_repo = tmp_path / "not_a_repo"
+    not_a_repo.mkdir()
+    monkeypatch.setattr(paths, "_LOOKUP_DIR", not_a_repo)
+    monkeypatch.setenv(
+        "BIRD_SLAYER_MODELS_OTF_ROOT_LIVESQLBENCH",
+        "/data/slayer_models_otf_livesqlbench",
+    )
+    assert (
+        paths.slayer_models_otf_root(benchmark="livesqlbench")
+        == Path("/data/slayer_models_otf_livesqlbench")
+    )
+
+
+def test_unknown_benchmark_value_raises(tmp_path, monkeypatch):
+    """An unrecognised benchmark name MUST raise — silent fallback to the
+    legacy mini-interact root would let a typo silently mix artifacts."""
+    _setup_main_and_worktree(tmp_path, monkeypatch)
+    with pytest.raises(ValueError) as exc_info:
+        paths.slayer_otf_cache_root(benchmark="this-is-not-a-benchmark")
+    assert "benchmark" in str(exc_info.value).lower()
+    with pytest.raises(ValueError):
+        paths.slayer_models_otf_root(benchmark="this-is-not-a-benchmark")
 
 
 # ---------------------------------------------------------------------------

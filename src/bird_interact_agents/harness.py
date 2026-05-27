@@ -140,12 +140,19 @@ def calculate_budget(
     c-interact: ask_cost*(amb + patience) + submit_cost.
         Reproduces ADK's discrete turn budget (n_amb+patience clarification
         turns + 1 submit) using the existing coin plumbing.
+    one-shot: fixed 30 (DEV-1462). One-shot strips ``ask_user`` from every
+        role, so the pool is only drawn down by ``submit_query`` (cost 3).
+        Turn-capping via ``MAX_MODEL_TURNS``/``request_limit`` is the real
+        bound; the pool just needs to outlast ~9 submit attempts before
+        ``force_submit`` trips (Plan B3).
     """
     amb = _ambiguity_count(task_data)
     if mode == "a-interact":
         return 6 + 2 * amb + 2 * patience
     if mode == "c-interact":
         return ACTION_COSTS["ask_user"] * (amb + patience) + ACTION_COSTS["submit_sql"]
+    if mode == "one-shot":
+        return 30.0
     raise ValueError(f"Unsupported budget mode: {mode}")
 
 
@@ -177,6 +184,172 @@ def load_tasks(jsonl_path: str, limit: int | None = None) -> list[dict]:
     if limit is not None:
         tasks = tasks[:limit]
     return tasks
+
+
+# ---------------------------------------------------------------------------
+# DEV-1462: LiveSQLBench loader.
+#
+# The public LiveSQLBench-Base-Lite jsonl ships task records WITHOUT
+# `sol_sql`/`test_cases`/`external_knowledge` (they are gated). The user
+# supplies the gold sidecar via ``--gold-file``; this loader merges it
+# in by `instance_id`, maps `query`→`amb_user_query` (so existing
+# agents and ``_ambiguity_count`` keep working without rewriting), stamps
+# the dataset marker that drives per-task DB isolation + the one-shot
+# `run_task` programmatic guard, and filters to SELECT tasks
+# (`category=="Query"`). The full SELECT set is exactly 180.
+# ---------------------------------------------------------------------------
+
+
+# Expected SELECT-task count on a full unfiltered LiveSQLBench-Base-Lite run.
+_LIVESQLBENCH_SELECT_FULL_RUN_COUNT = 180
+
+
+def load_livesqlbench_tasks(
+    data_path: str,
+    gold_file: str,
+    *,
+    limit: int | None = None,
+    filter_ids: list[str] | None = None,
+) -> list[dict]:
+    """Load + merge a LiveSQLBench task batch.
+
+    Pipeline (Plan B2):
+
+      1. Read the public task jsonl at ``data_path``.
+      2. Read the gated gold sidecar at ``gold_file`` and merge `sol_sql`,
+         `external_knowledge`, `test_cases` per `instance_id`.
+      3. Map `query` → `amb_user_query` (keep `query` for traceability).
+      4. Stamp `task["dataset"] = "livesqlbench"` — the loader's irreducible
+         marker for ``materialize_task_db`` + the one-shot ``run_task``
+         programmatic guard.
+      5. Filter to `category == "Query"` (authoritative); log a warning
+         when an `_M_` instance_id appears with `category=="Query"` (or
+         vice versa) — the substring is a DEFENSIVE cross-check, never
+         a filter (Plan B2 step 5).
+      6. Apply `filter_ids` if given so the empty-`sol_sql` fail-fast
+         (step 8) only inspects tasks that will actually run (Codex #6).
+      7. Assert exactly 180 SELECT tasks when neither `limit` nor
+         `filter_ids` narrows the set — a silent dataset truncation
+         must surface immediately, not produce a deceptive partial-run
+         metric.
+      8. Fail-fast on any KEPT task with empty `sol_sql` after the merge
+         — that means the gold sidecar is incomplete for at least one
+         task that would otherwise run.
+      9. Apply `limit` AFTER the SELECT + `filter_ids` narrowing, so
+         `--limit 180` doesn't accidentally yield < 180 if the dataset
+         interleaves Management rows.
+
+    Raises:
+        FileNotFoundError: data_path or gold_file missing.
+        json.JSONDecodeError / ValueError: malformed JSONL.
+        AssertionError: full unfiltered run yielded != 180 SELECT rows.
+        ValueError: a kept task has empty `sol_sql` post-merge.
+    """
+    import json
+
+    data_path_p = Path(data_path)
+    gold_path = Path(gold_file)
+    if not data_path_p.is_file():
+        raise FileNotFoundError(f"livesqlbench data file missing: {data_path_p}")
+    if not gold_path.is_file():
+        raise FileNotFoundError(
+            f"livesqlbench gold-file missing (required for "
+            f"--dataset livesqlbench): {gold_path}",
+        )
+
+    # Step 1 — public rows.
+    public_rows: list[dict] = []
+    with data_path_p.open() as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                public_rows.append(json.loads(line))
+
+    # Step 2 — gold sidecar keyed by instance_id.
+    gold_by_id: dict[str, dict] = {}
+    with gold_path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)  # bubbles JSONDecodeError on malformed lines
+            inst = entry.get("instance_id")
+            if inst:
+                gold_by_id[inst] = entry
+
+    # Steps 3-4 — merge + shim + stamp.
+    merged: list[dict] = []
+    for row in public_rows:
+        inst = row.get("instance_id")
+        gold = gold_by_id.get(inst, {}) if inst else {}
+        # Field-by-field merge so the public row's other keys survive.
+        if "sol_sql" in gold:
+            row["sol_sql"] = gold["sol_sql"]
+        if "external_knowledge" in gold:
+            row["external_knowledge"] = gold["external_knowledge"]
+        if "test_cases" in gold:
+            row["test_cases"] = gold["test_cases"]
+        # `query` → `amb_user_query` shim. Keep `query` for traceability.
+        if "query" in row and "amb_user_query" not in row:
+            row["amb_user_query"] = row["query"]
+        row["dataset"] = "livesqlbench"
+        merged.append(row)
+
+    # Step 5 — SELECT filter; defensive `_M_` cross-check.
+    select_rows: list[dict] = []
+    for row in merged:
+        cat = row.get("category")
+        inst = row.get("instance_id", "")
+        has_m = "_M_" in inst
+        is_query = cat == "Query"
+        if is_query and has_m:
+            logger.warning(
+                "livesqlbench loader: instance_id=%r has `_M_` substring "
+                "but category==Query — keeping (authoritative signal is "
+                "category); cross-check disagrees",
+                inst,
+            )
+        elif (not is_query) and (not has_m) and cat == "Management":
+            logger.warning(
+                "livesqlbench loader: instance_id=%r is Management but "
+                "lacks `_M_` substring — defensive cross-check disagrees",
+                inst,
+            )
+        if is_query:
+            select_rows.append(row)
+
+    # Step 6 — filter_ids narrowing BEFORE the assert (so a partial-gold
+    # run targeted via --instance-id doesn't trip step 8 on un-run rows).
+    if filter_ids is not None:
+        wanted = set(filter_ids)
+        select_rows = [r for r in select_rows if r.get("instance_id") in wanted]
+
+    # Step 7 — full-run assertion. Only when neither limit nor filter
+    # narrows the set; otherwise a smaller count is expected by design.
+    if limit is None and filter_ids is None:
+        assert len(select_rows) == _LIVESQLBENCH_SELECT_FULL_RUN_COUNT, (
+            f"expected exactly {_LIVESQLBENCH_SELECT_FULL_RUN_COUNT} SELECT "
+            f"tasks on a full unfiltered LiveSQLBench run; got "
+            f"{len(select_rows)}. Has the dataset been truncated?"
+        )
+
+    # Step 8 — empty `sol_sql` fail-fast on the kept set.
+    missing_gold = [
+        r["instance_id"] for r in select_rows
+        if not r.get("sol_sql")
+    ]
+    if missing_gold:
+        raise ValueError(
+            f"livesqlbench gold sidecar is incomplete: "
+            f"{len(missing_gold)} kept SELECT task(s) have empty `sol_sql` "
+            f"after merge: {missing_gold[:5]}"
+            + ("..." if len(missing_gold) > 5 else ""),
+        )
+
+    # Step 9 — limit AFTER filter.
+    if limit is not None:
+        select_rows = select_rows[:limit]
+    return select_rows
 
 
 def apply_audited_gold_overlay(
@@ -399,6 +572,127 @@ def _task_variant_workdir(instance_id: str) -> Path:
     p = Path(tempfile.gettempdir()) / "bird_interact_w5_variants" / instance_id
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+# ---------------------------------------------------------------------------
+# DEV-1462: per-task DB isolation for LiveSQLBench.
+#
+# LiveSQLBench ships per-DB ``<db>_template.sqlite`` and the upstream eval
+# rm+copies it onto ``<db>.sqlite`` on every submit. If multiple tasks share
+# the stable dataset ``<db>.sqlite``, concurrent resets race the OTF cache
+# build that ALSO reads it. Each LiveSQLBench task gets its own
+# ``db_file_path`` in ``$TMPDIR/.../<instance_id>/<db>.sqlite``, with the
+# template symlinked alongside — so the upstream reset operates inside
+# the per-task dir and never touches the stable file OTF ingests.
+# ---------------------------------------------------------------------------
+
+
+def _livesqlbench_task_dbdir(instance_id: str) -> Path:
+    """Per-task scratch dir for the LiveSQLBench per-task working sqlite.
+
+    Lives under ``$TMPDIR/bird_interact_livesqlbench_db/<instance_id>/``.
+    Created lazily on demand; never auto-cleaned (OS tmp hygiene owns it).
+    """
+    p = (
+        Path(tempfile.gettempdir())
+        / "bird_interact_livesqlbench_db"
+        / instance_id
+    )
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def materialize_task_db(
+    task_data: dict, data_path_base: str | Path,
+) -> str | None:
+    """Materialise a per-task isolated working sqlite for a LiveSQLBench task.
+
+    No-op (returns ``None``) for any task without
+    ``task_data["dataset"] == "livesqlbench"`` — mini-interact + every
+    other dataset keeps the existing shared-``<db>.sqlite`` flow.
+
+    For LiveSQLBench tasks:
+
+    * Refuse with a clear error if the DB name contains
+      ``_ephemeral_``/``_process_`` (the upstream
+      ``reset_and_restore_database`` splits ``base_db_name`` on these
+      tokens; a matching DB name would mis-derive the template path).
+      None of the 18 real LiveSQLBench DB names triggers this — the
+      defensive check is a guard against a future name collision.
+    * Create ``$TMPDIR/bird_interact_livesqlbench_db/<instance_id>/`` and
+      symlink ``<data_path_base>/<db>/<db>_template.sqlite`` into it
+      (the upstream reset reads
+      ``<dirname(db_file_path)>/<base>_template.sqlite`` so the template
+      MUST sit next to the working file).
+    * Set ``task_data["db_file_path"] = <dir>/<db>.sqlite`` (the
+      upstream ``_resolve_sqlite_db_path`` honours this when present).
+    * Idempotent + stale-safe: if ``db_file_path`` is already set AND the
+      symlinked template's target equals the current
+      ``data_path_base/<db>/<db>_template.sqlite``, return unchanged.
+      Otherwise rebuild the per-task dir so a rerun against a different
+      ``--db-path`` does not silently reuse a stale symlink.
+
+    Returns the resolved ``db_file_path`` (str) or ``None`` for the no-op
+    branch. Called from ``run_oracle_task`` and each one-shot
+    ``run_task`` setup before the first submit.
+    """
+    import os  # local: harness top is already heavy.
+
+    if task_data.get("dataset") != "livesqlbench":
+        return None
+
+    db = task_data.get("selected_database")
+    instance_id = task_data.get("instance_id")
+    if not db or not instance_id:
+        raise ValueError(
+            "materialize_task_db: task_data is missing required keys "
+            "`selected_database` and/or `instance_id`",
+        )
+    if "_ephemeral_" in db or "_process_" in db:
+        raise ValueError(
+            f"materialize_task_db: DB name {db!r} contains "
+            f"`_ephemeral_`/`_process_` — the upstream "
+            f"reset_and_restore_database would split base_db_name on "
+            f"those tokens and look for the wrong template. Refusing "
+            f"to materialise.",
+        )
+
+    data_root = Path(data_path_base)
+    dataset_template = (data_root / db / f"{db}_template.sqlite").resolve()
+    task_dir = _livesqlbench_task_dbdir(instance_id)
+    expected_db_file = task_dir / f"{db}.sqlite"
+    expected_template_link = task_dir / f"{db}_template.sqlite"
+
+    # Fast-path: idempotence. If the task already carries a db_file_path
+    # pointing at our dir AND the template symlink's target matches the
+    # current dataset template, reuse it.
+    existing = task_data.get("db_file_path")
+    if existing and Path(existing) == expected_db_file:
+        if expected_template_link.is_symlink():
+            try:
+                existing_target = expected_template_link.resolve()
+            except OSError:
+                existing_target = None
+            if existing_target == dataset_template:
+                return str(expected_db_file)
+        # Else fall through to rebuild — stale symlink (Codex #4).
+
+    # Rebuild the per-task dir from scratch. Drop any stale state so a
+    # rerun against a different --db-path cannot reuse the previous
+    # template symlink.
+    if expected_template_link.exists() or expected_template_link.is_symlink():
+        expected_template_link.unlink()
+    if expected_db_file.exists():
+        # Do not trip os.symlink on an existing file; the upstream reset
+        # will recreate it from the template on the next submit anyway.
+        expected_db_file.unlink()
+    # Symlink the template (not a copy — 18 templates × N tasks would
+    # blow storage; the upstream reset copies template→working in this
+    # dir on each submit, so we never need our own body of the template).
+    os.symlink(dataset_template, expected_template_link)
+
+    task_data["db_file_path"] = str(expected_db_file)
+    return str(expected_db_file)
 
 
 async def resolve_task_storage_dir(

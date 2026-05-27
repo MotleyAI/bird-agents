@@ -55,8 +55,10 @@ from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
     _LegacyAdapter,
 )
 from bird_interact_agents.agents.pydantic_ai_otf_encode.prompts import (
+    KB_ENCODER_ONESHOT_PROMPT,
     KB_ENCODER_PROMPT,
     SUB_CLARIFIER_PROMPT,
+    SUB_EXPLORER_PROMPT,
 )
 from bird_interact_agents.harness import MAX_MODEL_TURNS
 
@@ -268,18 +270,20 @@ def _register_spawn_subagent(
     model_settings: Any,
     shared_slayer_server: Any,
     self_model_id: str,
+    eval_mode: str = "a-interact",
 ) -> None:
     """Identical to the recursive adapter's spawn_subagent, but the
-    spawned child is THIS module's `_build_sub_clarifier`."""
+    spawned child is THIS module's `_build_sub_clarifier`
+    (a-interact) or :func:`_build_sub_explorer` (one-shot, DEV-1462)."""
+    use_explorer = eval_mode == "one-shot"
 
     @agent.tool(sequential=True)
     async def spawn_subagent(
         ctx: RunContext[TaskDeps], focus: str, instruction: str,
     ) -> str:
-        """Spawn a sub-clarifier agent focused on ONE logical block of
-        the user's question. Sibling spawn calls in one model batch
-        run sequentially. The sub-agent returns a description of its
-        slice."""
+        """Spawn a sub-agent focused on ONE logical block of the
+        user's question. Sibling spawn calls in one model batch run
+        sequentially. The sub-agent returns a description of its slice."""
         deps = ctx.deps
         if deps.depth >= deps.max_depth:
             return (
@@ -299,16 +303,27 @@ def _register_spawn_subagent(
         deps.shared.agent_records.append(record_partial)
         my_child_idx = len(deps.shared.agent_records) - 1
 
-        child = _build_sub_clarifier(
+        child_kwargs: dict[str, Any] = dict(
             model=model, model_settings=model_settings,
             shared_slayer_server=shared_slayer_server,
             self_model_id=self_model_id,
         )
+        # Resolve child builder at CALL time (not registration time) so
+        # tests that re-patch `_build_sub_clarifier` between building this
+        # agent and invoking its spawn still pick up the new stub.
+        if use_explorer:
+            child_kwargs["eval_mode"] = eval_mode
+            child = _build_sub_explorer(**child_kwargs)
+        else:
+            child = _build_sub_clarifier(**child_kwargs)
         child_deps = TaskDeps(
             shared=deps.shared, depth=deps.depth + 1,
             max_depth=deps.max_depth, self_record_idx=my_child_idx,
         )
-        child_prompt = SUB_CLARIFIER_PROMPT.format(
+        prompt_template = (
+            SUB_EXPLORER_PROMPT if use_explorer else SUB_CLARIFIER_PROMPT
+        )
+        child_prompt = prompt_template.format(
             budget=deps.shared.status.remaining_budget,
             db_name=deps.shared.db_name,
             focus=focus,
@@ -548,7 +563,7 @@ def _build_kb_encoder(
     shared_slayer_server: Any,
     self_model_id: str = "unknown",
 ) -> Agent:
-    """Build the encoder sub-agent.
+    """Build the encoder sub-agent (a-interact).
 
     Tool surface (Codex test-review finding 1): `ask_user` + `submit_encoding`
     on the native function-toolset. SLayer MCP write/read tools come via the
@@ -572,6 +587,33 @@ def _build_kb_encoder(
     return agent
 
 
+def _build_kb_encoder_oneshot(
+    *,
+    model: Any,
+    model_settings: Any,
+    shared_slayer_server: Any,
+    self_model_id: str = "unknown",
+) -> Agent:
+    """DEV-1462 — one-shot variant of :func:`_build_kb_encoder`.
+
+    Same tool surface MINUS ``ask_user``. Reasons in text and delivers
+    its ``EncoderResult`` via ``submit_encoding``; SLayer MCP write/read
+    tools come through the shared MCP toolset. The encoder decides every
+    KB-encoding choice autonomously — there is no user-sim in the
+    one-shot pipeline."""
+    kwargs: dict[str, Any] = dict(
+        model=model, deps_type=TaskDeps,
+        retries=2, prepare_tools=_make_prepare_tools(False),
+    )
+    if shared_slayer_server is not None:
+        kwargs["toolsets"] = [shared_slayer_server]
+    if model_settings is not None:
+        kwargs["model_settings"] = model_settings
+    agent = Agent(**kwargs)
+    _register_submit_encoding(agent)
+    return agent
+
+
 async def _run_kb_encoder_default(
     *,
     kb_id: int,
@@ -582,6 +624,7 @@ async def _run_kb_encoder_default(
     model_settings: Any,
     shared_slayer_server: Any,
     self_model_id: str,
+    eval_mode: str = "a-interact",
 ) -> EncoderResult:
     """Default `_encoder_runner` for `_register_kb_to_slayer`. Builds
     the encoder agent, formats its prompt, runs it, captures the
@@ -598,8 +641,12 @@ async def _run_kb_encoder_default(
     )
     # DEV-1454: feed the memory's `learning` body verbatim (knowledge +
     # verbatim KB block) — no YAML re-parse round-trip.
+    # DEV-1462: in one-shot mode the encoder must not be steered toward
+    # an ask_user tool it doesn't have, so swap in the one-shot prompt.
+    is_one_shot = eval_mode == "one-shot"
     kb_body = row.get("_learning") if isinstance(row, dict) else str(row)
-    prompt = KB_ENCODER_PROMPT.format(
+    prompt_template = KB_ENCODER_ONESHOT_PROMPT if is_one_shot else KB_ENCODER_PROMPT
+    prompt = prompt_template.format(
         db_name=ctx.deps.shared.db_name,
         kb_id=kb_id,
         kb_row_yaml=kb_body or "",
@@ -621,7 +668,8 @@ async def _run_kb_encoder_default(
     ctx.deps.shared.agent_records.append(record)
     my_idx = len(ctx.deps.shared.agent_records) - 1
 
-    encoder = _build_kb_encoder(
+    encoder_builder = _build_kb_encoder_oneshot if is_one_shot else _build_kb_encoder
+    encoder = encoder_builder(
         model=model, model_settings=model_settings,
         shared_slayer_server=shared_slayer_server,
         self_model_id=self_model_id,
@@ -889,6 +937,7 @@ def _register_kb_to_slayer(
     model_settings: Any,
     shared_slayer_server: Any,
     self_model_id: str,
+    eval_mode: str = "a-interact",
     _encoder_runner: _EncoderRunner | None = None,
 ) -> None:
     """Register `kb_to_slayer(kb_ids: list[int])` on `agent`.
@@ -897,6 +946,10 @@ def _register_kb_to_slayer(
     tests inject a stub that returns canned EncoderResults without
     spinning up a real pydantic-ai Agent. Production callers omit
     this kwarg and get `_run_kb_encoder_default`.
+
+    DEV-1462: ``eval_mode`` selects the per-KB encoder. In ``one-shot``
+    mode the dispatched encoder is the one-shot variant (no ask_user)
+    so the kb_to_slayer call chain stays free of user-sim turns.
     """
 
     async def _default_runner(*, kb_id, row, deps_map, ctx):
@@ -905,6 +958,7 @@ def _register_kb_to_slayer(
             model=model, model_settings=model_settings,
             shared_slayer_server=shared_slayer_server,
             self_model_id=self_model_id,
+            eval_mode=eval_mode,
         )
 
     runner: _EncoderRunner = _encoder_runner or _default_runner
@@ -1117,11 +1171,14 @@ def _build_root_clarifier(
     shared_slayer_server: Any,
     max_depth: int,
     self_model_id: str = "unknown",
+    eval_mode: str = "a-interact",
 ) -> Agent:
     """Root clarifier: spawn_subagent only. NO SLayer toolset,
     NO ask_user, NO submit_query, NO kb_to_slayer.
 
-    Identical contract to the recursive adapter's root_clarifier."""
+    Identical contract to the recursive adapter's root_clarifier.
+    DEV-1462: ``eval_mode`` selects sub-explorer vs sub-clarifier at
+    spawn time (same as the recursive adapter)."""
     kwargs: dict[str, Any] = dict(
         model=model, deps_type=TaskDeps, retries=2,
         prepare_tools=_make_prepare_tools(False),
@@ -1133,6 +1190,7 @@ def _build_root_clarifier(
         agent, model=model, model_settings=model_settings,
         shared_slayer_server=shared_slayer_server,
         self_model_id=self_model_id,
+        eval_mode=eval_mode,
     )
     return agent
 
@@ -1169,6 +1227,152 @@ def _build_sub_clarifier(
         self_model_id=self_model_id,
     )
     return agent
+
+
+# ---------------------------------------------------------------------------
+# DEV-1462: one-shot factories — `ask_user`-free flavors. The
+# orchestration shape is identical to a-interact (root → sub-explorer
+# tree with kb_to_slayer → projection-resolver → query-constructor)
+# but every role drops ask_user. The constructor's closure-bound count
+# check survives in the one-shot variant; only its ModelRetry text is
+# rewritten to drop the "call ask_user" suggestion.
+# ---------------------------------------------------------------------------
+
+
+def _build_sub_explorer(
+    *,
+    model: Any,
+    model_settings: Any,
+    shared_slayer_server: Any,
+    self_model_id: str = "unknown",
+    eval_mode: str = "one-shot",
+) -> Agent:
+    """Sub-explorer (one-shot): SLayer MCP toolset + spawn_subagent +
+    kb_to_slayer. NO ask_user.
+
+    Mirrors the a-interact :func:`_build_sub_clarifier` MINUS ask_user.
+    The kb_to_slayer wrapper is dispatched in one-shot mode so its
+    spawned encoder is also ask_user-free."""
+    kwargs: dict[str, Any] = dict(
+        model=model, deps_type=TaskDeps, retries=2,
+        prepare_tools=_make_prepare_tools(False),
+    )
+    if shared_slayer_server is not None:
+        kwargs["toolsets"] = [shared_slayer_server]
+    if model_settings is not None:
+        kwargs["model_settings"] = model_settings
+    agent = Agent(**kwargs)
+    _register_spawn_subagent(
+        agent, model=model, model_settings=model_settings,
+        shared_slayer_server=shared_slayer_server,
+        self_model_id=self_model_id,
+        eval_mode=eval_mode,
+    )
+    _register_kb_to_slayer(
+        agent, model=model, model_settings=model_settings,
+        shared_slayer_server=shared_slayer_server,
+        self_model_id=self_model_id,
+        eval_mode=eval_mode,
+    )
+    return agent
+
+
+def _build_projection_resolver_oneshot(
+    *,
+    model: Any,
+    model_settings: Any,
+    self_model_id: str = "unknown",
+) -> Agent:
+    """Projection-resolver (Stage 2, one-shot): ``submit_projection``
+    only. NO ask_user, NO query, NO MCP toolset.
+
+    Like the a-interact variant, the resolver reasons in text and
+    delivers its confirmed column list via ``submit_projection`` (a
+    structured output_type would forbid the reasoning step). The
+    ``_require_submission`` gate fires until the agent has actually
+    called the tool."""
+    kwargs: dict[str, Any] = dict(
+        model=model, deps_type=TaskDeps,
+        retries=2, prepare_tools=_make_prepare_tools(False),
+    )
+    if model_settings is not None:
+        kwargs["model_settings"] = model_settings
+    agent = Agent(**kwargs)
+    _register_submit_projection(agent)
+    return agent
+
+
+def _build_query_constructor_oneshot(
+    *,
+    model: Any,
+    model_settings: Any,
+    shared_slayer_server: Any,
+    confirmed_projection: tuple[str, ...],
+    self_model_id: str = "unknown",
+) -> Agent:
+    """Query-constructor (Stage 3, one-shot): SLayer MCP toolset +
+    ``submit_query``. NO ask_user.
+
+    Mirrors the a-interact constructor (incl. the
+    validate-before-persist hook that lives on the shared MCP server
+    layer, not the native function-toolset) but drops ask_user. The
+    closure-bound count check on submit_query is preserved with a
+    one-shot ModelRetry text (no "call ask_user")."""
+    kwargs: dict[str, Any] = dict(
+        model=model, deps_type=TaskDeps, retries=2,
+        prepare_tools=_make_prepare_tools(False),
+    )
+    if shared_slayer_server is not None:
+        kwargs["toolsets"] = [shared_slayer_server]
+    if model_settings is not None:
+        kwargs["model_settings"] = model_settings
+    agent = Agent(**kwargs)
+    _register_submit_query_oneshot(agent, confirmed_projection)
+    return agent
+
+
+def _register_submit_query_oneshot(
+    agent: Agent, confirmed_projection: tuple[str, ...],
+) -> None:
+    """One-shot variant of :func:`_register_submit_query` — same
+    closure-bound count check, NO ask_user reference in the ModelRetry
+    text (the one-shot constructor has no ask_user tool)."""
+    expected_count = len(confirmed_projection)
+    confirmed_list = list(confirmed_projection)
+    confirmed_block = "\n".join(
+        f"  {i + 1}. {name}" for i, name in enumerate(confirmed_list)
+    )
+
+    @agent.tool
+    async def submit_query(ctx: RunContext[TaskDeps], query_json: str) -> str:
+        """Submit your final SLayer query for evaluation. The submission
+        must project EXACTLY the columns the projection-resolver
+        confirmed. A count mismatch is hard-rejected before the helper
+        is called — no budget is charged on rejection. Align your draft
+        with the confirmed list and resubmit."""
+        try:
+            parsed = json.loads(query_json)
+        except json.JSONDecodeError:
+            adapter = _LegacyAdapter(ctx.deps)
+            return submit_slayer_query(
+                adapter, query_json, _slayer_client_factory,
+            )
+
+        observed = _projection_count(parsed)
+        if observed is not None and observed != expected_count:
+            raise ModelRetry(
+                f"Your submission has {observed} projected column(s), "
+                f"but the projection-resolver confirmed exactly "
+                f"{expected_count}:\n{confirmed_block}\n"
+                f"Align your dimensions+measures to that count and "
+                f"order, then resubmit. This rejection consumed no "
+                f"budget."
+            )
+
+        adapter = _LegacyAdapter(ctx.deps)
+        return submit_slayer_query(
+            adapter, query_json, _slayer_client_factory,
+        )
 
 
 def _build_query_constructor(

@@ -45,13 +45,18 @@ from bird_interact_agents.agents.pydantic_ai_recursive.deps import (
 )
 from bird_interact_agents.agents.pydantic_ai_recursive.factories import (
     _build_projection_resolver,
+    _build_projection_resolver_oneshot,
     _build_query_constructor,
+    _build_query_constructor_oneshot,
     _build_root_clarifier,
 )
 from bird_interact_agents.agents.pydantic_ai_recursive.prompts import (
+    PROJECTION_RESOLVER_ONESHOT_PROMPT,
     PROJECTION_RESOLVER_PROMPT,
+    QUERY_CONSTRUCTOR_ONESHOT_PROMPT,
     QUERY_CONSTRUCTOR_PROMPT,
     ROOT_CLARIFIER_PROMPT,
+    ROOT_EXPLORER_PROMPT,
 )
 from bird_interact_agents.harness import (
     ACTION_COSTS,
@@ -59,6 +64,7 @@ from bird_interact_agents.harness import (
     SampleStatus,
     finalize_result_row,
     load_db_data_if_needed,
+    materialize_task_db,
     resolve_task_storage_dir,
     slayer_mcp_stdio_config,
 )
@@ -79,17 +85,25 @@ logger = logging.getLogger(__name__)
 _TOOL_ERROR_SAMPLES_PER_TASK = 10
 
 
-def _constructor_reserve() -> float:
+def _constructor_reserve(eval_mode: str = "a-interact") -> float:
     """Bird-coin reserve held back from the clarifier phase so the
-    constructor's mandatory ask_user calls + final submit_query are not
-    rejected by ``gate_or_none``.
+    constructor's mandatory tool calls aren't rejected by
+    ``gate_or_none``.
 
-    Composition: ``2 * ask_user + submit_query``. ``help``, ``query``,
-    and the rest of the SLayer MCP tool surface do not flow through
-    ``update_budget`` in this adapter (they are not wrapped natively),
-    so they cost nothing against the bird-coin pool — only ``ask_user``
-    and ``submit_query`` decrement it.
+    * ``a-interact``: ``2 * ask_user + submit_query`` — the constructor
+      may call ask_user twice for projection-mismatch surfacing before
+      its final submit.
+    * ``one-shot`` (DEV-1462): ``submit_query`` only — there is no
+      ask_user anywhere in the spawn tree.
+
+    ``help``, ``query``, and the rest of the SLayer MCP tool surface do
+    not flow through ``update_budget`` in this adapter (they are not
+    wrapped natively), so they cost nothing against the bird-coin pool
+    — only ``ask_user`` (a-interact only) and ``submit_query`` decrement
+    it.
     """
+    if eval_mode == "one-shot":
+        return ACTION_COSTS["submit_query"]
     return (
         2 * ACTION_COSTS["ask_user"]
         + ACTION_COSTS["submit_query"]
@@ -128,6 +142,7 @@ async def _resolve_otf_task_storage_dir(
     db_name: str,
     task_data: dict,
     data_path_base: str,
+    benchmark: str | None = None,
 ) -> tuple[str, list[int]]:
     """On-the-fly equivalent of ``resolve_task_storage_dir``.
 
@@ -138,6 +153,12 @@ async def _resolve_otf_task_storage_dir(
     the harness's ``--db-path``) — Codex flagged that hardcoding
     ``paths.mini_interact_root()`` would silently ignore an overridden
     DB path.
+
+    DEV-1462: ``benchmark`` selects the per-benchmark scoped cache root
+    so a LiveSQLBench task's cache lands at
+    ``slayer_otf_cache_livesqlbench/<db>/`` instead of colliding with
+    a same-named mini-interact DB at ``slayer_otf_cache/<db>/``.
+    ``benchmark=None`` keeps the legacy mini-interact root.
     """
     deleted = sorted(extract_deleted_kb_ids(task_data))
     instance_id = task_data["instance_id"]
@@ -149,7 +170,7 @@ async def _resolve_otf_task_storage_dir(
     mini_interact_root = Path(data_path_base).resolve()
     cache_entry = await ensure_db_cache(
         db_name,
-        cache_root=_paths.slayer_otf_cache_root(),
+        cache_root=_paths.slayer_otf_cache_root(benchmark=benchmark),
         mini_interact_root=mini_interact_root,
     )
     scratch = await prepare_task_storage(
@@ -258,16 +279,38 @@ class PydanticAIRecursiveAgent:
                 "pydantic_ai_recursive supports only --query-mode slayer; "
                 f"got {query_mode!r}"
             )
-        if eval_mode != "a-interact":
+        if eval_mode not in ("a-interact", "one-shot"):
             raise ValueError(
-                "pydantic_ai_recursive supports only --mode a-interact; "
-                f"got {eval_mode!r}"
+                "pydantic_ai_recursive supports only --mode a-interact "
+                f"or --mode one-shot; got {eval_mode!r}"
+            )
+
+        is_one_shot = eval_mode == "one-shot"
+        # DEV-1462 — Codex #1 programmatic-bypass close: one-shot REQUIRES
+        # the loader-stamped ``dataset='livesqlbench'`` marker. A caller
+        # that bypasses ``load_livesqlbench_tasks`` (cloud actor, custom
+        # driver) MUST NOT silently get a one-shot run on un-marked data.
+        if is_one_shot and task_data.get("dataset") != "livesqlbench":
+            raise ValueError(
+                "--mode one-shot requires a task carrying "
+                "dataset='livesqlbench' (the loader stamps it); got "
+                f"dataset={task_data.get('dataset')!r}",
             )
 
         db_name = task_data["selected_database"]
         instance_id = task_data["instance_id"]
+        benchmark: str | None = (
+            "livesqlbench" if task_data.get("dataset") == "livesqlbench" else None
+        )
 
         load_db_data_if_needed(db_name, data_path_base)
+        # DEV-1462 B0: LiveSQLBench tasks get a per-task isolated
+        # `db_file_path`, so the upstream `reset_and_restore_database`
+        # never touches the stable dataset `<db>.sqlite` that the OTF
+        # cache reads. No-op for any non-livesqlbench task (mini-interact
+        # path is unchanged).
+        materialize_task_db(task_data, data_path_base)
+
         status = SampleStatus(
             idx=0,
             original_data=task_data,
@@ -281,6 +324,7 @@ class PydanticAIRecursiveAgent:
                     db_name=db_name,
                     task_data=task_data,
                     data_path_base=data_path_base,
+                    benchmark=benchmark,
                 )
             )
         else:
@@ -303,8 +347,9 @@ class PydanticAIRecursiveAgent:
 
         # Constructor budget reservation. Decrement the pool BEFORE the
         # clarifier phase so the sub-tree can't drain budget below the
-        # constructor's mandatory tool costs.
-        reserve = _constructor_reserve()
+        # constructor's mandatory tool costs. One-shot reserve = submit_query
+        # only (no ask_user anywhere in the spawn tree).
+        reserve = _constructor_reserve(eval_mode)
         total_budget = status.remaining_budget
         status.remaining_budget = max(
             0.0, status.remaining_budget - reserve,
@@ -341,14 +386,22 @@ class PydanticAIRecursiveAgent:
             async with (slayer_server if slayer_server is not None
                         else _null_async_context()):
                 # ----- ROOT PHASE -----
+                # One-shot threads ``eval_mode`` into the root's
+                # ``spawn_subagent`` so it builds sub-explorers (no
+                # ask_user), not sub-clarifiers.
                 root_agent = _build_root_clarifier(
                     model=self.model,
                     model_settings=self._model_settings,
                     shared_slayer_server=slayer_server,
                     max_depth=self.max_depth,
                     self_model_id=self.model_id,
+                    eval_mode=eval_mode,
                 )
-                root_prompt = ROOT_CLARIFIER_PROMPT.format(
+                root_template = (
+                    ROOT_EXPLORER_PROMPT if is_one_shot
+                    else ROOT_CLARIFIER_PROMPT
+                )
+                root_prompt = root_template.format(
                     budget=shared.status.remaining_budget,
                     db_name=db_name,
                     user_query=task_data["amb_user_query"],
@@ -398,23 +451,33 @@ class PydanticAIRecursiveAgent:
                 )
                 current_record = resolver_record
                 current_deps = resolver_deps
-                resolver_agent = _build_projection_resolver(
+                resolver_builder = (
+                    _build_projection_resolver_oneshot if is_one_shot
+                    else _build_projection_resolver
+                )
+                resolver_agent = resolver_builder(
                     model=self.model,
                     model_settings=self._model_settings,
                     self_model_id=self.model_id,
                 )
-                resolver_prompt = PROJECTION_RESOLVER_PROMPT.format(
+                resolver_template = (
+                    PROJECTION_RESOLVER_ONESHOT_PROMPT if is_one_shot
+                    else PROJECTION_RESOLVER_PROMPT
+                )
+                resolver_prompt = resolver_template.format(
                     amb_user_query=task_data["amb_user_query"],
                     spec=spec,
                     budget=shared.status.remaining_budget,
                     db_name=db_name,
                 )
+                resolver_recovery = _ONE_SHOT_RECOVERY_PROMPT if is_one_shot else None
                 resolver_result = await _run_projection_resolver(
                     resolver_agent=resolver_agent,
                     instructions=resolver_prompt,
                     user_prompt=task_data["amb_user_query"],
                     deps=resolver_deps,
                     model_id=self.model_id,
+                    recovery_prompt=resolver_recovery,
                 )
                 # Record resolver output verbatim so trajectories show
                 # what got passed to the constructor. Fold every
@@ -473,7 +536,11 @@ class PydanticAIRecursiveAgent:
                 current_record = constructor_record
                 current_deps = constructor_deps
                 confirmed_projection_tuple = tuple(resolver_result.projection)
-                constructor_agent = _build_query_constructor(
+                constructor_builder = (
+                    _build_query_constructor_oneshot if is_one_shot
+                    else _build_query_constructor
+                )
+                constructor_agent = constructor_builder(
                     model=self.model,
                     model_settings=self._model_settings,
                     shared_slayer_server=slayer_server,
@@ -487,7 +554,11 @@ class PydanticAIRecursiveAgent:
                     f"  {i + 1}. {name}"
                     for i, name in enumerate(confirmed_projection_tuple)
                 )
-                constructor_prompt = QUERY_CONSTRUCTOR_PROMPT.format(
+                constructor_template = (
+                    QUERY_CONSTRUCTOR_ONESHOT_PROMPT if is_one_shot
+                    else QUERY_CONSTRUCTOR_PROMPT
+                )
+                constructor_prompt = constructor_template.format(
                     amb_user_query=task_data["amb_user_query"],
                     spec=spec,
                     confirmed_projection=confirmed_projection_block,
@@ -634,6 +705,14 @@ def _aggregate_runs(
     )
 
 
+_ONE_SHOT_RECOVERY_PROMPT = (
+    "Your previous output was an empty list. Re-read the user's question "
+    "and the specification, propose at least one output column you can "
+    "derive from them, and return the list. There is no user simulator "
+    "to consult — decide the projection autonomously and finalise."
+)
+
+
 async def _run_projection_resolver(
     *,
     resolver_agent: Any,
@@ -641,6 +720,7 @@ async def _run_projection_resolver(
     user_prompt: str,
     deps: Any,
     model_id: str,
+    recovery_prompt: str | None = None,
 ) -> _ResolverResult:
     """Run Stage 2 with an empty-list guard.
 
@@ -654,6 +734,11 @@ async def _run_projection_resolver(
     second attempt also returns empty, return
     `_ResolverResult(projection=[], status='empty_after_guard')` —
     the caller (run_task) skips Stage 3 and finalizes with never_submitted.
+
+    DEV-1462: ``recovery_prompt`` lets the caller swap in a one-shot
+    recovery message (no "ask the user to confirm") so the model isn't
+    steered toward a tool the one-shot resolver doesn't have. Default
+    is the a-interact recovery text.
 
     Each agent.run's `.usage()` is folded into `deps.usage` so the
     resolver's AgentRecord carries its share of tokens; messages +
@@ -674,12 +759,14 @@ async def _run_projection_resolver(
     # Empty-list guard: one more attempt, continuing the same
     # conversation via message_history so the model sees its prior
     # turn's context.
-    recovery_run = await resolver_agent.run(
-        user_prompt=(
+    if recovery_prompt is None:
+        recovery_prompt = (
             "Your previous output was an empty list. Propose at least one "
             "output column you derive from the user's question and the "
             "specification, then ask the user to confirm or refine."
-        ),
+        )
+    recovery_run = await resolver_agent.run(
+        user_prompt=recovery_prompt,
         instructions=instructions,
         deps=deps,
         message_history=first_run.all_messages(),

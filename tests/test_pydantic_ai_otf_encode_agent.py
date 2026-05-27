@@ -112,7 +112,12 @@ def _mock_otf_setup(monkeypatch, tmp_path):
     dir. The agent's phases are exercised via stub factories."""
     from bird_interact_agents.agents.pydantic_ai_otf_encode import agent as _agent
 
-    async def fake_resolve(*, db_name, task_data, data_path_base, build_encoder=None):
+    async def fake_resolve(
+        *, db_name, task_data, data_path_base, build_encoder=None,
+        benchmark=None,
+    ):
+        # DEV-1462: real `_resolve_otf_task_storage_dir` gained a
+        # `benchmark` kwarg; stub must accept it (default None = legacy).
         return str(tmp_path), []
 
     monkeypatch.setattr(
