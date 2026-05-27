@@ -568,6 +568,112 @@ async def test_host_qualified_column_resolves_like_bare(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Codex DEV-1478 follow-up: the validator must only casefold + strip when
+# the LHS was actually wrapped by LOWER/UPPER/TRIM at the SQL level. An
+# unwrapped `col = 'Yes'` against sampled `['yes', 'no']` returns ZERO rows
+# at runtime; the validator must reject it instead of silently accepting
+# under the LLM-level STYLE_GUIDE convention.
+# ---------------------------------------------------------------------------
+
+
+async def test_unwrapped_eq_case_mismatch_rejected(tmp_path):
+    """Unwrapped `col = 'Yes'` against sampled `['yes', 'no']` (no 'Yes' in
+    the column's distinct values) MUST be rejected — runtime returns 0
+    rows. Previously the validator silently accepted via casefold."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    storage = await _new_storage(tmp_path)
+    await _add_model(storage, name="m", columns=[
+        Column(name="id", primary_key=True),
+        _col("col", sampled_values=["yes", "no"]),
+    ])
+    args = _edit_args("m", columns=[
+        {"name": "out", "sql": "col = 'Yes'", "type": "boolean"},
+    ])
+    problems = await _collect_literal_problems(
+        "edit_model", args, storage=storage, db=DB,
+    )
+    assert len(problems) == 1, (
+        f"unwrapped predicate must be rejected when literal differs in "
+        f"case from every sampled value; got {problems}"
+    )
+    assert "'Yes'" in problems[0]
+
+
+async def test_unwrapped_eq_exact_case_match_accepted(tmp_path):
+    """Unwrapped `col = 'Yes'` against sampled containing exact 'Yes' →
+    accepted (literal is in the column's distinct values verbatim)."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    storage = await _new_storage(tmp_path)
+    await _add_model(storage, name="m", columns=[
+        Column(name="id", primary_key=True),
+        _col("col", sampled_values=["yes", "no", "Yes"]),
+    ])
+    args = _edit_args("m", columns=[
+        {"name": "out", "sql": "col = 'Yes'", "type": "boolean"},
+    ])
+    problems = await _collect_literal_problems(
+        "edit_model", args, storage=storage, db=DB,
+    )
+    assert problems == []
+
+
+async def test_wrapped_lower_trim_still_tolerates_case_and_whitespace(tmp_path):
+    """Whitespace-tolerance (the original Codex finding M motivation)
+    still applies when the encoder DID wrap with LOWER+TRIM: a literal
+    `'yes'` matches sampled `' yes '` / `'Yes'` via the runtime LOWER+TRIM
+    normalisation."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    storage = await _new_storage(tmp_path)
+    await _add_model(storage, name="m", columns=[
+        Column(name="id", primary_key=True),
+        # Sampled values carry surrounding whitespace + mixed case; the
+        # runtime LOWER+TRIM normalises both sides to 'yes'/'no'.
+        _col("col", sampled_values=[" yes ", "Yes", "NO"]),
+    ])
+    args = _edit_args("m", columns=[
+        {"name": "out", "sql": "LOWER(TRIM(col)) = 'yes'", "type": "boolean"},
+    ])
+    problems = await _collect_literal_problems(
+        "edit_model", args, storage=storage, db=DB,
+    )
+    assert problems == [], (
+        f"LOWER(TRIM(col)) = 'yes' must pass when sampled values "
+        f"normalise to 'yes'; got {problems}"
+    )
+
+
+async def test_wrapped_lower_trim_still_rejects_truly_missing_literal(tmp_path):
+    """Even with LOWER+TRIM wrapping, a literal whose NORMALISED form is
+    absent from the column's sampled distinct values must be rejected."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    storage = await _new_storage(tmp_path)
+    await _add_model(storage, name="m", columns=[
+        Column(name="id", primary_key=True),
+        _col("col", sampled_values=["yes", "no"]),
+    ])
+    args = _edit_args("m", columns=[
+        {"name": "out", "sql": "LOWER(TRIM(col)) = 'maybe'", "type": "boolean"},
+    ])
+    problems = await _collect_literal_problems(
+        "edit_model", args, storage=storage, db=DB,
+    )
+    assert len(problems) == 1
+    assert "'maybe'" in problems[0]
+
+
+# ---------------------------------------------------------------------------
 # BLOCKER 1 (Codex): wrapper peeling. The STYLE_GUIDE forces
 # LOWER(TRIM(<col>)) on every string comparison — without peeling these the
 # walker would skip the literals entirely and the fix is useless.

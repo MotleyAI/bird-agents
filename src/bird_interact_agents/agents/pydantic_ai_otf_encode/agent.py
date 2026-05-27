@@ -326,15 +326,25 @@ _PEELABLE_WRAPPERS = (
     sqlglot_exp.Lower, sqlglot_exp.Upper, sqlglot_exp.Trim,
 )
 
-def _peel_wrapper(node: Any) -> Any:
+def _peel_wrapper(node: Any) -> tuple[Any, bool]:
     """Peel safe text-normalising wrappers (LOWER/UPPER/TRIM, possibly
-    nested) until a non-wrapper expression is reached. Returns the bare
-    inner node — typically a `Column`, but may be anything if the
-    expression isn't a simple wrapper-around-column form."""
+    nested) until a non-wrapper expression is reached.
+
+    Returns ``(inner_node, was_wrapped)`` — the bare inner expression and
+    a boolean recording whether ANY wrapper was stripped. The boolean
+    feeds the literal-existence check (Codex DEV-1478 follow-up): when
+    the LHS was un-normalized at the SQL level, the right-hand literal
+    must NOT be silently casefolded by the validator — otherwise the
+    validator accepts a broken predicate like ``col = 'Yes'`` against a
+    column whose sampled distinct values are ``['yes', 'no']`` (the
+    runtime returns zero rows even though the validator would pass).
+    """
     cur = node
+    wrapped = False
     while isinstance(cur, _PEELABLE_WRAPPERS):
         cur = cur.this
-    return cur
+        wrapped = True
+    return cur, wrapped
 
 
 def _column_ref(node: Any) -> tuple[str | None, str] | None:
@@ -701,7 +711,7 @@ async def _check_sql_literals(
     for node in tree.walk():
         if not isinstance(node, (sqlglot_exp.EQ, sqlglot_exp.In)):
             continue
-        lhs_peeled = _peel_wrapper(node.this)
+        lhs_peeled, lhs_wrapped = _peel_wrapper(node.this)
         ref = _column_ref(lhs_peeled)
         if ref is None:
             continue
@@ -726,17 +736,29 @@ async def _check_sql_literals(
                 f"empty). DEFER this KB and cite the empty column."
             )
             continue
-        # Codex PR #4 finding M: the STYLE_GUIDE forces `LOWER(TRIM(...))`
-        # on every string compare, so both sides should be normalised the
-        # same way before membership-check. Strip + casefold both — that
-        # mirrors what SQLite's `LOWER(TRIM(<col>)) = '<lit>'` does at
-        # runtime and prevents false-positive rejections when a sampled
-        # value carries surrounding whitespace (e.g. `" yes "`).
-        known_lc = {k.strip().casefold() for k in known}
-        misses = [
-            lit for lit in literals
-            if lit.strip().casefold() not in known_lc
-        ]
+        # Codex DEV-1478 follow-up: only strip + casefold both sides
+        # when the LHS was actually wrapped by LOWER/UPPER/TRIM at the
+        # SQL level. The STYLE_GUIDE *encourages* `LOWER(TRIM(<col>))`
+        # but it is an LLM-level convention, not a runtime guarantee —
+        # silently normalising the validator's comparison would accept
+        # an unwrapped `col = 'Yes'` against sampled `['yes', 'no']`
+        # even though the SQLite runtime returns zero rows for that
+        # predicate. When the LHS was unwrapped, compare literals
+        # against `known` exactly.
+        #
+        # Codex PR #4 finding M (the original whitespace-tolerance
+        # motivation) still holds: when the encoder did wrap with
+        # LOWER+TRIM, both sides get normalised the same way so a
+        # sampled value `' yes '` matches a literal `'yes'`.
+        if lhs_wrapped:
+            known_compare = {k.strip().casefold() for k in known}
+            misses = [
+                lit for lit in literals
+                if lit.strip().casefold() not in known_compare
+            ]
+        else:
+            known_compare = set(known)
+            misses = [lit for lit in literals if lit not in known_compare]
         if not misses:
             continue
         qualified = f"{alias}.{col_name}" if alias else col_name

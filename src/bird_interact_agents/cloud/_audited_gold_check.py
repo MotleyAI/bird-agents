@@ -44,13 +44,25 @@ def _load_dataset_instance_db_map(
 
 def _load_db_audit_index(
     db: str, audited_root: Path,
-) -> Optional[dict[str, str]]:
-    """Return ``{instance_id: audit_status}`` for ``<root>/<db>/<db>_audited.jsonl``
-    or ``None`` if the sidecar is absent. An empty file returns ``{}``."""
+) -> Optional[dict[str, tuple[str, bool]]]:
+    """Return ``{instance_id: (audit_status, has_audited_sql)}`` for
+    ``<root>/<db>/<db>_audited.jsonl`` or ``None`` if the sidecar is absent.
+    An empty file returns ``{}``.
+
+    Codex DEV-1478 follow-up: track whether ``audited_sol_sql`` is a
+    non-empty list on each row. ``apply_audited_gold_overlay`` only swaps
+    ``sol_sql`` for ``edited`` / ``unrecoverable`` rows when that field is
+    a non-empty list — so a sidecar row with status ``edited`` but missing
+    or empty ``audited_sol_sql`` would silently fall back to the original
+    un-audited gold mid-cloud-run, defeating the submit-time guard. We
+    carry the presence bit so the guard can reject those rows up front.
+    ``clean`` rows do not need ``audited_sol_sql`` (the original IS the
+    audited gold).
+    """
     path = audited_root / db / f"{db}_audited.jsonl"
     if not path.exists():
         return None
-    out: dict[str, str] = {}
+    out: dict[str, tuple[str, bool]] = {}
     with path.open() as f:
         for line in f:
             line = line.strip()
@@ -61,9 +73,11 @@ def _load_db_audit_index(
             except json.JSONDecodeError:
                 continue
             iid = row.get("instance_id")
-            status = row.get("audit_status")
+            status = row.get("audit_status") or "missing-row"
+            audited = row.get("audited_sol_sql")
+            has_audited_sql = isinstance(audited, list) and bool(audited)
             if iid:
-                out[iid] = status or "missing-row"
+                out[iid] = (status, has_audited_sql)
     return out
 
 
@@ -80,17 +94,22 @@ def missing_audited_gold_ids(
         caller passed a typo / stale id), OR
       - the per-db sidecar ``<root>/<db>/<db>_audited.jsonl`` does not exist,
         OR
-      - the sidecar has no row for the id.
+      - the sidecar has no row for the id, OR
+      - the row's ``audit_status`` is ``edited`` or ``unrecoverable`` but
+        ``audited_sol_sql`` is missing or not a non-empty list (Codex
+        DEV-1478 follow-up: the overlay would silently fall back to the
+        original un-audited gold for such rows, defeating the guard).
 
-    A row with ``audit_status`` in ``("clean", "edited", "unrecoverable")`` is
-    accepted — these are the three states for which the harness has an
-    ``audited_sol_sql`` (or a deliberately-equal-to-original gold).
+    A row with ``audit_status == "clean"`` passes regardless of
+    ``audited_sol_sql`` because the overlay deliberately leaves
+    ``sol_sql`` untouched for clean rows — the original IS the audited
+    gold by design.
     Returns the missing ids in input order; an empty list means everyone
     has audited gold.
     """
     audited_root = audited_root or paths.audited_gold_root()
     inst_to_db = _load_dataset_instance_db_map(data_path)
-    cache: dict[str, Optional[dict[str, str]]] = {}
+    cache: dict[str, Optional[dict[str, tuple[str, bool]]]] = {}
     missing: list[str] = []
     for iid in instance_ids:
         db = inst_to_db.get(iid)
@@ -103,10 +122,14 @@ def missing_audited_gold_ids(
         if index is None:
             missing.append(iid)
             continue
-        status = index.get(iid)
-        if status is None:
+        entry = index.get(iid)
+        if entry is None:
             missing.append(iid)
             continue
-        if status not in ("clean", "edited", "unrecoverable"):
-            missing.append(iid)
+        status, has_audited_sql = entry
+        if status == "clean":
+            continue
+        if status in ("edited", "unrecoverable") and has_audited_sql:
+            continue
+        missing.append(iid)
     return missing
