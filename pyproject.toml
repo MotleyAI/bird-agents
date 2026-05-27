@@ -13,6 +13,11 @@ dependencies = [
     "pydantic-settings>=2.2",
     "litellm>=1.0",
     "anthropic>=0.40",
+    # DEV-1478: agent.py imports sqlglot at module load for the literal-
+    # existence pre-save validator. Also used by sar_audit/compare.py. A
+    # runtime install of the `pydantic-ai` / `slayer` extras MUST resolve
+    # `import bird_interact_agents...` without dev extras present.
+    "sqlglot",
 ]
 
 [project.optional-dependencies]
@@ -50,7 +55,6 @@ all = [
 dev = [
     "pytest",
     "pytest-asyncio",
-    "sqlglot",  # used by scripts/verify_audited_gold.py + SAR-audit comparison
     "openai",   # used by SAR-audit tests' OpenAI-not-instantiated guard
 ]
 

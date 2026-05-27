@@ -308,6 +308,7 @@ dependencies = [
     { name = "litellm" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "sqlglot" },
 ]
 
 [package.optional-dependencies]
@@ -340,7 +341,6 @@ dev = [
     { name = "openai" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
-    { name = "sqlglot" },
 ]
 mcp-agent = [
     { name = "mcp-agent" },
@@ -391,7 +391,7 @@ requires-dist = [
     { name = "ray", extras = ["default"], marker = "extra == 'cloud'", specifier = ">=2.30" },
     { name = "smolagents", marker = "extra == 'all'", specifier = ">=1.0" },
     { name = "smolagents", marker = "extra == 'smolagents'", specifier = ">=1.0" },
-    { name = "sqlglot", marker = "extra == 'dev'" },
+    { name = "sqlglot" },
 ]
 provides-extras = ["claude-sdk", "pydantic-ai", "smolagents", "agno", "mcp-agent", "slayer", "original", "cloud", "all", "dev"]
 
