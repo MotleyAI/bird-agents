@@ -302,6 +302,67 @@ async def test_create_model_columns_are_scanned(tmp_path):
     assert "'maybe'" in problems[0]
 
 
+async def test_create_model_validation_runs_when_host_not_in_storage(tmp_path):
+    """CodeRabbit PR #4 thread 1: a fresh `create_model` payload — host
+    name is the NEW model that doesn't exist in storage yet — must still
+    have its literal-existence checks run against the proposal's own
+    columns. The synthetic host's columns inherit ``sampled_values`` from
+    the proposal payload when supplied (the agent may copy upstream
+    metadata into the create payload for R-MULTISTAGE / R-EXISTS stages).
+    """
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    storage = await _new_storage(tmp_path)
+    # NB: no model called `brand_new` is in storage.
+
+    args = {
+        "name": "brand_new",
+        "data_source": DB, "sql_table": "src_table",
+        "columns": [
+            # This column carries explicit sampled_values, so the walker
+            # has a concrete set to membership-check against.
+            {"name": "status", "sql": "src_status",
+             "sampled_values": ["yes", "no"]},
+            {"name": "is_maybe", "type": "boolean",
+             "sql": "status = 'maybe'"},  # 'maybe' is NOT in sampled
+        ],
+    }
+    problems = await _collect_literal_problems(
+        "create_model", args, storage=storage, db=DB,
+    )
+    assert len(problems) == 1, (
+        f"create_model literal-walker must fire even when the host model "
+        f"isn't in storage yet (CodeRabbit thread 1). got: {problems!r}"
+    )
+    assert "'maybe'" in problems[0]
+
+
+async def test_create_model_silently_skips_when_payload_has_no_columns(tmp_path):
+    """A degenerate create_model with no columns to resolve against → walker
+    returns no problems (best-effort skip; no false positive)."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    storage = await _new_storage(tmp_path)
+    args = {
+        "name": "empty_model",
+        "data_source": DB,
+        # No columns / measures, but a backing-query stage WITH a literal
+        # the walker would otherwise check. The walker should skip
+        # silently because the payload has nothing to resolve names
+        # against.
+        "query": {"source_model": "src", "dimensions": [],
+                  "measures": [{"formula": "x = 'maybe':count"}], "limit": 0},
+    }
+    problems = await _collect_literal_problems(
+        "create_model", args, storage=storage, db=DB,
+    )
+    assert problems == []
+
+
 async def test_host_qualified_column_resolves_like_bare(tmp_path):
     """`households.col = 'literal'` where the alias IS the host's own name
     must resolve to the same column as bare `col`."""
@@ -830,9 +891,10 @@ async def test_literal_collector_harness_error_fails_open(
     monkeypatch, tmp_path,
 ):
     """If `_collect_literal_problems` itself raises (a harness bug), the
-    write must proceed (fail OPEN) — never block valid work because of a
-    validator bug. Mirrors the existing fail-open pattern in
-    `_validate_and_call` for `_collect_validation_problems`.
+    write must proceed (fail OPEN) WHEN THE SQL GATE IS ALSO CLEAN — never
+    block valid work because of a validator bug. Mirrors the existing
+    fail-open pattern in `_validate_and_call` for
+    `_collect_validation_problems`.
 
     Monkeypatch the literal collector to raise directly so we're testing
     the wrapper's fail-open behavior, not an implementation detail that
@@ -856,7 +918,7 @@ async def test_literal_collector_harness_error_fails_open(
         async def execute(self, q):
             return types.SimpleNamespace(data=[])
 
-    async def exploding_collector(name, tool_args, *, storage, db):
+    async def exploding_collector(name, tool_args, *, storage, db=""):
         raise RuntimeError("simulated literal-collector bug")
 
     monkeypatch.setattr(
@@ -870,9 +932,69 @@ async def test_literal_collector_harness_error_fails_open(
         fake_call_tool, "edit_model", args,
         storage=storage, engine=_OkEngine(),
     )
-    # Despite the harness error in the literal collector, the write proceeds.
+    # Despite the harness error in the literal collector, the write proceeds
+    # because the SQL gate found no problems either.
     assert called and called[0][0] == "edit_model"
     assert result == "WROTE"
+
+
+async def test_literal_collector_error_still_surfaces_sql_problems(
+    monkeypatch, tmp_path,
+):
+    """CodeRabbit PR #4 thread 2 + Codex: when the literal collector
+    raises BUT the SQL gate has already collected blocking problems, the
+    `except` branch must NOT short-circuit to `call_tool` — the existing
+    SQL problems must still block the write. Earlier fix-open code
+    swallowed sql_problems and allowed the write through, turning a
+    literal-collector bug into a bypass for known-invalid SQL."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode import agent as _agent
+
+    storage = await _new_storage(tmp_path)
+    await _add_model(storage, name="m", columns=[
+        Column(name="id", primary_key=True),
+        _col("col", sampled_values=["yes", "no"]),
+    ])
+
+    called: list[Any] = []
+
+    async def fake_call_tool(name, args, _ctx):
+        called.append((name, args))
+        return "WROTE"
+
+    class _OkEngine:
+        async def execute(self, q):
+            return types.SimpleNamespace(data=[])
+
+    # SQL gate finds a problem AND literal collector raises.
+    async def stub_sql_problems(name, tool_args, *, storage, engine):
+        return ["column m.x: SQL-SIDE STUB FAILURE — known invalid"]
+
+    async def exploding_collector(name, tool_args, *, storage, db=""):
+        raise RuntimeError("simulated literal-collector bug")
+
+    monkeypatch.setattr(
+        _agent, "_collect_validation_problems", stub_sql_problems,
+    )
+    monkeypatch.setattr(
+        _agent, "_collect_literal_problems", exploding_collector,
+    )
+
+    args = _edit_args("m", columns=[
+        {"name": "x", "sql": "col = 'yes'", "type": "boolean"},
+    ])
+    result = await _agent._validate_and_call(
+        fake_call_tool, "edit_model", args,
+        storage=storage, engine=_OkEngine(),
+    )
+    # The literal collector raised, but the SQL gate's problem must still
+    # block the write — a literal-collector bug must NOT bypass the SQL
+    # gate.
+    assert called == [], (
+        "literal-collector failure must NOT bypass pre-existing SQL "
+        "validation failures (CodeRabbit thread 2 + Codex regression)"
+    )
+    assert isinstance(result, str)
+    assert "SQL-SIDE STUB FAILURE" in result
 
 
 # ---------------------------------------------------------------------------

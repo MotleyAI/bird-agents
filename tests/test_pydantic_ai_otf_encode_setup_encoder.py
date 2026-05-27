@@ -673,6 +673,55 @@ async def test_existing_kb_tagged_entities_block_sorted_by_kb_id(tmp_path):
     )
 
 
+async def test_existing_kb_tagged_entities_block_same_kb_id_deterministic(tmp_path):
+    """CodeRabbit PR #4 nitpick: two entities sharing the same kb_id
+    (e.g. R-FILTER's Column + ModelMeasure both tagged with the same id)
+    must sort to a deterministic order across rebuilds — tie-broken on
+    the rendered line so prompt text stays stable."""
+    from slayer.core.models import ModelMeasure
+
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_existing_kb_tagged_entities_block,
+    )
+
+    storage = YAMLStorage(base_dir=str(tmp_path))
+    await storage.save_datasource(DatasourceConfig(
+        name=DB, type="sqlite", connection_string="sqlite:///x.sqlite",
+    ))
+    # Two entities sharing kb_id=5 on the same model (Column + Measure
+    # is the R-FILTER recipe's natural output).
+    await storage.save_model(SlayerModel(
+        name="m", data_source=DB, sql_table="m",
+        columns=[
+            Column(name="id", primary_key=True),
+            Column(name="active_flag", sql="status='Y'",
+                   meta={"kb_id": 5}),
+        ],
+        measures=[ModelMeasure(
+            name="active_share", formula="active_flag:avg",
+            meta={"kb_id": 5},
+        )],
+    ))
+    block1 = await _format_existing_kb_tagged_entities_block(storage, DB)
+    block2 = await _format_existing_kb_tagged_entities_block(storage, DB)
+    # Rebuild stability: the block is byte-identical across two calls
+    # against the same storage. This pins the property the nitpick was
+    # about (storage-traversal order would otherwise leak into the
+    # rendered string and produce drift across rebuilds).
+    assert block1 == block2, (
+        "rendering must be deterministic for entities sharing kb_id "
+        "(CodeRabbit PR #4 nitpick on factories.py:799-800)"
+    )
+    # And we should sort alphabetically on the rendered line: 'measure'
+    # entries come after 'column' alphabetically within the kb_id tier,
+    # since the leading text is `  - {db}.m.{name} ({kind}) -> kb_id=5`
+    # and "active_flag (column)" < "active_share (measure)" lexicographically.
+    pos_col = block1.find("active_flag")
+    pos_meas = block1.find("active_share")
+    assert pos_col != -1 and pos_meas != -1
+    assert pos_col < pos_meas
+
+
 async def test_existing_kb_tagged_entities_block_lists_tagged_measures(tmp_path):
     """ModelMeasure with meta.kb_id must also appear (R-MEASURE / R-FILTER
     recipes write measures, not just columns)."""

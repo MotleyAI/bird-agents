@@ -796,7 +796,12 @@ async def _format_existing_kb_tagged_entities_block(
                 ))
     if not rows:
         return "(none)"
-    rows.sort(key=lambda r: r[0])
+    # CodeRabbit PR #4 nitpick: tie-break on the rendered line so entities
+    # sharing the same kb_id (e.g. R-FILTER produces a Column + a
+    # ModelMeasure both tagged with the same kb_id) appear in a
+    # deterministic order across rebuilds — keeping the formatted prompt
+    # stable.
+    rows.sort(key=lambda r: (r[0], r[1]))
     return "\n".join(line for _, line in rows)
 
 

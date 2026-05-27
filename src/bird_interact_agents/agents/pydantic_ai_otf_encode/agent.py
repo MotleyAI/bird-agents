@@ -500,6 +500,67 @@ def _host_model_name(name: str, tool_args: dict) -> str | None:
     return None
 
 
+class _SyntheticColumn:
+    """A minimal Column stand-in for ``_resolve_column_via_host`` to find
+    when the host model doesn't exist in storage yet (``create_model``).
+    Carries only the fields the literal walker reads:
+    ``name``, ``sampled``, ``sampled_values``."""
+
+    __slots__ = ("name", "sampled", "sampled_values")
+
+    def __init__(
+        self, name: str, sampled: Any = None, sampled_values: Any = None,
+    ) -> None:
+        self.name = name
+        self.sampled = sampled
+        self.sampled_values = sampled_values
+
+
+class _SyntheticHost:
+    """Minimal host model stand-in for ``create_model`` payloads. Carries
+    only what ``_resolve_column_via_host`` reads: ``columns``, ``joins``.
+    Joins are empty because a not-yet-persisted model can't have edges
+    in the join graph; cross-table refs from a create_model payload
+    therefore silently skip (consistent with the best-effort policy)."""
+
+    __slots__ = ("columns", "joins")
+
+    def __init__(self, columns: list, joins: list | None = None) -> None:
+        self.columns = columns
+        self.joins = joins or []
+
+
+def _build_synthetic_host_from_create_args(tool_args: dict) -> Any:
+    """CodeRabbit PR #4 thread 1: when ``create_model`` fires for a model
+    that doesn't exist in storage yet, build a stand-in host from the
+    proposal's own columns so the bare-column walker can still resolve
+    references and check literal membership.
+
+    The synthetic columns carry whatever ``sampled`` / ``sampled_values``
+    the proposal happens to populate — usually nothing. In that case the
+    walker correctly skips (the column has no known set), preserving the
+    best-effort no-false-positive contract. The fix's value lies in the
+    rare cases where the agent DOES copy upstream sampled metadata into
+    the create_model payload (R-MULTISTAGE stages, R-EXISTS per-parent
+    stages, etc.), AND it lets the unparseable-SQL gate still fire.
+
+    Returns None when the payload has no columns at all (nothing to
+    resolve against)."""
+    cols_arg = tool_args.get("columns") or []
+    columns: list = []
+    for c in cols_arg:
+        if not isinstance(c, dict) or not c.get("name"):
+            continue
+        columns.append(_SyntheticColumn(
+            name=c["name"],
+            sampled=c.get("sampled"),
+            sampled_values=c.get("sampled_values"),
+        ))
+    if not columns:
+        return None
+    return _SyntheticHost(columns=columns)
+
+
 async def _collect_literal_problems(
     name: str, tool_args: dict, *, storage: Any, db: str = "",
 ) -> list[str]:
@@ -531,13 +592,22 @@ async def _collect_literal_problems(
     # Resolve the host model ONCE up front (saves a `storage.get_model`
     # round-trip per literal check, and keeps the existing agent-side test
     # `test_write_gate_resolves_datasource_via_storage_fallback` from
-    # counting redundant calls).
+    # counting redundant calls). For ``create_model`` the host doesn't
+    # exist in storage yet (we ARE creating it), so synthesize a
+    # lightweight stand-in from ``tool_args`` so the bare-column walker
+    # can still resolve names against the proposed payload's columns and
+    # check their sampled metadata (which the agent may have copied from
+    # an upstream column's `sampled` text into the proposal). CodeRabbit
+    # PR #4 thread 1.
     try:
         host = await storage.get_model(host_name)
     except Exception:  # noqa: BLE001 — best-effort
-        return problems
+        host = None
     if host is None:
-        return problems
+        if name == "create_model":
+            host = _build_synthetic_host_from_create_args(tool_args)
+        if host is None:
+            return problems
 
     for sql in sqls:
         try:
@@ -627,12 +697,19 @@ async def _validate_and_call(
         literal_problems = await _collect_literal_problems(
             name, args, storage=storage,
         )
-    except Exception:  # noqa: BLE001 — literal-collector bug must also fail OPEN
+    except Exception:  # noqa: BLE001 — literal-collector bug must fail OPEN
+        # CodeRabbit PR #4 thread 2 + Codex: do NOT short-circuit to
+        # `call_tool` here — `sql_problems` from the existing SQL gate may
+        # already be non-empty, and skipping straight to the write would
+        # turn a literal-collector harness bug into a bypass for known-
+        # invalid SQL. Drop only the literal gate's results; the
+        # `if problems:` check below still blocks the write when the SQL
+        # gate flagged anything.
         logger.exception(
-            "literal-existence validation harness error; allowing write %s",
-            name,
+            "literal-existence validation harness error; allowing write %s "
+            "(SQL-gate problems still enforced)", name,
         )
-        return await call_tool(name, tool_args, None)
+        literal_problems = []
     problems = list(sql_problems) + list(literal_problems)
     if problems:
         return _validation_feedback(name, problems)
