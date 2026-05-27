@@ -183,12 +183,17 @@ def public_task(
     the loader's `query→amb_user_query` shim is exercised even without
     bespoke per-test wording.
     """
+    # `is not None` (not `or`) so a caller can build an edge-case
+    # fixture with an explicit empty query / conditions (CodeRabbit).
     return {
         "instance_id": instance_id,
         "selected_database": selected_database,
-        "query": query or f"unambiguous request for {instance_id}",
+        "query": (
+            query if query is not None
+            else f"unambiguous request for {instance_id}"
+        ),
         "category": category,
-        "conditions": conditions or {
+        "conditions": conditions if conditions is not None else {
             "decimal": [], "distinct": False, "order": False,
         },
     }

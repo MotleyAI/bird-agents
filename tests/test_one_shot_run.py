@@ -807,7 +807,7 @@ async def test_otf_encode_one_shot_reserve_is_submit_query_only(monkeypatch, tmp
     monkeypatch.setattr(
         agent_mod, "_build_shared_slayer_server", lambda *a, **kw: None,
     )
-    _spy_materialize(monkeypatch, agent_mod)
+    materialize_calls = _spy_materialize(monkeypatch, agent_mod)
     monkeypatch.setattr(
         agent_mod, "make_setup_build_encoder",
         lambda **kw: lambda *a, **kw2: None,
@@ -832,6 +832,10 @@ async def test_otf_encode_one_shot_reserve_is_submit_query_only(monkeypatch, tmp
     )
     expected = 30.0 - ACTION_COSTS["submit_query"]
     assert observed_remaining_before_root == [expected]
+    assert materialize_calls, (
+        "otf_encode one-shot run_task MUST call materialize_task_db "
+        "(reserve test)"
+    )
 
 
 @pytest.mark.asyncio
@@ -877,7 +881,7 @@ async def test_otf_encode_one_shot_empty_resolver_skips_constructor(monkeypatch,
     monkeypatch.setattr(
         agent_mod, "_build_shared_slayer_server", lambda *a, **kw: None,
     )
-    _spy_materialize(monkeypatch, agent_mod)
+    materialize_calls = _spy_materialize(monkeypatch, agent_mod)
     monkeypatch.setattr(
         agent_mod, "make_setup_build_encoder",
         lambda **kw: lambda *a, **kw2: None,
@@ -903,6 +907,10 @@ async def test_otf_encode_one_shot_empty_resolver_skips_constructor(monkeypatch,
     assert constructor_calls == []
     assert row["submission_status"] == "never_submitted"
     assert row.get("projection_resolver_status") == "empty_after_guard"
+    assert materialize_calls, (
+        "otf_encode one-shot run_task MUST call materialize_task_db on the "
+        "empty_after_guard short-circuit path too"
+    )
 
 
 @pytest.mark.asyncio

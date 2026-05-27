@@ -348,8 +348,10 @@ _BAD_COMBOS = [
 
 @pytest.mark.parametrize("combo,must_contain", _BAD_COMBOS)
 async def test_run_evaluation_rejects_invalid_combos(tmp_path, combo, must_contain):
-    data = tmp_path / "data.jsonl"; data.write_text("")
-    db_path = tmp_path / "ds"; db_path.mkdir()
+    data = tmp_path / "data.jsonl"
+    data.write_text("")
+    db_path = tmp_path / "ds"
+    db_path.mkdir()
     with pytest.raises(ValueError) as exc_info:
         await run_module.run_evaluation(
             data_path=str(data), data_dir=str(db_path),
@@ -390,8 +392,10 @@ def test_make_runner_rejects_invalid_combos(combo, must_contain):
 
 
 async def test_run_evaluation_rejects_one_shot_with_mini_interact(tmp_path):
-    data = tmp_path / "data.jsonl"; data.write_text("")
-    db_path = tmp_path / "ds"; db_path.mkdir()
+    data = tmp_path / "data.jsonl"
+    data.write_text("")
+    db_path = tmp_path / "ds"
+    db_path.mkdir()
     with pytest.raises(ValueError) as exc_info:
         await run_module.run_evaluation(
             data_path=str(data), data_dir=str(db_path),
@@ -424,7 +428,8 @@ async def test_run_one_task_one_shot_rejects_missing_livesqlbench_marker(tmp_pat
     """The loader stamps `task["dataset"]="livesqlbench"`. A programmatic
     caller bypassing the loader must NOT silently get a one-shot run on
     an un-marked task (Codex #1 — programmatic-bypass close)."""
-    db_path = tmp_path / "ds"; db_path.mkdir()
+    db_path = tmp_path / "ds"
+    db_path.mkdir()
     # Task is missing the dataset marker.
     task = {
         "instance_id": "x1", "selected_database": "alien",
@@ -453,8 +458,10 @@ async def test_run_one_task_one_shot_rejects_missing_livesqlbench_marker(tmp_pat
 async def test_empty_filter_ids_fails_instead_of_running_full_set(tmp_path):
     """`run_evaluation(filter_ids=[])` with the empty-list footgun fix
     MUST raise, not silently expand scope to the full task set."""
-    data = tmp_path / "data.jsonl"; data.write_text("")
-    db_path = tmp_path / "ds"; db_path.mkdir()
+    data = tmp_path / "data.jsonl"
+    data.write_text("")
+    db_path = tmp_path / "ds"
+    db_path.mkdir()
     with pytest.raises(ValueError) as exc_info:
         await run_module.run_evaluation(
             data_path=str(data), data_dir=str(db_path),
