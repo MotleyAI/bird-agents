@@ -30,6 +30,67 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
+# DEV-1478: shared encoder style guide, injected into BOTH SETUP and KB
+# encoder prompts. Five rules — see plan §B for the full rationale.
+# `{{ }}` doubled-braces survive str.format passes through both prompts.
+# ---------------------------------------------------------------------------
+
+_STYLE_GUIDE = """\
+ENCODER STYLE GUIDE (applies to every entity you write).
+
+STRING-NORM. For every predicate / CASE / filter that compares a TEXT column
+to a literal, wrap the column in LOWER(TRIM(<col>)) and the literal in
+lowercase. Use LIKE with a trailing % when sampled values or audit caveats
+show free-text variants (e.g. 'apartment%' matches 'apartment',
+'Apartment', 'APARTMENT House'). Apply universally — do not carve out
+exceptions for "values look case-uniform on first glance".
+
+CROSS-COLUMN REFERENCES. Prefer inlining `target_alias.col` via the
+existing join graph (call `inspect_model` on the host and read its
+`joins` before writing). Do NOT emit a correlated subquery
+`(SELECT ... FROM other WHERE ...)` or `EXISTS(SELECT ...)` when the
+host already reaches the target table via a declared join. Named
+cross-model helpers (e.g. another model's column referenced by name)
+are acceptable only when that helper has its own `meta.kb_id` and
+appears in the dependencies block above.
+
+HOST-CHOICE. Before placing a new Column / Measure, enumerate the
+models the KB definition touches. Pick the host whose existing joins
+already reach EVERY other touched model — do NOT add a new
+`joins=[...]` entry when picking the OTHER end of an existing join
+would let you reach all referenced fields. Only add a join when no
+such host exists.
+
+PEER-KB DEDUP. Before writing any entity, look at the EXISTING
+KB-TAGGED ENTITIES block above and the host's existing columns
+(`inspect_model`). If any existing column / measure description
+carries `[kb=X]` for an X that describes the SAME schema fact as
+this KB, DEFER with notes "duplicate of KB X" — do NOT write a
+competing entity with your own kb_id. The lower-id KB is canonical
+because the topo sort runs lower ids first.
+
+INLINE-DON'T-NAME. When a calc_knowledge KB merely combines sibling
+component scores (definition mentions "average", "mean", "sum",
+"weighted", "combined", "composite", "the average of the individual
+scores for X, Y, Z"), INLINE the components' CASE logic into your
+own Column.sql instead of referencing children by `entity_ref`.
+This matches the hand-audited reference's KB 13 / 20 / 29 pattern
+and avoids cascading-defer chains. PEER-KB DEDUP and
+INLINE-DON'T-NAME tie-break: DEDUP decides whether to write a
+NEW NAMED ENTITY for the current KB; INLINE-DON'T-NAME governs
+the SQL of the entity you DO write — inlining another KB's logic
+into your own expression is encouraged when that KB is small and
+deterministic, NOT a duplicate write.
+
+EXISTING KB-TAGGED ENTITIES on this datasource (already written by
+lower-id KBs in the topo sort). If your KB describes the SAME
+schema fact as any of these, DEFER with notes "duplicate of KB X":
+
+{existing_kb_tagged_entities_block}
+"""
+
+
+# ---------------------------------------------------------------------------
 # Sub-clarifier — copy of the recursive adapter's prompt plus a paragraph
 # on the new `kb_to_slayer` elevation tool.
 # ---------------------------------------------------------------------------
@@ -326,6 +387,9 @@ missing, the result is downgraded. So submit ONLY the refs you wrote.
 """
 
 
+KB_ENCODER_PROMPT += "\n\n" + _STYLE_GUIDE
+
+
 # ---------------------------------------------------------------------------
 # Setup encoder — DEV-1454 per-DB build-time encoder. NO ask_user (there is
 # no task to clarify against). Encode when confident; DEFER when ambiguous.
@@ -400,37 +464,64 @@ trigger matches:
   R-JOIN — cross-table relationship not in the FK graph → a `ModelJoin` via
     `edit_model(joins=[...])`.
 
-VALUE-ILLUSTRATION SCORING & OWNERSHIP. A `value_illustration` defaults to
-R-DESCRIBE — attach its value set / illustrative scoring prose as a `description`
-on the underlying base column. Do NOT materialise its scoring prose as a
-calculation Column when a `calculation_knowledge` KB that REFERENCES this one
-(see "KBs that REFERENCE this one" above) defines the SAME score as its WHOLE
-calculation — that KB OWNS the score column and will tag it with ITS kb_id;
-emitting your own competing column here would mis-tag the score (the benchmark
-masks by kb_id) and split ownership. EXCEPTION: if the referencing
-`calculation_knowledge` merely COMBINES this score with sibling component scores
-(e.g. averages several component scores into one), then DO emit this score as
-its own Column so that parent can reference it. NEVER create or claim a score
-Column that belongs to another KB: if a score you need is not yet present on the
-host model, INLINE its computation into your own Column rather than emitting a
-separately-named score column tagged with your kb_id. When you make this
-describe-vs-encode judgement for a value_illustration, state it in one sentence
-in your `notes`.
+VALUE-ILLUSTRATION OWNERSHIP — decide by inspecting the reverse-deps block
+above:
+
+  CASE A (emit own scoring Column — the DEFAULT for component-score patterns).
+  Parent in reverse-deps is a `calculation_knowledge` whose definition names
+  multiple sibling components AND combines them (words: "average", "mean",
+  "sum", "weighted", "combined", "composite", "the average of the individual
+  scores for X, Y, Z"). Each LEAF value_illustration emits its own scoring
+  Column; the parent then INLINES or references those leaves. Worked examples:
+    * KB 3 / 4 / 5 (Water / Road / Parking scores) -> KB 13 (Infrastructure
+      Quality = average of the three). Each leaf emits its own column;
+      KB 13 inlines or refers to them.
+    * KB 6 (Dwelling Type) + KB 13 (Infra Score) -> KB 20 (Living
+      Condition Score = 50/50 of the two). Same pattern.
+
+  CASE B (DEFER to parent — wrapper / rename / single-score parent). Parent
+  in reverse-deps is a `calculation_knowledge` whose WHOLE definition IS the
+  same score this KB illustrates (no combination, no sibling components — it
+  just renames or wraps this KB's scoring prose). Defer; the parent owns the
+  score Column and will tag it with ITS kb_id.
+
+  CASE C (R-DESCRIBE only — no parent owns a score). No
+  `calculation_knowledge` parent exists OR the parent only uses this KB for
+  filtering / dimension grouping (not scoring). Attach the value-list /
+  illustrative prose as a `description` on the base column via `edit_model`.
+  Do NOT emit a scoring Column.
+
+When you make this describe-vs-encode judgement, state in one sentence in your
+`notes` which CASE applies and why.
+
+DEFENSIVE DEFER. If ANY KB in `children_knowledge` shows `NOT encoded` in the
+dependencies block above, this KB MUST set `status="deferred"` with notes
+`'depends on unencoded KB <id> (<reason from deps block>)'` and
+`clarifying_questions` naming each missing child. Quote the reason verbatim
+from the deps block so a later per-task agent can distinguish "child deferred
+because ambiguous" from "child errored during encode". Do NOT silently encode
+this KB with stub or guessed inputs for the missing child.
 
 LITERAL-EXISTS. Before encoding any predicate or CASE keyed on a specific
 categorical literal (a status label, a named category, an enum value), CONFIRM
 the literal actually occurs in the column's data — run a tiny `query` for the
 distinct values (do NOT trust only the `inspect_model` `sampled` summary, which
-may omit rare values). If the literal does not appear verbatim AND you cannot
-ground it unambiguously in an already-encoded score/dimension or a column
-meaning, DEFER (do not encode a silently always-true / never-true condition).
-Scope this to exact categorical-literal matches on low-cardinality columns;
-fuzzy/qualitative phrasing ("high-quality", "high X") instead needs a
-threshold/mapping you cannot guess, so it defers under the NO-GUESS rule. When
-you defer for a missing literal, and the column has FEWER THAN 20 distinct
-values, LIST those values in `clarifying_questions` / `notes` so a later
-per-task agent can map the KB's label to a real value; if 20+, say so and give a
-representative sample.
+may omit rare values). The pre-save validation hook ALSO compares your `=` and
+`IN` string literals against each column's stored distinct values and rejects
+the write with a "VALIDATION FAILED" message listing the valid values — when
+that happens, EITHER (a) pick a real value from the listed set and call the
+write tool again, OR (b) DEFER this KB with notes naming the failing literal
+and the valid set. Do NOT retry with a different invented literal. If the
+literal does not appear verbatim AND you cannot ground it unambiguously in an
+already-encoded score/dimension or a column meaning, DEFER (do not encode a
+silently always-true / never-true condition). Scope this to exact
+categorical-literal matches on low-cardinality columns; fuzzy/qualitative
+phrasing ("high-quality", "high X") instead needs a threshold/mapping you
+cannot guess, so it defers under the NO-GUESS rule. When you defer for a
+missing literal, and the column has FEWER THAN 20 distinct values, LIST those
+values in `clarifying_questions` / `notes` so a later per-task agent can map
+the KB's label to a real value; if 20+, say so and give a representative
+sample.
 
 KB SELF-ANNOTATION. Every entity you write MUST carry `meta = {{"kb_id":
 {kb_id}}}` (singular int) — it is the SOLE key the benchmark uses to mask the
@@ -482,3 +573,6 @@ OUTPUT CONTRACT — strict. Deliver the result by calling
 The caller verifies every `entity_ref` exists AND carries `meta.kb_id={kb_id}`;
 a missing or untagged ref downgrades the result to `status="deferred"`.
 """
+
+
+SETUP_ENCODER_PROMPT += "\n\n" + _STYLE_GUIDE

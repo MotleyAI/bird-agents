@@ -603,3 +603,205 @@ async def test_run_one_closure_forwards_reverse_deps(monkeypatch):
                   reverse_deps=reverse)
 
     assert captured["reverse_deps"] == reverse
+
+
+# ---------------------------------------------------------------------------
+# DEV-1478: PEER-KB DEDUP support — a new helper renders every meta.kb_id-
+# tagged entity already present in storage as a block the prompt can show
+# the agent. Mechanical contract test (the function is a pure
+# storage-driven renderer; we're not testing prompt content here).
+# ---------------------------------------------------------------------------
+
+
+async def test_existing_kb_tagged_entities_block_empty_when_nothing_tagged(tmp_path):
+    """No models / no kb-tagged entities → block renders `(none)` so the prompt
+    has a deterministic substitution value even on a fresh build."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_existing_kb_tagged_entities_block,
+    )
+
+    storage = YAMLStorage(base_dir=str(tmp_path))
+    await storage.save_datasource(DatasourceConfig(
+        name=DB, type="sqlite", connection_string="sqlite:///x.sqlite",
+    ))
+    assert await _format_existing_kb_tagged_entities_block(storage, DB) == "(none)"
+
+
+async def test_existing_kb_tagged_entities_block_lists_tagged_columns(tmp_path):
+    """Storage has a Column with meta.kb_id=9 → block names the column, its
+    kind, and the kb_id."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_existing_kb_tagged_entities_block,
+    )
+
+    storage = await _storage_with_tagged_column(
+        tmp_path, model="service_types", col="socsupport", kb_id=9,
+    )
+    block = await _format_existing_kb_tagged_entities_block(storage, DB)
+    assert "service_types" in block
+    assert "socsupport" in block
+    assert "kb_id=9" in block
+
+
+async def test_existing_kb_tagged_entities_block_sorted_by_kb_id(tmp_path):
+    """Multiple tagged entities → output is sorted by kb_id ascending so the
+    canonical (lower-id) entity appears first."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_existing_kb_tagged_entities_block,
+    )
+
+    storage = YAMLStorage(base_dir=str(tmp_path))
+    await storage.save_datasource(DatasourceConfig(
+        name=DB, type="sqlite", connection_string="sqlite:///x.sqlite",
+    ))
+    await storage.save_model(SlayerModel(
+        name="a", data_source=DB, sql_table="a",
+        columns=[Column(name="id", primary_key=True),
+                 Column(name="late", sql="1", meta={"kb_id": 37})],
+    ))
+    await storage.save_model(SlayerModel(
+        name="b", data_source=DB, sql_table="b",
+        columns=[Column(name="id", primary_key=True),
+                 Column(name="early", sql="1", meta={"kb_id": 9})],
+    ))
+    block = await _format_existing_kb_tagged_entities_block(storage, DB)
+    pos_9 = block.find("kb_id=9")
+    pos_37 = block.find("kb_id=37")
+    assert pos_9 != -1 and pos_37 != -1
+    assert pos_9 < pos_37, (
+        f"lower kb_id must appear first in the block; got block:\n{block}"
+    )
+
+
+async def test_existing_kb_tagged_entities_block_lists_tagged_measures(tmp_path):
+    """ModelMeasure with meta.kb_id must also appear (R-MEASURE / R-FILTER
+    recipes write measures, not just columns)."""
+    from slayer.core.models import ModelMeasure
+
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_existing_kb_tagged_entities_block,
+    )
+
+    storage = YAMLStorage(base_dir=str(tmp_path))
+    await storage.save_datasource(DatasourceConfig(
+        name=DB, type="sqlite", connection_string="sqlite:///x.sqlite",
+    ))
+    await storage.save_model(SlayerModel(
+        name="m", data_source=DB, sql_table="m",
+        columns=[Column(name="id", primary_key=True),
+                 Column(name="status", sql="status")],
+        measures=[ModelMeasure(
+            name="active_count", formula="status:count",
+            meta={"kb_id": 11},
+        )],
+    ))
+    block = await _format_existing_kb_tagged_entities_block(storage, DB)
+    assert "active_count" in block
+    assert "kb_id=11" in block
+
+
+async def test_existing_kb_tagged_entities_block_lists_tagged_aggregations(tmp_path):
+    """Aggregation with meta.kb_id must appear (R-AGG recipe). Aggregations
+    live on the model under `aggregations: List[Aggregation]`."""
+    from slayer.core.models import Aggregation
+
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_existing_kb_tagged_entities_block,
+    )
+
+    storage = YAMLStorage(base_dir=str(tmp_path))
+    await storage.save_datasource(DatasourceConfig(
+        name=DB, type="sqlite", connection_string="sqlite:///x.sqlite",
+    ))
+    await storage.save_model(SlayerModel(
+        name="m", data_source=DB, sql_table="m",
+        columns=[Column(name="id", primary_key=True)],
+        aggregations=[Aggregation(
+            name="weighted_score",
+            formula="SUM({value} * w) / SUM(w)",
+            meta={"kb_id": 13},
+        )],
+    ))
+    block = await _format_existing_kb_tagged_entities_block(storage, DB)
+    assert "weighted_score" in block
+    assert "kb_id=13" in block
+
+
+async def test_existing_kb_tagged_entities_block_ignores_untagged_columns(tmp_path):
+    """Columns without meta.kb_id must not appear in the block (only
+    canonical-kb-tagged entities qualify for PEER-KB DEDUP)."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
+        _format_existing_kb_tagged_entities_block,
+    )
+
+    storage = YAMLStorage(base_dir=str(tmp_path))
+    await storage.save_datasource(DatasourceConfig(
+        name=DB, type="sqlite", connection_string="sqlite:///x.sqlite",
+    ))
+    await storage.save_model(SlayerModel(
+        name="m", data_source=DB, sql_table="m",
+        columns=[
+            Column(name="id", primary_key=True),
+            Column(name="untagged", sql="1"),   # no meta
+            Column(name="tagged", sql="1", meta={"kb_id": 5}),
+        ],
+    ))
+    block = await _format_existing_kb_tagged_entities_block(storage, DB)
+    assert "tagged" in block and "kb_id=5" in block
+    # The untagged column must not appear (substring `untagged` would match
+    # `untagged` literally, so we check the unique column name).
+    assert "untagged" not in block
+
+
+async def test_existing_kb_tagged_entities_block_threaded_into_setup_prompt(tmp_path):
+    """End-to-end seam (mirrors `test_run_setup_encoder_threads_reverse_deps_into_prompt`):
+    the real `_run_setup_encoder` formats the prompt with a
+    `existing_kb_tagged_entities_block` derived from the supplied storage."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode import setup_encoder
+
+    captured: dict = {}
+
+    class _CapRun:
+        def __init__(self):
+            self._stream = self._stream_impl()
+
+        def _stream_impl(self):
+            if False:
+                yield None
+            return
+
+        def __aiter__(self): return self
+
+        async def __anext__(self): raise StopAsyncIteration
+
+    class _CapCM:
+        def __init__(self, run, deps, instructions):
+            self._run = run
+            self._instructions = instructions
+            self._deps = deps
+
+        async def __aenter__(self):
+            captured["instructions"] = self._instructions
+            return self._run
+
+        async def __aexit__(self, *exc): return False
+
+    class _CapAgent:
+        def iter(self, *, user_prompt, instructions, deps, usage_limits):
+            return _CapCM(_CapRun(), deps, instructions)
+
+    # Storage has a canonical kb=9 entity present (the lower-id sibling that
+    # PEER-KB DEDUP should warn about when KB 37 fires).
+    storage = await _storage_with_tagged_column(
+        tmp_path, model="service_types", col="socsupport", kb_id=9,
+    )
+
+    await setup_encoder._run_setup_encoder(
+        agent=_CapAgent(), kb_id=37, kb_body="KB 37 — Social Assistance",
+        deps_results=[], storage=storage, db=DB,
+        sessions_dir=tmp_path,
+    )
+    instr = captured["instructions"]
+    assert instr is not None
+    assert "socsupport" in instr
+    assert "kb_id=9" in instr

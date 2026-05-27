@@ -591,20 +591,26 @@ async def _run_kb_encoder_default(
     EncoderResults). It is formatted into the encoder prompt's
     `deps_block` so the encoder can reference dep entity_refs in
     R-RESOLVE-style formulas instead of re-encoding them."""
+    storage_for_blocks = getattr(ctx.deps.shared, "_slayer_storage", None)
+    db_name = ctx.deps.shared.db_name
     deps_block = await _format_deps_block(
-        deps_map,
-        getattr(ctx.deps.shared, "_slayer_storage", None),
-        ctx.deps.shared.db_name,
+        deps_map, storage_for_blocks, db_name,
+    )
+    existing_kb_tagged_entities_block = (
+        await _format_existing_kb_tagged_entities_block(
+            storage_for_blocks, db_name,
+        )
     )
     # DEV-1454: feed the memory's `learning` body verbatim (knowledge +
     # verbatim KB block) — no YAML re-parse round-trip.
     kb_body = row.get("_learning") if isinstance(row, dict) else str(row)
     prompt = KB_ENCODER_PROMPT.format(
-        db_name=ctx.deps.shared.db_name,
+        db_name=db_name,
         kb_id=kb_id,
         kb_row_yaml=kb_body or "",
         deps_block=deps_block,
         budget=ctx.deps.shared.status.remaining_budget,
+        existing_kb_tagged_entities_block=existing_kb_tagged_entities_block,
     )
 
     # Pre-reserve the kb_encoder record slot so the trajectory's
@@ -733,6 +739,80 @@ async def _live_tagged_entities(
                 if _meta_has_kb_id(getattr(item, "meta", None), kb_id):
                     out.append((f"{db}.{name}.{item.name}", kind))
     return out
+
+
+async def _format_existing_kb_tagged_entities_block(
+    storage: Any, db: str,
+) -> str:
+    """DEV-1478 PEER-KB DEDUP support: render every ``meta.kb_id``-tagged
+    Column / ModelMeasure / Aggregation currently in storage for ``db`` as
+    one line per entity, sorted ascending by ``kb_id``. The setup encoder
+    runner threads this into ``SETUP_ENCODER_PROMPT`` so the agent can
+    pattern-match its current KB against the canonical (lower-id) entities
+    that already encode the same schema fact and DEFER as a duplicate.
+
+    Returns ``"(none)"`` when no tagged entities exist yet (e.g. the first
+    KB in the topo order). Best-effort — a storage hiccup yields
+    ``"(none)"`` rather than propagating; this block is an advisory hint,
+    not a correctness gate."""
+    rows: list[tuple[int, str]] = []
+    if storage is None:
+        return "(none)"
+    try:
+        names = await storage.list_models(data_source=db)
+    except Exception:  # noqa: BLE001 — best-effort
+        return "(none)"
+    for name in names:
+        try:
+            model = await storage.get_model(name, data_source=db)
+        except Exception:  # noqa: BLE001
+            try:
+                # YAMLStorage.get_model accepts positional name; absent
+                # data_source kwarg → retry with positional only.
+                model = await storage.get_model(name)
+            except Exception:  # noqa: BLE001
+                continue
+        if model is None:
+            continue
+        model_meta = getattr(model, "meta", None)
+        model_kb = _meta_kb_id(model_meta)
+        if model_kb is not None:
+            rows.append((
+                model_kb,
+                f"  - {db}.{name} (model) -> kb_id={model_kb}",
+            ))
+        for kind, items in (
+            ("column", getattr(model, "columns", None)),
+            ("measure", getattr(model, "measures", None)),
+            ("aggregation", getattr(model, "aggregations", None)),
+        ):
+            for item in items or []:
+                item_kb = _meta_kb_id(getattr(item, "meta", None))
+                if item_kb is None:
+                    continue
+                rows.append((
+                    item_kb,
+                    f"  - {db}.{name}.{item.name} ({kind}) -> kb_id={item_kb}",
+                ))
+    if not rows:
+        return "(none)"
+    rows.sort(key=lambda r: r[0])
+    return "\n".join(line for _, line in rows)
+
+
+def _meta_kb_id(meta: Any) -> int | None:
+    """Extract a non-null ``kb_id`` from a meta dict, returning ``None`` for
+    untagged or malformed entries. Tolerant of meta=None, kb_id=None, or a
+    non-int kb_id (treated as untagged)."""
+    if not isinstance(meta, dict):
+        return None
+    kb = meta.get("kb_id")
+    if kb is None:
+        return None
+    try:
+        return int(kb)
+    except (TypeError, ValueError):
+        return None
 
 
 async def _format_deps_block(

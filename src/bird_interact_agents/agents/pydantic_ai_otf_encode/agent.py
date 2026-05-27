@@ -21,11 +21,14 @@ recursive adapter so the parity tests pass.
 from __future__ import annotations
 
 import logging
+import re
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
 
+import sqlglot
+from sqlglot import expressions as sqlglot_exp
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy.exc import SQLAlchemyError
@@ -308,6 +311,289 @@ async def _collect_validation_problems(
     return problems
 
 
+# ---------------------------------------------------------------------------
+# DEV-1478: literal-existence validation. Catches the broken-predicate
+# failure mode where the agent emits `<col> = '<literal>'` / `<col> IN (...)`
+# whose literals never occur in the column's stored distinct values
+# (Column.sampled_values, falling back to Column.sampled text).
+# ---------------------------------------------------------------------------
+
+
+# Wrapper functions whose argument is the "bare column" for literal-check
+# purposes (the encoder STYLE_GUIDE forces LOWER(TRIM(...))). Add new
+# wrappers conservatively — wrappers that ALTER the value (e.g. SUBSTR,
+# CAST to a different type) MUST NOT be peeled.
+_PEELABLE_WRAPPERS = (
+    sqlglot_exp.Lower, sqlglot_exp.Upper, sqlglot_exp.Trim,
+)
+
+# Patterns that disqualify a comma-joined `sampled` string from naive
+# split-on-`, ` — when a value contains commas (e.g. `R$ 1,000-3,000`) the
+# naive split produces fragments that would false-positive an exact match
+# against the real value. Detect "<digit>,<3 digits>" anywhere in the
+# string and skip the check (DEV-1478 Codex IMPORTANT 1).
+_COMMA_IN_VALUE_PATTERN = re.compile(r"\d,\d{3}")
+
+# Overflow / range patterns in the `sampled` text — when present, the
+# structured list isn't available so the literal-existence check skips.
+_OVERFLOW_PATTERN = re.compile(r"^>\s*\d+\s*distinct\b", re.IGNORECASE)
+_RANGE_PATTERN = re.compile(r"\.\.")  # "min .. max"
+
+
+def _peel_wrapper(node: Any) -> Any:
+    """Peel safe text-normalising wrappers (LOWER/UPPER/TRIM, possibly
+    nested) until a non-wrapper expression is reached. Returns the bare
+    inner node — typically a `Column`, but may be anything if the
+    expression isn't a simple wrapper-around-column form."""
+    cur = node
+    while isinstance(cur, _PEELABLE_WRAPPERS):
+        cur = cur.this
+    return cur
+
+
+def _column_ref(node: Any) -> tuple[str | None, str] | None:
+    """If ``node`` is a `Column` (post-peeling), return
+    ``(alias_or_none, column_name)``. Else None.
+
+    sqlglot's `Column` has `.this` (the column name) and `.table` (the
+    alias / table-qualifier, or None for a bare column reference).
+    """
+    if not isinstance(node, sqlglot_exp.Column):
+        return None
+    name = node.this.name if hasattr(node.this, "name") else str(node.this)
+    table = node.table or None
+    return (table or None, name)
+
+
+async def _resolve_column_via_host(
+    host: Any, storage: Any, host_model_name: str,
+    alias: str | None, col_name: str,
+) -> Any:
+    """Resolve a column reference to a SLayer Column object (best-effort):
+
+      a. Bare column name → look up on the pre-fetched host model.
+      b. ``<alias>.<col>`` where ``<alias>`` matches the host's own name →
+         same as (a).
+      c. ``<alias>.<col>`` where ``<alias>`` matches one of the host's
+         ``joins[*].target_model`` → load the target via storage and look
+         up ``<col>`` there.
+      d. Multi-hop ``<path>__<alias>.<col>`` is OUT of scope; returns None.
+
+    Returns None on any failure; caller treats None as "skip silently"
+    (no false-positive). ``host`` is the pre-resolved host SlayerModel —
+    the caller fetches it once at the top of the walk so cross-table
+    references don't trigger redundant ``storage.get_model`` calls (which
+    inflate test counts on agent-side validation tests).
+    """
+    if host is None:
+        return None
+    # Same-host (bare or `<host>.<col>`).
+    if alias is None or alias == host_model_name:
+        for c in getattr(host, "columns", None) or []:
+            if c.name == col_name:
+                return c
+        return None
+    # Joined model (`<target_model>.<col>`).
+    for join in getattr(host, "joins", None) or []:
+        if getattr(join, "target_model", None) == alias:
+            if storage is None:
+                return None
+            try:
+                target = await storage.get_model(alias)
+            except Exception:  # noqa: BLE001
+                return None
+            if target is None:
+                return None
+            for c in getattr(target, "columns", None) or []:
+                if c.name == col_name:
+                    return c
+            return None
+    return None
+
+
+def _sampled_set(col: Any) -> list[str] | None:
+    """Return the set of known distinct values for ``col`` as a list, or
+    None if the check should be skipped.
+
+    Preference order (per plan §C.1):
+      * ``Column.sampled_values`` (DEV-1480 structured field) — used
+        directly (including `[]` for the "zero distinct" case).
+      * ``Column.sampled`` text — fallback for older SLayer. Skip if:
+        - None / empty;
+        - Matches the overflow marker (``> N distinct``);
+        - Matches the numeric/temporal range form (``a .. b``);
+        - Contains a ``<digit>,<3 digits>`` substring (values likely
+          contain commas — naive split would false-positive).
+      * Otherwise split on ``", "``.
+    """
+    structured = getattr(col, "sampled_values", None)
+    if structured is not None:
+        return list(structured)
+    sampled = getattr(col, "sampled", None)
+    if not sampled:
+        return None
+    if _OVERFLOW_PATTERN.search(sampled):
+        return None
+    if _RANGE_PATTERN.search(sampled):
+        return None
+    if _COMMA_IN_VALUE_PATTERN.search(sampled):
+        # Conservative skip — naive split would mis-fragment values that
+        # contain commas (e.g. "R$ 1,000-3,000"). DEV-1480 fixes this
+        # upstream by adding Column.sampled_values.
+        return None
+    return [v.strip() for v in sampled.split(",")]
+
+
+def _string_literals_under(eq_or_in: Any) -> list[str]:
+    """Extract string literals from an EQ or In expression's RHS. For EQ:
+    one literal (or none if not a string). For In: every Literal in
+    ``expressions`` that is a string. Non-string literals (numeric, etc.)
+    are out of scope — only string literals are checked."""
+    out: list[str] = []
+    if isinstance(eq_or_in, sqlglot_exp.EQ):
+        rhs = eq_or_in.expression
+        if isinstance(rhs, sqlglot_exp.Literal) and rhs.is_string:
+            out.append(rhs.this)
+    elif isinstance(eq_or_in, sqlglot_exp.In):
+        for e in eq_or_in.expressions or []:
+            if isinstance(e, sqlglot_exp.Literal) and e.is_string:
+                out.append(e.this)
+    return out
+
+
+def _iter_target_sqls(name: str, tool_args: dict) -> list[str]:
+    """Every SQL string the literal walker should scan from a proposed
+    edit_model / create_model payload."""
+    out: list[str] = []
+    if name == "edit_model":
+        for c in tool_args.get("columns") or []:
+            if isinstance(c, dict):
+                if c.get("sql"):
+                    out.append(str(c["sql"]))
+                if c.get("filter"):
+                    out.append(str(c["filter"]))
+        for m in tool_args.get("measures") or []:
+            if isinstance(m, dict) and m.get("formula"):
+                out.append(str(m["formula"]))
+    elif name == "create_model":
+        for c in tool_args.get("columns") or []:
+            if isinstance(c, dict):
+                if c.get("sql"):
+                    out.append(str(c["sql"]))
+                if c.get("filter"):
+                    out.append(str(c["filter"]))
+        for m in tool_args.get("measures") or []:
+            if isinstance(m, dict) and m.get("formula"):
+                out.append(str(m["formula"]))
+    return out
+
+
+def _host_model_name(name: str, tool_args: dict) -> str | None:
+    """The host model the proposed entity will live on. For edit_model
+    it's ``model_name``; for create_model it's the new model's ``name``
+    (so cross-table refs in its columns resolve via joins on that name
+    if it exists)."""
+    if name == "edit_model":
+        return tool_args.get("model_name")
+    if name == "create_model":
+        return tool_args.get("name")
+    return None
+
+
+async def _collect_literal_problems(
+    name: str, tool_args: dict, *, storage: Any, db: str = "",
+) -> list[str]:
+    """DEV-1478: walk every SQL string in the proposed write, find
+    ``<col> = 'literal'`` and ``<col> IN ('a', 'b', ...)`` patterns
+    (peeling LOWER/UPPER/TRIM wrappers), and check membership against
+    the column's stored distinct values. Returns one problem string per
+    column-with-misses, listing the bad literals and the full known set.
+
+    Best-effort: parse failures, unresolvable column references, and
+    sampled-set absence all yield NO problem (skip silently). This
+    matches plan §C: never false-positive.
+
+    The ``db`` arg is accepted for symmetry with
+    ``_collect_validation_problems`` but the literal walker does not use
+    it — host lookup is by name only, since ``storage.get_model`` is the
+    sole datasource scope at this point (a single MCP server / storage
+    dir per task)."""
+    del db  # unused
+    problems: list[str] = []
+    host_name = _host_model_name(name, tool_args)
+    if not host_name or storage is None:
+        return problems
+
+    sqls = _iter_target_sqls(name, tool_args)
+    if not sqls:
+        return problems
+
+    # Resolve the host model ONCE up front (saves a `storage.get_model`
+    # round-trip per literal check, and keeps the existing agent-side test
+    # `test_write_gate_resolves_datasource_via_storage_fallback` from
+    # counting redundant calls).
+    try:
+        host = await storage.get_model(host_name)
+    except Exception:  # noqa: BLE001 — best-effort
+        return problems
+    if host is None:
+        return problems
+
+    for sql in sqls:
+        try:
+            tree = sqlglot.parse_one(sql, dialect="sqlite")
+        except Exception:  # noqa: BLE001 — unparseable is the existing gate's job
+            continue
+        if tree is None:
+            continue
+        # Walk every EQ / In expression in the tree.
+        for node in tree.walk():
+            if not isinstance(node, (sqlglot_exp.EQ, sqlglot_exp.In)):
+                continue
+            lhs_peeled = _peel_wrapper(node.this)
+            ref = _column_ref(lhs_peeled)
+            if ref is None:
+                continue
+            alias, col_name = ref
+            literals = _string_literals_under(node)
+            if not literals:
+                continue
+            col = await _resolve_column_via_host(
+                host, storage, host_name, alias, col_name,
+            )
+            if col is None:
+                continue
+            known = _sampled_set(col)
+            if known is None:
+                continue
+            # All-NULL column: every literal misses, emit a strong defer hint.
+            if not known:
+                literals_str = ", ".join(f"'{lit}'" for lit in literals)
+                qualified = f"{alias}.{col_name}" if alias else col_name
+                problems.append(
+                    f"column {qualified}: literal(s) {literals_str} cannot "
+                    f"match because the column has no values (all NULL / "
+                    f"empty). DEFER this KB and cite the empty column."
+                )
+                continue
+            known_lc = {k.casefold() for k in known}
+            misses = [
+                lit for lit in literals if lit.casefold() not in known_lc
+            ]
+            if not misses:
+                continue
+            qualified = f"{alias}.{col_name}" if alias else col_name
+            misses_str = ", ".join(f"'{m}'" for m in misses)
+            known_str = ", ".join(f"'{v}'" for v in known)
+            problems.append(
+                f"column {qualified}: literal(s) {misses_str} do not occur "
+                f"in this column's sampled distinct values. Known values: "
+                f"{known_str}. Pick one that exists, or DEFER this KB with "
+                f"notes citing the failing literal(s) and the known set."
+            )
+    return problems
+
+
 async def _validate_and_call(
     call_tool, name: str, tool_args: dict, *, storage: Any, engine: Any,
 ):
@@ -317,18 +603,37 @@ async def _validate_and_call(
     SQL) BEFORE persisting. On failure the real write is NOT called — the error
     is returned so the agent self-corrects on its next turn; nothing invalid is
     ever saved. An unexpected harness error fails OPEN (the write proceeds) so a
-    bug here never blocks valid work."""
+    bug here never blocks valid work.
+
+    DEV-1478: also runs the literal-existence check via
+    ``_collect_literal_problems`` — string literals in ``=`` / ``IN``
+    predicates that don't occur in the column's sampled distinct values
+    are rejected with a feedback string that lists the valid values. SQL
+    and literal feedback are combined into ONE tool result so the agent
+    sees the full picture in a single turn."""
     if name not in _WRITE_TOOLS:
         return await call_tool(name, tool_args, None)
+    args = tool_args or {}
     try:
-        problems = await _collect_validation_problems(
-            name, tool_args or {}, storage=storage, engine=engine,
+        sql_problems = await _collect_validation_problems(
+            name, args, storage=storage, engine=engine,
         )
     except Exception:  # noqa: BLE001 — harness bug must never block a write
         logger.exception(
             "validate-before-persist harness error; allowing write %s", name,
         )
         return await call_tool(name, tool_args, None)
+    try:
+        literal_problems = await _collect_literal_problems(
+            name, args, storage=storage,
+        )
+    except Exception:  # noqa: BLE001 — literal-collector bug must also fail OPEN
+        logger.exception(
+            "literal-existence validation harness error; allowing write %s",
+            name,
+        )
+        return await call_tool(name, tool_args, None)
+    problems = list(sql_problems) + list(literal_problems)
     if problems:
         return _validation_feedback(name, problems)
     return await call_tool(name, tool_args, None)

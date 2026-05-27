@@ -937,3 +937,82 @@ async def test_encoder_ask_user_draws_from_shared_budget_pool(tmp_path):
     assert shared.status.remaining_budget == pytest.approx(
         initial_budget - ACTION_COSTS["ask_user"],
     )
+
+
+# ---------------------------------------------------------------------------
+# DEV-1478: PEER-KB DEDUP — `_run_kb_encoder_default` must compute the
+# existing-kb-tagged-entities block from storage and thread it into the
+# formatted `KB_ENCODER_PROMPT`. Mirrors
+# `test_run_setup_encoder_threads_reverse_deps_into_prompt` in shape, but
+# targets the task-time runner.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_kb_encoder_threads_existing_kb_tagged_entities_block_into_prompt(
+    tmp_path, monkeypatch,
+):
+    """Storage has a Column tagged `meta.kb_id=9` on `service_types.socsupport`.
+    When `_run_kb_encoder_default` fires for a different KB, the formatted
+    `KB_ENCODER_PROMPT` it builds MUST include a peer-block naming that
+    canonical entity — that's the PEER-KB DEDUP signal the agent reads."""
+    from slayer.core.models import Column, DatasourceConfig, SlayerModel
+    from slayer.storage.yaml_storage import YAMLStorage
+
+    from bird_interact_agents import usage as usage_mod
+    from bird_interact_agents.agents.pydantic_ai_otf_encode import factories
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+        EncoderResult,
+    )
+
+    monkeypatch.setattr(usage_mod, "_cost_per_token", lambda **_: (0.0, 0.0))
+
+    # Real storage with a canonical kb=9 tagged column.
+    _write_storage(tmp_path, rows=[_kb(37)])
+    real_storage = YAMLStorage(base_dir=str(tmp_path))
+    await real_storage.save_datasource(DatasourceConfig(
+        name=DB, type="sqlite", connection_string="sqlite:///x.sqlite",
+    ))
+    await real_storage.save_model(SlayerModel(
+        name="service_types", data_source=DB, sql_table="service_types",
+        columns=[
+            Column(name="serviceref", primary_key=True),
+            Column(name="socsupport", sql="socsupport", meta={"kb_id": 9}),
+        ],
+    ))
+
+    shared = _shared(tmp_path)
+    shared._slayer_storage = real_storage
+
+    captured: dict[str, Any] = {}
+
+    class _CapAgent:
+        async def run(self, *args, **kwargs):
+            from types import SimpleNamespace
+            captured["instructions"] = kwargs.get("instructions")
+            return SimpleNamespace(
+                output=EncoderResult(
+                    kb_id=37, status="encoded", entities=[], notes="",
+                ),
+                usage=lambda: SimpleNamespace(
+                    input_tokens=0, output_tokens=0,
+                    cache_read_tokens=0, cache_write_tokens=0,
+                ),
+                all_messages=lambda: [],
+            )
+
+    monkeypatch.setattr(
+        factories, "_build_kb_encoder", lambda **kw: _CapAgent(),
+    )
+
+    deps = _deps(shared)
+    await factories._run_kb_encoder_default(
+        kb_id=37, row={"_learning": "KB 37 — Social Assistance"},
+        deps_map=[], ctx=_ctx(deps), model="test",
+        model_settings=None, shared_slayer_server=None,
+        self_model_id="test",
+    )
+    instr = captured["instructions"]
+    assert instr is not None
+    assert "socsupport" in instr
+    assert "kb_id=9" in instr

@@ -169,6 +169,64 @@ and `<main-checkout>/slayer_models_otf/<db>/_reference_fp.txt` reappears
 with the cloud-built fingerprint and content. Per-run merge audit lives at
 `<results>/cloud/<run-id>/merge_report.json`.
 
+## DEV-1478 smoke: OTF encoder vs hand-audited reference (`households`)
+
+After landing the DEV-1478 prompt + validator fixes (style guide, peer-KB
+dedup block, defensive defer, literal-existence pre-save check), this
+smoke validates that the seven failure modes from the audit no longer
+silently slip through. Manual, **Opus encoder / Sonnet user-sim** (haiku
+was too weak to repro the original failures or distinguish the fix).
+
+```bash
+# 1. Nuke local artefacts for households so the reference rebuilds from
+# scratch under the new prompts + validator.
+rm -rf /path/to/main-checkout/slayer_models_otf/households
+rm -rf /path/to/main-checkout/slayer_otf_cache/households
+
+# 2. Build the deterministic cache locally (no LLMs, fast).
+env -u SSH_AUTH_SOCK uv run python -c "
+import asyncio
+from bird_interact_agents.slayer_otf.cache import ensure_db_cache
+from bird_interact_agents import paths
+asyncio.run(ensure_db_cache('households',
+    cache_root=paths.slayer_otf_cache_root(),
+    mini_interact_root=paths.mini_interact_root(), force=False))
+"
+
+# 3. Submit otf_encode — Opus encoder, Sonnet user-sim, households only.
+env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
+  --framework pydantic_ai_otf_encode --query-mode slayer \
+  --agent-model anthropic/claude-opus-4-7 \
+  --user-sim-model anthropic/claude-sonnet-4-6 \
+  --mode a-interact --slayer-setup on-the-fly \
+  --instance-ids households_1 \
+  --workers 1 --actors-per-worker 1 \
+  --worker-type e2-standard-4 --max-runtime-hours 2 --detach
+
+# 4. Wait via driver.wait_until_done (see note above), then:
+env -u SSH_AUTH_SOCK uv run bird-interact-cloud fetch <run-id>
+```
+
+Eyeball assertions on the fetched `slayer_models_otf/households/` and
+`_setup_results.json` (failures here are signals, not test-suite gates —
+the user-sim is stochastic):
+
+- **KB 13 / 20 / 29 chain**: at least KB 13 is `encoded` OR `deferred`
+  with a citation in `clarifying_questions`/`notes` (not silently absent).
+  If KB 13 is `encoded`, KB 20 should follow.
+- **KB 21 / 42 (broken-predicate regression target)**: either `deferred`
+  with notes naming the failing literal (e.g. `'High Income'`) and the
+  validator's known sampled list, OR `encoded` with a CASE/mapping whose
+  literals DO occur in the column. Never silently-broken.
+- **KB 9 vs KB 37**: exactly one of them encodes a Column tagged
+  `meta.kb_id` on `service_types.socsupport`. The other defers with
+  notes "duplicate of KB <other>".
+- **Sampled-value caveats**: opportunistic — for a random sample of
+  value-illustration KBs (1, 6, 7, 8, 10), check whether the encoder's
+  `description` text or its deferral notes reference the real sampled
+  values seen in storage (forced indirectly by the validator's feedback
+  surface when literal-existence rejects a write).
+
 ## Debugging the cloud runner: pull live state, don't guess
 
 When a `bird-interact-cloud` run fails on GCE, **do not iterate by editing
