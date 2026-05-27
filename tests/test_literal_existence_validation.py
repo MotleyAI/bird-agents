@@ -446,6 +446,46 @@ async def test_create_model_multistage_query_stages_each_resolve_per_source(tmp_
     assert "'gamma'" in joined
 
 
+async def test_create_model_query_stage_string_measures_are_scanned(tmp_path):
+    """Codex finding J (PR #4 third-pass): SlayerQuery `measures` accepts
+    BOTH dict form `{"formula": "..."}` AND bare-string form like
+    `"col:sum"` or `"CASE WHEN col = 'x' THEN 1 ELSE 0 END:sum"`. The
+    string form must be walked too — otherwise literal-bearing measures
+    inside `create_model(query=[...])` stages slip through."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    storage = await _new_storage(tmp_path)
+    await _add_model(storage, name="src", columns=[
+        Column(name="id", primary_key=True),
+        _col("status", sampled_values=["good", "bad"]),
+    ])
+
+    args = {
+        "name": "agg",
+        "data_source": DB,
+        "query": {
+            "source_model": "src",
+            "dimensions": [{"name": "id"}],
+            # measures here is a list of strings, not dicts — the agent's
+            # bare-formula shape.
+            "measures": [
+                "CASE WHEN status = 'maybe' THEN 1 ELSE 0 END:sum",
+            ],
+            "limit": 0,
+        },
+    }
+    problems = await _collect_literal_problems(
+        "create_model", args, storage=storage, db=DB,
+    )
+    assert len(problems) == 1, (
+        f"string-shaped query-stage measure must be walked. got: "
+        f"{problems!r}"
+    )
+    assert "'maybe'" in problems[0]
+
+
 async def test_create_model_query_stage_dimension_filter_is_scanned(tmp_path):
     """A dimension-level `filter` clause inside a query stage carries the
     same literal-existence risk as the top-level `filters` list."""
@@ -743,10 +783,14 @@ async def test_sampled_numeric_or_date_range_skip(tmp_path, sampled):
     ) == []
 
 
-async def test_sampled_text_naive_split_when_no_embedded_commas(tmp_path):
-    """Older SLayer (no sampled_values yet): falls back to splitting the
-    comma-joined `sampled` text on `, `. Safe when none of the values
-    contain commas."""
+async def test_sampled_text_only_skips_membership_check(tmp_path):
+    """Codex PR #4 finding L: when `Column.sampled_values` is None and
+    only the human-readable `Column.sampled` text is present (older
+    SLayer / not-yet-profiled column), the validator MUST skip the
+    membership check. Naive comma-split would produce false positives on
+    any value containing a comma (R$ ranges, "Springfield, IL", etc.) —
+    violating the no-false-positive contract. DEV-1480 will ship
+    `sampled_values` and make the check effective without this risk."""
     from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
         _collect_literal_problems,
     )
@@ -754,58 +798,55 @@ async def test_sampled_text_naive_split_when_no_embedded_commas(tmp_path):
     storage = await _new_storage(tmp_path)
     await _add_model(storage, name="m", columns=[
         Column(name="id", primary_key=True),
-        _col("col", sampled="alpha, beta, gamma"),
+        _col("col", sampled="alpha, beta, gamma"),  # NO sampled_values
     ])
 
-    # Hit
+    # Agent writes a literal that ISN'T in the sampled text — but we skip
+    # the check anyway because the parse is unsafe. No false-positive.
     args = _edit_args("m", columns=[
-        {"name": "x", "sql": "col = 'beta'", "type": "boolean"},
-    ])
-    assert await _collect_literal_problems(
-        "edit_model", args, storage=storage, db=DB,
-    ) == []
-
-    # Miss
-    args2 = _edit_args("m", columns=[
         {"name": "x", "sql": "col = 'delta'", "type": "boolean"},
     ])
     problems = await _collect_literal_problems(
-        "edit_model", args2, storage=storage, db=DB,
+        "edit_model", args, storage=storage, db=DB,
     )
-    assert len(problems) == 1
-    assert "'delta'" in problems[0]
+    assert problems == []
 
 
-async def test_sampled_text_conservative_skip_when_values_contain_commas(tmp_path):
-    """Codex IMPORTANT 1: when the `sampled` text contains a digit-comma-digit
-    pattern (likely values-with-commas e.g. 'R$ 1,000-3,000'), the validator
-    MUST skip rather than naive-split (which would produce false positives
-    against the fragments). Catches the exact KB 21/42 fallback case before
-    SLayer ships `sampled_values`."""
+@pytest.mark.parametrize("sampled", [
+    "R$ 1,000-3,000, R$ 3,000-6,000",   # numeric thousands-separator commas
+    "Springfield, IL, Boston, MA",       # city/state non-numeric commas
+    "Lastname, Firstname; OtherName",    # general embedded commas
+])
+async def test_sampled_text_only_never_false_positives_on_comma_values(
+    tmp_path, sampled,
+):
+    """Codex finding L (specific): a real value containing commas in
+    the human-readable `sampled` text MUST NOT trigger a false-positive
+    rejection when the agent's literal matches a real value verbatim.
+    The fix is total: skip whenever `sampled_values` is unavailable."""
     from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
         _collect_literal_problems,
     )
 
-    sampled = "R$ 1,000-3,000, R$ 3,000-6,000, R$ 6,000-10,000"
     storage = await _new_storage(tmp_path)
     await _add_model(storage, name="m", columns=[
         Column(name="id", primary_key=True),
         _col("col", sampled=sampled),
     ])
 
-    # The agent writes an exact-match against a REAL sampled value — naive
-    # split would mis-fragment and falsely flag this. The conservative
-    # fallback must skip the check entirely.
+    # Pick the first real value from the sampled text; the agent's
+    # predicate exactly matches it. The validator must NOT flag this.
+    real_value = sampled.split(",", 1)[0].strip()
     args = _edit_args("m", columns=[
         {"name": "x", "type": "boolean",
-         "sql": "col = 'R$ 1,000-3,000'"},
+         "sql": f"col = '{real_value}'"},
     ])
     problems = await _collect_literal_problems(
         "edit_model", args, storage=storage, db=DB,
     )
     assert problems == [], (
-        f"naive comma split must NOT false-positive a real value containing "
-        f"commas; conservative-fallback should skip. got: {problems!r}"
+        f"validator must skip when sampled_values is unavailable, even "
+        f"for sampled text containing comma-bearing values. got: {problems!r}"
     )
 
 
@@ -836,6 +877,96 @@ async def test_sampled_values_empty_list_flags_every_literal(tmp_path):
 # ---------------------------------------------------------------------------
 # Patterns the walker should NOT pretend to handle.
 # ---------------------------------------------------------------------------
+
+
+async def test_storage_get_model_calls_are_scoped_to_data_source(tmp_path):
+    """Codex finding K (PR #4 third-pass): `storage.get_model` calls
+    must scope by the proposed write's `data_source` so a same-named
+    model in another datasource (YAMLStorage's priority resolution)
+    doesn't shadow the right one. Verify by recording every call and
+    asserting `data_source=<DB>` was passed."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    calls: list[dict[str, Any]] = []
+
+    class _RecordingStorage:
+        def __init__(self, real: _FakeStorage):
+            self._real = real
+
+        async def get_model(self, name, data_source=None):
+            calls.append({"name": name, "data_source": data_source})
+            return await self._real.get_model(name, data_source=data_source)
+
+        async def list_models(self, data_source=None):
+            return await self._real.list_models(data_source=data_source)
+
+    real = await _new_storage(tmp_path)
+    await _add_model(real, name="m", columns=[
+        Column(name="id", primary_key=True),
+        _col("col", sampled_values=["yes", "no"]),
+    ])
+    recording = _RecordingStorage(real)
+
+    args = _edit_args("m", columns=[
+        {"name": "x", "sql": "col = 'maybe'", "type": "boolean"},
+    ])
+    await _collect_literal_problems(
+        "edit_model", args, storage=recording, db=DB,
+    )
+    assert calls, "the validator must consult storage for the host model"
+    # Every consult must carry `data_source=DB` (from tool_args).
+    for c in calls:
+        assert c["data_source"] == DB, (
+            f"unscoped get_model call leaked into the validator: {c}"
+        )
+
+
+async def test_storage_get_model_unscoped_fallback_when_data_source_missing(
+    tmp_path,
+):
+    """When `tool_args` omits `data_source` (the corner case the existing
+    `test_write_gate_resolves_datasource_via_storage_fallback` pins),
+    the validator falls back to an unscoped `get_model(name)` call —
+    preserves backward compatibility with the SQL gate's fallback path."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _collect_literal_problems,
+    )
+
+    calls: list[dict[str, Any]] = []
+
+    class _RecordingStorage:
+        def __init__(self, real: _FakeStorage):
+            self._real = real
+
+        async def get_model(self, name, data_source=None):
+            calls.append({"name": name, "data_source": data_source})
+            return await self._real.get_model(name, data_source=data_source)
+
+        async def list_models(self, data_source=None):
+            return await self._real.list_models(data_source=data_source)
+
+    real = await _new_storage(tmp_path)
+    await _add_model(real, name="m", columns=[
+        Column(name="id", primary_key=True),
+        _col("col", sampled_values=["yes", "no"]),
+    ])
+    recording = _RecordingStorage(real)
+
+    # No data_source in args — matches the existing fallback test setup.
+    args = {"model_name": "m", "columns": [
+        {"name": "x", "sql": "col = 'maybe'", "type": "boolean"},
+    ]}
+    await _collect_literal_problems(
+        "edit_model", args, storage=recording,
+    )
+    assert calls
+    for c in calls:
+        assert c["data_source"] is None, (
+            f"without args data_source, validator should fall back to "
+            f"unscoped lookup; got: {c}"
+        )
 
 
 async def test_unparseable_sql_returns_no_literal_problems(tmp_path):

@@ -327,13 +327,6 @@ _PEELABLE_WRAPPERS = (
     sqlglot_exp.Lower, sqlglot_exp.Upper, sqlglot_exp.Trim,
 )
 
-# Patterns that disqualify a comma-joined `sampled` string from naive
-# split-on-`, ` — when a value contains commas (e.g. `R$ 1,000-3,000`) the
-# naive split produces fragments that would false-positive an exact match
-# against the real value. Detect "<digit>,<3 digits>" anywhere in the
-# string and skip the check (DEV-1478 Codex IMPORTANT 1).
-_COMMA_IN_VALUE_PATTERN = re.compile(r"\d,\d{3}")
-
 # Overflow / range patterns in the `sampled` text — when present, the
 # structured list isn't available so the literal-existence check skips.
 _OVERFLOW_PATTERN = re.compile(r"^>\s*\d+\s*distinct\b", re.IGNORECASE)
@@ -367,7 +360,7 @@ def _column_ref(node: Any) -> tuple[str | None, str] | None:
 
 async def _resolve_column_via_host(
     host: Any, storage: Any, host_model_name: str,
-    alias: str | None, col_name: str,
+    alias: str | None, col_name: str, *, db: str | None = None,
 ) -> Any:
     """Resolve a column reference to a SLayer Column object (best-effort):
 
@@ -375,8 +368,9 @@ async def _resolve_column_via_host(
       b. ``<alias>.<col>`` where ``<alias>`` matches the host's own name →
          same as (a).
       c. ``<alias>.<col>`` where ``<alias>`` matches one of the host's
-         ``joins[*].target_model`` → load the target via storage and look
-         up ``<col>`` there.
+         ``joins[*].target_model`` → load the target via storage (scoped
+         to ``db`` when known so a same-named model in another datasource
+         doesn't shadow the right one) and look up ``<col>`` there.
       d. Multi-hop ``<path>__<alias>.<col>`` is OUT of scope; returns None.
 
     Returns None on any failure; caller treats None as "skip silently"
@@ -387,19 +381,17 @@ async def _resolve_column_via_host(
     """
     if host is None:
         return None
-    # Same-host (bare or `<host>.<col>`).
     if alias is None or alias == host_model_name:
         for c in getattr(host, "columns", None) or []:
             if c.name == col_name:
                 return c
         return None
-    # Joined model (`<target_model>.<col>`).
     for join in getattr(host, "joins", None) or []:
         if getattr(join, "target_model", None) == alias:
             if storage is None:
                 return None
             try:
-                target = await storage.get_model(alias)
+                target = await _get_model_scoped(storage, alias, db)
             except Exception:  # noqa: BLE001
                 return None
             if target is None:
@@ -411,37 +403,41 @@ async def _resolve_column_via_host(
     return None
 
 
+async def _get_model_scoped(storage: Any, name: str, db: str | None) -> Any:
+    """Load a model by name, scoped to ``db`` when known so a same-named
+    model in a different datasource (YAMLStorage's priority resolution)
+    doesn't shadow the intended one. When ``db`` is empty/None, falls
+    back to the unscoped lookup the existing
+    `test_write_gate_resolves_datasource_via_storage_fallback` pins."""
+    if db:
+        try:
+            return await storage.get_model(name, data_source=db)
+        except TypeError:
+            # Older storage signatures without `data_source` kwarg.
+            return await storage.get_model(name)
+    return await storage.get_model(name)
+
+
 def _sampled_set(col: Any) -> list[str] | None:
     """Return the set of known distinct values for ``col`` as a list, or
-    None if the check should be skipped.
+    None if the literal-existence check should be skipped.
 
-    Preference order (per plan §C.1):
-      * ``Column.sampled_values`` (DEV-1480 structured field) — used
-        directly (including `[]` for the "zero distinct" case).
-      * ``Column.sampled`` text — fallback for older SLayer. Skip if:
-        - None / empty;
-        - Matches the overflow marker (``> N distinct``);
-        - Matches the numeric/temporal range form (``a .. b``);
-        - Contains a ``<digit>,<3 digits>`` substring (values likely
-          contain commas — naive split would false-positive).
-      * Otherwise split on ``", "``.
+    Source of truth is ``Column.sampled_values`` (DEV-1480's structured
+    field). When that's present (including ``[]`` for the "zero distinct"
+    case), use it directly.
+
+    When it's absent (older SLayer / not-yet-profiled columns), DO NOT
+    naive-split the human-readable ``Column.sampled`` text — fragments
+    of values that themselves contain commas (e.g. ``"R$ 1,000-3,000"``
+    or ``"Springfield, IL"``) would mis-fragment and produce false
+    positives, violating the validator's no-false-positive contract.
+    Skip the check entirely instead; DEV-1480 ships ``sampled_values``
+    and makes the check effective everywhere. (Codex PR #4 finding L.)
     """
     structured = getattr(col, "sampled_values", None)
     if structured is not None:
         return list(structured)
-    sampled = getattr(col, "sampled", None)
-    if not sampled:
-        return None
-    if _OVERFLOW_PATTERN.search(sampled):
-        return None
-    if _RANGE_PATTERN.search(sampled):
-        return None
-    if _COMMA_IN_VALUE_PATTERN.search(sampled):
-        # Conservative skip — naive split would mis-fragment values that
-        # contain commas (e.g. "R$ 1,000-3,000"). DEV-1480 fixes this
-        # upstream by adding Column.sampled_values.
-        return None
-    return [v.strip() for v in sampled.split(",")]
+    return None
 
 
 def _string_literals_under(eq_or_in: Any) -> list[str]:
@@ -529,8 +525,13 @@ def _iter_query_stage_targets(
             if isinstance(f, str) and f:
                 out.append((f, src))
         for m in stage.get("measures") or []:
+            # SlayerQuery measures accept BOTH dict-form
+            # `{"formula": "..."}` AND bare-string form `"col:sum"` or
+            # `"CASE WHEN col = 'x' THEN 1 ELSE 0 END:sum"`. Walk both.
             if isinstance(m, dict) and m.get("formula"):
                 out.append((str(m["formula"]), src))
+            elif isinstance(m, str) and m:
+                out.append((m, src))
         for d in stage.get("dimensions") or []:
             if isinstance(d, dict) and d.get("filter"):
                 out.append((str(d["filter"]), src))
@@ -623,33 +624,33 @@ async def _collect_literal_problems(
     sampled-set absence all yield NO problem (skip silently). This
     matches plan §C: never false-positive.
 
-    The ``db`` arg is accepted for symmetry with
-    ``_collect_validation_problems`` but the literal walker does not use
-    it — host lookup is by name only, since ``storage.get_model`` is the
-    sole datasource scope at this point (a single MCP server / storage
-    dir per task)."""
-    del db  # unused
+    Codex follow-up: ``db`` is now used. Storage lookups are scoped to
+    the proposed write's ``data_source`` (when in args) so a same-named
+    model in a different datasource doesn't shadow the right one under
+    YAMLStorage's priority resolution. When ``data_source`` is absent
+    from args (the corner case the existing
+    ``test_write_gate_resolves_datasource_via_storage_fallback`` pins),
+    falls back to an unscoped lookup."""
     problems: list[str] = []
     host_name = _host_model_name(name, tool_args)
     if not host_name or storage is None:
         return problems
+
+    # Prefer the proposed write's data_source over the caller-supplied
+    # `db` arg — the agent's contract is to pass data_source on every
+    # write, and that's the authoritative scope for this lookup.
+    args_db = (tool_args or {}).get("data_source")
+    scope_db = str(args_db) if args_db else (db or None)
 
     sqls = _iter_target_sqls(name, tool_args)
     stage_targets = _iter_query_stage_targets(name, tool_args)
     if not sqls and not stage_targets:
         return problems
 
-    # Outer host: resolve the host model the proposed columns/measures
-    # live on (for ``edit_model`` it's in storage; for ``create_model``
-    # the new name doesn't exist yet — synthesize a stand-in from the
-    # payload's own columns so the bare-column walker can still resolve
-    # names — CodeRabbit PR #4 thread 1). One `storage.get_model` round-
-    # trip up front; this also pins the existing agent-side test
-    # `test_write_gate_resolves_datasource_via_storage_fallback`.
     host: Any = None
     if sqls:
         try:
-            host = await storage.get_model(host_name)
+            host = await _get_model_scoped(storage, host_name, scope_db)
         except Exception:  # noqa: BLE001 — best-effort
             host = None
         if host is None and name == "create_model":
@@ -657,38 +658,43 @@ async def _collect_literal_problems(
         if host is not None:
             for sql in sqls:
                 problems.extend(
-                    await _check_sql_literals(sql, host, storage, host_name)
+                    await _check_sql_literals(
+                        sql, host, storage, host_name, db=scope_db,
+                    )
                 )
 
-    # Codex follow-up: query-backed model creation (`create_model(query=[
-    # stage1, stage2, ...])` from R-MULTISTAGE / R-EXISTS) — each stage's
+    # Codex follow-up: query-backed model creation
+    # (`create_model(query=[stage1, stage2, ...])`) — each stage's
     # literals reference columns on the STAGE's `source_model`, not on
-    # the outer create_model's name. Resolve per-stage so the literal
-    # check actually fires against the right model. Independent of the
-    # outer-host loop above (a payload may have query stages but no
-    # top-level columns/measures, and vice versa).
+    # the outer create_model's name. Resolve per-stage and scope to
+    # ``scope_db`` so the right datasource's model wins.
     for sql, src_model in stage_targets:
         stage_host: Any
         try:
-            stage_host = await storage.get_model(src_model)
+            stage_host = await _get_model_scoped(storage, src_model, scope_db)
         except Exception:  # noqa: BLE001 — best-effort
             stage_host = None
         if stage_host is None:
             continue
         problems.extend(
-            await _check_sql_literals(sql, stage_host, storage, src_model)
+            await _check_sql_literals(
+                sql, stage_host, storage, src_model, db=scope_db,
+            )
         )
     return problems
 
 
 async def _check_sql_literals(
     sql: str, host: Any, storage: Any, host_name: str,
+    *, db: str | None = None,
 ) -> list[str]:
     """Walk one SQL string for EQ / IN string-literal predicates and
     return one problem per column whose literals miss the host's sampled
     set. Pure helper extracted from `_collect_literal_problems` so the
     same logic applies to both the outer-entity host AND per-stage hosts
-    in `create_model(query=[...])` payloads.
+    in `create_model(query=[...])` payloads. ``db`` scopes joined-target
+    storage lookups so a same-named model in another datasource doesn't
+    shadow the right one.
 
     Best-effort: parse failures, unresolvable column refs, and missing
     sampled metadata all yield NO problem (skip silently)."""
@@ -711,7 +717,7 @@ async def _check_sql_literals(
         if not literals:
             continue
         col = await _resolve_column_via_host(
-            host, storage, host_name, alias, col_name,
+            host, storage, host_name, alias, col_name, db=db,
         )
         if col is None:
             continue
