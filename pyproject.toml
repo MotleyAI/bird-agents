@@ -13,6 +13,11 @@ dependencies = [
     "pydantic-settings>=2.2",
     "litellm>=1.0",
     "anthropic>=0.40",
+    # DEV-1478: agent.py imports sqlglot at module load for the literal-
+    # existence pre-save validator. Also used by sar_audit/compare.py. A
+    # runtime install of the `pydantic-ai` / `slayer` extras MUST resolve
+    # `import bird_interact_agents...` without dev extras present.
+    "sqlglot",
 ]
 
 [project.optional-dependencies]
@@ -24,7 +29,7 @@ pydantic-ai = [
 smolagents = ["smolagents>=1.0"]
 agno = ["agno>=2.0"]
 mcp-agent = ["mcp-agent>=0.0.16"]
-slayer = ["motley-slayer[embedding-search]>=0.6.9"]
+slayer = ["motley-slayer[embedding-search]>=0.6.10"]
 # `original` brings in the upstream BIRD-Interact mini_interact_agent harness
 # so we can call its main.py directly via `uv run python -m batch_run_bird_interact.main`.
 original = ["mini-interact-agent"]
@@ -40,7 +45,7 @@ all = [
     "smolagents>=1.0",
     "agno>=2.0",
     "mcp-agent>=0.0.16",
-    "motley-slayer[embedding-search]>=0.6.9",
+    "motley-slayer[embedding-search]>=0.6.10",
     "mini-interact-agent",
     "ray[default]>=2.30",
     "google-cloud-storage>=2.18",
@@ -50,7 +55,6 @@ all = [
 dev = [
     "pytest",
     "pytest-asyncio",
-    "sqlglot",  # used by scripts/verify_audited_gold.py + SAR-audit comparison
     "openai",   # used by SAR-audit tests' OpenAI-not-instantiated guard
 ]
 

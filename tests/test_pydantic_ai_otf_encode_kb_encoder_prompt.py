@@ -18,8 +18,6 @@ These are mechanical contracts, not phrasing contracts.
 
 from __future__ import annotations
 
-import re
-
 import yaml
 
 
@@ -35,6 +33,7 @@ def _format_args():
         ),
         deps_block="(none)",
         budget=100.0,
+        existing_kb_tagged_entities_block="(none)",
     )
 
 
@@ -146,6 +145,7 @@ def _setup_format_args():
         kb_body="KB 6 — Dwelling Type\n\nKB item (verbatim):\nid: 6",
         deps_block="(none)",
         reverse_deps_block="(none)",
+        existing_kb_tagged_entities_block="(none)",
     )
 
 
@@ -207,3 +207,83 @@ def test_setup_prompt_includes_deps_block_when_supplied():
     )
     out = SETUP_ENCODER_PROMPT.format(**args)
     assert "water_access_score" in out
+
+
+# ---------------------------------------------------------------------------
+# DEV-1478: existing_kb_tagged_entities_block placeholder on both prompts.
+#
+# Mechanical contract only — `feedback_no_prompt_content_tests.md` prohibits
+# asserting on the prompt's natural-language content. We verify that:
+#   * the placeholder exists in each template (so the format(...) call site
+#     can pass it without a `KeyError`);
+#   * a supplied non-empty value is substituted verbatim into the rendered
+#     prompt (so the agent literally sees the peer-KB list);
+#   * the existing format-arg coverage / no-leftover-braces invariant holds
+#     after adding the new placeholder.
+# Per the policy, we do NOT pin STYLE_GUIDE phrasing, defensive-defer
+# wording, or VALUE-ILLUSTRATION decision-table markers — those are
+# tuned in the prompt body and asserting on them would create the brittle
+# substring-test cascade the policy warns against.
+# ---------------------------------------------------------------------------
+
+
+def test_kb_encoder_prompt_declares_existing_kb_tagged_entities_block_field():
+    """The placeholder must exist in KB_ENCODER_PROMPT (mirrors the existing
+    `reverse_deps_block` field test). `str.format` silently drops unknown
+    kwargs, so assert on the parsed field set instead of relying on
+    `.format(**args)` to raise."""
+    import string
+
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.prompts import (
+        KB_ENCODER_PROMPT,
+    )
+
+    fields = {
+        fname
+        for _, fname, _, _ in string.Formatter().parse(KB_ENCODER_PROMPT)
+        if fname
+    }
+    assert "existing_kb_tagged_entities_block" in fields
+
+
+def test_setup_prompt_declares_existing_kb_tagged_entities_block_field():
+    import string
+
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.prompts import (
+        SETUP_ENCODER_PROMPT,
+    )
+
+    fields = {
+        fname
+        for _, fname, _, _ in string.Formatter().parse(SETUP_ENCODER_PROMPT)
+        if fname
+    }
+    assert "existing_kb_tagged_entities_block" in fields
+
+
+def test_kb_encoder_prompt_includes_existing_kb_tagged_entities_block_when_supplied():
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.prompts import (
+        KB_ENCODER_PROMPT,
+    )
+
+    args = _format_args()
+    args["existing_kb_tagged_entities_block"] = (
+        "  - tinydb.service_types.socsupport (column) -> kb_id=9"
+    )
+    out = KB_ENCODER_PROMPT.format(**args)
+    assert "socsupport" in out
+    assert "kb_id=9" in out
+
+
+def test_setup_prompt_includes_existing_kb_tagged_entities_block_when_supplied():
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.prompts import (
+        SETUP_ENCODER_PROMPT,
+    )
+
+    args = _setup_format_args()
+    args["existing_kb_tagged_entities_block"] = (
+        "  - tinydb.service_types.socsupport (column) -> kb_id=9"
+    )
+    out = SETUP_ENCODER_PROMPT.format(**args)
+    assert "socsupport" in out
+    assert "kb_id=9" in out

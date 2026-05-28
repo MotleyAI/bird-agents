@@ -192,6 +192,88 @@ and `<main-checkout>/slayer_models_otf/<db>/_reference_fp.txt` reappears
 with the cloud-built fingerprint and content. Per-run merge audit lives at
 `<results>/cloud/<run-id>/merge_report.json`.
 
+## DEV-1478 smoke: OTF encoder vs hand-audited reference (`households`)
+
+After landing the DEV-1478 prompt + validator fixes (style guide, peer-KB
+dedup block, defensive defer, literal-existence pre-save check), this
+smoke validates that the seven failure modes from the audit no longer
+silently slip through. Manual, **Opus encoder / Sonnet user-sim** (haiku
+was too weak to repro the original failures or distinguish the fix).
+
+```bash
+# 1. Nuke local artefacts for households so the reference rebuilds from
+# scratch under the new prompts + validator.
+rm -rf /path/to/main-checkout/slayer_models_otf/households
+rm -rf /path/to/main-checkout/slayer_otf_cache/households
+
+# 2. Build the deterministic cache locally (no LLMs, fast).
+env -u SSH_AUTH_SOCK uv run python -c "
+import asyncio
+from bird_interact_agents.slayer_otf.cache import ensure_db_cache
+from bird_interact_agents import paths
+asyncio.run(ensure_db_cache('households',
+    cache_root=paths.slayer_otf_cache_root(),
+    mini_interact_root=paths.mini_interact_root(), force=False))
+"
+
+# 3. Submit otf_encode — Opus encoder, Sonnet user-sim, households only.
+env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
+  --framework pydantic_ai_otf_encode --query-mode slayer \
+  --agent-model anthropic/claude-opus-4-7 \
+  --user-sim-model anthropic/claude-sonnet-4-6 \
+  --mode a-interact --slayer-setup on-the-fly \
+  --instance-ids households_1 \
+  --workers 1 --actors-per-worker 1 \
+  --worker-type e2-standard-4 --max-runtime-hours 2 --detach
+
+# 4. Wait via driver.wait_until_done (see note above), then:
+env -u SSH_AUTH_SOCK uv run bird-interact-cloud fetch <run-id>
+```
+
+Eyeball assertions on the fetched `slayer_models_otf/households/` and
+`_setup_results.json` (failures here are signals, not test-suite gates —
+the user-sim is stochastic):
+
+- **KB 13 / 20 / 29 chain**: at least KB 13 is `encoded` OR `deferred`
+  with a citation in `clarifying_questions`/`notes` (not silently absent).
+  If KB 13 is `encoded`, KB 20 should follow.
+- **KB 21 / 42 (broken-predicate regression target)**: either `deferred`
+  with notes naming the failing literal (e.g. `'High Income'`) and the
+  validator's known sampled list, OR `encoded` with a CASE/mapping whose
+  literals DO occur in the column. Never silently-broken.
+- **KB 9 vs KB 37**: exactly one of them encodes a Column tagged
+  `meta.kb_id` on `service_types.socsupport`. The other defers with
+  notes "duplicate of KB <other>".
+- **Sampled-value caveats** (post-S1-S5 cleanup, commit `3a05b06`):
+  KB 1, 2 (and KB 9 if encoded) MUST carry a 1-2 sentence
+  sampled-value caveat ABOVE the `[kb=N]` block when actual values
+  diverge from KB-described enums. Hand-audited exemplars used as
+  three-shot in `prompts.py::_STYLE_GUIDE`: `Tenure_Type` mixed case,
+  `Income_Bracket` R$-ranges vs ordinal labels, `Dwelling_Class`
+  mixed case. Deferred value-illustration KBs (6, 8) should
+  enumerate sampled values in `clarifying_questions`.
+- **Peer-KB block enrichment**: every kb-tagged peer entity in the
+  rendered prompt block MUST carry labeled markers `entity_ref=<db>.
+  <model>[.<leaf>]` AND `reachable_from_host: host(hops), …`. Use
+  `_collect_peer_kb_entries` (factories.py) to dump for inspection.
+
+## Full eval baseline — households (15 instances)
+
+After landing S1/S2/S4/S5/S6 (commit `3a05b06`), the post-cleanup OTF
+reference beats the hand-audited reference on the 15 households
+instances (Opus encoder, Sonnet user-sim, patience 500, audited gold):
+
+| Run                                          | P1 / 15 | Wallclock | Run ID |
+| --                                           | --      | --        | --     |
+| PRIOR hand-audited (May 22, 53-task batch)   | 8       | ~93m sum  | `20260522-1041_par_opus-4-7-agent_sonnet-sim_combined53_p500` |
+| NEW pat=3, no audit (bad defaults)           | 3       | ~80m sum  | `20260527t1443-pydanti-slayer-70eead` |
+| NEW pat=500, audited gold (pre-S1-S5)        | 7       | ~87m sum  | `20260527t1601-pydanti-slayer-dab346` |
+| **NEW post-S1-S5 cleanup**                   | **9**   | ~92m sum  | **`20260527t1922-pydanti-slayer-45372d`** |
+
+Movement vs hand-audited: +`households_3, _7` (improvements);
+−`households_17` (lone regression). Movement vs pre-S1-S5 baseline:
++`households_2, _7`, zero new regressions.
+
 ## Debugging the cloud runner: pull live state, don't guess
 
 When a `bird-interact-cloud` run fails on GCE, **do not iterate by editing

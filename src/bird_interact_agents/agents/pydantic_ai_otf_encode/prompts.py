@@ -30,6 +30,142 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
+# DEV-1478: shared encoder style guide, injected into BOTH SETUP and KB
+# encoder prompts. Five rules — see plan §B for the full rationale.
+# `{{ }}` doubled-braces survive str.format passes through both prompts.
+# ---------------------------------------------------------------------------
+
+_STYLE_GUIDE = """\
+ENCODER STYLE GUIDE (applies to every entity you write).
+
+STRING-NORM. For every predicate / CASE / filter that compares a TEXT
+column to a literal, wrap the column in `LOWER(TRIM(<col>))` and the
+literal in lowercase. Use `LIKE` with a trailing `%` when sampled
+values or audit caveats show free-text variants (e.g. `'apartment%'`
+matches `'apartment'`, `'Apartment'`, `'APARTMENT House'`). Apply
+universally — do not carve out exceptions for "values look
+case-uniform on first glance". Worked example: a Yes/No flag column
+that looks clean almost always carries `'Yes'/'yes'/'YES'/'no'/'No'`
+in real data; use `LOWER(TRIM(<col>)) = 'yes'`, never `<col> = 'Yes'`.
+
+CROSS-MODEL ACCESS. Inside `Column.sql`, you may reference base or
+derived columns of any model REACHABLE from the host via the declared
+join graph. Use the single-hop alias form `target_alias.col` (or the
+multi-hop `path__alias.col` form documented in the CROSS-TABLE
+REFERENCES section of this prompt). The EXISTING KB-TAGGED ENTITIES
+block below renders an `entity_ref=<db>.<model>[.<leaf>]` for each
+peer plus a `reachable_from_host: host(hops), host(hops), ...` map.
+Use `entity_ref` to identify WHICH peer you intend to reference and
+WHICH host owns it; in `Column.sql` itself, write the alias-qualified
+SQL form (`<host_alias>.<leaf>`), NOT the fully-qualified
+`<db>.<model>.<leaf>` form — those are documentation, not SQL.
+
+You may NOT emit `SELECT ... FROM ... WHERE ...` subqueries
+(correlated or otherwise) inside `Column.sql`; you may NOT emit
+`EXISTS(SELECT ...)` either — those condition shapes belong inside a
+query stage of a query-backed model (R-MULTISTAGE / R-EXISTS), never
+directly inside a row-level Column expression. Counter-example
+(WRONG — KB 15 / OTF original): a ratio that uses a correlated
+subquery on the other table:
+
+    JSON_EXTRACT(dwelling_specs, '$.Bath_Count') / NULLIF(
+        (SELECT residentcount FROM households WHERE housenum=houselink), 0
+    )
+
+RIGHT — use the existing declared `properties -> households` join so
+SLayer's planner can resolve it:
+
+    JSON_EXTRACT(dwelling_specs, '$.Bath_Count') / NULLIF(
+        households.residentcount, 0
+    )
+
+NO INVENTED JOINS (in Column.sql / Measure formulas). When writing a
+derived Column or Measure: if a column you want to reference lives
+on a table NOT in the candidate host's `reachable_from_host` set
+above, CHANGE the host (see HOST-CHOICE). Do NOT add a new join
+clause inside `Column.sql` — the schema's declared joins are the
+only legal traversals from within row-level expressions. EXEMPTION:
+if your selected recipe is R-JOIN (the KB itself documents a missing
+schema-level relationship), that's the recipe whose specific job IS
+to register a new ModelJoin via `edit_model(joins=[...])` — apply
+the join at the model level, not embedded in a Column's SQL.
+
+HOST-CHOICE. Pick the host whose row corresponds 1:1 to the entity
+the KB describes (the KB's NATURAL GRANULARITY). Tie-break by
+MINIMISING the total join hops needed to reach every column the KB
+references — use the `reachable_from_host` map on each peer in the
+EXISTING KB-TAGGED ENTITIES block below. Never pick a host that
+requires an undeclared join.
+
+Worked example: KB 11 (Household Density = residents / rooms).
+Natural granularity is one household-property pair; both `properties`
+and `households` are 1:1 with it. Referenced columns:
+`properties.dwelling_specs.Room_Count` (lives on `properties`) and
+`households.residentcount` (lives on `households`). Both candidate
+hosts are 1 hop from each other via the declared
+`properties.houselink = households.housenum` reverse join → tied on
+hops. Break the tie toward the host that carries the STRUCTURAL
+column (Room_Count is part of dwelling specification; a property is
+"where" a household lives) → place on `properties`. The
+hand-audited reference makes exactly this choice.
+
+PEER-KB DEDUP. Before writing any entity, look at the EXISTING
+KB-TAGGED ENTITIES block below and the host's existing columns
+(via `inspect_model`). If any existing column / measure description
+carries `[kb=X]` for an X that describes the SAME schema fact as
+this KB, DEFER with notes `"duplicate of KB X"` — do NOT write a
+competing entity with your own kb_id. The lower-id KB is canonical
+because the topo sort runs lower ids first.
+
+SAMPLED-VALUE CAVEATS. When you write a Column that exposes a base
+column listed by a value_illustration KB, ALWAYS check the base
+column's actual sampled values (via `inspect_model` or via the
+validator's rejection list — see LITERAL-EXISTS in the SETUP encoder
+prompt). If the actual values diverge from the KB-described
+enum/labels (mixed case, free-text variants, ordinal labels missing
+from the data, R$-ranges where the KB describes ordinal labels,
+NULLs the KB doesn't mention), PREPEND a 1–2 sentence caveat to the
+Column's `description`, ABOVE the `[kb=N]` block, in the form:
+
+    "Sample values <concrete observation, quoting up to 3 verbatim
+    values>; <recommended downstream action, e.g. LOWER+TRIM, or
+    'define the mapping explicitly'>."
+
+Three exemplars (hand-audited reference):
+  * "Sample values mix case ('OWNED', 'Owned', 'owned'); downstream
+    callers should LOWER+TRIM before exact-equals matches."
+  * "The actual sample values are R$ amount ranges (e.g. 'More than
+    R$ 1,760 and less than R$ 2,640'), not the KB-described ordinal
+    labels ('Low Income' … 'Very High Income'). Any encoding that
+    needs to map this column to an ordinal score must define the
+    bracket→label mapping explicitly — the schema does not carry it."
+  * "Sample values are mixed-case ('Brickwork house', 'Apartment',
+    'apartment'); use LOWER for exact-match comparisons."
+
+If a KB cites SPECIFIC named literals AND those literals are absent
+from the column's sampled values, do NOT write the predicate
+(the validator will reject it anyway). DEFER with notes naming the
+failing literal and the known sampled set.
+
+EXISTING KB-TAGGED ENTITIES on this datasource (already written by
+lower-id KBs in the topo sort). Each line carries the canonical
+`entity_ref=<db>.<model>[.<leaf>]` (identifies WHICH peer + WHICH
+host owns it — use this to disambiguate by-name references and to
+pick a host in HOST-CHOICE) and a `reachable_from_host:` map showing
+which candidate hosts reach this peer via the declared join graph.
+The `entity_ref` form is documentation; do NOT paste the
+fully-qualified `<db>.<model>.<leaf>` form directly into
+`Column.sql`. In `Column.sql` use the alias-qualified single-hop
+form `target_alias.col` or the multi-hop `path__alias.col` per
+CROSS-MODEL ACCESS + CROSS-TABLE REFERENCES below. If your KB
+describes the SAME schema fact as any of these, DEFER with notes
+`"duplicate of KB X"`:
+
+{existing_kb_tagged_entities_block}
+"""
+
+
+# ---------------------------------------------------------------------------
 # Sub-clarifier — copy of the recursive adapter's prompt plus a paragraph
 # on the new `kb_to_slayer` elevation tool.
 # ---------------------------------------------------------------------------
@@ -209,8 +345,14 @@ recipe whose trigger matches:
     tunable params. Add an `Aggregation` with `formula=...` using
     `{{{{value}}}}` and named params.
   R-RESOLVE — KB references another KB by name. The dependency was
-    already encoded (see "Dependencies" above); reference its
-    `entity_ref` directly in your formula. Cycles are rejected at
+    already encoded (see "Dependencies" above); use its `entity_ref`
+    to identify the canonical peer + host, then write the formula
+    using the form appropriate to the surface: query measure /
+    dimension strings accept `model.col` / `model.subpath.col`
+    (dots), whereas raw `Column.sql` uses the alias-qualified
+    `target_alias.col` (single-hop) or `path__alias.col` (multi-hop)
+    per CROSS-TABLE REFERENCES. Do NOT paste the fully-qualified
+    `<db>.<model>.<leaf>` form into raw SQL. Cycles are rejected at
     save time.
   R-MULTISTAGE — composite that crosses an aggregation boundary
     (per-peer aggregate then row-level). Use
@@ -324,6 +466,9 @@ The caller verifies every `entity_ref` you submit actually exists in
 storage via `inspect_model` / `models_summary` — if any ref is
 missing, the result is downgraded. So submit ONLY the refs you wrote.
 """
+
+
+KB_ENCODER_PROMPT += "\n\n" + _STYLE_GUIDE
 
 
 # ---------------------------------------------------------------------------
@@ -710,8 +855,12 @@ trigger matches:
     over one table → a `ModelMeasure` with `formula="<col>:<agg>"`.
   R-AGG — parameterised aggregation needing more than one column or tunable
     params → an `Aggregation` with `formula=...` using `{{{{value}}}}` + named params.
-  R-RESOLVE — KB references another KB by name → reference the dependency's
-    already-encoded entity_ref directly in your formula.
+  R-RESOLVE — KB references another KB by name → use the dependency's
+    `entity_ref` to identify the canonical peer + host; in query
+    measure/dimension strings write `model.col` (dots); in raw
+    `Column.sql` write the alias-qualified `target_alias.col` /
+    `path__alias.col` per CROSS-TABLE REFERENCES. Do NOT paste the
+    fully-qualified `<db>.<model>.<leaf>` form into raw SQL.
   R-MULTISTAGE — composite crossing an aggregation boundary → `create_model`
     with `query=[stage1, stage2, ...]` (last stage is the DAG root).
   R-WINDOW — quartile / rank / percentile / NTILE / argmin-by-time → a
@@ -722,37 +871,74 @@ trigger matches:
   R-JOIN — cross-table relationship not in the FK graph → a `ModelJoin` via
     `edit_model(joins=[...])`.
 
-VALUE-ILLUSTRATION SCORING & OWNERSHIP. A `value_illustration` defaults to
-R-DESCRIBE — attach its value set / illustrative scoring prose as a `description`
-on the underlying base column. Do NOT materialise its scoring prose as a
-calculation Column when a `calculation_knowledge` KB that REFERENCES this one
-(see "KBs that REFERENCE this one" above) defines the SAME score as its WHOLE
-calculation — that KB OWNS the score column and will tag it with ITS kb_id;
-emitting your own competing column here would mis-tag the score (the benchmark
-masks by kb_id) and split ownership. EXCEPTION: if the referencing
-`calculation_knowledge` merely COMBINES this score with sibling component scores
-(e.g. averages several component scores into one), then DO emit this score as
-its own Column so that parent can reference it. NEVER create or claim a score
-Column that belongs to another KB: if a score you need is not yet present on the
-host model, INLINE its computation into your own Column rather than emitting a
-separately-named score column tagged with your kb_id. When you make this
-describe-vs-encode judgement for a value_illustration, state it in one sentence
-in your `notes`.
+VALUE-ILLUSTRATION OWNERSHIP — decide by inspecting the reverse-deps block
+above:
+
+  CASE A (emit own scoring Column — the DEFAULT for component-score patterns).
+  Parent in reverse-deps is a `calculation_knowledge` whose definition names
+  multiple sibling components AND combines them (words: "average", "mean",
+  "sum", "weighted", "combined", "composite", "the average of the individual
+  scores for X, Y, Z"). Each LEAF value_illustration emits its own scoring
+  Column; the parent REFERENCES those leaves by name. Use the EXISTING
+  KB-TAGGED ENTITIES block to identify each leaf's canonical
+  `entity_ref` and its host; then derive the SQL reference using the
+  alias-qualified `target_alias.col` (single-hop) or `path__alias.col`
+  (multi-hop) form appropriate to the parent's chosen host — do NOT
+  paste the documentation form `<db>.<model>.<leaf>` directly into
+  `Column.sql`. Do NOT inline the leaves' CASE expressions into the
+  parent's SQL — keep the DAG of refs; SLayer's planner resolves
+  them at query time. Worked examples:
+    * KB 3 / 4 / 5 (Water / Road / Parking scores) -> KB 13 (Infrastructure
+      Quality = average of the three). Each leaf emits its own column;
+      KB 13's Column.sql references them by name through the host's
+      reachable join graph.
+    * KB 6 (Dwelling Type) + KB 13 (Infra Score) -> KB 20 (Living
+      Condition Score = 50/50 of the two). Same pattern: KB 20
+      references both leaves by their entity_ref.
+
+  CASE B (DEFER to parent — wrapper / rename / single-score parent). Parent
+  in reverse-deps is a `calculation_knowledge` whose WHOLE definition IS the
+  same score this KB illustrates (no combination, no sibling components — it
+  just renames or wraps this KB's scoring prose). Defer; the parent owns the
+  score Column and will tag it with ITS kb_id.
+
+  CASE C (R-DESCRIBE only — no parent owns a score). No
+  `calculation_knowledge` parent exists OR the parent only uses this KB for
+  filtering / dimension grouping (not scoring). Attach the value-list /
+  illustrative prose as a `description` on the base column via `edit_model`.
+  Do NOT emit a scoring Column.
+
+When you make this describe-vs-encode judgement, state in one sentence in your
+`notes` which CASE applies and why.
+
+DEFENSIVE DEFER. If ANY KB in `children_knowledge` shows `NOT encoded` in the
+dependencies block above, this KB MUST set `status="deferred"` with notes
+`'depends on unencoded KB <id> (<reason from deps block>)'` and
+`clarifying_questions` naming each missing child. Quote the reason verbatim
+from the deps block so a later per-task agent can distinguish "child deferred
+because ambiguous" from "child errored during encode". Do NOT silently encode
+this KB with stub or guessed inputs for the missing child.
 
 LITERAL-EXISTS. Before encoding any predicate or CASE keyed on a specific
 categorical literal (a status label, a named category, an enum value), CONFIRM
 the literal actually occurs in the column's data — run a tiny `query` for the
 distinct values (do NOT trust only the `inspect_model` `sampled` summary, which
-may omit rare values). If the literal does not appear verbatim AND you cannot
-ground it unambiguously in an already-encoded score/dimension or a column
-meaning, DEFER (do not encode a silently always-true / never-true condition).
-Scope this to exact categorical-literal matches on low-cardinality columns;
-fuzzy/qualitative phrasing ("high-quality", "high X") instead needs a
-threshold/mapping you cannot guess, so it defers under the NO-GUESS rule. When
-you defer for a missing literal, and the column has FEWER THAN 20 distinct
-values, LIST those values in `clarifying_questions` / `notes` so a later
-per-task agent can map the KB's label to a real value; if 20+, say so and give a
-representative sample.
+may omit rare values). The pre-save validation hook ALSO compares your `=` and
+`IN` string literals against each column's stored distinct values and rejects
+the write with a "VALIDATION FAILED" message listing the valid values — when
+that happens, EITHER (a) pick a real value from the listed set and call the
+write tool again, OR (b) DEFER this KB with notes naming the failing literal
+and the valid set. Do NOT retry with a different invented literal. If the
+literal does not appear verbatim AND you cannot ground it unambiguously in an
+already-encoded score/dimension or a column meaning, DEFER (do not encode a
+silently always-true / never-true condition). Scope this to exact
+categorical-literal matches on low-cardinality columns; fuzzy/qualitative
+phrasing ("high-quality", "high X") instead needs a threshold/mapping you
+cannot guess, so it defers under the NO-GUESS rule. When you defer for a
+missing literal, and the column has FEWER THAN 20 distinct values, LIST those
+values in `clarifying_questions` / `notes` so a later per-task agent can map
+the KB's label to a real value; if 20+, say so and give a representative
+sample.
 
 KB SELF-ANNOTATION. Every entity you write MUST carry `meta = {{"kb_id":
 {kb_id}}}` (singular int) — it is the SOLE key the benchmark uses to mask the
@@ -804,3 +990,6 @@ OUTPUT CONTRACT — strict. Deliver the result by calling
 The caller verifies every `entity_ref` exists AND carries `meta.kb_id={kb_id}`;
 a missing or untagged ref downgrades the result to `status="deferred"`.
 """
+
+
+SETUP_ENCODER_PROMPT += "\n\n" + _STYLE_GUIDE

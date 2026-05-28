@@ -31,10 +31,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     grp.add_argument("--instance-ids", type=_instance_ids)
     grp.add_argument("--instance-ids-file", type=str)
     sp_submit.add_argument("--mode", required=True, choices=_VALID_MODES)
-    sp_submit.add_argument("--patience", type=int, default=3)
+    sp_submit.add_argument("--patience", type=int, default=500)
     sp_submit.add_argument("--strict", action="store_true")
     sp_submit.add_argument(
-        "--use-audited-gold-sql", action="store_true"
+        "--use-audited-gold-sql", action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    sp_submit.add_argument(
+        "--require-audited-gold", action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "When --use-audited-gold-sql is on, fail at submit time if any "
+            "passed instance_id lacks an audited-gold entry (audit_status "
+            "missing-row / missing-file). Default on — prevents silent "
+            "fall-back to the un-audited gold. Pass --no-require-audited-gold "
+            "to allow the fallback."
+        ),
     )
     sp_submit.add_argument("--max-depth", type=int, default=3)
     sp_submit.add_argument(
@@ -98,6 +110,27 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 "--instance-ids resolved to an empty list "
                 "(no ids parsed from `--instance-ids` or `--instance-ids-file`)"
             )
+        # DEV-1478 follow-up: when `use_audited_gold_sql` is on AND the
+        # default `require_audited_gold` guard is on, fail at submit if any
+        # passed instance_id has no audited-gold row. Default ON because
+        # silently falling back to the un-audited gold mid-cloud-run is a
+        # foot-gun: the cluster comes up, encodes (10+ min), and only THEN
+        # surfaces the missing-audit via a warning in the actor log. Fail
+        # before bringing up the cluster instead.
+        if ns.use_audited_gold_sql and ns.require_audited_gold:
+            from bird_interact_agents.cloud._audited_gold_check import (
+                missing_audited_gold_ids,
+            )
+            missing = missing_audited_gold_ids(ns.instance_ids)
+            if missing:
+                p.error(
+                    "the following instance_ids have no audited-gold entry "
+                    "(audit_status missing-row / missing-file): "
+                    f"{', '.join(missing)}. Either remove them, pass "
+                    "--no-require-audited-gold to allow the harness fallback "
+                    "to the original gold, or pass --no-use-audited-gold-sql "
+                    "to evaluate against the original gold for all tasks."
+                )
 
     return ns
 

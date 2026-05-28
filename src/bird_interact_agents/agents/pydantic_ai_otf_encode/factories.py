@@ -32,7 +32,7 @@ import time
 from dataclasses import replace
 from typing import Any, Awaitable, Callable
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import UsageLimits
@@ -634,10 +634,15 @@ async def _run_kb_encoder_default(
     EncoderResults). It is formatted into the encoder prompt's
     `deps_block` so the encoder can reference dep entity_refs in
     R-RESOLVE-style formulas instead of re-encoding them."""
+    storage_for_blocks = getattr(ctx.deps.shared, "_slayer_storage", None)
+    db_name = ctx.deps.shared.db_name
     deps_block = await _format_deps_block(
-        deps_map,
-        getattr(ctx.deps.shared, "_slayer_storage", None),
-        ctx.deps.shared.db_name,
+        deps_map, storage_for_blocks, db_name,
+    )
+    existing_kb_tagged_entities_block = (
+        await _format_existing_kb_tagged_entities_block(
+            storage_for_blocks, db_name, current_kb_id=kb_id,
+        )
     )
     # DEV-1454: feed the memory's `learning` body verbatim (knowledge +
     # verbatim KB block) — no YAML re-parse round-trip.
@@ -647,11 +652,12 @@ async def _run_kb_encoder_default(
     kb_body = row.get("_learning") if isinstance(row, dict) else str(row)
     prompt_template = KB_ENCODER_ONESHOT_PROMPT if is_one_shot else KB_ENCODER_PROMPT
     prompt = prompt_template.format(
-        db_name=ctx.deps.shared.db_name,
+        db_name=db_name,
         kb_id=kb_id,
         kb_row_yaml=kb_body or "",
         deps_block=deps_block,
         budget=ctx.deps.shared.status.remaining_budget,
+        existing_kb_tagged_entities_block=existing_kb_tagged_entities_block,
     )
 
     # Pre-reserve the kb_encoder record slot so the trajectory's
@@ -783,6 +789,237 @@ async def _live_tagged_entities(
     return out
 
 
+class PeerKbEntry(BaseModel):
+    """One ``meta.kb_id``-tagged peer entity currently in storage.
+
+    Used by ``_collect_peer_kb_entries`` (typed extraction) and by
+    ``_format_existing_kb_tagged_entities_block`` (renderer). The
+    encoder reads ``entity_ref`` to know what to copy verbatim when
+    composing cross-model SQL, and ``reachable_from_host`` to know
+    which candidate hosts can reach this peer via the declared join
+    graph (host-choice support — DEV-1478 plan §S2).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kb_id: int
+    kind: str  # "column" | "measure" | "aggregation" | "model"
+    host_model: str
+    leaf_name: str | None = None
+    entity_ref: str
+    # List of (host_model, hop_count) pairs; sorted (hops asc, name asc).
+    # The peer's own host is always present at hop 0; every other model
+    # whose declared joins (transitively) reach the host appears at its
+    # shortest distance.
+    reachable_from_host: tuple[tuple[str, int], ...]
+
+
+def _build_reverse_join_graph(models: list[Any]) -> dict[str, list[str]]:
+    """Build a graph keyed by TARGET model name. For each declared join
+    ``source.joins[*] -> target``, append ``source`` to ``graph[target]``.
+
+    BFS starting from a peer's host ``H`` over this reverse graph yields
+    every model that can reach ``H`` via declared joins, with the
+    shortest distance == hop count in the FORWARD join graph. This is
+    cheaper than running a separate forward BFS from each candidate
+    host.
+
+    Duplicate edges (a model declaring two ModelJoins to the same
+    target, or a single ModelJoin with a composite ``join_pairs``) do
+    NOT inflate hop counts because BFS uses a ``visited`` set; they
+    can appear twice in the adjacency list but each adjacent model is
+    enqueued only once.
+    """
+    graph: dict[str, list[str]] = {}
+    for m in models:
+        name = getattr(m, "name", None)
+        if name is None:
+            continue
+        graph.setdefault(name, [])
+    for m in models:
+        source = getattr(m, "name", None)
+        if source is None:
+            continue
+        for j in (getattr(m, "joins", None) or []):
+            target = getattr(j, "target_model", None)
+            if not target:
+                continue
+            graph.setdefault(target, []).append(source)
+    return graph
+
+
+def _bfs_reach_map(
+    host: str, reverse_graph: dict[str, list[str]],
+) -> tuple[tuple[str, int], ...]:
+    """BFS from ``host`` in the reverse join graph.
+
+    Returns a sorted tuple of ``(model_name, hops)`` pairs, where
+    ``hops`` is the shortest distance from ``model_name`` to ``host``
+    in the FORWARD join graph. The host itself is always present at
+    hop 0. Sort key is ``(hops asc, name asc)`` so the renderer
+    output is deterministic across rebuilds.
+    """
+    visited: dict[str, int] = {host: 0}
+    queue: list[tuple[str, int]] = [(host, 0)]
+    head = 0
+    while head < len(queue):
+        node, dist = queue[head]
+        head += 1
+        for neighbor in reverse_graph.get(node, []):
+            if neighbor in visited:
+                continue
+            visited[neighbor] = dist + 1
+            queue.append((neighbor, dist + 1))
+    return tuple(
+        sorted(visited.items(), key=lambda kv: (kv[1], kv[0]))
+    )
+
+
+async def _collect_peer_kb_entries(
+    storage: Any, db: str, *, current_kb_id: int | None = None,
+) -> list[PeerKbEntry]:
+    """Walk ``db``'s models in storage, yield one ``PeerKbEntry`` per
+    ``meta.kb_id``-tagged peer entity (model / column / measure /
+    aggregation). Filter by strict-less-than ``current_kb_id`` when
+    supplied — same concurrency-correctness rule as the legacy block.
+
+    Reach map per peer is computed by BFS over the declared join
+    graph: the peer's own host is at hop 0; every model that declares
+    a join (transitively) to the peer's host appears at its shortest
+    distance. The peer's own host is ALWAYS included so the encoder
+    knows it can place a column on the same host and reference the
+    peer directly without crossing any join.
+
+    Best-effort: a storage hiccup yields ``[]`` rather than
+    propagating — this collector is an advisory hint, not a
+    correctness gate.
+
+    DEV-1478 plan §S2.
+    """
+    if storage is None:
+        return []
+    try:
+        names = await storage.list_models(data_source=db)
+    except Exception:  # noqa: BLE001 — best-effort
+        return []
+    models: list[Any] = []
+    for name in names:
+        try:
+            model = await storage.get_model(name, data_source=db)
+        except Exception:  # noqa: BLE001
+            try:
+                model = await storage.get_model(name)
+            except Exception:  # noqa: BLE001
+                continue
+        if model is not None:
+            models.append(model)
+    reverse_graph = _build_reverse_join_graph(models)
+
+    out: list[PeerKbEntry] = []
+    for m in models:
+        host = m.name
+        reach = _bfs_reach_map(host, reverse_graph)
+        # Model-level tag.
+        model_kb = _meta_kb_id(getattr(m, "meta", None))
+        if model_kb is not None and (
+            current_kb_id is None or model_kb < current_kb_id
+        ):
+            out.append(PeerKbEntry(
+                kb_id=model_kb, kind="model", host_model=host,
+                leaf_name=None,
+                entity_ref=f"{db}.{host}",
+                reachable_from_host=reach,
+            ))
+        # Column / measure / aggregation leaves.
+        for kind, items in (
+            ("column", getattr(m, "columns", None)),
+            ("measure", getattr(m, "measures", None)),
+            ("aggregation", getattr(m, "aggregations", None)),
+        ):
+            for item in items or []:
+                item_kb = _meta_kb_id(getattr(item, "meta", None))
+                if item_kb is None:
+                    continue
+                if current_kb_id is not None and item_kb >= current_kb_id:
+                    continue
+                out.append(PeerKbEntry(
+                    kb_id=item_kb, kind=kind, host_model=host,
+                    leaf_name=item.name,
+                    entity_ref=f"{db}.{host}.{item.name}",
+                    reachable_from_host=reach,
+                ))
+    # Sort by (kb_id, entity_ref, kind) — deterministic, keeps the
+    # same-kb_id Column+Measure pairs (R-FILTER recipe output) in a
+    # stable order across rebuilds. entity_ref dominates the tie-break,
+    # so two entries with the same kb_id but different leaves stay
+    # together in alpha order.
+    out.sort(key=lambda e: (e.kb_id, e.entity_ref, e.kind))
+    return out
+
+
+async def _format_existing_kb_tagged_entities_block(
+    storage: Any, db: str, *, current_kb_id: int | None = None,
+) -> str:
+    """DEV-1478 PEER-KB DEDUP support: render every ``meta.kb_id``-tagged
+    Column / ModelMeasure / Aggregation / Model currently in storage
+    for ``db`` as one line per entity, sorted ascending by ``kb_id``.
+
+    Each line carries three labeled markers the encoder reads by key:
+
+    * ``kb_id=N`` — the canonical-id rule's match anchor (legacy).
+    * ``entity_ref=db.model[.leaf]`` — the verbatim cross-model
+      reference the encoder copies when writing R-RESOLVE-style SQL
+      (DEV-1478 plan §S2).
+    * ``reachable_from_host: host(hops), host(hops), ...`` — the set
+      of candidate host models that can reach this peer via the
+      declared join graph. The host-self entry is always at hop 0;
+      other hosts appear at their shortest-distance in the forward
+      join graph (DEV-1478 plan §S2).
+
+    Concurrency filter: when ``current_kb_id`` is supplied, the block
+    emits ONLY entities whose ``kb_id < current_kb_id`` — strict-less
+    so the "lower-id is canonical" claim holds even when peers finish
+    out of topo order under asyncio fan-out (Codex PR #4 follow-up).
+
+    Returns ``"(none)"`` when no qualifying entities exist (first KB
+    in topo, or a storage hiccup). Advisory hint, not a correctness
+    gate.
+    """
+    entries = await _collect_peer_kb_entries(
+        storage, db, current_kb_id=current_kb_id,
+    )
+    if not entries:
+        return "(none)"
+    lines: list[str] = []
+    for e in entries:
+        head = f"  - {e.entity_ref} ({e.kind}) -> kb_id={e.kb_id}"
+        entity_ref_marker = f"entity_ref={e.entity_ref}"
+        if e.reachable_from_host:
+            reach = ", ".join(
+                f"{name}({hops})" for name, hops in e.reachable_from_host
+            )
+        else:
+            reach = "(unreachable)"
+        reach_marker = f"reachable_from_host: {reach}"
+        lines.append(f"{head}, {entity_ref_marker}, {reach_marker}")
+    return "\n".join(lines)
+
+
+def _meta_kb_id(meta: Any) -> int | None:
+    """Extract a non-null ``kb_id`` from a meta dict, returning ``None`` for
+    untagged or malformed entries. Tolerant of meta=None, kb_id=None, or a
+    non-int kb_id (treated as untagged)."""
+    if not isinstance(meta, dict):
+        return None
+    kb = meta.get("kb_id")
+    if kb is None:
+        return None
+    try:
+        return int(kb)
+    except (TypeError, ValueError):
+        return None
+
+
 async def _format_deps_block(
     deps_map: list[EncoderResult], storage: Any = None, db: str = "",
 ) -> str:
@@ -805,10 +1042,28 @@ async def _format_deps_block(
                     f"  - KB {dep.kb_id} -> {ent.entity_ref} (kind={ent.kind})"
                 )
         else:
+            # Codex follow-up (PR #4): the defensive-defer prompt asks the
+            # encoder to "quote the reason verbatim from the deps block"
+            # so the dependent KB's notes distinguish "child deferred
+            # because ambiguous" from "child errored during encode". The
+            # status word alone (`deferred` / `error`) doesn't carry that
+            # signal — surface the child's `notes` (truncated) when
+            # present so the encoder has something concrete to quote.
+            reason = dep.error if dep.error else dep.status
+            notes = (dep.notes or "").strip()
+            if notes:
+                if len(notes) > _DEP_NOTES_MAXLEN:
+                    notes = notes[:_DEP_NOTES_MAXLEN].rstrip() + "…"
+                reason = f"{reason}: {notes}"
             lines.append(
-                f"  - KB {dep.kb_id} -> NOT encoded ({dep.error or dep.status})"
+                f"  - KB {dep.kb_id} -> NOT encoded ({reason})"
             )
     return "\n".join(lines) if lines else "(none)"
+
+
+# Trim long child-notes so a long-winded child can't blow up the parent's
+# prompt; ~200 chars is enough to convey the ambiguity statement.
+_DEP_NOTES_MAXLEN = 200
 
 
 # Trim long parent definitions so a KB with many parents can't blow up the
