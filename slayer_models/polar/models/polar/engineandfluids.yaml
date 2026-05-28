@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: engineandfluids
 sql_table: engineandfluids
 query_variables: {}

@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: signal_cip_class
 source_queries:
 - version: 3

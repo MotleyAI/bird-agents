@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: signals
 sql_table: signals
 query_variables: {}

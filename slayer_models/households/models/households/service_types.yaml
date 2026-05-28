@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: service_types
 sql_table: service_types
 query_variables: {}

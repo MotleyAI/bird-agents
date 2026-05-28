@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: signal_hzsr
 source_queries:
 - version: 3

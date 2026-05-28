@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: signal_is_habitable_zone_transmission
 source_queries:
 - version: 3

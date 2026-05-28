@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: signaldecoding
 sql_table: signaldecoding
 query_variables: {}

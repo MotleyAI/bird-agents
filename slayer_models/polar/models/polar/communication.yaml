@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: communication
 sql_table: communication
 query_variables: {}

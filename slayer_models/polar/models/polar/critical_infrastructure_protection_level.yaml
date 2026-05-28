@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: critical_infrastructure_protection_level
 source_queries:
 - version: 3
