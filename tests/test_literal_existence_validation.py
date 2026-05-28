@@ -1258,7 +1258,7 @@ async def test_combined_sql_and_literal_problems_appear_together(
         async def execute(self, q):
             return types.SimpleNamespace(data=[])
 
-    async def stub_sql_problems(name, tool_args, *, storage, engine):
+    async def stub_sql_problems(name, tool_args, *, engine):
         return ["column m.x: SQL-SIDE STUB FAILURE"]
 
     monkeypatch.setattr(
@@ -1389,7 +1389,7 @@ async def test_literal_collector_error_still_surfaces_sql_problems(
             return types.SimpleNamespace(data=[])
 
     # SQL gate finds a problem AND literal collector raises.
-    async def stub_sql_problems(name, tool_args, *, storage, engine):
+    async def stub_sql_problems(name, tool_args, *, engine):
         return ["column m.x: SQL-SIDE STUB FAILURE — known invalid"]
 
     async def exploding_collector(name, tool_args, *, storage, db=""):

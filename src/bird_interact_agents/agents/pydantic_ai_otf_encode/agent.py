@@ -250,48 +250,6 @@ def _inline_validation_queries(name: str, args: dict) -> list[tuple[str, dict]]:
     return []
 
 
-def _health_query(datasource: str) -> dict:
-    """A trivial ``SELECT 1`` against ``datasource`` — used to tell a genuine bad
-    expression from an engine/connection failure."""
-    return {
-        "source_model": {
-            "name": "__healthcheck__", "sql": "SELECT 1 AS one",
-            "data_source": datasource,
-            "columns": [{"name": "one", "sql": "one", "type": "number"}],
-        },
-        "dimensions": ["one"], "limit": 0,
-    }
-
-
-async def _engine_healthy(engine: Any, datasource: Any) -> bool:
-    """True if the validation engine can run ``SELECT 1`` against ``datasource``
-    (so a query failure is the agent's SQL, not infra). When the datasource is
-    unknown we can't probe — assume healthy so we fail CLOSED (block the suspect
-    write) rather than silently letting it through."""
-    if not datasource:
-        return True
-    try:
-        await engine.execute(SlayerQuery.model_validate(_health_query(datasource)))
-        return True
-    except Exception:  # noqa: BLE001 — any probe failure ⇒ engine/DB unreachable
-        return False
-
-
-async def _resolve_validation_datasource(storage: Any, name: str, args: dict) -> Any:
-    """The datasource for the proposed write — explicit ``data_source`` arg, else
-    (edit_model) the host model's datasource read from storage."""
-    ds = (args or {}).get("data_source")
-    if ds:
-        return ds
-    if name == "edit_model" and (args or {}).get("model_name"):
-        try:
-            model = await storage.get_model(args["model_name"])
-            return getattr(model, "data_source", None)
-        except Exception:  # noqa: BLE001 — best-effort
-            return None
-    return None
-
-
 def _validation_feedback(tool_name: str, problems: list[str]) -> str:
     """Tool result returned to the agent when a proposed write fails validation.
     The change was NOT persisted — this string IS the only effect."""
@@ -306,30 +264,50 @@ def _validation_feedback(tool_name: str, problems: list[str]) -> str:
     )
 
 
+# Substrings that mark a validation failure as an engine/DB-connection problem
+# (vs a referential/SQL error the encoder can fix). Used ONLY to log a
+# distinguishing WARNING — the strict gate blocks either way.
+_INFRA_ERROR_HINTS = (
+    "could not connect", "connection refused", "connection reset",
+    "unable to open database", "server closed", "operationalerror",
+    "timeout", "timed out",
+)
+
+
+def _looks_like_infra_error(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(hint in text for hint in _INFRA_ERROR_HINTS)
+
+
 async def _collect_validation_problems(
-    name: str, tool_args: dict, *, storage: Any, engine: Any,
+    name: str, tool_args: dict, *, engine: Any,
 ) -> list[str]:
-    """Run each inline validation query; on an expected failure, health-probe to
-    rule out infra, recording a problem only when the engine itself is healthy."""
+    """Run each inline validation query and record EVERY failure as a problem.
+
+    STRICT gate: a failing probe ALWAYS blocks the write — there is no
+    "engine unhealthy → skip" fail-open escape (that escape silently persisted
+    broken cross-references, the exact failure this gate exists to prevent).
+    Correct dependency-ordered encoding means a referent's column already
+    exists when a dependent is validated, so legitimate writes pass; only a
+    genuinely-unresolvable (or infra-broken) write blocks, and the encoder
+    self-corrects or defers the KB.
+
+    A failure that looks like an engine/connection error — which the encoder
+    cannot fix by editing SQL — is additionally logged at WARNING so an
+    infra-driven defer is distinguishable from a normal referential miss."""
     problems: list[str] = []
-    datasource: Any = None
-    resolved = False
     for label, qd in _inline_validation_queries(name, tool_args):
         try:
             await engine.execute(SlayerQuery.model_validate(qd))
         except _VALIDATION_FAILURES as exc:
-            if not resolved:
-                datasource = await _resolve_validation_datasource(
-                    storage, name, tool_args,
-                )
-                resolved = True
-            if await _engine_healthy(engine, datasource):
-                problems.append(f"{label}: {type(exc).__name__}: {exc}")
-            else:
+            problems.append(f"{label}: {type(exc).__name__}: {exc}")
+            if _looks_like_infra_error(exc):
                 logger.warning(
-                    "validate-before-persist: engine unhealthy "
-                    "(datasource=%s) — skipping gate for %s: %s",
-                    datasource, label, exc,
+                    "validate-before-persist: engine/connection error while "
+                    "validating %s (%s) — BLOCKING (write not persisted; the "
+                    "encoder will defer this KB). If this is infra rather than "
+                    "bad SQL, investigate the datasource: %s",
+                    name, label, exc,
                 )
     return problems
 
@@ -819,7 +797,7 @@ async def _validate_and_call(
     args = tool_args or {}
     try:
         sql_problems = await _collect_validation_problems(
-            name, args, storage=storage, engine=engine,
+            name, args, engine=engine,
         )
     except Exception:  # noqa: BLE001 — harness bug must never block a write
         logger.exception(
@@ -895,7 +873,7 @@ async def _resolve_otf_task_storage_dir(
     task_data: dict,
     data_path_base: str,
     build_encoder,
-    benchmark: str | None = None,
+    benchmark: str,
 ) -> tuple[str, list[int]]:
     """DEV-1454: lazily build the durable per-DB reference (setup encode of the
     full KB), then materialise a per-task HARD-8 variant copy of it — entities
@@ -905,8 +883,8 @@ async def _resolve_otf_task_storage_dir(
     DEV-1462: ``benchmark`` selects the per-benchmark scoped roots so a
     LiveSQLBench reference lands at ``slayer_models_otf_livesqlbench/<db>/``
     instead of colliding with a same-named mini-interact DB at
-    ``slayer_models_otf/<db>/``. ``benchmark=None`` keeps the legacy
-    mini-interact roots. Also threads an explicit ``db_root`` into
+    ``slayer_models_otf/<db>/``. ``benchmark`` is REQUIRED; ``"mini_interact"``
+    keeps the legacy roots. Also threads an explicit ``db_root`` into
     ``ensure_db_reference`` so the build's live-SQLite resolution
     follows ``--db-path`` (overriding ``$BIRD_DB_PATH``) — Codex #2 fix."""
     deleted = sorted(extract_deleted_kb_ids(task_data))
@@ -917,7 +895,7 @@ async def _resolve_otf_task_storage_dir(
         db_name,
         reference_root=reference_root,
         cache_root=_paths.slayer_otf_cache_root(benchmark=benchmark),
-        mini_interact_root=Path(data_path_base),
+        mini_interact_root=db_root_resolved,
         build_encoder=build_encoder,
         db_root=db_root_resolved,
     )
@@ -1057,8 +1035,10 @@ class PydanticAIOtfEncodeAgent:
 
         db_name = task_data["selected_database"]
         instance_id = task_data["instance_id"]
-        benchmark: str | None = (
-            "livesqlbench" if task_data.get("dataset") == "livesqlbench" else None
+        benchmark: str = (
+            "livesqlbench"
+            if task_data.get("dataset") == "livesqlbench"
+            else "mini_interact"
         )
 
         from slayer.storage.yaml_storage import YAMLStorage

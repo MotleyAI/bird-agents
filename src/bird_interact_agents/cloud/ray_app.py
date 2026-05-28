@@ -48,6 +48,20 @@ _ARTIFACT_ROOT_FN_NAME = {
     "slayer_models_otf": "slayer_models_otf_root",
 }
 
+# The two OTF roots are benchmark-scoped (no None default). Only these need the
+# benchmark; `slayer_models_root` (pre-encoded) is benchmark-agnostic.
+_BENCHMARK_SCOPED = {"slayer_otf_cache", "slayer_models_otf"}
+
+
+def _cloud_benchmark(cfg: dict[str, Any]) -> str:
+    """Benchmark token for the run's OTF path roots, derived from the run cfg.
+
+    Cloud is mini-interact-only today (no ``dataset`` in cfg) → ``"mini_interact"``;
+    returns ``"livesqlbench"`` automatically once a ``dataset`` is plumbed
+    through, so artifact-root selection never relies on a removed default.
+    """
+    return "livesqlbench" if cfg.get("dataset") == "livesqlbench" else "mini_interact"
+
 
 def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
     """Return ``[(artifact, dest_root, required), ...]`` for the run's combo.
@@ -72,10 +86,16 @@ def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
         ]
     else:
         artifacts = [("slayer_otf_cache", True)]
+    benchmark = _cloud_benchmark(cfg)
     out: list[tuple[str, Path, bool]] = []
     for artifact, required in artifacts:
         root_fn = getattr(paths, _ARTIFACT_ROOT_FN_NAME[artifact])
-        out.append((artifact, root_fn(), required))
+        root = (
+            root_fn(benchmark=benchmark)
+            if artifact in _BENCHMARK_SCOPED
+            else root_fn()
+        )
+        out.append((artifact, root, required))
     return out
 
 

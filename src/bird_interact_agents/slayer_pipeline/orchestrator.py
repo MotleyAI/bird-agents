@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -34,6 +35,7 @@ from ..config import get_default_llm_model
 from .dates import detect_and_apply, make_anthropic_client
 from .jsonb import detect_drift, expand_one_column, jsonb_meaning_entries
 from .overlay import apply_overlay, load_meanings
+from .portable_connection import absolute_sqlite_url
 
 DEFAULT_MINI_INTERACT_ROOT = paths.mini_interact_root()
 DEFAULT_RESULTS_ROOT = paths.results_root()
@@ -56,7 +58,10 @@ def _phase1_ingest(db: str, sqlite_path: Path, storage: Path) -> None:
     env = os.environ.copy()
     env["SLAYER_STORAGE"] = str(storage)
 
-    conn_str = f"sqlite:////{sqlite_path}"
+    # Canonical absolute URL, resolved env-independently — so a RELATIVE
+    # `sqlite_path` (from a relative `--db-path`) can't become a broken
+    # `sqlite:////../…` that SQLAlchemy reads at the filesystem root.
+    conn_str = absolute_sqlite_url(sqlite_path)
     create = subprocess.run(
         ["slayer", "datasources", "create", conn_str, "--name", db],
         env=env,
@@ -67,11 +72,18 @@ def _phase1_ingest(db: str, sqlite_path: Path, storage: Path) -> None:
         raise RuntimeError(
             f"slayer datasources create failed for {db}: {create.stderr.strip()}"
         )
-    # Force 4-slash absolute-path URL — the slayer CLI sometimes drops one.
+    # Canonicalise the persisted datasource YAML's connection_string to the
+    # SAME absolute URL — the slayer CLI may store a different slash form, and
+    # later phases read this YAML. Robust line-rewrite (any prior value), not a
+    # string-replace keyed on the input path.
     ds_yaml = storage / "datasources" / f"{db}.yaml"
     if ds_yaml.exists():
         text = ds_yaml.read_text()
-        fixed = text.replace(f"sqlite:///{sqlite_path}", f"sqlite:////{sqlite_path}")
+        fixed = re.sub(
+            r"(?m)^(\s*connection_string:\s*).*$",
+            lambda m: f"{m.group(1)}{conn_str}",
+            text,
+        )
         if fixed != text:
             ds_yaml.write_text(fixed)
 

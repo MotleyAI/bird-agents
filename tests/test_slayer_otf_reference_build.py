@@ -660,6 +660,124 @@ def test_edges_from_kb_rows_normalises_children_variants():
 
 
 # ---------------------------------------------------------------------------
+# Edges also come from the `definition` formula (the cross-references that
+# `children_knowledge` frequently omits). A `\text{ABBR}` token that names
+# another KB term (by its parenthetical abbreviation) becomes a dependency
+# edge — so the referent is encoded first and its column exists when the
+# dependent's SQL is validated.
+# ---------------------------------------------------------------------------
+
+
+def test_edges_include_formula_derived_deps():
+    from bird_interact_agents.slayer_otf.reference_build import (
+        _edges_from_kb_rows,
+    )
+
+    rows = [
+        {"id": 0, "knowledge": "Signal-to-Noise Quality Indicator (SNQI)",
+         "definition": r"$\text{SNQI} = \text{SnrRatio} - 0.1$",
+         "children_knowledge": -1},
+        {"id": 5, "knowledge": "Composite Detection Score (CDS)",
+         "definition": r"$\text{CDS} = \text{SNQI} \times 2$",
+         "children_knowledge": -1},
+    ]
+    edges = _edges_from_kb_rows(rows)
+    # KB5's formula references SNQI (KB0) even though children_knowledge=-1.
+    assert 0 in edges[5]
+    # KB0 references only SnrRatio (not a KB term) + itself -> no KB edge.
+    assert edges[0] == []
+
+
+def test_formula_edges_union_with_children_knowledge():
+    from bird_interact_agents.slayer_otf.reference_build import (
+        _edges_from_kb_rows,
+    )
+
+    rows = [
+        {"id": 0, "knowledge": "Base (B0)", "definition": "x",
+         "children_knowledge": -1},
+        {"id": 1, "knowledge": "Mid (M1)", "definition": "y",
+         "children_knowledge": -1},
+        {"id": 2, "knowledge": "Top (T2)",
+         "definition": r"$\text{T2} = \text{M1} + 1$",
+         "children_knowledge": [0]},  # declared dep on 0, formula dep on 1
+    ]
+    edges = _edges_from_kb_rows(rows)
+    assert set(edges[2]) == {0, 1}
+
+
+def test_ambiguous_abbreviation_does_not_create_edge():
+    """If a parenthetical abbreviation maps to >1 KB term it's ambiguous —
+    emitting an edge on it could create a spurious cycle that defers a large
+    valid subtree, so it must be dropped."""
+    from bird_interact_agents.slayer_otf.reference_build import (
+        _edges_from_kb_rows,
+    )
+
+    rows = [
+        {"id": 1, "knowledge": "Alpha Metric (AM)", "definition": "x",
+         "children_knowledge": -1},
+        {"id": 2, "knowledge": "Another Measure (AM)", "definition": "x",
+         "children_knowledge": -1},
+        {"id": 3, "knowledge": "Uses It (UI)",
+         "definition": r"$\text{UI} = \text{AM} + 1$",
+         "children_knowledge": -1},
+    ]
+    edges = _edges_from_kb_rows(rows)
+    assert edges[3] == []  # "AM" is ambiguous -> no edge
+
+
+def test_raw_column_token_suppresses_kb_edge():
+    """A `\\text{token}` that names a raw base column must NOT create a KB edge
+    even when it ALSO matches a KB abbreviation — raw-column suppression wins,
+    so a formula variable that happens to collide with an abbreviation can't
+    fabricate a spurious dependency (and cycle)."""
+    from bird_interact_agents.slayer_otf.reference_build import (
+        _edges_from_kb_rows,
+    )
+
+    rows = [
+        # "AOI" is BOTH a KB abbreviation (KB1) AND a raw base column below.
+        {"id": 1, "knowledge": "Atmospheric Observability Index (AOI)",
+         "definition": "x", "children_knowledge": -1},
+        {"id": 2, "knowledge": "Detection (DET)",
+         "definition": r"$\text{DET} = \text{AOI} \times 2$",
+         "children_knowledge": -1},
+    ]
+    # Without suppression, AOI would resolve to KB1.
+    assert _edges_from_kb_rows(rows)[2] == [1]
+    # With AOI present as a raw column, the token is suppressed -> no edge.
+    assert _edges_from_kb_rows(rows, raw_columns={"AOI"})[2] == []
+
+
+async def test_formula_only_dep_encoded_before_dependent():
+    """End-to-end: a formula-only dependency (children_knowledge=-1) must
+    still gate encode order — the referent runs before the dependent."""
+    from bird_interact_agents.slayer_otf import reference_build
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+        EncoderResult,
+    )
+
+    rows = [
+        {"id": 0, "knowledge": "Signal-to-Noise Quality Indicator (SNQI)",
+         "definition": r"$\text{SNQI} = \text{SnrRatio}$",
+         "type": "calculation_knowledge", "children_knowledge": -1},
+        {"id": 5, "knowledge": "Composite Detection Score (CDS)",
+         "definition": r"$\text{CDS} = \text{SNQI} \times 2$",
+         "type": "calculation_knowledge", "children_knowledge": -1},
+    ]
+    edges = reference_build._edges_from_kb_rows(rows)
+    order: list[int] = []
+
+    async def run_one(kb_id, row, deps_results, *, reverse_deps=None):
+        order.append(kb_id)
+        return EncoderResult(kb_id=kb_id, status="encoded", entities=[], notes="")
+
+    await reference_build._encode_all(kb_rows=rows, edges=edges, run_one=run_one)
+    assert order.index(0) < order.index(5)
+
+
+# ---------------------------------------------------------------------------
 # Reverse-dependency wiring (DEV-1466): `_encode_all` must hand each KB the rows
 # of the KBs that REFERENCE it (its parents), so a value_illustration can defer
 # an embedded scoring scheme to a calculation_knowledge parent. Only SCHEDULED

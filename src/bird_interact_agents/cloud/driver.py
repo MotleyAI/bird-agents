@@ -197,6 +197,22 @@ def _dbs_for_instances(instance_ids) -> list[str]:
     return sorted(dbs)
 
 
+def _benchmark_for_dataset(dataset: str | None) -> str:
+    """Map a run's dataset to its benchmark token for the OTF path roots.
+
+    Cloud is mini-interact-only today (no ``--dataset``/``--gold-file`` at
+    submit), so this resolves to ``"mini_interact"``; it returns
+    ``"livesqlbench"`` automatically the moment a ``dataset`` is plumbed
+    through, so the artifact-root selection never relies on a default.
+    """
+    return "livesqlbench" if dataset == "livesqlbench" else "mini_interact"
+
+
+def _submit_benchmark(args) -> str:
+    """Benchmark for a submit, derived from ``args.dataset`` (absent today)."""
+    return _benchmark_for_dataset(getattr(args, "dataset", None))
+
+
 def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
     """Return the local-dir → GCS-artifact-name uploads to ship for this
     combo, each tagged ``required`` (must exist + non-empty) or optional
@@ -211,15 +227,21 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
     """
     setup = args.slayer_setup
     fw = args.framework
+    benchmark = _submit_benchmark(args)
     if setup == "pre-encoded":
         return [(submitter_repo_root() / "slayer_models", "slayer_models", True)]
     if fw == "pydantic_ai_otf_encode":
         return [
-            (paths.slayer_otf_cache_root(), "slayer_otf_cache", True),
-            (paths.slayer_models_otf_root(), "slayer_models_otf", False),
+            (paths.slayer_otf_cache_root(benchmark=benchmark),
+             "slayer_otf_cache", True),
+            (paths.slayer_models_otf_root(benchmark=benchmark),
+             "slayer_models_otf", False),
         ]
     # pydantic_ai_recursive + on-the-fly — cache only, no LLM-encoded reference.
-    return [(paths.slayer_otf_cache_root(), "slayer_otf_cache", True)]
+    return [
+        (paths.slayer_otf_cache_root(benchmark=benchmark),
+         "slayer_otf_cache", True),
+    ]
 
 
 def _artifact_present(root: Path, db: str, artifact: str) -> bool:
@@ -573,7 +595,9 @@ def fetch(run_id: str) -> dict:
     # No-op for runs without any post_run/ shards (raw, pre-encoded, recursive).
     merge_report = _post_run_merge.merge_post_run_into_warm_cache(
         run_dir=dest,
-        reference_root=paths.slayer_models_otf_root(),
+        reference_root=paths.slayer_models_otf_root(
+            benchmark=_benchmark_for_dataset(manifest.get("dataset")),
+        ),
     )
     metrics["merge_report"] = merge_report
     return metrics

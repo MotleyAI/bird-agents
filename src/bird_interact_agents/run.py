@@ -172,7 +172,7 @@ def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) 
 
 def _maybe_force_wipe_otf(
     *, otf_rebuild: bool, framework: str, dbs,
-    benchmark: str | None = None,
+    benchmark: str,
 ) -> None:
     """``--otf-rebuild`` force-wipe: drop BOTH on-the-fly layers (the phase-1-3
     cache AND the KB-encoded reference) for ``dbs``, for either on-the-fly
@@ -182,9 +182,10 @@ def _maybe_force_wipe_otf(
     would let a stale cache be re-encoded into a "fresh" reference (Codex r2
     High#3).
 
-    DEV-1462: ``benchmark`` selects the per-benchmark scoped roots so a
-    LiveSQLBench ``--otf-rebuild`` never wipes the mini-interact cache (and
-    vice versa). ``benchmark=None`` keeps the legacy mini-interact roots.
+    DEV-1462: ``benchmark`` (REQUIRED, explicit) selects the per-benchmark
+    scoped roots so a LiveSQLBench ``--otf-rebuild`` never wipes the
+    mini-interact cache (and vice versa). ``"mini_interact"`` maps to the
+    legacy roots.
     """
     if not otf_rebuild:
         return
@@ -746,7 +747,9 @@ async def run_evaluation(
     # copy. Default off reuses whatever is present. On-the-fly frameworks only.
     # DEV-1462: pass the per-benchmark scope so a livesqlbench rebuild never
     # wipes the mini-interact roots (and vice versa).
-    benchmark_for_paths = "livesqlbench" if dataset == "livesqlbench" else None
+    benchmark_for_paths = (
+        "livesqlbench" if dataset == "livesqlbench" else "mini_interact"
+    )
     _maybe_force_wipe_otf(
         otf_rebuild=otf_rebuild,
         framework=framework,
@@ -1185,6 +1188,13 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+
+    # Resolve --db-path to an absolute path ONCE at the CLI boundary. Every
+    # downstream consumer (orchestrator ingest, on-the-fly cache/reference,
+    # per-task DB materialisation) then receives an absolute root, so a
+    # relative `--db-path ../livesqlbench-base-lite-sqlite/` (the README form)
+    # cannot produce a broken `sqlite:////../…` connection string.
+    args.db_path = str(Path(args.db_path).resolve())
 
     if args.instance_id is not None and (args.filter_ids or args.limit is not None):
         parser.error("--instance-id cannot be combined with --filter-ids or --limit")

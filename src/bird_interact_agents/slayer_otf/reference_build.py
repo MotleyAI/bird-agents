@@ -36,12 +36,13 @@ import fcntl
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 from collections import deque
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Iterator
+from typing import Any, Awaitable, Callable, Collection, Iterator
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -89,14 +90,93 @@ class ReferenceEntry(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _edges_from_kb_rows(kb_rows: list[dict]) -> dict[int, list[int]]:
-    """Map each KB id to its dependency ids, normalising the raw
-    ``children_knowledge`` field (``-1`` / ``None`` / int / list) the same way
-    :func:`kb_memory_encoder.encode_kb_as_memories` does."""
+# A KB term's parenthetical abbreviation, e.g. "… (SNQI)" -> "SNQI".
+_ABBR_RE = re.compile(r"\(([A-Za-z0-9_ ]{2,15})\)")
+# A `\text{TOKEN}` reference inside a `definition` formula.
+_TEXT_TOKEN_RE = re.compile(r"\\text\{([^}]*)\}")
+
+
+def _kb_term_index(kb_rows: list[dict]) -> dict[str, int]:
+    """Map each KB term's parenthetical abbreviation → its kb_id.
+
+    Ambiguous abbreviations (mapping to >1 KB) are DROPPED: emitting an edge on
+    an ambiguous token could fabricate a spurious dependency cycle that defers
+    a large valid subtree (codex review)."""
+    by_abbr: dict[str, set[int]] = {}
+    for row in kb_rows:
+        m = _ABBR_RE.search(str(row.get("knowledge", "")))
+        if not m:
+            continue
+        by_abbr.setdefault(m.group(1).strip(), set()).add(int(row["id"]))
+    return {abbr: next(iter(ids)) for abbr, ids in by_abbr.items() if len(ids) == 1}
+
+
+def _formula_dep_ids(
+    definition: Any, kb_term_index: dict[str, int],
+    raw_columns: Collection[str],
+) -> set[int]:
+    """KB ids referenced by the `\\text{…}` tokens in a `definition` formula.
+
+    A token resolves to an edge only when it unambiguously names ANOTHER KB
+    term (via :func:`_kb_term_index`) and is NOT a raw base column — a token
+    that names a raw column is a plain SQL variable, never a KB dependency."""
+    deps: set[int] = set()
+    for tok in _TEXT_TOKEN_RE.findall(str(definition or "")):
+        tok = tok.strip()
+        if tok in raw_columns:
+            continue  # raw base column reference — not a KB edge
+        kid = kb_term_index.get(tok)
+        if kid is not None:
+            deps.add(kid)
+    return deps
+
+
+def _edges_from_kb_rows(
+    kb_rows: list[dict], *, raw_columns: Collection[str] = frozenset(),
+) -> dict[int, list[int]]:
+    """Map each KB id to its dependency ids.
+
+    Edges are the UNION of the declared ``children_knowledge`` field (``-1`` /
+    ``None`` / int / list, normalised like
+    :func:`kb_memory_encoder.encode_kb_as_memories`) and the cross-references
+    embedded in the ``definition`` formula (``\\text{ABBR}`` tokens resolved to
+    other KB ids). The formula edges recover real dependencies that
+    ``children_knowledge`` frequently omits, so a dependent KB is encoded after
+    the columns it references already exist. ``raw_columns`` (the ingested base
+    schema) suppresses tokens that name a raw column rather than a KB term."""
+    index = _kb_term_index(kb_rows)
     edges: dict[int, list[int]] = {}
     for row in kb_rows:
-        edges[int(row["id"])] = _normalise_children(row.get("children_knowledge"))
+        kid = int(row["id"])
+        deps = set(_normalise_children(row.get("children_knowledge")))
+        deps |= _formula_dep_ids(row.get("definition"), index, raw_columns)
+        deps.discard(kid)
+        edges[kid] = sorted(deps)
     return edges
+
+
+async def _raw_base_columns(storage: Any, db: str) -> set[str]:
+    """Names of the ingested base columns for ``db`` — used to suppress
+    ``definition`` formula tokens that name a raw column rather than a KB term.
+    Read BEFORE the encoder runs, so storage holds only the phase-1 base
+    models.
+
+    Best-effort: suppression is an optimisation, not a correctness gate, so a
+    storage without the datasource registered (``list_models`` raises
+    ``ValueError`` for an unknown data_source — e.g. an empty cache) yields an
+    empty set rather than failing the build."""
+    cols: set[str] = set()
+    try:
+        names = await storage.list_models(data_source=db)
+    except ValueError:
+        return cols
+    for name in names:
+        model = await storage.get_model(name, data_source=db)
+        for c in getattr(model, "columns", None) or []:
+            cn = getattr(c, "name", None)
+            if cn:
+                cols.add(cn)
+    return cols
 
 
 def _cyclic_ids(ids: set[int], edges: dict[int, list[int]]) -> set[int]:
@@ -643,7 +723,8 @@ async def _build_reference_inside_lock(
         if opener is not None:
             await opener()
         try:
-            edges = _edges_from_kb_rows(kb_rows)
+            raw_columns = await _raw_base_columns(storage, db)
+            edges = _edges_from_kb_rows(kb_rows, raw_columns=raw_columns)
             results = await _encode_all(
                 kb_rows=kb_rows, edges=edges, run_one=run_one,
             )

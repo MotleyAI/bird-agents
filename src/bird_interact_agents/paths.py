@@ -114,20 +114,23 @@ def livesqlbench_data_file() -> Path:
     return livesqlbench_root() / "livesqlbench_data_sqlite.jsonl"
 
 
-# Set of benchmark identifiers the per-benchmark OTF roots accept. New
-# benchmarks (e.g. Base-Full) extend this; an unknown value raises so a
-# typo cannot silently fall back to mini-interact.
-_KNOWN_BENCHMARKS: frozenset[str] = frozenset({"livesqlbench"})
+# Set of benchmark identifiers the per-benchmark OTF roots accept. `benchmark`
+# is REQUIRED and explicit on those helpers (no `None` default) so a forgotten
+# or typo'd benchmark can never silently fall back to — and mix artifacts with
+# — mini-interact. `"mini_interact"` is itself an explicit value that maps to
+# the legacy dirs/env vars (so on-disk layout + the cloud contract are
+# unchanged). New benchmarks (e.g. Base-Full) extend this set.
+_KNOWN_BENCHMARKS: frozenset[str] = frozenset({"mini_interact", "livesqlbench"})
 
 
 def _validate_benchmark(benchmark: str | None) -> None:
-    if benchmark is None:
-        return
+    """Require an explicit, known benchmark. `None`/unknown raises ValueError —
+    there is no silent mini-interact fallback."""
     if benchmark not in _KNOWN_BENCHMARKS:
         raise ValueError(
-            f"Unknown benchmark {benchmark!r}; expected one of "
-            f"{sorted(_KNOWN_BENCHMARKS)} or None (mini-interact). "
-            f"A typo here would silently mix per-benchmark artifacts."
+            f"benchmark must be one of {sorted(_KNOWN_BENCHMARKS)}; got "
+            f"{benchmark!r}. It is required (no default) so a forgotten or "
+            f"typo'd benchmark cannot silently mix per-benchmark artifacts."
         )
 
 
@@ -166,38 +169,34 @@ def slayer_models_root() -> Path:
     return main_checkout_root() / "slayer_models"
 
 
-def slayer_otf_cache_root(*, benchmark: str | None = None) -> Path:
+def slayer_otf_cache_root(*, benchmark: str) -> Path:
     """Per-DB phase-1-3 ingest cache root for the on-the-fly setup path.
 
     Single source of truth (replaces the duplicated per-agent
-    ``_otf_cache_root`` helpers). Lives at ``<main_checkout>/slayer_otf_cache/``
-    so the cache is sandboxed-writable and shared across worktrees.
+    ``_otf_cache_root`` helpers). ``benchmark`` is REQUIRED and explicit so two
+    benchmarks with overlapping DB names (e.g. mini-interact and LiveSQLBench
+    both have an ``alien`` DB) keep disjoint caches and a forgotten benchmark
+    can never silently mix them:
 
-    ``benchmark`` (DEV-1462) selects a benchmark-scoped sibling root so two
-    benchmarks with overlapping DB names (e.g. mini-interact and
-    LiveSQLBench both have an ``alien`` DB) keep disjoint caches:
-
-    * ``benchmark=None`` (default) → ``<main_checkout>/slayer_otf_cache/``
-      (legacy mini-interact path; no caller breakage, no test breakage,
-      no silent shift in the dev-1470 cloud contract).
+    * ``benchmark="mini_interact"`` → ``<main_checkout>/slayer_otf_cache/``
+      (the LEGACY dir + LEGACY env var — on-disk layout & the dev-1470 cloud
+      contract are unchanged).
     * ``benchmark="livesqlbench"`` →
       ``<main_checkout>/slayer_otf_cache_livesqlbench/``.
 
     Env overrides (the cloud actor sets these to ``/data/<...>`` so the
-    uploaded cache is found there) are PARALLEL — one per benchmark, so
-    a livesqlbench override does not steer the mini-interact root and
-    vice versa:
+    uploaded cache is found there) are PARALLEL — one per benchmark, so a
+    livesqlbench override does not steer the mini-interact root and vice versa:
 
-    * mini-interact: ``BIRD_OTF_CACHE_ROOT``
+    * mini_interact: ``BIRD_OTF_CACHE_ROOT``
     * livesqlbench:  ``BIRD_OTF_CACHE_ROOT_LIVESQLBENCH``
     """
     _validate_benchmark(benchmark)
-    if benchmark is None:
+    if benchmark == "mini_interact":
         override = os.environ.get("BIRD_OTF_CACHE_ROOT")
         if override:
             return Path(override).expanduser()
         return main_checkout_root() / "slayer_otf_cache"
-    # Benchmark-scoped variant.
     env_var = f"BIRD_OTF_CACHE_ROOT_{benchmark.upper()}"
     override = os.environ.get(env_var)
     if override:
@@ -205,27 +204,28 @@ def slayer_otf_cache_root(*, benchmark: str | None = None) -> Path:
     return main_checkout_root() / f"slayer_otf_cache_{benchmark}"
 
 
-def slayer_models_otf_root(*, benchmark: str | None = None) -> Path:
+def slayer_models_otf_root(*, benchmark: str) -> Path:
     """Per-DB reference models built by the DEV-1454 on-the-fly KB-encode
     setup pass — a sibling of ``slayer_models`` under the main checkout (so
     it is git-committable, and ``hard8_preprocessor.build_task_variant_storage``
     resolves the ``mini-interact`` dataset path identically). NEVER the same
     dir as ``slayer_models`` — hand-built committed models are never touched.
 
-    ``benchmark`` (DEV-1462) selects a benchmark-scoped sibling root, same
-    semantics as :func:`slayer_otf_cache_root`:
+    ``benchmark`` is REQUIRED and explicit, same semantics as
+    :func:`slayer_otf_cache_root`:
 
-    * ``benchmark=None`` → ``<main_checkout>/slayer_models_otf/`` (legacy).
+    * ``benchmark="mini_interact"`` → ``<main_checkout>/slayer_models_otf/``
+      (legacy dir + legacy env var).
     * ``benchmark="livesqlbench"`` →
       ``<main_checkout>/slayer_models_otf_livesqlbench/``.
 
     Env overrides (one per benchmark):
 
-    * mini-interact: ``BIRD_SLAYER_MODELS_OTF_ROOT``
+    * mini_interact: ``BIRD_SLAYER_MODELS_OTF_ROOT``
     * livesqlbench:  ``BIRD_SLAYER_MODELS_OTF_ROOT_LIVESQLBENCH``
     """
     _validate_benchmark(benchmark)
-    if benchmark is None:
+    if benchmark == "mini_interact":
         override = os.environ.get("BIRD_SLAYER_MODELS_OTF_ROOT")
         if override:
             return Path(override).expanduser()

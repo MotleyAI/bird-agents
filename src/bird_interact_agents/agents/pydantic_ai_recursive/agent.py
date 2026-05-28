@@ -157,7 +157,7 @@ async def _resolve_otf_task_storage_dir(
     db_name: str,
     task_data: dict,
     data_path_base: str,
-    benchmark: str | None = None,
+    benchmark: str,
 ) -> tuple[str, list[int]]:
     """On-the-fly equivalent of ``resolve_task_storage_dir``.
 
@@ -173,7 +173,7 @@ async def _resolve_otf_task_storage_dir(
     so a LiveSQLBench task's cache lands at
     ``slayer_otf_cache_livesqlbench/<db>/`` instead of colliding with
     a same-named mini-interact DB at ``slayer_otf_cache/<db>/``.
-    ``benchmark=None`` keeps the legacy mini-interact root.
+    ``benchmark`` is REQUIRED; ``"mini_interact"`` keeps the legacy root.
     """
     deleted = sorted(extract_deleted_kb_ids(task_data))
     instance_id = task_data["instance_id"]
@@ -333,8 +333,10 @@ class PydanticAIRecursiveAgent:
 
         db_name = task_data["selected_database"]
         instance_id = task_data["instance_id"]
-        benchmark: str | None = (
-            "livesqlbench" if task_data.get("dataset") == "livesqlbench" else None
+        benchmark: str = (
+            "livesqlbench"
+            if task_data.get("dataset") == "livesqlbench"
+            else "mini_interact"
         )
 
         load_db_data_if_needed(db_name, data_path_base)

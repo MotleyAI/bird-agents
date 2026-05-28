@@ -216,7 +216,12 @@ def upload_otf_reference_delta(
     try:
         from bird_interact_agents import paths  # local import: tests stub `paths`
 
-        ref_root = paths.slayer_models_otf_root()
+        benchmark = (
+            "livesqlbench"
+            if cfg.get("dataset") == "livesqlbench"
+            else "mini_interact"
+        )
+        ref_root = paths.slayer_models_otf_root(benchmark=benchmark)
         if not ref_root.is_dir():
             return
         for db_dir in sorted(p for p in ref_root.iterdir() if p.is_dir()):

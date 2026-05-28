@@ -1962,7 +1962,7 @@ def test_actor_seed_snapshot_ignores_local_only_cloud_built_refs(
     ref_root = tmp_path / "slayer_models_otf"
     (ref_root / "db_b").mkdir(parents=True)
     (ref_root / "db_b" / "_reference_fp.txt").write_text("peer-built-fp-B")
-    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda: ref_root)
+    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda *, benchmark=None: ref_root)
 
     cfg = {
         "framework": "pydantic_ai_otf_encode", "query_mode": "slayer",
@@ -2009,7 +2009,7 @@ def test_actor_initial_seed_fps_empty_when_no_seed(
     monkeypatch.setattr(ray_app, "download_slayer_setup", lambda *a, **k: None)
 
     ref_root = tmp_path / "slayer_models_otf"  # absent
-    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda: ref_root)
+    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda *, benchmark=None: ref_root)
 
     cfg = {
         "framework": "pydantic_ai_otf_encode", "query_mode": "slayer",

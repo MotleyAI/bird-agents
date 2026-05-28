@@ -609,8 +609,8 @@ def _setup_slayer_submit(
     monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: data_file)
     monkeypatch.setattr(driver.paths, "mini_interact_root", lambda: tmp_path / "mini")
     monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
-    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda: otf_cache)
-    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: otf_ref)
+    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda *, benchmark=None: otf_cache)
+    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda *, benchmark=None: otf_ref)
     # read_api_keys_from_local_env now fails fast on a missing required key
     # (incl. OPENAI for slayer); set them so a successful submit doesn't raise
     # in an env without these vars.
@@ -720,7 +720,9 @@ def test_check_setup_auto_builds_missing_otf_cache(monkeypatch, tmp_path):
     # Lock the worktree-safe contract: the cache is built under the resolved
     # roots (not a worktree-relative path) with force=False.
     assert all(
-        kw["cache_root"] == driver.paths.slayer_otf_cache_root()
+        kw["cache_root"] == driver.paths.slayer_otf_cache_root(
+            benchmark="mini_interact",
+        )
         for kw in seen_kwargs
     )
     assert all(
@@ -949,8 +951,8 @@ def _setup_otf_encode_submit(monkeypatch, tmp_path, *, dbs, lay_down_cache=True,
     monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: data_file)
     monkeypatch.setattr(driver.paths, "mini_interact_root", lambda: tmp_path / "mini")
     monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
-    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda: otf_cache)
-    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: otf_ref)
+    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda *, benchmark=None: otf_cache)
+    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda *, benchmark=None: otf_ref)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
     monkeypatch.setattr(driver, "wait_until_done", MagicMock())
@@ -1118,8 +1120,8 @@ def test_submit_groups_instance_ids_by_database(monkeypatch, tmp_path):
     monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: dataset)
     monkeypatch.setattr(driver.paths, "mini_interact_root", lambda: tmp_path / "mini")
     monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
-    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda: otf_cache)
-    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: otf_ref)
+    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda *, benchmark=None: otf_cache)
+    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda *, benchmark=None: otf_ref)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
     monkeypatch.setattr(driver, "wait_until_done", MagicMock())
@@ -1211,7 +1213,7 @@ def test_fetch_calls_post_run_merge_after_collation(monkeypatch, tmp_path):
     fake_results = tmp_path / "results"
     monkeypatch.setattr(driver, "local_results_root", lambda: fake_results)
     fake_ref_root = tmp_path / "warm" / "slayer_models_otf"
-    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: fake_ref_root)
+    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda *, benchmark=None: fake_ref_root)
     mocks["gcs"].read_manifest.return_value = {
         "run_id": RUN_ID, "instance_ids": ["db_a_1"],
     }
@@ -1257,7 +1259,7 @@ def test_fetch_continues_when_merge_returns_no_shards(monkeypatch, tmp_path):
     monkeypatch.setattr(driver, "local_results_root", lambda: fake_results)
     monkeypatch.setattr(
         driver.paths, "slayer_models_otf_root",
-        lambda: tmp_path / "warm" / "slayer_models_otf",
+        lambda *, benchmark=None: tmp_path / "warm" / "slayer_models_otf",
     )
     mocks["gcs"].read_manifest.return_value = {
         "run_id": RUN_ID, "instance_ids": ["db_a_1"],
