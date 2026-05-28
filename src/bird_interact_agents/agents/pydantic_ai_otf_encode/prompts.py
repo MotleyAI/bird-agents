@@ -140,7 +140,7 @@ validator's rejection list — see LITERAL-EXISTS in the SETUP encoder
 prompt). If the actual values diverge from the KB-described
 enum/labels (mixed case, free-text variants, ordinal labels missing
 from the data, numeric-range strings where the KB describes ordinal
-labels, NULLs the KB doesn't mention), PREPEND a 1–2 sentence caveat to the
+labels, NULLs the KB doesn't mention), PREPEND a 1-2 sentence caveat to the
 Column's `description`, ABOVE the `[kb=N]` block, in the form:
 
     "Sample values <concrete observation, quoting up to 3 verbatim
