@@ -46,6 +46,7 @@ async def prepare_task_storage(
     cache_entry: CacheEntry,
     work_dir: Path,
     mini_interact_root: Path,
+    db_root: Path | None = None,
 ) -> Path:
     """Materialise the per-task SLayer storage at ``<work_dir>/<db>/``.
 
@@ -59,6 +60,13 @@ async def prepare_task_storage(
             (== the harness's ``--db-path``). Used to re-anchor the
             datasource ``connection_string`` so a cache built against
             a different root still points at the right sqlite file.
+        db_root: Authoritative DB root that overrides ``$BIRD_DB_PATH``
+            when re-anchoring (DEV-1462). A LiveSQLBench run threads its
+            ``--db-path`` here so conftest's / a dev shell's
+            ``$BIRD_DB_PATH=<mini-interact>`` can't silently re-anchor an
+            overlapping DB name (e.g. ``alien``) to the wrong sqlite.
+            Mirrors the otf_encode adapter's ``ensure_db_reference`` /
+            ``build_task_variant_storage`` ``db_root`` semantics.
 
     Returns:
         The path that should be set as ``SLAYER_STORAGE`` for the
@@ -75,6 +83,7 @@ async def prepare_task_storage(
 
     await _rewrite_datasource_connection_string(
         db=db, scratch=scratch, mini_interact_root=mini_interact_root,
+        db_root=db_root,
     )
     if deleted_kb_ids:
         # Re-encode + drop the matching embedding rows in lockstep so
@@ -97,6 +106,7 @@ async def _rewrite_datasource_connection_string(
     db: str,
     scratch: Path,
     mini_interact_root: Path,
+    db_root: Path | None = None,
 ) -> None:
     """Re-anchor the copied datasource's ``connection_string`` to the
     current mini-interact root.
@@ -115,6 +125,11 @@ async def _rewrite_datasource_connection_string(
     the stale-foreign-absolute form (the DEV-1478 cloud bug, where a
     locally-built cache's absolute path doesn't exist in the cloud
     container) while resolving the relative form against the root.
+
+    Root precedence (DEV-1462): an explicit ``db_root`` wins over
+    ``$BIRD_DB_PATH`` — a LiveSQLBench run threads its ``--db-path`` so
+    conftest's / a dev shell's ``$BIRD_DB_PATH=<mini-interact>`` can't
+    re-anchor an overlapping DB name to the wrong sqlite.
     """
     storage = YAMLStorage(base_dir=str(scratch))
     ds = await storage.get_datasource(db)
@@ -132,7 +147,7 @@ async def _rewrite_datasource_connection_string(
     # through unchanged — the DEV-1478 cloud bug). A relative form (if a
     # cache ever carried one) resolves against the root, path preserved.
     resolved = reanchor_connection_string(
-        ds.connection_string, db, mini_interact_root,
+        ds.connection_string, db, mini_interact_root, db_root=db_root,
     )
     if resolved != ds.connection_string:
         ds = ds.model_copy(update={"connection_string": resolved})

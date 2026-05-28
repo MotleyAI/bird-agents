@@ -194,6 +194,13 @@ async def _resolve_otf_task_storage_dir(
         cache_entry=cache_entry,
         work_dir=_otf_work_dir(instance_id),
         mini_interact_root=mini_interact_root,
+        # DEV-1462: pass the resolved --db-path as the authoritative
+        # db_root so it overrides $BIRD_DB_PATH when re-anchoring the
+        # per-task datasource. Without this, a LiveSQLBench DB whose name
+        # collides with a mini-interact DB (e.g. `alien`) would silently
+        # re-anchor to the mini-interact sqlite ($BIRD_DB_PATH default).
+        # Mirrors the otf_encode adapter's _resolve_otf_task_storage_dir.
+        db_root=mini_interact_root,
     )
     return str(scratch), deleted
 

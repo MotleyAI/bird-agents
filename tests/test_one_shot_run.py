@@ -653,7 +653,8 @@ async def test_recursive_real_resolver_passes_benchmark_to_paths(monkeypatch, tm
             cache_dir=Path(cache_root) / db, fingerprint="dead", kb_rows=[],
         )
 
-    async def fake_prepare(*, db, deleted_kb_ids, cache_entry, work_dir, mini_interact_root):
+    async def fake_prepare(*, db, deleted_kb_ids, cache_entry, work_dir,
+                           mini_interact_root, db_root=None):
         scratch = Path(work_dir) / db
         scratch.mkdir(parents=True, exist_ok=True)
         return scratch

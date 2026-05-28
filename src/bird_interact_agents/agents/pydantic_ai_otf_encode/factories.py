@@ -1156,12 +1156,17 @@ async def _entity_exists(
     """Single-entity existence check via direct storage lookup."""
     try:
         if ent.kind == "model":
-            model = await storage.get_model(ent.name)
+            # Scope by datasource: a bare `get_model(name)` resolves by
+            # datasource priority, so a same-named model in another
+            # datasource (LiveSQLBench vs mini-interact share names like
+            # `alien`) would fail the `== db_name` guard and be reported
+            # missing. Mirrors the scoped lookups at L774/L908.
+            model = await storage.get_model(ent.name, data_source=db_name)
             return model is not None and model.data_source == db_name
         # column / measure / aggregation live on a host model.
         if ent.host_model is None:
             return False
-        model = await storage.get_model(ent.host_model)
+        model = await storage.get_model(ent.host_model, data_source=db_name)
         if model is None or model.data_source != db_name:
             return False
         if ent.kind == "column":
@@ -1368,7 +1373,10 @@ async def _resolve_ref(storage: Any, db: str, ref: str) -> EncodedEntity | None:
     parts = ref.split(".")
     try:
         if len(parts) == 2:
-            model = await storage.get_model(parts[1])
+            # Scope by datasource (see _entity_exists): a bare lookup
+            # resolves by priority and could return another db's same-named
+            # model, which the `== db` guard would then drop.
+            model = await storage.get_model(parts[1], data_source=db)
             if model is not None and getattr(model, "data_source", None) == db:
                 return EncodedEntity(
                     kind="model", host_model=None, name=parts[1], entity_ref=ref,
@@ -1376,7 +1384,7 @@ async def _resolve_ref(storage: Any, db: str, ref: str) -> EncodedEntity | None:
             return None
         if len(parts) >= 3:
             model_name, leaf = parts[1], parts[2]
-            model = await storage.get_model(model_name)
+            model = await storage.get_model(model_name, data_source=db)
             if model is None or getattr(model, "data_source", None) != db:
                 return None
             for kind, bucket in (
