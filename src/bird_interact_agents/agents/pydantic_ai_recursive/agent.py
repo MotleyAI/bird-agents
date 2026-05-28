@@ -63,6 +63,9 @@ from bird_interact_agents.harness import (
     slayer_mcp_stdio_config,
 )
 from bird_interact_agents.hard8_preprocessor import extract_deleted_kb_ids
+from bird_interact_agents.slayer_pipeline.filter_normalization import (
+    normalize_tool_filters,
+)
 from bird_interact_agents.usage import TokenUsage
 from bird_interact_agents.slayer_otf import (
     ensure_db_cache,
@@ -97,12 +100,24 @@ def _constructor_reserve() -> float:
 
 
 def _build_shared_slayer_server(slayer_storage_dir: str) -> MCPServerStdio:
-    """One MCPServerStdio per task, shared across the spawn tree."""
+    """One MCPServerStdio per task, shared across the spawn tree.
+
+    DEV-1478: a thin ``process_tool_call`` hook normalizes text-equality FILTER
+    predicates (lower(trim) + lowercased literal) on the agent's exploratory
+    ``query``/``query_nested`` calls, then forwards. Keeps the hand-audited
+    (pre-encoded) eval path's case/whitespace handling identical to the
+    OTF-encode path so the comparison stays apples-to-apples. No validator here
+    (this adapter doesn't write models)."""
     cfg = slayer_mcp_stdio_config(slayer_storage_dir)
+
+    async def _process_tool_call(ctx, call_tool, name, tool_args):
+        return await call_tool(name, normalize_tool_filters(name, tool_args), None)
+
     return MCPServerStdio(
         command=cfg["command"], args=cfg["args"], env=cfg["env"],
         max_retries=100,
         timeout=300,
+        process_tool_call=_process_tool_call,
     )
 
 
