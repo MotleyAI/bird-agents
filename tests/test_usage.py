@@ -50,6 +50,32 @@ def test_add_call_records_first_call():
     assert row.name == "agent::anthropic/claude-sonnet-4-5"
 
 
+def test_add_call_setup_encoder_scope_isolated_from_per_task_subtotals():
+    """DEV-1478: the one-time per-DB reference-build encode is recorded under
+    scope 'setup_encoder'. Its cost rolls into the grand `cost_usd` and the
+    breakdown, but NOT into `agent_cost_usd` / `user_sim_cost_usd` — so it
+    stays separately summable from the per-task eval/user-sim spend."""
+    from bird_interact_agents.usage import TokenUsage
+
+    u = TokenUsage()
+    u.add_call(
+        scope="setup_encoder", model="anthropic/claude-opus-4-7",
+        prompt=10000, completion=2000, cache_read=500, cache_write=100,
+    )
+
+    rows = [r for r in u.breakdown if r.scope == "setup_encoder"]
+    assert len(rows) == 1
+    assert rows[0].prompt_tokens == 10000
+    assert rows[0].completion_tokens == 2000
+    assert rows[0].cache_read_tokens == 500
+    assert u.n_calls == 1
+    assert u.prompt_tokens == 10000
+    # cost rolls into the grand total but is isolated from the per-task scopes
+    assert u.cost_usd == rows[0].cost_usd
+    assert u.agent_cost_usd == 0.0
+    assert u.user_sim_cost_usd == 0.0
+
+
 def test_add_call_aggregates_same_scope_and_model(monkeypatch):
     from bird_interact_agents import usage as usage_mod
     from bird_interact_agents.usage import TokenUsage

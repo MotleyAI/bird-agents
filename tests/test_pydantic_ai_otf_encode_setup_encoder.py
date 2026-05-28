@@ -175,7 +175,7 @@ async def test_shared_server_entered_and_exited_in_same_task(monkeypatch):
 
     async def _fake_run(*, agent, kb_id, kb_body, deps_results, storage, db,
                         self_model_id="unknown", sessions_dir=None,
-                        index_rows=None, reverse_deps=None):
+                        index_rows=None, reverse_deps=None, usage=None):
         events.append(("run", kb_id, id(asyncio.current_task())))
         return EncoderResult(kb_id=kb_id, status="encoded", entities=[], notes="")
 
@@ -637,7 +637,7 @@ async def test_run_one_closure_forwards_reverse_deps(monkeypatch):
 
     async def _capture_run(*, agent, kb_id, kb_body, deps_results, storage, db,
                            self_model_id="unknown", sessions_dir=None,
-                           index_rows=None, reverse_deps=None):
+                           index_rows=None, reverse_deps=None, usage=None):
         captured["reverse_deps"] = reverse_deps
         return EncoderResult(kb_id=kb_id, status="encoded", entities=[], notes="")
 

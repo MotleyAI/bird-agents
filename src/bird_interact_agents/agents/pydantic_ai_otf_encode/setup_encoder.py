@@ -38,6 +38,7 @@ from bird_interact_agents.agents.pydantic_ai_otf_encode.prompts import (
     SETUP_ENCODER_PROMPT,
 )
 from bird_interact_agents.harness import MAX_MODEL_TURNS
+from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,7 @@ async def _run_setup_encoder(
     sessions_dir: Any = None,
     index_rows: list | None = None,
     reverse_deps: list[dict] | None = None,
+    usage: TokenUsage | None = None,
 ) -> EncoderResult:
     """Format the prompt, run the setup encoder agent, normalise + verify the
     result. Never raises — failures become ``status="error"``.
@@ -194,6 +196,23 @@ async def _run_setup_encoder(
         err = err or f"{type(exc).__name__}: {exc}"
         logger.exception("setup encoder iter-context failed for kb_id=%s", kb_id)
         session = session_from_run(agent_run)
+
+    # Capture the encode's token usage so the per-DB reference build's cost is
+    # accounted (DEV-1478: setup-encode was previously uninstrumented). Records
+    # under scope "setup_encoder" — distinct from the per-task "agent"/"user_sim"
+    # scopes, so it's summable separately. Best-effort: never break the build.
+    if usage is not None and agent_run is not None:
+        try:
+            ru = agent_run.usage()
+            usage.add_call(
+                scope="setup_encoder", model=self_model_id,
+                prompt=getattr(ru, "input_tokens", 0) or 0,
+                completion=getattr(ru, "output_tokens", 0) or 0,
+                cache_read=getattr(ru, "cache_read_tokens", 0) or 0,
+                cache_write=getattr(ru, "cache_write_tokens", 0) or 0,
+            )
+        except Exception:  # noqa: BLE001 — usage capture must not abort the build
+            logger.debug("setup-encode usage capture failed for kb_id=%s", kb_id)
 
     # DEV-1454: the result is delivered via submit_encoding into per-run deps
     # (not structured output), so a valid submission survives a post-submit
@@ -264,6 +283,10 @@ def make_setup_build_encoder(
         # Per-DB session index rows, appended by each run_one. Single-threaded
         # asyncio + list.append (no await between read/modify) → race-free.
         index_rows: list[dict] = []
+        # Per-DB setup-encode token usage/cost, accumulated across every KB
+        # encode (scope "setup_encoder"). Exposed on run_one so reference_build
+        # can persist it next to the reference.
+        usage = TokenUsage()
 
         async def aopen() -> None:
             # Enter the shared MCP server in the CALLER's task (reference_build's
@@ -288,7 +311,7 @@ def make_setup_build_encoder(
                 agent=agent, kb_id=kb_id, kb_body=kb_body,
                 deps_results=deps_results, storage=storage, db=db,
                 self_model_id=self_model_id, sessions_dir=sessions_dir,
-                index_rows=index_rows, reverse_deps=reverse_deps,
+                index_rows=index_rows, reverse_deps=reverse_deps, usage=usage,
             )
 
         async def aclose() -> None:
@@ -299,6 +322,7 @@ def make_setup_build_encoder(
         run_one.aopen = aopen  # type: ignore[attr-defined]
         run_one.aclose = aclose  # type: ignore[attr-defined]
         run_one.index_rows = index_rows  # type: ignore[attr-defined]
+        run_one.usage = usage  # type: ignore[attr-defined]
         return run_one
 
     return build_encoder
