@@ -693,25 +693,52 @@ def test_submit_uploads_combo_dir_per_selected_db(
     assert uploaded == expected, f"uploaded {uploaded}, expected {expected}"
 
 
-def test_submit_missing_local_artifact_raises_before_cluster(
-    monkeypatch, tmp_path,
-):
-    """Fail-fast: an on-the-fly DB with no local artifact must raise at submit
-    BEFORE building/pushing the image or bringing up a cluster."""
+def test_check_setup_auto_builds_missing_otf_cache(monkeypatch, tmp_path):
+    """A missing REQUIRED slayer_otf_cache is built locally (no error):
+    `_check_slayer_setup_present` triggers `ensure_db_cache` per missing DB and
+    returns the db list instead of raising."""
+    _setup_slayer_submit(
+        monkeypatch, tmp_path, framework="pydantic_ai_otf_encode",
+        slayer_setup="on-the-fly", mode="a-interact", dbs=["db_a", "db_b"],
+        lay_down=False,  # cache (and optional reference) intentionally absent
+    )
+    built: list[str] = []
+
+    async def _fake_cache(db, **kw):
+        built.append(db)
+
+    monkeypatch.setattr(driver, "ensure_db_cache", _fake_cache)
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
+        slayer_setup="on-the-fly", instance_ids=("db_a_1", "db_b_1"), detach=True,
+    )
+    dbs = driver._check_slayer_setup_present(args)
+    assert dbs == ["db_a", "db_b"]
+    assert sorted(built) == ["db_a", "db_b"]
+
+
+def test_submit_missing_otf_cache_auto_builds_then_proceeds(monkeypatch, tmp_path):
+    """End-to-end: a missing deterministic cache no longer fails the submit —
+    it's built locally and the submit proceeds to build/push/cluster."""
     mocks, *_ = _setup_slayer_submit(
         monkeypatch, tmp_path, framework="pydantic_ai_recursive",
         slayer_setup="on-the-fly", mode="a-interact", dbs=["db_a"],
-        lay_down=False,  # artifact intentionally absent
+        lay_down=False,  # cache absent
     )
+    built: list[str] = []
+
+    async def _fake_cache(db, **kw):
+        built.append(db)
+
+    monkeypatch.setattr(driver, "ensure_db_cache", _fake_cache)
     args = FakeSubmitArgs(
         framework="pydantic_ai_recursive", query_mode="slayer", mode="a-interact",
         slayer_setup="on-the-fly", instance_ids=("db_a_1",), detach=True,
     )
-    with pytest.raises(FileNotFoundError):
-        driver.submit(args)
-    mocks["image"].build_and_push.assert_not_called()
-    mocks["cluster"].up.assert_not_called()
-    mocks["gcs"].upload_dir_prefix.assert_not_called()
+    driver.submit(args)
+    assert built == ["db_a"]
+    mocks["image"].build_and_push.assert_called_once()
+    mocks["cluster"].up.assert_called_once()
 
 
 def test_submit_pre_encoded_missing_dir_raises(monkeypatch, tmp_path):
@@ -934,25 +961,28 @@ def _setup_otf_encode_submit(monkeypatch, tmp_path, *, dbs, lay_down_cache=True,
     return mocks, otf_cache, otf_ref
 
 
-def test_otf_encode_submit_requires_cache_marker(monkeypatch, tmp_path):
-    """DEV-1470: for `otf_encode + on-the-fly` the REQUIRED local artifact is
-    `slayer_otf_cache/<db>/_cache_fp.txt`. A missing cache must fail-fast
-    before any cluster work, regardless of whether the reference is present."""
+def test_otf_encode_submit_auto_builds_missing_cache(monkeypatch, tmp_path):
+    """For `otf_encode + on-the-fly` the deterministic `slayer_otf_cache` is the
+    REQUIRED artifact, but a missing one is BUILT locally (no LLMs) rather than
+    fail-fast — `ensure_db_cache` runs per missing DB and the submit proceeds."""
     mocks, *_ = _setup_otf_encode_submit(
         monkeypatch, tmp_path, dbs=["db_a"],
         lay_down_cache=False, lay_down_reference=True,
     )
+    built: list[str] = []
+
+    async def _fake_cache(db, **kw):
+        built.append(db)
+
+    monkeypatch.setattr(driver, "ensure_db_cache", _fake_cache)
     args = FakeSubmitArgs(
         framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
         slayer_setup="on-the-fly", instance_ids=("db_a_1",), detach=True,
     )
-    with pytest.raises(FileNotFoundError) as exc:
-        driver.submit(args)
-    # The error must point at the CACHE artifact (the new contract), not the
-    # reference.
-    assert "_cache_fp.txt" in str(exc.value) or "slayer_otf_cache" in str(exc.value)
-    mocks["image"].build_and_push.assert_not_called()
-    mocks["cluster"].up.assert_not_called()
+    driver.submit(args)
+    assert built == ["db_a"]
+    mocks["image"].build_and_push.assert_called_once()
+    mocks["cluster"].up.assert_called_once()
 
 
 def test_otf_encode_submit_accepts_missing_reference(monkeypatch, tmp_path):
