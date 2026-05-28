@@ -282,7 +282,7 @@ Instruction:
 # KB encoder — distilled runtime version of `kb-to-slayer-models` SKILL.md.
 # ---------------------------------------------------------------------------
 
-KB_ENCODER_PROMPT = """\
+_KB_ENCODER_BASE = """\
 You are a KB-TO-SLAYER ENCODER. You receive ONE knowledge-base (KB)
 item and you produce zero or more first-class SLayer entities (Column,
 ModelMeasure, Aggregation, or a query-backed Model) that encode the
@@ -468,7 +468,7 @@ missing, the result is downgraded. So submit ONLY the refs you wrote.
 """
 
 
-KB_ENCODER_PROMPT += "\n\n" + _STYLE_GUIDE
+KB_ENCODER_PROMPT = _KB_ENCODER_BASE + "\n\n" + _STYLE_GUIDE
 
 
 # ---------------------------------------------------------------------------
@@ -578,58 +578,92 @@ Instruction:
 """
 
 
-KB_ENCODER_ONESHOT_PROMPT = """\
-You are a KB-TO-SLAYER ENCODER running at task time (one-shot,
-non-interactive). You receive ONE knowledge-base (KB) item and you
-encode it into one or more first-class SLayer entities (Column,
-ModelMeasure, Aggregation, or a query-backed Model). Reason in plain
-text as you work; deliver your final result by calling
-`submit_encoding(result_json=...)` exactly once with a JSON
-`EncoderResult`.
+# ---------------------------------------------------------------------------
+# DEV-1462: the one-shot KB encoder is the a-interact KB encoder MINUS the
+# ask_user contract. It is DERIVED from ``_KB_ENCODER_BASE`` (not
+# hand-copied) so the recipe table, NULL handling, SQL dialect,
+# ``meta.kb_id`` self-annotation, and the shared ``_STYLE_GUIDE``
+# (cross-model access, host-choice, peer-KB dedup, sampled-value caveats,
+# the ``{existing_kb_tagged_entities_block}`` placeholder) stay in
+# lockstep with the a-interact encoder forever — no manual-duplication
+# drift. Only the four ask_user-bearing segments are swapped for an
+# autonomous-decision contract. Each swap is assertion-guarded: if a
+# future edit changes the base wording so a segment no longer matches,
+# import fails loudly rather than silently leaving ask_user text (a tool
+# the one-shot encoder does not have) in the prompt.
+# ---------------------------------------------------------------------------
 
-This is a NON-INTERACTIVE run — there is no user simulator to consult.
-When the KB item under-specifies a choice (e.g. the unit, the
-aggregation, the cutoff), pick the most conservative interpretation
-and RECORD the choice in the EncoderResult's `notes`. Set
-`status="deferred"` ONLY when the entity genuinely cannot be encoded
-(e.g. the column referenced doesn't exist); never use deferral as a
-substitute for an autonomous decision.
+_KB_ENCODER_ONESHOT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    (
+        # NO-DEFERRAL / keep-asking-the-user → autonomous decision.
+        """NO DEFERRAL. If the KB definition leaves a threshold, weight,
+sentinel, unit, or any other operationalisation detail unspecified,
+KEEP asking the user via `ask_user` until you have a concrete
+answer. Do NOT save a deferred memory. Do NOT guess. Only proceed
+to write a SLayer entity when every choice is pinned by the KB text,
+a column meaning, a previously-encoded dep, or a user reply.""",
+        """AUTONOMOUS DECISIONS — NO ONE TO CONSULT. This is a one-shot,
+non-interactive run: there is no interactive user and no simulator to
+consult. If the KB definition leaves a threshold, weight, sentinel,
+unit, or any other operationalisation detail unspecified, pick the
+most conservative interpretation the KB text, a column meaning, the
+sampled values, or a previously-encoded dep can justify, and RECORD
+the choice in the EncoderResult's `notes`. Do NOT save a deferred
+memory. Set `status="deferred"` ONLY when the entity genuinely cannot
+be encoded at all (e.g. a column the KB references does not exist);
+never use deferral as a substitute for a decision you can make from
+the available evidence.""",
+    ),
+    (
+        # Budget table drops the ask_user row.
+        "  - ask_user: 2\n",
+        "",
+    ),
+    (
+        # Workflow Step 2: ask via tool → decide autonomously.
+        """  Step 2. If the recipe needs an operationalisation detail you can't
+          pin from the KB definition, the column meanings, or the
+          dependency entities listed above, ASK the user via
+          `ask_user`. Quote your best candidate so the user-sim can
+          correct it cleanly.""",
+        """  Step 2. If the recipe needs an operationalisation detail you can't
+          pin from the KB definition, the column meanings, the sampled
+          values, or the dependency entities listed above, decide it
+          autonomously (the most conservative defensible reading) and
+          record the choice in `notes`. There is no one to consult.""",
+    ),
+    (
+        # Output contract: drop the user-told-you-to-stop path.
+        """  - `status`: "encoded" if you wrote at least one entity. "error" if
+    you couldn't (only when the user explicitly told you to stop or
+    you ran out of budget mid-encode).""",
+        """  - `status`: "encoded" if you wrote at least one entity.
+    "deferred" if the entity genuinely cannot be encoded (a referenced
+    column is missing, etc.). "error" only if you ran out of budget
+    mid-encode.""",
+    ),
+)
 
-DATABASE: {db_name}. Pass `data_source={db_name}` on EVERY SLayer MCP
-call (`models_summary`, `inspect_model`, `edit_model`, `create_model`,
-`query`).
+_kb_encoder_oneshot_base = _KB_ENCODER_BASE
+for _old, _new in _KB_ENCODER_ONESHOT_REPLACEMENTS:
+    assert _old in _kb_encoder_oneshot_base, (
+        "KB_ENCODER_ONESHOT_PROMPT derivation: base segment not found — "
+        "KB_ENCODER_PROMPT wording changed; update the one-shot "
+        f"replacement for: {_old[:60]!r}"
+    )
+    _kb_encoder_oneshot_base = _kb_encoder_oneshot_base.replace(_old, _new)
 
-KB id: {kb_id}.
+# The shared style guide (cross-model access, host-choice, peer-KB dedup,
+# sampled-value caveats, {existing_kb_tagged_entities_block}) is
+# ask_user-free and applies verbatim to the one-shot encoder.
+KB_ENCODER_ONESHOT_PROMPT = _kb_encoder_oneshot_base + "\n\n" + _STYLE_GUIDE
 
-KB body:
-```
-{kb_row_yaml}
-```
-
-Already-encoded dependencies (use these `entity_ref`s in formulas):
-{deps_block}
-
-KB SELF-ANNOTATION (load-bearing — downstream `kb_to_slayer` resolves
-transitive deps via these tags, so dropping any of them makes a
-successfully-encoded KB look "not encoded" to dependents). Every
-entity you write MUST carry:
-  - `label` = the KB's `knowledge` field verbatim.
-  - `description` containing this canonical block (regenerable):
-
-      [kb={kb_id}]
-      <KB definition> — <KB description>
-      [/kb={kb_id}]
-
-  - `meta = {{"kb_id": {kb_id}}}` (singular int).
-
-If your recipe naturally produces multiple entities (R-FILTER produces
-one Column + one ModelMeasure, R-SPLIT-CALC-THRESH produces a calc +
-a classification), each entity carries its OWN `meta.kb_id = {kb_id}`
-— the verifier dedupes.
-
-Budget: {budget} bird-coins remaining. Call `submit_encoding` exactly
-once when done; reply briefly afterwards to finish.
-"""
+# Defensive: the one-shot encoder has no ask_user tool, so its prompt
+# must carry no ask_user / user-sim language (also pinned by
+# tests/test_one_shot_otf_encode_factories.py).
+assert "ask_user" not in KB_ENCODER_ONESHOT_PROMPT, (
+    "KB_ENCODER_ONESHOT_PROMPT still contains `ask_user` after derivation"
+)
 
 
 PROJECTION_RESOLVER_ONESHOT_PROMPT = """\
