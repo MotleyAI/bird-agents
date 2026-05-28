@@ -703,9 +703,11 @@ def test_check_setup_auto_builds_missing_otf_cache(monkeypatch, tmp_path):
         lay_down=False,  # cache (and optional reference) intentionally absent
     )
     built: list[str] = []
+    seen_kwargs: list[dict] = []
 
     async def _fake_cache(db, **kw):
         built.append(db)
+        seen_kwargs.append(kw)
 
     monkeypatch.setattr(driver, "ensure_db_cache", _fake_cache)
     args = FakeSubmitArgs(
@@ -715,6 +717,17 @@ def test_check_setup_auto_builds_missing_otf_cache(monkeypatch, tmp_path):
     dbs = driver._check_slayer_setup_present(args)
     assert dbs == ["db_a", "db_b"]
     assert sorted(built) == ["db_a", "db_b"]
+    # Lock the worktree-safe contract: the cache is built under the resolved
+    # roots (not a worktree-relative path) with force=False.
+    assert all(
+        kw["cache_root"] == driver.paths.slayer_otf_cache_root()
+        for kw in seen_kwargs
+    )
+    assert all(
+        kw["mini_interact_root"] == driver.paths.mini_interact_root()
+        for kw in seen_kwargs
+    )
+    assert all(kw["force"] is False for kw in seen_kwargs)
 
 
 def test_submit_missing_otf_cache_auto_builds_then_proceeds(monkeypatch, tmp_path):
