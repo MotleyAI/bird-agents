@@ -10,6 +10,8 @@ import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
 
+from bird_interact_agents.benchmark import get_benchmark
+
 logger = logging.getLogger(__name__)
 from bird_interact_agents.hard8_preprocessor import (
     build_task_variant_storage,
@@ -183,6 +185,40 @@ def load_tasks(jsonl_path: str, limit: int | None = None) -> list[dict]:
                 tasks.append(json.loads(line))
     if limit is not None:
         tasks = tasks[:limit]
+    return tasks
+
+
+def load_benchmark_tasks(
+    dataset: str,
+    data_path: str,
+    gold_file: str | None = None,
+    *,
+    limit: int | None = None,
+    filter_ids: list[str] | None = None,
+) -> list[dict]:
+    """Benchmark-aware task loader — the single dispatch point both the local
+    runner and the cloud actor call, so the loader selection lives in ONE place.
+
+    A benchmark with a gated gold sidecar (``gold_required``) uses
+    :func:`load_livesqlbench_tasks` (merges the gold by instance_id, stamps the
+    dataset marker, filters to SELECT, is filter_ids-aware). Otherwise the plain
+    :func:`load_tasks` path (gold is inline in the data JSONL), with an optional
+    instance-id filter applied here.
+    """
+    b = get_benchmark(dataset)
+    if b.gold_required:
+        if not gold_file:
+            raise ValueError(
+                f"benchmark {b.name!r} requires a gold sidecar (gold_file); "
+                "got none.",
+            )
+        return load_livesqlbench_tasks(
+            data_path, gold_file, limit=limit, filter_ids=filter_ids,
+        )
+    tasks = load_tasks(data_path, limit)
+    if filter_ids is not None:
+        wanted = set(filter_ids)
+        tasks = [t for t in tasks if t.get("instance_id") in wanted]
     return tasks
 
 

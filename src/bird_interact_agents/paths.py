@@ -20,6 +20,12 @@ import os
 import subprocess
 from pathlib import Path
 
+from bird_interact_agents.benchmark import (
+    Benchmark,
+    benchmark_names,
+    get_benchmark,
+)
+
 # Module-level so tests can monkeypatch it. In production, this is the dir
 # containing this file — `<checkout>/src/bird_interact_agents/`. Production
 # code that imports from a worktree's editable install sees its own copy of
@@ -63,55 +69,59 @@ def main_checkout_root() -> Path:
     return _main_checkout_root_cached()
 
 
-def mini_interact_root() -> Path:
-    """Path to the sibling `mini-interact/` data dir (JSONL + per-DB SQLite + KB).
+# ---------------------------------------------------------------------------
+# Benchmark data roots — registry-driven, so ANY benchmark resolves its data
+# dir / tasks file the same way. Each benchmark declares its sibling subdir +
+# data filename + env-override names in `benchmark.Benchmark`; these generic
+# accessors read those. Worktree-safe by construction (anchored at the main
+# checkout). The per-benchmark `mini_interact_*` / `livesqlbench_*` helpers
+# below are thin back-compat shims over these.
+# ---------------------------------------------------------------------------
 
-    Honours `BIRD_DB_PATH` env override; otherwise sits next to the main
-    checkout.
-    """
-    override = os.environ.get("BIRD_DB_PATH")
+
+def _as_benchmark(benchmark: str | Benchmark) -> Benchmark:
+    return benchmark if isinstance(benchmark, Benchmark) else get_benchmark(benchmark)
+
+
+def benchmark_data_root(benchmark: str | Benchmark) -> Path:
+    """Sibling data dir for ``benchmark`` (per-DB SQLite + KB + tasks JSONL).
+    Honours the benchmark's data-root env override; else sits next to the main
+    checkout at ``<parent>/<data_subdir>``."""
+    b = _as_benchmark(benchmark)
+    override = os.environ.get(b.data_root_env)
     if override:
         return Path(override).expanduser()
-    return main_checkout_root().parent / "mini-interact"
+    return main_checkout_root().parent / b.data_subdir
+
+
+def benchmark_data_file(benchmark: str | Benchmark) -> Path:
+    """Tasks JSONL for ``benchmark`` — honours the benchmark's data-file env
+    override; else ``<data_root>/<data_file>``."""
+    b = _as_benchmark(benchmark)
+    override = os.environ.get(b.data_file_env)
+    if override:
+        return Path(override).expanduser()
+    return benchmark_data_root(b) / b.data_file
+
+
+def mini_interact_root() -> Path:
+    """Back-compat shim → ``benchmark_data_root("mini_interact")``."""
+    return benchmark_data_root("mini_interact")
 
 
 def mini_interact_data_file() -> Path:
-    """Path to `mini_interact.jsonl` — honours `BIRD_DATA_PATH` env override."""
-    override = os.environ.get("BIRD_DATA_PATH")
-    if override:
-        return Path(override).expanduser()
-    return mini_interact_root() / "mini_interact.jsonl"
-
-
-# ---------------------------------------------------------------------------
-# DEV-1462: LiveSQLBench-Base-Lite-SQLite — sibling helpers mirroring the
-# mini-interact pair. Env-overridable; defaults sit next to the main
-# checkout so they are worktree-safe by construction (per the CLAUDE.md
-# "all gitignored data goes through paths.*_root()" rule).
-# ---------------------------------------------------------------------------
+    """Back-compat shim → ``benchmark_data_file("mini_interact")``."""
+    return benchmark_data_file("mini_interact")
 
 
 def livesqlbench_root() -> Path:
-    """Path to the sibling ``livesqlbench-base-lite-sqlite/`` data dir
-    (per-DB template sqlite + KB + column-meaning + schema, plus the
-    public task jsonl).
-
-    Honours ``BIRD_LIVESQLBENCH_ROOT``; otherwise sits next to the main
-    checkout — same anchoring as :func:`mini_interact_root`.
-    """
-    override = os.environ.get("BIRD_LIVESQLBENCH_ROOT")
-    if override:
-        return Path(override).expanduser()
-    return main_checkout_root().parent / "livesqlbench-base-lite-sqlite"
+    """Back-compat shim → ``benchmark_data_root("livesqlbench")``."""
+    return benchmark_data_root("livesqlbench")
 
 
 def livesqlbench_data_file() -> Path:
-    """Path to ``livesqlbench_data_sqlite.jsonl`` — honours
-    ``BIRD_LIVESQLBENCH_DATA_FILE`` env override."""
-    override = os.environ.get("BIRD_LIVESQLBENCH_DATA_FILE")
-    if override:
-        return Path(override).expanduser()
-    return livesqlbench_root() / "livesqlbench_data_sqlite.jsonl"
+    """Back-compat shim → ``benchmark_data_file("livesqlbench")``."""
+    return benchmark_data_file("livesqlbench")
 
 
 # Set of benchmark identifiers the per-benchmark OTF roots accept. `benchmark`
@@ -120,7 +130,7 @@ def livesqlbench_data_file() -> Path:
 # — mini-interact. `"mini_interact"` is itself an explicit value that maps to
 # the legacy dirs/env vars (so on-disk layout + the cloud contract are
 # unchanged). New benchmarks (e.g. Base-Full) extend this set.
-_KNOWN_BENCHMARKS: frozenset[str] = frozenset({"mini_interact", "livesqlbench"})
+_KNOWN_BENCHMARKS: frozenset[str] = frozenset(benchmark_names())
 
 
 def _validate_benchmark(benchmark: str | None) -> None:

@@ -18,7 +18,7 @@ async def test_run_evaluation_records_per_task_duration(tmp_path, monkeypatch):
          "amb_user_query": f"q{i}"}
         for i in range(2)
     ]
-    monkeypatch.setattr(run_mod, "load_tasks", lambda *a, **kw: fake_tasks)
+    monkeypatch.setattr(run_mod, "load_benchmark_tasks", lambda *a, **kw: fake_tasks)
     monkeypatch.setattr(run_mod, "calculate_budget", lambda *a, **kw: 18)
 
     async def fake_oracle(td, dpb):
@@ -72,7 +72,7 @@ async def test_failing_task_still_gets_duration(tmp_path, monkeypatch):
         {"instance_id": "boom", "selected_database": "fake",
          "amb_user_query": "q"},
     ]
-    monkeypatch.setattr(run_mod, "load_tasks", lambda *a, **kw: fake_tasks)
+    monkeypatch.setattr(run_mod, "load_benchmark_tasks", lambda *a, **kw: fake_tasks)
     monkeypatch.setattr(run_mod, "calculate_budget", lambda *a, **kw: 18)
 
     async def fake_oracle(td, dpb):

@@ -1,0 +1,93 @@
+"""The Benchmark registry — one descriptor per benchmark, consumed symmetrically
+by the local runner and the cloud submit/actor/image. Adding a benchmark is a
+single BENCHMARKS entry; these tests pin the registry's resolution contract and
+the per-benchmark facts the rest of the harness keys off."""
+
+from __future__ import annotations
+
+import pytest
+
+from bird_interact_agents.benchmark import (
+    Benchmark,
+    all_benchmarks,
+    benchmark_names,
+    cli_dataset_tokens,
+    get_benchmark,
+)
+
+
+def test_resolves_canonical_name():
+    assert get_benchmark("mini_interact").name == "mini_interact"
+    assert get_benchmark("livesqlbench").name == "livesqlbench"
+
+
+def test_resolves_hyphen_alias_to_underscore_canonical():
+    """`--dataset mini-interact` (hyphen) is a back-compat alias for the
+    underscore-canonical `mini_interact`."""
+    assert get_benchmark("mini-interact").name == "mini_interact"
+
+
+def test_resolves_dataset_marker():
+    """The task-data marker stamped by the loaders must resolve back to its
+    benchmark (the agents derive their benchmark from `task_data['dataset']`)."""
+    for b in all_benchmarks():
+        assert get_benchmark(b.dataset_marker).name == b.name
+
+
+def test_unknown_token_raises():
+    with pytest.raises(ValueError) as exc:
+        get_benchmark("not-a-benchmark")
+    assert "benchmark" in str(exc.value).lower()
+
+
+def test_registry_membership_and_helpers():
+    assert set(benchmark_names()) == {"mini_interact", "livesqlbench"}
+    assert {b.name for b in all_benchmarks()} == {"mini_interact", "livesqlbench"}
+    # argparse `--dataset` choices: canonical names + aliases, all resolvable.
+    tokens = set(cli_dataset_tokens())
+    assert {"mini_interact", "mini-interact", "livesqlbench"} <= tokens
+    for t in tokens:
+        get_benchmark(t)  # every advertised token resolves
+
+
+def test_benchmark_is_frozen():
+    b = get_benchmark("mini_interact")
+    with pytest.raises(Exception):  # pydantic frozen → ValidationError/TypeError
+        b.name = "mutated"  # type: ignore[misc]
+
+
+def test_mini_interact_facts():
+    b = get_benchmark("mini_interact")
+    assert b.dataset_marker == "mini_interact"
+    assert b.data_subdir == "mini-interact"
+    assert b.data_file == "mini_interact.jsonl"
+    assert b.one_shot is False
+    assert b.gold_required is False
+    assert b.per_task_db_isolation is False
+    assert b.container_data_dir == "/data/mini-interact"
+    assert "a-interact" in b.supported_modes and "oracle" in b.supported_modes
+    assert "one-shot" not in b.supported_modes
+
+
+def test_livesqlbench_facts():
+    b = get_benchmark("livesqlbench")
+    assert b.dataset_marker == "livesqlbench"
+    assert b.data_subdir == "livesqlbench-base-lite-sqlite"
+    assert b.data_file == "livesqlbench_data_sqlite.jsonl"
+    assert b.one_shot is True
+    assert b.gold_required is True
+    assert b.per_task_db_isolation is True
+    assert b.container_data_dir == "/data/livesqlbench"
+    assert set(b.supported_modes) == {"one-shot", "oracle"}
+
+
+def test_distinct_container_dirs_and_data_files():
+    """No two benchmarks may share a container data dir or data filename — that
+    would re-introduce the cross-benchmark collision this registry prevents."""
+    bs = all_benchmarks()
+    assert len({b.container_data_dir for b in bs}) == len(bs)
+    assert len({(b.data_subdir, b.data_file) for b in bs}) == len(bs)
+
+
+def test_type_is_benchmark():
+    assert isinstance(get_benchmark("mini_interact"), Benchmark)

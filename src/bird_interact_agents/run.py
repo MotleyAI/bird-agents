@@ -12,13 +12,14 @@ import sqlite3 as _sqlite3
 from typing import Any as _Any
 
 from bird_interact_agents import paths
+from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.harness import (
     apply_audited_gold_overlay,
     calculate_budget,
     execute_submit_action,
     finalize_result_row,
+    load_benchmark_tasks,
     load_db_data_if_needed,
-    load_tasks,
     materialize_task_db,
     SampleStatus,
 )
@@ -126,26 +127,20 @@ def _validate_slayer_setup(
 
 
 def _validate_dataset_mode(dataset: str, mode: str) -> None:
-    """DEV-1462: gate ``--mode`` against ``--dataset`` and vice versa.
+    """Gate ``--mode`` against the benchmark's declared ``supported_modes``
+    (registry-driven, so adding a benchmark needs no edit here).
 
-    * ``--mode one-shot`` ⟹ ``--dataset livesqlbench`` — one-shot exists
-      to run the unambiguous LiveSQLBench SELECT set; running it against
-      mini-interact would treat ambiguous tasks as one-shot, which is
-      out of scope.
-    * ``--dataset livesqlbench`` ⟹ ``--mode in {one-shot, oracle}`` —
-      the dataset has no ambiguity to clarify; ``a-interact``/
-      ``c-interact`` would silently spin the user-simulator on unambiguous
-      queries (wasted tokens + meaningless metric).
+    This single membership check enforces both directions of the old
+    hand-written gate: e.g. ``one-shot`` is rejected for mini-interact (not in
+    its modes) and ``a-interact`` is rejected for livesqlbench — because each
+    benchmark's ``supported_modes`` encodes exactly what it accepts.
     """
-    if mode == "one-shot" and dataset != "livesqlbench":
+    b = get_benchmark(dataset)
+    if mode not in b.supported_modes:
         raise ValueError(
-            "--mode one-shot is only supported with --dataset livesqlbench; "
-            f"got --dataset {dataset!r}",
-        )
-    if dataset == "livesqlbench" and mode not in ("one-shot", "oracle"):
-        raise ValueError(
-            "--dataset livesqlbench is only supported with --mode one-shot "
-            f"or --mode oracle; got --mode {mode!r}",
+            f"--mode {mode!r} is not supported by --dataset {dataset!r} "
+            f"(benchmark {b.name!r}); supported modes: "
+            f"{', '.join(b.supported_modes)}.",
         )
 
 
@@ -709,7 +704,7 @@ async def run_evaluation(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
     )
-    if dataset == "livesqlbench" and not gold_file:
+    if get_benchmark(dataset).gold_required and not gold_file:
         raise ValueError(
             "--dataset livesqlbench requires --gold-file (the gated sidecar "
             "carrying sol_sql / external_knowledge / test_cases keyed by "
@@ -726,20 +721,12 @@ async def run_evaluation(
             "If you meant to run the full set, pass filter_ids=None.",
         )
 
-    if dataset == "livesqlbench":
-        # The LiveSQLBench loader merges the gated gold sidecar, stamps
-        # the dataset marker, filters to SELECT, and is filter_ids-aware
-        # (Codex #6). Apply limit inside the loader so it lands AFTER the
-        # SELECT + filter narrowing.
-        from bird_interact_agents.harness import load_livesqlbench_tasks
-        tasks = load_livesqlbench_tasks(
-            data_path, gold_file, limit=limit, filter_ids=filter_ids,
-        )
-    else:
-        tasks = load_tasks(data_path, limit)
-        if filter_ids is not None:
-            wanted = set(filter_ids)
-            tasks = [t for t in tasks if t.get("instance_id") in wanted]
+    # Benchmark-aware loader dispatch (single source of truth in harness):
+    # a gold-required benchmark merges its gated sidecar + stamps the marker +
+    # SELECT-filters; otherwise plain load + optional instance-id filter.
+    tasks = load_benchmark_tasks(
+        dataset, data_path, gold_file, limit=limit, filter_ids=filter_ids,
+    )
 
     # --otf-rebuild: force-wipe BOTH on-the-fly layers (cache + reference) for
     # the DBs in this run ONCE, before the (possibly concurrent) task loop, so
@@ -747,9 +734,7 @@ async def run_evaluation(
     # copy. Default off reuses whatever is present. On-the-fly frameworks only.
     # DEV-1462: pass the per-benchmark scope so a livesqlbench rebuild never
     # wipes the mini-interact roots (and vice versa).
-    benchmark_for_paths = (
-        "livesqlbench" if dataset == "livesqlbench" else "mini_interact"
-    )
+    benchmark_for_paths = get_benchmark(dataset).name
     _maybe_force_wipe_otf(
         otf_rebuild=otf_rebuild,
         framework=framework,
@@ -1012,13 +997,14 @@ def main() -> None:
     )
     parser.add_argument(
         "--dataset",
-        choices=["mini-interact", "livesqlbench"],
-        default="mini-interact",
+        choices=cli_dataset_tokens(),
+        default="mini_interact",
         help=(
-            "Which benchmark dataset to load (DEV-1462). "
-            "``mini-interact`` (default) keeps the existing behaviour. "
-            "``livesqlbench`` loads LiveSQLBench-Base-Lite-SQLite and "
-            "REQUIRES --gold-file; gated to --mode {one-shot, oracle}."
+            "Which benchmark to load (from the benchmark registry). "
+            "``mini_interact`` (default; ``mini-interact`` accepted as an "
+            "alias) keeps the existing behaviour. ``livesqlbench`` loads "
+            "LiveSQLBench-Base-Lite-SQLite and REQUIRES --gold-file; gated to "
+            "--mode {one-shot, oracle}."
         ),
     )
     parser.add_argument(
@@ -1199,6 +1185,11 @@ def main() -> None:
     if args.instance_id is not None and (args.filter_ids or args.limit is not None):
         parser.error("--instance-id cannot be combined with --filter-ids or --limit")
 
+    # Normalize the benchmark token to its canonical underscore form once, so
+    # every downstream consumer (gates, loader dispatch, path roots) sees the
+    # canonical name regardless of which alias the user typed.
+    args.dataset = get_benchmark(args.dataset).name
+
     # Fail-fast: --slayer-setup on-the-fly is only valid for the
     # pydantic_ai_recursive + slayer + a-interact|one-shot tuple. Validate
     # before any task starts so the user doesn't get a results.db full of
@@ -1222,7 +1213,7 @@ def main() -> None:
             query_mode=args.query_mode,
             mode=args.mode,
         )
-        if args.dataset == "livesqlbench" and not args.gold_file:
+        if get_benchmark(args.dataset).gold_required and not args.gold_file:
             raise ValueError(
                 "--dataset livesqlbench requires --gold-file (the gated "
                 "sidecar carrying sol_sql / external_knowledge / test_cases "

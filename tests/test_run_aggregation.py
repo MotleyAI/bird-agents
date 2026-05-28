@@ -21,7 +21,7 @@ async def test_run_evaluation_aggregates_usage(tmp_path, monkeypatch):
         {"instance_id": "t1", "selected_database": "fake", "amb_user_query": "q1"},
         {"instance_id": "t2", "selected_database": "fake", "amb_user_query": "q2"},
     ]
-    monkeypatch.setattr(run_mod, "load_tasks", lambda *a, **kw: fake_tasks)
+    monkeypatch.setattr(run_mod, "load_benchmark_tasks", lambda *a, **kw: fake_tasks)
     monkeypatch.setattr(
         run_mod, "calculate_budget", lambda *a, **kw: 18,
     )

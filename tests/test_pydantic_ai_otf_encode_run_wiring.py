@@ -86,7 +86,7 @@ async def test_run_evaluation_branches_to_new_agent(monkeypatch, tmp_path):
         raising=False,
     )
     # Also stub the loader so we don't need a real data file.
-    monkeypatch.setattr(run_mod, "load_tasks", lambda *a, **kw: [])
+    monkeypatch.setattr(run_mod, "load_benchmark_tasks", lambda *a, **kw: [])
 
     with pytest.raises(_Sentinel):
         await run_mod.run_evaluation(
