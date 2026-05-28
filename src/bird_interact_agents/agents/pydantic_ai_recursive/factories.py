@@ -46,6 +46,7 @@ from bird_interact_agents.agents.pydantic_ai_recursive.deps import (
 )
 from bird_interact_agents.agents.pydantic_ai_recursive.prompts import (
     SUB_CLARIFIER_PROMPT,
+    SUB_EXPLORER_PROMPT,
 )
 from bird_interact_agents.harness import MAX_MODEL_TURNS
 
@@ -234,6 +235,7 @@ def _register_spawn_subagent(
     model_settings: Any,
     shared_slayer_server: Any,
     self_model_id: str,
+    eval_mode: str = "a-interact",
 ) -> None:
     """Register `spawn_subagent` on the given agent.
 
@@ -248,7 +250,16 @@ def _register_spawn_subagent(
       correct slot regardless of completion order.
     * Captures the child's own agent-side tokens via an explicit
       `add_call(scope='agent', ...)` from `child_run.usage()`.
+
+    DEV-1462: ``eval_mode`` selects the spawn target:
+      * ``"a-interact"`` (default) → :func:`_build_sub_clarifier` (the
+        existing ask_user-carrying child).
+      * ``"one-shot"`` → :func:`_build_sub_explorer` (no ask_user, no
+        user-sim).
+    The chosen child also receives ``eval_mode=...`` so a grandchild
+    spawn keeps the same flavor (explorers spawn explorers).
     """
+    use_explorer = eval_mode == "one-shot"
 
     @agent.tool(sequential=True)
     async def spawn_subagent(
@@ -256,9 +267,9 @@ def _register_spawn_subagent(
         focus: str,
         instruction: str,
     ) -> str:
-        """Spawn a sub-clarifier agent focused on ONE logical block of
-        the user's question. Sibling spawn calls in one model batch run
-        sequentially. The sub-agent returns a description of its slice."""
+        """Spawn a sub-agent focused on ONE logical block of the user's
+        question. Sibling spawn calls in one model batch run sequentially.
+        The sub-agent returns a description of its slice."""
         deps = ctx.deps
         if deps.depth >= deps.max_depth:
             return (
@@ -270,6 +281,10 @@ def _register_spawn_subagent(
         # await — otherwise concurrent sibling completions interleave
         # the appends and break parent_idx.
         parent_record_idx = deps.self_record_idx
+        # Per plan B4c: explorers record under the existing
+        # ``sub_clarifier`` role so the AgentRecord Literal stays
+        # unchanged (no schema migration). The explorer/clarifier
+        # distinction is captured by the eval_mode flag at task level.
         record_partial = AgentRecord(
             role="sub_clarifier",
             depth=deps.depth + 1,
@@ -281,19 +296,29 @@ def _register_spawn_subagent(
         deps.shared.agent_records.append(record_partial)
         my_child_idx = len(deps.shared.agent_records) - 1
 
-        child = _build_sub_clarifier(
-            model=model,
-            model_settings=model_settings,
+        child_kwargs: dict[str, Any] = dict(
+            model=model, model_settings=model_settings,
             shared_slayer_server=shared_slayer_server,
             self_model_id=self_model_id,
         )
+        # Resolve child_builder at CALL time (not registration time) so a
+        # test that re-patches `_build_sub_clarifier` between building this
+        # agent and invoking its spawn still picks up the new stub.
+        if use_explorer:
+            child_kwargs["eval_mode"] = eval_mode
+            child = _build_sub_explorer(**child_kwargs)
+        else:
+            child = _build_sub_clarifier(**child_kwargs)
         child_deps = TaskDeps(
             shared=deps.shared,
             depth=deps.depth + 1,
             max_depth=deps.max_depth,
             self_record_idx=my_child_idx,
         )
-        child_prompt = SUB_CLARIFIER_PROMPT.format(
+        prompt_template = (
+            SUB_EXPLORER_PROMPT if use_explorer else SUB_CLARIFIER_PROMPT
+        )
+        child_prompt = prompt_template.format(
             budget=deps.shared.status.remaining_budget,
             db_name=deps.shared.db_name,
             focus=focus,
@@ -357,17 +382,24 @@ def _build_root_clarifier(
     shared_slayer_server: Any,
     max_depth: int,
     self_model_id: str = "unknown",
+    eval_mode: str = "a-interact",
 ) -> Agent:
     """Root clarifier: spawn_subagent only. NO SLayer toolset, NO ask_user,
     NO submit_query.
 
     `shared_slayer_server` is still accepted because it must be
-    forwarded into the sub-clarifiers spawned by this root — but it is
-    deliberately NOT wired into the root's own Agent. The root's job is
-    to slice the user's question into logical blocks; giving it
-    `search` / `help` / `inspect_model` tempts the model into looking
-    up tables and naming them in the handoff, starving the sub-
-    clarifier's table-family disambiguation step of candidates.
+    forwarded into the sub-clarifiers/explorers spawned by this root —
+    but it is deliberately NOT wired into the root's own Agent. The
+    root's job is to slice the user's question into logical blocks;
+    giving it `search` / `help` / `inspect_model` tempts the model into
+    looking up tables and naming them in the handoff, starving the
+    sub-clarifier/explorer's table-family disambiguation step of
+    candidates.
+
+    DEV-1462: ``eval_mode`` is forwarded into ``_register_spawn_subagent``
+    so the root spawns sub-explorers in one-shot mode (no ask_user) and
+    sub-clarifiers in a-interact mode (with ask_user). The root itself
+    is the same in both modes — it never asks the user, never submits.
     """
     kwargs: dict[str, Any] = dict(
         model=model, deps_type=TaskDeps, retries=2,
@@ -382,6 +414,7 @@ def _build_root_clarifier(
         model_settings=model_settings,
         shared_slayer_server=shared_slayer_server,
         self_model_id=self_model_id,
+        eval_mode=eval_mode,
     )
     return agent
 
@@ -473,3 +506,158 @@ def _build_projection_resolver(
     agent = Agent(**kwargs)
     _register_ask_user(agent)
     return agent
+
+
+# ---------------------------------------------------------------------------
+# DEV-1462: one-shot factories — `ask_user`-free flavors used by the
+# `--mode one-shot` path. Same orchestration shape as a-interact (root →
+# sub-explorers → projection-resolver → query-constructor) but every
+# role drops `ask_user`. The closure-bound projection count check on
+# the constructor is preserved (load-bearing against over/under-
+# projection); only its ModelRetry text is rewritten to drop the
+# "call ask_user" suggestion.
+# ---------------------------------------------------------------------------
+
+
+def _build_sub_explorer(
+    *,
+    model: Any,
+    model_settings: Any,
+    shared_slayer_server: Any,
+    self_model_id: str = "unknown",
+    eval_mode: str = "one-shot",
+) -> Agent:
+    """Sub-explorer (one-shot): SLayer MCP toolset (search/inspect_model)
+    + spawn_subagent. NO ask_user, NO submit_query, NO query.
+
+    Explorers recursively spawn explorers (never clarifiers) so a
+    grandchild keeps the one-shot flavor — pinned by the test that
+    monkeypatches both builders and asserts only the explorer was
+    invoked from a one-shot root's spawn.
+    """
+    kwargs: dict[str, Any] = dict(
+        model=model, deps_type=TaskDeps, retries=2,
+        prepare_tools=_make_prepare_tools(False),
+    )
+    if shared_slayer_server is not None:
+        kwargs["toolsets"] = [shared_slayer_server]
+    if model_settings is not None:
+        kwargs["model_settings"] = model_settings
+    agent = Agent(**kwargs)
+    _register_spawn_subagent(
+        agent,
+        model=model,
+        model_settings=model_settings,
+        shared_slayer_server=shared_slayer_server,
+        self_model_id=self_model_id,
+        eval_mode=eval_mode,
+    )
+    return agent
+
+
+def _build_projection_resolver_oneshot(
+    *,
+    model: Any,
+    model_settings: Any,
+    self_model_id: str = "unknown",
+) -> Agent:
+    """Projection-resolver (Stage 2, one-shot): structured output
+    ``list[str]`` only. NO ask_user, NO submit_query, NO query,
+    NO spawn_subagent, NO MCP toolset.
+
+    The constructor's closure-bound count check on ``submit_query``
+    depends on this list's length — the one-shot resolver decides
+    autonomously (no user-sim) and returns the ordered list directly.
+    The empty-list guard in ``_run_projection_resolver`` still applies.
+    """
+    kwargs: dict[str, Any] = dict(
+        model=model,
+        deps_type=TaskDeps,
+        output_type=list[str],
+        retries=2,
+        prepare_tools=_make_prepare_tools(False),
+    )
+    if model_settings is not None:
+        kwargs["model_settings"] = model_settings
+    agent = Agent(**kwargs)
+    return agent
+
+
+def _build_query_constructor_oneshot(
+    *,
+    model: Any,
+    model_settings: Any,
+    shared_slayer_server: Any,
+    confirmed_projection: tuple[str, ...],
+    self_model_id: str = "unknown",
+) -> Agent:
+    """Query-constructor (Stage 3, one-shot): SLayer MCP toolset
+    (search/inspect_model/query) + submit_query. NO ask_user,
+    NO spawn_subagent.
+
+    ``confirmed_projection`` is closure-captured into ``submit_query``
+    for the same count-mismatch ModelRetry as the a-interact constructor
+    — except the ModelRetry text is rewritten to drop the
+    "call ask_user" suggestion (the one-shot agent has no ask_user
+    tool; mentioning it would steer the model to a tool that doesn't
+    exist). A persistent mismatch exhausts ``retries`` → legitimate
+    ``never_submitted`` (no infinite loop).
+    """
+    kwargs: dict[str, Any] = dict(
+        model=model, deps_type=TaskDeps, retries=2,
+        prepare_tools=_make_prepare_tools(False),
+    )
+    if shared_slayer_server is not None:
+        kwargs["toolsets"] = [shared_slayer_server]
+    if model_settings is not None:
+        kwargs["model_settings"] = model_settings
+    agent = Agent(**kwargs)
+    _register_submit_query_oneshot(agent, confirmed_projection)
+    return agent
+
+
+def _register_submit_query_oneshot(
+    agent: Agent, confirmed_projection: tuple[str, ...],
+) -> None:
+    """One-shot variant of :func:`_register_submit_query` — same
+    closure-bound count check, NO ask_user reference in the
+    ModelRetry text (the one-shot constructor has no ask_user tool)."""
+    expected_count = len(confirmed_projection)
+    confirmed_list = list(confirmed_projection)
+    confirmed_block = "\n".join(
+        f"  {i + 1}. {name}" for i, name in enumerate(confirmed_list)
+    )
+
+    @agent.tool
+    async def submit_query(ctx: RunContext[TaskDeps], query_json: str) -> str:
+        """Submit your final SLayer query for evaluation.
+
+        Your submission must project EXACTLY the columns the
+        projection-resolver confirmed (in the prompt as CONFIRMED
+        PROJECTION). A count mismatch is hard-rejected here before
+        the helper is called — no budget is charged on rejection. Bring
+        your draft into line with the confirmed list and resubmit.
+        """
+        try:
+            parsed = json.loads(query_json)
+        except json.JSONDecodeError:
+            adapter = _LegacyAdapter(ctx.deps)
+            return submit_slayer_query(
+                adapter, query_json, _slayer_client_factory,
+            )
+
+        observed = _projection_count(parsed)
+        if observed is not None and observed != expected_count:
+            raise ModelRetry(
+                f"Your submission has {observed} projected column(s), "
+                f"but the projection-resolver confirmed exactly "
+                f"{expected_count}:\n{confirmed_block}\n"
+                f"Align your dimensions+measures to that count and "
+                f"order, then resubmit. This rejection consumed no "
+                f"budget."
+            )
+
+        adapter = _LegacyAdapter(ctx.deps)
+        return submit_slayer_query(
+            adapter, query_json, _slayer_client_factory,
+        )

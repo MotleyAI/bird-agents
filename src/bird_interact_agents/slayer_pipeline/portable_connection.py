@@ -65,11 +65,22 @@ def to_portable_connection_string(
 
 
 def resolve_committed_connection_string(
-    connection_string: str, mini_interact_root: Path
+    connection_string: str, mini_interact_root: Path,
+    *, db_root: Path | None = None,
 ) -> str:
     """Re-anchor a portable (relative) connection_string at the local
-    mini-interact root, returning an absolute SQLite URI. ``$BIRD_DB_PATH``
-    overrides the supplied root when set.
+    mini-interact root, returning an absolute SQLite URI.
+
+    Precedence (DEV-1462 / second-round Codex review): an explicit
+    ``db_root`` kwarg wins over ``$BIRD_DB_PATH``. Callers that know the
+    authoritative root (e.g. the otf_encode adapter handling a
+    LiveSQLBench run passes the harness's ``--db-path``) MUST be able to
+    override the env, because conftest + day-to-day shells often set
+    ``$BIRD_DB_PATH`` to the mini-interact root, which would otherwise
+    mis-anchor a LiveSQLBench per-task variant resolve at runtime.
+
+    Legacy precedence (no ``db_root``): ``$BIRD_DB_PATH`` wins over
+    ``mini_interact_root`` — back-compat with existing callers.
 
     Absolute connection strings are returned unchanged (so live storage
     and migration-from-old-yamls both pass through cleanly).
@@ -81,16 +92,27 @@ def resolve_committed_connection_string(
     if not connection_string.startswith(_SQLITE_PREFIX_RELATIVE):
         return connection_string
     rel_path = connection_string[len(_SQLITE_PREFIX_RELATIVE):]
-    env_root = os.environ.get("BIRD_DB_PATH")
-    root = Path(env_root).expanduser() if env_root else mini_interact_root
+    if db_root is not None:
+        root: Path = db_root
+    else:
+        env_root = os.environ.get("BIRD_DB_PATH")
+        root = Path(env_root).expanduser() if env_root else mini_interact_root
     abs_path = (root / rel_path).resolve()
     return f"{_SQLITE_PREFIX_ABSOLUTE}{abs_path.as_posix().lstrip('/')}"
 
 
-def expected_connection_string(db: str, mini_interact_root: Path) -> str:
+def expected_connection_string(
+    db: str, mini_interact_root: Path, *, db_root: Path | None = None,
+) -> str:
     """The absolute SQLite URL the datasource for ``db`` SHOULD carry in
     the CURRENT environment: ``<root>/<db>/<db>.sqlite`` where ``root`` is
-    ``$BIRD_DB_PATH`` (when set) else ``mini_interact_root``.
+    an explicit ``db_root`` (when given) else ``$BIRD_DB_PATH`` (when set)
+    else ``mini_interact_root``.
+
+    Precedence (DEV-1462 / second-round Codex review): an explicit
+    ``db_root`` wins over ``$BIRD_DB_PATH`` — a LiveSQLBench run passes its
+    ``--db-path`` here so conftest's / a day-to-day shell's
+    ``$BIRD_DB_PATH=<mini-interact>`` can't mis-anchor a LiveSQLBench DB.
 
     Unlike :func:`resolve_committed_connection_string` — which passes an
     absolute connection_string through UNCHANGED — this forces the path
@@ -102,20 +124,24 @@ def expected_connection_string(db: str, mini_interact_root: Path) -> str:
     resolving alone leaves the foreign absolute path intact and SQLite
     then fails with "unable to open database file".
     """
-    env_root = os.environ.get("BIRD_DB_PATH")
-    base = Path(env_root).expanduser() if env_root else mini_interact_root
+    if db_root is not None:
+        base: Path = db_root
+    else:
+        env_root = os.environ.get("BIRD_DB_PATH")
+        base = Path(env_root).expanduser() if env_root else mini_interact_root
     abs_sqlite = (base / db / f"{db}.sqlite").resolve()
     return f"{_SQLITE_PREFIX_ABSOLUTE}{abs_sqlite.as_posix().lstrip('/')}"
 
 
 def reanchor_connection_string(
-    connection_string: str, db: str, mini_interact_root: Path
+    connection_string: str, db: str, mini_interact_root: Path,
+    *, db_root: Path | None = None,
 ) -> str:
     """Re-anchor a ``connection_string`` to the current environment.
 
-    * **Relative** form (``sqlite:///<rel>``) → resolve against the root
-      (``$BIRD_DB_PATH`` wins), PRESERVING the path component. This is the
-      committed/pre-encoded form and behaviour is unchanged from
+    * **Relative** form (``sqlite:///<rel>``) → resolve against the root,
+      PRESERVING the path component. This is the committed/pre-encoded
+      form and behaviour is unchanged from
       :func:`resolve_committed_connection_string`.
     * **Absolute** form (``sqlite:////abs`` or the malformed 5-slash
       ``sqlite://///abs``) → FORCE-rewrite to the canonical
@@ -124,6 +150,11 @@ def reanchor_connection_string(
       NOT exist after transport (DEV-1478 cloud bug). The mini-interact
       convention places every DB at ``<root>/<db>/<db>.sqlite``, so the
       stale absolute path's host is irrelevant — we re-root it.
+
+    Root precedence in BOTH branches: an explicit ``db_root`` wins over
+    ``$BIRD_DB_PATH`` (DEV-1462 — a LiveSQLBench run threads its
+    ``--db-path`` so the env can't mis-anchor it); else ``$BIRD_DB_PATH``
+    wins over ``mini_interact_root``.
 
     A ``None`` / empty / non-sqlite connection_string is returned
     unchanged so non-sqlite datasources pass through untouched.
@@ -138,7 +169,9 @@ def reanchor_connection_string(
         idx += 1
         n_slashes += 1
     if n_slashes >= 4:
-        return expected_connection_string(db, mini_interact_root)
+        return expected_connection_string(
+            db, mini_interact_root, db_root=db_root,
+        )
     return resolve_committed_connection_string(
-        connection_string, mini_interact_root,
+        connection_string, mini_interact_root, db_root=db_root,
     )

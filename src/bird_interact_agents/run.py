@@ -19,6 +19,7 @@ from bird_interact_agents.harness import (
     finalize_result_row,
     load_db_data_if_needed,
     load_tasks,
+    materialize_task_db,
     SampleStatus,
 )
 from bird_interact_agents.results_db import (
@@ -80,6 +81,14 @@ def _validate_slayer_setup(
     re-raises via ``parser.error`` so the CLI gets the standard
     argparse exit-2 + stderr behaviour.
     """
+    # DEV-1462: one-shot REQUIRES on-the-fly. Pre-encoded one-shot would
+    # silently target the committed `slayer_models/` which has no
+    # LiveSQLBench coverage; fail fast.
+    if mode == "one-shot" and slayer_setup != "on-the-fly":
+        raise ValueError(
+            "--mode one-shot requires --slayer-setup on-the-fly; "
+            f"got --slayer-setup {slayer_setup!r}",
+        )
     # pydantic_ai_otf_encode is an on-the-fly-only adapter (DEV-1454).
     if framework == "pydantic_ai_otf_encode" and slayer_setup != "on-the-fly":
         raise ValueError(
@@ -107,22 +116,76 @@ def _validate_slayer_setup(
             "--query-mode slayer; "
             f"got --query-mode {query_mode}"
         )
-    if mode != "a-interact":
+    # DEV-1462: on-the-fly now allows {a-interact, one-shot}.
+    if mode not in ("a-interact", "one-shot"):
         raise ValueError(
             "--slayer-setup on-the-fly is only supported with "
-            "--mode a-interact; "
+            "--mode a-interact or --mode one-shot; "
             f"got --mode {mode}"
         )
 
 
-def _maybe_force_wipe_otf(*, otf_rebuild: bool, framework: str, dbs) -> None:
+def _validate_dataset_mode(dataset: str, mode: str) -> None:
+    """DEV-1462: gate ``--mode`` against ``--dataset`` and vice versa.
+
+    * ``--mode one-shot`` ⟹ ``--dataset livesqlbench`` — one-shot exists
+      to run the unambiguous LiveSQLBench SELECT set; running it against
+      mini-interact would treat ambiguous tasks as one-shot, which is
+      out of scope.
+    * ``--dataset livesqlbench`` ⟹ ``--mode in {one-shot, oracle}`` —
+      the dataset has no ambiguity to clarify; ``a-interact``/
+      ``c-interact`` would silently spin the user-simulator on unambiguous
+      queries (wasted tokens + meaningless metric).
+    """
+    if mode == "one-shot" and dataset != "livesqlbench":
+        raise ValueError(
+            "--mode one-shot is only supported with --dataset livesqlbench; "
+            f"got --dataset {dataset!r}",
+        )
+    if dataset == "livesqlbench" and mode not in ("one-shot", "oracle"):
+        raise ValueError(
+            "--dataset livesqlbench is only supported with --mode one-shot "
+            f"or --mode oracle; got --mode {mode!r}",
+        )
+
+
+def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) -> None:
+    """DEV-1462: one-shot dispatch is recursive + otf_encode only.
+
+    ``oracle`` stays framework-agnostic; ``a-interact``/``c-interact`` keep
+    their existing per-framework dispatch.
+    """
+    if mode != "one-shot":
+        return
+    if query_mode != "slayer":
+        raise ValueError(
+            "--mode one-shot requires --query-mode slayer; "
+            f"got --query-mode {query_mode!r}",
+        )
+    if framework not in ("pydantic_ai_recursive", "pydantic_ai_otf_encode"):
+        raise ValueError(
+            "--mode one-shot is only supported with --framework "
+            "pydantic_ai_recursive or --framework pydantic_ai_otf_encode; "
+            f"got --framework {framework!r}",
+        )
+
+
+def _maybe_force_wipe_otf(
+    *, otf_rebuild: bool, framework: str, dbs,
+    benchmark: str | None = None,
+) -> None:
     """``--otf-rebuild`` force-wipe: drop BOTH on-the-fly layers (the phase-1-3
     cache AND the KB-encoded reference) for ``dbs``, for either on-the-fly
     framework. No-op when the flag is off or the framework isn't on-the-fly.
 
     Wiping both layers together is load-bearing: wiping only the reference
     would let a stale cache be re-encoded into a "fresh" reference (Codex r2
-    High#3)."""
+    High#3).
+
+    DEV-1462: ``benchmark`` selects the per-benchmark scoped roots so a
+    LiveSQLBench ``--otf-rebuild`` never wipes the mini-interact cache (and
+    vice versa). ``benchmark=None`` keeps the legacy mini-interact roots.
+    """
     if not otf_rebuild:
         return
     if framework not in ("pydantic_ai_recursive", "pydantic_ai_otf_encode"):
@@ -133,8 +196,12 @@ def _maybe_force_wipe_otf(*, otf_rebuild: bool, framework: str, dbs) -> None:
     )
 
     dbs = set(dbs)
-    removed_cache = purge_caches(paths.slayer_otf_cache_root(), dbs)
-    removed_ref = purge_references(paths.slayer_models_otf_root(), dbs)
+    removed_cache = purge_caches(
+        paths.slayer_otf_cache_root(benchmark=benchmark), dbs,
+    )
+    removed_ref = purge_references(
+        paths.slayer_models_otf_root(benchmark=benchmark), dbs,
+    )
     logger.info(
         "--otf-rebuild: wiped OTF cache for %s and reference for %s "
         "(will rebuild from scratch)",
@@ -160,6 +227,11 @@ async def run_oracle_task(task_data: dict, data_path_base: str) -> dict:
         sol_sql = ""
 
     load_db_data_if_needed(db_name, data_path_base)
+    # DEV-1462 B0: LiveSQLBench oracle runs need per-task DB isolation too —
+    # at --concurrency > 1, multiple oracle tasks on the same DB would
+    # otherwise race the shared <db>.sqlite that the OTF cache reads.
+    # No-op for mini-interact (no `dataset` marker).
+    materialize_task_db(task_data, data_path_base)
     status = SampleStatus(idx=0, original_data=task_data)
 
     observation, reward, p1, p2, finished = execute_submit_action(
@@ -218,7 +290,20 @@ def make_runner(
     Validates ``slayer_setup`` against the framework/query_mode/mode tuple
     upfront so a programmatic caller (cloud actor, custom driver) that
     bypasses the CLI parser can't silently get a runner that ignores the
-    setting (Codex finding on PR #19)."""
+    setting (Codex finding on PR #19).
+
+    DEV-1462: also validates the one-shot ⟹ slayer + framework∈{recursive,
+    otf_encode} dispatch. ``make_runner`` has no ``dataset`` argument (it
+    is a per-task runner factory); the one-shot ⟹ livesqlbench guard
+    lives further down in ``run_task`` itself, keyed on the task's
+    loader-stamped ``dataset`` marker (Codex #1).
+
+    Guard order: one-shot dispatch FIRST so a one-shot-with-wrong-framework
+    surfaces a "one-shot requires …" error, not the more generic
+    on-the-fly-framework error from ``_validate_slayer_setup``."""
+    _validate_one_shot_framework(
+        mode=mode, query_mode=query_mode, framework=framework,
+    )
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
@@ -501,11 +586,27 @@ async def run_one_task(
     ``slayer_setup`` is validated against framework/query_mode/mode and
     threaded into the runner factory, so the cloud path can opt into
     on-the-fly setup (Codex finding on PR #19).
+
+    DEV-1462: when ``mode="one-shot"``, the task MUST carry the
+    ``dataset="livesqlbench"`` marker (the loader stamps it). A
+    programmatic caller that bypasses the loader can't silently get a
+    one-shot run on un-marked task data (Codex #1 — programmatic-bypass
+    close, complementary to ``_validate_dataset_mode`` on the CLI side).
     """
+    _validate_one_shot_framework(
+        mode=mode, query_mode=query_mode, framework=framework,
+    )
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
     )
+    if mode == "one-shot" and task_data.get("dataset") != "livesqlbench":
+        raise ValueError(
+            "--mode one-shot requires a task carrying "
+            "dataset='livesqlbench' (the loader stamps it); got "
+            f"dataset={task_data.get('dataset')!r}. This guard catches "
+            "programmatic callers that bypass load_livesqlbench_tasks.",
+        )
     runner = _make_runner(
         framework=framework,
         query_mode=query_mode,
@@ -589,30 +690,68 @@ async def run_evaluation(
     max_depth: int = 3,
     slayer_setup: str = "pre-encoded",
     otf_rebuild: bool = False,
+    dataset: str = "mini-interact",
+    gold_file: str | None = None,
 ) -> dict:
     """Run full evaluation across all tasks."""
-    # Programmatic-caller mirror of the CLI fail-fast guard. The CLI
+    # Programmatic-caller mirror of the CLI fail-fast guards. The CLI
     # parser rejects the same combinations in main(), but
     # ``run_evaluation`` is also called directly from tests and other
-    # entry points; without this check those callers would silently get
-    # unsupported behaviour (Codex finding on DEV-1455 PR #19).
+    # entry points; without these checks those callers would silently get
+    # unsupported behaviour (Codex finding on DEV-1455 PR #19 +
+    # DEV-1462 Codex round-2).
+    _validate_dataset_mode(dataset=dataset, mode=mode)
+    _validate_one_shot_framework(
+        mode=mode, query_mode=query_mode, framework=framework,
+    )
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
     )
-    tasks = load_tasks(data_path, limit)
-    if filter_ids:
-        wanted = set(filter_ids)
-        tasks = [t for t in tasks if t.get("instance_id") in wanted]
+    if dataset == "livesqlbench" and not gold_file:
+        raise ValueError(
+            "--dataset livesqlbench requires --gold-file (the gated sidecar "
+            "carrying sol_sql / external_knowledge / test_cases keyed by "
+            "instance_id)",
+        )
+
+    # B3 empty-filter footgun hardening: a caller that passes
+    # `filter_ids=[]` (e.g. `--instance-id ",,, "` collapsing to empty)
+    # would, with the legacy truthy-check, fall through to running the
+    # FULL task set. Treat "filter requested" as `is not None`.
+    if filter_ids is not None and len(filter_ids) == 0:
+        raise ValueError(
+            "filter_ids was explicitly empty (zero matching ids). "
+            "If you meant to run the full set, pass filter_ids=None.",
+        )
+
+    if dataset == "livesqlbench":
+        # The LiveSQLBench loader merges the gated gold sidecar, stamps
+        # the dataset marker, filters to SELECT, and is filter_ids-aware
+        # (Codex #6). Apply limit inside the loader so it lands AFTER the
+        # SELECT + filter narrowing.
+        from bird_interact_agents.harness import load_livesqlbench_tasks
+        tasks = load_livesqlbench_tasks(
+            data_path, gold_file, limit=limit, filter_ids=filter_ids,
+        )
+    else:
+        tasks = load_tasks(data_path, limit)
+        if filter_ids is not None:
+            wanted = set(filter_ids)
+            tasks = [t for t in tasks if t.get("instance_id") in wanted]
 
     # --otf-rebuild: force-wipe BOTH on-the-fly layers (cache + reference) for
     # the DBs in this run ONCE, before the (possibly concurrent) task loop, so
     # the lazy build regenerates each exactly once and all tasks reuse the fresh
     # copy. Default off reuses whatever is present. On-the-fly frameworks only.
+    # DEV-1462: pass the per-benchmark scope so a livesqlbench rebuild never
+    # wipes the mini-interact roots (and vice versa).
+    benchmark_for_paths = "livesqlbench" if dataset == "livesqlbench" else None
     _maybe_force_wipe_otf(
         otf_rebuild=otf_rebuild,
         framework=framework,
         dbs={t.get("selected_database") for t in tasks if t.get("selected_database")},
+        benchmark=benchmark_for_paths,
     )
 
     audited_overlay_log: dict[str, str] = {}
@@ -861,9 +1000,33 @@ def main() -> None:
     )
     parser.add_argument(
         "--mode",
-        choices=["a-interact", "c-interact", "oracle"],
+        choices=["a-interact", "c-interact", "oracle", "one-shot"],
         default="a-interact",
-        help="Evaluation mode",
+        help=(
+            "Evaluation mode. ``one-shot`` (DEV-1462) is the non-interactive "
+            "path used by --dataset livesqlbench: no user-sim, no ask_user."
+        ),
+    )
+    parser.add_argument(
+        "--dataset",
+        choices=["mini-interact", "livesqlbench"],
+        default="mini-interact",
+        help=(
+            "Which benchmark dataset to load (DEV-1462). "
+            "``mini-interact`` (default) keeps the existing behaviour. "
+            "``livesqlbench`` loads LiveSQLBench-Base-Lite-SQLite and "
+            "REQUIRES --gold-file; gated to --mode {one-shot, oracle}."
+        ),
+    )
+    parser.add_argument(
+        "--gold-file",
+        default=None,
+        help=(
+            "Path to the gated LiveSQLBench gold sidecar "
+            "(`*_gt_kg_testcases_*.jsonl`) — required when "
+            "--dataset livesqlbench. Carries sol_sql / external_knowledge / "
+            "test_cases keyed by instance_id."
+        ),
     )
     parser.add_argument(
         "--query-mode",
@@ -1027,18 +1190,34 @@ def main() -> None:
         parser.error("--instance-id cannot be combined with --filter-ids or --limit")
 
     # Fail-fast: --slayer-setup on-the-fly is only valid for the
-    # pydantic_ai_recursive + slayer + a-interact tuple. Validate before
-    # any task starts so the user doesn't get a results.db full of bogus
-    # rows (Codex finding on DEV-1455). The same check lives in
+    # pydantic_ai_recursive + slayer + a-interact|one-shot tuple. Validate
+    # before any task starts so the user doesn't get a results.db full of
+    # bogus rows (Codex finding on DEV-1455). The same check lives in
     # ``run_evaluation`` for programmatic callers; here we translate its
     # ValueError into argparse's standard stderr + exit-2 path.
     try:
+        # DEV-1462: dataset ⟺ mode gates + one-shot dispatch + gold-file
+        # presence — same fail-fast pattern (CLI + programmatic mirror in
+        # run_evaluation). The one-shot dispatch fires FIRST so a one-shot
+        # + wrong-framework surfaces a "--mode one-shot requires …" error,
+        # not the more generic on-the-fly-framework error.
+        _validate_dataset_mode(dataset=args.dataset, mode=args.mode)
+        _validate_one_shot_framework(
+            mode=args.mode, query_mode=args.query_mode,
+            framework=args.framework,
+        )
         _validate_slayer_setup(
             slayer_setup=args.slayer_setup,
             framework=args.framework,
             query_mode=args.query_mode,
             mode=args.mode,
         )
+        if args.dataset == "livesqlbench" and not args.gold_file:
+            raise ValueError(
+                "--dataset livesqlbench requires --gold-file (the gated "
+                "sidecar carrying sol_sql / external_knowledge / test_cases "
+                "keyed by instance_id).",
+            )
     except ValueError as e:
         parser.error(str(e))
 
@@ -1082,6 +1261,8 @@ def main() -> None:
             max_depth=args.max_depth,
             slayer_setup=args.slayer_setup,
             otf_rebuild=args.otf_rebuild,
+            dataset=args.dataset,
+            gold_file=args.gold_file,
         )
     )
 

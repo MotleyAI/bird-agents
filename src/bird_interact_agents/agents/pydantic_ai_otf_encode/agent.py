@@ -49,13 +49,18 @@ from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
 )
 from bird_interact_agents.agents.pydantic_ai_otf_encode.factories import (
     _build_projection_resolver,
+    _build_projection_resolver_oneshot,
     _build_query_constructor,
+    _build_query_constructor_oneshot,
     _build_root_clarifier,
 )
 from bird_interact_agents.agents.pydantic_ai_otf_encode.prompts import (
+    PROJECTION_RESOLVER_ONESHOT_PROMPT,
     PROJECTION_RESOLVER_PROMPT,
+    QUERY_CONSTRUCTOR_ONESHOT_PROMPT,
     QUERY_CONSTRUCTOR_PROMPT,
     ROOT_CLARIFIER_PROMPT,
+    ROOT_EXPLORER_PROMPT,
 )
 from bird_interact_agents.agents.pydantic_ai_recursive.agent import (
     _aggregate_runs,
@@ -68,6 +73,7 @@ from bird_interact_agents.harness import (
     SampleStatus,
     finalize_result_row,
     load_db_data_if_needed,
+    materialize_task_db,
     slayer_mcp_stdio_config,
     SLAYER_MCP_STARTUP_TIMEOUT_S,
 )
@@ -104,12 +110,27 @@ _PROJECTION_SUBMIT_SUFFIX = (
     "reply briefly to finish — the result is only recorded via the tool."
 )
 
+# DEV-1462: one-shot equivalent of `_PROJECTION_SUBMIT_SUFFIX`. The a-interact
+# suffix would steer the model toward asking the user to confirm — the one-shot
+# resolver has no ask_user tool, so the suffix MUST drop that wording.
+_PROJECTION_SUBMIT_SUFFIX_ONESHOT = (
+    "\n\nDELIVER your confirmed output columns by calling "
+    "`submit_projection(columns_json=...)` with a JSON array of column-name "
+    'strings (e.g. ["region", "revenue"]); an empty array [] is allowed and '
+    "triggers a recovery pass. Reason in text first, then call it once and "
+    "reply briefly to finish — the result is only recorded via the tool. "
+    "Decide the projection autonomously from the question and the "
+    "specification."
+)
 
-def _constructor_reserve() -> float:
-    """Bird-coin reserve held back from the clarifier phase. Identical
-    formula to the recursive adapter (`2 * ask_user + submit_query`);
-    the parity test pins them equal so a future change to one MUST be
-    mirrored to the other."""
+
+def _constructor_reserve(eval_mode: str = "a-interact") -> float:
+    """Bird-coin reserve held back from the clarifier phase. Same formula
+    as the recursive adapter (parity-pinned by a test): a-interact reserves
+    ``2 * ask_user + submit_query``; one-shot reserves ``submit_query``
+    only (no ask_user anywhere in the spawn tree)."""
+    if eval_mode == "one-shot":
+        return ACTION_COSTS["submit_query"]
     return (
         2 * ACTION_COSTS["ask_user"]
         + ACTION_COSTS["submit_query"]
@@ -875,20 +896,31 @@ async def _resolve_otf_task_storage_dir(
     task_data: dict,
     data_path_base: str,
     build_encoder,
+    benchmark: str | None = None,
 ) -> tuple[str, list[int]]:
     """DEV-1454: lazily build the durable per-DB reference (setup encode of the
     full KB), then materialise a per-task HARD-8 variant copy of it — entities
     whose ``meta.kb_id`` is in this task's ``deleted_knowledge`` are dropped.
-    The reference encodes the FULL KB; per-task masking happens only here."""
+    The reference encodes the FULL KB; per-task masking happens only here.
+
+    DEV-1462: ``benchmark`` selects the per-benchmark scoped roots so a
+    LiveSQLBench reference lands at ``slayer_models_otf_livesqlbench/<db>/``
+    instead of colliding with a same-named mini-interact DB at
+    ``slayer_models_otf/<db>/``. ``benchmark=None`` keeps the legacy
+    mini-interact roots. Also threads an explicit ``db_root`` into
+    ``ensure_db_reference`` so the build's live-SQLite resolution
+    follows ``--db-path`` (overriding ``$BIRD_DB_PATH``) — Codex #2 fix."""
     deleted = sorted(extract_deleted_kb_ids(task_data))
     instance_id = task_data["instance_id"]
-    reference_root = _paths.slayer_models_otf_root()
+    reference_root = _paths.slayer_models_otf_root(benchmark=benchmark)
+    db_root_resolved = Path(data_path_base).resolve()
     await ensure_db_reference(
         db_name,
         reference_root=reference_root,
-        cache_root=_paths.slayer_otf_cache_root(),
+        cache_root=_paths.slayer_otf_cache_root(benchmark=benchmark),
         mini_interact_root=Path(data_path_base),
         build_encoder=build_encoder,
+        db_root=db_root_resolved,
     )
     scratch = await build_task_variant_storage(
         canonical_storage_root=reference_root,
@@ -897,9 +929,19 @@ async def _resolve_otf_task_storage_dir(
         work_dir=_otf_work_dir(instance_id),
         # Honour the run's --db-path: the reference was built against this root
         # (mini_interact_root=data_path_base above), so the per-task datasource
-        # must resolve its portable connection string against the SAME root,
-        # not the default sibling mini-interact/ ($BIRD_DB_PATH still wins).
+        # must resolve its portable connection string against the SAME root.
         mini_interact_root=Path(data_path_base),
+        # DEV-1462 round-2 — the SLayer MCP server reads the per-task
+        # variant's connection string at runtime, and the resolver in
+        # ``portable_connection.py`` still prefers ``$BIRD_DB_PATH`` over
+        # the supplied root by default. Pass ``db_root`` explicitly so the
+        # runtime resolve matches the build-time resolve from
+        # ``ensure_db_reference(db_root=...)`` above — without this, a
+        # LiveSQLBench task would correctly build/reuse the LiveSQLBench-
+        # scoped reference but silently query the mini-interact sqlite at
+        # runtime when ``$BIRD_DB_PATH`` is set to mini-interact (the
+        # common conftest/CI/shell case).
+        db_root=db_root_resolved,
     )
     return str(scratch), deleted
 
@@ -996,14 +1038,29 @@ class PydanticAIOtfEncodeAgent:
                 "pydantic_ai_otf_encode supports only --query-mode slayer; "
                 f"got {query_mode!r}"
             )
-        if eval_mode != "a-interact":
+        if eval_mode not in ("a-interact", "one-shot"):
             raise ValueError(
-                "pydantic_ai_otf_encode supports only --mode a-interact; "
-                f"got {eval_mode!r}"
+                "pydantic_ai_otf_encode supports only --mode a-interact "
+                f"or --mode one-shot; got {eval_mode!r}"
+            )
+
+        is_one_shot = eval_mode == "one-shot"
+        # DEV-1462 — Codex #1: one-shot REQUIRES the loader-stamped
+        # ``dataset='livesqlbench'`` marker. A programmatic caller that
+        # bypasses ``load_livesqlbench_tasks`` (cloud actor, custom driver)
+        # MUST NOT silently get a one-shot run on un-marked data.
+        if is_one_shot and task_data.get("dataset") != "livesqlbench":
+            raise ValueError(
+                "--mode one-shot requires a task carrying "
+                "dataset='livesqlbench' (the loader stamps it); got "
+                f"dataset={task_data.get('dataset')!r}",
             )
 
         db_name = task_data["selected_database"]
         instance_id = task_data["instance_id"]
+        benchmark: str | None = (
+            "livesqlbench" if task_data.get("dataset") == "livesqlbench" else None
+        )
 
         from slayer.storage.yaml_storage import YAMLStorage
 
@@ -1054,6 +1111,9 @@ class PydanticAIOtfEncodeAgent:
 
             # --- pre-run setup (failure here → finalized error row) ---
             load_db_data_if_needed(db_name, data_path_base)
+            # DEV-1462 B0: LiveSQLBench tasks get a per-task isolated
+            # `db_file_path` (no-op for mini-interact).
+            materialize_task_db(task_data, data_path_base)
             # Always on-the-fly for this adapter (init enforced). The per-DB
             # reference is built once (lazily) by a setup encoder that shares
             # this agent's model; the per-task copy is a HARD-8 variant of it.
@@ -1069,6 +1129,7 @@ class PydanticAIOtfEncodeAgent:
                     task_data=task_data,
                     data_path_base=data_path_base,
                     build_encoder=build_encoder,
+                    benchmark=benchmark,
                 )
             )
             shared.slayer_storage_dir = slayer_storage_dir
@@ -1077,7 +1138,8 @@ class PydanticAIOtfEncodeAgent:
             # build it itself.
             shared._slayer_storage = YAMLStorage(base_dir=slayer_storage_dir)
 
-            reserve = _constructor_reserve()
+            # One-shot reserve = submit_query only (no ask_user anywhere).
+            reserve = _constructor_reserve(eval_mode)
             total_budget = status.remaining_budget
             status.remaining_budget = max(
                 0.0, status.remaining_budget - reserve,
@@ -1097,8 +1159,13 @@ class PydanticAIOtfEncodeAgent:
                     shared_slayer_server=slayer_server,
                     max_depth=self.max_depth,
                     self_model_id=self.model_id,
+                    eval_mode=eval_mode,
                 )
-                root_prompt = ROOT_CLARIFIER_PROMPT.format(
+                root_template = (
+                    ROOT_EXPLORER_PROMPT if is_one_shot
+                    else ROOT_CLARIFIER_PROMPT
+                )
+                root_prompt = root_template.format(
                     budget=shared.status.remaining_budget,
                     db_name=db_name,
                     user_query=task_data["amb_user_query"],
@@ -1139,23 +1206,39 @@ class PydanticAIOtfEncodeAgent:
                 )
                 current_record = resolver_record
                 current_deps = resolver_deps
-                resolver_agent = _build_projection_resolver(
+                resolver_builder = (
+                    _build_projection_resolver_oneshot if is_one_shot
+                    else _build_projection_resolver
+                )
+                resolver_agent = resolver_builder(
                     model=self.model,
                     model_settings=self._model_settings,
                     self_model_id=self.model_id,
                 )
-                resolver_prompt = PROJECTION_RESOLVER_PROMPT.format(
+                resolver_template = (
+                    PROJECTION_RESOLVER_ONESHOT_PROMPT if is_one_shot
+                    else PROJECTION_RESOLVER_PROMPT
+                )
+                resolver_suffix = (
+                    _PROJECTION_SUBMIT_SUFFIX_ONESHOT if is_one_shot
+                    else _PROJECTION_SUBMIT_SUFFIX
+                )
+                resolver_prompt = resolver_template.format(
                     amb_user_query=task_data["amb_user_query"],
                     spec=spec,
                     budget=shared.status.remaining_budget,
                     db_name=db_name,
-                ) + _PROJECTION_SUBMIT_SUFFIX
+                ) + resolver_suffix
+                resolver_recovery = (
+                    _ONE_SHOT_RECOVERY_PROMPT if is_one_shot else None
+                )
                 resolver_result = await _run_projection_resolver(
                     resolver_agent=resolver_agent,
                     instructions=resolver_prompt,
                     user_prompt=task_data["amb_user_query"],
                     deps=resolver_deps,
                     model_id=self.model_id,
+                    recovery_prompt=resolver_recovery,
                 )
                 resolver_record.output = repr(resolver_result.projection)
                 resolver_record.user_sim_transcript = list(
@@ -1205,7 +1288,11 @@ class PydanticAIOtfEncodeAgent:
                 current_record = constructor_record
                 current_deps = constructor_deps
                 confirmed_projection_tuple = tuple(resolver_result.projection)
-                constructor_agent = _build_query_constructor(
+                constructor_builder = (
+                    _build_query_constructor_oneshot if is_one_shot
+                    else _build_query_constructor
+                )
+                constructor_agent = constructor_builder(
                     model=self.model,
                     model_settings=self._model_settings,
                     shared_slayer_server=slayer_server,
@@ -1216,7 +1303,11 @@ class PydanticAIOtfEncodeAgent:
                     f"  {i + 1}. {name}"
                     for i, name in enumerate(confirmed_projection_tuple)
                 )
-                constructor_prompt = QUERY_CONSTRUCTOR_PROMPT.format(
+                constructor_template = (
+                    QUERY_CONSTRUCTOR_ONESHOT_PROMPT if is_one_shot
+                    else QUERY_CONSTRUCTOR_PROMPT
+                )
+                constructor_prompt = constructor_template.format(
                     amb_user_query=task_data["amb_user_query"],
                     spec=spec,
                     confirmed_projection=confirmed_projection_block,
@@ -1290,6 +1381,15 @@ class _null_async_context:
         return False
 
 
+_ONE_SHOT_RECOVERY_PROMPT = (
+    "Your previous output was an empty list. Re-read the user's question "
+    "and the specification, propose at least one output column you can "
+    "derive from them, and call submit_projection with the list. There is "
+    "no user simulator to consult — decide the projection autonomously and "
+    "finalise."
+)
+
+
 async def _run_projection_resolver(
     *,
     resolver_agent: Any,
@@ -1297,9 +1397,15 @@ async def _run_projection_resolver(
     user_prompt: str,
     deps: Any,
     model_id: str,
+    recovery_prompt: str | None = None,
 ) -> _ResolverResult:
     """Stage 2 with empty-list guard — copy of the recursive adapter's
-    helper bound to this module's TaskDeps."""
+    helper bound to this module's TaskDeps.
+
+    DEV-1462: ``recovery_prompt`` lets the caller swap in a one-shot
+    recovery message (no "ask the user to confirm") so the model isn't
+    steered toward a tool the one-shot resolver doesn't have. Default
+    is the a-interact recovery text."""
     # DEV-1454: the resolver delivers its columns via submit_projection into
     # per-run deps (not structured output), so it can reason in text. Reset the
     # slot before each attempt; read it after. Wrap each run so a valid
@@ -1324,13 +1430,15 @@ async def _run_projection_resolver(
 
     deps.projection_submission = None
     recovery_run = None
+    if recovery_prompt is None:
+        recovery_prompt = (
+            "Your previous output was an empty list. Propose at least one "
+            "output column you derive from the user's question and the "
+            "specification, then ask the user to confirm or refine."
+        )
     try:
         recovery_run = await resolver_agent.run(
-            user_prompt=(
-                "Your previous output was an empty list. Propose at least one "
-                "output column you derive from the user's question and the "
-                "specification, then ask the user to confirm or refine."
-            ),
+            user_prompt=recovery_prompt,
             instructions=instructions,
             deps=deps,
             message_history=(

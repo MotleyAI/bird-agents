@@ -114,6 +114,7 @@ async def build_task_variant_storage(
     deleted_kb_ids: set[int],
     work_dir: Path,
     mini_interact_root: Path | None = None,
+    db_root: Path | None = None,
 ) -> Path:
     """Build a per-task SLayer YAMLStorage, optionally with HARD-8
     deletions applied.
@@ -138,11 +139,17 @@ async def build_task_variant_storage(
         ``<work_dir>/<db_name>/``.
     mini_interact_root
         Root the portable (relative) datasource connection string is
-        re-anchored at when ``$BIRD_DB_PATH`` is unset. Defaults to the sibling
-        ``mini-interact/`` next to ``canonical_storage_root``'s parent. Pass the
-        run's ``--db-path`` so a non-default dataset is honoured at task time
-        (the OTF flow builds its reference against that same root). ``$BIRD_DB_PATH``
-        still wins when set.
+        re-anchored at when ``$BIRD_DB_PATH`` is unset AND ``db_root`` is
+        not provided. Defaults to the sibling ``mini-interact/`` next to
+        ``canonical_storage_root``'s parent. ``$BIRD_DB_PATH`` still wins
+        over ``mini_interact_root``.
+    db_root
+        DEV-1462 — authoritative live-SQLite root for this run. When
+        provided, OVERRIDES ``$BIRD_DB_PATH`` so a LiveSQLBench task
+        variant's connection string resolves against ``--db-path`` even
+        when the shell sets ``$BIRD_DB_PATH`` to mini-interact (Codex
+        second-round finding). Mirrors the ``ensure_db_reference``
+        ``db_root`` semantics so build-time + runtime see the same root.
 
     Returns
     -------
@@ -188,7 +195,7 @@ async def build_task_variant_storage(
             else canonical_storage_root.parent.parent / "mini-interact"
         )
         resolved = reanchor_connection_string(
-            ds.connection_string or "", db_name, root
+            ds.connection_string or "", db_name, root, db_root=db_root,
         )
         if resolved != ds.connection_string:
             ds = ds.model_copy(update={"connection_string": resolved})

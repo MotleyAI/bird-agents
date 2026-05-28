@@ -20,8 +20,17 @@ from bird_interact_agents.slayer_otf import reference_build
 @pytest.fixture
 def spy_purges(monkeypatch, tmp_path: Path):
     """Redirect the two artifact roots into tmp and record purge calls."""
-    monkeypatch.setattr(run_mod.paths, "slayer_otf_cache_root", lambda: tmp_path / "cache")
-    monkeypatch.setattr(run_mod.paths, "slayer_models_otf_root", lambda: tmp_path / "ref")
+    # DEV-1462: helpers now take an optional `benchmark` kwarg. The
+    # legacy `--otf-rebuild` (no `--dataset livesqlbench`) calls them
+    # with `benchmark=None`, so the stub must accept that.
+    monkeypatch.setattr(
+        run_mod.paths, "slayer_otf_cache_root",
+        lambda *, benchmark=None: tmp_path / "cache",
+    )
+    monkeypatch.setattr(
+        run_mod.paths, "slayer_models_otf_root",
+        lambda *, benchmark=None: tmp_path / "ref",
+    )
     cache_calls: list = []
     ref_calls: list = []
     monkeypatch.setattr(
