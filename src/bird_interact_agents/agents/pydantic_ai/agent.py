@@ -52,6 +52,7 @@ from bird_interact_agents.harness import (
     parse_encoder_response,
     resolve_task_storage_dir,
     slayer_mcp_stdio_config,
+    SLAYER_MCP_STARTUP_TIMEOUT_S,
     update_budget,
 )
 from bird_interact_agents.usage import TokenUsage
@@ -319,12 +320,12 @@ def _build_slayer_agent(
         # households_11 ran into the previous max_retries=3 on a
         # complex SEI-formula query and bailed without submitting.
         max_retries=100,
-        # pydantic-ai's default 5s startup timeout is too tight when
-        # the slayer MCP runs `--ingest-on-startup`: idempotent
-        # embedding refresh against OpenAI for 20-50 entities can take
-        # 10-30s on a cold variant. 300s gives generous headroom; a
-        # truly hung MCP still fails the task in reasonable time.
-        timeout=300,
+        # Startup-handshake budget: the slayer MCP runs `--ingest-on-startup`,
+        # whose cost is the datasource schema RE-REFLECTION + semantic-layer
+        # rebuild (NOT embeddings — those are prebuilt and hash-skipped). It
+        # scales with schema size and balloons under multi-actor CPU
+        # contention; see SLAYER_MCP_STARTUP_TIMEOUT_S for the sizing rationale.
+        timeout=SLAYER_MCP_STARTUP_TIMEOUT_S,
     )
     kwargs: dict[str, Any] = dict(
         model=model, deps_type=TaskDeps, retries=2, toolsets=[slayer_server],
