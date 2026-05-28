@@ -83,6 +83,54 @@ def mini_interact_data_file() -> Path:
     return mini_interact_root() / "mini_interact.jsonl"
 
 
+# ---------------------------------------------------------------------------
+# DEV-1462: LiveSQLBench-Base-Lite-SQLite — sibling helpers mirroring the
+# mini-interact pair. Env-overridable; defaults sit next to the main
+# checkout so they are worktree-safe by construction (per the CLAUDE.md
+# "all gitignored data goes through paths.*_root()" rule).
+# ---------------------------------------------------------------------------
+
+
+def livesqlbench_root() -> Path:
+    """Path to the sibling ``livesqlbench-base-lite-sqlite/`` data dir
+    (per-DB template sqlite + KB + column-meaning + schema, plus the
+    public task jsonl).
+
+    Honours ``BIRD_LIVESQLBENCH_ROOT``; otherwise sits next to the main
+    checkout — same anchoring as :func:`mini_interact_root`.
+    """
+    override = os.environ.get("BIRD_LIVESQLBENCH_ROOT")
+    if override:
+        return Path(override).expanduser()
+    return main_checkout_root().parent / "livesqlbench-base-lite-sqlite"
+
+
+def livesqlbench_data_file() -> Path:
+    """Path to ``livesqlbench_data_sqlite.jsonl`` — honours
+    ``BIRD_LIVESQLBENCH_DATA_FILE`` env override."""
+    override = os.environ.get("BIRD_LIVESQLBENCH_DATA_FILE")
+    if override:
+        return Path(override).expanduser()
+    return livesqlbench_root() / "livesqlbench_data_sqlite.jsonl"
+
+
+# Set of benchmark identifiers the per-benchmark OTF roots accept. New
+# benchmarks (e.g. Base-Full) extend this; an unknown value raises so a
+# typo cannot silently fall back to mini-interact.
+_KNOWN_BENCHMARKS: frozenset[str] = frozenset({"livesqlbench"})
+
+
+def _validate_benchmark(benchmark: str | None) -> None:
+    if benchmark is None:
+        return
+    if benchmark not in _KNOWN_BENCHMARKS:
+        raise ValueError(
+            f"Unknown benchmark {benchmark!r}; expected one of "
+            f"{sorted(_KNOWN_BENCHMARKS)} or None (mini-interact). "
+            f"A typo here would silently mix per-benchmark artifacts."
+        )
+
+
 def audited_gold_root() -> Path:
     """Audited-gold SQL sidecars — committed, must live in the main checkout.
 
@@ -118,35 +166,75 @@ def slayer_models_root() -> Path:
     return main_checkout_root() / "slayer_models"
 
 
-def slayer_otf_cache_root() -> Path:
+def slayer_otf_cache_root(*, benchmark: str | None = None) -> Path:
     """Per-DB phase-1-3 ingest cache root for the on-the-fly setup path.
 
     Single source of truth (replaces the duplicated per-agent
     ``_otf_cache_root`` helpers). Lives at ``<main_checkout>/slayer_otf_cache/``
-    so the cache is sandboxed-writable and shared across worktrees. Honours
-    ``BIRD_OTF_CACHE_ROOT`` (the cloud actor sets it to ``/data/slayer_otf_cache``
-    so the uploaded cache is found there).
+    so the cache is sandboxed-writable and shared across worktrees.
+
+    ``benchmark`` (DEV-1462) selects a benchmark-scoped sibling root so two
+    benchmarks with overlapping DB names (e.g. mini-interact and
+    LiveSQLBench both have an ``alien`` DB) keep disjoint caches:
+
+    * ``benchmark=None`` (default) → ``<main_checkout>/slayer_otf_cache/``
+      (legacy mini-interact path; no caller breakage, no test breakage,
+      no silent shift in the dev-1470 cloud contract).
+    * ``benchmark="livesqlbench"`` →
+      ``<main_checkout>/slayer_otf_cache_livesqlbench/``.
+
+    Env overrides (the cloud actor sets these to ``/data/<...>`` so the
+    uploaded cache is found there) are PARALLEL — one per benchmark, so
+    a livesqlbench override does not steer the mini-interact root and
+    vice versa:
+
+    * mini-interact: ``BIRD_OTF_CACHE_ROOT``
+    * livesqlbench:  ``BIRD_OTF_CACHE_ROOT_LIVESQLBENCH``
     """
-    override = os.environ.get("BIRD_OTF_CACHE_ROOT")
+    _validate_benchmark(benchmark)
+    if benchmark is None:
+        override = os.environ.get("BIRD_OTF_CACHE_ROOT")
+        if override:
+            return Path(override).expanduser()
+        return main_checkout_root() / "slayer_otf_cache"
+    # Benchmark-scoped variant.
+    env_var = f"BIRD_OTF_CACHE_ROOT_{benchmark.upper()}"
+    override = os.environ.get(env_var)
     if override:
         return Path(override).expanduser()
-    return main_checkout_root() / "slayer_otf_cache"
+    return main_checkout_root() / f"slayer_otf_cache_{benchmark}"
 
 
-def slayer_models_otf_root() -> Path:
+def slayer_models_otf_root(*, benchmark: str | None = None) -> Path:
     """Per-DB reference models built by the DEV-1454 on-the-fly KB-encode
     setup pass — a sibling of ``slayer_models`` under the main checkout (so
     it is git-committable, and ``hard8_preprocessor.build_task_variant_storage``
     resolves the ``mini-interact`` dataset path identically). NEVER the same
     dir as ``slayer_models`` — hand-built committed models are never touched.
 
-    Honours ``BIRD_SLAYER_MODELS_OTF_ROOT`` (the cloud actor sets it to
-    ``/data/slayer_models_otf`` so the uploaded reference is found there).
+    ``benchmark`` (DEV-1462) selects a benchmark-scoped sibling root, same
+    semantics as :func:`slayer_otf_cache_root`:
+
+    * ``benchmark=None`` → ``<main_checkout>/slayer_models_otf/`` (legacy).
+    * ``benchmark="livesqlbench"`` →
+      ``<main_checkout>/slayer_models_otf_livesqlbench/``.
+
+    Env overrides (one per benchmark):
+
+    * mini-interact: ``BIRD_SLAYER_MODELS_OTF_ROOT``
+    * livesqlbench:  ``BIRD_SLAYER_MODELS_OTF_ROOT_LIVESQLBENCH``
     """
-    override = os.environ.get("BIRD_SLAYER_MODELS_OTF_ROOT")
+    _validate_benchmark(benchmark)
+    if benchmark is None:
+        override = os.environ.get("BIRD_SLAYER_MODELS_OTF_ROOT")
+        if override:
+            return Path(override).expanduser()
+        return main_checkout_root() / "slayer_models_otf"
+    env_var = f"BIRD_SLAYER_MODELS_OTF_ROOT_{benchmark.upper()}"
+    override = os.environ.get(env_var)
     if override:
         return Path(override).expanduser()
-    return main_checkout_root() / "slayer_models_otf"
+    return main_checkout_root() / f"slayer_models_otf_{benchmark}"
 
 
 def results_root() -> Path:

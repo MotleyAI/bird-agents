@@ -106,7 +106,9 @@ class _PermissiveStorage:
     async def list_memories(self, *, entities=None):
         return await self._real.list_memories(entities=entities)
 
-    async def get_model(self, name):
+    async def get_model(self, name, data_source=None):
+        # Accept the `data_source=` kwarg the scoped verifier lookups now
+        # pass (DEV-1462 — _entity_exists/_resolve_ref scope by datasource).
         # Return a sentinel object that satisfies every existence
         # probe in `_entity_exists`. Pyright/runtime-wise we only
         # need: `model is not None`, `model.data_source == db_name`,

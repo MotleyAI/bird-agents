@@ -28,6 +28,29 @@ The smoke for this contract is `tests/cloud/test_image.py::test_*audited_gold*`
 worktree is a workaround, not a fix — the next created worktree won't
 have the symlink and the build will break for the same reason.
 
+## Per-benchmark OTF artifact roots (DEV-1462)
+
+LiveSQLBench and mini-interact share DB names (e.g. `alien`). The OTF
+cache + reference path helpers therefore take a `benchmark` kwarg so
+the artifacts stay disjoint:
+
+* `paths.slayer_otf_cache_root()` → `<main_checkout>/slayer_otf_cache/`
+  (mini-interact, legacy / default — no caller breakage).
+* `paths.slayer_otf_cache_root(benchmark="livesqlbench")` →
+  `<main_checkout>/slayer_otf_cache_livesqlbench/`.
+* Same shape for `slayer_models_otf_root`. Env overrides are parallel
+  (`BIRD_OTF_CACHE_ROOT_LIVESQLBENCH`,
+  `BIRD_SLAYER_MODELS_OTF_ROOT_LIVESQLBENCH`).
+
+When adding a new benchmark, extend `paths._KNOWN_BENCHMARKS` and pass
+`benchmark=...` from each call site that resolves an OTF root (today:
+the recursive + otf_encode agents' `_resolve_otf_task_storage_dir` and
+`run._maybe_force_wipe_otf`). Tests in `tests/test_paths.py`,
+`tests/test_otf_rebuild_per_benchmark.py`, and
+`tests/test_cloud_paths_unchanged.py` pin the contract — the last one
+asserts the dev-1470 cloud upload-back/merge keeps using the LEGACY
+(no-kwarg) roots until cloud-side LiveSQLBench is filed.
+
 ## Always run project tools via `uv run` (never conda/system)
 
 The shell auto-activates conda env `motley3.11`, whose
