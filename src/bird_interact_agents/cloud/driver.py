@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 import secrets
@@ -25,6 +26,9 @@ from bird_interact_agents.cloud.gcs import slayer_artifact_name
 # (CodeRabbit) — otherwise the mock returns an empty MagicMock-iterable and
 # key-selection silently no-ops in those tests.
 from bird_interact_agents.cloud.prereqs import PrereqError, _required_api_keys
+# Imported by NAME so `_build_missing_otf_caches` can be exercised with a mock
+# (`monkeypatch.setattr(driver, "ensure_db_cache", ...)`) without a real build.
+from bird_interact_agents.slayer_otf.cache import ensure_db_cache
 
 
 logger = logging.getLogger(__name__)
@@ -229,11 +233,38 @@ def _artifact_present(root: Path, db: str, artifact: str) -> bool:
     return (db_dir / marker).is_file()
 
 
+def _build_missing_otf_caches(cache_root: Path, dbs: list[str]) -> None:
+    """Build the deterministic OTF ingest cache locally for each DB in `dbs`.
+
+    The cache is free to build (no LLMs) and fully deterministic, so a missing
+    ``slayer_otf_cache`` is auto-created here — laptop-side, before upload —
+    rather than aborting the submit. The cloud runner never builds REQUIRED
+    setup in-cluster (it consumes the uploaded cache), so this is the only
+    place it can be produced for the submit to proceed."""
+    mi_root = paths.mini_interact_root()
+    for db in dbs:
+        logger.info(
+            "cloud slayer: deterministic cache missing for %s — building it "
+            "locally (no LLMs) before upload", db,
+        )
+        asyncio.run(
+            ensure_db_cache(
+                db, cache_root=cache_root, mini_interact_root=mi_root,
+                force=False,
+            )
+        )
+
+
 def _check_slayer_setup_present(args) -> list[str]:
-    """Fail-fast (BEFORE build/push/cluster): every REQUIRED artifact must be
+    """Validate (BEFORE build/push/cluster) that every REQUIRED artifact is
     present locally for every selected DB. Optional artifacts (e.g. the
     ``slayer_models_otf`` seed under ``otf_encode + on-the-fly``) are not
     required — the cloud will encode missing references on the fly.
+
+    A missing ``slayer_otf_cache`` (the deterministic ingest cache) is NOT a
+    hard error: it's free to build locally, so we build it here instead of
+    aborting. Other REQUIRED artifacts (e.g. the hand-authored ``slayer_models``
+    reference) can't be auto-built and still fail fast.
 
     Returns the db list to upload."""
     dbs = _dbs_for_instances(args.instance_ids)
@@ -242,19 +273,24 @@ def _check_slayer_setup_present(args) -> list[str]:
         if not required:
             continue
         missing = [db for db in dbs if not _artifact_present(root, db, artifact)]
-        if missing:
-            marker_hint = {
-                "slayer_models": "non-empty <db>/ dir",
-                "slayer_otf_cache": "_cache_fp.txt",
-                "slayer_models_otf": "_reference_fp.txt",
-            }.get(artifact, artifact)
-            raise FileNotFoundError(
-                f"cloud slayer: required local setup missing for {missing} "
-                f"under {root} (combo {args.slayer_setup}/{args.framework}, "
-                f"artifact {artifact} expects {marker_hint}); build it "
-                f"locally first — the cloud runner never builds REQUIRED "
-                f"setup in-cluster."
-            )
+        if not missing:
+            continue
+        if artifact == "slayer_otf_cache":
+            # Deterministic + LLM-free → build it rather than erroring.
+            _build_missing_otf_caches(root, missing)
+            continue
+        marker_hint = {
+            "slayer_models": "non-empty <db>/ dir",
+            "slayer_otf_cache": "_cache_fp.txt",
+            "slayer_models_otf": "_reference_fp.txt",
+        }.get(artifact, artifact)
+        raise FileNotFoundError(
+            f"cloud slayer: required local setup missing for {missing} "
+            f"under {root} (combo {args.slayer_setup}/{args.framework}, "
+            f"artifact {artifact} expects {marker_hint}); build it "
+            f"locally first — the cloud runner never builds REQUIRED "
+            f"setup in-cluster."
+        )
     return dbs
 
 

@@ -33,7 +33,7 @@ from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
 from bird_interact_agents.slayer_pipeline.portable_connection import (
-    resolve_committed_connection_string,
+    reanchor_connection_string,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,15 +92,6 @@ async def prepare_task_storage(
     return scratch
 
 
-def _expected_connection_string(db: str, mini_interact_root: Path) -> str:
-    """Build the sqlite URL the datasource SHOULD carry for the current
-    mini-interact root. Matches the 4-slash absolute form SQLAlchemy
-    expects (and that ``slayer datasources create`` would itself emit
-    when run against this root)."""
-    abs_sqlite = (mini_interact_root / db / f"{db}.sqlite").resolve()
-    return f"sqlite:////{abs_sqlite.as_posix().lstrip('/')}"
-
-
 async def _rewrite_datasource_connection_string(
     *,
     db: str,
@@ -120,8 +111,10 @@ async def _rewrite_datasource_connection_string(
     in-tree cache rebuild that landed against an unexpected absolute
     prefix gets corrected before SLayer opens the sqlite file.
 
-    Also handles the legacy relative form (``sqlite:///<db>/...``) via
-    :func:`resolve_committed_connection_string`.
+    Delegates to :func:`reanchor_connection_string`, which force-rewrites
+    the stale-foreign-absolute form (the DEV-1478 cloud bug, where a
+    locally-built cache's absolute path doesn't exist in the cloud
+    container) while resolving the relative form against the root.
     """
     storage = YAMLStorage(base_dir=str(scratch))
     ds = await storage.get_datasource(db)
@@ -133,16 +126,14 @@ async def _rewrite_datasource_connection_string(
     if ds.connection_string is None:
         return
 
-    # Step 1: convert relative form → absolute (no-op for absolute).
-    resolved = resolve_committed_connection_string(
-        ds.connection_string, mini_interact_root,
+    # Re-anchor to the current root's <db>/<db>.sqlite. The OTF cache bakes
+    # in an ABSOLUTE path from the machine that built it, so `reanchor_*`
+    # force-rewrites it (resolving alone would pass a foreign absolute path
+    # through unchanged — the DEV-1478 cloud bug). A relative form (if a
+    # cache ever carried one) resolves against the root, path preserved.
+    resolved = reanchor_connection_string(
+        ds.connection_string, db, mini_interact_root,
     )
-    # Step 2: force the absolute path to point at the current root.
-    # Cheap to compute and write — strings are short — so we always
-    # overwrite rather than diffing slash counts.
-    expected = _expected_connection_string(db, mini_interact_root)
-    if expected != resolved:
-        resolved = expected
     if resolved != ds.connection_string:
         ds = ds.model_copy(update={"connection_string": resolved})
         await storage.save_datasource(ds)

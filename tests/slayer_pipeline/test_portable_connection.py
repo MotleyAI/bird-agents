@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 
 from bird_interact_agents.slayer_pipeline.portable_connection import (
+    expected_connection_string,
+    reanchor_connection_string,
     resolve_committed_connection_string,
     to_portable_connection_string,
 )
@@ -117,3 +119,85 @@ def test_roundtrip(tmp_path, monkeypatch):
     portable = to_portable_connection_string(abs_uri, root)
     resolved = resolve_committed_connection_string(portable, root)
     assert resolved == abs_uri
+
+
+# ---------------------------------------------------------------------------
+# DEV-1478 cloud bug: a deterministic cache built on one machine bakes in an
+# ABSOLUTE local sqlite path. `resolve_committed_connection_string` passes
+# absolute paths through UNCHANGED, so the foreign path survived into the
+# cloud container and every agent query failed "unable to open database
+# file". `expected_connection_string` / `reanchor_connection_string` FORCE
+# the path to the current root, fixing the transported-cache case.
+# ---------------------------------------------------------------------------
+
+
+def test_expected_connection_string_uses_supplied_root(tmp_path, monkeypatch):
+    monkeypatch.delenv("BIRD_DB_PATH", raising=False)
+    root = tmp_path / "mini-interact"
+    expected = expected_connection_string("households", root)
+    want = f"sqlite:////{(root / 'households' / 'households.sqlite').resolve().as_posix().lstrip('/')}"
+    assert expected == want
+
+
+def test_expected_connection_string_honors_env(tmp_path, monkeypatch):
+    """``$BIRD_DB_PATH`` overrides the supplied root — this is what makes
+    the cloud container (``BIRD_DB_PATH=/data/mini-interact``) resolve to
+    the container path even if the supplied root were stale."""
+    env_root = tmp_path / "data" / "mini-interact"
+    monkeypatch.setenv("BIRD_DB_PATH", str(env_root))
+    expected = expected_connection_string("credit", tmp_path / "elsewhere")
+    want = f"sqlite:////{(env_root / 'credit' / 'credit.sqlite').resolve().as_posix().lstrip('/')}"
+    assert expected == want
+
+
+def test_reanchor_rewrites_stale_foreign_absolute_path(tmp_path, monkeypatch):
+    """THE regression: a cache built under /home/<user>/... is transported
+    to a container where the DB lives under the current root. The foreign
+    absolute path must be force-rewritten, not passed through."""
+    monkeypatch.delenv("BIRD_DB_PATH", raising=False)
+    container_root = tmp_path / "data" / "mini-interact"
+    foreign = "sqlite:////home/someone/Dropbox/SLayer/mini-interact/households/households.sqlite"
+    out = reanchor_connection_string(foreign, "households", container_root)
+    want = f"sqlite:////{(container_root / 'households' / 'households.sqlite').resolve().as_posix().lstrip('/')}"
+    assert out == want
+    assert "/home/someone/" not in out, (
+        "stale foreign absolute path must NOT survive re-anchoring"
+    )
+
+
+def test_reanchor_resolves_relative_form(tmp_path, monkeypatch):
+    """The committed/pre-encoded relative form re-anchors to the same
+    place — so the fix is a no-op for the pre-encoded path."""
+    monkeypatch.delenv("BIRD_DB_PATH", raising=False)
+    root = tmp_path / "mini-interact"
+    out = reanchor_connection_string(
+        "sqlite:///households/households.sqlite", "households", root,
+    )
+    want = f"sqlite:////{(root / 'households' / 'households.sqlite').resolve().as_posix().lstrip('/')}"
+    assert out == want
+
+
+def test_reanchor_honors_env_over_supplied_root(tmp_path, monkeypatch):
+    env_root = tmp_path / "data" / "mini-interact"
+    monkeypatch.setenv("BIRD_DB_PATH", str(env_root))
+    foreign = "sqlite:////home/someone/mini-interact/credit/credit.sqlite"
+    out = reanchor_connection_string(foreign, "credit", tmp_path / "stale")
+    want = f"sqlite:////{(env_root / 'credit' / 'credit.sqlite').resolve().as_posix().lstrip('/')}"
+    assert out == want
+
+
+@pytest.mark.parametrize("noise", ["", "postgresql://x", "yaml:///x"])
+def test_reanchor_passthrough_for_non_sqlite(noise, tmp_path):
+    assert reanchor_connection_string(noise, "credit", tmp_path) == noise
+
+
+def test_reanchor_normalises_five_slash_foreign_absolute(tmp_path, monkeypatch):
+    """The cache historically emitted the malformed 5-slash form
+    (``sqlite://///abs``). Re-anchoring must still produce a clean
+    4-slash current-root path."""
+    monkeypatch.delenv("BIRD_DB_PATH", raising=False)
+    root = tmp_path / "mini-interact"
+    foreign5 = "sqlite://///home/someone/mini-interact/households/households.sqlite"
+    out = reanchor_connection_string(foreign5, "households", root)
+    want = f"sqlite:////{(root / 'households' / 'households.sqlite').resolve().as_posix().lstrip('/')}"
+    assert out == want

@@ -76,6 +76,9 @@ from bird_interact_agents.hard8_preprocessor import (
 )
 from bird_interact_agents.usage import TokenUsage
 from bird_interact_agents.slayer_otf import ensure_db_reference
+from bird_interact_agents.slayer_pipeline.filter_normalization import (
+    normalize_tool_filters,
+)
 from bird_interact_agents.agents.pydantic_ai_otf_encode.setup_encoder import (
     make_setup_build_encoder,
 )
@@ -837,6 +840,13 @@ def _build_shared_slayer_server(slayer_storage_dir: str) -> MCPServerStdio:
     engine = SlayerQueryEngine(storage=storage)
 
     async def _process_tool_call(ctx, call_tool, name, tool_args):
+        # DEV-1478: normalize text-equality FILTER predicates (lower(trim) +
+        # lowercased literal) BEFORE validation/persistence, so the encoder's
+        # exploratory queries, the eval agent's exploratory queries, AND the
+        # persisted create_model/edit_model query stages are all case/
+        # whitespace-insensitive. The literal-existence validator then runs
+        # on the normalized args (its casefold-when-wrapped branch matches).
+        tool_args = normalize_tool_filters(name, tool_args)
         return await _validate_and_call(
             call_tool, name, tool_args, storage=storage, engine=engine,
         )
