@@ -359,29 +359,35 @@ def apply_audited_gold_overlay(
     tasks: list[dict],
     audited_root: str | Path,
 ) -> dict[str, str]:
-    """Swap each task's ``sol_sql`` for the audited version when available.
+    """Swap each task's ``sol_sql`` for the audited version when available
+    and record the pre-overlay gold so EVERY task scores against the
+    original gold too.
 
     Looks for ``<audited_root>/<db>/<db>_audited.jsonl`` per task's
     ``selected_database``. For each task whose ``instance_id`` is in
     the sidecar AND whose ``audit_status`` is ``edited`` or
     ``unrecoverable``, replaces ``task["sol_sql"]`` in-place with the
-    audited list. ``clean`` rows are a no-op. The upstream
+    audited list. ``clean`` rows keep their ``sol_sql``. The upstream
     ``execute_submit_action`` reads
     ``sample_status.original_data["sol_sql"]`` by reference (see
     ``BIRD-Interact/.../action_handler.py``), so mutating the dict
     before ``SampleStatus`` is constructed is sufficient.
 
-    When the overlay rewrites ``sol_sql`` (i.e. for ``edited`` /
-    ``unrecoverable`` rows), the pre-overlay value is preserved as
-    ``task["original_sol_sql"]`` so downstream dual-evaluation can
-    score the agent's submission against both golds. ``clean`` and
-    missing-row tasks have no ``original_sol_sql`` key (since
-    ``sol_sql`` IS the original — no point double-evaluating identical
-    SQL).
+    For EVERY task (clean, edited, unrecoverable, and missing-sidecar
+    alike), the pre-overlay gold is preserved as
+    ``task["original_sol_sql"]`` so downstream dual-evaluation ALWAYS
+    scores the agent's submission against the canonical/original gold —
+    not just the rows the overlay rewrote. On ``clean`` / missing rows
+    the audited and original golds are identical, so ``evaluate_dual_gold``
+    short-circuits to a single evaluator call (no extra wall cost) and
+    ``phase1_passed_original`` equals ``phase1_passed_audited``. This makes
+    the original-gold column uniformly non-NULL across an audited-gold run
+    instead of NULL on clean rows.
 
     Returns a dict mapping ``instance_id`` -> overlay status
     (``"edited"|"unrecoverable"|"clean"|"missing-row"|"missing-file"``).
-    Missing files / missing rows leave the task's gold untouched.
+    Missing files / missing rows leave the task's ``sol_sql`` untouched
+    (but still get ``original_sol_sql`` set, equal to that ``sol_sql``).
     """
     import json
 
@@ -394,6 +400,14 @@ def apply_audited_gold_overlay(
         db = task.get("selected_database")
         if not inst or not db:
             continue
+        # ALWAYS preserve the pre-overlay (canonical/original) gold up front,
+        # before any swap, so every task dual-evaluates against the original
+        # gold — not just the edited/unrecoverable rows. The edited branch
+        # below only swaps `sol_sql`; `original_sol_sql` is already captured.
+        pre_overlay = task.get("sol_sql")
+        task["original_sol_sql"] = (
+            list(pre_overlay) if isinstance(pre_overlay, list) else pre_overlay
+        )
         if db not in cache:
             path = audited_root / db / f"{db}_audited.jsonl"
             if not path.exists():
@@ -439,16 +453,9 @@ def apply_audited_gold_overlay(
         if status in ("edited", "unrecoverable"):
             audited = entry.get("audited_sol_sql")
             if isinstance(audited, list) and audited:
-                # Preserve the pre-overlay gold so downstream dual-eval
-                # can score against both the agent's reference (audited)
-                # and the canonical reference (original). Copying the
-                # list defensively — caller may still mutate task in
-                # other ways.
-                pre_overlay = task.get("sol_sql")
-                if isinstance(pre_overlay, list):
-                    task["original_sol_sql"] = list(pre_overlay)
-                else:
-                    task["original_sol_sql"] = pre_overlay
+                # `original_sol_sql` already holds the pre-swap gold (set at
+                # the top of the loop); here we only swap in the audited gold
+                # as the agent-visible reference.
                 task["sol_sql"] = list(audited)
     return overlay_log
 

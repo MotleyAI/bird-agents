@@ -74,10 +74,12 @@ def test_overlay_preserves_original_for_unrecoverable(tmp_path):
     assert task["original_sol_sql"] == ["SELECT original FROM t"]
 
 
-def test_overlay_clean_leaves_no_original_marker(tmp_path):
-    """clean rows: no overlay applied → no `original_sol_sql` key should
-    appear (otherwise dual-eval would run a wasteful second copy of the
-    same SQL on every clean task in a 300-task run)."""
+def test_overlay_clean_sets_original_equal_to_sol(tmp_path):
+    """clean rows: `sol_sql` is unchanged but `original_sol_sql` is still
+    set (= the same SQL) so EVERY task scores against the original gold
+    (user directive: ALWAYS score against original). `evaluate_dual_gold`
+    short-circuits when the two golds are identical, so this costs no extra
+    evaluator call on clean tasks."""
     from bird_interact_agents.harness import apply_audited_gold_overlay
 
     _write_audit_sidecar(tmp_path, "alien", [
@@ -92,10 +94,10 @@ def test_overlay_clean_leaves_no_original_marker(tmp_path):
     apply_audited_gold_overlay([task], tmp_path)
 
     assert task["sol_sql"] == ["SELECT original FROM t"]
-    assert "original_sol_sql" not in task
+    assert task["original_sol_sql"] == ["SELECT original FROM t"]
 
 
-def test_overlay_missing_audit_leaves_no_original_marker(tmp_path):
+def test_overlay_missing_audit_sets_original_equal_to_sol(tmp_path):
     from bird_interact_agents.harness import apply_audited_gold_overlay
 
     # No sidecar at all for "alien"
@@ -108,7 +110,9 @@ def test_overlay_missing_audit_leaves_no_original_marker(tmp_path):
 
     assert log["alien_4"] == "missing-file"
     assert task["sol_sql"] == ["SELECT original FROM t"]
-    assert "original_sol_sql" not in task
+    # Even with no audited sidecar, original_sol_sql is set to the task's
+    # own sol_sql so the row dual-evaluates (against an identical gold).
+    assert task["original_sol_sql"] == ["SELECT original FROM t"]
 
 
 # ---------------------------------------------------------------------------

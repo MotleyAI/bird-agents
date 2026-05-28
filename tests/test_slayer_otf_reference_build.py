@@ -462,6 +462,74 @@ async def test_datasource_connection_is_live_during_encode(fake_cache, tmp_path)
     )
 
 
+async def test_encoder_connection_reanchored_from_foreign_absolute_cache(
+    tmp_path, monkeypatch
+):
+    """DEV-1478 cloud bug: when the deterministic cache was built on ANOTHER
+    machine (absolute path under a foreign root, e.g. a laptop's
+    /home/<user>/...), the setup encoder running in a cloud container must
+    still see a connection re-anchored at THIS run's root — not the foreign
+    path, which doesn't exist here and gives "unable to open database file".
+
+    The old portabilise→resolve logic couldn't strip a foreign prefix, so it
+    leaked the stale absolute path. `reanchor_connection_string` force-rewrites
+    it. Regression guard."""
+    from bird_interact_agents.slayer_otf import reference_build
+    from bird_interact_agents.slayer_otf.cache import CacheEntry
+
+    monkeypatch.delenv("BIRD_DB_PATH", raising=False)
+
+    # Cache carries a FOREIGN absolute path (a different machine's layout).
+    foreign_abs = "/home/someone-else/Dropbox/SLayer/mini-interact"
+    cache_dir = tmp_path / "cache" / DB
+    (cache_dir / "datasources").mkdir(parents=True)
+    (cache_dir / "models" / DB).mkdir(parents=True)
+    (cache_dir / "datasources" / f"{DB}.yaml").write_text(
+        f"name: {DB}\ntype: sqlite\n"
+        f"connection_string: sqlite:////{foreign_abs.lstrip('/')}/{DB}/{DB}.sqlite\n"
+    )
+    (cache_dir / "models" / DB / "households.yaml").write_text(
+        "name: households\ndata_source: %s\nsql_table: households\n"
+        "columns:\n  - name: id\n    primary_key: true\n  - name: income\n"
+        "measures: []\naggregations: []\njoins: []\n" % DB
+    )
+    rows = _kb_rows()
+    (cache_dir / "_kb_rows.json").write_text(json.dumps(rows))
+    entry = CacheEntry(cache_dir=cache_dir, fingerprint="fp_foreign", kb_rows=rows)
+
+    async def fake_ensure_db_cache(db, *, cache_root, mini_interact_root, force=False):
+        return entry
+
+    monkeypatch.setattr(reference_build, "ensure_db_cache", fake_ensure_db_cache)
+
+    seen: dict[str, str] = {}
+
+    def build_encoder(storage, build_dir, db, sessions_dir=None):
+        async def run_one(kb_id, row, deps_results, **_):
+            ds = await storage.get_datasource(db)
+            seen.setdefault("conn", ds.connection_string)
+            from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+                EncoderResult,
+            )
+            return EncoderResult(
+                kb_id=kb_id, status="deferred", entities=[], notes="x",
+            )
+        return run_one
+
+    await _build(tmp_path, build_encoder)
+
+    conn = seen["conn"]
+    expected_abs = (tmp_path / "mini-interact" / DB / f"{DB}.sqlite").resolve()
+    assert str(expected_abs) in conn, (
+        f"encoder must see a connection re-anchored at the current root; "
+        f"got {conn!r}, expected to contain {expected_abs}"
+    )
+    assert "someone-else" not in conn, (
+        f"foreign-machine path must NOT leak into the encoder's connection; "
+        f"got {conn!r}"
+    )
+
+
 async def test_concurrent_first_callers_build_once(fake_cache, tmp_path):
     """Two ``asyncio.gather``ed first callers for the same DB must serialise
     on the per-DB lock so the setup encoder runs once and both get the same

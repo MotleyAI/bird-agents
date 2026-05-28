@@ -551,3 +551,118 @@ async def test_variant_uses_fresh_unique_subdir_per_build(
         names = set(await YAMLStorage(base_dir=str(out)).list_models())
         assert "ghost" not in names
         assert {"alpha", "beta", "gamma"} <= names
+
+
+# ---------------------------------------------------------------------------
+# DEV-1478 cloud bug: the OTF deterministic cache bakes in an ABSOLUTE local
+# sqlite path. `build_task_variant_storage` must FORCE-rewrite that path to
+# the current root (mirroring the recursive path's `prepare_task_storage`),
+# otherwise the foreign absolute path survives into the cloud container and
+# every agent query fails "unable to open database file".
+# ---------------------------------------------------------------------------
+
+
+async def _seed_canonical_with_connection(
+    canonical_root: Path, connection_string: str
+) -> None:
+    storage = YAMLStorage(base_dir=str(canonical_root / DB_NAME))
+    await storage.save_datasource(
+        DatasourceConfig(
+            name=DB_NAME, type="sqlite",
+            connection_string=connection_string,
+        )
+    )
+    await storage.save_model(
+        SlayerModel(
+            name="alpha", data_source=DB_NAME, sql_table="alpha",
+            columns=[Column(name="id", primary_key=True)],
+        )
+    )
+
+
+async def test_variant_reanchors_stale_foreign_absolute_connection(
+    tmp_path: Path, monkeypatch
+):
+    """A cache built on another machine carries an absolute path that does
+    NOT exist in this environment. The variant's datasource must be
+    re-anchored to `<mini_interact_root>/<db>/<db>.sqlite`."""
+    monkeypatch.delenv("BIRD_DB_PATH", raising=False)
+    canonical_root = tmp_path / "canonical"
+    canonical_root.mkdir()
+    await _seed_canonical_with_connection(
+        canonical_root,
+        "sqlite:////home/someone/Dropbox/SLayer/mini-interact/"
+        f"{DB_NAME}/{DB_NAME}.sqlite",
+    )
+    mini_root = tmp_path / "data" / "mini-interact"
+
+    out = await build_task_variant_storage(
+        canonical_storage_root=canonical_root, db_name=DB_NAME,
+        deleted_kb_ids=set(), work_dir=tmp_path / "work",
+        mini_interact_root=mini_root,
+    )
+    ds = await YAMLStorage(base_dir=str(out)).get_datasource(DB_NAME)
+    want = (
+        "sqlite:////"
+        + (mini_root / DB_NAME / f"{DB_NAME}.sqlite").resolve()
+        .as_posix().lstrip("/")
+    )
+    assert ds is not None
+    assert ds.connection_string == want, (
+        f"stale foreign absolute path must be re-anchored to the current "
+        f"root; got {ds.connection_string!r}"
+    )
+    assert "/home/someone/" not in (ds.connection_string or "")
+
+
+async def test_variant_reanchors_honors_bird_db_path(tmp_path: Path, monkeypatch):
+    """`$BIRD_DB_PATH` wins — mirrors the cloud container where
+    BIRD_DB_PATH=/data/mini-interact even though the supplied root differs."""
+    env_root = tmp_path / "data" / "mini-interact"
+    monkeypatch.setenv("BIRD_DB_PATH", str(env_root))
+    canonical_root = tmp_path / "canonical"
+    canonical_root.mkdir()
+    await _seed_canonical_with_connection(
+        canonical_root, f"sqlite:////home/someone/x/{DB_NAME}/{DB_NAME}.sqlite",
+    )
+
+    out = await build_task_variant_storage(
+        canonical_storage_root=canonical_root, db_name=DB_NAME,
+        deleted_kb_ids=set(), work_dir=tmp_path / "work",
+        mini_interact_root=tmp_path / "stale-root",
+    )
+    ds = await YAMLStorage(base_dir=str(out)).get_datasource(DB_NAME)
+    want = (
+        "sqlite:////"
+        + (env_root / DB_NAME / f"{DB_NAME}.sqlite").resolve()
+        .as_posix().lstrip("/")
+    )
+    assert ds is not None and ds.connection_string == want
+
+
+async def test_variant_reanchors_relative_connection_noop_equivalent(
+    tmp_path: Path, monkeypatch
+):
+    """The pre-encoded relative form re-anchors to the same place the old
+    resolve-only logic produced — confirms the fix is behaviour-preserving
+    for the pre-encoded path."""
+    monkeypatch.delenv("BIRD_DB_PATH", raising=False)
+    canonical_root = tmp_path / "canonical"
+    canonical_root.mkdir()
+    await _seed_canonical_with_connection(
+        canonical_root, f"sqlite:///{DB_NAME}/{DB_NAME}.sqlite",
+    )
+    mini_root = tmp_path / "mini-interact"
+
+    out = await build_task_variant_storage(
+        canonical_storage_root=canonical_root, db_name=DB_NAME,
+        deleted_kb_ids=set(), work_dir=tmp_path / "work",
+        mini_interact_root=mini_root,
+    )
+    ds = await YAMLStorage(base_dir=str(out)).get_datasource(DB_NAME)
+    want = (
+        "sqlite:////"
+        + (mini_root / DB_NAME / f"{DB_NAME}.sqlite").resolve()
+        .as_posix().lstrip("/")
+    )
+    assert ds is not None and ds.connection_string == want

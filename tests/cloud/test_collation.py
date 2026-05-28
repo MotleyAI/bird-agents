@@ -28,6 +28,21 @@ def _read_rows(db_path: Path) -> list[dict]:
     return rows
 
 
+def _read_dual_cols(db_path: Path) -> dict[str, dict]:
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    out = {
+        r["instance_id"]: dict(r)
+        for r in conn.execute(
+            "SELECT instance_id, phase1_passed_audited, phase1_passed_original, "
+            "phase1_observation_audited, phase1_observation_original "
+            "FROM task_results"
+        )
+    }
+    conn.close()
+    return out
+
+
 # ---------------------------------------------------------------------------
 # T20 — multiple attempts per iid: latest wins in results.db; older stays on disk.
 # ---------------------------------------------------------------------------
@@ -164,6 +179,96 @@ def test_eval_json_matches_local_aggregator(
     assert metrics["average_reward"] == 0.5
     # And results carries per-row entries in input order.
     assert {r["instance_id"] for r in metrics["results"]} == {"db_a_1", "db_a_2"}
+
+
+# ---------------------------------------------------------------------------
+# Dual-eval columns must survive collation into results.db. Regression: the
+# row JSON / eval.json carried phase1_passed_audited/original but
+# `_row_to_task_result_row` dropped them, so the cloud results.db showed NULL
+# for the original-gold score on every row.
+# ---------------------------------------------------------------------------
+
+
+def test_collate_persists_dual_eval_columns(tmp_path: Path, sample_task_result_row):
+    run_dir = tmp_path / RUN_ID
+    run_dir.mkdir()
+
+    # Edited row: audited gold passed, original gold failed (the diverging
+    # case that makes the original score informative).
+    diverging = {
+        **sample_task_result_row,
+        "instance_id": "db_a_1",
+        "phase1_passed": True,
+        "phase1_passed_audited": True,
+        "phase1_passed_original": False,
+        "phase1_observation_audited": "audited OK",
+        "phase1_observation_original": "original FAILED",
+    }
+    # Clean row: both golds identical → audited == original == phase1.
+    clean = {
+        **sample_task_result_row,
+        "instance_id": "db_a_2",
+        "phase1_passed": True,
+        "phase1_passed_audited": True,
+        "phase1_passed_original": True,
+        "phase1_observation_audited": "OK",
+        "phase1_observation_original": "OK",
+    }
+    _write_attempt(run_dir, "db_a_1", 1, diverging)
+    _write_attempt(run_dir, "db_a_2", 1, clean)
+
+    manifest = {
+        "run_id": RUN_ID,
+        "framework": "pydantic_ai_otf_encode",
+        "mode": "a-interact",
+        "query_mode": "slayer",
+        "agent_model": "anthropic/claude-opus-4-7",
+        "user_sim_model": "anthropic/claude-sonnet-4-6",
+        "instance_ids": ["db_a_1", "db_a_2"],
+    }
+    metrics = collation.collate(run_dir, manifest)
+
+    cols = _read_dual_cols(run_dir / "results.db")
+    # The diverging row must keep BOTH verdicts distinct in results.db.
+    assert cols["db_a_1"]["phase1_passed_audited"] == 1
+    assert cols["db_a_1"]["phase1_passed_original"] == 0
+    assert cols["db_a_1"]["phase1_observation_audited"] == "audited OK"
+    assert cols["db_a_1"]["phase1_observation_original"] == "original FAILED"
+    # The clean row also records the original score (always-score directive).
+    assert cols["db_a_2"]["phase1_passed_audited"] == 1
+    assert cols["db_a_2"]["phase1_passed_original"] == 1
+
+    # eval.json carries the dual aggregate (parity with local run.py).
+    assert metrics["n_dual_eval_tasks"] == 2
+    assert metrics["phase1_count_audited"] == 2
+    assert metrics["phase1_count_original"] == 1
+    assert metrics["phase1_rate_original"] == 0.5
+
+
+def test_collate_dual_columns_null_when_single_eval(
+    tmp_path: Path, sample_task_result_row
+):
+    """A non-audited run (single-eval) has no dual fields in its row JSON;
+    collation must leave the columns NULL and the dual aggregate at 0."""
+    run_dir = tmp_path / RUN_ID
+    run_dir.mkdir()
+    _write_attempt(run_dir, "db_a_1", 1, sample_task_result_row)
+    manifest = {
+        "run_id": RUN_ID,
+        "framework": "pydantic_ai",
+        "mode": "c-interact",
+        "query_mode": "raw",
+        "agent_model": "anthropic/claude-sonnet-4-5",
+        "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+        "instance_ids": ["db_a_1"],
+    }
+    metrics = collation.collate(run_dir, manifest)
+
+    cols = _read_dual_cols(run_dir / "results.db")
+    assert cols["db_a_1"]["phase1_passed_audited"] is None
+    assert cols["db_a_1"]["phase1_passed_original"] is None
+    assert metrics["n_dual_eval_tasks"] == 0
+    assert metrics["phase1_rate_original"] == 0
 
 
 # ---------------------------------------------------------------------------

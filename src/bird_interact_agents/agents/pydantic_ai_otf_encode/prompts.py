@@ -38,15 +38,33 @@ __all__ = [
 _STYLE_GUIDE = """\
 ENCODER STYLE GUIDE (applies to every entity you write).
 
-STRING-NORM. For every predicate / CASE / filter that compares a TEXT
-column to a literal, wrap the column in `LOWER(TRIM(<col>))` and the
-literal in lowercase. Use `LIKE` with a trailing `%` when sampled
-values or audit caveats show free-text variants (e.g. `'apartment%'`
-matches `'apartment'`, `'Apartment'`, `'APARTMENT House'`). Apply
-universally — do not carve out exceptions for "values look
-case-uniform on first glance". Worked example: a Yes/No flag column
-that looks clean almost always carries `'Yes'/'yes'/'YES'/'no'/'No'`
+STRING-NORM. The NL question carries no information about how the data
+spells its values, so a text-equality comparison must match all
+case/whitespace variants. In the raw SQL you write (Column.sql /
+Column.filter CASE-WHENs — "Mode A"), wrap a TEXT column compared to a
+literal in `LOWER(TRIM(<col>))` and lowercase the literal. Use `LIKE`
+with a trailing `%` when sampled values show free-text suffixes (e.g.
+`'premium%'` matches `'premium'`, `'Premium'`, `'PREMIUM Plus'`). A flag
+column that looks clean almost always carries `'Yes'/'yes'/'YES'/'no'`
 in real data; use `LOWER(TRIM(<col>)) = 'yes'`, never `<col> = 'Yes'`.
+
+**APPLY THIS ONLY IN FILTER / PREDICATE POSITIONS — NEVER ON A
+PROJECTED, SELECTED, RETURNED, GROUPED-BY, OR JOIN-KEY COLUMN.**
+Normalising a column you return/group by corrupts the output string
+(the caller expects the data's real casing back). Example —
+WRONG (normalises the grouped output, returns `'GADGETS'` instead of the
+stored `'Gadgets'`):
+
+    SELECT UPPER(TRIM(category)) AS c, COUNT(*) ... GROUP BY UPPER(TRIM(category))
+
+RIGHT (raw column in the projection/GROUP BY, normalised only in the
+filter):
+
+    SELECT category, COUNT(*) ... WHERE LOWER(TRIM(category)) = 'gadgets'
+    GROUP BY category
+
+(Mode-B query-side `filters` are normalised automatically by the tool
+layer; this rule is for the Mode-A SQL you author.)
 
 CROSS-MODEL ACCESS. Inside `Column.sql`, you may reference base or
 derived columns of any model REACHABLE from the host via the declared
@@ -65,18 +83,18 @@ You may NOT emit `SELECT ... FROM ... WHERE ...` subqueries
 `EXISTS(SELECT ...)` either — those condition shapes belong inside a
 query stage of a query-backed model (R-MULTISTAGE / R-EXISTS), never
 directly inside a row-level Column expression. Counter-example
-(WRONG — KB 15 / OTF original): a ratio that uses a correlated
-subquery on the other table:
+(WRONG): a ratio on host `products` that reaches another table via a
+correlated subquery:
 
-    JSON_EXTRACT(dwelling_specs, '$.Bath_Count') / NULLIF(
-        (SELECT residentcount FROM households WHERE housenum=houselink), 0
+    JSON_EXTRACT(attributes, '$.UnitCount') / NULLIF(
+        (SELECT headcount FROM suppliers WHERE supplierid = supplink), 0
     )
 
-RIGHT — use the existing declared `properties -> households` join so
+RIGHT — use the existing declared `products -> suppliers` join so
 SLayer's planner can resolve it:
 
-    JSON_EXTRACT(dwelling_specs, '$.Bath_Count') / NULLIF(
-        households.residentcount, 0
+    JSON_EXTRACT(attributes, '$.UnitCount') / NULLIF(
+        suppliers.headcount, 0
     )
 
 NO INVENTED JOINS (in Column.sql / Measure formulas). When writing a
@@ -97,17 +115,15 @@ references — use the `reachable_from_host` map on each peer in the
 EXISTING KB-TAGGED ENTITIES block below. Never pick a host that
 requires an undeclared join.
 
-Worked example: KB 11 (Household Density = residents / rooms).
-Natural granularity is one household-property pair; both `properties`
-and `households` are 1:1 with it. Referenced columns:
-`properties.dwelling_specs.Room_Count` (lives on `properties`) and
-`households.residentcount` (lives on `households`). Both candidate
-hosts are 1 hop from each other via the declared
-`properties.houselink = households.housenum` reverse join → tied on
-hops. Break the tie toward the host that carries the STRUCTURAL
-column (Room_Count is part of dwelling specification; a property is
-"where" a household lives) → place on `properties`. The
-hand-audited reference makes exactly this choice.
+Worked example (fictional schema): a "units per package" ratio =
+unit_count / package_count. Natural granularity is one product-shipment
+pair; both `products` and `shipments` are 1:1 with it. Referenced
+columns: `products.attributes.UnitCount` (lives on `products`) and
+`shipments.packagecount` (lives on `shipments`). Both candidate hosts
+are 1 hop apart via the declared `products.shiplink = shipments.shipid`
+join → tied on hops. Break the tie toward the host that carries the
+STRUCTURAL column (UnitCount is part of the product's own attributes) →
+place on `products`.
 
 PEER-KB DEDUP. Before writing any entity, look at the EXISTING
 KB-TAGGED ENTITIES block below and the host's existing columns
@@ -123,24 +139,25 @@ column's actual sampled values (via `inspect_model` or via the
 validator's rejection list — see LITERAL-EXISTS in the SETUP encoder
 prompt). If the actual values diverge from the KB-described
 enum/labels (mixed case, free-text variants, ordinal labels missing
-from the data, R$-ranges where the KB describes ordinal labels,
-NULLs the KB doesn't mention), PREPEND a 1–2 sentence caveat to the
+from the data, numeric-range strings where the KB describes ordinal
+labels, NULLs the KB doesn't mention), PREPEND a 1-2 sentence caveat to the
 Column's `description`, ABOVE the `[kb=N]` block, in the form:
 
     "Sample values <concrete observation, quoting up to 3 verbatim
     values>; <recommended downstream action, e.g. LOWER+TRIM, or
     'define the mapping explicitly'>."
 
-Three exemplars (hand-audited reference):
-  * "Sample values mix case ('OWNED', 'Owned', 'owned'); downstream
+Three exemplars (fictional — illustrate the SHAPE, invent your own
+from the real sampled values):
+  * "Sample values mix case ('ACTIVE', 'Active', 'active'); downstream
     callers should LOWER+TRIM before exact-equals matches."
-  * "The actual sample values are R$ amount ranges (e.g. 'More than
-    R$ 1,760 and less than R$ 2,640'), not the KB-described ordinal
-    labels ('Low Income' … 'Very High Income'). Any encoding that
-    needs to map this column to an ordinal score must define the
-    bracket→label mapping explicitly — the schema does not carry it."
-  * "Sample values are mixed-case ('Brickwork house', 'Apartment',
-    'apartment'); use LOWER for exact-match comparisons."
+  * "The actual sample values are numeric range strings (e.g. 'Between
+    100 and 500'), not the KB-described ordinal labels ('Low' … 'Very
+    High'). Any encoding that needs to map this column to an ordinal
+    score must define the range→label mapping explicitly — the schema
+    does not carry it."
+  * "Sample values are mixed-case ('Standard box', 'Pallet', 'pallet');
+    use LOWER for exact-match comparisons."
 
 If a KB cites SPECIFIC named literals AND those literals are absent
 from the column's sampled values, do NOT write the predicate
@@ -921,14 +938,14 @@ above:
   paste the documentation form `<db>.<model>.<leaf>` directly into
   `Column.sql`. Do NOT inline the leaves' CASE expressions into the
   parent's SQL — keep the DAG of refs; SLayer's planner resolves
-  them at query time. Worked examples:
-    * KB 3 / 4 / 5 (Water / Road / Parking scores) -> KB 13 (Infrastructure
-      Quality = average of the three). Each leaf emits its own column;
-      KB 13's Column.sql references them by name through the host's
-      reachable join graph.
-    * KB 6 (Dwelling Type) + KB 13 (Infra Score) -> KB 20 (Living
-      Condition Score = 50/50 of the two). Same pattern: KB 20
-      references both leaves by their entity_ref.
+  them at query time. Worked examples (fictional schema):
+    * three leaf component-scores (e.g. score_a / score_b / score_c) ->
+      a parent "quality index = average of the three". Each leaf emits
+      its own column; the parent's Column.sql references them by name
+      through the host's reachable join graph.
+    * a category-score leaf + the quality-index parent above -> a
+      higher composite "overall score = 50/50 of the two". Same pattern:
+      the composite references both leaves by their entity_ref.
 
   CASE B (DEFER to parent — wrapper / rename / single-score parent). Parent
   in reverse-deps is a `calculation_knowledge` whose WHOLE definition IS the

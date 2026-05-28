@@ -57,7 +57,7 @@ from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
 from bird_interact_agents.slayer_pipeline.portable_connection import (
-    resolve_committed_connection_string,
+    reanchor_connection_string,
     to_portable_connection_string,
 )
 from bird_interact_agents.agents._session_log import write_index
@@ -740,21 +740,27 @@ async def _resolve_datasource_for_build(
     query/validate the real DB during the build.
 
     The cache's baked-in absolute path is NOT trusted: the on-the-fly cache is
-    shared across checkouts/worktrees, so an absolute path written by another
-    checkout would point at a stale (but possibly valid-looking) location. We
-    portabilise first (strip the effective-root prefix → relative) and then
-    resolve (relative → absolute at the effective root), which re-anchors the
-    path no matter which checkout last wrote the cache. The effective root is
-    the explicit ``db_root`` if provided (DEV-1462), else ``$BIRD_DB_PATH`` or
-    ``mini_interact_root`` (the latter is git-common-dir based, so identical
-    from the main checkout or any worktree).
+    shared across checkouts/worktrees AND transported into cloud containers, so
+    an absolute path written elsewhere points at a stale or non-existent
+    location. ``reanchor_connection_string`` force-rewrites any absolute form
+    (incl. a foreign-machine path that ``to_portable_connection_string`` can't
+    strip, e.g. a locally-built cache running in a ``/data/mini-interact``
+    container — the DEV-1478 bug that blinded the setup encoder's
+    ``query``/validation tool with "unable to open database file") to the
+    canonical ``<root>/<db>/<db>.sqlite``, while resolving a relative form
+    against the root. The effective root is the explicit ``db_root`` if
+    provided (DEV-1462 — a LiveSQLBench run threads its ``--db-path`` so a
+    conftest/shell ``$BIRD_DB_PATH`` can't mis-anchor it), else
+    ``$BIRD_DB_PATH`` or ``mini_interact_root`` (the latter is git-common-dir
+    based, so identical from the main checkout or any worktree).
     """
     root = _effective_db_root(mini_interact_root, db_root=db_root)
     ds = await storage.get_datasource(db)
     if ds is None or ds.connection_string is None:
         return
-    portable = to_portable_connection_string(ds.connection_string, root)
-    resolved = resolve_committed_connection_string(portable, root)
+    resolved = reanchor_connection_string(
+        ds.connection_string, db, root, db_root=db_root,
+    )
     if resolved != ds.connection_string:
         await storage.save_datasource(
             ds.model_copy(update={"connection_string": resolved})

@@ -23,6 +23,9 @@ from typing import Any, Callable
 from pydantic import ValidationError
 
 from bird_interact_agents.agents._tool_specs import ToolSpec, render_action
+from bird_interact_agents.slayer_pipeline.filter_normalization import (
+    normalize_query_payload,
+)
 from bird_interact_agents.harness import (
     ACTION_COSTS,
     _schema_cache,
@@ -688,6 +691,15 @@ def submit_slayer_query(
         _record(sql=None, observation=msg, reward=0.0,
                 p1=False, p2=False, finished=False, json_failed=True)
         return msg + _budget_note(state)
+
+    # DEV-1478: deterministically normalize text-equality FILTER predicates
+    # (wrap the column in lower(trim(...)), lowercase the literal) so a NL
+    # question that carries no casing info matches all case/whitespace
+    # variants. Only the structured `filters` clause is touched — projections /
+    # dimensions / joins are left alone. The recorded `submitted_query` below
+    # stays the agent's ORIGINAL DSL; only the compiled `submitted_sql`
+    # reflects the normalization.
+    parsed = normalize_query_payload(parsed)
 
     client = slayer_client_factory(state)
     try:

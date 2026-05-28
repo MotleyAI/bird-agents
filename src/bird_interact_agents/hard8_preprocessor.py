@@ -173,13 +173,20 @@ async def build_task_variant_storage(
 
     ds = await src.get_datasource(db_name)
     if ds is not None:
-        # The committed YAML carries a relative connection_string
-        # (`sqlite:///<db>/<db>.sqlite`) so it stays portable across
-        # machines. Resolve it to an absolute path here, anchored at
-        # ``$BIRD_DB_PATH`` or a sibling ``mini-interact/`` next to
-        # ``slayer_models/``, before the SLayer MCP server reads it.
+        # Re-anchor the datasource connection_string to THIS environment's
+        # sqlite file before the SLayer MCP server reads it. The committed
+        # YAML carries a relative connection_string (`sqlite:///<db>/...`),
+        # but the on-the-fly deterministic cache bakes in an ABSOLUTE path
+        # from the machine that built it — so a cache built locally and
+        # transported into a cloud container points at a path that doesn't
+        # exist there ("unable to open database file"). `reanchor_*` forces
+        # the path to `<$BIRD_DB_PATH or root>/<db>/<db>.sqlite`, handling
+        # both the relative and stale-foreign-absolute forms (DEV-1478:
+        # this is the bug that blinded every cloud OTF-encode agent's query
+        # tool). The pre-encoded path's relative connection_string resolves
+        # to the same place, so this is a no-op there.
         from bird_interact_agents.slayer_pipeline.portable_connection import (
-            resolve_committed_connection_string,
+            reanchor_connection_string,
         )
 
         root = (
@@ -187,8 +194,8 @@ async def build_task_variant_storage(
             if mini_interact_root is not None
             else canonical_storage_root.parent.parent / "mini-interact"
         )
-        resolved = resolve_committed_connection_string(
-            ds.connection_string or "", root, db_root=db_root,
+        resolved = reanchor_connection_string(
+            ds.connection_string or "", db_name, root, db_root=db_root,
         )
         if resolved != ds.connection_string:
             ds = ds.model_copy(update={"connection_string": resolved})
