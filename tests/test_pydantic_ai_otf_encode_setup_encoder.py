@@ -290,6 +290,47 @@ async def test_run_setup_encoder_captures_partial_trajectory_on_failure(tmp_path
     assert "search" in trace  # the partial trajectory was captured, not discarded
 
 
+async def test_run_setup_encoder_marks_usage_partial_on_capture_failure(tmp_path):
+    """DEV-1478: if ``agent_run.usage()`` raises, the per-DB usage accumulator
+    is flagged ``partial`` (and nothing is added) so a downstream cost consumer
+    doesn't mistake the missing setup-encode tokens for a genuine $0."""
+    from bird_interact_agents.agents.pydantic_ai_otf_encode import setup_encoder
+    from bird_interact_agents.usage import TokenUsage
+
+    class _Run:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+        def all_messages(self):
+            return []
+
+        def usage(self):
+            raise RuntimeError("usage unavailable")
+
+    class _CM:
+        async def __aenter__(self):
+            return _Run()
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class _Agent:
+        def iter(self, **kw):
+            return _CM()
+
+    usage = TokenUsage()
+    await setup_encoder._run_setup_encoder(
+        agent=_Agent(), kb_id=7, kb_body="b", deps_results=[],
+        storage=object(), db="households", usage=usage,
+    )
+
+    assert usage.partial is True
+    assert usage.n_calls == 0  # capture failed → nothing recorded
+
+
 # ---------------------------------------------------------------------------
 # submit_encoding result capture (DEV-1454): the encoder now reasons in text and
 # delivers its EncoderResult via the submit_encoding tool into per-run deps,

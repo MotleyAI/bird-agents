@@ -212,6 +212,9 @@ async def _run_setup_encoder(
                 cache_write=getattr(ru, "cache_write_tokens", 0) or 0,
             )
         except Exception:  # noqa: BLE001 — usage capture must not abort the build
+            # Flag the accumulator incomplete so downstream cost consumers can
+            # distinguish a genuine $0 from "unknown/unmeasured".
+            usage.partial = True
             logger.debug("setup-encode usage capture failed for kb_id=%s", kb_id)
 
     # DEV-1454: the result is delivered via submit_encoding into per-run deps

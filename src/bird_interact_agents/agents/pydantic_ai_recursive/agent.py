@@ -7,8 +7,10 @@ benchmark runner. Other query/eval modes raise ``ValueError``.
 Internals:
 
 * One ``MCPServerStdio`` per task, shared across root → every sub-agent
-  → query-constructor. Slayer MCP startup is up to 300s with
-  ``--ingest-on-startup``; per-agent spawn would dominate wall time.
+  → query-constructor. Slayer MCP startup can take significant time with
+  ``--ingest-on-startup`` (schema re-reflection, esp. under CPU contention —
+  see ``SLAYER_MCP_STARTUP_TIMEOUT_S``); per-agent spawn would dominate wall
+  time.
   pydantic-ai's underlying ClientSession is multiplexed by request_id
   so concurrent tool calls on one shared session are safe.
 * Constructor budget reservation: snapshot total budget, decrement

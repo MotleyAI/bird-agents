@@ -39,3 +39,19 @@ def test_recursive_server_uses_shared_timeout(tmp_path):
 
     server = _build_shared_slayer_server(str(tmp_path))
     assert server.timeout == SLAYER_MCP_STARTUP_TIMEOUT_S
+
+
+def test_pydantic_ai_adapter_uses_shared_timeout(tmp_path):
+    """The base `pydantic_ai` adapter builds its MCP server inline in
+    `_build_slayer_agent` (not via a standalone helper), so assert the
+    constructed server in the agent's toolsets carries the shared timeout —
+    otherwise a per-site `timeout=300` regression here would go uncaught."""
+    from pydantic_ai.mcp import MCPServerStdio
+    from pydantic_ai.models.test import TestModel
+
+    from bird_interact_agents.agents.pydantic_ai.agent import _build_slayer_agent
+
+    agent = _build_slayer_agent(model=TestModel(), slayer_storage_dir=str(tmp_path))
+    servers = [t for t in agent.toolsets if isinstance(t, MCPServerStdio)]
+    assert len(servers) == 1
+    assert servers[0].timeout == SLAYER_MCP_STARTUP_TIMEOUT_S
