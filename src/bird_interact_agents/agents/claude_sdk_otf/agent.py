@@ -23,6 +23,7 @@ import logging
 from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    HookMatcher,
     create_sdk_mcp_server,
 )
 
@@ -79,6 +80,49 @@ SLAYER_MCP_TOOLS = [
 
 def _slayer_tool_names() -> list[str]:
     return [f"mcp__slayer__{t}" for t in SLAYER_MCP_TOOLS]
+
+
+# Encode-then-query is turn-expensive (one turn per KB column created/tested),
+# so this agent needs more headroom than the base agentic cap. 2x the base.
+_MAX_TURNS = 2 * MAX_MODEL_TURNS
+
+# Warn the agent to submit once it's within this many turns of the cap.
+_TURN_BUDGET_WARN_WITHIN = 3
+
+
+def _make_turn_budget_hook(
+    max_turns: int, warn_within: int = _TURN_BUDGET_WARN_WITHIN
+):
+    """Build a PostToolUse hook that nudges the agent to submit when it's
+    within ``warn_within`` tool-calls of the hard ``max_turns`` cap.
+
+    The hook counts its own invocations (≈ one per agent turn, since the
+    agent emits a tool call per turn) rather than reading the receive loop's
+    state, so it stays self-contained and per-task. The returned
+    ``additionalContext`` is injected into the model's context after the tool
+    result — an un-submitted task scores zero, so the nudge is load-bearing
+    for encode-heavy tasks that run long.
+    """
+    state = {"calls": 0}
+
+    async def _hook(input_data, tool_use_id, context):
+        state["calls"] += 1
+        remaining = max_turns - state["calls"]
+        if 0 < remaining <= warn_within:
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": (
+                        f"[TURN BUDGET] ~{remaining} model turn(s) remain before "
+                        f"the hard limit of {max_turns}. If you have a candidate "
+                        "answer, call submit_query NOW — an un-submitted task "
+                        "scores zero."
+                    ),
+                }
+            }
+        return {}
+
+    return _hook
 
 
 # Native (in-process) tools registered under the "bird-interact-tools"
@@ -259,17 +303,39 @@ class ClaudeSDKOtfAgent:
                 system_prompt=prompt,
                 mcp_servers=mcp_servers,
                 allowed_tools=tool_names,
+                # Restrict to ONLY our MCP tools: drop every Claude Code
+                # built-in (Bash/Edit/Task/WebFetch/ToolSearch/...). Removing
+                # ToolSearch is load-bearing — with the built-ins gone the
+                # ~16 MCP tools are exposed directly instead of being deferred
+                # behind ToolSearch (which previously wasted ~5 turns/run while
+                # the agent re-discovered its own tools). setting_sources=[]
+                # also keeps the run reproducible (no user/project settings,
+                # no CLAUDE.md bleed-through).
+                tools=[],
+                setting_sources=[],
                 # Pin the requested Anthropic model (bare id, no provider
                 # prefix) so --agent-model actually takes effect instead of
                 # the claude CLI's configured default.
                 model=native_model_id(self.model),
                 # Reasoning-effort level (None => SDK default).
                 effort=self.reasoning_effort,
+                # Native turn cap (2x the base). Unlike a manual break on the
+                # receive stream, max_turns lets the FINAL turn's tool (e.g.
+                # submit_query) execute before the run stops — the off-by-one
+                # that previously dropped a last-turn submission.
+                max_turns=_MAX_TURNS,
+                # Nudge the agent to submit when it nears the cap.
+                hooks={
+                    "PostToolUse": [
+                        HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
+                    ],
+                },
             )
 
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(task_data["amb_user_query"])
-                turns = 0
+                # No manual turn-break: `max_turns` caps the run and lets the
+                # final turn's tool call execute, so the stream ends cleanly.
                 async for msg in client.receive_response():
                     trajectory.append(
                         {"type": str(type(msg).__name__), "data": str(msg)[:500]}
@@ -285,14 +351,6 @@ class ClaudeSDKOtfAgent:
                                 getattr(msg_usage, "cache_read_input_tokens", 0) or 0
                             ),
                         )
-                    if type(msg).__name__ == "AssistantMessage":
-                        turns += 1
-                        if turns >= MAX_MODEL_TURNS:
-                            logger.warning(
-                                "Max model turns (%d) reached for %s; stopping.",
-                                MAX_MODEL_TURNS, instance_id,
-                            )
-                            break
         except Exception as e:
             logger.error("claude_sdk_otf error on %s: %s", instance_id, e)
             return finalize_result_row(

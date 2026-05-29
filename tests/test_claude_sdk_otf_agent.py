@@ -293,6 +293,37 @@ async def test_run_task_attaches_slayer_write_tools(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
+    """No Claude Code built-ins / ToolSearch (so MCP tools aren't deferred);
+    isolated settings; native max_turns at 2x the base; turn-budget hook."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.harness import MAX_MODEL_TURNS
+
+    captured = _stub_env(monkeypatch, m, tmp_path / "store")
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    opts = captured["options"]
+    assert opts.tools == []
+    assert opts.setting_sources == []
+    assert opts.max_turns == 2 * MAX_MODEL_TURNS == m._MAX_TURNS
+    assert "PostToolUse" in (opts.hooks or {})
+
+
+@pytest.mark.asyncio
+async def test_turn_budget_hook_warns_near_cap():
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    hook = m._make_turn_budget_hook(max_turns=5, warn_within=3)
+    assert await hook({}, None, None) == {}        # call 1 -> 4 left
+    out = await hook({}, None, None)               # call 2 -> 3 left -> warn
+    ctx = out["hookSpecificOutput"]["additionalContext"]
+    assert "submit_query" in ctx
+    assert "3" in ctx
+
+
+@pytest.mark.asyncio
 async def test_run_task_pins_requested_model(monkeypatch, tmp_path):
     """--agent-model must reach the SDK as the bare native model id, not be
     silently replaced by the claude CLI default (Codex finding)."""
