@@ -52,6 +52,8 @@ def test_pydantic_ai_adapter_uses_shared_timeout(tmp_path):
     from bird_interact_agents.agents.pydantic_ai.agent import _build_slayer_agent
 
     agent = _build_slayer_agent(model=TestModel(), slayer_storage_dir=str(tmp_path))
-    servers = [t for t in agent.toolsets if isinstance(t, MCPServerStdio)]
+    # `_user_toolsets` is the raw user-supplied list (repo convention — see
+    # test_root_clarifier_no_pinning.py), not the derived `agent.toolsets` view.
+    servers = [t for t in agent._user_toolsets if isinstance(t, MCPServerStdio)]
     assert len(servers) == 1
     assert servers[0].timeout == SLAYER_MCP_STARTUP_TIMEOUT_S
