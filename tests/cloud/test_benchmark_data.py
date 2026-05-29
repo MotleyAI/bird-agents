@@ -43,10 +43,15 @@ class _FakeClient:
         return _FakeBucket(self.store)
 
 
+# livesqlbench's tasks file — `ensure_uploaded` requires the benchmark's data
+# file to be present in the root (so it never stamps a complete EMPTY prefix).
+_LSB_DATA_FILE = "livesqlbench_data_sqlite.jsonl"
+
+
 def _make_dataset(root: Path) -> None:
     (root / "alien").mkdir(parents=True)
     (root / "alien" / "alien.sqlite").write_bytes(b"SQLITEDATA")
-    (root / "data.jsonl").write_text('{"instance_id": "alien_1"}\n')
+    (root / _LSB_DATA_FILE).write_text('{"instance_id": "alien_1"}\n')
 
 
 # --- content_hash ----------------------------------------------------------
@@ -56,8 +61,49 @@ def test_content_hash_deterministic_and_sensitive(tmp_path):
     _make_dataset(root)
     h1 = bd.content_hash(root)
     assert h1 == bd.content_hash(root)  # deterministic
-    (root / "data.jsonl").write_text('{"instance_id": "alien_2"}\n')
+    (root / _LSB_DATA_FILE).write_text('{"instance_id": "alien_2"}\n')
     assert bd.content_hash(root) != h1  # any change flips the hash
+
+
+def test_content_hash_excludes_git_dir(tmp_path):
+    """A benchmark data dir can be its own git checkout (livesqlbench). The
+    content hash must ignore `.git/` so it's stable across upstream commits —
+    otherwise the upload-once prefix would churn every time the dataset repo
+    advances."""
+    root = tmp_path / "ds"
+    _make_dataset(root)
+    h1 = bd.content_hash(root)
+    # Mutate .git/ as an upstream commit would; the hash must NOT change.
+    (root / ".git" / "objects").mkdir(parents=True)
+    (root / ".git" / "objects" / "deadbeef").write_bytes(b"\x01\x02")
+    (root / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    assert bd.content_hash(root) == h1
+    # A real dataset change still flips it.
+    (root / "alien" / "alien.sqlite").write_bytes(b"CHANGED")
+    assert bd.content_hash(root) != h1
+
+
+def test_ensure_uploaded_excludes_git_from_upload(tmp_path, monkeypatch):
+    """The upload must drop `.git/` files too (same set as the content hash),
+    so the GCS dataset tree never carries repo history."""
+    root = tmp_path / "ds"
+    _make_dataset(root)
+    (root / ".git").mkdir()
+    (root / ".git" / "config").write_text("[core]\n")
+    client = _FakeClient()
+    seen_excludes: list = []
+
+    def _fake_upload(local_dir, prefix, *, exclude=None, **kw):
+        seen_excludes.append(exclude)
+
+    monkeypatch.setattr(gcs, "upload_dir_prefix", _fake_upload)
+    bd.ensure_uploaded("livesqlbench", root=root, client=client)
+    assert len(seen_excludes) == 1
+    exclude = seen_excludes[0]
+    assert exclude is not None
+    from pathlib import Path as _P
+    assert exclude(_P(".git/config")) is True
+    assert exclude(_P("alien/alien.sqlite")) is False
 
 
 def test_prefix_is_benchmark_and_hash_keyed(tmp_path):
@@ -110,16 +156,35 @@ def test_ensure_uploaded_skips_when_marker_present(tmp_path, monkeypatch):
 def test_ensure_downloaded_downloads_then_marks(tmp_path, monkeypatch):
     dest = tmp_path / "data" / "livesqlbench"
     client = _FakeClient()
+    prefix = "benchmark-data/livesqlbench/abc/"
+    # The remote completeness marker must be present for the download to be
+    # trusted (the upload writes it LAST).
+    client.store[prefix + bd._MARKER] = b"abc"
 
-    def _fake_dl(prefix, d, **kw):
+    def _fake_dl(p, d, **kw):
         Path(d).mkdir(parents=True, exist_ok=True)
         (Path(d) / "data.jsonl").write_text("{}\n")
 
     monkeypatch.setattr(gcs, "download_prefix", _fake_dl)
-    out = bd.ensure_downloaded("benchmark-data/livesqlbench/abc/", dest, client=client)
+    out = bd.ensure_downloaded(prefix, dest, client=client)
     assert out == dest
     assert (dest / "data.jsonl").is_file()
     assert (dest / bd._MARKER).is_file()  # local marker written after download
+
+
+def test_ensure_downloaded_refuses_prefix_without_remote_marker(tmp_path, monkeypatch):
+    """No remote completeness marker → partial/wrong/GC'd prefix → must raise,
+    never cache a local marker over an empty/partial download."""
+    dest = tmp_path / "data" / "livesqlbench"
+    client = _FakeClient()  # store empty → no remote marker
+
+    def _boom(*a, **k):
+        raise AssertionError("must not download when remote marker absent")
+
+    monkeypatch.setattr(gcs, "download_prefix", _boom)
+    with pytest.raises(FileNotFoundError, match="no completeness marker"):
+        bd.ensure_downloaded("benchmark-data/livesqlbench/missing/", dest, client=client)
+    assert not (dest / bd._MARKER).exists()
 
 
 def test_ensure_downloaded_skips_when_local_marker_present(tmp_path, monkeypatch):

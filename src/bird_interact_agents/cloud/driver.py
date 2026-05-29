@@ -12,7 +12,8 @@ import time
 from pathlib import Path
 
 from bird_interact_agents import paths
-from bird_interact_agents.cloud import cluster, config, gcs, image, prereqs
+from bird_interact_agents.benchmark import get_benchmark
+from bird_interact_agents.cloud import benchmark_data, cluster, config, gcs, image, prereqs
 from bird_interact_agents.cloud import collation as _collation
 from bird_interact_agents.cloud import post_run_merge as _post_run_merge
 # Imported by NAME (not via the `gcs` module attr) so tests that mock
@@ -137,15 +138,24 @@ def read_api_keys_from_local_env(
     return {k: os.environ[k] for k in needed}
 
 
-def build_manifest(args, *, image_uri: str, run_id: str) -> dict:
-    """Build the manifest dict from a SubmitArgs-like object."""
+def build_manifest(
+    args, *, image_uri: str, run_id: str, benchmark_data_prefix: str | None = None,
+) -> dict:
+    """Build the manifest dict from a SubmitArgs-like object.
+
+    ``gold_file`` is stored as the IN-CLUSTER path (under the benchmark's
+    ``container_data_dir``), not the submitter's local path, so ``resubmit``
+    on any machine re-derives identical job args. ``benchmark_data_prefix`` is
+    the content-hashed GCS prefix the dataset was uploaded to at submit; the
+    actor downloads from it per node."""
     instance_ids = list(args.instance_ids)
     return {
         "run_id": run_id,
         "framework": args.framework,
         "mode": args.mode,
         "dataset": _submit_benchmark(args),
-        "gold_file": getattr(args, "gold_file", None),
+        "gold_file": _in_cluster_gold_file(args),
+        "benchmark_data_prefix": benchmark_data_prefix,
         "query_mode": args.query_mode,
         "agent_model": args.agent_model,
         "user_sim_model": args.user_sim_model,
@@ -201,19 +211,66 @@ def _dbs_for_instances(instance_ids, benchmark: str = "mini_interact") -> list[s
 
 
 def _benchmark_for_dataset(dataset: str | None) -> str:
-    """Map a run's dataset to its benchmark token for the OTF path roots.
+    """Map a run's ``dataset`` token (canonical name, CLI alias, or marker) to
+    its canonical benchmark name for the OTF path roots + container data dir.
 
-    Cloud is mini-interact-only today (no ``--dataset``/``--gold-file`` at
-    submit), so this resolves to ``"mini_interact"``; it returns
-    ``"livesqlbench"`` automatically the moment a ``dataset`` is plumbed
-    through, so the artifact-root selection never relies on a default.
+    An absent dataset (e.g. a pre-de-bake manifest being resubmitted) falls
+    back to ``"mini_interact"``; otherwise the token is resolved through the
+    registry so a third benchmark never silently aliases to mini-interact.
     """
-    return "livesqlbench" if dataset == "livesqlbench" else "mini_interact"
+    if not dataset:
+        return "mini_interact"
+    return get_benchmark(dataset).name
 
 
 def _submit_benchmark(args) -> str:
-    """Benchmark for a submit, derived from ``args.dataset`` (absent today)."""
+    """Benchmark for a submit, derived from ``args.dataset`` (defaults to
+    mini-interact when the CLI didn't set one)."""
     return _benchmark_for_dataset(getattr(args, "dataset", None))
+
+
+def _validate_gold_under_data_root(args) -> None:
+    """The gated gold sidecar rides along inside the GCS dataset upload (it
+    lives in the benchmark data root), so it MUST physically sit under that
+    root. Fail fast at submit if ``--gold-file`` points elsewhere — otherwise
+    it would be silently absent in-cluster and every task would fail to
+    score. No-op when no gold file is given."""
+    gold_file = getattr(args, "gold_file", None)
+    if not gold_file:
+        return
+    data_root = paths.benchmark_data_root(_submit_benchmark(args)).resolve()
+    gp = Path(gold_file).expanduser().resolve()
+    if not gp.is_file():
+        raise FileNotFoundError(f"--gold-file not found: {gp}")
+    if not gp.is_relative_to(data_root):
+        raise ValueError(
+            f"--gold-file {gp} must live under the benchmark data root "
+            f"{data_root} so it rides along in the GCS dataset upload; "
+            f"move the gold sidecar into the data dir."
+        )
+
+
+def _in_cluster_gold_file(args) -> str | None:
+    """Translate the local ``--gold-file`` to its in-cluster path.
+
+    The gold rides along in the GCS dataset upload and the actor downloads the
+    dataset into the benchmark's ``container_data_dir``, so the gold lands at
+    ``container_data_dir/<path-relative-to-data-root>``. Falls back to the
+    basename when the gold isn't under the data root (defensive — submit's
+    :func:`_validate_gold_under_data_root` enforces the contract for real
+    submits; direct ``build_manifest`` callers in tests may pass an arbitrary
+    path)."""
+    gold_file = getattr(args, "gold_file", None)
+    if not gold_file:
+        return None
+    benchmark = _submit_benchmark(args)
+    data_root = paths.benchmark_data_root(benchmark).resolve()
+    gp = Path(gold_file).expanduser()
+    try:
+        rel = gp.resolve().relative_to(data_root)
+    except ValueError:
+        rel = Path(gp.name)
+    return str(Path(get_benchmark(benchmark).container_data_dir) / rel)
 
 
 def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
@@ -423,6 +480,9 @@ class WaitResult:
 
 def submit(args) -> str:
     prereqs.check(args)
+    # Gated gold must ride along in the GCS dataset upload — fail fast at
+    # submit if it's outside the data root (before any build/upload/cluster).
+    _validate_gold_under_data_root(args)
     repo_root = submitter_repo_root()
     # DEV-1468: slayer fail-fast — verify the local setup is present BEFORE
     # building/pushing the image or bringing up a cluster (no in-cloud builds).
@@ -431,18 +491,23 @@ def submit(args) -> str:
         slayer_dbs = _check_slayer_setup_present(args)
     tag = image.image_tag(
         repo_root,
-        paths.mini_interact_root(),
         paths.audited_gold_root(),
         allow_dirty=args.allow_dirty,
     )
     image_uri = image.build_and_push(
         tag, repo_root,
-        mini_interact_root=paths.mini_interact_root(),
         audited_gold_root=paths.audited_gold_root(),
         force=False,
     )
+    # De-bake: upload the benchmark dataset ONCE to its content-hashed GCS
+    # prefix (skipped when the hash already exists). The actor downloads it
+    # per node — the dataset is no longer baked into the image.
+    benchmark_data_prefix = benchmark_data.ensure_uploaded(_submit_benchmark(args))
     run_id = args.run_id or mint_run_id(args.framework, args.query_mode)
-    manifest = build_manifest(args, image_uri=image_uri, run_id=run_id)
+    manifest = build_manifest(
+        args, image_uri=image_uri, run_id=run_id,
+        benchmark_data_prefix=benchmark_data_prefix,
+    )
     gcs.write_manifest(run_id, manifest)
     # Upload the slayer setup under the run prefix (per selected DB) so the
     # actor downloads it in-cluster. After the manifest so kill/resubmit work.
@@ -457,7 +522,10 @@ def submit(args) -> str:
         env_vars = read_api_keys_from_local_env(
             args.agent_model, args.user_sim_model, query_mode=args.query_mode,
         )
-        job_args = _build_job_args(args, run_id, attempt=1)
+        job_args = _build_job_args(
+            args, run_id, attempt=1,
+            benchmark_data_prefix=benchmark_data_prefix,
+        )
         ray_job_id = cluster.submit_job(
             head_address=head, args=job_args, env_vars=env_vars,
             yaml_path=yaml_path,
@@ -484,7 +552,9 @@ def submit(args) -> str:
     return run_id
 
 
-def _build_job_args(args, run_id: str, *, attempt: int) -> list[str]:
+def _build_job_args(
+    args, run_id: str, *, attempt: int, benchmark_data_prefix: str | None = None,
+) -> list[str]:
     benchmark = _submit_benchmark(args)
     job_args = [
         "--run-id", run_id,
@@ -503,9 +573,11 @@ def _build_job_args(args, run_id: str, *, attempt: int) -> list[str]:
         "--instance-ids",
         ",".join(_instance_ids_sorted_by_db(args.instance_ids, benchmark)),
     ]
-    gold_file = getattr(args, "gold_file", None)
+    if benchmark_data_prefix:
+        job_args += ["--benchmark-data-prefix", benchmark_data_prefix]
+    gold_file = _in_cluster_gold_file(args)
     if gold_file:
-        job_args += ["--gold-file", str(gold_file)]
+        job_args += ["--gold-file", gold_file]
     if args.strict:
         job_args.append("--strict")
     if args.use_audited_gold_sql:
@@ -718,6 +790,14 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         # DEV-1470: db-grouped retries — same rule as submit.
         "--instance-ids", ",".join(_instance_ids_sorted_by_db(missing, benchmark)),
     ]
+    # De-bake: thread the dataset's GCS prefix so the actor re-downloads it.
+    # Absent on pre-de-bake manifests — those runs reused a dataset-baked
+    # image, so the actor finds the data without a download (back-compat).
+    prefix = manifest.get("benchmark_data_prefix")
+    if prefix:
+        job_args += ["--benchmark-data-prefix", prefix]
+    # Manifest gold_file is ALREADY the in-cluster path (build_manifest
+    # translated it at submit), so pass it through unchanged.
     gold_file = manifest.get("gold_file")
     if gold_file:
         job_args += ["--gold-file", str(gold_file)]

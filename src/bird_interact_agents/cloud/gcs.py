@@ -232,6 +232,7 @@ def upload_dir_prefix(
     *,
     max_workers: int = 32,
     client=None,
+    exclude=None,
 ) -> None:
     """Upload every file under `local_dir` to `<prefix>/<relpath>`.
 
@@ -240,6 +241,11 @@ def upload_dir_prefix(
     `prefix='runs/<id>/slayer_setup/slayer_models/<db>'` becomes the blob
     `runs/<id>/slayer_setup/slayer_models/<db>/models/x.yaml`. Binary files
     (e.g. `embeddings.db`) and `_`-prefixed marker files are shipped verbatim.
+
+    `exclude`, when given, is a predicate `(rel_path: Path) -> bool` applied to
+    each file's path RELATIVE to `local_dir`; matching files are skipped. Used
+    by the benchmark-data upload to drop `.git/` so the GCS tree matches the
+    content hash (both exclude VCS metadata).
     """
     client = client or default_gcs_client()
     bucket = client.bucket(BUCKET_NAME)
@@ -247,6 +253,8 @@ def upload_dir_prefix(
     base = prefix.rstrip("/")
 
     files = [p for p in local_dir.rglob("*") if p.is_file()]
+    if exclude is not None:
+        files = [p for p in files if not exclude(p.relative_to(local_dir))]
     if not files:
         return
 

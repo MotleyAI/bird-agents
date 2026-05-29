@@ -24,6 +24,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
+from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
 from bird_interact_agents.cloud import upload_back as _upload_back
 
@@ -54,13 +55,47 @@ _BENCHMARK_SCOPED = {"slayer_otf_cache", "slayer_models_otf"}
 
 
 def _cloud_benchmark(cfg: dict[str, Any]) -> str:
-    """Benchmark token for the run's OTF path roots, derived from the run cfg.
+    """Canonical benchmark name for the run's OTF path roots + container data
+    dir, derived from the run cfg's ``dataset``.
 
-    Cloud is mini-interact-only today (no ``dataset`` in cfg) → ``"mini_interact"``;
-    returns ``"livesqlbench"`` automatically once a ``dataset`` is plumbed
-    through, so artifact-root selection never relies on a removed default.
+    An absent ``dataset`` (a pre-de-bake run whose driver never stamped it)
+    falls back to ``"mini_interact"``; otherwise the token is resolved through
+    the registry so a third benchmark never silently aliases to mini-interact.
     """
-    return "livesqlbench" if cfg.get("dataset") == "livesqlbench" else "mini_interact"
+    from bird_interact_agents.benchmark import get_benchmark
+
+    dataset = cfg.get("dataset")
+    if not dataset:
+        return "mini_interact"
+    return get_benchmark(dataset).name
+
+
+def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
+    """Download the run's benchmark dataset from its content-hashed GCS prefix
+    into the benchmark's ``container_data_dir`` (once per node via the local
+    completeness marker), then point the benchmark's data-root/data-file env
+    vars at it so ``paths.benchmark_data_*`` + the per-task loaders/ingest
+    resolve to the downloaded tree.
+
+    De-bake: this replaces the image-baked ``/data/mini-interact`` and the
+    ``BIRD_DB_PATH``/``BIRD_DATA_PATH`` env vars that ``cluster.yaml.j2`` used
+    to pin. Runs in BOTH the head job driver (before ``_load_task_data``) AND
+    each worker actor's ``__init__`` (before ingest), mirroring the per-worker
+    slayer-artifact download.
+
+    No-op when ``cfg['benchmark_data_prefix']`` is falsy — a pre-de-bake run
+    reuses a dataset-baked image and finds the data without a download."""
+    prefix = cfg.get("benchmark_data_prefix")
+    if not prefix:
+        return
+    from bird_interact_agents.benchmark import get_benchmark
+
+    b = get_benchmark(_cloud_benchmark(cfg))
+    dest = Path(b.container_data_dir)
+    client = client or default_gcs_client()
+    _benchmark_data.ensure_downloaded(prefix, dest, client=client)
+    os.environ[b.data_root_env] = str(dest)
+    os.environ[b.data_file_env] = str(dest / b.data_file)
 
 
 def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
@@ -474,9 +509,13 @@ def _run_one_in_actor(
     try:
         with fd_capture(log_tmp):
             try:
-                data_dir = os.environ.get(
-                    "BIRD_DB_PATH", cfg.get("data_dir", "/data/mini-interact")
-                )
+                # `cfg["data_dir"]` is the benchmark's container_data_dir,
+                # resolved benchmark-aware in `run_pool` (mini → BIRD_DB_PATH,
+                # livesqlbench → BIRD_LIVESQLBENCH_ROOT). It is authoritative —
+                # do NOT re-read BIRD_DB_PATH here, which would route a
+                # livesqlbench task back to mini-interact if BIRD_DB_PATH ever
+                # leaked into the actor env (Codex).
+                data_dir = cfg.get("data_dir") or "/data/mini-interact"
 
                 row = asyncio.run(
                     _run_one_task_async(
@@ -622,6 +661,10 @@ class _LocalActor:
         self.run_id = run_id
         self.attempt = attempt
         self.gcs_client = gcs_client or default_gcs_client()
+        # De-bake: download the benchmark dataset into container_data_dir once
+        # per process (no-op without a benchmark_data_prefix) BEFORE any
+        # slayer ingest / per-task DB read — the dataset is no longer baked.
+        download_benchmark_data(cfg, client=self.gcs_client)
         # DEV-1468: download the uploaded SLayer setup ONCE per process (gated
         # on slayer mode) before any task runs, so run_one_task finds the
         # artifacts at the env-override roots — exactly like local.
@@ -689,6 +732,11 @@ def _build_actor_class():
             # the driver (that raised PicklingError). Each actor builds
             # its own from the VM service-account metadata creds.
             self.gcs_client = default_gcs_client()
+            # De-bake: download the benchmark dataset into container_data_dir
+            # once per worker process (no-op without a benchmark_data_prefix)
+            # BEFORE ingest — the per-node marker makes concurrent actors on
+            # one VM converge, mirroring the slayer-artifact download.
+            download_benchmark_data(cfg, client=self.gcs_client)
             # DEV-1468: download the uploaded SLayer setup ONCE per worker
             # process (gated on slayer mode) before any task runs. Mirrors
             # `_LocalActor`; the root-level marker makes concurrent actors on
@@ -807,6 +855,8 @@ def run_pool(
     num_actors: int,
     attempt: int,
     task_data_by_id: dict[str, dict],
+    dataset: str = "mini_interact",
+    benchmark_data_prefix: str | None = None,
     user_sim_model: str = "anthropic/claude-haiku-4-5-20251001",
     patience: int = 3,
     strict: bool = False,
@@ -830,7 +880,10 @@ def run_pool(
     runtime_env — which `ray job list`/the dashboard echo back. They're
     delivered to the head out-of-band (a secrets file rsync'd in, never on
     a command line) and threaded here by `main`."""
+    from bird_interact_agents.benchmark import get_benchmark
+
     client = gcs_client or default_gcs_client()
+    _b = get_benchmark(dataset)
     cfg: dict[str, Any] = {
         "framework": framework,
         "query_mode": query_mode,
@@ -844,7 +897,15 @@ def run_pool(
         "max_depth": max_depth,
         "slayer_setup": slayer_setup,
         "slayer_storage_root": slayer_storage_root,
-        "data_dir": os.environ.get("BIRD_DB_PATH", "/data/mini-interact"),
+        # De-bake: carry the benchmark + its GCS dataset prefix so the actor
+        # can resolve the OTF roots and download the dataset per node.
+        "dataset": dataset,
+        "benchmark_data_prefix": benchmark_data_prefix,
+        # data_dir = the benchmark's container_data_dir. Honour the benchmark's
+        # data-root env override first (download_benchmark_data sets it to the
+        # downloaded tree on the head; on a baked/back-compat run it's the
+        # baked path), else the canonical container dir.
+        "data_dir": os.environ.get(_b.data_root_env) or _b.container_data_dir,
     }
 
     heartbeat = HeartbeatWriter(
@@ -1118,6 +1179,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--user-sim-model", required=True)
     p.add_argument("--dataset", default="mini_interact")
     p.add_argument("--gold-file", default=None)
+    p.add_argument(
+        "--benchmark-data-prefix", default=None,
+        help="content-hashed GCS prefix the benchmark dataset was uploaded to "
+             "at submit; the head + each worker download it into the "
+             "benchmark's container_data_dir before task-load / ingest.",
+    )
     p.add_argument("--patience", type=int, default=3)
     p.add_argument("--strict", action="store_true")
     p.add_argument("--use-audited-gold-sql", action="store_true")
@@ -1144,6 +1211,13 @@ def main(argv: list[str] | None = None) -> int:
     actor_env_vars = _load_secrets_file(args.secrets_file)
 
     instance_ids = [s.strip() for s in args.instance_ids.split(",") if s.strip()]
+    # De-bake: download the benchmark dataset on the HEAD before task-load —
+    # `_load_task_data` reads `paths.benchmark_data_file(dataset)` (+ the gold
+    # sidecar, which rode along in the upload), both resolved via the env vars
+    # `download_benchmark_data` sets. No-op without a --benchmark-data-prefix.
+    download_benchmark_data(
+        {"dataset": args.dataset, "benchmark_data_prefix": args.benchmark_data_prefix},
+    )
     task_data_by_id = _load_task_data(
         instance_ids,
         dataset=args.dataset,
@@ -1161,6 +1235,8 @@ def main(argv: list[str] | None = None) -> int:
         num_actors=args.num_actors,
         attempt=args.attempt,
         task_data_by_id=task_data_by_id,
+        dataset=args.dataset,
+        benchmark_data_prefix=args.benchmark_data_prefix,
         user_sim_model=args.user_sim_model,
         patience=args.patience,
         strict=args.strict,

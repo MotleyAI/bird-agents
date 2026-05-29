@@ -85,6 +85,12 @@ def test_render_sets_slayer_env_roots(tmp_path: Path) -> None:
     assert "BIRD_SLAYER_MODELS_ROOT=/data/slayer_models" in joined
     assert "BIRD_OTF_CACHE_ROOT=/data/slayer_otf_cache" in joined
     assert "BIRD_SLAYER_MODELS_OTF_ROOT=/data/slayer_models_otf" in joined
+    # De-bake: BIRD_DB_PATH/BIRD_DATA_PATH are NO LONGER pinned to
+    # /data/mini-interact — the actor downloads the dataset from GCS per node
+    # and sets the benchmark's data-root/data-file env vars at runtime, so one
+    # image+cluster serves any benchmark.
+    assert "BIRD_DB_PATH=" not in joined
+    assert "BIRD_DATA_PATH=" not in joined
 
 
 def test_render_pins_ssh_key_and_pushes_pubkey(tmp_path: Path) -> None:

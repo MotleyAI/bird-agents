@@ -44,8 +44,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--gold-file", default=None,
         help=(
             "Path to the gated gold sidecar for benchmarks whose data JSONL "
-            "ships gold empty (e.g. livesqlbench). Baked into the image and "
-            "merged by instance_id at task load."
+            "ships gold empty (e.g. livesqlbench). MUST live under the "
+            "benchmark data root so it rides along in the GCS dataset upload; "
+            "merged by instance_id at task load in-cluster."
         ),
     )
     sp_submit.add_argument("--patience", type=int, default=500)
@@ -233,7 +234,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         repo_root = driver.submitter_repo_root()
         tag = image.image_tag(
             repo_root,
-            paths.mini_interact_root(),
             paths.audited_gold_root(),
             allow_dirty=False,
         )
