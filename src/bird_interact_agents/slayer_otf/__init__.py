@@ -29,7 +29,10 @@ from bird_interact_agents.slayer_otf.reference_build import (
     ReferenceEntry,
     ensure_db_reference,
 )
-from bird_interact_agents.slayer_otf.runtime import prepare_task_storage
+from bird_interact_agents.slayer_otf.runtime import (
+    prepare_task_storage,
+    resolve_otf_task_storage_dir,
+)
 
 __all__ = [
     "CacheEntry",
@@ -40,4 +43,5 @@ __all__ = [
     "ensure_db_reference",
     "fingerprint_of",
     "prepare_task_storage",
+    "resolve_otf_task_storage_dir",
 ]

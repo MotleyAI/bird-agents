@@ -55,6 +55,55 @@ bird-interact --framework claude_sdk --query-mode slayer --mode a-interact \
   --db-path /path/to/mini-interact/
 ```
 
+### On-the-fly KB encoding (`claude_sdk_otf`)
+
+`claude_sdk_otf` is a Claude Agent SDK agent that **encodes the
+knowledge-base on the fly**: it runs off the deterministic OTF cache (base
+models + KB items pre-loaded as SLayer memories), is given the SLayer MCP
+with **write** tools, and is instructed to encode the KB items it needs as
+named columns/measures (in dependency order, referencing earlier entities
+through declared joins) and then build the final query off those named
+entities instead of inlining everything. Unlike `pydantic_ai_otf_encode`
+there are no forced stages or recursion, and there is no save-time
+validator yet (tracked in DEV-1506). It is **slayer-query-mode only** and
+**always** `--slayer-setup on-the-fly`; eval modes are `a-interact`
+(mini-interact) and `one-shot` (LiveSQLBench).
+
+> **Local runs must be launched from a non-Claude-Code shell** (a plain
+> terminal, or via Codex) — the SDK spawns the `claude` CLI, which fails
+> when nested inside an active Claude Code session (stdio collision). Cloud
+> runs are unaffected (Ray actors don't nest).
+
+```bash
+# mini-interact, a-interact
+bird-interact --framework claude_sdk_otf --query-mode slayer \
+  --slayer-setup on-the-fly --mode a-interact \
+  --agent-model anthropic/claude-opus-4-7 \
+  --data /path/to/mini_interact.jsonl \
+  --db-path /path/to/mini-interact/ --instance-id households_1
+
+# LiveSQLBench, one-shot
+bird-interact --framework claude_sdk_otf --query-mode slayer \
+  --slayer-setup on-the-fly --dataset livesqlbench --mode one-shot \
+  --gold-file <gated.jsonl> \
+  --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
+  --db-path ../livesqlbench-base-lite-sqlite/
+```
+
+Cloud (the deterministic OTF cache is uploaded from local if present, else
+built locally first — like `pydantic_ai_recursive`; no reference build or
+upload-back):
+
+```bash
+env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
+  --framework claude_sdk_otf --query-mode slayer --slayer-setup on-the-fly \
+  --agent-model anthropic/claude-opus-4-7 \
+  --user-sim-model anthropic/claude-sonnet-4-6 \
+  --mode a-interact --instance-ids households_1 \
+  --workers 1 --actors-per-worker 1 \
+  --worker-type e2-standard-4 --max-runtime-hours 2 --detach
+```
+
 ## 3-way comparison (original ↔ raw ↔ slayer)
 
 `scripts/run_three_way.sh` runs the upstream BIRD-Interact harness, our raw-SQL flavour, and our SLayer flavour on the same `instance_id` slice and emits a side-by-side `comparison.json`.
@@ -201,7 +250,8 @@ verbatim.
 
 | Framework | Status | Install extra |
 |-----------|--------|--------------|
-| Claude Agent SDK | Active | `claude-sdk` |
+| Claude Agent SDK (`claude_sdk`) | Active | `claude-sdk` |
+| Claude Agent SDK on-the-fly KB encode (`claude_sdk_otf`) | Active | `claude-sdk` |
 | PydanticAI | Planned | — |
 | smolagents | Planned | — |
 | Agno | Planned | — |
