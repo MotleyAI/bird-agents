@@ -22,6 +22,7 @@ import logging
 import shutil
 import sqlite3
 import tempfile
+import uuid
 from pathlib import Path
 
 import yaml
@@ -43,16 +44,19 @@ logger = logging.getLogger(__name__)
 
 
 def _otf_work_dir(instance_id: str) -> Path:
-    """Per-task scratch dir for the on-the-fly setup mode.
+    """Per-INVOCATION scratch dir for the shared on-the-fly storage path.
 
-    Lives under ``$TMPDIR/bird_interact_slayer_otf/<instance_id>/`` — the
-    same prefix the recursive adapter uses, so the two share scratch
-    layout but each task owns its own dir.
+    A fresh uuid suffix keeps every invocation's dir unique. Without it,
+    two concurrent runs of the same task — or a recursive-adapter run that
+    shares the ``bird_interact_slayer_otf`` prefix — could ``rmtree`` each
+    other's live per-task SLayer store mid-run, since
+    ``prepare_task_storage`` deletes ``<work_dir>/<db>`` before copying the
+    cache (CodeRabbit).
     """
     p = (
         Path(tempfile.gettempdir())
         / "bird_interact_slayer_otf"
-        / instance_id
+        / f"{instance_id}-{uuid.uuid4().hex[:8]}"
     )
     p.mkdir(parents=True, exist_ok=True)
     return p

@@ -68,6 +68,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     sp_submit.add_argument("--max-depth", type=int, default=3)
     sp_submit.add_argument(
+        "--reasoning-effort", dest="reasoning_effort", default=None,
+        choices=("low", "medium", "high", "max"),
+        help="Reasoning-effort level for claude_sdk_otf (ClaudeAgentOptions."
+             "effort). Ignored by other frameworks; unset = SDK default.",
+    )
+    sp_submit.add_argument(
         "--prompt-cache", dest="prompt_cache", action="store_true", default=True
     )
     sp_submit.add_argument(

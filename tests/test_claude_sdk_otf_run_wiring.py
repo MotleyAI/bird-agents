@@ -71,14 +71,19 @@ async def test_run_evaluation_branches_to_otf_agent(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(run_mod, "load_benchmark_tasks", lambda *a, **kw: [])
 
+    data_file = tmp_path / "x.jsonl"
+    data_file.write_text("")
     with pytest.raises(_Sentinel):
         await run_mod.run_evaluation(
-            data_path="/tmp/x.jsonl", data_dir="/tmp",
+            data_path=str(data_file), data_dir=str(tmp_path),
             output_path=str(tmp_path / "eval.json"),
             mode="a-interact", query_mode="slayer",
             framework="claude_sdk_otf", slayer_setup="on-the-fly",
+            reasoning_effort="high",
         )
     assert constructed and constructed[0].get("slayer_setup") == "on-the-fly"
+    # --reasoning-effort must thread through to the agent constructor.
+    assert constructed[0].get("reasoning_effort") == "high"
 
 
 def test_validate_slayer_setup_requires_on_the_fly():
@@ -123,17 +128,19 @@ def test_maybe_force_wipe_otf_purges_cache_for_claude_sdk_otf(monkeypatch):
     assert purged.get("cache") == {"shop"}
 
 
-def test_cli_rejects_claude_sdk_otf_with_pre_encoded(monkeypatch):
+def test_cli_rejects_claude_sdk_otf_with_pre_encoded(monkeypatch, tmp_path):
     from bird_interact_agents import run as run_mod
 
+    data_file = tmp_path / "x.jsonl"
+    data_file.write_text("")
     argv = [
         "prog",
         "--framework", "claude_sdk_otf",
         "--slayer-setup", "pre-encoded",
         "--query-mode", "slayer",
         "--mode", "a-interact",
-        "--data", "/tmp/x.jsonl",
-        "--db-path", "/tmp",
+        "--data", str(data_file),
+        "--db-path", str(tmp_path),
     ]
     monkeypatch.setattr(sys, "argv", argv)
     with pytest.raises(SystemExit):
@@ -175,3 +182,31 @@ def test_cloud_driver_uploads_cache_only():
     names = {name for (_path, name, _req) in driver._slayer_uploads_for(args)}
     # cache only — no LLM-encoded reference upload-back for this framework
     assert names == {"slayer_otf_cache"}
+
+
+def test_cloud_resubmit_preserves_reasoning_effort():
+    """The manifest carries reasoning_effort and resubmit re-emits the flag so
+    a db-grouped retry runs at the same effort as the original submit."""
+    from bird_interact_agents.cloud import driver
+
+    manifest = {
+        "framework": "claude_sdk_otf",
+        "query_mode": "slayer",
+        "mode": "a-interact",
+        "agent_model": "anthropic/claude-opus-4-7",
+        "user_sim_model": "anthropic/claude-sonnet-4-6",
+        "patience": 500,
+        "max_depth": 3,
+        "dataset": "mini_interact",
+        "render_inputs": {"workers": 1, "actors_per_worker": 1},
+        "reasoning_effort": "high",
+        "prompt_cache": True,
+        "slayer_setup": "on-the-fly",
+        "slayer_storage_root": "/data/slayer_models",
+    }
+    job_args = driver._build_resubmit_args(
+        manifest, "rid", ["households_7"], attempt=1,
+    )
+    assert "--reasoning-effort" in job_args
+    i = job_args.index("--reasoning-effort")
+    assert job_args[i + 1] == "high"

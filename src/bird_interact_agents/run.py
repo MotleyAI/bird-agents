@@ -289,6 +289,7 @@ def make_runner(
     max_depth: int,
     slayer_storage_root: str | None,
     slayer_setup: str = "pre-encoded",
+    reasoning_effort: str | None = None,
 ):
     """Public alias for `_make_runner` — the cloud actor (and other
     throughput-sensitive callers) call this once at startup and reuse the
@@ -319,7 +320,7 @@ def make_runner(
         framework=framework, query_mode=query_mode, mode=mode,
         agent_model=agent_model, strict=strict, prompt_cache=prompt_cache,
         max_depth=max_depth, slayer_storage_root=slayer_storage_root,
-        slayer_setup=slayer_setup,
+        slayer_setup=slayer_setup, reasoning_effort=reasoning_effort,
     )
 
 
@@ -402,6 +403,7 @@ def _make_runner(
     max_depth: int,
     slayer_storage_root: str | None,
     slayer_setup: str = "pre-encoded",
+    reasoning_effort: str | None = None,
 ):
     """Construct the per-task runner closure for the given config.
 
@@ -448,6 +450,7 @@ def _make_runner(
             slayer_storage_root=slayer_storage_root,
             model=agent_model,
             slayer_setup=slayer_setup,
+            reasoning_effort=reasoning_effort,
         )
 
         async def run_one(td: dict, data_dir: str, patience: int,
@@ -600,6 +603,7 @@ async def run_one_task(
     max_depth: int,
     slayer_storage_root: str | None,
     slayer_setup: str = "pre-encoded",
+    reasoning_effort: str | None = None,
 ) -> dict:
     """Run a single per-task evaluation and return a `_persist`-consumable dict.
 
@@ -649,6 +653,7 @@ async def run_one_task(
         max_depth=max_depth,
         slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup,
+        reasoning_effort=reasoning_effort,
     )
     instance_id = str(task_data.get("instance_id") or "")
     t_start = time.perf_counter()
@@ -724,6 +729,7 @@ async def run_evaluation(
     otf_rebuild: bool = False,
     dataset: str = "mini-interact",
     gold_file: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> dict:
     """Run full evaluation across all tasks."""
     # Programmatic-caller mirror of the CLI fail-fast guards. The CLI
@@ -812,6 +818,7 @@ async def run_evaluation(
         max_depth=max_depth,
         slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup,
+        reasoning_effort=reasoning_effort,
     )
 
     # Open the per-run results.db (lives next to eval.json) and write
@@ -1184,6 +1191,17 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--reasoning-effort",
+        dest="reasoning_effort",
+        choices=["low", "medium", "high", "max"],
+        default=None,
+        help=(
+            "Reasoning-effort level for the claude_sdk_otf agent (maps to the "
+            "Claude Agent SDK's ClaudeAgentOptions.effort). Ignored by other "
+            "frameworks. Unset uses the SDK default."
+        ),
+    )
+    parser.add_argument(
         "--otf-rebuild",
         dest="otf_rebuild",
         action="store_true",
@@ -1213,9 +1231,10 @@ def main() -> None:
             "as today. 'on-the-fly' (DEV-1455) ingests the relevant DB "
             "into SLayer at task setup time and encodes each KB item "
             "as a SLayer memory, preserving cross-references as "
-            "memory:<id> entity tokens. Only valid with "
-            "--framework pydantic_ai_recursive --query-mode slayer "
-            "--mode a-interact."
+            "memory:<id> entity tokens. Valid with --query-mode slayer "
+            "and --framework pydantic_ai_recursive, pydantic_ai_otf_encode, "
+            "or claude_sdk_otf, under --mode a-interact or one-shot. "
+            "(pydantic_ai_otf_encode and claude_sdk_otf REQUIRE on-the-fly.)"
         ),
     )
     args = parser.parse_args()
@@ -1310,6 +1329,7 @@ def main() -> None:
             otf_rebuild=args.otf_rebuild,
             dataset=args.dataset,
             gold_file=args.gold_file,
+            reasoning_effort=args.reasoning_effort,
         )
     )
 

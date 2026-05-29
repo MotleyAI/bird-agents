@@ -445,6 +445,7 @@ async def _run_one_task_async(
     data_dir: str,
     slayer_storage_root: str | None,
     slayer_setup: str = "pre-encoded",
+    reasoning_effort: str | None = None,
     cached_runner: Any = None,
 ) -> dict:
     # Defer the import so monkeypatching `bird_interact_agents.run.run_one_task`
@@ -469,6 +470,7 @@ async def _run_one_task_async(
         use_audited_gold_sql=use_audited_gold_sql,
         prompt_cache=prompt_cache,
         max_depth=max_depth,
+        reasoning_effort=reasoning_effort,
         slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup,
     )
@@ -530,6 +532,7 @@ def _run_one_in_actor(
                         use_audited_gold_sql=cfg["use_audited_gold_sql"],
                         prompt_cache=cfg["prompt_cache"],
                         max_depth=cfg["max_depth"],
+                        reasoning_effort=cfg.get("reasoning_effort"),
                         data_dir=data_dir,
                         slayer_storage_root=cfg.get("slayer_storage_root"),
                         slayer_setup=cfg.get("slayer_setup", "pre-encoded"),
@@ -711,6 +714,7 @@ def _maybe_build_cached_runner(cfg: dict[str, Any]):
         strict=cfg["strict"],
         prompt_cache=cfg["prompt_cache"],
         max_depth=cfg["max_depth"],
+        reasoning_effort=cfg.get("reasoning_effort"),
         slayer_storage_root=None,
     )
 
@@ -863,6 +867,7 @@ def run_pool(
     use_audited_gold_sql: bool = False,
     prompt_cache: bool = True,
     max_depth: int = 3,
+    reasoning_effort: str | None = None,
     slayer_setup: str = "pre-encoded",
     slayer_storage_root: str | None = None,
     ray_job_id: str = "local",
@@ -895,6 +900,7 @@ def run_pool(
         "use_audited_gold_sql": use_audited_gold_sql,
         "prompt_cache": prompt_cache,
         "max_depth": max_depth,
+        "reasoning_effort": reasoning_effort,
         "slayer_setup": slayer_setup,
         "slayer_storage_root": slayer_storage_root,
         # De-bake: carry the benchmark + its GCS dataset prefix so the actor
@@ -1196,6 +1202,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-prompt-cache", dest="prompt_cache",
                    action="store_false")
     p.add_argument("--max-depth", type=int, default=3)
+    p.add_argument("--reasoning-effort", dest="reasoning_effort", default=None,
+                   choices=("low", "medium", "high", "max"))
     p.add_argument("--num-actors", type=int, default=4)
     p.add_argument("--slayer-setup", default="pre-encoded",
                    choices=("pre-encoded", "on-the-fly"))
@@ -1250,6 +1258,7 @@ def main(argv: list[str] | None = None) -> int:
         use_audited_gold_sql=args.use_audited_gold_sql,
         prompt_cache=args.prompt_cache,
         max_depth=args.max_depth,
+        reasoning_effort=args.reasoning_effort,
         slayer_setup=args.slayer_setup,
         slayer_storage_root=args.slayer_storage_root,
         ray_job_id=args.ray_job_id,

@@ -293,6 +293,53 @@ async def test_run_task_attaches_slayer_write_tools(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_task_pins_requested_model(monkeypatch, tmp_path):
+    """--agent-model must reach the SDK as the bare native model id, not be
+    silently replaced by the claude CLI default (Codex finding)."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    captured = _stub_env(monkeypatch, m, tmp_path / "store")
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-opus-4-7")
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert captured["options"].model == "claude-opus-4-7"
+
+
+@pytest.mark.asyncio
+async def test_run_task_passes_reasoning_effort(monkeypatch, tmp_path):
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    captured = _stub_env(monkeypatch, m, tmp_path / "store")
+    agent = m.ClaudeSDKOtfAgent(
+        model="anthropic/claude-sonnet-4-5", reasoning_effort="high",
+    )
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert captured["options"].effort == "high"
+
+
+@pytest.mark.asyncio
+async def test_run_task_default_effort_is_none(monkeypatch, tmp_path):
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    captured = _stub_env(monkeypatch, m, tmp_path / "store")
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert captured["options"].effort is None
+
+
+def test_init_rejects_bad_reasoning_effort():
+    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
+
+    with pytest.raises(ValueError):
+        ClaudeSDKOtfAgent(reasoning_effort="turbo")
+
+
+@pytest.mark.asyncio
 async def test_run_task_one_shot_livesqlbench(monkeypatch, tmp_path):
     """One-shot LiveSQLBench: storage resolved with benchmark='livesqlbench',
     materialize_task_db called, and the native ask_user tool is NOT whitelisted."""

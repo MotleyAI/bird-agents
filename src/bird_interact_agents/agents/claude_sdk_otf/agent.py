@@ -42,6 +42,7 @@ from bird_interact_agents.agents.claude_sdk_otf.prompts import (
     SLAYER_OTF_ONE_SHOT,
 )
 from bird_interact_agents.benchmark import get_benchmark
+from bird_interact_agents.model_string import is_anthropic, native_model_id
 from bird_interact_agents.harness import (
     MAX_MODEL_TURNS,
     SampleStatus,
@@ -117,20 +118,30 @@ class ClaudeSDKOtfAgent:
     ``slayer_setup`` must be ``on-the-fly``.
     """
 
+    #: Reasoning-effort levels accepted by the Claude SDK (`ClaudeAgentOptions.effort`).
+    _EFFORT_CHOICES = ("low", "medium", "high", "max")
+
     def __init__(
         self,
         slayer_storage_root: str | None = None,
         model: str = "anthropic/claude-sonnet-4-5",
         slayer_setup: str = "on-the-fly",
+        reasoning_effort: str | None = None,
     ) -> None:
         if slayer_setup != "on-the-fly":
             raise ValueError(
                 "claude_sdk_otf requires slayer_setup='on-the-fly'; "
                 f"got {slayer_setup!r}"
             )
+        if reasoning_effort is not None and reasoning_effort not in self._EFFORT_CHOICES:
+            raise ValueError(
+                f"reasoning_effort must be one of {self._EFFORT_CHOICES} or None; "
+                f"got {reasoning_effort!r}"
+            )
         self.slayer_storage_root = slayer_storage_root
         self.model = model
         self.slayer_setup = slayer_setup
+        self.reasoning_effort = reasoning_effort
 
     async def run_task(
         self,
@@ -142,8 +153,6 @@ class ClaudeSDKOtfAgent:
         user_sim_model: str = "anthropic/claude-haiku-4-5-20251001",
         user_sim_prompt_version: str = "v2",
     ) -> dict:
-        from bird_interact_agents.model_string import is_anthropic
-
         if query_mode != "slayer":
             raise ValueError(
                 "claude_sdk_otf supports only --query-mode slayer; "
@@ -250,6 +259,12 @@ class ClaudeSDKOtfAgent:
                 system_prompt=prompt,
                 mcp_servers=mcp_servers,
                 allowed_tools=tool_names,
+                # Pin the requested Anthropic model (bare id, no provider
+                # prefix) so --agent-model actually takes effect instead of
+                # the claude CLI's configured default.
+                model=native_model_id(self.model),
+                # Reasoning-effort level (None => SDK default).
+                effort=self.reasoning_effort,
             )
 
             async with ClaudeSDKClient(options=options) as client:
