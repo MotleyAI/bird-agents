@@ -17,6 +17,66 @@ from bird_interact_agents.cloud import cli  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
+def _lsb_argv(extra: list[str]) -> list[str]:
+    return [
+        "submit",
+        "--framework", "pydantic_ai_otf_encode",
+        "--query-mode", "slayer",
+        "--agent-model", "anthropic/claude-haiku-4-5-20251001",
+        "--instance-ids", "alien_1",
+        "--slayer-setup", "on-the-fly",
+        "--dataset", "livesqlbench",
+        *extra,
+    ]
+
+
+def test_livesqlbench_one_shot_accepted_with_gold():
+    ns = cli.parse_args(
+        _lsb_argv(["--mode", "one-shot", "--gold-file", "/abs/gold.jsonl"])
+    )
+    assert ns.dataset == "livesqlbench"
+    assert ns.gold_file == "/abs/gold.jsonl"
+    assert ns.mode == "one-shot"
+
+
+def test_livesqlbench_without_gold_file_rejected():
+    with pytest.raises(SystemExit):
+        cli.parse_args(_lsb_argv(["--mode", "one-shot"]))  # no --gold-file
+
+
+def test_livesqlbench_rejects_unsupported_mode():
+    # a-interact is not in livesqlbench's supported modes → gate rejects.
+    with pytest.raises(SystemExit):
+        cli.parse_args(_lsb_argv(["--mode", "a-interact", "--gold-file", "/g.jsonl"]))
+
+
+def test_dataset_hyphen_alias_normalized_to_canonical():
+    ns = cli.parse_args(
+        [
+            "submit",
+            "--framework", "pydantic_ai", "--query-mode", "raw",
+            "--agent-model", "anthropic/claude-sonnet-4-5",
+            "--instance-ids", "db_a_1", "--mode", "a-interact",
+            "--dataset", "mini-interact",  # hyphen alias
+            "--no-require-audited-gold",
+        ]
+    )
+    assert ns.dataset == "mini_interact"  # normalized to canonical
+
+
+def test_dataset_defaults_to_mini_interact():
+    ns = cli.parse_args(
+        [
+            "submit",
+            "--framework", "pydantic_ai", "--query-mode", "raw",
+            "--agent-model", "anthropic/claude-sonnet-4-5",
+            "--instance-ids", "db_a_1", "--mode", "a-interact",
+            "--no-require-audited-gold",
+        ]
+    )
+    assert ns.dataset == "mini_interact"
+
+
 @pytest.mark.parametrize("mode", ["a-interact", "c-interact", "oracle"])
 def test_mode_values_accepted(mode: str) -> None:
     ns = cli.parse_args(

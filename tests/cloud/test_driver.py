@@ -606,8 +606,8 @@ def _setup_slayer_submit(
     otf_cache = tmp_path / "main" / "slayer_otf_cache"
     otf_ref = tmp_path / "main" / "slayer_models_otf"
 
-    monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: data_file)
-    monkeypatch.setattr(driver.paths, "mini_interact_root", lambda: tmp_path / "mini")
+    monkeypatch.setattr(driver.paths, "benchmark_data_file", lambda *a, **k: data_file)
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: tmp_path / "mini")
     monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
     monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda *, benchmark=None: otf_cache)
     monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda *, benchmark=None: otf_ref)
@@ -948,8 +948,8 @@ def _setup_otf_encode_submit(monkeypatch, tmp_path, *, dbs, lay_down_cache=True,
     otf_cache = tmp_path / "main" / "slayer_otf_cache"
     otf_ref = tmp_path / "main" / "slayer_models_otf"
 
-    monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: data_file)
-    monkeypatch.setattr(driver.paths, "mini_interact_root", lambda: tmp_path / "mini")
+    monkeypatch.setattr(driver.paths, "benchmark_data_file", lambda *a, **k: data_file)
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: tmp_path / "mini")
     monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
     monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda *, benchmark=None: otf_cache)
     monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda *, benchmark=None: otf_ref)
@@ -1117,8 +1117,8 @@ def test_submit_groups_instance_ids_by_database(monkeypatch, tmp_path):
     worktree = tmp_path / "worktree"
     otf_cache = tmp_path / "main" / "slayer_otf_cache"
     otf_ref = tmp_path / "main" / "slayer_models_otf"
-    monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: dataset)
-    monkeypatch.setattr(driver.paths, "mini_interact_root", lambda: tmp_path / "mini")
+    monkeypatch.setattr(driver.paths, "benchmark_data_file", lambda *a, **k: dataset)
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: tmp_path / "mini")
     monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
     monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda *, benchmark=None: otf_cache)
     monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda *, benchmark=None: otf_ref)
@@ -1164,7 +1164,7 @@ def test_resubmit_groups_missing_instance_ids_by_database(monkeypatch, tmp_path)
         {"instance_id": "db_b_2", "selected_database": "db_b"},
     ]
     dataset.write_text("\n".join(_json.dumps(r) for r in rows) + "\n")
-    monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: dataset)
+    monkeypatch.setattr(driver.paths, "benchmark_data_file", lambda *a, **k: dataset)
     yaml_path = Path("/tmp/cluster.yaml")
     mocks["cluster"].render_from_manifest.return_value = yaml_path
     mocks["cluster"].head_address.return_value = "http://localhost:8265"
@@ -1278,3 +1278,39 @@ def test_fetch_continues_when_merge_returns_no_shards(monkeypatch, tmp_path):
     )
     metrics = driver.fetch(RUN_ID)
     assert metrics["merge_report"]["merged_dbs"] == []
+
+
+# ---------------------------------------------------------------------------
+# Benchmark plumbing: dataset + gold_file flow through the manifest and the
+# actor job args; the actor + instance→db read the benchmark's tasks file.
+# ---------------------------------------------------------------------------
+
+
+def test_manifest_and_job_args_carry_benchmark(monkeypatch):
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer",
+        mode="one-shot", slayer_setup="on-the-fly",
+    )
+    # FakeSubmitArgs predates --dataset/--gold-file; set them as the cli would.
+    args.dataset = "livesqlbench"
+    args.gold_file = "/abs/gold.jsonl"
+
+    m = driver.build_manifest(args, image_uri="img:tag", run_id="rid")
+    assert m["dataset"] == "livesqlbench"
+    assert m["gold_file"] == "/abs/gold.jsonl"
+
+    # Avoid reading a real tasks file for the db-grouped sort.
+    monkeypatch.setattr(
+        driver, "_instance_ids_sorted_by_db",
+        lambda ids, benchmark="mini_interact": list(ids),
+    )
+    ja = driver._build_job_args(args, "rid", attempt=1)
+    assert ja[ja.index("--dataset") + 1] == "livesqlbench"
+    assert ja[ja.index("--gold-file") + 1] == "/abs/gold.jsonl"
+
+
+def test_manifest_defaults_to_mini_interact_benchmark():
+    args = FakeSubmitArgs()  # no dataset attr → derives mini_interact
+    m = driver.build_manifest(args, image_uri="img:tag", run_id="rid")
+    assert m["dataset"] == "mini_interact"
+    assert m["gold_file"] is None

@@ -1052,29 +1052,32 @@ def _run_with_actors(
 
 
 def _load_task_data(
-    instance_ids: list[str], *, use_audited_gold_sql: bool = False,
+    instance_ids: list[str],
+    *,
+    dataset: str = "mini_interact",
+    gold_file: str | None = None,
+    use_audited_gold_sql: bool = False,
 ) -> dict[str, dict]:
-    """Load per-task dicts from the dataset on disk via paths.py.
+    """Load per-task dicts for ``dataset`` via the benchmark-aware loader (the
+    SAME dispatch the local runner uses): a gold-required benchmark merges its
+    gated sidecar + stamps the dataset marker + SELECT-filters; otherwise plain
+    load. Filtered to the run's ``instance_ids``.
 
-    When `use_audited_gold_sql=True`, applies the audited-gold overlay
-    (same helper `run_evaluation` uses) so the cloud actor evaluates
-    against the audited gold-SQL — not the raw unaudited dataset (Cx3).
+    The audited-gold overlay (same helper `run_evaluation` uses) is a
+    mini-interact concept, so it's applied only for non-gold-sidecar benchmarks
+    when `use_audited_gold_sql=True`.
     """
     from bird_interact_agents import paths
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import load_benchmark_tasks
 
-    data_path = paths.mini_interact_data_file()
-    wanted = set(instance_ids)
-    rows: list[dict] = []
-    with data_path.open() as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            td = json.loads(line)
-            iid = td.get("instance_id")
-            if iid in wanted:
-                rows.append(td)
-    if use_audited_gold_sql:
+    rows = load_benchmark_tasks(
+        dataset,
+        str(paths.benchmark_data_file(dataset)),
+        gold_file,
+        filter_ids=instance_ids,
+    )
+    if use_audited_gold_sql and not get_benchmark(dataset).gold_required:
         from bird_interact_agents.harness import apply_audited_gold_overlay
         apply_audited_gold_overlay(rows, paths.audited_gold_root())
     return {td["instance_id"]: td for td in rows}
@@ -1113,6 +1116,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--mode", required=True)
     p.add_argument("--agent-model", required=True)
     p.add_argument("--user-sim-model", required=True)
+    p.add_argument("--dataset", default="mini_interact")
+    p.add_argument("--gold-file", default=None)
     p.add_argument("--patience", type=int, default=3)
     p.add_argument("--strict", action="store_true")
     p.add_argument("--use-audited-gold-sql", action="store_true")
@@ -1140,7 +1145,10 @@ def main(argv: list[str] | None = None) -> int:
 
     instance_ids = [s.strip() for s in args.instance_ids.split(",") if s.strip()]
     task_data_by_id = _load_task_data(
-        instance_ids, use_audited_gold_sql=args.use_audited_gold_sql,
+        instance_ids,
+        dataset=args.dataset,
+        gold_file=args.gold_file,
+        use_audited_gold_sql=args.use_audited_gold_sql,
     )
 
     run_pool(

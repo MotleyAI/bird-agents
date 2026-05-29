@@ -892,7 +892,7 @@ def test_load_task_data_applies_audited_gold_overlay(
             "sol_sql": "SELECT raw",
         }) + "\n"
     )
-    monkeypatch.setattr(_paths, "mini_interact_data_file", lambda: dataset_file)
+    monkeypatch.setattr(_paths, "benchmark_data_file", lambda *a, **k: dataset_file)
 
     overlay_calls: list[tuple] = []
 

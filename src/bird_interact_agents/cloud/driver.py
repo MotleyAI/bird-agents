@@ -144,6 +144,8 @@ def build_manifest(args, *, image_uri: str, run_id: str) -> dict:
         "run_id": run_id,
         "framework": args.framework,
         "mode": args.mode,
+        "dataset": _submit_benchmark(args),
+        "gold_file": getattr(args, "gold_file", None),
         "query_mode": args.query_mode,
         "agent_model": args.agent_model,
         "user_sim_model": args.user_sim_model,
@@ -176,15 +178,16 @@ def build_manifest(args, *, image_uri: str, run_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _dbs_for_instances(instance_ids) -> list[str]:
+def _dbs_for_instances(instance_ids, benchmark: str = "mini_interact") -> list[str]:
     """Map the selected instance_ids to their distinct ``selected_database``
-    via the dataset (never string-split the id — DB names contain underscores,
-    e.g. ``california_schools``). Returns a sorted, de-duplicated db list."""
+    via the benchmark's tasks file (never string-split the id — DB names contain
+    underscores, e.g. ``california_schools``). Returns a sorted, de-duplicated
+    db list."""
     import json as _json
 
     wanted = set(instance_ids)
     dbs: set[str] = set()
-    with paths.mini_interact_data_file().open() as f:
+    with paths.benchmark_data_file(benchmark).open() as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -255,7 +258,9 @@ def _artifact_present(root: Path, db: str, artifact: str) -> bool:
     return (db_dir / marker).is_file()
 
 
-def _build_missing_otf_caches(cache_root: Path, dbs: list[str]) -> None:
+def _build_missing_otf_caches(
+    cache_root: Path, dbs: list[str], benchmark: str = "mini_interact",
+) -> None:
     """Build the deterministic OTF ingest cache locally for each DB in `dbs`.
 
     The cache is free to build (no LLMs) and fully deterministic, so a missing
@@ -263,7 +268,7 @@ def _build_missing_otf_caches(cache_root: Path, dbs: list[str]) -> None:
     rather than aborting the submit. The cloud runner never builds REQUIRED
     setup in-cluster (it consumes the uploaded cache), so this is the only
     place it can be produced for the submit to proceed."""
-    mi_root = paths.mini_interact_root()
+    data_root = paths.benchmark_data_root(benchmark)
     for db in dbs:
         logger.info(
             "cloud slayer: deterministic cache missing for %s — building it "
@@ -271,7 +276,7 @@ def _build_missing_otf_caches(cache_root: Path, dbs: list[str]) -> None:
         )
         asyncio.run(
             ensure_db_cache(
-                db, cache_root=cache_root, mini_interact_root=mi_root,
+                db, cache_root=cache_root, mini_interact_root=data_root,
                 force=False,
             )
         )
@@ -289,7 +294,8 @@ def _check_slayer_setup_present(args) -> list[str]:
     reference) can't be auto-built and still fail fast.
 
     Returns the db list to upload."""
-    dbs = _dbs_for_instances(args.instance_ids)
+    benchmark = _submit_benchmark(args)
+    dbs = _dbs_for_instances(args.instance_ids, benchmark)
     uploads = _slayer_uploads_for(args)
     for root, artifact, required in uploads:
         if not required:
@@ -299,7 +305,7 @@ def _check_slayer_setup_present(args) -> list[str]:
             continue
         if artifact == "slayer_otf_cache":
             # Deterministic + LLM-free → build it rather than erroring.
-            _build_missing_otf_caches(root, missing)
+            _build_missing_otf_caches(root, missing, benchmark)
             continue
         marker_hint = {
             "slayer_models": "non-empty <db>/ dir",
@@ -332,7 +338,9 @@ def _upload_slayer_setup(args, run_id: str, dbs: list[str]) -> None:
             gcs.upload_dir_prefix(root / db, prefix, client=client)
 
 
-def _instance_ids_sorted_by_db(instance_ids) -> list[str]:
+def _instance_ids_sorted_by_db(
+    instance_ids, benchmark: str = "mini_interact",
+) -> list[str]:
     """DEV-1470: sort iids by ``(selected_database, instance_id)`` so same-db
     tasks are adjacent in the ActorPool dispatch order — a single actor then
     typically does all encoding for a given DB and the cross-actor encode
@@ -342,7 +350,7 @@ def _instance_ids_sorted_by_db(instance_ids) -> list[str]:
     wanted = list(instance_ids)
     db_by_iid: dict[str, str] = {}
     if wanted:
-        with paths.mini_interact_data_file().open() as f:
+        with paths.benchmark_data_file(benchmark).open() as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -477,12 +485,14 @@ def submit(args) -> str:
 
 
 def _build_job_args(args, run_id: str, *, attempt: int) -> list[str]:
+    benchmark = _submit_benchmark(args)
     job_args = [
         "--run-id", run_id,
         "--attempt", str(attempt),
         "--framework", args.framework,
         "--query-mode", args.query_mode,
         "--mode", args.mode,
+        "--dataset", benchmark,
         "--agent-model", args.agent_model,
         "--user-sim-model", args.user_sim_model,
         "--patience", str(args.patience),
@@ -490,8 +500,12 @@ def _build_job_args(args, run_id: str, *, attempt: int) -> list[str]:
         "--num-actors", str(args.workers * args.actors_per_worker),
         # DEV-1470: group same-db iids adjacently so a single actor typically
         # does all encoding for a given DB.
-        "--instance-ids", ",".join(_instance_ids_sorted_by_db(args.instance_ids)),
+        "--instance-ids",
+        ",".join(_instance_ids_sorted_by_db(args.instance_ids, benchmark)),
     ]
+    gold_file = getattr(args, "gold_file", None)
+    if gold_file:
+        job_args += ["--gold-file", str(gold_file)]
     if args.strict:
         job_args.append("--strict")
     if args.use_audited_gold_sql:
@@ -685,12 +699,14 @@ def resubmit(run_id: str) -> None:
 
 def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
                           attempt: int) -> list[str]:
+    benchmark = _benchmark_for_dataset(manifest.get("dataset"))
     job_args = [
         "--run-id", run_id,
         "--attempt", str(attempt),
         "--framework", manifest["framework"],
         "--query-mode", manifest["query_mode"],
         "--mode", manifest["mode"],
+        "--dataset", benchmark,
         "--agent-model", manifest["agent_model"],
         "--user-sim-model", manifest["user_sim_model"],
         "--patience", str(manifest.get("patience", 3)),
@@ -700,8 +716,11 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
             * manifest["render_inputs"]["actors_per_worker"]
         ),
         # DEV-1470: db-grouped retries — same rule as submit.
-        "--instance-ids", ",".join(_instance_ids_sorted_by_db(missing)),
+        "--instance-ids", ",".join(_instance_ids_sorted_by_db(missing, benchmark)),
     ]
+    gold_file = manifest.get("gold_file")
+    if gold_file:
+        job_args += ["--gold-file", str(gold_file)]
     if manifest.get("strict"):
         job_args.append("--strict")
     if manifest.get("use_audited_gold_sql"):
