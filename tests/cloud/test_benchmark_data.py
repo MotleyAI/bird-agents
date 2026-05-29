@@ -197,3 +197,30 @@ def test_ensure_downloaded_skips_when_local_marker_present(tmp_path, monkeypatch
 
     monkeypatch.setattr(gcs, "download_prefix", _boom)
     assert bd.ensure_downloaded("benchmark-data/livesqlbench/abc/", dest, client=_FakeClient()) == dest
+
+
+def test_ensure_downloaded_redownloads_on_prefix_mismatch(tmp_path, monkeypatch):
+    """A stale local marker written for a DIFFERENT content-hash prefix is NOT
+    a cache hit — `dest` is benchmark-scoped, not hash-scoped, so a benchmark
+    update lands a new prefix into the same dir. ensure_downloaded must clear
+    the stale tree and re-download (CodeRabbit)."""
+    dest = tmp_path / "data" / "livesqlbench"
+    dest.mkdir(parents=True)
+    (dest / bd._MARKER).write_text("benchmark-data/livesqlbench/OLDHASH/")
+    (dest / "stale.jsonl").write_text("old")  # a file the new dataset removed
+    client = _FakeClient()
+    new_prefix = "benchmark-data/livesqlbench/NEWHASH/"
+    client.store[new_prefix + bd._MARKER] = b"NEWHASH"
+    dl_calls: list = []
+
+    def _fake_dl(prefix, d, **kw):
+        dl_calls.append(prefix)
+        Path(d).mkdir(parents=True, exist_ok=True)
+        (Path(d) / "fresh.jsonl").write_text("{}\n")
+
+    monkeypatch.setattr(gcs, "download_prefix", _fake_dl)
+    bd.ensure_downloaded(new_prefix, dest, client=client)
+    assert dl_calls == [new_prefix]            # re-downloaded under the new prefix
+    assert not (dest / "stale.jsonl").exists()  # stale tree cleared
+    assert (dest / "fresh.jsonl").is_file()      # new content present
+    assert (dest / bd._MARKER).read_text() == new_prefix

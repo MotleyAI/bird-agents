@@ -14,6 +14,7 @@ so a partial or concurrent upload can never be mistaken for a finished one
 from __future__ import annotations
 
 import hashlib
+import shutil
 from pathlib import Path
 
 from bird_interact_agents import paths
@@ -111,7 +112,15 @@ def ensure_downloaded(prefix: str, dest: Path, *, client=None) -> Path:
     dest = Path(dest)
     local_marker = dest / _MARKER
     if local_marker.is_file():
-        return dest
+        # The marker stores the prefix it was downloaded for. ``dest`` is
+        # benchmark-scoped (``/data/<benchmark>``), NOT hash-scoped, so a
+        # benchmark update lands a NEW content-hash prefix into the same dir.
+        # Only treat it as a cache hit when the marker matches THIS prefix;
+        # on a mismatch the cached tree is stale (and may retain files the new
+        # dataset removed), so clear it and re-download (CodeRabbit).
+        if local_marker.read_text() == prefix:
+            return dest
+        shutil.rmtree(dest)
     client = client or gcs.default_gcs_client()
     remote_marker = client.bucket(gcs.BUCKET_NAME).blob(prefix + _MARKER)
     if not remote_marker.exists():

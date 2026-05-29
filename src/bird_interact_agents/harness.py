@@ -215,10 +215,15 @@ def load_benchmark_tasks(
         return load_livesqlbench_tasks(
             data_path, gold_file, limit=limit, filter_ids=filter_ids,
         )
-    tasks = load_tasks(data_path, limit)
+    # Apply `limit` AFTER `filter_ids` (not via load_tasks' own limit), so a
+    # caller passing both doesn't have requested instance_ids truncated away
+    # before filtering — mirrors the LiveSQLBench path (CodeRabbit).
+    tasks = load_tasks(data_path)
     if filter_ids is not None:
         wanted = set(filter_ids)
         tasks = [t for t in tasks if t.get("instance_id") in wanted]
+    if limit is not None:
+        tasks = tasks[:limit]
     return tasks
 
 

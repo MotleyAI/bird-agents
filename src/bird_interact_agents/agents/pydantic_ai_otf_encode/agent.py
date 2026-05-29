@@ -32,6 +32,8 @@ from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy.exc import SQLAlchemyError
 
+from bird_interact_agents.benchmark import get_benchmark
+
 from slayer.core.query import SlayerQuery
 from slayer.engine.query_engine import SlayerQueryEngine
 from slayer.storage.yaml_storage import YAMLStorage
@@ -1035,11 +1037,9 @@ class PydanticAIOtfEncodeAgent:
 
         db_name = task_data["selected_database"]
         instance_id = task_data["instance_id"]
-        benchmark: str = (
-            "livesqlbench"
-            if task_data.get("dataset") == "livesqlbench"
-            else "mini_interact"
-        )
+        benchmark: str = get_benchmark(
+            task_data.get("dataset") or "mini_interact"
+        ).name
 
         from slayer.storage.yaml_storage import YAMLStorage
 

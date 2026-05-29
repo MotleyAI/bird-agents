@@ -1426,3 +1426,18 @@ def test_resubmit_threads_benchmark_prefix(monkeypatch):
     manifest.pop("benchmark_data_prefix")
     ja2 = driver._build_resubmit_args(manifest, "rid", ["db_a_1"], 2)
     assert "--benchmark-data-prefix" not in ja2
+
+
+def test_instance_ids_sorted_by_db_falls_back_when_data_file_absent(
+    monkeypatch, tmp_path,
+):
+    """De-bake: `resubmit` may run on a machine without the local dataset, so a
+    missing benchmark data file must NOT crash `_instance_ids_sorted_by_db` —
+    it falls back to input order (DB-grouping is only a dispatch optimization,
+    not a correctness gate) (Codex)."""
+    monkeypatch.setattr(
+        driver.paths, "benchmark_data_file",
+        lambda *a, **k: tmp_path / "absent.jsonl",
+    )
+    ids = ["z_2", "a_1", "m_3"]
+    assert driver._instance_ids_sorted_by_db(ids, "mini_interact") == ids

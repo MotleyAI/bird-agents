@@ -704,9 +704,10 @@ async def run_evaluation(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
     )
-    if get_benchmark(dataset).gold_required and not gold_file:
+    b = get_benchmark(dataset)
+    if b.gold_required and not gold_file:
         raise ValueError(
-            "--dataset livesqlbench requires --gold-file (the gated sidecar "
+            f"--dataset {b.name} requires --gold-file (the gated sidecar "
             "carrying sol_sql / external_knowledge / test_cases keyed by "
             "instance_id)",
         )
@@ -734,7 +735,7 @@ async def run_evaluation(
     # copy. Default off reuses whatever is present. On-the-fly frameworks only.
     # DEV-1462: pass the per-benchmark scope so a livesqlbench rebuild never
     # wipes the mini-interact roots (and vice versa).
-    benchmark_for_paths = get_benchmark(dataset).name
+    benchmark_for_paths = b.name
     _maybe_force_wipe_otf(
         otf_rebuild=otf_rebuild,
         framework=framework,
@@ -742,8 +743,14 @@ async def run_evaluation(
         benchmark=benchmark_for_paths,
     )
 
+    # The audited-gold overlay is a mini-interact concept: gold inline in the
+    # data JSONL + a separate audited_gold/<db> sidecar. A gold_required
+    # benchmark (livesqlbench) carries its gold in the gated sidecar instead
+    # and has no audited_gold/, so skip the overlay there — mirrors the cloud
+    # `_load_task_data` gate and avoids overlaying an unrelated audited_gold/<db>
+    # row onto the gated gold on an instance_id clash (Codex).
     audited_overlay_log: dict[str, str] = {}
-    if use_audited_gold_sql:
+    if use_audited_gold_sql and not b.gold_required:
         audited_overlay_log = apply_audited_gold_overlay(
             tasks, paths.audited_gold_root(),
         )
@@ -1213,9 +1220,10 @@ def main() -> None:
             query_mode=args.query_mode,
             mode=args.mode,
         )
-        if get_benchmark(args.dataset).gold_required and not args.gold_file:
+        _b = get_benchmark(args.dataset)
+        if _b.gold_required and not args.gold_file:
             raise ValueError(
-                "--dataset livesqlbench requires --gold-file (the gated "
+                f"--dataset {_b.name} requires --gold-file (the gated "
                 "sidecar carrying sol_sql / external_knowledge / test_cases "
                 "keyed by instance_id).",
             )

@@ -1168,6 +1168,8 @@ def _load_secrets_file(path: str | None) -> dict[str, str] | None:
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
+    from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
+
     p = argparse.ArgumentParser()
     p.add_argument("--run-id", required=True)
     p.add_argument("--attempt", required=True, type=int)
@@ -1177,7 +1179,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--mode", required=True)
     p.add_argument("--agent-model", required=True)
     p.add_argument("--user-sim-model", required=True)
-    p.add_argument("--dataset", default="mini_interact")
+    p.add_argument("--dataset", default="mini_interact",
+                   choices=cli_dataset_tokens())
     p.add_argument("--gold-file", default=None)
     p.add_argument(
         "--benchmark-data-prefix", default=None,
@@ -1207,6 +1210,10 @@ def main(argv: list[str] | None = None) -> int:
              "runtime_env (which `ray job list` echoes).",
     )
     args = p.parse_args(argv)
+    # Canonicalize the benchmark token (e.g. the `mini-interact` alias →
+    # `mini_interact`) immediately, mirroring `cloud.cli`, so every downstream
+    # path-root / loader lookup sees the canonical name (CodeRabbit).
+    args.dataset = get_benchmark(args.dataset).name
 
     actor_env_vars = _load_secrets_file(args.secrets_file)
 

@@ -33,6 +33,7 @@ from typing import Any
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.usage import UsageLimits
 
+from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.agents._run_capture import (
     _count_turns,
     _extract_tool_stats,
@@ -333,11 +334,9 @@ class PydanticAIRecursiveAgent:
 
         db_name = task_data["selected_database"]
         instance_id = task_data["instance_id"]
-        benchmark: str = (
-            "livesqlbench"
-            if task_data.get("dataset") == "livesqlbench"
-            else "mini_interact"
-        )
+        benchmark: str = get_benchmark(
+            task_data.get("dataset") or "mini_interact"
+        ).name
 
         load_db_data_if_needed(db_name, data_path_base)
         # DEV-1462 B0: LiveSQLBench tasks get a per-task isolated

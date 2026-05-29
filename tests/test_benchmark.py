@@ -6,6 +6,7 @@ the per-benchmark facts the rest of the harness keys off."""
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from bird_interact_agents.benchmark import (
     Benchmark,
@@ -52,7 +53,7 @@ def test_registry_membership_and_helpers():
 
 def test_benchmark_is_frozen():
     b = get_benchmark("mini_interact")
-    with pytest.raises(Exception):  # pydantic frozen → ValidationError/TypeError
+    with pytest.raises(ValidationError):  # pydantic frozen → ValidationError
         b.name = "mutated"  # type: ignore[misc]
 
 

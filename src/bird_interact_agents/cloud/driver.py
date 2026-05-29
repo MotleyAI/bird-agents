@@ -405,18 +405,32 @@ def _instance_ids_sorted_by_db(
     grouped by their iid string so they still appear deterministically."""
     import json as _json
     wanted = list(instance_ids)
+    if not wanted:
+        return wanted
+    data_file = paths.benchmark_data_file(benchmark)
+    # De-bake: the dataset is GCS-delivered, so `resubmit` may run on a machine
+    # that has no local copy. DB-grouping is only a dispatch optimization (it
+    # makes same-db tasks adjacent so one actor tends to do all of a DB's
+    # encoding), never a correctness gate — so a missing local data file falls
+    # back to the input order rather than failing the resubmit (Codex).
+    if not data_file.is_file():
+        logger.info(
+            "instance DB-grouping skipped: local data file %s absent "
+            "(e.g. resubmit without the local dataset) — preserving input order",
+            data_file,
+        )
+        return wanted
     db_by_iid: dict[str, str] = {}
-    if wanted:
-        with paths.benchmark_data_file(benchmark).open() as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                td = _json.loads(line)
-                iid = td.get("instance_id")
-                if iid in wanted:
-                    db = td.get("selected_database") or ""
-                    db_by_iid[iid] = db
+    with data_file.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            td = _json.loads(line)
+            iid = td.get("instance_id")
+            if iid in wanted:
+                db = td.get("selected_database") or ""
+                db_by_iid[iid] = db
     # Stable, deterministic sort by (db, iid). Unknown iids → ("", iid).
     return sorted(wanted, key=lambda iid: (db_by_iid.get(iid, ""), iid))
 

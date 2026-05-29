@@ -2174,3 +2174,42 @@ def test_main_downloads_benchmark_data_before_task_load(
         "--instance-ids", "db_a_1",
     ])
     assert order.index("download") < order.index("load") < order.index("run_pool")
+
+
+def test_main_canonicalizes_dataset_alias(monkeypatch: pytest.MonkeyPatch):
+    """`main()` canonicalizes the --dataset alias (mini-interact →
+    mini_interact) right after parse, so every downstream loader/path lookup
+    sees the canonical name (CodeRabbit)."""
+    seen: dict = {}
+    monkeypatch.setattr(ray_app, "download_benchmark_data", lambda *a, **k: None)
+    monkeypatch.setattr(
+        ray_app, "_load_task_data",
+        lambda iids, *, dataset, **k: (seen.update(load=dataset), {})[1],
+    )
+    monkeypatch.setattr(
+        ray_app, "run_pool", lambda **kw: seen.update(pool=kw["dataset"]),
+    )
+    ray_app.main([
+        "--run-id", RUN_ID, "--attempt", "1",
+        "--framework", "pydantic_ai", "--query-mode", "raw",
+        "--mode", "c-interact", "--agent-model", "m", "--user-sim-model", "u",
+        "--dataset", "mini-interact",  # hyphen alias
+        "--instance-ids", "db_a_1",
+    ])
+    assert seen["load"] == "mini_interact"
+    assert seen["pool"] == "mini_interact"
+
+
+def test_main_rejects_unknown_dataset(monkeypatch: pytest.MonkeyPatch):
+    """argparse `choices=cli_dataset_tokens()` rejects an unknown --dataset
+    at the actor CLI boundary (SystemExit), instead of failing late during
+    path/load resolution (CodeRabbit)."""
+    monkeypatch.setattr(ray_app, "download_benchmark_data", lambda *a, **k: None)
+    with pytest.raises(SystemExit):
+        ray_app.main([
+            "--run-id", RUN_ID, "--attempt", "1",
+            "--framework", "pydantic_ai", "--query-mode", "raw",
+            "--mode", "c-interact", "--agent-model", "m", "--user-sim-model", "u",
+            "--dataset", "not-a-benchmark",
+            "--instance-ids", "db_a_1",
+        ])
