@@ -792,7 +792,6 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         "--framework", manifest["framework"],
         "--query-mode", manifest["query_mode"],
         "--mode", manifest["mode"],
-        "--dataset", benchmark,
         "--agent-model", manifest["agent_model"],
         "--user-sim-model", manifest["user_sim_model"],
         "--patience", str(manifest.get("patience", 3)),
@@ -804,9 +803,15 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         # DEV-1470: db-grouped retries — same rule as submit.
         "--instance-ids", ",".join(_instance_ids_sorted_by_db(missing, benchmark)),
     ]
-    # De-bake: thread the dataset's GCS prefix so the actor re-downloads it.
-    # Absent on pre-de-bake manifests — those runs reused a dataset-baked
-    # image, so the actor finds the data without a download (back-compat).
+    # Pass --dataset / --benchmark-data-prefix ONLY when the manifest carries
+    # them. A manifest with a `dataset` key was written by a driver new enough
+    # to also bake `--dataset` support into its image; a pre-`--dataset`
+    # manifest (no key) pins an OLDER image whose `ray_app` argparse rejects
+    # `--dataset`, so resubmitting it MUST omit the flag and let the old image
+    # use its baked mini-interact data (Codex). The prefix is independently
+    # conditional for the same reason (de-bake came later than `--dataset`).
+    if manifest.get("dataset"):
+        job_args += ["--dataset", benchmark]
     prefix = manifest.get("benchmark_data_prefix")
     if prefix:
         job_args += ["--benchmark-data-prefix", prefix]

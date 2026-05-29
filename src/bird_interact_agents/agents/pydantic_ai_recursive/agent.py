@@ -313,10 +313,12 @@ class PydanticAIRecursiveAgent:
         # the loader-stamped ``dataset='livesqlbench'`` marker. A caller
         # that bypasses ``load_livesqlbench_tasks`` (cloud actor, custom
         # driver) MUST NOT silently get a one-shot run on un-marked data.
-        if is_one_shot and task_data.get("dataset") != "livesqlbench":
+        if is_one_shot and not get_benchmark(
+            task_data.get("dataset") or "mini_interact"
+        ).one_shot:
             raise ValueError(
-                "--mode one-shot requires a task carrying "
-                "dataset='livesqlbench' (the loader stamps it); got "
+                "--mode one-shot requires a task whose benchmark declares "
+                "one_shot=True (its loader stamps task_data['dataset']); got "
                 f"dataset={task_data.get('dataset')!r}",
             )
         # DEV-1462 — CodeRabbit close: ``_validate_slayer_setup`` rejects

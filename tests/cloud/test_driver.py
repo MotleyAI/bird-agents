@@ -1441,3 +1441,22 @@ def test_instance_ids_sorted_by_db_falls_back_when_data_file_absent(
     )
     ids = ["z_2", "a_1", "m_3"]
     assert driver._instance_ids_sorted_by_db(ids, "mini_interact") == ids
+
+
+def test_resubmit_omits_dataset_for_pre_dataset_manifest(monkeypatch):
+    """A manifest with NO 'dataset' key was written before --dataset existed,
+    so its pinned image's ray_app rejects --dataset. Resubmit must OMIT both
+    --dataset and --benchmark-data-prefix and let the old baked image run
+    (Codex)."""
+    monkeypatch.setattr(
+        driver, "_instance_ids_sorted_by_db",
+        lambda ids, benchmark="mini_interact": list(ids),
+    )
+    manifest = {
+        "framework": "pydantic_ai", "query_mode": "raw", "mode": "c-interact",
+        "agent_model": "m", "user_sim_model": "u",
+        "render_inputs": {"workers": 1, "actors_per_worker": 1},
+    }  # neither 'dataset' nor 'benchmark_data_prefix'
+    ja = driver._build_resubmit_args(manifest, "rid", ["db_a_1"], 2)
+    assert "--dataset" not in ja
+    assert "--benchmark-data-prefix" not in ja

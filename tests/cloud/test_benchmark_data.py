@@ -224,3 +224,25 @@ def test_ensure_downloaded_redownloads_on_prefix_mismatch(tmp_path, monkeypatch)
     assert not (dest / "stale.jsonl").exists()  # stale tree cleared
     assert (dest / "fresh.jsonl").is_file()      # new content present
     assert (dest / bd._MARKER).read_text() == new_prefix
+
+
+def test_ensure_downloaded_clears_partial_dest_without_marker(tmp_path, monkeypatch):
+    """A partial dest (files present, NO marker — a crashed prior download) is
+    cleared + re-downloaded under the lock; the marker (written LAST) is the
+    only completeness signal (Codex)."""
+    dest = tmp_path / "data" / "livesqlbench"
+    dest.mkdir(parents=True)
+    (dest / "partial.jsonl").write_text("half")  # leftover from a crash, no marker
+    client = _FakeClient()
+    prefix = "benchmark-data/livesqlbench/abc/"
+    client.store[prefix + bd._MARKER] = b"abc"
+
+    def _fake_dl(p, d, **kw):
+        Path(d).mkdir(parents=True, exist_ok=True)
+        (Path(d) / "full.jsonl").write_text("{}\n")
+
+    monkeypatch.setattr(gcs, "download_prefix", _fake_dl)
+    bd.ensure_downloaded(prefix, dest, client=client)
+    assert not (dest / "partial.jsonl").exists()
+    assert (dest / "full.jsonl").is_file()
+    assert (dest / bd._MARKER).read_text() == prefix

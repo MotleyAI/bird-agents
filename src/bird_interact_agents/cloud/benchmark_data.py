@@ -13,6 +13,7 @@ so a partial or concurrent upload can never be mistaken for a finished one
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import shutil
 from pathlib import Path
@@ -99,35 +100,56 @@ def ensure_uploaded(
     return prefix
 
 
+def _marker_matches(local_marker: Path, prefix: str) -> bool:
+    """The local marker stores the prefix it was downloaded for. ``dest`` is
+    benchmark-scoped (``/data/<benchmark>``), NOT hash-scoped, so a benchmark
+    update lands a NEW content-hash prefix into the same dir — only a marker
+    whose content equals THIS prefix is a real cache hit (CodeRabbit)."""
+    return local_marker.is_file() and local_marker.read_text() == prefix
+
+
 def ensure_downloaded(prefix: str, dest: Path, *, client=None) -> Path:
     """Download the dataset at ``prefix`` into ``dest`` if not already present
-    locally (local marker check). Writes the local marker only AFTER a complete
-    download, so an interrupted download is re-attempted next call.
+    for THIS prefix. Concurrency-safe across the multiple Ray actors that share
+    one VM's ``dest`` (``--actors-per-worker > 1``): the whole
+    check→download→mark sequence runs under a per-``dest`` ``fcntl`` lock, so a
+    task can never observe a half-written tree (Codex). The completeness marker
+    (``_MARKER``, holding the prefix) is written LAST, so an interrupted
+    download leaves no marker and is re-attempted on the next call.
 
-    Refuses to cache a prefix that lacks the upload-completeness marker
-    (``_MARKER``, written LAST by :func:`ensure_uploaded`): a missing remote
-    marker means the upload was partial/concurrent OR the prefix is wrong /
-    lifecycle-GC'd. Trusting it would write a local marker over an empty/partial
-    download and silently fail every in-cluster task (Codex)."""
+    Refuses to cache a prefix that lacks the upload-completeness marker on the
+    GCS side (written LAST by :func:`ensure_uploaded`): a missing remote marker
+    means the upload was partial/concurrent OR the prefix is wrong /
+    lifecycle-GC'd. Trusting it would mark an empty/partial download complete
+    and silently fail every in-cluster task (Codex)."""
     dest = Path(dest)
     local_marker = dest / _MARKER
-    if local_marker.is_file():
-        # The marker stores the prefix it was downloaded for. ``dest`` is
-        # benchmark-scoped (``/data/<benchmark>``), NOT hash-scoped, so a
-        # benchmark update lands a NEW content-hash prefix into the same dir.
-        # Only treat it as a cache hit when the marker matches THIS prefix;
-        # on a mismatch the cached tree is stale (and may retain files the new
-        # dataset removed), so clear it and re-download (CodeRabbit).
-        if local_marker.read_text() == prefix:
+    # Lock-free fast path: this exact prefix is already fully present.
+    if _marker_matches(local_marker, prefix):
+        return dest
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # Sibling lock (NOT under dest, so it survives an rmtree of dest). Serialises
+    # concurrent actors on one VM: the first downloads + marks; the rest block,
+    # then re-check and hit the cache.
+    lock_path = dest.parent / f".{dest.name}.dl.lock"
+    with open(lock_path, "w") as lock_f:
+        fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+        # Re-check under the lock — a peer may have just finished.
+        if _marker_matches(local_marker, prefix):
             return dest
-        shutil.rmtree(dest)
-    client = client or gcs.default_gcs_client()
-    remote_marker = client.bucket(gcs.BUCKET_NAME).blob(prefix + _MARKER)
-    if not remote_marker.exists():
-        raise FileNotFoundError(
-            f"benchmark-data prefix {prefix!r} has no completeness marker "
-            f"({_MARKER}); refusing to cache an incomplete/missing dataset"
-        )
-    gcs.download_prefix(prefix, dest, client=client)
-    local_marker.write_text(prefix)
+        client = client or gcs.default_gcs_client()
+        remote_marker = client.bucket(gcs.BUCKET_NAME).blob(prefix + _MARKER)
+        if not remote_marker.exists():
+            raise FileNotFoundError(
+                f"benchmark-data prefix {prefix!r} has no completeness marker "
+                f"({_MARKER}); refusing to cache an incomplete/missing dataset"
+            )
+        # Clear any stale (older-prefix) or partial (crashed mid-download) tree
+        # before re-downloading, so removed files don't linger and a partial
+        # tree can't be mistaken for complete. Safe under the lock.
+        if dest.exists():
+            shutil.rmtree(dest)
+        gcs.download_prefix(prefix, dest, client=client)
+        local_marker.write_text(prefix)  # marker LAST — completeness invariant
     return dest
