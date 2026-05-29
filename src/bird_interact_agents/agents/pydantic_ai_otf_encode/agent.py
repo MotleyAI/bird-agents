@@ -77,6 +77,7 @@ from bird_interact_agents.harness import (
     load_db_data_if_needed,
     materialize_task_db,
     slayer_mcp_stdio_config,
+    SLAYER_MCP_STARTUP_TIMEOUT_S,
 )
 from bird_interact_agents.hard8_preprocessor import (
     build_task_variant_storage,
@@ -854,7 +855,7 @@ def _build_shared_slayer_server(slayer_storage_dir: str) -> MCPServerStdio:
 
     return MCPServerStdio(
         command=cfg["command"], args=cfg["args"], env=cfg["env"],
-        max_retries=100, timeout=300,
+        max_retries=100, timeout=SLAYER_MCP_STARTUP_TIMEOUT_S,
         process_tool_call=_process_tool_call,
     )
 

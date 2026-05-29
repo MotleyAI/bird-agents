@@ -154,6 +154,54 @@ async def test_build_when_absent_runs_encoder_over_full_kb(fake_cache, tmp_path)
     assert all(r.status == "encoded" for r in entry.setup_results)
 
 
+async def test_setup_encode_usage_is_persisted(fake_cache, tmp_path):
+    """DEV-1478: the per-DB setup-encode token usage (exposed on run_one.usage)
+    is written to `_setup_usage.json` next to the reference, so the otherwise-
+    uninstrumented reference-build encode cost is recoverable."""
+    import json
+
+    from slayer.core.models import Column
+
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+        EncodedEntity, EncoderResult,
+    )
+    from bird_interact_agents.usage import TokenUsage
+
+    def build_encoder(storage, build_dir, db, sessions_dir=None):
+        usage = TokenUsage()
+
+        async def run_one(kb_id, row, deps_results, **_):
+            usage.add_call(
+                scope="setup_encoder", model="anthropic/claude-opus-4-7",
+                prompt=1000, completion=200,
+            )
+            model = await storage.get_model("households")
+            name = f"kb{kb_id}_col"
+            model.columns.append(Column(name=name, sql="1", meta={"kb_id": kb_id}))
+            await storage.save_model(model)
+            return EncoderResult(
+                kb_id=kb_id, status="encoded",
+                entities=[EncodedEntity(
+                    kind="column", host_model="households", name=name,
+                    entity_ref=f"{DB}.households.{name}",
+                )],
+                notes="",
+            )
+
+        run_one.usage = usage
+        return run_one
+
+    await _build(tmp_path, build_encoder)
+    usage_file = tmp_path / "slayer_models_otf" / DB / "_setup_usage.json"
+    assert usage_file.exists(), "reference build must persist _setup_usage.json"
+    data = json.loads(usage_file.read_text())
+    assert data["n_calls"] == 3  # one add_call per KB (the fake cache has 3)
+    assert any(r["scope"] == "setup_encoder" for r in data["breakdown"])
+    # setup-encode cost is isolated from the per-task subtotals
+    assert data["agent_cost_usd"] == 0.0
+    assert data["user_sim_cost_usd"] == 0.0
+
+
 async def test_dependency_encoded_before_dependent(fake_cache, tmp_path):
     """KB 2 depends on KB 1 — the encoder must see 1 finished before 2."""
     record: list[int] = []

@@ -7,8 +7,10 @@ benchmark runner. Other query/eval modes raise ``ValueError``.
 Internals:
 
 * One ``MCPServerStdio`` per task, shared across root → every sub-agent
-  → query-constructor. Slayer MCP startup is up to 300s with
-  ``--ingest-on-startup``; per-agent spawn would dominate wall time.
+  → query-constructor. Slayer MCP startup can take significant time with
+  ``--ingest-on-startup`` (schema re-reflection, esp. under CPU contention —
+  see ``SLAYER_MCP_STARTUP_TIMEOUT_S``); per-agent spawn would dominate wall
+  time.
   pydantic-ai's underlying ClientSession is multiplexed by request_id
   so concurrent tool calls on one shared session are safe.
 * Constructor budget reservation: snapshot total budget, decrement
@@ -68,6 +70,7 @@ from bird_interact_agents.harness import (
     materialize_task_db,
     resolve_task_storage_dir,
     slayer_mcp_stdio_config,
+    SLAYER_MCP_STARTUP_TIMEOUT_S,
 )
 from bird_interact_agents.hard8_preprocessor import extract_deleted_kb_ids
 from bird_interact_agents.slayer_pipeline.filter_normalization import (
@@ -131,7 +134,7 @@ def _build_shared_slayer_server(slayer_storage_dir: str) -> MCPServerStdio:
     return MCPServerStdio(
         command=cfg["command"], args=cfg["args"], env=cfg["env"],
         max_retries=100,
-        timeout=300,
+        timeout=SLAYER_MCP_STARTUP_TIMEOUT_S,
         process_tool_call=_process_tool_call,
     )
 

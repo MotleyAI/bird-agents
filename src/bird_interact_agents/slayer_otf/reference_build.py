@@ -67,6 +67,11 @@ logger = logging.getLogger(__name__)
 
 _MARKER = "_reference_fp.txt"
 _SETUP_RESULTS = "_setup_results.json"
+# Per-DB setup-encode token usage/cost (DEV-1478 instrumentation). Written next
+# to the reference and carried back by the cloud merge, so the one-time
+# reference-build encode cost is recoverable (it is NOT in the per-task
+# usage_json — that only covers the eval agents + task-time on-the-fly encode).
+_SETUP_USAGE = "_setup_usage.json"
 
 # `run_one(kb_id, row, deps_results) -> EncoderResult`
 _RunOne = Callable[..., Awaitable[Any]]
@@ -753,10 +758,13 @@ async def _build_reference_inside_lock(
             storage, db, mini_interact_root, db_root=db_root,
         )
 
-        # 6. Persist setup results + marker (marker LAST).
+        # 6. Persist setup results + setup-encode usage + marker (marker LAST).
         (tmp / _SETUP_RESULTS).write_text(
             json.dumps([r.model_dump() for r in results], indent=2, default=str)
         )
+        setup_usage = getattr(run_one, "usage", None)
+        if setup_usage is not None:
+            (tmp / _SETUP_USAGE).write_text(setup_usage.model_dump_json(indent=2))
         (tmp / _MARKER).write_text(fp)
 
         # 7. Atomic-rename onto the (absent) target.

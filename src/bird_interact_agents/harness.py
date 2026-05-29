@@ -783,6 +783,22 @@ async def resolve_task_storage_dir(
     return str(variant_dir), deleted
 
 
+# Startup-handshake budget (seconds) for the SLayer stdio MCP server. The
+# server runs `--ingest-on-startup`, which RE-REFLECTS the datasource schema
+# and rebuilds the in-memory semantic layer before answering pydantic-ai's
+# `initialize()` handshake. That reflection is pure CPU and scales with schema
+# size — ~30-50s uncontended for a large schema (e.g. alien, 30+ models) — and
+# balloons under multi-actor CPU contention (N actors per worker each
+# reflecting on the same few vCPUs). The prior 300s budget tripped exactly
+# this way (DEV-1478: every alien task + other big-schema DBs timed out at the
+# MCP handshake). Embeddings are NOT the cost: they're prebuilt in the
+# reference's `embeddings.db`, copied into each task variant, and hash-skipped
+# on startup (no re-embed). 1800s gives a deliberately generous margin (≈30-50x
+# uncontended) so contention can't trip it; a stuck handshake is otherwise
+# bounded by the run's max-runtime / no-progress deadline.
+SLAYER_MCP_STARTUP_TIMEOUT_S = 1800
+
+
 def slayer_mcp_stdio_config(storage_dir: str) -> dict:
     """Return a stdio MCP server config for the per-task slayer storage.
 
