@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: transmission
 sql_table: transmission
 query_variables: {}

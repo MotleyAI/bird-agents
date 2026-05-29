@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: polar_base_energy_security_status
 source_queries:
 - version: 3

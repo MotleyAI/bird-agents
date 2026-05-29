@@ -294,8 +294,14 @@ def test_slayer_models_otf_root_anchored_to_main(tmp_path, monkeypatch):
     slayer_models under the main checkout (so it's git-committable and the
     HARD-8 variant builder resolves mini-interact identically)."""
     main, wt = _setup_main_and_worktree(tmp_path, monkeypatch)
-    assert paths.slayer_models_otf_root() == main / "slayer_models_otf"
-    assert paths.slayer_models_otf_root() != wt / "slayer_models_otf"
+    assert (
+        paths.slayer_models_otf_root(benchmark="mini_interact")
+        == main / "slayer_models_otf"
+    )
+    assert (
+        paths.slayer_models_otf_root(benchmark="mini_interact")
+        != wt / "slayer_models_otf"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -311,8 +317,14 @@ def test_slayer_otf_cache_root_anchored_to_main(tmp_path, monkeypatch):
     the main checkout (shared across worktrees), replacing the duplicated
     per-agent _otf_cache_root helpers."""
     main, wt = _setup_main_and_worktree(tmp_path, monkeypatch)
-    assert paths.slayer_otf_cache_root() == main / "slayer_otf_cache"
-    assert paths.slayer_otf_cache_root() != wt / "slayer_otf_cache"
+    assert (
+        paths.slayer_otf_cache_root(benchmark="mini_interact")
+        == main / "slayer_otf_cache"
+    )
+    assert (
+        paths.slayer_otf_cache_root(benchmark="mini_interact")
+        != wt / "slayer_otf_cache"
+    )
 
 
 def test_slayer_models_root_env_override(tmp_path, monkeypatch):
@@ -324,13 +336,13 @@ def test_slayer_models_root_env_override(tmp_path, monkeypatch):
 def test_slayer_otf_cache_root_env_override(tmp_path, monkeypatch):
     override = tmp_path / "data" / "slayer_otf_cache"
     monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(override))
-    assert paths.slayer_otf_cache_root() == override
+    assert paths.slayer_otf_cache_root(benchmark="mini_interact") == override
 
 
 def test_slayer_models_otf_root_env_override(tmp_path, monkeypatch):
     override = tmp_path / "data" / "slayer_models_otf"
     monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(override))
-    assert paths.slayer_models_otf_root() == override
+    assert paths.slayer_models_otf_root(benchmark="mini_interact") == override
 
 
 def test_agents_no_longer_define_their_own_otf_cache_root():
@@ -364,8 +376,14 @@ def test_slayer_root_env_overrides_win_when_default_would_fail(
     monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", "/data/slayer_otf_cache")
     monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", "/data/slayer_models_otf")
     assert paths.slayer_models_root() == Path("/data/slayer_models")
-    assert paths.slayer_otf_cache_root() == Path("/data/slayer_otf_cache")
-    assert paths.slayer_models_otf_root() == Path("/data/slayer_models_otf")
+    assert (
+        paths.slayer_otf_cache_root(benchmark="mini_interact")
+        == Path("/data/slayer_otf_cache")
+    )
+    assert (
+        paths.slayer_models_otf_root(benchmark="mini_interact")
+        == Path("/data/slayer_models_otf")
+    )
 
 
 def test_results_root_default_anchored_to_main(tmp_path, monkeypatch):
@@ -472,29 +490,39 @@ def test_livesqlbench_data_file_default(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# DEV-1462: per-benchmark scoping of the two OTF root helpers
-# (`slayer_otf_cache_root` and `slayer_models_otf_root`). Adding the
-# `benchmark: str | None = None` kwarg must:
-#   * keep the legacy mini-interact path when omitted (back-compat, no
-#     caller breakage, no test breakage),
-#   * return a PARALLEL root for `benchmark="livesqlbench"`, and
-#   * honour PARALLEL env-var overrides
-#     (`BIRD_OTF_CACHE_ROOT_LIVESQLBENCH` etc.) independent of the
-#     mini-interact `BIRD_OTF_CACHE_ROOT`.
+# Per-benchmark scoping of the two OTF root helpers
+# (`slayer_otf_cache_root` and `slayer_models_otf_root`). `benchmark` is now
+# REQUIRED and explicit (no `None` default) — a forgotten benchmark must NOT
+# silently fall back to the mini-interact roots and mix artifacts. The
+# `benchmark` values are:
+#   * `"mini_interact"` → the LEGACY dirs (`slayer_otf_cache/`,
+#     `slayer_models_otf/`) + LEGACY env vars (`BIRD_OTF_CACHE_ROOT`,
+#     `BIRD_SLAYER_MODELS_OTF_ROOT`) — on-disk layout & cloud contract unchanged,
+#   * `"livesqlbench"` → PARALLEL `_livesqlbench` roots + `_LIVESQLBENCH` env vars,
+#   * `None` / unknown → ValueError.
 # ---------------------------------------------------------------------------
 
 
-def test_slayer_otf_cache_root_default_kwarg_none_is_legacy(
+def test_slayer_otf_cache_root_mini_interact_is_legacy_root(
     tmp_path, monkeypatch,
 ):
-    """`benchmark=None` (or the kwarg omitted entirely) MUST return the
-    legacy mini-interact root so the dev-1470 cloud upload/merge contract
-    is unchanged."""
+    """`benchmark="mini_interact"` returns the legacy mini-interact root so the
+    dev-1470 cloud upload/merge contract is unchanged."""
     main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
-    assert paths.slayer_otf_cache_root() == main / "slayer_otf_cache"
     assert (
-        paths.slayer_otf_cache_root(benchmark=None) == main / "slayer_otf_cache"
+        paths.slayer_otf_cache_root(benchmark="mini_interact")
+        == main / "slayer_otf_cache"
     )
+
+
+def test_slayer_otf_cache_root_none_benchmark_raises(tmp_path, monkeypatch):
+    """`benchmark=None` (or omitted) MUST raise — no silent fallback to the
+    mini-interact root, which would let a forgotten benchmark mix artifacts."""
+    _setup_main_and_worktree(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        paths.slayer_otf_cache_root(benchmark=None)
+    with pytest.raises(TypeError):
+        paths.slayer_otf_cache_root()  # benchmark is required (no default)
 
 
 def test_slayer_otf_cache_root_livesqlbench_is_parallel_root(
@@ -510,7 +538,7 @@ def test_slayer_otf_cache_root_livesqlbench_is_parallel_root(
     # names (alien, cross_db, …).
     assert (
         paths.slayer_otf_cache_root(benchmark="livesqlbench")
-        != paths.slayer_otf_cache_root()
+        != paths.slayer_otf_cache_root(benchmark="mini_interact")
     )
 
 
@@ -530,7 +558,10 @@ def test_slayer_otf_cache_root_legacy_env_does_not_steer_livesqlbench(
         "BIRD_OTF_CACHE_ROOT", str(tmp_path / "elsewhere" / "mini_only"),
     )
     # Mini-interact follows the override…
-    assert paths.slayer_otf_cache_root() == tmp_path / "elsewhere" / "mini_only"
+    assert (
+        paths.slayer_otf_cache_root(benchmark="mini_interact")
+        == tmp_path / "elsewhere" / "mini_only"
+    )
     # …but the livesqlbench root is unaffected.
     assert (
         paths.slayer_otf_cache_root(benchmark="livesqlbench")
@@ -554,14 +585,22 @@ def test_slayer_otf_cache_root_livesqlbench_env_override_wins_when_default_would
     )
 
 
-def test_slayer_models_otf_root_default_kwarg_none_is_legacy(
+def test_slayer_models_otf_root_mini_interact_is_legacy_root(
     tmp_path, monkeypatch,
 ):
     main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
-    assert paths.slayer_models_otf_root() == main / "slayer_models_otf"
     assert (
-        paths.slayer_models_otf_root(benchmark=None) == main / "slayer_models_otf"
+        paths.slayer_models_otf_root(benchmark="mini_interact")
+        == main / "slayer_models_otf"
     )
+
+
+def test_slayer_models_otf_root_none_benchmark_raises(tmp_path, monkeypatch):
+    _setup_main_and_worktree(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        paths.slayer_models_otf_root(benchmark=None)
+    with pytest.raises(TypeError):
+        paths.slayer_models_otf_root()  # benchmark is required (no default)
 
 
 def test_slayer_models_otf_root_livesqlbench_is_parallel_root(
@@ -574,7 +613,7 @@ def test_slayer_models_otf_root_livesqlbench_is_parallel_root(
     )
     assert (
         paths.slayer_models_otf_root(benchmark="livesqlbench")
-        != paths.slayer_models_otf_root()
+        != paths.slayer_models_otf_root(benchmark="mini_interact")
     )
 
 
@@ -595,7 +634,7 @@ def test_slayer_models_otf_root_legacy_env_does_not_steer_livesqlbench(
         str(tmp_path / "elsewhere" / "mini_only_models_otf"),
     )
     assert (
-        paths.slayer_models_otf_root()
+        paths.slayer_models_otf_root(benchmark="mini_interact")
         == tmp_path / "elsewhere" / "mini_only_models_otf"
     )
     assert (

@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: infrastructure
 sql_table: infrastructure
 query_variables: {}
@@ -111,11 +111,11 @@ columns:
     \ expand same-model derived-column refs in Column.sql, so a name-based composite\
     \ emits literal column references that don't exist in the physical table (tracked\
     \ as motley-ai DEV-1410; fixed in SLayer 0.6.9, inlining now optional). If any\
-    \ component is NULL (missing base value) the sum\
-    \ is NULL, propagating the unknown through the average rather than imputing a\
-    \ value.\n\n[kb=13]\nCalculated as the average of the individual scores for Water\
-    \ Access, Road Surface, and Parking Availability. \u2014 Calculates a composite\
-    \ score for infrastructure quality.\n[/kb=13]"
+    \ component is NULL (missing base value) the sum is NULL, propagating the unknown\
+    \ through the average rather than imputing a value.\n\n[kb=13]\nCalculated as\
+    \ the average of the individual scores for Water Access, Road Surface, and Parking\
+    \ Availability. \u2014 Calculates a composite score for infrastructure quality.\n\
+    [/kb=13]"
   label: Infrastructure Quality Score
   hidden: false
   meta:

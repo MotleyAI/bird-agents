@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: powerbattery
 sql_table: powerbattery
 query_variables: {}

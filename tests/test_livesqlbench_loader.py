@@ -334,3 +334,23 @@ def test_loader_filter_ids_assert_180_skipped_when_filter_present(tmp_path):
         str(data), str(gold), limit=None, filter_ids=["alien_1"],
     )
     assert len(rows) == 1
+
+
+def test_load_benchmark_tasks_nongold_applies_limit_after_filter(tmp_path):
+    """Non-gold dispatch (mini_interact): `limit` must apply AFTER `filter_ids`.
+
+    Limiting first can truncate a requested instance_id away before filtering —
+    e.g. filtering to the 3rd row with limit=2 would load only [a, b], then
+    filter to [] (the requested `c` dropped). Limit-after-filter yields [c]
+    (CodeRabbit, mirrors the LiveSQLBench path)."""
+    from bird_interact_agents.harness import load_benchmark_tasks
+
+    p = tmp_path / "mini.jsonl"
+    p.write_text("".join(
+        json.dumps({"instance_id": i, "selected_database": "db"}) + "\n"
+        for i in ("a", "b", "c")
+    ))
+    rows = load_benchmark_tasks(
+        "mini_interact", str(p), None, limit=2, filter_ids=["c"],
+    )
+    assert [r["instance_id"] for r in rows] == ["c"]

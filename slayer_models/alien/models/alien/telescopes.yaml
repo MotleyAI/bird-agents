@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: telescopes
 sql_table: telescopes
 query_variables: {}

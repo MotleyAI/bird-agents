@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: polar_vehicle_safe_operation_conditions
 source_queries:
 - version: 3

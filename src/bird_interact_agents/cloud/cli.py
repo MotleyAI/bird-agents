@@ -6,10 +6,11 @@ import argparse
 import sys
 from typing import Sequence
 
+from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.cloud import driver
 
 
-_VALID_MODES = ("a-interact", "c-interact", "oracle")
+_VALID_MODES = ("a-interact", "c-interact", "oracle", "one-shot")
 
 
 def _instance_ids(value: str) -> list[str]:
@@ -31,6 +32,23 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     grp.add_argument("--instance-ids", type=_instance_ids)
     grp.add_argument("--instance-ids-file", type=str)
     sp_submit.add_argument("--mode", required=True, choices=_VALID_MODES)
+    sp_submit.add_argument(
+        "--dataset", choices=cli_dataset_tokens(), default="mini_interact",
+        help=(
+            "Which benchmark to run (registry token; `mini-interact` accepted "
+            "as an alias). `livesqlbench` REQUIRES --gold-file and --mode "
+            "{one-shot, oracle}."
+        ),
+    )
+    sp_submit.add_argument(
+        "--gold-file", default=None,
+        help=(
+            "Path to the gated gold sidecar for benchmarks whose data JSONL "
+            "ships gold empty (e.g. livesqlbench). MUST live under the "
+            "benchmark data root so it rides along in the GCS dataset upload; "
+            "merged by instance_id at task load in-cluster."
+        ),
+    )
     sp_submit.add_argument("--patience", type=int, default=500)
     sp_submit.add_argument("--strict", action="store_true")
     sp_submit.add_argument(
@@ -89,12 +107,30 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         # before building/pushing the image or bringing up a cluster — rather
         # than per-task mid-run. (run._validate_slayer_setup raises ValueError;
         # translate to the standard argparse exit-2 + stderr.)
-        from bird_interact_agents.run import _validate_slayer_setup
+        # Normalize the benchmark token to canonical (e.g. mini-interact alias
+        # → mini_interact) before any benchmark-keyed logic.
+        ns.dataset = get_benchmark(ns.dataset).name
+        from bird_interact_agents.run import (
+            _validate_dataset_mode,
+            _validate_one_shot_framework,
+            _validate_slayer_setup,
+        )
         try:
+            # Same dataset⟺mode⟺framework gates the local CLI uses — one source
+            # of truth, so an unsupported cloud combo fails fast at submit.
+            _validate_dataset_mode(dataset=ns.dataset, mode=ns.mode)
+            _validate_one_shot_framework(
+                mode=ns.mode, query_mode=ns.query_mode, framework=ns.framework,
+            )
             _validate_slayer_setup(
                 slayer_setup=ns.slayer_setup, framework=ns.framework,
                 query_mode=ns.query_mode, mode=ns.mode,
             )
+            if get_benchmark(ns.dataset).gold_required and not ns.gold_file:
+                raise ValueError(
+                    f"--dataset {ns.dataset} requires --gold-file (the gated "
+                    "gold sidecar).",
+                )
         except ValueError as e:
             p.error(str(e))
         if ns.instance_ids_file and not ns.instance_ids:
@@ -117,7 +153,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         # foot-gun: the cluster comes up, encodes (10+ min), and only THEN
         # surfaces the missing-audit via a warning in the actor log. Fail
         # before bringing up the cluster instead.
-        if ns.use_audited_gold_sql and ns.require_audited_gold:
+        # The audited-gold overlay is a mini-interact concept (its data JSONL
+        # carries gold inline + a separate audited_gold/ sidecar). Benchmarks
+        # with their own gated gold sidecar (gold_required, e.g. livesqlbench)
+        # have no audited_gold — skip the check rather than report every id
+        # missing.
+        if (
+            ns.use_audited_gold_sql
+            and ns.require_audited_gold
+            and not get_benchmark(ns.dataset).gold_required
+        ):
             from bird_interact_agents.cloud._audited_gold_check import (
                 missing_audited_gold_ids,
             )
@@ -189,7 +234,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         repo_root = driver.submitter_repo_root()
         tag = image.image_tag(
             repo_root,
-            paths.mini_interact_root(),
             paths.audited_gold_root(),
             allow_dirty=False,
         )

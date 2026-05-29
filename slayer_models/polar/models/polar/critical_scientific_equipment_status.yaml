@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: critical_scientific_equipment_status
 source_queries:
 - version: 3

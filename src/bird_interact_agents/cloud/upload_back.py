@@ -38,6 +38,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import gcs as _gcs
 
 logger = logging.getLogger(__name__)
@@ -216,7 +217,8 @@ def upload_otf_reference_delta(
     try:
         from bird_interact_agents import paths  # local import: tests stub `paths`
 
-        ref_root = paths.slayer_models_otf_root()
+        benchmark = get_benchmark(cfg.get("dataset") or "mini_interact").name
+        ref_root = paths.slayer_models_otf_root(benchmark=benchmark)
         if not ref_root.is_dir():
             return
         for db_dir in sorted(p for p in ref_root.iterdir() if p.is_dir()):

@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: signal_aidp
 source_queries:
 - version: 3

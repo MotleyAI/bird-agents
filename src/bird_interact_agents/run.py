@@ -12,13 +12,14 @@ import sqlite3 as _sqlite3
 from typing import Any as _Any
 
 from bird_interact_agents import paths
+from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.harness import (
     apply_audited_gold_overlay,
     calculate_budget,
     execute_submit_action,
     finalize_result_row,
+    load_benchmark_tasks,
     load_db_data_if_needed,
-    load_tasks,
     materialize_task_db,
     SampleStatus,
 )
@@ -126,26 +127,20 @@ def _validate_slayer_setup(
 
 
 def _validate_dataset_mode(dataset: str, mode: str) -> None:
-    """DEV-1462: gate ``--mode`` against ``--dataset`` and vice versa.
+    """Gate ``--mode`` against the benchmark's declared ``supported_modes``
+    (registry-driven, so adding a benchmark needs no edit here).
 
-    * ``--mode one-shot`` ⟹ ``--dataset livesqlbench`` — one-shot exists
-      to run the unambiguous LiveSQLBench SELECT set; running it against
-      mini-interact would treat ambiguous tasks as one-shot, which is
-      out of scope.
-    * ``--dataset livesqlbench`` ⟹ ``--mode in {one-shot, oracle}`` —
-      the dataset has no ambiguity to clarify; ``a-interact``/
-      ``c-interact`` would silently spin the user-simulator on unambiguous
-      queries (wasted tokens + meaningless metric).
+    This single membership check enforces both directions of the old
+    hand-written gate: e.g. ``one-shot`` is rejected for mini-interact (not in
+    its modes) and ``a-interact`` is rejected for livesqlbench — because each
+    benchmark's ``supported_modes`` encodes exactly what it accepts.
     """
-    if mode == "one-shot" and dataset != "livesqlbench":
+    b = get_benchmark(dataset)
+    if mode not in b.supported_modes:
         raise ValueError(
-            "--mode one-shot is only supported with --dataset livesqlbench; "
-            f"got --dataset {dataset!r}",
-        )
-    if dataset == "livesqlbench" and mode not in ("one-shot", "oracle"):
-        raise ValueError(
-            "--dataset livesqlbench is only supported with --mode one-shot "
-            f"or --mode oracle; got --mode {mode!r}",
+            f"--mode {mode!r} is not supported by --dataset {dataset!r} "
+            f"(benchmark {b.name!r}); supported modes: "
+            f"{', '.join(b.supported_modes)}.",
         )
 
 
@@ -172,7 +167,7 @@ def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) 
 
 def _maybe_force_wipe_otf(
     *, otf_rebuild: bool, framework: str, dbs,
-    benchmark: str | None = None,
+    benchmark: str,
 ) -> None:
     """``--otf-rebuild`` force-wipe: drop BOTH on-the-fly layers (the phase-1-3
     cache AND the KB-encoded reference) for ``dbs``, for either on-the-fly
@@ -182,9 +177,10 @@ def _maybe_force_wipe_otf(
     would let a stale cache be re-encoded into a "fresh" reference (Codex r2
     High#3).
 
-    DEV-1462: ``benchmark`` selects the per-benchmark scoped roots so a
-    LiveSQLBench ``--otf-rebuild`` never wipes the mini-interact cache (and
-    vice versa). ``benchmark=None`` keeps the legacy mini-interact roots.
+    DEV-1462: ``benchmark`` (REQUIRED, explicit) selects the per-benchmark
+    scoped roots so a LiveSQLBench ``--otf-rebuild`` never wipes the
+    mini-interact cache (and vice versa). ``"mini_interact"`` maps to the
+    legacy roots.
     """
     if not otf_rebuild:
         return
@@ -600,12 +596,14 @@ async def run_one_task(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
     )
-    if mode == "one-shot" and task_data.get("dataset") != "livesqlbench":
+    if mode == "one-shot" and not get_benchmark(
+        task_data.get("dataset") or "mini_interact"
+    ).one_shot:
         raise ValueError(
-            "--mode one-shot requires a task carrying "
-            "dataset='livesqlbench' (the loader stamps it); got "
+            "--mode one-shot requires a task whose benchmark declares "
+            "one_shot=True (its loader stamps task_data['dataset']); got "
             f"dataset={task_data.get('dataset')!r}. This guard catches "
-            "programmatic callers that bypass load_livesqlbench_tasks.",
+            "programmatic callers that bypass the one-shot loader.",
         )
     runner = _make_runner(
         framework=framework,
@@ -708,9 +706,10 @@ async def run_evaluation(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
     )
-    if dataset == "livesqlbench" and not gold_file:
+    b = get_benchmark(dataset)
+    if b.gold_required and not gold_file:
         raise ValueError(
-            "--dataset livesqlbench requires --gold-file (the gated sidecar "
+            f"--dataset {b.name} requires --gold-file (the gated sidecar "
             "carrying sol_sql / external_knowledge / test_cases keyed by "
             "instance_id)",
         )
@@ -725,20 +724,12 @@ async def run_evaluation(
             "If you meant to run the full set, pass filter_ids=None.",
         )
 
-    if dataset == "livesqlbench":
-        # The LiveSQLBench loader merges the gated gold sidecar, stamps
-        # the dataset marker, filters to SELECT, and is filter_ids-aware
-        # (Codex #6). Apply limit inside the loader so it lands AFTER the
-        # SELECT + filter narrowing.
-        from bird_interact_agents.harness import load_livesqlbench_tasks
-        tasks = load_livesqlbench_tasks(
-            data_path, gold_file, limit=limit, filter_ids=filter_ids,
-        )
-    else:
-        tasks = load_tasks(data_path, limit)
-        if filter_ids is not None:
-            wanted = set(filter_ids)
-            tasks = [t for t in tasks if t.get("instance_id") in wanted]
+    # Benchmark-aware loader dispatch (single source of truth in harness):
+    # a gold-required benchmark merges its gated sidecar + stamps the marker +
+    # SELECT-filters; otherwise plain load + optional instance-id filter.
+    tasks = load_benchmark_tasks(
+        dataset, data_path, gold_file, limit=limit, filter_ids=filter_ids,
+    )
 
     # --otf-rebuild: force-wipe BOTH on-the-fly layers (cache + reference) for
     # the DBs in this run ONCE, before the (possibly concurrent) task loop, so
@@ -746,7 +737,7 @@ async def run_evaluation(
     # copy. Default off reuses whatever is present. On-the-fly frameworks only.
     # DEV-1462: pass the per-benchmark scope so a livesqlbench rebuild never
     # wipes the mini-interact roots (and vice versa).
-    benchmark_for_paths = "livesqlbench" if dataset == "livesqlbench" else None
+    benchmark_for_paths = b.name
     _maybe_force_wipe_otf(
         otf_rebuild=otf_rebuild,
         framework=framework,
@@ -754,8 +745,14 @@ async def run_evaluation(
         benchmark=benchmark_for_paths,
     )
 
+    # The audited-gold overlay is a mini-interact concept: gold inline in the
+    # data JSONL + a separate audited_gold/<db> sidecar. A gold_required
+    # benchmark (livesqlbench) carries its gold in the gated sidecar instead
+    # and has no audited_gold/, so skip the overlay there — mirrors the cloud
+    # `_load_task_data` gate and avoids overlaying an unrelated audited_gold/<db>
+    # row onto the gated gold on an instance_id clash (Codex).
     audited_overlay_log: dict[str, str] = {}
-    if use_audited_gold_sql:
+    if use_audited_gold_sql and not b.gold_required:
         audited_overlay_log = apply_audited_gold_overlay(
             tasks, paths.audited_gold_root(),
         )
@@ -1009,13 +1006,14 @@ def main() -> None:
     )
     parser.add_argument(
         "--dataset",
-        choices=["mini-interact", "livesqlbench"],
-        default="mini-interact",
+        choices=cli_dataset_tokens(),
+        default="mini_interact",
         help=(
-            "Which benchmark dataset to load (DEV-1462). "
-            "``mini-interact`` (default) keeps the existing behaviour. "
-            "``livesqlbench`` loads LiveSQLBench-Base-Lite-SQLite and "
-            "REQUIRES --gold-file; gated to --mode {one-shot, oracle}."
+            "Which benchmark to load (from the benchmark registry). "
+            "``mini_interact`` (default; ``mini-interact`` accepted as an "
+            "alias) keeps the existing behaviour. ``livesqlbench`` loads "
+            "LiveSQLBench-Base-Lite-SQLite and REQUIRES --gold-file; gated to "
+            "--mode {one-shot, oracle}."
         ),
     )
     parser.add_argument(
@@ -1186,8 +1184,20 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Resolve --db-path to an absolute path ONCE at the CLI boundary. Every
+    # downstream consumer (orchestrator ingest, on-the-fly cache/reference,
+    # per-task DB materialisation) then receives an absolute root, so a
+    # relative `--db-path ../livesqlbench-base-lite-sqlite/` (the README form)
+    # cannot produce a broken `sqlite:////../…` connection string.
+    args.db_path = str(Path(args.db_path).resolve())
+
     if args.instance_id is not None and (args.filter_ids or args.limit is not None):
         parser.error("--instance-id cannot be combined with --filter-ids or --limit")
+
+    # Normalize the benchmark token to its canonical underscore form once, so
+    # every downstream consumer (gates, loader dispatch, path roots) sees the
+    # canonical name regardless of which alias the user typed.
+    args.dataset = get_benchmark(args.dataset).name
 
     # Fail-fast: --slayer-setup on-the-fly is only valid for the
     # pydantic_ai_recursive + slayer + a-interact|one-shot tuple. Validate
@@ -1212,9 +1222,10 @@ def main() -> None:
             query_mode=args.query_mode,
             mode=args.mode,
         )
-        if args.dataset == "livesqlbench" and not args.gold_file:
+        _b = get_benchmark(args.dataset)
+        if _b.gold_required and not args.gold_file:
             raise ValueError(
-                "--dataset livesqlbench requires --gold-file (the gated "
+                f"--dataset {_b.name} requires --gold-file (the gated "
                 "sidecar carrying sol_sql / external_knowledge / test_cases "
                 "keyed by instance_id).",
             )

@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: signal_is_quantum_coherent
 source_queries:
 - version: 3
