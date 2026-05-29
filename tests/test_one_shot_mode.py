@@ -102,7 +102,9 @@ def test_dataset_flag_default_is_mini_interact(monkeypatch, tmp_path):
         "--mode", "a-interact",
     ]
     kwargs = _drive_main(monkeypatch, argv)
-    assert kwargs.get("dataset") == "mini-interact"
+    # Canonical underscore token; `mini-interact` (hyphen) is accepted as a CLI
+    # alias and normalized to this before reaching run_evaluation.
+    assert kwargs.get("dataset") == "mini_interact"
 
 
 def test_dataset_flag_livesqlbench_is_plumbed(monkeypatch, tmp_path):
@@ -407,7 +409,8 @@ async def test_run_evaluation_rejects_one_shot_with_mini_interact(tmp_path):
             limit=0,
         )
     msg = str(exc_info.value)
-    assert "one-shot" in msg and "livesqlbench" in msg
+    # Registry-driven gate: one-shot is not in mini-interact's supported_modes.
+    assert "one-shot" in msg and "not supported" in msg
 
 
 def test_make_runner_rejects_one_shot_with_wrong_framework():

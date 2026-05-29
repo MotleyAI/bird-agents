@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: signaldynamics
 sql_table: signaldynamics
 query_variables: {}

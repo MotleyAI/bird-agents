@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: observationalconditions
 sql_table: observationalconditions
 query_variables: {}

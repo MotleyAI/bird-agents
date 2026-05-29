@@ -35,6 +35,7 @@ from typing import Any
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.usage import UsageLimits
 
+from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.agents._run_capture import (
     _count_turns,
     _extract_tool_stats,
@@ -160,7 +161,7 @@ async def _resolve_otf_task_storage_dir(
     db_name: str,
     task_data: dict,
     data_path_base: str,
-    benchmark: str | None = None,
+    benchmark: str,
 ) -> tuple[str, list[int]]:
     """On-the-fly equivalent of ``resolve_task_storage_dir``.
 
@@ -176,7 +177,7 @@ async def _resolve_otf_task_storage_dir(
     so a LiveSQLBench task's cache lands at
     ``slayer_otf_cache_livesqlbench/<db>/`` instead of colliding with
     a same-named mini-interact DB at ``slayer_otf_cache/<db>/``.
-    ``benchmark=None`` keeps the legacy mini-interact root.
+    ``benchmark`` is REQUIRED; ``"mini_interact"`` keeps the legacy root.
     """
     deleted = sorted(extract_deleted_kb_ids(task_data))
     instance_id = task_data["instance_id"]
@@ -315,10 +316,12 @@ class PydanticAIRecursiveAgent:
         # the loader-stamped ``dataset='livesqlbench'`` marker. A caller
         # that bypasses ``load_livesqlbench_tasks`` (cloud actor, custom
         # driver) MUST NOT silently get a one-shot run on un-marked data.
-        if is_one_shot and task_data.get("dataset") != "livesqlbench":
+        if is_one_shot and not get_benchmark(
+            task_data.get("dataset") or "mini_interact"
+        ).one_shot:
             raise ValueError(
-                "--mode one-shot requires a task carrying "
-                "dataset='livesqlbench' (the loader stamps it); got "
+                "--mode one-shot requires a task whose benchmark declares "
+                "one_shot=True (its loader stamps task_data['dataset']); got "
                 f"dataset={task_data.get('dataset')!r}",
             )
         # DEV-1462 — CodeRabbit close: ``_validate_slayer_setup`` rejects
@@ -336,9 +339,9 @@ class PydanticAIRecursiveAgent:
 
         db_name = task_data["selected_database"]
         instance_id = task_data["instance_id"]
-        benchmark: str | None = (
-            "livesqlbench" if task_data.get("dataset") == "livesqlbench" else None
-        )
+        benchmark: str = get_benchmark(
+            task_data.get("dataset") or "mini_interact"
+        ).name
 
         load_db_data_if_needed(db_name, data_path_base)
         # DEV-1462 B0: LiveSQLBench tasks get a per-task isolated

@@ -33,6 +33,19 @@ _SQLITE_PREFIX_ABSOLUTE = "sqlite:////"
 _SQLITE_PREFIX_RELATIVE = "sqlite:///"
 
 
+def absolute_sqlite_url(path: Path | str) -> str:
+    """Canonical absolute SQLite URL for ``path``, env-independent.
+
+    Resolves ``path`` to an absolute filesystem path and emits the 4-slash
+    SQLAlchemy absolute form (``sqlite:////abs/path``). This is the single
+    chokepoint for building a SQLite URL from a path so a RELATIVE input (e.g.
+    a relative ``--db-path``) can never produce a broken ``sqlite:////../…``
+    URL that SQLAlchemy resolves at the filesystem root.
+    """
+    abs_path = Path(path).resolve()
+    return f"{_SQLITE_PREFIX_ABSOLUTE}{abs_path.as_posix().lstrip('/')}"
+
+
 def to_portable_connection_string(
     connection_string: str, mini_interact_root: Path
 ) -> str:
@@ -129,8 +142,7 @@ def expected_connection_string(
     else:
         env_root = os.environ.get("BIRD_DB_PATH")
         base = Path(env_root).expanduser() if env_root else mini_interact_root
-    abs_sqlite = (base / db / f"{db}.sqlite").resolve()
-    return f"{_SQLITE_PREFIX_ABSOLUTE}{abs_sqlite.as_posix().lstrip('/')}"
+    return absolute_sqlite_url(base / db / f"{db}.sqlite")
 
 
 def reanchor_connection_string(

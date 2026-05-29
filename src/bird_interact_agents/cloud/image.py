@@ -85,36 +85,34 @@ def _split_dockerfile_sections(repo_root: Path) -> dict[str, str]:
 
 def data_hash(
     repo_root: Path,
-    mini_interact_root: Path,
     audited_gold_root: Path,
 ) -> str:
     """Content-based hash over the inputs that compose the DATA layers
-    of `Dockerfile.cloud`: the mini-interact dataset, `audited_gold/`, and
-    the Dockerfile's DATA section.
+    of `Dockerfile.cloud`: ``audited_gold/`` and the Dockerfile's DATA
+    section.
 
-    Worktree-safe: BOTH ``mini_interact_root`` AND ``audited_gold_root`` are
-    passed in by the caller (driver resolves them via ``paths.*_root()``,
-    which anchor at the main checkout via git's common dir). The Dockerfile
-    pulls each in via BuildKit's ``--build-context`` so the build is runnable
-    from any git worktree, where these dirs don't physically live. The hash
-    key always uses the on-image path (``audited_gold/<rel>``) so the digest
-    is stable regardless of where the inputs live on the host.
+    Worktree-safe: ``audited_gold_root`` is passed in by the caller (driver
+    resolves it via ``paths.audited_gold_root()``, which anchors at the main
+    checkout via git's common dir). The Dockerfile pulls it in via BuildKit's
+    ``--build-context`` so the build is runnable from any git worktree, where
+    the dir doesn't physically live. The hash key always uses the on-image
+    path (``audited_gold/<rel>``) so the digest is stable regardless of where
+    the inputs live on the host.
 
     DEV-1468: ``slayer_models/`` is no longer baked (uploaded to GCS at
     submit), and the image no longer runs ``slayer ingest``, so neither the
     slayer-model files nor the slayer-ingest CLI version are data-layer
-    inputs anymore."""
-    h = hashlib.sha256()
+    inputs anymore.
 
-    # mini-interact dataset (sibling of the main checkout, filesystem walk —
-    # not git-tracked from here).
-    for f in _iter_files_under(mini_interact_root):
-        rel = f.relative_to(mini_interact_root)
-        h.update(b"mi/")
-        h.update(str(rel).encode())
-        h.update(b"\x00")
-        h.update(f.read_bytes())
-        h.update(b"\x00")
+    De-bake (this chunk): the benchmark dataset (mini-interact /
+    livesqlbench) is ALSO no longer baked — it is delivered via GCS at submit
+    (``cloud/benchmark_data.ensure_uploaded`` → content-hashed prefix → the
+    actor downloads it per node), so the dataset tree is no longer a
+    data-layer input and ``data_hash`` no longer depends on it. The gated
+    gold sidecar rides along inside that GCS dataset upload (it lives in the
+    data root), so it is not baked either. ``audited_gold/`` (author-produced
+    corrections, code-like) stays baked + hashed."""
+    h = hashlib.sha256()
 
     # audited_gold (main-checkout-anchored, gitignored). Keyed under
     # ``audited_gold/<rel>`` to match the on-image path — hash is stable
@@ -182,7 +180,6 @@ def code_hash(repo_root: Path, allow_dirty: bool) -> str:
 
 def image_tag(
     repo_root: Path,
-    mini_interact_root: Path,
     audited_gold_root: Path,
     *,
     allow_dirty: bool,
@@ -192,7 +189,7 @@ def image_tag(
 
     See :func:`data_hash` for why ``audited_gold_root`` is a separate input
     (worktree-safety)."""
-    dh = data_hash(repo_root, mini_interact_root, audited_gold_root)
+    dh = data_hash(repo_root, audited_gold_root)
     ch = code_hash(repo_root, allow_dirty=allow_dirty)
     tag = f"{dh[:12]}-{ch[:12]}"
     if allow_dirty and _dirty_image_input_paths(repo_root):
@@ -268,7 +265,6 @@ def build_and_push(
     repo_root: Path,
     *,
     image_uri_prefix: str | None = None,
-    mini_interact_root: Path | None = None,
     audited_gold_root: Path | None = None,
     force: bool = False,
 ) -> str:
@@ -277,17 +273,17 @@ def build_and_push(
     `image_uri_prefix` defaults to `config.image_uri_prefix()` so any
     `BIRD_INTERACT_CLOUD_*` env-var overrides take effect.
 
-    `mini_interact_root` defaults to `paths.mini_interact_root()` — the
-    sibling dataset dir, which lives OUTSIDE the repo and is wired in via
-    BuildKit's ``--build-context mini-interact=<path>`` so the Dockerfile's
-    ``COPY --from=mini-interact`` can pull it in.
-
     `audited_gold_root` defaults to `paths.audited_gold_root()` — the
     gitignored audited-gold dir that lives in the MAIN checkout, NOT in
-    worktrees. Same BuildKit pattern as ``mini-interact``: wired in via
+    worktrees. It is wired in via BuildKit's
     ``--build-context audited-gold=<path>`` so the Dockerfile's
     ``COPY --from=audited-gold`` works from any worktree without the user
     having to mirror the dir.
+
+    De-bake (this chunk): the benchmark dataset is no longer a build context
+    (no ``--build-context mini-interact``) — it is delivered to the cluster
+    via GCS at submit. ``audited_gold`` is the only remaining baked DATA
+    layer.
 
     Skip-if-exists: if `docker manifest inspect <uri>:<tag>` succeeds and
     `force=False`, we don't rebuild.
@@ -297,8 +293,6 @@ def build_and_push(
 
     if image_uri_prefix is None:
         image_uri_prefix = config.image_uri_prefix()
-    if mini_interact_root is None:
-        mini_interact_root = paths.mini_interact_root()
     if audited_gold_root is None:
         audited_gold_root = paths.audited_gold_root()
     uri = f"{image_uri_prefix}:{tag}"
@@ -313,7 +307,6 @@ def build_and_push(
     subprocess.run(
         [
             "docker", "build",
-            "--build-context", f"mini-interact={mini_interact_root}",
             "--build-context", f"audited-gold={audited_gold_root}",
             "-t", uri,
             "-f", "Dockerfile.cloud",

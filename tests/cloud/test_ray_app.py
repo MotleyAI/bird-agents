@@ -892,7 +892,7 @@ def test_load_task_data_applies_audited_gold_overlay(
             "sol_sql": "SELECT raw",
         }) + "\n"
     )
-    monkeypatch.setattr(_paths, "mini_interact_data_file", lambda: dataset_file)
+    monkeypatch.setattr(_paths, "benchmark_data_file", lambda *a, **k: dataset_file)
 
     overlay_calls: list[tuple] = []
 
@@ -1962,7 +1962,7 @@ def test_actor_seed_snapshot_ignores_local_only_cloud_built_refs(
     ref_root = tmp_path / "slayer_models_otf"
     (ref_root / "db_b").mkdir(parents=True)
     (ref_root / "db_b" / "_reference_fp.txt").write_text("peer-built-fp-B")
-    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda: ref_root)
+    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda *, benchmark=None: ref_root)
 
     cfg = {
         "framework": "pydantic_ai_otf_encode", "query_mode": "slayer",
@@ -2009,7 +2009,7 @@ def test_actor_initial_seed_fps_empty_when_no_seed(
     monkeypatch.setattr(ray_app, "download_slayer_setup", lambda *a, **k: None)
 
     ref_root = tmp_path / "slayer_models_otf"  # absent
-    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda: ref_root)
+    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda *, benchmark=None: ref_root)
 
     cfg = {
         "framework": "pydantic_ai_otf_encode", "query_mode": "slayer",
@@ -2022,3 +2022,194 @@ def test_actor_initial_seed_fps_empty_when_no_seed(
     actor = ray_app._LocalActor(cfg, RUN_ID, 1, gcs_client=client)
     assert actor.initial_seed_fp_by_db == {}
     assert actor.uploaded_dbs == set()
+
+
+# ---------------------------------------------------------------------------
+# De-bake: download_benchmark_data pulls the run's dataset from its GCS prefix
+# into the benchmark's container_data_dir and points the benchmark's
+# data-root/data-file env vars at it. Runs on the head (before task-load) AND
+# in each actor's __init__ (before ingest).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "dataset, container_dir, root_env, file_env, data_file",
+    [
+        ("mini_interact", "/data/mini-interact", "BIRD_DB_PATH",
+         "BIRD_DATA_PATH", "mini_interact.jsonl"),
+        ("livesqlbench", "/data/livesqlbench", "BIRD_LIVESQLBENCH_ROOT",
+         "BIRD_LIVESQLBENCH_DATA_FILE", "livesqlbench_data_sqlite.jsonl"),
+    ],
+)
+def test_download_benchmark_data_downloads_and_sets_env(
+    monkeypatch: pytest.MonkeyPatch, dataset, container_dir, root_env,
+    file_env, data_file,
+):
+    """The dataset is downloaded into the benchmark's container_data_dir and
+    the benchmark's data-root/data-file env vars point at it, so
+    `paths.benchmark_data_*` + the loaders resolve the downloaded tree."""
+    from pathlib import Path as _P
+
+    calls: list = []
+    monkeypatch.setattr(
+        ray_app._benchmark_data, "ensure_downloaded",
+        lambda prefix, dest, **kw: calls.append((prefix, _P(dest))) or _P(dest),
+    )
+    # Pre-set the env keys so monkeypatch restores them on teardown (the code
+    # under test writes os.environ directly).
+    monkeypatch.setenv(root_env, "SENTINEL")
+    monkeypatch.setenv(file_env, "SENTINEL")
+
+    prefix = f"benchmark-data/{dataset}/abc123/"
+    ray_app.download_benchmark_data(
+        {"dataset": dataset, "benchmark_data_prefix": prefix},
+        client=object(),
+    )
+    assert calls == [(prefix, _P(container_dir))]
+    import os as _os
+    assert _os.environ[root_env] == container_dir
+    assert _os.environ[file_env] == f"{container_dir}/{data_file}"
+
+
+def test_download_benchmark_data_noop_without_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """No benchmark_data_prefix (pre-de-bake run on a dataset-baked image) →
+    no download, no env mutation."""
+    called = []
+    monkeypatch.setattr(
+        ray_app._benchmark_data, "ensure_downloaded",
+        lambda *a, **k: called.append(1),
+    )
+    ray_app.download_benchmark_data({"dataset": "mini_interact"}, client=object())
+    assert called == []
+
+
+def test_run_pool_cfg_carries_dataset_and_prefix(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket,
+):
+    """run_pool threads dataset + benchmark_data_prefix into cfg, and sets
+    cfg['data_dir'] to the benchmark's container_data_dir."""
+    client, _store = fake_gcs_bucket
+    seen_cfgs: list[dict] = []
+
+    class _RecordingActor:
+        def __init__(self, cfg, run_id, attempt):
+            seen_cfgs.append(cfg)
+
+        def run_one(self, task_data):
+            return task_data["instance_id"]
+
+    ray_app.run_pool(
+        run_id=RUN_ID,
+        instance_ids=["alien_1"],
+        framework="pydantic_ai_otf_encode",
+        query_mode="slayer",
+        mode="one-shot",
+        agent_model="anthropic/claude-sonnet-4-5",
+        num_actors=1,
+        attempt=1,
+        task_data_by_id={"alien_1": {"instance_id": "alien_1", "selected_database": "alien"}},
+        dataset="livesqlbench",
+        benchmark_data_prefix="benchmark-data/livesqlbench/abc/",
+        gcs_client=client,
+        local_only=True,
+        actor_cls=_RecordingActor,
+    )
+    assert seen_cfgs, "actor never constructed"
+    cfg = seen_cfgs[0]
+    assert cfg["dataset"] == "livesqlbench"
+    assert cfg["benchmark_data_prefix"] == "benchmark-data/livesqlbench/abc/"
+    assert cfg["data_dir"] == "/data/livesqlbench"
+
+
+def test_local_actor_init_downloads_benchmark_data(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket,
+):
+    """The actor downloads the benchmark dataset in __init__ (before ingest),
+    mirroring the per-worker slayer-artifact download."""
+    client, _store = fake_gcs_bucket
+    monkeypatch.setattr(ray_app, "_maybe_build_cached_runner", lambda _cfg: None)
+    monkeypatch.setattr(ray_app, "download_slayer_setup", lambda *a, **k: None)
+    seen: list[dict] = []
+    monkeypatch.setattr(
+        ray_app, "download_benchmark_data",
+        lambda cfg, *, client=None: seen.append(cfg),
+    )
+    cfg = {
+        "framework": "pydantic_ai", "query_mode": "raw", "mode": "c-interact",
+        "agent_model": "m", "user_sim_model": "u", "patience": 3,
+        "strict": False, "use_audited_gold_sql": False, "prompt_cache": True,
+        "max_depth": 3, "slayer_setup": "pre-encoded",
+        "slayer_storage_root": "/data/slayer_models",
+        "dataset": "mini_interact",
+        "benchmark_data_prefix": "benchmark-data/mini_interact/abc/",
+    }
+    ray_app._LocalActor(cfg, RUN_ID, 1, gcs_client=client)
+    assert seen and seen[0]["benchmark_data_prefix"] == "benchmark-data/mini_interact/abc/"
+
+
+def test_main_downloads_benchmark_data_before_task_load(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """`main()` must download the dataset on the head BEFORE `_load_task_data`
+    (which reads the dataset's tasks file + gold sidecar)."""
+    order: list[str] = []
+    monkeypatch.setattr(
+        ray_app, "download_benchmark_data",
+        lambda cfg, *, client=None: order.append("download"),
+    )
+    monkeypatch.setattr(
+        ray_app, "_load_task_data",
+        lambda *a, **k: (order.append("load"), {})[1],
+    )
+    monkeypatch.setattr(ray_app, "run_pool", lambda **kw: order.append("run_pool"))
+
+    ray_app.main([
+        "--run-id", RUN_ID, "--attempt", "1",
+        "--framework", "pydantic_ai", "--query-mode", "raw",
+        "--mode", "c-interact", "--agent-model", "m", "--user-sim-model", "u",
+        "--dataset", "mini_interact",
+        "--benchmark-data-prefix", "benchmark-data/mini_interact/abc/",
+        "--instance-ids", "db_a_1",
+    ])
+    assert order.index("download") < order.index("load") < order.index("run_pool")
+
+
+def test_main_canonicalizes_dataset_alias(monkeypatch: pytest.MonkeyPatch):
+    """`main()` canonicalizes the --dataset alias (mini-interact →
+    mini_interact) right after parse, so every downstream loader/path lookup
+    sees the canonical name (CodeRabbit)."""
+    seen: dict = {}
+    monkeypatch.setattr(ray_app, "download_benchmark_data", lambda *a, **k: None)
+    monkeypatch.setattr(
+        ray_app, "_load_task_data",
+        lambda iids, *, dataset, **k: (seen.update(load=dataset), {})[1],
+    )
+    monkeypatch.setattr(
+        ray_app, "run_pool", lambda **kw: seen.update(pool=kw["dataset"]),
+    )
+    ray_app.main([
+        "--run-id", RUN_ID, "--attempt", "1",
+        "--framework", "pydantic_ai", "--query-mode", "raw",
+        "--mode", "c-interact", "--agent-model", "m", "--user-sim-model", "u",
+        "--dataset", "mini-interact",  # hyphen alias
+        "--instance-ids", "db_a_1",
+    ])
+    assert seen["load"] == "mini_interact"
+    assert seen["pool"] == "mini_interact"
+
+
+def test_main_rejects_unknown_dataset(monkeypatch: pytest.MonkeyPatch):
+    """argparse `choices=cli_dataset_tokens()` rejects an unknown --dataset
+    at the actor CLI boundary (SystemExit), instead of failing late during
+    path/load resolution (CodeRabbit)."""
+    monkeypatch.setattr(ray_app, "download_benchmark_data", lambda *a, **k: None)
+    with pytest.raises(SystemExit):
+        ray_app.main([
+            "--run-id", RUN_ID, "--attempt", "1",
+            "--framework", "pydantic_ai", "--query-mode", "raw",
+            "--mode", "c-interact", "--agent-model", "m", "--user-sim-model", "u",
+            "--dataset", "not-a-benchmark",
+            "--instance-ids", "db_a_1",
+        ])

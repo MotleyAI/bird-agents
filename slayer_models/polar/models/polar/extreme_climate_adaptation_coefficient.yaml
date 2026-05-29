@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: extreme_climate_adaptation_coefficient
 source_queries:
 - version: 3

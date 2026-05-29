@@ -43,6 +43,8 @@ class FakeSubmitArgs:
     allow_dirty: bool = False
     slayer_setup: str = "pre-encoded"
     slayer_storage_root: str = "/data/slayer_models"
+    dataset: str = "mini_interact"
+    gold_file: str | None = None
 
 
 def _patch_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict[str, MagicMock]:
@@ -53,6 +55,7 @@ def _patch_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict[str, MagicMock
         "image",
         "cluster",
         "gcs",
+        "benchmark_data",
     ):
         m = MagicMock(name=attr)
         mocks[attr] = m
@@ -60,6 +63,12 @@ def _patch_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict[str, MagicMock
     mocks["image"].image_tag.return_value = "deadbeef1234-cafebabe5678"
     mocks["image"].build_and_push.return_value = (
         "us-central1-docker.pkg.dev/motley-team-475011/x/runner:tag"
+    )
+    # De-bake: submit uploads the dataset to a content-hashed GCS prefix and
+    # threads it through the manifest/job-args. Mocked so submit tests don't
+    # hash the real dataset dir or hit GCS.
+    mocks["benchmark_data"].ensure_uploaded.return_value = (
+        "benchmark-data/mini_interact/deadbeefcafe/"
     )
     mocks["cluster"].head_address.return_value = "ray://10.0.0.1:10001"
     mocks["cluster"].submit_job.return_value = "raysubmit_abc123"
@@ -606,11 +615,11 @@ def _setup_slayer_submit(
     otf_cache = tmp_path / "main" / "slayer_otf_cache"
     otf_ref = tmp_path / "main" / "slayer_models_otf"
 
-    monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: data_file)
-    monkeypatch.setattr(driver.paths, "mini_interact_root", lambda: tmp_path / "mini")
+    monkeypatch.setattr(driver.paths, "benchmark_data_file", lambda *a, **k: data_file)
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: tmp_path / "mini")
     monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
-    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda: otf_cache)
-    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: otf_ref)
+    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda *, benchmark=None: otf_cache)
+    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda *, benchmark=None: otf_ref)
     # read_api_keys_from_local_env now fails fast on a missing required key
     # (incl. OPENAI for slayer); set them so a successful submit doesn't raise
     # in an env without these vars.
@@ -720,7 +729,9 @@ def test_check_setup_auto_builds_missing_otf_cache(monkeypatch, tmp_path):
     # Lock the worktree-safe contract: the cache is built under the resolved
     # roots (not a worktree-relative path) with force=False.
     assert all(
-        kw["cache_root"] == driver.paths.slayer_otf_cache_root()
+        kw["cache_root"] == driver.paths.slayer_otf_cache_root(
+            benchmark="mini_interact",
+        )
         for kw in seen_kwargs
     )
     assert all(
@@ -946,11 +957,11 @@ def _setup_otf_encode_submit(monkeypatch, tmp_path, *, dbs, lay_down_cache=True,
     otf_cache = tmp_path / "main" / "slayer_otf_cache"
     otf_ref = tmp_path / "main" / "slayer_models_otf"
 
-    monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: data_file)
-    monkeypatch.setattr(driver.paths, "mini_interact_root", lambda: tmp_path / "mini")
+    monkeypatch.setattr(driver.paths, "benchmark_data_file", lambda *a, **k: data_file)
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: tmp_path / "mini")
     monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
-    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda: otf_cache)
-    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: otf_ref)
+    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda *, benchmark=None: otf_cache)
+    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda *, benchmark=None: otf_ref)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
     monkeypatch.setattr(driver, "wait_until_done", MagicMock())
@@ -1115,11 +1126,11 @@ def test_submit_groups_instance_ids_by_database(monkeypatch, tmp_path):
     worktree = tmp_path / "worktree"
     otf_cache = tmp_path / "main" / "slayer_otf_cache"
     otf_ref = tmp_path / "main" / "slayer_models_otf"
-    monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: dataset)
-    monkeypatch.setattr(driver.paths, "mini_interact_root", lambda: tmp_path / "mini")
+    monkeypatch.setattr(driver.paths, "benchmark_data_file", lambda *a, **k: dataset)
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: tmp_path / "mini")
     monkeypatch.setattr(driver, "submitter_repo_root", lambda: worktree)
-    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda: otf_cache)
-    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: otf_ref)
+    monkeypatch.setattr(driver.paths, "slayer_otf_cache_root", lambda *, benchmark=None: otf_cache)
+    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda *, benchmark=None: otf_ref)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
     monkeypatch.setattr(driver, "wait_until_done", MagicMock())
@@ -1162,7 +1173,7 @@ def test_resubmit_groups_missing_instance_ids_by_database(monkeypatch, tmp_path)
         {"instance_id": "db_b_2", "selected_database": "db_b"},
     ]
     dataset.write_text("\n".join(_json.dumps(r) for r in rows) + "\n")
-    monkeypatch.setattr(driver.paths, "mini_interact_data_file", lambda: dataset)
+    monkeypatch.setattr(driver.paths, "benchmark_data_file", lambda *a, **k: dataset)
     yaml_path = Path("/tmp/cluster.yaml")
     mocks["cluster"].render_from_manifest.return_value = yaml_path
     mocks["cluster"].head_address.return_value = "http://localhost:8265"
@@ -1211,7 +1222,7 @@ def test_fetch_calls_post_run_merge_after_collation(monkeypatch, tmp_path):
     fake_results = tmp_path / "results"
     monkeypatch.setattr(driver, "local_results_root", lambda: fake_results)
     fake_ref_root = tmp_path / "warm" / "slayer_models_otf"
-    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda: fake_ref_root)
+    monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda *, benchmark=None: fake_ref_root)
     mocks["gcs"].read_manifest.return_value = {
         "run_id": RUN_ID, "instance_ids": ["db_a_1"],
     }
@@ -1257,7 +1268,7 @@ def test_fetch_continues_when_merge_returns_no_shards(monkeypatch, tmp_path):
     monkeypatch.setattr(driver, "local_results_root", lambda: fake_results)
     monkeypatch.setattr(
         driver.paths, "slayer_models_otf_root",
-        lambda: tmp_path / "warm" / "slayer_models_otf",
+        lambda *, benchmark=None: tmp_path / "warm" / "slayer_models_otf",
     )
     mocks["gcs"].read_manifest.return_value = {
         "run_id": RUN_ID, "instance_ids": ["db_a_1"],
@@ -1276,3 +1287,176 @@ def test_fetch_continues_when_merge_returns_no_shards(monkeypatch, tmp_path):
     )
     metrics = driver.fetch(RUN_ID)
     assert metrics["merge_report"]["merged_dbs"] == []
+
+
+# ---------------------------------------------------------------------------
+# Benchmark plumbing: dataset + gold_file flow through the manifest and the
+# actor job args; the actor + instance→db read the benchmark's tasks file.
+# ---------------------------------------------------------------------------
+
+
+def test_manifest_and_job_args_carry_benchmark(monkeypatch):
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer",
+        mode="one-shot", slayer_setup="on-the-fly",
+    )
+    # FakeSubmitArgs predates --dataset/--gold-file; set them as the cli would.
+    args.dataset = "livesqlbench"
+    args.gold_file = "/abs/gold.jsonl"
+
+    prefix = "benchmark-data/livesqlbench/abc123/"
+    m = driver.build_manifest(
+        args, image_uri="img:tag", run_id="rid", benchmark_data_prefix=prefix,
+    )
+    assert m["dataset"] == "livesqlbench"
+    # De-bake: the gold rides along in the GCS dataset upload, so the manifest
+    # stores the IN-CLUSTER path (under the benchmark's container_data_dir),
+    # NOT the submitter's local path. `/abs/gold.jsonl` isn't under the data
+    # root → basename fallback under /data/livesqlbench.
+    assert m["gold_file"] == "/data/livesqlbench/gold.jsonl"
+    assert m["benchmark_data_prefix"] == prefix
+
+    # Avoid reading a real tasks file for the db-grouped sort.
+    monkeypatch.setattr(
+        driver, "_instance_ids_sorted_by_db",
+        lambda ids, benchmark="mini_interact": list(ids),
+    )
+    ja = driver._build_job_args(
+        args, "rid", attempt=1, benchmark_data_prefix=prefix,
+    )
+    assert ja[ja.index("--dataset") + 1] == "livesqlbench"
+    assert ja[ja.index("--gold-file") + 1] == "/data/livesqlbench/gold.jsonl"
+    assert ja[ja.index("--benchmark-data-prefix") + 1] == prefix
+
+
+def test_manifest_defaults_to_mini_interact_benchmark():
+    args = FakeSubmitArgs()  # default dataset → mini_interact, no gold
+    m = driver.build_manifest(args, image_uri="img:tag", run_id="rid")
+    assert m["dataset"] == "mini_interact"
+    assert m["gold_file"] is None
+    # No prefix passed → key present but None (back-compat for direct callers).
+    assert m["benchmark_data_prefix"] is None
+
+
+# ---------------------------------------------------------------------------
+# De-bake: submit uploads the dataset to GCS (upload-once) and threads the
+# returned prefix into the manifest + actor job args; the gated gold must live
+# under the data root so it rides along in that upload.
+# ---------------------------------------------------------------------------
+
+
+def test_submit_uploads_dataset_and_threads_prefix(monkeypatch):
+    """`submit` calls `benchmark_data.ensure_uploaded(benchmark)` and threads
+    the returned content-hashed prefix into both the manifest and the actor
+    job args (`--benchmark-data-prefix`)."""
+    mocks = _patch_collaborators(monkeypatch)
+    monkeypatch.setattr(driver, "wait_until_done", MagicMock())
+    monkeypatch.setattr(driver, "fetch", MagicMock())
+    mocks["benchmark_data"].ensure_uploaded.return_value = (
+        "benchmark-data/mini_interact/feedface/"
+    )
+
+    args = FakeSubmitArgs(detach=True)
+    driver.submit(args)
+
+    # Uploaded the run's benchmark dataset.
+    assert mocks["benchmark_data"].ensure_uploaded.call_args.args[0] == "mini_interact"
+    # Manifest carries the prefix.
+    manifest = mocks["gcs"].write_manifest.call_args.args[1]
+    assert manifest["benchmark_data_prefix"] == "benchmark-data/mini_interact/feedface/"
+    # Actor job args carry the prefix.
+    job_args = mocks["cluster"].submit_job.call_args.kwargs["args"]
+    assert job_args[job_args.index("--benchmark-data-prefix") + 1] == (
+        "benchmark-data/mini_interact/feedface/"
+    )
+
+
+def test_validate_gold_under_data_root_rejects_outside(monkeypatch, tmp_path):
+    """A `--gold-file` outside the benchmark data root fails fast at submit —
+    it would otherwise be silently absent in-cluster (the gold rides along in
+    the GCS dataset upload, which only covers the data root)."""
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("{}\n")
+
+    args = FakeSubmitArgs()
+    args.dataset = "livesqlbench"
+    args.gold_file = str(outside)
+    with pytest.raises(ValueError, match="must live under the benchmark data root"):
+        driver._validate_gold_under_data_root(args)
+
+
+def test_validate_gold_under_data_root_accepts_inside(monkeypatch, tmp_path):
+    """A `--gold-file` inside the data root passes the guard, and
+    `_in_cluster_gold_file` maps it to its container path preserving the
+    relative location."""
+    data_root = tmp_path / "data"
+    (data_root / "sub").mkdir(parents=True)
+    gold = data_root / "sub" / "gold.jsonl"
+    gold.write_text("{}\n")
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
+
+    args = FakeSubmitArgs()
+    args.dataset = "livesqlbench"
+    args.gold_file = str(gold)
+    driver._validate_gold_under_data_root(args)  # no raise
+    assert driver._in_cluster_gold_file(args) == "/data/livesqlbench/sub/gold.jsonl"
+
+
+def test_resubmit_threads_benchmark_prefix(monkeypatch):
+    """`_build_resubmit_args` re-threads the manifest's benchmark_data_prefix so
+    the actor re-downloads the dataset; absent on pre-de-bake manifests."""
+    monkeypatch.setattr(
+        driver, "_instance_ids_sorted_by_db",
+        lambda ids, benchmark="mini_interact": list(ids),
+    )
+    manifest = {
+        "framework": "pydantic_ai", "query_mode": "raw", "mode": "c-interact",
+        "dataset": "mini_interact", "agent_model": "m", "user_sim_model": "u",
+        "benchmark_data_prefix": "benchmark-data/mini_interact/abc/",
+        "render_inputs": {"workers": 1, "actors_per_worker": 1},
+    }
+    ja = driver._build_resubmit_args(manifest, "rid", ["db_a_1"], 2)
+    assert ja[ja.index("--benchmark-data-prefix") + 1] == (
+        "benchmark-data/mini_interact/abc/"
+    )
+    # Pre-de-bake manifest (no prefix) → flag omitted.
+    manifest.pop("benchmark_data_prefix")
+    ja2 = driver._build_resubmit_args(manifest, "rid", ["db_a_1"], 2)
+    assert "--benchmark-data-prefix" not in ja2
+
+
+def test_instance_ids_sorted_by_db_falls_back_when_data_file_absent(
+    monkeypatch, tmp_path,
+):
+    """De-bake: `resubmit` may run on a machine without the local dataset, so a
+    missing benchmark data file must NOT crash `_instance_ids_sorted_by_db` —
+    it falls back to input order (DB-grouping is only a dispatch optimization,
+    not a correctness gate) (Codex)."""
+    monkeypatch.setattr(
+        driver.paths, "benchmark_data_file",
+        lambda *a, **k: tmp_path / "absent.jsonl",
+    )
+    ids = ["z_2", "a_1", "m_3"]
+    assert driver._instance_ids_sorted_by_db(ids, "mini_interact") == ids
+
+
+def test_resubmit_omits_dataset_for_pre_dataset_manifest(monkeypatch):
+    """A manifest with NO 'dataset' key was written before --dataset existed,
+    so its pinned image's ray_app rejects --dataset. Resubmit must OMIT both
+    --dataset and --benchmark-data-prefix and let the old baked image run
+    (Codex)."""
+    monkeypatch.setattr(
+        driver, "_instance_ids_sorted_by_db",
+        lambda ids, benchmark="mini_interact": list(ids),
+    )
+    manifest = {
+        "framework": "pydantic_ai", "query_mode": "raw", "mode": "c-interact",
+        "agent_model": "m", "user_sim_model": "u",
+        "render_inputs": {"workers": 1, "actors_per_worker": 1},
+    }  # neither 'dataset' nor 'benchmark_data_prefix'
+    ja = driver._build_resubmit_args(manifest, "rid", ["db_a_1"], 2)
+    assert "--dataset" not in ja
+    assert "--benchmark-data-prefix" not in ja

@@ -12,12 +12,56 @@ from pathlib import Path
 
 import pytest
 
+import sqlite3
+
 from bird_interact_agents.slayer_pipeline.portable_connection import (
+    absolute_sqlite_url,
     expected_connection_string,
     reanchor_connection_string,
     resolve_committed_connection_string,
     to_portable_connection_string,
 )
+
+
+# ---------------------------------------------------------------------------
+# absolute_sqlite_url: env-independent canonical absolute URL from a path.
+# This is the chokepoint the orchestrator uses so a RELATIVE --db-path no
+# longer yields a broken `sqlite:////../...` URL.
+# ---------------------------------------------------------------------------
+
+
+def test_absolute_sqlite_url_from_absolute_path(tmp_path):
+    p = tmp_path / "alien" / "alien.sqlite"
+    want = f"sqlite:////{p.resolve().as_posix().lstrip('/')}"
+    assert absolute_sqlite_url(p) == want
+
+
+def test_absolute_sqlite_url_from_relative_path_resolves(tmp_path, monkeypatch):
+    """A RELATIVE path must resolve to a canonical 4-slash ABSOLUTE URL —
+    not `sqlite:////../...` which SQLAlchemy reads at filesystem root."""
+    db_dir = tmp_path / "lsb" / "alien"
+    db_dir.mkdir(parents=True)
+    (db_dir / "alien.sqlite").touch()
+    monkeypatch.chdir(tmp_path)
+    rel = Path("lsb") / "alien" / "alien.sqlite"
+    url = absolute_sqlite_url(rel)
+    abs_p = (tmp_path / rel).resolve()
+    assert url == f"sqlite:////{abs_p.as_posix().lstrip('/')}"
+    assert "/../" not in url and not url.startswith("sqlite:////..")
+
+
+def test_absolute_sqlite_url_opens_a_real_sqlite(tmp_path, monkeypatch):
+    """The produced URL must actually open the DB through SQLAlchemy."""
+    sa = pytest.importorskip("sqlalchemy")
+    db_dir = tmp_path / "lsb" / "alien"
+    db_dir.mkdir(parents=True)
+    real = db_dir / "alien.sqlite"
+    sqlite3.connect(str(real)).close()  # materialise a real sqlite file
+    monkeypatch.chdir(tmp_path)
+    url = absolute_sqlite_url(Path("lsb") / "alien" / "alien.sqlite")
+    eng = sa.create_engine(url)
+    with eng.connect() as conn:
+        conn.exec_driver_sql("select 1")
 
 
 def test_to_portable_strips_mini_interact_prefix(tmp_path):

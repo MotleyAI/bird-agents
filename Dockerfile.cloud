@@ -52,10 +52,7 @@ COPY src/ /app/bird-interact-agents/src/
 RUN uv pip install --no-deps -e .
 
 # DATA-LAYERS  ──────────────────────────────────────────────────────────────
-# Bake the dataset + audited-gold sidecars into the image.
-# `mini-interact/` lives as a sibling of the repo, NOT inside it — pulled
-# in via BuildKit's `--build-context mini-interact=<sibling-path>` arg
-# that `image.build_and_push` sets at build time.
+# Bake the audited-gold sidecars into the image.
 #
 # DEV-1468: the SLayer setup dirs (slayer_models/, slayer_otf_cache/,
 # slayer_models_otf/) are NO LONGER baked. They are uploaded to GCS at submit
@@ -64,16 +61,24 @@ RUN uv pip install --no-deps -e .
 # / BIRD_OTF_CACHE_ROOT / BIRD_SLAYER_MODELS_OTF_ROOT, set in cluster.yaml.j2).
 # This makes locally-built (gitignored) embeddings.db ship too, and keeps the
 # image free of slayer-model churn.
+#
+# De-bake (this chunk): the benchmark DATASET (mini-interact / livesqlbench)
+# is NO LONGER baked either. It is uploaded ONCE to a content-hashed GCS prefix
+# at submit (`cloud/benchmark_data.ensure_uploaded`) and the actor downloads it
+# per node into the benchmark's `container_data_dir` (`/data/<benchmark>`),
+# then points the benchmark's data-root/data-file env vars at it. The gated
+# gold sidecar rides along inside that dataset upload (it lives in the data
+# root), so it is not baked here. This removes the per-rebuild dataset re-bake
+# and lets one image serve any benchmark. `BIRD_DB_PATH`/`BIRD_DATA_PATH` are
+# therefore set by the actor at runtime, NOT pinned here.
 
-COPY --from=mini-interact . /data/mini-interact/
 # `audited_gold/` lives in the main checkout (gitignored, never tracked) — pulled
 # in via BuildKit's `--build-context audited-gold=<paths.audited_gold_root()>`
 # arg that `image.build_and_push` sets at build time. This keeps the cloud
 # build runnable from any git worktree (the dir doesn't exist there) without
-# requiring the user to manually mirror it.
+# requiring the user to manually mirror it. Author-produced corrections are
+# code-like, so they stay baked (unlike the raw dataset/gold).
 COPY --from=audited-gold . /app/bird-interact-agents/audited_gold/
 
-ENV BIRD_DB_PATH=/data/mini-interact \
-    BIRD_DATA_PATH=/data/mini-interact/mini_interact.jsonl \
-    BIRD_RESULTS_ROOT=/tmp/results \
+ENV BIRD_RESULTS_ROOT=/tmp/results \
     BIRD_INTERACT_AGENTS_CLOUD=1

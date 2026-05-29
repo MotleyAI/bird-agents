@@ -483,8 +483,9 @@ async def test_write_gate_blocks_invalid_and_does_not_persist():
     assert "ILIKE" in res
     assert "DOUBLE PRECISION" in res          # SQLite dialect hint present
     assert "call `edit_model` again" in res   # explicit retry instruction
-    # An entity query failed, then a health probe ran to rule out infra.
-    assert eng.kinds == ["entity", "probe"]
+    # The gate is STRICT: an entity-query failure blocks directly — no health
+    # probe / fail-open escape (that escape silently persisted broken refs).
+    assert eng.kinds == ["entity"]
 
 
 @pytest.mark.asyncio
@@ -506,21 +507,14 @@ async def test_write_gate_blocks_on_value_error():
     assert "edit_model" not in ct.names
     assert "VALIDATION FAILED" in res
     assert "unknown column 'zzz'" in res
-    assert eng.kinds == ["entity", "probe"]
+    assert eng.kinds == ["entity"]  # strict: block directly, no probe
 
 
 @pytest.mark.asyncio
-async def test_write_gate_resolves_datasource_via_storage_fallback():
-    """When the edit_model call omits ``data_source``, the gate must resolve it
-    from ``storage.get_model(model_name).data_source`` so the health probe
-    targets the right datasource.
-
-    DEV-1478 added a literal-existence gate that ALSO consults
-    ``storage.get_model(host)`` to look up the host's columns (separately
-    from the datasource fallback). So the assertion below loosens from
-    "exactly one lookup" to "the host name appears as the first lookup
-    target" — preserving the original intent of pinning the SQL gate's
-    fallback behaviour."""
+async def test_write_gate_blocks_when_data_source_omitted():
+    """Even when the edit_model call omits ``data_source``, an invalid write is
+    blocked and never persisted. (The strict gate no longer runs a health
+    probe, so there is no datasource-resolution-for-probe step to assert.)"""
     from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
         _validate_and_call,
     )
@@ -528,18 +522,15 @@ async def test_write_gate_resolves_datasource_via_storage_fallback():
     ct = _CallToolLog()
     storage = _FakeStorage()
     eng = _FakeEngine(entity_error=SQLAlchemyError('near "ILIKE": syntax error'))
-    await _validate_and_call(
+    res = await _validate_and_call(
         ct, "edit_model",
         {"model_name": "properties",  # NO data_source
          "columns": [{"name": "bad", "sql": "x ILIKE 'y'", "type": "string"}]},
         storage=storage, engine=eng,
     )
-    # The fallback consulted storage for the model's datasource …
-    assert storage.got and storage.got[0] == "properties"
-    # … and the probe targeted that datasource.
-    probe = eng.probe_query()
-    assert probe is not None
-    assert probe.source_model["data_source"] == "db"
+    assert "edit_model" not in ct.names
+    assert "VALIDATION FAILED" in res
+    assert eng.probe_query() is None  # strict gate: no health probe at all
 
 
 @pytest.mark.asyncio
@@ -581,28 +572,42 @@ async def test_write_gate_ignores_read_only_tools():
 
 
 @pytest.mark.asyncio
-async def test_write_gate_fails_open_on_infra_error():
-    """If the validation engine itself can't reach the DB (the SELECT-1 probe
-    also raises), we must NOT block a possibly-valid write — fail open."""
+async def test_write_gate_blocks_on_infra_error_and_warns(caplog):
+    """A connection/infra-class validation failure now BLOCKS too (strict gate —
+    no silent fail-open) so a broken entity is never persisted. But because the
+    encoder cannot fix infra, the gate logs a WARNING distinguishing it from a
+    referential miss, keeping infra problems visible."""
+    import logging
     from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
         _validate_and_call,
     )
 
     ct = _CallToolLog()
     eng = _FakeEngine(
-        entity_error=SQLAlchemyError('near "ILIKE": syntax error'),
-        probe_error=SQLAlchemyError("could not connect to database"),
+        entity_error=SQLAlchemyError("could not connect to database"),
     )
-    res = await _validate_and_call(
-        ct, "edit_model",
-        {"model_name": "properties", "data_source": "db",
-         "columns": [{"name": "c", "sql": "anything", "type": "string"}]},
-        storage=_FakeStorage(), engine=eng,
-    )
-    # Infra down → don't block: the real write goes through.
-    assert "edit_model" in ct.names
-    assert res == "OK: edit_model"
-    assert eng.kinds == ["entity", "probe"]
+    with caplog.at_level(logging.WARNING):
+        res = await _validate_and_call(
+            ct, "edit_model",
+            {"model_name": "properties", "data_source": "db",
+             "columns": [{"name": "c", "sql": "anything", "type": "string"}]},
+            storage=_FakeStorage(), engine=eng,
+        )
+    # Strict: the write is NOT persisted and the agent gets feedback.
+    assert "edit_model" not in ct.names
+    assert "VALIDATION FAILED" in res
+    assert eng.kinds == ["entity"]  # no probe
+    # Infra visibility: a WARNING from the agent gate, naming the tool and the
+    # connection/engine nature (so an infra defer isn't mistaken for a normal
+    # referential miss).
+    agent_warnings = [
+        r for r in caplog.records
+        if r.levelno == logging.WARNING
+        and r.name.startswith("bird_interact_agents")
+    ]
+    assert agent_warnings, "expected a WARNING from the agent write-gate"
+    joined = " ".join(r.getMessage().lower() for r in agent_warnings)
+    assert "edit_model" in joined and ("connect" in joined or "engine" in joined)
 
 
 @pytest.mark.asyncio

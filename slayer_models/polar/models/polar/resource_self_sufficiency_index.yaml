@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: resource_self_sufficiency_index
 source_queries:
 - version: 3

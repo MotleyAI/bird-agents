@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: observatories
 sql_table: observatories
 query_variables: {}

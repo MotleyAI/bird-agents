@@ -48,13 +48,14 @@ def fake_repo_root(tmp_path: Path) -> Path:
         '{"instance_id":"db_a_1"}\n'
     )
 
-    # DEV-1468: slayer_models/ is uploaded to GCS at submit, no longer baked,
-    # so the Dockerfile DATA section no longer COPYs it or runs `slayer ingest`.
+    # DEV-1468: slayer_models/ is uploaded to GCS at submit, no longer baked.
+    # De-bake (this chunk): the benchmark dataset is no longer baked either
+    # (delivered via GCS), so the DATA section no longer COPYs mini-interact —
+    # only the code-like audited_gold/ corrections stay baked.
     (tmp_path / "Dockerfile.cloud").write_text(
         "FROM python:3.11-slim\n"
         "RUN pip install uv\n"
         "# DATA-LAYERS\n"
-        "COPY mini-interact/ /data/mini-interact/\n"
         "COPY audited_gold/  /app/bird-interact-agents/audited_gold/\n"
         "# CODE-LAYERS\n"
         "COPY pyproject.toml uv.lock /app/bird-interact-agents/\n"

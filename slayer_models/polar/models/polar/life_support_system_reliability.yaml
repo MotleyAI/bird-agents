@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: life_support_system_reliability
 source_queries:
 - version: 3

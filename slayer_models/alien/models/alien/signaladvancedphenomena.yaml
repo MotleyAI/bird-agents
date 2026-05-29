@@ -1,4 +1,4 @@
-version: 6
+version: 7
 name: signaladvancedphenomena
 sql_table: signaladvancedphenomena
 query_variables: {}

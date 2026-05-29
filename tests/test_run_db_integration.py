@@ -22,7 +22,7 @@ async def test_db_row_appears_after_each_task(tmp_path, monkeypatch):
         {"instance_id": "t2", "selected_database": "fake",
          "amb_user_query": "q2", "sol_sql": ["SELECT 2"]},
     ]
-    monkeypatch.setattr(run_mod, "load_tasks", lambda *a, **kw: fake_tasks)
+    monkeypatch.setattr(run_mod, "load_benchmark_tasks", lambda *a, **kw: fake_tasks)
     monkeypatch.setattr(run_mod, "calculate_budget", lambda *a, **kw: 18)
 
     db_path = tmp_path / "results.db"
@@ -84,7 +84,7 @@ async def test_failed_task_still_lands_in_db(tmp_path, monkeypatch):
     attempted."""
     import bird_interact_agents.run as run_mod
 
-    monkeypatch.setattr(run_mod, "load_tasks", lambda *a, **kw: [
+    monkeypatch.setattr(run_mod, "load_benchmark_tasks", lambda *a, **kw: [
         {"instance_id": "boom", "selected_database": "fake",
          "amb_user_query": "q"},
     ])
@@ -121,7 +121,7 @@ async def test_diagnostic_columns_persist(tmp_path, monkeypatch):
     """
     import bird_interact_agents.run as run_mod
 
-    monkeypatch.setattr(run_mod, "load_tasks", lambda *a, **kw: [
+    monkeypatch.setattr(run_mod, "load_benchmark_tasks", lambda *a, **kw: [
         {"instance_id": "t1", "selected_database": "fake",
          "amb_user_query": "what is the count?", "sol_sql": ["SELECT 1"]},
     ])
@@ -167,7 +167,7 @@ async def test_diagnostic_columns_persist(tmp_path, monkeypatch):
 async def test_run_metadata_recorded(tmp_path, monkeypatch):
     import bird_interact_agents.run as run_mod
 
-    monkeypatch.setattr(run_mod, "load_tasks", lambda *a, **kw: [
+    monkeypatch.setattr(run_mod, "load_benchmark_tasks", lambda *a, **kw: [
         {"instance_id": "t1", "selected_database": "fake",
          "amb_user_query": "q"},
     ])
