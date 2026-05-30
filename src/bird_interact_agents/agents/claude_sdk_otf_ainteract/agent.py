@@ -1,22 +1,19 @@
-"""Claude Agent SDK adapter that encodes KB items on the fly (DEV-1505).
+"""Claude Agent SDK adapter that encodes KB items on the fly, a-interact
+flavor (DEV-1507).
 
-A single agent (no forced stages, no recursion) that runs off the
-deterministic OTF cache — base models + KB items pre-loaded as SLayer
-memories — and is given the SLayer MCP with WRITE tools so it can encode
-the relevant KB items into named columns/measures (in dependency order,
-referencing earlier entities through declared joins) and then query off
-them, instead of inlining everything.
+Bound to ``--dataset mini_interact --mode a-interact``. Shares the OTF
+cache pipeline and the slayer write-tool whitelist with the sibling
+``claude_sdk_otf`` package (one-shot/livesqlbench), but adds:
 
-After DEV-1507 this adapter is **livesqlbench / one-shot only**; the
-sibling ``claude_sdk_otf_ainteract`` flavor handles
-``mini-interact / a-interact`` with a hard ``ask_user``-before-submit
-discipline.
+* A native ``ask_user`` tool.
+* Three PreToolUse/PostToolUse guards that enforce a hard
+  ``ask_user``-before-``submit_query`` discipline (built by
+  ``_make_ask_user_guards`` — invoked once **per task**, never on the
+  agent constructor, because a single agent instance is reused across
+  concurrent tasks via ``make_runner``).
 
-The contextvar plumbing, the native submission / knowledge tools,
-``_gate``/``_state_view``, the usage loop and ``finalize_result_row`` are
-reused verbatim from the sibling ``claude_sdk`` adapter — only the
-per-task storage source (the deterministic cache, NOT committed models),
-the SLayer write-tool whitelist, the prompts, and the mode gating differ.
+The encoding workflow is the same — see ``prompts.py::SLAYER_OTF_AINTERACT``
+for Rule 0 (ask before encode) plus the shared encode-then-query rules.
 """
 
 from __future__ import annotations
@@ -30,24 +27,26 @@ from claude_agent_sdk import (
     create_sdk_mcp_server,
 )
 
-# Reuse the sibling claude_sdk adapter's contextvar + native tools. These
-# tools read/write the SAME `_ctx_var` we set below, so binding them here
-# is sound.
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
     accumulate_assistant_usage,
+    ask_user,
     get_all_external_knowledge_names,
     get_all_knowledge_definitions,
     get_knowledge_definition,
     submit_query,
 )
-from bird_interact_agents.agents.claude_sdk_otf.prompts import (
-    SLAYER_OTF_ONE_SHOT,
+from bird_interact_agents.agents.claude_sdk_otf.agent import (
+    _MAX_TURNS,
+    _make_turn_budget_hook,
+    _slayer_tool_names,
+)
+from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
+    SLAYER_OTF_AINTERACT,
 )
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.model_string import is_anthropic, native_model_id
 from bird_interact_agents.harness import (
-    MAX_MODEL_TURNS,
     SampleStatus,
     _ambiguity_count,
     finalize_result_row,
@@ -61,77 +60,87 @@ from bird_interact_agents.usage import TokenUsage
 logger = logging.getLogger(__name__)
 
 
-# SLayer MCP tools the OTF agent may call. The existing claude_sdk slayer
-# mode is read-only; this adapter ADDS the write tools (create_model /
-# edit_model / save_memory / validate_models) plus query_nested so the
-# agent can encode KB items and submit nested-DAG queries.
-SLAYER_MCP_TOOLS = [
-    "help",
-    "list_datasources",
-    "models_summary",
-    "inspect_model",
-    "search",
-    "query",
-    "query_nested",
-    "create_model",
-    "edit_model",
-    "save_memory",
-    "validate_models",
-]
+# The full MCP tool name of the native ask_user tool — used as the
+# PostToolUse counter's matcher AND as the race-skip predicate inside
+# the nag hook.
+_ASK_USER_TOOL = "mcp__bird-interact-tools__ask_user"
+
+# How often (in TOTAL tool calls without ask_user) the nag fires.
+_NAG_EVERY = 10
 
 
-def _slayer_tool_names() -> list[str]:
-    return [f"mcp__slayer__{t}" for t in SLAYER_MCP_TOOLS]
+def _make_ask_user_guards():
+    """Build the three per-task hook callables that enforce the
+    ask-user-before-submit discipline.
 
+    Returns ``(pre_submit_gate, post_ask_counter, post_nag)`` sharing a
+    single per-task ``state`` closure. The factory MUST be invoked inside
+    ``run_task`` (per task), NOT stored on the agent — a single agent
+    instance is reused across concurrent tasks via ``make_runner``, and
+    cross-task counter bleed would let one task's submit pass through
+    another task's denial gate.
 
-# Encode-then-query is turn-expensive (one turn per KB column created/tested),
-# so this agent needs more headroom than the base agentic cap. 2x the base.
-_MAX_TURNS = 2 * MAX_MODEL_TURNS
-
-# Warn the agent to submit once it's within this many turns of the cap.
-_TURN_BUDGET_WARN_WITHIN = 3
-
-
-def _make_turn_budget_hook(
-    max_turns: int, warn_within: int = _TURN_BUDGET_WARN_WITHIN
-):
-    """Build a PostToolUse hook that nudges the agent to submit when it's
-    within ``warn_within`` tool-calls of the hard ``max_turns`` cap.
-
-    The hook counts its own invocations (≈ one per agent turn, since the
-    agent emits a tool call per turn) rather than reading the receive loop's
-    state, so it stays self-contained and per-task. The returned
-    ``additionalContext`` is injected into the model's context after the tool
-    result — an un-submitted task scores zero, so the nudge is load-bearing
-    for encode-heavy tasks that run long.
+    * ``pre_submit_gate`` (PreToolUse, matcher ``submit_query``): denies
+      ``submit_query`` while ``ask_count == 0``, with an explicit reason
+      the SDK passes through to the model.
+    * ``post_ask_counter`` (PostToolUse, matcher ``ask_user``): increments
+      ``ask_count``.
+    * ``post_nag`` (PostToolUse, all tools): every 10 tool calls without
+      any ``ask_user`` yet, nudges the agent that the user-sim holds
+      ground-truth it can't reach via KB alone. SKIPS when the current
+      tool IS ``ask_user`` — otherwise a 10th call that happens to BE
+      the first ask would emit a false-positive nag if the SDK fires
+      ``post_nag`` before ``post_ask_counter``.
     """
-    state = {"calls": 0}
+    state = {"ask_count": 0, "tool_calls": 0}
 
-    async def _hook(input_data, tool_use_id, context):
-        state["calls"] += 1
-        remaining = max_turns - state["calls"]
-        if 0 < remaining <= warn_within:
+    async def pre_submit_gate(input_data, tool_use_id, context):
+        if state["ask_count"] == 0:
             return {
                 "hookSpecificOutput": {
-                    "hookEventName": "PostToolUse",
-                    "additionalContext": (
-                        f"[TURN BUDGET] ~{remaining} model turn(s) remain before "
-                        f"the hard limit of {max_turns}. If you have a candidate "
-                        "answer, call submit_query NOW — an un-submitted task "
-                        "scores zero."
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": (
+                        "You have not called ask_user. The user-sim has the "
+                        "masked-KB ground truth that is unrecoverable from KB "
+                        "alone. Identify your single most-uncertain "
+                        "operationalisation choice (threshold / value list / "
+                        "aggregation / sort / unit / rounding) and call "
+                        "ask_user on it before submitting."
                     ),
                 }
             }
         return {}
 
-    return _hook
+    async def post_ask_counter(input_data, tool_use_id, context):
+        state["ask_count"] += 1
+        return {}
+
+    async def post_nag(input_data, tool_use_id, context):
+        # Race-skip: when the current tool IS ask_user, never nag — the
+        # ask-counter may fire AFTER us, and we'd emit a false positive
+        # nag for the very call that satisfies the gate.
+        if input_data.get("tool_name") == _ASK_USER_TOOL:
+            return {}
+        state["tool_calls"] += 1
+        if state["ask_count"] == 0 and state["tool_calls"] % _NAG_EVERY == 0:
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": (
+                        f"[BENCHMARK NOTE] You have made {state['tool_calls']} "
+                        "tool calls without consulting the user-sim. The "
+                        "user-sim has the masked-KB ground truth — clarify "
+                        "your single most uncertain operationalisation choice "
+                        "before continuing."
+                    ),
+                }
+            }
+        return {}
+
+    return pre_submit_gate, post_ask_counter, post_nag
 
 
-# Native (in-process) tools registered under the "bird-interact-tools"
-# MCP server. one-shot decides autonomously (no user simulator), so the
-# knowledge-lookup tools + `submit_query` are the only natives the agent
-# needs. (The a-interact flavor adds `ask_user` in
-# ``claude_sdk_otf_ainteract``.)
 _KNOWLEDGE_TOOLS = [
     get_all_external_knowledge_names,
     get_knowledge_definition,
@@ -140,39 +149,37 @@ _KNOWLEDGE_TOOLS = [
 
 
 def _select_tools(eval_mode: str) -> list:
-    if eval_mode != "one-shot":
+    if eval_mode != "a-interact":
         raise ValueError(
-            "claude_sdk_otf supports only eval_mode='one-shot' "
-            "(use claude_sdk_otf_ainteract for a-interact); "
+            "claude_sdk_otf_ainteract supports only eval_mode='a-interact' "
+            "(use claude_sdk_otf for one-shot); "
             f"got {eval_mode!r}"
         )
-    return [*_KNOWLEDGE_TOOLS, submit_query]
+    return [*_KNOWLEDGE_TOOLS, ask_user, submit_query]
 
 
 def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
-    if eval_mode != "one-shot":
+    if eval_mode != "a-interact":
         raise ValueError(
-            "claude_sdk_otf supports only eval_mode='one-shot'; "
+            "claude_sdk_otf_ainteract supports only eval_mode='a-interact'; "
             f"got {eval_mode!r}"
         )
     user_query = task_data["amb_user_query"]
     db_name = task_data["selected_database"]
-    return SLAYER_OTF_ONE_SHOT.format(
+    return SLAYER_OTF_AINTERACT.format(
         budget=budget, db_name=db_name, user_query=user_query,
     )
 
 
-class ClaudeSDKOtfAgent:
-    """SystemAgent: Claude SDK agent with on-the-fly KB encoding.
+class ClaudeSDKOtfAInteractAgent:
+    """SystemAgent: Claude SDK agent with on-the-fly KB encoding + enforced
+    ask-user discipline.
 
-    Anthropic-only (the SDK is locked to Anthropic); a non-Anthropic model
-    short-circuits with a skip-shaped row. slayer-query-mode only;
-    ``slayer_setup`` must be ``on-the-fly``. After DEV-1507 this flavor is
-    bound to **livesqlbench / one-shot**; mismatched dataset or eval_mode
-    is rejected at the agent boundary.
+    Anthropic-only (the SDK is locked to Anthropic). Bound to
+    ``--dataset mini_interact --mode a-interact``; mismatched dataset or
+    eval_mode is rejected at the agent boundary.
     """
 
-    #: Reasoning-effort levels accepted by the Claude SDK (`ClaudeAgentOptions.effort`).
     _EFFORT_CHOICES = ("low", "medium", "high", "max")
 
     def __init__(
@@ -184,7 +191,7 @@ class ClaudeSDKOtfAgent:
     ) -> None:
         if slayer_setup != "on-the-fly":
             raise ValueError(
-                "claude_sdk_otf requires slayer_setup='on-the-fly'; "
+                "claude_sdk_otf_ainteract requires slayer_setup='on-the-fly'; "
                 f"got {slayer_setup!r}"
             )
         if reasoning_effort is not None and reasoning_effort not in self._EFFORT_CHOICES:
@@ -203,33 +210,32 @@ class ClaudeSDKOtfAgent:
         data_path_base: str,
         budget: float,
         query_mode: str,
-        eval_mode: str = "one-shot",
+        eval_mode: str = "a-interact",
         user_sim_model: str = "anthropic/claude-haiku-4-5-20251001",
         user_sim_prompt_version: str = "v2",
     ) -> dict:
         if query_mode != "slayer":
             raise ValueError(
-                "claude_sdk_otf supports only --query-mode slayer; "
+                "claude_sdk_otf_ainteract supports only --query-mode slayer; "
                 f"got {query_mode!r}"
             )
-        if eval_mode != "one-shot":
+        if eval_mode != "a-interact":
             raise ValueError(
-                "claude_sdk_otf supports only --mode one-shot "
-                "(use --framework claude_sdk_otf_ainteract for "
-                f"--mode a-interact); got {eval_mode!r}"
+                "claude_sdk_otf_ainteract supports only --mode a-interact "
+                "(use --framework claude_sdk_otf for --mode one-shot); "
+                f"got {eval_mode!r}"
             )
 
-        # Defense in depth on top of the CLI gate: a programmatic caller
-        # (`make_runner` has no dataset arg) cannot bypass dataset binding
-        # by passing task_data with the wrong marker. Canonicalize via
-        # ``get_benchmark`` so documented aliases are accepted (matches
-        # `_validate_framework_dataset_mode`'s behavior).
+        # Defense in depth on top of the CLI gate. Canonicalize via
+        # ``get_benchmark`` so the documented ``mini-interact`` alias is
+        # accepted (matches `_validate_framework_dataset_mode`'s behavior;
+        # a programmatic caller using the alias must reach the agent).
         dataset = task_data.get("dataset") or "mini_interact"
-        if get_benchmark(dataset).name != "livesqlbench":
+        if get_benchmark(dataset).name != "mini_interact":
             raise ValueError(
-                "claude_sdk_otf is bound to --dataset livesqlbench "
-                "(use --framework claude_sdk_otf_ainteract for "
-                f"mini_interact); got dataset={dataset!r}"
+                "claude_sdk_otf_ainteract is bound to --dataset mini_interact "
+                "(use --framework claude_sdk_otf for livesqlbench); "
+                f"got dataset={dataset!r}"
             )
 
         instance_id = task_data["instance_id"]
@@ -237,9 +243,9 @@ class ClaudeSDKOtfAgent:
 
         if not is_anthropic(self.model):
             msg = (
-                f"claude_sdk_otf requires an Anthropic model; got {self.model!r}. "
-                "Skipped — use --framework pydantic_ai_otf_encode for "
-                "non-Anthropic models."
+                f"claude_sdk_otf_ainteract requires an Anthropic model; "
+                f"got {self.model!r}. Skipped — use --framework "
+                "pydantic_ai_otf_encode for non-Anthropic models."
             )
             logger.warning("[%s] %s", instance_id, msg)
             return finalize_result_row(
@@ -258,16 +264,6 @@ class ClaudeSDKOtfAgent:
             )
 
         benchmark = get_benchmark(dataset)
-        # one-shot REQUIRES a benchmark that declares one_shot=True. The
-        # narrowed-flavor's dataset gate above already enforces livesqlbench,
-        # but the benchmark check is kept as a load-bearing assertion in case
-        # a future benchmark joins the one-shot family.
-        if not benchmark.one_shot:
-            raise ValueError(
-                "--mode one-shot requires a task whose benchmark declares "
-                "one_shot=True (its loader stamps task_data['dataset']); got "
-                f"dataset={dataset!r}",
-            )
 
         status = SampleStatus(
             idx=0,
@@ -282,12 +278,7 @@ class ClaudeSDKOtfAgent:
         trajectory: list[dict] = []
         try:
             load_db_data_if_needed(db_name, data_path_base)
-            # LiveSQLBench one-shot: per-task isolated working sqlite (no-op
-            # for mini-interact).
             materialize_task_db(task_data, data_path_base)
-            # Cache-only per-task storage: deterministic OTF cache copied to
-            # a scratch dir with this task's deleted KBs masked. The agent
-            # encodes into THIS dir at task time.
             slayer_storage_dir, deleted_kb_ids = await resolve_otf_task_storage_dir(
                 db_name=db_name,
                 task_data=task_data,
@@ -295,7 +286,7 @@ class ClaudeSDKOtfAgent:
                 benchmark=benchmark.name,
             )
 
-            max_asks = _ambiguity_count(task_data) + 3  # +patience(3); matches ADK
+            max_asks = _ambiguity_count(task_data) + 3
 
             _ctx_var.set({
                 "status": status,
@@ -327,34 +318,31 @@ class ClaudeSDKOtfAgent:
             }
             tool_names.extend(_slayer_tool_names())
 
+            # Per-task hook factory — never share state across tasks.
+            pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
+
             options = ClaudeAgentOptions(
                 system_prompt=prompt,
                 mcp_servers=mcp_servers,
                 allowed_tools=tool_names,
-                # Restrict to ONLY our MCP tools: drop every Claude Code
-                # built-in (Bash/Edit/Task/WebFetch/ToolSearch/...). Removing
-                # ToolSearch is load-bearing — with the built-ins gone the
-                # ~15 MCP tools are exposed directly instead of being deferred
-                # behind ToolSearch (which previously wasted ~5 turns/run while
-                # the agent re-discovered its own tools). setting_sources=[]
-                # also keeps the run reproducible (no user/project settings,
-                # no CLAUDE.md bleed-through).
                 tools=[],
                 setting_sources=[],
-                # Pin the requested Anthropic model (bare id, no provider
-                # prefix) so --agent-model actually takes effect instead of
-                # the claude CLI's configured default.
                 model=native_model_id(self.model),
-                # Reasoning-effort level (None => SDK default).
                 effort=self.reasoning_effort,
-                # Native turn cap (2x the base). Unlike a manual break on the
-                # receive stream, max_turns lets the FINAL turn's tool (e.g.
-                # submit_query) execute before the run stops — the off-by-one
-                # that previously dropped a last-turn submission.
                 max_turns=_MAX_TURNS,
-                # Nudge the agent to submit when it nears the cap.
                 hooks={
+                    "PreToolUse": [
+                        HookMatcher(
+                            matcher="mcp__bird-interact-tools__submit_query",
+                            hooks=[pre_submit_gate],
+                        ),
+                    ],
                     "PostToolUse": [
+                        HookMatcher(
+                            matcher=_ASK_USER_TOOL,
+                            hooks=[post_ask_counter],
+                        ),
+                        HookMatcher(hooks=[post_nag]),
                         HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
                     ],
                 },
@@ -369,7 +357,7 @@ class ClaudeSDKOtfAgent:
                     accumulate_assistant_usage(accum, msg, self.model)
         except Exception as e:
             logger.error(
-                "claude_sdk_otf error on %s: %s",
+                "claude_sdk_otf_ainteract error on %s: %s",
                 instance_id, e, exc_info=True,
             )
             return finalize_result_row(

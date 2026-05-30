@@ -359,6 +359,104 @@ def test_otf_encode_requires_on_the_fly() -> None:
         ))
 
 
+# ---------------------------------------------------------------------------
+# DEV-1507 — claude_sdk_otf split: ainteract framework + dataset×framework
+# gate (Codex HIGH#1 / MED#6).
+# ---------------------------------------------------------------------------
+
+
+def _ainteract_argv(**over) -> list[str]:
+    base = {
+        "framework": "claude_sdk_otf_ainteract",
+        "query_mode": "slayer",
+        "agent_model": "anthropic/claude-opus-4-7",
+        "instance_ids": "shop_1",
+        "mode": "a-interact",
+        "dataset": "mini_interact",
+        "slayer_setup": "on-the-fly",
+    }
+    base.update(over)
+    argv = [
+        "submit",
+        "--framework", base["framework"],
+        "--query-mode", base["query_mode"],
+        "--agent-model", base["agent_model"],
+        "--instance-ids", base["instance_ids"],
+        "--mode", base["mode"],
+        "--dataset", base["dataset"],
+        "--slayer-setup", base["slayer_setup"],
+        "--no-require-audited-gold",
+    ]
+    if "gold_file" in over:
+        argv += ["--gold-file", over["gold_file"]]
+    return argv
+
+
+def test_cloud_ainteract_with_mini_interact_a_interact_on_the_fly_accepted():
+    ns = cli.parse_args(_ainteract_argv())
+    assert ns.framework == "claude_sdk_otf_ainteract"
+    assert ns.dataset == "mini_interact"
+    assert ns.mode == "a-interact"
+    assert ns.slayer_setup == "on-the-fly"
+
+
+def test_cloud_ainteract_with_pre_encoded_rejected():
+    with pytest.raises(SystemExit):
+        cli.parse_args(_ainteract_argv(slayer_setup="pre-encoded"))
+
+
+def test_cloud_ainteract_with_livesqlbench_rejected():
+    """Dataset×framework gate: ainteract is bound to mini_interact even with
+    a gold-file present."""
+    with pytest.raises(SystemExit):
+        cli.parse_args(_ainteract_argv(
+            dataset="livesqlbench", gold_file="/abs/gold.jsonl",
+        ))
+
+
+def test_cloud_ainteract_with_one_shot_rejected():
+    """one-shot is rejected by _validate_one_shot_framework (only
+    claude_sdk_otf is whitelisted on the one-shot path)."""
+    with pytest.raises(SystemExit):
+        cli.parse_args(_ainteract_argv(
+            mode="one-shot", dataset="livesqlbench",
+            gold_file="/abs/gold.jsonl",
+        ))
+
+
+def test_cloud_claude_sdk_otf_with_mini_interact_oracle_rejected():
+    """Codex MED#6 / HIGH#1: claude_sdk_otf + mini_interact + oracle would
+    pass `_validate_dataset_mode` (mini_interact supports oracle) — the new
+    `_validate_framework_dataset_mode` is the only gate that rejects it."""
+    with pytest.raises(SystemExit):
+        cli.parse_args([
+            "submit",
+            "--framework", "claude_sdk_otf",
+            "--query-mode", "slayer",
+            "--agent-model", "anthropic/claude-opus-4-7",
+            "--instance-ids", "alien_1",
+            "--mode", "oracle",
+            "--dataset", "mini_interact",
+            "--no-require-audited-gold",
+        ])
+
+
+def test_cloud_ainteract_with_livesqlbench_oracle_rejected():
+    """Symmetric oracle case for the new flavor."""
+    with pytest.raises(SystemExit):
+        cli.parse_args([
+            "submit",
+            "--framework", "claude_sdk_otf_ainteract",
+            "--query-mode", "slayer",
+            "--agent-model", "anthropic/claude-opus-4-7",
+            "--instance-ids", "alien_1",
+            "--mode", "oracle",
+            "--dataset", "livesqlbench",
+            "--gold-file", "/abs/gold.jsonl",
+            "--no-require-audited-gold",
+        ])
+
+
 def test_detach_and_allow_dirty_mutually_exclusive() -> None:
     with pytest.raises(SystemExit):
         cli.parse_args(

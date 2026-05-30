@@ -92,6 +92,30 @@ def test_upload_per_task_debug_noop_when_iid_dir_absent(
     assert store == {}
 
 
+def test_upload_per_task_debug_ships_uuid_suffixed_dirs(
+    tmp_path: Path, fake_gcs_bucket,
+):
+    """DEV-1507 / Codex: the OTF scratch resolver names per-task dirs
+    ``<iid>-<uuid>/`` (concurrency-safety), not ``<iid>/``. The helper
+    must glob both shapes; otherwise cloud runs of either OTF flavor
+    silently skip their per-task debug bundle."""
+    client, store = fake_gcs_bucket
+    work_root = tmp_path / "bird_interact_slayer_otf"
+    uuid_dir = work_root / "households_1-abc12345"
+    (uuid_dir / "sessions").mkdir(parents=True)
+    (uuid_dir / "sessions" / "agent__top.json").write_text("[]")
+    (uuid_dir / "scratch_storage").mkdir(parents=True)
+    (uuid_dir / "scratch_storage" / "x.yaml").write_text("name: x\n")
+
+    upload_back.upload_per_task_debug(
+        run_id=RUN_ID, iid="households_1", attempt=1,
+        work_root=work_root, client=client,
+    )
+    base = f"runs/{RUN_ID}/sessions/households_1/attempt-1"
+    assert store[f"{base}/sessions/agent__top.json"] == b"[]"
+    assert store[f"{base}/scratch_storage/x.yaml"] == b"name: x\n"
+
+
 def test_upload_per_task_debug_swallows_exceptions(
     tmp_path: Path, fake_gcs_bucket, capsys: pytest.CaptureFixture,
 ):
