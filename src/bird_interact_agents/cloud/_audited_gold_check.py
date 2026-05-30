@@ -61,19 +61,20 @@ def _load_dataset_instance_db_map(
 
 def _load_single_file_audit_index(
     audited_root: Path, benchmark: Benchmark,
-) -> Optional[dict[str, tuple[str, bool, str]]]:
-    """Return ``{instance_id: (audit_status, has_audited_sql, row_db)}`` for
-    ``<root>/<benchmark.name>_audited.jsonl`` or ``None`` if absent.
+) -> Optional[dict[str, tuple[str, bool, str, str]]]:
+    """Return ``{instance_id: (audit_status, has_audited_sql, row_db, row_benchmark)}``
+    for ``<root>/<benchmark.name>_audited.jsonl`` or ``None`` if absent.
 
-    ``row_db`` is the row's ``selected_database`` field; the caller uses
-    it as a defensive cross-benchmark guard (an instance_id collision
-    that pointed at the wrong database would silently apply the wrong
+    ``row_db`` is the row's ``selected_database`` and ``row_benchmark``
+    is the row's ``benchmark`` field; the caller uses both as defensive
+    cross-benchmark guards (an instance_id collision that pointed at the
+    wrong database or the wrong benchmark would silently apply the wrong
     audit otherwise).
     """
     path = audited_root / f"{benchmark.name}_audited.jsonl"
     if not path.exists():
         return None
-    out: dict[str, tuple[str, bool, str]] = {}
+    out: dict[str, tuple[str, bool, str, str]] = {}
     with path.open() as f:
         for line in f:
             line = line.strip()
@@ -88,8 +89,9 @@ def _load_single_file_audit_index(
             audited = row.get("audited_sol_sql")
             has_audited_sql = isinstance(audited, list) and bool(audited)
             row_db = row.get("selected_database") or ""
+            row_benchmark = row.get("benchmark") or ""
             if iid:
-                out[iid] = (status, has_audited_sql, row_db)
+                out[iid] = (status, has_audited_sql, row_db, row_benchmark)
     return out
 
 
@@ -183,7 +185,7 @@ def missing_audited_gold_ids(
             if entry is None:
                 missing.append(iid)
                 continue
-            status, has_audited_sql, row_db = entry
+            status, has_audited_sql, row_db, row_benchmark = entry
             # Defensive cross-benchmark guard: a row is missing if its
             # `selected_database` is absent OR mismatches the dataset's
             # mapping for this id. The single_file layout is shared
@@ -192,6 +194,15 @@ def missing_audited_gold_ids(
             # land the wrong audit. Mirrors the overlay's guard in
             # `harness.py::apply_audited_gold_overlay`.
             if not row_db or row_db != db:
+                missing.append(iid)
+                continue
+            # Defence-in-depth: also verify the row's `benchmark` tag.
+            # DB names overlap across benchmarks by design (alien, museum,
+            # … exist in both mini-interact and livesqlbench) — without
+            # this check, a row with the right (instance_id, db) but the
+            # wrong benchmark would still pass. Schema requires it; an
+            # absent field is treated the same as a mismatch.
+            if not row_benchmark or row_benchmark != benchmark.name:
                 missing.append(iid)
                 continue
             if status == "clean":

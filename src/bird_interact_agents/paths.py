@@ -172,10 +172,6 @@ def audited_gold_file(*, benchmark: str) -> Path:
     benchmark cannot silently land at a wrong path.
     """
     _validate_benchmark(benchmark)
-    # Lazy import to avoid a top-level import cycle with `benchmark.py`
-    # (which imports from `paths` indirectly through other modules).
-    from bird_interact_agents.benchmark import get_benchmark
-
     b = get_benchmark(benchmark)
     if b.audited_gold_layout != "single_file":
         raise ValueError(

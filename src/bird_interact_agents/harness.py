@@ -532,6 +532,24 @@ def apply_audited_gold_overlay(
                 )
                 overlay_log[inst] = "missing-row"
                 continue
+            # Defence-in-depth: also verify the row's `benchmark` tag matches
+            # the active benchmark. A row with the right (instance_id,
+            # selected_database) but the wrong `benchmark` would still slip
+            # past the selected_database check above (DB names overlap across
+            # benchmarks by design — that's why we have single_file in the
+            # first place). The schema requires `benchmark`, so an absent
+            # field is treated the same as a mismatch.
+            row_benchmark = entry.get("benchmark")
+            if not row_benchmark or row_benchmark != benchmark.name:
+                logger.warning(
+                    "audited-gold row for instance_id=%s has "
+                    "benchmark=%r but active benchmark is %r "
+                    "— treating as missing-row to avoid applying the wrong "
+                    "audit (single_file layout cross-benchmark guard)",
+                    inst, row_benchmark, benchmark.name,
+                )
+                overlay_log[inst] = "missing-row"
+                continue
             status = entry.get("audit_status")
             overlay_log[inst] = status or "missing-row"
             if status in ("edited", "unrecoverable"):

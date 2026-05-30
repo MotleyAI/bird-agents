@@ -644,6 +644,78 @@ def test_overlay_single_file_row_with_empty_selected_database_is_missing_row(
     assert task["sol_sql"] == ["SELECT original FROM t"]
 
 
+def test_overlay_single_file_row_with_wrong_benchmark_is_missing_row(
+    tmp_path, caplog,
+):
+    """Codex post-review-fix follow-up: DB names overlap across benchmarks
+    by design (alien, museum, … exist in both mini-interact and livesqlbench
+    — that's WHY single_file exists). A row with the right (instance_id,
+    selected_database) but the wrong `benchmark` tag would slip past the
+    selected_database guard, so the overlay must also verify the
+    `benchmark` field matches the active benchmark."""
+    import logging
+
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    _write_single_file_audit(tmp_path, [
+        {
+            "instance_id": "museum_7",
+            "selected_database": "museum",
+            "benchmark": "mini_interact",  # wrong benchmark
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT audited FROM t"],
+        },
+    ])
+    task = {
+        "instance_id": "museum_7",
+        "selected_database": "museum",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    with caplog.at_level(logging.WARNING, logger="bird_interact_agents.harness"):
+        log = apply_audited_gold_overlay(
+            [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+        )
+
+    assert log["museum_7"] == "missing-row"
+    assert task["sol_sql"] == ["SELECT original FROM t"]
+    assert any(
+        "museum_7" in rec.getMessage() and "mini_interact" in rec.getMessage()
+        for rec in caplog.records
+    ), (
+        "expected a wrong-benchmark warning; got: "
+        f"{[r.getMessage() for r in caplog.records]}"
+    )
+
+
+def test_overlay_single_file_row_with_no_benchmark_is_missing_row(tmp_path):
+    """Same guard, with the `benchmark` field absent — the schema requires
+    it, so missing is treated the same as mismatch."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    _write_single_file_audit(tmp_path, [
+        {
+            "instance_id": "museum_7",
+            "selected_database": "museum",
+            # NB: no `benchmark` field.
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT audited FROM t"],
+        },
+    ])
+    task = {
+        "instance_id": "museum_7",
+        "selected_database": "museum",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    log = apply_audited_gold_overlay(
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+    )
+
+    assert log["museum_7"] == "missing-row"
+    assert task["sol_sql"] == ["SELECT original FROM t"]
+
+
 def test_overlay_single_file_unrecoverable_swaps_and_records(tmp_path):
     """`unrecoverable` swaps `sol_sql` to the audited version too (same
     semantics as `edited`) and records the status."""
@@ -654,6 +726,7 @@ def test_overlay_single_file_unrecoverable_swaps_and_records(tmp_path):
         {
             "instance_id": "museum_5",
             "selected_database": "museum",
+            "benchmark": "livesqlbench",
             "audit_status": "unrecoverable",
             "audited_sol_sql": ["SELECT fallback FROM t"],
         },
@@ -681,7 +754,8 @@ def test_overlay_single_file_reads_audit_jsonl_only_once(tmp_path, monkeypatch):
 
     _write_single_file_audit(tmp_path, [
         {"instance_id": f"museum_{i}", "selected_database": "museum",
-         "audit_status": "clean"} for i in range(1, 11)
+         "benchmark": "livesqlbench", "audit_status": "clean"}
+        for i in range(1, 11)
     ])
     tasks = [
         {"instance_id": f"museum_{i}", "selected_database": "museum",

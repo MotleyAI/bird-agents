@@ -349,6 +349,7 @@ def test_require_audited_gold_passes_for_livesqlbench_when_row_present(
     audited_root.mkdir()
     (audited_root / "livesqlbench_audited.jsonl").write_text(
         '{"instance_id":"museum_7","selected_database":"museum",'
+        '"benchmark":"livesqlbench",'
         '"audit_status":"edited","audited_sol_sql":["SELECT 1"]}\n'
     )
     monkeypatch.setattr(_paths, "audited_gold_root", lambda: audited_root)

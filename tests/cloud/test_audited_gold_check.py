@@ -338,10 +338,23 @@ def _write_lsb_dataset(data_path: Path, rows: list[dict]) -> None:
 
 def _write_lsb_audited(audited_root: Path, rows: list[dict]) -> Path:
     """Lay down `<audited_root>/livesqlbench_audited.jsonl` for the
-    single_file layout."""
+    single_file layout.
+
+    Injects ``benchmark: "livesqlbench"`` into any row that doesn't
+    already set it, so existing test cases (which only set
+    ``selected_database``) keep passing the new benchmark-field guard.
+    Tests that DELIBERATELY omit ``benchmark`` to exercise the guard
+    should set ``benchmark`` to ``None`` (which the helper preserves)
+    or set an explicit wrong value.
+    """
     audited_root.mkdir(parents=True, exist_ok=True)
     sidecar = audited_root / "livesqlbench_audited.jsonl"
-    sidecar.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    normalised = []
+    for r in rows:
+        if "benchmark" not in r:
+            r = {**r, "benchmark": "livesqlbench"}
+        normalised.append(r)
+    sidecar.write_text("\n".join(json.dumps(r) for r in normalised) + "\n")
     return sidecar
 
 
@@ -547,6 +560,67 @@ def test_lsb_row_with_empty_selected_database_is_reported(tmp_path: Path) -> Non
     audited_root = tmp_path / "audited_gold"
     _write_lsb_audited(audited_root, [
         {"instance_id": "museum_7", "selected_database": "",
+         "audit_status": "edited", "audited_sol_sql": ["SELECT 1"]},
+    ])
+
+    missing = missing_audited_gold_ids(
+        ["museum_7"],
+        audited_root=audited_root, data_path=data,
+        benchmark=get_benchmark("livesqlbench"),
+    )
+    assert missing == ["museum_7"]
+
+
+def test_lsb_row_with_wrong_benchmark_is_reported(tmp_path: Path) -> None:
+    """Codex post-review-fix follow-up: DB names overlap across benchmarks
+    by design (alien, museum, ...). A row with the right (instance_id,
+    selected_database) but the wrong `benchmark` tag would slip past the
+    selected_database check. The submit-time guard must mirror the
+    overlay's check on the `benchmark` field too."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        missing_audited_gold_ids,
+    )
+
+    data = tmp_path / "livesqlbench_data_sqlite.jsonl"
+    _write_lsb_dataset(data, [
+        {"instance_id": "museum_7", "selected_database": "museum"},
+    ])
+    audited_root = tmp_path / "audited_gold"
+    _write_lsb_audited(audited_root, [
+        {"instance_id": "museum_7", "selected_database": "museum",
+         "benchmark": "mini_interact",  # wrong benchmark
+         "audit_status": "edited", "audited_sol_sql": ["SELECT 1"]},
+    ])
+
+    missing = missing_audited_gold_ids(
+        ["museum_7"],
+        audited_root=audited_root, data_path=data,
+        benchmark=get_benchmark("livesqlbench"),
+    )
+    assert missing == ["museum_7"]
+
+
+def test_lsb_row_with_no_benchmark_field_is_reported(tmp_path: Path) -> None:
+    """Same guard, with `benchmark` absent — the schema requires it, so
+    missing is treated the same as mismatch. Bypasses the helper's
+    default-injection by setting `benchmark=None` explicitly (which the
+    helper preserves)."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        missing_audited_gold_ids,
+    )
+
+    data = tmp_path / "livesqlbench_data_sqlite.jsonl"
+    _write_lsb_dataset(data, [
+        {"instance_id": "museum_7", "selected_database": "museum"},
+    ])
+    audited_root = tmp_path / "audited_gold"
+    _write_lsb_audited(audited_root, [
+        # benchmark=None — JSON-serialises as null, which the loader's
+        # `row.get("benchmark") or ""` coerces to "" so the guard fires.
+        {"instance_id": "museum_7", "selected_database": "museum",
+         "benchmark": None,
          "audit_status": "edited", "audited_sol_sql": ["SELECT 1"]},
     ])
 
