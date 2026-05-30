@@ -82,17 +82,25 @@ def _spy_slayer_mcp_stdio_config(monkeypatch, target_module):
     return captured
 
 
-def test_otf_encode_build_shared_slayer_server_disables_ingest_on_startup(
+def test_otf_encode_build_shared_slayer_server_keeps_ingest_on_startup(
     tmp_path, monkeypatch,
 ):
-    """pydantic_ai_otf_encode is the OTF encoder; its per-task storage always
-    comes from a fully-ingested OTF cache, so the startup re-ingest is pure
-    waste."""
+    """pydantic_ai_otf_encode operates against an ``ensure_db_reference``
+    artifact (NOT ``ensure_db_cache``). The reference's reuse path is
+    presence-gated on ``_reference_fp.txt`` and does NOT carry the
+    impl-fingerprint guard added in DEV-1508 (only ``ensure_db_cache``
+    does). Until the impl-fp split is extended to ``ensure_db_reference``,
+    this adapter must keep ``--ingest-on-startup`` as the safety net
+    against a reference built under an older slayer / embedding model
+    (e.g. a downloaded artifact from cloud combo 3 — Codex review of
+    PR #11)."""
     from bird_interact_agents.agents.pydantic_ai_otf_encode import agent as m
 
     captured = _spy_slayer_mcp_stdio_config(monkeypatch, m)
     m._build_shared_slayer_server(str(tmp_path))
-    assert captured["kw"].get("ingest_on_startup") is False
+    # Either default (no kwarg) or explicit True is acceptable; pin the
+    # observable behavior of the helper receiving True.
+    assert captured["kw"].get("ingest_on_startup", True) is True
 
 
 def test_recursive_build_shared_slayer_server_disables_for_on_the_fly(
