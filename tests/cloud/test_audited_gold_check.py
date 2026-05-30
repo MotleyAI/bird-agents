@@ -498,6 +498,66 @@ def test_lsb_row_db_mismatch_is_reported(tmp_path: Path) -> None:
     assert missing == ["museum_7"]
 
 
+def test_lsb_row_with_no_selected_database_is_reported(tmp_path: Path) -> None:
+    """Codex DEV-1510 review follow-up: a row that's missing
+    `selected_database` entirely must also be reported. The submit-time
+    guard's cross-benchmark check has to mirror the overlay's — if the
+    overlay rejects a row with no discriminator (and falls back to the
+    original gold), the submit-time guard must too, otherwise the
+    cluster comes up + the actor silently falls back mid-run."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        missing_audited_gold_ids,
+    )
+
+    data = tmp_path / "livesqlbench_data_sqlite.jsonl"
+    _write_lsb_dataset(data, [
+        {"instance_id": "museum_7", "selected_database": "museum"},
+    ])
+    audited_root = tmp_path / "audited_gold"
+    _write_lsb_audited(audited_root, [
+        # NB: no `selected_database` field at all.
+        {"instance_id": "museum_7",
+         "audit_status": "edited", "audited_sol_sql": ["SELECT 1"]},
+    ])
+
+    missing = missing_audited_gold_ids(
+        ["museum_7"],
+        audited_root=audited_root, data_path=data,
+        benchmark=get_benchmark("livesqlbench"),
+    )
+    assert missing == ["museum_7"], (
+        "row with no selected_database must be reported; the overlay "
+        "rejects it as missing-row, so the submit-time guard has to too"
+    )
+
+
+def test_lsb_row_with_empty_selected_database_is_reported(tmp_path: Path) -> None:
+    """Same guard, with `selected_database` present but empty-string —
+    the guard must reject both None and empty-string the same way."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        missing_audited_gold_ids,
+    )
+
+    data = tmp_path / "livesqlbench_data_sqlite.jsonl"
+    _write_lsb_dataset(data, [
+        {"instance_id": "museum_7", "selected_database": "museum"},
+    ])
+    audited_root = tmp_path / "audited_gold"
+    _write_lsb_audited(audited_root, [
+        {"instance_id": "museum_7", "selected_database": "",
+         "audit_status": "edited", "audited_sol_sql": ["SELECT 1"]},
+    ])
+
+    missing = missing_audited_gold_ids(
+        ["museum_7"],
+        audited_root=audited_root, data_path=data,
+        benchmark=get_benchmark("livesqlbench"),
+    )
+    assert missing == ["museum_7"]
+
+
 def test_benchmark_kwarg_default_preserves_per_db_behavior(tmp_path: Path) -> None:
     """Same back-compat posture as `apply_audited_gold_overlay`: existing
     `missing_audited_gold_ids(..., data_path=mini_interact_file)` callers

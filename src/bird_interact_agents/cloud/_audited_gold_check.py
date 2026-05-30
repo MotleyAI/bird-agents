@@ -184,10 +184,14 @@ def missing_audited_gold_ids(
                 missing.append(iid)
                 continue
             status, has_audited_sql, row_db = entry
-            # Defensive cross-benchmark guard: a row tagged with the wrong
-            # selected_database for this id is corrupt; treat as missing
-            # rather than apply the wrong audit.
-            if row_db and row_db != db:
+            # Defensive cross-benchmark guard: a row is missing if its
+            # `selected_database` is absent OR mismatches the dataset's
+            # mapping for this id. The single_file layout is shared
+            # across DBs, so applying an audit based on `instance_id`
+            # alone (without verifying the per-DB discriminator) could
+            # land the wrong audit. Mirrors the overlay's guard in
+            # `harness.py::apply_audited_gold_overlay`.
+            if not row_db or row_db != db:
                 missing.append(iid)
                 continue
             if status == "clean":

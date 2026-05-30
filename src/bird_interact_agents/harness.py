@@ -509,7 +509,20 @@ def apply_audited_gold_overlay(
                 overlay_log[inst] = "missing-row"
                 continue
             row_db = entry.get("selected_database")
-            if row_db is not None and row_db != db:
+            # Reject BOTH missing and mismatching `selected_database`. A row
+            # with no `selected_database` is corrupt — applying it based on
+            # `instance_id` alone would defeat the cross-benchmark collision
+            # protection entirely (single_file is shared across DBs).
+            if not row_db:
+                logger.warning(
+                    "audited-gold row for instance_id=%s has no "
+                    "selected_database — treating as missing-row "
+                    "(single_file layout requires the per-DB discriminator)",
+                    inst,
+                )
+                overlay_log[inst] = "missing-row"
+                continue
+            if row_db != db:
                 logger.warning(
                     "audited-gold row for instance_id=%s has "
                     "selected_database=%r but task carries selected_database=%r "
