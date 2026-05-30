@@ -276,6 +276,12 @@ class ClaudeSDKOtfAInteractAgent:
         slayer_storage_dir = ""
         accum = TokenUsage()
         trajectory: list[dict] = []
+        # Local handle to the per-task context dict. The exception path
+        # reads from THIS local instead of `_ctx_var.get()` — a stale
+        # ContextVar from a prior task in the same async context would
+        # otherwise leak its `result` into this row when an early setup
+        # failure (before _ctx_var.set, below) hits the except.
+        ctx_dict: dict | None = None
         try:
             load_db_data_if_needed(db_name, data_path_base)
             materialize_task_db(task_data, data_path_base)
@@ -288,7 +294,7 @@ class ClaudeSDKOtfAInteractAgent:
 
             max_asks = _ambiguity_count(task_data) + 3
 
-            _ctx_var.set({
+            ctx_dict = {
                 "status": status,
                 "data_path_base": data_path_base,
                 "user_sim_model": user_sim_model,
@@ -302,7 +308,8 @@ class ClaudeSDKOtfAInteractAgent:
                 "max_asks": max_asks,
                 "asks_used": 0,
                 "usage": accum,
-            })
+            }
+            _ctx_var.set(ctx_dict)
 
             tools = _select_tools(eval_mode)
             prompt = _build_prompt(eval_mode, task_data, budget)
@@ -368,23 +375,39 @@ class ClaudeSDKOtfAInteractAgent:
                 "claude_sdk_otf_ainteract error on %s: %s",
                 instance_id, e, exc_info=True,
             )
+            # Read from the LOCAL ctx_dict (not _ctx_var.get()) so a stale
+            # context from a prior task in the same async context cannot
+            # leak its diagnostics into this row. ctx_dict is None when an
+            # early-setup call raised before `_ctx_var.set(...)`.
+            result = (ctx_dict or {}).get("result") or {}
             return finalize_result_row(
                 {
                     "task_id": instance_id,
                     "instance_id": instance_id,
                     "database": db_name,
-                    "phase1_passed": False,
-                    "phase2_passed": False,
-                    "total_reward": 0.0,
+                    "phase1_passed": result.get("phase1_passed", False),
+                    "phase2_passed": result.get("phase2_passed", False),
+                    "total_reward": result.get("total_reward", 0.0),
+                    "submitted_sql": result.get("submitted_sql"),
+                    "submitted_query": result.get("submitted_query"),
+                    "submission_status": result.get("submission_status"),
+                    "predicted_result_json": result.get("predicted_result_json"),
+                    "gold_result_json": result.get("gold_result_json"),
+                    "phase1_observation": result.get("phase1_observation"),
+                    "phase2_observation": result.get("phase2_observation"),
                     "trajectory": trajectory,
                     "error": str(e),
                     "usage": accum.model_dump(),
+                    "phase1_passed_audited": result.get("phase1_passed_audited"),
+                    "phase1_passed_original": result.get("phase1_passed_original"),
+                    "phase1_observation_audited": result.get("phase1_observation_audited"),
+                    "phase1_observation_original": result.get("phase1_observation_original"),
                 },
                 deleted_kb_ids=deleted_kb_ids,
                 slayer_storage_dir=slayer_storage_dir,
             )
 
-        result = _ctx_var.get().get("result") or {}
+        result = (ctx_dict or {}).get("result") or {}
         return finalize_result_row(
             {
                 "task_id": instance_id,
@@ -395,6 +418,11 @@ class ClaudeSDKOtfAInteractAgent:
                 "total_reward": result.get("total_reward", 0.0),
                 "submitted_sql": result.get("submitted_sql"),
                 "submitted_query": result.get("submitted_query"),
+                "submission_status": result.get("submission_status"),
+                "predicted_result_json": result.get("predicted_result_json"),
+                "gold_result_json": result.get("gold_result_json"),
+                "phase1_observation": result.get("phase1_observation"),
+                "phase2_observation": result.get("phase2_observation"),
                 "trajectory": trajectory,
                 "error": None,
                 "usage": accum.model_dump(),
