@@ -242,7 +242,30 @@ class _FakeAssistant:
 _FakeAssistant.__name__ = "AssistantMessage"
 
 
-def _make_fake_client(captured: dict, messages):
+def _make_fake_client(
+    captured: dict,
+    messages,
+    *,
+    m_module,
+    prefill_result=None,
+    prefill_timing: str = "after",
+    raise_after_prefill: Exception | None = None,
+):
+    """Build a fake `ClaudeSDKClient`.
+
+    The optional `prefill_result` simulates a `submit_query` tool call
+    inside the agent loop by mutating the per-task `_ctx["result"]` at the
+    requested timing:
+
+    * `"before"` — set BEFORE yielding any message (mirrors a submit on
+      turn 1).
+    * `"after"`  — set AFTER yielding all messages (mirrors a submit
+      that landed on the final turn, just before finalize).
+
+    `raise_after_prefill` lets a test exercise the exception path with a
+    partial `_ctx["result"]` already in place (agent submitted then the
+    SDK loop crashed).
+    """
     class _FakeClient:
         def __init__(self, options):
             captured["options"] = options
@@ -257,13 +280,26 @@ def _make_fake_client(captured: dict, messages):
             return None
 
         async def receive_response(self):
-            for m in messages:
-                yield m
+            if prefill_result is not None and prefill_timing == "before":
+                m_module._ctx_var.get()["result"] = dict(prefill_result)
+            for msg in messages:
+                yield msg
+            if prefill_result is not None and prefill_timing == "after":
+                m_module._ctx_var.get()["result"] = dict(prefill_result)
+            if raise_after_prefill is not None:
+                raise raise_after_prefill
 
     return _FakeClient
 
 
-def _stub_env(monkeypatch, m, storage_dir, *, messages=(), captured=None, deleted=()):
+def _stub_env(
+    monkeypatch, m, storage_dir,
+    *,
+    messages=(), captured=None, deleted=(),
+    prefill_result=None,
+    prefill_timing: str = "after",
+    raise_after_prefill: Exception | None = None,
+):
     from bird_interact_agents import usage as usage_mod
 
     captured = captured if captured is not None else {}
@@ -290,7 +326,16 @@ def _stub_env(monkeypatch, m, storage_dir, *, messages=(), captured=None, delete
         return str(storage_dir), list(deleted)
 
     monkeypatch.setattr(m, "resolve_otf_task_storage_dir", fake_resolve)
-    monkeypatch.setattr(m, "ClaudeSDKClient", _make_fake_client(captured, messages))
+    monkeypatch.setattr(
+        m, "ClaudeSDKClient",
+        _make_fake_client(
+            captured, messages,
+            m_module=m,
+            prefill_result=prefill_result,
+            prefill_timing=prefill_timing,
+            raise_after_prefill=raise_after_prefill,
+        ),
+    )
     return captured
 
 
@@ -542,3 +587,249 @@ def test_import_does_not_pull_pydantic_ai_adapter_packages():
         "claude_sdk_otf import leaked pydantic_ai ADAPTER packages: "
         f"{r.stdout.strip()}{r.stderr.strip()}"
     )
+
+
+# ---------------------------------------------------------------------------
+# DEV-1511: diagnostic-field propagation from _ctx["result"] to the
+# finalized row. The submit helpers (`agents/_submit.py::_diagnostic_payload`)
+# populate `submission_status`, `predicted_result_json`, `gold_result_json`,
+# `phase1_observation` (and `phase2_observation` on phase 2) onto
+# `state.result`. The bug: `run_task` did not propagate them, so every
+# Claude-SDK row was mis-labeled `submission_status="never_submitted"` by
+# `run.py`'s setdefault — including rows that PASSED.
+# ---------------------------------------------------------------------------
+
+
+def _full_prefill(**overrides):
+    """A `_ctx['result']` snapshot shaped like what `_diagnostic_payload`
+    produces on a successful submit. Tests override individual keys."""
+    base = {
+        "submission_status": "submitted_ok",
+        "predicted_result_json": "[{\"a\": 1}]",
+        "gold_result_json": "[{\"a\": 1}]",
+        "phase1_observation": "PASS",
+        "phase1_passed": True,
+        "phase2_passed": False,
+        "total_reward": 1.0,
+        "submitted_sql": "SELECT 1",
+        "submitted_query": "{\"models\": [\"m\"]}",
+    }
+    base.update(overrides)
+    return base
+
+
+@pytest.mark.asyncio
+async def test_run_task_propagates_diagnostic_fields_on_happy_path(
+    monkeypatch, tmp_path,
+):
+    """The 5 fields (`submission_status`, `predicted_result_json`,
+    `gold_result_json`, `phase1_observation`, `phase2_observation`) must
+    appear on the returned row when the submit helper populated them."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    prefill = _full_prefill()
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        prefill_result=prefill,
+        prefill_timing="after",
+    )
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert row["submission_status"] == "submitted_ok"
+    assert row["predicted_result_json"] == "[{\"a\": 1}]"
+    assert row["gold_result_json"] == "[{\"a\": 1}]"
+    assert row["phase1_observation"] == "PASS"
+    # phase2_observation absent from prefill => key MUST still be present
+    # on the row (with value None), so downstream classifiers can read it
+    # unconditionally instead of using `.get(...)`.
+    assert "phase2_observation" in row
+    assert row["phase2_observation"] is None
+    # Pre-existing pass-throughs must still work (regression guard).
+    assert row["phase1_passed"] is True
+    assert row["submitted_query"] == "{\"models\": [\"m\"]}"
+    assert row["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_task_propagates_phase2_observation(monkeypatch, tmp_path):
+    """`phase2_observation` is set by `_diagnostic_payload` when the submit
+    runs in phase 2 (symmetric with `phase1_observation`). Same root-cause
+    drop; must propagate too."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    prefill = {
+        "submission_status": "wrong_result",
+        "phase1_passed": True,
+        "phase2_passed": False,
+        "phase2_observation": "p2 fail observation",
+        # phase1_observation deliberately omitted
+    }
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        prefill_result=prefill,
+    )
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert row["phase2_observation"] == "p2 fail observation"
+    # phase1_observation absent from prefill => key present with value None
+    assert "phase1_observation" in row
+    assert row["phase1_observation"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_task_propagation_defaults_to_none_when_never_submitted(
+    monkeypatch, tmp_path,
+):
+    """Adapter-contract coverage: when the agent never called submit, the
+    adapter's returned row must carry `None` (not a misleading sentinel) for
+    the 5 diagnostic fields. The `"never_submitted"` sentinel lives only in
+    `run.py`'s downstream `setdefault`, not in this adapter's row."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        # no prefill => _ctx["result"] stays None
+    )
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert row["submission_status"] is None
+    assert row["predicted_result_json"] is None
+    assert row["gold_result_json"] is None
+    assert row["phase1_observation"] is None
+    assert row["phase2_observation"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_task_exception_path_propagates_partial_result(
+    monkeypatch, tmp_path,
+):
+    """If the SDK loop crashes AFTER a successful submit, the exception
+    finalize block must rescue the diagnostic state from `_ctx["result"]`
+    rather than dropping it on the floor with `phase1_passed=False` and
+    `submission_status=None`. Mirrors the happy-path field set INCLUDING
+    pre-existing pass-throughs (`phase2_passed`, `total_reward`, the dual-
+    eval columns) — a rewrite must not silently drop any of them."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    prefill = _full_prefill(
+        submission_status="submitted_ok", phase1_passed=True,
+        phase2_passed=True, total_reward=0.75,
+        phase2_observation="p2 ok",
+        phase1_passed_audited=True, phase1_passed_original=False,
+        phase1_observation_audited="audited-obs",
+        phase1_observation_original="original-obs",
+    )
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        prefill_result=prefill,
+        prefill_timing="after",
+        raise_after_prefill=RuntimeError("boom"),
+    )
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert row["error"] == "boom"
+    # Rescued diagnostic state (the 5 new fields)
+    assert row["submission_status"] == "submitted_ok"
+    assert row["predicted_result_json"] == "[{\"a\": 1}]"
+    assert row["gold_result_json"] == "[{\"a\": 1}]"
+    assert row["phase1_observation"] == "PASS"
+    assert row["phase2_observation"] == "p2 ok"
+    # Rescued pre-existing fields — must still pass through on exception.
+    assert row["phase1_passed"] is True
+    assert row["phase2_passed"] is True
+    assert row["total_reward"] == 0.75
+    assert row["submitted_query"] == "{\"models\": [\"m\"]}"
+    assert row["submitted_sql"] == "SELECT 1"
+    # Dual-eval columns: still pass-through.
+    assert row["phase1_passed_audited"] is True
+    assert row["phase1_passed_original"] is False
+    assert row["phase1_observation_audited"] == "audited-obs"
+    assert row["phase1_observation_original"] == "original-obs"
+
+
+@pytest.mark.asyncio
+async def test_run_task_exception_before_ctx_set_yields_empty_diagnostics(
+    monkeypatch, tmp_path,
+):
+    """If an early-setup call (`load_db_data_if_needed`,
+    `materialize_task_db`, `resolve_otf_task_storage_dir`) raises BEFORE
+    `_ctx_var.set(...)` runs, the exception finalize block must not crash
+    with LookupError — and must return None for the diagnostic fields."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    _stub_env(monkeypatch, m, tmp_path / "store")
+    # Override load_db_data_if_needed to raise early.
+    def _boom(*a, **kw):
+        raise RuntimeError("early-setup boom")
+
+    monkeypatch.setattr(m, "load_db_data_if_needed", _boom)
+
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert "early-setup boom" in (row.get("error") or "")
+    assert row["submission_status"] is None
+    assert row["predicted_result_json"] is None
+    assert row["gold_result_json"] is None
+    assert row["phase1_observation"] is None
+    assert row["phase2_observation"] is None
+    assert row["phase1_passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_task_exception_path_isolated_from_stale_context(
+    monkeypatch, tmp_path,
+):
+    """Codex blocker: if a prior task in the same async context left
+    `_ctx_var` pointing at a stale dict, an early-setup failure in the
+    current task must NOT propagate the stale `result` into the new row.
+
+    The fix is to read the exception-path `result` from a LOCAL variable
+    populated alongside `_ctx_var.set(...)`, not from `_ctx_var.get()`.
+    This test verifies that contract by pre-setting `_ctx_var` to a stale
+    fake, then forcing an early-setup failure, and asserting the row
+    diagnostics are NOT the stale ones."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    _stub_env(monkeypatch, m, tmp_path / "store")
+    # Simulate a stale per-context contextvar from a prior task.
+    m._ctx_var.set({
+        "result": {
+            "submission_status": "STALE_SHOULD_NOT_LEAK",
+            "phase1_passed": True,
+            "predicted_result_json": "STALE",
+            "gold_result_json": "STALE",
+            "phase1_observation": "STALE",
+        },
+    })
+    # Force the early-setup phase to raise (before this run's _ctx_var.set).
+    def _boom(*a, **kw):
+        raise RuntimeError("early boom")
+
+    monkeypatch.setattr(m, "load_db_data_if_needed", _boom)
+
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert "early boom" in (row.get("error") or "")
+    # Crucially: NOT the stale values.
+    assert row["submission_status"] != "STALE_SHOULD_NOT_LEAK"
+    assert row["submission_status"] is None
+    assert row["predicted_result_json"] is None
+    assert row["gold_result_json"] is None
+    assert row["phase1_observation"] is None
+    assert row["phase1_passed"] is False

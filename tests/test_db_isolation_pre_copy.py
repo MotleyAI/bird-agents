@@ -370,10 +370,32 @@ def test_upstream_reset_still_works_after_pre_copy(tmp_path):
     execute_submit_action("SELECT id FROM widgets", status, str(root))
 
     assert working.is_file() and working.stat().st_size > 0
-    assert working.read_bytes() == template.read_bytes(), (
-        "after upstream reset, working DB must be byte-equal to the "
-        "dataset template — i.e. reset overwrites our pre-copy cleanly"
+    # `execute_submit_action` connects to the working DB after the reset's
+    # `shutil.copy2`, so SQLite touches the header (e.g. byte 18 — file-
+    # format write version). Don't require byte-equality of the whole
+    # file; instead check the reset's semantic contract: the working DB
+    # starts with the SQLite magic and exposes the same tables/rows as
+    # the template (i.e. the corruption was wiped).
+    assert working.read_bytes().startswith(_SQLITE_MAGIC), (
+        "after upstream reset, working DB must be a real SQLite file "
+        "(the reset wiped our intentional corruption)"
     )
+    with sqlite3.connect(working) as wconn, sqlite3.connect(template) as tconn:
+        wtables = sorted(r[0] for r in wconn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ))
+        ttables = sorted(r[0] for r in tconn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ))
+        assert wtables == ttables, (
+            f"working DB tables {wtables!r} must match template {ttables!r}"
+        )
+        for tbl in ttables:
+            wrows = list(wconn.execute(f"SELECT * FROM {tbl}"))
+            trows = list(tconn.execute(f"SELECT * FROM {tbl}"))
+            assert wrows == trows, (
+                f"working DB rows in {tbl!r} must match template after reset"
+            )
     assert stable.read_bytes() == stable_before, (
         "execute_submit_action must NOT rewrite the stable dataset "
         "<db>.sqlite — DEV-1462 per-task isolation is preserved"
@@ -499,14 +521,23 @@ def test_materialize_uses_atomic_rename_for_working_db_copy(monkeypatch, tmp_pat
     assert out is not None
     expected_db_file = Path(out)
 
+    # `materialize_task_db` installs BOTH the template symlink and the
+    # working DB atomically via per-call unique .part- paths + os.replace
+    # (the template entry is a symlink, so no shutil.copy2 there). Filter
+    # to the working-DB replace — that's the one this test pins.
     assert len(copy2_calls) == 1, (
-        f"expected exactly one shutil.copy2 call; got {copy2_calls!r}"
+        f"expected exactly one shutil.copy2 call (the working DB); "
+        f"got {copy2_calls!r}"
     )
-    assert len(replace_calls) == 1, (
-        f"expected exactly one os.replace call; got {replace_calls!r}"
+    working_replace_calls = [
+        c for c in replace_calls if Path(c[1]) == expected_db_file
+    ]
+    assert len(working_replace_calls) == 1, (
+        f"expected exactly one os.replace call targeting the working DB "
+        f"({expected_db_file!r}); got {replace_calls!r}"
     )
     copy_src, copy_dst = copy2_calls[0]
-    rep_src, rep_dst = replace_calls[0]
+    rep_src, rep_dst = working_replace_calls[0]
 
     assert Path(copy_dst) != expected_db_file, (
         f"shutil.copy2 must NOT write directly to expected_db_file "
