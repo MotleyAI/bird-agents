@@ -382,18 +382,24 @@ async def test_cross_process_race_rename_onto_marked_dir_is_success(
     monkeypatch,
 ):
     """If a peer process won the rename while we built (target now exists +
-    marked), our ``os.rename`` raises OSError; we must treat that as success
-    (the peer's content is equivalent) and discard our tmp dir, not re-raise."""
+    marked + impl-fp matches), our ``os.rename`` raises OSError; we must treat
+    that as success (the peer's content is equivalent) and discard our tmp dir,
+    not re-raise. DEV-1508 tightens the contract: the peer's `_impl_fp.txt`
+    must ALSO match ours — otherwise we'd be accepting a peer that built
+    under a stale impl, reintroducing the bug class Codex flagged."""
     cache_root = tmp_path / "cache"
     target = cache_root / DB
 
     real_rename = os.rename
+    current_impl = otf_cache._impl_fingerprint_of()
 
     def racing_rename(src, dst):
-        # Simulate a peer that already committed a complete dir at dst.
+        # Simulate a peer that already committed a complete dir at dst —
+        # WITH a matching impl marker (the "compatible peer" case).
         if Path(dst) == target and not target.exists():
             target.mkdir(parents=True)
             (target / "_kb_rows.json").write_text("[]")
+            (target / IMPL_MARKER).write_text(current_impl)
             (target / MARKER).write_text("peerfp")
             raise OSError("Directory not empty")
         return real_rename(src, dst)
@@ -410,6 +416,37 @@ async def test_cross_process_race_rename_onto_marked_dir_is_success(
     assert (target / MARKER).is_file()
     assert entry.fingerprint == "peerfp"
     assert entry.kb_rows == []
+
+
+async def test_cross_process_race_peer_with_mismatched_impl_is_rejected(
+    fake_mini_interact_root: Path, mock_orchestrator: dict, tmp_path: Path,
+    monkeypatch,
+):
+    """If a peer won the rename but built under a DIFFERENT impl
+    fingerprint (e.g. older slayer version that lacked a feature), we must
+    NOT silently accept their stale cache — that's the DEV-1508 bug class.
+    Re-raise the OSError so the caller knows the rebuild failed."""
+    cache_root = tmp_path / "cache"
+    target = cache_root / DB
+
+    real_rename = os.rename
+
+    def racing_rename(src, dst):
+        if Path(dst) == target and not target.exists():
+            target.mkdir(parents=True)
+            (target / "_kb_rows.json").write_text("[]")
+            # Peer's impl marker DIFFERS from ours.
+            (target / IMPL_MARKER).write_text("STALE_PEER_IMPL")
+            (target / MARKER).write_text("peerfp")
+            raise OSError("Directory not empty")
+        return real_rename(src, dst)
+
+    monkeypatch.setattr(otf_cache.os, "rename", racing_rename)
+
+    with pytest.raises(OSError):
+        await otf_cache.ensure_db_cache(
+            DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+        )
 
 
 async def test_concurrent_calls_for_same_db_build_once(
@@ -695,6 +732,65 @@ async def test_reuse_impl_match_keeps_fast_path(
     assert mock_orchestrator == snapshot, (
         "impl-fp match must keep the fast (no-rebuild) path"
     )
+
+
+async def test_impl_mismatch_actually_replaces_target_on_disk(
+    fake_mini_interact_root: Path, mock_orchestrator: dict, tmp_path: Path,
+    monkeypatch,
+):
+    """Codex review: when the impl fingerprint drifts, the rebuild must
+    actually REPLACE the on-disk target — incrementing phase counters is
+    not enough. Without this assertion a prior version of the rebuild path
+    appeared to "work" (phase counts went up) while ``os.rename`` silently
+    failed because the marked target still existed, and the OSError handler
+    returned the stale target. Pin both observable effects:
+    (a) ``_impl_fp.txt`` on disk reflects the NEW impl,
+    (b) the returned ``cache_dir`` is the target (not a stranded tmp dir)."""
+    cache_root = tmp_path / "cache"
+    first = await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+    impl_marker = first.cache_dir / IMPL_MARKER
+    old_impl = impl_marker.read_text().strip()
+
+    monkeypatch.setattr(otf_cache, "_slayer_version", lambda: "999.0.0-fake")
+    new_expected_impl = otf_cache._impl_fingerprint_of()
+    assert new_expected_impl != old_impl  # sanity
+
+    second = await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+    # Target replaced; the on-disk impl marker reflects the new build.
+    assert second.cache_dir == cache_root / DB
+    assert impl_marker.read_text().strip() == new_expected_impl
+
+
+async def test_legacy_cache_without_impl_marker_rebuilds(
+    fake_mini_interact_root: Path, mock_orchestrator: dict, tmp_path: Path,
+):
+    """A cache built BEFORE the impl-fp split landed has ``_cache_fp.txt``
+    but no ``_impl_fp.txt``. On reuse, that must trigger a rebuild (the
+    safer-than-assume-compat semantics) — and the rebuild must actually
+    replace the legacy target on disk."""
+    cache_root = tmp_path / "cache"
+    await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+    # Simulate a pre-split cache by deleting the impl marker.
+    impl_marker = cache_root / DB / IMPL_MARKER
+    assert impl_marker.is_file()
+    impl_marker.unlink()
+    snapshot = dict(mock_orchestrator)
+
+    entry = await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+    # Orchestrator re-ran AND the impl marker is back, populated with the
+    # current impl fingerprint.
+    assert mock_orchestrator["phase1"] == snapshot["phase1"] + 1
+    assert entry.cache_dir == cache_root / DB
+    assert impl_marker.is_file()
+    assert impl_marker.read_text().strip() == otf_cache._impl_fingerprint_of()
 
 
 async def test_reuse_does_not_call_full_fingerprint_of_after_split(

@@ -341,28 +341,33 @@ async def ensure_db_cache(
             # Provenance marker, written LAST.
             (tmp_dir / _CACHE_MARKER).write_text(fp)
 
-            # Migration / force: a pre-existing target with NO marker (old
-            # <db>/<fp>/ layout or an incomplete dir) — or any target under
-            # force — is wiped before the rename. (A markerless target also
-            # can't be reused, so wiping it is safe.) We never rmtree a
-            # peer's complete (marked) dir here: when the target is marked
-            # and not force, the rename below collides and the OSError branch
-            # treats the peer's dir as success.
-            if target.exists() and (force or not marker.is_file()):
+            # Migration / force / drift: a pre-existing target with NO
+            # marker (old <db>/<fp>/ layout or an incomplete dir), or any
+            # target under force, OR a target whose persisted impl
+            # fingerprint diverges from the current one (DEV-1508) — is
+            # wiped before the rename. Without the impl-drift branch,
+            # ``os.rename(tmp_dir, target)`` would fail with ENOTEMPTY and
+            # the OSError handler would silently return the stale target,
+            # defeating the impl-fp protection (Codex review of PR #11).
+            if target.exists() and (force or not marker.is_file() or not _impl_ok()):
                 shutil.rmtree(target, ignore_errors=True)
 
             # Atomic-rename onto the (now-absent) target. Cross-process race:
             # if a peer won the rename while we built, ours fails with OSError;
-            # treat that as success iff the target now carries the marker, and
-            # discard our tmp dir.
+            # treat that as success iff the target now carries the marker AND
+            # the peer's impl fingerprint matches ours — otherwise we'd be
+            # accepting a peer that built under a stale impl. Tight invariant
+            # in practice (single uv.lock per process tree) but explicit so
+            # the cross-process race can't reintroduce DEV-1508's bug class.
             try:
                 os.rename(tmp_dir, target)
             except OSError:
-                if not marker.is_file():
+                if not marker.is_file() or not _impl_ok():
                     raise
-                # A peer won the rename; the target is THEIR complete dir.
-                # Return their on-disk fp/kb_rows (ours may differ) so the
-                # CacheEntry matches cache_dir's actual contents (CodeRabbit).
+                # A peer won the rename; the target is THEIR complete dir
+                # AND its impl fp matches ours. Return their on-disk
+                # fp/kb_rows (ours may differ on input-half components) so
+                # the CacheEntry matches cache_dir's actual contents.
                 shutil.rmtree(tmp_dir, ignore_errors=True)
                 return _load_cache_entry(target)
         except BaseException:
