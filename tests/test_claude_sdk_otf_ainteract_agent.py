@@ -443,7 +443,13 @@ class _FakeAssistant:
 _FakeAssistant.__name__ = "AssistantMessage"
 
 
-def _make_fake_client(captured: dict, messages):
+def _make_fake_client(
+    captured: dict, messages,
+    *, m_module=None, prefill_result=None, prefill_timing: str = "after",
+    raise_after_prefill: Exception | None = None,
+):
+    """Build a fake `ClaudeSDKClient`. See the equivalent helper in
+    test_claude_sdk_otf_agent.py for the prefill semantics."""
     class _FakeClient:
         def __init__(self, options):
             captured["options"] = options
@@ -458,13 +464,25 @@ def _make_fake_client(captured: dict, messages):
             return None
 
         async def receive_response(self):
-            for m in messages:
-                yield m
+            if prefill_result is not None and prefill_timing == "before":
+                m_module._ctx_var.get()["result"] = dict(prefill_result)
+            for msg in messages:
+                yield msg
+            if prefill_result is not None and prefill_timing == "after":
+                m_module._ctx_var.get()["result"] = dict(prefill_result)
+            if raise_after_prefill is not None:
+                raise raise_after_prefill
 
     return _FakeClient
 
 
-def _stub_env(monkeypatch, m, storage_dir, *, messages=(), captured=None, deleted=()):
+def _stub_env(
+    monkeypatch, m, storage_dir,
+    *,
+    messages=(), captured=None, deleted=(),
+    prefill_result=None, prefill_timing: str = "after",
+    raise_after_prefill: Exception | None = None,
+):
     from bird_interact_agents import usage as usage_mod
 
     captured = captured if captured is not None else {}
@@ -479,6 +497,9 @@ def _stub_env(monkeypatch, m, storage_dir, *, messages=(), captured=None, delete
     monkeypatch.setattr(m, "materialize_task_db", _fake_materialize)
 
     def _fake_slayer_mcp(storage_dir, **kw):
+        # DEV-1508: capture the ingest_on_startup kwarg so the regression
+        # test (`test_run_task_passes_ingest_on_startup_false_to_slayer_mcp`)
+        # can assert the OTF adapter opted out of startup re-ingest.
         captured["slayer_mcp_kw"] = dict(kw)
         return {"command": "slayer", "args": ["mcp"], "env": {}}
 
@@ -493,7 +514,16 @@ def _stub_env(monkeypatch, m, storage_dir, *, messages=(), captured=None, delete
         return str(storage_dir), list(deleted)
 
     monkeypatch.setattr(m, "resolve_otf_task_storage_dir", fake_resolve)
-    monkeypatch.setattr(m, "ClaudeSDKClient", _make_fake_client(captured, messages))
+    monkeypatch.setattr(
+        m, "ClaudeSDKClient",
+        _make_fake_client(
+            captured, messages,
+            m_module=m,
+            prefill_result=prefill_result,
+            prefill_timing=prefill_timing,
+            raise_after_prefill=raise_after_prefill,
+        ),
+    )
     return captured
 
 
@@ -814,3 +844,208 @@ def test_import_does_not_pull_pydantic_ai_adapter_packages(
         "claude_sdk_otf_ainteract import leaked pydantic_ai ADAPTER packages: "
         f"leaked={r.get('leaked')!r} error={r.get('error')!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# DEV-1511: diagnostic-field propagation from `_ctx["result"]` to the
+# finalized row, mirrored for the post-DEV-1507 ainteract flavor. Same
+# shape as `test_claude_sdk_otf_agent.py`'s DEV-1511 block.
+# ---------------------------------------------------------------------------
+
+
+def _full_prefill(**overrides):
+    base = {
+        "submission_status": "submitted_ok",
+        "predicted_result_json": "[{\"a\": 1}]",
+        "gold_result_json": "[{\"a\": 1}]",
+        "phase1_observation": "PASS",
+        "phase1_passed": True,
+        "phase2_passed": False,
+        "total_reward": 1.0,
+        "submitted_sql": "SELECT 1",
+        "submitted_query": "{\"models\": [\"m\"]}",
+    }
+    base.update(overrides)
+    return base
+
+
+@pytest.mark.asyncio
+async def test_run_task_propagates_diagnostic_fields_on_happy_path(
+    monkeypatch, tmp_path,
+):
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        prefill_result=_full_prefill(),
+        prefill_timing="after",
+    )
+    agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert row["submission_status"] == "submitted_ok"
+    assert row["predicted_result_json"] == "[{\"a\": 1}]"
+    assert row["gold_result_json"] == "[{\"a\": 1}]"
+    assert row["phase1_observation"] == "PASS"
+    assert "phase2_observation" in row
+    assert row["phase2_observation"] is None
+    assert row["phase1_passed"] is True
+    assert row["submitted_query"] == "{\"models\": [\"m\"]}"
+    assert row["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_task_propagates_phase2_observation(monkeypatch, tmp_path):
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        prefill_result={
+            "submission_status": "wrong_result",
+            "phase1_passed": True,
+            "phase2_passed": False,
+            "phase2_observation": "p2 fail observation",
+        },
+    )
+    agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert row["phase2_observation"] == "p2 fail observation"
+    assert "phase1_observation" in row
+    assert row["phase1_observation"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_task_propagation_defaults_to_none_when_never_submitted(
+    monkeypatch, tmp_path,
+):
+    """Adapter contract: row carries None (not the misleading
+    "never_submitted" sentinel) when no submit happened. The sentinel
+    lives only in run.py's downstream setdefault, not in this row."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+    )
+    agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert row["submission_status"] is None
+    assert row["predicted_result_json"] is None
+    assert row["gold_result_json"] is None
+    assert row["phase1_observation"] is None
+    assert row["phase2_observation"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_task_exception_path_propagates_partial_result(
+    monkeypatch, tmp_path,
+):
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+
+    prefill = _full_prefill(
+        phase2_passed=True, total_reward=0.75,
+        phase2_observation="p2 ok",
+        phase1_passed_audited=True, phase1_passed_original=False,
+        phase1_observation_audited="audited-obs",
+        phase1_observation_original="original-obs",
+    )
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        prefill_result=prefill,
+        prefill_timing="after",
+        raise_after_prefill=RuntimeError("boom"),
+    )
+    agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert row["error"] == "boom"
+    assert row["submission_status"] == "submitted_ok"
+    assert row["predicted_result_json"] == "[{\"a\": 1}]"
+    assert row["gold_result_json"] == "[{\"a\": 1}]"
+    assert row["phase1_observation"] == "PASS"
+    assert row["phase2_observation"] == "p2 ok"
+    assert row["phase1_passed"] is True
+    assert row["phase2_passed"] is True
+    assert row["total_reward"] == 0.75
+    assert row["submitted_query"] == "{\"models\": [\"m\"]}"
+    assert row["submitted_sql"] == "SELECT 1"
+    assert row["phase1_passed_audited"] is True
+    assert row["phase1_passed_original"] is False
+    assert row["phase1_observation_audited"] == "audited-obs"
+    assert row["phase1_observation_original"] == "original-obs"
+
+
+@pytest.mark.asyncio
+async def test_run_task_exception_before_ctx_set_yields_empty_diagnostics(
+    monkeypatch, tmp_path,
+):
+    """Early-setup exception (`load_db_data_if_needed` raises before
+    `_ctx_var.set(...)`) must not crash with LookupError, and must return
+    None for the diagnostic fields — not a stale dict from a prior task."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+
+    _stub_env(monkeypatch, m, tmp_path / "store")
+
+    def _boom(*a, **kw):
+        raise RuntimeError("early-setup boom")
+
+    monkeypatch.setattr(m, "load_db_data_if_needed", _boom)
+
+    agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert "early-setup boom" in (row.get("error") or "")
+    assert row["submission_status"] is None
+    assert row["predicted_result_json"] is None
+    assert row["gold_result_json"] is None
+    assert row["phase1_observation"] is None
+    assert row["phase2_observation"] is None
+    assert row["phase1_passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_task_exception_path_isolated_from_stale_context(
+    monkeypatch, tmp_path,
+):
+    """Stale-context isolation (Codex blocker): a prior task's ContextVar
+    must not leak into this row when an early-setup failure hits the
+    exception path before `_ctx_var.set(...)` runs."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+
+    _stub_env(monkeypatch, m, tmp_path / "store")
+    m._ctx_var.set({
+        "result": {
+            "submission_status": "STALE_SHOULD_NOT_LEAK",
+            "phase1_passed": True,
+            "predicted_result_json": "STALE",
+            "gold_result_json": "STALE",
+            "phase1_observation": "STALE",
+        },
+    })
+
+    def _boom(*a, **kw):
+        raise RuntimeError("early boom")
+
+    monkeypatch.setattr(m, "load_db_data_if_needed", _boom)
+
+    agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert "early boom" in (row.get("error") or "")
+    assert row["submission_status"] != "STALE_SHOULD_NOT_LEAK"
+    assert row["submission_status"] is None
+    assert row["predicted_result_json"] is None
+    assert row["gold_result_json"] is None
+    assert row["phase1_observation"] is None
+    assert row["phase1_passed"] is False
