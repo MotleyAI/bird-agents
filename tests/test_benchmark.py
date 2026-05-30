@@ -92,3 +92,48 @@ def test_distinct_container_dirs_and_data_files():
 
 def test_type_is_benchmark():
     assert isinstance(get_benchmark("mini_interact"), Benchmark)
+
+
+# ---------------------------------------------------------------------------
+# DEV-1510: audited_gold_layout — mini-interact stays per-db (each db gets its
+# own sidecar dir); livesqlbench uses a single jsonl across all dbs (its dbs
+# share names with mini-interact, so a per-db dir under audited_gold/ would
+# collide). A forgotten `audited_gold_layout` on a new benchmark must NOT
+# silently land in the per-db root and mix artifacts.
+# ---------------------------------------------------------------------------
+
+
+def test_audited_gold_layout_default_is_per_db():
+    """Default preserves the existing on-disk shape (mini-interact contract)."""
+    assert Benchmark.model_fields["audited_gold_layout"].default == "per_db"
+
+
+def test_mini_interact_audited_gold_layout_per_db():
+    assert get_benchmark("mini_interact").audited_gold_layout == "per_db"
+
+
+def test_livesqlbench_audited_gold_layout_single_file():
+    """DEV-1510: livesqlbench routes audited gold through one consolidated
+    `audited_gold/livesqlbench_audited.jsonl`. Distinct from mini-interact
+    so DBs with shared names (alien, museum, etc.) don't collide."""
+    assert get_benchmark("livesqlbench").audited_gold_layout == "single_file"
+
+
+def test_audited_gold_layout_rejects_unknown_value():
+    """`audited_gold_layout` is a closed Literal — typos must fail at
+    descriptor construction time, not at lookup time inside the overlay."""
+    with pytest.raises(ValidationError):
+        Benchmark(
+            name="x",
+            dataset_marker="x",
+            data_subdir="x",
+            data_file="x.jsonl",
+            data_root_env="X_ROOT",
+            data_file_env="X_DATA",
+            supported_modes=("one-shot",),
+            one_shot=True,
+            gold_required=False,
+            per_task_db_isolation=False,
+            container_data_dir="/data/x",
+            audited_gold_layout="bogus",  # type: ignore[arg-type]
+        )

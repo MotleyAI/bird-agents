@@ -675,6 +675,68 @@ def test_unknown_benchmark_value_raises(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# DEV-1510: `audited_gold_file(benchmark)` — resolves the audited-gold file
+# for benchmarks whose `audited_gold_layout == "single_file"`. Per-db
+# benchmarks (mini-interact) use the `audited_gold_root() / <db> / <db>_audited.jsonl`
+# pattern via `apply_audited_gold_overlay` and have no single-file helper —
+# calling `audited_gold_file("mini_interact")` MUST raise so callers don't
+# silently land at a nonsense path.
+# ---------------------------------------------------------------------------
+
+
+def test_audited_gold_file_livesqlbench_anchored_to_main(tmp_path, monkeypatch):
+    main, wt = _setup_main_and_worktree(tmp_path, monkeypatch)
+    assert (
+        paths.audited_gold_file(benchmark="livesqlbench")
+        == main / "audited_gold" / "livesqlbench_audited.jsonl"
+    )
+    assert (
+        paths.audited_gold_file(benchmark="livesqlbench")
+        != wt / "audited_gold" / "livesqlbench_audited.jsonl"
+    )
+
+
+def test_audited_gold_file_honours_root_env_override(tmp_path, monkeypatch):
+    """`BIRD_AUDITED_GOLD_ROOT` (used by SAR-audit tests) repositions the
+    root; the single-file helper must respect it so cloud-side test fixtures
+    can point at a tmp dir."""
+    override = tmp_path / "elsewhere" / "audited_gold"
+    monkeypatch.setenv("BIRD_AUDITED_GOLD_ROOT", str(override))
+    assert (
+        paths.audited_gold_file(benchmark="livesqlbench")
+        == override / "livesqlbench_audited.jsonl"
+    )
+
+
+def test_audited_gold_file_per_db_layout_raises(tmp_path, monkeypatch):
+    """mini-interact uses per-db sidecars; there is no single-file path.
+    Asking for it must fail loudly — silently returning a bogus path would
+    let a caller write the wrong layout for that benchmark."""
+    _setup_main_and_worktree(tmp_path, monkeypatch)
+    with pytest.raises(ValueError) as exc:
+        paths.audited_gold_file(benchmark="mini_interact")
+    msg = str(exc.value).lower()
+    assert "single_file" in msg or "per_db" in msg or "layout" in msg
+
+
+def test_audited_gold_file_unknown_benchmark_raises(tmp_path, monkeypatch):
+    _setup_main_and_worktree(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        paths.audited_gold_file(benchmark="this-is-not-a-benchmark")
+
+
+def test_audited_gold_file_requires_explicit_benchmark(tmp_path, monkeypatch):
+    """Same posture as `slayer_otf_cache_root` / `slayer_models_otf_root`:
+    `benchmark` is required (no default) so a forgotten kwarg cannot
+    silently pick a benchmark."""
+    _setup_main_and_worktree(tmp_path, monkeypatch)
+    with pytest.raises(TypeError):
+        paths.audited_gold_file()  # benchmark is required (no default)
+    with pytest.raises(ValueError):
+        paths.audited_gold_file(benchmark=None)
+
+
 def test_live_main_checkout_root_is_a_git_dir():
     """Smoke test using the real LOOKUP_DIR (no monkeypatch).
 

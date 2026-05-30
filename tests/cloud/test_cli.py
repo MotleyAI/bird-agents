@@ -18,6 +18,11 @@ from bird_interact_agents.cloud import cli  # noqa: E402
 
 
 def _lsb_argv(extra: list[str]) -> list[str]:
+    # DEV-1510: the audited-gold guard now fires for livesqlbench too;
+    # fake `alien_1` has no audit row in CI checkouts, so default-skip
+    # the guard here. The DEV-1510-specific tests (further down) test
+    # the guard's livesqlbench behaviour with `--no-require-audited-gold`
+    # toggled deliberately.
     return [
         "submit",
         "--framework", "pydantic_ai_otf_encode",
@@ -26,6 +31,7 @@ def _lsb_argv(extra: list[str]) -> list[str]:
         "--instance-ids", "alien_1",
         "--slayer-setup", "on-the-fly",
         "--dataset", "livesqlbench",
+        "--no-require-audited-gold",
         *extra,
     ]
 
@@ -246,6 +252,112 @@ def test_require_audited_gold_disabled_when_use_audited_gold_off() -> None:
     )
     assert ns.use_audited_gold_sql is False
     assert ns.instance_ids == ["db_a_1"]
+
+
+# ---------------------------------------------------------------------------
+# DEV-1510: the `require_audited_gold` guard ALSO fires for livesqlbench now
+# that the benchmark has its own audited-gold sidecar
+# (`audited_gold/livesqlbench_audited.jsonl`). Pre-fix, cli.py skipped the
+# guard with `not get_benchmark(ns.dataset).gold_required` — the safety net
+# was disabled for the only gold_required benchmark, so a livesqlbench submit
+# could ship with NO audited rows and silently fall back to original gold.
+# ---------------------------------------------------------------------------
+
+
+def _lsb_audit_argv(extra: list[str] | None = None) -> list[str]:
+    """Like `_lsb_argv`, but with `museum_7` (the locked DEV-1510 audit
+    subject), `--mode one-shot`, `--gold-file`, and `--require-audited-gold`
+    forced back ON (overrides `_lsb_argv`'s default `--no-require-audited-gold`)
+    so the argv reaches the audited-gold guard."""
+    return _lsb_argv([
+        "--mode", "one-shot",
+        "--gold-file", "/tmp/fake-livesqlbench-gold.jsonl",
+        "--instance-ids", "museum_7",
+        "--require-audited-gold",
+        *(extra or []),
+    ])
+
+
+def _stub_lsb_dataset_file(tmp_path, monkeypatch, *, instance_id: str = "museum_7") -> None:
+    """Point `paths.benchmark_data_file` at a tmp livesqlbench JSONL so the
+    audited-gold guard's instance_id → selected_database lookup resolves
+    (without depending on the gitignored real data root)."""
+    from bird_interact_agents import paths as _paths
+
+    lsb_root = tmp_path / "livesqlbench-base-lite-sqlite"
+    lsb_root.mkdir(exist_ok=True)
+    data_file = lsb_root / "livesqlbench_data_sqlite.jsonl"
+    data_file.write_text(
+        f'{{"instance_id":"{instance_id}","selected_database":"museum"}}\n'
+    )
+    monkeypatch.setattr(
+        _paths, "benchmark_data_file", lambda *a, **k: data_file,
+    )
+
+
+def _stub_empty_audited_gold_root(tmp_path, monkeypatch) -> None:
+    """Point `paths.audited_gold_root` at an EMPTY tmp dir so the
+    livesqlbench guard sees `missing-file` (no `livesqlbench_audited.jsonl`)
+    rather than reading whatever the dev's main checkout contains."""
+    from bird_interact_agents import paths as _paths
+
+    audited_root = tmp_path / "audited_gold"
+    audited_root.mkdir(exist_ok=True)
+    monkeypatch.setattr(_paths, "audited_gold_root", lambda: audited_root)
+
+
+def test_require_audited_gold_default_on_for_livesqlbench(
+    tmp_path, monkeypatch,
+) -> None:
+    """DEV-1510: pre-fix, cli.py skipped this guard for any benchmark with
+    `gold_required=True` — i.e. livesqlbench. A submit with `museum_7`
+    and no audit row would silently fall back. Post-fix the guard fires
+    for livesqlbench too, so the submit must reject."""
+    _stub_empty_audited_gold_root(tmp_path, monkeypatch)
+    _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
+
+    with pytest.raises(SystemExit):
+        cli.parse_args(_lsb_audit_argv())
+
+
+def test_require_audited_gold_can_be_disabled_for_livesqlbench(
+    tmp_path, monkeypatch,
+) -> None:
+    """Same opt-out shape as mini-interact: `--no-require-audited-gold`
+    lets the submit proceed without an audit row."""
+    _stub_empty_audited_gold_root(tmp_path, monkeypatch)
+    _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
+
+    ns = cli.parse_args(_lsb_audit_argv(["--no-require-audited-gold"]))
+    assert ns.dataset == "livesqlbench"
+    assert ns.require_audited_gold is False
+    assert ns.use_audited_gold_sql is True  # default-on stays on
+
+
+def test_require_audited_gold_passes_for_livesqlbench_when_row_present(
+    tmp_path, monkeypatch,
+) -> None:
+    """The guard accepts a livesqlbench submit whose instance_ids ARE in
+    the audit file — proves the symmetry is bidirectional (not just
+    `always reject livesqlbench`).
+
+    Uses an `edited` row with `audited_sol_sql` for `museum_7` — matches
+    the locked DEV-1510 decision (museum_7 is `edited`, not `clean`)."""
+    from bird_interact_agents import paths as _paths
+
+    audited_root = tmp_path / "audited_gold"
+    audited_root.mkdir()
+    (audited_root / "livesqlbench_audited.jsonl").write_text(
+        '{"instance_id":"museum_7","selected_database":"museum",'
+        '"benchmark":"livesqlbench",'
+        '"audit_status":"edited","audited_sol_sql":["SELECT 1"]}\n'
+    )
+    monkeypatch.setattr(_paths, "audited_gold_root", lambda: audited_root)
+    _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
+
+    ns = cli.parse_args(_lsb_audit_argv())
+    assert ns.dataset == "livesqlbench"
+    assert ns.instance_ids == ["museum_7"]
 
 
 def test_prompt_cache_default_on() -> None:

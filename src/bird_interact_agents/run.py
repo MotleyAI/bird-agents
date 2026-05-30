@@ -882,16 +882,15 @@ async def run_evaluation(
         benchmark=benchmark_for_paths,
     )
 
-    # The audited-gold overlay is a mini-interact concept: gold inline in the
-    # data JSONL + a separate audited_gold/<db> sidecar. A gold_required
-    # benchmark (livesqlbench) carries its gold in the gated sidecar instead
-    # and has no audited_gold/, so skip the overlay there — mirrors the cloud
-    # `_load_task_data` gate and avoids overlaying an unrelated audited_gold/<db>
-    # row onto the gated gold on an instance_id clash (Codex).
+    # DEV-1510: the audited-gold overlay now fires for ALL benchmarks. The
+    # per-benchmark `audited_gold_layout` (per_db / single_file) on the
+    # `Benchmark` descriptor selects the on-disk layout, so livesqlbench
+    # picks up `audited_gold/livesqlbench_audited.jsonl` while mini-interact
+    # keeps the per-db sidecar layout — both flow through the same call.
     audited_overlay_log: dict[str, str] = {}
-    if use_audited_gold_sql and not b.gold_required:
+    if use_audited_gold_sql:
         audited_overlay_log = apply_audited_gold_overlay(
-            tasks, paths.audited_gold_root(),
+            tasks, paths.audited_gold_root(), benchmark=b,
         )
         logger.info(
             "audited-gold overlay applied: %s",
