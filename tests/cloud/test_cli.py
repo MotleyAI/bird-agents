@@ -103,6 +103,7 @@ def test_unknown_mode_rejected() -> None:
         cli.parse_args(
             [
                 "submit",
+                "--dataset", "mini_interact",
                 "--framework", "pydantic_ai",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -218,6 +219,7 @@ def test_require_audited_gold_default_on() -> None:
         cli.parse_args(
             [
                 "submit",
+                "--dataset", "mini_interact",
                 "--framework", "pydantic_ai",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -362,6 +364,7 @@ def test_detach_and_allow_dirty_mutually_exclusive() -> None:
         cli.parse_args(
             [
                 "submit",
+                "--dataset", "mini_interact",
                 "--framework", "pydantic_ai",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -383,6 +386,7 @@ def test_empty_instance_ids_string_rejected() -> None:
         cli.parse_args(
             [
                 "submit",
+                "--dataset", "mini_interact",
                 "--framework", "pydantic_ai",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -399,6 +403,7 @@ def test_empty_instance_ids_file_rejected(tmp_path) -> None:
         cli.parse_args(
             [
                 "submit",
+                "--dataset", "mini_interact",
                 "--framework", "pydantic_ai",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
