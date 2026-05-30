@@ -554,3 +554,169 @@ def test_fingerprint_of_changes_on_slayer_version(
         db_name=DB, mini_interact_root=fake_mini_interact_root,
     )
     assert a != b
+
+
+# ---------------------------------------------------------------------------
+# Impl-fingerprint split (DEV-1508): dropping `--ingest-on-startup` from the
+# OTF MCP launch removes the last defensive refresh path for slayer / embed-
+# model drift. The marker-presence reuse contract MUST stay (cloud lifecycle
+# would otherwise always-rebuild, since stat-mtime and abs-root differ). The
+# narrower fix is a SECOND marker `_impl_fp.txt` that holds only the
+# implementation-version components (slayer version + embedding model name)
+# — recomputed on reuse, mismatched → rebuild.
+# ---------------------------------------------------------------------------
+
+
+IMPL_MARKER = "_impl_fp.txt"
+
+
+async def test_impl_fp_marker_written_on_build(
+    fake_mini_interact_root: Path, mock_orchestrator: dict, tmp_path: Path,
+):
+    """After a fresh build BOTH markers exist; `_impl_fp.txt` carries the
+    impl-only fingerprint (a string)."""
+    cache_root = tmp_path / "cache"
+    entry = await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+    impl_marker = entry.cache_dir / IMPL_MARKER
+    assert impl_marker.is_file(), "impl-fp marker must be written on build"
+    content = impl_marker.read_text().strip()
+    assert content, "impl-fp marker must be non-empty"
+    # Impl fp is a separate symbol from the full fingerprint and excludes
+    # root/stat-mtime/file-content, so it should NOT equal entry.fingerprint
+    # (which carries those input components).
+    assert content != entry.fingerprint
+
+
+async def test_impl_fp_helper_excludes_root_and_inputs(
+    fake_mini_interact_root: Path, tmp_path: Path, monkeypatch,
+):
+    """The new ``_impl_fingerprint_of`` helper depends ONLY on the
+    implementation-version components (slayer version + embedding model).
+    Changing the mini-interact root or any input file MUST NOT change it —
+    that's the whole point of the split (cloud reuse with a different abs
+    root must keep working)."""
+    a = otf_cache._impl_fingerprint_of()
+    # Mutate a file that affects the FULL fingerprint but not impl.
+    (fake_mini_interact_root / DB / f"{DB}_column_meaning_base.json").write_text(
+        '{"some": "new content"}'
+    )
+    b = otf_cache._impl_fingerprint_of()
+    assert a == b
+    # And changing the slayer version DOES change it.
+    monkeypatch.setattr(otf_cache, "_slayer_version", lambda: "999.0.0-fake")
+    c = otf_cache._impl_fingerprint_of()
+    assert a != c
+
+
+async def test_impl_fp_helper_changes_on_embed_model(monkeypatch):
+    """Switching the embedding model name (or flipping channel on/off)
+    changes the impl fingerprint."""
+    off = otf_cache._impl_fingerprint_of()
+    monkeypatch.setattr(otf_cache, "_embeddings_available", lambda: True)
+    monkeypatch.setattr(otf_cache, "_embedding_current_model", lambda: "embed-v1")
+    a = otf_cache._impl_fingerprint_of()
+    assert off != a
+    monkeypatch.setattr(otf_cache, "_embedding_current_model", lambda: "embed-v2")
+    b = otf_cache._impl_fingerprint_of()
+    assert a != b
+
+
+async def test_reuse_rebuilds_on_slayer_version_mismatch(
+    fake_mini_interact_root: Path, mock_orchestrator: dict, tmp_path: Path,
+    monkeypatch,
+):
+    """Build cache. Bump slayer version. Reuse must rebuild — otherwise we'd
+    silently serve a cache built under a different slayer."""
+    cache_root = tmp_path / "cache"
+    await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+    snapshot = dict(mock_orchestrator)
+
+    # Simulate a slayer upgrade between cache-build and runtime.
+    monkeypatch.setattr(otf_cache, "_slayer_version", lambda: "999.0.0-fake")
+
+    await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+    # Each orchestrator phase ran AGAIN — total = snapshot + 1 per phase.
+    assert mock_orchestrator["phase1"] == snapshot["phase1"] + 1
+    assert mock_orchestrator["phase2"] == snapshot["phase2"] + 1
+    assert mock_orchestrator["phase3"] == snapshot["phase3"] + 1
+
+
+async def test_reuse_rebuilds_on_embed_model_mismatch(
+    fake_mini_interact_root: Path, mock_orchestrator: dict, tmp_path: Path,
+    monkeypatch,
+):
+    """Build cache with embeddings OFF (autouse fixture default). Flip
+    embeddings ON. Reuse must rebuild."""
+    cache_root = tmp_path / "cache"
+    await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+    snapshot = dict(mock_orchestrator)
+
+    monkeypatch.setattr(otf_cache, "_embeddings_available", lambda: True)
+    monkeypatch.setattr(
+        otf_cache, "_embedding_current_model", lambda: "embed-v1-fake",
+    )
+
+    # Stub embed_batch so we don't hit any real client.
+    async def fake_embed_batch(texts, model):
+        return [[0.0] for _ in texts]
+
+    monkeypatch.setattr(otf_cache, "embed_batch", fake_embed_batch)
+
+    await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+    # Symmetric with the slayer-version test: full rebuild, all phases re-run.
+    assert mock_orchestrator["phase1"] == snapshot["phase1"] + 1
+    assert mock_orchestrator["phase2"] == snapshot["phase2"] + 1
+    assert mock_orchestrator["phase3"] == snapshot["phase3"] + 1
+
+
+async def test_reuse_impl_match_keeps_fast_path(
+    fake_mini_interact_root: Path, mock_orchestrator: dict, tmp_path: Path,
+):
+    """Build cache. Re-call with no impl change. The orchestrator phases
+    MUST NOT re-run. (The fast path is the whole reason the cache exists.)"""
+    cache_root = tmp_path / "cache"
+    await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+    snapshot = dict(mock_orchestrator)
+    await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+    assert mock_orchestrator == snapshot, (
+        "impl-fp match must keep the fast (no-rebuild) path"
+    )
+
+
+async def test_reuse_does_not_call_full_fingerprint_of_after_split(
+    fake_mini_interact_root: Path, mock_orchestrator: dict, tmp_path: Path,
+    monkeypatch,
+):
+    """The split must not regress the explicit "no full fingerprint recompute
+    on reuse" invariant (the cloud lifecycle would otherwise mismatch on
+    sqlite mtime + abs root). Only the impl-only helper is allowed."""
+    cache_root = tmp_path / "cache"
+    await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+
+    def boom(**_kw):
+        raise AssertionError(
+            "full fingerprint_of must not be called on reuse — only _impl_fingerprint_of"
+        )
+
+    monkeypatch.setattr(otf_cache, "fingerprint_of", boom)
+    # Must reuse cleanly.
+    entry = await otf_cache.ensure_db_cache(
+        DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
+    )
+    assert entry.cache_dir == cache_root / DB

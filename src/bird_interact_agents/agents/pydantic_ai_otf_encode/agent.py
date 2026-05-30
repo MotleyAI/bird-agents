@@ -837,7 +837,13 @@ def _build_shared_slayer_server(slayer_storage_dir: str) -> MCPServerStdio:
     feeds any SQL error back to the agent (DEV-1454). The hook runs a client-side
     ``SlayerQueryEngine`` over the SAME storage dir (``YAMLStorage.get_model``
     reads disk uncached, so it sees the subprocess's latest writes)."""
-    cfg = slayer_mcp_stdio_config(slayer_storage_dir)
+    # DEV-1508: skip `--ingest-on-startup` — the OTF cache copied into
+    # `slayer_storage_dir` is post-ingestion by construction (full models YAML
+    # + `embeddings.db` + `memories.yaml`). Re-ingesting here is wasted work
+    # AND leaves the slayer MCP unreachable on the Claude-SDK-no-timeout path
+    # by analogy (here pydantic-ai's 1800s timeout would absorb it, but we
+    # save the 30-50s anyway).
+    cfg = slayer_mcp_stdio_config(slayer_storage_dir, ingest_on_startup=False)
     storage = YAMLStorage(base_dir=slayer_storage_dir)
     engine = SlayerQueryEngine(storage=storage)
 

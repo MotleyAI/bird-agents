@@ -240,10 +240,12 @@ def _stub_env(monkeypatch, m, storage_dir, *, messages=(), captured=None, delete
         return None
 
     monkeypatch.setattr(m, "materialize_task_db", _fake_materialize)
-    monkeypatch.setattr(
-        m, "slayer_mcp_stdio_config",
-        lambda d: {"command": "slayer", "args": ["mcp"], "env": {}},
-    )
+
+    def _fake_slayer_mcp(storage_dir, **kw):
+        captured["slayer_mcp_kw"] = dict(kw)
+        return {"command": "slayer", "args": ["mcp"], "env": {}}
+
+    monkeypatch.setattr(m, "slayer_mcp_stdio_config", _fake_slayer_mcp)
     monkeypatch.setattr(m, "create_sdk_mcp_server", lambda **kw: SimpleNamespace())
 
     async def fake_resolve(*, db_name, task_data, data_path_base, benchmark):
@@ -290,6 +292,25 @@ async def test_run_task_attaches_slayer_write_tools(monkeypatch, tmp_path):
     allowed = set(captured["options"].allowed_tools)
     assert "mcp__slayer__create_model" in allowed
     assert "mcp__slayer__edit_model" in allowed
+
+
+@pytest.mark.asyncio
+async def test_run_task_passes_ingest_on_startup_false_to_slayer_mcp(
+    monkeypatch, tmp_path,
+):
+    """DEV-1508: claude_sdk_otf must boot the slayer MCP WITHOUT
+    --ingest-on-startup. The OTF cache is post-ingestion by construction;
+    the Claude Agent SDK has no startup-timeout knob, so a slow re-ingest
+    leaves slayer status='pending' for the whole session and the agent
+    silently loses every mcp__slayer__* tool."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    captured = _stub_env(monkeypatch, m, tmp_path / "store")
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert captured["slayer_mcp_kw"].get("ingest_on_startup") is False
 
 
 @pytest.mark.asyncio
