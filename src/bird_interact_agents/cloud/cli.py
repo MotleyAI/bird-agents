@@ -33,10 +33,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     grp.add_argument("--instance-ids-file", type=str)
     sp_submit.add_argument("--mode", required=True, choices=_VALID_MODES)
     sp_submit.add_argument(
-        "--dataset", choices=cli_dataset_tokens(), default="mini_interact",
+        "--dataset", choices=cli_dataset_tokens(), required=True,
         help=(
             "Which benchmark to run (registry token; `mini-interact` accepted "
-            "as an alias). `livesqlbench` REQUIRES --gold-file and --mode "
+            "as an alias). REQUIRED — no default, to prevent silently running "
+            "mini-interact when --mode/--instance-ids happen to be consistent "
+            "with both. `livesqlbench` REQUIRES --gold-file and --mode "
             "{one-shot, oracle}."
         ),
     )
@@ -67,6 +69,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     sp_submit.add_argument("--max-depth", type=int, default=3)
+    sp_submit.add_argument(
+        "--reasoning-effort", dest="reasoning_effort", default=None,
+        choices=("low", "medium", "high", "max"),
+        help="Reasoning-effort level for claude_sdk_otf (ClaudeAgentOptions."
+             "effort). Ignored by other frameworks; unset = SDK default.",
+    )
     sp_submit.add_argument(
         "--prompt-cache", dest="prompt_cache", action="store_true", default=True
     )

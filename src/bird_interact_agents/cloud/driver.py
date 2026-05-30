@@ -165,6 +165,7 @@ def build_manifest(
         "use_audited_gold_sql": bool(args.use_audited_gold_sql),
         "max_depth": args.max_depth,
         "prompt_cache": bool(args.prompt_cache),
+        "reasoning_effort": getattr(args, "reasoning_effort", None),
         "slayer_setup": getattr(args, "slayer_setup", "pre-encoded"),
         "slayer_storage_root": getattr(
             args, "slayer_storage_root", "/data/slayer_models"
@@ -600,6 +601,8 @@ def _build_job_args(
         job_args.append("--prompt-cache")
     else:
         job_args.append("--no-prompt-cache")
+    if getattr(args, "reasoning_effort", None):
+        job_args += ["--reasoning-effort", args.reasoning_effort]
     job_args += [
         "--slayer-setup", getattr(args, "slayer_setup", "pre-encoded"),
         "--slayer-storage-root",
@@ -828,6 +831,8 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         job_args.append("--prompt-cache")
     else:
         job_args.append("--no-prompt-cache")
+    if manifest.get("reasoning_effort"):
+        job_args += ["--reasoning-effort", manifest["reasoning_effort"]]
     job_args += [
         "--slayer-setup", manifest.get("slayer_setup", "pre-encoded"),
         "--slayer-storage-root",

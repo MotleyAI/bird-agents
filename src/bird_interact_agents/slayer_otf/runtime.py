@@ -21,6 +21,8 @@ from __future__ import annotations
 import logging
 import shutil
 import sqlite3
+import tempfile
+import uuid
 from pathlib import Path
 
 import yaml
@@ -28,7 +30,9 @@ import yaml
 from slayer.memories.models import MEMORY_CANONICAL_PREFIX
 from slayer.storage.yaml_storage import YAMLStorage
 
-from bird_interact_agents.slayer_otf.cache import CacheEntry
+from bird_interact_agents import paths as _paths
+from bird_interact_agents.hard8_preprocessor import extract_deleted_kb_ids
+from bird_interact_agents.slayer_otf.cache import CacheEntry, ensure_db_cache
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
@@ -37,6 +41,72 @@ from bird_interact_agents.slayer_pipeline.portable_connection import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _otf_work_dir(instance_id: str) -> Path:
+    """Per-INVOCATION scratch dir for the shared on-the-fly storage path.
+
+    A fresh uuid suffix keeps every invocation's dir unique. Without it,
+    two concurrent runs of the same task — or a recursive-adapter run that
+    shares the ``bird_interact_slayer_otf`` prefix — could ``rmtree`` each
+    other's live per-task SLayer store mid-run, since
+    ``prepare_task_storage`` deletes ``<work_dir>/<db>`` before copying the
+    cache (CodeRabbit).
+    """
+    p = (
+        Path(tempfile.gettempdir())
+        / "bird_interact_slayer_otf"
+        / f"{instance_id}-{uuid.uuid4().hex[:8]}"
+    )
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+async def resolve_otf_task_storage_dir(
+    *,
+    db_name: str,
+    task_data: dict,
+    data_path_base: str,
+    benchmark: str,
+) -> tuple[str, list[int]]:
+    """Cache-only per-task SLayer storage for the on-the-fly path.
+
+    Materialises the per-DB deterministic OTF cache (idempotent — phases
+    1-3 ingest + KB-as-memories, NO LLM) and copies it into a per-task
+    scratch dir with this task's ``deleted_knowledge`` KB memories masked
+    (HARD-8). The agent then encodes KB items into THIS scratch at task
+    time and queries off them; nothing is persisted back to the cache.
+
+    Shared by ``claude_sdk_otf`` and structurally identical to the
+    recursive adapter's private ``_resolve_otf_task_storage_dir`` — kept
+    here (not imported from that adapter) so a Claude-SDK-only framework
+    does not drag in ``pydantic_ai``.
+
+    ``benchmark`` selects the per-benchmark scoped cache root (DEV-1462);
+    ``"mini_interact"`` keeps the legacy root. ``db_root`` is threaded as
+    the resolved ``--db-path`` so it overrides ``$BIRD_DB_PATH`` when the
+    per-task datasource connection string is re-anchored.
+    """
+    deleted = sorted(extract_deleted_kb_ids(task_data))
+    instance_id = task_data["instance_id"]
+    # ``.resolve()`` is load-bearing: ``_phase1_ingest`` formats the sqlite
+    # path into a 4-slash absolute URL, so a relative ``--db-path`` would
+    # otherwise root at ``/<rel>/...`` and ingest the wrong file.
+    mini_interact_root = Path(data_path_base).resolve()
+    cache_entry = await ensure_db_cache(
+        db_name,
+        cache_root=_paths.slayer_otf_cache_root(benchmark=benchmark),
+        mini_interact_root=mini_interact_root,
+    )
+    scratch = await prepare_task_storage(
+        db=db_name,
+        deleted_kb_ids=set(deleted),
+        cache_entry=cache_entry,
+        work_dir=_otf_work_dir(instance_id),
+        mini_interact_root=mini_interact_root,
+        db_root=mini_interact_root,
+    )
+    return str(scratch), deleted
 
 
 async def prepare_task_storage(

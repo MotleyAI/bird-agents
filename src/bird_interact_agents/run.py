@@ -90,10 +90,14 @@ def _validate_slayer_setup(
             "--mode one-shot requires --slayer-setup on-the-fly; "
             f"got --slayer-setup {slayer_setup!r}",
         )
-    # pydantic_ai_otf_encode is an on-the-fly-only adapter (DEV-1454).
-    if framework == "pydantic_ai_otf_encode" and slayer_setup != "on-the-fly":
+    # pydantic_ai_otf_encode and claude_sdk_otf are on-the-fly-only adapters
+    # (DEV-1454 / DEV-1505).
+    if (
+        framework in ("pydantic_ai_otf_encode", "claude_sdk_otf")
+        and slayer_setup != "on-the-fly"
+    ):
         raise ValueError(
-            "--framework pydantic_ai_otf_encode requires "
+            f"--framework {framework} requires "
             "--slayer-setup on-the-fly; "
             f"got --slayer-setup {slayer_setup}"
         )
@@ -104,11 +108,14 @@ def _validate_slayer_setup(
             f"--slayer-setup must be 'pre-encoded' or 'on-the-fly'; "
             f"got {slayer_setup!r}"
         )
-    if framework not in ("pydantic_ai_recursive", "pydantic_ai_otf_encode"):
+    if framework not in (
+        "pydantic_ai_recursive", "pydantic_ai_otf_encode", "claude_sdk_otf",
+    ):
         raise ValueError(
             "--slayer-setup on-the-fly is only supported with "
-            "--framework pydantic_ai_recursive or "
-            "--framework pydantic_ai_otf_encode; "
+            "--framework pydantic_ai_recursive, "
+            "--framework pydantic_ai_otf_encode, or "
+            "--framework claude_sdk_otf; "
             f"got --framework {framework}"
         )
     if query_mode != "slayer":
@@ -157,11 +164,13 @@ def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) 
             "--mode one-shot requires --query-mode slayer; "
             f"got --query-mode {query_mode!r}",
         )
-    if framework not in ("pydantic_ai_recursive", "pydantic_ai_otf_encode"):
+    if framework not in (
+        "pydantic_ai_recursive", "pydantic_ai_otf_encode", "claude_sdk_otf",
+    ):
         raise ValueError(
             "--mode one-shot is only supported with --framework "
-            "pydantic_ai_recursive or --framework pydantic_ai_otf_encode; "
-            f"got --framework {framework!r}",
+            "pydantic_ai_recursive, --framework pydantic_ai_otf_encode, or "
+            f"--framework claude_sdk_otf; got --framework {framework!r}",
         )
 
 
@@ -184,7 +193,9 @@ def _maybe_force_wipe_otf(
     """
     if not otf_rebuild:
         return
-    if framework not in ("pydantic_ai_recursive", "pydantic_ai_otf_encode"):
+    if framework not in (
+        "pydantic_ai_recursive", "pydantic_ai_otf_encode", "claude_sdk_otf",
+    ):
         return
     from bird_interact_agents.slayer_otf.reference_build import (
         purge_caches,
@@ -278,6 +289,7 @@ def make_runner(
     max_depth: int,
     slayer_storage_root: str | None,
     slayer_setup: str = "pre-encoded",
+    reasoning_effort: str | None = None,
 ):
     """Public alias for `_make_runner` — the cloud actor (and other
     throughput-sensitive callers) call this once at startup and reuse the
@@ -308,7 +320,7 @@ def make_runner(
         framework=framework, query_mode=query_mode, mode=mode,
         agent_model=agent_model, strict=strict, prompt_cache=prompt_cache,
         max_depth=max_depth, slayer_storage_root=slayer_storage_root,
-        slayer_setup=slayer_setup,
+        slayer_setup=slayer_setup, reasoning_effort=reasoning_effort,
     )
 
 
@@ -391,6 +403,7 @@ def _make_runner(
     max_depth: int,
     slayer_storage_root: str | None,
     slayer_setup: str = "pre-encoded",
+    reasoning_effort: str | None = None,
 ):
     """Construct the per-task runner closure for the given config.
 
@@ -420,6 +433,30 @@ def _make_runner(
                           user_sim_model: str) -> dict:
             budget = calculate_budget(td, patience, mode=mode)
             return await agent.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            )
+        return run_one
+    if framework == "claude_sdk_otf":
+        from bird_interact_agents.agents.claude_sdk_otf import ClaudeSDKOtfAgent
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf] --strict is a no-op for Anthropic models; "
+                "ignored."
+            )
+        agent_cso = ClaudeSDKOtfAgent(
+            slayer_storage_root=slayer_storage_root,
+            model=agent_model,
+            slayer_setup=slayer_setup,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_cso.run_task(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
@@ -566,6 +603,7 @@ async def run_one_task(
     max_depth: int,
     slayer_storage_root: str | None,
     slayer_setup: str = "pre-encoded",
+    reasoning_effort: str | None = None,
 ) -> dict:
     """Run a single per-task evaluation and return a `_persist`-consumable dict.
 
@@ -615,6 +653,7 @@ async def run_one_task(
         max_depth=max_depth,
         slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup,
+        reasoning_effort=reasoning_effort,
     )
     instance_id = str(task_data.get("instance_id") or "")
     t_start = time.perf_counter()
@@ -690,6 +729,7 @@ async def run_evaluation(
     otf_rebuild: bool = False,
     dataset: str = "mini-interact",
     gold_file: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> dict:
     """Run full evaluation across all tasks."""
     # Programmatic-caller mirror of the CLI fail-fast guards. The CLI
@@ -778,6 +818,7 @@ async def run_evaluation(
         max_depth=max_depth,
         slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup,
+        reasoning_effort=reasoning_effort,
     )
 
     # Open the per-run results.db (lives next to eval.json) and write
@@ -988,8 +1029,8 @@ def main() -> None:
     parser.add_argument(
         "--framework",
         choices=[
-            "claude_sdk", "pydantic_ai", "pydantic_ai_recursive",
-            "pydantic_ai_otf_encode",
+            "claude_sdk", "claude_sdk_otf", "pydantic_ai",
+            "pydantic_ai_recursive", "pydantic_ai_otf_encode",
             "mcp_agent", "agno", "smolagents",
         ],
         default="claude_sdk",
@@ -1007,11 +1048,13 @@ def main() -> None:
     parser.add_argument(
         "--dataset",
         choices=cli_dataset_tokens(),
-        default="mini_interact",
+        required=True,
         help=(
             "Which benchmark to load (from the benchmark registry). "
-            "``mini_interact`` (default; ``mini-interact`` accepted as an "
-            "alias) keeps the existing behaviour. ``livesqlbench`` loads "
+            "REQUIRED — no default, to prevent silently running the wrong "
+            "benchmark when --mode/--instance-ids happen to be consistent "
+            "with both. Pick ``mini_interact`` (``mini-interact`` accepted "
+            "as an alias) or ``livesqlbench``. ``livesqlbench`` loads "
             "LiveSQLBench-Base-Lite-SQLite and REQUIRES --gold-file; gated to "
             "--mode {one-shot, oracle}."
         ),
@@ -1055,8 +1098,9 @@ def main() -> None:
             "anthropic/claude-sonnet-4-5, fireworks_ai/glm-4p7. The matching "
             "API-key env var (CEREBRAS_API_KEY, OPENROUTER_API_KEY, "
             "ANTHROPIC_API_KEY, FIREWORKS_API_KEY) must be set. The "
-            "claude_sdk framework is locked to Anthropic and will skip "
-            "with a warning if given a non-Anthropic model."
+            "claude_sdk and claude_sdk_otf frameworks are locked to "
+            "Anthropic and will skip with a warning if given a "
+            "non-Anthropic model."
         ),
     )
     parser.add_argument(
@@ -1096,8 +1140,9 @@ def main() -> None:
             "Force every tool definition to carry strict=True (OpenAI "
             "strict structured-output mode). Default False matches the "
             "non-strict, non-constrained-decoding behaviour of all "
-            "frameworks. claude_sdk silently ignores the flag (Anthropic "
-            "has no tool-level strict). mcp_agent doesn't expose a hook "
+            "frameworks. claude_sdk and claude_sdk_otf silently ignore the "
+            "flag (Anthropic has no tool-level strict). mcp_agent doesn't "
+            "expose a hook "
             "for it and exits with a clear error when --strict is given."
         ),
     )
@@ -1148,6 +1193,17 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--reasoning-effort",
+        dest="reasoning_effort",
+        choices=["low", "medium", "high", "max"],
+        default=None,
+        help=(
+            "Reasoning-effort level for the claude_sdk_otf agent (maps to the "
+            "Claude Agent SDK's ClaudeAgentOptions.effort). Ignored by other "
+            "frameworks. Unset uses the SDK default."
+        ),
+    )
+    parser.add_argument(
         "--otf-rebuild",
         dest="otf_rebuild",
         action="store_true",
@@ -1177,9 +1233,10 @@ def main() -> None:
             "as today. 'on-the-fly' (DEV-1455) ingests the relevant DB "
             "into SLayer at task setup time and encodes each KB item "
             "as a SLayer memory, preserving cross-references as "
-            "memory:<id> entity tokens. Only valid with "
-            "--framework pydantic_ai_recursive --query-mode slayer "
-            "--mode a-interact."
+            "memory:<id> entity tokens. Valid with --query-mode slayer "
+            "and --framework pydantic_ai_recursive, pydantic_ai_otf_encode, "
+            "or claude_sdk_otf, under --mode a-interact or one-shot. "
+            "(pydantic_ai_otf_encode and claude_sdk_otf REQUIRE on-the-fly.)"
         ),
     )
     args = parser.parse_args()
@@ -1274,6 +1331,7 @@ def main() -> None:
             otf_rebuild=args.otf_rebuild,
             dataset=args.dataset,
             gold_file=args.gold_file,
+            reasoning_effort=args.reasoning_effort,
         )
     )
 

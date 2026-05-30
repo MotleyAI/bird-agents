@@ -193,6 +193,7 @@ fi
 } > "$OUT/invocation.txt"
 
 uv run bird-interact \
+  --dataset mini_interact \
   --framework pydantic_ai \
   --query-mode slayer \
   --mode a-interact \

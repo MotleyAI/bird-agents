@@ -96,15 +96,19 @@ def test_calculate_budget_one_shot_is_30():
 # ---------------------------------------------------------------------------
 
 
-def test_dataset_flag_default_is_mini_interact(monkeypatch, tmp_path):
+def test_dataset_flag_is_required(monkeypatch, tmp_path):
+    """--dataset has no default — omitting it must be rejected. Prevents
+    silently running mini-interact when --mode/--instance-ids are consistent
+    with both benchmarks."""
+    import sys
     argv = _argv_base(tmp_path) + [
         "--framework", "pydantic_ai", "--query-mode", "raw",
         "--mode", "a-interact",
     ]
-    kwargs = _drive_main(monkeypatch, argv)
-    # Canonical underscore token; `mini-interact` (hyphen) is accepted as a CLI
-    # alias and normalized to this before reaching run_evaluation.
-    assert kwargs.get("dataset") == "mini_interact"
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit):
+        from bird_interact_agents import run as run_mod
+        run_mod.main()
 
 
 def test_dataset_flag_livesqlbench_is_plumbed(monkeypatch, tmp_path):
