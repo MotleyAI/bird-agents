@@ -33,10 +33,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     grp.add_argument("--instance-ids-file", type=str)
     sp_submit.add_argument("--mode", required=True, choices=_VALID_MODES)
     sp_submit.add_argument(
-        "--dataset", choices=cli_dataset_tokens(), default="mini_interact",
+        "--dataset", choices=cli_dataset_tokens(), required=True,
         help=(
             "Which benchmark to run (registry token; `mini-interact` accepted "
-            "as an alias). `livesqlbench` REQUIRES --gold-file and --mode "
+            "as an alias). REQUIRED — no default, to prevent silently running "
+            "mini-interact when --mode/--instance-ids happen to be consistent "
+            "with both. `livesqlbench` REQUIRES --gold-file and --mode "
             "{one-shot, oracle}."
         ),
     )

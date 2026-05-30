@@ -29,6 +29,7 @@ def _argv_base(tmp_path: Path) -> list[str]:
     db_path.mkdir()
     return [
         "bird-interact",
+        "--dataset", "mini_interact",
         "--data", str(data),
         "--db-path", str(db_path),
         "--output", str(tmp_path / "out.json"),

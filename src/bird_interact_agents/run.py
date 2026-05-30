@@ -1128,11 +1128,13 @@ def main() -> None:
     parser.add_argument(
         "--dataset",
         choices=cli_dataset_tokens(),
-        default="mini_interact",
+        required=True,
         help=(
             "Which benchmark to load (from the benchmark registry). "
-            "``mini_interact`` (default; ``mini-interact`` accepted as an "
-            "alias) keeps the existing behaviour. ``livesqlbench`` loads "
+            "REQUIRED — no default, to prevent silently running the wrong "
+            "benchmark when --mode/--instance-ids happen to be consistent "
+            "with both. Pick ``mini_interact`` (``mini-interact`` accepted "
+            "as an alias) or ``livesqlbench``. ``livesqlbench`` loads "
             "LiveSQLBench-Base-Lite-SQLite and REQUIRES --gold-file; gated to "
             "--mode {one-shot, oracle}."
         ),

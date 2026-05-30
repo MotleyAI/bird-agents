@@ -39,18 +39,18 @@ pip install -e ".[claude-sdk,dev]"
 
 ```bash
 # Validate eval pipeline (submits ground-truth SQL, no LLM)
-bird-interact --mode oracle \
+bird-interact --dataset mini_interact --mode oracle \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/
 
 # Run with Claude Agent SDK, raw SQL mode
-bird-interact --framework claude_sdk --query-mode raw --mode a-interact \
+bird-interact --dataset mini_interact --framework claude_sdk --query-mode raw --mode a-interact \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/ \
   --limit 10 --concurrency 3
 
 # Run with SLayer mode (requires SLayer models to be ingested)
-bird-interact --framework claude_sdk --query-mode slayer --mode a-interact \
+bird-interact --dataset mini_interact --framework claude_sdk --query-mode slayer --mode a-interact \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/
 ```
@@ -116,7 +116,7 @@ first ask. Recommended `--reasoning-effort high`.
 
 ```bash
 bird-interact --framework claude_sdk_otf_ainteract --query-mode slayer \
-  --slayer-setup on-the-fly --mode a-interact \
+  --slayer-setup on-the-fly --dataset mini_interact --mode a-interact \
   --agent-model anthropic/claude-opus-4-7 \
   --reasoning-effort high \
   --data /path/to/mini_interact.jsonl \
@@ -128,7 +128,7 @@ Cloud:
 ```bash
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --framework claude_sdk_otf_ainteract --query-mode slayer \
-  --slayer-setup on-the-fly --mode a-interact \
+  --slayer-setup on-the-fly --dataset mini_interact --mode a-interact \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
   --reasoning-effort high \
