@@ -6,7 +6,10 @@ and `src.envs` packages are then importable from site-packages directly.
 """
 
 import logging
+import os
+import shutil
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -569,11 +572,6 @@ def evaluate_dual_gold(
 # Each task spawns a per-DB instance pointing at the right model storage.
 # ---------------------------------------------------------------------------
 
-import os as _os
-import shutil as _shutil
-from pathlib import Path as _Path
-
-
 def _resolve_slayer_command() -> str:
     """Locate the slayer CLI binary.
 
@@ -582,11 +580,11 @@ def _resolve_slayer_command() -> str:
     """
     # The .venv lives at the repo root; src/bird_interact_agents/harness.py
     # is two levels deep below repo root.
-    repo_root = _Path(__file__).resolve().parent.parent.parent
+    repo_root = Path(__file__).resolve().parent.parent.parent
     venv_slayer = repo_root / ".venv" / "bin" / "slayer"
-    if venv_slayer.is_file() and _os.access(venv_slayer, _os.X_OK):
+    if venv_slayer.is_file() and os.access(venv_slayer, os.X_OK):
         return str(venv_slayer)
-    on_path = _shutil.which("slayer")
+    on_path = shutil.which("slayer")
     if on_path:
         return on_path
     raise RuntimeError(
@@ -653,6 +651,28 @@ def _livesqlbench_task_dbdir(instance_id: str) -> Path:
     return p
 
 
+# The 16-byte magic at the start of every SQLite 3 database file. Used by
+# `materialize_task_db`'s fast-path to reject 0-byte and foreign-shape
+# files (e.g. LFS pointers) at the per-task working `<db>.sqlite` (DEV-1509).
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+
+
+def _has_sqlite_magic(path: Path) -> bool:
+    """Return True iff the first 16 bytes of `path` are the SQLite 3 magic.
+
+    Cheap (one open + 16-byte read). Catches the empirically observed
+    0-byte case and foreign-shape files (LFS pointers, etc.). NOTE:
+    does NOT detect deeper corruption of a SQLite-magic-starting file —
+    that's out of scope; the upstream `reset_and_restore_database` is
+    the authoritative restoration path.
+    """
+    try:
+        with path.open("rb") as fh:
+            return fh.read(16) == _SQLITE_MAGIC
+    except OSError:
+        return False
+
+
 def materialize_task_db(
     task_data: dict, data_path_base: str | Path,
 ) -> str | None:
@@ -687,8 +707,6 @@ def materialize_task_db(
     branch. Called from ``run_oracle_task`` and each one-shot
     ``run_task`` setup before the first submit.
     """
-    import os  # local: harness top is already heavy.
-
     if task_data.get("dataset") != "livesqlbench":
         return None
 
@@ -714,33 +732,62 @@ def materialize_task_db(
     expected_db_file = task_dir / f"{db}.sqlite"
     expected_template_link = task_dir / f"{db}_template.sqlite"
 
-    # Fast-path: idempotence. If the task already carries a db_file_path
-    # pointing at our dir AND the template symlink's target matches the
-    # current dataset template, reuse it.
+    # Fast-path: idempotence. Reuse the per-task dir iff (a) the task
+    # already carries our `db_file_path`, (b) the template symlink
+    # targets the current dataset template, AND (c) the working file is
+    # a real SQLite (DEV-1509: pre-fix, any earlier RW-mode connect
+    # could leave a 0-byte file here that ?mode=ro readers misinterpret
+    # as "no such table"; the magic-header check rejects 0-byte AND
+    # foreign shapes like LFS pointers).
     existing = task_data.get("db_file_path")
     if existing and Path(existing) == expected_db_file:
-        if expected_template_link.is_symlink():
+        if (
+            expected_template_link.is_symlink()
+            and expected_db_file.is_file()
+            and _has_sqlite_magic(expected_db_file)
+        ):
             try:
                 existing_target = expected_template_link.resolve()
             except OSError:
                 existing_target = None
             if existing_target == dataset_template:
                 return str(expected_db_file)
-        # Else fall through to rebuild — stale symlink (Codex #4).
+        # Else fall through to rebuild — stale symlink, missing working
+        # file, or corrupted/foreign-shape working file.
 
-    # Rebuild the per-task dir from scratch. Drop any stale state so a
-    # rerun against a different --db-path cannot reuse the previous
-    # template symlink.
-    if expected_template_link.exists() or expected_template_link.is_symlink():
-        expected_template_link.unlink()
-    if expected_db_file.exists():
-        # Do not trip os.symlink on an existing file; the upstream reset
-        # will recreate it from the template on the next submit anyway.
-        expected_db_file.unlink()
-    # Symlink the template (not a copy — 18 templates × N tasks would
-    # blow storage; the upstream reset copies template→working in this
-    # dir on each submit, so we never need our own body of the template).
-    os.symlink(dataset_template, expected_template_link)
+    # Rebuild the per-task dir. Both the template symlink AND the
+    # working file are installed via per-call unique tmp paths +
+    # `os.replace`, so two concurrent calls on the same instance_id
+    # cannot collide on a shared `.part` slot or race os.symlink's
+    # FileExistsError. `os.replace` atomically swaps the destination on
+    # POSIX, regardless of whether it's missing, a regular file, or a
+    # symlink — so the up-front `unlink()` of stale state is redundant.
+    uniq = uuid.uuid4().hex[:8]
+
+    # Template entry: SYMLINK ONLY — 18 templates × N tasks copied
+    # would blow storage (DEV-1462 Plan B0).
+    tmp_link = expected_template_link.with_name(
+        f"{expected_template_link.name}.part-{uniq}"
+    )
+    os.symlink(dataset_template, tmp_link)
+    os.replace(tmp_link, expected_template_link)
+
+    # Working file: ATOMIC PRE-COPY (DEV-1509). Without this, the dry-run
+    # gate in `agents/_submit.py::_dry_run_sql` opens the path ?mode=ro
+    # and — if anything (e.g. upstream `get_db_connection` in default RW
+    # mode) created an empty file here before the first reset — gets
+    # `OperationalError: no such table: <name>`, which the agent
+    # misdiagnoses as a casing problem. shutil.copy2 to a sibling tmp
+    # then os.replace makes the destination switch atomic, so a
+    # mid-copy failure (ENOSPC etc.) cannot leave a half-written file
+    # at expected_db_file. The upstream `reset_and_restore_database`
+    # is idempotent over this pre-copy (it `os.remove`s and
+    # `shutil.copy2`s from template on every submit).
+    tmp_db_file = expected_db_file.with_name(
+        f"{expected_db_file.name}.part-{uniq}"
+    )
+    shutil.copy2(dataset_template, tmp_db_file)
+    os.replace(tmp_db_file, expected_db_file)
 
     task_data["db_file_path"] = str(expected_db_file)
     return str(expected_db_file)
@@ -855,8 +902,8 @@ def slayer_mcp_stdio_config(
             "set --slayer-storage-root (or pass slayer_storage_root explicitly) "
             "when running slayer mode."
         )
-    env = _os.environ.copy()
-    env["SLAYER_STORAGE"] = str(_Path(storage_dir).resolve())
+    env = os.environ.copy()
+    env["SLAYER_STORAGE"] = str(Path(storage_dir).resolve())
     args = ["mcp"]
     if ingest_on_startup:
         args.append("--ingest-on-startup")

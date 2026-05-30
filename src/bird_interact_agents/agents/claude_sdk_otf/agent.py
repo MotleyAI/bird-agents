@@ -7,11 +7,14 @@ the relevant KB items into named columns/measures (in dependency order,
 referencing earlier entities through declared joins) and then query off
 them, instead of inlining everything.
 
-slayer-query-mode only; eval modes ``a-interact`` and ``one-shot``.
+After DEV-1507 this adapter is **livesqlbench / one-shot only**; the
+sibling ``claude_sdk_otf_ainteract`` flavor handles
+``mini-interact / a-interact`` with a hard ``ask_user``-before-submit
+discipline.
 
-The contextvar plumbing, the native user-sim / submission / knowledge
-tools, ``_gate``/``_state_view``, the usage loop and ``finalize_result_row``
-are reused verbatim from the sibling ``claude_sdk`` adapter — only the
+The contextvar plumbing, the native submission / knowledge tools,
+``_gate``/``_state_view``, the usage loop and ``finalize_result_row`` are
+reused verbatim from the sibling ``claude_sdk`` adapter — only the
 per-task storage source (the deterministic cache, NOT committed models),
 the SLayer write-tool whitelist, the prompts, and the mode gating differ.
 """
@@ -33,14 +36,12 @@ from claude_agent_sdk import (
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
     accumulate_assistant_usage,
-    ask_user,
     get_all_external_knowledge_names,
     get_all_knowledge_definitions,
     get_knowledge_definition,
     submit_query,
 )
 from bird_interact_agents.agents.claude_sdk_otf.prompts import (
-    SLAYER_OTF_A_INTERACT,
     SLAYER_OTF_ONE_SHOT,
 )
 from bird_interact_agents.benchmark import get_benchmark
@@ -127,9 +128,10 @@ def _make_turn_budget_hook(
 
 
 # Native (in-process) tools registered under the "bird-interact-tools"
-# MCP server. a-interact gets `ask_user`; one-shot decides autonomously
-# (no user simulator) so it is dropped. Both keep the knowledge-lookup
-# tools and `submit_query`.
+# MCP server. one-shot decides autonomously (no user simulator), so the
+# knowledge-lookup tools + `submit_query` are the only natives the agent
+# needs. (The a-interact flavor adds `ask_user` in
+# ``claude_sdk_otf_ainteract``.)
 _KNOWLEDGE_TOOLS = [
     get_all_external_knowledge_names,
     get_knowledge_definition,
@@ -138,21 +140,26 @@ _KNOWLEDGE_TOOLS = [
 
 
 def _select_tools(eval_mode: str) -> list:
-    if eval_mode == "a-interact":
-        return [*_KNOWLEDGE_TOOLS, ask_user, submit_query]
-    if eval_mode == "one-shot":
-        return [*_KNOWLEDGE_TOOLS, submit_query]
-    raise ValueError(
-        f"claude_sdk_otf supports eval_mode a-interact or one-shot; "
-        f"got {eval_mode!r}"
-    )
+    if eval_mode != "one-shot":
+        raise ValueError(
+            "claude_sdk_otf supports only eval_mode='one-shot' "
+            "(use claude_sdk_otf_ainteract for a-interact); "
+            f"got {eval_mode!r}"
+        )
+    return [*_KNOWLEDGE_TOOLS, submit_query]
 
 
 def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
+    if eval_mode != "one-shot":
+        raise ValueError(
+            "claude_sdk_otf supports only eval_mode='one-shot'; "
+            f"got {eval_mode!r}"
+        )
     user_query = task_data["amb_user_query"]
     db_name = task_data["selected_database"]
-    template = SLAYER_OTF_A_INTERACT if eval_mode == "a-interact" else SLAYER_OTF_ONE_SHOT
-    return template.format(budget=budget, db_name=db_name, user_query=user_query)
+    return SLAYER_OTF_ONE_SHOT.format(
+        budget=budget, db_name=db_name, user_query=user_query,
+    )
 
 
 class ClaudeSDKOtfAgent:
@@ -160,7 +167,9 @@ class ClaudeSDKOtfAgent:
 
     Anthropic-only (the SDK is locked to Anthropic); a non-Anthropic model
     short-circuits with a skip-shaped row. slayer-query-mode only;
-    ``slayer_setup`` must be ``on-the-fly``.
+    ``slayer_setup`` must be ``on-the-fly``. After DEV-1507 this flavor is
+    bound to **livesqlbench / one-shot**; mismatched dataset or eval_mode
+    is rejected at the agent boundary.
     """
 
     #: Reasoning-effort levels accepted by the Claude SDK (`ClaudeAgentOptions.effort`).
@@ -194,7 +203,7 @@ class ClaudeSDKOtfAgent:
         data_path_base: str,
         budget: float,
         query_mode: str,
-        eval_mode: str = "a-interact",
+        eval_mode: str = "one-shot",
         user_sim_model: str = "anthropic/claude-haiku-4-5-20251001",
         user_sim_prompt_version: str = "v2",
     ) -> dict:
@@ -203,10 +212,24 @@ class ClaudeSDKOtfAgent:
                 "claude_sdk_otf supports only --query-mode slayer; "
                 f"got {query_mode!r}"
             )
-        if eval_mode not in ("a-interact", "one-shot"):
+        if eval_mode != "one-shot":
             raise ValueError(
-                "claude_sdk_otf supports only --mode a-interact or "
-                f"--mode one-shot; got {eval_mode!r}"
+                "claude_sdk_otf supports only --mode one-shot "
+                "(use --framework claude_sdk_otf_ainteract for "
+                f"--mode a-interact); got {eval_mode!r}"
+            )
+
+        # Defense in depth on top of the CLI gate: a programmatic caller
+        # (`make_runner` has no dataset arg) cannot bypass dataset binding
+        # by passing task_data with the wrong marker. Canonicalize via
+        # ``get_benchmark`` so documented aliases are accepted (matches
+        # `_validate_framework_dataset_mode`'s behavior).
+        dataset = task_data.get("dataset") or "mini_interact"
+        if get_benchmark(dataset).name != "livesqlbench":
+            raise ValueError(
+                "claude_sdk_otf is bound to --dataset livesqlbench "
+                "(use --framework claude_sdk_otf_ainteract for "
+                f"mini_interact); got dataset={dataset!r}"
             )
 
         instance_id = task_data["instance_id"]
@@ -234,12 +257,16 @@ class ClaudeSDKOtfAgent:
                 slayer_storage_dir="",
             )
 
-        benchmark = get_benchmark(task_data.get("dataset") or "mini_interact")
-        if eval_mode == "one-shot" and not benchmark.one_shot:
+        benchmark = get_benchmark(dataset)
+        # one-shot REQUIRES a benchmark that declares one_shot=True. The
+        # narrowed-flavor's dataset gate above already enforces livesqlbench,
+        # but the benchmark check is kept as a load-bearing assertion in case
+        # a future benchmark joins the one-shot family.
+        if not benchmark.one_shot:
             raise ValueError(
                 "--mode one-shot requires a task whose benchmark declares "
                 "one_shot=True (its loader stamps task_data['dataset']); got "
-                f"dataset={task_data.get('dataset')!r}",
+                f"dataset={dataset!r}",
             )
 
         status = SampleStatus(
@@ -253,6 +280,12 @@ class ClaudeSDKOtfAgent:
         slayer_storage_dir = ""
         accum = TokenUsage()
         trajectory: list[dict] = []
+        # Local handle to the per-task context dict. We read from THIS
+        # local on the exception path instead of `_ctx_var.get()` — a
+        # stale ContextVar from a prior task in the same async context
+        # would otherwise leak its `result` into this row when an early
+        # setup failure (before _ctx_var.set, below) hits the except.
+        ctx_dict: dict | None = None
         try:
             load_db_data_if_needed(db_name, data_path_base)
             # LiveSQLBench one-shot: per-task isolated working sqlite (no-op
@@ -270,7 +303,7 @@ class ClaudeSDKOtfAgent:
 
             max_asks = _ambiguity_count(task_data) + 3  # +patience(3); matches ADK
 
-            _ctx_var.set({
+            ctx_dict = {
                 "status": status,
                 "data_path_base": data_path_base,
                 "user_sim_model": user_sim_model,
@@ -284,7 +317,8 @@ class ClaudeSDKOtfAgent:
                 "max_asks": max_asks,
                 "asks_used": 0,
                 "usage": accum,
-            })
+            }
+            _ctx_var.set(ctx_dict)
 
             tools = _select_tools(eval_mode)
             prompt = _build_prompt(eval_mode, task_data, budget)
@@ -309,7 +343,7 @@ class ClaudeSDKOtfAgent:
                 # Restrict to ONLY our MCP tools: drop every Claude Code
                 # built-in (Bash/Edit/Task/WebFetch/ToolSearch/...). Removing
                 # ToolSearch is load-bearing — with the built-ins gone the
-                # ~16 MCP tools are exposed directly instead of being deferred
+                # ~15 MCP tools are exposed directly instead of being deferred
                 # behind ToolSearch (which previously wasted ~5 turns/run while
                 # the agent re-discovered its own tools). setting_sources=[]
                 # also keeps the run reproducible (no user/project settings,
@@ -337,32 +371,49 @@ class ClaudeSDKOtfAgent:
 
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(task_data["amb_user_query"])
-                # No manual turn-break: `max_turns` caps the run and lets the
-                # final turn's tool call execute, so the stream ends cleanly.
                 async for msg in client.receive_response():
                     trajectory.append(
                         {"type": str(type(msg).__name__), "data": str(msg)[:500]}
                     )
                     accumulate_assistant_usage(accum, msg, self.model)
         except Exception as e:
-            logger.error("claude_sdk_otf error on %s: %s", instance_id, e)
+            logger.error(
+                "claude_sdk_otf error on %s: %s",
+                instance_id, e, exc_info=True,
+            )
+            # Read from the LOCAL ctx_dict (not _ctx_var.get()) so a stale
+            # context from a prior task in the same async context cannot
+            # leak its diagnostics into this row. ctx_dict is None when an
+            # early-setup call raised before `_ctx_var.set(...)`.
+            result = (ctx_dict or {}).get("result") or {}
             return finalize_result_row(
                 {
                     "task_id": instance_id,
                     "instance_id": instance_id,
                     "database": db_name,
-                    "phase1_passed": False,
-                    "phase2_passed": False,
-                    "total_reward": 0.0,
+                    "phase1_passed": result.get("phase1_passed", False),
+                    "phase2_passed": result.get("phase2_passed", False),
+                    "total_reward": result.get("total_reward", 0.0),
+                    "submitted_sql": result.get("submitted_sql"),
+                    "submitted_query": result.get("submitted_query"),
+                    "submission_status": result.get("submission_status"),
+                    "predicted_result_json": result.get("predicted_result_json"),
+                    "gold_result_json": result.get("gold_result_json"),
+                    "phase1_observation": result.get("phase1_observation"),
+                    "phase2_observation": result.get("phase2_observation"),
                     "trajectory": trajectory,
                     "error": str(e),
                     "usage": accum.model_dump(),
+                    "phase1_passed_audited": result.get("phase1_passed_audited"),
+                    "phase1_passed_original": result.get("phase1_passed_original"),
+                    "phase1_observation_audited": result.get("phase1_observation_audited"),
+                    "phase1_observation_original": result.get("phase1_observation_original"),
                 },
                 deleted_kb_ids=deleted_kb_ids,
                 slayer_storage_dir=slayer_storage_dir,
             )
 
-        result = _ctx_var.get().get("result") or {}
+        result = (ctx_dict or {}).get("result") or {}
         return finalize_result_row(
             {
                 "task_id": instance_id,
@@ -373,6 +424,11 @@ class ClaudeSDKOtfAgent:
                 "total_reward": result.get("total_reward", 0.0),
                 "submitted_sql": result.get("submitted_sql"),
                 "submitted_query": result.get("submitted_query"),
+                "submission_status": result.get("submission_status"),
+                "predicted_result_json": result.get("predicted_result_json"),
+                "gold_result_json": result.get("gold_result_json"),
+                "phase1_observation": result.get("phase1_observation"),
+                "phase2_observation": result.get("phase2_observation"),
                 "trajectory": trajectory,
                 "error": None,
                 "usage": accum.model_dump(),

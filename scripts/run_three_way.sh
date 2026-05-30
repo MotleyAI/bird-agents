@@ -221,6 +221,7 @@ run_ours() {
     strict_flag="--no-strict"
   fi
   uv run python -m bird_interact_agents.run \
+    --dataset mini_interact \
     --framework "$FRAMEWORK" \
     --mode "$MODE" \
     --query-mode "$query_mode" \

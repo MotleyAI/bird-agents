@@ -1,9 +1,9 @@
 """Unit tests for the `claude_sdk_otf` agent (no LLM, no real cache build).
 
-The framework is a single Claude-Agent-SDK agent that encodes the DB's KB
-items into the per-task SLayer store on the fly (off the deterministic OTF
-cache) and then queries. It is slayer-query-mode only and supports the
-`a-interact` and `one-shot` eval modes.
+After DEV-1507 the framework is **livesqlbench / one-shot only**. The
+mini-interact / a-interact behavior lives in the sibling
+`claude_sdk_otf_ainteract` flavor (see
+`tests/test_claude_sdk_otf_ainteract_agent.py`).
 """
 
 from __future__ import annotations
@@ -40,32 +40,33 @@ def _tool_names(tools):
     return {t.name for t in tools}
 
 
-def test_select_tools_a_interact_has_ask_user_and_submit_query():
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
-
-    names = _tool_names(m._select_tools("a-interact"))
-    assert "ask_user" in names
-    assert "submit_query" in names
-
-
-def test_select_tools_one_shot_omits_ask_user_keeps_submit_query():
+def test_select_tools_one_shot_returns_four_native_tools():
+    """3 knowledge tools + submit_query = 4 native; no ask_user.
+    Total tool count (with 11 slayer) is 15."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as m
 
     names = _tool_names(m._select_tools("one-shot"))
-    assert "submit_query" in names
+    assert names == {
+        "get_all_external_knowledge_names",
+        "get_knowledge_definition",
+        "get_all_knowledge_definitions",
+        "submit_query",
+    }
     assert "ask_user" not in names
 
 
-def test_select_tools_rejects_unknown_eval_mode():
+def test_select_tools_rejects_a_interact_and_others():
+    """After DEV-1507 the narrowed flavor is one-shot only."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as m
 
-    with pytest.raises(ValueError):
-        m._select_tools("c-interact")
+    for bad in ("a-interact", "c-interact", "oracle"):
+        with pytest.raises(ValueError):
+            m._select_tools(bad)
 
 
 def test_slayer_tool_names_include_write_tools():
     """The OTF agent must be able to WRITE models, unlike the read-only
-    claude_sdk slayer mode."""
+    claude_sdk slayer mode. 11 slayer tools total."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as m
 
     names = set(m._slayer_tool_names())
@@ -80,50 +81,61 @@ def test_slayer_tool_names_include_write_tools():
     # read tools still present
     for t in ("mcp__slayer__query", "mcp__slayer__search", "mcp__slayer__inspect_model"):
         assert t in names
+    assert len(names) == 11
 
 
 # ---------------------------------------------------------------------------
 # Prompt selection + hygiene
 # ---------------------------------------------------------------------------
 
-def test_build_prompt_variant_matches_eval_mode():
+def test_build_prompt_uses_one_shot_template():
+    """After DEV-1507 the narrowed agent has only the one-shot template;
+    a-interact lives in the ainteract flavor's prompts module."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as m
     from bird_interact_agents.agents.claude_sdk_otf import prompts as p
 
     td = {"amb_user_query": "how many widgets?", "selected_database": "shop"}
-    a = m._build_prompt("a-interact", td, budget=20.0)
-    o = m._build_prompt("one-shot", td, budget=20.0)
-    assert a != o
-    # the formatted prompts must carry the question + budget
-    assert "how many widgets?" in a and "how many widgets?" in o
-    # a-interact MUST instruct the agent to ask the user; one-shot must NOT
-    assert "ask_user" in a.lower()
-    assert "ask_user" not in o.lower()
-    # both descend from the declared constants
-    assert p.SLAYER_OTF_A_INTERACT and p.SLAYER_OTF_ONE_SHOT
+    out = m._build_prompt("one-shot", td, budget=20.0)
+    assert "how many widgets?" in out
+    assert "shop" in out
+    # one-shot does NOT instruct ask_user.
+    assert "ask_user" not in out.lower()
+    assert p.SLAYER_OTF_ONE_SHOT
+    assert not hasattr(p, "SLAYER_OTF_A_INTERACT"), (
+        "SLAYER_OTF_A_INTERACT must be removed from the narrowed module"
+    )
+
+
+def test_build_prompt_rejects_non_one_shot():
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    td = {"amb_user_query": "?", "selected_database": "shop"}
+    for bad in ("a-interact", "c-interact", "oracle"):
+        with pytest.raises(ValueError):
+            m._build_prompt(bad, td, budget=20.0)
 
 
 def test_prompts_encode_in_sequence_and_no_inlining():
     from bird_interact_agents.agents.claude_sdk_otf import prompts as p
 
-    for text in (p.SLAYER_OTF_A_INTERACT, p.SLAYER_OTF_ONE_SHOT):
-        low = text.lower()
-        # KB self-annotation contract
-        assert "kb_id" in low or "[kb=" in low
-        # the core no-inlining instruction
-        assert "inlin" in low
-        # encourage referencing created entities in the final query
-        assert "final query" in low or "reference" in low
-        # find relevant KB via search
-        assert "search" in low
-        # encode in dependency order through declared joins (not invented)
-        assert "join" in low
-        assert "order" in low or "depend" in low or "sequence" in low
+    text = p.SLAYER_OTF_ONE_SHOT
+    low = text.lower()
+    # KB self-annotation contract
+    assert "kb_id" in low or "[kb=" in low
+    # the core no-inlining instruction
+    assert "inlin" in low
+    # encourage referencing created entities in the final query
+    assert "final query" in low or "reference" in low
+    # find relevant KB via search
+    assert "search" in low
+    # encode in dependency order through declared joins (not invented)
+    assert "join" in low
+    assert "order" in low or "depend" in low or "sequence" in low
 
 
 def test_prompts_use_synthetic_examples_only():
     """Guards `feedback_prompts_synthetic_examples_only`: no real eval-set
-    DB / table / column / value names may appear in the prompts."""
+    DB / table / column / value names may appear in the prompt."""
     from bird_interact_agents.agents.claude_sdk_otf import prompts as p
 
     banned = [
@@ -131,10 +143,9 @@ def test_prompts_use_synthetic_examples_only():
         "socsupport", "service_types", "stellardist", "photo_band",
         "taguatinga",
     ]
-    for text in (p.SLAYER_OTF_A_INTERACT, p.SLAYER_OTF_ONE_SHOT):
-        low = text.lower()
-        for name in banned:
-            assert name not in low, f"real eval-set name {name!r} leaked into prompt"
+    low = p.SLAYER_OTF_ONE_SHOT.lower()
+    for name in banned:
+        assert name not in low, f"real eval-set name {name!r} leaked into prompt"
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +157,7 @@ _TASK = {
     "instance_id": "shop_1",
     "amb_user_query": "?",
     "knowledge_ambiguity": [],
+    "dataset": "livesqlbench",
 }
 
 
@@ -155,18 +167,53 @@ async def test_run_task_rejects_raw_query_mode():
 
     agent = ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
     with pytest.raises(ValueError):
-        await agent.run_task(dict(_TASK), "/tmp", 20.0, "raw", eval_mode="a-interact")
+        await agent.run_task(dict(_TASK), "/tmp", 20.0, "raw", eval_mode="one-shot")
 
 
 @pytest.mark.asyncio
-async def test_run_task_rejects_unsupported_eval_mode():
+async def test_run_task_rejects_unsupported_eval_modes():
+    """After DEV-1507 the narrowed agent rejects every non-one-shot mode at
+    the agent boundary (defense in depth on top of CLI gates)."""
     from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
 
     agent = ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    for bad in ("a-interact", "c-interact", "oracle"):
+        with pytest.raises(ValueError):
+            await agent.run_task(
+                dict(_TASK), "/tmp", 20.0, "slayer", eval_mode=bad,
+            )
+
+
+@pytest.mark.asyncio
+async def test_run_task_accepts_livesqlbench_alias():
+    """Codex (PR #10 follow-up): the agent-level dataset gate must accept
+    the canonical token regardless of any alias normalization upstream.
+    The narrowed flavor is livesqlbench-only; canonicalization happens
+    via `get_benchmark(dataset).name` so any future alias would be honored
+    consistently with the validator."""
+    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
+
+    agent = ClaudeSDKOtfAgent(model="openai/gpt-4o")
+    td = dict(_TASK, dataset="livesqlbench")  # canonical
+    row = await agent.run_task(
+        td, "/tmp", 20.0, "slayer", eval_mode="one-shot",
+    )
+    # Got past dataset gate; non-anthropic short-circuit produced a skip row.
+    assert row["phase1_passed"] is False
+    assert "anthropic" in (row.get("error") or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_run_task_rejects_mini_interact_dataset():
+    """claude_sdk_otf is bound to livesqlbench at the agent layer — a
+    programmatic caller (`make_runner` has no dataset arg) cannot bypass
+    the CLI gate by passing task_data with the wrong dataset."""
+    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
+
+    agent = ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    td = dict(_TASK, dataset="mini_interact")
     with pytest.raises(ValueError):
-        await agent.run_task(
-            dict(_TASK), "/tmp", 20.0, "slayer", eval_mode="c-interact",
-        )
+        await agent.run_task(td, "/tmp", 20.0, "slayer", eval_mode="one-shot")
 
 
 @pytest.mark.asyncio
@@ -175,21 +222,10 @@ async def test_run_task_non_anthropic_model_skips():
 
     agent = ClaudeSDKOtfAgent(model="openai/gpt-4o")
     row = await agent.run_task(
-        dict(_TASK), "/tmp", 20.0, "slayer", eval_mode="a-interact",
+        dict(_TASK), "/tmp", 20.0, "slayer", eval_mode="one-shot",
     )
     assert row["phase1_passed"] is False
     assert "anthropic" in (row.get("error") or "").lower()
-
-
-@pytest.mark.asyncio
-async def test_run_task_one_shot_requires_one_shot_benchmark():
-    """mini-interact tasks (benchmark.one_shot == False) cannot run one-shot."""
-    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
-
-    agent = ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
-    td = dict(_TASK)  # no "dataset" => mini_interact
-    with pytest.raises(ValueError):
-        await agent.run_task(td, "/tmp", 20.0, "slayer", eval_mode="one-shot")
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +242,30 @@ class _FakeAssistant:
 _FakeAssistant.__name__ = "AssistantMessage"
 
 
-def _make_fake_client(captured: dict, messages):
+def _make_fake_client(
+    captured: dict,
+    messages,
+    *,
+    m_module,
+    prefill_result=None,
+    prefill_timing: str = "after",
+    raise_after_prefill: Exception | None = None,
+):
+    """Build a fake `ClaudeSDKClient`.
+
+    The optional `prefill_result` simulates a `submit_query` tool call
+    inside the agent loop by mutating the per-task `_ctx["result"]` at the
+    requested timing:
+
+    * `"before"` — set BEFORE yielding any message (mirrors a submit on
+      turn 1).
+    * `"after"`  — set AFTER yielding all messages (mirrors a submit
+      that landed on the final turn, just before finalize).
+
+    `raise_after_prefill` lets a test exercise the exception path with a
+    partial `_ctx["result"]` already in place (agent submitted then the
+    SDK loop crashed).
+    """
     class _FakeClient:
         def __init__(self, options):
             captured["options"] = options
@@ -221,13 +280,26 @@ def _make_fake_client(captured: dict, messages):
             return None
 
         async def receive_response(self):
-            for m in messages:
-                yield m
+            if prefill_result is not None and prefill_timing == "before":
+                m_module._ctx_var.get()["result"] = dict(prefill_result)
+            for msg in messages:
+                yield msg
+            if prefill_result is not None and prefill_timing == "after":
+                m_module._ctx_var.get()["result"] = dict(prefill_result)
+            if raise_after_prefill is not None:
+                raise raise_after_prefill
 
     return _FakeClient
 
 
-def _stub_env(monkeypatch, m, storage_dir, *, messages=(), captured=None, deleted=()):
+def _stub_env(
+    monkeypatch, m, storage_dir,
+    *,
+    messages=(), captured=None, deleted=(),
+    prefill_result=None,
+    prefill_timing: str = "after",
+    raise_after_prefill: Exception | None = None,
+):
     from bird_interact_agents import usage as usage_mod
 
     captured = captured if captured is not None else {}
@@ -256,7 +328,16 @@ def _stub_env(monkeypatch, m, storage_dir, *, messages=(), captured=None, delete
         return str(storage_dir), list(deleted)
 
     monkeypatch.setattr(m, "resolve_otf_task_storage_dir", fake_resolve)
-    monkeypatch.setattr(m, "ClaudeSDKClient", _make_fake_client(captured, messages))
+    monkeypatch.setattr(
+        m, "ClaudeSDKClient",
+        _make_fake_client(
+            captured, messages,
+            m_module=m,
+            prefill_result=prefill_result,
+            prefill_timing=prefill_timing,
+            raise_after_prefill=raise_after_prefill,
+        ),
+    )
     return captured
 
 
@@ -272,10 +353,11 @@ async def test_run_task_uses_cache_resolver_not_committed(monkeypatch, tmp_path)
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
     await agent.run_task(
-        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
     assert "resolve_kwargs" in captured
-    assert captured["resolve_kwargs"]["benchmark"] == "mini_interact"
+    # Narrowed flavor is livesqlbench-only — the cache root is scoped accordingly.
+    assert captured["resolve_kwargs"]["benchmark"] == "livesqlbench"
 
 
 @pytest.mark.asyncio
@@ -287,7 +369,7 @@ async def test_run_task_attaches_slayer_write_tools(monkeypatch, tmp_path):
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
     await agent.run_task(
-        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
     allowed = set(captured["options"].allowed_tools)
     assert "mcp__slayer__create_model" in allowed
@@ -308,9 +390,25 @@ async def test_run_task_passes_ingest_on_startup_false_to_slayer_mcp(
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
     await agent.run_task(
-        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
     assert captured["slayer_mcp_kw"].get("ingest_on_startup") is False
+
+
+@pytest.mark.asyncio
+async def test_run_task_does_not_whitelist_ask_user(monkeypatch, tmp_path):
+    """Narrowed flavor: ask_user must NOT be on the allow-list (livesqlbench
+    has no user simulator)."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    captured = _stub_env(monkeypatch, m, tmp_path / "store")
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    allowed = set(captured["options"].allowed_tools)
+    assert "mcp__bird-interact-tools__submit_query" in allowed
+    assert "mcp__bird-interact-tools__ask_user" not in allowed
 
 
 @pytest.mark.asyncio
@@ -323,7 +421,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
     await agent.run_task(
-        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
     opts = captured["options"]
     assert opts.tools == []
@@ -332,7 +430,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
     assert "PostToolUse" in (opts.hooks or {})
 
 
-def test_accumulate_assistant_usage_dict_shaped_and_skips_result():
+def test_accumulate_assistant_usage_dict_shaped_and_skips_result(monkeypatch):
     """Regression: the live SDK delivers `msg.usage` as a DICT. The shared
     helper must read it (not via getattr→0) AND skip the cumulative
     ResultMessage so agent tokens/cost aren't zero or double-counted."""
@@ -340,6 +438,10 @@ def test_accumulate_assistant_usage_dict_shaped_and_skips_result():
         accumulate_assistant_usage,
     )
     from bird_interact_agents import usage as usage_mod
+
+    # Pin pricing so the >0 assertion below doesn't depend on litellm's
+    # cost-map being loaded for the given model (CodeRabbit on PR #9).
+    monkeypatch.setattr(usage_mod, "_cost_per_token", lambda **_: (1e-6, 1e-6))
 
     class _AM:
         def __init__(self, usage):
@@ -396,7 +498,7 @@ async def test_run_task_pins_requested_model(monkeypatch, tmp_path):
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-opus-4-7")
     await agent.run_task(
-        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
     assert captured["options"].model == "claude-opus-4-7"
 
@@ -410,7 +512,7 @@ async def test_run_task_passes_reasoning_effort(monkeypatch, tmp_path):
         model="anthropic/claude-sonnet-4-5", reasoning_effort="high",
     )
     await agent.run_task(
-        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
     assert captured["options"].effort == "high"
 
@@ -422,7 +524,7 @@ async def test_run_task_default_effort_is_none(monkeypatch, tmp_path):
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
     await agent.run_task(
-        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
     assert captured["options"].effort is None
 
@@ -436,20 +538,18 @@ def test_init_rejects_bad_reasoning_effort():
 
 @pytest.mark.asyncio
 async def test_run_task_one_shot_livesqlbench(monkeypatch, tmp_path):
-    """One-shot LiveSQLBench: storage resolved with benchmark='livesqlbench',
-    materialize_task_db called, and the native ask_user tool is NOT whitelisted."""
+    """LiveSQLBench one-shot: storage resolved with benchmark='livesqlbench',
+    materialize_task_db called (per-task DB copy)."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
-    td = dict(_TASK, dataset="livesqlbench")
-    await agent.run_task(td, str(tmp_path), 20.0, "slayer", eval_mode="one-shot")
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
 
     assert captured["resolve_kwargs"]["benchmark"] == "livesqlbench"
     assert captured["materialize_calls"] == 1
-    allowed = set(captured["options"].allowed_tools)
-    assert "mcp__bird-interact-tools__submit_query" in allowed
-    assert "mcp__bird-interact-tools__ask_user" not in allowed
 
 
 @pytest.mark.asyncio
@@ -461,7 +561,7 @@ async def test_run_task_captures_usage(monkeypatch, tmp_path):
     _stub_env(monkeypatch, m, tmp_path / "store", messages=msgs)
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
     row = await agent.run_task(
-        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
     rebuilt = usage_mod.TokenUsage.model_validate(row["usage"])
     assert rebuilt.prompt_tokens == 250
@@ -508,3 +608,249 @@ def test_import_does_not_pull_pydantic_ai_adapter_packages():
         "claude_sdk_otf import leaked pydantic_ai ADAPTER packages: "
         f"{r.stdout.strip()}{r.stderr.strip()}"
     )
+
+
+# ---------------------------------------------------------------------------
+# DEV-1511: diagnostic-field propagation from _ctx["result"] to the
+# finalized row. The submit helpers (`agents/_submit.py::_diagnostic_payload`)
+# populate `submission_status`, `predicted_result_json`, `gold_result_json`,
+# `phase1_observation` (and `phase2_observation` on phase 2) onto
+# `state.result`. The bug: `run_task` did not propagate them, so every
+# Claude-SDK row was mis-labeled `submission_status="never_submitted"` by
+# `run.py`'s setdefault — including rows that PASSED.
+# ---------------------------------------------------------------------------
+
+
+def _full_prefill(**overrides):
+    """A `_ctx['result']` snapshot shaped like what `_diagnostic_payload`
+    produces on a successful submit. Tests override individual keys."""
+    base = {
+        "submission_status": "submitted_ok",
+        "predicted_result_json": "[{\"a\": 1}]",
+        "gold_result_json": "[{\"a\": 1}]",
+        "phase1_observation": "PASS",
+        "phase1_passed": True,
+        "phase2_passed": False,
+        "total_reward": 1.0,
+        "submitted_sql": "SELECT 1",
+        "submitted_query": "{\"models\": [\"m\"]}",
+    }
+    base.update(overrides)
+    return base
+
+
+@pytest.mark.asyncio
+async def test_run_task_propagates_diagnostic_fields_on_happy_path(
+    monkeypatch, tmp_path,
+):
+    """The 5 fields (`submission_status`, `predicted_result_json`,
+    `gold_result_json`, `phase1_observation`, `phase2_observation`) must
+    appear on the returned row when the submit helper populated them."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    prefill = _full_prefill()
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        prefill_result=prefill,
+        prefill_timing="after",
+    )
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert row["submission_status"] == "submitted_ok"
+    assert row["predicted_result_json"] == "[{\"a\": 1}]"
+    assert row["gold_result_json"] == "[{\"a\": 1}]"
+    assert row["phase1_observation"] == "PASS"
+    # phase2_observation absent from prefill => key MUST still be present
+    # on the row (with value None), so downstream classifiers can read it
+    # unconditionally instead of using `.get(...)`.
+    assert "phase2_observation" in row
+    assert row["phase2_observation"] is None
+    # Pre-existing pass-throughs must still work (regression guard).
+    assert row["phase1_passed"] is True
+    assert row["submitted_query"] == "{\"models\": [\"m\"]}"
+    assert row["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_task_propagates_phase2_observation(monkeypatch, tmp_path):
+    """`phase2_observation` is set by `_diagnostic_payload` when the submit
+    runs in phase 2 (symmetric with `phase1_observation`). Same root-cause
+    drop; must propagate too."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    prefill = {
+        "submission_status": "wrong_result",
+        "phase1_passed": True,
+        "phase2_passed": False,
+        "phase2_observation": "p2 fail observation",
+        # phase1_observation deliberately omitted
+    }
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        prefill_result=prefill,
+    )
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert row["phase2_observation"] == "p2 fail observation"
+    # phase1_observation absent from prefill => key present with value None
+    assert "phase1_observation" in row
+    assert row["phase1_observation"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_task_propagation_defaults_to_none_when_never_submitted(
+    monkeypatch, tmp_path,
+):
+    """Adapter-contract coverage: when the agent never called submit, the
+    adapter's returned row must carry `None` (not a misleading sentinel) for
+    the 5 diagnostic fields. The `"never_submitted"` sentinel lives only in
+    `run.py`'s downstream `setdefault`, not in this adapter's row."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        # no prefill => _ctx["result"] stays None
+    )
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert row["submission_status"] is None
+    assert row["predicted_result_json"] is None
+    assert row["gold_result_json"] is None
+    assert row["phase1_observation"] is None
+    assert row["phase2_observation"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_task_exception_path_propagates_partial_result(
+    monkeypatch, tmp_path,
+):
+    """If the SDK loop crashes AFTER a successful submit, the exception
+    finalize block must rescue the diagnostic state from `_ctx["result"]`
+    rather than dropping it on the floor with `phase1_passed=False` and
+    `submission_status=None`. Mirrors the happy-path field set INCLUDING
+    pre-existing pass-throughs (`phase2_passed`, `total_reward`, the dual-
+    eval columns) — a rewrite must not silently drop any of them."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    prefill = _full_prefill(
+        submission_status="submitted_ok", phase1_passed=True,
+        phase2_passed=True, total_reward=0.75,
+        phase2_observation="p2 ok",
+        phase1_passed_audited=True, phase1_passed_original=False,
+        phase1_observation_audited="audited-obs",
+        phase1_observation_original="original-obs",
+    )
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        prefill_result=prefill,
+        prefill_timing="after",
+        raise_after_prefill=RuntimeError("boom"),
+    )
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert row["error"] == "boom"
+    # Rescued diagnostic state (the 5 new fields)
+    assert row["submission_status"] == "submitted_ok"
+    assert row["predicted_result_json"] == "[{\"a\": 1}]"
+    assert row["gold_result_json"] == "[{\"a\": 1}]"
+    assert row["phase1_observation"] == "PASS"
+    assert row["phase2_observation"] == "p2 ok"
+    # Rescued pre-existing fields — must still pass through on exception.
+    assert row["phase1_passed"] is True
+    assert row["phase2_passed"] is True
+    assert row["total_reward"] == 0.75
+    assert row["submitted_query"] == "{\"models\": [\"m\"]}"
+    assert row["submitted_sql"] == "SELECT 1"
+    # Dual-eval columns: still pass-through.
+    assert row["phase1_passed_audited"] is True
+    assert row["phase1_passed_original"] is False
+    assert row["phase1_observation_audited"] == "audited-obs"
+    assert row["phase1_observation_original"] == "original-obs"
+
+
+@pytest.mark.asyncio
+async def test_run_task_exception_before_ctx_set_yields_empty_diagnostics(
+    monkeypatch, tmp_path,
+):
+    """If an early-setup call (`load_db_data_if_needed`,
+    `materialize_task_db`, `resolve_otf_task_storage_dir`) raises BEFORE
+    `_ctx_var.set(...)` runs, the exception finalize block must not crash
+    with LookupError — and must return None for the diagnostic fields."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    _stub_env(monkeypatch, m, tmp_path / "store")
+    # Override load_db_data_if_needed to raise early.
+    def _boom(*a, **kw):
+        raise RuntimeError("early-setup boom")
+
+    monkeypatch.setattr(m, "load_db_data_if_needed", _boom)
+
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert "early-setup boom" in (row.get("error") or "")
+    assert row["submission_status"] is None
+    assert row["predicted_result_json"] is None
+    assert row["gold_result_json"] is None
+    assert row["phase1_observation"] is None
+    assert row["phase2_observation"] is None
+    assert row["phase1_passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_task_exception_path_isolated_from_stale_context(
+    monkeypatch, tmp_path,
+):
+    """Codex blocker: if a prior task in the same async context left
+    `_ctx_var` pointing at a stale dict, an early-setup failure in the
+    current task must NOT propagate the stale `result` into the new row.
+
+    The fix is to read the exception-path `result` from a LOCAL variable
+    populated alongside `_ctx_var.set(...)`, not from `_ctx_var.get()`.
+    This test verifies that contract by pre-setting `_ctx_var` to a stale
+    fake, then forcing an early-setup failure, and asserting the row
+    diagnostics are NOT the stale ones."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    _stub_env(monkeypatch, m, tmp_path / "store")
+    # Simulate a stale per-context contextvar from a prior task.
+    m._ctx_var.set({
+        "result": {
+            "submission_status": "STALE_SHOULD_NOT_LEAK",
+            "phase1_passed": True,
+            "predicted_result_json": "STALE",
+            "gold_result_json": "STALE",
+            "phase1_observation": "STALE",
+        },
+    })
+    # Force the early-setup phase to raise (before this run's _ctx_var.set).
+    def _boom(*a, **kw):
+        raise RuntimeError("early boom")
+
+    monkeypatch.setattr(m, "load_db_data_if_needed", _boom)
+
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert "early boom" in (row.get("error") or "")
+    # Crucially: NOT the stale values.
+    assert row["submission_status"] != "STALE_SHOULD_NOT_LEAK"
+    assert row["submission_status"] is None
+    assert row["predicted_result_json"] is None
+    assert row["gold_result_json"] is None
+    assert row["phase1_observation"] is None
+    assert row["phase1_passed"] is False
