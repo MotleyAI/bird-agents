@@ -380,6 +380,28 @@ async def test_run_task_rejects_unsupported_eval_modes():
 
 
 @pytest.mark.asyncio
+async def test_run_task_accepts_mini_interact_alias():
+    """Codex (PR #10 follow-up): the agent-level dataset gate must accept
+    the documented ``mini-interact`` (hyphen) alias, matching the
+    validator's canonicalization behavior. Without this, a programmatic
+    `run_one_task` call that passes the alias would pass the validator
+    but be silently turned into a failed result row at the agent layer."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract.agent import (
+        ClaudeSDKOtfAInteractAgent,
+    )
+
+    agent = ClaudeSDKOtfAInteractAgent(model="openai/gpt-4o")
+    td = dict(_TASK, dataset="mini-interact")  # alias, not canonical
+    # Non-anthropic model short-circuits to a skip-shaped row; key signal
+    # is that we get *past* the dataset gate (no ValueError raised).
+    row = await agent.run_task(
+        td, "/tmp", 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert row["phase1_passed"] is False
+    assert "anthropic" in (row.get("error") or "").lower()
+
+
+@pytest.mark.asyncio
 async def test_run_task_rejects_livesqlbench_dataset():
     """ainteract is bound to mini_interact at the agent layer too —
     a programmatic caller (e.g. `make_runner`, which has no dataset arg)

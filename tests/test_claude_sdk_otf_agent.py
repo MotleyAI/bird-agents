@@ -185,6 +185,25 @@ async def test_run_task_rejects_unsupported_eval_modes():
 
 
 @pytest.mark.asyncio
+async def test_run_task_accepts_livesqlbench_alias():
+    """Codex (PR #10 follow-up): the agent-level dataset gate must accept
+    the canonical token regardless of any alias normalization upstream.
+    The narrowed flavor is livesqlbench-only; canonicalization happens
+    via `get_benchmark(dataset).name` so any future alias would be honored
+    consistently with the validator."""
+    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
+
+    agent = ClaudeSDKOtfAgent(model="openai/gpt-4o")
+    td = dict(_TASK, dataset="livesqlbench")  # canonical
+    row = await agent.run_task(
+        td, "/tmp", 20.0, "slayer", eval_mode="one-shot",
+    )
+    # Got past dataset gate; non-anthropic short-circuit produced a skip row.
+    assert row["phase1_passed"] is False
+    assert "anthropic" in (row.get("error") or "").lower()
+
+
+@pytest.mark.asyncio
 async def test_run_task_rejects_mini_interact_dataset():
     """claude_sdk_otf is bound to livesqlbench at the agent layer — a
     programmatic caller (`make_runner` has no dataset arg) cannot bypass

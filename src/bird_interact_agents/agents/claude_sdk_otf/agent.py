@@ -221,9 +221,11 @@ class ClaudeSDKOtfAgent:
 
         # Defense in depth on top of the CLI gate: a programmatic caller
         # (`make_runner` has no dataset arg) cannot bypass dataset binding
-        # by passing task_data with the wrong marker.
+        # by passing task_data with the wrong marker. Canonicalize via
+        # ``get_benchmark`` so documented aliases are accepted (matches
+        # `_validate_framework_dataset_mode`'s behavior).
         dataset = task_data.get("dataset") or "mini_interact"
-        if dataset != "livesqlbench":
+        if get_benchmark(dataset).name != "livesqlbench":
             raise ValueError(
                 "claude_sdk_otf is bound to --dataset livesqlbench "
                 "(use --framework claude_sdk_otf_ainteract for "
