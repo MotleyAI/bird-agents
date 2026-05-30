@@ -820,18 +820,26 @@ def slayer_mcp_stdio_config(
             ``mcp_agent``, ``agno``) whose ``slayer_models/<db>/`` may have
             been embedded against a different model.
 
-            When False (DEV-1508), the flag is omitted. OTF callers
-            (``claude_sdk_otf``, ``pydantic_ai_otf_encode``,
-            ``pydantic_ai_recursive`` in on-the-fly mode) pass False because
-            their storage is `cp -r`'d from the deterministic OTF cache,
-            which already contains a fully ingested ``embeddings.db`` /
-            ``memories.yaml`` / model YAML — re-ingesting is wasted work,
-            and on the Claude Agent SDK path (no MCP startup-timeout knob)
-            it leaves slayer ``status='pending'`` for the entire agent
-            session. The cache's ``_impl_fp.txt`` marker
-            (``slayer.__version__`` + embedding model) is recomputed on
-            reuse and forces a rebuild on drift, so dropping this flag is
-            safe under the project's locked-slayer-version invariant.
+            When False (DEV-1508), the flag is omitted. OTF callers whose
+            storage comes through ``cache.ensure_db_cache`` pass False:
+            today that's ``claude_sdk_otf`` and ``pydantic_ai_recursive`` in
+            on-the-fly mode. Their per-task storage is `cp -r`'d from the
+            deterministic OTF cache, which already contains a fully
+            ingested ``embeddings.db`` / ``memories.yaml`` / model YAML —
+            re-ingesting is wasted work, and on the Claude Agent SDK path
+            (no MCP startup-timeout knob) it leaves slayer
+            ``status='pending'`` for the entire agent session. The cache's
+            ``_impl_fp.txt`` marker (``slayer.__version__`` + embedding
+            model) is recomputed on reuse and forces a rebuild on drift,
+            so dropping this flag is safe under the project's locked-
+            slayer-version invariant.
+
+            ``pydantic_ai_otf_encode`` does NOT yet opt out: its storage
+            comes from ``reference_build.ensure_db_reference``, whose
+            reuse path is presence-gated on ``_reference_fp.txt`` without
+            the impl-fingerprint check. Extending the impl-fp split to
+            ``ensure_db_reference`` is a follow-up; until then the encoder
+            keeps the startup ingest as its drift safety net.
 
     Keys:
         command: absolute path to the slayer binary
