@@ -182,3 +182,29 @@ async def test_submit_query_bad_json_propagates_helper_message(monkeypatch):
     # Per DEV-1432: deterministic pre-eval failures (JSON parse) are
     # FREE — `execute_submit_action` never ran, so budget is untouched.
     assert status.remaining_budget == start
+
+
+def test_state_view_exposes_ctx_result_for_multi_submit_preservation():
+    """Regression for the multi-submit observation drop (DEV-1511 follow-up
+    flagged by Codex): `_state_view().result` MUST reflect `_ctx["result"]`
+    so the submit helpers' cross-phase observation-preservation logic
+    (`prior = state.result or {}`, then
+    `state.result["phaseN_observation"] = prior.get(...)`) sees the prior
+    phase's diagnostic state.
+
+    Was hard-coded to None — meaning `prior` was always empty `{}`, so the
+    helper silently blanked the other-phase observation on every
+    multi-submit run. Once the agent submitted in phase 2, the phase-1
+    observation captured by the prior submit was overwritten with None
+    before reaching the finalize row.
+    """
+    from bird_interact_agents.agents.claude_sdk import agent as agent_mod
+
+    agent_mod._ctx_var.set({"result": {"phase1_observation": "obs1"}})
+    view = agent_mod._state_view()
+    assert view.result == {"phase1_observation": "obs1"}
+
+    # And: the empty case still returns None (no LookupError, no KeyError).
+    agent_mod._ctx_var.set({})
+    view = agent_mod._state_view()
+    assert view.result is None
