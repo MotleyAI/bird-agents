@@ -210,8 +210,15 @@ def _validate_framework_dataset_mode(
     bound = _FRAMEWORK_DATASET_MODE_BINDING.get(framework)
     if bound is None:
         return
+    # Canonicalize the dataset token before comparison so the documented
+    # ``mini-interact`` alias (and any future alias) is accepted —
+    # otherwise a programmatic ``run_evaluation`` / ``run_one_task`` call
+    # using the alias against the canonical binding would fail with a
+    # confusing error (Codex + CodeRabbit on PR #10). The CLI normalises
+    # at the argparse boundary, but the programmatic surface doesn't.
+    canonical_dataset = get_benchmark(dataset).name
     bound_dataset, bound_mode = bound
-    if dataset != bound_dataset:
+    if canonical_dataset != bound_dataset:
         raise ValueError(
             f"--framework {framework} is bound to --dataset {bound_dataset!r}; "
             f"got --dataset {dataset!r}",
@@ -703,6 +710,17 @@ async def run_one_task(
     one-shot run on un-marked task data (Codex #1 — programmatic-bypass
     close, complementary to ``_validate_dataset_mode`` on the CLI side).
     """
+    # DEV-1507: enforce the framework-bound (dataset, mode) gate at the
+    # per-task programmatic surface too — `make_runner` has no dataset
+    # arg and `_make_runner` short-circuits to `run_oracle_task` regardless
+    # of framework, so a direct caller invoking
+    # `run_one_task(framework="claude_sdk_otf_ainteract", mode="oracle")`
+    # would otherwise bypass the "no oracle bypass" contract.
+    _validate_framework_dataset_mode(
+        framework=framework,
+        dataset=task_data.get("dataset") or "mini_interact",
+        mode=mode,
+    )
     _validate_one_shot_framework(
         mode=mode, query_mode=query_mode, framework=framework,
     )

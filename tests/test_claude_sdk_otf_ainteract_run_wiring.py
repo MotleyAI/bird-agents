@@ -207,6 +207,21 @@ def test_validate_framework_dataset_mode_accepts_bound_pairs():
     )
 
 
+def test_validate_framework_dataset_mode_accepts_dataset_alias():
+    """Codex + CodeRabbit (PR #10): the validator must accept the
+    documented ``mini-interact`` (hyphen) alias, not just the canonical
+    ``mini_interact`` (underscore) form — `run_evaluation`'s default is
+    the hyphen alias, so programmatic callers using the default would
+    otherwise be rejected with a confusing error."""
+    from bird_interact_agents import run as run_mod
+
+    # Hyphen alias for mini_interact must pass.
+    run_mod._validate_framework_dataset_mode(
+        framework="claude_sdk_otf_ainteract",
+        dataset="mini-interact", mode="a-interact",
+    )
+
+
 def test_validate_framework_dataset_mode_rejects_wrong_dataset():
     from bird_interact_agents import run as run_mod
 
@@ -239,6 +254,40 @@ def test_validate_framework_dataset_mode_rejects_oracle_for_both():
         run_mod._validate_framework_dataset_mode(
             framework="claude_sdk_otf_ainteract", dataset="mini_interact",
             mode="oracle",
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_one_task_enforces_framework_dataset_mode_binding(tmp_path):
+    """Codex (PR #10, minor): the new bound-framework gate must also fire at
+    the per-task programmatic surface. `make_runner` has no dataset arg,
+    and `_make_runner` short-circuits to `run_oracle_task` regardless of
+    framework — so a direct `run_one_task(framework="claude_sdk_otf_ainteract",
+    mode="oracle")` call would bypass the "no oracle bypass" contract."""
+    from bird_interact_agents import run as run_mod
+
+    with pytest.raises(ValueError, match=r"claude_sdk_otf_ainteract"):
+        await run_mod.run_one_task(
+            task_data={
+                "instance_id": "households_1",
+                "selected_database": "households",
+                "sol_sql": ["SELECT 1;"],
+                "amb_user_query": "?",
+                "dataset": "mini_interact",
+            },
+            data_dir=str(tmp_path),
+            framework="claude_sdk_otf_ainteract",
+            query_mode="slayer",
+            mode="oracle",  # not the bound a-interact — must reject
+            agent_model="anthropic/claude-opus-4-7",
+            user_sim_model="anthropic/claude-haiku-4-5-20251001",
+            patience=3,
+            strict=False,
+            use_audited_gold_sql=False,
+            prompt_cache=True,
+            max_depth=3,
+            slayer_storage_root=None,
+            slayer_setup="pre-encoded",
         )
 
 

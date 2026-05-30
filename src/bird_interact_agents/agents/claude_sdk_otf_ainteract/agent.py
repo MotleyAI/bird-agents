@@ -353,7 +353,10 @@ class ClaudeSDKOtfAInteractAgent:
                     )
                     accumulate_assistant_usage(accum, msg, self.model)
         except Exception as e:
-            logger.error("claude_sdk_otf_ainteract error on %s: %s", instance_id, e)
+            logger.error(
+                "claude_sdk_otf_ainteract error on %s: %s",
+                instance_id, e, exc_info=True,
+            )
             return finalize_result_row(
                 {
                     "task_id": instance_id,
