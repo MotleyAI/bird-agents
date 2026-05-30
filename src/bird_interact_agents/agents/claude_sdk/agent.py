@@ -558,9 +558,12 @@ class ClaudeSDKAgent:
         max_asks = _ambiguity_count(task_data) + 3  # +patience(3); matches ADK
 
         # Set the per-task context dict via contextvars — concurrent task
-        # runs each get their own dict instance.
+        # runs each get their own dict instance. The LOCAL `ctx_dict`
+        # binding is what the exception path reads from, so a stale
+        # ContextVar from a prior task in the same async context cannot
+        # leak its `result` into this row.
         accum = TokenUsage()
-        _ctx_var.set({
+        ctx_dict: dict = {
             "status": status,
             "data_path_base": data_path_base,
             "user_sim_model": user_sim_model,
@@ -574,7 +577,8 @@ class ClaudeSDKAgent:
             "max_asks": max_asks,
             "asks_used": 0,
             "usage": accum,
-        })
+        }
+        _ctx_var.set(ctx_dict)
 
         tools = _select_tools(query_mode, eval_mode)
         prompt = await _build_prompt(query_mode, eval_mode, task_data, budget)
@@ -630,23 +634,38 @@ class ClaudeSDKAgent:
                             break
         except Exception as e:
             logger.error("Agent error on %s: %s", instance_id, e)
+            # Read from the LOCAL ctx_dict (not _ctx_var.get()) so a stale
+            # context from a prior task in the same async context cannot
+            # leak its diagnostics into this row.
+            result = ctx_dict.get("result") or {}
             return finalize_result_row(
                 {
                     "task_id": instance_id,
                     "instance_id": instance_id,
                     "database": db_name,
-                    "phase1_passed": False,
-                    "phase2_passed": False,
-                    "total_reward": 0.0,
+                    "phase1_passed": result.get("phase1_passed", False),
+                    "phase2_passed": result.get("phase2_passed", False),
+                    "total_reward": result.get("total_reward", 0.0),
+                    "submitted_sql": result.get("submitted_sql"),
+                    "submitted_query": result.get("submitted_query"),
+                    "submission_status": result.get("submission_status"),
+                    "predicted_result_json": result.get("predicted_result_json"),
+                    "gold_result_json": result.get("gold_result_json"),
+                    "phase1_observation": result.get("phase1_observation"),
+                    "phase2_observation": result.get("phase2_observation"),
                     "trajectory": trajectory,
                     "error": str(e),
                     "usage": accum.model_dump(),
+                    "phase1_passed_audited": result.get("phase1_passed_audited"),
+                    "phase1_passed_original": result.get("phase1_passed_original"),
+                    "phase1_observation_audited": result.get("phase1_observation_audited"),
+                    "phase1_observation_original": result.get("phase1_observation_original"),
                 },
                 deleted_kb_ids=deleted_kb_ids,
                 slayer_storage_dir=slayer_storage_dir,
             )
 
-        result = _ctx.get("result") or {}
+        result = ctx_dict.get("result") or {}
         return finalize_result_row(
             {
                 "task_id": instance_id,
@@ -657,6 +676,11 @@ class ClaudeSDKAgent:
                 "total_reward": result.get("total_reward", 0.0),
                 "submitted_sql": result.get("submitted_sql"),
                 "submitted_query": result.get("submitted_query"),
+                "submission_status": result.get("submission_status"),
+                "predicted_result_json": result.get("predicted_result_json"),
+                "gold_result_json": result.get("gold_result_json"),
+                "phase1_observation": result.get("phase1_observation"),
+                "phase2_observation": result.get("phase2_observation"),
                 "trajectory": trajectory,
                 "error": None,
                 "usage": accum.model_dump(),
