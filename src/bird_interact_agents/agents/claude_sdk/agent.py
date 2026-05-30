@@ -189,7 +189,11 @@ def _state_view() -> SimpleNamespace:
     Note: only `result` is mutated by the helpers (via submit_*), and a
     SimpleNamespace assignment to `result` won't write back to the dict.
     Helpers that mutate state must use the explicit ctx-writing helpers
-    below.
+    below. Reads of `state.result` DO see the live ctx dict — the submit
+    helpers' cross-phase observation-preservation logic relies on it
+    (`prior = state.result or {}` → `state.result["phaseN_observation"] =
+    prior.get(...)`); hard-coding to None silently blanked the other-phase
+    observation on every multi-submit (DEV-1511 follow-up).
     """
     d = _ctx_var.get()
     return SimpleNamespace(
@@ -199,7 +203,7 @@ def _state_view() -> SimpleNamespace:
         user_sim_prompt_version=d.get("user_sim_prompt_version", "v2"),
         slayer_storage_dir=d.get("slayer_storage_dir", ""),
         usage=d.get("usage") or TokenUsage(),
-        result=None,
+        result=d.get("result"),
     )
 
 
