@@ -12,6 +12,8 @@ so an agent that derives its benchmark from task data and a CLI that parses
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -60,6 +62,22 @@ class Benchmark(BaseModel):
     """Where the actor materialises this benchmark's data in-container, e.g.
     ``/data/mini-interact``; also the cloud ``BIRD_DB_PATH``."""
 
+    # DEV-1510: audited-gold sidecar layout.
+    audited_gold_layout: Literal["per_db", "single_file"] = "per_db"
+    """Where ``apply_audited_gold_overlay`` (and the cloud submit-time
+    ``require_audited_gold`` guard) looks for this benchmark's audited
+    rows.
+
+    * ``per_db`` (default, mini-interact's historical contract) → one
+      sidecar per DB at ``<audited_gold>/<db>/<db>_audited.jsonl``.
+    * ``single_file`` (livesqlbench) → one consolidated JSONL at
+      ``<audited_gold>/<benchmark>_audited.jsonl``, with the
+      ``selected_database`` field on each row as the per-DB discriminator.
+      Used when the benchmark's DBs collide on name with another
+      benchmark's (e.g. ``alien`` / ``museum`` exist in both
+      mini-interact and livesqlbench, so a per-db dir under
+      ``audited_gold/`` would clash)."""
+
 
 MINI_INTERACT = Benchmark(
     name="mini_interact",
@@ -90,6 +108,11 @@ LIVESQLBENCH = Benchmark(
     gold_root_env="BIRD_LIVESQLBENCH_GOLD_FILE",
     per_task_db_isolation=True,
     container_data_dir="/data/livesqlbench",
+    # DEV-1510: a per-db sidecar dir under audited_gold/ would clash with
+    # mini-interact (overlapping DB names: alien, museum, …). The
+    # consolidated single-file layout uses the row's `selected_database`
+    # as the per-db discriminator.
+    audited_gold_layout="single_file",
 )
 
 BENCHMARKS: dict[str, Benchmark] = {b.name: b for b in (MINI_INTERACT, LIVESQLBENCH)}

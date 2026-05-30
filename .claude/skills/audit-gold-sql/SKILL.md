@@ -3,7 +3,16 @@ name: audit-gold-sql
 description: Audit a BIRD-Interact mini-interact task's gold SQL (`sol_sql`) against the dataset's own justification sources (`<db>_kb.jsonl` + `<db>_column_meaning_base.json` + the task's labeled ambiguities). For each clause that is not derivable from these sources, propose a minimal rewrite — as close to the original as possible — that IS derivable, and write the audit (original + audited SQL + per-clause changes + citations) to `bird-interact-agents/audited_gold/<db>/<db>_audited.jsonl`. The auditor is Claude executing this recipe; there is no script.
 ---
 
-# Audit a BIRD-Interact gold SQL against authorised justification sources
+# Audit a BIRD-Interact mini-interact gold SQL against authorised sources
+
+This skill is the mini-interact-shaped audit recipe. The cross-benchmark
+contract (schema, citation tokens, audit-status semantics, per-clause
+classification recipe, anti-patterns, edge cases) lives in
+`_shared/audit-gold-sql.contract.md`. **Read that file first.** This
+skill specialises it for mini-interact's inputs + output layout +
+mini-interact-specific citation tokens (`labeled_ambiguity:`,
+`knowledge_ambiguity:`). For LiveSQLBench, use
+`audit-gold-sql-livesqlbench`.
 
 ## When to use
 

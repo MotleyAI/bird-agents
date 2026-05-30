@@ -77,6 +77,62 @@ def test_data_hash_changes_on_audited_gold_edit(
     assert h1 != h2
 
 
+def test_data_hash_changes_on_livesqlbench_audited_gold_edit(
+    fake_repo_root: Path
+) -> None:
+    """DEV-1510: the livesqlbench audit ships as a SINGLE top-level file
+    `audited_gold/livesqlbench_audited.jsonl` (not a per-db sidecar dir).
+    The image already bakes audited_gold/ recursively, so the new file
+    rides in for free — but data_hash must include it so a content change
+    forces an image rebuild (same contract as for per-db files)."""
+    h1 = image.data_hash(fake_repo_root, fake_repo_root / "audited_gold")
+    (fake_repo_root / "audited_gold" / "livesqlbench_audited.jsonl").write_text(
+        '{"instance_id":"museum_7","audit_status":"edited",'
+        '"audited_sol_sql":["SELECT 1"]}\n'
+    )
+    h2 = image.data_hash(fake_repo_root, fake_repo_root / "audited_gold")
+    assert h1 != h2, (
+        "data_hash must include audited_gold/livesqlbench_audited.jsonl; "
+        "otherwise an audited-gold edit doesn't force the image to rebake "
+        "and cloud actors would keep the stale gold."
+    )
+
+
+def test_dockerfile_audited_gold_copy_covers_top_level_files() -> None:
+    """The production Dockerfile.cloud must copy the WHOLE audited_gold
+    dir (not `audited_gold/*/`), so a top-level
+    `audited_gold/livesqlbench_audited.jsonl` is baked exactly like the
+    per-db files. Regression guard: a future Dockerfile edit that
+    narrows the COPY to per-db dirs (or accidentally drops the
+    destination) would silently exclude the livesqlbench audit."""
+    import re as _re
+
+    repo_root = Path(__file__).resolve().parents[2]
+    df = (repo_root / "Dockerfile.cloud").read_text()
+    # Strip comment-only lines so a comment that happens to contain the
+    # string `COPY --from=audited-gold . ` can't satisfy the test.
+    non_comment_lines = [
+        ln for ln in df.splitlines()
+        if not ln.lstrip().startswith("#")
+    ]
+    body = "\n".join(non_comment_lines)
+    # Anchored regex: COPY --from=audited-gold . <DEST_DIR_ENDING_IN audited_gold/>
+    # The `.` source captures the entire context (so top-level files
+    # like `livesqlbench_audited.jsonl` ride along), and the destination
+    # must land under `audited_gold/` for the in-container path the
+    # actor reads from.
+    pattern = _re.compile(
+        r"^\s*COPY\s+--from=audited-gold\s+\.\s+\S*audited_gold/?\s*$",
+        flags=_re.MULTILINE,
+    )
+    assert pattern.search(body), (
+        "Dockerfile.cloud must contain a `COPY --from=audited-gold . "
+        "<dest>/audited_gold/` line (`.` source = whole context so "
+        "top-level files like livesqlbench_audited.jsonl are baked). "
+        f"Got (non-comment Dockerfile body):\n{body}"
+    )
+
+
 def test_data_hash_no_longer_depends_on_slayer_ingest_version() -> None:
     """DEV-1468: the image no longer runs `slayer ingest` (no baked
     /data/slayer_dbs), so the slayer-ingest CLI version is no longer a

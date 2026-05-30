@@ -311,3 +311,250 @@ def test_partial_batch_reports_only_failing_ids(tmp_path: Path) -> None:
         audited_root=audited_root, data_path=data,
     )
     assert missing == ["alien_3", "alien_4"]
+
+
+# ---------------------------------------------------------------------------
+# DEV-1510: `missing_audited_gold_ids` learns a `benchmark` kwarg so the
+# submit-time guard supports BOTH layouts symmetrically. Pre-fix the cloud CLI
+# skipped this check entirely for `gold_required` benchmarks (livesqlbench)
+# because the per-db sidecar didn't exist. After this change:
+#   * mini-interact (per_db layout): existing behavior unchanged.
+#   * livesqlbench (single_file layout): reads
+#     `<audited_root>/livesqlbench_audited.jsonl`, looks up by instance_id,
+#     enforces the same `clean passes` / `edited+empty sql fails` semantics
+#     as per_db, and (defensively) treats a row whose `selected_database`
+#     doesn't match the task's as missing-row.
+# All tests below mirror the per_db tests above; the only delta is the
+# audit-file layout and the dataset shape.
+# ---------------------------------------------------------------------------
+
+
+def _write_lsb_dataset(data_path: Path, rows: list[dict]) -> None:
+    """Mirror of `_write_dataset` but for livesqlbench's data file (same
+    JSON-lines shape; only the filename and the field set the dataset's
+    instance_db_map loader keys off differ)."""
+    data_path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+
+
+def _write_lsb_audited(audited_root: Path, rows: list[dict]) -> Path:
+    """Lay down `<audited_root>/livesqlbench_audited.jsonl` for the
+    single_file layout."""
+    audited_root.mkdir(parents=True, exist_ok=True)
+    sidecar = audited_root / "livesqlbench_audited.jsonl"
+    sidecar.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    return sidecar
+
+
+def test_lsb_clean_row_passes(tmp_path: Path) -> None:
+    """Same `clean passes regardless of audited_sol_sql` semantics as the
+    per_db case — the overlay deliberately leaves `sol_sql` untouched
+    for clean rows, so missing `audited_sol_sql` is benign."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        missing_audited_gold_ids,
+    )
+
+    data = tmp_path / "livesqlbench_data_sqlite.jsonl"
+    _write_lsb_dataset(data, [
+        {"instance_id": "museum_9", "selected_database": "museum"},
+    ])
+    audited_root = tmp_path / "audited_gold"
+    _write_lsb_audited(audited_root, [
+        {"instance_id": "museum_9", "selected_database": "museum",
+         "audit_status": "clean"},
+    ])
+
+    missing = missing_audited_gold_ids(
+        ["museum_9"],
+        audited_root=audited_root, data_path=data,
+        benchmark=get_benchmark("livesqlbench"),
+    )
+    assert missing == []
+
+
+def test_lsb_edited_with_audited_sol_sql_passes(tmp_path: Path) -> None:
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        missing_audited_gold_ids,
+    )
+
+    data = tmp_path / "livesqlbench_data_sqlite.jsonl"
+    _write_lsb_dataset(data, [
+        {"instance_id": "museum_7", "selected_database": "museum"},
+    ])
+    audited_root = tmp_path / "audited_gold"
+    _write_lsb_audited(audited_root, [
+        {"instance_id": "museum_7", "selected_database": "museum",
+         "audit_status": "edited", "audited_sol_sql": ["SELECT 1"]},
+    ])
+
+    missing = missing_audited_gold_ids(
+        ["museum_7"],
+        audited_root=audited_root, data_path=data,
+        benchmark=get_benchmark("livesqlbench"),
+    )
+    assert missing == []
+
+
+def test_lsb_edited_missing_sol_sql_is_reported(tmp_path: Path) -> None:
+    """Same silent-fallback risk as per_db: a row with `audit_status=edited`
+    but no `audited_sol_sql` would silently keep the original gold."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        missing_audited_gold_ids,
+    )
+
+    data = tmp_path / "livesqlbench_data_sqlite.jsonl"
+    _write_lsb_dataset(data, [
+        {"instance_id": "museum_7", "selected_database": "museum"},
+    ])
+    audited_root = tmp_path / "audited_gold"
+    _write_lsb_audited(audited_root, [
+        {"instance_id": "museum_7", "selected_database": "museum",
+         "audit_status": "edited"},  # no audited_sol_sql
+    ])
+
+    missing = missing_audited_gold_ids(
+        ["museum_7"],
+        audited_root=audited_root, data_path=data,
+        benchmark=get_benchmark("livesqlbench"),
+    )
+    assert missing == ["museum_7"]
+
+
+def test_lsb_missing_row_is_reported(tmp_path: Path) -> None:
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        missing_audited_gold_ids,
+    )
+
+    data = tmp_path / "livesqlbench_data_sqlite.jsonl"
+    _write_lsb_dataset(data, [
+        {"instance_id": "museum_1", "selected_database": "museum"},
+        {"instance_id": "museum_7", "selected_database": "museum"},
+    ])
+    audited_root = tmp_path / "audited_gold"
+    _write_lsb_audited(audited_root, [
+        {"instance_id": "museum_1", "selected_database": "museum",
+         "audit_status": "clean"},
+        # museum_7 not in the audit file.
+    ])
+
+    missing = missing_audited_gold_ids(
+        ["museum_1", "museum_7"],
+        audited_root=audited_root, data_path=data,
+        benchmark=get_benchmark("livesqlbench"),
+    )
+    assert missing == ["museum_7"]
+
+
+def test_lsb_missing_file_reports_every_id(tmp_path: Path) -> None:
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        missing_audited_gold_ids,
+    )
+
+    data = tmp_path / "livesqlbench_data_sqlite.jsonl"
+    _write_lsb_dataset(data, [
+        {"instance_id": "museum_1", "selected_database": "museum"},
+    ])
+    audited_root = tmp_path / "audited_gold"
+    # No livesqlbench_audited.jsonl at all.
+
+    missing = missing_audited_gold_ids(
+        ["museum_1"],
+        audited_root=audited_root, data_path=data,
+        benchmark=get_benchmark("livesqlbench"),
+    )
+    assert missing == ["museum_1"]
+
+
+def test_lsb_row_db_mismatch_is_reported(tmp_path: Path) -> None:
+    """Defensive: a single_file audit row whose `selected_database`
+    differs from the dataset's mapping for that instance_id is corrupt
+    (cross-benchmark id collision). The guard must NOT trust it; it
+    reports the id as missing so the submitter sees the discrepancy
+    instead of silently applying the wrong audit."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        missing_audited_gold_ids,
+    )
+
+    data = tmp_path / "livesqlbench_data_sqlite.jsonl"
+    _write_lsb_dataset(data, [
+        {"instance_id": "museum_7", "selected_database": "museum"},
+    ])
+    audited_root = tmp_path / "audited_gold"
+    _write_lsb_audited(audited_root, [
+        {"instance_id": "museum_7", "selected_database": "WRONG",
+         "audit_status": "edited", "audited_sol_sql": ["SELECT 1"]},
+    ])
+
+    missing = missing_audited_gold_ids(
+        ["museum_7"],
+        audited_root=audited_root, data_path=data,
+        benchmark=get_benchmark("livesqlbench"),
+    )
+    assert missing == ["museum_7"]
+
+
+def test_benchmark_kwarg_default_preserves_per_db_behavior(tmp_path: Path) -> None:
+    """Same back-compat posture as `apply_audited_gold_overlay`: existing
+    `missing_audited_gold_ids(..., data_path=mini_interact_file)` callers
+    (the cloud CLI's mini-interact path) keep working without the kwarg."""
+    from bird_interact_agents.cloud._audited_gold_check import (
+        missing_audited_gold_ids,
+    )
+
+    data = tmp_path / "mini_interact.jsonl"
+    _write_dataset(data, [
+        {"instance_id": "alien_1", "selected_database": "alien"},
+    ])
+    audited_root = tmp_path / "audited_gold"
+    _write_audited(audited_root, "alien", [
+        {"instance_id": "alien_1", "audit_status": "clean"},
+    ])
+
+    # NO `benchmark=` kwarg — defaults to per_db, mini-interact.
+    missing = missing_audited_gold_ids(
+        ["alien_1"],
+        audited_root=audited_root, data_path=data,
+    )
+    assert missing == []
+
+
+def test_lsb_partial_batch_reports_only_failing_ids(tmp_path: Path) -> None:
+    """End-to-end batch sanity: a partial fix lands museum_1/2/9 in the
+    single-file audit; museum_7's row was malformed (status=edited but
+    no audited_sol_sql) and museum_10 was never added. Guard reports
+    only the two that would silently fall back."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        missing_audited_gold_ids,
+    )
+
+    data = tmp_path / "livesqlbench_data_sqlite.jsonl"
+    _write_lsb_dataset(data, [
+        {"instance_id": f"museum_{i}", "selected_database": "museum"}
+        for i in (1, 2, 7, 9, 10)
+    ])
+    audited_root = tmp_path / "audited_gold"
+    _write_lsb_audited(audited_root, [
+        {"instance_id": "museum_1", "selected_database": "museum",
+         "audit_status": "clean"},
+        {"instance_id": "museum_2", "selected_database": "museum",
+         "audit_status": "edited", "audited_sol_sql": ["SELECT 1"]},
+        # museum_7 row malformed: edited + no audited_sol_sql.
+        {"instance_id": "museum_7", "selected_database": "museum",
+         "audit_status": "edited"},
+        {"instance_id": "museum_9", "selected_database": "museum",
+         "audit_status": "clean"},
+        # museum_10 not in the file.
+    ])
+
+    missing = missing_audited_gold_ids(
+        ["museum_1", "museum_2", "museum_7", "museum_9", "museum_10"],
+        audited_root=audited_root, data_path=data,
+        benchmark=get_benchmark("livesqlbench"),
+    )
+    assert missing == ["museum_7", "museum_10"]

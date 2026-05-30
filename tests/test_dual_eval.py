@@ -404,6 +404,274 @@ def test_results_db_open_creates_dual_eval_columns(tmp_path):
     assert "phase1_observation_original" in cols
 
 
+# ---------------------------------------------------------------------------
+# DEV-1510: `apply_audited_gold_overlay` learns a `benchmark` kwarg and a
+# `single_file` dispatch so livesqlbench (whose audited gold is one consolidated
+# `audited_gold/livesqlbench_audited.jsonl`, not per-db dirs) can flow through
+# the same code path as mini-interact. The per_db branch must stay
+# bit-identical for back-compat (existing tests above pin that).
+# ---------------------------------------------------------------------------
+
+
+def _write_single_file_audit(audited_root: Path, rows: list[dict]) -> Path:
+    """Lay down `<audited_root>/livesqlbench_audited.jsonl` from `rows`."""
+    audited_root.mkdir(parents=True, exist_ok=True)
+    path = audited_root / "livesqlbench_audited.jsonl"
+    with path.open("w") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    return path
+
+
+def test_overlay_single_file_basic_swap_for_edited(tmp_path):
+    """The single_file dispatch reads `<root>/livesqlbench_audited.jsonl` once
+    and swaps `sol_sql` for `edited` rows just like the per_db branch."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    _write_single_file_audit(tmp_path, [
+        {
+            "instance_id": "museum_7",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT audited FROM t"],
+        },
+    ])
+    task = {
+        "instance_id": "museum_7",
+        "selected_database": "museum",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    log = apply_audited_gold_overlay(
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+    )
+
+    assert log["museum_7"] == "edited"
+    assert task["sol_sql"] == ["SELECT audited FROM t"]
+    assert task["original_sol_sql"] == ["SELECT original FROM t"]
+
+
+def test_overlay_single_file_clean_keeps_original_and_stamps_snapshot(tmp_path):
+    """`clean` rows leave `sol_sql` untouched and still stamp the
+    `original_sol_sql` snapshot — exactly mirrors per_db semantics."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    _write_single_file_audit(tmp_path, [
+        {
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "audit_status": "clean",
+        },
+    ])
+    task = {
+        "instance_id": "museum_9",
+        "selected_database": "museum",
+        "sol_sql": ["SELECT identical FROM t"],
+    }
+    log = apply_audited_gold_overlay(
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+    )
+
+    assert log["museum_9"] == "clean"
+    assert task["sol_sql"] == ["SELECT identical FROM t"]
+    assert task["original_sol_sql"] == ["SELECT identical FROM t"]
+
+
+def test_overlay_single_file_missing_file_logs_missing_for_all(tmp_path):
+    """No `livesqlbench_audited.jsonl` at all → every task in the run logs
+    `missing-file`; `sol_sql` untouched; `original_sol_sql` still stamped
+    so dual-eval can still run against the same gold on both sides."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    task = {
+        "instance_id": "museum_7",
+        "selected_database": "museum",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    log = apply_audited_gold_overlay(
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+    )
+
+    assert log["museum_7"] == "missing-file"
+    assert task["sol_sql"] == ["SELECT original FROM t"]
+    assert task["original_sol_sql"] == ["SELECT original FROM t"]
+
+
+def test_overlay_single_file_missing_row(tmp_path):
+    """The audit file exists but has no row for this task — log
+    `missing-row`, leave `sol_sql` untouched."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    _write_single_file_audit(tmp_path, [
+        {
+            "instance_id": "museum_1",
+            "selected_database": "museum",
+            "audit_status": "clean",
+        },
+    ])
+    task = {
+        "instance_id": "museum_7",  # not in the audit file
+        "selected_database": "museum",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    log = apply_audited_gold_overlay(
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+    )
+
+    assert log["museum_7"] == "missing-row"
+    assert task["sol_sql"] == ["SELECT original FROM t"]
+
+
+def test_overlay_single_file_row_db_mismatch_is_missing_row(tmp_path, caplog):
+    """The single_file layout relies on `instance_id` being globally unique
+    within the benchmark — and on the row's `selected_database` matching
+    the task's. A mismatch indicates a corrupt audit row (cross-benchmark
+    instance_id clash); treat as missing-row + log a warning, never
+    silently apply the wrong audit."""
+    import logging
+
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    _write_single_file_audit(tmp_path, [
+        {
+            "instance_id": "museum_7",
+            "selected_database": "WRONG_db",  # mismatch
+            "benchmark": "livesqlbench",
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT audited FROM t"],
+        },
+    ])
+    task = {
+        "instance_id": "museum_7",
+        "selected_database": "museum",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    with caplog.at_level(logging.WARNING, logger="bird_interact_agents.harness"):
+        log = apply_audited_gold_overlay(
+            [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+        )
+
+    assert log["museum_7"] == "missing-row"
+    assert task["sol_sql"] == ["SELECT original FROM t"]
+    # Warning surfaced — operator must see this in the logs.
+    assert any(
+        "museum_7" in rec.getMessage() and "WRONG_db" in rec.getMessage()
+        for rec in caplog.records
+    ), f"expected a db-mismatch warning, got: {[r.getMessage() for r in caplog.records]}"
+
+
+def test_overlay_single_file_unrecoverable_swaps_and_records(tmp_path):
+    """`unrecoverable` swaps `sol_sql` to the audited version too (same
+    semantics as `edited`) and records the status."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    _write_single_file_audit(tmp_path, [
+        {
+            "instance_id": "museum_5",
+            "selected_database": "museum",
+            "audit_status": "unrecoverable",
+            "audited_sol_sql": ["SELECT fallback FROM t"],
+        },
+    ])
+    task = {
+        "instance_id": "museum_5",
+        "selected_database": "museum",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    log = apply_audited_gold_overlay(
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+    )
+
+    assert log["museum_5"] == "unrecoverable"
+    assert task["sol_sql"] == ["SELECT fallback FROM t"]
+    assert task["original_sol_sql"] == ["SELECT original FROM t"]
+
+
+def test_overlay_single_file_reads_audit_jsonl_only_once(tmp_path, monkeypatch):
+    """Running over a list of N tasks against the single_file layout MUST
+    open the audit file once (not N times) — at-scale (180 livesqlbench
+    tasks) the per-task open would dominate the overlay wall time."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents import harness
+
+    _write_single_file_audit(tmp_path, [
+        {"instance_id": f"museum_{i}", "selected_database": "museum",
+         "audit_status": "clean"} for i in range(1, 11)
+    ])
+    tasks = [
+        {"instance_id": f"museum_{i}", "selected_database": "museum",
+         "sol_sql": [f"SELECT {i} FROM t"]} for i in range(1, 11)
+    ]
+
+    open_calls = {"n": 0}
+    real_open = Path.open
+
+    def counting_open(self, *args, **kwargs):
+        if self.name == "livesqlbench_audited.jsonl":
+            open_calls["n"] += 1
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", counting_open)
+    harness.apply_audited_gold_overlay(
+        tasks, tmp_path, benchmark=get_benchmark("livesqlbench"),
+    )
+    assert open_calls["n"] == 1, (
+        f"expected one read of the single-file audit, got {open_calls['n']}"
+    )
+
+
+def test_overlay_benchmark_kwarg_default_preserves_per_db_behavior(tmp_path):
+    """Existing call sites (mini-interact tests above) call the overlay
+    without a `benchmark` kwarg. The default MUST keep dispatching via
+    the per_db layout so this PR doesn't break those callers (and so the
+    cloud upload-back / dual-eval flow stays bit-identical for mini-interact)."""
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    _write_audit_sidecar(tmp_path, "alien", [
+        {"instance_id": "alien_default", "audit_status": "edited",
+         "audited_sol_sql": ["SELECT audited FROM t"]},
+    ])
+    task = {
+        "instance_id": "alien_default",
+        "selected_database": "alien",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    # Note: NO `benchmark=` kwarg — verifies the default is per_db.
+    log = apply_audited_gold_overlay([task], tmp_path)
+    assert log["alien_default"] == "edited"
+    assert task["sol_sql"] == ["SELECT audited FROM t"]
+
+
+def test_overlay_benchmark_kwarg_per_db_explicit_matches_default(tmp_path):
+    """Passing `benchmark=mini_interact` explicitly is equivalent to omitting
+    it — proves the layout dispatch is the field that matters, not whether
+    `benchmark` happens to be set."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    _write_audit_sidecar(tmp_path, "alien", [
+        {"instance_id": "alien_explicit", "audit_status": "edited",
+         "audited_sol_sql": ["SELECT audited FROM t"]},
+    ])
+    task = {
+        "instance_id": "alien_explicit",
+        "selected_database": "alien",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    log = apply_audited_gold_overlay(
+        [task], tmp_path, benchmark=get_benchmark("mini_interact"),
+    )
+    assert log["alien_explicit"] == "edited"
+    assert task["sol_sql"] == ["SELECT audited FROM t"]
+
+
 def test_insert_task_result_round_trip_dual_eval_fields(tmp_path):
     """The TaskResultRow → SQL insert must actually persist the new
     fields. The current insert in results_db.py uses an explicit column

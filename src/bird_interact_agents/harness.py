@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Optional, Tuple
 
-from bird_interact_agents.benchmark import get_benchmark
+from bird_interact_agents.benchmark import Benchmark, get_benchmark
 
 logger = logging.getLogger(__name__)
 from bird_interact_agents.hard8_preprocessor import (
@@ -402,17 +402,28 @@ def load_livesqlbench_tasks(
 def apply_audited_gold_overlay(
     tasks: list[dict],
     audited_root: str | Path,
+    *,
+    benchmark: Benchmark | None = None,
 ) -> dict[str, str]:
     """Swap each task's ``sol_sql`` for the audited version when available
     and record the pre-overlay gold so EVERY task scores against the
     original gold too.
 
-    Looks for ``<audited_root>/<db>/<db>_audited.jsonl`` per task's
-    ``selected_database``. For each task whose ``instance_id`` is in
-    the sidecar AND whose ``audit_status`` is ``edited`` or
-    ``unrecoverable``, replaces ``task["sol_sql"]`` in-place with the
-    audited list. ``clean`` rows keep their ``sol_sql``. The upstream
-    ``execute_submit_action`` reads
+    The on-disk layout depends on ``benchmark.audited_gold_layout``:
+
+    * ``per_db`` (mini-interact's historical contract, also the default
+      when ``benchmark is None``): one sidecar per DB at
+      ``<audited_root>/<db>/<db>_audited.jsonl``. Cached on first read
+      per DB.
+    * ``single_file`` (DEV-1510 — livesqlbench): one consolidated JSONL
+      at ``<audited_root>/<benchmark.name>_audited.jsonl``, with
+      ``instance_id`` as the lookup key and ``selected_database`` as
+      the per-DB discriminator on each row. Read ONCE per call.
+
+    For each task whose ``instance_id`` is in the audit set AND whose
+    ``audit_status`` is ``edited`` or ``unrecoverable``, replaces
+    ``task["sol_sql"]`` in-place with the audited list. ``clean`` rows
+    keep their ``sol_sql``. The upstream ``execute_submit_action`` reads
     ``sample_status.original_data["sol_sql"]`` by reference (see
     ``BIRD-Interact/.../action_handler.py``), so mutating the dict
     before ``SampleStatus`` is constructed is sufficient.
@@ -421,33 +432,110 @@ def apply_audited_gold_overlay(
     alike), the pre-overlay gold is preserved as
     ``task["original_sol_sql"]`` so downstream dual-evaluation ALWAYS
     scores the agent's submission against the canonical/original gold —
-    not just the rows the overlay rewrote. On ``clean`` / missing rows
-    the audited and original golds are identical, so ``evaluate_dual_gold``
-    short-circuits to a single evaluator call (no extra wall cost) and
-    ``phase1_passed_original`` equals ``phase1_passed_audited``. This makes
-    the original-gold column uniformly non-NULL across an audited-gold run
-    instead of NULL on clean rows.
+    not just the rows the overlay rewrote.
 
     Returns a dict mapping ``instance_id`` -> overlay status
     (``"edited"|"unrecoverable"|"clean"|"missing-row"|"missing-file"``).
     Missing files / missing rows leave the task's ``sol_sql`` untouched
     (but still get ``original_sol_sql`` set, equal to that ``sol_sql``).
+
+    A single-file row whose ``selected_database`` does not match the
+    task's ``selected_database`` is treated as ``missing-row`` and logs
+    a warning — defensive against cross-benchmark instance_id collision
+    in the consolidated file.
     """
     import json
 
+    layout = "per_db" if benchmark is None else benchmark.audited_gold_layout
     audited_root = Path(audited_root)
     overlay_log: dict[str, str] = {}
-    cache: dict[str, dict[str, dict]] = {}
 
+    if layout == "single_file":
+        # `single_file` only ever appears when a Benchmark descriptor set it,
+        # so `benchmark is not None` inside this branch — narrowed for the
+        # type-checker.
+        assert benchmark is not None
+        # Read the consolidated audit file ONCE for the whole task list.
+        # An absent file is benign: log once + return "missing-file" for
+        # every task (without ever opening a per-db path that doesn't
+        # exist in this layout).
+        single_file_path = audited_root / f"{benchmark.name}_audited.jsonl"
+        single_rows: dict[str, dict] | None
+        if not single_file_path.exists():
+            logger.warning(
+                "audited-gold single_file missing for benchmark=%s: %s — "
+                "falling back to original gold",
+                benchmark.name, single_file_path,
+            )
+            single_rows = None
+        else:
+            single_rows = {}
+            with single_file_path.open() as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        d = json.loads(line)
+                    except json.JSONDecodeError as e:
+                        logger.warning(
+                            "invalid audited-gold JSON for benchmark=%s at %s: %s",
+                            benchmark.name, single_file_path, e,
+                        )
+                        continue
+                    inst_id = d.get("instance_id")
+                    if not inst_id:
+                        logger.warning(
+                            "audited-gold row missing instance_id for benchmark=%s at %s",
+                            benchmark.name, single_file_path,
+                        )
+                        continue
+                    single_rows[inst_id] = d  # latest-wins
+        for task in tasks:
+            inst = task.get("instance_id")
+            db = task.get("selected_database")
+            if not inst or not db:
+                continue
+            # Always snapshot the pre-overlay gold (same posture as per_db).
+            pre_overlay = task.get("sol_sql")
+            task["original_sol_sql"] = (
+                list(pre_overlay) if isinstance(pre_overlay, list) else pre_overlay
+            )
+            if single_rows is None:
+                overlay_log[inst] = "missing-file"
+                continue
+            entry = single_rows.get(inst)
+            if entry is None:
+                overlay_log[inst] = "missing-row"
+                continue
+            row_db = entry.get("selected_database")
+            if row_db is not None and row_db != db:
+                logger.warning(
+                    "audited-gold row for instance_id=%s has "
+                    "selected_database=%r but task carries selected_database=%r "
+                    "— treating as missing-row to avoid applying the wrong "
+                    "audit (single_file layout cross-benchmark guard)",
+                    inst, row_db, db,
+                )
+                overlay_log[inst] = "missing-row"
+                continue
+            status = entry.get("audit_status")
+            overlay_log[inst] = status or "missing-row"
+            if status in ("edited", "unrecoverable"):
+                audited = entry.get("audited_sol_sql")
+                if isinstance(audited, list) and audited:
+                    task["sol_sql"] = list(audited)
+        return overlay_log
+
+    # Default / per_db layout — the historical mini-interact path. Kept
+    # bit-identical to the pre-DEV-1510 implementation so existing tests
+    # and the cloud upload-back/merge contract don't drift.
+    cache: dict[str, dict[str, dict]] = {}
     for task in tasks:
         inst = task.get("instance_id")
         db = task.get("selected_database")
         if not inst or not db:
             continue
-        # ALWAYS preserve the pre-overlay (canonical/original) gold up front,
-        # before any swap, so every task dual-evaluates against the original
-        # gold — not just the edited/unrecoverable rows. The edited branch
-        # below only swaps `sol_sql`; `original_sol_sql` is already captured.
         pre_overlay = task.get("sol_sql")
         task["original_sol_sql"] = (
             list(pre_overlay) if isinstance(pre_overlay, list) else pre_overlay
@@ -497,9 +585,6 @@ def apply_audited_gold_overlay(
         if status in ("edited", "unrecoverable"):
             audited = entry.get("audited_sol_sql")
             if isinstance(audited, list) and audited:
-                # `original_sol_sql` already holds the pre-swap gold (set at
-                # the top of the loop); here we only swap in the audited gold
-                # as the agent-visible reference.
                 task["sol_sql"] = list(audited)
     return overlay_log
 
