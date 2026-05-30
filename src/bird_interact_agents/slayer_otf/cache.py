@@ -91,6 +91,15 @@ logger = logging.getLogger(__name__)
 # LAST in the build tmp dir. Content = the build-time fingerprint (provenance).
 _CACHE_MARKER = "_cache_fp.txt"
 
+# DEV-1508: implementation-only fingerprint marker. Captures the components
+# that MUST match between cache-build time and runtime — slayer package
+# version + active embedding model name — but NONE of the input components
+# that the cloud's "build local, reuse remote" lifecycle deliberately
+# tolerates differing (sqlite mtime, absolute mini-interact root, KB / column-
+# meaning content). On reuse, this is recomputed and rebuilds on mismatch;
+# the full fingerprint stays marker-presence-gated (see `ensure_db_cache`).
+_IMPL_MARKER = "_impl_fp.txt"
+
 
 @dataclass(frozen=True)
 class CacheEntry:
@@ -191,6 +200,33 @@ def fingerprint_of(*, db_name: str, mini_interact_root: Path) -> str:
     return h.hexdigest()[:16]
 
 
+def _impl_fingerprint_of() -> str:
+    """Return the implementation-version fingerprint half.
+
+    Includes ONLY the components that must agree between cache-build time
+    and runtime; the input-half (sqlite stat, abs root, KB content,
+    column-meaning content) is intentionally excluded so the cloud's "build
+    local, reuse remote" lifecycle keeps working.
+
+    Components:
+
+    - ``slayer.__version__`` — semantic-layer schema / renderer / ingestion
+      behaviour can change across releases; reusing a cache built against
+      a different slayer would silently serve stale entity embeddings or
+      models. (Mitigates DEV-1508 risk #1 — Codex review of the plan.)
+    - active embedding model name (or ``"none"``) — search ranks would
+      degrade silently if embeddings were built against a different model.
+
+    Used by :func:`ensure_db_cache` on the reuse path: recompute, compare
+    against the persisted ``_impl_fp.txt`` marker, and fall through to a
+    full rebuild on mismatch.
+    """
+    h = hashlib.sha256()
+    h.update(f"slayer={_slayer_version()}\n".encode())
+    h.update(f"embed={_active_embedding_model_or_none()}\n".encode())
+    return h.hexdigest()[:16]
+
+
 def _load_kb_rows(kb_path: Path) -> list[dict]:
     return [
         json.loads(line)
@@ -221,9 +257,23 @@ async def ensure_db_cache(
     """Materialise (or reuse) the single authoritative per-DB cache at
     ``<cache_root>/<db>/``.
 
-    Presence-gated: a present ``_cache_fp.txt`` completeness marker → reuse
-    (no rebuild, ``fingerprint_of`` is NOT recomputed). Rebuild only when the
-    marker is ABSENT or ``force=True``. See the module docstring for the full
+    Reuse gating:
+
+    - ``_cache_fp.txt`` (full fingerprint) is marker-presence gated only.
+      Recomputing it on reuse would always-mismatch in the cloud (different
+      absolute root + sqlite mtime than the laptop that built the cache),
+      forcing a needless rebuild — that's the lifecycle the cloud was
+      designed around.
+    - ``_impl_fp.txt`` (DEV-1508) IS recomputed and forces a rebuild on
+      mismatch. It only captures the impl-version components
+      (``slayer.__version__`` + active embedding model) so the cloud
+      lifecycle keeps working; an actual slayer-version / embed-model drift
+      between cache-build and runtime triggers a rebuild instead of
+      silently serving stale storage. Missing ``_impl_fp.txt`` is treated
+      as a mismatch (legacy-cache migration).
+
+    Rebuild happens when the marker is ABSENT, ``force=True``, or the
+    impl fingerprint diverges. See the module docstring for the full
     lifecycle/atomicity contract.
 
     Returns a :class:`CacheEntry` whose ``cache_dir`` is ``<cache_root>/<db>``
@@ -233,14 +283,26 @@ async def ensure_db_cache(
     target = cache_root / db
     marker = target / _CACHE_MARKER
 
-    # Fast path — reuse a complete cache without recomputing the fingerprint.
-    if not force and marker.is_file():
+    def _impl_ok() -> bool:
+        """Persisted impl fp matches the current implementation. The legacy
+        case (no ``_impl_fp.txt`` because the cache was built before the
+        split landed) is treated as a mismatch → rebuild — safer than
+        assuming compat with an unknown prior implementation."""
+        impl_marker = target / _IMPL_MARKER
+        if not impl_marker.is_file():
+            return False
+        return impl_marker.read_text().strip() == _impl_fingerprint_of()
+
+    # Fast path — reuse a complete cache without recomputing the FULL
+    # fingerprint. The IMPL half IS recomputed; mismatch falls through to
+    # rebuild.
+    if not force and marker.is_file() and _impl_ok():
         return _load_cache_entry(target)
 
     async with _get_lock(db):
         # Double-check under the lock — a peer coroutine may have built it
         # while we waited.
-        if not force and marker.is_file():
+        if not force and marker.is_file() and _impl_ok():
             return _load_cache_entry(target)
 
         sqlite_path = mini_interact_root / db / f"{db}.sqlite"
@@ -271,31 +333,41 @@ async def ensure_db_cache(
                 meanings_path=meanings_path,
                 kb_rows=kb_rows,
             )
+            # DEV-1508: persist the impl-fp half BEFORE the completeness
+            # marker so a successful reuse (marker present) is guaranteed
+            # to find a usable ``_impl_fp.txt`` to validate. The marker is
+            # still written LAST and remains the sole completeness signal.
+            (tmp_dir / _IMPL_MARKER).write_text(_impl_fingerprint_of())
             # Provenance marker, written LAST.
             (tmp_dir / _CACHE_MARKER).write_text(fp)
 
-            # Migration / force: a pre-existing target with NO marker (old
-            # <db>/<fp>/ layout or an incomplete dir) — or any target under
-            # force — is wiped before the rename. (A markerless target also
-            # can't be reused, so wiping it is safe.) We never rmtree a
-            # peer's complete (marked) dir here: when the target is marked
-            # and not force, the rename below collides and the OSError branch
-            # treats the peer's dir as success.
-            if target.exists() and (force or not marker.is_file()):
+            # Migration / force / drift: a pre-existing target with NO
+            # marker (old <db>/<fp>/ layout or an incomplete dir), or any
+            # target under force, OR a target whose persisted impl
+            # fingerprint diverges from the current one (DEV-1508) — is
+            # wiped before the rename. Without the impl-drift branch,
+            # ``os.rename(tmp_dir, target)`` would fail with ENOTEMPTY and
+            # the OSError handler would silently return the stale target,
+            # defeating the impl-fp protection (Codex review of PR #11).
+            if target.exists() and (force or not marker.is_file() or not _impl_ok()):
                 shutil.rmtree(target, ignore_errors=True)
 
             # Atomic-rename onto the (now-absent) target. Cross-process race:
             # if a peer won the rename while we built, ours fails with OSError;
-            # treat that as success iff the target now carries the marker, and
-            # discard our tmp dir.
+            # treat that as success iff the target now carries the marker AND
+            # the peer's impl fingerprint matches ours — otherwise we'd be
+            # accepting a peer that built under a stale impl. Tight invariant
+            # in practice (single uv.lock per process tree) but explicit so
+            # the cross-process race can't reintroduce DEV-1508's bug class.
             try:
                 os.rename(tmp_dir, target)
             except OSError:
-                if not marker.is_file():
+                if not marker.is_file() or not _impl_ok():
                     raise
-                # A peer won the rename; the target is THEIR complete dir.
-                # Return their on-disk fp/kb_rows (ours may differ) so the
-                # CacheEntry matches cache_dir's actual contents (CodeRabbit).
+                # A peer won the rename; the target is THEIR complete dir
+                # AND its impl fp matches ours. Return their on-disk
+                # fp/kb_rows (ours may differ on input-half components) so
+                # the CacheEntry matches cache_dir's actual contents.
                 shutil.rmtree(tmp_dir, ignore_errors=True)
                 return _load_cache_entry(target)
         except BaseException:

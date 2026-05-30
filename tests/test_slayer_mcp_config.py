@@ -56,3 +56,53 @@ def test_slayer_mcp_storage_per_task(tmp_path):
     assert a["env"]["SLAYER_STORAGE"] != b["env"]["SLAYER_STORAGE"]
     assert a["env"]["SLAYER_STORAGE"].endswith("alien")
     assert b["env"]["SLAYER_STORAGE"].endswith("robot")
+
+
+# DEV-1508: opt-out for --ingest-on-startup so an OTF-warm storage doesn't
+# pay 30-50s of useless schema re-reflection / sample-value refresh /
+# embedding hash-walks at MCP boot — which the Claude Agent SDK has no
+# timeout knob to wait through, leaving slayer status='pending' for the
+# whole session on big-schema LiveSQLBench DBs.
+
+
+def test_slayer_mcp_config_default_includes_ingest_flag(tmp_path):
+    """Default (back-compat) call still ships ``--ingest-on-startup``. The
+    committed-reference adapters depend on this to refresh entity embeddings
+    against the active embedding model."""
+    from bird_interact_agents.harness import slayer_mcp_stdio_config
+
+    cfg = slayer_mcp_stdio_config(str(tmp_path / "store"))
+    assert cfg["args"] == ["mcp", "--ingest-on-startup"]
+
+
+def test_slayer_mcp_config_ingest_on_startup_false_omits_flag(tmp_path):
+    """OTF callers pass ``ingest_on_startup=False`` to skip the startup
+    re-ingest: the OTF cache by construction IS the post-ingestion state."""
+    from bird_interact_agents.harness import slayer_mcp_stdio_config
+
+    cfg = slayer_mcp_stdio_config(
+        str(tmp_path / "store"), ingest_on_startup=False,
+    )
+    assert cfg["args"] == ["mcp"]
+
+
+def test_slayer_mcp_config_env_unaffected_by_kwarg(tmp_path):
+    """Pin: the new kwarg only affects ``args``. ``env["SLAYER_STORAGE"]``
+    must still be the resolved abs path so a regression doesn't silently
+    point SLayer at the wrong dir."""
+    from bird_interact_agents.harness import slayer_mcp_stdio_config
+
+    a = slayer_mcp_stdio_config(str(tmp_path / "store"))
+    b = slayer_mcp_stdio_config(str(tmp_path / "store"), ingest_on_startup=False)
+    assert a["env"]["SLAYER_STORAGE"] == b["env"]["SLAYER_STORAGE"]
+    assert a["command"] == b["command"]
+
+
+def test_slayer_mcp_config_kwarg_is_keyword_only(tmp_path):
+    """The flag MUST be keyword-only — a positional ``True`` shouldn't be
+    misread as ``ingest_on_startup=True`` by a careless caller that thought
+    they were passing a different positional arg."""
+    from bird_interact_agents.harness import slayer_mcp_stdio_config
+
+    with pytest.raises(TypeError):
+        slayer_mcp_stdio_config(str(tmp_path / "store"), False)  # type: ignore[misc]

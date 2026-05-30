@@ -8,7 +8,6 @@ mini-interact / a-interact behavior lives in the sibling
 
 from __future__ import annotations
 
-import sys
 from types import SimpleNamespace
 
 import pytest
@@ -312,10 +311,12 @@ def _stub_env(
         return None
 
     monkeypatch.setattr(m, "materialize_task_db", _fake_materialize)
-    monkeypatch.setattr(
-        m, "slayer_mcp_stdio_config",
-        lambda d: {"command": "slayer", "args": ["mcp"], "env": {}},
-    )
+
+    def _fake_slayer_mcp(storage_dir, **kw):
+        captured["slayer_mcp_kw"] = dict(kw)
+        return {"command": "slayer", "args": ["mcp"], "env": {}}
+
+    monkeypatch.setattr(m, "slayer_mcp_stdio_config", _fake_slayer_mcp)
     monkeypatch.setattr(m, "create_sdk_mcp_server", lambda **kw: SimpleNamespace())
 
     async def fake_resolve(*, db_name, task_data, data_path_base, benchmark):
@@ -372,6 +373,25 @@ async def test_run_task_attaches_slayer_write_tools(monkeypatch, tmp_path):
     allowed = set(captured["options"].allowed_tools)
     assert "mcp__slayer__create_model" in allowed
     assert "mcp__slayer__edit_model" in allowed
+
+
+@pytest.mark.asyncio
+async def test_run_task_passes_ingest_on_startup_false_to_slayer_mcp(
+    monkeypatch, tmp_path,
+):
+    """DEV-1508: claude_sdk_otf must boot the slayer MCP WITHOUT
+    --ingest-on-startup. The OTF cache is post-ingestion by construction;
+    the Claude Agent SDK has no startup-timeout knob, so a slow re-ingest
+    leaves slayer status='pending' for the whole session and the agent
+    silently loses every mcp__slayer__* tool."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    captured = _stub_env(monkeypatch, m, tmp_path / "store")
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert captured["slayer_mcp_kw"].get("ingest_on_startup") is False
 
 
 @pytest.mark.asyncio
@@ -552,7 +572,9 @@ async def test_run_task_captures_usage(monkeypatch, tmp_path):
 # Import isolation (Codex): no pydantic_ai ADAPTER package pulled in
 # ---------------------------------------------------------------------------
 
-def test_import_does_not_pull_pydantic_ai_adapter_packages():
+def test_import_does_not_pull_pydantic_ai_adapter_packages(
+    import_isolation_results,
+):
     """claude_sdk_otf must not drag in the heavy pydantic_ai *adapter*
     packages (`agents.pydantic_ai{,_recursive,_otf_encode}`) — that was the
     Codex concern about importing the shared OTF resolver from the recursive
@@ -560,32 +582,14 @@ def test_import_does_not_pull_pydantic_ai_adapter_packages():
     `slayer_otf` (via reference_build -> agents._session_log) and is NOT in
     scope here, so it is allowed.
 
-    Run in a CLEAN interpreter so we don't mutate this process's sys.modules
-    (deleting already-imported adapter modules would corrupt class identity
-    for other tests in the same session).
-    """
-    import subprocess
-    import textwrap
-
-    code = textwrap.dedent(
-        """
-        import importlib, sys
-        importlib.import_module("bird_interact_agents.agents.claude_sdk_otf.agent")
-        leaked = [
-            n for n in sys.modules
-            if n.startswith("bird_interact_agents.agents.pydantic_ai")
-        ]
-        if leaked:
-            print("LEAKED:" + ",".join(sorted(leaked)))
-            sys.exit(1)
-        """
-    )
-    r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True,
-    )
-    assert r.returncode == 0, (
+    Drives the consolidated ``import_isolation_results`` subprocess fixture
+    (DEV-1508 perf — see ``tests/conftest.py``); the check still runs in a
+    fresh sub-interpreter with sys.modules cleared, just shared across the
+    three boundary tests."""
+    r = import_isolation_results["claude_sdk_otf_no_pydantic_ai_adapter"]
+    assert r["ok"], (
         "claude_sdk_otf import leaked pydantic_ai ADAPTER packages: "
-        f"{r.stdout.strip()}{r.stderr.strip()}"
+        f"leaked={r.get('leaked')!r} error={r.get('error')!r}"
     )
 
 

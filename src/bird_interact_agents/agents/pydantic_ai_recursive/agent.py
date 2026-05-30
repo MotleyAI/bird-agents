@@ -117,7 +117,9 @@ def _constructor_reserve(eval_mode: str = "a-interact") -> float:
     )
 
 
-def _build_shared_slayer_server(slayer_storage_dir: str) -> MCPServerStdio:
+def _build_shared_slayer_server(
+    slayer_storage_dir: str, *, ingest_on_startup: bool = True,
+) -> MCPServerStdio:
     """One MCPServerStdio per task, shared across the spawn tree.
 
     DEV-1478: a thin ``process_tool_call`` hook normalizes text-equality FILTER
@@ -125,8 +127,15 @@ def _build_shared_slayer_server(slayer_storage_dir: str) -> MCPServerStdio:
     ``query``/``query_nested`` calls, then forwards. Keeps the hand-audited
     (pre-encoded) eval path's case/whitespace handling identical to the
     OTF-encode path so the comparison stays apples-to-apples. No validator here
-    (this adapter doesn't write models)."""
-    cfg = slayer_mcp_stdio_config(slayer_storage_dir)
+    (this adapter doesn't write models).
+
+    DEV-1508: ``ingest_on_startup`` defaults to True (committed-reference
+    behavior) and the on-the-fly call site passes False — see
+    ``slayer_mcp_stdio_config`` for the rationale.
+    """
+    cfg = slayer_mcp_stdio_config(
+        slayer_storage_dir, ingest_on_startup=ingest_on_startup,
+    )
 
     async def _process_tool_call(ctx, call_tool, name, tool_args):
         return await call_tool(name, normalize_tool_filters(name, tool_args), None)
@@ -396,7 +405,14 @@ class PydanticAIRecursiveAgent:
         )
 
         slayer_server = (
-            _build_shared_slayer_server(slayer_storage_dir)
+            _build_shared_slayer_server(
+                slayer_storage_dir,
+                # DEV-1508: the on-the-fly path uses a fully-ingested OTF
+                # cache; the committed-reference (pre-encoded) path still
+                # needs the slayer MCP's startup refresh as the safety net
+                # against a committed-reference / embedding-model mismatch.
+                ingest_on_startup=(self.slayer_setup != "on-the-fly"),
+            )
             if slayer_storage_dir else None
         )
 

@@ -330,7 +330,9 @@ class ClaudeSDKOtfAgent:
 
             mcp_servers: dict = {
                 "bird-interact-tools": server,
-                "slayer": slayer_mcp_stdio_config(slayer_storage_dir),
+                "slayer": slayer_mcp_stdio_config(
+                    slayer_storage_dir, ingest_on_startup=False,
+                ),
             }
             tool_names.extend(_slayer_tool_names())
 

@@ -17,7 +17,6 @@ concurrent tasks via ``make_runner``.
 
 from __future__ import annotations
 
-import sys
 from types import SimpleNamespace
 
 import pytest
@@ -496,10 +495,15 @@ def _stub_env(
         return None
 
     monkeypatch.setattr(m, "materialize_task_db", _fake_materialize)
-    monkeypatch.setattr(
-        m, "slayer_mcp_stdio_config",
-        lambda d: {"command": "slayer", "args": ["mcp"], "env": {}},
-    )
+
+    def _fake_slayer_mcp(storage_dir, **kw):
+        # DEV-1508: capture the ingest_on_startup kwarg so the regression
+        # test (`test_run_task_passes_ingest_on_startup_false_to_slayer_mcp`)
+        # can assert the OTF adapter opted out of startup re-ingest.
+        captured["slayer_mcp_kw"] = dict(kw)
+        return {"command": "slayer", "args": ["mcp"], "env": {}}
+
+    monkeypatch.setattr(m, "slayer_mcp_stdio_config", _fake_slayer_mcp)
     monkeypatch.setattr(m, "create_sdk_mcp_server", lambda **kw: SimpleNamespace())
 
     async def fake_resolve(*, db_name, task_data, data_path_base, benchmark):
@@ -557,6 +561,25 @@ async def test_run_task_attaches_slayer_write_tools(monkeypatch, tmp_path):
     assert "mcp__slayer__create_model" in allowed
     assert "mcp__slayer__edit_model" in allowed
     assert "mcp__slayer__validate_models" in allowed
+
+
+@pytest.mark.asyncio
+async def test_run_task_passes_ingest_on_startup_false_to_slayer_mcp(
+    monkeypatch, tmp_path,
+):
+    """DEV-1508: same reasoning as the livesqlbench sibling — the OTF cache
+    is post-ingestion by construction, the Claude Agent SDK has no MCP
+    startup-timeout knob, so the slayer MCP must boot WITHOUT
+    --ingest-on-startup or the agent silently loses every mcp__slayer__*
+    tool to a stuck-pending handshake."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+
+    captured = _stub_env(monkeypatch, m, tmp_path / "store")
+    agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert captured["slayer_mcp_kw"].get("ingest_on_startup") is False
 
 
 @pytest.mark.asyncio
@@ -806,34 +829,20 @@ async def test_run_task_captures_usage(monkeypatch, tmp_path):
 # not drag in heavy pydantic_ai adapter packages either.
 # ---------------------------------------------------------------------------
 
-def test_import_does_not_pull_pydantic_ai_adapter_packages():
-    """Run in a CLEAN interpreter so we don't mutate sys.modules in this
-    process (deleting already-imported adapter modules would corrupt class
-    identity for other tests in the same session)."""
-    import subprocess
-    import textwrap
-
-    code = textwrap.dedent(
-        """
-        import importlib, sys
-        importlib.import_module(
-            "bird_interact_agents.agents.claude_sdk_otf_ainteract.agent"
-        )
-        leaked = [
-            n for n in sys.modules
-            if n.startswith("bird_interact_agents.agents.pydantic_ai")
-        ]
-        if leaked:
-            print("LEAKED:" + ",".join(sorted(leaked)))
-            sys.exit(1)
-        """
-    )
-    r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True,
-    )
-    assert r.returncode == 0, (
+def test_import_does_not_pull_pydantic_ai_adapter_packages(
+    import_isolation_results,
+):
+    """Drives the consolidated ``import_isolation_results`` subprocess
+    fixture (DEV-1508 perf — see ``tests/conftest.py``); the check still
+    runs in a fresh sub-interpreter with sys.modules cleared, shared
+    across the three boundary tests so we don't pay Python startup three
+    times."""
+    r = import_isolation_results[
+        "claude_sdk_otf_ainteract_no_pydantic_ai_adapter"
+    ]
+    assert r["ok"], (
         "claude_sdk_otf_ainteract import leaked pydantic_ai ADAPTER packages: "
-        f"{r.stdout.strip()}{r.stderr.strip()}"
+        f"leaked={r.get('leaked')!r} error={r.get('error')!r}"
     )
 
 

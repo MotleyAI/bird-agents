@@ -321,7 +321,15 @@ class ClaudeSDKOtfAInteractAgent:
 
             mcp_servers: dict = {
                 "bird-interact-tools": server,
-                "slayer": slayer_mcp_stdio_config(slayer_storage_dir),
+                # DEV-1508: like the sibling claude_sdk_otf adapter, the
+                # per-task slayer storage here comes from the
+                # `ensure_db_cache`-backed OTF cache (full post-ingestion
+                # state). Skip `--ingest-on-startup` so the Claude Agent
+                # SDK (no MCP startup-timeout knob) doesn't proceed with
+                # slayer status='pending' on big-schema DBs.
+                "slayer": slayer_mcp_stdio_config(
+                    slayer_storage_dir, ingest_on_startup=False,
+                ),
             }
             tool_names.extend(_slayer_tool_names())
 

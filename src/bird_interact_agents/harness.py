@@ -946,36 +946,71 @@ async def resolve_task_storage_dir(
     return str(variant_dir), deleted
 
 
-# Startup-handshake budget (seconds) for the SLayer stdio MCP server. The
-# server runs `--ingest-on-startup`, which RE-REFLECTS the datasource schema
-# and rebuilds the in-memory semantic layer before answering pydantic-ai's
-# `initialize()` handshake. That reflection is pure CPU and scales with schema
-# size — ~30-50s uncontended for a large schema (e.g. alien, 30+ models) — and
-# balloons under multi-actor CPU contention (N actors per worker each
-# reflecting on the same few vCPUs). The prior 300s budget tripped exactly
-# this way (DEV-1478: every alien task + other big-schema DBs timed out at the
-# MCP handshake). Embeddings are NOT the cost: they're prebuilt in the
-# reference's `embeddings.db`, copied into each task variant, and hash-skipped
-# on startup (no re-embed). 1800s gives a deliberately generous margin (≈30-50x
-# uncontended) so contention can't trip it; a stuck handshake is otherwise
-# bounded by the run's max-runtime / no-progress deadline.
+# Startup-handshake budget (seconds) for the SLayer stdio MCP server when
+# `ingest_on_startup=True` (the committed-reference path — committed
+# `slayer_models/<db>/` may have been built under a different embedding model
+# than the one the runtime is using, so the slayer server's `--ingest-on-
+# startup` refresh is the safety net). That refresh RE-REFLECTS the datasource
+# schema and rebuilds the in-memory semantic layer before answering
+# pydantic-ai's `initialize()` handshake. Reflection is pure CPU and scales
+# with schema size — ~30-50s uncontended for a large schema (e.g. alien,
+# 30+ models) — and balloons under multi-actor CPU contention. The prior 300s
+# budget tripped exactly that way (DEV-1478). 1800s gives ≈30-50x margin.
+#
+# OTF callers (DEV-1508) opt out via `slayer_mcp_stdio_config(...,
+# ingest_on_startup=False)` because the deterministic OTF cache IS the
+# post-ingestion state; on those paths the handshake is sub-second and this
+# budget is moot.
 SLAYER_MCP_STARTUP_TIMEOUT_S = 1800
 
 
-def slayer_mcp_stdio_config(storage_dir: str) -> dict:
+def slayer_mcp_stdio_config(
+    storage_dir: str, *, ingest_on_startup: bool = True,
+) -> dict:
     """Return a stdio MCP server config for the per-task slayer storage.
 
     Frameworks adapt this dict to their own MCP-server config type.
 
+    Args:
+        storage_dir: Per-task SLayer storage dir. Non-empty (a Path("")
+            silently aliases to CWD on `.resolve()`, which would point
+            SLayer at whatever directory the run happens to start in).
+        ingest_on_startup: When True (default), pass ``--ingest-on-startup``
+            to ``slayer mcp`` so the server refreshes datasource / model /
+            column / measure / aggregation embeddings against the active
+            embedding model at boot. Required for the committed-reference
+            adapters (``pydantic_ai``, ``claude_sdk``, ``smolagents``,
+            ``mcp_agent``, ``agno``) whose ``slayer_models/<db>/`` may have
+            been embedded against a different model.
+
+            When False (DEV-1508), the flag is omitted. OTF callers whose
+            storage comes through ``cache.ensure_db_cache`` pass False:
+            today that's ``claude_sdk_otf`` and ``pydantic_ai_recursive`` in
+            on-the-fly mode. Their per-task storage is `cp -r`'d from the
+            deterministic OTF cache, which already contains a fully
+            ingested ``embeddings.db`` / ``memories.yaml`` / model YAML —
+            re-ingesting is wasted work, and on the Claude Agent SDK path
+            (no MCP startup-timeout knob) it leaves slayer
+            ``status='pending'`` for the entire agent session. The cache's
+            ``_impl_fp.txt`` marker (``slayer.__version__`` + embedding
+            model) is recomputed on reuse and forces a rebuild on drift,
+            so dropping this flag is safe under the project's locked-
+            slayer-version invariant.
+
+            ``pydantic_ai_otf_encode`` does NOT yet opt out: its storage
+            comes from ``reference_build.ensure_db_reference``, whose
+            reuse path is presence-gated on ``_reference_fp.txt`` without
+            the impl-fingerprint check. Extending the impl-fp split to
+            ``ensure_db_reference`` is a follow-up; until then the encoder
+            keeps the startup ingest as its drift safety net.
+
     Keys:
         command: absolute path to the slayer binary
-        args:    [`mcp`]
+        args:    [`mcp`] (or [`mcp`, `--ingest-on-startup`] when enabled)
         env:     full env dict with SLAYER_STORAGE pointing at the per-DB store
 
     Raises:
-        ValueError: if storage_dir is empty/None. We refuse to silently fall
-            back to CWD because Path("").resolve() does — that would point
-            SLayer at whatever directory the run happens to start in.
+        ValueError: if storage_dir is empty/None.
     """
     if not storage_dir:
         raise ValueError(
@@ -985,16 +1020,11 @@ def slayer_mcp_stdio_config(storage_dir: str) -> dict:
         )
     env = os.environ.copy()
     env["SLAYER_STORAGE"] = str(Path(storage_dir).resolve())
+    args = ["mcp"]
+    if ingest_on_startup:
+        args.append("--ingest-on-startup")
     return {
         "command": _resolve_slayer_command(),
-        # --ingest-on-startup refreshes datasource / model / column /
-        # measure / aggregation embeddings against the active embedding
-        # model when the server boots. Memory embeddings remain stale
-        # (DEV-1416) — the kb-to-slayer-models skill writes them once
-        # at save-time. The per-task variant carries the canonical
-        # store's `embeddings.db` verbatim (see hard8_preprocessor's
-        # `_copy_memories_and_embeddings`) so memory rows are already
-        # present; this flag covers the entity side.
-        "args": ["mcp", "--ingest-on-startup"],
+        "args": args,
         "env": env,
     }

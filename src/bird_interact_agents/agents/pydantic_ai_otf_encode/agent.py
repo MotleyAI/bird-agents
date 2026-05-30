@@ -837,6 +837,17 @@ def _build_shared_slayer_server(slayer_storage_dir: str) -> MCPServerStdio:
     feeds any SQL error back to the agent (DEV-1454). The hook runs a client-side
     ``SlayerQueryEngine`` over the SAME storage dir (``YAMLStorage.get_model``
     reads disk uncached, so it sees the subprocess's latest writes)."""
+    # DEV-1508: keep `--ingest-on-startup` here. This adapter is the OTF
+    # *encoder* — its `slayer_storage_dir` is a per-task variant of an
+    # `ensure_db_reference` artifact (NOT `ensure_db_cache`), and the
+    # reference's reuse path is presence-gated on `_reference_fp.txt`
+    # without an impl-fingerprint check (see `reference_build.py:568`).
+    # The MCP's startup ingest is the remaining safety net against a
+    # reference built under an older slayer version / embedding model
+    # (e.g. a downloaded artifact from cloud combo 3). pydantic-ai's
+    # 1800s startup timeout absorbs the 30-50s cost. If we ever extend
+    # the impl-fp split to `ensure_db_reference`, this caller can flip
+    # to `ingest_on_startup=False`.
     cfg = slayer_mcp_stdio_config(slayer_storage_dir)
     storage = YAMLStorage(base_dir=slayer_storage_dir)
     engine = SlayerQueryEngine(storage=storage)
