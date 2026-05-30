@@ -1,9 +1,5 @@
 """Verify the BIRD-Interact harness imports and basic helpers work."""
 
-import subprocess
-import sys
-import textwrap
-
 from bird_interact_agents.config import settings
 
 
@@ -51,43 +47,22 @@ def test_calculate_budget():
     assert budget >= 12  # 6 + 0 + 6 minimum
 
 
-def test_pydantic_ai_agent_imports_without_claude_sdk():
+def test_pydantic_ai_agent_imports_without_claude_sdk(
+    import_isolation_results,
+):
     """The pydantic_ai adapter must not pull in `claude_agent_sdk` at import
-    time. Run a child Python with `claude_agent_sdk` masked from sys.modules
-    via a meta-path finder, then assert the adapter still imports.
+    time. Regression for the previous
+    `from ...claude_sdk.agent import MAX_MODEL_TURNS` edge, which forced
+    every pydantic_ai user to install the Claude SDK extra.
 
-    Regression for the previous `from ...claude_sdk.agent import MAX_MODEL_TURNS`
-    edge, which forced every pydantic_ai user to install the Claude SDK extra.
+    Drives the consolidated `import_isolation_results` subprocess fixture
+    (DEV-1508 perf) — see ``tests/conftest.py`` for the rationale; this
+    test plus the two sibling ``test_import_does_not_pull_pydantic_ai_
+    adapter_packages`` tests previously each spawned a fresh Python
+    interpreter (~5-7s × 3) just to inspect ``sys.modules``.
     """
-    program = textwrap.dedent(
-        """
-        import importlib.abc
-        import importlib.machinery
-        import sys
-
-        class _Block(importlib.abc.MetaPathFinder):
-            def find_spec(self, name, path, target=None):
-                if name == "claude_agent_sdk" or name.startswith("claude_agent_sdk."):
-                    raise ImportError(
-                        f"claude_agent_sdk is masked for this isolation test "
-                        f"(attempted to import {name})"
-                    )
-                return None
-
-        sys.meta_path.insert(0, _Block())
-
-        import bird_interact_agents.agents.pydantic_ai.agent  # noqa: F401
-        print("ok")
-        """
+    r = import_isolation_results["pydantic_ai_without_claude_sdk"]
+    assert r["ok"], (
+        f"pydantic_ai adapter import failed under claude_agent_sdk mask: "
+        f"{r.get('error')}"
     )
-    result = subprocess.run(
-        [sys.executable, "-c", program],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert result.returncode == 0, (
-        f"pydantic_ai adapter import pulled in claude_agent_sdk:\n"
-        f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
-    )
-    assert result.stdout.strip().endswith("ok")

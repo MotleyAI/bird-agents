@@ -17,7 +17,6 @@ concurrent tasks via ``make_runner``.
 
 from __future__ import annotations
 
-import sys
 from types import SimpleNamespace
 
 import pytest
@@ -800,32 +799,18 @@ async def test_run_task_captures_usage(monkeypatch, tmp_path):
 # not drag in heavy pydantic_ai adapter packages either.
 # ---------------------------------------------------------------------------
 
-def test_import_does_not_pull_pydantic_ai_adapter_packages():
-    """Run in a CLEAN interpreter so we don't mutate sys.modules in this
-    process (deleting already-imported adapter modules would corrupt class
-    identity for other tests in the same session)."""
-    import subprocess
-    import textwrap
-
-    code = textwrap.dedent(
-        """
-        import importlib, sys
-        importlib.import_module(
-            "bird_interact_agents.agents.claude_sdk_otf_ainteract.agent"
-        )
-        leaked = [
-            n for n in sys.modules
-            if n.startswith("bird_interact_agents.agents.pydantic_ai")
-        ]
-        if leaked:
-            print("LEAKED:" + ",".join(sorted(leaked)))
-            sys.exit(1)
-        """
-    )
-    r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True,
-    )
-    assert r.returncode == 0, (
+def test_import_does_not_pull_pydantic_ai_adapter_packages(
+    import_isolation_results,
+):
+    """Drives the consolidated ``import_isolation_results`` subprocess
+    fixture (DEV-1508 perf — see ``tests/conftest.py``); the check still
+    runs in a fresh sub-interpreter with sys.modules cleared, shared
+    across the three boundary tests so we don't pay Python startup three
+    times."""
+    r = import_isolation_results[
+        "claude_sdk_otf_ainteract_no_pydantic_ai_adapter"
+    ]
+    assert r["ok"], (
         "claude_sdk_otf_ainteract import leaked pydantic_ai ADAPTER packages: "
-        f"{r.stdout.strip()}{r.stderr.strip()}"
+        f"leaked={r.get('leaked')!r} error={r.get('error')!r}"
     )
