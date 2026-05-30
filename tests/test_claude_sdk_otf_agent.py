@@ -311,7 +311,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
     assert "PostToolUse" in (opts.hooks or {})
 
 
-def test_accumulate_assistant_usage_dict_shaped_and_skips_result():
+def test_accumulate_assistant_usage_dict_shaped_and_skips_result(monkeypatch):
     """Regression: the live SDK delivers `msg.usage` as a DICT. The shared
     helper must read it (not via getattr→0) AND skip the cumulative
     ResultMessage so agent tokens/cost aren't zero or double-counted."""
@@ -319,6 +319,10 @@ def test_accumulate_assistant_usage_dict_shaped_and_skips_result():
         accumulate_assistant_usage,
     )
     from bird_interact_agents import usage as usage_mod
+
+    # Pin pricing so the >0 assertion below doesn't depend on litellm's
+    # cost-map being loaded for the given model (CodeRabbit on PR #9).
+    monkeypatch.setattr(usage_mod, "_cost_per_token", lambda **_: (1e-6, 1e-6))
 
     class _AM:
         def __init__(self, usage):
