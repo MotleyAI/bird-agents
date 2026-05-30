@@ -57,15 +57,35 @@ def upload_per_task_debug(
     work_root: Path,
     client: Any,
 ) -> None:
-    """Upload ``<work_root>/<iid>/`` to
-    ``runs/<run_id>/sessions/<iid>/attempt-<n>/``. No-op when ``<iid>/`` is
-    absent (non-OTF runs never populate it). Best-effort."""
+    """Upload per-task scratch (``<work_root>/<iid>[-<uuid>]/``) to
+    ``runs/<run_id>/sessions/<iid>/attempt-<n>/``. No-op when no matching
+    dir exists (non-OTF runs never populate it). Best-effort.
+
+    The OTF scratch resolver (``slayer_otf.runtime._otf_work_dir``) appends
+    a UUID suffix to keep concurrent runs of the same instance from
+    ``rmtree``-ing each other's live storage, so the on-disk layout is
+    ``<work_root>/<iid>-<uuid>/`` rather than ``<work_root>/<iid>/``. We
+    match both shapes via ``Path.glob`` so cloud debug uploads work for
+    every OTF flavor (DEV-1505 + DEV-1507) without forcing the resolver
+    back to colliding names.
+    """
     try:
-        iid_dir = Path(work_root) / iid
-        if not iid_dir.is_dir():
-            return
+        work_root = Path(work_root)
         prefix = f"runs/{run_id}/sessions/{iid}/attempt-{attempt}"
-        _gcs.upload_dir_prefix(iid_dir, prefix, client=client)
+        # Exact ``<iid>/`` (legacy, non-OTF callers) first, then any
+        # ``<iid>-<suffix>/`` produced by the OTF scratch resolver. Both
+        # are uploaded under the same destination prefix — concurrent
+        # invocations of the same task on one actor are not expected, but
+        # if they happen we'd want all scratch contents shipped.
+        candidates: list[Path] = []
+        legacy = work_root / iid
+        if legacy.is_dir():
+            candidates.append(legacy)
+        candidates.extend(
+            d for d in sorted(work_root.glob(f"{iid}-*")) if d.is_dir()
+        )
+        for d in candidates:
+            _gcs.upload_dir_prefix(d, prefix, client=client)
     except Exception:  # noqa: BLE001
         sys.stderr.write(
             f"[upload_back] upload_per_task_debug failed for {iid}: "
