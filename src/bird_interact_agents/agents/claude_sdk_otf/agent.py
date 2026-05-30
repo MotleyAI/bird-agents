@@ -32,6 +32,7 @@ from claude_agent_sdk import (
 # is sound.
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
+    accumulate_assistant_usage,
     ask_user,
     get_all_external_knowledge_names,
     get_all_knowledge_definitions,
@@ -340,17 +341,7 @@ class ClaudeSDKOtfAgent:
                     trajectory.append(
                         {"type": str(type(msg).__name__), "data": str(msg)[:500]}
                     )
-                    msg_usage = getattr(msg, "usage", None)
-                    if msg_usage is not None:
-                        accum.add_call(
-                            scope="agent",
-                            model=self.model,
-                            prompt=getattr(msg_usage, "input_tokens", 0) or 0,
-                            completion=getattr(msg_usage, "output_tokens", 0) or 0,
-                            cache_read=(
-                                getattr(msg_usage, "cache_read_input_tokens", 0) or 0
-                            ),
-                        )
+                    accumulate_assistant_usage(accum, msg, self.model)
         except Exception as e:
             logger.error("claude_sdk_otf error on %s: %s", instance_id, e)
             return finalize_result_row(

@@ -105,6 +105,46 @@ def _budget_note(status: SampleStatus) -> str:
     )
 
 
+def _usage_value(usage: object, key: str) -> int:
+    """Read a token field from a Claude Agent SDK usage object.
+
+    The live SDK delivers `message.usage` as a **dict**
+    (`{'input_tokens': …, 'output_tokens': …,
+    'cache_read_input_tokens': …, 'cache_creation_input_tokens': …}`);
+    mocked/older paths use an attribute object. Handle both — reading a
+    dict with `getattr` silently returns 0, which is why agent token usage
+    (and therefore agent cost) was previously recorded as zero.
+    """
+    if usage is None:
+        return 0
+    val = usage.get(key) if isinstance(usage, dict) else getattr(usage, key, None)
+    return val or 0
+
+
+def accumulate_assistant_usage(accum: TokenUsage, msg: object, model: str) -> None:
+    """Fold one streamed message's token usage into `accum` (scope=agent).
+
+    Only `AssistantMessage`s carry per-turn usage; the cumulative
+    `ResultMessage.usage` is intentionally skipped so totals aren't
+    double-counted. Shared by the `claude_sdk` and `claude_sdk_otf`
+    adapters so SDK-backed agents report cost consistently with the
+    litellm-tracked frameworks.
+    """
+    if type(msg).__name__ != "AssistantMessage":
+        return
+    usage = getattr(msg, "usage", None)
+    if usage is None:
+        return
+    accum.add_call(
+        scope="agent",
+        model=model,
+        prompt=_usage_value(usage, "input_tokens"),
+        completion=_usage_value(usage, "output_tokens"),
+        cache_read=_usage_value(usage, "cache_read_input_tokens"),
+        cache_write=_usage_value(usage, "cache_creation_input_tokens"),
+    )
+
+
 def _gate(action_name: str, status: SampleStatus) -> str | None:
     """Reject a non-submit tool call when budget would go below submit cost.
 
@@ -573,20 +613,10 @@ class ClaudeSDKAgent:
                     trajectory.append(
                         {"type": str(type(msg).__name__), "data": str(msg)[:500]}
                     )
-                    # Each assistant turn carries a `usage` block; capture
-                    # incrementally so we still record partial usage on
-                    # exception or early break.
-                    msg_usage = getattr(msg, "usage", None)
-                    if msg_usage is not None:
-                        accum.add_call(
-                            scope="agent",
-                            model=self.model,
-                            prompt=getattr(msg_usage, "input_tokens", 0) or 0,
-                            completion=getattr(msg_usage, "output_tokens", 0) or 0,
-                            cache_read=(
-                                getattr(msg_usage, "cache_read_input_tokens", 0) or 0
-                            ),
-                        )
+                    # Each assistant turn carries a `usage` block (a dict);
+                    # fold it in so we record partial usage on exception or
+                    # early break.
+                    accumulate_assistant_usage(accum, msg, self.model)
                     # Count assistant model turns; cap at MAX_MODEL_TURNS to
                     # match the original mini_interact_agent (--max_turns=60)
                     # and ADK before_model_callback.

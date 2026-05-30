@@ -311,6 +311,49 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
     assert "PostToolUse" in (opts.hooks or {})
 
 
+def test_accumulate_assistant_usage_dict_shaped_and_skips_result():
+    """Regression: the live SDK delivers `msg.usage` as a DICT. The shared
+    helper must read it (not via getattr→0) AND skip the cumulative
+    ResultMessage so agent tokens/cost aren't zero or double-counted."""
+    from bird_interact_agents.agents.claude_sdk.agent import (
+        accumulate_assistant_usage,
+    )
+    from bird_interact_agents import usage as usage_mod
+
+    class _AM:
+        def __init__(self, usage):
+            self.usage = usage
+
+    _AM.__name__ = "AssistantMessage"
+
+    class _RM:
+        def __init__(self, usage):
+            self.usage = usage
+
+    _RM.__name__ = "ResultMessage"
+
+    accum = usage_mod.TokenUsage()
+    accumulate_assistant_usage(
+        accum,
+        _AM({
+            "input_tokens": 100, "output_tokens": 20,
+            "cache_read_input_tokens": 5, "cache_creation_input_tokens": 7,
+        }),
+        "anthropic/claude-opus-4-7",
+    )
+    # cumulative ResultMessage usage must be ignored (no double count)
+    accumulate_assistant_usage(
+        accum, _RM({"input_tokens": 9999, "output_tokens": 9999}),
+        "anthropic/claude-opus-4-7",
+    )
+    assert accum.n_calls == 1
+    assert accum.prompt_tokens == 100
+    assert accum.completion_tokens == 20
+    assert accum.cache_read_tokens == 5
+    assert accum.cache_write_tokens == 7
+    assert accum.agent_cost_usd > 0  # opus priced via litellm, not zero
+
+
 @pytest.mark.asyncio
 async def test_turn_budget_hook_warns_near_cap():
     from bird_interact_agents.agents.claude_sdk_otf import agent as m
