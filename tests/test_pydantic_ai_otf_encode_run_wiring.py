@@ -110,6 +110,7 @@ def test_cli_rejects_pydantic_ai_otf_encode_with_pre_encoded(monkeypatch):
 
     argv = [
         "prog",
+        "--dataset", "mini_interact",
         "--framework", "pydantic_ai_otf_encode",
         "--slayer-setup", "pre-encoded",
         "--query-mode", "slayer",
@@ -135,6 +136,7 @@ def test_cli_accepts_pydantic_ai_otf_encode_with_on_the_fly(
 
     argv = [
         "prog",
+        "--dataset", "mini_interact",
         "--framework", "pydantic_ai_otf_encode",
         "--slayer-setup", "on-the-fly",
         "--query-mode", "slayer",

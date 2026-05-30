@@ -135,6 +135,7 @@ def test_cli_rejects_claude_sdk_otf_with_pre_encoded(monkeypatch, tmp_path):
     data_file.write_text("")
     argv = [
         "prog",
+        "--dataset", "mini_interact",
         "--framework", "claude_sdk_otf",
         "--slayer-setup", "pre-encoded",
         "--query-mode", "slayer",

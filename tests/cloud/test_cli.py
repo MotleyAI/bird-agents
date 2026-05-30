@@ -54,6 +54,7 @@ def test_dataset_hyphen_alias_normalized_to_canonical():
     ns = cli.parse_args(
         [
             "submit",
+            "--dataset", "mini_interact",
             "--framework", "pydantic_ai", "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1", "--mode", "a-interact",
@@ -64,17 +65,20 @@ def test_dataset_hyphen_alias_normalized_to_canonical():
     assert ns.dataset == "mini_interact"  # normalized to canonical
 
 
-def test_dataset_defaults_to_mini_interact():
-    ns = cli.parse_args(
-        [
-            "submit",
-            "--framework", "pydantic_ai", "--query-mode", "raw",
-            "--agent-model", "anthropic/claude-sonnet-4-5",
-            "--instance-ids", "db_a_1", "--mode", "a-interact",
-            "--no-require-audited-gold",
-        ]
-    )
-    assert ns.dataset == "mini_interact"
+def test_dataset_is_required():
+    """--dataset has no default — omitting it must be rejected. Prevents
+    silently running mini-interact when --mode/--instance-ids are consistent
+    with both benchmarks."""
+    with pytest.raises(SystemExit):
+        cli.parse_args(
+            [
+                "submit",
+                "--framework", "pydantic_ai", "--query-mode", "raw",
+                "--agent-model", "anthropic/claude-sonnet-4-5",
+                "--instance-ids", "db_a_1", "--mode", "a-interact",
+                "--no-require-audited-gold",
+            ]
+        )
 
 
 @pytest.mark.parametrize("mode", ["a-interact", "c-interact", "oracle"])
@@ -82,6 +86,7 @@ def test_mode_values_accepted(mode: str) -> None:
     ns = cli.parse_args(
         [
             "submit",
+            "--dataset", "mini_interact",
             "--framework", "pydantic_ai",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -116,6 +121,7 @@ def test_pass_through_flags_parse() -> None:
     ns = cli.parse_args(
         [
             "submit",
+            "--dataset", "mini_interact",
             "--framework", "pydantic_ai_recursive",
             "--query-mode", "raw",  # slayer is guarded for cloud (see below)
             "--agent-model", "cerebras/zai-glm-4.7",
@@ -155,6 +161,7 @@ def test_default_patience_is_500() -> None:
     ns = cli.parse_args(
         [
             "submit",
+            "--dataset", "mini_interact",
             "--framework", "pydantic_ai",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -174,6 +181,7 @@ def test_default_use_audited_gold_sql_is_true() -> None:
     ns = cli.parse_args(
         [
             "submit",
+            "--dataset", "mini_interact",
             "--framework", "pydantic_ai",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -190,6 +198,7 @@ def test_no_use_audited_gold_sql_opt_out() -> None:
     ns = cli.parse_args(
         [
             "submit",
+            "--dataset", "mini_interact",
             "--framework", "pydantic_ai",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -224,6 +233,7 @@ def test_require_audited_gold_disabled_when_use_audited_gold_off() -> None:
     ns = cli.parse_args(
         [
             "submit",
+            "--dataset", "mini_interact",
             "--framework", "pydantic_ai",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -240,6 +250,7 @@ def test_prompt_cache_default_on() -> None:
     ns = cli.parse_args(
         [
             "submit",
+            "--dataset", "mini_interact",
             "--framework", "pydantic_ai",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -274,6 +285,7 @@ def _slayer_argv(**over) -> list[str]:
     base.update(over)
     argv = [
         "submit",
+        "--dataset", base.get("dataset", "mini_interact"),
         "--framework", base["framework"],
         "--query-mode", base["query_mode"],
         "--agent-model", base["agent_model"],
@@ -462,6 +474,7 @@ def test_subcommand_registered(sub: str) -> None:
         ns = cli.parse_args(
             [
                 "submit",
+                "--dataset", "mini_interact",
                 "--framework", "pydantic_ai",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
