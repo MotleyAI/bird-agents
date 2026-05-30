@@ -896,7 +896,10 @@ def test_load_task_data_applies_audited_gold_overlay(
 
     overlay_calls: list[tuple] = []
 
-    def fake_overlay(rows, audited_root):
+    # DEV-1510: `apply_audited_gold_overlay` learned a `benchmark` kwarg so
+    # `_load_task_data` can dispatch the per_db/single_file layout. The
+    # fake accepts (and ignores) it for back-compat.
+    def fake_overlay(rows, audited_root, **kwargs):
         overlay_calls.append((list(rows), audited_root))
         # Mutate the row's sol_sql to mimic the real overlay.
         for r in rows:

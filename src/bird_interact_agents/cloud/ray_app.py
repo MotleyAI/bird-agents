@@ -1130,9 +1130,10 @@ def _load_task_data(
     gated sidecar + stamps the dataset marker + SELECT-filters; otherwise plain
     load. Filtered to the run's ``instance_ids``.
 
-    The audited-gold overlay (same helper `run_evaluation` uses) is a
-    mini-interact concept, so it's applied only for non-gold-sidecar benchmarks
-    when `use_audited_gold_sql=True`.
+    DEV-1510: the audited-gold overlay now fires for ALL benchmarks. The
+    per-benchmark `audited_gold_layout` on the `Benchmark` descriptor
+    selects the on-disk shape (per_db for mini-interact, single_file for
+    livesqlbench), so cloud actors evaluate against audited gold for both.
     """
     from bird_interact_agents import paths
     from bird_interact_agents.benchmark import get_benchmark
@@ -1144,9 +1145,12 @@ def _load_task_data(
         gold_file,
         filter_ids=instance_ids,
     )
-    if use_audited_gold_sql and not get_benchmark(dataset).gold_required:
+    if use_audited_gold_sql:
         from bird_interact_agents.harness import apply_audited_gold_overlay
-        apply_audited_gold_overlay(rows, paths.audited_gold_root())
+        apply_audited_gold_overlay(
+            rows, paths.audited_gold_root(),
+            benchmark=get_benchmark(dataset),
+        )
     return {td["instance_id"]: td for td in rows}
 
 

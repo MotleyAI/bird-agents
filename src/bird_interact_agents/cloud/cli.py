@@ -166,20 +166,19 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         # foot-gun: the cluster comes up, encodes (10+ min), and only THEN
         # surfaces the missing-audit via a warning in the actor log. Fail
         # before bringing up the cluster instead.
-        # The audited-gold overlay is a mini-interact concept (its data JSONL
-        # carries gold inline + a separate audited_gold/ sidecar). Benchmarks
-        # with their own gated gold sidecar (gold_required, e.g. livesqlbench)
-        # have no audited_gold — skip the check rather than report every id
-        # missing.
-        if (
-            ns.use_audited_gold_sql
-            and ns.require_audited_gold
-            and not get_benchmark(ns.dataset).gold_required
-        ):
+        # DEV-1510: this guard now fires for BOTH benchmarks. The per-
+        # benchmark `audited_gold_layout` on the descriptor selects the
+        # on-disk shape (per_db / single_file); `missing_audited_gold_ids`
+        # dispatches on the kwarg so both benchmarks get the same
+        # silent-fallback protection.
+        if ns.use_audited_gold_sql and ns.require_audited_gold:
             from bird_interact_agents.cloud._audited_gold_check import (
                 missing_audited_gold_ids,
             )
-            missing = missing_audited_gold_ids(ns.instance_ids)
+            missing = missing_audited_gold_ids(
+                ns.instance_ids,
+                benchmark=get_benchmark(ns.dataset),
+            )
             if missing:
                 p.error(
                     "the following instance_ids have no audited-gold entry "

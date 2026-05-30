@@ -5,6 +5,10 @@ because silently falling back to the un-audited gold for a missing audited
 row turns the cloud run into a meaningless mix of evaluations against
 two different golds. The check below resolves each instance_id's
 ``audit_status`` and reports the subset that would silently fall back.
+
+DEV-1510: now dispatches on `Benchmark.audited_gold_layout` so livesqlbench's
+consolidated `audited_gold/<benchmark>_audited.jsonl` is supported alongside
+mini-interact's per-db sidecars.
 """
 
 from __future__ import annotations
@@ -14,19 +18,32 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from bird_interact_agents import paths
+from bird_interact_agents.benchmark import Benchmark
 
 
 def _load_dataset_instance_db_map(
     data_path: Optional[Path] = None,
+    *,
+    benchmark: Benchmark | None = None,
 ) -> dict[str, str]:
-    """Map ``instance_id`` -> ``selected_database`` from mini_interact.jsonl.
+    """Map ``instance_id`` -> ``selected_database`` from the benchmark's
+    data file.
 
     Reading just two fields per row keeps this cheap (the file is ~3 MB,
     one line per task). Caches nothing — caller invokes once per submit.
+
+    When ``data_path`` is omitted, resolves to the benchmark's data file
+    via ``paths.benchmark_data_file(benchmark.name)`` so livesqlbench
+    callers don't have to pass it explicitly. Default benchmark = mini
+    interact (back-compat with the DEV-1478 callers).
     """
-    path = data_path or paths.mini_interact_data_file()
+    if data_path is None:
+        if benchmark is None or benchmark.name == "mini_interact":
+            data_path = paths.mini_interact_data_file()
+        else:
+            data_path = paths.benchmark_data_file(benchmark.name)
     out: dict[str, str] = {}
-    with path.open() as f:
+    with data_path.open() as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -39,6 +56,42 @@ def _load_dataset_instance_db_map(
             db = td.get("selected_database")
             if iid and db:
                 out[iid] = db
+    return out
+
+
+def _load_single_file_audit_index(
+    audited_root: Path, benchmark: Benchmark,
+) -> Optional[dict[str, tuple[str, bool, str, str]]]:
+    """Return ``{instance_id: (audit_status, has_audited_sql, row_db, row_benchmark)}``
+    for ``<root>/<benchmark.name>_audited.jsonl`` or ``None`` if absent.
+
+    ``row_db`` is the row's ``selected_database`` and ``row_benchmark``
+    is the row's ``benchmark`` field; the caller uses both as defensive
+    cross-benchmark guards (an instance_id collision that pointed at the
+    wrong database or the wrong benchmark would silently apply the wrong
+    audit otherwise).
+    """
+    path = audited_root / f"{benchmark.name}_audited.jsonl"
+    if not path.exists():
+        return None
+    out: dict[str, tuple[str, bool, str, str]] = {}
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            iid = row.get("instance_id")
+            status = row.get("audit_status") or "missing-row"
+            audited = row.get("audited_sol_sql")
+            has_audited_sql = isinstance(audited, list) and bool(audited)
+            row_db = row.get("selected_database") or ""
+            row_benchmark = row.get("benchmark") or ""
+            if iid:
+                out[iid] = (status, has_audited_sql, row_db, row_benchmark)
     return out
 
 
@@ -86,31 +139,82 @@ def missing_audited_gold_ids(
     *,
     audited_root: Optional[Path] = None,
     data_path: Optional[Path] = None,
+    benchmark: Benchmark | None = None,
 ) -> list[str]:
     """Return the subset of ``instance_ids`` whose audited gold is missing.
 
+    Dispatches on ``benchmark.audited_gold_layout`` (DEV-1510). Default
+    benchmark = mini-interact, preserving the DEV-1478 call signature.
+
     An id is reported missing when:
-      - its ``selected_database`` is unknown to ``mini_interact.jsonl`` (the
+      - its ``selected_database`` is unknown to the dataset file (the
         caller passed a typo / stale id), OR
-      - the per-db sidecar ``<root>/<db>/<db>_audited.jsonl`` does not exist,
-        OR
-      - the sidecar has no row for the id, OR
+      - the per_db sidecar / single_file file is absent, OR
+      - the file has no row for the id, OR
+      - (single_file only) the row's ``selected_database`` doesn't match
+        the dataset's mapping for the id (cross-benchmark id collision —
+        treating as missing avoids silently applying the wrong audit), OR
       - the row's ``audit_status`` is ``edited`` or ``unrecoverable`` but
-        ``audited_sol_sql`` is missing or not a non-empty list (Codex
-        DEV-1478 follow-up: the overlay would silently fall back to the
-        original un-audited gold for such rows, defeating the guard).
+        ``audited_sol_sql`` is missing or not a non-empty list (the
+        overlay would silently fall back to the original un-audited gold
+        for such rows, defeating the guard).
 
     A row with ``audit_status == "clean"`` passes regardless of
     ``audited_sol_sql`` because the overlay deliberately leaves
     ``sol_sql`` untouched for clean rows — the original IS the audited
-    gold by design.
-    Returns the missing ids in input order; an empty list means everyone
-    has audited gold.
+    gold by design. Returns the missing ids in input order; an empty
+    list means everyone has audited gold.
     """
     audited_root = audited_root or paths.audited_gold_root()
-    inst_to_db = _load_dataset_instance_db_map(data_path)
-    cache: dict[str, Optional[dict[str, tuple[str, bool]]]] = {}
+    inst_to_db = _load_dataset_instance_db_map(data_path, benchmark=benchmark)
+    layout = "per_db" if benchmark is None else benchmark.audited_gold_layout
     missing: list[str] = []
+
+    if layout == "single_file":
+        assert benchmark is not None  # narrowed for the type-checker
+        single_index = _load_single_file_audit_index(audited_root, benchmark)
+        for iid in instance_ids:
+            db = inst_to_db.get(iid)
+            if db is None:
+                missing.append(iid)
+                continue
+            if single_index is None:
+                missing.append(iid)
+                continue
+            entry = single_index.get(iid)
+            if entry is None:
+                missing.append(iid)
+                continue
+            status, has_audited_sql, row_db, row_benchmark = entry
+            # Defensive cross-benchmark guard: a row is missing if its
+            # `selected_database` is absent OR mismatches the dataset's
+            # mapping for this id. The single_file layout is shared
+            # across DBs, so applying an audit based on `instance_id`
+            # alone (without verifying the per-DB discriminator) could
+            # land the wrong audit. Mirrors the overlay's guard in
+            # `harness.py::apply_audited_gold_overlay`.
+            if not row_db or row_db != db:
+                missing.append(iid)
+                continue
+            # Defence-in-depth: also verify the row's `benchmark` tag.
+            # DB names overlap across benchmarks by design (alien, museum,
+            # … exist in both mini-interact and livesqlbench) — without
+            # this check, a row with the right (instance_id, db) but the
+            # wrong benchmark would still pass. Schema requires it; an
+            # absent field is treated the same as a mismatch.
+            if not row_benchmark or row_benchmark != benchmark.name:
+                missing.append(iid)
+                continue
+            if status == "clean":
+                continue
+            if status in ("edited", "unrecoverable") and has_audited_sql:
+                continue
+            missing.append(iid)
+        return missing
+
+    # Default / per_db layout (mini-interact's historical contract). Kept
+    # bit-identical to the pre-DEV-1510 path for back-compat.
+    cache: dict[str, Optional[dict[str, tuple[str, bool]]]] = {}
     for iid in instance_ids:
         db = inst_to_db.get(iid)
         if db is None:

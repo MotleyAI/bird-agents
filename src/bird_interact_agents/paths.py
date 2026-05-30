@@ -155,6 +155,34 @@ def audited_gold_root() -> Path:
     return main_checkout_root() / "audited_gold"
 
 
+def audited_gold_file(*, benchmark: str) -> Path:
+    """DEV-1510: resolve the audited-gold JSONL for a `single_file` benchmark.
+
+    Mini-interact uses ``per_db`` (each DB gets its own
+    ``<audited_root>/<db>/<db>_audited.jsonl``) and has no single-file
+    path — call ``audited_gold_root()`` directly there.
+
+    Livesqlbench uses ``single_file`` because its DB names collide with
+    mini-interact's (alien, museum, …); the file is one consolidated
+    ``audited_gold/livesqlbench_audited.jsonl`` keyed by ``instance_id``
+    with ``selected_database`` as the per-DB discriminator on each row.
+
+    Raises ``ValueError`` for ``per_db`` benchmarks or unknown tokens —
+    same posture as ``slayer_otf_cache_root`` so a forgotten / typo'd
+    benchmark cannot silently land at a wrong path.
+    """
+    _validate_benchmark(benchmark)
+    b = get_benchmark(benchmark)
+    if b.audited_gold_layout != "single_file":
+        raise ValueError(
+            f"audited_gold_file({benchmark!r}) is only defined for "
+            f"`single_file` layouts; got layout={b.audited_gold_layout!r}. "
+            f"For `per_db` benchmarks, use `audited_gold_root() / <db> / "
+            f"<db>_audited.jsonl` via `apply_audited_gold_overlay`."
+        )
+    return audited_gold_root() / f"{b.name}_audited.jsonl"
+
+
 def sar_audited_gold_root() -> Path:
     """SAR-Agent audit JSONL output root.
 
