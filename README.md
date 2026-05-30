@@ -55,37 +55,38 @@ bird-interact --framework claude_sdk --query-mode slayer --mode a-interact \
   --db-path /path/to/mini-interact/
 ```
 
-### On-the-fly KB encoding (`claude_sdk_otf`)
+### On-the-fly KB encoding — two flavors
 
-`claude_sdk_otf` is a Claude Agent SDK agent that **encodes the
-knowledge-base on the fly**: it runs off the deterministic OTF cache (base
-models + KB items pre-loaded as SLayer memories), is given the SLayer MCP
-with **write** tools, and is instructed to encode the KB items it needs as
+Both flavors are Claude Agent SDK agents that **encode the knowledge-base
+on the fly**: they run off the deterministic OTF cache (base models + KB
+items pre-loaded as SLayer memories), are given the SLayer MCP with
+**write** tools, and are instructed to encode the KB items they need as
 named columns/measures (in dependency order, referencing earlier entities
 through declared joins) and then build the final query off those named
 entities instead of inlining everything. Unlike `pydantic_ai_otf_encode`
 there are no forced stages or recursion, and there is no save-time
-validator yet (tracked in DEV-1506). It is **slayer-query-mode only** and
-**always** `--slayer-setup on-the-fly`; eval modes are `a-interact`
-(mini-interact) and `one-shot` (LiveSQLBench).
+validator yet (tracked in DEV-1506). Both are **slayer-query-mode only**
+and **always** `--slayer-setup on-the-fly`.
+
+DEV-1507 split this framework along the benchmark boundary because a
+single prompt that had to decide "ask user vs don't ask" based on mode
+was the wrong shape — trace analysis on Opus-high mini-interact runs
+showed the agent never called `ask_user` despite the prompt instruction.
+The mini-interact flavor now bakes the ask-then-submit discipline into
+PreToolUse hooks, not prompt text.
 
 > **Local runs must be launched from a non-Claude-Code shell** (a plain
 > terminal, or via Codex) — the SDK spawns the `claude` CLI, which fails
 > when nested inside an active Claude Code session (stdio collision). Cloud
 > runs are unaffected (Ray actors don't nest).
 
-```bash
-# mini-interact, a-interact
-bird-interact --framework claude_sdk_otf --query-mode slayer \
-  --slayer-setup on-the-fly --mode a-interact \
-  --agent-model anthropic/claude-opus-4-7 \
-  --data /path/to/mini_interact.jsonl \
-  --db-path /path/to/mini-interact/ --instance-id households_1
+#### `claude_sdk_otf` — LiveSQLBench / one-shot only
 
-# LiveSQLBench, one-shot
+```bash
 bird-interact --framework claude_sdk_otf --query-mode slayer \
   --slayer-setup on-the-fly --dataset livesqlbench --mode one-shot \
   --gold-file <gated.jsonl> \
+  --agent-model anthropic/claude-opus-4-7 \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
 ```
@@ -99,7 +100,39 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --framework claude_sdk_otf --query-mode slayer --slayer-setup on-the-fly \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
-  --mode a-interact --instance-ids households_1 \
+  --mode one-shot --dataset livesqlbench --gold-file <gated.jsonl> \
+  --instance-ids museum_1 \
+  --workers 1 --actors-per-worker 1 \
+  --worker-type e2-standard-4 --max-runtime-hours 2 --detach
+```
+
+#### `claude_sdk_otf_ainteract` — mini-interact / a-interact only
+
+Adds a native `ask_user` tool plus three PreToolUse/PostToolUse guards:
+the agent CANNOT call `submit_query` until it has called `ask_user` at
+least once (the user-sim holds masked-KB ground truth unrecoverable from
+the visible KB alone), and a nag fires every 10 tool calls until the
+first ask. Recommended `--reasoning-effort high`.
+
+```bash
+bird-interact --framework claude_sdk_otf_ainteract --query-mode slayer \
+  --slayer-setup on-the-fly --mode a-interact \
+  --agent-model anthropic/claude-opus-4-7 \
+  --reasoning-effort high \
+  --data /path/to/mini_interact.jsonl \
+  --db-path /path/to/mini-interact/ --instance-id households_1
+```
+
+Cloud:
+
+```bash
+env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
+  --framework claude_sdk_otf_ainteract --query-mode slayer \
+  --slayer-setup on-the-fly --mode a-interact \
+  --agent-model anthropic/claude-opus-4-7 \
+  --user-sim-model anthropic/claude-sonnet-4-6 \
+  --reasoning-effort high \
+  --instance-ids households_1 \
   --workers 1 --actors-per-worker 1 \
   --worker-type e2-standard-4 --max-runtime-hours 2 --detach
 ```
@@ -251,7 +284,8 @@ verbatim.
 | Framework | Status | Install extra |
 |-----------|--------|--------------|
 | Claude Agent SDK (`claude_sdk`) | Active | `claude-sdk` |
-| Claude Agent SDK on-the-fly KB encode (`claude_sdk_otf`) | Active | `claude-sdk` |
+| Claude Agent SDK OTF, livesqlbench/one-shot (`claude_sdk_otf`) | Active | `claude-sdk` |
+| Claude Agent SDK OTF, mini-interact/a-interact (`claude_sdk_otf_ainteract`) | Active | `claude-sdk` |
 | PydanticAI | Planned | — |
 | smolagents | Planned | — |
 | Agno | Planned | — |

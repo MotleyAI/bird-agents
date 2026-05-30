@@ -90,10 +90,13 @@ def _validate_slayer_setup(
             "--mode one-shot requires --slayer-setup on-the-fly; "
             f"got --slayer-setup {slayer_setup!r}",
         )
-    # pydantic_ai_otf_encode and claude_sdk_otf are on-the-fly-only adapters
-    # (DEV-1454 / DEV-1505).
+    # pydantic_ai_otf_encode and the two claude_sdk_otf flavors are
+    # on-the-fly-only adapters (DEV-1454 / DEV-1505 / DEV-1507).
     if (
-        framework in ("pydantic_ai_otf_encode", "claude_sdk_otf")
+        framework in (
+            "pydantic_ai_otf_encode", "claude_sdk_otf",
+            "claude_sdk_otf_ainteract",
+        )
         and slayer_setup != "on-the-fly"
     ):
         raise ValueError(
@@ -110,12 +113,14 @@ def _validate_slayer_setup(
         )
     if framework not in (
         "pydantic_ai_recursive", "pydantic_ai_otf_encode", "claude_sdk_otf",
+        "claude_sdk_otf_ainteract",
     ):
         raise ValueError(
             "--slayer-setup on-the-fly is only supported with "
             "--framework pydantic_ai_recursive, "
-            "--framework pydantic_ai_otf_encode, or "
-            "--framework claude_sdk_otf; "
+            "--framework pydantic_ai_otf_encode, "
+            "--framework claude_sdk_otf, or "
+            "--framework claude_sdk_otf_ainteract; "
             f"got --framework {framework}"
         )
     if query_mode != "slayer":
@@ -152,10 +157,13 @@ def _validate_dataset_mode(dataset: str, mode: str) -> None:
 
 
 def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) -> None:
-    """DEV-1462: one-shot dispatch is recursive + otf_encode only.
+    """DEV-1462: one-shot dispatch is recursive + otf_encode + claude_sdk_otf
+    only.
 
     ``oracle`` stays framework-agnostic; ``a-interact``/``c-interact`` keep
-    their existing per-framework dispatch.
+    their existing per-framework dispatch. After DEV-1507
+    ``claude_sdk_otf_ainteract`` is a-interact only — explicitly NOT on this
+    list so the user-facing error names the right framework.
     """
     if mode != "one-shot":
         return
@@ -171,6 +179,47 @@ def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) 
             "--mode one-shot is only supported with --framework "
             "pydantic_ai_recursive, --framework pydantic_ai_otf_encode, or "
             f"--framework claude_sdk_otf; got --framework {framework!r}",
+        )
+
+
+# (framework -> (bound dataset, bound mode)). DEV-1507: claude_sdk_otf is
+# the livesqlbench/one-shot flavor; claude_sdk_otf_ainteract is the
+# mini_interact/a-interact flavor. Every other framework is unbound —
+# they don't appear here.
+_FRAMEWORK_DATASET_MODE_BINDING = {
+    "claude_sdk_otf": ("livesqlbench", "one-shot"),
+    "claude_sdk_otf_ainteract": ("mini_interact", "a-interact"),
+}
+
+
+def _validate_framework_dataset_mode(
+    *, framework: str, dataset: str, mode: str,
+) -> None:
+    """DEV-1507: reject any (framework, dataset, mode) combo that violates a
+    framework's hard binding.
+
+    Oracle does NOT bypass — picking the bound framework signals intent to
+    use that flavor's agent, and ``run_oracle_task`` short-circuits
+    framework dispatch entirely. A user who wants to oracle-eval a
+    different benchmark should drop the framework binding (oracle is
+    framework-agnostic in dispatch).
+
+    Frameworks not listed in ``_FRAMEWORK_DATASET_MODE_BINDING`` are
+    unbound and pass through silently.
+    """
+    bound = _FRAMEWORK_DATASET_MODE_BINDING.get(framework)
+    if bound is None:
+        return
+    bound_dataset, bound_mode = bound
+    if dataset != bound_dataset:
+        raise ValueError(
+            f"--framework {framework} is bound to --dataset {bound_dataset!r}; "
+            f"got --dataset {dataset!r}",
+        )
+    if mode != bound_mode:
+        raise ValueError(
+            f"--framework {framework} is bound to --mode {bound_mode!r}; "
+            f"got --mode {mode!r}",
         )
 
 
@@ -195,6 +244,7 @@ def _maybe_force_wipe_otf(
         return
     if framework not in (
         "pydantic_ai_recursive", "pydantic_ai_otf_encode", "claude_sdk_otf",
+        "claude_sdk_otf_ainteract",
     ):
         return
     from bird_interact_agents.slayer_otf.reference_build import (
@@ -457,6 +507,32 @@ def _make_runner(
                           user_sim_model: str) -> dict:
             budget = calculate_budget(td, patience, mode=mode)
             return await agent_cso.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_ainteract":
+        from bird_interact_agents.agents.claude_sdk_otf_ainteract import (
+            ClaudeSDKOtfAInteractAgent,
+        )
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_ainteract] --strict is a no-op for "
+                "Anthropic models; ignored."
+            )
+        agent_csoa = ClaudeSDKOtfAInteractAgent(
+            slayer_storage_root=slayer_storage_root,
+            model=agent_model,
+            slayer_setup=slayer_setup,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csoa.run_task(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
@@ -739,6 +815,9 @@ async def run_evaluation(
     # unsupported behaviour (Codex finding on DEV-1455 PR #19 +
     # DEV-1462 Codex round-2).
     _validate_dataset_mode(dataset=dataset, mode=mode)
+    _validate_framework_dataset_mode(
+        framework=framework, dataset=dataset, mode=mode,
+    )
     _validate_one_shot_framework(
         mode=mode, query_mode=query_mode, framework=framework,
     )
@@ -1029,7 +1108,8 @@ def main() -> None:
     parser.add_argument(
         "--framework",
         choices=[
-            "claude_sdk", "claude_sdk_otf", "pydantic_ai",
+            "claude_sdk", "claude_sdk_otf", "claude_sdk_otf_ainteract",
+            "pydantic_ai",
             "pydantic_ai_recursive", "pydantic_ai_otf_encode",
             "mcp_agent", "agno", "smolagents",
         ],
@@ -1096,9 +1176,9 @@ def main() -> None:
             "anthropic/claude-sonnet-4-5, fireworks_ai/glm-4p7. The matching "
             "API-key env var (CEREBRAS_API_KEY, OPENROUTER_API_KEY, "
             "ANTHROPIC_API_KEY, FIREWORKS_API_KEY) must be set. The "
-            "claude_sdk and claude_sdk_otf frameworks are locked to "
-            "Anthropic and will skip with a warning if given a "
-            "non-Anthropic model."
+            "claude_sdk, claude_sdk_otf, and claude_sdk_otf_ainteract "
+            "frameworks are locked to Anthropic and will skip with a "
+            "warning if given a non-Anthropic model."
         ),
     )
     parser.add_argument(
@@ -1138,9 +1218,9 @@ def main() -> None:
             "Force every tool definition to carry strict=True (OpenAI "
             "strict structured-output mode). Default False matches the "
             "non-strict, non-constrained-decoding behaviour of all "
-            "frameworks. claude_sdk and claude_sdk_otf silently ignore the "
-            "flag (Anthropic has no tool-level strict). mcp_agent doesn't "
-            "expose a hook "
+            "frameworks. claude_sdk, claude_sdk_otf, and "
+            "claude_sdk_otf_ainteract silently ignore the flag (Anthropic "
+            "has no tool-level strict). mcp_agent doesn't expose a hook "
             "for it and exits with a clear error when --strict is given."
         ),
     )
@@ -1196,9 +1276,10 @@ def main() -> None:
         choices=["low", "medium", "high", "max"],
         default=None,
         help=(
-            "Reasoning-effort level for the claude_sdk_otf agent (maps to the "
-            "Claude Agent SDK's ClaudeAgentOptions.effort). Ignored by other "
-            "frameworks. Unset uses the SDK default."
+            "Reasoning-effort level for the claude_sdk_otf and "
+            "claude_sdk_otf_ainteract agents (maps to the Claude Agent SDK's "
+            "ClaudeAgentOptions.effort). Ignored by other frameworks. Unset "
+            "uses the SDK default."
         ),
     )
     parser.add_argument(
@@ -1233,8 +1314,10 @@ def main() -> None:
             "as a SLayer memory, preserving cross-references as "
             "memory:<id> entity tokens. Valid with --query-mode slayer "
             "and --framework pydantic_ai_recursive, pydantic_ai_otf_encode, "
-            "or claude_sdk_otf, under --mode a-interact or one-shot. "
-            "(pydantic_ai_otf_encode and claude_sdk_otf REQUIRE on-the-fly.)"
+            "claude_sdk_otf, or claude_sdk_otf_ainteract, under --mode "
+            "a-interact or one-shot. (pydantic_ai_otf_encode, "
+            "claude_sdk_otf, and claude_sdk_otf_ainteract REQUIRE "
+            "on-the-fly.)"
         ),
     )
     args = parser.parse_args()
@@ -1267,6 +1350,12 @@ def main() -> None:
         # + wrong-framework surfaces a "--mode one-shot requires …" error,
         # not the more generic on-the-fly-framework error.
         _validate_dataset_mode(dataset=args.dataset, mode=args.mode)
+        # DEV-1507: framework-bound (dataset, mode) gate. Fires right after
+        # `_validate_dataset_mode` so the error message names the framework
+        # binding, not a downstream mode/slayer-setup gate.
+        _validate_framework_dataset_mode(
+            framework=args.framework, dataset=args.dataset, mode=args.mode,
+        )
         _validate_one_shot_framework(
             mode=args.mode, query_mode=args.query_mode,
             framework=args.framework,

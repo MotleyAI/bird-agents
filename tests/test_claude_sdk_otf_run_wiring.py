@@ -1,8 +1,12 @@
-"""run.py + cloud wiring for the `claude_sdk_otf` framework.
+"""run.py + cloud wiring for the (narrowed) `claude_sdk_otf` framework.
+
+After DEV-1507 `claude_sdk_otf` is livesqlbench / one-shot only. The
+mini-interact / a-interact behavior lives in `claude_sdk_otf_ainteract`
+(see `tests/test_claude_sdk_otf_ainteract_run_wiring.py`).
 
 Locks down:
 * `--framework claude_sdk_otf` is in the CLI choices (existing ones kept).
-* `run_evaluation` branches to `ClaudeSDKOtfAgent` with slayer_setup on-the-fly.
+* `run_evaluation` branches to `ClaudeSDKOtfAgent` for one-shot/livesqlbench.
 * `_validate_slayer_setup` requires on-the-fly; `_validate_one_shot_framework`
   accepts it; `_maybe_force_wipe_otf` purges its cache.
 * Cloud maps the combo to the cache-only artifact (no reference / upload-back).
@@ -73,13 +77,16 @@ async def test_run_evaluation_branches_to_otf_agent(monkeypatch, tmp_path):
 
     data_file = tmp_path / "x.jsonl"
     data_file.write_text("")
+    gold = tmp_path / "gold.jsonl"
+    gold.write_text("")
     with pytest.raises(_Sentinel):
         await run_mod.run_evaluation(
             data_path=str(data_file), data_dir=str(tmp_path),
             output_path=str(tmp_path / "eval.json"),
-            mode="a-interact", query_mode="slayer",
+            mode="one-shot", query_mode="slayer",
             framework="claude_sdk_otf", slayer_setup="on-the-fly",
             reasoning_effort="high",
+            dataset="livesqlbench", gold_file=str(gold),
         )
     assert constructed and constructed[0].get("slayer_setup") == "on-the-fly"
     # --reasoning-effort must thread through to the agent constructor.
@@ -93,12 +100,12 @@ def test_validate_slayer_setup_requires_on_the_fly():
     with pytest.raises(ValueError):
         run_mod._validate_slayer_setup(
             slayer_setup="pre-encoded", framework="claude_sdk_otf",
-            query_mode="slayer", mode="a-interact",
+            query_mode="slayer", mode="one-shot",
         )
-    # on-the-fly + slayer + a-interact must pass
+    # on-the-fly + slayer + one-shot must pass for the narrowed flavor.
     run_mod._validate_slayer_setup(
         slayer_setup="on-the-fly", framework="claude_sdk_otf",
-        query_mode="slayer", mode="a-interact",
+        query_mode="slayer", mode="one-shot",
     )
 
 
@@ -111,6 +118,8 @@ def test_validate_one_shot_framework_accepts_claude_sdk_otf():
 
 
 def test_maybe_force_wipe_otf_purges_cache_for_claude_sdk_otf(monkeypatch):
+    """Narrowed flavor is livesqlbench-only — wipe must target the
+    livesqlbench-scoped cache root."""
     from bird_interact_agents import run as run_mod
     from bird_interact_agents.slayer_otf import reference_build as rb
 
@@ -123,9 +132,9 @@ def test_maybe_force_wipe_otf_purges_cache_for_claude_sdk_otf(monkeypatch):
     )
     run_mod._maybe_force_wipe_otf(
         otf_rebuild=True, framework="claude_sdk_otf",
-        dbs=["shop"], benchmark="mini_interact",
+        dbs=["museum"], benchmark="livesqlbench",
     )
-    assert purged.get("cache") == {"shop"}
+    assert purged.get("cache") == {"museum"}
 
 
 def test_cli_rejects_claude_sdk_otf_with_pre_encoded(monkeypatch, tmp_path):
@@ -133,12 +142,16 @@ def test_cli_rejects_claude_sdk_otf_with_pre_encoded(monkeypatch, tmp_path):
 
     data_file = tmp_path / "x.jsonl"
     data_file.write_text("")
+    gold = tmp_path / "gold.jsonl"
+    gold.write_text("")
     argv = [
         "prog",
         "--framework", "claude_sdk_otf",
         "--slayer-setup", "pre-encoded",
         "--query-mode", "slayer",
-        "--mode", "a-interact",
+        "--mode", "one-shot",
+        "--dataset", "livesqlbench",
+        "--gold-file", str(gold),
         "--data", str(data_file),
         "--db-path", str(tmp_path),
     ]
@@ -158,12 +171,14 @@ def test_cloud_artifact_name_is_cache_only():
 
 
 def test_cloud_actor_downloads_cache_only():
+    """Narrowed flavor is livesqlbench-only — actor downloads the cache for
+    that benchmark."""
     from bird_interact_agents.cloud import ray_app
 
     cfg = {
         "framework": "claude_sdk_otf",
         "slayer_setup": "on-the-fly",
-        "dataset": "mini_interact",
+        "dataset": "livesqlbench",
     }
     artifacts = {a for (a, _root, _req) in ray_app._slayer_artifacts_for(cfg)}
     assert artifacts == {"slayer_otf_cache"}
@@ -177,7 +192,7 @@ def test_cloud_driver_uploads_cache_only():
 
     args = SimpleNamespace(
         slayer_setup="on-the-fly", framework="claude_sdk_otf",
-        dataset="mini_interact",
+        dataset="livesqlbench",
     )
     names = {name for (_path, name, _req) in driver._slayer_uploads_for(args)}
     # cache only — no LLM-encoded reference upload-back for this framework
@@ -186,18 +201,20 @@ def test_cloud_driver_uploads_cache_only():
 
 def test_cloud_resubmit_preserves_reasoning_effort():
     """The manifest carries reasoning_effort and resubmit re-emits the flag so
-    a db-grouped retry runs at the same effort as the original submit."""
+    a db-grouped retry runs at the same effort as the original submit.
+    Narrowed flavor: livesqlbench / one-shot."""
     from bird_interact_agents.cloud import driver
 
     manifest = {
         "framework": "claude_sdk_otf",
         "query_mode": "slayer",
-        "mode": "a-interact",
+        "mode": "one-shot",
         "agent_model": "anthropic/claude-opus-4-7",
         "user_sim_model": "anthropic/claude-sonnet-4-6",
         "patience": 500,
         "max_depth": 3,
-        "dataset": "mini_interact",
+        "dataset": "livesqlbench",
+        "gold_file": "/data/gold.jsonl",
         "render_inputs": {"workers": 1, "actors_per_worker": 1},
         "reasoning_effort": "high",
         "prompt_cache": True,
@@ -205,7 +222,7 @@ def test_cloud_resubmit_preserves_reasoning_effort():
         "slayer_storage_root": "/data/slayer_models",
     }
     job_args = driver._build_resubmit_args(
-        manifest, "rid", ["households_7"], attempt=1,
+        manifest, "rid", ["museum_1"], attempt=1,
     )
     assert "--reasoning-effort" in job_args
     i = job_args.index("--reasoning-effort")

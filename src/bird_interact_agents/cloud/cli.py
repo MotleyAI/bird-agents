@@ -70,8 +70,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_submit.add_argument(
         "--reasoning-effort", dest="reasoning_effort", default=None,
         choices=("low", "medium", "high", "max"),
-        help="Reasoning-effort level for claude_sdk_otf (ClaudeAgentOptions."
-             "effort). Ignored by other frameworks; unset = SDK default.",
+        help="Reasoning-effort level for claude_sdk_otf and "
+             "claude_sdk_otf_ainteract (ClaudeAgentOptions.effort). Ignored "
+             "by other frameworks; unset = SDK default.",
     )
     sp_submit.add_argument(
         "--prompt-cache", dest="prompt_cache", action="store_true", default=True
@@ -118,6 +119,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ns.dataset = get_benchmark(ns.dataset).name
         from bird_interact_agents.run import (
             _validate_dataset_mode,
+            _validate_framework_dataset_mode,
             _validate_one_shot_framework,
             _validate_slayer_setup,
         )
@@ -125,6 +127,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             # Same dataset⟺mode⟺framework gates the local CLI uses — one source
             # of truth, so an unsupported cloud combo fails fast at submit.
             _validate_dataset_mode(dataset=ns.dataset, mode=ns.mode)
+            _validate_framework_dataset_mode(
+                framework=ns.framework, dataset=ns.dataset, mode=ns.mode,
+            )
             _validate_one_shot_framework(
                 mode=ns.mode, query_mode=ns.query_mode, framework=ns.framework,
             )
