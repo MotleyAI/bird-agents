@@ -169,11 +169,30 @@ class TaskAnnotation(BaseModel):
     provenance: Provenance
 
 
+class VariantInformational(BaseModel):
+    """Tier-2 diagnostic block populated per (submission, variant).
+
+    Carries deterministic, non-verdict-flipping signal: rowset relation,
+    column-structure comparison, and the first divergent cell (if any).
+    Consumers reading this can decide which variant to fix vs. which is
+    closest to the agent's intent without re-executing.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    rowset_relation: RowsetRelation
+    column_count_match: bool
+    column_name_match_case_insensitive: bool
+    column_order_match: bool
+    first_divergent_row_index: Optional[int] = None
+    first_divergent_cell_diff: Optional[str] = None
+
+
 class VariantMatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     variant_id: str
     match: RowsetRelation
+    informational: Optional[VariantInformational] = None
 
 
 class SubmissionMetadata(BaseModel):
@@ -195,7 +214,8 @@ class SubmissionMetadata(BaseModel):
 class SubmissionEvaluation(BaseModel):
     """Cascading evaluation, most stringent → most lenient.
 
-    Each field corresponds to one row in the after-run report layout.
+    Each field corresponds to one row in the after-run report layout
+    (N1 through N8 of the cascade).
     """
     model_config = ConfigDict(extra="forbid")
 
@@ -207,6 +227,12 @@ class SubmissionEvaluation(BaseModel):
     novel_reading_judgment: Optional[PhaseVerdict] = None
     """Populated only when ``metadata_sufficiency.verdict ==
     'insufficient'`` AND the deterministic check returned no match."""
+    correct_under_numeric_epsilon: bool = False
+    correct_under_trailing_whitespace: bool = False
+    correct_under_column_order: bool = False
+    numeric_epsilon: float = 1e-6
+    """Records the epsilon threshold actually used for N6, so consumers
+    of the annotation know how lenient the relaxation was."""
     verdict: SubmissionVerdict
     matched_variant_id: Optional[str] = None
     rationale: str = ""

@@ -952,7 +952,6 @@ async def test_run_task_exception_path_propagates_partial_result(
     prefill = _full_prefill(
         phase2_passed=True, total_reward=0.75,
         phase2_observation="p2 ok",
-        phase1_passed_audited=True, phase1_passed_original=False,
         phase1_observation_audited="audited-obs",
         phase1_observation_original="original-obs",
     )
@@ -978,8 +977,6 @@ async def test_run_task_exception_path_propagates_partial_result(
     assert row["total_reward"] == 0.75
     assert row["submitted_query"] == "{\"models\": [\"m\"]}"
     assert row["submitted_sql"] == "SELECT 1"
-    assert row["phase1_passed_audited"] is True
-    assert row["phase1_passed_original"] is False
     assert row["phase1_observation_audited"] == "audited-obs"
     assert row["phase1_observation_original"] == "original-obs"
 

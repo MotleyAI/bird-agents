@@ -508,10 +508,12 @@ def submit(args) -> str:
         repo_root,
         paths.audited_gold_root(),
         allow_dirty=args.allow_dirty,
+        annotations_root=paths.annotations_root(),
     )
     image_uri = image.build_and_push(
         tag, repo_root,
         audited_gold_root=paths.audited_gold_root(),
+        annotations_root=paths.annotations_root(),
         force=False,
     )
     # De-bake: upload the benchmark dataset ONCE to its content-hashed GCS
@@ -703,6 +705,17 @@ def fetch(run_id: str) -> dict:
         ),
     )
     metrics["merge_report"] = merge_report
+
+    # DEV-1515: merge per-task submission_annotation.json files into
+    # `<main_checkout>/annotations/<benchmark>/<db>/<inst>.submission.<run_id>.json`.
+    # No-overwrite-if-present; schema-validated; audit log persisted.
+    annotation_merge = _post_run_merge.merge_submission_annotations(
+        downloaded_run_dir=dest,
+        run_id=run_id,
+        benchmark=_benchmark_for_dataset(manifest.get("dataset")),
+        main_checkout_root=paths.main_checkout_root(),
+    )
+    metrics["annotation_merge_report"] = annotation_merge.model_dump()
     return metrics
 
 

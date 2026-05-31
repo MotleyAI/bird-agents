@@ -86,6 +86,8 @@ def _split_dockerfile_sections(repo_root: Path) -> dict[str, str]:
 def data_hash(
     repo_root: Path,
     audited_gold_root: Path,
+    *,
+    annotations_root: Path | None = None,
 ) -> str:
     """Content-based hash over the inputs that compose the DATA layers
     of `Dockerfile.cloud`: ``audited_gold/`` and the Dockerfile's DATA
@@ -126,6 +128,18 @@ def data_hash(
         h.update(b"\x00")
         h.update(f.read_bytes())
         h.update(b"\x00")
+
+    # DEV-1515: annotations/ — same posture as audited_gold/. Keyed
+    # under ``annotations/<rel>`` so a worktree build produces the
+    # same digest as a main-checkout build with identical content.
+    if annotations_root is not None and annotations_root.exists():
+        for f in _iter_files_under(annotations_root):
+            rel = f.relative_to(annotations_root)
+            h.update(b"repo/")
+            h.update(f"annotations/{rel.as_posix()}".encode())
+            h.update(b"\x00")
+            h.update(f.read_bytes())
+            h.update(b"\x00")
 
     # Dockerfile DATA-LAYERS section
     sections = _split_dockerfile_sections(repo_root)
@@ -183,13 +197,15 @@ def image_tag(
     audited_gold_root: Path,
     *,
     allow_dirty: bool,
+    annotations_root: Path | None = None,
 ) -> str:
     """`<data_hash[:12]>-<code_hash[:12]>` (+ `-dirty` when `allow_dirty=True`
     and the worktree is dirty).
 
     See :func:`data_hash` for why ``audited_gold_root`` is a separate input
-    (worktree-safety)."""
-    dh = data_hash(repo_root, audited_gold_root)
+    (worktree-safety). ``annotations_root`` is the DEV-1515 sibling input —
+    same rationale."""
+    dh = data_hash(repo_root, audited_gold_root, annotations_root=annotations_root)
     ch = code_hash(repo_root, allow_dirty=allow_dirty)
     tag = f"{dh[:12]}-{ch[:12]}"
     if allow_dirty and _dirty_image_input_paths(repo_root):
@@ -266,6 +282,7 @@ def build_and_push(
     *,
     image_uri_prefix: str | None = None,
     audited_gold_root: Path | None = None,
+    annotations_root: Path | None = None,
     force: bool = False,
 ) -> str:
     """Build (if needed) and push the image, returning the full URI.
@@ -295,6 +312,8 @@ def build_and_push(
         image_uri_prefix = config.image_uri_prefix()
     if audited_gold_root is None:
         audited_gold_root = paths.audited_gold_root()
+    if annotations_root is None:
+        annotations_root = paths.annotations_root()
     uri = f"{image_uri_prefix}:{tag}"
     if not force:
         probe = subprocess.run(
@@ -308,6 +327,7 @@ def build_and_push(
         [
             "docker", "build",
             "--build-context", f"audited-gold={audited_gold_root}",
+            "--build-context", f"annotations={annotations_root}",
             "-t", uri,
             "-f", "Dockerfile.cloud",
             ".",

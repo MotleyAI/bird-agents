@@ -248,10 +248,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             repo_root,
             paths.audited_gold_root(),
             allow_dirty=False,
+            annotations_root=paths.annotations_root(),
         )
         uri = image.build_and_push(
             tag, repo_root,
             audited_gold_root=paths.audited_gold_root(),
+            annotations_root=paths.annotations_root(),
             force=ns.force,
         )
         print(uri)

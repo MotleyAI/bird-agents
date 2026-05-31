@@ -32,35 +32,28 @@ from bird_interact_agents.results_db import (
 from bird_interact_agents.usage import TokenUsage
 
 def build_aggregate_eval(*, db_path: Path | str) -> dict[str, _Any]:
-    """Read task_results from a results.db and emit aggregate dual-eval
-    metrics. Used by run.py at end-of-run and by tests for round-trip
-    verification. Returns a dict with keys: ``phase1_count``,
-    ``phase1_rate``, ``phase1_count_audited``, ``phase1_count_original``,
-    ``phase1_rate_audited``, ``phase1_rate_original``, ``n_dual_eval_tasks``,
-    ``total_tasks``."""
+    """Read task_results from a results.db and emit aggregate phase-1
+    metrics. DEV-1515: the legacy dual-eval bool columns are gone;
+    every per-task cascade verdict now lives in the SubmissionAnnotation
+    written inline by ``grade_and_write``. The cascading_phase1 block
+    in ``eval.json`` is built by
+    :func:`bird_interact_agents.eval.cascading_report.emit_cascading_eval_json`
+    over the per-row annotation files; this helper only returns the
+    simple ``phase1_count`` / ``phase1_rate`` totals used by
+    back-compat consumers of the results DB."""
     conn = _sqlite3.connect(str(db_path))
     try:
         rows = conn.execute(
-            "SELECT phase1_passed, phase1_passed_audited, phase1_passed_original "
-            "FROM task_results"
+            "SELECT phase1_passed FROM task_results"
         ).fetchall()
     finally:
         conn.close()
     n = len(rows)
     p1 = sum(1 for r in rows if r[0])
-    dual_rows = [r for r in rows if r[1] is not None]
-    n_dual = len(dual_rows)
-    p1_aud = sum(1 for r in dual_rows if r[1])
-    p1_orig = sum(1 for r in dual_rows if r[2])
     return {
         "total_tasks": n,
         "phase1_count": p1,
         "phase1_rate": p1 / n if n else 0.0,
-        "n_dual_eval_tasks": n_dual,
-        "phase1_count_audited": p1_aud,
-        "phase1_count_original": p1_orig,
-        "phase1_rate_audited": p1_aud / n_dual if n_dual else 0.0,
-        "phase1_rate_original": p1_orig / n_dual if n_dual else 0.0,
     }
 
 
@@ -983,8 +976,6 @@ async def run_evaluation(
             gold_result_json=r.get("gold_result_json"),
             n_agent_turns=int(n_turns) if isinstance(n_turns, int) else None,
             tool_call_stats_json=tool_call_stats_json,
-            phase1_passed_audited=r.get("phase1_passed_audited"),
-            phase1_passed_original=r.get("phase1_passed_original"),
             phase1_observation_audited=r.get("phase1_observation_audited"),
             phase1_observation_original=r.get("phase1_observation_original"),
         ))
@@ -1054,16 +1045,13 @@ async def run_evaluation(
     # Build metrics
     n = len(tasks)
 
-    # Dual-evaluation counts (NULL on single-eval runs — only populated
-    # when the overlay applied AND evaluate_dual_gold ran). Counting
-    # over the in-memory results list so we don't have to round-trip
-    # through the DB just for aggregation.
-    dual_audited = [r.get("phase1_passed_audited") for r in results]
-    dual_original = [r.get("phase1_passed_original") for r in results]
-    n_dual = sum(1 for x in dual_audited if x is not None)
-    p1_audited = sum(1 for x in dual_audited if x)
-    p1_original = sum(1 for x in dual_original if x)
-
+    # DEV-1515: the legacy dual-eval breakdown (`phase1_count_audited`,
+    # `phase1_count_original`, `n_dual_eval_tasks`, the two rates) has
+    # been REPLACED by the cascading_phase1 block. The block is computed
+    # downstream by `emit_cascading_eval_json` over per-row
+    # submission_annotation.json files — local runs that don't write
+    # those (no inline grader hook) simply omit the block. `phase1_count`
+    # / `phase1_rate` stay as back-compat aliases for N1.
     metrics = {
         "mode": mode,
         "query_mode": query_mode,
@@ -1077,13 +1065,6 @@ async def run_evaluation(
         "average_reward": total_reward / n if n else 0,
         "total_usage": total_usage.model_dump(),
         **timing,
-        # Dual-eval breakdown (only meaningful when --use-audited-gold-sql
-        # is on; equal to the single-eval counts otherwise).
-        "n_dual_eval_tasks": n_dual,
-        "phase1_count_audited": p1_audited,
-        "phase1_count_original": p1_original,
-        "phase1_rate_audited": p1_audited / n_dual if n_dual else 0,
-        "phase1_rate_original": p1_original / n_dual if n_dual else 0,
         "results": results,
     }
 

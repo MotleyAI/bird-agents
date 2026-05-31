@@ -414,3 +414,96 @@ def merge_post_run_into_warm_cache(
         pass
 
     return report
+
+
+# ---------------------------------------------------------------------------
+# DEV-1515: fetch-side merge of per-row submission_annotation.json files
+# into the main checkout's annotations/ tree. Same posture as the OTF
+# reference merge above — no-overwrite, schema-validated, auditable.
+# ---------------------------------------------------------------------------
+
+
+from pydantic import BaseModel, ConfigDict
+
+
+class AnnotationMergeReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    benchmark: str
+    merged: int = 0
+    skipped_existing: int = 0
+    rejected_invalid: int = 0
+    merged_paths: list[str] = []
+    skipped_paths: list[str] = []
+    rejected_paths: list[str] = []
+
+
+def merge_submission_annotations(
+    *,
+    downloaded_run_dir: Path,
+    run_id: str,
+    benchmark: str,
+    main_checkout_root: Path,
+) -> AnnotationMergeReport:
+    """Walk ``<downloaded_run_dir>/rows/<inst>/submission_annotation.json``
+    and merge each into ``<main_checkout_root>/annotations/<benchmark>/<db>/<inst>.submission.<run_id>.json``.
+
+    Contract:
+    * No-overwrite-if-present. A pre-existing destination is preserved
+      (logged as ``skipped_existing``).
+    * Each candidate is schema-validated via
+      :class:`bird_interact_agents.eval.annotation_schema.SubmissionAnnotation`.
+      Invalid files are recorded as ``rejected_invalid``; they do NOT
+      create a destination file.
+    * Writes an audit report at
+      ``<downloaded_run_dir>/annotation_merge_report.json``.
+    """
+    from bird_interact_agents.eval.annotation_io import (
+        submission_annotation_path,
+    )
+    from bird_interact_agents.eval.annotation_schema import (
+        SubmissionAnnotation,
+    )
+    from pydantic import ValidationError
+
+    rows_dir = downloaded_run_dir / "rows"
+    report = AnnotationMergeReport(run_id=run_id, benchmark=benchmark)
+    if rows_dir.exists():
+        for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
+            src = sub / "submission_annotation.json"
+            if not src.exists():
+                continue
+            try:
+                ann = SubmissionAnnotation.model_validate_json(
+                    src.read_text(),
+                )
+            except (ValidationError, ValueError) as e:
+                report.rejected_invalid += 1
+                report.rejected_paths.append(
+                    f"{src}: {type(e).__name__}: {e}"
+                )
+                continue
+            dest = submission_annotation_path(
+                benchmark=benchmark,
+                selected_database=ann.selected_database,
+                instance_id=ann.instance_id,
+                run_id=run_id,
+                repo_root=main_checkout_root,
+            )
+            if dest.exists():
+                report.skipped_existing += 1
+                report.skipped_paths.append(str(dest))
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(
+                ann.model_dump_json(indent=2, exclude_none=False) + "\n",
+            )
+            report.merged += 1
+            report.merged_paths.append(str(dest))
+
+    # Audit log lives alongside the downloaded run dir (next to the
+    # OTF merge_report.json above, for symmetry).
+    audit_path = downloaded_run_dir / "annotation_merge_report.json"
+    audit_path.write_text(report.model_dump_json(indent=2) + "\n")
+    return report

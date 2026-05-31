@@ -91,14 +91,6 @@ def _row_to_task_result_row(manifest: dict, r: dict) -> TaskResultRow:
         gold_result_json=r.get("gold_result_json"),
         n_agent_turns=int(n_turns) if isinstance(n_turns, int) else None,
         tool_call_stats_json=tool_call_stats_json,
-        # Dual-eval columns — present in the row JSON / eval.json whenever the
-        # overlay ran; must be carried into results.db too (the local
-        # `run.py` writer already does this — collation must match or the
-        # cloud DB silently nulls the original-gold score).
-        phase1_passed_audited=r.get("phase1_passed_audited"),
-        phase1_passed_original=r.get("phase1_passed_original"),
-        phase1_observation_audited=r.get("phase1_observation_audited"),
-        phase1_observation_original=r.get("phase1_observation_original"),
     )
 
 
@@ -121,17 +113,10 @@ def _build_metrics(manifest: dict, canonical_rows: list[dict],
     durations = [float(r.get("duration_s") or 0.0) for r in canonical_rows]
     resubmitted_ids = sorted(iid for iid, lst in attempts.items() if len(lst) > 1)
 
-    # Dual-eval breakdown — parity with the local `run.py` metrics. Populated
-    # only when --use-audited-gold-sql ran (else the per-row fields are NULL
-    # and these counts collapse to 0). `phase1_*_original` is the canonical-
-    # gold score; `phase1_*_audited` mirrors `phase1_count` (phase1 evaluates
-    # against the overlaid/audited gold).
-    dual_audited = [r.get("phase1_passed_audited") for r in canonical_rows]
-    dual_original = [r.get("phase1_passed_original") for r in canonical_rows]
-    n_dual = sum(1 for x in dual_audited if x is not None)
-    p1_audited = sum(1 for x in dual_audited if x)
-    p1_original = sum(1 for x in dual_original if x)
-
+    # DEV-1515: the legacy dual-eval breakdown is replaced by the
+    # cascading_phase1 block built downstream by
+    # `emit_cascading_eval_json` over per-row submission_annotation.json
+    # files (merged in by `driver.fetch` via `merge_submission_annotations`).
     return {
         "mode": manifest["mode"],
         "query_mode": manifest["query_mode"],
@@ -151,11 +136,6 @@ def _build_metrics(manifest: dict, canonical_rows: list[dict],
         "results": canonical_rows,
         "n_resubmitted": len(resubmitted_ids),
         "resubmitted_ids": resubmitted_ids,
-        "n_dual_eval_tasks": n_dual,
-        "phase1_count_audited": p1_audited,
-        "phase1_count_original": p1_original,
-        "phase1_rate_audited": p1_audited / n_dual if n_dual else 0,
-        "phase1_rate_original": p1_original / n_dual if n_dual else 0,
     }
 
 

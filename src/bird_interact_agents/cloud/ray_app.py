@@ -27,6 +27,10 @@ from typing import Any, Callable, Iterable, Iterator
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
 from bird_interact_agents.cloud import upload_back as _upload_back
+from bird_interact_agents.eval.grade_in_place import grade_and_write
+from bird_interact_agents.eval.implicit_annotation import (
+    implicit_task_annotation,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +40,126 @@ from bird_interact_agents.cloud import upload_back as _upload_back
 
 def default_gcs_client():
     return _gcs.default_gcs_client()
+
+
+# ---------------------------------------------------------------------------
+# DEV-1515: inline grader hook called per task after a successful submit.
+# Bridges between the worker's per-task state and the shared
+# `grade_in_place.grade_and_write` helper. The aggregator + fetch path
+# consume the resulting submission_annotation.json — no `phase1_passed_*`
+# raw fields are emitted from this path.
+# ---------------------------------------------------------------------------
+
+
+def _load_task_annotation_or_implicit(
+    *, instance_id: str, selected_database: str, benchmark: str,
+    amb_user_query: str = "",
+):
+    """Try to read ``<paths.annotations_root()>/<benchmark>/<db>/<inst>.task.json``;
+    if missing, fall back to the in-memory implicit default. NEVER writes
+    a synthesized stub to disk."""
+    from bird_interact_agents import paths
+    from bird_interact_agents.eval.annotation_io import (
+        read_task_annotation, task_annotation_path,
+    )
+
+    p = task_annotation_path(
+        benchmark=benchmark, selected_database=selected_database,
+        instance_id=instance_id, repo_root=paths.main_checkout_root(),
+    )
+    if p.exists():
+        return read_task_annotation(p)
+    return implicit_task_annotation(
+        instance_id=instance_id,
+        selected_database=selected_database,
+        benchmark=benchmark,
+        amb_user_query=amb_user_query,
+    )
+
+
+def _load_audited_gold_rows_for(
+    *, benchmark: str, instance_id: str,
+) -> list[dict]:
+    """Load every audited-gold row for ``instance_id`` from the
+    consolidated JSONL. Empty list when no rows exist (graceful default
+    — see ``implicit_annotation``)."""
+    from bird_interact_agents import paths
+    from bird_interact_agents.benchmark import get_benchmark
+
+    try:
+        bench = get_benchmark(benchmark.replace("-", "_"))
+    except Exception:  # noqa: BLE001
+        return []
+    if getattr(bench, "audited_gold_layout", None) != "single_file":
+        return []
+    consolidated = paths.audited_gold_root() / f"{bench.name}_audited.jsonl"
+    if not consolidated.exists():
+        return []
+    out: list[dict] = []
+    for line in consolidated.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if row.get("instance_id") == instance_id:
+            out.append(row)
+    return out
+
+
+def _grade_one_submission(
+    *,
+    task_data: dict,
+    submitted_sql: str,
+    rows_dir: Path,
+    run_id: str,
+    benchmark: str,
+    db_path: Path,
+    conn: Any = None,
+    cost_usd_agent: float | None = None,
+    cost_usd_user_sim: float | None = None,
+    duration_s: float | None = None,
+    n_agent_turns: int | None = None,
+    n_ask_user_calls: int | None = None,
+    predicted_row_count: int | None = None,
+) -> Path:
+    """Inline-grade one submission and write the per-row
+    ``submission_annotation.json``. Idempotent at the per-(task, run)
+    level — the cloud fetch path is no-overwrite at the destination."""
+    instance_id = task_data["instance_id"]
+    selected_database = task_data["selected_database"]
+    ann = _load_task_annotation_or_implicit(
+        instance_id=instance_id,
+        selected_database=selected_database,
+        benchmark=benchmark,
+        amb_user_query=task_data.get("amb_user_query", ""),
+    )
+    audited_rows = _load_audited_gold_rows_for(
+        benchmark=benchmark, instance_id=instance_id,
+    )
+    return grade_and_write(
+        rows_dir=rows_dir,
+        instance_id=instance_id,
+        benchmark=benchmark,
+        run_id=run_id,
+        task_annotation=ann,
+        audited_gold_rows=audited_rows,
+        original_sol_sql=list(
+            task_data.get("original_sol_sql") or task_data.get("sol_sql") or [],
+        ),
+        submitted_sql=submitted_sql,
+        db_path=db_path,
+        conn=conn,
+        trajectory_path=f"rows/{instance_id}/attempt-1.json",
+        cost_usd_agent=cost_usd_agent,
+        cost_usd_user_sim=cost_usd_user_sim,
+        duration_s=duration_s,
+        n_agent_turns=n_agent_turns,
+        n_ask_user_calls=n_ask_user_calls,
+        predicted_row_count=predicted_row_count,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -545,6 +669,46 @@ def _run_one_in_actor(
         pass
 
     _gcs.write_row(run_id, iid, attempt, row, client=gcs_client)
+
+    # DEV-1515: inline grader produces a SubmissionAnnotation per task
+    # (cascading verdict + Tier 2 informational). Failure here MUST NOT
+    # block the row/log upload — it's diagnostic, not result-of-record.
+    _grader_data_dir = locals().get("data_dir")
+    try:
+        if _grader_data_dir is None:
+            raise RuntimeError("data_dir unbound; grader skipped")
+        annotation_dir = Path(tempfile.mkdtemp(prefix="bird_submission_annot_"))
+        ann_path = _grade_one_submission(
+            task_data=task_data,
+            submitted_sql=str(row.get("submitted_sql") or ""),
+            rows_dir=annotation_dir,
+            run_id=run_id,
+            benchmark=_cloud_benchmark(cfg),
+            db_path=Path(_grader_data_dir)
+                / str(task_data.get("selected_database", ""))
+                / f"{task_data.get('selected_database', '')}.sqlite",
+            cost_usd_agent=row.get("usage", {}).get("cost_usd_agent")
+                if isinstance(row.get("usage"), dict) else None,
+            cost_usd_user_sim=row.get("usage", {}).get("cost_usd_user_sim")
+                if isinstance(row.get("usage"), dict) else None,
+            duration_s=row.get("duration_s"),
+            n_agent_turns=row.get("usage", {}).get("n_agent_turns")
+                if isinstance(row.get("usage"), dict) else None,
+            n_ask_user_calls=row.get("usage", {}).get("n_ask_user_calls")
+                if isinstance(row.get("usage"), dict) else None,
+            predicted_row_count=None,
+        )
+        try:
+            _gcs.write_submission_annotation(
+                run_id, iid, json.loads(ann_path.read_text()),
+                client=gcs_client,
+            )
+        finally:
+            shutil.rmtree(annotation_dir, ignore_errors=True)
+    except Exception:  # noqa: BLE001
+        # Diagnostic — never let grader failure cascade into a task fail.
+        traceback.print_exc()
+
     try:
         log_bytes = log_tmp.read_bytes() if log_tmp.exists() else b""
     except OSError:

@@ -30,6 +30,7 @@ from bird_interact_agents.eval.annotation_schema import (
     TaskAnnotation,
     TrajectoryDecisionPoint,
     UserSimInteraction,
+    VariantInformational,
     VariantMatch,
 )
 from bird_interact_agents.eval.annotation_io import (
@@ -53,6 +54,7 @@ __all__ = [
     "TaskAnnotation",
     "TrajectoryDecisionPoint",
     "UserSimInteraction",
+    "VariantInformational",
     "VariantMatch",
     "read_submission_annotation",
     "read_task_annotation",

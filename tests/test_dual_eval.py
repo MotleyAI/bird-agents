@@ -357,51 +357,15 @@ def _minimal_row_kwargs() -> dict:
     )
 
 
-def test_task_result_row_has_dual_eval_columns():
-    """The schema must accept the new dual-eval fields. We instantiate
-    with explicit values to verify the fields are wired through."""
-    from bird_interact_agents.results_db import TaskResultRow
-
-    row = TaskResultRow(
-        **_minimal_row_kwargs(),
-        phase1_passed_audited=True,
-        phase1_passed_original=False,
-        phase1_observation_audited="ok-audit",
-        phase1_observation_original="fail-orig",
-    )
-    assert row.phase1_passed_audited is True
-    assert row.phase1_passed_original is False
-    assert row.phase1_observation_audited == "ok-audit"
-    assert row.phase1_observation_original == "fail-orig"
-
-
-def test_task_result_row_dual_eval_columns_default_none():
-    """Single-eval call sites that don't pass the dual fields still work."""
-    from bird_interact_agents.results_db import TaskResultRow
-
-    row = TaskResultRow(**_minimal_row_kwargs())
-    assert row.phase1_passed_audited is None
-    assert row.phase1_passed_original is None
-    assert row.phase1_observation_audited is None
-    assert row.phase1_observation_original is None
-
-
-def test_results_db_open_creates_dual_eval_columns(tmp_path):
-    """Schema migration: a fresh results.db must have all four new
-    columns so insert_task_result can write them."""
-    from bird_interact_agents.results_db import open_db
-
-    db_path = tmp_path / "results.db"
-    conn = open_db(db_path)
-    try:
-        cur = conn.execute("PRAGMA table_info(task_results)")
-        cols = {row[1] for row in cur.fetchall()}
-    finally:
-        conn.close()
-    assert "phase1_passed_audited" in cols
-    assert "phase1_passed_original" in cols
-    assert "phase1_observation_audited" in cols
-    assert "phase1_observation_original" in cols
+# DEV-1515: the per-row `phase1_passed_audited` / `phase1_passed_original`
+# raw bool columns have been removed; the per-task cascade verdict now
+# lives in the SubmissionAnnotation. Tests covering that schema are in
+# `tests/test_schema_extension.py` and the cascading aggregator tests in
+# `tests/test_cascading_report.py`. The three tests previously here
+# (`test_task_result_row_has_dual_eval_columns`,
+# `test_task_result_row_dual_eval_columns_default_none`,
+# `test_results_db_open_creates_dual_eval_columns`) are intentionally
+# removed.
 
 
 # ---------------------------------------------------------------------------
@@ -832,126 +796,12 @@ def test_overlay_benchmark_kwarg_mini_interact_uses_single_file(tmp_path):
     assert task["sol_sql"] == ["SELECT audited FROM t"]
 
 
-def test_insert_task_result_round_trip_dual_eval_fields(tmp_path):
-    """The TaskResultRow → SQL insert must actually persist the new
-    fields. The current insert in results_db.py uses an explicit column
-    list, so adding model fields without touching the INSERT silently
-    drops them — round-trip catches that."""
-    from bird_interact_agents.results_db import TaskResultRow, insert_task_result, open_db
-
-    db_path = tmp_path / "results.db"
-    conn = open_db(db_path)
-    try:
-        row = TaskResultRow(
-            **_minimal_row_kwargs(),
-            phase1_passed_audited=True,
-            phase1_passed_original=False,
-            phase1_observation_audited="aud-ok",
-            phase1_observation_original="orig-fail",
-        )
-        insert_task_result(conn, row)
-        result = conn.execute(
-            """SELECT phase1_passed_audited, phase1_passed_original,
-                      phase1_observation_audited, phase1_observation_original
-               FROM task_results WHERE instance_id = 'alien_1'"""
-        ).fetchone()
-    finally:
-        conn.close()
-    assert result == (1, 0, "aud-ok", "orig-fail")
-
-
-# ---------------------------------------------------------------------------
-# `run.py` aggregates dual-eval rates into eval.json
-# ---------------------------------------------------------------------------
-
-
-def test_submit_writes_dual_fields_to_state_result(monkeypatch):
-    """Dual-eval fields must land on `state.result` so each framework's
-    finalizer can copy them out. Tests `submit_slayer_query`'s plumbing
-    end-to-end without going through a real evaluator."""
-    from types import SimpleNamespace
-    from bird_interact_agents.agents import _submit
-
-    from bird_interact_agents import harness
-
-    monkeypatch.setattr(_submit, "_dry_run_sql", lambda *a, **kw: None)
-    monkeypatch.setattr(_submit, "capture_result_snapshot", lambda *a, **kw: None)
-
-    def fake_eval(sol_sql, status, dpb):
-        gold = status.original_data["sol_sql"][0]
-        passed = "audited" in gold
-        return (f"obs:{gold}", 1.0 if passed else 0.0, passed, False, True)
-    # The dispatcher calls `evaluate_dual_gold` (in harness.py) when
-    # `original_sol_sql` is set; that helper in turn calls
-    # `harness.execute_submit_action`. Patch the harness binding.
-    monkeypatch.setattr(harness, "execute_submit_action", fake_eval)
-    monkeypatch.setattr(_submit, "execute_submit_action", fake_eval)
-
-    state = SimpleNamespace(
-        status=SimpleNamespace(
-            original_data={
-                "selected_database": "fake_db",
-                "sol_sql": ["SELECT audited FROM t"],
-                "original_sol_sql": ["SELECT original FROM t"],
-            },
-            remaining_budget=100.0,
-            total_budget=100.0,
-            force_submit=False,
-            current_phase=1,
-        ),
-        data_path_base="/tmp/ignored",
-        user_sim_model="anthropic/claude-haiku-4-5-20251001",
-        user_sim_prompt_version="v2",
-        slayer_storage_dir="",
-        result=None,
-    )
-
-    fake_client = SimpleNamespace(sql_sync=lambda d: "SELECT 1")
-    _submit.submit_slayer_query(
-        state,
-        query_json='{"models": ["m"]}',
-        slayer_client_factory=lambda s: fake_client,
-    )
-    # The four dual-eval keys MUST be present on state.result — every
-    # framework finalizer reads them via submitter.get(...) / result.get(...).
-    assert state.result["phase1_passed_audited"] is True
-    assert state.result["phase1_passed_original"] is False
-    assert "audited" in state.result["phase1_observation_audited"]
-    assert "original" in state.result["phase1_observation_original"]
-
-
-def test_run_aggregation_emits_dual_eval_rates(tmp_path):
-    """End of run: eval.json should carry phase1_count_audited /
-    phase1_count_original / phase1_rate_audited / phase1_rate_original
-    when at least one task has dual-eval columns populated.
-
-    Strategy: write a known set of task results to a fresh results.db,
-    then call run.py's aggregation entry point and parse eval.json."""
-    pytest.importorskip("bird_interact_agents.run")
-    from bird_interact_agents.results_db import TaskResultRow, insert_task_result, open_db
-    from bird_interact_agents.run import build_aggregate_eval
-
-    db_path = tmp_path / "results.db"
-    conn = open_db(db_path)
-    try:
-        for i, (aud, orig) in enumerate([(True, True), (True, False), (False, False)], 1):
-            insert_task_result(conn, TaskResultRow(
-                **{**_minimal_row_kwargs(),
-                   "instance_id": f"alien_{i}",
-                   "phase1_passed": aud,  # primary = audited
-                   "submission_status": "passed_phase1" if aud else "wrong_result"},
-                phase1_passed_audited=aud,
-                phase1_passed_original=orig,
-            ))
-        conn.commit()
-    finally:
-        conn.close()
-
-    agg = build_aggregate_eval(db_path=db_path)
-
-    # 3 tasks: 2 audited-pass, 1 original-pass.
-    assert agg["phase1_count_audited"] == 2
-    assert agg["phase1_count_original"] == 1
-    # Rates are derived from the same n.
-    assert agg["phase1_rate_audited"] == pytest.approx(2 / 3)
-    assert agg["phase1_rate_original"] == pytest.approx(1 / 3)
+# DEV-1515: the three end-of-pipeline dual-eval tests previously here
+# (`test_insert_task_result_round_trip_dual_eval_fields`,
+# `test_submit_writes_dual_fields_to_state_result`,
+# `test_run_aggregation_emits_dual_eval_rates`) covered the removed
+# pre-DEV-1515 per-task raw bool persistence + state.result emission +
+# eval.json rates. The equivalents under the cascade are in
+# `tests/test_local_run_cascading.py`,
+# `tests/test_cascading_report.py`, and the legacy-removal grep-sweep in
+# `tests/test_legacy_field_removal.py`.

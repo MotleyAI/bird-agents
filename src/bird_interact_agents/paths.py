@@ -183,6 +183,20 @@ def audited_gold_file(*, benchmark: str) -> Path:
     return audited_gold_root() / f"{b.name}_audited.jsonl"
 
 
+def annotations_root() -> Path:
+    """DEV-1515: per-task / per-submission annotations, committed to the
+    main checkout (gitignored locally — the human-judgment content is
+    licensed for local use only, same posture as ``audited_gold/``).
+
+    Honours ``BIRD_ANNOTATIONS_ROOT`` for tests / forks that mount the
+    annotations from a parallel repo.
+    """
+    override = os.environ.get("BIRD_ANNOTATIONS_ROOT")
+    if override:
+        return Path(override).expanduser()
+    return main_checkout_root() / "annotations"
+
+
 def sar_audited_gold_root() -> Path:
     """SAR-Agent audit JSONL output root.
 
