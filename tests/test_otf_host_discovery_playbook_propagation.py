@@ -94,11 +94,14 @@ def test_canonical_playbook_has_no_format_fields():
     )
 
 
-def test_three_prompts_modules_import_the_same_object():
-    """Each of the three OTF prompts modules re-exports the canonical
-    playbook as a private alias `_HOST_DISCOVERY_PLAYBOOK`. They MUST
-    be the same object — drift is impossible by construction."""
+def test_otf_prompts_modules_import_the_same_object():
+    """Every OTF prompts module re-exports the canonical playbook as a
+    private alias `_HOST_DISCOVERY_PLAYBOOK`. They MUST be the same
+    object — drift is impossible by construction."""
     from bird_interact_agents.agents.claude_sdk_otf import prompts as cs_otf
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import (
+        prompts as cs_otf_ainteract,
+    )
     from bird_interact_agents.agents.pydantic_ai_otf_encode import (
         prompts as otf_encode,
     )
@@ -107,6 +110,7 @@ def test_three_prompts_modules_import_the_same_object():
     )
 
     assert cs_otf._HOST_DISCOVERY_PLAYBOOK is HOST_DISCOVERY_PLAYBOOK
+    assert cs_otf_ainteract._HOST_DISCOVERY_PLAYBOOK is HOST_DISCOVERY_PLAYBOOK
     assert otf_encode._HOST_DISCOVERY_PLAYBOOK is HOST_DISCOVERY_PLAYBOOK
     assert recursive._HOST_DISCOVERY_PLAYBOOK is HOST_DISCOVERY_PLAYBOOK
 
@@ -120,6 +124,15 @@ def test_claude_sdk_otf_one_shot_includes_playbook():
     from bird_interact_agents.agents.claude_sdk_otf import prompts
 
     rendered = prompts.SLAYER_OTF_ONE_SHOT.format(**_claude_sdk_otf_args())
+    assert HOST_DISCOVERY_PLAYBOOK in rendered
+
+
+def test_claude_sdk_otf_ainteract_includes_playbook():
+    """The mini-interact (a-interact) claude_sdk OTF flavor — same OTF
+    encoder role as claude_sdk_otf but with the ask_user discipline."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import prompts
+
+    rendered = prompts.SLAYER_OTF_AINTERACT.format(**_claude_sdk_otf_args())
     assert HOST_DISCOVERY_PLAYBOOK in rendered
 
 
@@ -189,6 +202,15 @@ def test_no_leftover_braces_slayer_otf_one_shot():
 
     args = _claude_sdk_otf_args()
     out = prompts.SLAYER_OTF_ONE_SHOT.format(**args)
+    for key in args:
+        assert "{" + key + "}" not in out
+
+
+def test_no_leftover_braces_slayer_otf_ainteract():
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import prompts
+
+    args = _claude_sdk_otf_args()
+    out = prompts.SLAYER_OTF_AINTERACT.format(**args)
     for key in args:
         assert "{" + key + "}" not in out
 
