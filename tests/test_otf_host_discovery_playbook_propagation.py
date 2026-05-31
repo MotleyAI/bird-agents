@@ -169,6 +169,20 @@ def test_query_constructor_prompt_includes_playbook():
     assert prompts._HOST_DISCOVERY_PLAYBOOK in rendered
 
 
+def test_recursive_query_constructor_oneshot_prompt_includes_playbook():
+    """The recursive one-shot constructor — selected by
+    pydantic_ai_recursive.agent:614 when eval_mode == 'one-shot'. Must also
+    carry the playbook so the autonomous-decision path gets the same
+    host-discovery guidance as the a-interact path. (DEV-1512 / PR #15
+    Codex finding.)"""
+    from bird_interact_agents.agents.pydantic_ai_recursive import prompts
+
+    rendered = prompts.QUERY_CONSTRUCTOR_ONESHOT_PROMPT.format(
+        **_query_constructor_args()
+    )
+    assert prompts._HOST_DISCOVERY_PLAYBOOK in rendered
+
+
 # ---------------------------------------------------------------------------
 # 3. Playbook constant contains no Python format placeholders.
 #
