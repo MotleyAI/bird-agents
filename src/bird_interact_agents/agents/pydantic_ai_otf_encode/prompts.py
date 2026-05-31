@@ -30,6 +30,146 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
+# DEV-1512: HOST DISCOVERY playbook. Injected at the END of _STYLE_GUIDE
+# (which is itself appended to KB_ENCODER_PROMPT, KB_ENCODER_ONESHOT_PROMPT,
+# and SETUP_ENCODER_PROMPT) AND at the end of QUERY_CONSTRUCTOR_ONESHOT_PROMPT
+# (which doesn't carry _STYLE_GUIDE).
+#
+# Mirrors the verbatim text in `claude_sdk_otf/prompts._HOST_DISCOVERY_PLAYBOOK`
+# and `pydantic_ai_recursive/prompts._HOST_DISCOVERY_PLAYBOOK` — three
+# packages, three copies, kept in lockstep by the playbook-propagation
+# tests in `tests/test_otf_host_discovery_playbook_propagation.py`. Cross-
+# package sharing would couple more than the duplication costs.
+# ---------------------------------------------------------------------------
+
+_HOST_DISCOVERY_PLAYBOOK = """\
+HOST DISCOVERY (when picking a root model [`source_model`] for a query or
+a host for an encoded entity, AND the KB body does not pin the host
+unambiguously — i.e. the KB names columns/fields that exist on more than
+one candidate table, or the formula's columns live on a table T that's
+not the natural per-entity grain of the question).
+
+HARD REQUIREMENT — READ COLUMN DESCRIPTIONS BEFORE COMMITTING. For every
+candidate (root model OR join-key column) you are about to use, read its
+description first. Column descriptions are the PRIMARY signal — they
+often state the schema author's semantic intent verbatim ("Associates
+the inspection with the relevant sensor reading", "Links this audit to
+the underlying measurement", "References the parent batch's sample
+set"). That intent is the canonical answer to "which table is this
+column meant to be reached from". Skip this only when the host is
+trivially pinned (single candidate table, KB explicitly names it, OR no
+joins involved at all).
+
+NEVER read raw `*_column_meaning_base.json` / `*_schema.txt` /
+`*_kb.jsonl` files. They are already projected into the SLayer surface:
+column meanings live in `Column.description`, schema FKs are ModelJoin
+entries on the source-side table only (the FK side, not both sides),
+and KB items are memories you `search` for.
+
+HOW TO READ COLUMN DESCRIPTIONS via SLayer MCP:
+
+  * Known column(s), want their descriptions by canonical ref:
+
+        search(
+            entities=["<db>.<model>.<col>", ...],
+            max_memories=0,
+            max_example_queries=0,
+            datasource="<db>",
+        )
+
+    Returns each named entity in the `entities` bucket as
+    `EntityHit(id, kind, score, text)`. The `text` field carries a
+    multi-line block — `Column: <ds>.<model>.<col> / Type: <type> /
+    Description: <intent text> / ...`. Setting `max_memories=0` and
+    `max_example_queries=0` suppresses the referencing memories when
+    you only want the schema-author intent text.
+  * Whole-model bulk read (every column at once): `inspect_model(<model>,
+    sections=["columns"], data_source="<db>")` — Column.name + .type +
+    .description for every column. Use when scanning a model end-to-end.
+  * Discover columns whose descriptions match a phrase:
+    `search(question="<one-sentence paraphrase>", max_memories=0,
+    max_example_queries=0, max_entities=10, datasource="<db>")`. The
+    tantivy + dense-embedding channels rank all column / model /
+    measure descriptions and return entity hits with `text`.
+
+HOW TO FIND CANDIDATE HOSTS for a target table T (the table whose
+columns the KB references):
+
+  1. Call `models_summary(datasource_name="<db>", format="json")` once.
+     Every model's `joins_to` list is its OUTGOING declared joins.
+     Models whose `joins_to` contains T are the candidate 1-hop hosts.
+     (SLayer ingestion only emits FKs on the source side, so calling
+     `inspect_model(T, sections=["joins"])` would only list joins FROM
+     T and miss inbound candidates — the inverse direction.)
+
+  2. For each candidate host H, call `inspect_model(H,
+     sections=["columns", "joins"], data_source="<db>")` to see (a)
+     the join_pairs naming the FK columns that connect H to T, and (b)
+     the descriptions of those FK columns on H's side.
+
+  3. If no candidate has a 1-hop join to T, widen the search: for each
+     candidate H, call `inspect_model(H, sections=["reachable_fields"],
+     reachable_fields_depth=3, data_source="<db>")` and grep the
+     returned dotted paths for those ending at one of T's columns —
+     path depth equals hop count.
+
+DECISION ORDER:
+
+  PRIMARY (description match). Pick the candidate whose FK column's
+  description literally states the relationship the KB needs
+  ("associates X with Y" / "links X to Y" / "references X's Y data").
+  This is the canonical schema-author signal.
+
+  TIE-BREAKER 1 (shortest declared path). If multiple candidates match
+  on description (or none does), prefer the candidate with the SHORTEST
+  declared-join path to T. A 1-hop FK is almost always more canonical
+  than a 3-hop chain through shared-infrastructure tables (e.g. tables
+  named "events", "log", "sites", "registry", or any table with
+  many-to-many roles in the schema) — those chains are one-to-many at
+  every step and silently multiply rows even when structurally valid.
+
+  TIE-BREAKER 2 (KB body re-read). If still tied, re-read the KB body
+  via `search(question="<KB definition>", datasource="<db>")` — KB
+  definitions occasionally include parenthetical hints ("per entity",
+  "per inspection") that pin the grain.
+
+  LAST RESORT (deterministic). If still ambiguous, pick the candidate
+  whose model name sorts FIRST lexicographically and record the choice
+  in your notes / final answer so a reviewer can flag it. Never
+  silently guess.
+
+WORKED EXAMPLE (fictional names — invent your own).
+KB defines `quality_risk = sp * sw * ml / 100` on columns of
+`sensor_readings`. Call `models_summary(datasource_name="demo",
+format="json")` and scan each model's `joins_to`:
+`asset_inspections.joins_to` includes `sensor_readings` (1 hop);
+`service_log.joins_to` includes `equipment` only;
+`equipment.joins_to` includes `maintenance_log`;
+`maintenance_log.joins_to` includes `sensor_readings`. So
+`asset_inspections` is a 1-hop candidate and `service_log` is a 3-hop
+candidate.
+
+Description read (PRIMARY):
+  search(
+    entities=["demo.asset_inspections.sensor_read_ref",
+              "demo.maintenance_log.sensor_read_ref"],
+    max_memories=0, max_example_queries=0, datasource="demo",
+  )
+returns EntityHit.text excerpts:
+  * `asset_inspections.sensor_read_ref` — "Associates the inspection
+    with the relevant sensor reading."
+  * `maintenance_log.sensor_read_ref` — "Associates maintenance data
+    with an existing sensor measurement."
+Only `asset_inspections.sensor_read_ref` directly states an
+inspection-to-sensor relationship; `maintenance_log` talks about
+maintenance data, not inspection. PICK `asset_inspections` on the
+description signal alone — tie-breakers are unnecessary. If both
+descriptions had been equally on-intent, the 1-hop tiebreaker would
+have picked `asset_inspections` anyway.
+"""
+
+
+# ---------------------------------------------------------------------------
 # DEV-1478: shared encoder style guide, injected into BOTH SETUP and KB
 # encoder prompts. Five rules — see plan §B for the full rationale.
 # `{{ }}` doubled-braces survive str.format passes through both prompts.
@@ -109,11 +249,11 @@ to register a new ModelJoin via `edit_model(joins=[...])` — apply
 the join at the model level, not embedded in a Column's SQL.
 
 HOST-CHOICE. Pick the host whose row corresponds 1:1 to the entity
-the KB describes (the KB's NATURAL GRANULARITY). Tie-break by
-MINIMISING the total join hops needed to reach every column the KB
-references — use the `reachable_from_host` map on each peer in the
-EXISTING KB-TAGGED ENTITIES block below. Never pick a host that
-requires an undeclared join.
+the KB describes (the KB's NATURAL GRANULARITY). When the KB does not
+pin a unique candidate, follow the HOST DISCOVERY playbook rendered
+LATER in this prompt — description-match is the PRIMARY signal;
+shortest declared-join path is the tie-breaker. Never pick a host
+that requires an undeclared join.
 
 Worked example (fictional schema): a "units per package" ratio =
 unit_count / package_count. Natural granularity is one product-shipment
@@ -179,7 +319,7 @@ describes the SAME schema fact as any of these, DEFER with notes
 `"duplicate of KB X"`:
 
 {existing_kb_tagged_entities_block}
-"""
+""" + "\n\n" + _HOST_DISCOVERY_PLAYBOOK
 
 
 # ---------------------------------------------------------------------------
@@ -841,7 +981,12 @@ Budget: {budget} bird-coins remaining. Each tool call costs:
 - submit_query: 3
 
 Database: {db_name}.
-"""
+
+When the question requires reaching a target table T from a per-entity
+context table, follow the HOST DISCOVERY playbook below to pick
+`source_model` — description match first, shortest declared-join path
+as tie-breaker.
+""" + "\n\n" + _HOST_DISCOVERY_PLAYBOOK
 
 
 # ---------------------------------------------------------------------------
