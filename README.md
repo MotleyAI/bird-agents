@@ -82,26 +82,32 @@ PreToolUse hooks, not prompt text.
 
 #### `claude_sdk_otf` — LiveSQLBench / one-shot only
 
+Recommended `--reasoning-effort high` (the smoke / baseline default).
+
 ```bash
 bird-interact --framework claude_sdk_otf --query-mode slayer \
   --slayer-setup on-the-fly --dataset livesqlbench --mode one-shot \
-  --gold-file <gated.jsonl> \
+  --gold-file ../livesqlbench-base-lite-sqlite/livesqlbench_sqlite_gt_kg_testcases_0528.jsonl \
   --agent-model anthropic/claude-opus-4-7 \
+  --reasoning-effort high \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
 ```
 
-Cloud (the deterministic OTF cache is uploaded from local if present, else
-built locally first — like `pydantic_ai_recursive`; no reference build or
-upload-back):
+Cloud smoke / baseline defaults (the deterministic OTF cache is uploaded
+from local if present, else built locally first — like
+`pydantic_ai_recursive`; no reference build or upload-back). `museum_6` is
+the canonical single-task smoke (passes under these defaults):
 
 ```bash
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --framework claude_sdk_otf --query-mode slayer --slayer-setup on-the-fly \
+  --mode one-shot --dataset livesqlbench \
+  --gold-file ../livesqlbench-base-lite-sqlite/livesqlbench_sqlite_gt_kg_testcases_0528.jsonl \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
-  --mode one-shot --dataset livesqlbench --gold-file <gated.jsonl> \
-  --instance-ids museum_1 \
+  --reasoning-effort high \
+  --instance-ids museum_6 \
   --workers 1 --actors-per-worker 1 \
   --worker-type e2-standard-4 --max-runtime-hours 2 --detach
 ```
@@ -123,7 +129,9 @@ bird-interact --framework claude_sdk_otf_ainteract --query-mode slayer \
   --db-path /path/to/mini-interact/ --instance-id households_1
 ```
 
-Cloud:
+Cloud smoke / baseline defaults. `households_16` is the canonical
+single-task smoke (passes both audited and original gold under these
+defaults):
 
 ```bash
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
@@ -132,7 +140,7 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
   --reasoning-effort high \
-  --instance-ids households_1 \
+  --instance-ids households_16 \
   --workers 1 --actors-per-worker 1 \
   --worker-type e2-standard-4 --max-runtime-hours 2 --detach
 ```
