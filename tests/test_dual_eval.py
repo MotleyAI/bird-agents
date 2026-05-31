@@ -801,17 +801,25 @@ def test_overlay_benchmark_kwarg_default_preserves_per_db_behavior(tmp_path):
     assert task["sol_sql"] == ["SELECT audited FROM t"]
 
 
-def test_overlay_benchmark_kwarg_per_db_explicit_matches_default(tmp_path):
-    """Passing `benchmark=mini_interact` explicitly is equivalent to omitting
-    it — proves the layout dispatch is the field that matters, not whether
-    `benchmark` happens to be set."""
+def test_overlay_benchmark_kwarg_mini_interact_uses_single_file(tmp_path):
+    """DEV-1515: passing `benchmark=mini_interact` dispatches to the
+    consolidated ``mini_interact_audited.jsonl`` (not the legacy per_db
+    sidecar). Proves the layout dispatch follows the descriptor and that
+    mini-interact's new single-file shape is wired through end-to-end."""
+    import json
     from bird_interact_agents.benchmark import get_benchmark
     from bird_interact_agents.harness import apply_audited_gold_overlay
 
-    _write_audit_sidecar(tmp_path, "alien", [
-        {"instance_id": "alien_explicit", "audit_status": "edited",
-         "audited_sol_sql": ["SELECT audited FROM t"]},
-    ])
+    single_file = tmp_path / "mini_interact_audited.jsonl"
+    single_file.write_text(json.dumps({
+        "instance_id": "alien_explicit",
+        "selected_database": "alien",
+        "benchmark": "mini_interact",
+        "variant_id": "primary",
+        "primary": True,
+        "audit_status": "edited",
+        "audited_sol_sql": ["SELECT audited FROM t"],
+    }) + "\n")
     task = {
         "instance_id": "alien_explicit",
         "selected_database": "alien",
