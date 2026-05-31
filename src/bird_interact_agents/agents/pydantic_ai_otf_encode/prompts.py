@@ -29,6 +29,16 @@ __all__ = [
 ]
 
 
+# DEV-1512: HOST DISCOVERY playbook — appended to _STYLE_GUIDE (which is
+# itself injected into KB_ENCODER_PROMPT / KB_ENCODER_ONESHOT_PROMPT /
+# SETUP_ENCODER_PROMPT) AND to QUERY_CONSTRUCTOR_ONESHOT_PROMPT (which
+# doesn't carry _STYLE_GUIDE). Single source in
+# bird_interact_agents.agents._host_discovery_playbook.
+from bird_interact_agents.agents._host_discovery_playbook import (
+    HOST_DISCOVERY_PLAYBOOK as _HOST_DISCOVERY_PLAYBOOK,
+)
+
+
 # ---------------------------------------------------------------------------
 # DEV-1478: shared encoder style guide, injected into BOTH SETUP and KB
 # encoder prompts. Five rules — see plan §B for the full rationale.
@@ -109,11 +119,11 @@ to register a new ModelJoin via `edit_model(joins=[...])` — apply
 the join at the model level, not embedded in a Column's SQL.
 
 HOST-CHOICE. Pick the host whose row corresponds 1:1 to the entity
-the KB describes (the KB's NATURAL GRANULARITY). Tie-break by
-MINIMISING the total join hops needed to reach every column the KB
-references — use the `reachable_from_host` map on each peer in the
-EXISTING KB-TAGGED ENTITIES block below. Never pick a host that
-requires an undeclared join.
+the KB describes (the KB's NATURAL GRANULARITY). When the KB does not
+pin a unique candidate, follow the HOST DISCOVERY playbook rendered
+LATER in this prompt — description-match is the PRIMARY signal;
+shortest declared-join path is the tie-breaker. Never pick a host
+that requires an undeclared join.
 
 Worked example (fictional schema): a "units per package" ratio =
 unit_count / package_count. Natural granularity is one product-shipment
@@ -179,7 +189,7 @@ describes the SAME schema fact as any of these, DEFER with notes
 `"duplicate of KB X"`:
 
 {existing_kb_tagged_entities_block}
-"""
+""" + "\n\n" + _HOST_DISCOVERY_PLAYBOOK
 
 
 # ---------------------------------------------------------------------------
@@ -841,7 +851,12 @@ Budget: {budget} bird-coins remaining. Each tool call costs:
 - submit_query: 3
 
 Database: {db_name}.
-"""
+
+When the question requires reaching a target table T from a per-entity
+context table, follow the HOST DISCOVERY playbook below to pick
+`source_model` — description match first, shortest declared-join path
+as tie-breaker.
+""" + "\n\n" + _HOST_DISCOVERY_PLAYBOOK
 
 
 # ---------------------------------------------------------------------------

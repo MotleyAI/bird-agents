@@ -670,7 +670,15 @@ Database: {db_name}.
 """
 
 
-QUERY_CONSTRUCTOR_ONESHOT_PROMPT = """\
+# DEV-1512: HOST DISCOVERY playbook — appended to both constructor
+# prompts in this file. Single source in
+# bird_interact_agents.agents._host_discovery_playbook.
+from bird_interact_agents.agents._host_discovery_playbook import (
+    HOST_DISCOVERY_PLAYBOOK as _HOST_DISCOVERY_PLAYBOOK,
+)
+
+
+QUERY_CONSTRUCTOR_ONESHOT_PROMPT = ("""\
 You are the QUERY CONSTRUCTOR (one-shot). You receive the original
 user question plus a SPECIFICATION concatenated from a tree of
 sub-explorers, each of which already nailed down ONE logical block.
@@ -809,14 +817,20 @@ submit_query). Each tool call costs bird-coins:
 If your budget runs out you must submit immediately.
 
 Database: {db_name}.
-"""
+
+When the question requires reaching a target table T from a per-entity
+context table, follow the HOST DISCOVERY playbook below to pick
+`source_model` — description match first, shortest declared-join path
+as tie-breaker.
+""" + "\n\n" + _HOST_DISCOVERY_PLAYBOOK)
 
 
 # ---------------------------------------------------------------------------
 # Query-constructor — assembles and submits, owns the count-check.
 # ---------------------------------------------------------------------------
 
-QUERY_CONSTRUCTOR_PROMPT = """\
+
+QUERY_CONSTRUCTOR_PROMPT = ("""\
 You are the QUERY CONSTRUCTOR. You receive the original user question
 plus a SPECIFICATION concatenated from a tree of sub-clarifiers, each
 of which already nailed down ONE logical block. Your job: assemble the
@@ -1020,4 +1034,9 @@ ask_user + query + submit_query). Each tool call costs bird-coins:
 If your budget runs out you must submit immediately.
 
 Database: {db_name}.
-"""
+
+When the question requires reaching a target table T from a per-entity
+context table, follow the HOST DISCOVERY playbook below to pick
+`source_model` — description match first, shortest declared-join path
+as tie-breaker.
+""" + "\n\n" + _HOST_DISCOVERY_PLAYBOOK)

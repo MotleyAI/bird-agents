@@ -20,6 +20,10 @@ a real dataset's table/column/value names.
 Format params: ``budget``, ``db_name``, ``user_query``.
 """
 
+from bird_interact_agents.agents._host_discovery_playbook import (
+    HOST_DISCOVERY_PLAYBOOK as _HOST_DISCOVERY_PLAYBOOK,
+)
+
 # Shared submission contract (single-stage or nested-DAG). Literal JSON
 # braces are doubled because the prompt is consumed via ``str.format``.
 _SUBMIT_CONTRACT = """\
@@ -70,8 +74,10 @@ ENCODE-THEN-QUERY DISCIPLINE:
 3. ENCODE IN DEPENDENCY ORDER. Encode a KB that others depend on BEFORE
    the KBs that reference it (topological order). For each KB:
    - Create the column / measure on the HOST whose row is 1:1 with what
-     the KB describes (minimise join hops; never pick a host that needs
-     an undeclared join).
+     the KB describes. When the KB does not pin the host unambiguously,
+     follow the HOST DISCOVERY playbook below to pick it — description
+     match first, then shortest declared-join path. Never pick a host
+     that needs an undeclared join.
    - To reach a column on another table, reference it through a DECLARED
      join, alias-qualified (e.g. `other_alias.col`). Do NOT invent a join
      inside the SQL and do NOT write a correlated subquery in a row-level
@@ -120,4 +126,4 @@ question needs).
 
 Database: {db_name}
 User question: {user_query}
-""".replace("{submit}", _SUBMIT_CONTRACT)
+""".replace("{submit}", _SUBMIT_CONTRACT) + "\n" + _HOST_DISCOVERY_PLAYBOOK
