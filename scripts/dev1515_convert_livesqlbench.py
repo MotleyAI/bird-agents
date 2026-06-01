@@ -66,15 +66,13 @@ AUDIT_FILE_REL = "audited_gold/livesqlbench_audited.jsonl"
 
 PENDING = "PENDING_HUMAN_REVIEW"
 
-LIVESQL_ROOT = Path("/home/james/Dropbox/SLayer/livesqlbench-base-lite-sqlite")
-
 
 def _norm(sqls):
     return [" ".join((s or "").split()) for s in (sqls or [])]
 
 
 def _load_data_rows(db: str) -> dict:
-    p = LIVESQL_ROOT / "livesqlbench_data_sqlite.jsonl"
+    p = paths.livesqlbench_root() / "livesqlbench_data_sqlite.jsonl"
     rows = {}
     for line in p.read_text().splitlines():
         if not line.strip():
@@ -86,7 +84,10 @@ def _load_data_rows(db: str) -> dict:
 
 
 def _load_gold_rows() -> dict:
-    p = LIVESQL_ROOT / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl"
+    p = (
+        paths.livesqlbench_root()
+        / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl"
+    )
     rows = {}
     for line in p.read_text().splitlines():
         if not line.strip():
@@ -96,17 +97,35 @@ def _load_gold_rows() -> dict:
     return rows
 
 
-def _load_audit_rows() -> dict:
+def _load_audit_rows() -> dict[str, list[dict]]:
+    """Load every audit row keyed by ``instance_id`` → list of variant
+    rows. Multi-variant audits ship N rows per instance (one primary +
+    alternates) and ALL of them must survive: collapsing to a single
+    dict-per-instance silently drops alternates and makes N3 ("any
+    audited variant") miscompute for ambiguous tasks."""
     p = paths.audited_gold_root() / "livesqlbench_audited.jsonl"
-    rows = {}
+    rows: dict[str, list[dict]] = {}
     if not p.exists():
         return rows
     for line in p.read_text().splitlines():
         if not line.strip():
             continue
         d = json.loads(line)
-        rows[d["instance_id"]] = d
+        rows.setdefault(d["instance_id"], []).append(d)
     return rows
+
+
+def _pick_primary(audit_rows: list[dict]) -> dict | None:
+    """Return the primary variant from a list of audit rows, or None if
+    the list is empty. Falls back to the first row when no row carries
+    ``primary: true`` (single-variant tasks pre-DEV-1515 omit the
+    field; the default is ``True``)."""
+    if not audit_rows:
+        return None
+    for r in audit_rows:
+        if r.get("primary", True):
+            return r
+    return audit_rows[0]
 
 
 def _build_task_annotation(
@@ -229,13 +248,14 @@ def _process_one(
     run_id: str | None,
     data_row: dict,
     gold_row: dict,
-    audit_row: dict | None,
+    audit_rows: list[dict],
     audit_unchanged: bool,
     rows_dir: Path | None,
     annotations_root: Path,
     annotated_at: str,
 ) -> dict:
-    db_path = LIVESQL_ROOT / db / f"{db}.sqlite"
+    db_path = paths.livesqlbench_root() / db / f"{db}.sqlite"
+    audit_row = _pick_primary(audit_rows)
     task_ann = _build_task_annotation(
         instance_id=instance_id,
         db=db,
@@ -265,12 +285,11 @@ def _process_one(
         submitted_sql = attempt.get("submitted_sql", "")
         usage = attempt.get("usage", {}) or {}
 
-        audit_arg = [audit_row] if audit_row is not None else []
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=60)
         try:
             cascade = grade_submission(
                 task_annotation=task_ann,
-                audited_gold_rows=audit_arg,
+                audited_gold_rows=audit_rows,
                 original_sol_sql=list(gold_row.get("sol_sql") or []),
                 submitted_sql=submitted_sql,
                 db_path=db_path,
@@ -321,6 +340,7 @@ def _process_one(
         "instance_id": instance_id,
         "audit_unchanged": audit_unchanged,
         "audit_present": audit_row is not None,
+        "n_audit_variants": len(audit_rows),
         "task_path": str(task_dest),
         **rec_extra,
     }
@@ -377,11 +397,12 @@ def main() -> None:
         if iid not in gold_rows:
             print(f"  {iid:30s}  SKIP: no gold row")
             continue
-        audit = audit_rows.get(iid)
+        variants = audit_rows.get(iid, [])
+        primary = _pick_primary(variants)
         unchanged = False
-        if audit is not None:
-            orig = _norm(audit.get("original_sol_sql"))
-            aud = _norm(audit.get("audited_sol_sql"))
+        if primary is not None:
+            orig = _norm(primary.get("original_sol_sql"))
+            aud = _norm(primary.get("audited_sol_sql"))
             unchanged = (orig == aud)
         rows_dir = (
             run_rows_dir
@@ -395,7 +416,7 @@ def main() -> None:
                 run_id=run_id,
                 data_row=data_rows[iid],
                 gold_row=gold_rows[iid],
-                audit_row=audit,
+                audit_rows=variants,
                 audit_unchanged=unchanged,
                 rows_dir=rows_dir,
                 annotations_root=annotations_root,
@@ -405,7 +426,7 @@ def main() -> None:
             print(f"  {iid:30s}  FAILED: {type(exc).__name__}: {exc}")
             raise
         else:
-            audit_tag = "U" if unchanged else ("C" if audit else "-")
+            audit_tag = "U" if unchanged else ("C" if primary else "-")
             sub_tag = "S" if rec["has_submission"] else " "
             cascade_str = ""
             if rec["has_submission"]:

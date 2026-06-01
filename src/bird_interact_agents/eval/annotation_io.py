@@ -7,9 +7,16 @@ Path conventions:
 * Submission annotation:
   ``<repo_root>/annotations/<benchmark>/<db>/<instance_id>.submission.<run_id>.json``
 
-``<benchmark>`` matches the benchmark name passed by callers (e.g.
-``mini-interact``, ``livesqlbench``). ``<db>`` matches the task's
-``selected_database`` field.
+``<benchmark>`` is normalized to the canonical underscore form
+(``mini_interact``, ``livesqlbench``) at every path-building site so
+callers passing the dash form (``mini-interact``) write/read to the
+same tree as callers passing the underscore form. The canonical form
+matches the benchmark registry's ``name`` field, which is what the
+cloud worker resolves via ``_cloud_benchmark``. Without this
+normalization the disk grows two parallel trees and the cloud cascade
+silently misses every annotation written via the dash form.
+
+``<db>`` matches the task's ``selected_database`` field.
 
 These helpers do NOT regenerate annotations from raw artefacts — that
 belongs in a separate tool (``scripts/generate_annotation_skeleton.py``
@@ -29,6 +36,14 @@ from bird_interact_agents.eval.annotation_schema import (
 ANNOTATIONS_DIRNAME = "annotations"
 
 
+def _canonical_benchmark(benchmark: str) -> str:
+    """Normalize to the registry's canonical underscore form. Both
+    ``mini-interact`` (the form the CLI / docs historically accepted)
+    and ``mini_interact`` (``benchmark.name``) resolve to the same
+    on-disk tree."""
+    return benchmark.replace("-", "_")
+
+
 def _annotations_root(repo_root: Optional[Path] = None) -> Path:
     """Anchor at the main checkout (matches the worktree-safe contract
     used by ``audited_gold/`` and ``results/``)."""
@@ -45,7 +60,7 @@ def task_annotation_path(
 ) -> Path:
     return (
         _annotations_root(repo_root)
-        / benchmark
+        / _canonical_benchmark(benchmark)
         / selected_database
         / f"{instance_id}.task.json"
     )
@@ -61,7 +76,7 @@ def submission_annotation_path(
 ) -> Path:
     return (
         _annotations_root(repo_root)
-        / benchmark
+        / _canonical_benchmark(benchmark)
         / selected_database
         / f"{instance_id}.submission.{run_id}.json"
     )
@@ -94,7 +109,7 @@ def iter_task_annotations(
     so corruption surfaces at scan time rather than at first downstream
     use.
     """
-    root = _annotations_root(repo_root) / benchmark
+    root = _annotations_root(repo_root) / _canonical_benchmark(benchmark)
     out: list[tuple[Path, TaskAnnotation]] = []
     if not root.exists():
         return out
@@ -108,7 +123,7 @@ def iter_submission_annotations(
     repo_root: Optional[Path] = None,
 ) -> "list[tuple[Path, SubmissionAnnotation]]":
     """Walk submission annotations. When ``run_id`` is set, filter."""
-    root = _annotations_root(repo_root) / benchmark
+    root = _annotations_root(repo_root) / _canonical_benchmark(benchmark)
     out: list[tuple[Path, SubmissionAnnotation]] = []
     if not root.exists():
         return out

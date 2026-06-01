@@ -194,13 +194,17 @@ def test_submission_annotation_forbid_extra():
 
 
 def test_path_helpers(tmp_path):
+    # ``annotation_io`` normalizes the dash form to the canonical
+    # underscore form so cloud workers (``_cloud_benchmark`` → ``mini_interact``)
+    # and CLI callers (``--benchmark mini-interact``) write to the
+    # same tree.
     t = task_annotation_path(
         benchmark="mini-interact",
         selected_database="alien",
         instance_id="alien_42",
         repo_root=tmp_path,
     )
-    assert t == tmp_path / "annotations" / "mini-interact" / "alien" / "alien_42.task.json"
+    assert t == tmp_path / "annotations" / "mini_interact" / "alien" / "alien_42.task.json"
     s = submission_annotation_path(
         benchmark="mini-interact",
         selected_database="alien",
@@ -211,7 +215,7 @@ def test_path_helpers(tmp_path):
     assert s == (
         tmp_path
         / "annotations"
-        / "mini-interact"
+        / "mini_interact"
         / "alien"
         / "alien_42.submission.20260531t1008-claudes-slayer-890419.json"
     )

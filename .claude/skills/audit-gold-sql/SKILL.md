@@ -46,10 +46,14 @@ Read-only:
 
 ## Outputs
 
-One JSONL line appended (or updated) at
-`bird-interact-agents/audited_gold/<db>/<db>_audited.jsonl`. If a line
-already exists for this `instance_id`, **overwrite** it in place
-(latest-wins; the verifier dedups on read).
+One JSONL line per `(instance_id, variant_id)` pair appended (or
+updated) at `bird-interact-agents/audited_gold/<db>/<db>_audited.jsonl`.
+`variant_id` defaults to `"primary"`; multi-variant audits emit
+multiple rows sharing `instance_id` with distinct `variant_id` slugs.
+If a row already exists for this `(instance_id, variant_id)` pair,
+**overwrite** it in place (latest-wins on the composite key —
+NEVER drop alternate variants by overwriting on `instance_id` alone;
+the verifier dedups on `(instance_id, variant_id)`).
 
 ### Sidecar schema (verbatim)
 
@@ -409,13 +413,18 @@ is incomplete until execution succeeds.
 
 Path: `bird-interact-agents/audited_gold/<db>/<db>_audited.jsonl`.
 
-If the file doesn't exist, create the directory and the file. If a
-line already exists for this `instance_id`, rewrite the whole file
-with the line replaced (latest-wins).
+If the file doesn't exist, create the directory and the file. The
+write key is the composite `(instance_id, variant_id)` pair — NOT
+`instance_id` alone, because multi-variant audits emit multiple rows
+per instance and overwriting on `instance_id` would silently drop
+alternates. If a line already exists for this `(instance_id,
+variant_id)` pair, rewrite the whole file with that one line replaced
+(latest-wins on the composite key); leave every other variant row
+untouched.
 
 Build the JSON object per the schema above, serialise with
 `json.dumps(obj, ensure_ascii=False)`, append a newline. Each JSONL
-line is one task's full audit.
+line is one variant of one task's full audit.
 
 ### Step 9 — Per-DB summary (optional, after auditing all tasks)
 

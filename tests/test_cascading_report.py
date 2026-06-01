@@ -23,7 +23,7 @@ def _make_submission_annotation_json(
     instance_id: str,
     selected_database: str,
     n1: bool, n2: bool, n3: bool, n4: bool, n5: bool,
-    n6: bool, n7: bool, n8: bool,
+    n6: bool, n7: bool, n8: bool, n9: bool = False,
     verdict: str = "correct",
 ) -> dict:
     """Build the JSON shape produced by tolerant_grader → SubmissionAnnotation."""
@@ -59,6 +59,7 @@ def _make_submission_annotation_json(
             "correct_under_numeric_epsilon": n6,
             "correct_under_trailing_whitespace": n7,
             "correct_under_column_order": n8,
+            "correct_under_case_fold": n9,
             "numeric_epsilon": 1e-6,
             "verdict": verdict,
             "matched_variant_id": "primary" if n3 else None,
@@ -169,6 +170,47 @@ def test_aggregator_enforces_monotonicity_on_tampered_row(tmp_path):
     )
     assert counts["n7"] == 1
     assert counts["n8"] == 1
+
+
+def test_aggregator_surfaces_n9_case_fold(tmp_path):
+    """Regression for DEV-1515 follow-up: N9 was added to
+    ``tolerant_grader._CASCADE_ORDER`` but the aggregator's
+    ``_per_row_cascade_bools`` was hardcoded to N1..N8, leaving
+    ``counts['n9']`` stuck at 0 (and no ``deltas['n9']``) even when
+    the per-row annotation reported a case-fold-only pass."""
+    from bird_interact_agents.eval.cascading_report import (
+        aggregate_cascading_phase1,
+    )
+
+    rows_dir = tmp_path / "rows"
+    rows_dir.mkdir()
+    # One row: case-fold-only pass — every earlier level fails.
+    ann = _make_submission_annotation_json(
+        instance_id="alien_1", selected_database="alien",
+        n1=False, n2=False, n3=False, n4=False, n5=False,
+        n6=False, n7=False, n8=False, n9=True,
+    )
+    d = rows_dir / "alien_1"
+    d.mkdir()
+    (d / "submission_annotation.json").write_text(json.dumps(ann))
+
+    block = aggregate_cascading_phase1(rows_dir)
+    assert block["counts"]["n9"] == 1, (
+        "n9_case_fold must increment counts['n9'] — it was previously "
+        "dropped because _per_row_cascade_bools hardcoded n1..n8 only"
+    )
+    assert block["rates"]["n9"] == pytest.approx(1.0)
+    assert "n9" in block["deltas"], (
+        "deltas must extend to n9, not stop at n8"
+    )
+    # Monotone enforcement walks N1→N9, so a case-fold-only pass leaves
+    # every stricter level (N1..N8) at 0 and only N9 at 1. The point of
+    # this regression test is that N9 is SURFACED at all — pre-fix it
+    # was stuck at 0 because the aggregator hardcoded N1..N8.
+    for k in ("n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8"):
+        assert block["counts"][k] == 0, (
+            f"only n9 was True in the raw row; {k} must remain 0"
+        )
 
 
 def test_aggregator_raises_when_row_missing_submission_annotation(tmp_path):

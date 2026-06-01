@@ -189,7 +189,7 @@ so the agent's only sources are the published metadata.
 
 ### mini-interact (a-interact mode)
 
-```
+```text
 1. Audit-correctness gate — is the audited gold itself correct?
      NO  → FIX the audit JSONL row first; come back here.
      YES → proceed.
@@ -226,7 +226,7 @@ Corollaries:
 
 ### livesqlbench (one-shot mode)
 
-```
+```text
 1. Audit-correctness gate — is the audited gold itself correct?
      NO  → FIX the audit JSONL row first; come back here.
      YES → proceed.

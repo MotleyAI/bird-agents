@@ -51,6 +51,7 @@ def _per_row_cascade_bools(annotation_dir: Path) -> dict[str, bool]:
         "n6_numeric_epsilon": ev.correct_under_numeric_epsilon,
         "n7_trailing_whitespace": ev.correct_under_trailing_whitespace,
         "n8_column_order": ev.correct_under_column_order,
+        "n9_case_fold": ev.correct_under_case_fold,
     }
     return enforce_monotone_cascade(raw)
 
@@ -83,7 +84,7 @@ def aggregate_cascading_phase1(rows_dir: Path) -> dict:
     }
     deltas: dict[str, int] = {}
     prev: int | None = None
-    for k in ("n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8"):
+    for k in ("n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9"):
         if prev is None:
             deltas[k] = 0
         else:

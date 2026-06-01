@@ -82,7 +82,7 @@ def test_regrade_overwrites_existing_submission_annotation(tmp_path, monkeypatch
     monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
     # Pre-existing submission annotation at the destination.
-    dest_dir = tmp_path / "annotations" / "mini-interact" / "alien"
+    dest_dir = tmp_path / "annotations" / "mini_interact" / "alien"
     dest_dir.mkdir(parents=True)
     dest = dest_dir / "alien_1.submission.r1.json"
     dest.write_text('{"annotated_by": "stale", "kind": "submission_annotation"}')

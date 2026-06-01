@@ -7,11 +7,16 @@ task row + per-row attempt artefacts. Human-judgment fields are left as
 Usage::
 
     python -m bird_interact_agents.eval.annotate \\
-        --run-id <id> --benchmark mini-interact \\
+        --run-id <id> --benchmark mini_interact \\
         [--instance-ids ...] \\
         [--task-mode {init,refresh,force-all}] \\
         [--submission-mode {overwrite,init}] \\
         [--dry-run]
+
+``--benchmark`` accepts both the dash form (``mini-interact``) and the
+underscore form (``mini_interact``); ``annotation_io`` normalizes to
+the canonical underscore form on every path-build so writes from
+either form land in the same on-disk tree.
 """
 from __future__ import annotations
 

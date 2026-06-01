@@ -61,7 +61,7 @@ def _valid_submission_annotation_dict(instance_id: str = "alien_1") -> dict:
         "kind": "submission_annotation",
         "instance_id": instance_id,
         "selected_database": "alien",
-        "task_annotation_ref": f"annotations/mini-interact/alien/{instance_id}.task.json",
+        "task_annotation_ref": f"annotations/mini_interact/alien/{instance_id}.task.json",
         "annotated_by": "auto",
         "annotated_at": "2026-05-31",
         "submission": {
@@ -104,7 +104,7 @@ def test_merge_writes_annotation_to_main_checkout(tmp_path):
     )
 
     dest = (
-        main_checkout / "annotations" / "mini-interact" / "alien"
+        main_checkout / "annotations" / "mini_interact" / "alien"
         / "alien_1.submission.r1.json"
     )
     assert dest.exists()
@@ -119,7 +119,7 @@ def test_merge_no_overwrite_if_present(tmp_path):
     )
 
     main_checkout = tmp_path / "checkout"
-    dest_dir = main_checkout / "annotations" / "mini-interact" / "alien"
+    dest_dir = main_checkout / "annotations" / "mini_interact" / "alien"
     dest_dir.mkdir(parents=True)
     pre = _valid_submission_annotation_dict("alien_1")
     pre["annotated_by"] = "human-pre-existing"
@@ -170,7 +170,7 @@ def test_merge_rejects_schema_invalid_file(tmp_path):
     assert report.rejected_invalid == 1
     # Destination must NOT have been created from invalid content.
     assert not (
-        main_checkout / "annotations" / "mini-interact" / "alien"
+        main_checkout / "annotations" / "mini_interact" / "alien"
         / "alien_1.submission.r1.json"
     ).exists()
 

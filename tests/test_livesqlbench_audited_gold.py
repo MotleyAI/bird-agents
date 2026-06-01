@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Iterator
+from typing import Iterable, Iterator
 
 import pytest
 
@@ -390,30 +390,84 @@ def test_audit_rows_audited_at_is_iso8601():
         )
 
 
+def _check_unique_variant_pairs_and_primary_count(
+    rows: Iterable[dict],
+) -> tuple[list[tuple[str, str]], dict[str, int]]:
+    """Pure helper used by both the live-data contract test below and
+    the synthetic regression test for the zero-primary edge case.
+    Returns ``(dupes, bad_primary_counts)`` — both empty when the audit
+    set satisfies the (instance_id, variant_id) + exactly-one-primary
+    contract."""
+    from collections import Counter
+
+    seen_pairs: list[tuple[str, str]] = []
+    all_iids: set[str] = set()
+    primaries_per_iid: dict[str, int] = {}
+    for row in rows:
+        iid = row["instance_id"]
+        all_iids.add(iid)
+        vid = row.get("variant_id", "primary")
+        seen_pairs.append((iid, vid))
+        if row.get("primary", True):
+            primaries_per_iid[iid] = primaries_per_iid.get(iid, 0) + 1
+    dupes = [p for p, n in Counter(seen_pairs).items() if n > 1]
+    # Iterate every seen iid (not just those that recorded a primary)
+    # so zero-primary instances are flagged — building this dict from
+    # ``primaries_per_iid.items()`` alone would silently skip them.
+    bad_primary_counts = {
+        iid: primaries_per_iid.get(iid, 0)
+        for iid in all_iids
+        if primaries_per_iid.get(iid, 0) != 1
+    }
+    return dupes, bad_primary_counts
+
+
 def test_no_duplicate_instance_id_variant_pairs():
     """The dedup contract is on the (instance_id, variant_id) pair, not on
     instance_id alone — DEV-1515 multi-variant audits ship N rows per task
     (one primary + alternates). Also: each instance_id MUST have exactly one
     primary row."""
-    seen_pairs: list[tuple[str, str]] = []
-    primaries_per_iid: dict[str, int] = {}
-    for row in _iter_audit_rows():
-        iid = row["instance_id"]
-        vid = row.get("variant_id", "primary")
-        seen_pairs.append((iid, vid))
-        if row.get("primary", True):
-            primaries_per_iid[iid] = primaries_per_iid.get(iid, 0) + 1
-    dupes = [p for p in seen_pairs if seen_pairs.count(p) > 1]
+    dupes, bad_primary_counts = (
+        _check_unique_variant_pairs_and_primary_count(_iter_audit_rows())
+    )
     assert not dupes, (
         f"duplicate (instance_id, variant_id) pairs in audit file: {dupes}"
     )
-    over_primaries = {
-        iid: n for iid, n in primaries_per_iid.items() if n != 1
-    }
-    assert not over_primaries, (
+    assert not bad_primary_counts, (
         f"each instance_id must have exactly one primary row; "
-        f"got counts: {over_primaries}"
+        f"got counts: {bad_primary_counts}"
     )
+
+
+def test_zero_primary_variants_are_detected():
+    """Regression: an iid carrying ONLY non-primary variants used to
+    slip through the over-primaries check because the dict was built
+    from ``primaries_per_iid.items()``, which never includes
+    zero-primary iids. The fixed check iterates all seen iids."""
+    rows = [
+        {"instance_id": "x_1", "variant_id": "alt_a", "primary": False},
+        {"instance_id": "x_1", "variant_id": "alt_b", "primary": False},
+    ]
+    dupes, bad_primary_counts = (
+        _check_unique_variant_pairs_and_primary_count(rows)
+    )
+    assert dupes == []
+    assert bad_primary_counts == {"x_1": 0}, (
+        "zero-primary iid must surface in bad_primary_counts with count 0"
+    )
+
+
+def test_two_primary_variants_are_detected():
+    """Companion: an iid with TWO primaries also violates the contract."""
+    rows = [
+        {"instance_id": "y_1", "variant_id": "a", "primary": True},
+        {"instance_id": "y_1", "variant_id": "b", "primary": True},
+    ]
+    dupes, bad_primary_counts = (
+        _check_unique_variant_pairs_and_primary_count(rows)
+    )
+    assert dupes == []
+    assert bad_primary_counts == {"y_1": 2}
 
 
 # ---------------------------------------------------------------------------

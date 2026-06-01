@@ -89,7 +89,7 @@ def _masked_terms_from(task_row: dict) -> list[MaskedTerm]:
 def _build_task_annotation(
     *,
     task_row: dict,
-    audit_row: dict,
+    audit_row: dict | None,
     audit_unchanged: bool,
     annotated_at: str,
 ) -> TaskAnnotation:
@@ -158,12 +158,25 @@ def _build_task_annotation(
     )
 
 
+def _pick_primary(audit_rows: list[dict]) -> dict | None:
+    """Return the primary variant from a list of audit rows, or None if
+    the list is empty. Falls back to the first row when no row carries
+    ``primary: true`` (single-variant rows pre-DEV-1515 omit the field;
+    the default is ``True``)."""
+    if not audit_rows:
+        return None
+    for r in audit_rows:
+        if r.get("primary", True):
+            return r
+    return audit_rows[0]
+
+
 def _process_one(
     *,
     run_id: str,
     instance_id: str,
     task_row: dict,
-    audit_row: dict,
+    audit_rows: list[dict],
     audit_unchanged: bool,
     rows_dir: Path,
     mini_root: Path,
@@ -177,6 +190,8 @@ def _process_one(
     attempt = json.loads(attempt_path.read_text())
     submitted_sql = attempt.get("submitted_sql", "")
     usage = attempt.get("usage", {}) or {}
+
+    audit_row = _pick_primary(audit_rows)
 
     # 1) Task annotation.
     task_ann = _build_task_annotation(
@@ -193,12 +208,15 @@ def _process_one(
     )
     write_task_annotation(task_ann, task_dest)
 
-    # 2) Cascade via grade_submission.
+    # 2) Cascade via grade_submission. Multi-variant audits are passed
+    # as the full list so N3 ("any audited variant") sees every
+    # alternate — collapsing to the primary alone would miscompute
+    # cascade outcomes for ambiguous tasks.
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=60)
     try:
         cascade = grade_submission(
             task_annotation=task_ann,
-            audited_gold_rows=[audit_row],
+            audited_gold_rows=audit_rows,
             original_sol_sql=list(task_row.get("sol_sql") or []),
             submitted_sql=submitted_sql,
             db_path=db_path,
@@ -267,14 +285,18 @@ def main() -> None:
         d = json.loads(line)
         rows[d["instance_id"]] = d
 
-    audit_rows = {}
+    # Collect every variant per instance_id. Multi-variant audits
+    # (DEV-1515 source_conflict tasks) ship N rows sharing instance_id;
+    # collapsing to a single dict per instance silently drops alternates
+    # and makes downstream N3 miscompute.
+    audit_rows: dict[str, list[dict]] = {}
     for line in (
         paths.audited_gold_root() / "mini_interact_audited.jsonl"
     ).read_text().splitlines():
         if not line.strip():
             continue
         d = json.loads(line)
-        audit_rows[d["instance_id"]] = d
+        audit_rows.setdefault(d["instance_id"], []).append(d)
 
     annotated_at = (
         _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()
@@ -287,16 +309,18 @@ def main() -> None:
         print(f"\n[{run_id}] {len(inst_ids)} instances")
         for iid in inst_ids:
             task_row = rows[iid]
-            audit_row = audit_rows[iid]
-            n_orig = _norm(audit_row.get("original_sol_sql"))
-            n_aud = _norm(audit_row.get("audited_sol_sql"))
+            variants = audit_rows[iid]
+            primary = _pick_primary(variants)
+            assert primary is not None  # rows[iid] non-empty by construction
+            n_orig = _norm(primary.get("original_sol_sql"))
+            n_aud = _norm(primary.get("audited_sol_sql"))
             unchanged = n_orig == n_aud
             try:
                 rec = _process_one(
                     run_id=run_id,
                     instance_id=iid,
                     task_row=task_row,
-                    audit_row=audit_row,
+                    audit_rows=variants,
                     audit_unchanged=unchanged,
                     rows_dir=rows_dir,
                     mini_root=mini_root,

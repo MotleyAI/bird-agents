@@ -81,3 +81,50 @@ def test_annotation_io_uses_paths_helper(monkeypatch, tmp_path):
     write_task_annotation(ann, p_explicit)
     assert p_explicit.exists()
     assert p_explicit.is_relative_to(tmp_path / "annotations")
+
+
+def test_annotation_paths_canonicalize_mini_interact(tmp_path):
+    """``mini-interact`` (dash, the form ``annotate.py`` historically
+    accepted via the CLI) and ``mini_interact`` (underscore, the form
+    ``_cloud_benchmark`` returns from ``benchmark.name``) MUST resolve
+    to the same on-disk path. Without normalization, cloud workers
+    silently read from an empty ``annotations/mini_interact/`` tree
+    while every CLI-written annotation lands under
+    ``annotations/mini-interact/``."""
+    from bird_interact_agents.eval import (
+        submission_annotation_path,
+        task_annotation_path,
+    )
+
+    dash = task_annotation_path(
+        benchmark="mini-interact",
+        selected_database="alien",
+        instance_id="alien_1",
+        repo_root=tmp_path,
+    )
+    underscore = task_annotation_path(
+        benchmark="mini_interact",
+        selected_database="alien",
+        instance_id="alien_1",
+        repo_root=tmp_path,
+    )
+    assert dash == underscore
+    # And the canonical landing directory is the underscore form.
+    assert "mini_interact" in dash.parts
+    assert "mini-interact" not in dash.parts
+
+    sub_dash = submission_annotation_path(
+        benchmark="mini-interact",
+        selected_database="alien",
+        instance_id="alien_1",
+        run_id="r1",
+        repo_root=tmp_path,
+    )
+    sub_under = submission_annotation_path(
+        benchmark="mini_interact",
+        selected_database="alien",
+        instance_id="alien_1",
+        run_id="r1",
+        repo_root=tmp_path,
+    )
+    assert sub_dash == sub_under

@@ -88,7 +88,7 @@ AUDIT_FILE_REL = "audited_gold/mini_interact_audited.jsonl"
 def _patch_audit_jsonl() -> None:
     audit_path = paths.audited_gold_root() / "mini_interact_audited.jsonl"
     rows: list[dict] = []
-    found = False
+    matched_rows: list[dict] = []
     for line in audit_path.read_text().splitlines():
         if not line.strip():
             continue
@@ -96,13 +96,34 @@ def _patch_audit_jsonl() -> None:
         if d["instance_id"] != INSTANCE_ID:
             rows.append(d)
             continue
+        matched_rows.append(d)
+
+    if not matched_rows:
+        raise SystemExit(f"{INSTANCE_ID} not found in {audit_path}")
+    if len(matched_rows) > 1:
+        # Already multi-variant — running the script a second time would
+        # append two more kb_row/snippet_row variants AND accumulate a
+        # duplicate `source_conflict` change entry on each. Refuse instead
+        # of silently producing 4+ variants per instance.
+        raise SystemExit(
+            f"{INSTANCE_ID} already has {len(matched_rows)} audit rows "
+            f"in {audit_path}; refusing to duplicate variants. Clean up "
+            "the existing variants manually before rerunning this script."
+        )
+
+    for d in matched_rows:
         # The existing row becomes the kb_definition_reading variant
         # (already `lcs > 3`).
-        found = True
         kb_row = dict(d)
         kb_row["variant_id"] = "kb_definition_reading"
         kb_row["primary"] = True
-        kb_row.setdefault("changes", []).append({
+        # Filter out any pre-existing source_conflict entry so reruns
+        # never accumulate duplicate change records.
+        kb_row["changes"] = [
+            c for c in (kb_row.get("changes") or [])
+            if c.get("clause_kind") != "source_conflict"
+        ]
+        kb_row["changes"].append({
             "clause_kind": "source_conflict",
             "original": "lcs > 2 (per critical_ambiguity for 'good quality of life'.sql_snippet)",
             "replacement": "lcs > 3",
@@ -180,9 +201,6 @@ def _patch_audit_jsonl() -> None:
         finally:
             conn.close()
         rows.append(snippet_row)
-
-    if not found:
-        raise SystemExit(f"{INSTANCE_ID} not found in {audit_path}")
 
     audit_path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     print(f"Patched {audit_path}: {INSTANCE_ID} now has 2 rows "

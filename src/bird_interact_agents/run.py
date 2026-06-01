@@ -13,6 +13,7 @@ from typing import Any as _Any
 
 from bird_interact_agents import paths
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
+from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
 from bird_interact_agents.harness import (
     apply_audited_gold_overlay,
     calculate_budget,
@@ -1049,9 +1050,8 @@ async def run_evaluation(
     # `phase1_count_original`, `n_dual_eval_tasks`, the two rates) has
     # been REPLACED by the cascading_phase1 block. The block is computed
     # downstream by `emit_cascading_eval_json` over per-row
-    # submission_annotation.json files — local runs that don't write
-    # those (no inline grader hook) simply omit the block. `phase1_count`
-    # / `phase1_rate` stay as back-compat aliases for N1.
+    # submission_annotation.json files. `phase1_count` / `phase1_rate`
+    # stay as back-compat aliases for N1.
     metrics = {
         "mode": mode,
         "query_mode": query_mode,
@@ -1068,10 +1068,26 @@ async def run_evaluation(
         "results": results,
     }
 
-    # Save
+    # Save. If a local-mode rows tree carrying per-row
+    # ``submission_annotation.json`` files exists alongside the eval
+    # output (cloud convention: ``<output_dir>/rows/<inst>/``), enrich
+    # eval.json with the freshly-aggregated ``cascading_phase1`` block
+    # so the headline N1..N9 metrics aren't silently lost when local
+    # runs DO have annotations (e.g. via ``grade_in_place.grade_and_write``
+    # or the convert scripts). Local runs without that tree keep the
+    # documented behaviour: omit the block, ship only the N1 aliases.
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(metrics, f, indent=2, default=str)
+
+    rows_dir = Path(output_path).parent / "rows"
+    if rows_dir.exists() and any(
+        (sub / "submission_annotation.json").exists()
+        for sub in rows_dir.iterdir() if sub.is_dir()
+    ):
+        metrics = emit_cascading_eval_json(
+            rows_dir, Path(output_path), base_metrics=metrics,
+        )
 
     logger.info(
         "Done. Tasks: %d, P1: %d/%d (%.1f%%), Avg Reward: %.4f",

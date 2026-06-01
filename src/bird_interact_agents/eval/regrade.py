@@ -63,6 +63,70 @@ def clear_llm_judge_cache(
     cache_path.write_text(json.dumps(new, indent=2))
 
 
+def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
+    """Map ``instance_id`` → list-of-SQL-strings for the benchmark's
+    original gold. mini_interact carries ``sol_sql`` inline on each task
+    row in ``mini_interact.jsonl``; livesqlbench ships an empty
+    ``sol_sql`` on the public ``livesqlbench_data_sqlite.jsonl`` and the
+    real list lives on the gated gold sidecar (env override
+    ``BIRD_LIVESQLBENCH_GOLD_FILE``). Look it up once at CLI startup so
+    the per-row grader doesn't repeatedly parse a multi-megabyte JSONL.
+    Empty rows fall back to ``[]`` so the cascade's N1 just doesn't fire
+    for instances whose source row genuinely has no gold (rather than
+    crashing).
+    """
+    from bird_interact_agents.benchmark import get_benchmark
+
+    out: dict[str, list[str]] = {}
+    data_file = paths.benchmark_data_file(benchmark)
+    if data_file.exists():
+        with data_file.open() as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                iid = r.get("instance_id")
+                sol = r.get("sol_sql")
+                if iid and isinstance(sol, list) and sol:
+                    out[iid] = list(sol)
+    # Merge in livesqlbench's gated sidecar if available.
+    bench = get_benchmark(benchmark)
+    if bench.gold_required:
+        gold_path: Optional[Path] = None
+        import os
+        env_override = os.environ.get(bench.gold_root_env or "")
+        if env_override:
+            gold_path = Path(env_override).expanduser()
+        else:
+            # Default sidecar location: <livesqlbench_root>/<gt_sidecar>
+            for candidate in (
+                paths.benchmark_data_root(benchmark)
+                / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl",
+            ):
+                if candidate.exists():
+                    gold_path = candidate
+                    break
+        if gold_path and gold_path.exists():
+            with gold_path.open() as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    iid = r.get("instance_id")
+                    sol = r.get("sol_sql")
+                    if iid and isinstance(sol, list) and sol:
+                        out[iid] = list(sol)
+    return out
+
+
 def regrade_run(
     *,
     run_id: str,
@@ -207,7 +271,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.instance_ids else None
     )
     from bird_interact_agents.eval.tolerant_grader import grade_submission
-    run_dir = paths.main_checkout_root() / "results" / "cloud" / args.run_id
+    run_dir = paths.results_root() / "cloud" / args.run_id
+
+    # Index the benchmark's source data once. mini_interact ships sol_sql
+    # inline; livesqlbench's gated sidecar carries sol_sql under
+    # ``--gold-file`` and the public data file ships it empty. Both routes
+    # land under ``instance_id`` so the lookup is identical at call time.
+    original_sql_by_inst = _build_original_sql_index(args.benchmark)
 
     def _grader(*, instance_id: str, submitted_sql: str, task_row: dict, **_kw):
         # Minimal end-to-end wiring — production callers pre-build the
@@ -239,12 +309,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         audited = _load_audited_gold_rows_for(
             benchmark=args.benchmark, instance_id=instance_id,
         )
+        # N1 requires the original gold SQL; the attempt JSON doesn't
+        # carry it (it lives on the source data row / gated gold sidecar).
+        original_sol_sql = list(
+            task_row.get("original_sol_sql")
+            or task_row.get("sol_sql")
+            or original_sql_by_inst.get(instance_id)
+            or []
+        )
         return grade_submission(
             task_annotation=ann,
             audited_gold_rows=audited,
-            original_sol_sql=list(
-                task_row.get("original_sol_sql") or task_row.get("sol_sql") or [],
-            ),
+            original_sol_sql=original_sol_sql,
             submitted_sql=submitted_sql,
             db_path=db_path,
             conn=None,
