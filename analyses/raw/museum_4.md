@@ -13,7 +13,7 @@ CBE in agent: `SUM(cpi) / COUNT²` — uniform 1/N reading of "BudgetRatio".
 ## Was CBE a KB entry?
 
 Yes. `museum_kb.jsonl` id=9:
-```
+```text
 "CBE = \frac{\sum_{i \in artifacts} (CPI_i \times BudgetRatio_i)}{|artifacts|}, where BudgetRatio is the proportion of total conservation budget allocated to each artifact"
 ```
 
@@ -22,7 +22,7 @@ Agent retrieved at `trajectory[8 → 9]` via `get_knowledge_definition("Conserva
 ## Agent's reasoning
 
 ThinkingBlocks encrypted (`thinking=''`), but `create_model` description at `trajectory[33]`:
-```
+```text
 "CBE = sum(CPI*1/N)/N = sum(CPI)/N^2 assuming uniform BudgetRatio"
 ```
 

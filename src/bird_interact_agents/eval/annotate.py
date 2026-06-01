@@ -153,7 +153,16 @@ def _skeleton_failure_classification(cascade: Any) -> FailureClassification:
 
 def _eval_from_cascade(cascade: Any, epsilon: float = 1e-6) -> SubmissionEvaluation:
     """Convert a tolerant_grader CascadeVerdict into a
-    SubmissionEvaluation persistence shape."""
+    SubmissionEvaluation persistence shape. Uses
+    :func:`grade_in_place.verdict_label_from_cascade` so this helper and
+    the cloud/local-runner builder cannot drift apart — without the
+    shared mapping, N4/N5/N6/N7/N8 cascade-tier passes would land here
+    with ``verdict="invalid"`` while the inline grader's annotations
+    carried ``verdict="valid_interpretation"``."""
+    from bird_interact_agents.eval.grade_in_place import (
+        verdict_label_from_cascade,
+    )
+
     return SubmissionEvaluation(
         phase1_against_original_gold="pass" if cascade.n1_original_gold else "fail",
         phase1_against_audited_primary="pass" if cascade.n2_audited_primary else "fail",
@@ -167,9 +176,7 @@ def _eval_from_cascade(cascade: Any, epsilon: float = 1e-6) -> SubmissionEvaluat
         correct_under_trailing_whitespace=cascade.n7_trailing_whitespace,
         correct_under_column_order=cascade.n8_column_order,
         numeric_epsilon=epsilon,
-        verdict=(
-            "correct" if cascade.n3_any_audited_variant else "invalid"
-        ),
+        verdict=verdict_label_from_cascade(cascade),  # type: ignore[arg-type]
         matched_variant_id=cascade.matched_variant_id,
         rationale="",
     )

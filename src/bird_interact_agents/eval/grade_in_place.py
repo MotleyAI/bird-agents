@@ -39,6 +39,35 @@ def _verdict_to_phase(b: bool) -> PhaseVerdict:
     return "pass" if b else "fail"
 
 
+def verdict_label_from_cascade(cascade: CascadeVerdict) -> str:
+    """Map a cascade verdict → the ``SubmissionEvaluation.verdict`` label.
+
+    Shared by ``_build_submission_annotation`` (cloud + local runners) and
+    ``annotate._eval_from_cascade`` (skeleton CLI + regrade CLI). Keep
+    them in sync — every cascade tier that flips the headline verdict
+    should appear here:
+
+    * ``n3_any_audited_variant`` → ``"correct"`` (strict set-equal pass)
+    * ``n4_tie_order`` / ``n5_llm_judge`` / ``n6_numeric_epsilon`` /
+      ``n7_trailing_whitespace`` / ``n8_column_order`` →
+      ``"valid_interpretation"`` (cascade-tier acceptance — the row is
+      not strictly identical to the gold but matches under a named
+      tolerance / under the LLM judge for an ``insufficient`` task)
+    * otherwise → ``"invalid"``
+    """
+    if cascade.n3_any_audited_variant:
+        return "correct"
+    if (
+        cascade.n4_tie_order
+        or cascade.n5_llm_judge
+        or cascade.n6_numeric_epsilon
+        or cascade.n7_trailing_whitespace
+        or cascade.n8_column_order
+    ):
+        return "valid_interpretation"
+    return "invalid"
+
+
 def _auto_failure_class(cascade: CascadeVerdict) -> tuple[str, bool, str]:
     """Pick the (primary, agent_at_fault, remediation_target) triple
     purely from the cascade. ``no_fail`` for N3 passes; each lower
@@ -85,18 +114,7 @@ def _build_submission_annotation(
     epsilon: float = 1e-6,
 ) -> SubmissionAnnotation:
     """Map the in-memory CascadeVerdict → on-disk SubmissionAnnotation."""
-    if cascade.n3_any_audited_variant:
-        verdict_label = "correct"
-    elif cascade.n5_llm_judge or cascade.n4_tie_order:
-        verdict_label = "valid_interpretation"
-    elif (
-        cascade.n6_numeric_epsilon
-        or cascade.n7_trailing_whitespace
-        or cascade.n8_column_order
-    ):
-        verdict_label = "valid_interpretation"
-    else:
-        verdict_label = "invalid"
+    verdict_label = verdict_label_from_cascade(cascade)
 
     auto_primary, auto_at_fault, auto_remediation = _auto_failure_class(cascade)
 

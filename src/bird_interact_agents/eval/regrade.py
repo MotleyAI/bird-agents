@@ -103,12 +103,28 @@ def regrade_run(
             continue
         attempt_data = json.loads(attempt.read_text())
         submitted_sql = attempt_data.get("submitted_sql", "")
-        selected_database = attempt_data.get("selected_database", "")
-        cascade = grader(
-            instance_id=instance_id,
-            submitted_sql=submitted_sql,
-            task_row=attempt_data,
+        # The cloud worker writes the per-DB token to ``database``;
+        # ``selected_database`` is only present on the source data row,
+        # so fall back if the attempt file is missing it.
+        selected_database = (
+            attempt_data.get("selected_database")
+            or attempt_data.get("database")
+            or ""
         )
+        attempt_data["selected_database"] = selected_database
+        try:
+            cascade = grader(
+                instance_id=instance_id,
+                submitted_sql=submitted_sql,
+                task_row=attempt_data,
+            )
+        except Exception as exc:  # noqa: BLE001 — operational CLI
+            print(
+                f"  skip {instance_id}: grader raised "
+                f"{type(exc).__name__}: {exc}"
+            )
+            report.skipped += 1
+            continue
         # Build a fresh SubmissionAnnotation from the cascade.
         from bird_interact_agents.eval.annotate import (
             _eval_from_cascade,
@@ -196,15 +212,27 @@ def main(argv: Optional[List[str]] = None) -> int:
     def _grader(*, instance_id: str, submitted_sql: str, task_row: dict, **_kw):
         # Minimal end-to-end wiring — production callers pre-build the
         # implicit annotation + audited gold rows themselves.
-        from bird_interact_agents.eval.implicit_annotation import (
-            implicit_task_annotation,
-        )
         from bird_interact_agents.cloud.ray_app import (
             _load_audited_gold_rows_for, _load_task_annotation_or_implicit,
         )
+        selected_database = task_row.get("selected_database", "")
+        if not selected_database:
+            raise ValueError(
+                f"{instance_id}: attempt JSON missing selected_database / "
+                f"database key — cannot resolve sqlite path."
+            )
+        # Real per-DB sqlite for this benchmark. ``benchmark_data_root``
+        # accepts canonical names ("mini_interact"/"livesqlbench") and
+        # the hyphenated CLI alias ("mini-interact"); the registry rejects
+        # unknown tokens, so a typo'd ``--benchmark`` fails loudly here.
+        db_path = (
+            paths.benchmark_data_root(args.benchmark)
+            / selected_database
+            / f"{selected_database}.sqlite"
+        )
         ann = _load_task_annotation_or_implicit(
             instance_id=instance_id,
-            selected_database=task_row.get("selected_database", ""),
+            selected_database=selected_database,
             benchmark=args.benchmark,
             amb_user_query=task_row.get("amb_user_query", ""),
         )
@@ -218,7 +246,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 task_row.get("original_sol_sql") or task_row.get("sol_sql") or [],
             ),
             submitted_sql=submitted_sql,
-            db_path=Path("/dev/null"),
+            db_path=db_path,
             conn=None,
         )
 

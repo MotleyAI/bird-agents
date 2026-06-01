@@ -38,7 +38,7 @@ Prompt asks for "home IDs" but original gold returns a region. Output-shape mism
 
 ## What KBs 6/7/10 actually say
 
-```
+```text
 KB 6 Dwelling Type:      "Values based on schema include 'Brickwork house', 'Apartment', 'Condominium', etc."
 KB 7 Cable TV Status:    "Values indicating availability, based on schema, are 'avail', 'available', and 'yes'."
 KB 10 Vehicle Year Range:"Text ranges like '1995 to 1999', '2005 to 2009', or '2010 to 2013'."
@@ -49,13 +49,13 @@ KBs 6, 10 hedge (`"include … etc."`, `"like"`). KB 7 does not. None mention `'
 ## Slayer model exposes the noise
 
 `slayer_models_otf/households/models/households/amenities.yaml` — `cablestatus.sampled_values` (123 distinct values; structured top-50):
-```
+```text
 Available, Not available, available, AVAILABLE, yes, Y, not available, Yes, avail, have,
 NOT AVAILABLE, unavailable, not avail, N, no, No, dont have, Y, YEs, YES, Avail, y, ...
 ```
 
 `properties.yaml` — `dwelling_specs__Dwelling_Class.sampled_values` (116 distinct):
-```
+```text
 Brickwork house, Apartment, BRICKWORK HOUSE, Brickwork House, brickwork house,
 brick house, Brickwork house , apartment, Brickwork  house, APARTMENT,
 Shack (with floor finish), apt, Apt, Unfinished brickwork, BRICK HOUSE, ...

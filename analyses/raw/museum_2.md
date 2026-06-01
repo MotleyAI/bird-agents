@@ -35,7 +35,7 @@ Did the agent inspect SensitivityData via slayer? **Yes** — at `trajectory[14]
 **Critical finding** — the slayer-encoded model has the wrong answer **pre-baked**:
 
 `slayer_models_otf_livesqlbench/museum/models/museum/sensitivitydata.yaml:311-326`:
-```
+```yaml
 erf:
   formula: (env_sens_weight + light_sens_weight + temp_sens_weight + humid_sens_weight) / 4.0
   description: "Computed as the arithmetic mean of the four encoded sensitivity weights (env, light, temp, humid)…"

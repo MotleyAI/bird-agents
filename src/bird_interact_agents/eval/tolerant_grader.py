@@ -517,12 +517,37 @@ def _multi_sql_execute(
     """Execute a list of SQL strings and return the rows+cols of the
     LAST one. Mirrors BIRD-Interact's evaluator semantics: prior items
     in the list set up state (CREATE TEMP …); only the last returns
-    rows for comparison."""
-    rows: Sequence[Sequence] = []
-    cols: Sequence[str] = []
-    for sql in sqls:
-        rows, cols = executor(sql, db_path=db_path, conn=conn)
-    return rows, cols
+    rows for comparison.
+
+    Connection-scoped state (TEMP tables, PRAGMAs, attached DBs) only
+    survives across statements inside the SAME sqlite connection. When
+    the caller passes ``conn=None`` and lets the default SQLite executor
+    open one, the executor would otherwise open+close a fresh connection
+    per statement and the setup statements would silently lose their
+    TEMP state before the final comparison statement runs. Open one
+    shared connection here (closed in a finally) so the whole list runs
+    against the same connection.
+    """
+    own_conn: Optional[sqlite3.Connection] = None
+    if conn is None and executor is default_executor and len(sqls) > 1:
+        try:
+            conn = sqlite3.connect(
+                f"file:{db_path}?mode=ro", uri=True, timeout=30,
+            )
+            own_conn = conn
+        except sqlite3.Error:
+            # db_path unreachable / not a sqlite file — let the
+            # downstream executor call raise with the original error.
+            conn = None
+    try:
+        rows: Sequence[Sequence] = []
+        cols: Sequence[str] = []
+        for sql in sqls:
+            rows, cols = executor(sql, db_path=db_path, conn=conn)
+        return rows, cols
+    finally:
+        if own_conn is not None:
+            own_conn.close()
 
 
 def grade_submission(

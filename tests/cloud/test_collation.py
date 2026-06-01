@@ -28,21 +28,6 @@ def _read_rows(db_path: Path) -> list[dict]:
     return rows
 
 
-def _read_dual_cols(db_path: Path) -> dict[str, dict]:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    out = {
-        r["instance_id"]: dict(r)
-        for r in conn.execute(
-            "SELECT instance_id, phase1_passed_audited, phase1_passed_original, "
-            "phase1_observation_audited, phase1_observation_original "
-            "FROM task_results"
-        )
-    }
-    conn.close()
-    return out
-
-
 # ---------------------------------------------------------------------------
 # T20 — multiple attempts per iid: latest wins in results.db; older stays on disk.
 # ---------------------------------------------------------------------------
