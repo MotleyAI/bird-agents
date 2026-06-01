@@ -1,6 +1,6 @@
-"""DEV-1515: convert the museum livesqlbench tasks (15 instances) to the
-new annotation schema. Mirrors `dev1515_convert_runs.py` but for
-livesqlbench's one-shot data layout:
+"""DEV-1515: convert any livesqlbench DB's tasks to the new annotation
+schema. Mirrors `dev1515_convert_runs.py` but for livesqlbench's one-shot
+data layout:
 
 * `query` (NL only) instead of `amb_user_query` (NL + masked snippet).
 * No `user_query_ambiguity.critical_ambiguity`; no masked snippets.
@@ -10,25 +10,28 @@ livesqlbench's one-shot data layout:
 
 Inputs:
 * `livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl` —
-  main task rows.
+  main task rows; filtered to `--db`.
 * `livesqlbench-base-lite-sqlite/livesqlbench_sqlite_gt_kg_testcases_0528.jsonl`
   — gold sidecar (`instance_id`, `sol_sql`, `external_knowledge`,
   `test_cases`).
 * `audited_gold/livesqlbench_audited.jsonl` — audited sidecar.
-* `results/cloud/<run-id>/rows/<inst>/attempt-1.json` — submitted SQL
-  + trajectory + usage for the museum tasks that ran on
-  `20260531t1013-claudes-slayer-48eb0f` (10/15).
+* (optional) `results/cloud/<run-id>/rows/<inst>/attempt-1.json` — when
+  `--run-id` is passed, submission annotations are written for every
+  instance that has a run row.
 
 Outputs:
-* `annotations/livesqlbench/museum/<inst>.task.json` (all 15).
-* `annotations/livesqlbench/museum/<inst>.submission.<run-id>.json` (10
-  with submissions).
+* `annotations/livesqlbench/<db>/<inst>.task.json` for every instance in
+  the DB.
+* `annotations/livesqlbench/<db>/<inst>.submission.<run-id>.json` when
+  a corresponding `attempt-1.json` exists under `--run-id`.
 
-For the 5 museum instances without a submission, no submission file is
-written.
+Usage:
+    uv run python scripts/dev1515_convert_livesqlbench.py \\
+        --db museum [--run-id 20260531t1013-claudes-slayer-48eb0f]
 """
 from __future__ import annotations
 
+import argparse
 import datetime as _dt
 import json
 import sqlite3
@@ -44,7 +47,6 @@ from bird_interact_agents.eval.annotation_io import (
 from bird_interact_agents.eval.annotation_schema import (
     AuditedGoldRef,
     GoldVariantRef,
-    MaskedTerm,
     MetadataSufficiency,
     Provenance,
     TaskAnnotation,
@@ -60,9 +62,7 @@ from bird_interact_agents.eval.tolerant_grader import (
 
 
 BENCHMARK = "livesqlbench"
-DB = "museum"
 AUDIT_FILE_REL = "audited_gold/livesqlbench_audited.jsonl"
-RUN_ID = "20260531t1013-claudes-slayer-48eb0f"
 
 PENDING = "PENDING_HUMAN_REVIEW"
 
@@ -73,14 +73,14 @@ def _norm(sqls):
     return [" ".join((s or "").split()) for s in (sqls or [])]
 
 
-def _load_data_rows() -> dict:
+def _load_data_rows(db: str) -> dict:
     p = LIVESQL_ROOT / "livesqlbench_data_sqlite.jsonl"
     rows = {}
     for line in p.read_text().splitlines():
         if not line.strip():
             continue
         d = json.loads(line)
-        if d.get("selected_database") == DB:
+        if d.get("selected_database") == db:
             rows[d["instance_id"]] = d
     return rows
 
@@ -112,13 +112,43 @@ def _load_audit_rows() -> dict:
 def _build_task_annotation(
     *,
     instance_id: str,
+    db: str,
     data_row: dict,
     gold_row: dict,
     audit_row: dict | None,
     audit_unchanged: bool,
     annotated_at: str,
 ) -> TaskAnnotation:
-    if audit_row is not None and audit_unchanged:
+    is_management_deferral = (
+        audit_row is not None
+        and audit_row.get("audit_status") == "unrecoverable"
+        and any(
+            c.get("clause_kind") == "management_category"
+            for c in (audit_row.get("changes") or [])
+        )
+    )
+    if is_management_deferral:
+        # Management-category tasks (CREATE/ALTER/DELETE/CREATE INDEX
+        # etc.) are deferred from the row-count audit per the shared
+        # contract — eval depends on side-effects + custom test_case
+        # comparators, not row equality. The published metadata is fine
+        # for the task itself; the audit just doesn't certify the SQL.
+        ms = MetadataSufficiency(
+            verdict="sufficient",
+            rationale=(
+                "Management-category task: the audit-gold-sql skill "
+                "deferred this row from the row-count audit because eval "
+                "uses test_case Python comparators rather than row "
+                "equality. The published metadata sufficiently anchors "
+                "the user query; canonicity of the SQL is checked by "
+                "the test_cases, not by this annotation."
+            ),
+            evidence_sources_consulted=["audited_gold/livesqlbench_audited.jsonl"],
+        )
+        gold_variants: list[GoldVariantRef] = []
+        original_gold_is_correct = True
+        evaluator_prompt = None
+    elif audit_row is not None and audit_unchanged:
         ms = MetadataSufficiency(
             verdict="sufficient",
             rationale=(
@@ -129,7 +159,7 @@ def _build_task_annotation(
             ),
             evidence_sources_consulted=["audited_gold/livesqlbench_audited.jsonl"],
         )
-        gold_variants: list[GoldVariantRef] = []
+        gold_variants = []
         original_gold_is_correct = True
         evaluator_prompt = None
     elif audit_row is not None and not audit_unchanged:
@@ -175,8 +205,8 @@ def _build_task_annotation(
 
     return TaskAnnotation(
         instance_id=instance_id,
-        selected_database=DB,
-        annotated_by="dev1515-convert-livesqlbench-museum",
+        selected_database=db,
+        annotated_by=f"dev1515-convert-livesqlbench-{db}",
         annotated_at=annotated_at,
         amb_user_query=data_row.get("query", ""),  # livesqlbench: NL-only `query`
         external_knowledge=list(gold_row.get("external_knowledge", []) or []),
@@ -195,6 +225,8 @@ def _build_task_annotation(
 def _process_one(
     *,
     instance_id: str,
+    db: str,
+    run_id: str | None,
     data_row: dict,
     gold_row: dict,
     audit_row: dict | None,
@@ -203,9 +235,10 @@ def _process_one(
     annotations_root: Path,
     annotated_at: str,
 ) -> dict:
-    db_path = LIVESQL_ROOT / DB / f"{DB}.sqlite"
+    db_path = LIVESQL_ROOT / db / f"{db}.sqlite"
     task_ann = _build_task_annotation(
         instance_id=instance_id,
+        db=db,
         data_row=data_row,
         gold_row=gold_row,
         audit_row=audit_row,
@@ -214,7 +247,7 @@ def _process_one(
     )
     task_dest = task_annotation_path(
         benchmark=BENCHMARK,
-        selected_database=DB,
+        selected_database=db,
         instance_id=instance_id,
         repo_root=annotations_root.parent,
     )
@@ -222,7 +255,11 @@ def _process_one(
 
     sub_dest = None
     rec_extra = {"has_submission": False}
-    if rows_dir is not None and (rows_dir / instance_id / "attempt-1.json").exists():
+    if (
+        run_id is not None
+        and rows_dir is not None
+        and (rows_dir / instance_id / "attempt-1.json").exists()
+    ):
         attempt_path = rows_dir / instance_id / "attempt-1.json"
         attempt = json.loads(attempt_path.read_text())
         submitted_sql = attempt.get("submitted_sql", "")
@@ -250,7 +287,7 @@ def _process_one(
             task_annotation=task_ann,
             cascade=cascade,
             benchmark=BENCHMARK,
-            run_id=RUN_ID,
+            run_id=run_id,
             trajectory_path=str(attempt_path),
             predicted_row_count=attempt.get("predicted_row_count"),
             duration_s=attempt.get("duration_s"),
@@ -262,9 +299,9 @@ def _process_one(
         )
         sub_dest = submission_annotation_path(
             benchmark=BENCHMARK,
-            selected_database=DB,
+            selected_database=db,
             instance_id=instance_id,
-            run_id=RUN_ID,
+            run_id=run_id,
             repo_root=annotations_root.parent,
         )
         write_submission_annotation(ann, sub_dest)
@@ -290,24 +327,44 @@ def _process_one(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--db",
+        required=True,
+        help="livesqlbench `selected_database` to convert (e.g. museum, credit, mental)",
+    )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="optional cloud run id; when set, writes submission "
+             "annotations for instances with attempt-1.json under "
+             "results/cloud/<run-id>/rows/.",
+    )
+    args = parser.parse_args()
+    db = args.db
+    run_id = args.run_id
+
     annotations_root = paths.annotations_root()
     results_cloud = paths.results_root() / "cloud"
 
-    data_rows = _load_data_rows()
+    data_rows = _load_data_rows(db)
     gold_rows = _load_gold_rows()
     audit_rows = _load_audit_rows()
 
     instance_ids = sorted(data_rows.keys())
-    print(f"museum instances in data: {len(instance_ids)}")
-    print(f"museum audit rows present: "
+    print(f"{db} instances in data: {len(instance_ids)}")
+    print(f"{db} audit rows present: "
           f"{sum(1 for i in instance_ids if i in audit_rows)}")
 
-    run_rows_dir = results_cloud / RUN_ID / "rows"
-    print(f"run rows dir exists: {run_rows_dir.exists()}")
-    if run_rows_dir.exists():
-        present = sorted(p.name for p in run_rows_dir.iterdir()
-                         if p.is_dir() and p.name.startswith("museum_"))
-        print(f"museum instances with submissions: {len(present)}")
+    run_rows_dir = (results_cloud / run_id / "rows") if run_id else None
+    if run_rows_dir is not None:
+        print(f"run rows dir exists: {run_rows_dir.exists()}")
+        if run_rows_dir.exists():
+            present = sorted(p.name for p in run_rows_dir.iterdir()
+                             if p.is_dir() and p.name.startswith(f"{db}_"))
+            print(f"{db} instances with submissions: {len(present)}")
+        else:
+            present = []
     else:
         present = []
 
@@ -326,10 +383,16 @@ def main() -> None:
             orig = _norm(audit.get("original_sol_sql"))
             aud = _norm(audit.get("audited_sol_sql"))
             unchanged = (orig == aud)
-        rows_dir = run_rows_dir if (run_rows_dir.exists() and iid in present) else None
+        rows_dir = (
+            run_rows_dir
+            if (run_rows_dir is not None and run_rows_dir.exists() and iid in present)
+            else None
+        )
         try:
             rec = _process_one(
                 instance_id=iid,
+                db=db,
+                run_id=run_id,
                 data_row=data_rows[iid],
                 gold_row=gold_rows[iid],
                 audit_row=audit,
@@ -353,7 +416,7 @@ def main() -> None:
             print(f"  [{audit_tag}{sub_tag}] {iid:30s}{cascade_str}")
             results.append(rec)
 
-    out_index = annotations_root / "_dev1515_convert_museum_index.json"
+    out_index = annotations_root / f"_dev1515_convert_livesqlbench_{db}_index.json"
     out_index.write_text(json.dumps(results, indent=2) + "\n")
     print(f"\nWrote {len(results)} task annotations "
           f"+ {sum(1 for r in results if r['has_submission'])} submission annotations.")

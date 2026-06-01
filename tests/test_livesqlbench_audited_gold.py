@@ -1,18 +1,20 @@
-"""DEV-1510 contract tests for `audited_gold/livesqlbench_audited.jsonl`.
+"""DEV-1510/DEV-1515 contract tests for
+`audited_gold/livesqlbench_audited.jsonl`.
 
-The file is the deliverable of this issue: one row per livesqlbench museum
-SELECT task (museum_1..10), each row attaching to the canonical gold for
+The file is the deliverable of these issues: one row per audited
+livesqlbench SELECT task, each row attaching to the canonical gold for
 that instance. Tests here pin three layers of contract:
 
 * **Schema** — every row parses, has the required keys + types, and is
-  unique by `instance_id`. Coverage = exactly {museum_1..10}; the 5
-  Management tasks (museum_M_1..5) are explicitly out of scope per the
-  Linear issue.
+  unique by `(instance_id, variant_id)`. Per DB, coverage is the
+  set in `EXPECTED_INSTANCE_IDS_BY_DB` (the SELECT tasks; the M-suffixed
+  Management tasks are deferred per the shared contract's edge case).
 * **Status-claim consistency** — `clean` rows have `audited_sol_sql ==
-  original_sol_sql` and `changes == []`; `edited` / `unrecoverable` have
-  `audited_sol_sql != original_sol_sql` and at least one change entry
-  carrying `clause_kind`, `original`, `replacement`, `why_unjustified`,
-  and a non-empty `justified_by` list.
+  original_sol_sql` and `changes == []`; `edited` rows have
+  `audited_sol_sql != original_sol_sql` and at least one change entry.
+  `unrecoverable` rows have non-empty changes; they DIFFER from the
+  original unless the change is the management-category deferral
+  (`clause_kind="management_category"`), per the shared contract.
 * **Pinned decisions** — museum_7 and museum_9 are the issue's worked
   examples, locked in the spec:
   - museum_7 (`edited`): KB-canonical rewrite using a NULL-safe
@@ -24,8 +26,8 @@ that instance. Tests here pin three layers of contract:
     + the schema's single-hop declared FK. `reasoning_summary` documents
     the KB-alone underspec AND mentions both join chains by name.
 
-Tests that need the real upstream data (`museum_kb.jsonl`,
-`museum_column_meaning_base.json`, the gated gold sidecar) skip when the
+Tests that need the real upstream data (`<db>_kb.jsonl`,
+`<db>_column_meaning_base.json`, the gated gold sidecar) skip when the
 livesqlbench data root is absent (CI doesn't ship the gitignored data).
 """
 
@@ -46,8 +48,16 @@ from bird_interact_agents import paths
 # ---------------------------------------------------------------------------
 
 
-EXPECTED_INSTANCE_IDS = {f"museum_{i}" for i in range(1, 11)}
-"""The 10 museum SELECT tasks. museum_M_1..5 (management) are out of scope."""
+EXPECTED_INSTANCE_IDS_BY_DB: dict[str, set[str]] = {
+    "museum": {f"museum_{i}" for i in range(1, 11)},
+    "credit": {f"credit_{i}" for i in range(1, 11)},
+    "mental": {f"mental_{i}" for i in range(1, 11)},
+}
+"""Per-DB SELECT-task coverage. The M-suffixed management tasks are
+deferred per the shared contract's edge case; museum omits them
+entirely, credit/mental ship them as `unrecoverable` with
+`clause_kind="management_category"`. Both shapes are accepted by
+``test_audit_rows_cover_select_tasks_per_db``."""
 
 REQUIRED_ROW_KEYS = {
     "instance_id",
@@ -146,11 +156,11 @@ def _livesqlbench_data_or_skip() -> Path:
     return root
 
 
-def _load_museum_kb_ids() -> set[int]:
+def _load_kb_ids(db: str) -> set[int]:
     root = _livesqlbench_data_or_skip()
-    kb_path = root / "museum" / "museum_kb.jsonl"
+    kb_path = root / db / f"{db}_kb.jsonl"
     if not kb_path.exists():
-        pytest.skip(f"museum_kb.jsonl missing at {kb_path}")
+        pytest.skip(f"{db}_kb.jsonl missing at {kb_path}")
     ids: set[int] = set()
     with kb_path.open() as f:
         for line in f:
@@ -163,11 +173,11 @@ def _load_museum_kb_ids() -> set[int]:
     return ids
 
 
-def _load_museum_column_meaning_keys() -> set[str]:
+def _load_column_meaning_keys(db: str) -> set[str]:
     root = _livesqlbench_data_or_skip()
-    cm_path = root / "museum" / "museum_column_meaning_base.json"
+    cm_path = root / db / f"{db}_column_meaning_base.json"
     if not cm_path.exists():
-        pytest.skip(f"museum_column_meaning_base.json missing at {cm_path}")
+        pytest.skip(f"{db}_column_meaning_base.json missing at {cm_path}")
     with cm_path.open() as f:
         return set(json.load(f).keys())
 
@@ -273,13 +283,39 @@ def test_audit_file_exists_when_other_audits_are_present():
     )
 
 
-def test_audit_rows_cover_exactly_museum_1_through_10():
-    rows = _load_audit_rows()
-    assert set(rows.keys()) == EXPECTED_INSTANCE_IDS, (
-        f"audit must cover exactly museum_1..10; missing="
-        f"{sorted(EXPECTED_INSTANCE_IDS - rows.keys())}; "
-        f"extra={sorted(rows.keys() - EXPECTED_INSTANCE_IDS)}"
-    )
+def test_audit_rows_cover_select_tasks_per_db():
+    """For every DB that has ANY audited row in the file, every SELECT
+    task (1..10) must be covered. M-suffixed Management tasks are NOT
+    required (deferred per shared contract); per-DB extras outside the
+    SELECT set are allowed only when they are deferred management rows
+    (`audit_status=unrecoverable` with `clause_kind="management_category"`)."""
+    primary_rows = _load_audit_rows()
+    by_db: dict[str, set[str]] = {}
+    for iid, row in primary_rows.items():
+        by_db.setdefault(row["selected_database"], set()).add(iid)
+    for db, ids in by_db.items():
+        expected = EXPECTED_INSTANCE_IDS_BY_DB.get(db)
+        assert expected is not None, (
+            f"audit file contains DB {db!r} without a coverage entry in "
+            f"EXPECTED_INSTANCE_IDS_BY_DB — add one when authoring a new DB"
+        )
+        missing = expected - ids
+        assert not missing, (
+            f"{db}: missing SELECT-task audits {sorted(missing)}"
+        )
+        # Extras that aren't in EXPECTED are tolerated only if they're
+        # management deferrals (or any non-primary alternate that the
+        # auditor explicitly carries).
+        extras = ids - expected
+        for iid in sorted(extras):
+            row = primary_rows[iid]
+            cks = {c.get("clause_kind") for c in row.get("changes", [])}
+            assert row["audit_status"] == "unrecoverable" and (
+                "management_category" in cks
+            ), (
+                f"{db}: extra audited instance {iid!r} is not in the SELECT "
+                f"coverage set and is not a management-category deferral"
+            )
 
 
 def test_audit_rows_have_required_keys_and_types():
@@ -314,13 +350,21 @@ def test_audit_rows_use_valid_audit_status():
 
 
 def test_audit_rows_tag_benchmark_and_database():
+    """Every row carries `benchmark=livesqlbench` and a `selected_database`
+    in EXPECTED_INSTANCE_IDS_BY_DB; the `instance_id` prefix matches the
+    `selected_database` (so a museum row can't claim DB=credit by typo)."""
     for row in _iter_audit_rows():
+        iid = row["instance_id"]
         assert row["benchmark"] == "livesqlbench", (
-            f"{row['instance_id']}: benchmark={row['benchmark']!r} (expected 'livesqlbench')"
+            f"{iid}: benchmark={row['benchmark']!r} (expected 'livesqlbench')"
         )
-        assert row["selected_database"] == "museum", (
-            f"{row['instance_id']}: selected_database={row['selected_database']!r} "
-            "(expected 'museum')"
+        db = row["selected_database"]
+        assert db in EXPECTED_INSTANCE_IDS_BY_DB, (
+            f"{iid}: selected_database={db!r} not in "
+            f"{sorted(EXPECTED_INSTANCE_IDS_BY_DB.keys())}"
+        )
+        assert iid.startswith(f"{db}_"), (
+            f"{iid}: instance_id prefix does not match selected_database={db!r}"
         )
 
 
@@ -392,13 +436,28 @@ def test_clean_rows_have_audited_equal_original_and_no_changes():
 
 
 def test_edited_and_unrecoverable_rows_have_changes_and_differ():
+    """`edited` rows MUST differ from the original (that's the whole point
+    of the rewrite). `unrecoverable` rows usually differ — they fall back
+    to the natural reading of the user query — but the shared contract
+    carves out one exception: management-category tasks
+    (`clause_kind="management_category"`) are deferred from the
+    row-count audit and ship with gold copied verbatim into
+    `audited_sol_sql`. Both shapes must still have non-empty changes."""
     for row in _iter_audit_rows():
         if row["audit_status"] not in {"edited", "unrecoverable"}:
             continue
         iid = row["instance_id"]
-        assert row["audited_sol_sql"] != row["original_sol_sql"], (
-            f"{iid}: {row['audit_status']} row must differ from original_sol_sql"
+        clause_kinds = {c.get("clause_kind") for c in row.get("changes", [])}
+        is_management_deferral = (
+            row["audit_status"] == "unrecoverable"
+            and "management_category" in clause_kinds
         )
+        if not is_management_deferral:
+            assert row["audited_sol_sql"] != row["original_sol_sql"], (
+                f"{iid}: {row['audit_status']} row must differ from "
+                f"original_sol_sql (unless it's a management-category "
+                f"deferral)"
+            )
         assert row["changes"], (
             f"{iid}: {row['audit_status']} row must have non-empty changes"
         )
@@ -409,9 +468,17 @@ def test_edited_and_unrecoverable_rows_have_changes_and_differ():
             )
             assert isinstance(change["clause_kind"], str) and change["clause_kind"], iid
             assert isinstance(change["why_unjustified"], str) and change["why_unjustified"], iid
-            assert isinstance(change["justified_by"], list) and change["justified_by"], (
-                f"{iid}: changes[{j}].justified_by must be a non-empty list"
+            assert isinstance(change["justified_by"], list), (
+                f"{iid}: changes[{j}].justified_by must be a list"
             )
+            # Management-category deferrals carry no citations (nothing
+            # to cite — the gold is verbatim, the deferral itself is
+            # documented in `why_unjustified`). Every OTHER change must
+            # cite at least one source.
+            if change.get("clause_kind") != "management_category":
+                assert change["justified_by"], (
+                    f"{iid}: changes[{j}].justified_by must be a non-empty list"
+                )
             # Every justified_by token must look like a citation. (The
             # resolvability tests below confirm the tokens actually resolve.)
             for token in change["justified_by"]:
@@ -626,19 +693,23 @@ def test_museum_9_is_clean_with_column_meaning_justification():
 # ---------------------------------------------------------------------------
 
 
-def test_every_kb_citation_resolves_to_a_museum_kb_id():
-    """Every `kb:N` citation MUST resolve to a row in museum_kb.jsonl —
-    catches typos (kb:116 instead of kb:16) and id-drift after upstream
-    KB renumbers. Same posture as the mini-interact resolvability tests."""
-    kb_ids = _load_museum_kb_ids()
+def test_every_kb_citation_resolves_to_a_kb_id():
+    """Every `kb:N` citation MUST resolve to a row in the row's own DB
+    `<db>_kb.jsonl` — catches typos (kb:116 instead of kb:16) and
+    id-drift after upstream KB renumbers. Same posture as the
+    mini-interact resolvability tests."""
+    kb_ids_by_db: dict[str, set[int]] = {}
     for row in _iter_audit_rows():
         iid = row["instance_id"]
-        tokens = _collect_citation_tokens(row)
-        for tok in tokens:
+        db = row["selected_database"]
+        if db not in kb_ids_by_db:
+            kb_ids_by_db[db] = _load_kb_ids(db)
+        kb_ids = kb_ids_by_db[db]
+        for tok in _collect_citation_tokens(row):
             if tok.startswith("kb:"):
                 kb_id = int(tok.split(":", 1)[1])
                 assert kb_id in kb_ids, (
-                    f"{iid}: kb:{kb_id} does not resolve in museum_kb.jsonl"
+                    f"{iid}: kb:{kb_id} does not resolve in {db}_kb.jsonl"
                 )
 
 
@@ -665,19 +736,23 @@ def test_every_column_meaning_citation_resolves():
     """Catches case-typos in column-meaning citations — keys are
     case-sensitive in the JSON (e.g. `museum|ConditionAssessments|LightReadRefObserved`,
     NOT lowercase)."""
-    keys = _load_museum_column_meaning_keys()
+    keys_by_db: dict[str, set[str]] = {}
     for row in _iter_audit_rows():
         iid = row["instance_id"]
+        db = row["selected_database"]
+        if db not in keys_by_db:
+            keys_by_db[db] = _load_column_meaning_keys(db)
+        keys = keys_by_db[db]
         for tok in _collect_citation_tokens(row):
             if tok.startswith("column_meaning:"):
                 table_col = tok.split(":", 1)[1]
                 # Citations use the `Table|Column[|SubField]` form; the
-                # JSON key is `museum|Table|Column[|SubField]`. Both shapes
+                # JSON key is `<db>|Table|Column[|SubField]`. Both shapes
                 # accepted.
-                candidates = [f"museum|{table_col}", table_col]
+                candidates = [f"{db}|{table_col}", table_col]
                 assert any(c in keys for c in candidates), (
                     f"{iid}: column_meaning:{table_col} does not resolve in "
-                    f"museum_column_meaning_base.json (tried: {candidates})"
+                    f"{db}_column_meaning_base.json (tried: {candidates})"
                 )
 
 

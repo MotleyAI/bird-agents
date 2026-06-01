@@ -14,6 +14,27 @@ The Pydantic schemas live in
 `src/bird_interact_agents/eval/annotation_schema.py`; they validate with
 `extra="forbid"` — never invent fields.
 
+## Two phases — task annotation is self-contained
+
+The recipe has two independent phases, and you can stop after the first:
+
+1. **Task annotation** (`<inst>.task.json`) — needs only task-side
+   inputs (KB, column meanings, schema, gold sidecar, audited gold).
+   Fills `metadata_sufficiency.verdict` + `gold_variants` +
+   `evaluator_prompt` + `internal_inconsistency`. Produce this whenever
+   you author a new benchmark DB; no cloud run required.
+2. **Submission annotation** (`<inst>.submission.<run-id>.json`) — adds
+   per-(instance, run) `failure_classification` + cascade tier on top
+   of the task annotation. Skip this phase entirely when no run exists;
+   the task annotation stands on its own and downstream tooling
+   (cascade summary, U/C buckets) gracefully handles missing
+   submissions.
+
+When in doubt, the rule of thumb: if you're not looking at a
+`results/cloud/<run-id>/rows/<inst>/attempt-1.json`, you're in phase 1
+only. Read just the phase-1 inputs below + the verdict decision flow;
+ignore everything tagged "submission" or "failure_classification".
+
 ## NON-NEGOTIABLE: fix buggy audits — never annotate around them
 
 Before classifying ANY task where `audited_sol_sql != original_sol_sql`,
@@ -89,7 +110,9 @@ audit_status stays `edited`). This skill carries the annotation-side
 rule (the `internal_inconsistency` block + multi-variant
 `gold_variants`).
 
-## Inputs (per task)
+## Inputs
+
+### Phase 1 — task annotation (always required)
 
 Read-only — **mini-interact**:
 
@@ -119,12 +142,6 @@ Read-only — **livesqlbench**:
   the agent sees this at task time.
 - `livesqlbench-base-lite-sqlite/<db>/<db>.sqlite`
 
-Per-submission (both benchmarks):
-
-- `results/cloud/<run-id>/rows/<inst>/attempt-1.json` — `submitted_sql`,
-  `trajectory`, `usage`, `phase1_observation_*`. (livesqlbench
-  trajectories are short — one-shot.)
-
 Read+write (both benchmarks):
 
 - `audited_gold/<benchmark>_audited.jsonl` — audit sidecar.
@@ -133,8 +150,20 @@ Read+write (both benchmarks):
   `livesqlbench_audited.jsonl`.
 - `annotations/<benchmark>/<db>/<inst>.task.json` — task annotation.
   Benchmark slug: `mini-interact` / `livesqlbench`.
+
+### Phase 2 — submission annotation (only when a run exists)
+
+Read-only:
+
+- `results/cloud/<run-id>/rows/<inst>/attempt-1.json` — `submitted_sql`,
+  `trajectory`, `usage`, `phase1_observation_*`. (livesqlbench
+  trajectories are short — one-shot.)
+
+Read+write:
+
 - `annotations/<benchmark>/<db>/<inst>.submission.<run-id>.json` —
-  per-(instance, run) submission annotation.
+  per-(instance, run) submission annotation. Skip this file entirely
+  when phase 1 stands alone.
 
 ## What "masked sql_snippet" means
 
@@ -293,16 +322,16 @@ A task is **U** (audit-unchanged) when its
 
 ## Workflow
 
-1. Generate skeletons via
-   `scripts/dev1515_convert_runs.py` (or `bird_interact_agents.eval.annotate`).
-   The skeleton pre-fills mechanical fields + the cascade and auto-picks
-   `no_fail` / cascade-tier failure_class. Human-judgment fields land at
-   `PENDING_HUMAN_REVIEW` only for genuine `other` strict misses.
+### Phase 1 — task annotation (always run)
+
+1. Generate skeletons via `scripts/dev1515_convert_runs.py`
+   (mini-interact, also touches submissions) or
+   `scripts/dev1515_convert_livesqlbench.py --db <db>` (livesqlbench,
+   task-only when `--run-id` is omitted). The skeleton pre-fills
+   mechanical fields; human-judgment fields land at
+   `PENDING_HUMAN_REVIEW`.
 2. For each task: check `audit_unchanged` first. If unchanged AND
-   published metadata is unambiguous, the task is `sufficient`; if the
-   submission also passed, you're done. If unchanged AND agent failed,
-   the failure is `agent_miss` 90% of the time (verify by reading
-   submitted_sql vs gold).
+   published metadata is unambiguous, the task is `sufficient`.
 3. For tasks where the audit changed gold (C-instances), START with the
    audit-correctness gate. If the audit is buggy, fix it in
    `audited_gold/<benchmark>_audited.jsonl` before writing the
@@ -310,12 +339,27 @@ A task is **U** (audit-unchanged) when its
 4. Read `external_knowledge` + the relevant KB entries +
    `column_meaning_base.json` + the masked snippet inside
    `amb_user_query` before assigning a verdict.
-5. For ambiguous + a-interact: scan the trajectory for `ask_user` calls
+5. Validate every edit with `TaskAnnotation.model_validate(...)`.
+
+Stop here when no run exists. Phase 2 is a strict superset, not a
+prerequisite — downstream tooling reads the `.task.json` files
+independently of any `.submission.<run-id>.json`.
+
+### Phase 2 — submission annotation (only with a run)
+
+6. Re-run the skeleton generator with the run-id wired in (e.g.
+   `dev1515_convert_runs.py` against the desired run, or
+   `dev1515_convert_livesqlbench.py --db <db> --run-id <run-id>`). The
+   skeleton auto-picks `no_fail` / cascade-tier `failure_class` for
+   mechanical passes; only genuine `other` strict misses get
+   `PENDING_HUMAN_REVIEW`.
+7. If unchanged AND agent failed, the failure is `agent_miss` 90% of
+   the time (verify by reading submitted_sql vs gold).
+8. For ambiguous + a-interact: scan the trajectory for `ask_user` calls
    and the sim's replies. If the sim withheld snippet content the agent
    needed, the submission's `failure_classification.primary` is
    `user_sim_under_disclosure`.
-6. Validate every edit with
-   `SubmissionAnnotation.model_validate(...)` / `TaskAnnotation.model_validate(...)`.
+9. Validate every edit with `SubmissionAnnotation.model_validate(...)`.
 
 ## Annotation rationale — write generously
 
