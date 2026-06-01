@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import sqlite3
+from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional, Protocol, Sequence, Tuple
 
@@ -25,6 +26,8 @@ import sqlglot.expressions as sg_expr
 from pydantic import BaseModel, ConfigDict, Field
 
 from bird_interact_agents.eval.annotation_schema import (
+    MissDiagnostics,
+    MissPattern,
     PhaseVerdict,
     RowsetRelation,
     TaskAnnotation,
@@ -525,6 +528,7 @@ class CascadeVerdict(BaseModel):
     novel_reading_judgment: Optional[PhaseVerdict] = None
     variant_matches: List[VariantMatch] = Field(default_factory=list)
     rowset_relations: List[VariantMatch] = Field(default_factory=list)
+    miss_diagnostics: Optional["MissDiagnostics"] = None
 
 
 def _multi_sql_execute(
@@ -581,6 +585,7 @@ def grade_submission(
     executor: Optional[ExecutorProtocol] = None,
     llm_judge: Optional[Any] = None,
     epsilon: float = 1e-6,
+    user_sim_n_asks: Optional[int] = None,
 ) -> CascadeVerdict:
     """Compute the 8-row cascade for a single submission.
 
@@ -592,13 +597,30 @@ def grade_submission(
     * N4 uses the ORIGINAL gold's ORDER BY (locked simplification).
     * N5 fires ONLY when ``task_annotation.metadata_sufficiency.verdict``
       is ``"insufficient"`` AND N4 didn't already pass.
+    * ``user_sim_n_asks``: None for one-shot benchmarks (livesqlbench);
+      int for interactive benchmarks (mini-interact). Affects the
+      ``never_asked_user`` diagnostic flag on strict-miss verdicts only.
     """
     if executor is None:
         executor = default_executor  # type: ignore[assignment]
     assert executor is not None  # narrowing
 
-    # 1) Run predicted + original gold + each variant.
-    pred_rows, pred_cols = executor(submitted_sql, db_path=db_path, conn=conn)
+    # 1) Run predicted + original gold + each variant. The agent's
+    # SQL is wrapped in try/except so a syntax / runtime error
+    # produces an empty rowset + an error excerpt rather than aborting
+    # grading — the cascade then naturally fails every tier and the
+    # diagnostics path attaches the `sql_execution_error` flag.
+    agent_sql_executed_ok = True
+    agent_sql_error_excerpt: Optional[str] = None
+    try:
+        pred_rows, pred_cols = executor(
+            submitted_sql, db_path=db_path, conn=conn,
+        )
+    except Exception as exc:  # noqa: BLE001
+        agent_sql_executed_ok = False
+        agent_sql_error_excerpt = f"{type(exc).__name__}: {exc}"[:200]
+        pred_rows, pred_cols = [], []
+
     orig_rows, orig_cols = _multi_sql_execute(
         list(original_sol_sql), db_path=db_path, conn=conn, executor=executor,
     )
@@ -608,9 +630,16 @@ def grade_submission(
         sqls = list(v.get("audited_sol_sql") or [])
         if not sqls:
             continue
-        v_rows, v_cols = _multi_sql_execute(
-            sqls, db_path=db_path, conn=conn, executor=executor,
-        )
+        try:
+            v_rows, v_cols = _multi_sql_execute(
+                sqls, db_path=db_path, conn=conn, executor=executor,
+            )
+        except Exception:  # noqa: BLE001
+            # Variant SQL didn't execute — treat as empty rowset so the
+            # cascade can still complete and diagnostics can flag the
+            # downstream sqlglot parse failure. Better than crashing
+            # grading on a single broken variant.
+            v_rows, v_cols = [], []
         variant_results.append((v, v_rows, v_cols))
 
     # 2) N1 — original gold strict.
@@ -767,12 +796,379 @@ def grade_submission(
         "n9_case_fold": n9,
     }
     enforced = enforce_monotone_cascade(raw)
+
+    # 8) Strict-miss diagnostics — populated ONLY when no cascade tier
+    # passed AND at least one audited variant exists. Captures rowset
+    # / column / SQL signals against the best-overlap audited variant
+    # so downstream tooling can break down failure modes without
+    # re-running queries. The no-variants case (implicit annotation
+    # factory) leaves miss_diagnostics=None — there's no canonical
+    # gold to diagnose against.
+    miss_diagnostics: Optional[MissDiagnostics] = None
+    if not enforced["n9_case_fold"] and variant_results:
+        miss_diagnostics = _compute_miss_diagnostics(
+            pred_rows=pred_rows,
+            pred_cols=list(pred_cols),
+            agent_sql=submitted_sql,
+            agent_sql_executed_ok=agent_sql_executed_ok,
+            agent_sql_error_excerpt=agent_sql_error_excerpt,
+            variant_results=variant_results,
+            original_sol_sql=list(original_sol_sql),
+            original_rows=orig_rows,
+            user_sim_n_asks=user_sim_n_asks,
+        )
+
     return CascadeVerdict(
         **enforced,
         matched_variant_id=matched_variant,
         novel_reading_judgment=novel_judgment,
         variant_matches=info_matches,
+        miss_diagnostics=miss_diagnostics,
     )
+
+
+# ---------------------------------------------------------------------------
+# Strict-miss diagnostics (DEV-1515 session-4)
+# ---------------------------------------------------------------------------
+
+
+def _bag(rows: Sequence[Sequence]) -> Counter:
+    """Multiset of canonical row repr — duplicates preserved."""
+    return Counter(_canonical_repr(r) for r in rows)
+
+
+def _bag_relation(
+    *,
+    pred: Sequence[Sequence],
+    gold: Sequence[Sequence],
+) -> RowsetRelation:
+    """Bag-aware set relation. Same semantics as
+    ``classify_rowset_relation`` but uses multiset (Counter)
+    comparisons so duplicate rows are honoured the way the grader's
+    ``_set_equal`` does."""
+    p = _bag(pred)
+    g = _bag(gold)
+    if not p and not g:
+        return "equal_rowset"
+    if p == g:
+        return "equal_rowset"
+    p_le_g = all(p[k] <= g[k] for k in p)
+    g_le_p = all(g[k] <= p[k] for k in g)
+    overlap_keys = set(p) & set(g)
+    overlap = sum(min(p[k], g[k]) for k in overlap_keys)
+    if p_le_g:
+        return "strict_subset_of"
+    if g_le_p:
+        return "strict_superset_of"
+    if overlap == 0:
+        return "disjoint"
+    return "overlapping"
+
+
+def _bag_overlap(
+    pred: Sequence[Sequence],
+    gold: Sequence[Sequence],
+) -> int:
+    """Multiset intersection cardinality (Codex bag-semantics req)."""
+    p = _bag(pred)
+    g = _bag(gold)
+    keys = set(p) & set(g)
+    return sum(min(p[k], g[k]) for k in keys)
+
+
+def _pick_best_overlap_variant(
+    *,
+    pred_rows: Sequence[Sequence],
+    variant_results: List[Tuple[dict, Sequence[Sequence], Sequence[str]]],
+) -> Tuple[dict, Sequence[Sequence], Sequence[str]]:
+    """Pick the audited variant with the largest multiset overlap with
+    the agent's rowset. Tie-break: primary > alphabetical variant_id.
+    """
+    assert variant_results, "cannot pick best-overlap from empty variant list"
+    scored = []
+    for v_meta, v_rows, v_cols in variant_results:
+        overlap = _bag_overlap(pred_rows, v_rows)
+        # Sort key: (-overlap, not_primary, variant_id).
+        # Larger overlap first; primary preferred on ties; then alpha.
+        is_primary = bool(v_meta.get("primary"))
+        scored.append(
+            (-overlap, not is_primary, str(v_meta.get("variant_id") or ""),
+             (v_meta, v_rows, v_cols)),
+        )
+    scored.sort()
+    return scored[0][3]
+
+
+def _parse_sql(sql: str) -> Tuple[bool, Optional[str], Optional[sg_expr.Expression]]:
+    """Parse ``sql`` with sqlglot's sqlite dialect. Return
+    ``(ok, error_excerpt, expression)``. On parse failure, ok=False
+    and error_excerpt carries the first 200 chars of the exception."""
+    try:
+        parsed = sqlglot.parse_one(sql, read="sqlite")
+        return True, None, parsed
+    except Exception as exc:  # noqa: BLE001
+        return False, f"{type(exc).__name__}: {exc}"[:200], None
+
+
+def _base_tables_from_expression(
+    expr: Optional[sg_expr.Expression],
+) -> Optional[List[str]]:
+    """Walk ``expr`` and return the list of BASE tables — CTE names
+    and derived-table aliases excluded. Returns alphabetically sorted
+    list of unique base-table names. Returns None when expr is None
+    (caller should propagate the None sentinel)."""
+    if expr is None:
+        return None
+    cte_names: set[str] = set()
+    with_clause = expr.find(sg_expr.With)
+    if with_clause is not None:
+        for cte in with_clause.find_all(sg_expr.CTE):
+            alias = cte.alias_or_name
+            if alias:
+                cte_names.add(alias.lower())
+    tables: set[str] = set()
+    for t in expr.find_all(sg_expr.Table):
+        name = (t.name or "").lower()
+        if not name:
+            continue
+        if name in cte_names:
+            continue
+        tables.add(name)
+    return sorted(tables)
+
+
+def _has_group_by(expr: Optional[sg_expr.Expression]) -> Optional[bool]:
+    if expr is None:
+        return None
+    return any(expr.find_all(sg_expr.Group))
+
+
+def _has_aggregate(expr: Optional[sg_expr.Expression]) -> Optional[bool]:
+    if expr is None:
+        return None
+    return any(expr.find_all(sg_expr.AggFunc))
+
+
+def _join_count(expr: Optional[sg_expr.Expression]) -> Optional[int]:
+    if expr is None:
+        return None
+    return sum(1 for _ in expr.find_all(sg_expr.Join))
+
+
+def _has_having(expr: Optional[sg_expr.Expression]) -> Optional[bool]:
+    if expr is None:
+        return None
+    return any(expr.find_all(sg_expr.Having))
+
+
+def _has_limit(expr: Optional[sg_expr.Expression]) -> Optional[bool]:
+    if expr is None:
+        return None
+    return any(expr.find_all(sg_expr.Limit))
+
+
+def _where_conjunct_count(expr: Optional[sg_expr.Expression]) -> Optional[int]:
+    """Count top-level AND-conjuncts in the outer SELECT's WHERE clause.
+    Zero if no WHERE. A single predicate counts as 1."""
+    if expr is None:
+        return None
+    where = expr.find(sg_expr.Where)
+    if where is None:
+        return 0
+    # Flatten the AND tree into atoms.
+    count = 0
+    stack = [where.this]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, sg_expr.And):
+            stack.append(node.this)
+            stack.append(node.expression)
+        else:
+            count += 1
+    return count
+
+
+def _column_match_signals(
+    *,
+    agent_cols: List[str],
+    gold_cols: List[str],
+) -> Tuple[bool, bool, bool]:
+    """(column_count_match, name_match_case_insensitive, order_match)."""
+    count_match = len(agent_cols) == len(gold_cols)
+    a_lower = [c.lower() for c in agent_cols]
+    g_lower = [c.lower() for c in gold_cols]
+    name_match_ci = set(a_lower) == set(g_lower) and count_match
+    order_match = a_lower == g_lower
+    return count_match, name_match_ci, order_match
+
+
+def _compute_miss_diagnostics(
+    *,
+    pred_rows: Sequence[Sequence],
+    pred_cols: List[str],
+    agent_sql: str,
+    agent_sql_executed_ok: bool,
+    agent_sql_error_excerpt: Optional[str],
+    variant_results: List[Tuple[dict, Sequence[Sequence], Sequence[str]]],
+    original_sol_sql: List[str],
+    original_rows: Sequence[Sequence],
+    user_sim_n_asks: Optional[int],
+) -> MissDiagnostics:
+    """Build the structured diagnostics for a strict-miss cascade.
+
+    Compares the agent's rowset to the BEST-OVERLAP audited variant.
+    SQL-derived signals are populated only when sqlglot parsing
+    succeeds for the relevant side; otherwise the corresponding
+    Optional[T] field stays None and ``sql_parse_error`` lands in the
+    flag list. Multi-statement gold (CREATE TEMP + final SELECT)
+    triggers a defensive AssertionError — the SELECT-task contract
+    is single-statement.
+    """
+    # Defensive guards (single-statement gold contract).
+    for v_meta, _v_rows, _v_cols in variant_results:
+        v_sqls = list(v_meta.get("audited_sol_sql") or [])
+        assert len(v_sqls) <= 1, (
+            f"diagnostics only support single-statement audited_sol_sql; "
+            f"variant {v_meta.get('variant_id')!r} has {len(v_sqls)} stmts "
+            f"(multi-statement is M-task territory, out of scope)"
+        )
+    assert len(original_sol_sql) <= 1, (
+        f"diagnostics only support single-statement original_sol_sql; "
+        f"got {len(original_sol_sql)} stmts (multi-statement is M-task "
+        f"territory, out of scope)"
+    )
+    if not variant_results:
+        # Should be impossible (cascade would short-circuit) but guard.
+        raise RuntimeError(
+            "_compute_miss_diagnostics called without any audited variants",
+        )
+
+    best_meta, best_rows, best_cols = _pick_best_overlap_variant(
+        pred_rows=pred_rows, variant_results=variant_results,
+    )
+    best_variant_id = str(best_meta.get("variant_id") or "")
+    best_sql = (best_meta.get("audited_sol_sql") or [""])[0]
+
+    overlap = _bag_overlap(pred_rows, best_rows)
+    relation = _bag_relation(pred=pred_rows, gold=best_rows)
+
+    count_match, name_match_ci, order_match = _column_match_signals(
+        agent_cols=list(pred_cols), gold_cols=list(best_cols),
+    )
+
+    # First divergent cell (against the best variant).
+    _fdri, fdcd = _first_divergent_row(pred=pred_rows, gold=best_rows)
+
+    # SQL parsing — each side independently.
+    a_ok, a_err, a_expr = _parse_sql(agent_sql)
+    b_ok, b_err, b_expr = _parse_sql(best_sql)
+
+    agent_tables = _base_tables_from_expression(a_expr) if a_ok else None
+    best_tables = _base_tables_from_expression(b_expr) if b_ok else None
+    if a_ok and b_ok:
+        table_set_match: Optional[bool] = (
+            set(agent_tables or []) == set(best_tables or [])
+        )
+    else:
+        table_set_match = None
+
+    md = MissDiagnostics(
+        best_variant_id=best_variant_id,
+        agent_row_count=len(pred_rows),
+        best_variant_row_count=len(best_rows),
+        original_gold_row_count=len(original_rows) if original_sol_sql else None,
+        overlap_with_best=overlap,
+        rowset_relation_to_best=relation,
+        agent_column_count=len(pred_cols),
+        best_variant_column_count=len(best_cols),
+        column_count_match=count_match,
+        column_name_match_case_insensitive=name_match_ci,
+        column_order_match=order_match,
+        agent_columns=list(pred_cols),
+        best_variant_columns=list(best_cols),
+        first_divergent_cell_diff=fdcd,
+        agent_sql_parse_ok=a_ok,
+        best_variant_sql_parse_ok=b_ok,
+        agent_sql_parse_error=a_err,
+        best_variant_sql_parse_error=b_err,
+        agent_tables_referenced=agent_tables,
+        best_variant_tables_referenced=best_tables,
+        table_set_match=table_set_match,
+        agent_has_group_by=_has_group_by(a_expr) if a_ok else None,
+        best_variant_has_group_by=_has_group_by(b_expr) if b_ok else None,
+        agent_has_aggregate=_has_aggregate(a_expr) if a_ok else None,
+        best_variant_has_aggregate=_has_aggregate(b_expr) if b_ok else None,
+        agent_join_count=_join_count(a_expr) if a_ok else None,
+        best_variant_join_count=_join_count(b_expr) if b_ok else None,
+        agent_where_conjunct_count=_where_conjunct_count(a_expr) if a_ok else None,
+        best_variant_where_conjunct_count=(
+            _where_conjunct_count(b_expr) if b_ok else None
+        ),
+        agent_has_having=_has_having(a_expr) if a_ok else None,
+        best_variant_has_having=_has_having(b_expr) if b_ok else None,
+        agent_has_limit=_has_limit(a_expr) if a_ok else None,
+        best_variant_has_limit=_has_limit(b_expr) if b_ok else None,
+        agent_sql_executed_ok=agent_sql_executed_ok,
+        agent_sql_error_excerpt=agent_sql_error_excerpt,
+        user_sim_n_asks=user_sim_n_asks,
+        miss_patterns=[],
+    )
+
+    # Independent flag rules — every applicable rule appends.
+    flags: List[MissPattern] = []
+    if not agent_sql_executed_ok:
+        flags.append("sql_execution_error")
+    if (not a_ok) or (not b_ok):
+        flags.append("sql_parse_error")
+    if md.agent_row_count == 0 and md.best_variant_row_count > 0:
+        flags.append("empty_agent_result")
+    if table_set_match is False:
+        flags.append("wrong_table_set")
+    if (
+        md.agent_has_group_by is not None
+        and md.best_variant_has_group_by is not None
+        and md.agent_has_aggregate is not None
+        and md.best_variant_has_aggregate is not None
+        and (
+            md.agent_has_group_by != md.best_variant_has_group_by
+            or md.agent_has_aggregate != md.best_variant_has_aggregate
+        )
+    ):
+        flags.append("aggregation_shape_mismatch")
+    if (not count_match) or (not name_match_ci):
+        flags.append("column_projection_mismatch")
+    if (
+        md.agent_where_conjunct_count is not None
+        and md.best_variant_where_conjunct_count is not None
+        and md.agent_where_conjunct_count != md.best_variant_where_conjunct_count
+    ):
+        flags.append("predicate_count_mismatch")
+    if (
+        md.agent_has_having is not None
+        and md.best_variant_has_having is not None
+        and md.agent_has_having != md.best_variant_has_having
+    ):
+        flags.append("having_presence_mismatch")
+    if (
+        md.agent_has_limit is not None
+        and md.best_variant_has_limit is not None
+        and md.agent_has_limit != md.best_variant_has_limit
+    ):
+        flags.append("limit_presence_mismatch")
+    if relation == "disjoint":
+        flags.append("disjoint_rowset")
+    elif relation == "overlapping":
+        flags.append("partial_match_overlap")
+    elif relation == "strict_subset_of":
+        flags.append("agent_undercount")
+    elif relation == "strict_superset_of":
+        flags.append("agent_overcount")
+    if user_sim_n_asks is not None and user_sim_n_asks == 0:
+        flags.append("never_asked_user")
+
+    # Sort alphabetically for stable JSON diffs.
+    md.miss_patterns = sorted(flags)
+    return md
 
 
 def _annotation_hash(ann: TaskAnnotation) -> str:

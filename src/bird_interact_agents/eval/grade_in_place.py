@@ -39,6 +39,30 @@ def _verdict_to_phase(b: bool) -> PhaseVerdict:
     return "pass" if b else "fail"
 
 
+def _failure_details_for(
+    cascade: CascadeVerdict, primary: str,
+) -> str:
+    """Return a one-line free-form human summary for
+    ``FailureClassification.details``. Downstream consumers MUST go
+    through ``cascade.miss_diagnostics.miss_patterns`` for structured
+    signals; this string is for humans only."""
+    if primary == "agent_miss" and cascade.miss_diagnostics is not None:
+        md = cascade.miss_diagnostics
+        return (
+            f"strict miss vs best_variant={md.best_variant_id!r}; "
+            f"patterns={md.miss_patterns}"
+        )
+    if primary == "other":
+        return (
+            "Strict miss across all cascade tiers; human review "
+            "pending — pick the specific failure class."
+        )
+    return (
+        "Auto-classified from cascade verdict; no human review "
+        "needed for no_fail / cascade-tier categories."
+    )
+
+
 def verdict_label_from_cascade(cascade: CascadeVerdict) -> str:
     """Map a cascade verdict → the ``SubmissionEvaluation.verdict`` label.
 
@@ -96,8 +120,11 @@ def _auto_failure_class(cascade: CascadeVerdict) -> tuple[str, bool, str]:
         return ("column_order", False, "grader")
     if cascade.n9_case_fold:
         return ("case_sensitivity", False, "grader")
-    # Genuine strict miss — let the human classify.
-    return ("other", True, "other")
+    # Genuine strict miss across every cascade tier — agent miss. The
+    # rich diagnostic detail lives on ``ev.miss_diagnostics`` (DEV-1515
+    # session-4); ``FailureClassification.details`` carries a one-line
+    # human summary derived from ``miss_diagnostics.miss_patterns``.
+    return ("agent_miss", True, "agent")
 
 
 def _build_submission_annotation(
@@ -138,6 +165,7 @@ def _build_submission_annotation(
         verdict=verdict_label,  # type: ignore[arg-type]
         matched_variant_id=cascade.matched_variant_id,
         rationale="",
+        miss_diagnostics=cascade.miss_diagnostics,
     )
 
     task_ann_ref = (
@@ -167,13 +195,7 @@ def _build_submission_annotation(
             primary=auto_primary,  # type: ignore[arg-type]
             agent_at_fault=auto_at_fault,
             remediation_target=auto_remediation,  # type: ignore[arg-type]
-            details=(
-                "Auto-classified from cascade verdict; no human review "
-                "needed for no_fail / cascade-tier categories."
-                if auto_primary != "other"
-                else "Strict miss across all cascade tiers; human "
-                     "review pending — pick the specific failure class."
-            ),
+            details=_failure_details_for(cascade, auto_primary),
         ),
         decision_point=None,
         user_sim_interaction=(

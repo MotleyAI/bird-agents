@@ -185,6 +185,7 @@ def _eval_from_cascade(cascade: Any, epsilon: float = 1e-6) -> SubmissionEvaluat
         verdict=verdict_label_from_cascade(cascade),  # type: ignore[arg-type]
         matched_variant_id=cascade.matched_variant_id,
         rationale="",
+        miss_diagnostics=getattr(cascade, "miss_diagnostics", None),
     )
 
 

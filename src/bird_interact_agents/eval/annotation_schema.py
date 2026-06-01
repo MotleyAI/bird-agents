@@ -299,6 +299,104 @@ class SubmissionMetadata(BaseModel):
     n_ask_user_calls: Optional[int] = None
 
 
+MissPattern = Literal[
+    "sql_execution_error",
+    "sql_parse_error",
+    "empty_agent_result",
+    "wrong_table_set",
+    "aggregation_shape_mismatch",
+    "column_projection_mismatch",
+    "predicate_count_mismatch",
+    "having_presence_mismatch",
+    "limit_presence_mismatch",
+    "disjoint_rowset",
+    "partial_match_overlap",
+    "agent_undercount",
+    "agent_overcount",
+    "never_asked_user",
+]
+
+
+class MissDiagnostics(BaseModel):
+    """Diagnostic signals collected at grading time for cascade-fail
+    submissions. Populated when the cascade has no passing tier
+    (every N1-N9 returned False).
+
+    Comparison reference is the BEST-OVERLAP audited variant — the
+    variant with the largest multiset (bag) intersection with the
+    agent's rowset. Tie-break: prefer the primary variant; then
+    alphabetical variant_id. Single comparison target keeps the schema
+    flat; the variant identifier is recorded so downstream consumers
+    know which variant the signals are measured against.
+
+    Works uniformly across interactive (a-interact) and one-shot
+    benchmarks. Interactive-only fields stay None when the benchmark
+    has no user-sim.
+
+    SQL-derived fields are Optional[T] = None when sqlglot can't
+    parse the corresponding SQL. The ``*_sql_parse_ok`` booleans
+    + ``*_sql_parse_error`` excerpts make the parse state explicit
+    so downstream consumers don't read a False/0 as a real signal.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    # Comparison reference identifier.
+    best_variant_id: str
+
+    # Row counts (multiset cardinality matches grader bag semantics).
+    agent_row_count: int
+    best_variant_row_count: int
+    original_gold_row_count: Optional[int] = None
+    overlap_with_best: int
+    rowset_relation_to_best: RowsetRelation
+
+    # Column shape.
+    agent_column_count: int
+    best_variant_column_count: int
+    column_count_match: bool
+    column_name_match_case_insensitive: bool
+    column_order_match: bool
+    agent_columns: List[str] = Field(default_factory=list)
+    best_variant_columns: List[str] = Field(default_factory=list)
+    first_divergent_cell_diff: Optional[str] = None
+
+    # SQL parse status gates the SQL-derived fields below.
+    agent_sql_parse_ok: bool
+    best_variant_sql_parse_ok: bool
+    agent_sql_parse_error: Optional[str] = None
+    best_variant_sql_parse_error: Optional[str] = None
+
+    # SQL-derived signals — Optional[T]=None on the parse-failed side.
+    # Tables: base tables only, CTE / derived aliases excluded;
+    # alphabetically sorted for stable JSON diffs.
+    agent_tables_referenced: Optional[List[str]] = None
+    best_variant_tables_referenced: Optional[List[str]] = None
+    table_set_match: Optional[bool] = None
+    agent_has_group_by: Optional[bool] = None
+    best_variant_has_group_by: Optional[bool] = None
+    agent_has_aggregate: Optional[bool] = None
+    best_variant_has_aggregate: Optional[bool] = None
+    agent_join_count: Optional[int] = None
+    best_variant_join_count: Optional[int] = None
+    agent_where_conjunct_count: Optional[int] = None
+    best_variant_where_conjunct_count: Optional[int] = None
+    agent_has_having: Optional[bool] = None
+    best_variant_has_having: Optional[bool] = None
+    agent_has_limit: Optional[bool] = None
+    best_variant_has_limit: Optional[bool] = None
+
+    # Execution status of the agent's SQL.
+    agent_sql_executed_ok: bool
+    agent_sql_error_excerpt: Optional[str] = None
+
+    # Interactive-only signal — None on one-shot benchmarks.
+    user_sim_n_asks: Optional[int] = None
+
+    # Independent flag list — every applicable rule appends. Sorted
+    # alphabetically before persist for stable JSON diffs.
+    miss_patterns: List[MissPattern] = Field(default_factory=list)
+
+
 class SubmissionEvaluation(BaseModel):
     """Cascading evaluation, most stringent → most lenient.
 
@@ -325,6 +423,11 @@ class SubmissionEvaluation(BaseModel):
     verdict: SubmissionVerdict
     matched_variant_id: Optional[str] = None
     rationale: str = ""
+    miss_diagnostics: Optional[MissDiagnostics] = None
+    """DEV-1515 session-4 — populated only when the cascade has no
+    passing tier (strict miss). Captures rowset-shape, column-shape,
+    SQL-derived signals, and execution status to support downstream
+    failure-mode analysis without re-running queries."""
 
 
 class FailureClassification(BaseModel):
