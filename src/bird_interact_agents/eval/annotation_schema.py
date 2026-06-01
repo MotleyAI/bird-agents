@@ -31,13 +31,31 @@ RowsetRelation = Literal[
 ]
 PhaseVerdict = Literal["pass", "fail", "skip"]
 FailurePrimary = Literal[
+    "no_fail",
     "agent_miss",
     "metadata_ambiguity",
     "gold_audit_quality",
     "user_sim_under_disclosure",
-    "grader_stability",
+    "novel_reading_accepted",
+    "numerical_precision",
+    "row_order",
+    "trailing_whitespace",
+    "column_order",
+    "case_sensitivity",
     "other",
 ]
+"""``no_fail`` ⇒ agent passed N3-strict; nothing to attribute.
+``other`` ⇒ failure happened but doesn't fit any listed category.
+
+Cascade-tier relaxation buckets (``row_order``, ``numerical_precision``,
+``trailing_whitespace``, ``column_order``, ``case_sensitivity``) each
+flag exactly which grader-tolerance dimension flipped the verdict.
+
+``novel_reading_accepted`` ⇒ strict cascade (N1..N4, N6..N8) failed AND
+``task.metadata_sufficiency.verdict == "insufficient"`` AND the LLM
+judge accepted the agent's reading as a valid novel interpretation
+(N5). The underlying issue is the task's metadata — the judge merely
+ratified the agent's plausible reading."""
 RemediationTarget = Literal["agent", "prompt", "kb", "audit", "grader", "user_sim", "gold_sidecar", "other"]
 SubmissionVerdict = Literal[
     "correct",
@@ -69,6 +87,22 @@ class MaskedTerm(BaseModel):
 
 
 class MetadataSufficiency(BaseModel):
+    """Verdict semantics (sharpened DEV-1515):
+
+    * ``sufficient``  — published metadata (KB + column meanings +
+      sampled values) alone pins the answer; no user_sim help needed.
+    * ``ambiguous``   — published metadata licenses multiple readings,
+      BUT a maximally cooperative user_sim disclosing the masked
+      sql_snippet on a well-phrased ask would resolve them. If the
+      run-side sim refused / under-disclosed, the submission's
+      ``failure_classification.primary`` should be
+      ``user_sim_under_disclosure`` (not ``metadata_ambiguity``).
+    * ``insufficient`` — even with maximally cooperative user_sim
+      disclosure of the masked sql_snippet, the answer remains
+      underspecified (e.g. arbitrary policy thresholds / coefficients
+      with no semantic anchor). The companion ``evaluator_prompt`` then
+      describes what counts as a valid LLM-judge-accepted reading.
+    """
     model_config = ConfigDict(extra="forbid")
 
     verdict: MetadataSufficiencyVerdict
@@ -125,6 +159,53 @@ class Provenance(BaseModel):
     None for benchmarks that never had a per-DB layout."""
 
 
+InconsistencyResolution = Literal[
+    "multi_variant",
+    "picked_one_variant",
+    "unresolved",
+]
+
+
+class InternalInconsistency(BaseModel):
+    """Flag set when two or more authoritative sources within the task
+    disagree on the SAME parameter — an agent cannot satisfy all sources
+    simultaneously.
+
+    Examples
+    --------
+    * KB description says ``LCS > 3``; masked sql_snippet says
+      ``lcs > 2`` for the same defined concept.
+    * KB definition field contradicts the KB description field.
+    * The user_query phrasing implies one aggregation; the masked
+      snippet specifies another.
+
+    This is task-level: it describes the source landscape, not the
+    agent's submission. Most tasks have ``internal_inconsistency =
+    None`` (sources converge).
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    sources_in_conflict: List[str]
+    """Citations naming each conflicting source. E.g.
+    ``['KB#29.description: "LCS > 3"', 'critical_ambiguity for "good
+    quality of life".sql_snippet: "lcs > 2"']``."""
+
+    description: str
+    """1-3 sentences explaining what each source says and why an agent
+    cannot satisfy them all at once. Quote the disagreeing values."""
+
+    audit_resolution: InconsistencyResolution
+    """How the audit handled the inconsistency:
+
+    * ``multi_variant`` — audited_gold JSONL has N rows, one per
+      reading; the task's ``gold_variants`` mirrors them.
+    * ``picked_one_variant`` — audit chose one reading; the alternate
+      is documented here but is NOT in the audited_gold JSONL.
+    * ``unresolved`` — audit declared the task unanswerable;
+      ``audit_status`` is typically ``unrecoverable``.
+    """
+
+
 class TaskAnnotation(BaseModel):
     """Run-independent annotation of a single benchmark task.
 
@@ -165,6 +246,13 @@ class TaskAnnotation(BaseModel):
     sufficient / ambiguous tasks this MAY be populated as a future-proof
     fallback for novel readings but is not used by the deterministic
     grader."""
+
+    internal_inconsistency: Optional[InternalInconsistency] = None
+    """Set when the task's authoritative sources disagree on the same
+    parameter (KB vs sql_snippet, KB.description vs KB.definition,
+    etc.). ``None`` for tasks where all sources converge — the common
+    case. When set, ``audit_resolution=multi_variant`` should also be
+    reflected in ``gold_variants`` carrying one entry per reading."""
 
     provenance: Provenance
 

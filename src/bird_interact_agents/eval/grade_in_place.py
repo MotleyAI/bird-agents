@@ -39,6 +39,35 @@ def _verdict_to_phase(b: bool) -> PhaseVerdict:
     return "pass" if b else "fail"
 
 
+def _auto_failure_class(cascade: CascadeVerdict) -> tuple[str, bool, str]:
+    """Pick the (primary, agent_at_fault, remediation_target) triple
+    purely from the cascade. ``no_fail`` for N3 passes; each lower
+    cascade tier maps to its own bucket so consumers know exactly which
+    grader-tolerance dimension flipped the verdict. ``other`` is the
+    only catch-all that requires human review.
+
+    N5 (LLM judge) is treated as its own outcome (``novel_reading_accepted``)
+    because the judge fires ONLY when ``metadata_sufficiency.verdict``
+    is ``"insufficient"`` — so the agent is being accepted under a
+    valid-novel-reading exception, not under a tolerance-of-the-gold."""
+    if cascade.n3_any_audited_variant:
+        return ("no_fail", False, "other")
+    if cascade.n4_tie_order:
+        return ("row_order", False, "grader")
+    if cascade.n5_llm_judge and cascade.novel_reading_judgment == "pass":
+        # Strict cascade missed; the judge accepted a novel reading
+        # because the metadata couldn't pin a single answer.
+        return ("novel_reading_accepted", False, "kb")
+    if cascade.n6_numeric_epsilon:
+        return ("numerical_precision", False, "grader")
+    if cascade.n7_trailing_whitespace:
+        return ("trailing_whitespace", False, "grader")
+    if cascade.n8_column_order:
+        return ("column_order", False, "grader")
+    # Genuine strict miss — let the human classify.
+    return ("other", True, "other")
+
+
 def _build_submission_annotation(
     *,
     task_annotation: TaskAnnotation,
@@ -68,6 +97,8 @@ def _build_submission_annotation(
         verdict_label = "valid_interpretation"
     else:
         verdict_label = "invalid"
+
+    auto_primary, auto_at_fault, auto_remediation = _auto_failure_class(cascade)
 
     ev = SubmissionEvaluation(
         phase1_against_original_gold=_verdict_to_phase(cascade.n1_original_gold),
@@ -111,10 +142,16 @@ def _build_submission_annotation(
         ),
         evaluation=ev,
         failure_classification=FailureClassification(
-            primary="other",
-            agent_at_fault=not cascade.n3_any_audited_variant,
-            remediation_target="other",
-            details="auto-generated; human review pending",
+            primary=auto_primary,  # type: ignore[arg-type]
+            agent_at_fault=auto_at_fault,
+            remediation_target=auto_remediation,  # type: ignore[arg-type]
+            details=(
+                "Auto-classified from cascade verdict; no human review "
+                "needed for no_fail / cascade-tier categories."
+                if auto_primary != "other"
+                else "Strict miss across all cascade tiers; human "
+                     "review pending — pick the specific failure class."
+            ),
         ),
         decision_point=None,
         user_sim_interaction=(

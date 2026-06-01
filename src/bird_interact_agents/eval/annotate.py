@@ -45,6 +45,7 @@ from bird_interact_agents.eval.annotation_schema import (
     UserSimInteraction,
     UserSimResponseSummary,
 )
+from bird_interact_agents.eval.grade_in_place import _auto_failure_class
 
 PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
 
@@ -131,6 +132,25 @@ def _user_sim_interaction_from_trajectory(traj: list[dict]) -> UserSimInteractio
     )
 
 
+def _skeleton_failure_classification(cascade: Any) -> FailureClassification:
+    """Auto-classify from the cascade; ``other`` for strict misses still
+    needing human review."""
+    primary, at_fault, remediation = _auto_failure_class(cascade)
+    if primary == "other":
+        details = PENDING_HUMAN_REVIEW
+    else:
+        details = (
+            "Auto-classified from cascade verdict; no human review "
+            "needed for no_fail / cascade-tier categories."
+        )
+    return FailureClassification(
+        primary=primary,  # type: ignore[arg-type]
+        agent_at_fault=at_fault,
+        remediation_target=remediation,  # type: ignore[arg-type]
+        details=details,
+    )
+
+
 def _eval_from_cascade(cascade: Any, epsilon: float = 1e-6) -> SubmissionEvaluation:
     """Convert a tolerant_grader CascadeVerdict into a
     SubmissionEvaluation persistence shape."""
@@ -209,12 +229,7 @@ def generate_submission_annotation(
             n_ask_user_calls=usage.get("n_ask_user_calls"),
         ),
         evaluation=ev,
-        failure_classification=FailureClassification(
-            primary="other",
-            agent_at_fault=False,
-            remediation_target="other",
-            details=PENDING_HUMAN_REVIEW,
-        ),
+        failure_classification=_skeleton_failure_classification(cascade),
         decision_point=None,
         user_sim_interaction=_user_sim_interaction_from_trajectory(traj),
     )

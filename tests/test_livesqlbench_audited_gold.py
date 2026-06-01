@@ -113,7 +113,19 @@ def _iter_audit_rows() -> Iterator[dict]:
 
 
 def _load_audit_rows() -> dict[str, dict]:
-    return {r["instance_id"]: r for r in _iter_audit_rows()}
+    """Return PRIMARY audit rows keyed by instance_id.
+
+    Multi-variant pattern (DEV-1515): a task may carry one primary row plus
+    N non-primary alternates sharing the same instance_id. Tests that pin a
+    specific reading (e.g. museum_7 edited, museum_9 clean) should reach the
+    primary; iterating tests (citation resolvability, status consistency)
+    should use ``_iter_audit_rows`` to see every variant.
+    """
+    out: dict[str, dict] = {}
+    for r in _iter_audit_rows():
+        if r.get("primary", True):
+            out[r["instance_id"]] = r
+    return out
 
 
 def _livesqlbench_data_or_skip() -> Path:
@@ -334,15 +346,29 @@ def test_audit_rows_audited_at_is_iso8601():
         )
 
 
-def test_no_duplicate_instance_ids():
-    """`latest-wins` is the dedup contract for the overlay; the file MUST
-    not ship with duplicates because there's no canonical order."""
-    seen = []
+def test_no_duplicate_instance_id_variant_pairs():
+    """The dedup contract is on the (instance_id, variant_id) pair, not on
+    instance_id alone — DEV-1515 multi-variant audits ship N rows per task
+    (one primary + alternates). Also: each instance_id MUST have exactly one
+    primary row."""
+    seen_pairs: list[tuple[str, str]] = []
+    primaries_per_iid: dict[str, int] = {}
     for row in _iter_audit_rows():
-        seen.append(row["instance_id"])
-    assert len(seen) == len(set(seen)), (
-        f"duplicate instance_ids in audit file: "
-        f"{[i for i in seen if seen.count(i) > 1]}"
+        iid = row["instance_id"]
+        vid = row.get("variant_id", "primary")
+        seen_pairs.append((iid, vid))
+        if row.get("primary", True):
+            primaries_per_iid[iid] = primaries_per_iid.get(iid, 0) + 1
+    dupes = [p for p in seen_pairs if seen_pairs.count(p) > 1]
+    assert not dupes, (
+        f"duplicate (instance_id, variant_id) pairs in audit file: {dupes}"
+    )
+    over_primaries = {
+        iid: n for iid, n in primaries_per_iid.items() if n != 1
+    }
+    assert not over_primaries, (
+        f"each instance_id must have exactly one primary row; "
+        f"got counts: {over_primaries}"
     )
 
 

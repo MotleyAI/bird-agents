@@ -112,10 +112,10 @@ def regrade_run(
         # Build a fresh SubmissionAnnotation from the cascade.
         from bird_interact_agents.eval.annotate import (
             _eval_from_cascade,
+            _skeleton_failure_classification,
             _user_sim_interaction_from_trajectory,
         )
         from bird_interact_agents.eval.annotation_schema import (
-            FailureClassification,
             SubmissionMetadata,
         )
         usage = attempt_data.get("usage", {}) or {}
@@ -139,11 +139,7 @@ def regrade_run(
                 n_ask_user_calls=usage.get("n_ask_user_calls"),
             ),
             evaluation=_eval_from_cascade(cascade),
-            failure_classification=FailureClassification(
-                primary="other",
-                agent_at_fault=not cascade.n3_any_audited_variant,
-                remediation_target="other",
-            ),
+            failure_classification=_skeleton_failure_classification(cascade),
             user_sim_interaction=_user_sim_interaction_from_trajectory(
                 list(attempt_data.get("trajectory", []) or []),
             ),

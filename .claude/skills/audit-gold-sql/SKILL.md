@@ -57,6 +57,8 @@ already exists for this `instance_id`, **overwrite** it in place
 {
   "instance_id": "shop_3",
   "selected_database": "shop",
+  "variant_id": "primary",
+  "primary": true,
   "audit_status": "edited",
   "original_sol_sql": ["WITH SupplierTier AS (..."],
   "audited_sol_sql":  ["SELECT COUNT(*) ..."],
@@ -76,6 +78,13 @@ already exists for this `instance_id`, **overwrite** it in place
 }
 ```
 
+`variant_id` defaults to `"primary"` and `primary` defaults to `true`
+for single-variant tasks (the common case). Multi-variant tasks (when
+authoritative sources disagree among themselves — see the
+`source_conflict` rule above) emit N rows sharing `instance_id`, each
+with a distinct `variant_id` slug, with exactly one carrying
+`primary: true`.
+
 Field rules:
 
 - `audit_status` is one of three:
@@ -89,6 +98,24 @@ Field rules:
     unauthorised). Fall back to the natural reading of `amb_user_query`
     using only authorised sources. `audited_sol_sql` is the natural
     reading; one `changes` entry documents the gap.
+- When the task's authoritative sources **disagree among themselves**
+  on the same parameter — e.g. KB description says `LCS > 3`, masked
+  sql_snippet says `lcs > 2` for the same defined concept — emit
+  **multiple rows** to the audit JSONL, one per defensible reading,
+  sharing `instance_id` and distinguished by `variant_id`:
+  - Exactly one row carries `primary: true`. The KB-anchored reading
+    typically takes primary; the snippet-anchored reading is the
+    alternate. Document the choice in `reasoning_summary`.
+  - Every row keeps `audit_status: "edited"`. Each row's `changes[]`
+    has at least one entry with `clause_kind: "source_conflict"`
+    pointing at the other variant (its `original` is what THIS
+    variant rejected; `replacement` is what THIS variant chose; both
+    `justified_by` entries cite the source backing the chosen reading;
+    `why_unjustified` quotes the other source's contrary value).
+  - The downstream `TaskAnnotation` then carries
+    `internal_inconsistency.audit_resolution = "multi_variant"` and
+    one `gold_variants[]` entry per audit row (see
+    `annotate-task-submission` skill).
 - `original_sol_sql` and `audited_sol_sql` are both list[str], mirroring
   upstream `sol_sql`'s shape. For most tasks both have length 1.
 - `audited_sample_row` is the first row of running `audited_sol_sql[0]`
