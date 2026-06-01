@@ -248,6 +248,7 @@ def _process_one(
         "n6": cascade.n6_numeric_epsilon,
         "n7": cascade.n7_trailing_whitespace,
         "n8": cascade.n8_column_order,
+        "n9": cascade.n9_case_fold,
         "task_path": str(task_dest),
         "sub_path": str(sub_dest),
     }

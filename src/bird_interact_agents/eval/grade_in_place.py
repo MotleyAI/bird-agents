@@ -49,7 +49,7 @@ def verdict_label_from_cascade(cascade: CascadeVerdict) -> str:
 
     * ``n3_any_audited_variant`` → ``"correct"`` (strict set-equal pass)
     * ``n4_tie_order`` / ``n5_llm_judge`` / ``n6_numeric_epsilon`` /
-      ``n7_trailing_whitespace`` / ``n8_column_order`` →
+      ``n7_trailing_whitespace`` / ``n8_column_order`` / ``n9_case_fold`` →
       ``"valid_interpretation"`` (cascade-tier acceptance — the row is
       not strictly identical to the gold but matches under a named
       tolerance / under the LLM judge for an ``insufficient`` task)
@@ -63,6 +63,7 @@ def verdict_label_from_cascade(cascade: CascadeVerdict) -> str:
         or cascade.n6_numeric_epsilon
         or cascade.n7_trailing_whitespace
         or cascade.n8_column_order
+        or cascade.n9_case_fold
     ):
         return "valid_interpretation"
     return "invalid"
@@ -93,6 +94,8 @@ def _auto_failure_class(cascade: CascadeVerdict) -> tuple[str, bool, str]:
         return ("trailing_whitespace", False, "grader")
     if cascade.n8_column_order:
         return ("column_order", False, "grader")
+    if cascade.n9_case_fold:
+        return ("case_sensitivity", False, "grader")
     # Genuine strict miss — let the human classify.
     return ("other", True, "other")
 
@@ -130,6 +133,7 @@ def _build_submission_annotation(
         correct_under_numeric_epsilon=cascade.n6_numeric_epsilon,
         correct_under_trailing_whitespace=cascade.n7_trailing_whitespace,
         correct_under_column_order=cascade.n8_column_order,
+        correct_under_case_fold=cascade.n9_case_fold,
         numeric_epsilon=epsilon,
         verdict=verdict_label,  # type: ignore[arg-type]
         matched_variant_id=cascade.matched_variant_id,

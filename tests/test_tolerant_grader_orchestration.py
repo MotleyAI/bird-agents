@@ -553,6 +553,37 @@ def test_n7_trailing_whitespace_lifts_failing_n6_to_pass():
     assert verdict.n7_trailing_whitespace is True
 
 
+def test_n9_case_fold_lifts_failing_n8_to_pass():
+    """A case-only mismatch in cell strings fails N7/N8 but lifts at N9."""
+    from bird_interact_agents.eval.tolerant_grader import grade_submission
+
+    submitted = "S"
+    original_gold = "G"
+    audited = "A"
+    executor = FakeExecutor({
+        submitted: ([("HIGH",), ("Low",)], ["bracket"]),
+        original_gold: ([("high",), ("low",)], ["bracket"]),
+        audited: ([("high",), ("low",)], ["bracket"]),
+    })
+    ann = _make_task_annotation()
+    gold_rows = [_audited_row(
+        instance_id="alien_1", variant_id="primary", primary=True,
+        audited_sol_sql=[audited],
+    )]
+    verdict = grade_submission(
+        task_annotation=ann,
+        audited_gold_rows=gold_rows,
+        original_sol_sql=[original_gold],
+        submitted_sql=submitted,
+        db_path=Path("/dev/null"),
+        conn=None,
+        executor=executor,
+    )
+    assert verdict.n7_trailing_whitespace is False
+    assert verdict.n8_column_order is False
+    assert verdict.n9_case_fold is True
+
+
 def test_n8_column_order_uses_column_metadata():
     """N8 needs cursor.description-style column names; ensure the
     executor's returned `column_names` parameter is the path used."""
@@ -607,10 +638,11 @@ def test_cascade_is_monotone_for_every_possible_pass_pattern():
         "n1_original_gold", "n2_audited_primary", "n3_any_audited_variant",
         "n4_tie_order", "n5_llm_judge",
         "n6_numeric_epsilon", "n7_trailing_whitespace", "n8_column_order",
+        "n9_case_fold",
     ]
-    # Every possible 8-bit raw mask.
-    for mask in range(2 ** 8):
-        raw = {fields[i]: bool((mask >> i) & 1) for i in range(8)}
+    n = len(fields)
+    for mask in range(2 ** n):
+        raw = {fields[i]: bool((mask >> i) & 1) for i in range(n)}
         enforced = enforce_monotone_cascade(raw)
         prev = False
         for f in fields:

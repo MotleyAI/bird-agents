@@ -136,7 +136,17 @@ descriptions, and proceed autonomously.
 4. TEST candidate columns and the final query with `query` /
    `query_nested`; sanity-check the generated SQL.
 
-5. SUBMIT. Write the FINAL query so it REFERENCES the named columns /
+5. PRE-SUBMIT MUTATION CHECK. Before calling `submit_query`, audit every
+   TRIM, LOWER, UPPER, ROUND, CAST, dedup, canonicalize-via-CASE, and
+   output-shape choice in the FINAL query. Each one MUST be either
+   (a) explicitly named in the user's question or (b) required by an
+   encoded KB. If neither holds, DROP the mutation and submit the raw
+   form. "Defensive" normalisation of an output column, a join key, a
+   JSON key, or a CHAR-padded literal silently corrupts the rowset —
+   never apply one without an explicit source. There is no user to
+   second-guess this on your behalf.
+
+6. SUBMIT. Write the FINAL query so it REFERENCES the named columns /
    measures you encoded — do NOT inline their SQL back into the query.
    Project exactly the columns the question names, and only those.
    {submit}

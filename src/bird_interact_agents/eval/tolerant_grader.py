@@ -242,6 +242,24 @@ def compare_trailing_whitespace(
     return _set_equal(pred_n, gold_n)
 
 
+def _lower_str_cell(cell: Any) -> Any:
+    return cell.lower() if isinstance(cell, str) else cell
+
+
+def compare_case_fold(
+    pred: Sequence[Sequence],
+    gold: Sequence[Sequence],
+) -> bool:
+    """N9 — lift case-only differences in string cells. Non-string cells
+    pass through unchanged; column-name case-folding is handled by
+    `compare_column_order` / `_column_diff`, not here."""
+    if not _row_count_match(pred, gold):
+        return False
+    pred_n = [tuple(_lower_str_cell(c) for c in r) for r in pred]
+    gold_n = [tuple(_lower_str_cell(c) for c in r) for r in gold]
+    return _set_equal(pred_n, gold_n)
+
+
 def compare_column_order(
     pred: Sequence[Sequence],
     gold: Sequence[Sequence],
@@ -345,6 +363,7 @@ _CASCADE_ORDER = [
     "n6_numeric_epsilon",
     "n7_trailing_whitespace",
     "n8_column_order",
+    "n9_case_fold",
 ]
 
 
@@ -501,6 +520,7 @@ class CascadeVerdict(BaseModel):
     n6_numeric_epsilon: bool
     n7_trailing_whitespace: bool
     n8_column_order: bool
+    n9_case_fold: bool
     matched_variant_id: Optional[str] = None
     novel_reading_judgment: Optional[PhaseVerdict] = None
     variant_matches: List[VariantMatch] = Field(default_factory=list)
@@ -711,6 +731,14 @@ def grade_submission(
                 ):
                     n8 = True
                     break
+    n9 = n8
+    if not n9:
+        for _v_meta, v_rows, _v_cols in variant_results + [
+            ({"variant_id": "__original__"}, orig_rows, orig_cols),  # type: ignore[list-item]
+        ]:
+            if compare_case_fold(pred_rows, v_rows):
+                n9 = True
+                break
 
     # 7) Tier 2 informational per variant.
     info_matches: list[VariantMatch] = []
@@ -736,6 +764,7 @@ def grade_submission(
         "n3_any_audited_variant": n3, "n4_tie_order": n4,
         "n5_llm_judge": n5, "n6_numeric_epsilon": n6,
         "n7_trailing_whitespace": n7, "n8_column_order": n8,
+        "n9_case_fold": n9,
     }
     enforced = enforce_monotone_cascade(raw)
     return CascadeVerdict(

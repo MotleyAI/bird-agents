@@ -143,7 +143,22 @@ ENCODE-THEN-QUERY DISCIPLINE:
 5. TEST candidate columns and the final query with `query` /
    `query_nested`; sanity-check the generated SQL.
 
-6. SUBMIT. Write the FINAL query so it REFERENCES the named columns /
+6. PRE-SUBMIT MUTATION CHECK. Before calling `submit_query`, audit every
+   TRIM, LOWER, UPPER, ROUND, CAST, dedup, canonicalize-via-CASE, and
+   output-shape choice in the FINAL query. Each one MUST be either
+   (a) explicitly named in the user's question, (b) explicitly named OR
+   authorized in a reply to one of your `ask_user` calls in this
+   session, or (c) required by an encoded KB. If none of (a-b-c) hold,
+   DROP the mutation and submit the raw form. Particularly: when an
+   `ask_user` reply said "use exact values", "don't normalize", "use
+   this output shape / columns / sort axis", or named a specific format
+   (date, label casing, JSON shape), DO NOT silently override that on
+   final-assembly. Conversely, when an `ask_user` reply DID name a
+   specific transformation (e.g. "lowercase the bracket labels",
+   "round to 2 decimals", "TRIM the keys"), that reply IS the
+   authorization for that mutation — apply it.
+
+7. SUBMIT. Write the FINAL query so it REFERENCES the named columns /
    measures you encoded — do NOT inline their SQL back into the query.
    Project exactly the columns the user named, and only those. {submit}
 

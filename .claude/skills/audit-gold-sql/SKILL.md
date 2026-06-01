@@ -98,24 +98,17 @@ Field rules:
     unauthorised). Fall back to the natural reading of `amb_user_query`
     using only authorised sources. `audited_sol_sql` is the natural
     reading; one `changes` entry documents the gap.
-- When the task's authoritative sources **disagree among themselves**
-  on the same parameter — e.g. KB description says `LCS > 3`, masked
-  sql_snippet says `lcs > 2` for the same defined concept — emit
-  **multiple rows** to the audit JSONL, one per defensible reading,
-  sharing `instance_id` and distinguished by `variant_id`:
-  - Exactly one row carries `primary: true`. The KB-anchored reading
-    typically takes primary; the snippet-anchored reading is the
-    alternate. Document the choice in `reasoning_summary`.
-  - Every row keeps `audit_status: "edited"`. Each row's `changes[]`
-    has at least one entry with `clause_kind: "source_conflict"`
-    pointing at the other variant (its `original` is what THIS
-    variant rejected; `replacement` is what THIS variant chose; both
-    `justified_by` entries cite the source backing the chosen reading;
-    `why_unjustified` quotes the other source's contrary value).
-  - The downstream `TaskAnnotation` then carries
-    `internal_inconsistency.audit_resolution = "multi_variant"` and
-    one `gold_variants[]` entry per audit row (see
-    `annotate-task-submission` skill).
+- **Source contradiction → multi-variant is mandatory** — see the
+  shared contract's "Multi-variant audit on source contradiction
+  (MANDATORY)" section. For mini-interact, the sources that can
+  participate in a contradiction are: KB items (`<db>_kb.jsonl` —
+  both `description` and `definition` fields), column meanings
+  (`<db>_column_meaning_base.json`), labeled-ambiguity sql_snippets
+  (`user_query_ambiguity.critical_ambiguity[]` and
+  `non_critical_ambiguity[]`), and knowledge-ambiguity sql_snippets
+  (`knowledge_ambiguity[]`). The recurring shape is `kb:<n>` vs
+  `labeled_ambiguity:<term>` disagreeing on a boundary / threshold /
+  bucket. Step 3.5 below is the mechanical contradiction-check pass.
 - `original_sol_sql` and `audited_sol_sql` are both list[str], mirroring
   upstream `sol_sql`'s shape. For most tasks both have length 1.
 - `audited_sample_row` is the first row of running `audited_sol_sql[0]`
@@ -270,6 +263,31 @@ For `shop_3`:
 | critical_ambiguity[0] | "heavy orders" | `(unit_count / NULLIF(...$.Pack_Size..., 0)) > 2` — defines order-density predicate INCLUDING the `> 2` threshold |
 | critical_ambiguity[1] | "premium suppliers" | `LOWER(tier) IN ('gold','platinum') AND LOWER(ship_class) IN ('express','priority')` — defines the premium predicate |
 | knowledge_ambiguity[0] | "Premium Supplier" (deleted_knowledge=22) | Same `LOWER+IN` premium predicate |
+
+### Step 3.5 — Contradiction check (MUST precede any single-variant commit)
+
+Before committing to `audit_status="clean"` or `"edited"` with a SINGLE
+audit row, run the contradiction check from the shared contract's
+"Multi-variant audit on source contradiction (MANDATORY)" section.
+Pairwise-scan the sources you loaded in Steps 1-3:
+
+- every KB item touched by this task (both `description` and
+  `definition` fields, in case they disagree internally)
+- every column meaning referenced
+- every `critical_ambiguity` / `non_critical_ambiguity` sql_snippet
+- every `knowledge_ambiguity` sql_snippet
+
+ANY pair that pins different values for the SAME operational choice
+(threshold value, boundary operator, bucket inclusion, aggregation
+choice, etc.) triggers multi-variant. Emit one audit row per
+defensible reading per the mechanics in the shared contract; reflect
+the contradiction on the TaskAnnotation via
+`internal_inconsistency.audit_resolution = "multi_variant"`.
+
+If NO contradictions are found, proceed to Step 4 (single-variant
+audit). If you wrote a regretful note in `reasoning_summary` that
+names two sources and explains why you went with one, you SKIPPED
+this step — go back.
 
 ### Step 4 — Decompose the gold SQL
 

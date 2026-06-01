@@ -318,6 +318,7 @@ class SubmissionEvaluation(BaseModel):
     correct_under_numeric_epsilon: bool = False
     correct_under_trailing_whitespace: bool = False
     correct_under_column_order: bool = False
+    correct_under_case_fold: bool = False
     numeric_epsilon: float = 1e-6
     """Records the epsilon threshold actually used for N6, so consumers
     of the annotation know how lenient the relaxation was."""

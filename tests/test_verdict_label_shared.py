@@ -27,6 +27,7 @@ def _cascade(**flags):
         n6_numeric_epsilon=flags.get("n6", False),
         n7_trailing_whitespace=flags.get("n7", False),
         n8_column_order=flags.get("n8", False),
+        n9_case_fold=flags.get("n9", False),
         matched_variant_id=flags.get("matched_variant_id"),
         novel_reading_judgment=flags.get("novel"),
     )
@@ -81,6 +82,12 @@ def test_n7_only_yields_valid_interpretation_on_both_paths():
 
 def test_n8_only_yields_valid_interpretation_on_both_paths():
     inline, annotate = _both_verdicts(_cascade(n8=True))
+    assert inline == "valid_interpretation"
+    assert annotate == "valid_interpretation"
+
+
+def test_n9_only_yields_valid_interpretation_on_both_paths():
+    inline, annotate = _both_verdicts(_cascade(n9=True))
     assert inline == "valid_interpretation"
     assert annotate == "valid_interpretation"
 

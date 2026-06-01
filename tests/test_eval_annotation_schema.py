@@ -152,6 +152,23 @@ def test_task_annotation_roundtrip(tmp_path):
     assert loaded == ann
 
 
+def test_submission_evaluation_default_includes_n9_case_fold():
+    """N9 (case-fold) flag must default to False on new evaluations
+    and round-trip through JSON write/read."""
+    ann = _make_submission_annotation()
+    assert ann.evaluation.correct_under_case_fold is False
+
+
+def test_submission_evaluation_n9_case_fold_roundtrips(tmp_path):
+    ann = _make_submission_annotation()
+    # Flip the new tier to True to confirm it survives write→read.
+    ann.evaluation.correct_under_case_fold = True
+    p = tmp_path / "alien_42.submission.20260531t0001.json"
+    write_submission_annotation(ann, p)
+    loaded = read_submission_annotation(p)
+    assert loaded.evaluation.correct_under_case_fold is True
+
+
 def test_submission_annotation_roundtrip(tmp_path):
     ann = _make_submission_annotation()
     p = tmp_path / "alien_42.submission.20260531t0001.json"

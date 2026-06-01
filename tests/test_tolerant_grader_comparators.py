@@ -227,6 +227,44 @@ def test_n8_column_count_mismatch_fails():
 
 
 # ---------------------------------------------------------------------------
+# N9 — case-fold tolerance on string cells
+# ---------------------------------------------------------------------------
+
+
+def test_n9_case_fold_lifts_case_only_mismatch():
+    from bird_interact_agents.eval.tolerant_grader import compare_case_fold
+
+    pred = [("HIGH",), ("Low",)]
+    gold = [("high",), ("low",)]
+    assert compare_case_fold(pred, gold) is True
+
+
+def test_n9_non_string_cells_unchanged():
+    from bird_interact_agents.eval.tolerant_grader import compare_case_fold
+
+    pred = [("A", 1.0)]
+    gold = [("a", 1.0)]
+    assert compare_case_fold(pred, gold) is True
+
+
+def test_n9_row_count_mismatch_fails():
+    from bird_interact_agents.eval.tolerant_grader import compare_case_fold
+
+    pred = [("A",), ("B",)]
+    gold = [("a",)]
+    assert compare_case_fold(pred, gold) is False
+
+
+def test_n9_content_difference_beyond_case_fails():
+    """Case-fold must not paper over genuine content differences."""
+    from bird_interact_agents.eval.tolerant_grader import compare_case_fold
+
+    pred = [("Apple",)]
+    gold = [("orange",)]
+    assert compare_case_fold(pred, gold) is False
+
+
+# ---------------------------------------------------------------------------
 # ORDER BY parser — N4 input
 # ---------------------------------------------------------------------------
 

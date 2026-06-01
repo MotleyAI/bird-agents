@@ -175,6 +175,7 @@ def _eval_from_cascade(cascade: Any, epsilon: float = 1e-6) -> SubmissionEvaluat
         correct_under_numeric_epsilon=cascade.n6_numeric_epsilon,
         correct_under_trailing_whitespace=cascade.n7_trailing_whitespace,
         correct_under_column_order=cascade.n8_column_order,
+        correct_under_case_fold=cascade.n9_case_fold,
         numeric_epsilon=epsilon,
         verdict=verdict_label_from_cascade(cascade),  # type: ignore[arg-type]
         matched_variant_id=cascade.matched_variant_id,

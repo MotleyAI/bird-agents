@@ -98,6 +98,7 @@ def test_submission_annotation_skeleton_fills_from_trajectory(tmp_path):
                 n3_any_audited_variant=True, n4_tie_order=True,
                 n5_llm_judge=True, n6_numeric_epsilon=True,
                 n7_trailing_whitespace=True, n8_column_order=True,
+                n9_case_fold=True,
                 matched_variant_id="primary",
                 novel_reading_judgment=None,
                 variant_matches=[], rowset_relations=[],
@@ -305,6 +306,7 @@ def test_submission_mode_overwrite_rewrites_existing(tmp_path, monkeypatch):
                 n3_any_audited_variant=True, n4_tie_order=True,
                 n5_llm_judge=True, n6_numeric_epsilon=True,
                 n7_trailing_whitespace=True, n8_column_order=True,
+                n9_case_fold=True,
                 matched_variant_id="primary", novel_reading_judgment=None,
                 variant_matches=[], rowset_relations=[],
             )
@@ -338,6 +340,7 @@ def test_submission_dry_run_writes_nothing(tmp_path, monkeypatch):
                 n3_any_audited_variant=True, n4_tie_order=True,
                 n5_llm_judge=True, n6_numeric_epsilon=True,
                 n7_trailing_whitespace=True, n8_column_order=True,
+                n9_case_fold=True,
                 matched_variant_id="primary", novel_reading_judgment=None,
                 variant_matches=[], rowset_relations=[],
             )
