@@ -1204,8 +1204,19 @@ async def run_evaluation(
         (sub / "submission_annotation.json").exists()
         for sub in rows_dir.iterdir() if sub.is_dir()
     ):
+        # Codex r11: scope the cascade aggregation to the CURRENT run's
+        # instance set. Filtered reruns preserve unrelated prior
+        # annotations on disk (round 10 design), but the published
+        # ``eval.json`` must describe ONLY the current run's row set —
+        # otherwise ``cascading_phase1.n_dual_eval_tasks`` (union) would
+        # exceed ``eval.total_tasks`` (filtered count) and the rewritten
+        # ``phase1_count`` / ``phase1_rate`` would become uninterpretable.
+        _current_iids = {
+            str(td.get("instance_id") or "") for td in tasks
+        } - {""}
         metrics = emit_cascading_eval_json(
             rows_dir, Path(output_path), base_metrics=metrics,
+            instance_filter=_current_iids,
         )
 
     logger.info(

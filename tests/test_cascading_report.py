@@ -138,6 +138,66 @@ def test_aggregator_emits_cascading_phase1_block(tmp_path):
     assert deltas["n4"] == 1  # alien_2 added at N4
 
 
+def test_aggregator_instance_filter_scopes_to_current_run(tmp_path):
+    """Codex r11: filtered local reruns preserve unrelated prior
+    annotations on disk for human inspection. The aggregator MUST
+    accept an ``instance_filter`` so the published cascade describes
+    only the CURRENT run's row set — otherwise
+    ``n_dual_eval_tasks`` (union of new + stale) would exceed the
+    rest of ``eval.json``'s ``total_tasks`` (filtered count) and
+    rewritten ``phase1_count`` / ``phase1_rate`` would become
+    uninterpretable."""
+    from bird_interact_agents.eval.cascading_report import (
+        aggregate_cascading_phase1,
+    )
+
+    rows_dir = tmp_path / "rows"
+    rows_dir.mkdir()
+    # Three on-disk annotations; the current run only touches alien_1
+    # (and alien_3, which fails). alien_2 is a leftover from a
+    # previous full run.
+    annotations = [
+        _make_submission_annotation_json(
+            instance_id="alien_1", selected_database="alien",
+            n1=True, n2=True, n3=True, n4=True, n5=True,
+            n6=True, n7=True, n8=True,
+        ),
+        _make_submission_annotation_json(
+            instance_id="alien_2_stale", selected_database="alien",
+            n1=True, n2=True, n3=True, n4=True, n5=True,
+            n6=True, n7=True, n8=True,
+        ),
+        _make_submission_annotation_json(
+            instance_id="alien_3", selected_database="alien",
+            n1=False, n2=False, n3=False, n4=False, n5=False,
+            n6=False, n7=False, n8=False,
+        ),
+    ]
+    for ann in annotations:
+        d = rows_dir / ann["instance_id"]
+        d.mkdir()
+        (d / "submission_annotation.json").write_text(json.dumps(ann))
+
+    # No filter — back-compat path counts every dir.
+    block_all = aggregate_cascading_phase1(rows_dir)
+    assert block_all["n_dual_eval_tasks"] == 3
+    assert block_all["counts"]["n1"] == 2  # alien_1 + alien_2_stale
+
+    # With filter — only the current run's two iids are counted.
+    block_filtered = aggregate_cascading_phase1(
+        rows_dir,
+        instance_filter={"alien_1", "alien_3"},
+    )
+    assert block_filtered["n_dual_eval_tasks"] == 2
+    assert block_filtered["counts"]["n1"] == 1, (
+        "alien_2_stale's n1=True must NOT contribute to the filtered "
+        "count; only alien_1 passes"
+    )
+    # And the stale dir is still on disk — the aggregator filter does
+    # NOT delete anything, only scopes the count.
+    assert (rows_dir / "alien_2_stale" / "submission_annotation.json").exists()
+
+
 def test_aggregator_enforces_monotonicity_on_tampered_row(tmp_path):
     """The aggregator MUST enforce monotonicity. We deliberately feed a
     violating row (N5=True, N6=False) — a "later level is more strict
