@@ -58,7 +58,7 @@ async def test_pydantic_ai_prepare_tools_forces_strict_false():
 def test_pydantic_ai_each_factory_wires_prepare_tools(tmp_path, monkeypatch):
     """All three pydantic_ai agent factories register the strict-forcing hook."""
     import os
-    if "ANTHROPIC_API_KEY" not in os.environ:
+    if not os.environ.get("ANTHROPIC_API_KEY"):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
     from bird_interact_agents.agents.pydantic_ai.agent import (
         _build_raw_a_agent, _build_raw_c_agent, _build_slayer_agent,

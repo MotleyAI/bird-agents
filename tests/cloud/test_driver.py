@@ -986,6 +986,32 @@ def test_read_api_keys_old_manifest_no_framework_legacy_path(monkeypatch):
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
 
 
+def test_read_api_keys_oauth_bad_prefix_raises(monkeypatch):
+    """claude_sdk + OAuth with wrong token prefix → PrereqError before any
+    os.environ lookups, not a raw KeyError or silent cluster start."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-api03-not-an-oauth-token")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    with pytest.raises(driver.PrereqError, match="sk-ant-oat01-"):
+        driver.read_api_keys_from_local_env(
+            "anthropic/claude-sonnet-4-5",
+            "anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+        )
+
+
+def test_read_api_keys_oauth_missing_usersim_key_raises_prereq_error(monkeypatch):
+    """claude_sdk + valid OAuth + anthropic user-sim but no ANTHROPIC_API_KEY
+    → PrereqError (not KeyError) listing the missing key."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(driver.PrereqError, match="BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"):
+        driver.read_api_keys_from_local_env(
+            "anthropic/claude-sonnet-4-5",
+            "anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+        )
+
+
 def test_build_resubmit_args_old_manifest_no_framework_uses_get(monkeypatch):
     """_build_resubmit_args must use manifest.get('framework', '') so old
     manifests without the key don't raise KeyError (DEV-1517)."""

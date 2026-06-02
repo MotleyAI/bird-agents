@@ -123,18 +123,25 @@ def read_api_keys_from_local_env(
     # Ship the token and rename the user-sim Anthropic key so the SDK cannot
     # see ANTHROPIC_API_KEY and is forced to use the OAuth token.
     if prereqs._is_claude_sdk_framework(framework) and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
-        result: dict[str, str] = {"CLAUDE_CODE_OAUTH_TOKEN": os.environ["CLAUDE_CODE_OAUTH_TOKEN"]}
+        token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
+        if not token.startswith("sk-ant-oat01-"):
+            raise PrereqError(
+                "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai OAuth token "
+                "(expected sk-ant-oat01- prefix).",
+                remediation="claude setup-token",
+            )
+        result: dict[str, str] = {"CLAUDE_CODE_OAUTH_TOKEN": token}
         # Rename the Anthropic key for user-sim; LiteLLM reads it via
         # _maybe_inject_anthropic_key in usage.acompletion_tracked.
         if user_sim_model.startswith("anthropic/"):
-            result["BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"] = os.environ["ANTHROPIC_API_KEY"]
+            result["BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"] = os.environ.get("ANTHROPIC_API_KEY", "")
         # Non-anthropic user-sim keys (OPENAI, CEREBRAS, GEMINI).
         for k in _required_api_keys(user_sim_model):
             if k != "ANTHROPIC_API_KEY":
-                result[k] = os.environ[k]
+                result[k] = os.environ.get(k, "")
         # DEV-1468: slayer embeddings always need OPENAI_API_KEY.
         if query_mode == "slayer":
-            result["OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
+            result["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY", "")
         # Fail fast on missing keys (resubmit has no prereq check).
         missing = [k for k, v in result.items() if not v]
         if missing:

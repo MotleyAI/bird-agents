@@ -801,7 +801,9 @@ def _assert_actor_oauth_invariant() -> None:
         if not token.startswith("sk-ant-oat01-"):
             raise RuntimeError(
                 "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai OAuth "
-                "token (expected sk-ant-oat01- prefix). Re-run `claude setup-token`."
+                "token (expected sk-ant-oat01- prefix). Re-run `claude setup-token`. "
+                "This actor will not be restarted — check the token in the manifest "
+                "secrets file rather than the Ray restart log."
             )
 
 
