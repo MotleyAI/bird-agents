@@ -83,13 +83,19 @@ def _is_genuine_miss(cascade: "CascadeVerdict") -> bool:
     return not cascade.n9_case_fold
 
 
-def _read_kb_text(slayer_storage_dir: str, db_name: str) -> str:
-    """Read ``{db_name}_kb_*`` SLayer memories from ``memories.yaml``.
+def _read_kb_text(
+    slayer_storage_dir: str,
+    db_name: str,
+    external_knowledge: list[int],
+) -> str:
+    """Read KB SLayer memories relevant to this task from ``memories.yaml``.
 
-    Returns a string of newline-separated ``learning`` paragraphs for all
-    matching entries. Returns ``""`` if the file is absent or the directory
-    doesn't exist.
+    Only entries whose ID matches ``{db_name}_kb_{n}`` for ``n`` in
+    ``external_knowledge`` are included. Returns ``""`` if the file is absent,
+    the directory doesn't exist, or ``external_knowledge`` is empty.
     """
+    if not external_knowledge:
+        return ""
     memories_path = Path(slayer_storage_dir) / "memories.yaml"
     if not memories_path.exists():
         return ""
@@ -98,10 +104,10 @@ def _read_kb_text(slayer_storage_dir: str, db_name: str) -> str:
     except Exception:  # noqa: BLE001
         logger.warning("[autopsy] failed to parse %s", memories_path)
         return ""
-    prefix = f"{db_name}_kb_"
+    allowed_ids = {f"{db_name}_kb_{n}" for n in external_knowledge}
     paragraphs = []
     for entry in entries:
-        if isinstance(entry, dict) and str(entry.get("id", "")).startswith(prefix):
+        if isinstance(entry, dict) and entry.get("id") in allowed_ids:
             learning = entry.get("learning") or ""
             if learning:
                 paragraphs.append(learning)
@@ -279,7 +285,11 @@ async def run_autopsy(
     """
     import anthropic
 
-    kb_text = _read_kb_text(slayer_storage_dir, task_annotation.selected_database)
+    kb_text = _read_kb_text(
+        slayer_storage_dir,
+        task_annotation.selected_database,
+        task_annotation.external_knowledge,
+    )
     prompt = _build_prompt(
         task_annotation=task_annotation,
         trajectory=trajectory,

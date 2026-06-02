@@ -204,7 +204,7 @@ def _build_submission_annotation(
     )
 
     task_ann_ref = (
-        f"annotations/{benchmark}/"
+        f"annotations/{benchmark.replace('-', '_')}/"
         f"{task_annotation.selected_database}/"
         f"{task_annotation.instance_id}.task.json"
     )

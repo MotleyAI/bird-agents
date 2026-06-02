@@ -543,7 +543,7 @@ def test_grade_and_write_no_autopsy(tmp_path):
 
 def test_read_kb_text_returns_empty_for_missing_dir():
     from bird_interact_agents.eval.autopsy import _read_kb_text
-    assert _read_kb_text("/nonexistent/path/that/does/not/exist", "testdb") == ""
+    assert _read_kb_text("/nonexistent/path/that/does/not/exist", "testdb", [1]) == ""
 
 
 def test_read_kb_text_parses_memories_yaml(tmp_path):
@@ -578,7 +578,7 @@ def test_read_kb_text_parses_memories_yaml(tmp_path):
     ]
     (tmp_path / "memories.yaml").write_text(yaml.dump(memories))
 
-    text = _read_kb_text(str(tmp_path), "mydb")
+    text = _read_kb_text(str(tmp_path), "mydb", [1, 2])
     assert "KB 1" in text
     assert "KB 2" in text
     assert "Should be excluded from mydb output" not in text
@@ -590,7 +590,7 @@ def test_read_kb_text_parses_memories_yaml(tmp_path):
 def test_read_kb_text_returns_empty_for_missing_yaml(tmp_path):
     """No memories.yaml at all → empty string."""
     from bird_interact_agents.eval.autopsy import _read_kb_text
-    assert _read_kb_text(str(tmp_path), "mydb") == ""
+    assert _read_kb_text(str(tmp_path), "mydb", [1]) == ""
 
 
 # ---------------------------------------------------------------------------

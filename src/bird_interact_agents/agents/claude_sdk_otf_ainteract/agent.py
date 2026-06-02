@@ -464,28 +464,37 @@ class ClaudeSDKOtfAInteractAgent:
         _autopsy_result = None
         _submitted_sql = result.get("submitted_sql") or ""
         if _submitted_sql:
-            _audited_rows = load_audited_gold_rows_for(
-                benchmark=benchmark.name, instance_id=instance_id,
-            )
-            _orig_sql = normalize_sol_sql(
-                task_data.get("original_sol_sql") or task_data.get("sol_sql"),
-            )
-            _db_path = Path(data_path_base) / db_name / f"{db_name}.sqlite"
-            _cascade = grade_submission(
-                task_annotation=task_annotation,
-                audited_gold_rows=_audited_rows,
-                original_sol_sql=_orig_sql,
-                submitted_sql=_submitted_sql,
-                db_path=_db_path,
-                user_sim_n_asks=ctx_dict.get("asks_used", 0),
-            )
-            if _is_genuine_miss(_cascade):
-                _autopsy_result = await run_autopsy(
+            try:
+                _audited_rows = load_audited_gold_rows_for(
+                    benchmark=benchmark.name, instance_id=instance_id,
+                )
+                _orig_sql = normalize_sol_sql(
+                    task_data.get("original_sol_sql") or task_data.get("sol_sql"),
+                )
+                _db_path = Path(
+                    task_data.get("db_file_path")
+                    or (Path(data_path_base) / db_name / f"{db_name}.sqlite")
+                )
+                _cascade = grade_submission(
                     task_annotation=task_annotation,
-                    trajectory=trajectory,
-                    slayer_storage_dir=slayer_storage_dir,
-                    miss_diagnostics=_cascade.miss_diagnostics,
-                    model=self.model,
+                    audited_gold_rows=_audited_rows,
+                    original_sol_sql=_orig_sql,
+                    submitted_sql=_submitted_sql,
+                    db_path=_db_path,
+                    user_sim_n_asks=ctx_dict.get("asks_used", 0),
+                )
+                if _is_genuine_miss(_cascade):
+                    _autopsy_result = await run_autopsy(
+                        task_annotation=task_annotation,
+                        trajectory=trajectory,
+                        slayer_storage_dir=slayer_storage_dir,
+                        miss_diagnostics=_cascade.miss_diagnostics,
+                        model=self.model,
+                    )
+            except Exception:
+                logger.exception(
+                    "[otf_ainteract] autopsy grading failed for %s; continuing without autopsy",
+                    instance_id,
                 )
         return finalize_result_row(
             {
