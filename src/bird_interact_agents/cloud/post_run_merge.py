@@ -80,6 +80,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+from bird_interact_agents.eval.annotation_io import submission_annotation_path
+from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation, TaskAnnotation
+
 _MARKER = "_reference_fp.txt"
 _SIDECAR = "_source_mtimes.json"
 _UPLOAD_COMPLETE = "_upload_complete"
@@ -423,7 +428,6 @@ def merge_post_run_into_warm_cache(
 # ---------------------------------------------------------------------------
 
 
-from pydantic import BaseModel, ConfigDict
 
 
 class AnnotationMergeReport(BaseModel):
@@ -459,14 +463,6 @@ def merge_submission_annotations(
     * Writes an audit report at
       ``<downloaded_run_dir>/annotation_merge_report.json``.
     """
-    from bird_interact_agents.eval.annotation_io import (
-        submission_annotation_path,
-    )
-    from bird_interact_agents.eval.annotation_schema import (
-        SubmissionAnnotation,
-    )
-    from pydantic import ValidationError
-
     rows_dir = downloaded_run_dir / "rows"
     report = AnnotationMergeReport(run_id=run_id, benchmark=benchmark)
     if rows_dir.exists():
@@ -561,9 +557,10 @@ def merge_task_annotations(
             continue
         try:
             data = json.loads(src.read_text())
+            TaskAnnotation.model_validate(data)
             db = data["selected_database"]
             instance_id = data["instance_id"]
-        except (json.JSONDecodeError, KeyError) as e:
+        except (json.JSONDecodeError, KeyError, ValidationError) as e:
             report.errors += 1
             report.error_details.append(f"{src}: {e}")
             continue
