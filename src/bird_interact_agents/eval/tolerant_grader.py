@@ -147,6 +147,18 @@ def compare_tie_order(
     if not orderby_indices:
         return _set_equal(pred, gold)
 
+    # Codex r12: a wrong-projection-width agent submission is a normal
+    # miss (e.g. forgot a column), but ``row[i]`` would raise IndexError
+    # below and bubble out of the grader, forcing the caller into a
+    # generic fail-everything fallback annotation. Bounds-check the
+    # ORDER BY indices against the NARROWEST row on either side first;
+    # any out-of-range index means tie-order cannot match → return False
+    # cleanly (same disposition as the row-count check above).
+    max_idx = max(orderby_indices)
+    rows_for_width = list(pred) + list(gold)
+    if rows_for_width and max_idx >= min(len(r) for r in rows_for_width):
+        return False
+
     def _key(row: Sequence) -> Tuple:
         return tuple(row[i] for i in orderby_indices)
 
@@ -278,9 +290,25 @@ def compare_column_order(
         return False
     pred_l = [c.lower() for c in pred_cols]
     gold_l = [c.lower() for c in gold_cols]
+    # Codex r12: duplicate column names make "column order tolerance"
+    # ill-defined. ``set(...)`` collapses duplicates, then
+    # ``pred_l.index(c)`` returns the FIRST matching position for every
+    # later occurrence — so e.g. pred ``[a, b, a]`` against gold
+    # ``[a, a, b]`` would map both gold "a" positions to pred's first
+    # "a" column and silently ignore the second pred "a" column's
+    # actual value, falsely passing N8. Reject the case at the boundary
+    # — duplicate-named projections aren't a column-order miss, they're
+    # a separate quality issue (likely a join-collision in the query).
+    if (
+        len(pred_l) != len(set(pred_l))
+        or len(gold_l) != len(set(gold_l))
+    ):
+        return False
     if set(pred_l) != set(gold_l):
         return False
-    # Permutation: position in pred for each gold column.
+    # Permutation: position in pred for each gold column. Safe because
+    # the duplicate-name guard above ensures each gold name appears
+    # exactly once on each side.
     perm = [pred_l.index(c) for c in gold_l]
     aligned = [tuple(r[i] for i in perm) for r in pred]
     return _set_equal(aligned, gold)
