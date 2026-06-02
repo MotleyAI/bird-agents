@@ -15,7 +15,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
+from typing import Any
 
 from bird_interact_agents.cloud import gcs as _gcs
 from bird_interact_agents.agents.annotator.agent import AnnotatorResult
@@ -147,32 +149,202 @@ def _write_attempt(
 
 
 # ---------------------------------------------------------------------------
-# CLI entry point (minimal — full arg-parsing is done by cli.py)
+# Task data loader (annotator only — no gold overlay needed)
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+def _load_annotator_task_data(
+    instance_ids: list[str],
+    *,
+    benchmark: str,
+) -> dict[str, dict]:
+    """Load plain task data for the annotator (no audited-gold overlay)."""
+    from bird_interact_agents import paths
+    from bird_interact_agents.harness import load_benchmark_tasks
+
+    rows = load_benchmark_tasks(
+        benchmark,
+        str(paths.benchmark_data_file(benchmark)),
+        None,
+        filter_ids=instance_ids,
+    )
+    return {td["instance_id"]: td for td in rows}
+
+
+# ---------------------------------------------------------------------------
+# Ray actor class builder
+# ---------------------------------------------------------------------------
+
+def _build_annotator_actor_class():
+    """Return a Ray-remote actor class whose `.run_one(task_data)` calls
+    `_run_one_task`. Lazy import so test environments without Ray can still
+    use the sequential path."""
+    import ray  # type: ignore[import-not-found]
+
+    @ray.remote
+    class AnnotatorActor:
+        def __init__(self, cfg: dict[str, Any], run_id: str, data_path_base: str):
+            self.cfg = cfg
+            self.run_id = run_id
+            self.data_path_base = data_path_base
+            self.gcs_client = default_gcs_client()
+
+        def run_one(self, task_data: dict) -> None:
+            _run_one_task(
+                task_data=task_data,
+                cfg=self.cfg,
+                run_id=self.run_id,
+                data_path_base=self.data_path_base,
+                gcs_client=self.gcs_client,
+            )
+
+    return AnnotatorActor
+
+
+# ---------------------------------------------------------------------------
+# Pool driver (reuses ray_app helpers)
+# ---------------------------------------------------------------------------
+
+def run_annotator_pool(
+    *,
+    run_id: str,
+    instance_ids: list[str],
+    task_data_by_id: dict[str, dict],
+    cfg: dict[str, Any],
+    data_path_base: str,
+    num_actors: int,
+    ray_job_id: str = "local",
+    gcs_client=None,
+    actor_env_vars: dict[str, str] | None = None,
+    heartbeat_interval_s: float = 30.0,
+    local_only: bool = False,
+) -> None:
+    """Dispatch annotator tasks via a Ray actor pool (or sequentially)."""
+    from bird_interact_agents.cloud.ray_app import (
+        HeartbeatWriter,
+        _apply_actor_env_local,
+        _run_with_actors,
+        _with_actor_env,
+    )
+
+    client = gcs_client or default_gcs_client()
+    heartbeat = HeartbeatWriter(
+        run_id=run_id, total=len(instance_ids), attempt=1,
+        ray_job_id=ray_job_id, client=client,
+        interval_s=heartbeat_interval_s,
+    )
+
+    try:
+        import ray  # type: ignore[import-not-found]
+        ray_available = True
+    except ImportError:
+        ray_available = False
+
+    use_local = local_only or not ray_available
+
+    heartbeat.start()
+    try:
+        if use_local:
+            if actor_env_vars:
+                _apply_actor_env_local(actor_env_vars)
+            for iid in instance_ids:
+                _run_one_task(
+                    task_data=task_data_by_id[iid],
+                    cfg=cfg,
+                    run_id=run_id,
+                    data_path_base=data_path_base,
+                    gcs_client=client,
+                )
+                heartbeat.tick_done()
+        else:
+            ActorCls = _with_actor_env(_build_annotator_actor_class(), actor_env_vars)
+            actors = [
+                ActorCls.remote(cfg, run_id, data_path_base)
+                for _ in range(num_actors)
+            ]
+            _run_with_actors(
+                actors=actors,
+                instance_ids=instance_ids,
+                task_data_by_id=task_data_by_id,
+                run_id=run_id,
+                attempt=1,
+                gcs_client=client,
+                heartbeat=heartbeat,
+                actor_factory=lambda: ActorCls.remote(cfg, run_id, data_path_base),
+            )
+        heartbeat.stop_and_flush(terminal_state="done")
+    except Exception:
+        heartbeat.stop_and_flush(terminal_state="error")
+        raise
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+
+def main(argv: list[str] | None = None) -> int:
     import argparse
+    from bird_interact_agents.benchmark import get_benchmark
 
-    parser = argparse.ArgumentParser(description="Annotator Ray worker")
-    parser.add_argument("--benchmark", required=True)
-    parser.add_argument("--model", default="anthropic/claude-opus-4-7")
-    parser.add_argument("--effort", default="medium")
-    parser.add_argument("--run-id", required=True)
-    parser.add_argument("--data-path-base", default="/tmp/data")
-    parser.add_argument("--override", action="store_true")
-    parser.add_argument("--task-data-json", required=True)
-    args = parser.parse_args()
+    p = argparse.ArgumentParser(description="Annotator Ray worker pool")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--ray-job-id", default="unknown")
+    p.add_argument("--benchmark", required=True)
+    p.add_argument("--model", default="anthropic/claude-opus-4-7")
+    p.add_argument("--effort", default="medium",
+                   choices=("low", "medium", "high"))
+    p.add_argument("--override", action="store_true")
+    p.add_argument("--num-actors", type=int, default=4)
+    p.add_argument("--benchmark-data-prefix", default=None)
+    p.add_argument("--data-path-base", default=None)
+    p.add_argument("--instance-ids", required=True, help="comma-separated list")
+    p.add_argument(
+        "--secrets-file", default=None,
+        help="path to a JSON file of env vars (API keys) applied per-actor",
+    )
+    args = p.parse_args(argv)
 
-    task_data = json.loads(args.task_data_json)
-    cfg = {
+    args.benchmark = get_benchmark(args.benchmark).name
+
+    from bird_interact_agents.cloud.ray_app import (
+        _load_secrets_file,
+        download_benchmark_data,
+    )
+
+    actor_env_vars = _load_secrets_file(args.secrets_file)
+    instance_ids = [s.strip() for s in args.instance_ids.split(",") if s.strip()]
+
+    download_benchmark_data(
+        {"dataset": args.benchmark, "benchmark_data_prefix": args.benchmark_data_prefix},
+    )
+
+    task_data_by_id = _load_annotator_task_data(instance_ids, benchmark=args.benchmark)
+
+    _b = get_benchmark(args.benchmark)
+    data_path_base = (
+        args.data_path_base
+        or os.environ.get(_b.data_root_env)
+        or _b.container_data_dir
+    )
+
+    cfg: dict[str, Any] = {
         "benchmark": args.benchmark,
         "model": args.model,
         "effort": args.effort,
         "override": args.override,
     }
-    _run_one_task(
-        task_data=task_data,
-        cfg=cfg,
+
+    run_annotator_pool(
         run_id=args.run_id,
-        data_path_base=args.data_path_base,
+        instance_ids=instance_ids,
+        task_data_by_id=task_data_by_id,
+        cfg=cfg,
+        data_path_base=data_path_base,
+        num_actors=args.num_actors,
+        ray_job_id=args.ray_job_id,
+        actor_env_vars=actor_env_vars,
     )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

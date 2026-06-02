@@ -585,9 +585,12 @@ def _run_one_in_actor(
     try:
         if _grader_data_dir is None:
             raise RuntimeError("data_dir unbound; grader skipped")
+        _submitted_sql = str(row.get("submitted_sql") or "")
+        if not _submitted_sql:
+            raise RuntimeError("submitted_sql is empty; cannot grade")
         ann_path = _grade_one_submission(
             task_data=task_data,
-            submitted_sql=str(row.get("submitted_sql") or ""),
+            submitted_sql=_submitted_sql,
             rows_dir=annotation_dir,
             run_id=run_id,
             benchmark=_cloud_benchmark(cfg),

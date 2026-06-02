@@ -660,6 +660,127 @@ def _build_job_args(
 
 
 # ---------------------------------------------------------------------------
+# Annotator submit
+# ---------------------------------------------------------------------------
+
+_ANNOTATOR_RAY_APP_PATH = (
+    "/app/bird-interact-agents/src/bird_interact_agents/cloud/ray_app_annotator.py"
+)
+
+
+def build_annotator_manifest(
+    args, *, image_uri: str, run_id: str, benchmark_data_prefix: str | None = None,
+) -> dict:
+    """Build the manifest dict for an annotator run."""
+    return {
+        "run_id": run_id,
+        "framework": "annotator",
+        "mode": "annotate",
+        "query_mode": "raw",
+        "dataset": get_benchmark(args.benchmark).name,
+        "benchmark_data_prefix": benchmark_data_prefix,
+        "instance_ids": list(args.instance_ids),
+        "render_inputs": {
+            "workers": args.workers,
+            "actors_per_worker": args.actors_per_worker,
+            "worker_type": args.worker_type,
+            "zone": cluster.DEFAULT_ZONE,
+            "worker_sa": cluster.DEFAULT_WORKER_SA,
+            "max_runtime_hours": args.max_runtime_hours,
+            "image_uri": image_uri,
+            "project": config.PROJECT,
+            "region": config.REGION,
+        },
+    }
+
+
+def _build_annotator_job_args(
+    args, run_id: str, *, benchmark_data_prefix: str | None = None,
+) -> list[str]:
+    benchmark = get_benchmark(args.benchmark).name
+    job_args = [
+        "--run-id", run_id,
+        "--benchmark", benchmark,
+        "--model", args.agent_model,
+        "--effort", getattr(args, "effort", "medium"),
+        "--num-actors", str(args.workers * args.actors_per_worker),
+        "--instance-ids", ",".join(args.instance_ids),
+    ]
+    if benchmark_data_prefix:
+        job_args += ["--benchmark-data-prefix", benchmark_data_prefix]
+    if getattr(args, "override", False):
+        job_args.append("--override")
+    return job_args
+
+
+def submit_annotator(args) -> str:
+    import argparse as _argparse
+    _prereq_args = _argparse.Namespace(
+        agent_model=args.agent_model,
+        user_sim_model=args.agent_model,
+        query_mode="raw",
+        framework="annotator",
+    )
+    prereqs.check(_prereq_args)
+    repo_root = submitter_repo_root()
+    tag = image.image_tag(
+        repo_root,
+        paths.audited_gold_root(),
+        allow_dirty=args.allow_dirty,
+        annotations_root=paths.annotations_root(),
+    )
+    image_uri = image.build_and_push(
+        tag, repo_root,
+        audited_gold_root=paths.audited_gold_root(),
+        annotations_root=paths.annotations_root(),
+        force=False,
+    )
+    benchmark_data_prefix = benchmark_data.ensure_uploaded(
+        get_benchmark(args.benchmark).name
+    )
+    run_id = args.run_id or mint_run_id("annotator", "raw")
+    manifest = build_annotator_manifest(
+        args, image_uri=image_uri, run_id=run_id,
+        benchmark_data_prefix=benchmark_data_prefix,
+    )
+    gcs.write_manifest(run_id, manifest)
+    yaml_path = cluster.render_from_manifest(manifest, cache_dir=yaml_cache_dir())
+    h = install_signal_handlers(run_id=run_id, yaml_path=yaml_path)
+    submit_succeeded = False
+    try:
+        cluster.up(yaml_path)
+        head = cluster.head_address(yaml_path)
+        env_vars = read_api_keys_from_local_env(
+            args.agent_model, args.agent_model, query_mode="raw",
+            framework="annotator",
+        )
+        job_args = _build_annotator_job_args(
+            args, run_id, benchmark_data_prefix=benchmark_data_prefix,
+        )
+        ray_job_id = cluster.submit_job(
+            head_address=head, args=job_args, env_vars=env_vars,
+            yaml_path=yaml_path,
+            ray_app_path=_ANNOTATOR_RAY_APP_PATH,
+        )
+        submit_succeeded = True
+        gcs.write_status(run_id, {
+            "ray_job_id": ray_job_id,
+            "last_heartbeat_ts": time.time(),
+            "rows_done": 0,
+            "rows_total": len(args.instance_ids),
+            "terminal_state": None,
+            "attempt": 1,
+        })
+        if not args.detach:
+            wait_until_done(run_id, manifest)
+            fetch(run_id)
+    finally:
+        if (not args.detach) or (not submit_succeeded):
+            h.teardown(reason="finally")
+    return run_id
+
+
+# ---------------------------------------------------------------------------
 # wait_until_done
 # ---------------------------------------------------------------------------
 
@@ -764,6 +885,23 @@ def fetch(run_id: str) -> dict:
     metrics["annotation_merge_report"] = annotation_merge.model_dump()
 
     metrics = _emit_cascading_phase1_on_fetch(dest=dest, metrics=metrics)
+
+    # DEV-1518: for annotator runs, merge per-task annotation + gold variant
+    # files from the downloaded rows into local stable storage.
+    if manifest.get("framework") == "annotator":
+        task_ann_report = _post_run_merge.merge_task_annotations(
+            downloaded_run_dir=dest,
+            benchmark=_benchmark_for_dataset(manifest.get("dataset")),
+            annotations_root=paths.annotations_root(),
+        )
+        metrics["task_annotation_merge_report"] = task_ann_report.model_dump()
+        variants_report = _post_run_merge.merge_audited_gold_variants(
+            downloaded_run_dir=dest,
+            benchmark=_benchmark_for_dataset(manifest.get("dataset")),
+            audited_gold_root=paths.audited_gold_root(),
+        )
+        metrics["audited_gold_variants_merge_report"] = variants_report.model_dump()
+
     return metrics
 
 
