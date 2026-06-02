@@ -635,15 +635,33 @@ def grade_submission(
                 sqls, db_path=db_path, conn=conn, executor=executor,
             )
         except Exception:  # noqa: BLE001
-            # Variant SQL didn't execute — treat as empty rowset so the
-            # cascade can still complete and diagnostics can flag the
-            # downstream sqlglot parse failure. Better than crashing
-            # grading on a single broken variant.
-            v_rows, v_cols = [], []
+            # Variant SQL didn't execute — SKIP it instead of coercing
+            # to ``([], [])``. An empty stand-in lets N2/N3 falsely pass
+            # whenever the agent rowset is also empty (e.g. agent SQL
+            # also failed) — producing "correct" verdicts from broken
+            # gold SQL. The diagnostics path picks the best-overlap
+            # variant from the surviving rows; downstream sqlglot
+            # parsing of the broken SQL string still surfaces the
+            # ``sql_parse_error`` flag on the agent-side miss.
+            logger.exception(
+                "Audited variant execution failed; skipping. "
+                "instance=%s variant_id=%s",
+                task_annotation.instance_id, v.get("variant_id"),
+            )
+            continue
         variant_results.append((v, v_rows, v_cols))
 
     # 2) N1 — original gold strict.
-    n1 = _set_equal(pred_rows, orig_rows)
+    # When the source data carries no ``sol_sql`` for this instance
+    # (e.g. the regrade source-row lookup returned []), ``orig_rows``
+    # is also []. ``_set_equal([], [])`` is True — which would falsely
+    # mark N1 as a strict pass whenever the agent's SQL also returns
+    # empty (execution failure or genuinely empty result). Treat
+    # missing-gold as ungradable for N1 instead of as an empty bag.
+    if not original_sol_sql:
+        n1 = False
+    else:
+        n1 = _set_equal(pred_rows, orig_rows)
 
     # 3) N2/N3 — audited primary / any variant strict.
     primary = next(
@@ -968,11 +986,23 @@ def _has_limit(expr: Optional[sg_expr.Expression]) -> Optional[bool]:
 
 
 def _where_conjunct_count(expr: Optional[sg_expr.Expression]) -> Optional[int]:
-    """Count top-level AND-conjuncts in the outer SELECT's WHERE clause.
-    Zero if no WHERE. A single predicate counts as 1."""
+    """Count top-level AND-conjuncts in the OUTER SELECT's WHERE clause.
+    Zero if no WHERE. A single predicate counts as 1.
+
+    ``expr.find(sg_expr.Where)`` would descend into subqueries / CTEs
+    and pick whichever WHERE node sqlglot iterates first, which can be
+    a nested one — producing wrong ``predicate_count_mismatch``
+    diagnostics. Reach the outer Select's ``args["where"]`` directly
+    instead so we count predicates on the query the agent's result
+    rowset actually came from.
+    """
     if expr is None:
         return None
-    where = expr.find(sg_expr.Where)
+    outer = (
+        expr if isinstance(expr, sg_expr.Select)
+        else expr.find(sg_expr.Select)
+    )
+    where = outer.args.get("where") if outer is not None else None
     if where is None:
         return 0
     # Flatten the AND tree into atoms.

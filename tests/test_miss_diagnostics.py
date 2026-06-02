@@ -280,10 +280,45 @@ def test_flag_sql_parse_error_agent_side(tmp_path: Path):
 
 
 def test_flag_sql_parse_error_best_variant_side(tmp_path: Path):
-    """Mirror case: agent SQL parses fine but the best-variant audited
-    SQL is malformed. Codex major #4 — the rule fires on EITHER side
-    failing to parse, and the best-variant nullable fields must mirror
-    the agent-side behaviour."""
+    """Mixed-variants case: one variant executes fine, one is malformed.
+    The malformed variant is SKIPPED from variant_results (not coerced
+    to ``([], [])`` — that would risk false N2/N3 passes per
+    CodeRabbit r3336709435). The surviving good variant becomes the
+    best-overlap reference; if its SQL parses fine, sql_parse_error
+    does NOT fire because the broken variant was excluded from the
+    sqlglot pass.
+
+    Audit-quality issues (broken variants in the gold set) are out of
+    scope for MissDiagnostics — they belong to a separate audit-side
+    annotation. This test pins the new contract: broken variants are
+    silently skipped and the diagnostics path proceeds against the
+    surviving ones."""
+    db = _build_db(tmp_path)
+    verdict = _grade(
+        db=db,
+        submitted_sql="SELECT id FROM t1 WHERE id IN (4, 5)",
+        audited_sol_sql_per_variant=[
+            ("primary", True, ["NOT A VALID SQL AT ALL ;;"]),
+            ("alt", False, ["SELECT id FROM t1 WHERE id IN (1, 2)"]),
+        ],
+    )
+    md = verdict.miss_diagnostics
+    assert md is not None
+    # The broken "primary" was skipped from variant_results; only "alt"
+    # survives, so best_variant_id must be "alt".
+    assert md.best_variant_id == "alt"
+    assert md.agent_sql_parse_ok is True
+    assert md.best_variant_sql_parse_ok is True
+    assert "sql_parse_error" not in md.miss_patterns
+
+
+def test_all_variants_failing_execution_leaves_diagnostics_none(tmp_path: Path):
+    """When EVERY audited variant fails to execute, there is no
+    canonical gold to diagnose against — miss_diagnostics stays None
+    (we never coerce to empty, which would risk a false N2/N3 pass).
+    The cascade's `phase1_against_*` fields still record the misses;
+    callers can detect the unevaluable-grading state by observing
+    miss_diagnostics is None on a cascade-fail."""
     db = _build_db(tmp_path)
     verdict = _grade(
         db=db,
@@ -292,23 +327,11 @@ def test_flag_sql_parse_error_best_variant_side(tmp_path: Path):
             ("primary", True, ["NOT A VALID SQL AT ALL ;;"]),
         ],
     )
-    md = verdict.miss_diagnostics
-    assert md is not None
-    assert md.agent_sql_parse_ok is True
-    assert md.agent_sql_parse_error is None
-    assert md.agent_tables_referenced == ["t1"]
-    # Best-variant side is the broken one.
-    assert md.best_variant_sql_parse_ok is False
-    assert md.best_variant_sql_parse_error is not None
-    assert md.best_variant_tables_referenced is None
-    assert md.best_variant_has_group_by is None
-    assert md.best_variant_has_aggregate is None
-    assert md.best_variant_join_count is None
-    assert md.best_variant_where_conjunct_count is None
-    assert md.best_variant_has_having is None
-    assert md.best_variant_has_limit is None
-    assert md.table_set_match is None
-    assert "sql_parse_error" in md.miss_patterns
+    # Cascade should fail across the board.
+    assert verdict.n2_audited_primary is False
+    assert verdict.n3_any_audited_variant is False
+    # No surviving variant → no canonical reference → no diagnostics.
+    assert verdict.miss_diagnostics is None
 
 
 def test_flag_empty_agent_result(tmp_path: Path):

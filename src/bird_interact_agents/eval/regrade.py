@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional
 
@@ -48,11 +49,20 @@ def _attempt_rows_dir(run_dir: Path) -> Path:
 def clear_llm_judge_cache(
     *,
     cache_path: Path,
-    instance_ids: Iterable[str],
+    instance_ids: Optional[Iterable[str]],
 ) -> None:
     """Drop cache entries whose embedded ``instance_id`` matches any of
-    ``instance_ids``. Entries for other instances are preserved."""
+    ``instance_ids``. Entries for other instances are preserved.
+
+    Pass ``instance_ids=None`` to drop EVERY entry in the cache — the
+    correct behaviour for an unfiltered ``--force-llm-judge`` regrade
+    (when the caller wants the judge to re-decide every cascade-N5 row,
+    a partial clear would leave previously-cached verdicts intact).
+    """
     if not cache_path.exists():
+        return
+    if instance_ids is None:
+        cache_path.write_text("{}\n")
         return
     cache = json.loads(cache_path.read_text())
     wanted = set(instance_ids)
@@ -147,13 +157,27 @@ def regrade_run(
         return report
 
     filter_set = set(instance_ids) if instance_ids else None
-    if force_llm_judge and filter_set:
+    if force_llm_judge:
+        # ``filter_set=None`` clears the whole cache — the right thing
+        # for an unfiltered regrade since otherwise stale verdicts
+        # would survive and silently override the fresh judge call.
         clear_llm_judge_cache(
             cache_path=run_dir / "llm_judge_cache.json",
             instance_ids=filter_set,
         )
 
+    # Reset the fresh-rows scratch dir so a partial regrade doesn't
+    # leak stale per-instance rows from a previous pass into
+    # ``eval_regraded.json``. When filtering by instance_ids, scope
+    # the reset to those subdirs so unrelated instances from a prior
+    # full regrade survive (and continue contributing to the report).
     fresh_rows_dir = run_dir / "regrade_rows"
+    if filter_set is not None and fresh_rows_dir.exists():
+        for sub in list(fresh_rows_dir.iterdir()):
+            if sub.is_dir() and sub.name in filter_set:
+                shutil.rmtree(sub, ignore_errors=True)
+    elif filter_set is None:
+        shutil.rmtree(fresh_rows_dir, ignore_errors=True)
     fresh_rows_dir.mkdir(parents=True, exist_ok=True)
 
     for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
