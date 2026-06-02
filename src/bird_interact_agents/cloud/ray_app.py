@@ -582,18 +582,37 @@ def _run_one_in_actor(
     # annotation — mirrors ``run._grade_local_row``.
     _grader_data_dir = locals().get("data_dir")
     annotation_dir = Path(tempfile.mkdtemp(prefix="bird_submission_annot_"))
+    _row_submitted_sql = row.get("submitted_sql")
+    _row_selected_db = (
+        row.get("database") or task_data.get("selected_database") or ""
+    )
     try:
+        # Short-circuit BEFORE calling the real grader on a missing
+        # submission. ``str(row.get("submitted_sql") or "")`` would
+        # otherwise pass ``""`` through; SQLite may silently return an
+        # empty rowset for an empty statement, and ``_set_equal([], [])``
+        # would falsely pass N1/N2/N3 whenever the gold result is also
+        # empty (Codex r7). Mirrors ``run._grade_local_row``'s short-
+        # circuit so the cloud + local paths agree on never-submitted
+        # rows — both write a fail-everything annotation here, which the
+        # ``except`` branch below ALSO does for grader exceptions.
+        if not _row_submitted_sql or not _row_selected_db:
+            raise RuntimeError(
+                "no submitted_sql / selected_database — task errored "
+                "before reaching submit; routed to fail-everything "
+                "fallback",
+            )
         if _grader_data_dir is None:
             raise RuntimeError("data_dir unbound; grader skipped")
         ann_path = _grade_one_submission(
             task_data=task_data,
-            submitted_sql=str(row.get("submitted_sql") or ""),
+            submitted_sql=str(_row_submitted_sql),
             rows_dir=annotation_dir,
             run_id=run_id,
             benchmark=_cloud_benchmark(cfg),
             db_path=Path(_grader_data_dir)
-                / str(task_data.get("selected_database", ""))
-                / f"{task_data.get('selected_database', '')}.sqlite",
+                / str(_row_selected_db)
+                / f"{_row_selected_db}.sqlite",
             cost_usd_agent=row.get("usage", {}).get("cost_usd_agent")
                 if isinstance(row.get("usage"), dict) else None,
             cost_usd_user_sim=row.get("usage", {}).get("cost_usd_user_sim")
