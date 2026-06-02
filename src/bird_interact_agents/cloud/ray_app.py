@@ -661,7 +661,7 @@ class _LocalActor:
         gcs_client=None,
     ):
         # Auth env-var invariant: see _assert_actor_oauth_invariant.
-        _assert_actor_oauth_invariant()
+        _assert_actor_oauth_invariant(cfg)
         self.cfg = cfg
         self.run_id = run_id
         self.attempt = attempt
@@ -731,7 +731,7 @@ def _build_actor_class():
     class WorkerActor:
         def __init__(self, cfg: dict[str, Any], run_id: str, attempt: int):
             # Auth env-var invariant: see _assert_actor_oauth_invariant.
-            _assert_actor_oauth_invariant()
+            _assert_actor_oauth_invariant(cfg)
             self.cfg = cfg
             self.run_id = run_id
             self.attempt = attempt
@@ -777,7 +777,7 @@ def _build_actor_class():
     return WorkerActor
 
 
-def _assert_actor_oauth_invariant() -> None:
+def _assert_actor_oauth_invariant(cfg: dict[str, Any]) -> None:
     """Raise RuntimeError if the worker env violates the OAuth precedence rule.
 
     Called at the top of every actor's __init__ (both WorkerActor and
@@ -785,9 +785,14 @@ def _assert_actor_oauth_invariant() -> None:
     os.environ by the time __init__ runs. In local mode, _apply_actor_env_local
     has already stripped ANTHROPIC_API_KEY before the actors are constructed.
 
+    Only active for claude_sdk* frameworks — an ambient CLAUDE_CODE_OAUTH_TOKEN
+    in the developer's shell must not falsely fire for pydantic_ai, agno, etc.
+
     This is a last-resort safety net — if both keys somehow coexist, the
     Claude Agent SDK would silently pick ANTHROPIC_API_KEY over the OAuth token.
     """
+    if not cfg.get("framework", "").startswith("claude_sdk"):
+        return
     if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
         if os.environ.get("ANTHROPIC_API_KEY"):
             raise RuntimeError(

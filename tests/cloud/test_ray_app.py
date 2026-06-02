@@ -2223,13 +2223,17 @@ def test_main_rejects_unknown_dataset(monkeypatch: pytest.MonkeyPatch):
 # ---------------------------------------------------------------------------
 
 
+_CLAUDE_SDK_CFG = {"framework": "claude_sdk"}
+_PYDANTIC_AI_CFG = {"framework": "pydantic_ai"}
+
+
 def test_assert_actor_oauth_invariant_passes_no_oauth(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """No OAuth token → invariant is a no-op."""
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    ray_app._assert_actor_oauth_invariant()  # must not raise
+    ray_app._assert_actor_oauth_invariant(_CLAUDE_SDK_CFG)  # must not raise
 
 
 def test_assert_actor_oauth_invariant_passes_valid_token_only(
@@ -2238,7 +2242,7 @@ def test_assert_actor_oauth_invariant_passes_valid_token_only(
     """Valid OAuth token + no ANTHROPIC_API_KEY → passes."""
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-valid")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    ray_app._assert_actor_oauth_invariant()  # must not raise
+    ray_app._assert_actor_oauth_invariant(_CLAUDE_SDK_CFG)  # must not raise
 
 
 def test_assert_actor_oauth_invariant_raises_on_co_presence(
@@ -2249,7 +2253,7 @@ def test_assert_actor_oauth_invariant_raises_on_co_presence(
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-valid")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-key")
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
-        ray_app._assert_actor_oauth_invariant()
+        ray_app._assert_actor_oauth_invariant(_CLAUDE_SDK_CFG)
 
 
 def test_assert_actor_oauth_invariant_raises_on_bad_prefix(
@@ -2259,7 +2263,18 @@ def test_assert_actor_oauth_invariant_raises_on_bad_prefix(
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-bad-prefix-xyz")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="sk-ant-oat01-"):
-        ray_app._assert_actor_oauth_invariant()
+        ray_app._assert_actor_oauth_invariant(_CLAUDE_SDK_CFG)
+
+
+def test_assert_actor_oauth_invariant_non_claude_sdk_skips_ambient_oauth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-claude_sdk framework with ambient OAuth + API key must NOT raise.
+    DEV-1517: a developer running pydantic_ai locally with CLAUDE_CODE_OAUTH_TOKEN
+    in their shell should not have the invariant fire spuriously."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-ambient")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-key")
+    ray_app._assert_actor_oauth_invariant(_PYDANTIC_AI_CFG)  # must not raise
 
 
 def test_load_secrets_file_round_trips_oauth_vars(tmp_path: Path) -> None:
