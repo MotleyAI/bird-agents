@@ -316,8 +316,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     def _grader(*, instance_id: str, submitted_sql: str, task_row: dict, **_kw):
         # Minimal end-to-end wiring — production callers pre-build the
         # implicit annotation + audited gold rows themselves.
-        from bird_interact_agents.cloud.ray_app import (
-            _load_audited_gold_rows_for, _load_task_annotation_or_implicit,
+        from bird_interact_agents.eval.grade_in_place import (
+            load_audited_gold_rows_for as _load_audited_gold_rows_for,
+            load_task_annotation_or_implicit as _load_task_annotation_or_implicit,
         )
         selected_database = task_row.get("selected_database", "")
         if not selected_database:

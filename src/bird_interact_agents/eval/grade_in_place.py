@@ -14,6 +14,7 @@ block.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 from pathlib import Path
 from typing import Any, Callable, List, Optional
 
@@ -25,6 +26,9 @@ from bird_interact_agents.eval.annotation_schema import (
     SubmissionMetadata,
     TaskAnnotation,
     UserSimInteraction,
+)
+from bird_interact_agents.eval.implicit_annotation import (
+    implicit_task_annotation,
 )
 from bird_interact_agents.eval.tolerant_grader import (
     CascadeVerdict,
@@ -286,3 +290,133 @@ def grade_and_write(
     out_path = out_dir / "submission_annotation.json"
     out_path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
     return out_path
+
+
+def load_task_annotation_or_implicit(
+    *, instance_id: str, selected_database: str, benchmark: str,
+    amb_user_query: str = "",
+) -> TaskAnnotation:
+    """Try to read ``<paths.annotations_root()>/<benchmark>/<db>/<inst>.task.json``;
+    if missing, fall back to the in-memory implicit default. NEVER writes
+    a synthesized stub to disk.
+
+    Shared by the cloud worker (``ray_app.py``) and the local runner
+    (``run.py``) so both paths produce the same TaskAnnotation for the
+    same instance — keeping the per-row ``submission_annotation.json``
+    comparable across local + cloud runs.
+    """
+    from bird_interact_agents.eval.annotation_io import (
+        read_task_annotation, task_annotation_path,
+    )
+
+    # Leave ``repo_root`` unset so ``annotation_io._annotations_root``
+    # honours ``BIRD_ANNOTATIONS_ROOT`` (the default already anchors at
+    # ``paths.main_checkout_root()`` via ``paths.annotations_root()``,
+    # so the production path is unchanged).
+    p = task_annotation_path(
+        benchmark=benchmark, selected_database=selected_database,
+        instance_id=instance_id,
+    )
+    if p.exists():
+        return read_task_annotation(p)
+    return implicit_task_annotation(
+        instance_id=instance_id,
+        selected_database=selected_database,
+        benchmark=benchmark,
+        amb_user_query=amb_user_query,
+    )
+
+
+def load_audited_gold_rows_for(
+    *, benchmark: str, instance_id: str,
+) -> list[dict]:
+    """Load every audited-gold row for ``instance_id`` from the
+    consolidated JSONL. Empty list when no rows exist (graceful default
+    — see ``implicit_task_annotation``)."""
+    from bird_interact_agents import paths
+    from bird_interact_agents.benchmark import get_benchmark
+
+    try:
+        bench = get_benchmark(benchmark.replace("-", "_"))
+    except Exception:  # noqa: BLE001
+        return []
+    if getattr(bench, "audited_gold_layout", None) != "single_file":
+        return []
+    consolidated = paths.audited_gold_root() / f"{bench.name}_audited.jsonl"
+    if not consolidated.exists():
+        return []
+    out: list[dict] = []
+    for line in consolidated.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if row.get("instance_id") == instance_id:
+            out.append(row)
+    return out
+
+
+def grade_one_submission(
+    *,
+    task_data: dict,
+    submitted_sql: str,
+    rows_dir: Path,
+    run_id: str,
+    benchmark: str,
+    db_path: Path,
+    conn: Any = None,
+    cost_usd_agent: Optional[float] = None,
+    cost_usd_user_sim: Optional[float] = None,
+    duration_s: Optional[float] = None,
+    n_agent_turns: Optional[int] = None,
+    n_ask_user_calls: Optional[int] = None,
+    predicted_row_count: Optional[int] = None,
+    user_sim_interaction: Optional[UserSimInteraction] = None,
+) -> Path:
+    """Inline-grade one submission and write the per-row
+    ``submission_annotation.json``. Idempotent at the per-(task, run)
+    level — both the cloud fetch path and the local rows aggregator are
+    no-overwrite at the destination.
+
+    Shared between cloud (``cloud.ray_app``) and local (``run``) so the
+    ``cascading_phase1`` block in ``eval.json`` is populated regardless
+    of where the run was launched.
+    """
+    instance_id = task_data["instance_id"]
+    selected_database = task_data["selected_database"]
+    ann = load_task_annotation_or_implicit(
+        instance_id=instance_id,
+        selected_database=selected_database,
+        benchmark=benchmark,
+        amb_user_query=task_data.get("amb_user_query", ""),
+    )
+    audited_rows = load_audited_gold_rows_for(
+        benchmark=benchmark, instance_id=instance_id,
+    )
+    return grade_and_write(
+        rows_dir=rows_dir,
+        instance_id=instance_id,
+        benchmark=benchmark,
+        run_id=run_id,
+        task_annotation=ann,
+        audited_gold_rows=audited_rows,
+        original_sol_sql=list(
+            task_data.get("original_sol_sql")
+            or task_data.get("sol_sql")
+            or [],
+        ),
+        submitted_sql=submitted_sql,
+        db_path=db_path,
+        conn=conn,
+        trajectory_path=f"rows/{instance_id}/attempt-1.json",
+        cost_usd_agent=cost_usd_agent,
+        cost_usd_user_sim=cost_usd_user_sim,
+        duration_s=duration_s,
+        n_agent_turns=n_agent_turns,
+        n_ask_user_calls=n_ask_user_calls,
+        predicted_row_count=predicted_row_count,
+        user_sim_interaction=user_sim_interaction,
+    )

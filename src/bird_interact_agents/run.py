@@ -14,6 +14,7 @@ from typing import Any as _Any
 from bird_interact_agents import paths
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
+from bird_interact_agents.eval.grade_in_place import grade_one_submission
 from bird_interact_agents.harness import (
     apply_audited_gold_overlay,
     calculate_budget,
@@ -988,6 +989,53 @@ async def run_evaluation(
     p1_count = 0
     p2_count = 0
 
+    # DEV-1515: inline-grade every task into ``<rows_dir>/<inst>/`` so
+    # the existing aggregator at the bottom of ``run_evaluation`` can
+    # emit the ``cascading_phase1`` block in ``eval.json``. Mirrors the
+    # cloud worker (``cloud.ray_app._grade_one_submission``) — without
+    # this, local runs would silently lose the N1-N9 cascade metrics
+    # whenever audited gold / per-task annotations are present.
+    rows_dir = output_dir / "rows"
+    rows_dir.mkdir(parents=True, exist_ok=True)
+    _benchmark_canonical = b.name
+
+    def _grade_local_row(td: dict, r: dict) -> None:
+        """Persist the per-row ``submission_annotation.json`` mirroring
+        cloud's ``_grade_one_submission``. Best-effort: a grader raise
+        on one instance must NOT take down the whole run loop — the row
+        was already inserted into the results DB by ``_persist``."""
+        submitted_sql = r.get("submitted_sql")
+        selected_database = (
+            r.get("database") or td.get("selected_database") or ""
+        )
+        if not submitted_sql or not selected_database:
+            return
+        per_task_db = (
+            paths.benchmark_data_root(_benchmark_canonical)
+            / selected_database
+            / f"{selected_database}.sqlite"
+        )
+        usage_blob = r.get("usage") or {}
+        try:
+            grade_one_submission(
+                task_data=td,
+                submitted_sql=submitted_sql,
+                rows_dir=rows_dir,
+                run_id=run_id,
+                benchmark=_benchmark_canonical,
+                db_path=per_task_db,
+                duration_s=r.get("duration_s"),
+                n_agent_turns=usage_blob.get("n_agent_turns"),
+                n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
+                predicted_row_count=r.get("predicted_row_count"),
+            )
+        except Exception:  # noqa: BLE001 — keep the loop alive
+            logger.exception(
+                "inline grader raised on instance=%s; "
+                "submission_annotation.json NOT written",
+                td.get("instance_id"),
+            )
+
     async def _run_with_sem(i: int, td: dict) -> None:
         nonlocal total_reward, p1_count, p2_count
         async with semaphore:
@@ -1021,6 +1069,7 @@ async def run_evaluation(
                 p1_count += 1
             if r.get("phase2_passed"):
                 p2_count += 1
+            _grade_local_row(td, r)
 
     try:
         await asyncio.gather(*[_run_with_sem(i, td) for i, td in enumerate(tasks)])
