@@ -489,3 +489,164 @@ def test_list_worker_sa_roles_real_impl_no_longer_stub() -> None:
     assert "_roles_for_member" in src or "subprocess.run" in src
     assert "subprocess.run" in inspect.getsource(prereqs._roles_for_member)
     assert "return set()" not in src.split("\n", 1)[1].strip().split("\n")[0]
+
+
+# ---------------------------------------------------------------------------
+# DEV-1517 — OAuth token path for claude_sdk* frameworks.
+# ---------------------------------------------------------------------------
+
+_GOOD_TOKEN = "sk-ant-oat01-good-token"
+_BAD_TOKEN = "sk-bad-prefix-token"
+_ANTHROPIC_KEY = "sk-ant-api-key"
+
+
+def test_claude_sdk_oauth_anthropic_usersim_missing_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """claude_sdk + OAuth present + anthropic user-sim but no ANTHROPIC_API_KEY
+    → fail: user-sim still needs the API key to be shipped as
+    BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(prereqs.PrereqError) as exc:
+        prereqs.check_api_keys(
+            agent_model="anthropic/claude-sonnet-4-5",
+            user_sim_model="anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+        )
+    assert "ANTHROPIC_API_KEY" in str(exc.value)
+
+
+def test_claude_sdk_oauth_plus_api_key_anthropic_usersim_passes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """claude_sdk + valid OAuth + ANTHROPIC_API_KEY + anthropic user-sim → pass."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    # Must not raise.
+    prereqs.check_api_keys(
+        agent_model="anthropic/claude-sonnet-4-5",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+    )
+
+
+def test_claude_sdk_oauth_plus_api_key_openai_usersim_passes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """claude_sdk + OAuth + openai user-sim → pass; ANTHROPIC_API_KEY not
+    required because neither agent nor user-sim is anthropic on this path."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    # Must not raise.
+    prereqs.check_api_keys(
+        agent_model="anthropic/claude-sonnet-4-5",
+        user_sim_model="openai/gpt-4o",
+        framework="claude_sdk",
+    )
+
+
+def test_claude_sdk_oauth_slayer_still_requires_openai_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """claude_sdk + OAuth + slayer mode: OPENAI_API_KEY is still required for
+    channel-3 embeddings even though ANTHROPIC_API_KEY is not shipped."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(prereqs.PrereqError) as exc:
+        prereqs.check_api_keys(
+            agent_model="anthropic/claude-sonnet-4-5",
+            user_sim_model="anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+            query_mode="slayer",
+        )
+    assert "OPENAI_API_KEY" in str(exc.value)
+
+
+def test_claude_sdk_only_api_key_legacy_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """claude_sdk + no OAuth token + ANTHROPIC_API_KEY → legacy path, passes."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    # Must not raise.
+    prereqs.check_api_keys(
+        agent_model="anthropic/claude-sonnet-4-5",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+    )
+
+
+def test_pydantic_ai_ignores_oauth_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pydantic_ai framework with OAuth token set locally → legacy path;
+    ANTHROPIC_API_KEY is still required."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    # Must not raise (legacy path, OAuth silently ignored).
+    prereqs.check_api_keys(
+        agent_model="anthropic/claude-sonnet-4-5",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        framework="pydantic_ai",
+    )
+
+
+def test_pydantic_ai_without_oauth_still_requires_anthropic_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pydantic_ai + OAuth set + no ANTHROPIC_API_KEY → fail (legacy path
+    requires the key; OAuth is not honoured for non-claude_sdk frameworks)."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(prereqs.PrereqError) as exc:
+        prereqs.check_api_keys(
+            agent_model="anthropic/claude-sonnet-4-5",
+            user_sim_model="anthropic/claude-haiku-4-5-20251001",
+            framework="pydantic_ai",
+        )
+    assert "ANTHROPIC_API_KEY" in str(exc.value)
+
+
+def test_claude_sdk_oauth_bad_prefix_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OAuth token without sk-ant-oat01- prefix → PrereqError with
+    `claude setup-token` remediation."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _BAD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    with pytest.raises(prereqs.PrereqError) as exc:
+        prereqs.check_api_keys(
+            agent_model="anthropic/claude-sonnet-4-5",
+            user_sim_model="anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+        )
+    assert "claude setup-token" in exc.value.remediation
+
+
+def test_check_orchestrator_passes_framework(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`prereqs.check(args)` must forward `args.framework` to `check_api_keys`."""
+    captured: dict = {}
+
+    def _stub_check_api_keys(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(prereqs, "check_api_keys", _stub_check_api_keys)
+    # Stub out everything else check() calls.
+    for name in (
+        "check_python_version", "check_local_tools", "check_gcloud_config",
+        "check_adc", "check_submitter_iam", "check_worker_sa_iam",
+        "ensure_bucket_and_artifact_repo",
+    ):
+        monkeypatch.setattr(prereqs, name, lambda *_a, **_kw: None)
+
+    class _Args:
+        agent_model = "anthropic/claude-sonnet-4-5"
+        user_sim_model = "anthropic/claude-haiku-4-5-20251001"
+        framework = "claude_sdk_otf"
+        query_mode = "raw"
+
+    prereqs.check(_Args())
+    assert captured.get("framework") == "claude_sdk_otf"

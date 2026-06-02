@@ -2216,3 +2216,118 @@ def test_main_rejects_unknown_dataset(monkeypatch: pytest.MonkeyPatch):
             "--dataset", "not-a-benchmark",
             "--instance-ids", "db_a_1",
         ])
+
+
+# ---------------------------------------------------------------------------
+# DEV-1517 — _assert_actor_oauth_invariant
+# ---------------------------------------------------------------------------
+
+
+def test_assert_actor_oauth_invariant_passes_no_oauth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No OAuth token → invariant is a no-op."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    ray_app._assert_actor_oauth_invariant()  # must not raise
+
+
+def test_assert_actor_oauth_invariant_passes_valid_token_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Valid OAuth token + no ANTHROPIC_API_KEY → passes."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-valid")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    ray_app._assert_actor_oauth_invariant()  # must not raise
+
+
+def test_assert_actor_oauth_invariant_raises_on_co_presence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY present →
+    RuntimeError (SDK precedence would silently pick the API key)."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-valid")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-key")
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+        ray_app._assert_actor_oauth_invariant()
+
+
+def test_assert_actor_oauth_invariant_raises_on_bad_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OAuth token with wrong prefix → RuntimeError with setup-token hint."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-bad-prefix-xyz")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="sk-ant-oat01-"):
+        ray_app._assert_actor_oauth_invariant()
+
+
+def test_load_secrets_file_round_trips_oauth_vars(tmp_path: Path) -> None:
+    """_load_secrets_file correctly loads CLAUDE_CODE_OAUTH_TOKEN and
+    BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY (new var names from DEV-1517)."""
+    f = tmp_path / "secrets.json"
+    f.write_text(json.dumps({
+        "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-tok",
+        "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY": "sk-ant-key",
+        "OPENAI_API_KEY": "sk-openai",
+    }))
+    out = ray_app._load_secrets_file(str(f))
+    assert out == {
+        "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-tok",
+        "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY": "sk-ant-key",
+        "OPENAI_API_KEY": "sk-openai",
+    }
+    assert not f.exists()
+
+
+def test_with_actor_env_propagates_oauth_vars() -> None:
+    """_with_actor_env passes CLAUDE_CODE_OAUTH_TOKEN and
+    BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY through to the actor's runtime_env."""
+    from unittest.mock import MagicMock
+
+    cls = MagicMock()
+    env_vars = {
+        "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-tok",
+        "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY": "sk-ant-key",
+    }
+    ray_app._with_actor_env(cls, env_vars)
+    cls.options.assert_called_once_with(runtime_env={"env_vars": env_vars})
+
+
+def test_apply_actor_env_local_removes_anthropic_key_on_oauth_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In local mode, applying OAuth actor_env_vars must strip ANTHROPIC_API_KEY
+    from os.environ so the Claude Agent SDK cannot see it."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-key")
+    # NOTE: monkeypatch.delenv is a no-op when the key is absent, so it does NOT
+    # track keys that _apply_actor_env_local later adds via os.environ.update().
+    # Use try/finally to ensure cleanup of those keys.
+    actor_env_vars = {
+        "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-tok",
+        "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY": "sk-ant-key",
+    }
+    try:
+        ray_app._apply_actor_env_local(actor_env_vars)
+
+        assert os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") == "sk-ant-oat01-tok"
+        assert os.environ.get("BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY") == "sk-ant-key"
+        assert "ANTHROPIC_API_KEY" not in os.environ
+    finally:
+        os.environ.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+        os.environ.pop("BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY", None)
+
+
+def test_apply_actor_env_local_legacy_path_keeps_anthropic_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In local mode, legacy actor_env_vars (no CLAUDE_CODE_OAUTH_TOKEN) must
+    NOT remove ANTHROPIC_API_KEY from os.environ."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-key")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    actor_env_vars = {"ANTHROPIC_API_KEY": "sk-ant-key"}
+    ray_app._apply_actor_env_local(actor_env_vars)
+
+    assert os.environ.get("ANTHROPIC_API_KEY") == "sk-ant-key"
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in os.environ

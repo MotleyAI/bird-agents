@@ -340,3 +340,130 @@ async def test_acompletion_tracked_handles_missing_usage(monkeypatch):
     assert accum.n_calls == 0
     assert accum.prompt_tokens == 0
     assert accum.breakdown == []
+
+
+# ---------------------------------------------------------------------------
+# DEV-1517 — _maybe_inject_anthropic_key
+# ---------------------------------------------------------------------------
+
+
+def test_maybe_inject_anthropic_key_injects_on_anthropic_model(
+    monkeypatch,
+) -> None:
+    """When BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY is set and model is
+    anthropic/*, the helper injects api_key into kwargs."""
+    from bird_interact_agents import usage as usage_mod
+
+    monkeypatch.setenv(usage_mod._LITELLM_ANTHROPIC_KEY_ENV, "sk-ant-dedicated")
+    kwargs: dict = {}
+    usage_mod._maybe_inject_anthropic_key("anthropic/claude-haiku-4-5-20251001", kwargs)
+    assert kwargs["api_key"] == "sk-ant-dedicated"
+
+
+def test_maybe_inject_anthropic_key_no_op_on_openai_model(
+    monkeypatch,
+) -> None:
+    """openai/* model → no injection regardless of env var."""
+    from bird_interact_agents import usage as usage_mod
+
+    monkeypatch.setenv(usage_mod._LITELLM_ANTHROPIC_KEY_ENV, "sk-ant-dedicated")
+    kwargs: dict = {}
+    usage_mod._maybe_inject_anthropic_key("openai/gpt-4o", kwargs)
+    assert "api_key" not in kwargs
+
+
+def test_maybe_inject_anthropic_key_no_op_when_env_absent(
+    monkeypatch,
+) -> None:
+    """Env var absent → no injection; LiteLLM falls back to ANTHROPIC_API_KEY."""
+    from bird_interact_agents import usage as usage_mod
+
+    monkeypatch.delenv(usage_mod._LITELLM_ANTHROPIC_KEY_ENV, raising=False)
+    kwargs: dict = {}
+    usage_mod._maybe_inject_anthropic_key("anthropic/claude-haiku-4-5-20251001", kwargs)
+    assert "api_key" not in kwargs
+
+
+def test_maybe_inject_anthropic_key_does_not_overwrite_caller_key(
+    monkeypatch,
+) -> None:
+    """Caller-supplied api_key is not overwritten."""
+    from bird_interact_agents import usage as usage_mod
+
+    monkeypatch.setenv(usage_mod._LITELLM_ANTHROPIC_KEY_ENV, "sk-ant-dedicated")
+    kwargs: dict = {"api_key": "sk-caller-supplied"}
+    usage_mod._maybe_inject_anthropic_key("anthropic/claude-haiku-4-5-20251001", kwargs)
+    assert kwargs["api_key"] == "sk-caller-supplied"
+
+
+def test_maybe_inject_anthropic_key_does_not_mutate_os_environ(
+    monkeypatch,
+) -> None:
+    """The helper must not mutate os.environ."""
+    import os
+    from bird_interact_agents import usage as usage_mod
+
+    monkeypatch.setenv(usage_mod._LITELLM_ANTHROPIC_KEY_ENV, "sk-ant-dedicated")
+    before = dict(os.environ)
+    usage_mod._maybe_inject_anthropic_key("anthropic/claude-haiku-4-5-20251001", {})
+    assert dict(os.environ) == before
+
+
+@pytest.mark.asyncio
+async def test_acompletion_tracked_injects_api_key_on_oauth_path(
+    monkeypatch,
+) -> None:
+    """When BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY is set and model is
+    anthropic/*, acompletion_tracked passes api_key to _acompletion."""
+    from types import SimpleNamespace
+    from bird_interact_agents import usage as usage_mod
+
+    monkeypatch.setenv(usage_mod._LITELLM_ANTHROPIC_KEY_ENV, "sk-ant-dedicated")
+    monkeypatch.setattr(usage_mod, "_cost_per_token", lambda **_: (0.0, 0.0))
+
+    captured: dict = {}
+
+    async def fake_acompletion(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(usage=None, choices=[])
+
+    monkeypatch.setattr(usage_mod, "_acompletion", fake_acompletion)
+
+    accum = usage_mod.TokenUsage()
+    await usage_mod.acompletion_tracked(
+        accum,
+        scope="user_sim",
+        model="anthropic/claude-haiku-4-5-20251001",
+        messages=[],
+    )
+    assert captured.get("api_key") == "sk-ant-dedicated"
+
+
+@pytest.mark.asyncio
+async def test_acompletion_tracked_no_injection_when_env_absent(
+    monkeypatch,
+) -> None:
+    """When BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY is absent, acompletion_tracked
+    does not inject api_key (legacy path — LiteLLM reads ANTHROPIC_API_KEY itself)."""
+    from types import SimpleNamespace
+    from bird_interact_agents import usage as usage_mod
+
+    monkeypatch.delenv(usage_mod._LITELLM_ANTHROPIC_KEY_ENV, raising=False)
+    monkeypatch.setattr(usage_mod, "_cost_per_token", lambda **_: (0.0, 0.0))
+
+    captured: dict = {}
+
+    async def fake_acompletion(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(usage=None, choices=[])
+
+    monkeypatch.setattr(usage_mod, "_acompletion", fake_acompletion)
+
+    accum = usage_mod.TokenUsage()
+    await usage_mod.acompletion_tracked(
+        accum,
+        scope="user_sim",
+        model="anthropic/claude-haiku-4-5-20251001",
+        messages=[],
+    )
+    assert "api_key" not in captured

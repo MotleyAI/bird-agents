@@ -236,18 +236,46 @@ def _required_api_keys(model: str) -> tuple[str, ...]:
     return ()
 
 
+def _is_claude_sdk_framework(framework: str) -> bool:
+    return framework.startswith("claude_sdk")
+
+
 def check_api_keys(
     *, agent_model: str, user_sim_model: str, query_mode: str = "raw",
+    framework: str = "",
 ) -> None:
-    needed: set[str] = set()
-    needed.update(_required_api_keys(agent_model))
-    needed.update(_required_api_keys(user_sim_model))
-    # DEV-1468: slayer mode requires channel-3 embeddings (default
-    # openai/text-embedding-3-small), so OPENAI_API_KEY must be present and
-    # delivered to the actors regardless of the agent/user-sim providers.
-    if query_mode == "slayer":
-        needed.add("OPENAI_API_KEY")
-    missing = [k for k in needed if not os.environ.get(k)]
+    # DEV-1517: claude_sdk* + CLAUDE_CODE_OAUTH_TOKEN present → OAuth path.
+    if _is_claude_sdk_framework(framework) and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
+        if not token.startswith("sk-ant-oat01-"):
+            raise PrereqError(
+                "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai OAuth token "
+                "(expected sk-ant-oat01- prefix).",
+                remediation="claude setup-token",
+            )
+        # Agent uses OAuth; user-sim uses a dedicated env var whose value is
+        # ANTHROPIC_API_KEY. Require it locally so the driver can ship it.
+        needed: set[str] = set()
+        if user_sim_model.startswith("anthropic/"):
+            needed.add("ANTHROPIC_API_KEY")
+        # DEV-1468: slayer embeddings still need OPENAI_API_KEY.
+        if query_mode == "slayer":
+            needed.add("OPENAI_API_KEY")
+        # Non-anthropic keys for user-sim (CEREBRAS, OPENAI, GEMINI).
+        for k in _required_api_keys(user_sim_model):
+            if k != "ANTHROPIC_API_KEY":
+                needed.add(k)
+    else:
+        needed = set()
+        needed.update(_required_api_keys(agent_model))
+        needed.update(_required_api_keys(user_sim_model))
+        # DEV-1468: slayer mode requires channel-3 embeddings (default
+        # openai/text-embedding-3-small), so OPENAI_API_KEY must be present and
+        # delivered to the actors regardless of the agent/user-sim providers.
+        if query_mode == "slayer":
+            needed.add("OPENAI_API_KEY")
+
+    missing = [k for k in sorted(needed) if not os.environ.get(k)]
     if missing:
         cmds = "\n".join(f"export {k}=<your-key>" for k in missing)
         raise PrereqError(
@@ -410,6 +438,7 @@ def check(args: Any) -> None:
         agent_model=args.agent_model,
         user_sim_model=args.user_sim_model,
         query_mode=getattr(args, "query_mode", "raw"),
+        framework=getattr(args, "framework", ""),
     )
     check_submitter_iam()
     ensure_bucket_and_artifact_repo()
