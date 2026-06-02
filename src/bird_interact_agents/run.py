@@ -14,7 +14,10 @@ from typing import Any as _Any
 from bird_interact_agents import paths
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
-from bird_interact_agents.eval.grade_in_place import grade_one_submission
+from bird_interact_agents.eval.grade_in_place import (
+    grade_one_submission,
+    write_failed_submission_annotation,
+)
 from bird_interact_agents.harness import (
     apply_audited_gold_overlay,
     calculate_budget,
@@ -1003,19 +1006,48 @@ async def run_evaluation(
         """Persist the per-row ``submission_annotation.json`` mirroring
         cloud's ``_grade_one_submission``. Best-effort: a grader raise
         on one instance must NOT take down the whole run loop — the row
-        was already inserted into the results DB by ``_persist``."""
+        was already inserted into the results DB by ``_persist``.
+
+        For tasks the grader can't run on (no ``submitted_sql``, agent
+        crashed before submit, grader itself raised) we still write a
+        ``fail-everything`` annotation so the aggregator's denominator
+        (``cascading_phase1.n_dual_eval_tasks``) stays at
+        ``len(tasks)`` and the reported rates aren't inflated by
+        silently dropped rows.
+        """
+        instance_id_for_log = td.get("instance_id", "<unknown>")
         submitted_sql = r.get("submitted_sql")
         selected_database = (
             r.get("database") or td.get("selected_database") or ""
         )
+        usage_blob = r.get("usage") or {}
+        common_failed_kwargs = dict(
+            rows_dir=rows_dir,
+            instance_id=instance_id_for_log,
+            selected_database=selected_database or "<unknown>",
+            benchmark=_benchmark_canonical,
+            run_id=run_id,
+            trajectory_path=f"rows/{instance_id_for_log}/attempt-1.json",
+            duration_s=r.get("duration_s"),
+            n_agent_turns=usage_blob.get("n_agent_turns"),
+            n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
+            predicted_row_count=r.get("predicted_row_count"),
+        )
         if not submitted_sql or not selected_database:
+            write_failed_submission_annotation(
+                **common_failed_kwargs,
+                failure_details=(
+                    "no submitted_sql / selected_database — task "
+                    "errored before reaching submit; counted as 0-pass "
+                    "row at every cascade tier."
+                ),
+            )
             return
         per_task_db = (
             paths.benchmark_data_root(_benchmark_canonical)
             / selected_database
             / f"{selected_database}.sqlite"
         )
-        usage_blob = r.get("usage") or {}
         try:
             grade_one_submission(
                 task_data=td,
@@ -1029,11 +1061,18 @@ async def run_evaluation(
                 n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
                 predicted_row_count=r.get("predicted_row_count"),
             )
-        except Exception:  # noqa: BLE001 — keep the loop alive
+        except Exception as exc:  # noqa: BLE001 — keep the loop alive
             logger.exception(
-                "inline grader raised on instance=%s; "
-                "submission_annotation.json NOT written",
-                td.get("instance_id"),
+                "inline grader raised on instance=%s; writing "
+                "fail-everything annotation so the cascade denominator "
+                "stays honest",
+                instance_id_for_log,
+            )
+            write_failed_submission_annotation(
+                **common_failed_kwargs,
+                failure_details=(
+                    f"inline grader raised: {type(exc).__name__}: {exc}"
+                )[:200],
             )
 
     async def _run_with_sem(i: int, td: dict) -> None:

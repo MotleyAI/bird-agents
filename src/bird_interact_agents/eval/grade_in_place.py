@@ -39,6 +39,34 @@ from bird_interact_agents.eval.tolerant_grader import (
 _AUTO_ANNOTATOR = "auto-inline-grader"
 
 
+def normalize_sol_sql(value: Any) -> List[str]:
+    """Coerce ``sol_sql`` / ``original_sol_sql`` to ``list[str]``.
+
+    Both shapes are present in the wild — ``mini_interact.jsonl`` carries
+    ``sol_sql`` as a single SQL string on some rows and as a list on
+    others (the post-DEV-1478 schema is list, but tests and older
+    fixtures still pass a bare string). Without this helper the previous
+    ``list(value or [])`` would turn the string ``"SELECT 1"`` into the
+    character list ``["S", "E", "L", "E", "C", "T", " ", "1"]`` and the
+    grader would execute each character as a one-character SQL
+    statement, raising ``sqlite3.OperationalError`` and silently
+    dropping N1 to False.
+
+    Contract:
+    * ``None`` / falsy → ``[]``
+    * ``str`` → ``[value]``
+    * ``list`` / ``tuple`` / other iterable of strings → ``list(value)``
+
+    Non-string elements inside a list pass through unchanged (the
+    grader rejects them downstream — this helper is shape-only).
+    """
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+
 def _verdict_to_phase(b: bool) -> PhaseVerdict:
     return "pass" if b else "fail"
 
@@ -292,6 +320,93 @@ def grade_and_write(
     return out_path
 
 
+def write_failed_submission_annotation(
+    *,
+    rows_dir: Path,
+    instance_id: str,
+    selected_database: str,
+    benchmark: str,
+    run_id: str,
+    trajectory_path: str,
+    failure_details: str,
+    duration_s: Optional[float] = None,
+    cost_usd_agent: Optional[float] = None,
+    cost_usd_user_sim: Optional[float] = None,
+    n_agent_turns: Optional[int] = None,
+    n_ask_user_calls: Optional[int] = None,
+    predicted_row_count: Optional[int] = None,
+) -> Path:
+    """Write a 0-pass ``submission_annotation.json`` for a task that
+    bypassed the grader (e.g. agent crashed before submit, no
+    ``submitted_sql`` on the result row, grader itself raised).
+
+    Without this, ``aggregate_cascading_phase1`` walks ``rows_dir`` and
+    skips the missing per-task dir entirely — so ``n_dual_eval_tasks``
+    drops below ``total_tasks`` and ``cascading_phase1.rates`` are
+    INFLATED by silently excluding never-graded rows from the
+    denominator. Writing a fail-everything annotation keeps the
+    denominator honest.
+
+    The annotation is shaped so every N-tier reads as ``"fail"`` /
+    ``False`` (which the aggregator then counts as a 0-pass row at every
+    cascade tier). ``failure_classification.primary`` is ``"other"``
+    because the cascade was never actually computed — the gap isn't
+    "the agent's SQL didn't match the gold" but "no SQL to compare".
+    """
+    out_dir = Path(rows_dir) / instance_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    benchmark_canonical = benchmark.replace("-", "_")
+    ann = SubmissionAnnotation(
+        instance_id=instance_id,
+        selected_database=selected_database,
+        task_annotation_ref=(
+            f"annotations/{benchmark_canonical}/{selected_database}/"
+            f"{instance_id}.task.json"
+        ),
+        annotated_by=_AUTO_ANNOTATOR,
+        annotated_at=_dt.datetime.now(_dt.timezone.utc)
+            .replace(microsecond=0).isoformat(),
+        submission=SubmissionMetadata(
+            cloud_run_id=run_id,
+            trajectory_path=trajectory_path,
+            predicted_row_count=predicted_row_count,
+            duration_s=duration_s,
+            cost_usd_agent=cost_usd_agent,
+            cost_usd_user_sim=cost_usd_user_sim,
+            n_agent_turns=n_agent_turns,
+            n_ask_user_calls=n_ask_user_calls,
+        ),
+        evaluation=SubmissionEvaluation(
+            phase1_against_original_gold="fail",
+            phase1_against_audited_primary="fail",
+            phase1_against_any_audited_variant="fail",
+            phase1_against_variants=[],
+            correct_up_to_tie_order=False,
+            novel_reading_judgment=None,
+            correct_under_numeric_epsilon=False,
+            correct_under_trailing_whitespace=False,
+            correct_under_column_order=False,
+            correct_under_case_fold=False,
+            numeric_epsilon=1e-6,
+            verdict="invalid",
+            matched_variant_id=None,
+            rationale=failure_details,
+            miss_diagnostics=None,
+        ),
+        failure_classification=FailureClassification(
+            primary="other",
+            agent_at_fault=False,
+            remediation_target="other",
+            details=failure_details,
+        ),
+        decision_point=None,
+        user_sim_interaction=UserSimInteraction(),
+    )
+    out_path = out_dir / "submission_annotation.json"
+    out_path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
+    return out_path
+
+
 def load_task_annotation_or_implicit(
     *, instance_id: str, selected_database: str, benchmark: str,
     amb_user_query: str = "",
@@ -403,10 +518,8 @@ def grade_one_submission(
         run_id=run_id,
         task_annotation=ann,
         audited_gold_rows=audited_rows,
-        original_sol_sql=list(
-            task_data.get("original_sol_sql")
-            or task_data.get("sol_sql")
-            or [],
+        original_sol_sql=normalize_sol_sql(
+            task_data.get("original_sol_sql") or task_data.get("sol_sql"),
         ),
         submitted_sql=submitted_sql,
         db_path=db_path,

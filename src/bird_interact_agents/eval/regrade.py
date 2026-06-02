@@ -30,6 +30,7 @@ from bird_interact_agents.eval.annotation_io import (
 )
 from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
+from bird_interact_agents.eval.grade_in_place import normalize_sol_sql
 
 
 class RegradeReport(BaseModel):
@@ -346,11 +347,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         # N1 requires the original gold SQL; the attempt JSON doesn't
         # carry it (it lives on the source data row / gated gold sidecar).
-        original_sol_sql = list(
+        # ``normalize_sol_sql`` wraps a bare string in a list so the
+        # grader doesn't see ``["S", "E", "L", "E", "C", "T", ...]``
+        # when the source row carries ``sol_sql`` as a single string.
+        original_sol_sql = normalize_sol_sql(
             task_row.get("original_sol_sql")
             or task_row.get("sol_sql")
-            or original_sql_by_inst.get(instance_id)
-            or []
+            or original_sql_by_inst.get(instance_id),
         )
         # Compute the user-sim signal from the attempt's trajectory so
         # the ``never_asked_user`` diagnostic fires properly on

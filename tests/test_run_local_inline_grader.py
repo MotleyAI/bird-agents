@@ -217,10 +217,15 @@ async def test_local_run_invokes_inline_grader_per_task(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_local_run_grader_failure_does_not_kill_loop(monkeypatch, tmp_path):
+async def test_local_run_grader_failure_writes_fail_everything_annotation(
+    monkeypatch, tmp_path,
+):
     """If the inline grader raises on one instance, the loop MUST
-    continue — the agent result row is already persisted by
-    ``_persist``, and a partial cascade block is better than nothing."""
+    continue AND a fail-everything ``submission_annotation.json`` MUST
+    be written for the broken instance so the aggregator's denominator
+    stays at ``len(tasks)``. Pre-fix the broken instance was silently
+    dropped, inflating ``cascading_phase1.rates`` (Codex round-4 finding
+    on ``run.py:1007-1012``)."""
     import bird_interact_agents.run as run_mod
 
     rows = [
@@ -336,3 +341,170 @@ async def test_local_run_grader_failure_does_not_kill_loop(monkeypatch, tmp_path
     # Both tasks ran to completion despite alien_1 grader raising —
     # the loop kept going, total_tasks==2.
     assert metrics["total_tasks"] == 2
+    # Both annotations are on disk: alien_2 from the stub success path,
+    # alien_1 from the fail-everything fallback the runner wrote when
+    # the stub raised. Without that fallback the aggregator's
+    # denominator would have been 1, not 2.
+    rows_dir = output_path.parent / "rows"
+    for inst in ("alien_1", "alien_2"):
+        assert (rows_dir / inst / "submission_annotation.json").exists(), (
+            f"submission_annotation.json missing for {inst} after "
+            f"grader failure — fail-everything fallback didn't fire"
+        )
+    cp = metrics["cascading_phase1"]
+    assert cp["n_dual_eval_tasks"] == 2, (
+        f"denominator should stay at 2 even when alien_1's grader "
+        f"raised; got cp={cp}"
+    )
+    # Both alien_1 (fail-everything from the fallback) and alien_2
+    # (the stub's deliberate fail-everything) count as 0 at every tier.
+    for tier in ("n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9"):
+        assert cp["counts"][tier] == 0, (
+            f"every cascade tier should count 0 (both rows fail); "
+            f"got cp={cp}"
+        )
+    # alien_1's annotation is the fail-everything shape: primary
+    # ``other`` (the cascade was never actually run on alien_1).
+    alien1 = json.loads(
+        (rows_dir / "alien_1" / "submission_annotation.json").read_text(),
+    )
+    assert alien1["failure_classification"]["primary"] == "other"
+    assert alien1["evaluation"]["verdict"] == "invalid"
+    assert "grader raised" in alien1["failure_classification"]["details"]
+
+
+@pytest.mark.asyncio
+async def test_local_run_no_submitted_sql_writes_fail_everything_annotation(
+    monkeypatch, tmp_path,
+):
+    """If the agent crashes before submit (no ``submitted_sql`` on the
+    result row), the local runner MUST still write a fail-everything
+    annotation so the cascade denominator stays honest. Pre-fix the
+    no-submit row was silently dropped from
+    ``cascading_phase1.n_dual_eval_tasks``."""
+    import bird_interact_agents.run as run_mod
+
+    rows = [
+        {"instance_id": "alien_1", "selected_database": "alien",
+         "sol_sql": ["SELECT 1"], "amb_user_query": "q1"},
+        {"instance_id": "alien_2", "selected_database": "alien",
+         "sol_sql": ["SELECT 2"], "amb_user_query": "q2"},
+    ]
+    _patch_loader_returns(monkeypatch, rows)
+    monkeypatch.setattr(run_mod, "_maybe_force_wipe_otf", lambda **kw: None)
+    _stub_runner_factory(monkeypatch, {
+        # alien_1 returns a row WITHOUT submitted_sql — simulating an
+        # agent crash before reaching the submit step.
+        "alien_1": {
+            "instance_id": "alien_1", "database": "alien",
+            "phase1_passed": False, "phase2_passed": False,
+            "total_reward": 0.0, "submitted_sql": None,
+            "trajectory": [], "usage": {},
+        },
+        "alien_2": {
+            "instance_id": "alien_2", "database": "alien",
+            "phase1_passed": False, "phase2_passed": False,
+            "total_reward": 0.0, "submitted_sql": "SELECT 2",
+            "trajectory": [], "usage": {},
+        },
+    })
+
+    from bird_interact_agents.eval.annotation_schema import (
+        FailureClassification,
+        SubmissionAnnotation,
+        SubmissionEvaluation,
+        SubmissionMetadata,
+        UserSimInteraction,
+    )
+
+    def _stub_grader_for_alien_2(*, task_data, **kw):
+        # Only called for alien_2 — alien_1 is short-circuited by the
+        # no-submitted_sql check before reaching the grader.
+        out_dir = Path(kw["rows_dir"]) / task_data["instance_id"]
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ann = SubmissionAnnotation(
+            instance_id=task_data["instance_id"],
+            selected_database=task_data["selected_database"],
+            task_annotation_ref=(
+                f"annotations/mini_interact/alien/"
+                f"{task_data['instance_id']}.task.json"
+            ),
+            annotated_by="auto-inline-grader",
+            annotated_at="2026-06-02T00:00:00+00:00",
+            submission=SubmissionMetadata(
+                cloud_run_id=kw["run_id"],
+                trajectory_path=f"rows/{task_data['instance_id']}/attempt-1.json",
+            ),
+            evaluation=SubmissionEvaluation(
+                phase1_against_original_gold="fail",
+                phase1_against_audited_primary="fail",
+                phase1_against_any_audited_variant="fail",
+                phase1_against_variants=[],
+                correct_up_to_tie_order=False,
+                novel_reading_judgment=None,
+                correct_under_numeric_epsilon=False,
+                correct_under_trailing_whitespace=False,
+                correct_under_column_order=False,
+                correct_under_case_fold=False,
+                numeric_epsilon=1e-6,
+                verdict="invalid",
+                matched_variant_id=None,
+                rationale="",
+                miss_diagnostics=None,
+            ),
+            failure_classification=FailureClassification(
+                primary="agent_miss",
+                agent_at_fault=True,
+                remediation_target="agent",
+                details="stub",
+            ),
+            decision_point=None,
+            user_sim_interaction=UserSimInteraction(),
+        )
+        path = out_dir / "submission_annotation.json"
+        path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
+        return path
+
+    monkeypatch.setattr(
+        run_mod, "grade_one_submission", _stub_grader_for_alien_2,
+    )
+
+    output_path = tmp_path / "eval.json"
+    metrics = await run_mod.run_evaluation(
+        framework="claude_sdk_otf_ainteract",
+        query_mode="slayer",
+        mode="a-interact",
+        data_path="ignored",
+        data_dir=str(tmp_path / "ignored_data_dir"),
+        output_path=str(output_path),
+        concurrency=1,
+        limit=None,
+        agent_model="anthropic/claude-haiku-4-5-20251001",
+        strict=False,
+        prompt_cache=False,
+        max_depth=1,
+        slayer_storage_root=str(tmp_path / "slayer_models"),
+        slayer_setup="on-the-fly",
+        reasoning_effort=None,
+        use_audited_gold_sql=False,
+        dataset="mini-interact",
+        gold_file=None,
+        filter_ids=None,
+    )
+
+    rows_dir = output_path.parent / "rows"
+    for inst in ("alien_1", "alien_2"):
+        assert (rows_dir / inst / "submission_annotation.json").exists(), (
+            f"submission_annotation.json missing for {inst} — "
+            f"no-submitted_sql fallback didn't fire"
+        )
+    cp = metrics["cascading_phase1"]
+    assert cp["n_dual_eval_tasks"] == 2, (
+        f"denominator should stay at 2 even when alien_1 had no "
+        f"submitted_sql; got cp={cp}"
+    )
+    alien1 = json.loads(
+        (rows_dir / "alien_1" / "submission_annotation.json").read_text(),
+    )
+    assert alien1["failure_classification"]["primary"] == "other"
+    assert "no submitted_sql" in alien1["failure_classification"]["details"]
