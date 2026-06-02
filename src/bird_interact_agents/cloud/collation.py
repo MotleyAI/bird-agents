@@ -91,6 +91,16 @@ def _row_to_task_result_row(manifest: dict, r: dict) -> TaskResultRow:
         gold_result_json=r.get("gold_result_json"),
         n_agent_turns=int(n_turns) if isinstance(n_turns, int) else None,
         tool_call_stats_json=tool_call_stats_json,
+        # Codex r9: parity with the local ``run.py::_persist`` shape.
+        # Cloud workers emit these observation strings on the per-row
+        # JSON blob (every agent flavor's submit helper +
+        # ``agents/_submit.py`` populate them); without the explicit
+        # plumb-through, cloud ``fetch``+collation drops them at the
+        # results.db boundary while local runs retain them — an
+        # asymmetry that hid the audited/original observation diag
+        # for everything that ran in the cloud.
+        phase1_observation_audited=r.get("phase1_observation_audited"),
+        phase1_observation_original=r.get("phase1_observation_original"),
     )
 
 

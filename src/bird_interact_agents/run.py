@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import logging
+import shutil
 import statistics
 import time
 from pathlib import Path
@@ -998,7 +999,30 @@ async def run_evaluation(
     # cloud worker (``cloud.ray_app._grade_one_submission``) — without
     # this, local runs would silently lose the N1-N9 cascade metrics
     # whenever audited gold / per-task annotations are present.
+    #
+    # Codex r9: ``aggregate_cascading_phase1`` walks EVERY subdir under
+    # ``rows_dir`` to compute ``n_dual_eval_tasks``. Reusing the same
+    # ``output_dir`` for a fresh run (different ``--limit`` /
+    # ``--instance-id`` subset) would otherwise carry forward stale
+    # annotations from the prior pass, inflating the denominator and
+    # rewriting ``phase1_count`` / ``phase1_rate`` from the union of
+    # old + new. Wipe per-instance subdirs that THIS run is about to
+    # touch (or the whole rows dir when no filter is set) so the
+    # aggregator only sees fresh annotations. Mirrors the round-2
+    # regrade.py reset pattern.
     rows_dir = output_dir / "rows"
+    if rows_dir.exists():
+        if filter_ids is None:
+            # Full run — wipe everything.
+            shutil.rmtree(rows_dir, ignore_errors=True)
+        else:
+            # Filtered run — reset ONLY the subdirs this run will
+            # overwrite, so unrelated instances from a prior pass
+            # survive (and still contribute to the cascade block).
+            _wanted = {str(t.get("instance_id") or "") for t in tasks}
+            for sub in list(rows_dir.iterdir()):
+                if sub.is_dir() and sub.name in _wanted:
+                    shutil.rmtree(sub, ignore_errors=True)
     rows_dir.mkdir(parents=True, exist_ok=True)
     _benchmark_canonical = b.name
 

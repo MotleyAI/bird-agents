@@ -230,3 +230,47 @@ def test_driver_fetch_twice_idempotent(
     for k in ("total_tasks", "phase1_count", "phase1_rate",
               "phase2_count", "phase2_rate", "total_reward", "average_reward"):
         assert eval1[k] == eval2[k]
+
+
+# ---------------------------------------------------------------------------
+# Codex r9: cloud collation MUST plumb the dual-eval observation
+# strings (``phase1_observation_audited`` / ``phase1_observation_original``)
+# through to ``results.db``. Pre-fix the local ``run.py::_persist``
+# path carried them but cloud collation dropped them at the
+# ``TaskResultRow`` build site, hiding the diagnostic on every
+# cloud-fetched results.db. Local + cloud must agree.
+# ---------------------------------------------------------------------------
+
+
+def test_collation_writes_observation_columns_through_to_results_db(
+    tmp_path: Path, sample_task_result_row,
+):
+    run_dir = tmp_path / RUN_ID
+    run_dir.mkdir()
+    row = {
+        **sample_task_result_row,
+        "phase1_observation_audited": "audited observation captured",
+        "phase1_observation_original": "original observation captured",
+    }
+    _write_attempt(run_dir, "db_a_1", 1, row)
+    manifest = {
+        "run_id": RUN_ID,
+        "framework": "pydantic_ai",
+        "mode": "c-interact",
+        "query_mode": "raw",
+        "agent_model": "anthropic/claude-sonnet-4-5",
+        "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+        "instance_ids": ["db_a_1"],
+    }
+    collation.collate(run_dir, manifest)
+
+    import sqlite3
+    conn = sqlite3.connect(str(run_dir / "results.db"))
+    conn.row_factory = sqlite3.Row
+    db_row = dict(next(iter(conn.execute(
+        "SELECT phase1_observation_audited, phase1_observation_original "
+        "FROM task_results"
+    ))))
+    conn.close()
+    assert db_row["phase1_observation_audited"] == "audited observation captured"
+    assert db_row["phase1_observation_original"] == "original observation captured"

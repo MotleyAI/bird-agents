@@ -621,9 +621,30 @@ def grade_submission(
         agent_sql_error_excerpt = f"{type(exc).__name__}: {exc}"[:200]
         pred_rows, pred_cols = [], []
 
-    orig_rows, orig_cols = _multi_sql_execute(
-        list(original_sol_sql), db_path=db_path, conn=conn, executor=executor,
-    )
+    # Codex r9: original gold execution was unguarded. If the source row's
+    # ``sol_sql`` is invalid or no longer executes against the current DB
+    # schema, the unguarded ``_multi_sql_execute`` call bubbled out of the
+    # grader and the cloud/local fallbacks wrote a generic fail-everything
+    # annotation — losing any valid audited-variant passes (N2/N3) the
+    # row would have earned. Now we degrade gracefully: ``orig_rows = []``
+    # combined with the ``original_sql_executed_ok = False`` signal makes
+    # N1 effectively False (and the cell-level tier comparators skip the
+    # ``__original__`` fallback), so audited variants continue to be
+    # evaluated normally.
+    original_sql_executed_ok = True
+    try:
+        orig_rows, orig_cols = _multi_sql_execute(
+            list(original_sol_sql),
+            db_path=db_path, conn=conn, executor=executor,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "original gold execution failed; degrading N1 to False "
+            "so audited variants can still grade. instance=%s",
+            task_annotation.instance_id,
+        )
+        orig_rows, orig_cols = [], []
+        original_sql_executed_ok = False
 
     variant_results: list[tuple[dict, Sequence[Sequence], Sequence[str]]] = []
     for v in audited_gold_rows:
@@ -658,7 +679,9 @@ def grade_submission(
     # mark N1 as a strict pass whenever the agent's SQL also returns
     # empty (execution failure or genuinely empty result). Treat
     # missing-gold as ungradable for N1 instead of as an empty bag.
-    if not original_sol_sql:
+    # Also degrade N1 when the original gold FAILED TO EXECUTE
+    # (Codex r9) — same false-pass concern.
+    if not original_sol_sql or not original_sql_executed_ok:
         n1 = False
     else:
         n1 = _set_equal(pred_rows, orig_rows)
@@ -698,13 +721,16 @@ def grade_submission(
         candidates = (
             [(primary[0], primary[1])] if primary else []
         ) + [(v[0], v[1]) for v in variant_results if not v[0].get("primary")]
-        if not candidates and original_sol_sql:
+        if not candidates and original_sol_sql and original_sql_executed_ok:
             # No variants → fall back to original gold itself. Gated on
-            # ``original_sol_sql`` because ``orig_rows`` is also ``[]``
-            # when no source gold exists, and ``compare_tie_order([], [])``
-            # returns True via set equality — without this guard a
-            # missing-gold + empty-agent row pair would falsely pass at
-            # N4 (and propagate as ``valid_interpretation`` even though
+            # ``original_sol_sql`` (round 3, missing-gold) AND on
+            # ``original_sql_executed_ok`` (Codex r9, original-exec
+            # failure) because ``orig_rows`` is ``[]`` in both cases;
+            # ``compare_tie_order([], [])`` returns True via set
+            # equality — without these guards a missing- or
+            # unexecutable-gold + empty-agent row pair would falsely
+            # pass at N4 (and propagate as ``valid_interpretation``
+            # even though
             # nothing was actually compared).
             candidates = [({}, orig_rows)]
         for v_meta, v_rows in candidates:
@@ -755,13 +781,15 @@ def grade_submission(
             novel_judgment = None
 
     # 6) N6/N7/N8/N9 — cell-level relaxations applied across all variants.
-    # When ``original_sol_sql`` is empty, ``orig_rows`` is also ``[]`` and
-    # every cell-level comparator returns True on the ``([], [])`` pair
-    # (bag equality holds vacuously). Drop the ``__original__`` fallback
-    # from the iteration list in that case — same guard as the N4 block,
-    # otherwise a missing-gold + empty-agent row would cascade-pass at N6.
+    # When ``original_sol_sql`` is empty OR its execution failed,
+    # ``orig_rows`` is ``[]`` and every cell-level comparator returns
+    # True on the ``([], [])`` pair (bag equality holds vacuously).
+    # Drop the ``__original__`` fallback from the iteration list in
+    # both cases — same guard as the N4 block (round 3 + Codex r9),
+    # otherwise a missing- or unexecutable-gold + empty-agent row
+    # would cascade-pass at N6.
     _comparator_targets: list = list(variant_results)
-    if original_sol_sql:
+    if original_sol_sql and original_sql_executed_ok:
         _comparator_targets.append(
             ({"variant_id": "__original__"}, orig_rows, orig_cols),
         )

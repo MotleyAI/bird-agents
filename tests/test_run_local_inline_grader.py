@@ -525,3 +525,223 @@ async def test_local_run_no_submitted_sql_writes_fail_everything_annotation(
     )
     assert alien1["failure_classification"]["primary"] == "other"
     assert "no submitted_sql" in alien1["failure_classification"]["details"]
+
+
+@pytest.mark.asyncio
+async def test_local_run_wipes_stale_rows_when_no_filter(monkeypatch, tmp_path):
+    """Codex r9: reusing the same ``output_dir`` without ``filter_ids``
+    MUST wipe ``rows/`` first, so the aggregator only sees the current
+    run's annotations. Pre-fix a stale ``rows/old_iid/...`` from a prior
+    pass would inflate ``cascading_phase1.n_dual_eval_tasks``."""
+    import bird_interact_agents.run as run_mod
+
+    output_path = tmp_path / "eval.json"
+    rows_dir = output_path.parent / "rows"
+    # Plant a stale annotation from a prior run under a DIFFERENT iid
+    # than the current task set will produce.
+    stale_dir = rows_dir / "stale_old_iid"
+    stale_dir.mkdir(parents=True)
+    (stale_dir / "submission_annotation.json").write_text(
+        '{"this": "should be wiped"}',
+    )
+
+    rows = [
+        {"instance_id": "alien_1", "selected_database": "alien",
+         "sol_sql": ["SELECT 1"], "amb_user_query": "q1"},
+    ]
+    _patch_loader_returns(monkeypatch, rows)
+    monkeypatch.setattr(run_mod, "_maybe_force_wipe_otf", lambda **kw: None)
+    _stub_runner_factory(monkeypatch, {
+        "alien_1": {
+            "instance_id": "alien_1", "database": "alien",
+            "phase1_passed": True, "phase2_passed": False,
+            "total_reward": 1.0, "submitted_sql": "SELECT 1",
+            "trajectory": [], "usage": {},
+        },
+    })
+    # No-op grader so cascading_phase1 is built off the (sole) row.
+    from bird_interact_agents.eval.annotation_schema import (
+        FailureClassification, SubmissionAnnotation, SubmissionEvaluation,
+        SubmissionMetadata, UserSimInteraction,
+    )
+
+    def _stub(*, task_data, **kw):
+        out_dir = Path(kw["rows_dir"]) / task_data["instance_id"]
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ann = SubmissionAnnotation(
+            instance_id=task_data["instance_id"],
+            selected_database=task_data["selected_database"],
+            task_annotation_ref=(
+                f"annotations/mini_interact/alien/"
+                f"{task_data['instance_id']}.task.json"
+            ),
+            annotated_by="auto-inline-grader",
+            annotated_at="2026-06-02T00:00:00+00:00",
+            submission=SubmissionMetadata(
+                cloud_run_id=kw["run_id"],
+                trajectory_path=f"rows/{task_data['instance_id']}/attempt-1.json",
+            ),
+            evaluation=SubmissionEvaluation(
+                phase1_against_original_gold="fail",
+                phase1_against_audited_primary="fail",
+                phase1_against_any_audited_variant="fail",
+                phase1_against_variants=[],
+                correct_up_to_tie_order=False,
+                novel_reading_judgment=None,
+                correct_under_numeric_epsilon=False,
+                correct_under_trailing_whitespace=False,
+                correct_under_column_order=False,
+                correct_under_case_fold=False,
+                numeric_epsilon=1e-6,
+                verdict="invalid",
+                matched_variant_id=None,
+                rationale="",
+                miss_diagnostics=None,
+            ),
+            failure_classification=FailureClassification(
+                primary="agent_miss",
+                agent_at_fault=True,
+                remediation_target="agent",
+                details="stub",
+            ),
+            decision_point=None,
+            user_sim_interaction=UserSimInteraction(),
+        )
+        path = out_dir / "submission_annotation.json"
+        path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
+        return path
+    monkeypatch.setattr(run_mod, "grade_one_submission", _stub)
+
+    metrics = await run_mod.run_evaluation(
+        framework="claude_sdk_otf_ainteract", query_mode="slayer",
+        mode="a-interact", data_path="ignored",
+        data_dir=str(tmp_path / "ignored_data_dir"),
+        output_path=str(output_path),
+        concurrency=1, limit=None,
+        agent_model="anthropic/claude-haiku-4-5-20251001",
+        strict=False, prompt_cache=False, max_depth=1,
+        slayer_storage_root=str(tmp_path / "slayer_models"),
+        slayer_setup="on-the-fly", reasoning_effort=None,
+        use_audited_gold_sql=False, dataset="mini-interact",
+        gold_file=None, filter_ids=None,
+    )
+    assert not stale_dir.exists(), (
+        "rows/stale_old_iid should have been wiped before the run"
+    )
+    cp = metrics["cascading_phase1"]
+    assert cp["n_dual_eval_tasks"] == 1, (
+        f"denominator must reflect ONLY current tasks (1), not the "
+        f"union with stale entries; got cp={cp}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_local_run_filter_ids_preserves_unrelated_rows(
+    monkeypatch, tmp_path,
+):
+    """Symmetric case: filtered reruns must NOT wipe rows from a prior
+    full run if those instances aren't in the current task set. Only
+    the subdirs we're about to overwrite get reset."""
+    import bird_interact_agents.run as run_mod
+
+    output_path = tmp_path / "eval.json"
+    rows_dir = output_path.parent / "rows"
+    # Unrelated prior-run annotation that the filtered rerun should
+    # preserve verbatim.
+    from bird_interact_agents.eval.annotation_schema import (
+        FailureClassification, SubmissionAnnotation, SubmissionEvaluation,
+        SubmissionMetadata, UserSimInteraction,
+    )
+    unrelated = rows_dir / "alien_99"
+    unrelated.mkdir(parents=True)
+
+    def _make_ann(iid: str, marker: str) -> SubmissionAnnotation:
+        return SubmissionAnnotation(
+            instance_id=iid,
+            selected_database="alien",
+            task_annotation_ref=f"annotations/mini_interact/alien/{iid}.task.json",
+            annotated_by=marker,
+            annotated_at="2026-06-02T00:00:00+00:00",
+            submission=SubmissionMetadata(
+                cloud_run_id="r1",
+                trajectory_path=f"rows/{iid}/attempt-1.json",
+            ),
+            evaluation=SubmissionEvaluation(
+                phase1_against_original_gold="fail",
+                phase1_against_audited_primary="fail",
+                phase1_against_any_audited_variant="fail",
+                phase1_against_variants=[],
+                correct_up_to_tie_order=False,
+                novel_reading_judgment=None,
+                correct_under_numeric_epsilon=False,
+                correct_under_trailing_whitespace=False,
+                correct_under_column_order=False,
+                correct_under_case_fold=False,
+                numeric_epsilon=1e-6,
+                verdict="invalid",
+                matched_variant_id=None,
+                rationale="",
+                miss_diagnostics=None,
+            ),
+            failure_classification=FailureClassification(
+                primary="agent_miss",
+                agent_at_fault=True,
+                remediation_target="agent",
+                details="stub",
+            ),
+            decision_point=None,
+            user_sim_interaction=UserSimInteraction(),
+        )
+    (unrelated / "submission_annotation.json").write_text(
+        _make_ann("alien_99", "unrelated-survivor")
+        .model_dump_json(indent=2, exclude_none=False) + "\n",
+    )
+
+    rows = [
+        {"instance_id": "alien_1", "selected_database": "alien",
+         "sol_sql": ["SELECT 1"], "amb_user_query": "q1"},
+    ]
+    _patch_loader_returns(monkeypatch, rows)
+    monkeypatch.setattr(run_mod, "_maybe_force_wipe_otf", lambda **kw: None)
+    _stub_runner_factory(monkeypatch, {
+        "alien_1": {
+            "instance_id": "alien_1", "database": "alien",
+            "phase1_passed": True, "phase2_passed": False,
+            "total_reward": 1.0, "submitted_sql": "SELECT 1",
+            "trajectory": [], "usage": {},
+        },
+    })
+
+    def _stub(*, task_data, **kw):
+        out_dir = Path(kw["rows_dir"]) / task_data["instance_id"]
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "submission_annotation.json").write_text(
+            _make_ann(task_data["instance_id"], "fresh")
+            .model_dump_json(indent=2, exclude_none=False) + "\n",
+        )
+        return out_dir / "submission_annotation.json"
+    monkeypatch.setattr(run_mod, "grade_one_submission", _stub)
+
+    await run_mod.run_evaluation(
+        framework="claude_sdk_otf_ainteract", query_mode="slayer",
+        mode="a-interact", data_path="ignored",
+        data_dir=str(tmp_path / "ignored_data_dir"),
+        output_path=str(output_path),
+        concurrency=1, limit=None,
+        agent_model="anthropic/claude-haiku-4-5-20251001",
+        strict=False, prompt_cache=False, max_depth=1,
+        slayer_storage_root=str(tmp_path / "slayer_models"),
+        slayer_setup="on-the-fly", reasoning_effort=None,
+        use_audited_gold_sql=False, dataset="mini-interact",
+        gold_file=None,
+        # Filter: only alien_1 — alien_99's prior annotation should survive.
+        filter_ids=["alien_1"],
+    )
+    assert (unrelated / "submission_annotation.json").exists(), (
+        "filtered rerun must NOT wipe rows for instances outside the "
+        "filter set; alien_99's prior annotation was deleted"
+    )
+    surviving = json.loads(
+        (unrelated / "submission_annotation.json").read_text(),
+    )
+    assert surviving["annotated_by"] == "unrelated-survivor"
