@@ -101,9 +101,13 @@ def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
                 except json.JSONDecodeError:
                     continue
                 iid = r.get("instance_id")
-                sol = r.get("sol_sql")
-                if iid and isinstance(sol, list) and sol:
-                    out[iid] = list(sol)
+                sol = normalize_sol_sql(r.get("sol_sql"))
+                # ``normalize_sol_sql`` returns ``[]`` for None / empty /
+                # missing, ``[s]`` for a string, and ``list(value)`` for
+                # a list — so a string-shaped ``sol_sql`` is no longer
+                # silently dropped at index-build time (Codex r6).
+                if iid and sol:
+                    out[iid] = sol
     # Merge in livesqlbench's gated sidecar if available.
     bench = get_benchmark(benchmark)
     if bench.gold_required:
@@ -132,9 +136,9 @@ def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
                     except json.JSONDecodeError:
                         continue
                     iid = r.get("instance_id")
-                    sol = r.get("sol_sql")
-                    if iid and isinstance(sol, list) and sol:
-                        out[iid] = list(sol)
+                    sol = normalize_sol_sql(r.get("sol_sql"))
+                    if iid and sol:
+                        out[iid] = sol
     return out
 
 

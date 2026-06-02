@@ -264,3 +264,73 @@ def test_regrade_run_force_llm_judge_reinvokes_judge(tmp_path, monkeypatch):
     assert len(calls) == 1
     remaining = json.loads(cache_path.read_text())
     assert "k_for_alien_1" not in remaining
+
+
+# ---------------------------------------------------------------------------
+# Codex round 6: ``_build_original_sql_index`` MUST accept string-shaped
+# ``sol_sql``. The mini_interact JSONL carries both shapes (post-DEV-1478
+# is list; older rows / tests / fixtures pass a bare string). Pre-fix the
+# ``isinstance(sol, list)`` filter silently dropped the string rows, so
+# regrade fell through to ``original_sql_by_inst.get(iid) → []`` and N1
+# could never pass for those instances.
+# ---------------------------------------------------------------------------
+
+
+def test_build_original_sql_index_accepts_string_sol_sql(tmp_path, monkeypatch):
+    """Mini-interact data file with both string + list shapes: both
+    must land in the index after normalize_sol_sql wraps the string."""
+    from bird_interact_agents import paths as paths_mod
+    from bird_interact_agents.eval.regrade import _build_original_sql_index
+
+    data_file = tmp_path / "mini_interact.jsonl"
+    data_file.write_text(
+        json.dumps({
+            "instance_id": "alien_string_sol",
+            "sol_sql": "SELECT 1 FROM t",
+        }) + "\n"
+        + json.dumps({
+            "instance_id": "alien_list_sol",
+            "sol_sql": ["SELECT 2 FROM u"],
+        }) + "\n"
+        + json.dumps({
+            "instance_id": "alien_no_sol",
+            # ``sol_sql`` absent — expected to be skipped.
+        }) + "\n"
+    )
+
+    # Pretend the data file lives at this temp path.
+    monkeypatch.setattr(
+        paths_mod, "benchmark_data_file",
+        lambda benchmark: data_file,
+    )
+
+    out = _build_original_sql_index("mini_interact")
+    assert out["alien_string_sol"] == ["SELECT 1 FROM t"], (
+        "string-shaped sol_sql must be wrapped as a 1-item list, NOT "
+        "dropped or character-split"
+    )
+    assert out["alien_list_sol"] == ["SELECT 2 FROM u"]
+    assert "alien_no_sol" not in out
+
+
+def test_build_original_sql_index_does_not_char_split_string(
+    tmp_path, monkeypatch,
+):
+    """Defensive: a long-string ``sol_sql`` returns a 1-element list
+    whose element is the verbatim SQL, NOT a per-character list."""
+    from bird_interact_agents import paths as paths_mod
+    from bird_interact_agents.eval.regrade import _build_original_sql_index
+
+    sql = "WITH cte AS (SELECT * FROM t) SELECT a, b FROM cte WHERE x = 1"
+    data_file = tmp_path / "mini_interact.jsonl"
+    data_file.write_text(
+        json.dumps({"instance_id": "x_1", "sol_sql": sql}) + "\n",
+    )
+    monkeypatch.setattr(
+        paths_mod, "benchmark_data_file",
+        lambda benchmark: data_file,
+    )
+
+    out = _build_original_sql_index("mini_interact")
+    assert out["x_1"] == [sql]
+    assert len(out["x_1"]) == 1
