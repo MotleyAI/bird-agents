@@ -274,3 +274,108 @@ def test_open_db_migrates_pre_diagnostic_table(tmp_path):
         "SELECT instance_id, submission_status FROM task_results"
     ))
     assert rows == [("new_1", "passed_phase1"), ("old_1", "never_submitted")]
+
+
+# ---------------------------------------------------------------------------
+# Codex r8: dual-eval observation columns. Every agent flavor's submit
+# helper emits ``phase1_observation_audited`` + ``phase1_observation_original``,
+# but for a while those fields were missing from ``TaskResultRow`` + the
+# DDL and Pydantic's default ``extra="ignore"`` silently dropped them.
+# These tests pin both shapes:
+#   * round-trip through the model + INSERT
+#   * old DB on disk gets the columns ALTER'd in on open
+# ---------------------------------------------------------------------------
+
+
+def test_dual_eval_observation_columns_round_trip(tmp_path):
+    """Both observation strings survive a model -> INSERT -> SELECT
+    round trip in a fresh DB."""
+    from bird_interact_agents.results_db import (
+        TaskResultRow, insert_task_result, open_db,
+    )
+
+    conn = open_db(tmp_path / "results.db")
+    insert_task_result(conn, TaskResultRow(
+        run_id="r", framework="pydantic_ai", mode="a-interact",
+        query_mode="raw", instance_id="alien_1", database="alien",
+        started_at=0.0, duration_s=0.0,
+        phase1_passed=False, phase2_passed=False, total_reward=0.0,
+        phase1_observation_audited="audited PASS",
+        phase1_observation_original="original FAIL",
+    ))
+    rows = list(conn.execute(
+        "SELECT phase1_observation_audited, phase1_observation_original "
+        "FROM task_results"
+    ))
+    assert rows == [("audited PASS", "original FAIL")]
+
+
+def test_open_db_adds_observation_columns_to_pre_existing_table(tmp_path):
+    """A results.db left over from a version that lacked the two
+    observation columns MUST gain them silently on ``open_db`` so the
+    next ``insert_task_result`` can write through. Mirrors the pattern
+    used for ``user_query`` / ``phase1_observation`` / etc."""
+    import sqlite3
+    from bird_interact_agents.results_db import (
+        TaskResultRow, insert_task_result, open_db,
+    )
+
+    db_path = tmp_path / "old.db"
+    pre = sqlite3.connect(str(db_path))
+    # Pre-DEV-1515 round-9 DDL: every column the CURRENT DDL has EXCEPT
+    # the two observation columns. Mirrors the real-on-disk shape of a
+    # DB written by an older version, so the ``_DIAGNOSTIC_COLUMNS``
+    # ALTER pass in ``open_db`` is the only path that adds them.
+    pre.execute(
+        """
+        CREATE TABLE task_results (
+            run_id          TEXT NOT NULL,
+            framework       TEXT NOT NULL,
+            mode            TEXT NOT NULL,
+            query_mode      TEXT NOT NULL,
+            instance_id     TEXT NOT NULL,
+            database        TEXT NOT NULL,
+            started_at      REAL NOT NULL,
+            duration_s      REAL NOT NULL,
+            phase1_passed   INTEGER NOT NULL,
+            phase2_passed   INTEGER NOT NULL,
+            total_reward    REAL NOT NULL,
+            submitted_sql   TEXT,
+            submitted_query TEXT,
+            ground_truth_sql TEXT,
+            error           TEXT,
+            usage_json      TEXT NOT NULL DEFAULT '{}',
+            user_query      TEXT,
+            submission_status TEXT NOT NULL DEFAULT 'never_submitted',
+            phase1_observation TEXT,
+            phase2_observation TEXT,
+            predicted_result_json TEXT,
+            gold_result_json TEXT,
+            n_agent_turns  INTEGER,
+            tool_call_stats_json TEXT,
+            PRIMARY KEY (run_id, framework, mode, query_mode, instance_id)
+        )
+        """
+    )
+    pre.commit()
+    pre.close()
+
+    conn = open_db(db_path)
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(task_results)")}
+    assert "phase1_observation_audited" in existing
+    assert "phase1_observation_original" in existing
+
+    # And a write-then-read still works through the upgraded table.
+    insert_task_result(conn, TaskResultRow(
+        run_id="r", framework="pydantic_ai", mode="a-interact",
+        query_mode="raw", instance_id="alien_1", database="alien",
+        started_at=0.0, duration_s=0.0,
+        phase1_passed=False, phase2_passed=False, total_reward=0.0,
+        phase1_observation_audited="aud",
+        phase1_observation_original="orig",
+    ))
+    rows = list(conn.execute(
+        "SELECT phase1_observation_audited, phase1_observation_original "
+        "FROM task_results"
+    ))
+    assert rows == [("aud", "orig")]

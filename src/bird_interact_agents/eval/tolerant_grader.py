@@ -1071,23 +1071,17 @@ def _compute_miss_diagnostics(
     SQL-derived signals are populated only when sqlglot parsing
     succeeds for the relevant side; otherwise the corresponding
     Optional[T] field stays None and ``sql_parse_error`` lands in the
-    flag list. Multi-statement gold (CREATE TEMP + final SELECT)
-    triggers a defensive AssertionError — the SELECT-task contract
-    is single-statement.
+    flag list.
+
+    Multi-statement gold (CREATE TEMP + final SELECT, etc.) is
+    handled by using the LAST statement for sqlglot parsing — that's
+    the SELECT query that actually produced the rowset under
+    diagnosis; the preceding setup statements don't constrain the
+    miss patterns. Pre-fix this path asserted single-statement gold
+    and the AssertionError leaked out of grading, causing the cloud
+    + local fallbacks to drop the structured ``miss_patterns`` for
+    multi-statement misses (Codex r8).
     """
-    # Defensive guards (single-statement gold contract).
-    for v_meta, _v_rows, _v_cols in variant_results:
-        v_sqls = list(v_meta.get("audited_sol_sql") or [])
-        assert len(v_sqls) <= 1, (
-            f"diagnostics only support single-statement audited_sol_sql; "
-            f"variant {v_meta.get('variant_id')!r} has {len(v_sqls)} stmts "
-            f"(multi-statement is M-task territory, out of scope)"
-        )
-    assert len(original_sol_sql) <= 1, (
-        f"diagnostics only support single-statement original_sol_sql; "
-        f"got {len(original_sol_sql)} stmts (multi-statement is M-task "
-        f"territory, out of scope)"
-    )
     if not variant_results:
         # Should be impossible (cascade would short-circuit) but guard.
         raise RuntimeError(
@@ -1098,7 +1092,12 @@ def _compute_miss_diagnostics(
         pred_rows=pred_rows, variant_results=variant_results,
     )
     best_variant_id = str(best_meta.get("variant_id") or "")
-    best_sql = (best_meta.get("audited_sol_sql") or [""])[0]
+    # Multi-statement gold: the LAST statement is the SELECT under
+    # diagnosis. Empty list → use empty string so the parse fails and
+    # we surface ``sql_parse_error`` (preserving the round-3 missing-
+    # gold guard pattern).
+    _best_sql_list = list(best_meta.get("audited_sol_sql") or [])
+    best_sql = _best_sql_list[-1] if _best_sql_list else ""
 
     overlap = _bag_overlap(pred_rows, best_rows)
     relation = _bag_relation(pred=pred_rows, gold=best_rows)
