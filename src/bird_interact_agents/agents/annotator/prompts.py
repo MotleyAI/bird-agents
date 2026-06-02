@@ -39,7 +39,8 @@ _AMBIGUITY_TOOL_NOTE = (
 
 
 def build_system_prompt(task_data: dict, benchmark: str) -> str:
-    sol_sql = task_data.get("sol_sql", [])
+    sol_sql = task_data.get("sol_sql")
+    sol_sql = sol_sql if isinstance(sol_sql, list) else []
     sol_str = "\n".join(sol_sql) if sol_sql else "(none)"
     has_ambiguity_tool = benchmark == "mini_interact"
     return _SYSTEM_PROMPT.format(

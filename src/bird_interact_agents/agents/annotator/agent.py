@@ -393,6 +393,7 @@ async def run_task(
         allowed_tools=tool_names_prefixed,
         effort=effort,
         max_turns=cap,
+        model=model,
     )
 
     turns = 0

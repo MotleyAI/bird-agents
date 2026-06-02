@@ -280,8 +280,13 @@ def compare_column_order(
     gold_l = [c.lower() for c in gold_cols]
     if set(pred_l) != set(gold_l):
         return False
-    # Permutation: position in pred for each gold column.
-    perm = [pred_l.index(c) for c in gold_l]
+    # Permutation: one position in pred for each gold column.
+    # Uses per-name position queues so duplicate column names are handled
+    # correctly (.index() would always return the first occurrence).
+    avail: dict[str, list[int]] = {}
+    for i, c in enumerate(pred_l):
+        avail.setdefault(c, []).append(i)
+    perm = [avail[c].pop(0) for c in gold_l]
     aligned = [tuple(r[i] for i in perm) for r in pred]
     return _set_equal(aligned, gold)
 

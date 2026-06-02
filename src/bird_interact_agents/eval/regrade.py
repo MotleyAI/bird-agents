@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional
@@ -186,10 +187,14 @@ def regrade_run(
         if filter_set is not None and instance_id not in filter_set:
             report.skipped += 1
             continue
-        attempt = sub / "attempt-1.json"
-        if not attempt.exists():
+        attempt_files = sorted(
+            (f for f in sub.iterdir() if re.match(r"^attempt-\d+\.json$", f.name)),
+            key=lambda f: int(re.search(r"\d+", f.name).group()),
+        )
+        if not attempt_files:
             report.skipped += 1
             continue
+        attempt = attempt_files[-1]
         attempt_data = json.loads(attempt.read_text())
         submitted_sql = attempt_data.get("submitted_sql", "")
         # The cloud worker writes the per-DB token to ``database``;

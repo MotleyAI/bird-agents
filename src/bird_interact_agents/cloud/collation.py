@@ -178,8 +178,8 @@ def collate(run_dir: Path, manifest: dict) -> dict[str, Any]:
                 rows_dir=rows_dir, out_path=eval_path, base_metrics=metrics,
             )
         except FileNotFoundError as exc:
-            eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
             metrics["cascading_phase1_error"] = str(exc)
+            eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
     else:
         eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
     return metrics

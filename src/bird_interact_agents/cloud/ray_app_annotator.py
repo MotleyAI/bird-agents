@@ -120,10 +120,21 @@ def _run_one_task(
     ann = result.task_annotation
     variants = result.audited_gold_variants
 
-    _gcs.write_task_annotation(run_id, instance_id, ann, client=client)
-    _gcs.write_audited_gold_variants(run_id, instance_id, variants, client=client)
-    _gcs.write_stable_task_annotation(benchmark, db, instance_id, ann, client=client)
-    _gcs.write_stable_audited_gold_variants(benchmark, db, instance_id, variants, client=client)
+    try:
+        _gcs.write_task_annotation(run_id, instance_id, ann, client=client)
+        _gcs.write_audited_gold_variants(run_id, instance_id, variants, client=client)
+        _gcs.write_stable_task_annotation(benchmark, db, instance_id, ann, client=client)
+        _gcs.write_stable_audited_gold_variants(benchmark, db, instance_id, variants, client=client)
+    except Exception as exc:
+        logger.error("[%s] GCS write failed after annotation: %s", instance_id, exc)
+        attempt_row = {
+            "instance_id": instance_id,
+            "status": "error",
+            "error": f"GCS write failed: {exc}",
+            "duration_s": result.duration_s,
+        }
+        _write_attempt(run_id, instance_id, attempt_row, client=client)
+        return
 
     attempt_row = {
         "instance_id": instance_id,

@@ -679,6 +679,8 @@ def build_annotator_manifest(
         "query_mode": "raw",
         "dataset": get_benchmark(args.benchmark).name,
         "benchmark_data_prefix": benchmark_data_prefix,
+        "agent_model": args.agent_model,
+        "effort": getattr(args, "effort", "medium"),
         "instance_ids": list(args.instance_ids),
         "render_inputs": {
             "workers": args.workers,
@@ -1009,16 +1011,27 @@ def resubmit(run_id: str) -> None:
                 "resubmit: manifest has no 'framework' field (pre-DEV-1517); "
                 "defaulting to legacy API-key path"
             )
-        env_vars = read_api_keys_from_local_env(
-            manifest["agent_model"], manifest["user_sim_model"],
-            query_mode=manifest.get("query_mode", "raw"),
-            framework=_framework,
-        )
-        job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
-        cluster.submit_job(
-            head_address=head, args=job_args, env_vars=env_vars,
-            yaml_path=yaml_path,
-        )
+        if _framework == "annotator":
+            env_vars = read_api_keys_from_local_env(
+                manifest["agent_model"], manifest["agent_model"],
+                query_mode="raw", framework="annotator",
+            )
+            job_args = _build_annotator_resubmit_args(manifest, run_id, missing)
+            cluster.submit_job(
+                head_address=head, args=job_args, env_vars=env_vars,
+                yaml_path=yaml_path, ray_app_path=_ANNOTATOR_RAY_APP_PATH,
+            )
+        else:
+            env_vars = read_api_keys_from_local_env(
+                manifest["agent_model"], manifest["user_sim_model"],
+                query_mode=manifest.get("query_mode", "raw"),
+                framework=_framework,
+            )
+            job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
+            cluster.submit_job(
+                head_address=head, args=job_args, env_vars=env_vars,
+                yaml_path=yaml_path,
+            )
         wait_until_done(run_id, manifest)
         fetch(run_id)
     finally:
@@ -1077,4 +1090,28 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         "--slayer-storage-root",
         manifest.get("slayer_storage_root", "/data/slayer_models"),
     ]
+    return job_args
+
+
+def _build_annotator_resubmit_args(
+    manifest: dict, run_id: str, missing: list[str],
+) -> list[str]:
+    benchmark = _benchmark_for_dataset(manifest.get("dataset"))
+    num_actors = (
+        manifest["render_inputs"]["workers"]
+        * manifest["render_inputs"]["actors_per_worker"]
+    )
+    job_args = [
+        "--run-id", run_id,
+        "--benchmark", benchmark,
+        "--model", manifest["agent_model"],
+        "--effort", manifest.get("effort", "medium"),
+        "--num-actors", str(num_actors),
+        "--instance-ids", ",".join(missing),
+    ]
+    prefix = manifest.get("benchmark_data_prefix")
+    if prefix:
+        job_args += ["--benchmark-data-prefix", prefix]
+    if manifest.get("override"):
+        job_args.append("--override")
     return job_args
