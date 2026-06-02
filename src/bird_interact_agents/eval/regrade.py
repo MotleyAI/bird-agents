@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional
 
@@ -29,6 +30,7 @@ from bird_interact_agents.eval.annotation_io import (
 )
 from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
+from bird_interact_agents.eval.grade_in_place import normalize_sol_sql
 
 
 class RegradeReport(BaseModel):
@@ -48,11 +50,20 @@ def _attempt_rows_dir(run_dir: Path) -> Path:
 def clear_llm_judge_cache(
     *,
     cache_path: Path,
-    instance_ids: Iterable[str],
+    instance_ids: Optional[Iterable[str]],
 ) -> None:
     """Drop cache entries whose embedded ``instance_id`` matches any of
-    ``instance_ids``. Entries for other instances are preserved."""
+    ``instance_ids``. Entries for other instances are preserved.
+
+    Pass ``instance_ids=None`` to drop EVERY entry in the cache — the
+    correct behaviour for an unfiltered ``--force-llm-judge`` regrade
+    (when the caller wants the judge to re-decide every cascade-N5 row,
+    a partial clear would leave previously-cached verdicts intact).
+    """
     if not cache_path.exists():
+        return
+    if instance_ids is None:
+        cache_path.write_text("{}\n")
         return
     cache = json.loads(cache_path.read_text())
     wanted = set(instance_ids)
@@ -147,13 +158,27 @@ def regrade_run(
         return report
 
     filter_set = set(instance_ids) if instance_ids else None
-    if force_llm_judge and filter_set:
+    if force_llm_judge:
+        # ``filter_set=None`` clears the whole cache — the right thing
+        # for an unfiltered regrade since otherwise stale verdicts
+        # would survive and silently override the fresh judge call.
         clear_llm_judge_cache(
             cache_path=run_dir / "llm_judge_cache.json",
             instance_ids=filter_set,
         )
 
+    # Reset the fresh-rows scratch dir so a partial regrade doesn't
+    # leak stale per-instance rows from a previous pass into
+    # ``eval_regraded.json``. When filtering by instance_ids, scope
+    # the reset to those subdirs so unrelated instances from a prior
+    # full regrade survive (and continue contributing to the report).
     fresh_rows_dir = run_dir / "regrade_rows"
+    if filter_set is not None and fresh_rows_dir.exists():
+        for sub in list(fresh_rows_dir.iterdir()):
+            if sub.is_dir() and sub.name in filter_set:
+                shutil.rmtree(sub, ignore_errors=True)
+    elif filter_set is None:
+        shutil.rmtree(fresh_rows_dir, ignore_errors=True)
     fresh_rows_dir.mkdir(parents=True, exist_ok=True)
 
     for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
@@ -270,6 +295,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         [s.strip() for s in args.instance_ids.split(",")]
         if args.instance_ids else None
     )
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.eval.annotate import (
+        _user_sim_interaction_from_trajectory,
+    )
     from bird_interact_agents.eval.tolerant_grader import grade_submission
     run_dir = paths.results_root() / "cloud" / args.run_id
 
@@ -279,11 +308,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     # land under ``instance_id`` so the lookup is identical at call time.
     original_sql_by_inst = _build_original_sql_index(args.benchmark)
 
+    # Resolve interactive-vs-one-shot ONCE for this run — drives the
+    # ``user_sim_n_asks`` plumbing on each grader call so the
+    # ``never_asked_user`` diagnostic fires on interactive benchmarks
+    # where the agent never queried the user-sim.
+    _bench_is_interactive = not get_benchmark(args.benchmark).one_shot
+
     def _grader(*, instance_id: str, submitted_sql: str, task_row: dict, **_kw):
         # Minimal end-to-end wiring — production callers pre-build the
         # implicit annotation + audited gold rows themselves.
-        from bird_interact_agents.cloud.ray_app import (
-            _load_audited_gold_rows_for, _load_task_annotation_or_implicit,
+        from bird_interact_agents.eval.grade_in_place import (
+            load_audited_gold_rows_for as _load_audited_gold_rows_for,
+            load_task_annotation_or_implicit as _load_task_annotation_or_implicit,
         )
         selected_database = task_row.get("selected_database", "")
         if not selected_database:
@@ -311,12 +347,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         # N1 requires the original gold SQL; the attempt JSON doesn't
         # carry it (it lives on the source data row / gated gold sidecar).
-        original_sol_sql = list(
+        # ``normalize_sol_sql`` wraps a bare string in a list so the
+        # grader doesn't see ``["S", "E", "L", "E", "C", "T", ...]``
+        # when the source row carries ``sol_sql`` as a single string.
+        original_sol_sql = normalize_sol_sql(
             task_row.get("original_sol_sql")
             or task_row.get("sol_sql")
-            or original_sql_by_inst.get(instance_id)
-            or []
+            or original_sql_by_inst.get(instance_id),
         )
+        # Compute the user-sim signal from the attempt's trajectory so
+        # the ``never_asked_user`` diagnostic fires properly on
+        # interactive runs where the agent never asked. One-shot
+        # benchmarks pass None so the flag stays out of miss_patterns.
+        if _bench_is_interactive:
+            _traj = list(task_row.get("trajectory") or [])
+            _user_sim_n_asks: Optional[int] = (
+                _user_sim_interaction_from_trajectory(_traj).n_asks
+            )
+        else:
+            _user_sim_n_asks = None
         return grade_submission(
             task_annotation=ann,
             audited_gold_rows=audited,
@@ -324,6 +373,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             submitted_sql=submitted_sql,
             db_path=db_path,
             conn=None,
+            user_sim_n_asks=_user_sim_n_asks,
         )
 
     report = regrade_run(

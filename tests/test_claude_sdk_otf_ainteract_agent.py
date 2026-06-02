@@ -447,9 +447,17 @@ def _make_fake_client(
     captured: dict, messages,
     *, m_module=None, prefill_result=None, prefill_timing: str = "after",
     raise_after_prefill: Exception | None = None,
+    prefill_asks: int = 0,
 ):
     """Build a fake `ClaudeSDKClient`. See the equivalent helper in
-    test_claude_sdk_otf_agent.py for the prefill semantics."""
+    test_claude_sdk_otf_agent.py for the prefill semantics.
+
+    ``prefill_asks`` simulates the ``ask_user`` tool having been called
+    ``N`` times during the message loop — pokes ``asks_used`` into the
+    per-task context dict, which the real tool's handler does at
+    runtime. Used by the n_ask_user_calls reporting tests so they
+    don't have to wire real MCP tools.
+    """
     class _FakeClient:
         def __init__(self, options):
             captured["options"] = options
@@ -468,6 +476,8 @@ def _make_fake_client(
                 m_module._ctx_var.get()["result"] = dict(prefill_result)
             for msg in messages:
                 yield msg
+            if prefill_asks:
+                m_module._ctx_var.get()["asks_used"] = prefill_asks
             if prefill_result is not None and prefill_timing == "after":
                 m_module._ctx_var.get()["result"] = dict(prefill_result)
             if raise_after_prefill is not None:
@@ -482,6 +492,7 @@ def _stub_env(
     messages=(), captured=None, deleted=(),
     prefill_result=None, prefill_timing: str = "after",
     raise_after_prefill: Exception | None = None,
+    prefill_asks: int = 0,
 ):
     from bird_interact_agents import usage as usage_mod
 
@@ -522,6 +533,7 @@ def _stub_env(
             prefill_result=prefill_result,
             prefill_timing=prefill_timing,
             raise_after_prefill=raise_after_prefill,
+            prefill_asks=prefill_asks,
         ),
     )
     return captured
@@ -1046,3 +1058,70 @@ async def test_run_task_exception_path_isolated_from_stale_context(
     assert row["gold_result_json"] is None
     assert row["phase1_observation"] is None
     assert row["phase1_passed"] is False
+
+
+# ---------------------------------------------------------------------------
+# DEV-1519: n_ask_user_calls reporting. ``asks_used`` is incremented in the
+# per-task ctx dict by the ``ask_user`` tool; without it on the result
+# row's ``usage`` dict the grader sees 0 and falsely flags
+# ``never_asked_user`` on every interactive miss.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_task_writes_n_ask_user_calls_zero(monkeypatch, tmp_path):
+    """Happy path with no ``ask_user`` calls — usage carries
+    ``n_ask_user_calls == 0`` (NOT missing)."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        prefill_asks=0,
+    )
+    agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert row["usage"]["n_ask_user_calls"] == 0
+
+
+@pytest.mark.asyncio
+async def test_run_task_writes_n_ask_user_calls_nonzero(monkeypatch, tmp_path):
+    """Happy path with 3 simulated ``ask_user`` calls — usage carries
+    ``n_ask_user_calls == 3``."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(100, 20)],
+        prefill_asks=3,
+    )
+    agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert row["usage"]["n_ask_user_calls"] == 3
+
+
+@pytest.mark.asyncio
+async def test_run_task_exception_path_writes_n_ask_user_calls(
+    monkeypatch, tmp_path,
+):
+    """Error path also propagates the ``asks_used`` count — the agent
+    asked twice before the failure, so usage carries
+    ``n_ask_user_calls == 2`` on the resulting row."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+
+    _stub_env(
+        monkeypatch, m, tmp_path / "store",
+        messages=[_FakeAssistant(50, 10)],
+        prefill_asks=2,
+        raise_after_prefill=RuntimeError("boom"),
+    )
+    agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert "boom" in (row.get("error") or "")
+    assert row["usage"]["n_ask_user_calls"] == 2

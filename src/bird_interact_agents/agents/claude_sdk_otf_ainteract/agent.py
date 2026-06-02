@@ -397,7 +397,19 @@ class ClaudeSDKOtfAInteractAgent:
                     "phase2_observation": result.get("phase2_observation"),
                     "trajectory": trajectory,
                     "error": str(e),
-                    "usage": accum.model_dump(),
+                    # ``asks_used`` is incremented by the ``ask_user`` tool
+                    # inside the per-task context; without it on the usage
+                    # dict the grader (grade_in_place._user_sim_n_asks
+                    # plumbing) defaults to 0 and falsely flags
+                    # ``never_asked_user`` on every interactive miss. Use
+                    # ``(ctx_dict or {})`` because early-setup failures can
+                    # raise BEFORE ctx_dict is constructed.
+                    "usage": {
+                        **accum.model_dump(),
+                        "n_ask_user_calls": (ctx_dict or {}).get(
+                            "asks_used", 0,
+                        ),
+                    },
                     "phase1_observation_audited": result.get("phase1_observation_audited"),
                     "phase1_observation_original": result.get("phase1_observation_original"),
                 },
@@ -423,7 +435,13 @@ class ClaudeSDKOtfAInteractAgent:
                 "phase2_observation": result.get("phase2_observation"),
                 "trajectory": trajectory,
                 "error": None,
-                "usage": accum.model_dump(),
+                # ctx_dict is guaranteed-set on the success path, but the
+                # ``{**accum.model_dump(), n_ask_user_calls: …}`` shape
+                # mirrors the error path above for readability.
+                "usage": {
+                    **accum.model_dump(),
+                    "n_ask_user_calls": ctx_dict.get("asks_used", 0),
+                },
                 "phase1_observation_audited": result.get("phase1_observation_audited"),
                 "phase1_observation_original": result.get("phase1_observation_original"),
             },

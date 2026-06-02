@@ -1,16 +1,19 @@
-"""DEV-1515: annotation-skeleton generator.
+"""DEV-1515: annotation-skeleton generator (task-side only).
 
-Builds the per-task / per-submission JSON skeletons mechanically from a
-task row + per-row attempt artefacts. Human-judgment fields are left as
-``PENDING_HUMAN_REVIEW`` sentinels; modes control overwrite semantics.
+Builds the per-task JSON skeletons mechanically from each benchmark
+data row. Human-judgment fields are left as ``PENDING_HUMAN_REVIEW``
+sentinels; ``--task-mode`` controls overwrite semantics.
+
+Per-submission skeletons are built by ``scripts/dev1515_convert_runs.py``
+from a completed run's per-row attempts (it has the trajectory + usage
+plumbing this module does not).
 
 Usage::
 
     python -m bird_interact_agents.eval.annotate \\
-        --run-id <id> --benchmark mini_interact \\
+        --benchmark mini_interact \\
         [--instance-ids ...] \\
         [--task-mode {init,refresh,force-all}] \\
-        [--submission-mode {overwrite,init}] \\
         [--dry-run]
 
 ``--benchmark`` accepts both the dash form (``mini-interact``) and the
@@ -348,21 +351,17 @@ def _load_task_rows(*, benchmark: str, instance_ids: Optional[Iterable[str]]) ->
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Generate / refresh per-task + per-submission annotation skeletons.",
+        description="Generate / refresh per-task annotation skeletons.",
     )
-    parser.add_argument("--run-id", required=True)
     parser.add_argument("--benchmark", required=True)
     parser.add_argument(
         "--instance-ids", default=None,
-        help="Comma-separated subset; default = every instance in the run.",
+        help="Comma-separated subset; default = every instance in the "
+             "benchmark data file.",
     )
     parser.add_argument(
         "--task-mode", choices=("init", "refresh", "force-all"),
         default="init",
-    )
-    parser.add_argument(
-        "--submission-mode", choices=("overwrite", "init"),
-        default="overwrite",
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)

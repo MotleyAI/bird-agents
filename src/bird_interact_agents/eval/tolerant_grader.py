@@ -635,15 +635,33 @@ def grade_submission(
                 sqls, db_path=db_path, conn=conn, executor=executor,
             )
         except Exception:  # noqa: BLE001
-            # Variant SQL didn't execute — treat as empty rowset so the
-            # cascade can still complete and diagnostics can flag the
-            # downstream sqlglot parse failure. Better than crashing
-            # grading on a single broken variant.
-            v_rows, v_cols = [], []
+            # Variant SQL didn't execute — SKIP it instead of coercing
+            # to ``([], [])``. An empty stand-in lets N2/N3 falsely pass
+            # whenever the agent rowset is also empty (e.g. agent SQL
+            # also failed) — producing "correct" verdicts from broken
+            # gold SQL. The diagnostics path picks the best-overlap
+            # variant from the surviving rows; downstream sqlglot
+            # parsing of the broken SQL string still surfaces the
+            # ``sql_parse_error`` flag on the agent-side miss.
+            logger.exception(
+                "Audited variant execution failed; skipping. "
+                "instance=%s variant_id=%s",
+                task_annotation.instance_id, v.get("variant_id"),
+            )
+            continue
         variant_results.append((v, v_rows, v_cols))
 
     # 2) N1 — original gold strict.
-    n1 = _set_equal(pred_rows, orig_rows)
+    # When the source data carries no ``sol_sql`` for this instance
+    # (e.g. the regrade source-row lookup returned []), ``orig_rows``
+    # is also []. ``_set_equal([], [])`` is True — which would falsely
+    # mark N1 as a strict pass whenever the agent's SQL also returns
+    # empty (execution failure or genuinely empty result). Treat
+    # missing-gold as ungradable for N1 instead of as an empty bag.
+    if not original_sol_sql:
+        n1 = False
+    else:
+        n1 = _set_equal(pred_rows, orig_rows)
 
     # 3) N2/N3 — audited primary / any variant strict.
     primary = next(
@@ -680,8 +698,14 @@ def grade_submission(
         candidates = (
             [(primary[0], primary[1])] if primary else []
         ) + [(v[0], v[1]) for v in variant_results if not v[0].get("primary")]
-        if not candidates:
-            # No variants → fall back to original gold itself.
+        if not candidates and original_sol_sql:
+            # No variants → fall back to original gold itself. Gated on
+            # ``original_sol_sql`` because ``orig_rows`` is also ``[]``
+            # when no source gold exists, and ``compare_tie_order([], [])``
+            # returns True via set equality — without this guard a
+            # missing-gold + empty-agent row pair would falsely pass at
+            # N4 (and propagate as ``valid_interpretation`` even though
+            # nothing was actually compared).
             candidates = [({}, orig_rows)]
         for v_meta, v_rows in candidates:
             if compare_tie_order(pred_rows, v_rows, orderby_indices=indices):
@@ -730,30 +754,34 @@ def grade_submission(
         else:
             novel_judgment = None
 
-    # 6) N6/N7/N8 — cell-level relaxations applied across all variants.
+    # 6) N6/N7/N8/N9 — cell-level relaxations applied across all variants.
+    # When ``original_sol_sql`` is empty, ``orig_rows`` is also ``[]`` and
+    # every cell-level comparator returns True on the ``([], [])`` pair
+    # (bag equality holds vacuously). Drop the ``__original__`` fallback
+    # from the iteration list in that case — same guard as the N4 block,
+    # otherwise a missing-gold + empty-agent row would cascade-pass at N6.
+    _comparator_targets: list = list(variant_results)
+    if original_sol_sql:
+        _comparator_targets.append(
+            ({"variant_id": "__original__"}, orig_rows, orig_cols),
+        )
     n6, n7, n8 = n5, n5, n5
     if not n6:
-        for _v_meta, v_rows, _v_cols in variant_results + [
-            ({"variant_id": "__original__"}, orig_rows, orig_cols),  # type: ignore[list-item]
-        ]:
+        for _v_meta, v_rows, _v_cols in _comparator_targets:
             if compare_numeric_epsilon(pred_rows, v_rows, epsilon=epsilon):
                 n6 = True
                 break
     if not n7:
         n7 = n6
         if not n7:
-            for _v_meta, v_rows, _v_cols in variant_results + [
-                ({"variant_id": "__original__"}, orig_rows, orig_cols),  # type: ignore[list-item]
-            ]:
+            for _v_meta, v_rows, _v_cols in _comparator_targets:
                 if compare_trailing_whitespace(pred_rows, v_rows):
                     n7 = True
                     break
     if not n8:
         n8 = n7
         if not n8:
-            for _v_meta, v_rows, v_cols in variant_results + [
-                ({"variant_id": "__original__"}, orig_rows, orig_cols),  # type: ignore[list-item]
-            ]:
+            for _v_meta, v_rows, v_cols in _comparator_targets:
                 if compare_column_order(
                     pred_rows, v_rows,
                     pred_cols=list(pred_cols), gold_cols=list(v_cols),
@@ -762,9 +790,7 @@ def grade_submission(
                     break
     n9 = n8
     if not n9:
-        for _v_meta, v_rows, _v_cols in variant_results + [
-            ({"variant_id": "__original__"}, orig_rows, orig_cols),  # type: ignore[list-item]
-        ]:
+        for _v_meta, v_rows, _v_cols in _comparator_targets:
             if compare_case_fold(pred_rows, v_rows):
                 n9 = True
                 break
@@ -968,11 +994,23 @@ def _has_limit(expr: Optional[sg_expr.Expression]) -> Optional[bool]:
 
 
 def _where_conjunct_count(expr: Optional[sg_expr.Expression]) -> Optional[int]:
-    """Count top-level AND-conjuncts in the outer SELECT's WHERE clause.
-    Zero if no WHERE. A single predicate counts as 1."""
+    """Count top-level AND-conjuncts in the OUTER SELECT's WHERE clause.
+    Zero if no WHERE. A single predicate counts as 1.
+
+    ``expr.find(sg_expr.Where)`` would descend into subqueries / CTEs
+    and pick whichever WHERE node sqlglot iterates first, which can be
+    a nested one — producing wrong ``predicate_count_mismatch``
+    diagnostics. Reach the outer Select's ``args["where"]`` directly
+    instead so we count predicates on the query the agent's result
+    rowset actually came from.
+    """
     if expr is None:
         return None
-    where = expr.find(sg_expr.Where)
+    outer = (
+        expr if isinstance(expr, sg_expr.Select)
+        else expr.find(sg_expr.Select)
+    )
+    where = outer.args.get("where") if outer is not None else None
     if where is None:
         return 0
     # Flatten the AND tree into atoms.
@@ -1000,6 +1038,19 @@ def _column_match_signals(
     name_match_ci = set(a_lower) == set(g_lower) and count_match
     order_match = a_lower == g_lower
     return count_match, name_match_ci, order_match
+
+
+def _normalize_col(name: str) -> str:
+    """Lowercase + strip the longest dot-prefix.
+
+    ``'households.housenum' → 'housenum'``; ``'Alias.X.Y' → 'y'``.
+    Used by the column-order-mismatch diagnostic so slayer's
+    namespacing convention (``<db>.<table>.<col>``) and the gold's
+    bare column names compare equal modulo whitespace, while still
+    detecting cases where the agent picked the right columns in a
+    different order from the gold.
+    """
+    return name.lower().rsplit(".", 1)[-1]
 
 
 def _compute_miss_diagnostics(
@@ -1135,8 +1186,25 @@ def _compute_miss_diagnostics(
         )
     ):
         flags.append("aggregation_shape_mismatch")
-    if (not count_match) or (not name_match_ci):
-        flags.append("column_projection_mismatch")
+    # Column-shape flags — split by causal vs near-miss vs stylistic
+    # (see MissPattern docstring in annotation_schema.py).
+    # 1. count_mismatch is load-bearing: different arity → bag
+    #    equality CANNOT hold on row reprs of differing length.
+    # 2. order_mismatch is a near-miss: counts match, normalised
+    #    name lists match as SETS but differ as LISTS — agent picked
+    #    the right columns in the wrong order.
+    # 3. Bare name-only divergence is intentionally unflagged —
+    #    stylistic (slayer namespacing); not a cascade-fail cause.
+    if not count_match:
+        flags.append("column_count_mismatch")
+    else:
+        agent_norm = [_normalize_col(c) for c in pred_cols]
+        gold_norm = [_normalize_col(c) for c in best_cols]
+        if (
+            sorted(agent_norm) == sorted(gold_norm)
+            and agent_norm != gold_norm
+        ):
+            flags.append("column_order_mismatch")
     if (
         md.agent_where_conjunct_count is not None
         and md.best_variant_where_conjunct_count is not None

@@ -280,10 +280,45 @@ def test_flag_sql_parse_error_agent_side(tmp_path: Path):
 
 
 def test_flag_sql_parse_error_best_variant_side(tmp_path: Path):
-    """Mirror case: agent SQL parses fine but the best-variant audited
-    SQL is malformed. Codex major #4 — the rule fires on EITHER side
-    failing to parse, and the best-variant nullable fields must mirror
-    the agent-side behaviour."""
+    """Mixed-variants case: one variant executes fine, one is malformed.
+    The malformed variant is SKIPPED from variant_results (not coerced
+    to ``([], [])`` — that would risk false N2/N3 passes per
+    CodeRabbit r3336709435). The surviving good variant becomes the
+    best-overlap reference; if its SQL parses fine, sql_parse_error
+    does NOT fire because the broken variant was excluded from the
+    sqlglot pass.
+
+    Audit-quality issues (broken variants in the gold set) are out of
+    scope for MissDiagnostics — they belong to a separate audit-side
+    annotation. This test pins the new contract: broken variants are
+    silently skipped and the diagnostics path proceeds against the
+    surviving ones."""
+    db = _build_db(tmp_path)
+    verdict = _grade(
+        db=db,
+        submitted_sql="SELECT id FROM t1 WHERE id IN (4, 5)",
+        audited_sol_sql_per_variant=[
+            ("primary", True, ["NOT A VALID SQL AT ALL ;;"]),
+            ("alt", False, ["SELECT id FROM t1 WHERE id IN (1, 2)"]),
+        ],
+    )
+    md = verdict.miss_diagnostics
+    assert md is not None
+    # The broken "primary" was skipped from variant_results; only "alt"
+    # survives, so best_variant_id must be "alt".
+    assert md.best_variant_id == "alt"
+    assert md.agent_sql_parse_ok is True
+    assert md.best_variant_sql_parse_ok is True
+    assert "sql_parse_error" not in md.miss_patterns
+
+
+def test_all_variants_failing_execution_leaves_diagnostics_none(tmp_path: Path):
+    """When EVERY audited variant fails to execute, there is no
+    canonical gold to diagnose against — miss_diagnostics stays None
+    (we never coerce to empty, which would risk a false N2/N3 pass).
+    The cascade's `phase1_against_*` fields still record the misses;
+    callers can detect the unevaluable-grading state by observing
+    miss_diagnostics is None on a cascade-fail."""
     db = _build_db(tmp_path)
     verdict = _grade(
         db=db,
@@ -292,23 +327,11 @@ def test_flag_sql_parse_error_best_variant_side(tmp_path: Path):
             ("primary", True, ["NOT A VALID SQL AT ALL ;;"]),
         ],
     )
-    md = verdict.miss_diagnostics
-    assert md is not None
-    assert md.agent_sql_parse_ok is True
-    assert md.agent_sql_parse_error is None
-    assert md.agent_tables_referenced == ["t1"]
-    # Best-variant side is the broken one.
-    assert md.best_variant_sql_parse_ok is False
-    assert md.best_variant_sql_parse_error is not None
-    assert md.best_variant_tables_referenced is None
-    assert md.best_variant_has_group_by is None
-    assert md.best_variant_has_aggregate is None
-    assert md.best_variant_join_count is None
-    assert md.best_variant_where_conjunct_count is None
-    assert md.best_variant_has_having is None
-    assert md.best_variant_has_limit is None
-    assert md.table_set_match is None
-    assert "sql_parse_error" in md.miss_patterns
+    # Cascade should fail across the board.
+    assert verdict.n2_audited_primary is False
+    assert verdict.n3_any_audited_variant is False
+    # No surviving variant → no canonical reference → no diagnostics.
+    assert verdict.miss_diagnostics is None
 
 
 def test_flag_empty_agent_result(tmp_path: Path):
@@ -370,8 +393,11 @@ def test_flag_aggregation_shape_mismatch(tmp_path: Path):
     assert "aggregation_shape_mismatch" in md.miss_patterns
 
 
-def test_flag_column_projection_mismatch(tmp_path: Path):
-    """Agent projects 1 col; gold projects 2. column_count_match=False."""
+def test_flag_column_count_mismatch(tmp_path: Path):
+    """Agent projects 1 column; gold projects 2. Different arity →
+    bag equality on canonical row reprs cannot hold (same for
+    BIRD-Interact's ex_base). column_count_mismatch is the
+    load-bearing column-shape flag for this case."""
     db = _build_db(tmp_path)
     verdict = _grade(
         db=db,
@@ -382,8 +408,77 @@ def test_flag_column_projection_mismatch(tmp_path: Path):
     )
     md = verdict.miss_diagnostics
     assert md is not None
+    # Informational fields are populated.
     assert md.column_count_match is False
-    assert "column_projection_mismatch" in md.miss_patterns
+    assert md.agent_column_count == 1
+    assert md.best_variant_column_count == 2
+    flags = set(md.miss_patterns)
+    assert "column_count_mismatch" in flags
+    # Mutually exclusive — order can't be checked when counts differ.
+    assert "column_order_mismatch" not in flags
+
+
+def test_flag_column_order_mismatch(tmp_path: Path):
+    """Agent projects the right COLUMNS (after stripping slayer's
+    dot-prefix + lowercasing) but in a different ORDER from gold.
+    Same column count, normalised name lists match as SETS but differ
+    as LISTS → column_order_mismatch fires; column_count_mismatch
+    does not. This is the near-miss pattern where N8 column-order
+    tolerance would have rescued the cascade if slayer's namespacing
+    hadn't tripped its column-name set check."""
+    db = _build_db(tmp_path)
+    # Agent's column names use slayer-namespacing; gold's are bare;
+    # order is reversed. Force rowset divergence so the cascade
+    # actually reaches diagnostics (values differ in row 0 vs row 0
+    # because the columns are swapped in the SELECT list).
+    verdict = _grade(
+        db=db,
+        submitted_sql=(
+            'SELECT val AS "t1.val", id AS "t1.id" FROM t1 WHERE id <= 2 ORDER BY id'
+        ),
+        audited_sol_sql_per_variant=[
+            ("primary", True,
+             ["SELECT id, val FROM t1 WHERE id <= 2 ORDER BY id"]),
+        ],
+    )
+    md = verdict.miss_diagnostics
+    assert md is not None
+    assert md.column_count_match is True
+    assert md.agent_column_count == 2
+    assert md.best_variant_column_count == 2
+    flags = set(md.miss_patterns)
+    assert "column_order_mismatch" in flags
+    assert "column_count_mismatch" not in flags
+
+
+def test_column_name_only_divergence_no_column_flag(tmp_path: Path):
+    """Same column count + names differ in a NON-RECOVERABLE way
+    (normalised name sets are different — agent picked actually
+    different columns, not just renamed/namespaced). Neither
+    column_count_mismatch nor column_order_mismatch fires —
+    column-NAME-only divergence is stylistic / actually-different
+    projection and we don't surface it as a column-shape flag
+    (whatever else caused the cascade fail will surface elsewhere)."""
+    db = _build_db(tmp_path)
+    # Agent projects `id`; gold projects `val`. Same arity (1), but
+    # the normalised name sets are {'id'} vs {'val'} — disjoint.
+    verdict = _grade(
+        db=db,
+        submitted_sql="SELECT id FROM t1 WHERE id <= 2 ORDER BY id",
+        audited_sol_sql_per_variant=[
+            ("primary", True,
+             ["SELECT val FROM t1 WHERE id <= 2 ORDER BY id"]),
+        ],
+    )
+    md = verdict.miss_diagnostics
+    assert md is not None
+    assert md.column_count_match is True
+    # column-name signal is populated as informational.
+    assert md.column_name_match_case_insensitive is False
+    flags = set(md.miss_patterns)
+    # No column-shape flag fires; the rowset flags do the talking.
+    assert "column_count_mismatch" not in flags
+    assert "column_order_mismatch" not in flags
 
 
 def test_flag_predicate_count_mismatch(tmp_path: Path):
@@ -618,15 +713,19 @@ def test_multi_flag_fixture_fires_every_applicable_flag(tmp_path: Path):
     assert md is not None
     flags = set(md.miss_patterns)
     for required in (
-        "column_projection_mismatch",
         "wrong_table_set",
         "aggregation_shape_mismatch",
         "limit_presence_mismatch",
         "never_asked_user",
+        # Agent projects 2 cols (id, name) vs gold's 1 col (id) —
+        # arity mismatch fires the load-bearing column-count flag.
+        "column_count_mismatch",
     ):
         assert required in flags, (
             f"expected {required!r} in {flags} (multi-flag scenario)"
         )
+    # When counts differ, the order check is short-circuited.
+    assert "column_order_mismatch" not in flags
 
 
 def test_multi_flag_fixture_with_sql_parse_error(tmp_path: Path):

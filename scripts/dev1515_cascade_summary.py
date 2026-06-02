@@ -1,6 +1,6 @@
 """DEV-1515: print aggregate cascade summary over the 53 annotated instances.
 
-Walks `annotations/mini-interact/*/<inst>.submission.<run>.json` for the
+Walks `annotations/mini_interact/*/<inst>.submission.<run>.json` for the
 two May-31 runs and emits the phase1 monotone cascade (each tier is the
 cumulative pass count up to and including that tier), plus a small
 per-failure-class tally.
@@ -24,7 +24,7 @@ RUNS = (
     "20260531t1008-claudes-slayer-890419",
     "20260531t1343-claudes-slayer-b39bfc",
 )
-BENCHMARK = "mini-interact"
+BENCHMARK = "mini_interact"
 
 # Most-stringent → most-lenient labels for the phase1 view.
 _PHASE1_LABELS = (

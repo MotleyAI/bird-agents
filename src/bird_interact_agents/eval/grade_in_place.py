@@ -14,6 +14,7 @@ block.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 from pathlib import Path
 from typing import Any, Callable, List, Optional
 
@@ -26,6 +27,9 @@ from bird_interact_agents.eval.annotation_schema import (
     TaskAnnotation,
     UserSimInteraction,
 )
+from bird_interact_agents.eval.implicit_annotation import (
+    implicit_task_annotation,
+)
 from bird_interact_agents.eval.tolerant_grader import (
     CascadeVerdict,
     grade_submission,
@@ -33,6 +37,34 @@ from bird_interact_agents.eval.tolerant_grader import (
 
 
 _AUTO_ANNOTATOR = "auto-inline-grader"
+
+
+def normalize_sol_sql(value: Any) -> List[str]:
+    """Coerce ``sol_sql`` / ``original_sol_sql`` to ``list[str]``.
+
+    Both shapes are present in the wild — ``mini_interact.jsonl`` carries
+    ``sol_sql`` as a single SQL string on some rows and as a list on
+    others (the post-DEV-1478 schema is list, but tests and older
+    fixtures still pass a bare string). Without this helper the previous
+    ``list(value or [])`` would turn the string ``"SELECT 1"`` into the
+    character list ``["S", "E", "L", "E", "C", "T", " ", "1"]`` and the
+    grader would execute each character as a one-character SQL
+    statement, raising ``sqlite3.OperationalError`` and silently
+    dropping N1 to False.
+
+    Contract:
+    * ``None`` / falsy → ``[]``
+    * ``str`` → ``[value]``
+    * ``list`` / ``tuple`` / other iterable of strings → ``list(value)``
+
+    Non-string elements inside a list pass through unchanged (the
+    grader rejects them downstream — this helper is shape-only).
+    """
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return list(value)
 
 
 def _verdict_to_phase(b: bool) -> PhaseVerdict:
@@ -230,6 +262,30 @@ def grade_and_write(
 ) -> Path:
     """Run the tolerant grader and write the SubmissionAnnotation to
     ``<rows_dir>/<instance_id>/submission_annotation.json``."""
+    # Resolve the user-sim signal for `grade_submission`. Interactive
+    # benchmarks (mini-interact a-interact) pass the int count of
+    # `ask_user` calls so the `never_asked_user` diagnostic can fire
+    # when the count is zero; one-shot benchmarks (livesqlbench) pass
+    # None so the flag stays out of `miss_patterns`. Prefer the
+    # already-parsed `user_sim_interaction.n_asks` over the raw
+    # `n_ask_user_calls` since the former encodes the parsing rule.
+    from bird_interact_agents.benchmark import get_benchmark
+    try:
+        _bench = get_benchmark(benchmark)
+        _is_interactive = not _bench.one_shot
+    except Exception:  # noqa: BLE001 — unknown benchmark token
+        _is_interactive = False
+    _user_sim_n_asks: Optional[int]
+    if _is_interactive:
+        if user_sim_interaction is not None:
+            _user_sim_n_asks = user_sim_interaction.n_asks
+        elif n_ask_user_calls is not None:
+            _user_sim_n_asks = n_ask_user_calls
+        else:
+            _user_sim_n_asks = 0
+    else:
+        _user_sim_n_asks = None
+
     cascade = grade_submission(
         task_annotation=task_annotation,
         audited_gold_rows=audited_gold_rows,
@@ -240,6 +296,7 @@ def grade_and_write(
         executor=executor,
         llm_judge=llm_judge,
         epsilon=epsilon,
+        user_sim_n_asks=_user_sim_n_asks,
     )
     ann = _build_submission_annotation(
         task_annotation=task_annotation,
@@ -261,3 +318,218 @@ def grade_and_write(
     out_path = out_dir / "submission_annotation.json"
     out_path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
     return out_path
+
+
+def write_failed_submission_annotation(
+    *,
+    rows_dir: Path,
+    instance_id: str,
+    selected_database: str,
+    benchmark: str,
+    run_id: str,
+    trajectory_path: str,
+    failure_details: str,
+    duration_s: Optional[float] = None,
+    cost_usd_agent: Optional[float] = None,
+    cost_usd_user_sim: Optional[float] = None,
+    n_agent_turns: Optional[int] = None,
+    n_ask_user_calls: Optional[int] = None,
+    predicted_row_count: Optional[int] = None,
+) -> Path:
+    """Write a 0-pass ``submission_annotation.json`` for a task that
+    bypassed the grader (e.g. agent crashed before submit, no
+    ``submitted_sql`` on the result row, grader itself raised).
+
+    Without this, ``aggregate_cascading_phase1`` walks ``rows_dir`` and
+    skips the missing per-task dir entirely — so ``n_dual_eval_tasks``
+    drops below ``total_tasks`` and ``cascading_phase1.rates`` are
+    INFLATED by silently excluding never-graded rows from the
+    denominator. Writing a fail-everything annotation keeps the
+    denominator honest.
+
+    The annotation is shaped so every N-tier reads as ``"fail"`` /
+    ``False`` (which the aggregator then counts as a 0-pass row at every
+    cascade tier). ``failure_classification.primary`` is ``"other"``
+    because the cascade was never actually computed — the gap isn't
+    "the agent's SQL didn't match the gold" but "no SQL to compare".
+    """
+    out_dir = Path(rows_dir) / instance_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    benchmark_canonical = benchmark.replace("-", "_")
+    ann = SubmissionAnnotation(
+        instance_id=instance_id,
+        selected_database=selected_database,
+        task_annotation_ref=(
+            f"annotations/{benchmark_canonical}/{selected_database}/"
+            f"{instance_id}.task.json"
+        ),
+        annotated_by=_AUTO_ANNOTATOR,
+        annotated_at=_dt.datetime.now(_dt.timezone.utc)
+            .replace(microsecond=0).isoformat(),
+        submission=SubmissionMetadata(
+            cloud_run_id=run_id,
+            trajectory_path=trajectory_path,
+            predicted_row_count=predicted_row_count,
+            duration_s=duration_s,
+            cost_usd_agent=cost_usd_agent,
+            cost_usd_user_sim=cost_usd_user_sim,
+            n_agent_turns=n_agent_turns,
+            n_ask_user_calls=n_ask_user_calls,
+        ),
+        evaluation=SubmissionEvaluation(
+            phase1_against_original_gold="fail",
+            phase1_against_audited_primary="fail",
+            phase1_against_any_audited_variant="fail",
+            phase1_against_variants=[],
+            correct_up_to_tie_order=False,
+            novel_reading_judgment=None,
+            correct_under_numeric_epsilon=False,
+            correct_under_trailing_whitespace=False,
+            correct_under_column_order=False,
+            correct_under_case_fold=False,
+            numeric_epsilon=1e-6,
+            verdict="invalid",
+            matched_variant_id=None,
+            rationale=failure_details,
+            miss_diagnostics=None,
+        ),
+        failure_classification=FailureClassification(
+            primary="other",
+            agent_at_fault=False,
+            remediation_target="other",
+            details=failure_details,
+        ),
+        decision_point=None,
+        user_sim_interaction=UserSimInteraction(),
+    )
+    out_path = out_dir / "submission_annotation.json"
+    out_path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
+    return out_path
+
+
+def load_task_annotation_or_implicit(
+    *, instance_id: str, selected_database: str, benchmark: str,
+    amb_user_query: str = "",
+) -> TaskAnnotation:
+    """Try to read ``<paths.annotations_root()>/<benchmark>/<db>/<inst>.task.json``;
+    if missing, fall back to the in-memory implicit default. NEVER writes
+    a synthesized stub to disk.
+
+    Shared by the cloud worker (``ray_app.py``) and the local runner
+    (``run.py``) so both paths produce the same TaskAnnotation for the
+    same instance — keeping the per-row ``submission_annotation.json``
+    comparable across local + cloud runs.
+    """
+    from bird_interact_agents.eval.annotation_io import (
+        read_task_annotation, task_annotation_path,
+    )
+
+    # Leave ``repo_root`` unset so ``annotation_io._annotations_root``
+    # honours ``BIRD_ANNOTATIONS_ROOT`` (the default already anchors at
+    # ``paths.main_checkout_root()`` via ``paths.annotations_root()``,
+    # so the production path is unchanged).
+    p = task_annotation_path(
+        benchmark=benchmark, selected_database=selected_database,
+        instance_id=instance_id,
+    )
+    if p.exists():
+        return read_task_annotation(p)
+    return implicit_task_annotation(
+        instance_id=instance_id,
+        selected_database=selected_database,
+        benchmark=benchmark,
+        amb_user_query=amb_user_query,
+    )
+
+
+def load_audited_gold_rows_for(
+    *, benchmark: str, instance_id: str,
+) -> list[dict]:
+    """Load every audited-gold row for ``instance_id`` from the
+    consolidated JSONL. Empty list when no rows exist (graceful default
+    — see ``implicit_task_annotation``)."""
+    from bird_interact_agents import paths
+    from bird_interact_agents.benchmark import get_benchmark
+
+    try:
+        bench = get_benchmark(benchmark.replace("-", "_"))
+    except Exception:  # noqa: BLE001
+        return []
+    if getattr(bench, "audited_gold_layout", None) != "single_file":
+        return []
+    consolidated = paths.audited_gold_root() / f"{bench.name}_audited.jsonl"
+    if not consolidated.exists():
+        return []
+    out: list[dict] = []
+    for line in consolidated.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if row.get("instance_id") == instance_id:
+            out.append(row)
+    return out
+
+
+def grade_one_submission(
+    *,
+    task_data: dict,
+    submitted_sql: str,
+    rows_dir: Path,
+    run_id: str,
+    benchmark: str,
+    db_path: Path,
+    conn: Any = None,
+    cost_usd_agent: Optional[float] = None,
+    cost_usd_user_sim: Optional[float] = None,
+    duration_s: Optional[float] = None,
+    n_agent_turns: Optional[int] = None,
+    n_ask_user_calls: Optional[int] = None,
+    predicted_row_count: Optional[int] = None,
+    user_sim_interaction: Optional[UserSimInteraction] = None,
+) -> Path:
+    """Inline-grade one submission and write the per-row
+    ``submission_annotation.json``. Idempotent at the per-(task, run)
+    level — both the cloud fetch path and the local rows aggregator are
+    no-overwrite at the destination.
+
+    Shared between cloud (``cloud.ray_app``) and local (``run``) so the
+    ``cascading_phase1`` block in ``eval.json`` is populated regardless
+    of where the run was launched.
+    """
+    instance_id = task_data["instance_id"]
+    selected_database = task_data["selected_database"]
+    ann = load_task_annotation_or_implicit(
+        instance_id=instance_id,
+        selected_database=selected_database,
+        benchmark=benchmark,
+        amb_user_query=task_data.get("amb_user_query", ""),
+    )
+    audited_rows = load_audited_gold_rows_for(
+        benchmark=benchmark, instance_id=instance_id,
+    )
+    return grade_and_write(
+        rows_dir=rows_dir,
+        instance_id=instance_id,
+        benchmark=benchmark,
+        run_id=run_id,
+        task_annotation=ann,
+        audited_gold_rows=audited_rows,
+        original_sol_sql=normalize_sol_sql(
+            task_data.get("original_sol_sql") or task_data.get("sol_sql"),
+        ),
+        submitted_sql=submitted_sql,
+        db_path=db_path,
+        conn=conn,
+        trajectory_path=f"rows/{instance_id}/attempt-1.json",
+        cost_usd_agent=cost_usd_agent,
+        cost_usd_user_sim=cost_usd_user_sim,
+        duration_s=duration_s,
+        n_agent_turns=n_agent_turns,
+        n_ask_user_calls=n_ask_user_calls,
+        predicted_row_count=predicted_row_count,
+        user_sim_interaction=user_sim_interaction,
+    )

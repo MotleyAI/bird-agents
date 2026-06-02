@@ -15,6 +15,7 @@ from pathlib import Path
 def test_ray_app_writes_submission_annotation_per_task(monkeypatch, tmp_path):
     """The worker MUST invoke grade_and_write for each task it runs."""
     from bird_interact_agents.cloud import ray_app
+    from bird_interact_agents.eval import grade_in_place
 
     calls: list[dict] = []
 
@@ -26,6 +27,14 @@ def test_ray_app_writes_submission_annotation_per_task(monkeypatch, tmp_path):
         d.mkdir(parents=True, exist_ok=True)
         (d / "submission_annotation.json").write_text("{}")
 
+    # After DEV-1515 round-4, the per-task grader helper lives in
+    # ``grade_in_place`` (canonical location, shared with the local
+    # runner); ``ray_app._grade_one_submission`` is now a thin alias.
+    # Patch BOTH so the test passes regardless of which lookup path
+    # the wiring code uses.
+    monkeypatch.setattr(
+        grade_in_place, "grade_and_write", fake_grade, raising=True,
+    )
     monkeypatch.setattr(
         ray_app, "grade_and_write", fake_grade, raising=True,
     )
@@ -86,6 +95,10 @@ def test_worker_uses_implicit_annotation_when_file_missing(monkeypatch, tmp_path
         d.mkdir(parents=True, exist_ok=True)
         (d / "submission_annotation.json").write_text("{}")
 
+    from bird_interact_agents.eval import grade_in_place
+    monkeypatch.setattr(
+        grade_in_place, "grade_and_write", fake_grade, raising=True,
+    )
     monkeypatch.setattr(ray_app, "grade_and_write", fake_grade, raising=True)
 
     ray_app._grade_one_submission(

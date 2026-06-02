@@ -46,9 +46,16 @@ def _canonical_benchmark(benchmark: str) -> str:
 
 def _annotations_root(repo_root: Optional[Path] = None) -> Path:
     """Anchor at the main checkout (matches the worktree-safe contract
-    used by ``audited_gold/`` and ``results/``)."""
-    root = Path(repo_root) if repo_root else paths.main_checkout_root()
-    return root / ANNOTATIONS_DIRNAME
+    used by ``audited_gold/`` and ``results/``).
+
+    When ``repo_root`` is None, delegate to ``paths.annotations_root()``
+    so the ``BIRD_ANNOTATIONS_ROOT`` env override is honoured (used by
+    tests + forks that mount the annotations tree elsewhere). Passing
+    an explicit ``repo_root`` bypasses the override on purpose — the
+    caller has already pinned the location."""
+    if repo_root is None:
+        return paths.annotations_root()
+    return Path(repo_root) / ANNOTATIONS_DIRNAME
 
 
 def task_annotation_path(
