@@ -58,14 +58,17 @@ def _load_task_annotation_or_implicit(
     """Try to read ``<paths.annotations_root()>/<benchmark>/<db>/<inst>.task.json``;
     if missing, fall back to the in-memory implicit default. NEVER writes
     a synthesized stub to disk."""
-    from bird_interact_agents import paths
     from bird_interact_agents.eval.annotation_io import (
         read_task_annotation, task_annotation_path,
     )
 
+    # Leave ``repo_root`` unset so ``annotation_io._annotations_root``
+    # honours ``BIRD_ANNOTATIONS_ROOT`` (the default already anchors at
+    # ``paths.main_checkout_root()`` via ``paths.annotations_root()``,
+    # so the production path is unchanged).
     p = task_annotation_path(
         benchmark=benchmark, selected_database=selected_database,
-        instance_id=instance_id, repo_root=paths.main_checkout_root(),
+        instance_id=instance_id,
     )
     if p.exists():
         return read_task_annotation(p)

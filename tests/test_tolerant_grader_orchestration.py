@@ -968,3 +968,46 @@ def test_tier2_populated_on_grader_output():
     assert info.first_divergent_cell_diff is not None
     assert "1" in info.first_divergent_cell_diff
     assert "2" in info.first_divergent_cell_diff
+
+
+# ---------------------------------------------------------------------------
+# Missing-gold guard: empty ``original_sol_sql`` + empty audited variants
+# must NOT collapse to a monotone cascade pass at any tier. Regression
+# pinned by the post-Group-1.3 follow-up — even after N1 is gated on
+# ``original_sol_sql``, N4 used to fall back to ``orig_rows == []`` and
+# ``compare_tie_order([], [], orderby_indices=[])`` returned True via set
+# equality. That made a missing-gold + empty-agent pair come back as
+# ``valid_interpretation`` despite nothing being compared.
+# ---------------------------------------------------------------------------
+
+
+def test_missing_gold_does_not_collapse_to_n4_pass():
+    """No original gold, no audited variants — every cascade tier MUST
+    stay False, no matter what the agent's rowset looks like (including
+    empty)."""
+    from bird_interact_agents.eval.tolerant_grader import grade_submission
+
+    submitted = "SELECT something_empty"
+    executor = FakeExecutor({
+        submitted: ([], ["a"]),
+    })
+    ann = _make_task_annotation()
+    verdict = grade_submission(
+        task_annotation=ann,
+        audited_gold_rows=[],
+        original_sol_sql=[],
+        submitted_sql=submitted,
+        db_path=Path("/dev/null"),
+        conn=None,
+        executor=executor,
+    )
+    # Every N-tier stays False — no usable gold to compare against.
+    assert verdict.n1_original_gold is False
+    assert verdict.n2_audited_primary is False
+    assert verdict.n3_any_audited_variant is False
+    assert verdict.n4_tie_order is False
+    assert verdict.n5_llm_judge is False
+    assert verdict.n6_numeric_epsilon is False
+    assert verdict.n7_trailing_whitespace is False
+    assert verdict.n8_column_order is False
+    assert verdict.n9_case_fold is False

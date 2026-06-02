@@ -698,8 +698,14 @@ def grade_submission(
         candidates = (
             [(primary[0], primary[1])] if primary else []
         ) + [(v[0], v[1]) for v in variant_results if not v[0].get("primary")]
-        if not candidates:
-            # No variants → fall back to original gold itself.
+        if not candidates and original_sol_sql:
+            # No variants → fall back to original gold itself. Gated on
+            # ``original_sol_sql`` because ``orig_rows`` is also ``[]``
+            # when no source gold exists, and ``compare_tie_order([], [])``
+            # returns True via set equality — without this guard a
+            # missing-gold + empty-agent row pair would falsely pass at
+            # N4 (and propagate as ``valid_interpretation`` even though
+            # nothing was actually compared).
             candidates = [({}, orig_rows)]
         for v_meta, v_rows in candidates:
             if compare_tie_order(pred_rows, v_rows, orderby_indices=indices):
@@ -748,30 +754,34 @@ def grade_submission(
         else:
             novel_judgment = None
 
-    # 6) N6/N7/N8 — cell-level relaxations applied across all variants.
+    # 6) N6/N7/N8/N9 — cell-level relaxations applied across all variants.
+    # When ``original_sol_sql`` is empty, ``orig_rows`` is also ``[]`` and
+    # every cell-level comparator returns True on the ``([], [])`` pair
+    # (bag equality holds vacuously). Drop the ``__original__`` fallback
+    # from the iteration list in that case — same guard as the N4 block,
+    # otherwise a missing-gold + empty-agent row would cascade-pass at N6.
+    _comparator_targets: list = list(variant_results)
+    if original_sol_sql:
+        _comparator_targets.append(
+            ({"variant_id": "__original__"}, orig_rows, orig_cols),
+        )
     n6, n7, n8 = n5, n5, n5
     if not n6:
-        for _v_meta, v_rows, _v_cols in variant_results + [
-            ({"variant_id": "__original__"}, orig_rows, orig_cols),  # type: ignore[list-item]
-        ]:
+        for _v_meta, v_rows, _v_cols in _comparator_targets:
             if compare_numeric_epsilon(pred_rows, v_rows, epsilon=epsilon):
                 n6 = True
                 break
     if not n7:
         n7 = n6
         if not n7:
-            for _v_meta, v_rows, _v_cols in variant_results + [
-                ({"variant_id": "__original__"}, orig_rows, orig_cols),  # type: ignore[list-item]
-            ]:
+            for _v_meta, v_rows, _v_cols in _comparator_targets:
                 if compare_trailing_whitespace(pred_rows, v_rows):
                     n7 = True
                     break
     if not n8:
         n8 = n7
         if not n8:
-            for _v_meta, v_rows, v_cols in variant_results + [
-                ({"variant_id": "__original__"}, orig_rows, orig_cols),  # type: ignore[list-item]
-            ]:
+            for _v_meta, v_rows, v_cols in _comparator_targets:
                 if compare_column_order(
                     pred_rows, v_rows,
                     pred_cols=list(pred_cols), gold_cols=list(v_cols),
@@ -780,9 +790,7 @@ def grade_submission(
                     break
     n9 = n8
     if not n9:
-        for _v_meta, v_rows, _v_cols in variant_results + [
-            ({"variant_id": "__original__"}, orig_rows, orig_cols),  # type: ignore[list-item]
-        ]:
+        for _v_meta, v_rows, _v_cols in _comparator_targets:
             if compare_case_fold(pred_rows, v_rows):
                 n9 = True
                 break
