@@ -884,6 +884,162 @@ def test_read_api_keys_raises_on_missing_required_key(monkeypatch):
     assert "export OPENAI_API_KEY=" in exc.value.remediation
 
 
+# ---------------------------------------------------------------------------
+# DEV-1517 — OAuth token path for claude_sdk* frameworks.
+# ---------------------------------------------------------------------------
+
+_GOOD_TOKEN = "sk-ant-oat01-good-token"
+_ANTHROPIC_KEY = "sk-ant-api-key"
+_OPENAI_KEY = "sk-openai-key"
+
+
+def test_read_api_keys_oauth_anthropic_usersim(monkeypatch):
+    """claude_sdk + OAuth → returns CLAUDE_CODE_OAUTH_TOKEN and
+    BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY; never contains ANTHROPIC_API_KEY."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+    )
+    assert keys["CLAUDE_CODE_OAUTH_TOKEN"] == _GOOD_TOKEN
+    assert keys["BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert "ANTHROPIC_API_KEY" not in keys
+
+
+def test_read_api_keys_oauth_openai_usersim(monkeypatch):
+    """claude_sdk + OAuth + openai user-sim → CLAUDE_CODE_OAUTH_TOKEN +
+    OPENAI_API_KEY; no ANTHROPIC_API_KEY and no BIRD_INTERACT_LITELLM_* key."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.setenv("OPENAI_API_KEY", _OPENAI_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "openai/gpt-4o",
+        framework="claude_sdk",
+    )
+    assert keys["CLAUDE_CODE_OAUTH_TOKEN"] == _GOOD_TOKEN
+    assert keys["OPENAI_API_KEY"] == _OPENAI_KEY
+    assert "ANTHROPIC_API_KEY" not in keys
+    assert "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY" not in keys
+
+
+def test_read_api_keys_oauth_slayer_ships_openai_key(monkeypatch):
+    """claude_sdk + OAuth + slayer → OPENAI_API_KEY is still shipped for
+    channel-3 embeddings even though ANTHROPIC_API_KEY is omitted."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.setenv("OPENAI_API_KEY", _OPENAI_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+        query_mode="slayer",
+    )
+    assert keys["CLAUDE_CODE_OAUTH_TOKEN"] == _GOOD_TOKEN
+    assert keys["BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert keys["OPENAI_API_KEY"] == _OPENAI_KEY
+    assert "ANTHROPIC_API_KEY" not in keys
+
+
+def test_read_api_keys_claude_sdk_no_oauth_legacy_path(monkeypatch):
+    """claude_sdk + no OAuth token → legacy path; ANTHROPIC_API_KEY shipped."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+    )
+    assert keys["ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
+    assert "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY" not in keys
+
+
+def test_read_api_keys_pydantic_ai_oauth_ignored(monkeypatch):
+    """pydantic_ai framework + OAuth token set locally → legacy path; OAuth
+    is silently ignored and ANTHROPIC_API_KEY is shipped as normal."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="pydantic_ai",
+    )
+    assert keys["ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
+    assert "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY" not in keys
+
+
+def test_read_api_keys_old_manifest_no_framework_legacy_path(monkeypatch):
+    """Old manifests without a framework key default framework="" → legacy path.
+    The log note fires; ANTHROPIC_API_KEY is shipped."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    # framework="" (default) → legacy
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+    )
+    assert keys["ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
+
+
+def test_read_api_keys_oauth_bad_prefix_raises(monkeypatch):
+    """claude_sdk + OAuth with wrong token prefix → PrereqError before any
+    os.environ lookups, not a raw KeyError or silent cluster start."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-api03-not-an-oauth-token")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    with pytest.raises(driver.PrereqError, match="sk-ant-oat01-"):
+        driver.read_api_keys_from_local_env(
+            "anthropic/claude-sonnet-4-5",
+            "anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+        )
+
+
+def test_read_api_keys_oauth_missing_usersim_key_raises_prereq_error(monkeypatch):
+    """claude_sdk + valid OAuth + anthropic user-sim but no ANTHROPIC_API_KEY
+    → PrereqError (not KeyError) listing the missing key."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(driver.PrereqError, match="ANTHROPIC_API_KEY"):
+        driver.read_api_keys_from_local_env(
+            "anthropic/claude-sonnet-4-5",
+            "anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+        )
+
+
+def test_build_resubmit_args_old_manifest_no_framework_uses_get(monkeypatch):
+    """_build_resubmit_args must use manifest.get('framework', '') so old
+    manifests without the key don't raise KeyError (DEV-1517)."""
+    # Old manifest without 'framework' key.
+    manifest = {
+        "run_id": RUN_ID,
+        "query_mode": "raw",
+        "mode": "c-interact",
+        "agent_model": "anthropic/claude-sonnet-4-5",
+        "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+        "patience": 3,
+        "max_depth": 3,
+        "render_inputs": {"workers": 1, "actors_per_worker": 1},
+        "slayer_setup": "pre-encoded",
+        "slayer_storage_root": "/data/slayer_models",
+        "strict": False,
+        "use_audited_gold_sql": False,
+        "prompt_cache": True,
+        "instance_ids": ["db_a_1"],
+        # NOTE: no "framework" key — simulates pre-DEV-1517 manifest
+    }
+    # Must not raise KeyError.
+    args = driver._build_resubmit_args(manifest, RUN_ID, ["db_a_1"], 2)
+    # --framework must still be present in the job args (defaulting to "").
+    fw_idx = args.index("--framework")
+    assert args[fw_idx + 1] == ""
+
+
 def test_build_manifest_carries_slayer_fields() -> None:
     args = FakeSubmitArgs(
         framework="pydantic_ai_otf_encode", query_mode="slayer", mode="a-interact",
