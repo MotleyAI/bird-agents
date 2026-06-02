@@ -61,6 +61,68 @@ from bird_interact_agents.usage import TokenUsage
 logger = logging.getLogger(__name__)
 
 
+# SLayer query tools that satisfy the pre-submit verification gate.
+# Any `query` or `query_nested` call immediately before `submit_query`
+# is treated as the required output-inspection step.
+SLAYER_QUERY_TOOLS: frozenset[str] = frozenset(
+    {"mcp__slayer__query", "mcp__slayer__query_nested"}
+)
+
+
+def _make_query_before_submit_guard():
+    """Enforce that the last completed tool call before ``submit_query``
+    is a SLayer ``query`` or ``query_nested`` call.
+
+    Returns ``(pre_submit_gate, post_tool_tracker)`` sharing a single
+    per-task ``state`` closure. The factory MUST be invoked inside
+    ``run_task`` (per task) — never on the agent constructor — to avoid
+    cross-task state bleed when a single agent instance handles concurrent
+    tasks via ``make_runner``.
+
+    * ``pre_submit_gate`` (PreToolUse, matcher ``submit_query``): denies
+      ``submit_query`` when the last completed tool call was not in
+      ``SLAYER_QUERY_TOOLS``, with an explicit message telling the agent
+      what to do next.
+    * ``post_tool_tracker`` (PostToolUse, all tools): records the name of
+      every completed tool call in ``state["last_tool"]``. PostToolUse only
+      fires when a tool actually ran (i.e. a denied PreToolUse does NOT
+      trigger PostToolUse), so a denied ``submit_query`` never overwrites
+      the last-call record with its own name.
+    """
+    state: dict = {"last_tool": None}
+
+    async def pre_submit_gate(input_data, tool_use_id, context):
+        if state["last_tool"] not in SLAYER_QUERY_TOOLS:
+            last = state["last_tool"] or "none"
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": (
+                        f"Your last tool call was `{last}`, not `query`. "
+                        "Before submitting you MUST run the exact query JSON "
+                        "you intend to submit through `query` and inspect the "
+                        "output: verify that row count is non-zero and "
+                        "plausible, that numeric aggregates are in the "
+                        "expected range (non-zero proportions, correct units, "
+                        "no all-zero values that would indicate integer "
+                        "division), and that string values have the expected "
+                        "casing and whitespace. Then call `submit_query` "
+                        "immediately — with no other tool calls in between."
+                    ),
+                }
+            }
+        return {}
+
+    async def post_tool_tracker(input_data, tool_use_id, context):
+        tool_name = input_data.get("tool_name") or ""
+        if tool_name:
+            state["last_tool"] = tool_name
+        return {}
+
+    return pre_submit_gate, post_tool_tracker
+
+
 # SLayer MCP tools the OTF agent may call. The existing claude_sdk slayer
 # mode is read-only; this adapter ADDS the write tools (create_model /
 # edit_model / save_memory / validate_models) plus query_nested so the

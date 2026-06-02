@@ -38,6 +38,7 @@ from bird_interact_agents.agents.claude_sdk.agent import (
 )
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
+    _make_query_before_submit_guard,
     _make_turn_budget_hook,
     _slayer_tool_names,
 )
@@ -333,8 +334,9 @@ class ClaudeSDKOtfAInteractAgent:
             }
             tool_names.extend(_slayer_tool_names())
 
-            # Per-task hook factory — never share state across tasks.
+            # Per-task hook factories — never share state across tasks.
             pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
+            pre_query_gate, post_tool_tracker = _make_query_before_submit_guard()
 
             options = ClaudeAgentOptions(
                 system_prompt=prompt,
@@ -349,7 +351,8 @@ class ClaudeSDKOtfAInteractAgent:
                     "PreToolUse": [
                         HookMatcher(
                             matcher="mcp__bird-interact-tools__submit_query",
-                            hooks=[pre_submit_gate],
+                            # ask_user gate runs first; query gate runs second.
+                            hooks=[pre_submit_gate, pre_query_gate],
                         ),
                     ],
                     "PostToolUse": [
@@ -359,6 +362,9 @@ class ClaudeSDKOtfAInteractAgent:
                         ),
                         HookMatcher(hooks=[post_nag]),
                         HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
+                        # Must be last so it captures the true last-completed
+                        # tool name after all other PostToolUse hooks have run.
+                        HookMatcher(hooks=[post_tool_tracker]),
                     ],
                 },
             )

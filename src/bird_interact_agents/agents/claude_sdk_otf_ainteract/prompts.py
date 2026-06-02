@@ -140,8 +140,19 @@ ENCODE-THEN-QUERY DISCIPLINE:
    description, call `ask_user` again. If a reply lists multiple criteria
    joined by "and", apply EACH as its own filter.
 
-5. TEST candidate columns and the final query with `query` /
-   `query_nested`; sanity-check the generated SQL.
+5. PRE-SUBMIT QUERY RUN (enforced). Run the EXACT query JSON you intend
+   to submit through `query` and inspect the output before calling
+   `submit_query`. Verify ALL of the following:
+   - ROW COUNT: non-zero and plausible given the domain (unless the
+     user's question implies empty results).
+   - NUMERIC VALUES: aggregates are in the expected range — proportions
+     between 0 and 1 (or 0-100 for percentages), counts positive.
+     All-zero or all-null numeric rows almost always mean integer
+     division in SQLite; cast to REAL or multiply by 1.0 to fix.
+   - STRING VALUES: casing and whitespace match what the user described.
+   Fix any issue and re-run before proceeding to step 6. A hook
+   enforces this: `submit_query` is denied unless your immediately
+   preceding tool call was `query`.
 
 6. PRE-SUBMIT MUTATION CHECK. Before calling `submit_query`, audit every
    TRIM, LOWER, UPPER, ROUND, CAST, dedup, canonicalize-via-CASE, and
