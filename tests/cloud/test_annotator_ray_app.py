@@ -54,7 +54,7 @@ def _minimal_annotator_result(instance_id: str = "shop_1", db: str = "shop"):
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "KB 1.",
-            "consulted_sources": ["kb:1"],
+            "evidence_sources_consulted": ["kb:1"],
         },
         "original_gold_is_correct": True,
         "gold_variants": [],

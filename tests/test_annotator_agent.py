@@ -78,7 +78,7 @@ def _valid_task_annotation_json(instance_id: str = "shop_1", db: str = "shop") -
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "KB 3 directly pins the tier.",
-            "consulted_sources": ["kb:3"],
+            "evidence_sources_consulted": ["kb:3"],
         },
         "original_gold_is_correct": True,
         "gold_variants": [],
@@ -361,7 +361,7 @@ def test_fill_audited_gold_ref_files_replaces_sentinel():
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "r",
-            "consulted_sources": [],
+            "evidence_sources_consulted": [],
         },
         "original_gold_is_correct": False,
         "gold_variants": [
@@ -404,7 +404,7 @@ def test_fill_audited_gold_ref_files_livesqlbench():
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "r",
-            "consulted_sources": [],
+            "evidence_sources_consulted": [],
         },
         "original_gold_is_correct": False,
         "gold_variants": [
@@ -449,7 +449,7 @@ def test_fill_audited_gold_ref_files_noop_when_no_variants():
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "r",
-            "consulted_sources": [],
+            "evidence_sources_consulted": [],
         },
         "original_gold_is_correct": True,
         "gold_variants": [],

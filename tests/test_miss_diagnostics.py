@@ -1174,12 +1174,12 @@ def test_back_compat_old_submission_evaluation_validates():
 
 def test_multi_statement_audited_gold_raises_assertion(tmp_path: Path):
     """Diagnostics only support single-statement gold (the contract for
-    SELECT tasks). A multi-statement audited_sol_sql must trigger an
-    explicit AssertionError so the bug doesn't silently parse the
-    wrong statement. Multi-statement M-tasks are out of scope."""
+    SELECT tasks). A multi-statement audited_sol_sql must trigger a
+    RuntimeError so the bug doesn't silently parse the wrong statement.
+    Multi-statement M-tasks are out of scope."""
     import pytest as _pytest
     db = _build_db(tmp_path)
-    with _pytest.raises(AssertionError, match="single-statement"):
+    with _pytest.raises(RuntimeError, match="single-statement"):
         _grade(
             db=db,
             submitted_sql="SELECT id FROM t1 WHERE id IN (4, 5)",
@@ -1195,10 +1195,10 @@ def test_multi_statement_audited_gold_raises_assertion(tmp_path: Path):
 def test_multi_statement_original_gold_raises_assertion(tmp_path: Path):
     """Codex major #7 — the single-statement assertion applies to
     original_sol_sql too, not just audited. Multi-statement original
-    gold must raise the same explicit AssertionError."""
+    gold must raise the same RuntimeError."""
     import pytest as _pytest
     db = _build_db(tmp_path)
-    with _pytest.raises(AssertionError, match="single-statement"):
+    with _pytest.raises(RuntimeError, match="single-statement"):
         _grade(
             db=db,
             submitted_sql="SELECT id FROM t1 WHERE id IN (4, 5)",

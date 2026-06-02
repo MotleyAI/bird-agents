@@ -798,7 +798,7 @@ def grade_submission(
     # 7) Tier 2 informational per variant.
     info_matches: list[VariantMatch] = []
     for v_meta, v_rows, v_cols in variant_results:
-        rel = classify_rowset_relation(pred=pred_rows, gold=v_rows)
+        rel = _bag_relation(pred=pred_rows, gold=v_rows)
         cm, nm, om = _column_diff(pred_cols=list(pred_cols), gold_cols=list(v_cols))
         fdri, fdcd = _first_divergent_row(pred=pred_rows, gold=v_rows)
         info_matches.append(VariantMatch(
@@ -1078,16 +1078,18 @@ def _compute_miss_diagnostics(
     # Defensive guards (single-statement gold contract).
     for v_meta, _v_rows, _v_cols in variant_results:
         v_sqls = list(v_meta.get("audited_sol_sql") or [])
-        assert len(v_sqls) <= 1, (
-            f"diagnostics only support single-statement audited_sol_sql; "
-            f"variant {v_meta.get('variant_id')!r} has {len(v_sqls)} stmts "
-            f"(multi-statement is M-task territory, out of scope)"
+        if len(v_sqls) > 1:
+            raise RuntimeError(
+                f"diagnostics only support single-statement audited_sol_sql; "
+                f"variant {v_meta.get('variant_id')!r} has {len(v_sqls)} stmts "
+                f"(multi-statement is M-task territory, out of scope)"
+            )
+    if len(original_sol_sql) > 1:
+        raise RuntimeError(
+            f"diagnostics only support single-statement original_sol_sql; "
+            f"got {len(original_sol_sql)} stmts (multi-statement is M-task "
+            f"territory, out of scope)"
         )
-    assert len(original_sol_sql) <= 1, (
-        f"diagnostics only support single-statement original_sol_sql; "
-        f"got {len(original_sol_sql)} stmts (multi-statement is M-task "
-        f"territory, out of scope)"
-    )
     if not variant_results:
         # Should be impossible (cascade would short-circuit) but guard.
         raise RuntimeError(

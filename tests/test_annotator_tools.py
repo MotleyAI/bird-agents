@@ -84,7 +84,7 @@ def _valid_task_annotation_json(instance_id: str = "shop_1") -> str:
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "KB 3 pins the tier.",
-            "consulted_sources": ["kb:3"],
+            "evidence_sources_consulted": ["kb:3"],
         },
         "original_gold_is_correct": True,
         "gold_variants": [],
