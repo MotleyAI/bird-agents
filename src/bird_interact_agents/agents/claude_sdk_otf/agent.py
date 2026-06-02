@@ -22,6 +22,7 @@ the SLayer write-tool whitelist, the prompts, and the mode gating differ.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
@@ -55,6 +56,16 @@ from bird_interact_agents.harness import (
     materialize_task_db,
     slayer_mcp_stdio_config,
 )
+from bird_interact_agents.eval.annotation_io import (
+    read_task_annotation,
+    task_annotation_path,
+)
+from bird_interact_agents.eval.autopsy import _is_genuine_miss, run_autopsy
+from bird_interact_agents.eval.grade_in_place import (
+    load_audited_gold_rows_for,
+    normalize_sol_sql,
+)
+from bird_interact_agents.eval.tolerant_grader import grade_submission
 from bird_interact_agents.slayer_otf import resolve_otf_task_storage_dir
 from bird_interact_agents.usage import TokenUsage
 
@@ -331,6 +342,32 @@ class ClaudeSDKOtfAgent:
                 f"dataset={dataset!r}",
             )
 
+        _ann_path = task_annotation_path(
+            benchmark=benchmark.name,
+            selected_database=db_name,
+            instance_id=instance_id,
+        )
+        if not _ann_path.exists():
+            return finalize_result_row(
+                {
+                    "task_id": instance_id,
+                    "instance_id": instance_id,
+                    "database": db_name,
+                    "phase1_passed": False,
+                    "phase2_passed": False,
+                    "total_reward": 0.0,
+                    "trajectory": [],
+                    "error": (
+                        f"no TaskAnnotation on disk for {instance_id} — "
+                        "autopsy requires an explicit annotation; add one to "
+                        f"annotations/{benchmark.name}/{db_name}/ first"
+                    ),
+                },
+                deleted_kb_ids=[],
+                slayer_storage_dir="",
+            )
+        task_annotation = read_task_annotation(_ann_path)
+
         status = SampleStatus(
             idx=0,
             original_data=task_data,
@@ -435,7 +472,7 @@ class ClaudeSDKOtfAgent:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
                     trajectory.append(
-                        {"type": str(type(msg).__name__), "data": str(msg)[:500]}
+                        {"type": str(type(msg).__name__), "data": str(msg)}
                     )
                     accumulate_assistant_usage(accum, msg, self.model)
         except Exception as e:
@@ -474,6 +511,35 @@ class ClaudeSDKOtfAgent:
             )
 
         result = (ctx_dict or {}).get("result") or {}
+        _autopsy_result = None
+        _submitted_sql = result.get("submitted_sql") or ""
+        if _submitted_sql:
+            _audited_rows = load_audited_gold_rows_for(
+                benchmark=benchmark.name, instance_id=instance_id,
+            )
+            _orig_sql = normalize_sol_sql(
+                task_data.get("original_sol_sql") or task_data.get("sol_sql"),
+            )
+            _db_path = Path(
+                task_data.get("db_file_path")
+                or (Path(data_path_base) / db_name / f"{db_name}.sqlite")
+            )
+            _cascade = grade_submission(
+                task_annotation=task_annotation,
+                audited_gold_rows=_audited_rows,
+                original_sol_sql=_orig_sql,
+                submitted_sql=_submitted_sql,
+                db_path=_db_path,
+                user_sim_n_asks=None,
+            )
+            if _is_genuine_miss(_cascade):
+                _autopsy_result = await run_autopsy(
+                    task_annotation=task_annotation,
+                    trajectory=trajectory,
+                    slayer_storage_dir=slayer_storage_dir,
+                    miss_diagnostics=_cascade.miss_diagnostics,
+                    model=self.model,
+                )
         return finalize_result_row(
             {
                 "task_id": instance_id,
@@ -494,6 +560,8 @@ class ClaudeSDKOtfAgent:
                 "usage": accum.model_dump(),
                 "phase1_observation_audited": result.get("phase1_observation_audited"),
                 "phase1_observation_original": result.get("phase1_observation_original"),
+                "_autopsy": _autopsy_result,
+                "_task_annotation": task_annotation,
             },
             deleted_kb_ids=deleted_kb_ids,
             slayer_storage_dir=slayer_storage_dir,

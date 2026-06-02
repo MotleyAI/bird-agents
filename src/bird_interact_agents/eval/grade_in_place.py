@@ -16,7 +16,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 from pathlib import Path
-from typing import Any, Callable, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 from bird_interact_agents.eval.annotation_schema import (
     FailureClassification,
@@ -27,6 +27,9 @@ from bird_interact_agents.eval.annotation_schema import (
     TaskAnnotation,
     UserSimInteraction,
 )
+
+if TYPE_CHECKING:
+    from bird_interact_agents.eval.annotation_schema import AutopsyResult
 from bird_interact_agents.eval.implicit_annotation import (
     implicit_task_annotation,
 )
@@ -259,9 +262,15 @@ def grade_and_write(
     user_sim_interaction: Optional[UserSimInteraction] = None,
     llm_judge: Any = None,
     epsilon: float = 1e-6,
+    autopsy_result: Optional["AutopsyResult"] = None,
 ) -> Path:
     """Run the tolerant grader and write the SubmissionAnnotation to
-    ``<rows_dir>/<instance_id>/submission_annotation.json``."""
+    ``<rows_dir>/<instance_id>/submission_annotation.json``.
+
+    When ``autopsy_result`` is provided (DEV-1521), the annotation's
+    ``autopsy``, ``decision_point``, and ``user_sim_interaction`` fields
+    are overwritten with the LLM-produced findings before writing.
+    """
     # Resolve the user-sim signal for `grade_submission`. Interactive
     # benchmarks (mini-interact a-interact) pass the int count of
     # `ask_user` calls so the `never_asked_user` diagnostic can fire
@@ -313,6 +322,11 @@ def grade_and_write(
         user_sim_interaction=user_sim_interaction,
         epsilon=epsilon,
     )
+    if autopsy_result is not None:
+        ann.autopsy = autopsy_result.analysis
+        ann.decision_point = autopsy_result.decision_point
+        ann.user_sim_interaction = autopsy_result.user_sim_interaction
+
     out_dir = Path(rows_dir) / instance_id
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "submission_annotation.json"
@@ -490,6 +504,8 @@ def grade_one_submission(
     n_ask_user_calls: Optional[int] = None,
     predicted_row_count: Optional[int] = None,
     user_sim_interaction: Optional[UserSimInteraction] = None,
+    task_annotation: Optional[TaskAnnotation] = None,
+    autopsy_result: Optional["AutopsyResult"] = None,
 ) -> Path:
     """Inline-grade one submission and write the per-row
     ``submission_annotation.json``. Idempotent at the per-(task, run)
@@ -502,12 +518,15 @@ def grade_one_submission(
     """
     instance_id = task_data["instance_id"]
     selected_database = task_data["selected_database"]
-    ann = load_task_annotation_or_implicit(
-        instance_id=instance_id,
-        selected_database=selected_database,
-        benchmark=benchmark,
-        amb_user_query=task_data.get("amb_user_query", ""),
-    )
+    # Use the pre-loaded TaskAnnotation when provided (e.g. from run_task)
+    # to avoid a redundant re-read and to keep the annotation consistent.
+    if task_annotation is None:
+        task_annotation = load_task_annotation_or_implicit(
+            instance_id=instance_id,
+            selected_database=selected_database,
+            benchmark=benchmark,
+            amb_user_query=task_data.get("amb_user_query", ""),
+        )
     audited_rows = load_audited_gold_rows_for(
         benchmark=benchmark, instance_id=instance_id,
     )
@@ -516,7 +535,7 @@ def grade_one_submission(
         instance_id=instance_id,
         benchmark=benchmark,
         run_id=run_id,
-        task_annotation=ann,
+        task_annotation=task_annotation,
         audited_gold_rows=audited_rows,
         original_sol_sql=normalize_sol_sql(
             task_data.get("original_sol_sql") or task_data.get("sol_sql"),
@@ -532,4 +551,5 @@ def grade_one_submission(
         n_ask_user_calls=n_ask_user_calls,
         predicted_row_count=predicted_row_count,
         user_sim_interaction=user_sim_interaction,
+        autopsy_result=autopsy_result,
     )

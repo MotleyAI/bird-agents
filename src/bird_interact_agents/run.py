@@ -1060,6 +1060,8 @@ async def run_evaluation(
                 n_agent_turns=usage_blob.get("n_agent_turns"),
                 n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
                 predicted_row_count=r.get("predicted_row_count"),
+                task_annotation=r.get("_task_annotation"),
+                autopsy_result=r.get("_autopsy"),
             )
         except Exception as exc:  # noqa: BLE001 — keep the loop alive
             logger.exception(

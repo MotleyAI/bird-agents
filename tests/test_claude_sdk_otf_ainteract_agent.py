@@ -494,7 +494,12 @@ def _stub_env(
     raise_after_prefill: Exception | None = None,
     prefill_asks: int = 0,
 ):
+    from pathlib import Path
     from bird_interact_agents import usage as usage_mod
+    from bird_interact_agents.eval.annotation_schema import (
+        MetadataSufficiency, Provenance, TaskAnnotation,
+    )
+    from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
 
     captured = captured if captured is not None else {}
     captured.setdefault("materialize_calls", 0)
@@ -536,6 +541,36 @@ def _stub_env(
             prefill_asks=prefill_asks,
         ),
     )
+
+    # Autopsy precondition + trigger mocks: create a real annotation file so
+    # _ann_path.exists() returns True, then return a passing cascade so the
+    # autopsy never actually fires an LLM call in unit tests.
+    ann_dir = Path(storage_dir).parent
+    ann_dir.mkdir(parents=True, exist_ok=True)
+    ann_file = ann_dir / "fake_ann.json"
+    ann_file.write_text("{}")
+    _fake_ann = TaskAnnotation(
+        instance_id=_TASK["instance_id"],
+        selected_database=_TASK["selected_database"],
+        annotated_by="test",
+        annotated_at="2024-01-01",
+        amb_user_query=_TASK["amb_user_query"],
+        metadata_sufficiency=MetadataSufficiency(verdict="sufficient", rationale="test"),
+        provenance=Provenance(
+            task_jsonl_path="mini_interact.jsonl",
+            task_jsonl_instance_id=_TASK["instance_id"],
+        ),
+    )
+    _passing_cascade = CascadeVerdict(
+        n1_original_gold=True, n2_audited_primary=True, n3_any_audited_variant=True,
+        n4_tie_order=True, n5_llm_judge=True, n6_numeric_epsilon=True,
+        n7_trailing_whitespace=True, n8_column_order=True, n9_case_fold=True,
+    )
+    monkeypatch.setattr(m, "task_annotation_path", lambda **kw: ann_file)
+    monkeypatch.setattr(m, "read_task_annotation", lambda _p: _fake_ann)
+    monkeypatch.setattr(m, "grade_submission", lambda **kw: _passing_cascade)
+    monkeypatch.setattr(m, "load_audited_gold_rows_for", lambda **kw: [])
+
     return captured
 
 
