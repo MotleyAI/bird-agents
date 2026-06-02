@@ -120,3 +120,102 @@ def test_worker_uses_implicit_annotation_when_file_missing(monkeypatch, tmp_path
     assert len(captured) == 1
     # No <instance>.task.json was written.
     assert not list(annotations_root.rglob("*.task.json"))
+
+
+# ---------------------------------------------------------------------------
+# DEV-1515 round 6: when the cloud inline grader raises, the worker MUST
+# still upload a fail-everything submission_annotation.json — otherwise
+# the post-fetch ``cascading_phase1`` aggregator either skips the block
+# entirely (no per-row anns at all) or raises FileNotFoundError as soon
+# as one missing-annotation row is encountered, so a single broken task
+# wipes the new N1-N9 metrics from ``eval.json``.
+# ---------------------------------------------------------------------------
+
+
+def test_cloud_grader_failure_uploads_fail_everything_annotation(
+    monkeypatch, fake_gcs_bucket,
+):
+    """``_run_one_in_actor`` invokes the inline grader; when it raises,
+    the worker writes + uploads a fail-everything
+    ``submission_annotation.json`` so every cloud row contributes to
+    the cascade denominator."""
+    import json
+    import pytest
+    from bird_interact_agents.cloud import ray_app
+
+    RUN_ID = "20260602T1200-pydanticai-raw-round6"
+
+    client, store = fake_gcs_bucket
+    monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
+    monkeypatch.setattr(ray_app, "_maybe_build_cached_runner", lambda _cfg: None)
+    monkeypatch.setattr(ray_app, "download_slayer_setup", lambda *a, **k: None)
+
+    async def fake_run_one_task(task_data, **_kw):
+        return {
+            "instance_id": task_data["instance_id"],
+            "database": task_data.get("selected_database", "db_a"),
+            "phase1_passed": False, "phase2_passed": False,
+            "total_reward": 0.0, "duration_s": 0.01, "error": None,
+            "submitted_sql": "SELECT 1",
+        }
+    monkeypatch.setattr(
+        "bird_interact_agents.run.run_one_task", fake_run_one_task,
+    )
+
+    # The load-bearing patch: the cloud-side inline grader RAISES. The
+    # worker's except branch must catch + write + upload the
+    # fail-everything fallback. Patch the cloud module's reference (the
+    # name the worker actually looks up) so we don't need to also poke
+    # at the canonical grade_in_place location.
+    def _raise_grader(**_kw):
+        raise RuntimeError("simulated grader explosion")
+    monkeypatch.setattr(
+        ray_app, "_grade_one_submission", _raise_grader, raising=True,
+    )
+
+    # No-op the rest of the upload-back triple — irrelevant to this
+    # test and they hit the wider FS.
+    from bird_interact_agents.cloud import upload_back
+    monkeypatch.setattr(
+        upload_back, "upload_per_task_debug", lambda **kw: None,
+    )
+    monkeypatch.setattr(
+        upload_back, "upload_per_task_setup_sessions", lambda **kw: None,
+    )
+    monkeypatch.setattr(
+        upload_back, "upload_otf_reference_delta", lambda **kw: None,
+    )
+
+    actor = ray_app._LocalActor(
+        {"framework": "pydantic_ai_otf_encode", "query_mode": "slayer",
+         "mode": "a-interact", "agent_model": "anthropic/claude-sonnet-4-5",
+         "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+         "patience": 3, "strict": False, "use_audited_gold_sql": False,
+         "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
+         "slayer_storage_root": "/data/slayer_models",
+         "data_dir": "/data/mini-interact"},
+        RUN_ID, 1, gcs_client=client,
+    )
+    # MUST NOT raise — grader failure is diagnostic, not result-of-record.
+    actor.run_one({"instance_id": "db_a_1", "selected_database": "db_a"})
+
+    # Per-row submission_annotation.json blob landed in GCS storage.
+    ann_blob_keys = [
+        k for k in store
+        if k.endswith("/db_a_1/submission_annotation.json")
+    ]
+    assert ann_blob_keys, (
+        f"fail-everything annotation should have been uploaded; "
+        f"store keys: {sorted(store)}"
+    )
+    payload = json.loads(store[ann_blob_keys[0]].decode())
+    # Fail-everything shape: every cascade tier is fail/False, verdict
+    # is invalid, primary is 'other' (the cascade was never actually run).
+    assert payload["evaluation"]["verdict"] == "invalid"
+    assert payload["evaluation"]["phase1_against_original_gold"] == "fail"
+    assert payload["evaluation"]["phase1_against_any_audited_variant"] == "fail"
+    assert payload["evaluation"]["correct_up_to_tie_order"] is False
+    assert payload["failure_classification"]["primary"] == "other"
+    assert "simulated grader explosion" in (
+        payload["failure_classification"]["details"]
+    )
