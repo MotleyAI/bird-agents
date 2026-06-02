@@ -313,6 +313,124 @@ def test_build_original_sql_index_accepts_string_sol_sql(tmp_path, monkeypatch):
     assert "alien_no_sol" not in out
 
 
+def test_regrade_picks_latest_attempt_after_resubmit(tmp_path, monkeypatch):
+    """Codex r10: regrade MUST read the highest ``attempt-N.json``, not
+    the hardcoded attempt-1. Pre-fix a resubmit's attempt-2 was either
+    skipped (when attempt-1 was absent) or its SQL got silently
+    overwritten by stale attempt-1 data."""
+    from bird_interact_agents import paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+
+    run_dir = tmp_path / "results" / "cloud" / "r1"
+    d = run_dir / "rows" / "alien_1"
+    d.mkdir(parents=True)
+    # Stale attempt-1: this SQL must NOT be the one graded.
+    (d / "attempt-1.json").write_text(json.dumps({
+        "instance_id": "alien_1",
+        "selected_database": "alien",
+        "submitted_sql": "STALE_ATTEMPT_1_SQL",
+        "trajectory": [],
+        "usage": {},
+        "duration_s": 0.0,
+        "sol_sql": ["SELECT gold"],
+        "original_sol_sql": ["SELECT gold"],
+    }))
+    # Fresh attempt-3: this is the one regrade should pick.
+    (d / "attempt-3.json").write_text(json.dumps({
+        "instance_id": "alien_1",
+        "selected_database": "alien",
+        "submitted_sql": "FRESH_ATTEMPT_3_SQL",
+        "trajectory": [],
+        "usage": {},
+        "duration_s": 0.0,
+        "sol_sql": ["SELECT gold"],
+        "original_sol_sql": ["SELECT gold"],
+    }))
+
+    captured: list[dict] = []
+
+    class StubGrader:
+        def __call__(self, *, instance_id, submitted_sql, task_row):
+            captured.append({
+                "instance_id": instance_id,
+                "submitted_sql": submitted_sql,
+            })
+            from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
+            return CascadeVerdict(
+                n1_original_gold=False, n2_audited_primary=False,
+                n3_any_audited_variant=False, n4_tie_order=False,
+                n5_llm_judge=False, n6_numeric_epsilon=False,
+                n7_trailing_whitespace=False, n8_column_order=False,
+                n9_case_fold=False,
+                matched_variant_id=None, novel_reading_judgment=None,
+                variant_matches=[], rowset_relations=[],
+            )
+
+    from bird_interact_agents.eval.regrade import regrade_run
+
+    regrade_run(
+        run_id="r1", benchmark="mini-interact", run_dir=run_dir,
+        instance_ids=None, force_llm_judge=False,
+        grader=StubGrader(), repo_root=tmp_path,
+    )
+    assert len(captured) == 1
+    assert captured[0]["submitted_sql"] == "FRESH_ATTEMPT_3_SQL", (
+        f"regrade must pick the HIGHEST attempt-N.json, got "
+        f"{captured[0]['submitted_sql']!r} — pre-fix this would be "
+        f"'STALE_ATTEMPT_1_SQL'"
+    )
+
+
+def test_regrade_grades_when_only_later_attempt_exists(tmp_path, monkeypatch):
+    """Companion case: a resubmit may produce ONLY attempt-2 (the
+    earlier attempt-1.json was never written or was cleaned up). Pre-fix
+    that instance was silently skipped because the hardcoded path
+    didn't exist."""
+    from bird_interact_agents import paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+
+    run_dir = tmp_path / "results" / "cloud" / "r1"
+    d = run_dir / "rows" / "alien_1"
+    d.mkdir(parents=True)
+    (d / "attempt-2.json").write_text(json.dumps({
+        "instance_id": "alien_1",
+        "selected_database": "alien",
+        "submitted_sql": "ONLY_ATTEMPT_2",
+        "trajectory": [],
+        "usage": {},
+        "duration_s": 0.0,
+    }))
+
+    captured: list[dict] = []
+
+    class StubGrader:
+        def __call__(self, *, instance_id, submitted_sql, task_row):
+            captured.append({
+                "instance_id": instance_id,
+                "submitted_sql": submitted_sql,
+            })
+            from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
+            return CascadeVerdict(
+                n1_original_gold=False, n2_audited_primary=False,
+                n3_any_audited_variant=False, n4_tie_order=False,
+                n5_llm_judge=False, n6_numeric_epsilon=False,
+                n7_trailing_whitespace=False, n8_column_order=False,
+                n9_case_fold=False,
+                matched_variant_id=None, novel_reading_judgment=None,
+                variant_matches=[], rowset_relations=[],
+            )
+
+    from bird_interact_agents.eval.regrade import regrade_run
+
+    report = regrade_run(
+        run_id="r1", benchmark="mini-interact", run_dir=run_dir,
+        instance_ids=None, force_llm_judge=False,
+        grader=StubGrader(), repo_root=tmp_path,
+    )
+    assert report.regraded == 1
+    assert captured[0]["submitted_sql"] == "ONLY_ATTEMPT_2"
+
+
 def test_build_original_sql_index_does_not_char_split_string(
     tmp_path, monkeypatch,
 ):
