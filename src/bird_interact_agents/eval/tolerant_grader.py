@@ -1002,6 +1002,19 @@ def _column_match_signals(
     return count_match, name_match_ci, order_match
 
 
+def _normalize_col(name: str) -> str:
+    """Lowercase + strip the longest dot-prefix.
+
+    ``'households.housenum' → 'housenum'``; ``'Alias.X.Y' → 'y'``.
+    Used by the column-order-mismatch diagnostic so slayer's
+    namespacing convention (``<db>.<table>.<col>``) and the gold's
+    bare column names compare equal modulo whitespace, while still
+    detecting cases where the agent picked the right columns in a
+    different order from the gold.
+    """
+    return name.lower().rsplit(".", 1)[-1]
+
+
 def _compute_miss_diagnostics(
     *,
     pred_rows: Sequence[Sequence],
@@ -1135,8 +1148,25 @@ def _compute_miss_diagnostics(
         )
     ):
         flags.append("aggregation_shape_mismatch")
-    if (not count_match) or (not name_match_ci):
-        flags.append("column_projection_mismatch")
+    # Column-shape flags — split by causal vs near-miss vs stylistic
+    # (see MissPattern docstring in annotation_schema.py).
+    # 1. count_mismatch is load-bearing: different arity → bag
+    #    equality CANNOT hold on row reprs of differing length.
+    # 2. order_mismatch is a near-miss: counts match, normalised
+    #    name lists match as SETS but differ as LISTS — agent picked
+    #    the right columns in the wrong order.
+    # 3. Bare name-only divergence is intentionally unflagged —
+    #    stylistic (slayer namespacing); not a cascade-fail cause.
+    if not count_match:
+        flags.append("column_count_mismatch")
+    else:
+        agent_norm = [_normalize_col(c) for c in pred_cols]
+        gold_norm = [_normalize_col(c) for c in best_cols]
+        if (
+            sorted(agent_norm) == sorted(gold_norm)
+            and agent_norm != gold_norm
+        ):
+            flags.append("column_order_mismatch")
     if (
         md.agent_where_conjunct_count is not None
         and md.best_variant_where_conjunct_count is not None

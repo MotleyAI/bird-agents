@@ -230,6 +230,30 @@ def grade_and_write(
 ) -> Path:
     """Run the tolerant grader and write the SubmissionAnnotation to
     ``<rows_dir>/<instance_id>/submission_annotation.json``."""
+    # Resolve the user-sim signal for `grade_submission`. Interactive
+    # benchmarks (mini-interact a-interact) pass the int count of
+    # `ask_user` calls so the `never_asked_user` diagnostic can fire
+    # when the count is zero; one-shot benchmarks (livesqlbench) pass
+    # None so the flag stays out of `miss_patterns`. Prefer the
+    # already-parsed `user_sim_interaction.n_asks` over the raw
+    # `n_ask_user_calls` since the former encodes the parsing rule.
+    from bird_interact_agents.benchmark import get_benchmark
+    try:
+        _bench = get_benchmark(benchmark)
+        _is_interactive = not _bench.one_shot
+    except Exception:  # noqa: BLE001 — unknown benchmark token
+        _is_interactive = False
+    _user_sim_n_asks: Optional[int]
+    if _is_interactive:
+        if user_sim_interaction is not None:
+            _user_sim_n_asks = user_sim_interaction.n_asks
+        elif n_ask_user_calls is not None:
+            _user_sim_n_asks = n_ask_user_calls
+        else:
+            _user_sim_n_asks = 0
+    else:
+        _user_sim_n_asks = None
+
     cascade = grade_submission(
         task_annotation=task_annotation,
         audited_gold_rows=audited_gold_rows,
@@ -240,6 +264,7 @@ def grade_and_write(
         executor=executor,
         llm_judge=llm_judge,
         epsilon=epsilon,
+        user_sim_n_asks=_user_sim_n_asks,
     )
     ann = _build_submission_annotation(
         task_annotation=task_annotation,

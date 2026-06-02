@@ -305,7 +305,8 @@ MissPattern = Literal[
     "empty_agent_result",
     "wrong_table_set",
     "aggregation_shape_mismatch",
-    "column_projection_mismatch",
+    "column_count_mismatch",
+    "column_order_mismatch",
     "predicate_count_mismatch",
     "having_presence_mismatch",
     "limit_presence_mismatch",
@@ -315,6 +316,27 @@ MissPattern = Literal[
     "agent_overcount",
     "never_asked_user",
 ]
+# Column-shape flag design (intentionally split, not lumped):
+#   * ``column_count_mismatch`` — agent and gold have different column
+#     counts. Cell tuples have different arity → bag equality CANNOT
+#     hold (same for BIRD-Interact's ``ex_base``). Load-bearing cause
+#     of cascade fail.
+#   * ``column_order_mismatch`` — counts match AND the column-name
+#     LISTS, after normalisation (lowercase + strip longest dot-prefix,
+#     so 'households.housenum' → 'housenum'), are equal AS SETS but
+#     differ AS LISTS. Surfaces a "near miss" where the agent's
+#     projection content is correct but positionally misaligned —
+#     cascade N3 fails because row reprs are positional; N8 column-
+#     order tolerance might have rescued it but didn't because
+#     slayer's namespacing trips its column-name set check.
+#   * Pure column-NAME divergence with matching counts AND non-matching
+#     normalised sets is INTENTIONALLY NOT FLAGGED — that's stylistic
+#     (agent projected meaningfully different columns) and would fire
+#     spuriously on every slayer-namespaced submission. The
+#     column-shape fields (column_count_match,
+#     column_name_match_case_insensitive, column_order_match,
+#     agent_columns, best_variant_columns) stay populated as
+#     informational signals so downstream tooling can inspect.
 
 
 class MissDiagnostics(BaseModel):

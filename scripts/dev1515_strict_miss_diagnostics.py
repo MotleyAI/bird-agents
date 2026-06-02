@@ -23,45 +23,64 @@ from pathlib import Path
 
 from bird_interact_agents import paths
 
-# Walk both the hyphen + underscore tree to be defensive about the
-# benchmark-name canonicalisation split that earlier sessions hit.
-ROOTS = (
-    paths.annotations_root() / "mini-interact",
-    paths.annotations_root() / "mini_interact",
-    paths.annotations_root() / "livesqlbench",
-)
+# Walk per-benchmark trees. Same instance_id can exist in BOTH
+# mini-interact and livesqlbench (e.g. ``credit_4`` lives in both
+# benchmark sets), so dedup key MUST be ``(benchmark, instance_id)``,
+# not just ``instance_id`` — otherwise the latest-wins collapse
+# silently hides mini-interact data when livesqlbench has the same
+# instance_id with a later run_id.
+ROOTS = {
+    "mini_interact": (
+        paths.annotations_root() / "mini-interact",
+        paths.annotations_root() / "mini_interact",
+    ),
+    "livesqlbench": (
+        paths.annotations_root() / "livesqlbench",
+    ),
+}
 
 SUB_RE = re.compile(r"^(.+)\.submission\.(.+)\.json$")
 
 
-def _walk_latest_submissions() -> dict[str, dict]:
-    """Return {instance_id: latest submission JSON}. Latest = lex-max
-    of the run_id suffix; works because run_ids are timestamped
-    ``YYYYMMDDtHHMM…``."""
-    by_inst: dict[str, tuple[str, dict]] = {}
-    for root in ROOTS:
-        if not root.exists():
-            continue
-        for p in root.glob("*/*.submission.*.json"):
-            m = SUB_RE.match(p.name)
-            if not m:
+def _walk_latest_submissions() -> dict[tuple[str, str], dict]:
+    """Return {(benchmark, instance_id): latest submission JSON}.
+    Latest = lex-max of the run_id suffix; works because run_ids are
+    timestamped ``YYYYMMDDtHHMM…``."""
+    by_key: dict[tuple[str, str], tuple[str, dict]] = {}
+    for bench, roots in ROOTS.items():
+        for root in roots:
+            if not root.exists():
                 continue
-            iid, run_id = m.group(1), m.group(2)
-            cur = by_inst.get(iid)
-            if cur is None or run_id > cur[0]:
-                by_inst[iid] = (run_id, json.loads(p.read_text()))
-    return {iid: v for iid, (_run, v) in by_inst.items()}
+            for p in root.glob("*/*.submission.*.json"):
+                m = SUB_RE.match(p.name)
+                if not m:
+                    continue
+                iid, run_id = m.group(1), m.group(2)
+                key = (bench, iid)
+                cur = by_key.get(key)
+                if cur is None or run_id > cur[0]:
+                    by_key[key] = (run_id, json.loads(p.read_text()))
+    return {key: v for key, (_run, v) in by_key.items()}
 
 
 def main() -> None:
     submissions = _walk_latest_submissions()
     strict_misses: list[tuple[str, dict, dict]] = []
-    for iid, ann in submissions.items():
+    for (bench, iid), ann in submissions.items():
         ev = ann.get("evaluation", {})
         md = ev.get("miss_diagnostics")
         if md is None:
             continue
-        strict_misses.append((iid, ann, md))
+        # Display label combines bench + iid so the per-instance table
+        # disambiguates same-iid-different-benchmark rows
+        # (e.g. `credit_4@mini_interact` vs `credit_4@livesqlbench`).
+        label = (
+            iid if bench == "mini_interact" and iid not in {
+                s.split("@")[0] for s, _, _ in strict_misses
+            }
+            else f"{iid}@{bench}"
+        )
+        strict_misses.append((label, ann, md))
     strict_misses.sort()
 
     print("=" * 110)

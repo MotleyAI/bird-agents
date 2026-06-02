@@ -370,8 +370,11 @@ def test_flag_aggregation_shape_mismatch(tmp_path: Path):
     assert "aggregation_shape_mismatch" in md.miss_patterns
 
 
-def test_flag_column_projection_mismatch(tmp_path: Path):
-    """Agent projects 1 col; gold projects 2. column_count_match=False."""
+def test_flag_column_count_mismatch(tmp_path: Path):
+    """Agent projects 1 column; gold projects 2. Different arity →
+    bag equality on canonical row reprs cannot hold (same for
+    BIRD-Interact's ex_base). column_count_mismatch is the
+    load-bearing column-shape flag for this case."""
     db = _build_db(tmp_path)
     verdict = _grade(
         db=db,
@@ -382,8 +385,77 @@ def test_flag_column_projection_mismatch(tmp_path: Path):
     )
     md = verdict.miss_diagnostics
     assert md is not None
+    # Informational fields are populated.
     assert md.column_count_match is False
-    assert "column_projection_mismatch" in md.miss_patterns
+    assert md.agent_column_count == 1
+    assert md.best_variant_column_count == 2
+    flags = set(md.miss_patterns)
+    assert "column_count_mismatch" in flags
+    # Mutually exclusive — order can't be checked when counts differ.
+    assert "column_order_mismatch" not in flags
+
+
+def test_flag_column_order_mismatch(tmp_path: Path):
+    """Agent projects the right COLUMNS (after stripping slayer's
+    dot-prefix + lowercasing) but in a different ORDER from gold.
+    Same column count, normalised name lists match as SETS but differ
+    as LISTS → column_order_mismatch fires; column_count_mismatch
+    does not. This is the near-miss pattern where N8 column-order
+    tolerance would have rescued the cascade if slayer's namespacing
+    hadn't tripped its column-name set check."""
+    db = _build_db(tmp_path)
+    # Agent's column names use slayer-namespacing; gold's are bare;
+    # order is reversed. Force rowset divergence so the cascade
+    # actually reaches diagnostics (values differ in row 0 vs row 0
+    # because the columns are swapped in the SELECT list).
+    verdict = _grade(
+        db=db,
+        submitted_sql=(
+            'SELECT val AS "t1.val", id AS "t1.id" FROM t1 WHERE id <= 2 ORDER BY id'
+        ),
+        audited_sol_sql_per_variant=[
+            ("primary", True,
+             ["SELECT id, val FROM t1 WHERE id <= 2 ORDER BY id"]),
+        ],
+    )
+    md = verdict.miss_diagnostics
+    assert md is not None
+    assert md.column_count_match is True
+    assert md.agent_column_count == 2
+    assert md.best_variant_column_count == 2
+    flags = set(md.miss_patterns)
+    assert "column_order_mismatch" in flags
+    assert "column_count_mismatch" not in flags
+
+
+def test_column_name_only_divergence_no_column_flag(tmp_path: Path):
+    """Same column count + names differ in a NON-RECOVERABLE way
+    (normalised name sets are different — agent picked actually
+    different columns, not just renamed/namespaced). Neither
+    column_count_mismatch nor column_order_mismatch fires —
+    column-NAME-only divergence is stylistic / actually-different
+    projection and we don't surface it as a column-shape flag
+    (whatever else caused the cascade fail will surface elsewhere)."""
+    db = _build_db(tmp_path)
+    # Agent projects `id`; gold projects `val`. Same arity (1), but
+    # the normalised name sets are {'id'} vs {'val'} — disjoint.
+    verdict = _grade(
+        db=db,
+        submitted_sql="SELECT id FROM t1 WHERE id <= 2 ORDER BY id",
+        audited_sol_sql_per_variant=[
+            ("primary", True,
+             ["SELECT val FROM t1 WHERE id <= 2 ORDER BY id"]),
+        ],
+    )
+    md = verdict.miss_diagnostics
+    assert md is not None
+    assert md.column_count_match is True
+    # column-name signal is populated as informational.
+    assert md.column_name_match_case_insensitive is False
+    flags = set(md.miss_patterns)
+    # No column-shape flag fires; the rowset flags do the talking.
+    assert "column_count_mismatch" not in flags
+    assert "column_order_mismatch" not in flags
 
 
 def test_flag_predicate_count_mismatch(tmp_path: Path):
@@ -618,15 +690,19 @@ def test_multi_flag_fixture_fires_every_applicable_flag(tmp_path: Path):
     assert md is not None
     flags = set(md.miss_patterns)
     for required in (
-        "column_projection_mismatch",
         "wrong_table_set",
         "aggregation_shape_mismatch",
         "limit_presence_mismatch",
         "never_asked_user",
+        # Agent projects 2 cols (id, name) vs gold's 1 col (id) —
+        # arity mismatch fires the load-bearing column-count flag.
+        "column_count_mismatch",
     ):
         assert required in flags, (
             f"expected {required!r} in {flags} (multi-flag scenario)"
         )
+    # When counts differ, the order check is short-circuited.
+    assert "column_order_mismatch" not in flags
 
 
 def test_multi_flag_fixture_with_sql_parse_error(tmp_path: Path):

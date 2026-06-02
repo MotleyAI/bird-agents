@@ -270,6 +270,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         [s.strip() for s in args.instance_ids.split(",")]
         if args.instance_ids else None
     )
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.eval.annotate import (
+        _user_sim_interaction_from_trajectory,
+    )
     from bird_interact_agents.eval.tolerant_grader import grade_submission
     run_dir = paths.results_root() / "cloud" / args.run_id
 
@@ -278,6 +282,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     # ``--gold-file`` and the public data file ships it empty. Both routes
     # land under ``instance_id`` so the lookup is identical at call time.
     original_sql_by_inst = _build_original_sql_index(args.benchmark)
+
+    # Resolve interactive-vs-one-shot ONCE for this run — drives the
+    # ``user_sim_n_asks`` plumbing on each grader call so the
+    # ``never_asked_user`` diagnostic fires on interactive benchmarks
+    # where the agent never queried the user-sim.
+    _bench_is_interactive = not get_benchmark(args.benchmark).one_shot
 
     def _grader(*, instance_id: str, submitted_sql: str, task_row: dict, **_kw):
         # Minimal end-to-end wiring — production callers pre-build the
@@ -317,6 +327,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             or original_sql_by_inst.get(instance_id)
             or []
         )
+        # Compute the user-sim signal from the attempt's trajectory so
+        # the ``never_asked_user`` diagnostic fires properly on
+        # interactive runs where the agent never asked. One-shot
+        # benchmarks pass None so the flag stays out of miss_patterns.
+        if _bench_is_interactive:
+            _traj = list(task_row.get("trajectory") or [])
+            _user_sim_n_asks: Optional[int] = (
+                _user_sim_interaction_from_trajectory(_traj).n_asks
+            )
+        else:
+            _user_sim_n_asks = None
         return grade_submission(
             task_annotation=ann,
             audited_gold_rows=audited,
@@ -324,6 +345,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             submitted_sql=submitted_sql,
             db_path=db_path,
             conn=None,
+            user_sim_n_asks=_user_sim_n_asks,
         )
 
     report = regrade_run(
