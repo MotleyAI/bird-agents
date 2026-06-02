@@ -111,6 +111,7 @@ async def test_local_run_invokes_inline_grader_per_task(monkeypatch, tmp_path):
             "benchmark": benchmark,
             "rows_dir": rows_dir,
             "run_id": run_id,
+            "db_path": db_path,
         })
         out_dir = Path(rows_dir) / task_data["instance_id"]
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -214,6 +215,22 @@ async def test_local_run_invokes_inline_grader_per_task(monkeypatch, tmp_path):
     # alien_2 failed everything. Each tier should therefore count 1.
     assert cp["counts"]["n3"] == 1, f"got cp={cp}"
     assert cp["rates"]["n3"] == 0.5, f"got cp={cp}"
+    # Codex r7: ``db_path`` MUST be rooted at the caller-provided
+    # ``data_dir`` (the same sqlite the agent ran against) — NOT
+    # ``paths.benchmark_data_root``. Without this guard a local run
+    # pointed at a tmp / alternate checkout / env-overridden data dir
+    # would grade against the global sqlite, and the cascade verdict
+    # could disagree with the agent's submission for purely path-routing
+    # reasons.
+    expected_data_dir = str(tmp_path / "ignored_data_dir")
+    for c in calls:
+        assert str(c["db_path"]).startswith(expected_data_dir), (
+            f"db_path must be rooted at data_dir={expected_data_dir!r}; "
+            f"got db_path={c['db_path']!r}"
+        )
+        assert c["db_path"].name == "alien.sqlite", (
+            f"db_path leaf must be <db>.sqlite; got {c['db_path']!r}"
+        )
 
 
 @pytest.mark.asyncio

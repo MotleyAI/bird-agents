@@ -1043,8 +1043,15 @@ async def run_evaluation(
                 ),
             )
             return
+        # Root the per-task sqlite at the caller-provided ``data_dir``
+        # (the same path the agent's SQL executed against) — NOT the
+        # global ``paths.benchmark_data_root``. Otherwise an alternate
+        # checkout, a tmp fixture, or a ``BIRD_DB_PATH`` override would
+        # have the agent and grader disagreeing on schema/data, and a
+        # correct submission could be marked failing. Mirrors the
+        # cloud worker, which uses ``cfg["data_dir"]`` (Codex r7).
         per_task_db = (
-            paths.benchmark_data_root(_benchmark_canonical)
+            Path(data_dir)
             / selected_database
             / f"{selected_database}.sqlite"
         )
