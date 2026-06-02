@@ -1004,7 +1004,7 @@ def test_read_api_keys_oauth_missing_usersim_key_raises_prereq_error(monkeypatch
     → PrereqError (not KeyError) listing the missing key."""
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    with pytest.raises(driver.PrereqError, match="BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"):
+    with pytest.raises(driver.PrereqError, match="ANTHROPIC_API_KEY"):
         driver.read_api_keys_from_local_env(
             "anthropic/claude-sonnet-4-5",
             "anthropic/claude-haiku-4-5-20251001",

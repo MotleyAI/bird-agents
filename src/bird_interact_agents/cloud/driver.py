@@ -131,23 +131,33 @@ def read_api_keys_from_local_env(
                 remediation="claude setup-token",
             )
         result: dict[str, str] = {"CLAUDE_CODE_OAUTH_TOKEN": token}
+        # Track the LOCAL env var names for error messages (the worker-side names
+        # differ — e.g. ANTHROPIC_API_KEY → BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY).
+        missing_local: list[str] = []
         # Rename the Anthropic key for user-sim; LiteLLM reads it via
         # _maybe_inject_anthropic_key in usage.acompletion_tracked.
         if user_sim_model.startswith("anthropic/"):
-            result["BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"] = os.environ.get("ANTHROPIC_API_KEY", "")
+            val = os.environ.get("ANTHROPIC_API_KEY", "")
+            result["BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"] = val
+            if not val:
+                missing_local.append("ANTHROPIC_API_KEY")
         # Non-anthropic user-sim keys (OPENAI, CEREBRAS, GEMINI).
         for k in _required_api_keys(user_sim_model):
             if k != "ANTHROPIC_API_KEY":
                 result[k] = os.environ.get(k, "")
+                if not result[k]:
+                    missing_local.append(k)
         # DEV-1468: slayer embeddings always need OPENAI_API_KEY.
         if query_mode == "slayer":
             result["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY", "")
+            if not result["OPENAI_API_KEY"] and "OPENAI_API_KEY" not in missing_local:
+                missing_local.append("OPENAI_API_KEY")
         # Fail fast on missing keys (resubmit has no prereq check).
-        missing = [k for k, v in result.items() if not v]
-        if missing:
-            cmds = "\n".join(f"export {k}=<your-key>" for k in sorted(missing))
+        if missing_local:
+            missing_local_sorted = sorted(missing_local)
+            cmds = "\n".join(f"export {k}=<your-key>" for k in missing_local_sorted)
             raise PrereqError(
-                f"missing API key env vars for job submission: {sorted(missing)}",
+                f"missing API key env vars for job submission: {missing_local_sorted}",
                 remediation=cmds,
             )
         return result
