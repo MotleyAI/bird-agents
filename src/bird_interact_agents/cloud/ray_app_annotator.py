@@ -215,11 +215,11 @@ def _load_annotator_task_data(
     instance_ids: list[str],
     *,
     benchmark: str,
+    gold_file: str | None = None,
 ) -> dict[str, dict]:
     """Load plain task data for the annotator (no audited-gold overlay)."""
     bench = get_benchmark(benchmark)
-    gold_file: str | None = None
-    if bench.gold_required:
+    if bench.gold_required and gold_file is None:
         env_val = os.environ.get(bench.gold_root_env or "")
         if env_val:
             gold_file = env_val
@@ -378,6 +378,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--attempt", type=int, default=1,
                    help="attempt number (1-based); used in the GCS blob name")
+    p.add_argument("--gold-file", default=None,
+                   help="explicit path to the gold sidecar JSONL (overrides env lookup)")
     args = p.parse_args(argv)
 
     args.benchmark = get_benchmark(args.benchmark).name
@@ -389,7 +391,9 @@ def main(argv: list[str] | None = None) -> int:
         {"dataset": args.benchmark, "benchmark_data_prefix": args.benchmark_data_prefix},
     )
 
-    task_data_by_id = _load_annotator_task_data(instance_ids, benchmark=args.benchmark)
+    task_data_by_id = _load_annotator_task_data(
+        instance_ids, benchmark=args.benchmark, gold_file=args.gold_file,
+    )
 
     _b = get_benchmark(args.benchmark)
     data_path_base = (

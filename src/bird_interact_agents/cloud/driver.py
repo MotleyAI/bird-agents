@@ -1115,6 +1115,9 @@ def _build_annotator_resubmit_args(
     prefix = manifest.get("benchmark_data_prefix")
     if prefix:
         job_args += ["--benchmark-data-prefix", prefix]
+    gold_file = manifest.get("gold_file")
+    if gold_file:
+        job_args += ["--gold-file", str(gold_file)]
     if manifest.get("override"):
         job_args.append("--override")
     return job_args
