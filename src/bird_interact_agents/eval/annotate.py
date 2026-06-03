@@ -393,7 +393,7 @@ def write_submission_skeleton(
 
 def _load_task_rows(*, benchmark: str, instance_ids: Optional[Iterable[str]]) -> list[dict]:
     """Load task rows for the given instance IDs from the benchmark JSONL."""
-    bench = get_benchmark(benchmark.replace("-", "_"))
+    bench = get_benchmark(benchmark)
     data_path = paths.benchmark_data_root(bench) / bench.data_file
     rows = [json.loads(line) for line in data_path.read_text().splitlines() if line.strip()]
     if instance_ids:
