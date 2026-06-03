@@ -104,8 +104,8 @@ def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
                     continue
                 iid = r.get("instance_id")
                 sol = r.get("sol_sql")
-                if iid and isinstance(sol, list) and sol:
-                    out[iid] = list(sol)
+                if iid and sol:
+                    out[iid] = list(sol) if isinstance(sol, list) else [sol]
     # Merge in livesqlbench's gated sidecar if available.
     bench = get_benchmark(benchmark)
     if bench.gold_required:

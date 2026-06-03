@@ -73,11 +73,12 @@ def _masked_terms_from(task_row: dict) -> list[MaskedTerm]:
     amb = (task_row.get("user_query_ambiguity") or {}).get("critical_ambiguity", [])
     out: list[MaskedTerm] = []
     for entry in amb or []:
+        me = entry.get("metadata_evidence") or []
         out.append(MaskedTerm(
             term=entry.get("term", ""),
             type=entry.get("type", "intent_ambiguity"),
             is_mask=bool(entry.get("is_mask", True)),
-            metadata_evidence=list(entry.get("metadata_evidence", []) or []),
+            metadata_evidence=me if isinstance(me, list) else [me],
         ))
     return out
 

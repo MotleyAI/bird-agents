@@ -152,10 +152,13 @@ def compare_tie_order(
 
     pred_buckets: dict[Tuple, list[tuple]] = {}
     gold_buckets: dict[Tuple, list[tuple]] = {}
-    for r in pred:
-        pred_buckets.setdefault(_key(r), []).append(tuple(r))
-    for r in gold:
-        gold_buckets.setdefault(_key(r), []).append(tuple(r))
+    try:
+        for r in pred:
+            pred_buckets.setdefault(_key(r), []).append(tuple(r))
+        for r in gold:
+            gold_buckets.setdefault(_key(r), []).append(tuple(r))
+    except IndexError:
+        return False
     if pred_buckets.keys() != gold_buckets.keys():
         return False
     # Cross-bucket order: the keys must appear in the same sequence in pred
