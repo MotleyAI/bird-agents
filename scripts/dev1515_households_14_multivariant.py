@@ -194,7 +194,7 @@ def _patch_audit_jsonl() -> None:
                 snippet_row["audited_sample_row"] = []
                 snippet_row["audited_sample_row_status"] = "empty"
                 snippet_row.pop("audited_sample_row_error", None)
-        except Exception as exc:
+        except sqlite3.Error as exc:
             snippet_row["audited_sample_row"] = []
             snippet_row["audited_sample_row_status"] = "error"
             snippet_row["audited_sample_row_error"] = f"{type(exc).__name__}: {exc}"

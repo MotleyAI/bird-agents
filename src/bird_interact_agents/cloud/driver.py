@@ -882,7 +882,7 @@ def fetch(run_id: str) -> dict:
         downloaded_run_dir=dest,
         run_id=run_id,
         benchmark=_benchmark_for_dataset(manifest.get("dataset")),
-        main_checkout_root=paths.main_checkout_root(),
+        annotations_root=paths.annotations_root(),
     )
     metrics["annotation_merge_report"] = annotation_merge.model_dump()
 

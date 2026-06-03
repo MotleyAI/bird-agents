@@ -187,16 +187,17 @@ def _build_task_annotation(
             rationale=PENDING,
             evidence_sources_consulted=[],
         )
+        _vid = audit_row.get("variant_id", "primary")
         gold_variants = [
             GoldVariantRef(
-                variant_id="primary",
+                variant_id=_vid,
                 interpretation=PENDING,
                 primary=True,
                 anchored_in=[],
                 audited_gold_ref=AuditedGoldRef(
                     file=AUDIT_FILE_REL,
                     instance_id=instance_id,
-                    variant_id="primary",
+                    variant_id=_vid,
                 ),
                 notes=(
                     "Audit changed the gold relative to the original — "

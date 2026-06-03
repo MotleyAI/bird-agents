@@ -364,21 +364,80 @@ def main(argv: Optional[List[str]] = None) -> int:
         default="init",
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--run-id", default=None,
+        help="Cloud run ID. When provided, also generate per-submission "
+             "annotation skeletons from the run's attempt files.",
+    )
+    parser.add_argument(
+        "--submission-mode", choices=("overwrite", "init"),
+        default="overwrite",
+        help="Overwrite-semantics for submission skeletons (default: overwrite).",
+    )
     args = parser.parse_args(argv)
 
+    benchmark = get_benchmark(args.benchmark).name
     instance_ids = (
         [s.strip() for s in args.instance_ids.split(",")]
         if args.instance_ids else None
     )
-    rows = _load_task_rows(
-        benchmark=args.benchmark, instance_ids=instance_ids,
-    )
+    rows = _load_task_rows(benchmark=benchmark, instance_ids=instance_ids)
     for row in rows:
         write_task_skeleton(
-            task_row=row, benchmark=args.benchmark,
+            task_row=row, benchmark=benchmark,
             mode=args.task_mode, dry_run=args.dry_run,
         )
     print(f"task skeletons: {len(rows)} processed in mode={args.task_mode}")
+
+    if args.run_id:
+        from bird_interact_agents.eval.grade_in_place import (
+            load_audited_gold_rows_for,
+            load_task_annotation_or_implicit,
+        )
+        from bird_interact_agents.eval.tolerant_grader import grade_submission
+
+        run_dir = paths.results_root() / "cloud" / args.run_id
+        rows_dir = run_dir / "rows"
+        if not rows_dir.exists():
+            print(f"rows_dir not found: {rows_dir}")
+            return 1
+        n_sub = 0
+        for row in rows:
+            iid = row["instance_id"]
+            db = row["selected_database"]
+            db_path = (
+                paths.benchmark_data_root(benchmark) / db / f"{db}.sqlite"
+            )
+            ann = load_task_annotation_or_implicit(
+                instance_id=iid, selected_database=db,
+                benchmark=benchmark, amb_user_query=row.get("amb_user_query", ""),
+            )
+            audited = load_audited_gold_rows_for(benchmark=benchmark, instance_id=iid)
+
+            def _grader(*, instance_id: str, submitted_sql: str, task_row: dict, **_kw):  # noqa: E731
+                return grade_submission(
+                    task_annotation=ann,
+                    audited_gold_rows=audited,
+                    original_sol_sql=row.get("sol_sql"),
+                    submitted_sql=submitted_sql,
+                    db_path=db_path,
+                    conn=None,
+                )
+
+            dest = write_submission_skeleton(
+                rows_dir=rows_dir,
+                instance_id=iid,
+                selected_database=db,
+                benchmark=benchmark,
+                run_id=args.run_id,
+                task_row=row,
+                grader=_grader,
+                mode=args.submission_mode,
+                dry_run=args.dry_run,
+            )
+            if dest is not None:
+                n_sub += 1
+        print(f"submission skeletons: {n_sub} written in mode={args.submission_mode}")
     return 0
 
 

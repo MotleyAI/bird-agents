@@ -37,7 +37,7 @@ def add_multivariant_fields(row: dict, *, benchmark: str) -> dict:
         )
     out.setdefault("benchmark", benchmark)
     out.setdefault("variant_id", "primary")
-    out.setdefault("primary", True)
+    out.setdefault("primary", out["variant_id"] == "primary")
     return out
 
 

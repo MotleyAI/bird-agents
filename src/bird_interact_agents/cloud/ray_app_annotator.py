@@ -79,9 +79,20 @@ def _run_one_task(
 
     # Skip check: both stable blobs must be present to skip.
     if not override:
-        ann_blob = _gcs.stable_task_annotation_blob(benchmark, db, instance_id)
-        var_blob = _gcs.stable_audited_gold_variants_blob(benchmark, db, instance_id)
-        if _gcs.blob_exists(ann_blob, client=client) and _gcs.blob_exists(var_blob, client=client):
+        try:
+            ann_blob = _gcs.stable_task_annotation_blob(benchmark, db, instance_id)
+            var_blob = _gcs.stable_audited_gold_variants_blob(benchmark, db, instance_id)
+            both_exist = (
+                _gcs.blob_exists(ann_blob, client=client)
+                and _gcs.blob_exists(var_blob, client=client)
+            )
+        except Exception as exc:
+            logger.warning(
+                "[%s] skip-check failed (%s); proceeding with annotation",
+                instance_id, exc,
+            )
+            both_exist = False
+        if both_exist:
             logger.info("[%s] skipping — both stable blobs exist", instance_id)
             attempt_row = {
                 "instance_id": instance_id,

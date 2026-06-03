@@ -89,6 +89,11 @@ def data_hash(
     *,
     annotations_root: Path | None = None,
 ) -> str:
+    # DEV-1515: default to paths.annotations_root() so callers that omit
+    # the argument still include annotations content in the hash.
+    if annotations_root is None:
+        from bird_interact_agents import paths as _paths
+        annotations_root = _paths.annotations_root()
     """Content-based hash over the inputs that compose the DATA layers
     of `Dockerfile.cloud`: ``audited_gold/`` and the Dockerfile's DATA
     section.

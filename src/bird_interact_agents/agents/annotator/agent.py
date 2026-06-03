@@ -40,7 +40,7 @@ from bird_interact_agents.harness import (
     load_db_data_if_needed,
     materialize_task_db,
 )
-from bird_interact_agents.model_string import is_anthropic
+from bird_interact_agents.model_string import is_anthropic, native_model_id
 
 _BY_NAME = {t.name: t for t in BIRD_INTERACT_TOOLS}
 logger = logging.getLogger(__name__)
@@ -393,7 +393,7 @@ async def run_task(
         allowed_tools=tool_names_prefixed,
         effort=effort,
         max_turns=cap,
-        model=model,
+        model=native_model_id(model),
     )
 
     turns = 0

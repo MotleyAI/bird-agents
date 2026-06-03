@@ -45,6 +45,25 @@ def _both_verdicts(cascade) -> tuple[str, str]:
     return inline, ev.verdict
 
 
+def test_n1_original_gold_yields_correct_on_both_paths():
+    # The grader enforces a monotone cascade: N1=True implies N2..N9=True.
+    # Simulate that here so the verdict reflects what production emits.
+    cascade = _cascade(n1=True, n2=True, n3=True, n4=True, n5=True,
+                       n6=True, n7=True, n8=True, n9=True)
+    inline, annotate = _both_verdicts(cascade)
+    assert inline == "correct"
+    assert annotate == "correct"
+
+
+def test_n2_audited_primary_yields_correct_on_both_paths():
+    # N2=True → N3..N9=True in the monotone cascade.
+    cascade = _cascade(n2=True, n3=True, n4=True, n5=True,
+                       n6=True, n7=True, n8=True, n9=True)
+    inline, annotate = _both_verdicts(cascade)
+    assert inline == "correct"
+    assert annotate == "correct"
+
+
 def test_n3_strict_yields_correct_on_both_paths():
     inline, annotate = _both_verdicts(_cascade(n3=True))
     assert inline == "correct"

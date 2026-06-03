@@ -710,9 +710,8 @@ def test_audited_gold_file_honours_root_env_override(tmp_path, monkeypatch):
 
 
 def test_audited_gold_file_mini_interact_anchored_to_main(tmp_path, monkeypatch):
-    """mini-interact moved to single_file layout in DEV-1515.
-    The consolidated path is ``audited_gold/mini_interact_audited.jsonl``.
-    """
+    """mini-interact uses single_file layout; the consolidated path is
+    ``audited_gold/mini_interact_audited.jsonl``."""
     main_root, _ = _setup_main_and_worktree(tmp_path, monkeypatch)
     assert (
         paths.audited_gold_file(benchmark="mini_interact")

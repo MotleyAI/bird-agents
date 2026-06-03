@@ -236,5 +236,5 @@ def test_written_json_is_valid_utf8_and_human_readable(tmp_path):
     # Indent check: every continuation line of the body starts with `  ` (2 spaces).
     body_lines = text.splitlines()
     assert body_lines[0] == "{"
-    indent_lines = [l for l in body_lines[1:-1] if l.strip()]
-    assert all(l.startswith("  ") for l in indent_lines)
+    indent_lines = [line for line in body_lines[1:-1] if line.strip()]
+    assert all(line.startswith("  ") for line in indent_lines)

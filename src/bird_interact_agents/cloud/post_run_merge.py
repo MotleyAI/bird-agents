@@ -78,7 +78,7 @@ import os
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -448,10 +448,11 @@ def merge_submission_annotations(
     downloaded_run_dir: Path,
     run_id: str,
     benchmark: str,
-    main_checkout_root: Path,
+    main_checkout_root: Optional[Path] = None,
+    annotations_root: Optional[Path] = None,
 ) -> AnnotationMergeReport:
     """Walk ``<downloaded_run_dir>/rows/<inst>/submission_annotation.json``
-    and merge each into ``<main_checkout_root>/annotations/<benchmark>/<db>/<inst>.submission.<run_id>.json``.
+    and merge each into ``<annotations_root>/<benchmark>/<db>/<inst>.submission.<run_id>.json``.
 
     Contract:
     * No-overwrite-if-present. A pre-existing destination is preserved
@@ -462,6 +463,11 @@ def merge_submission_annotations(
       create a destination file.
     * Writes an audit report at
       ``<downloaded_run_dir>/annotation_merge_report.json``.
+
+    ``annotations_root`` takes priority over ``main_checkout_root`` so
+    callers can honour ``BIRD_ANNOTATIONS_ROOT`` by passing
+    ``paths.annotations_root()`` directly.  When neither is given,
+    ``submission_annotation_path`` falls back to ``paths.annotations_root()``.
     """
     rows_dir = downloaded_run_dir / "rows"
     report = AnnotationMergeReport(run_id=run_id, benchmark=benchmark)
@@ -480,13 +486,21 @@ def merge_submission_annotations(
                     f"{src}: {type(e).__name__}: {e}"
                 )
                 continue
-            dest = submission_annotation_path(
-                benchmark=benchmark,
-                selected_database=ann.selected_database,
-                instance_id=ann.instance_id,
-                run_id=run_id,
-                repo_root=main_checkout_root,
-            )
+            if annotations_root is not None:
+                dest = (
+                    annotations_root
+                    / benchmark.replace("-", "_")
+                    / ann.selected_database
+                    / f"{ann.instance_id}.submission.{run_id}.json"
+                )
+            else:
+                dest = submission_annotation_path(
+                    benchmark=benchmark,
+                    selected_database=ann.selected_database,
+                    instance_id=ann.instance_id,
+                    run_id=run_id,
+                    repo_root=main_checkout_root,
+                )
             if dest.exists():
                 report.skipped_existing += 1
                 report.skipped_paths.append(str(dest))

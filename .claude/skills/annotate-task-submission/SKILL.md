@@ -74,10 +74,10 @@ rationale paragraph. Instead:
 
 1. **Emit BOTH readings as gold variants in the audit JSONL.** Two
    rows sharing `instance_id`, distinct `variant_id`s, exactly one
-   with `primary=true`. The KB-anchored reading typically takes
-   primary; the snippet-anchored reading is the alternate. Each row's
-   `reasoning_summary` cites its source explicitly and names the
-   conflict with the other.
+   with `primary=true` and `variant_id="primary"`. The KB-anchored
+   reading typically takes primary; the snippet-anchored reading is
+   the alternate. Each row's `reasoning_summary` cites its source
+   explicitly and names the conflict with the other.
 2. **Set `TaskAnnotation.internal_inconsistency`** to an
    `InternalInconsistency` record with:
    * `sources_in_conflict`: list of citations, one per source,

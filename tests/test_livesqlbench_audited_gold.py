@@ -302,11 +302,21 @@ def test_audit_rows_cover_select_tasks_per_db():
     task (1..10) must be covered. M-suffixed Management tasks are NOT
     required (deferred per shared contract); per-DB extras outside the
     SELECT set are allowed only when they are deferred management rows
-    (`audit_status=unrecoverable` with `clause_kind="management_category"`)."""
+    (`audit_status=unrecoverable` with `clause_kind="management_category"`).
+
+    Additionally, every DB listed in EXPECTED_INSTANCE_IDS_BY_DB must
+    appear in the file — this catches the case where an entire DB's
+    rows were accidentally omitted."""
     primary_rows = _load_audit_rows()
     by_db: dict[str, set[str]] = {}
     for iid, row in primary_rows.items():
         by_db.setdefault(row["selected_database"], set()).add(iid)
+    # Every expected DB must be present.
+    missing_dbs = set(EXPECTED_INSTANCE_IDS_BY_DB) - set(by_db)
+    assert not missing_dbs, (
+        f"audit file is missing entire DB(s): {sorted(missing_dbs)}. "
+        f"Add rows for each DB's SELECT tasks."
+    )
     for db, ids in by_db.items():
         expected = EXPECTED_INSTANCE_IDS_BY_DB.get(db)
         assert expected is not None, (
