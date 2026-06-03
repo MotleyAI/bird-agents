@@ -123,7 +123,10 @@ class PostgresDbConnection:
             cur.execute("BEGIN")
         try:
             cur.execute(sql)
-            rows = cur.fetchall()
+            # Non-SELECT statements (CREATE TEMP TABLE, SET, INSERT without
+            # RETURNING) leave cur.description as None; fetchall() on those
+            # raises ProgrammingError: no results to fetch.
+            rows = cur.fetchall() if cur.description is not None else []
             cols = [d[0] for d in (cur.description or [])]
         except psycopg2.Error:
             raise

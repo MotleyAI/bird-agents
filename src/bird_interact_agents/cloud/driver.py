@@ -751,6 +751,7 @@ def _emit_cascading_phase1_on_fetch(*, dest: Path, metrics: dict) -> dict:
         # Aggregator is strict — a missing per-row file raises so we
         # never silently under-count. Surface it as a side-channel entry
         # and leave the in-memory metrics writeable.
+        logger.warning("cascading_phase1 aggregation failed: %s", exc)
         metrics["cascading_phase1_error"] = str(exc)
         return metrics
 

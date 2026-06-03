@@ -560,5 +560,8 @@ def merge_submission_annotations(
     # Audit log lives alongside the downloaded run dir (next to the
     # OTF merge_report.json above, for symmetry).
     audit_path = downloaded_run_dir / "annotation_merge_report.json"
-    audit_path.write_text(report.model_dump_json(indent=2) + "\n")
+    try:
+        audit_path.write_text(report.model_dump_json(indent=2) + "\n")
+    except OSError:
+        pass
     return report

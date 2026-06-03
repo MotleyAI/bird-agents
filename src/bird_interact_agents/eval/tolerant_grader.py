@@ -753,8 +753,12 @@ def _multi_sql_execute(
         elif getattr(benchmark, "db_backend", "sqlite") == "postgres":
             from bird_interact_agents.db_connection import make_db_connection
             try:
+                # read_only=False: no per-execute BEGIN/ROLLBACK wrapping, so
+                # session state (e.g. TEMP TABLE) survives across statements.
+                # psycopg2 auto-rolls back any uncommitted txn on close, so
+                # writes cannot persist beyond this call.
                 own_pg_conn = make_db_connection(
-                    db_path.stem, benchmark=benchmark, read_only=True
+                    db_path.stem, benchmark=benchmark, read_only=False
                 )
                 conn = own_pg_conn
             except Exception:  # noqa: BLE001
@@ -781,6 +785,7 @@ def grade_submission(
     db_path: Path,
     conn: Any = None,
     executor: Optional[ExecutorProtocol] = None,
+    benchmark: Any = None,
     llm_judge: Optional[Any] = None,
     epsilon: float = 1e-6,
     user_sim_n_asks: Optional[int] = None,
@@ -833,7 +838,7 @@ def grade_submission(
     try:
         orig_rows, orig_cols = _multi_sql_execute(
             list(original_sol_sql),
-            db_path=db_path, conn=conn, executor=executor,
+            db_path=db_path, conn=conn, executor=executor, benchmark=benchmark,
         )
     except Exception:  # noqa: BLE001
         logger.exception(
@@ -851,7 +856,7 @@ def grade_submission(
             continue
         try:
             v_rows, v_cols = _multi_sql_execute(
-                sqls, db_path=db_path, conn=conn, executor=executor,
+                sqls, db_path=db_path, conn=conn, executor=executor, benchmark=benchmark,
             )
         except Exception:  # noqa: BLE001
             # Variant SQL didn't execute — SKIP it instead of coercing

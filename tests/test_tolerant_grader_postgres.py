@@ -251,3 +251,57 @@ def test_grade_submission_postgres_fails_on_mismatch():
     )
     assert isinstance(verdict, CascadeVerdict)
     assert verdict.n1_original_gold is False
+
+
+# ---------------------------------------------------------------------------
+# Regression: fetchall on non-SELECT + grade_submission benchmark threading
+# ---------------------------------------------------------------------------
+
+
+def test_postgres_execute_non_select_returns_empty_rows():
+    """PostgresDbConnection.execute must not raise for non-SELECT statements."""
+    from bird_interact_agents.db_connection import PostgresDbConnection
+
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_cur.description = None  # non-SELECT: no column metadata
+    mock_cur.fetchall.side_effect = Exception("no results to fetch")
+    mock_conn.cursor.return_value = mock_cur
+
+    pg = PostgresDbConnection(mock_conn, read_only=False)
+    rows, cols = pg.execute("CREATE TEMP TABLE t AS SELECT 1 AS n")
+    assert rows == []
+    assert cols == []
+    mock_cur.fetchall.assert_not_called()
+
+
+def test_grade_submission_passes_benchmark_to_multi_sql_execute():
+    """grade_submission must forward benchmark so _multi_sql_execute can open a
+    shared postgres connection for multi-statement gold SQL."""
+    from bird_interact_agents.eval.tolerant_grader import _multi_sql_execute
+
+    b = get_benchmark("livesqlbench_postgres")
+    calls: list[tuple] = []
+
+    def spy_execute(sqls, *, db_path, conn, executor, benchmark=None):
+        calls.append((benchmark,))
+        return [], []
+
+    task_ann = _dummy_task_annotation()
+    db_path = Path("alien")
+    executor = _make_postgres_executor(rows=[], cols=[])
+
+    with patch("bird_interact_agents.eval.tolerant_grader._multi_sql_execute", side_effect=spy_execute):
+        grade_submission(
+            task_annotation=task_ann,
+            audited_gold_rows=[],
+            original_sol_sql=["SELECT 1"],
+            submitted_sql="SELECT 1",
+            db_path=db_path,
+            conn=None,
+            executor=executor,
+            benchmark=b,
+        )
+
+    assert len(calls) >= 1
+    assert all(c[0] is b for c in calls), "benchmark not forwarded to _multi_sql_execute"

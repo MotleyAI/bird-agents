@@ -415,6 +415,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             db_path=db_path,
             conn=None,
             executor=_executor,
+            benchmark=_bench,
             user_sim_n_asks=_user_sim_n_asks,
         )
 

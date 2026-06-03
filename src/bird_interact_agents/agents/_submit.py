@@ -111,7 +111,7 @@ def capture_result_snapshot(
                 types.append(inferred)
             return {
                 "columns": [
-                    {"name": n, "type": t} for n, t in zip(col_names, types)
+                    {"name": n, "type": t} for n, t in zip(col_names, types, strict=True)
                 ],
                 "row_count": len(rows),
                 "row_count_truncated": truncated,

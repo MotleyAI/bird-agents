@@ -530,6 +530,7 @@ def _run_one_in_actor(
     log_dir = Path(tempfile.mkdtemp(prefix="cloud_log_"))
     log_tmp = log_dir / "task.log"
     task_start_ts = time.time()
+    _grader_data_dir = None
 
     try:
         with fd_capture(log_tmp):
@@ -541,6 +542,7 @@ def _run_one_in_actor(
                 # livesqlbench task back to mini-interact if BIRD_DB_PATH ever
                 # leaked into the actor env (Codex).
                 data_dir = cfg.get("data_dir") or "/data/mini-interact"
+                _grader_data_dir = data_dir
 
                 row = asyncio.run(
                     _run_one_task_async(
@@ -589,7 +591,6 @@ def _run_one_in_actor(
     # ``cascading_phase1_error``. Uploading the annotation first makes
     # the row blob the canonical "task fully done, including
     # annotation" marker.
-    _grader_data_dir = locals().get("data_dir")
     annotation_dir = Path(tempfile.mkdtemp(prefix="bird_submission_annot_"))
     _row_submitted_sql = row.get("submitted_sql")
     _row_selected_db = (

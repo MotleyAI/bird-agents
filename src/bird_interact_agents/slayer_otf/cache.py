@@ -442,10 +442,11 @@ async def _build_async(
     build_dir.mkdir(parents=True, exist_ok=True)
 
     if is_postgres:
+        from urllib.parse import quote as _quote
         host = _os.environ.get("BIRD_PG_HOST", "localhost")
         port = _os.environ.get("BIRD_PG_PORT", "5432")
-        user = _os.environ.get("BIRD_PG_USER", "bird_interact")
-        password = _os.environ.get("BIRD_PG_PASSWORD", "bird_interact")
+        user = _quote(_os.environ.get("BIRD_PG_USER", "bird_interact"), safe="")
+        password = _quote(_os.environ.get("BIRD_PG_PASSWORD", "bird_interact"), safe="")
         db_url = f"postgresql://{user}:{password}@{host}:{port}/{db}"
         await asyncio.to_thread(_phase1_ingest, db, build_dir, db_url=db_url)
     else:

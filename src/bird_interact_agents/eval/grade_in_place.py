@@ -271,6 +271,7 @@ def grade_and_write(
     # already-parsed `user_sim_interaction.n_asks` over the raw
     # `n_ask_user_calls` since the former encodes the parsing rule.
     from bird_interact_agents.benchmark import get_benchmark
+    _bench: Any = None
     try:
         _bench = get_benchmark(benchmark)
         _is_interactive = not _bench.one_shot
@@ -299,6 +300,7 @@ def grade_and_write(
         db_path=db_path,
         conn=conn,
         executor=executor,
+        benchmark=_bench,
         llm_judge=llm_judge,
         epsilon=epsilon,
         user_sim_n_asks=_user_sim_n_asks,
