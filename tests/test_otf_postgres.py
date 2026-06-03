@@ -210,3 +210,118 @@ def test_phase4_skipped_for_postgres(tmp_path):
         retyped, _ = asyncio.run(_phase4_dates(storage, "alien", benchmark=b, sqlite_path=None))
         mock_detect.assert_not_called()
     assert retyped == 0
+
+
+# ---------------------------------------------------------------------------
+# Password isolation — pg_password must not appear in subprocess args or YAML
+# ---------------------------------------------------------------------------
+
+
+def test_slayer_ingest_sets_pgpassword_env_not_url(tmp_path):
+    """_slayer_ingest must inject pg_password via PGPASSWORD env var and NOT
+    embed it in the subprocess command-line args."""
+    import subprocess as _subprocess
+    from bird_interact_agents.slayer_pipeline.orchestrator import _slayer_ingest
+
+    captured_args: list = []
+    captured_env: dict = {}
+
+    def fake_run(args, *, env, **_kw):
+        captured_args.extend(args)
+        captured_env.update(env or {})
+        result = MagicMock()
+        result.returncode = 0
+        result.stderr = ""
+        return result
+
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    conn_str = "postgresql://bird@localhost:5432/alien"  # no password in URL
+
+    with patch("bird_interact_agents.slayer_pipeline.orchestrator.subprocess.run", side_effect=fake_run):
+        _slayer_ingest(conn_str, storage, db="alien", pg_password="s3cr3t")
+
+    # Password must NOT appear in command-line args
+    for arg in captured_args:
+        assert "s3cr3t" not in str(arg), f"password leaked into subprocess arg: {arg!r}"
+    # Password MUST be in env
+    assert captured_env.get("PGPASSWORD") == "s3cr3t"
+
+
+def test_slayer_ingest_no_pgpassword_when_none(tmp_path):
+    """_slayer_ingest must not set PGPASSWORD when pg_password is None (SQLite path)."""
+    from bird_interact_agents.slayer_pipeline.orchestrator import _slayer_ingest
+
+    captured_env: dict = {}
+
+    def fake_run(args, *, env, **_kw):
+        captured_env.update(env or {})
+        result = MagicMock()
+        result.returncode = 0
+        result.stderr = ""
+        return result
+
+    storage = tmp_path / "storage"
+    storage.mkdir()
+
+    with patch("bird_interact_agents.slayer_pipeline.orchestrator.subprocess.run", side_effect=fake_run):
+        import os
+        env_before = os.environ.copy()
+        env_before.pop("PGPASSWORD", None)
+        with patch.dict("os.environ", env_before, clear=True):
+            _slayer_ingest("sqlite:///foo.sqlite", storage, db="foo")
+
+    assert "PGPASSWORD" not in captured_env, "PGPASSWORD must not be set for SQLite ingest"
+
+
+def test_build_async_postgres_url_excludes_password(tmp_path):
+    """_build_async must pass a password-free URL to _phase1_ingest and
+    supply the password via pg_password so it never appears in the URL."""
+    import asyncio
+    import os
+    from bird_interact_agents.slayer_otf import cache as otf_cache
+    from bird_interact_agents.benchmark import get_benchmark
+
+    b = get_benchmark("livesqlbench_postgres")
+    build_dir = tmp_path / "build"
+
+    phase1_calls: list[dict] = []
+
+    def fake_phase1(db, storage, *, sqlite_path=None, db_url=None, pg_password=None):
+        phase1_calls.append({"db_url": db_url, "pg_password": pg_password})
+
+    async def fake_phase2(storage, db, meanings_path):
+        return 0, []
+
+    async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *, benchmark=None):
+        return 0, [], []
+
+    async def fake_phase4(storage, db, sqlite_path=None, llm_model=None, *, benchmark=None):
+        return 0, []
+
+    env_patch = {
+        "BIRD_PG_HOST": "pghost",
+        "BIRD_PG_PORT": "5432",
+        "BIRD_PG_USER": "pguser",
+        "BIRD_PG_PASSWORD": "pgpass",
+    }
+    with patch.dict("os.environ", env_patch):
+        with patch.object(otf_cache, "_phase1_ingest", side_effect=fake_phase1):
+            with patch.object(otf_cache, "_phase2_overlay", side_effect=fake_phase2):
+                with patch.object(otf_cache, "_phase3_jsonb", side_effect=fake_phase3):
+                    with patch.object(otf_cache, "_phase4_dates", side_effect=fake_phase4):
+                        asyncio.run(otf_cache._build_async(
+                            build_dir=build_dir,
+                            db="alien",
+                            sqlite_path=None,
+                            meanings_path=tmp_path / "meanings.json",
+                            kb_rows=[],
+                            benchmark=b,
+                        ))
+
+    assert len(phase1_calls) == 1
+    url = phase1_calls[0]["db_url"]
+    pw = phase1_calls[0]["pg_password"]
+    assert url is not None
+    assert "pgpass" not in url, f"password leaked into db_url: {url!r}"
+    assert pw == "pgpass", f"pg_password not passed separately: {pw!r}"

@@ -446,9 +446,14 @@ async def _build_async(
         host = _os.environ.get("BIRD_PG_HOST", "localhost")
         port = _os.environ.get("BIRD_PG_PORT", "5432")
         user = _quote(_os.environ.get("BIRD_PG_USER", "bird_interact"), safe="")
-        password = _quote(_os.environ.get("BIRD_PG_PASSWORD", "bird_interact"), safe="")
-        db_url = f"postgresql://{user}:{password}@{host}:{port}/{db}"
-        await asyncio.to_thread(_phase1_ingest, db, build_dir, db_url=db_url)
+        password = _os.environ.get("BIRD_PG_PASSWORD", "bird_interact")
+        # Password excluded from the URL so it does not appear in subprocess
+        # command-line args (visible via ps) or persist in datasources YAML.
+        # Passed separately as PGPASSWORD env var instead.
+        db_url = f"postgresql://{user}@{host}:{port}/{db}"
+        await asyncio.to_thread(
+            _phase1_ingest, db, build_dir, db_url=db_url, pg_password=password
+        )
     else:
         if sqlite_path is None:
             raise ValueError("_build_async: sqlite_path is required for non-postgres benchmarks")

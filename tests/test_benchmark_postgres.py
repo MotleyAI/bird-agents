@@ -233,3 +233,123 @@ def test_load_benchmark_tasks_sqlite_livesqlbench_still_stamps_livesqlbench(tmp_
     )
     assert tasks
     assert tasks[0]["dataset"] == "livesqlbench"
+
+
+# ---------------------------------------------------------------------------
+# _pg_execute_submit_action — finished flag respects benchmark.one_shot
+# ---------------------------------------------------------------------------
+
+
+def _make_sample_status(dataset: str, db: str, sol_sql: list[str]):
+    """Minimal SampleStatus-like object with original_data for harness tests."""
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        original_data={
+            "dataset": dataset,
+            "selected_database": db,
+            "sol_sql": sol_sql,
+        }
+    )
+
+
+def test_pg_submit_one_shot_finishes_on_wrong_answer():
+    """livesqlbench_postgres (one_shot=True): finished=True even when p1=False."""
+    from unittest.mock import patch, MagicMock
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    ss = _make_sample_status("livesqlbench_postgres", "alien", ["SELECT 1"])
+
+    with patch("bird_interact_agents.harness.make_db_connection") as mock_conn_ctx:
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = [
+            ([(99,)], ["n"]),  # predicted — wrong value
+            ([(1,)], ["n"]),   # gold
+        ]
+        mock_conn_ctx.return_value.__enter__ = lambda s: mock_conn
+        mock_conn_ctx.return_value.__exit__ = MagicMock(return_value=False)
+
+        _, _, p1, _, finished = _pg_execute_submit_action("SELECT 99", ss, "/data")
+
+    assert not p1
+    assert finished, "one-shot benchmark must finish even on wrong answer"
+
+
+def test_pg_submit_interactive_does_not_finish_on_wrong_answer():
+    """mini_interact_postgres (one_shot=False): finished=False when p1=False."""
+    from unittest.mock import patch, MagicMock
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    ss = _make_sample_status("mini_interact_postgres", "alien", ["SELECT 1"])
+
+    with patch("bird_interact_agents.harness.make_db_connection") as mock_conn_ctx:
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = [
+            ([(99,)], ["n"]),  # predicted — wrong
+            ([(1,)], ["n"]),   # gold
+        ]
+        mock_conn_ctx.return_value.__enter__ = lambda s: mock_conn
+        mock_conn_ctx.return_value.__exit__ = MagicMock(return_value=False)
+
+        _, _, p1, _, finished = _pg_execute_submit_action("SELECT 99", ss, "/data")
+
+    assert not p1
+    assert not finished, "interactive benchmark must NOT finish on a wrong answer"
+
+
+def test_pg_submit_interactive_finishes_on_correct_answer():
+    """mini_interact_postgres: finished=True when p1=True."""
+    from unittest.mock import patch, MagicMock
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    ss = _make_sample_status("mini_interact_postgres", "alien", ["SELECT 1"])
+
+    with patch("bird_interact_agents.harness.make_db_connection") as mock_conn_ctx:
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = [
+            ([(1,)], ["n"]),  # predicted — correct
+            ([(1,)], ["n"]),  # gold
+        ]
+        mock_conn_ctx.return_value.__enter__ = lambda s: mock_conn
+        mock_conn_ctx.return_value.__exit__ = MagicMock(return_value=False)
+
+        _, _, p1, _, finished = _pg_execute_submit_action("SELECT 1", ss, "/data")
+
+    assert p1
+    assert finished, "interactive benchmark must finish when p1=True"
+
+
+def test_pg_submit_interactive_does_not_finish_on_sql_error():
+    """mini_interact_postgres: SQL error => finished=False so agent can retry."""
+    from unittest.mock import patch, MagicMock
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    ss = _make_sample_status("mini_interact_postgres", "alien", ["SELECT 1"])
+
+    with patch("bird_interact_agents.harness.make_db_connection") as mock_conn_ctx:
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = RuntimeError("syntax error")
+        mock_conn_ctx.return_value.__enter__ = lambda s: mock_conn
+        mock_conn_ctx.return_value.__exit__ = MagicMock(return_value=False)
+
+        obs, _, _, _, finished = _pg_execute_submit_action("BAD SQL", ss, "/data")
+
+    assert "error" in obs.lower()
+    assert not finished, "interactive benchmark must NOT finish on SQL execution error"
+
+
+def test_pg_submit_one_shot_finishes_on_sql_error():
+    """livesqlbench_postgres: SQL error => finished=True (task over regardless)."""
+    from unittest.mock import patch, MagicMock
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    ss = _make_sample_status("livesqlbench_postgres", "alien", ["SELECT 1"])
+
+    with patch("bird_interact_agents.harness.make_db_connection") as mock_conn_ctx:
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = RuntimeError("syntax error")
+        mock_conn_ctx.return_value.__enter__ = lambda s: mock_conn
+        mock_conn_ctx.return_value.__exit__ = MagicMock(return_value=False)
+
+        _, _, _, _, finished = _pg_execute_submit_action("BAD SQL", ss, "/data")
+
+    assert finished, "one-shot benchmark must finish even on SQL execution error"

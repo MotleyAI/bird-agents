@@ -53,16 +53,24 @@ def _wipe_db_from_storage(storage: Path, db: str) -> None:
         shutil.rmtree(models_dir)
 
 
-def _slayer_ingest(conn_str: str, storage: Path, *, db: str) -> None:
+def _slayer_ingest(
+    conn_str: str, storage: Path, *, db: str, pg_password: str | None = None
+) -> None:
     """Run ``slayer datasources create`` + ``slayer ingest`` for one DB.
 
     Extracted so tests can monkeypatch this without touching subprocess.
     ``conn_str`` is any valid SQLAlchemy connection string (sqlite or
     postgresql). ``db`` is the datasource name.
+
+    ``pg_password``, when provided, is passed as the ``PGPASSWORD`` environment
+    variable so it never appears in the subprocess command-line args (visible
+    via ``ps``) or in the persisted ``datasources/<db>.yaml``.
     """
     storage.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["SLAYER_STORAGE"] = str(storage)
+    if pg_password is not None:
+        env["PGPASSWORD"] = pg_password
 
     create = subprocess.run(
         ["slayer", "datasources", "create", conn_str, "--name", db],
@@ -107,12 +115,16 @@ def _phase1_ingest(
     *,
     sqlite_path: Optional[Path] = None,
     db_url: Optional[str] = None,
+    pg_password: str | None = None,
 ) -> None:
     """Phase 1: ingest a DB into SLayer storage.
 
     Exactly one of ``sqlite_path`` or ``db_url`` must be provided.
     ``sqlite_path`` is the legacy SQLite path; ``db_url`` is a full
     SQLAlchemy URL (e.g. ``postgresql://...``) used for postgres backends.
+
+    ``pg_password`` is forwarded to ``_slayer_ingest`` as the ``PGPASSWORD``
+    env var so the credential never appears in subprocess args or YAML files.
     """
     if db_url is not None:
         conn_str = db_url
@@ -123,7 +135,7 @@ def _phase1_ingest(
         conn_str = absolute_sqlite_url(sqlite_path)
     else:
         raise ValueError("_phase1_ingest: exactly one of sqlite_path or db_url must be provided")
-    _slayer_ingest(conn_str, storage, db=db)
+    _slayer_ingest(conn_str, storage, db=db, pg_password=pg_password)
 
 
 async def _phase2_overlay(

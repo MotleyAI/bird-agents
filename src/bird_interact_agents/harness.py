@@ -170,7 +170,9 @@ def _pg_execute_submit_action(
 
     pred_rows, pred_err = _run(sql)
     if pred_err:
-        return "SQL execution error", 0.0, False, False, True
+        # For interactive benchmarks (one_shot=False) an execution error lets
+        # the agent retry; for one-shot benchmarks the task is over.
+        return "SQL execution error", 0.0, False, False, benchmark.one_shot
 
     # Compare against each gold SQL; p1=True if any gold matches
     p1 = False
@@ -185,10 +187,11 @@ def _pg_execute_submit_action(
 
     reward = 1.0 if p1 else 0.0
     obs = f"Submitted. Result match: {p1}"
-    # p2=False: livesqlbench_postgres is one-shot so there is no second-pass
-    # grading metric.  Future interactive postgres benchmarks will need a
-    # separate implementation that computes p2 meaningfully.
-    return obs, reward, p1, False, True
+    # p2=False: no second-pass grading metric for postgres benchmarks yet.
+    # finished: one-shot benchmarks always end after one submission; interactive
+    # ones only end when the agent's answer is correct.
+    finished = benchmark.one_shot or p1
+    return obs, reward, p1, False, finished
 
 
 def execute_env_action(

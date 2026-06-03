@@ -80,7 +80,7 @@ def mock_orchestrator(monkeypatch):
     layout under the build dir. Returns the call-counter dict."""
     calls = {"phase1": 0, "phase2": 0, "phase3": 0, "phase4": 0}
 
-    def fake_phase1(db, storage, *, sqlite_path=None, db_url=None):
+    def fake_phase1(db, storage, *, sqlite_path=None, db_url=None, pg_password=None):
         calls["phase1"] += 1
         models_dir = Path(storage) / "models" / db
         models_dir.mkdir(parents=True, exist_ok=True)
@@ -457,7 +457,7 @@ async def test_concurrent_calls_for_same_db_build_once(
     cache_root = tmp_path / "cache"
     calls = {"phase1": 0}
 
-    def fake_phase1(db, storage, *, sqlite_path=None, db_url=None):
+    def fake_phase1(db, storage, *, sqlite_path=None, db_url=None, pg_password=None):
         calls["phase1"] += 1
         import time as _time
         _time.sleep(0.05)
