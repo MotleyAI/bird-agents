@@ -489,7 +489,7 @@ def _fill_deterministic_fields(
         uqa = task_data.get("user_query_ambiguity", {})
         critical = uqa.get("critical_ambiguity", []) if isinstance(uqa, dict) else []
         if critical:
-            existing_terms = {mt.term for mt in updated.masked_terms}
+            existing_terms = {mt.term for mt in updated.masked_terms if mt.is_mask}
             for item in critical:
                 term = item.get("term", "")
                 if not term or term in existing_terms:

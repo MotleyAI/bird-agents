@@ -630,6 +630,44 @@ def test_fill_deterministic_fields_string_metadata_evidence_wrapped_in_list():
     assert mt.metadata_evidence == ["KB 3"]
 
 
+def test_fill_deterministic_fields_is_mask_false_same_term_does_not_block_authoritative_entry():
+    """If the agent submitted an is_mask=False entry with the same term as a critical_ambiguity
+    item, the harness must still insert the authoritative is_mask=True entry — deduplicate only
+    against existing is_mask=True entries."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    base = _minimal_annotation()
+    # Agent found [MASKED_TIER] as a schema-linking ambiguity (is_mask=False).
+    base["masked_terms"] = [
+        {"term": "[MASKED_TIER]", "type": "schema_linking_ambiguity", "is_mask": False, "metadata_evidence": []}
+    ]
+    ann = TaskAnnotation.model_validate(base)
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {
+                    "term": "[MASKED_TIER]",
+                    "type": "knowledge_linking_ambiguity",
+                    "is_mask": True,
+                    "metadata_evidence": "KB 3",
+                }
+            ],
+            "non_critical_ambiguity": [],
+        },
+        "knowledge_ambiguity": [],
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini_interact")
+
+    mask_true_entries = [mt for mt in filled.masked_terms if mt.term == "[MASKED_TIER]" and mt.is_mask]
+    assert len(mask_true_entries) == 1, (
+        "Authoritative is_mask=True entry must be present even when agent submitted "
+        "an is_mask=False entry with the same term"
+    )
+
+
 def test_fill_deterministic_fields_no_duplicate_masked_terms():
     """If critical_ambiguity contains a term already in masked_terms, it must NOT be duplicated."""
     from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
