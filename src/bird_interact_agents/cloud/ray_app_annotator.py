@@ -79,9 +79,9 @@ def _run_one_task(
 
     # Skip check: both stable blobs must be present to skip.
     if not override:
+        ann_blob = _gcs.stable_task_annotation_blob(benchmark, db, instance_id)
+        var_blob = _gcs.stable_audited_gold_variants_blob(benchmark, db, instance_id)
         try:
-            ann_blob = _gcs.stable_task_annotation_blob(benchmark, db, instance_id)
-            var_blob = _gcs.stable_audited_gold_variants_blob(benchmark, db, instance_id)
             both_exist = (
                 _gcs.blob_exists(ann_blob, client=client)
                 and _gcs.blob_exists(var_blob, client=client)
@@ -93,7 +93,23 @@ def _run_one_task(
             )
             both_exist = False
         if both_exist:
-            logger.info("[%s] skipping — both stable blobs exist", instance_id)
+            logger.info(
+                "[%s] skipping — both stable blobs exist; copying to run-scoped paths",
+                instance_id,
+            )
+            try:
+                bucket = client.bucket(_gcs.BUCKET_NAME)
+                for src_name, dst_name in (
+                    (ann_blob, _gcs.task_annotation_blob(run_id, instance_id)),
+                    (var_blob, _gcs.audited_gold_variants_blob(run_id, instance_id)),
+                ):
+                    data = bucket.blob(src_name).download_as_bytes()
+                    bucket.blob(dst_name).upload_from_string(data)
+            except Exception as exc:
+                logger.warning(
+                    "[%s] stable→run-scoped copy failed (%s); fetch may be incomplete",
+                    instance_id, exc,
+                )
             attempt_row = {
                 "instance_id": instance_id,
                 "status": "skipped",

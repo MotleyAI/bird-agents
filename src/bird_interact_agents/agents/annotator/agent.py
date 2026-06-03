@@ -161,6 +161,20 @@ async def submit_annotation(args: dict) -> dict:
     except Exception as e:
         return _text(f"Error parsing task_annotation_json: {e}")
 
+    task_data = _ctx.get("task_data") or {}
+    expected_iid = task_data.get("instance_id")
+    expected_db = task_data.get("selected_database")
+    if expected_iid and task_annotation.instance_id != expected_iid:
+        return _text(
+            f"Validation error: task_annotation instance_id must be "
+            f"{expected_iid!r}, got {task_annotation.instance_id!r}"
+        )
+    if expected_db and task_annotation.selected_database != expected_db:
+        return _text(
+            f"Validation error: task_annotation selected_database must be "
+            f"{expected_db!r}, got {task_annotation.selected_database!r}"
+        )
+
     try:
         audited_gold_variants: list[dict] = json.loads(av_json)
         if not isinstance(audited_gold_variants, list):

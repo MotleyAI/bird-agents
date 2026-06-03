@@ -119,6 +119,28 @@ def test_skip_when_both_stable_blobs_exist(fake_gcs_bucket, monkeypatch):
     assert agent_calls == []  # was skipped
 
 
+def test_skip_copies_stable_blobs_to_run_scoped_paths(fake_gcs_bucket, monkeypatch):
+    """On skip, both stable blobs must be copied to the run-scoped row paths
+    so that `fetch` can download annotation data for skipped tasks."""
+    from bird_interact_agents.cloud import gcs
+    from bird_interact_agents.cloud import ray_app_annotator
+
+    client, store = fake_gcs_bucket
+    ann_content = b'{"instance_id":"shop_1"}'
+    var_content = b'{"variant_id":"primary"}\n'
+    store[gcs.stable_task_annotation_blob("mini_interact", "shop", "shop_1")] = ann_content
+    store[gcs.stable_audited_gold_variants_blob("mini_interact", "shop", "shop_1")] = var_content
+    monkeypatch.setattr(ray_app_annotator, "_run_agent", lambda *a, **kw: _minimal_annotator_result())
+
+    ray_app_annotator._run_one_task(
+        task_data=_task_data(), cfg=_cfg(), run_id="r-1",
+        data_path_base="/tmp/data", gcs_client=client,
+    )
+
+    assert store.get(gcs.task_annotation_blob("r-1", "shop_1")) == ann_content
+    assert store.get(gcs.audited_gold_variants_blob("r-1", "shop_1")) == var_content
+
+
 def test_skip_writes_attempt_row_with_skipped_status(fake_gcs_bucket, monkeypatch):
     from bird_interact_agents.cloud import gcs
     from bird_interact_agents.cloud import ray_app_annotator

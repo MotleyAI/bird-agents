@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional
 
 from bird_interact_agents import paths
-from bird_interact_agents.benchmark import benchmark_names, get_benchmark
+from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.eval.annotation_io import (
     read_submission_annotation,
     read_task_annotation,
@@ -64,9 +64,10 @@ PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
 
 
 def _benchmark_task_jsonl_name(benchmark: str) -> str:
-    if benchmark in set(benchmark_names()):
+    try:
         return get_benchmark(benchmark).data_file
-    return f"{benchmark}.jsonl"
+    except ValueError:
+        return f"{benchmark}.jsonl"
 
 
 def _masked_terms_from(task_row: dict) -> list[MaskedTerm]:

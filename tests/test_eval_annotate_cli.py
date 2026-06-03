@@ -82,6 +82,18 @@ def test_task_annotation_skeleton_leaves_sentinels(tmp_path):
     assert ann.evaluator_prompt is None
 
 
+def test_task_annotation_alias_benchmark_uses_canonical_jsonl_name():
+    """``benchmark="mini-interact"`` (dash alias) must resolve to the
+    canonical ``"mini_interact.jsonl"`` JSONL name, not the literal
+    ``"mini-interact.jsonl"`` fallback."""
+    from bird_interact_agents.eval.annotate import generate_task_annotation
+
+    ann = generate_task_annotation(
+        task_row=SAMPLE_TASK_ROW, benchmark="mini-interact",
+    )
+    assert ann.provenance.task_jsonl_path == "mini_interact.jsonl"
+
+
 def test_submission_annotation_skeleton_fills_from_trajectory(tmp_path):
     from bird_interact_agents.eval.annotate import (
         generate_submission_annotation,

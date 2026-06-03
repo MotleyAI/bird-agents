@@ -292,6 +292,61 @@ async def test_submit_annotation_parses_audited_gold_variants():
 
 
 @pytest.mark.asyncio
+async def test_submit_annotation_wrong_instance_id_returns_error():
+    """A TaskAnnotation with an instance_id that doesn't match the current
+    task context must return an error and NOT set _submission_done."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": _valid_task_annotation_json("alien_99"),
+        "audited_gold_variants_json": "[]",
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "validation" in text or "instance_id" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_wrong_database_returns_error():
+    """A TaskAnnotation with a selected_database that doesn't match the
+    current task context must return an error and NOT set _submission_done."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    # Build a valid annotation JSON but swap the database to "alien".
+    wrong_db = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "alien",  # wrong DB
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-02",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "r",
+            "evidence_sources_consulted": [],
+        },
+        "original_gold_is_correct": True,
+        "gold_variants": [],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": wrong_db,
+        "audited_gold_variants_json": "[]",
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "validation" in text or "selected_database" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
 async def test_submit_annotation_variant_missing_required_field_returns_error():
     """A variant dict that omits a required field (e.g. variant_id) must
     return an error and NOT set _submission_done — so the malformed row
