@@ -697,7 +697,7 @@ async def test_otf_encode_real_resolver_passes_benchmark_to_paths(monkeypatch, t
 
     async def fake_ensure_db_reference(db, *, reference_root, cache_root,
                                         mini_interact_root, build_encoder,
-                                        force=False, db_root=None):
+                                        force=False, db_root=None, benchmark=None):
         from bird_interact_agents.slayer_otf.reference_build import ReferenceEntry
         Path(reference_root).mkdir(parents=True, exist_ok=True)
         (Path(reference_root) / db).mkdir(parents=True, exist_ok=True)

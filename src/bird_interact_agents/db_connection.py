@@ -120,10 +120,16 @@ class PostgresDbConnection:
 
         cur = self._conn.cursor()
         if self._read_only:
-            # READ ONLY is enforced server-side: DML against permanent tables
-            # is rejected before it can run, preventing a multi-statement SQL
-            # with an embedded COMMIT from silently persisting writes before
-            # the ROLLBACK fires.  Temp-table writes are still permitted.
+            # BEGIN READ ONLY rejects DML against permanent tables server-side.
+            # It does NOT prevent a multi-statement string with an embedded
+            # COMMIT from terminating the transaction early — psycopg2's simple
+            # protocol executes the whole string in one round-trip, so an
+            # embedded COMMIT commits whatever preceded it before the ROLLBACK
+            # in the finally block fires.  The assumption is that benchmark SQL
+            # never contains embedded transaction control; enforcement against
+            # permanent writes comes solely from the READ ONLY mode.
+            # Temp-table writes (CREATE TEMP TABLE, INSERT INTO temp …) are
+            # still permitted by Postgres even in a READ ONLY transaction.
             cur.execute("BEGIN READ ONLY")
         try:
             cur.execute(sql)

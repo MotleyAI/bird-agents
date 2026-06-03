@@ -185,6 +185,9 @@ def _pg_execute_submit_action(
 
     reward = 1.0 if p1 else 0.0
     obs = f"Submitted. Result match: {p1}"
+    # p2=False: livesqlbench_postgres is one-shot so there is no second-pass
+    # grading metric.  Future interactive postgres benchmarks will need a
+    # separate implementation that computes p2 meaningfully.
     return obs, reward, p1, False, True
 
 
