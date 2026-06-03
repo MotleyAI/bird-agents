@@ -919,6 +919,65 @@ async def test_submit_annotation_audited_variants_without_gold_variants_rejected
 
 
 @pytest.mark.asyncio
+async def test_submit_annotation_variant_non_boolean_primary_rejected():
+    """primary must be a JSON boolean; integer 1 or string 'true' must be rejected
+    to avoid silent truthy-but-wrong routing in the grader."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation_json = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-02",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "r",
+            "evidence_sources_consulted": [],
+        },
+        "original_gold_is_correct": False,
+        "gold_variants": [{
+            "variant_id": "primary",
+            "interpretation": "the canonical reading",
+            "primary": True,
+            "anchored_in": [],
+            "audited_gold_ref": {
+                "file": "__HARNESS_FILLS__",
+                "instance_id": "shop_1",
+                "variant_id": "primary",
+            },
+        }],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
+    # Use integer 1 instead of boolean true — must be rejected.
+    variant_int_primary = json.dumps([
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "variant_id": "primary",
+            "primary": 1,   # integer, not boolean
+            "benchmark": "mini_interact",
+            "audit_status": "clean",
+            "audited_sol_sql": ["SELECT 1;"],
+        }
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation_json,
+        "audited_gold_variants_json": variant_int_primary,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "boolean" in text or "primary" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
 async def test_submit_annotation_audited_variants_no_primary_rejected():
     """original_gold_is_correct=False + non-empty audited_gold_variants all with primary=False
     must be rejected — the grader's N2 tier always needs exactly one primary audited variant."""

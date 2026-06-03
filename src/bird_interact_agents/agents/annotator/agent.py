@@ -232,6 +232,13 @@ async def submit_annotation(args: dict) -> dict:
                 f"Error: audited_gold_variants[{i}].audit_status must be one of "
                 f"{sorted(_VALID_AUDIT_STATUSES)}, got {variant.get('audit_status')!r}"
             )
+        _primary_val = variant.get("primary")
+        if _primary_val is not None and not isinstance(_primary_val, bool):
+            return _text(
+                f"Error: audited_gold_variants[{i}].primary must be a boolean "
+                f"(true or false), got {type(_primary_val).__name__!r}. "
+                f"Use JSON true/false, not 1/0 or strings."
+            )
 
     if task_annotation.original_gold_is_correct and audited_gold_variants:
         return _text(
@@ -488,9 +495,12 @@ def _fill_deterministic_fields(
                 if not term or term in existing_terms:
                     continue
                 raw_evidence = item.get("metadata_evidence")
-                evidence: list = (
-                    raw_evidence if isinstance(raw_evidence, list) else []
-                )
+                if isinstance(raw_evidence, list):
+                    evidence: list = raw_evidence
+                elif isinstance(raw_evidence, str) and raw_evidence:
+                    evidence = [raw_evidence]
+                else:
+                    evidence = []
                 updated.masked_terms = list(updated.masked_terms) + [
                     MaskedTerm(
                         term=term,

@@ -601,6 +601,35 @@ def test_fill_deterministic_fields_merges_masked_terms_from_critical_ambiguity()
     assert terms_by_name["area"].is_mask is False
 
 
+def test_fill_deterministic_fields_string_metadata_evidence_wrapped_in_list():
+    """metadata_evidence that is a string (e.g. 'KB 3') must be wrapped in a
+    single-element list, not silently dropped."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    ann = TaskAnnotation.model_validate(_minimal_annotation())
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {
+                    "term": "[MASKED_TIER]",
+                    "type": "knowledge_linking_ambiguity",
+                    "is_mask": True,
+                    "metadata_evidence": "KB 3",
+                }
+            ],
+            "non_critical_ambiguity": [],
+        },
+        "knowledge_ambiguity": [],
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini_interact")
+
+    mt = next(mt for mt in filled.masked_terms if mt.term == "[MASKED_TIER]")
+    assert mt.metadata_evidence == ["KB 3"]
+
+
 def test_fill_deterministic_fields_no_duplicate_masked_terms():
     """If critical_ambiguity contains a term already in masked_terms, it must NOT be duplicated."""
     from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
