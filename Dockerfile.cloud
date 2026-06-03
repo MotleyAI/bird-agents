@@ -80,5 +80,14 @@ RUN uv pip install --no-deps -e .
 # code-like, so they stay baked (unlike the raw dataset/gold).
 COPY --from=audited-gold . /app/bird-interact-agents/audited_gold/
 
+# DEV-1515: `annotations/` lives in the main checkout (gitignored, same
+# posture as audited_gold/) — pulled in via BuildKit's
+# `--build-context annotations=<paths.annotations_root()>` arg set by
+# `image.build_and_push` so the build runs from any worktree. The grader
+# reads task + submission annotations from this dir via
+# `paths.annotations_root()`, which resolves to `/app/bird-interact-agents/annotations/`
+# inside the worker (via git's `--git-common-dir`).
+COPY --from=annotations . /app/bird-interact-agents/annotations/
+
 ENV BIRD_RESULTS_ROOT=/tmp/results \
     BIRD_INTERACT_AGENTS_CLOUD=1

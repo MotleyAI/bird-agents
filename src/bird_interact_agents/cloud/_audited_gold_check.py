@@ -75,6 +75,11 @@ def _load_single_file_audit_index(
     if not path.exists():
         return None
     out: dict[str, tuple[str, bool, str, str]] = {}
+    # Track whether each iid's current row came from a primary-tagged
+    # source so we can prefer ``primary=True`` over alternates when
+    # multi-variant rows share an instance_id (Codex r9). Mirrors
+    # ``harness._load_single_file_audited_rows``.
+    primary_seen: dict[str, bool] = {}
     with path.open() as f:
         for line in f:
             line = line.strip()
@@ -85,13 +90,25 @@ def _load_single_file_audit_index(
             except json.JSONDecodeError:
                 continue
             iid = row.get("instance_id")
+            if not iid:
+                continue
+            is_primary = row.get("primary") is True
+            existing_is_primary = primary_seen.get(iid, False)
+            if iid in out and existing_is_primary and not is_primary:
+                # Already have the primary recorded — never let an
+                # alternate stomp on it.
+                continue
+            if iid in out and not existing_is_primary and not is_primary:
+                # Two non-primary alternates — keep the first (no
+                # ordering preference).
+                continue
             status = row.get("audit_status") or "missing-row"
             audited = row.get("audited_sol_sql")
             has_audited_sql = isinstance(audited, list) and bool(audited)
             row_db = row.get("selected_database") or ""
             row_benchmark = row.get("benchmark") or ""
-            if iid:
-                out[iid] = (status, has_audited_sql, row_db, row_benchmark)
+            out[iid] = (status, has_audited_sql, row_db, row_benchmark)
+            primary_seen[iid] = is_primary
     return out
 
 

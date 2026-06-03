@@ -1,18 +1,20 @@
-"""DEV-1510 contract tests for `audited_gold/livesqlbench_audited.jsonl`.
+"""DEV-1510/DEV-1515 contract tests for
+`audited_gold/livesqlbench_audited.jsonl`.
 
-The file is the deliverable of this issue: one row per livesqlbench museum
-SELECT task (museum_1..10), each row attaching to the canonical gold for
+The file is the deliverable of these issues: one row per audited
+livesqlbench SELECT task, each row attaching to the canonical gold for
 that instance. Tests here pin three layers of contract:
 
 * **Schema** — every row parses, has the required keys + types, and is
-  unique by `instance_id`. Coverage = exactly {museum_1..10}; the 5
-  Management tasks (museum_M_1..5) are explicitly out of scope per the
-  Linear issue.
+  unique by `(instance_id, variant_id)`. Per DB, coverage is the
+  set in `EXPECTED_INSTANCE_IDS_BY_DB` (the SELECT tasks; the M-suffixed
+  Management tasks are deferred per the shared contract's edge case).
 * **Status-claim consistency** — `clean` rows have `audited_sol_sql ==
-  original_sol_sql` and `changes == []`; `edited` / `unrecoverable` have
-  `audited_sol_sql != original_sol_sql` and at least one change entry
-  carrying `clause_kind`, `original`, `replacement`, `why_unjustified`,
-  and a non-empty `justified_by` list.
+  original_sol_sql` and `changes == []`; `edited` rows have
+  `audited_sol_sql != original_sol_sql` and at least one change entry.
+  `unrecoverable` rows have non-empty changes; they DIFFER from the
+  original unless the change is the management-category deferral
+  (`clause_kind="management_category"`), per the shared contract.
 * **Pinned decisions** — museum_7 and museum_9 are the issue's worked
   examples, locked in the spec:
   - museum_7 (`edited`): KB-canonical rewrite using a NULL-safe
@@ -24,8 +26,8 @@ that instance. Tests here pin three layers of contract:
     + the schema's single-hop declared FK. `reasoning_summary` documents
     the KB-alone underspec AND mentions both join chains by name.
 
-Tests that need the real upstream data (`museum_kb.jsonl`,
-`museum_column_meaning_base.json`, the gated gold sidecar) skip when the
+Tests that need the real upstream data (`<db>_kb.jsonl`,
+`<db>_column_meaning_base.json`, the gated gold sidecar) skip when the
 livesqlbench data root is absent (CI doesn't ship the gitignored data).
 """
 
@@ -34,7 +36,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Iterator
+from typing import Iterable, Iterator
 
 import pytest
 
@@ -46,8 +48,16 @@ from bird_interact_agents import paths
 # ---------------------------------------------------------------------------
 
 
-EXPECTED_INSTANCE_IDS = {f"museum_{i}" for i in range(1, 11)}
-"""The 10 museum SELECT tasks. museum_M_1..5 (management) are out of scope."""
+EXPECTED_INSTANCE_IDS_BY_DB: dict[str, set[str]] = {
+    "museum": {f"museum_{i}" for i in range(1, 11)},
+    "credit": {f"credit_{i}" for i in range(1, 11)},
+    "mental": {f"mental_{i}" for i in range(1, 11)},
+}
+"""Per-DB SELECT-task coverage. The M-suffixed management tasks are
+deferred per the shared contract's edge case; museum omits them
+entirely, credit/mental ship them as `unrecoverable` with
+`clause_kind="management_category"`. Both shapes are accepted by
+``test_audit_rows_cover_select_tasks_per_db``."""
 
 REQUIRED_ROW_KEYS = {
     "instance_id",
@@ -113,7 +123,19 @@ def _iter_audit_rows() -> Iterator[dict]:
 
 
 def _load_audit_rows() -> dict[str, dict]:
-    return {r["instance_id"]: r for r in _iter_audit_rows()}
+    """Return PRIMARY audit rows keyed by instance_id.
+
+    Multi-variant pattern (DEV-1515): a task may carry one primary row plus
+    N non-primary alternates sharing the same instance_id. Tests that pin a
+    specific reading (e.g. museum_7 edited, museum_9 clean) should reach the
+    primary; iterating tests (citation resolvability, status consistency)
+    should use ``_iter_audit_rows`` to see every variant.
+    """
+    out: dict[str, dict] = {}
+    for r in _iter_audit_rows():
+        if r.get("primary", True):
+            out[r["instance_id"]] = r
+    return out
 
 
 def _livesqlbench_data_or_skip() -> Path:
@@ -134,11 +156,11 @@ def _livesqlbench_data_or_skip() -> Path:
     return root
 
 
-def _load_museum_kb_ids() -> set[int]:
+def _load_kb_ids(db: str) -> set[int]:
     root = _livesqlbench_data_or_skip()
-    kb_path = root / "museum" / "museum_kb.jsonl"
+    kb_path = root / db / f"{db}_kb.jsonl"
     if not kb_path.exists():
-        pytest.skip(f"museum_kb.jsonl missing at {kb_path}")
+        pytest.skip(f"{db}_kb.jsonl missing at {kb_path}")
     ids: set[int] = set()
     with kb_path.open() as f:
         for line in f:
@@ -151,11 +173,11 @@ def _load_museum_kb_ids() -> set[int]:
     return ids
 
 
-def _load_museum_column_meaning_keys() -> set[str]:
+def _load_column_meaning_keys(db: str) -> set[str]:
     root = _livesqlbench_data_or_skip()
-    cm_path = root / "museum" / "museum_column_meaning_base.json"
+    cm_path = root / db / f"{db}_column_meaning_base.json"
     if not cm_path.exists():
-        pytest.skip(f"museum_column_meaning_base.json missing at {cm_path}")
+        pytest.skip(f"{db}_column_meaning_base.json missing at {cm_path}")
     with cm_path.open() as f:
         return set(json.load(f).keys())
 
@@ -261,15 +283,39 @@ def test_audit_file_exists_when_other_audits_are_present():
     )
 
 
-def test_audit_rows_cover_at_least_museum_1_through_10():
-    """museum_1..10 must be present (the DEV-1510 deliverable). The file
-    may additionally cover other DBs (credit, mental, ...) added by later
-    audit work — that is not an error."""
-    rows = _load_audit_rows()
-    missing = EXPECTED_INSTANCE_IDS - rows.keys()
-    assert not missing, (
-        f"audit must cover museum_1..10; missing={sorted(missing)}"
-    )
+def test_audit_rows_cover_select_tasks_per_db():
+    """For every DB that has ANY audited row in the file, every SELECT
+    task (1..10) must be covered. M-suffixed Management tasks are NOT
+    required (deferred per shared contract); per-DB extras outside the
+    SELECT set are allowed only when they are deferred management rows
+    (`audit_status=unrecoverable` with `clause_kind="management_category"`)."""
+    primary_rows = _load_audit_rows()
+    by_db: dict[str, set[str]] = {}
+    for iid, row in primary_rows.items():
+        by_db.setdefault(row["selected_database"], set()).add(iid)
+    for db, ids in by_db.items():
+        expected = EXPECTED_INSTANCE_IDS_BY_DB.get(db)
+        assert expected is not None, (
+            f"audit file contains DB {db!r} without a coverage entry in "
+            f"EXPECTED_INSTANCE_IDS_BY_DB — add one when authoring a new DB"
+        )
+        missing = expected - ids
+        assert not missing, (
+            f"{db}: missing SELECT-task audits {sorted(missing)}"
+        )
+        # Extras that aren't in EXPECTED are tolerated only if they're
+        # management deferrals (or any non-primary alternate that the
+        # auditor explicitly carries).
+        extras = ids - expected
+        for iid in sorted(extras):
+            row = primary_rows[iid]
+            cks = {c.get("clause_kind") for c in row.get("changes", [])}
+            assert row["audit_status"] == "unrecoverable" and (
+                "management_category" in cks
+            ), (
+                f"{db}: extra audited instance {iid!r} is not in the SELECT "
+                f"coverage set and is not a management-category deferral"
+            )
 
 
 def test_audit_rows_have_required_keys_and_types():
@@ -304,17 +350,21 @@ def test_audit_rows_use_valid_audit_status():
 
 
 def test_audit_rows_tag_benchmark_and_database():
+    """Every row carries `benchmark=livesqlbench` and a `selected_database`
+    in EXPECTED_INSTANCE_IDS_BY_DB; the `instance_id` prefix matches the
+    `selected_database` (so a museum row can't claim DB=credit by typo)."""
     for row in _iter_audit_rows():
         iid = row["instance_id"]
         assert row["benchmark"] == "livesqlbench", (
             f"{iid}: benchmark={row['benchmark']!r} (expected 'livesqlbench')"
         )
-        # selected_database must match the DB prefix of the instance_id
-        # (e.g. museum_1 → museum, credit_M_2 → credit).
-        expected_db = iid.split("_")[0]
-        assert row["selected_database"] == expected_db, (
-            f"{iid}: selected_database={row['selected_database']!r} "
-            f"(expected {expected_db!r})"
+        db = row["selected_database"]
+        assert db in EXPECTED_INSTANCE_IDS_BY_DB, (
+            f"{iid}: selected_database={db!r} not in "
+            f"{sorted(EXPECTED_INSTANCE_IDS_BY_DB.keys())}"
+        )
+        assert iid.startswith(f"{db}_"), (
+            f"{iid}: instance_id prefix does not match selected_database={db!r}"
         )
 
 
@@ -340,16 +390,84 @@ def test_audit_rows_audited_at_is_iso8601():
         )
 
 
-def test_no_duplicate_instance_ids():
-    """`latest-wins` is the dedup contract for the overlay; the file MUST
-    not ship with duplicates because there's no canonical order."""
-    seen = []
-    for row in _iter_audit_rows():
-        seen.append(row["instance_id"])
-    assert len(seen) == len(set(seen)), (
-        f"duplicate instance_ids in audit file: "
-        f"{[i for i in seen if seen.count(i) > 1]}"
+def _check_unique_variant_pairs_and_primary_count(
+    rows: Iterable[dict],
+) -> tuple[list[tuple[str, str]], dict[str, int]]:
+    """Pure helper used by both the live-data contract test below and
+    the synthetic regression test for the zero-primary edge case.
+    Returns ``(dupes, bad_primary_counts)`` — both empty when the audit
+    set satisfies the (instance_id, variant_id) + exactly-one-primary
+    contract."""
+    from collections import Counter
+
+    seen_pairs: list[tuple[str, str]] = []
+    all_iids: set[str] = set()
+    primaries_per_iid: dict[str, int] = {}
+    for row in rows:
+        iid = row["instance_id"]
+        all_iids.add(iid)
+        vid = row.get("variant_id", "primary")
+        seen_pairs.append((iid, vid))
+        if row.get("primary", True):
+            primaries_per_iid[iid] = primaries_per_iid.get(iid, 0) + 1
+    dupes = [p for p, n in Counter(seen_pairs).items() if n > 1]
+    # Iterate every seen iid (not just those that recorded a primary)
+    # so zero-primary instances are flagged — building this dict from
+    # ``primaries_per_iid.items()`` alone would silently skip them.
+    bad_primary_counts = {
+        iid: primaries_per_iid.get(iid, 0)
+        for iid in all_iids
+        if primaries_per_iid.get(iid, 0) != 1
+    }
+    return dupes, bad_primary_counts
+
+
+def test_no_duplicate_instance_id_variant_pairs():
+    """The dedup contract is on the (instance_id, variant_id) pair, not on
+    instance_id alone — DEV-1515 multi-variant audits ship N rows per task
+    (one primary + alternates). Also: each instance_id MUST have exactly one
+    primary row."""
+    dupes, bad_primary_counts = (
+        _check_unique_variant_pairs_and_primary_count(_iter_audit_rows())
     )
+    assert not dupes, (
+        f"duplicate (instance_id, variant_id) pairs in audit file: {dupes}"
+    )
+    assert not bad_primary_counts, (
+        f"each instance_id must have exactly one primary row; "
+        f"got counts: {bad_primary_counts}"
+    )
+
+
+def test_zero_primary_variants_are_detected():
+    """Regression: an iid carrying ONLY non-primary variants used to
+    slip through the over-primaries check because the dict was built
+    from ``primaries_per_iid.items()``, which never includes
+    zero-primary iids. The fixed check iterates all seen iids."""
+    rows = [
+        {"instance_id": "x_1", "variant_id": "alt_a", "primary": False},
+        {"instance_id": "x_1", "variant_id": "alt_b", "primary": False},
+    ]
+    dupes, bad_primary_counts = (
+        _check_unique_variant_pairs_and_primary_count(rows)
+    )
+    assert dupes == []
+    assert bad_primary_counts == {"x_1": 0}, (
+        "zero-primary iid must surface in bad_primary_counts with count 0"
+    )
+
+
+def test_two_primary_variants_are_detected():
+    """Companion: an iid with TWO primaries also violates the contract."""
+    rows = [
+        {"instance_id": "y_1", "variant_id": "a", "primary": True},
+        {"instance_id": "y_1", "variant_id": "b", "primary": True},
+    ]
+    dupes, bad_primary_counts = (
+        _check_unique_variant_pairs_and_primary_count(rows)
+    )
+    assert dupes == []
+    assert bad_primary_counts == {"y_1": 2}
 
 
 # ---------------------------------------------------------------------------
@@ -372,15 +490,27 @@ def test_clean_rows_have_audited_equal_original_and_no_changes():
 
 
 def test_edited_and_unrecoverable_rows_have_changes_and_differ():
+    """`edited` rows MUST differ from the original (that's the whole point
+    of the rewrite). `unrecoverable` rows usually differ — they fall back
+    to the natural reading of the user query — but the shared contract
+    carves out one exception: management-category tasks
+    (`clause_kind="management_category"`) are deferred from the
+    row-count audit and ship with gold copied verbatim into
+    `audited_sol_sql`. Both shapes must still have non-empty changes."""
     for row in _iter_audit_rows():
         if row["audit_status"] not in {"edited", "unrecoverable"}:
             continue
         iid = row["instance_id"]
-        # edited rows must have changed SQL; unrecoverable rows (e.g.
-        # management-category tasks copied verbatim) need not differ.
-        if row["audit_status"] == "edited":
+        clause_kinds = {c.get("clause_kind") for c in row.get("changes", [])}
+        is_management_deferral = (
+            row["audit_status"] == "unrecoverable"
+            and "management_category" in clause_kinds
+        )
+        if not is_management_deferral:
             assert row["audited_sol_sql"] != row["original_sol_sql"], (
-                f"{iid}: edited row must differ from original_sol_sql"
+                f"{iid}: {row['audit_status']} row must differ from "
+                f"original_sol_sql (unless it's a management-category "
+                f"deferral)"
             )
         assert row["changes"], (
             f"{iid}: {row['audit_status']} row must have non-empty changes"
@@ -392,19 +522,16 @@ def test_edited_and_unrecoverable_rows_have_changes_and_differ():
             )
             assert isinstance(change["clause_kind"], str) and change["clause_kind"], iid
             assert isinstance(change["why_unjustified"], str) and change["why_unjustified"], iid
-            # unrecoverable rows with management_category clause kind have
-            # no KB citation (reason is categorical); all other changes must
+            assert isinstance(change["justified_by"], list), (
+                f"{iid}: changes[{j}].justified_by must be a list"
+            )
+            # Management-category deferrals carry no citations (nothing
+            # to cite — the gold is verbatim, the deferral itself is
+            # documented in `why_unjustified`). Every OTHER change must
             # cite at least one source.
-            if not (
-                row["audit_status"] == "unrecoverable"
-                and change.get("clause_kind") == "management_category"
-            ):
-                assert isinstance(change["justified_by"], list) and change["justified_by"], (
+            if change.get("clause_kind") != "management_category":
+                assert change["justified_by"], (
                     f"{iid}: changes[{j}].justified_by must be a non-empty list"
-                )
-            else:
-                assert isinstance(change["justified_by"], list), (
-                    f"{iid}: changes[{j}].justified_by must be a list"
                 )
             # Every justified_by token must look like a citation. (The
             # resolvability tests below confirm the tokens actually resolve.)
@@ -549,21 +676,70 @@ def test_museum_7_is_edited_with_null_safe_three_of_four_predicate():
     )
 
 
-def test_museum_9_is_in_audit_file():
-    """museum_9 must be present in the audit file.
-
-    Originally a DEV-1510 locked decision (clean, single-hop FK). Re-audited
-    in DEV-1515 session-4 as a multi-variant source_conflict (conditionassessments
-    join path vs. the original gold's LightReadRefObserved path). The minimal
-    contract that survives: the row exists and has non-empty changes."""
+def test_museum_9_is_clean_with_column_meaning_justification():
+    """DEV-1510 locked decision: museum_9 gold uses
+    ConditionAssessments.LightReadRefObserved (single-hop declared FK with
+    column-meaning text 'Associates the assessment with relevant light
+    data'). Audit status is 'clean'; reasoning_summary must name BOTH
+    candidate join chains (so the audit trail explains WHY the agent's
+    UsageRecords reading is also defensible from KB-alone) and cite the
+    column-meaning that resolves the disambiguation."""
     rows = _load_audit_rows()
     row = rows.get("museum_9")
     assert row is not None, "museum_9 must be in the audit file"
-    assert row["audit_status"] in {"clean", "edited"}, (
-        f"museum_9 must be clean or edited; got {row['audit_status']!r}"
+    assert row["audit_status"] == "clean", (
+        f"museum_9 must be 'clean'; got {row['audit_status']!r}"
     )
-    if row["audit_status"] == "edited":
-        assert row["changes"], "museum_9 edited row must have non-empty changes"
+    assert row["audited_sol_sql"] == row["original_sol_sql"], (
+        "museum_9 is 'clean' — audited_sol_sql must equal original_sol_sql"
+    )
+    assert row["changes"] == [], (
+        f"museum_9 is 'clean' — changes must be empty; got {row['changes']!r}"
+    )
+
+    rs = row["reasoning_summary"]
+    rs_lower = rs.lower()
+    # Both candidate join chains named, AND the discriminating endpoints
+    # cited. A bare "usagerecords" or "conditionassessments" mention
+    # would let the reasoning slip past with no actual explanation of
+    # the underspec — pin the FK column and the alternative chain's
+    # discriminator so the audit trail is meaningful.
+    assert "usagerecords" in rs_lower, (
+        f"museum_9 reasoning_summary must name the alternative UsageRecords "
+        f"chain (the one the agent picked) so the audit explains the "
+        f"disambiguation; got: {rs!r}"
+    )
+    # The agent's chain pivots through Showcases / EnvironmentalReadingsCore
+    # to find a light reading — naming at least one of those endpoints
+    # demonstrates the audit understood the 3-hop chain.
+    assert (
+        "environmentalreadingscore" in rs_lower
+        or "showcaseref" in rs_lower
+        or "showcases" in rs_lower
+    ), (
+        f"museum_9 reasoning_summary must name an endpoint of the "
+        f"UsageRecords→Showcases→EnvironmentalReadingsCore→LightAndRadiationReadings "
+        f"chain (Showcases / EnvironmentalReadingsCore / ShowcaseRef) so "
+        f"the audit shows what makes that chain weaker than gold's. "
+        f"Got: {rs!r}"
+    )
+    # Gold's chain is single-hop via LightReadRefObserved; the audit
+    # MUST name that FK column explicitly (it's the discriminator that
+    # resolves the KB-alone underspec).
+    assert "lightreadrefobserved" in rs_lower, (
+        f"museum_9 reasoning_summary must name "
+        f"ConditionAssessments.LightReadRefObserved — the single-hop FK "
+        f"that resolves the KB underspec; got: {rs!r}"
+    )
+    # And the column-meaning citation MUST appear in the exact token form
+    # the verifier resolves against `museum_column_meaning_base.json`. A
+    # loose substring match would let `LightReadRefObserved` mentioned in
+    # prose-only count, which weakens the resolvability guarantee.
+    assert "column_meaning:ConditionAssessments|LightReadRefObserved" in rs, (
+        f"museum_9 reasoning_summary must contain the EXACT citation token "
+        f"'column_meaning:ConditionAssessments|LightReadRefObserved' so "
+        f"the resolvability test catches typos; got: {rs!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -571,22 +747,23 @@ def test_museum_9_is_in_audit_file():
 # ---------------------------------------------------------------------------
 
 
-def test_every_kb_citation_resolves_to_a_museum_kb_id():
-    """Every `kb:N` citation in museum entries MUST resolve to a row in
-    museum_kb.jsonl — catches typos (kb:116 instead of kb:16) and id-drift
-    after upstream KB renumbers. Scoped to museum entries only; credit/mental
-    entries use their own KB namespaces."""
-    kb_ids = _load_museum_kb_ids()
+def test_every_kb_citation_resolves_to_a_kb_id():
+    """Every `kb:N` citation MUST resolve to a row in the row's own DB
+    `<db>_kb.jsonl` — catches typos (kb:116 instead of kb:16) and
+    id-drift after upstream KB renumbers. Same posture as the
+    mini-interact resolvability tests."""
+    kb_ids_by_db: dict[str, set[int]] = {}
     for row in _iter_audit_rows():
         iid = row["instance_id"]
-        if not iid.startswith("museum"):
-            continue
-        tokens = _collect_citation_tokens(row)
-        for tok in tokens:
+        db = row["selected_database"]
+        if db not in kb_ids_by_db:
+            kb_ids_by_db[db] = _load_kb_ids(db)
+        kb_ids = kb_ids_by_db[db]
+        for tok in _collect_citation_tokens(row):
             if tok.startswith("kb:"):
                 kb_id = int(tok.split(":", 1)[1])
                 assert kb_id in kb_ids, (
-                    f"{iid}: kb:{kb_id} does not resolve in museum_kb.jsonl"
+                    f"{iid}: kb:{kb_id} does not resolve in {db}_kb.jsonl"
                 )
 
 
@@ -613,21 +790,23 @@ def test_every_column_meaning_citation_resolves():
     """Catches case-typos in column-meaning citations — keys are
     case-sensitive in the JSON (e.g. `museum|ConditionAssessments|LightReadRefObserved`,
     NOT lowercase)."""
-    keys = _load_museum_column_meaning_keys()
+    keys_by_db: dict[str, set[str]] = {}
     for row in _iter_audit_rows():
         iid = row["instance_id"]
-        if not iid.startswith("museum"):
-            continue
+        db = row["selected_database"]
+        if db not in keys_by_db:
+            keys_by_db[db] = _load_column_meaning_keys(db)
+        keys = keys_by_db[db]
         for tok in _collect_citation_tokens(row):
             if tok.startswith("column_meaning:"):
                 table_col = tok.split(":", 1)[1]
                 # Citations use the `Table|Column[|SubField]` form; the
-                # JSON key is `museum|Table|Column[|SubField]`. Both shapes
+                # JSON key is `<db>|Table|Column[|SubField]`. Both shapes
                 # accepted.
-                candidates = [f"museum|{table_col}", table_col]
+                candidates = [f"{db}|{table_col}", table_col]
                 assert any(c in keys for c in candidates), (
                     f"{iid}: column_meaning:{table_col} does not resolve in "
-                    f"museum_column_meaning_base.json (tried: {candidates})"
+                    f"{db}_column_meaning_base.json (tried: {candidates})"
                 )
 
 

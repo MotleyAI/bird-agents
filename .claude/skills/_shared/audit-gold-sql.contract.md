@@ -92,6 +92,94 @@ Use one of: `outer_select`, `projection`, `from`, `join`, `where_predicate`,
 6. **Persist** the JSONL line per the benchmark's on-disk layout (see
    each SKILL.md).
 
+## Multi-variant audit on source contradiction (MANDATORY)
+
+If two of the task's authoritative sources DIRECTLY contradict on the
+SAME parameter, the audit MUST emit **multi-variant** — one row per
+defensible reading. Collapsing to a single variant with a note is
+**forbidden**. The agent under test cannot satisfy mutually-exclusive
+sources; forcing one reading tags genuine ambiguity as `agent_miss`.
+
+What counts as a contradiction:
+
+| Same parameter | Source A | Source B | Verdict |
+| --- | --- | --- | --- |
+| Boundary operator on a threshold | KB definition: "greater than 7" | labeled sql_snippet: `score >= 7` | **contradiction** (strict vs inclusive) |
+| Numeric threshold value | KB: "> 3" | labeled sql_snippet: `> 2` | **contradiction** |
+| Bucket inclusion | column_meaning enum: `{A,B,C}` | KB cites bucket `D` | **contradiction** |
+| Aggregation choice | KB: "average of …" | labeled sql_snippet: `SUM(…)` | **contradiction** |
+| KB-internal | KB.description: one cutoff | KB.definition: another | **contradiction** |
+
+Not a contradiction: one source silent, the other specifies; one source
+operationalises in SQL what the other describes in prose; different
+parameters that happen to live near each other in the metadata.
+
+**The recipe addendum.** Before classifying the audit as single-variant
+in step 4 of the per-clause recipe, scan ALL loaded authoritative
+sources (KB items, column meanings, every labeled/anchor citation
+shape your benchmark exposes — see the per-benchmark SKILL.md for the
+full source list) for pairwise direct contradictions. ANY contradicting
+pair triggers multi-variant. No "labeled wins" tie-breaker. No "KB-
+anchored is primary" tie-breaker. If you find yourself writing a
+regretful note in `reasoning_summary` that names two sources and
+explains why you went with one, STOP — that's the multi-variant
+trigger and you skipped it. Go back and emit two rows.
+
+**Mechanics when emitting multi-variant.**
+
+- Each row shares `instance_id`; rows are distinguished by `variant_id`
+  (a short kebab-case slug naming the reading, e.g. `labeled_snippet`,
+  `kb_strict`).
+- Exactly one row carries `primary: true`. The choice is arbitrary —
+  it only controls which row the grader's strict-N2 path targets by
+  default; `n3_any_audited_variant` accepts either. Document the
+  choice in `reasoning_summary` as bookkeeping, not as authority.
+- Every row keeps `audit_status: "edited"`.
+- Each row's `changes[]` carries AT LEAST one entry with
+  `clause_kind: "source_conflict"` pointing at the other variant:
+  - `original`: what THIS variant rejected (paraphrase the other
+    variant's reading, in parens cite the source).
+  - `replacement`: what THIS variant chose (paraphrase, in parens
+    cite the source).
+  - `why_unjustified`: quote the rejected source's contrary value.
+  - `justified_by`: the citation tokens backing THIS variant's choice.
+- The downstream TaskAnnotation carries
+  `internal_inconsistency.audit_resolution = "multi_variant"` with
+  `sources_in_conflict[]` quoting both sides verbatim, and one
+  `gold_variants[]` entry per audit row.
+
+**Minimal worked example (synthetic).** A task asks "list high-score
+items"; KB X.definition says "score must be greater than 7" (strict);
+the labeled sql_snippet for "high score" says `score >= 7` (inclusive).
+The audit emits two rows:
+
+```jsonl
+{"instance_id": "demo_5", "variant_id": "labeled_snippet", "primary": true,
+ "audit_status": "edited",
+ "audited_sol_sql": ["… WHERE foo.score >= 7 …"],
+ "changes": [{"clause_kind": "source_conflict",
+   "original": "foo.score > 7  (KB X strict reading)",
+   "replacement": "foo.score >= 7  (labeled-snippet inclusive reading)",
+   "why_unjustified": "KB X.definition: 'score must be greater than 7' is strict; this variant rejects KB X in favor of the labeled sql_snippet's inclusive boundary.",
+   "justified_by": ["labeled_ambiguity:high score"]}],
+ "reasoning_summary": "Task is internally inconsistent on the score threshold. This variant follows the labeled sql_snippet."}
+{"instance_id": "demo_5", "variant_id": "kb_strict", "primary": false,
+ "audit_status": "edited",
+ "audited_sol_sql": ["… WHERE foo.score > 7 …"],
+ "changes": [{"clause_kind": "source_conflict",
+   "original": "foo.score >= 7  (labeled-snippet inclusive reading)",
+   "replacement": "foo.score > 7  (KB X strict reading)",
+   "why_unjustified": "labeled_ambiguity:high score uses inclusive >=; this variant rejects the labeled snippet in favor of KB X.definition's explicit 'greater than' wording.",
+   "justified_by": ["kb:foo_kb#X"]}],
+ "reasoning_summary": "Task is internally inconsistent on the score threshold. This variant follows KB X's strict reading."}
+```
+
+(For LiveSQLBench tasks the citation token for the snippet-anchored
+variant would be `external_knowledge:<id>` or `column_meaning:…`
+instead of `labeled_ambiguity:` — LiveSQLBench has no labeled-ambiguity
+blocks. See the per-benchmark SKILL.md for which sources can take part
+in a contradiction.)
+
 ## Anti-patterns (call out in the audit)
 
 - **Set arithmetic on counts** with no natural-language analogue in the

@@ -54,6 +54,13 @@ def log_blob(run_id: str, instance_id: str, attempt: int) -> str:
     return f"runs/{run_id}/logs/{instance_id}/attempt-{attempt}.log"
 
 
+def submission_annotation_blob(run_id: str, instance_id: str) -> str:
+    """DEV-1515: per-task submission annotation blob path. One file per
+    (run, instance); the in-cloud grader writes it once per task; the
+    fetch path downloads + merges to ``<main_checkout>/annotations/``."""
+    return f"runs/{run_id}/rows/{instance_id}/submission_annotation.json"
+
+
 # ---------------------------------------------------------------------------
 # Writers
 # ---------------------------------------------------------------------------
@@ -85,6 +92,38 @@ def write_log(
     client = client or default_gcs_client()
     blob = client.bucket(BUCKET_NAME).blob(log_blob(run_id, instance_id, attempt))
     blob.upload_from_string(text, content_type="text/plain")
+
+
+def write_submission_annotation(
+    run_id: str,
+    instance_id: str,
+    annotation: dict,
+    *,
+    client=None,
+) -> None:
+    """DEV-1515: upload a per-task SubmissionAnnotation. The cloud
+    worker calls this once per task right after ``grade_and_write``."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(
+        submission_annotation_blob(run_id, instance_id),
+    )
+    blob.upload_from_string(
+        json.dumps(annotation, indent=2).encode(),
+        content_type="application/json",
+    )
+
+
+def read_submission_annotation(
+    run_id: str,
+    instance_id: str,
+    *,
+    client=None,
+) -> dict:
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(
+        submission_annotation_blob(run_id, instance_id),
+    )
+    return json.loads(blob.download_as_bytes())
 
 
 def write_manifest(run_id: str, manifest: dict, *, client=None) -> None:

@@ -148,11 +148,18 @@ def audited_gold_root() -> Path:
     """Audited-gold SQL sidecars — committed, must live in the main checkout.
 
     Honours `BIRD_AUDITED_GOLD_ROOT` override (used by SAR-audit tests).
+
+    Always creates the directory if missing — the dir is gitignored so a
+    fresh checkout doesn't have one, and downstream callers (notably
+    ``cloud/image.build_and_push``'s BuildKit ``--build-context``) need
+    at least an empty dir on disk before they can mount it.
     """
     override = os.environ.get("BIRD_AUDITED_GOLD_ROOT")
     if override:
         return Path(override).expanduser()
-    return main_checkout_root() / "audited_gold"
+    path = main_checkout_root() / "audited_gold"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def audited_gold_file(*, benchmark: str) -> Path:
@@ -181,6 +188,28 @@ def audited_gold_file(*, benchmark: str) -> Path:
             f"<db>_audited.jsonl` via `apply_audited_gold_overlay`."
         )
     return audited_gold_root() / f"{b.name}_audited.jsonl"
+
+
+def annotations_root() -> Path:
+    """DEV-1515: per-task / per-submission annotations, committed to the
+    main checkout (gitignored locally — the human-judgment content is
+    licensed for local use only, same posture as ``audited_gold/``).
+
+    Honours ``BIRD_ANNOTATIONS_ROOT`` for tests / forks that mount the
+    annotations from a parallel repo.
+
+    Always creates the directory if missing — same posture as
+    ``audited_gold_root``: the dir is gitignored so a fresh checkout
+    doesn't have one, and ``cloud/image.build_and_push`` mounts it via
+    BuildKit ``--build-context``, which needs at least an empty dir on
+    disk before docker build can resolve it.
+    """
+    override = os.environ.get("BIRD_ANNOTATIONS_ROOT")
+    if override:
+        return Path(override).expanduser()
+    path = main_checkout_root() / "annotations"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def sar_audited_gold_root() -> Path:

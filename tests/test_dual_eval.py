@@ -357,51 +357,15 @@ def _minimal_row_kwargs() -> dict:
     )
 
 
-def test_task_result_row_has_dual_eval_columns():
-    """The schema must accept the new dual-eval fields. We instantiate
-    with explicit values to verify the fields are wired through."""
-    from bird_interact_agents.results_db import TaskResultRow
-
-    row = TaskResultRow(
-        **_minimal_row_kwargs(),
-        phase1_passed_audited=True,
-        phase1_passed_original=False,
-        phase1_observation_audited="ok-audit",
-        phase1_observation_original="fail-orig",
-    )
-    assert row.phase1_passed_audited is True
-    assert row.phase1_passed_original is False
-    assert row.phase1_observation_audited == "ok-audit"
-    assert row.phase1_observation_original == "fail-orig"
-
-
-def test_task_result_row_dual_eval_columns_default_none():
-    """Single-eval call sites that don't pass the dual fields still work."""
-    from bird_interact_agents.results_db import TaskResultRow
-
-    row = TaskResultRow(**_minimal_row_kwargs())
-    assert row.phase1_passed_audited is None
-    assert row.phase1_passed_original is None
-    assert row.phase1_observation_audited is None
-    assert row.phase1_observation_original is None
-
-
-def test_results_db_open_creates_dual_eval_columns(tmp_path):
-    """Schema migration: a fresh results.db must have all four new
-    columns so insert_task_result can write them."""
-    from bird_interact_agents.results_db import open_db
-
-    db_path = tmp_path / "results.db"
-    conn = open_db(db_path)
-    try:
-        cur = conn.execute("PRAGMA table_info(task_results)")
-        cols = {row[1] for row in cur.fetchall()}
-    finally:
-        conn.close()
-    assert "phase1_passed_audited" in cols
-    assert "phase1_passed_original" in cols
-    assert "phase1_observation_audited" in cols
-    assert "phase1_observation_original" in cols
+# DEV-1515: the per-row `phase1_passed_audited` / `phase1_passed_original`
+# raw bool columns have been removed; the per-task cascade verdict now
+# lives in the SubmissionAnnotation. Tests covering that schema are in
+# `tests/test_schema_extension.py` and the cascading aggregator tests in
+# `tests/test_cascading_report.py`. The three tests previously here
+# (`test_task_result_row_has_dual_eval_columns`,
+# `test_task_result_row_dual_eval_columns_default_none`,
+# `test_results_db_open_creates_dual_eval_columns`) are intentionally
+# removed.
 
 
 # ---------------------------------------------------------------------------
@@ -801,17 +765,25 @@ def test_overlay_benchmark_kwarg_default_preserves_per_db_behavior(tmp_path):
     assert task["sol_sql"] == ["SELECT audited FROM t"]
 
 
-def test_overlay_benchmark_kwarg_per_db_explicit_matches_default(tmp_path):
-    """Passing `benchmark=mini_interact` explicitly is equivalent to omitting
-    it — proves the layout dispatch is the field that matters, not whether
-    `benchmark` happens to be set."""
+def test_overlay_benchmark_kwarg_mini_interact_uses_single_file(tmp_path):
+    """DEV-1515: passing `benchmark=mini_interact` dispatches to the
+    consolidated ``mini_interact_audited.jsonl`` (not the legacy per_db
+    sidecar). Proves the layout dispatch follows the descriptor and that
+    mini-interact's new single-file shape is wired through end-to-end."""
+    import json
     from bird_interact_agents.benchmark import get_benchmark
     from bird_interact_agents.harness import apply_audited_gold_overlay
 
-    _write_audit_sidecar(tmp_path, "alien", [
-        {"instance_id": "alien_explicit", "audit_status": "edited",
-         "audited_sol_sql": ["SELECT audited FROM t"]},
-    ])
+    single_file = tmp_path / "mini_interact_audited.jsonl"
+    single_file.write_text(json.dumps({
+        "instance_id": "alien_explicit",
+        "selected_database": "alien",
+        "benchmark": "mini_interact",
+        "variant_id": "primary",
+        "primary": True,
+        "audit_status": "edited",
+        "audited_sol_sql": ["SELECT audited FROM t"],
+    }) + "\n")
     task = {
         "instance_id": "alien_explicit",
         "selected_database": "alien",
@@ -824,126 +796,154 @@ def test_overlay_benchmark_kwarg_per_db_explicit_matches_default(tmp_path):
     assert task["sol_sql"] == ["SELECT audited FROM t"]
 
 
-def test_insert_task_result_round_trip_dual_eval_fields(tmp_path):
-    """The TaskResultRow → SQL insert must actually persist the new
-    fields. The current insert in results_db.py uses an explicit column
-    list, so adding model fields without touching the INSERT silently
-    drops them — round-trip catches that."""
-    from bird_interact_agents.results_db import TaskResultRow, insert_task_result, open_db
-
-    db_path = tmp_path / "results.db"
-    conn = open_db(db_path)
-    try:
-        row = TaskResultRow(
-            **_minimal_row_kwargs(),
-            phase1_passed_audited=True,
-            phase1_passed_original=False,
-            phase1_observation_audited="aud-ok",
-            phase1_observation_original="orig-fail",
-        )
-        insert_task_result(conn, row)
-        result = conn.execute(
-            """SELECT phase1_passed_audited, phase1_passed_original,
-                      phase1_observation_audited, phase1_observation_original
-               FROM task_results WHERE instance_id = 'alien_1'"""
-        ).fetchone()
-    finally:
-        conn.close()
-    assert result == (1, 0, "aud-ok", "orig-fail")
+# DEV-1515: the three end-of-pipeline dual-eval tests previously here
+# (`test_insert_task_result_round_trip_dual_eval_fields`,
+# `test_submit_writes_dual_fields_to_state_result`,
+# `test_run_aggregation_emits_dual_eval_rates`) covered the removed
+# pre-DEV-1515 per-task raw bool persistence + state.result emission +
+# eval.json rates. The equivalents under the cascade are in
+# `tests/test_local_run_cascading.py`,
+# `tests/test_cascading_report.py`, and the legacy-removal grep-sweep in
+# `tests/test_legacy_field_removal.py`.
 
 
 # ---------------------------------------------------------------------------
-# `run.py` aggregates dual-eval rates into eval.json
+# Codex r9: multi-variant audited gold rows for the same instance_id
+# (one ``primary=True`` + N alternates) must NOT let an alternate
+# overwrite the primary row at index-build time. Pre-fix both index
+# helpers (``harness._load_single_file_audited_rows`` via the overlay
+# AND ``cloud._audited_gold_check._load_single_file_audit_index``)
+# wrote with latest-wins semantics. These two tests pin the new
+# primary-first contract — alternates listed AFTER the primary in the
+# file must lose the contest.
 # ---------------------------------------------------------------------------
 
 
-def test_submit_writes_dual_fields_to_state_result(monkeypatch):
-    """Dual-eval fields must land on `state.result` so each framework's
-    finalizer can copy them out. Tests `submit_slayer_query`'s plumbing
-    end-to-end without going through a real evaluator."""
-    from types import SimpleNamespace
-    from bird_interact_agents.agents import _submit
+def test_overlay_single_file_prefers_primary_when_alternate_listed_after(
+    tmp_path,
+):
+    """Multi-variant file: primary row first, alternate row second.
+    The overlay MUST keep the primary's ``audited_sol_sql``."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
 
-    from bird_interact_agents import harness
-
-    monkeypatch.setattr(_submit, "_dry_run_sql", lambda *a, **kw: None)
-    monkeypatch.setattr(_submit, "capture_result_snapshot", lambda *a, **kw: None)
-
-    def fake_eval(sol_sql, status, dpb):
-        gold = status.original_data["sol_sql"][0]
-        passed = "audited" in gold
-        return (f"obs:{gold}", 1.0 if passed else 0.0, passed, False, True)
-    # The dispatcher calls `evaluate_dual_gold` (in harness.py) when
-    # `original_sol_sql` is set; that helper in turn calls
-    # `harness.execute_submit_action`. Patch the harness binding.
-    monkeypatch.setattr(harness, "execute_submit_action", fake_eval)
-    monkeypatch.setattr(_submit, "execute_submit_action", fake_eval)
-
-    state = SimpleNamespace(
-        status=SimpleNamespace(
-            original_data={
-                "selected_database": "fake_db",
-                "sol_sql": ["SELECT audited FROM t"],
-                "original_sol_sql": ["SELECT original FROM t"],
-            },
-            remaining_budget=100.0,
-            total_budget=100.0,
-            force_submit=False,
-            current_phase=1,
-        ),
-        data_path_base="/tmp/ignored",
-        user_sim_model="anthropic/claude-haiku-4-5-20251001",
-        user_sim_prompt_version="v2",
-        slayer_storage_dir="",
-        result=None,
+    _write_single_file_audit(tmp_path, [
+        {
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "variant_id": "primary",
+            "primary": True,
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT primary_reading FROM t"],
+        },
+        {
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "variant_id": "alt_a",
+            "primary": False,
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT alt_reading FROM t"],
+        },
+    ])
+    task = {
+        "instance_id": "museum_9",
+        "selected_database": "museum",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    apply_audited_gold_overlay(
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+    )
+    assert task["sol_sql"] == ["SELECT primary_reading FROM t"], (
+        "primary row MUST win over alternates regardless of file order"
     )
 
-    fake_client = SimpleNamespace(sql_sync=lambda d: "SELECT 1")
-    _submit.submit_slayer_query(
-        state,
-        query_json='{"models": ["m"]}',
-        slayer_client_factory=lambda s: fake_client,
+
+def test_overlay_single_file_prefers_primary_when_alternate_listed_first(
+    tmp_path,
+):
+    """Symmetric case: alternate row FIRST, primary row second. The
+    primary must still take precedence at the end."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    _write_single_file_audit(tmp_path, [
+        {
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "variant_id": "alt_a",
+            "primary": False,
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT alt_reading FROM t"],
+        },
+        {
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "variant_id": "primary",
+            "primary": True,
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT primary_reading FROM t"],
+        },
+    ])
+    task = {
+        "instance_id": "museum_9",
+        "selected_database": "museum",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    apply_audited_gold_overlay(
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
     )
-    # The four dual-eval keys MUST be present on state.result — every
-    # framework finalizer reads them via submitter.get(...) / result.get(...).
-    assert state.result["phase1_passed_audited"] is True
-    assert state.result["phase1_passed_original"] is False
-    assert "audited" in state.result["phase1_observation_audited"]
-    assert "original" in state.result["phase1_observation_original"]
+    assert task["sol_sql"] == ["SELECT primary_reading FROM t"], (
+        "primary row MUST win regardless of where it lands in the file"
+    )
 
 
-def test_run_aggregation_emits_dual_eval_rates(tmp_path):
-    """End of run: eval.json should carry phase1_count_audited /
-    phase1_count_original / phase1_rate_audited / phase1_rate_original
-    when at least one task has dual-eval columns populated.
+def test_cloud_audit_index_prefers_primary_over_alternate(tmp_path):
+    """``cloud._audited_gold_check._load_single_file_audit_index``
+    is the cloud-side guard against an audited gold layout drift —
+    same primary-first rule must hold there."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        _load_single_file_audit_index,
+    )
 
-    Strategy: write a known set of task results to a fresh results.db,
-    then call run.py's aggregation entry point and parse eval.json."""
-    pytest.importorskip("bird_interact_agents.run")
-    from bird_interact_agents.results_db import TaskResultRow, insert_task_result, open_db
-    from bird_interact_agents.run import build_aggregate_eval
+    benchmark = get_benchmark("livesqlbench")
+    audit_path = tmp_path / f"{benchmark.name}_audited.jsonl"
+    audit_path.write_text(
+        json.dumps({
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "variant_id": "alt_a",
+            "primary": False,
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT alt_reading FROM t"],
+        }) + "\n"
+        + json.dumps({
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "variant_id": "primary",
+            "primary": True,
+            # Deliberately different from the alt so we can tell which
+            # row landed in the index.
+            "audit_status": "clean",
+            "audited_sol_sql": [],
+        }) + "\n"
+    )
 
-    db_path = tmp_path / "results.db"
-    conn = open_db(db_path)
-    try:
-        for i, (aud, orig) in enumerate([(True, True), (True, False), (False, False)], 1):
-            insert_task_result(conn, TaskResultRow(
-                **{**_minimal_row_kwargs(),
-                   "instance_id": f"alien_{i}",
-                   "phase1_passed": aud,  # primary = audited
-                   "submission_status": "passed_phase1" if aud else "wrong_result"},
-                phase1_passed_audited=aud,
-                phase1_passed_original=orig,
-            ))
-        conn.commit()
-    finally:
-        conn.close()
-
-    agg = build_aggregate_eval(db_path=db_path)
-
-    # 3 tasks: 2 audited-pass, 1 original-pass.
-    assert agg["phase1_count_audited"] == 2
-    assert agg["phase1_count_original"] == 1
-    # Rates are derived from the same n.
-    assert agg["phase1_rate_audited"] == pytest.approx(2 / 3)
-    assert agg["phase1_rate_original"] == pytest.approx(1 / 3)
+    index = _load_single_file_audit_index(tmp_path, benchmark)
+    assert index is not None
+    status, has_audited_sql, _row_db, _row_bench = index["museum_9"]
+    # ``clean`` is the primary's status; ``edited`` is the alt's.
+    assert status == "clean", (
+        f"primary row's audit_status must survive against the alt's; "
+        f"got status={status!r} (alt's status was 'edited')"
+    )
+    assert has_audited_sql is False, (
+        "primary's empty audited_sol_sql must be the one indexed, "
+        "not the alt's non-empty list"
+    )

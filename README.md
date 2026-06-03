@@ -94,10 +94,10 @@ bird-interact --framework claude_sdk_otf --query-mode slayer \
   --db-path ../livesqlbench-base-lite-sqlite/
 ```
 
-Cloud smoke / baseline defaults (the deterministic OTF cache is uploaded
-from local if present, else built locally first — like
-`pydantic_ai_recursive`; no reference build or upload-back). `museum_6` is
-the canonical single-task smoke (passes under these defaults):
+Cloud smoke (the deterministic OTF cache is uploaded from local if
+present, else built locally first — like `pydantic_ai_recursive`; no
+reference build or upload-back). `museum_6` is the canonical single-task
+smoke (passes under these defaults):
 
 ```bash
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
@@ -110,6 +110,20 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --instance-ids museum_6 \
   --workers 1 --actors-per-worker 1 \
   --worker-type e2-standard-4 --max-runtime-hours 2 --detach
+```
+
+For multi-instance runs bump `--actors-per-worker` so tasks run in
+parallel — `1` is correct for a 1-task smoke but serialises everything
+larger. `e2-standard-4` (4 vCPU / 16 GB) comfortably runs 4 concurrent
+Opus + Sonnet pairs (mostly network-bound on LLM APIs), so 4 is a safe
+default for 10-50 task runs:
+
+```bash
+env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
+  ... \
+  --instance-ids museum_1,museum_2,museum_3,museum_4,museum_5,museum_6,museum_7,museum_8,museum_9,museum_10 \
+  --workers 1 --actors-per-worker 4 \
+  --worker-type e2-standard-4 --max-runtime-hours 3 --detach
 ```
 
 #### `claude_sdk_otf_ainteract` — mini-interact / a-interact only
@@ -129,9 +143,8 @@ bird-interact --framework claude_sdk_otf_ainteract --query-mode slayer \
   --db-path /path/to/mini-interact/ --instance-id households_1
 ```
 
-Cloud smoke / baseline defaults. `households_16` is the canonical
-single-task smoke (passes both audited and original gold under these
-defaults):
+Cloud smoke. `households_16` is the canonical single-task smoke (passes
+both audited and original gold under these defaults):
 
 ```bash
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
@@ -144,6 +157,12 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --workers 1 --actors-per-worker 1 \
   --worker-type e2-standard-4 --max-runtime-hours 2 --detach
 ```
+
+For multi-instance runs bump `--actors-per-worker` to 4 (see the
+`claude_sdk_otf` note above for the sizing rule). With the default 1×1
+a 53-task batch serialises through one actor and takes ~5 hours; at 1×4
+it finishes in ~80 minutes for the same per-task wallclock and identical
+cluster cost.
 
 ## 3-way comparison (original ↔ raw ↔ slayer)
 

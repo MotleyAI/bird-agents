@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import logging
+import shutil
 import statistics
 import time
 from pathlib import Path
@@ -13,6 +14,11 @@ from typing import Any as _Any
 
 from bird_interact_agents import paths
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
+from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
+from bird_interact_agents.eval.grade_in_place import (
+    grade_one_submission,
+    write_failed_submission_annotation,
+)
 from bird_interact_agents.harness import (
     apply_audited_gold_overlay,
     calculate_budget,
@@ -32,35 +38,28 @@ from bird_interact_agents.results_db import (
 from bird_interact_agents.usage import TokenUsage
 
 def build_aggregate_eval(*, db_path: Path | str) -> dict[str, _Any]:
-    """Read task_results from a results.db and emit aggregate dual-eval
-    metrics. Used by run.py at end-of-run and by tests for round-trip
-    verification. Returns a dict with keys: ``phase1_count``,
-    ``phase1_rate``, ``phase1_count_audited``, ``phase1_count_original``,
-    ``phase1_rate_audited``, ``phase1_rate_original``, ``n_dual_eval_tasks``,
-    ``total_tasks``."""
+    """Read task_results from a results.db and emit aggregate phase-1
+    metrics. DEV-1515: the legacy dual-eval bool columns are gone;
+    every per-task cascade verdict now lives in the SubmissionAnnotation
+    written inline by ``grade_and_write``. The cascading_phase1 block
+    in ``eval.json`` is built by
+    :func:`bird_interact_agents.eval.cascading_report.emit_cascading_eval_json`
+    over the per-row annotation files; this helper only returns the
+    simple ``phase1_count`` / ``phase1_rate`` totals used by
+    back-compat consumers of the results DB."""
     conn = _sqlite3.connect(str(db_path))
     try:
         rows = conn.execute(
-            "SELECT phase1_passed, phase1_passed_audited, phase1_passed_original "
-            "FROM task_results"
+            "SELECT phase1_passed FROM task_results"
         ).fetchall()
     finally:
         conn.close()
     n = len(rows)
     p1 = sum(1 for r in rows if r[0])
-    dual_rows = [r for r in rows if r[1] is not None]
-    n_dual = len(dual_rows)
-    p1_aud = sum(1 for r in dual_rows if r[1])
-    p1_orig = sum(1 for r in dual_rows if r[2])
     return {
         "total_tasks": n,
         "phase1_count": p1,
         "phase1_rate": p1 / n if n else 0.0,
-        "n_dual_eval_tasks": n_dual,
-        "phase1_count_audited": p1_aud,
-        "phase1_count_original": p1_orig,
-        "phase1_rate_audited": p1_aud / n_dual if n_dual else 0.0,
-        "phase1_rate_original": p1_orig / n_dual if n_dual else 0.0,
     }
 
 
@@ -983,8 +982,6 @@ async def run_evaluation(
             gold_result_json=r.get("gold_result_json"),
             n_agent_turns=int(n_turns) if isinstance(n_turns, int) else None,
             tool_call_stats_json=tool_call_stats_json,
-            phase1_passed_audited=r.get("phase1_passed_audited"),
-            phase1_passed_original=r.get("phase1_passed_original"),
             phase1_observation_audited=r.get("phase1_observation_audited"),
             phase1_observation_original=r.get("phase1_observation_original"),
         ))
@@ -995,6 +992,119 @@ async def run_evaluation(
     total_reward = 0.0
     p1_count = 0
     p2_count = 0
+
+    # DEV-1515: inline-grade every task into ``<rows_dir>/<inst>/`` so
+    # the existing aggregator at the bottom of ``run_evaluation`` can
+    # emit the ``cascading_phase1`` block in ``eval.json``. Mirrors the
+    # cloud worker (``cloud.ray_app._grade_one_submission``) — without
+    # this, local runs would silently lose the N1-N9 cascade metrics
+    # whenever audited gold / per-task annotations are present.
+    #
+    # Codex r9: ``aggregate_cascading_phase1`` walks EVERY subdir under
+    # ``rows_dir`` to compute ``n_dual_eval_tasks``. Reusing the same
+    # ``output_dir`` for a fresh run (different ``--limit`` /
+    # ``--instance-id`` subset) would otherwise carry forward stale
+    # annotations from the prior pass, inflating the denominator and
+    # rewriting ``phase1_count`` / ``phase1_rate`` from the union of
+    # old + new. Wipe per-instance subdirs that THIS run is about to
+    # touch (or the whole rows dir when no filter is set) so the
+    # aggregator only sees fresh annotations. Mirrors the round-2
+    # regrade.py reset pattern.
+    rows_dir = output_dir / "rows"
+    if rows_dir.exists():
+        if filter_ids is None:
+            # Full run — wipe everything.
+            shutil.rmtree(rows_dir, ignore_errors=True)
+        else:
+            # Filtered run — reset ONLY the subdirs this run will
+            # overwrite, so unrelated instances from a prior pass
+            # survive (and still contribute to the cascade block).
+            _wanted = {str(t.get("instance_id") or "") for t in tasks}
+            for sub in list(rows_dir.iterdir()):
+                if sub.is_dir() and sub.name in _wanted:
+                    shutil.rmtree(sub, ignore_errors=True)
+    rows_dir.mkdir(parents=True, exist_ok=True)
+    _benchmark_canonical = b.name
+
+    def _grade_local_row(td: dict, r: dict) -> None:
+        """Persist the per-row ``submission_annotation.json`` mirroring
+        cloud's ``_grade_one_submission``. Best-effort: a grader raise
+        on one instance must NOT take down the whole run loop — the row
+        was already inserted into the results DB by ``_persist``.
+
+        For tasks the grader can't run on (no ``submitted_sql``, agent
+        crashed before submit, grader itself raised) we still write a
+        ``fail-everything`` annotation so the aggregator's denominator
+        (``cascading_phase1.n_dual_eval_tasks``) stays at
+        ``len(tasks)`` and the reported rates aren't inflated by
+        silently dropped rows.
+        """
+        instance_id_for_log = td.get("instance_id", "<unknown>")
+        submitted_sql = r.get("submitted_sql")
+        selected_database = (
+            r.get("database") or td.get("selected_database") or ""
+        )
+        usage_blob = r.get("usage") or {}
+        common_failed_kwargs = dict(
+            rows_dir=rows_dir,
+            instance_id=instance_id_for_log,
+            selected_database=selected_database or "<unknown>",
+            benchmark=_benchmark_canonical,
+            run_id=run_id,
+            trajectory_path=f"rows/{instance_id_for_log}/attempt-1.json",
+            duration_s=r.get("duration_s"),
+            n_agent_turns=usage_blob.get("n_agent_turns"),
+            n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
+            predicted_row_count=r.get("predicted_row_count"),
+        )
+        if not submitted_sql or not selected_database:
+            write_failed_submission_annotation(
+                **common_failed_kwargs,
+                failure_details=(
+                    "no submitted_sql / selected_database — task "
+                    "errored before reaching submit; counted as 0-pass "
+                    "row at every cascade tier."
+                ),
+            )
+            return
+        # Root the per-task sqlite at the caller-provided ``data_dir``
+        # (the same path the agent's SQL executed against) — NOT the
+        # global ``paths.benchmark_data_root``. Otherwise an alternate
+        # checkout, a tmp fixture, or a ``BIRD_DB_PATH`` override would
+        # have the agent and grader disagreeing on schema/data, and a
+        # correct submission could be marked failing. Mirrors the
+        # cloud worker, which uses ``cfg["data_dir"]`` (Codex r7).
+        per_task_db = (
+            Path(data_dir)
+            / selected_database
+            / f"{selected_database}.sqlite"
+        )
+        try:
+            grade_one_submission(
+                task_data=td,
+                submitted_sql=submitted_sql,
+                rows_dir=rows_dir,
+                run_id=run_id,
+                benchmark=_benchmark_canonical,
+                db_path=per_task_db,
+                duration_s=r.get("duration_s"),
+                n_agent_turns=usage_blob.get("n_agent_turns"),
+                n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
+                predicted_row_count=r.get("predicted_row_count"),
+            )
+        except Exception as exc:  # noqa: BLE001 — keep the loop alive
+            logger.exception(
+                "inline grader raised on instance=%s; writing "
+                "fail-everything annotation so the cascade denominator "
+                "stays honest",
+                instance_id_for_log,
+            )
+            write_failed_submission_annotation(
+                **common_failed_kwargs,
+                failure_details=(
+                    f"inline grader raised: {type(exc).__name__}: {exc}"
+                )[:200],
+            )
 
     async def _run_with_sem(i: int, td: dict) -> None:
         nonlocal total_reward, p1_count, p2_count
@@ -1029,6 +1139,7 @@ async def run_evaluation(
                 p1_count += 1
             if r.get("phase2_passed"):
                 p2_count += 1
+            _grade_local_row(td, r)
 
     try:
         await asyncio.gather(*[_run_with_sem(i, td) for i, td in enumerate(tasks)])
@@ -1054,16 +1165,12 @@ async def run_evaluation(
     # Build metrics
     n = len(tasks)
 
-    # Dual-evaluation counts (NULL on single-eval runs — only populated
-    # when the overlay applied AND evaluate_dual_gold ran). Counting
-    # over the in-memory results list so we don't have to round-trip
-    # through the DB just for aggregation.
-    dual_audited = [r.get("phase1_passed_audited") for r in results]
-    dual_original = [r.get("phase1_passed_original") for r in results]
-    n_dual = sum(1 for x in dual_audited if x is not None)
-    p1_audited = sum(1 for x in dual_audited if x)
-    p1_original = sum(1 for x in dual_original if x)
-
+    # DEV-1515: the legacy dual-eval breakdown (`phase1_count_audited`,
+    # `phase1_count_original`, `n_dual_eval_tasks`, the two rates) has
+    # been REPLACED by the cascading_phase1 block. The block is computed
+    # downstream by `emit_cascading_eval_json` over per-row
+    # submission_annotation.json files. `phase1_count` / `phase1_rate`
+    # stay as back-compat aliases for N1.
     metrics = {
         "mode": mode,
         "query_mode": query_mode,
@@ -1077,20 +1184,40 @@ async def run_evaluation(
         "average_reward": total_reward / n if n else 0,
         "total_usage": total_usage.model_dump(),
         **timing,
-        # Dual-eval breakdown (only meaningful when --use-audited-gold-sql
-        # is on; equal to the single-eval counts otherwise).
-        "n_dual_eval_tasks": n_dual,
-        "phase1_count_audited": p1_audited,
-        "phase1_count_original": p1_original,
-        "phase1_rate_audited": p1_audited / n_dual if n_dual else 0,
-        "phase1_rate_original": p1_original / n_dual if n_dual else 0,
         "results": results,
     }
 
-    # Save
+    # Save. If a local-mode rows tree carrying per-row
+    # ``submission_annotation.json`` files exists alongside the eval
+    # output (cloud convention: ``<output_dir>/rows/<inst>/``), enrich
+    # eval.json with the freshly-aggregated ``cascading_phase1`` block
+    # so the headline N1..N9 metrics aren't silently lost when local
+    # runs DO have annotations (e.g. via ``grade_in_place.grade_and_write``
+    # or the convert scripts). Local runs without that tree keep the
+    # documented behaviour: omit the block, ship only the N1 aliases.
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(metrics, f, indent=2, default=str)
+
+    rows_dir = Path(output_path).parent / "rows"
+    if rows_dir.exists() and any(
+        (sub / "submission_annotation.json").exists()
+        for sub in rows_dir.iterdir() if sub.is_dir()
+    ):
+        # Codex r11: scope the cascade aggregation to the CURRENT run's
+        # instance set. Filtered reruns preserve unrelated prior
+        # annotations on disk (round 10 design), but the published
+        # ``eval.json`` must describe ONLY the current run's row set —
+        # otherwise ``cascading_phase1.n_dual_eval_tasks`` (union) would
+        # exceed ``eval.total_tasks`` (filtered count) and the rewritten
+        # ``phase1_count`` / ``phase1_rate`` would become uninterpretable.
+        _current_iids = {
+            str(td.get("instance_id") or "") for td in tasks
+        } - {""}
+        metrics = emit_cascading_eval_json(
+            rows_dir, Path(output_path), base_metrics=metrics,
+            instance_filter=_current_iids,
+        )
 
     logger.info(
         "Done. Tasks: %d, P1: %d/%d (%.1f%%), Avg Reward: %.4f",

@@ -16,6 +16,7 @@ from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data, cluster, config, gcs, image, prereqs
 from bird_interact_agents.cloud import collation as _collation
 from bird_interact_agents.cloud import post_run_merge as _post_run_merge
+from bird_interact_agents.eval import cascading_report as _cascading_report
 # Imported by NAME (not via the `gcs` module attr) so tests that mock
 # `driver.gcs` still get the real pure mapping — only the I/O helpers
 # (`gcs.upload_dir_prefix` etc.) need to be mockable.
@@ -552,10 +553,12 @@ def submit(args) -> str:
         repo_root,
         paths.audited_gold_root(),
         allow_dirty=args.allow_dirty,
+        annotations_root=paths.annotations_root(),
     )
     image_uri = image.build_and_push(
         tag, repo_root,
         audited_gold_root=paths.audited_gold_root(),
+        annotations_root=paths.annotations_root(),
         force=False,
     )
     # De-bake: upload the benchmark dataset ONCE to its content-hashed GCS
@@ -748,7 +751,53 @@ def fetch(run_id: str) -> dict:
         ),
     )
     metrics["merge_report"] = merge_report
+
+    # DEV-1515: merge per-task submission_annotation.json files into
+    # `<main_checkout>/annotations/<benchmark>/<db>/<inst>.submission.<run_id>.json`.
+    # No-overwrite-if-present; schema-validated; audit log persisted.
+    annotation_merge = _post_run_merge.merge_submission_annotations(
+        downloaded_run_dir=dest,
+        run_id=run_id,
+        benchmark=_benchmark_for_dataset(manifest.get("dataset")),
+        main_checkout_root=paths.main_checkout_root(),
+    )
+    metrics["annotation_merge_report"] = annotation_merge.model_dump()
+
+    metrics = _emit_cascading_phase1_on_fetch(dest=dest, metrics=metrics)
     return metrics
+
+
+def _emit_cascading_phase1_on_fetch(*, dest: Path, metrics: dict) -> dict:
+    """Aggregate per-row submission_annotation.json files into the
+    ``cascading_phase1`` block on the fetched run's eval.json.
+
+    Extracted so the post-fetch behaviour can be exercised in unit tests
+    without round-tripping through GCS download + collation. Older runs
+    (pre-DEV-1515 worker code) won't have per-row annotation files; skip
+    rather than fail.
+    """
+    rows_dir = dest / "rows"
+    eval_path = dest / "eval.json"
+    if not rows_dir.exists() or not eval_path.exists():
+        return metrics
+    has_per_row_anns = any(
+        (row_dir / "submission_annotation.json").exists()
+        for row_dir in rows_dir.iterdir() if row_dir.is_dir()
+    )
+    if not has_per_row_anns:
+        return metrics
+    try:
+        return _cascading_report.emit_cascading_eval_json(
+            rows_dir=rows_dir,
+            out_path=eval_path,
+            base_metrics=metrics,
+        )
+    except FileNotFoundError as exc:
+        # Aggregator is strict — a missing per-row file raises so we
+        # never silently under-count. Surface it as a side-channel entry
+        # and leave the in-memory metrics writeable.
+        metrics["cascading_phase1_error"] = str(exc)
+        return metrics
 
 
 def kill(run_id: str) -> None:

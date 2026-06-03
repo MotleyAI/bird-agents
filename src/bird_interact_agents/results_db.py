@@ -46,10 +46,8 @@ CREATE TABLE IF NOT EXISTS task_results (
     gold_result_json TEXT,
     n_agent_turns  INTEGER,
     tool_call_stats_json TEXT,
-    phase1_passed_audited        INTEGER,
-    phase1_passed_original       INTEGER,
-    phase1_observation_audited   TEXT,
-    phase1_observation_original  TEXT,
+    phase1_observation_audited TEXT,
+    phase1_observation_original TEXT,
     PRIMARY KEY (run_id, framework, mode, query_mode, instance_id)
 )
 """
@@ -72,11 +70,13 @@ _DIAGNOSTIC_COLUMNS: list[tuple[str, str]] = [
     #    "total_calls": int, "total_errors": int,
     #    "error_samples": [{"tool": str, "error": str}, ...]}
     ("tool_call_stats_json", "TEXT"),
-    # Dual-evaluation columns (populated only when --use-audited-gold-sql is on
-    # and the task had an overlay applied). NULL elsewhere so old call sites
-    # don't have to know about them.
-    ("phase1_passed_audited", "INTEGER"),
-    ("phase1_passed_original", "INTEGER"),
+    # DEV-1515 round 9 (Codex r8): dual-eval observation strings
+    # produced by every agent flavor's submit helpers +
+    # ``agents/_submit.py``. ``run.py`` was passing these into
+    # ``TaskResultRow`` but they had been silently dropped from the
+    # model + DDL; Pydantic's default ``extra="ignore"`` ate them
+    # without warning, so ``results.db`` lost the audited/original
+    # observation diagnostic — re-add them as nullable TEXT columns.
     ("phase1_observation_audited", "TEXT"),
     ("phase1_observation_original", "TEXT"),
 ]
@@ -124,11 +124,11 @@ class TaskResultRow(BaseModel):
     gold_result_json: str | None = None
     n_agent_turns: int | None = None
     tool_call_stats_json: str | None = None
-    # Dual-evaluation: populated when --use-audited-gold-sql is on AND
-    # the task had an overlay applied (edited / unrecoverable). NULL on
-    # single-eval runs.
-    phase1_passed_audited: bool | None = None
-    phase1_passed_original: bool | None = None
+    # DEV-1515 round 9 (Codex r8): the agent flavors + agents/_submit.py
+    # have always emitted these observation strings; they were
+    # accidentally dropped from this model along with the dual-eval
+    # bool flags that DEV-1515 retired. Restoring as nullable TEXT so
+    # ``run.py::_persist`` actually writes them through to ``results.db``.
     phase1_observation_audited: str | None = None
     phase1_observation_original: str | None = None
 
@@ -165,9 +165,8 @@ def insert_task_result(conn: sqlite3.Connection, row: TaskResultRow) -> None:
          user_query, submission_status, phase1_observation,
          phase2_observation, predicted_result_json, gold_result_json,
          n_agent_turns, tool_call_stats_json,
-         phase1_passed_audited, phase1_passed_original,
          phase1_observation_audited, phase1_observation_original)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             row.run_id, row.framework, row.mode, row.query_mode,
@@ -179,10 +178,6 @@ def insert_task_result(conn: sqlite3.Connection, row: TaskResultRow) -> None:
             row.phase2_observation, row.predicted_result_json,
             row.gold_result_json, row.n_agent_turns,
             row.tool_call_stats_json,
-            None if row.phase1_passed_audited is None
-                 else int(row.phase1_passed_audited),
-            None if row.phase1_passed_original is None
-                 else int(row.phase1_passed_original),
             row.phase1_observation_audited,
             row.phase1_observation_original,
         ),

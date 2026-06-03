@@ -59,6 +59,15 @@ the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 to see a model's columns / measures / joins; `create_model` / `edit_model`
 to add columns and measures; `query` / `query_nested` to test.
 
+READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
+filter, projection, or join key — `search` with `entities=[
+"<db>.<model>.<col>"]`, `max_memories=0`, `max_example_queries=0`. The
+returned `EntityHit.text` carries `Description:` and `Sample values:`
+inline. The truncated `Sample values:` line is your authoritative source
+of which literal forms actually occur in this column — case variants,
+whitespace forms, abbreviations, alternate phrasings of the same concept.
+Use it BEFORE writing any IN-set (see rule 3 below).
+
 ENCODE-THEN-QUERY DISCIPLINE:
 
 1. DECOMPOSE the question into logical blocks. Every qualifier
@@ -94,6 +103,18 @@ ENCODE-THEN-QUERY DISCIPLINE:
    - If a KB cites named literals that are ABSENT from the column's
      sampled values (check via `inspect_model`), do not write that
      predicate.
+   - Symmetric companion: if the column's `Sample values` show variants
+     of the KB-named literals — case differences, internal whitespace,
+     abbreviations (`apt` for `Apartment`, `Y` for `yes`), or alternate
+     phrasings of the same concept (`brick house` vs `brickwork house`,
+     `2014+` / `after 2014` for `2014 or newer`) — NORMALISE and EXTEND
+     the IN-set to include those variants. KB hedges ("etc.", "like",
+     "include") and the schema author's `Ex.` enumerations are
+     deliberately non-exhaustive; the `Sample values` line is the
+     authoritative inventory of what's actually present in the column.
+     A canonical-only IN-set will silently miss matching rows. There is
+     no user-sim to confirm this for you in one-shot mode — read the
+     sampled values yourself.
 """
 
 
@@ -115,7 +136,17 @@ descriptions, and proceed autonomously.
 4. TEST candidate columns and the final query with `query` /
    `query_nested`; sanity-check the generated SQL.
 
-5. SUBMIT. Write the FINAL query so it REFERENCES the named columns /
+5. PRE-SUBMIT MUTATION CHECK. Before calling `submit_query`, audit every
+   TRIM, LOWER, UPPER, ROUND, CAST, dedup, canonicalize-via-CASE, and
+   output-shape choice in the FINAL query. Each one MUST be either
+   (a) explicitly named in the user's question or (b) required by an
+   encoded KB. If neither holds, DROP the mutation and submit the raw
+   form. "Defensive" normalisation of an output column, a join key, a
+   JSON key, or a CHAR-padded literal silently corrupts the rowset —
+   never apply one without an explicit source. There is no user to
+   second-guess this on your behalf.
+
+6. SUBMIT. Write the FINAL query so it REFERENCES the named columns /
    measures you encoded — do NOT inline their SQL back into the query.
    Project exactly the columns the question names, and only those.
    {submit}

@@ -72,10 +72,30 @@ def audited_filename_for(db: str, audit_set: str) -> str:
 
 
 def load_audited(db: str, audit_set: str = "inhouse") -> list[dict]:
+    # DEV-1515: inhouse mini-interact moved to single_file layout. Read
+    # the consolidated `mini_interact_audited.jsonl` and filter by
+    # `selected_database`. SAR audit set still uses the per_db layout.
+    if audit_set == "inhouse":
+        single = audited_root_for(audit_set) / "mini_interact_audited.jsonl"
+        if single.exists():
+            rows: list[dict] = []
+            with single.open() as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    d = json.loads(line)
+                    if d.get("selected_database") == db:
+                        rows.append(d)
+            if not rows:
+                raise FileNotFoundError(
+                    f"No rows for db={db!r} in {single}"
+                )
+            return rows
     path = audited_root_for(audit_set) / db / audited_filename_for(db, audit_set)
     if not path.exists():
         raise FileNotFoundError(f"No sidecar at {path}")
-    rows: list[dict] = []
+    rows = []
     with path.open() as f:
         for line in f:
             line = line.strip()

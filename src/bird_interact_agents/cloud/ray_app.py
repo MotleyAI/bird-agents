@@ -27,6 +27,13 @@ from typing import Any, Callable, Iterable, Iterator
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
 from bird_interact_agents.cloud import upload_back as _upload_back
+from bird_interact_agents.eval.grade_in_place import (
+    grade_and_write,
+    grade_one_submission,
+    load_audited_gold_rows_for as _load_audited_gold_rows_for,
+    load_task_annotation_or_implicit as _load_task_annotation_or_implicit,
+    write_failed_submission_annotation,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +43,22 @@ from bird_interact_agents.cloud import upload_back as _upload_back
 
 def default_gcs_client():
     return _gcs.default_gcs_client()
+
+
+# ---------------------------------------------------------------------------
+# DEV-1515: inline grader hook called per task after a successful submit.
+# Both ``cloud.ray_app`` (cloud) and ``run`` (local) call
+# ``grade_in_place.grade_one_submission`` so the per-row
+# ``submission_annotation.json`` files come out identical regardless of
+# the entry point. The aggregator + fetch path consume those files —
+# no ``phase1_passed_*`` raw fields are emitted here. The
+# ``_load_*`` / ``_grade_one_submission`` names are kept as
+# backwards-compat aliases at the top of this module so existing
+# call-sites and tests keep importing from ``cloud.ray_app``.
+# ---------------------------------------------------------------------------
+
+
+_grade_one_submission = grade_one_submission
 
 
 # ---------------------------------------------------------------------------
@@ -544,7 +567,111 @@ def _run_one_in_actor(
     finally:
         pass
 
+    # DEV-1515: inline grader produces a SubmissionAnnotation per task
+    # (cascading verdict + Tier 2 informational). Failure here MUST NOT
+    # block the row/log upload — it's diagnostic, not result-of-record.
+    # But the per-row submission_annotation.json MUST land in GCS
+    # regardless: ``driver._emit_cascading_phase1_on_fetch`` runs the
+    # aggregator strictly (a single missing per-row file raises
+    # FileNotFoundError and the whole ``cascading_phase1`` block is
+    # dropped from ``eval.json``). So on any cloud-grader bypass path
+    # (unbound data_dir, missing submitted_sql, broken gold, grader
+    # exception) we fall back to writing + uploading a fail-everything
+    # annotation — mirrors ``run._grade_local_row``.
+    #
+    # Codex r7 ordering: upload the annotation BEFORE the attempt row.
+    # ``driver.wait_until_done`` returns ``done`` when
+    # ``len(attempts) >= total`` (i.e. once every attempt row blob
+    # exists in GCS). Non-detached ``submit`` then immediately calls
+    # ``fetch``; if the row landed before the annotation, fetch could
+    # race the in-flight annotation upload and the cascade aggregator
+    # would either drop ``cascading_phase1`` entirely or surface
+    # ``cascading_phase1_error``. Uploading the annotation first makes
+    # the row blob the canonical "task fully done, including
+    # annotation" marker.
+    _grader_data_dir = locals().get("data_dir")
+    annotation_dir = Path(tempfile.mkdtemp(prefix="bird_submission_annot_"))
+    _row_submitted_sql = row.get("submitted_sql")
+    _row_selected_db = (
+        row.get("database") or task_data.get("selected_database") or ""
+    )
+    try:
+        # Short-circuit BEFORE calling the real grader on a missing
+        # submission. ``str(row.get("submitted_sql") or "")`` would
+        # otherwise pass ``""`` through; SQLite may silently return an
+        # empty rowset for an empty statement, and ``_set_equal([], [])``
+        # would falsely pass N1/N2/N3 whenever the gold result is also
+        # empty (Codex r7). Mirrors ``run._grade_local_row``'s short-
+        # circuit so the cloud + local paths agree on never-submitted
+        # rows — both write a fail-everything annotation here, which the
+        # ``except`` branch below ALSO does for grader exceptions.
+        if not _row_submitted_sql or not _row_selected_db:
+            raise RuntimeError(
+                "no submitted_sql / selected_database — task errored "
+                "before reaching submit; routed to fail-everything "
+                "fallback",
+            )
+        if _grader_data_dir is None:
+            raise RuntimeError("data_dir unbound; grader skipped")
+        ann_path = _grade_one_submission(
+            task_data=task_data,
+            submitted_sql=str(_row_submitted_sql),
+            rows_dir=annotation_dir,
+            run_id=run_id,
+            benchmark=_cloud_benchmark(cfg),
+            db_path=Path(_grader_data_dir)
+                / str(_row_selected_db)
+                / f"{_row_selected_db}.sqlite",
+            cost_usd_agent=row.get("usage", {}).get("cost_usd_agent")
+                if isinstance(row.get("usage"), dict) else None,
+            cost_usd_user_sim=row.get("usage", {}).get("cost_usd_user_sim")
+                if isinstance(row.get("usage"), dict) else None,
+            duration_s=row.get("duration_s"),
+            n_agent_turns=row.get("usage", {}).get("n_agent_turns")
+                if isinstance(row.get("usage"), dict) else None,
+            n_ask_user_calls=row.get("usage", {}).get("n_ask_user_calls")
+                if isinstance(row.get("usage"), dict) else None,
+            predicted_row_count=None,
+            attempt=attempt,
+        )
+        _gcs.write_submission_annotation(
+            run_id, iid, json.loads(ann_path.read_text()),
+            client=gcs_client,
+        )
+    except Exception as grader_exc:  # noqa: BLE001
+        # Diagnostic — never let grader failure cascade into a task fail.
+        traceback.print_exc()
+        try:
+            failed_path = write_failed_submission_annotation(
+                rows_dir=annotation_dir,
+                instance_id=iid,
+                selected_database=str(task_data.get("selected_database", "")
+                                      or "<unknown>"),
+                benchmark=_cloud_benchmark(cfg),
+                run_id=run_id,
+                trajectory_path=f"rows/{iid}/attempt-{attempt}.json",
+                failure_details=(
+                    f"cloud inline grader raised: "
+                    f"{type(grader_exc).__name__}: {grader_exc}"
+                )[:200],
+                duration_s=row.get("duration_s"),
+            )
+            _gcs.write_submission_annotation(
+                run_id, iid, json.loads(failed_path.read_text()),
+                client=gcs_client,
+            )
+        except Exception:  # noqa: BLE001
+            # Fallback-of-the-fallback — log and move on. The downstream
+            # aggregator will treat this row as missing (skip whole block).
+            traceback.print_exc()
+    finally:
+        shutil.rmtree(annotation_dir, ignore_errors=True)
+
+    # Codex r7: annotation upload is now BEFORE the attempt row write,
+    # so ``wait_until_done`` (which counts attempt rows) only sees the
+    # row after the cascade annotation has landed in GCS.
     _gcs.write_row(run_id, iid, attempt, row, client=gcs_client)
+
     try:
         log_bytes = log_tmp.read_bytes() if log_tmp.exists() else b""
     except OSError:

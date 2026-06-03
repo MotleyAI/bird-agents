@@ -917,8 +917,6 @@ def _finalize(
         "tool_call_stats": tool_stats,
         # Dual-eval fields — populated only when --use-audited-gold-sql
         # is on AND the overlay applied; NULL elsewhere.
-        "phase1_passed_audited": submitter.get("phase1_passed_audited"),
-        "phase1_passed_original": submitter.get("phase1_passed_original"),
         "phase1_observation_audited": submitter.get("phase1_observation_audited"),
         "phase1_observation_original": submitter.get("phase1_observation_original"),
     }

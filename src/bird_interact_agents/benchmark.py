@@ -92,6 +92,12 @@ MINI_INTERACT = Benchmark(
     gold_required=False,
     per_task_db_isolation=False,
     container_data_dir="/data/mini-interact",
+    # DEV-1515: switched to the single-file layout (matches livesqlbench).
+    # Per-DB JSONLs at audited_gold/<db>/<db>_audited.jsonl have been
+    # consolidated into audited_gold/mini_interact_audited.jsonl with
+    # variant_id + primary fields added per row (DEV-1515 multi-variant
+    # support). See scripts/consolidate_mini_interact_audited.py.
+    audited_gold_layout="single_file",
 )
 
 LIVESQLBENCH = Benchmark(

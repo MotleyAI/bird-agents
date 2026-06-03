@@ -653,13 +653,17 @@ def test_build_subcommand_passes_audited_gold_root_to_image_tag(
     tag_calls: list[tuple] = []
     push_calls: list[tuple] = []
 
-    def fake_image_tag(repo_root, audited_gold_root, *, allow_dirty):
-        tag_calls.append((repo_root, audited_gold_root, allow_dirty))
+    def fake_image_tag(repo_root, audited_gold_root, *, allow_dirty,
+                       annotations_root=None):
+        tag_calls.append((repo_root, audited_gold_root, allow_dirty,
+                          annotations_root))
         return "deadbeef-cafebabe"
 
     def fake_build_and_push(tag, repo_root, *, audited_gold_root=None,
+                            annotations_root=None,
                             force=False, **_kw):
-        push_calls.append((tag, repo_root, audited_gold_root, force))
+        push_calls.append((tag, repo_root, audited_gold_root,
+                           annotations_root, force))
         return f"registry.example/x/runner:{tag}"
 
     monkeypatch.setattr(_image, "image_tag", fake_image_tag)

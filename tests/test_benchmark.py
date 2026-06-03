@@ -108,8 +108,10 @@ def test_audited_gold_layout_default_is_per_db():
     assert Benchmark.model_fields["audited_gold_layout"].default == "per_db"
 
 
-def test_mini_interact_audited_gold_layout_per_db():
-    assert get_benchmark("mini_interact").audited_gold_layout == "per_db"
+def test_mini_interact_audited_gold_layout_single_file():
+    """DEV-1515: mini-interact moved to single_file (matches livesqlbench).
+    Per-DB JSONLs were consolidated into ``audited_gold/mini_interact_audited.jsonl``."""
+    assert get_benchmark("mini_interact").audited_gold_layout == "single_file"
 
 
 def test_livesqlbench_audited_gold_layout_single_file():

@@ -24,3 +24,8 @@ _specs/
 # Kept on disk for local `--use-audited-gold-sql` runs; never committed/pushed.
 audited_gold/
 sar_audited_gold/
+# DEV-1515: per-task / per-submission annotations. Same posture as
+# audited_gold/ — kept local to avoid contaminating the benchmark
+# distribution; baked into the cloud image at build time via the
+# `paths.annotations_root()` build context.
+annotations/

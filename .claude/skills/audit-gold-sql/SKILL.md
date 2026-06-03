@@ -46,10 +46,14 @@ Read-only:
 
 ## Outputs
 
-One JSONL line appended (or updated) at
-`bird-interact-agents/audited_gold/<db>/<db>_audited.jsonl`. If a line
-already exists for this `instance_id`, **overwrite** it in place
-(latest-wins; the verifier dedups on read).
+One JSONL line per `(instance_id, variant_id)` pair appended (or
+updated) at `bird-interact-agents/audited_gold/<db>/<db>_audited.jsonl`.
+`variant_id` defaults to `"primary"`; multi-variant audits emit
+multiple rows sharing `instance_id` with distinct `variant_id` slugs.
+If a row already exists for this `(instance_id, variant_id)` pair,
+**overwrite** it in place (latest-wins on the composite key —
+NEVER drop alternate variants by overwriting on `instance_id` alone;
+the verifier dedups on `(instance_id, variant_id)`).
 
 ### Sidecar schema (verbatim)
 
@@ -57,6 +61,8 @@ already exists for this `instance_id`, **overwrite** it in place
 {
   "instance_id": "shop_3",
   "selected_database": "shop",
+  "variant_id": "primary",
+  "primary": true,
   "audit_status": "edited",
   "original_sol_sql": ["WITH SupplierTier AS (..."],
   "audited_sol_sql":  ["SELECT COUNT(*) ..."],
@@ -76,6 +82,13 @@ already exists for this `instance_id`, **overwrite** it in place
 }
 ```
 
+`variant_id` defaults to `"primary"` and `primary` defaults to `true`
+for single-variant tasks (the common case). Multi-variant tasks (when
+authoritative sources disagree among themselves — see the
+`source_conflict` rule above) emit N rows sharing `instance_id`, each
+with a distinct `variant_id` slug, with exactly one carrying
+`primary: true`.
+
 Field rules:
 
 - `audit_status` is one of three:
@@ -89,6 +102,17 @@ Field rules:
     unauthorised). Fall back to the natural reading of `amb_user_query`
     using only authorised sources. `audited_sol_sql` is the natural
     reading; one `changes` entry documents the gap.
+- **Source contradiction → multi-variant is mandatory** — see the
+  shared contract's "Multi-variant audit on source contradiction
+  (MANDATORY)" section. For mini-interact, the sources that can
+  participate in a contradiction are: KB items (`<db>_kb.jsonl` —
+  both `description` and `definition` fields), column meanings
+  (`<db>_column_meaning_base.json`), labeled-ambiguity sql_snippets
+  (`user_query_ambiguity.critical_ambiguity[]` and
+  `non_critical_ambiguity[]`), and knowledge-ambiguity sql_snippets
+  (`knowledge_ambiguity[]`). The recurring shape is `kb:<n>` vs
+  `labeled_ambiguity:<term>` disagreeing on a boundary / threshold /
+  bucket. Step 3.5 below is the mechanical contradiction-check pass.
 - `original_sol_sql` and `audited_sol_sql` are both list[str], mirroring
   upstream `sol_sql`'s shape. For most tasks both have length 1.
 - `audited_sample_row` is the first row of running `audited_sol_sql[0]`
@@ -244,6 +268,31 @@ For `shop_3`:
 | critical_ambiguity[1] | "premium suppliers" | `LOWER(tier) IN ('gold','platinum') AND LOWER(ship_class) IN ('express','priority')` — defines the premium predicate |
 | knowledge_ambiguity[0] | "Premium Supplier" (deleted_knowledge=22) | Same `LOWER+IN` premium predicate |
 
+### Step 3.5 — Contradiction check (MUST precede any single-variant commit)
+
+Before committing to `audit_status="clean"` or `"edited"` with a SINGLE
+audit row, run the contradiction check from the shared contract's
+"Multi-variant audit on source contradiction (MANDATORY)" section.
+Pairwise-scan the sources you loaded in Steps 1-3:
+
+- every KB item touched by this task (both `description` and
+  `definition` fields, in case they disagree internally)
+- every column meaning referenced
+- every `critical_ambiguity` / `non_critical_ambiguity` sql_snippet
+- every `knowledge_ambiguity` sql_snippet
+
+ANY pair that pins different values for the SAME operational choice
+(threshold value, boundary operator, bucket inclusion, aggregation
+choice, etc.) triggers multi-variant. Emit one audit row per
+defensible reading per the mechanics in the shared contract; reflect
+the contradiction on the TaskAnnotation via
+`internal_inconsistency.audit_resolution = "multi_variant"`.
+
+If NO contradictions are found, proceed to Step 4 (single-variant
+audit). If you wrote a regretful note in `reasoning_summary` that
+names two sources and explains why you went with one, you SKIPPED
+this step — go back.
+
 ### Step 4 — Decompose the gold SQL
 
 Parse the gold SQL into clauses manually. List every:
@@ -364,13 +413,18 @@ is incomplete until execution succeeds.
 
 Path: `bird-interact-agents/audited_gold/<db>/<db>_audited.jsonl`.
 
-If the file doesn't exist, create the directory and the file. If a
-line already exists for this `instance_id`, rewrite the whole file
-with the line replaced (latest-wins).
+If the file doesn't exist, create the directory and the file. The
+write key is the composite `(instance_id, variant_id)` pair — NOT
+`instance_id` alone, because multi-variant audits emit multiple rows
+per instance and overwriting on `instance_id` would silently drop
+alternates. If a line already exists for this `(instance_id,
+variant_id)` pair, rewrite the whole file with that one line replaced
+(latest-wins on the composite key); leave every other variant row
+untouched.
 
 Build the JSON object per the schema above, serialise with
 `json.dumps(obj, ensure_ascii=False)`, append a newline. Each JSONL
-line is one task's full audit.
+line is one variant of one task's full audit.
 
 ### Step 9 — Per-DB summary (optional, after auditing all tasks)
 

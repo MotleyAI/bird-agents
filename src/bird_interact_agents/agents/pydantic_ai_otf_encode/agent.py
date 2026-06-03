@@ -1562,8 +1562,6 @@ def _finalize(
         "tool_call_stats": tool_stats,
         # Dual-eval fields — parity with the recursive adapter (merged from
         # master); populated only under --use-audited-gold-sql, NULL otherwise.
-        "phase1_passed_audited": submitter.get("phase1_passed_audited"),
-        "phase1_passed_original": submitter.get("phase1_passed_original"),
         "phase1_observation_audited": submitter.get("phase1_observation_audited"),
         "phase1_observation_original": submitter.get("phase1_observation_original"),
         # DEV-1454-specific: per-task KB encode registry.
@@ -1609,8 +1607,6 @@ def _minimal_error_row(
         "gold_result_json": None,
         "n_agent_turns": None,
         "tool_call_stats": None,
-        "phase1_passed_audited": None,
-        "phase1_passed_original": None,
         "phase1_observation_audited": None,
         "phase1_observation_original": None,
         "kb_encoded": [],

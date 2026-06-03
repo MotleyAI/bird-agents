@@ -195,8 +195,6 @@ def _diagnostic_payload(
     translation_failed: bool = False,
     dry_run_failed: bool = False,
     infrastructure_failed: bool = False,
-    phase1_passed_audited: bool | None = None,
-    phase1_passed_original: bool | None = None,
     phase1_observation_audited: str | None = None,
     phase1_observation_original: str | None = None,
 ) -> dict[str, Any]:
@@ -246,11 +244,11 @@ def _diagnostic_payload(
         payload["phase2_observation"] = observation
     else:
         payload["phase1_observation"] = observation
-    # Dual-eval columns only populated when both golds were exercised.
-    if phase1_passed_audited is not None:
-        payload["phase1_passed_audited"] = phase1_passed_audited
-    if phase1_passed_original is not None:
-        payload["phase1_passed_original"] = phase1_passed_original
+    # DEV-1515: per-task pass-fail bool fields against audited/original
+    # gold have been REMOVED — all per-task verdicts now live in the
+    # SubmissionAnnotation (produced inline by grade_and_write). The
+    # observation snapshots are kept as diagnostic-only context for
+    # log inspection.
     if phase1_observation_audited is not None:
         payload["phase1_observation_audited"] = phase1_observation_audited
     if phase1_observation_original is not None:
@@ -491,11 +489,10 @@ def submit_raw_sql(state: Any, sql: str) -> str:
         return msg + _budget_note(state)
 
     infra_failed = False
-    audited_p1 = original_p1 = None
     audited_obs = original_obs = None
     try:
         (observation, reward, p1, p2, finished,
-         audited_p1, original_p1, audited_obs, original_obs) = _dispatch_eval(state, sql)
+         _audited_p1, _original_p1, audited_obs, original_obs) = _dispatch_eval(state, sql)
     except Exception as e:  # noqa: BLE001
         logger.exception("execute_submit_action raised on %s", sql[:80])
         observation = f"Error processing submission: {e}"
@@ -510,8 +507,6 @@ def submit_raw_sql(state: Any, sql: str) -> str:
         p1=p1,
         p2=p2,
         infrastructure_failed=infra_failed,
-        phase1_passed_audited=audited_p1,
-        phase1_passed_original=original_p1,
         phase1_observation_audited=audited_obs,
         phase1_observation_original=original_obs,
     )
@@ -634,8 +629,6 @@ def submit_slayer_query(
                 json_failed: bool = False, translation_failed: bool = False,
                 dry_run_failed: bool = False,
                 infrastructure_failed: bool = False,
-                phase1_passed_audited: bool | None = None,
-                phase1_passed_original: bool | None = None,
                 phase1_observation_audited: str | None = None,
                 phase1_observation_original: str | None = None) -> None:
         diag = _diagnostic_payload(
@@ -648,8 +641,6 @@ def submit_slayer_query(
             translation_failed=translation_failed,
             dry_run_failed=dry_run_failed,
             infrastructure_failed=infrastructure_failed,
-            phase1_passed_audited=phase1_passed_audited,
-            phase1_passed_original=phase1_passed_original,
             phase1_observation_audited=phase1_observation_audited,
             phase1_observation_original=phase1_observation_original,
         )
@@ -729,11 +720,10 @@ def submit_slayer_query(
         return msg + _budget_note(state)
 
     infra_failed = False
-    audited_p1 = original_p1 = None
     audited_obs = original_obs = None
     try:
         (observation, reward, p1, p2, finished,
-         audited_p1, original_p1, audited_obs, original_obs) = _dispatch_eval(state, sql)
+         _audited_p1, _original_p1, audited_obs, original_obs) = _dispatch_eval(state, sql)
     except Exception as e:  # noqa: BLE001
         logger.exception("execute_submit_action raised on slayer-rendered SQL")
         observation = f"Error processing submission: {e}"
@@ -746,8 +736,6 @@ def submit_slayer_query(
         reward=reward if reward is not None else 0.0,
         p1=p1, p2=p2, finished=finished,
         infrastructure_failed=infra_failed,
-        phase1_passed_audited=audited_p1,
-        phase1_passed_original=original_p1,
         phase1_observation_audited=audited_obs,
         phase1_observation_original=original_obs,
     )

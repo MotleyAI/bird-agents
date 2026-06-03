@@ -438,8 +438,6 @@ class SmolagentsAgent:
                 "trajectory": [{"final_output": output[:500]}],
                 "error": None,
                 "usage": state.usage.model_dump(),
-                "phase1_passed_audited": result.get("phase1_passed_audited"),
-                "phase1_passed_original": result.get("phase1_passed_original"),
                 "phase1_observation_audited": result.get("phase1_observation_audited"),
                 "phase1_observation_original": result.get("phase1_observation_original"),
             },

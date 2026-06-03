@@ -99,10 +99,24 @@ substituting livesqlbench's inputs / citations / output path:
    join chain isn't obviously pinned by KB+column-meaning text. The
    `<db>_schema.txt` is small (one CREATE TABLE per table) — grep the
    relevant table names + `FOREIGN KEY` lines.
-4. **Classify** per shared contract (clean / edited / unrecoverable).
-5. **Sanity-execute** `audited_sol_sql[0]` against `<db>.sqlite` (or
+4. **Contradiction check** (MUST precede single-variant commit).
+   Run the shared contract's "Multi-variant audit on source
+   contradiction (MANDATORY)" check. For livesqlbench, the sources
+   that can participate in a contradiction are: KB items
+   (`<db>_kb.jsonl` — both `description` and `definition` fields),
+   column meanings (`<db>_column_meaning_base.json`), and the
+   relationships implied by `<db>_schema.txt` FKs. (livesqlbench has
+   NO labeled-ambiguity blocks; the contradiction-side citations are
+   always `kb:<id>`, `external_knowledge:<id>`, or `column_meaning:…`.)
+   ANY pair pinning different values for the SAME operational choice
+   triggers multi-variant per the shared contract's mechanics.
+5. **Classify** per shared contract (clean / edited / unrecoverable,
+   or — if step 4 fired — multi-variant with N edited rows).
+6. **Sanity-execute** `audited_sol_sql[0]` against `<db>.sqlite` (or
    `<db>_template.sqlite`). Record first row in `audited_sample_row`.
-6. **Persist**: append/overwrite the row in
+   For multi-variant, execute EACH variant's SQL and record its own
+   sample row.
+7. **Persist**: append/overwrite the row(s) in
    `audited_gold/livesqlbench_audited.jsonl`. Each row carries
    `benchmark: "livesqlbench"` and `skill_version: "audit-gold-sql-livesqlbench/1.0"`.
 
