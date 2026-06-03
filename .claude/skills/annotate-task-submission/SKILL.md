@@ -87,10 +87,11 @@ rationale paragraph. Instead:
      'lcs > 2'"`).
    * `description`: 1–3 sentences explaining what each source says and
      why an agent can't satisfy both at once.
-   * `audit_resolution`: typically `"multi_variant"` (see step 1).
-     Use `"picked_one_variant"` when emitting two variants would be
-     redundant for grading (rare), or `"unresolved"` when the audit
-     declared the task unanswerable.
+   * `audit_resolution`: **always `"multi_variant"`** for direct source
+     contradictions — `"picked_one_variant"` is forbidden in this
+     case, because no single reading is authoritative. Use
+     `"unresolved"` only when the audit declares the task
+     unanswerable.
 3. **Set `verdict = "ambiguous"`** — NOT `sufficient` (sources DON'T
    converge), NOT `insufficient` (each source independently pins a
    reading). The published metadata licenses multiple readings

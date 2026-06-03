@@ -470,10 +470,10 @@ def merge_submission_annotations(
     downloaded_run_dir: Path,
     run_id: str,
     benchmark: str,
-    main_checkout_root: Path,
 ) -> AnnotationMergeReport:
     """Walk ``<downloaded_run_dir>/rows/<inst>/submission_annotation.json``
-    and merge each into ``<main_checkout_root>/annotations/<benchmark>/<db>/<inst>.submission.<run_id>.json``.
+    and merge each into ``<annotations_root>/<benchmark>/<db>/<inst>.submission.<run_id>.json``
+    (resolved via ``paths.annotations_root()`` so ``BIRD_ANNOTATIONS_ROOT`` is honoured).
 
     Contract:
     * No-overwrite-if-present. A pre-existing destination is preserved

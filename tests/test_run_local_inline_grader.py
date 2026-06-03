@@ -222,13 +222,14 @@ async def test_local_run_invokes_inline_grader_per_task(monkeypatch, tmp_path):
     # would grade against the global sqlite, and the cascade verdict
     # could disagree with the agent's submission for purely path-routing
     # reasons.
-    expected_data_dir = str(tmp_path / "ignored_data_dir")
+    expected_data_dir = (tmp_path / "ignored_data_dir").resolve()
     for c in calls:
-        assert str(c["db_path"]).startswith(expected_data_dir), (
+        db_path = Path(c["db_path"]).resolve()
+        assert expected_data_dir in db_path.parents, (
             f"db_path must be rooted at data_dir={expected_data_dir!r}; "
             f"got db_path={c['db_path']!r}"
         )
-        assert c["db_path"].name == "alien.sqlite", (
+        assert db_path.name == "alien.sqlite", (
             f"db_path leaf must be <db>.sqlite; got {c['db_path']!r}"
         )
 

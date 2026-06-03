@@ -670,6 +670,12 @@ def _run_one_in_actor(
     finally:
         shutil.rmtree(annotation_dir, ignore_errors=True)
 
+    # Strip Pydantic objects from the row before JSON-serialising it for
+    # GCS — they were consumed by the annotation writer above and must not
+    # reach json.dumps (which raises TypeError on non-serialisable types).
+    row.pop("_task_annotation", None)
+    row.pop("_autopsy", None)
+
     # Codex r7: annotation upload is now BEFORE the attempt row write,
     # so ``wait_until_done`` (which counts attempt rows) only sees the
     # row after the cascade annotation has landed in GCS.
@@ -1113,6 +1119,7 @@ def run_pool(
                 gcs_client=client,
                 heartbeat=heartbeat,
                 actor_factory=lambda: ActorCls.remote(cfg, run_id, attempt),
+                benchmark=_cloud_benchmark(cfg),
             )
         heartbeat.stop_and_flush(terminal_state="done")
     except Exception:
@@ -1130,6 +1137,7 @@ def _run_with_actors(
     gcs_client,
     heartbeat: HeartbeatWriter,
     actor_factory: Callable[[], Any],
+    benchmark: str,
 ) -> None:
     """Drive a pool of Ray actors with precise actor→iid bookkeeping.
 
@@ -1169,7 +1177,7 @@ def _run_with_actors(
                     rows_dir=_ann_dir,
                     instance_id=iid,
                     selected_database="",
-                    benchmark=_cloud_benchmark(cfg),
+                    benchmark=benchmark,
                     run_id=run_id,
                     trajectory_path=f"rows/{iid}/attempt-1.json",
                     failure_details=err_row.get("error", "")[:200],
@@ -1217,7 +1225,7 @@ def _run_with_actors(
                     rows_dir=_ann_dir,
                     instance_id=iid,
                     selected_database="",
-                    benchmark=_cloud_benchmark(cfg),
+                    benchmark=benchmark,
                     run_id=run_id,
                     trajectory_path=f"rows/{iid}/attempt-1.json",
                     failure_details=err_row.get("error", "")[:200],
@@ -1262,7 +1270,7 @@ def _run_with_actors(
                     rows_dir=_ann_dir,
                     instance_id=iid,
                     selected_database="",
-                    benchmark=_cloud_benchmark(cfg),
+                    benchmark=benchmark,
                     run_id=run_id,
                     trajectory_path=f"rows/{iid}/attempt-1.json",
                     failure_details=err_row.get("error", "")[:200],
@@ -1293,7 +1301,7 @@ def _run_with_actors(
                     rows_dir=_ann_dir,
                     instance_id=iid,
                     selected_database="",
-                    benchmark=_cloud_benchmark(cfg),
+                    benchmark=benchmark,
                     run_id=run_id,
                     trajectory_path=f"rows/{iid}/attempt-1.json",
                     failure_details=err_row.get("error", "")[:200],

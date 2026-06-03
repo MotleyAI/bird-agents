@@ -103,7 +103,6 @@ def test_merge_writes_annotation_to_main_checkout(tmp_path, monkeypatch):
         downloaded_run_dir=downloaded,
         run_id="r1",
         benchmark="mini-interact",
-        main_checkout_root=main_checkout,
     )
 
     dest = (
@@ -142,7 +141,6 @@ def test_merge_no_overwrite_if_present(tmp_path, monkeypatch):
         downloaded_run_dir=downloaded,
         run_id="r1",
         benchmark="mini-interact",
-        main_checkout_root=main_checkout,
     )
     assert report.merged == 0
     assert report.skipped_existing == 1
@@ -173,7 +171,6 @@ def test_merge_rejects_schema_invalid_file(tmp_path, monkeypatch):
         downloaded_run_dir=downloaded,
         run_id="r1",
         benchmark="mini-interact",
-        main_checkout_root=main_checkout,
     )
     assert report.merged == 0
     assert report.rejected_invalid == 1
@@ -206,7 +203,6 @@ def test_merge_writes_audit_report(tmp_path, monkeypatch):
         downloaded_run_dir=downloaded,
         run_id="r1",
         benchmark="mini-interact",
-        main_checkout_root=main_checkout,
     )
     audit = downloaded / "annotation_merge_report.json"
     assert audit.exists()
@@ -267,7 +263,6 @@ def test_merge_overwrites_when_new_attempt_strictly_newer(tmp_path, monkeypatch)
         downloaded_run_dir=downloaded,
         run_id="r1",
         benchmark="mini-interact",
-        main_checkout_root=main_checkout,
     )
 
     assert report.overwritten_newer_attempt == 1, report
@@ -310,7 +305,6 @@ def test_merge_does_not_overwrite_when_new_attempt_is_older_or_equal(tmp_path, m
         downloaded_run_dir=downloaded,
         run_id="r1",
         benchmark="mini-interact",
-        main_checkout_root=main_checkout,
     )
 
     assert report.overwritten_newer_attempt == 0, report
@@ -348,7 +342,6 @@ def test_merge_skips_when_attempts_equal(tmp_path, monkeypatch):
         downloaded_run_dir=downloaded,
         run_id="r1",
         benchmark="mini-interact",
-        main_checkout_root=main_checkout,
     )
     assert report.overwritten_newer_attempt == 0, report
     assert report.skipped_existing == 1, report

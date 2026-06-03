@@ -297,9 +297,11 @@ Both roots live under the main checkout (worktree-safe via
 `BIRD_SLAYER_MODELS_OTF_ROOT_LIVESQLBENCH`). `--otf-rebuild` purges
 only the run's benchmark roots — never the other benchmark's.
 
-Cloud-side LiveSQLBench is out of scope for now; the dev-1470 cloud
-upload-back / post-run-merge still target the mini-interact roots
-verbatim.
+Cloud LiveSQLBench submission is supported via `bird-interact-cloud submit`
+(see the "Cloud smoke" example above). What remains out of scope is the OTF
+encode → upload-back → merge round-trip: the dev-1470 upload-back and
+post-run-merge still target the mini-interact OTF roots verbatim; per-benchmark
+OTF cloud support is a separate work item.
 
 ## Query Modes
 

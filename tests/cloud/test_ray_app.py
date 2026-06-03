@@ -966,6 +966,7 @@ def test_undispatched_pending_iids_get_error_rows(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=factory_that_also_fails,
+            benchmark="mini_interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")
@@ -1044,6 +1045,7 @@ def test_dispatch_failure_mints_replacement_actor(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=factory,
+            benchmark="mini_interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")
@@ -1326,6 +1328,7 @@ def test_run_with_actors_writes_actor_lost_row_for_dying_actor(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=lambda: _FakeActor(),
+            benchmark="mini_interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")
@@ -1387,6 +1390,7 @@ def test_dispatch_failure_writes_error_row(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=lambda: _BoomActor(),
+            benchmark="mini_interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")

@@ -422,6 +422,10 @@ class ClaudeSDKOtfAgent:
             }
             tool_names.extend(_slayer_tool_names())
 
+            # Per-task hook factories — must be created here (not on the
+            # agent constructor) to avoid cross-task state bleed.
+            pre_query_gate, post_tool_tracker = _make_query_before_submit_guard()
+
             options = ClaudeAgentOptions(
                 system_prompt=prompt,
                 mcp_servers=mcp_servers,
@@ -447,10 +451,18 @@ class ClaudeSDKOtfAgent:
                 # submit_query) execute before the run stops — the off-by-one
                 # that previously dropped a last-turn submission.
                 max_turns=_MAX_TURNS,
-                # Nudge the agent to submit when it nears the cap.
                 hooks={
+                    "PreToolUse": [
+                        HookMatcher(
+                            matcher="mcp__bird-interact-tools__submit_query",
+                            hooks=[pre_query_gate],
+                        ),
+                    ],
                     "PostToolUse": [
                         HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
+                        # Must be last so it captures the true last-completed
+                        # tool name after all other PostToolUse hooks have run.
+                        HookMatcher(hooks=[post_tool_tracker]),
                     ],
                 },
             )
