@@ -30,7 +30,7 @@ def _lsb_argv(extra: list[str]) -> list[str]:
         "--agent-model", "anthropic/claude-haiku-4-5-20251001",
         "--instance-ids", "alien_1",
         "--slayer-setup", "on-the-fly",
-        "--dataset", "livesqlbench",
+        "--dataset", "livesqlbench-base-lite-sqlite",
         "--no-require-audited-gold",
         *extra,
     ]
@@ -40,7 +40,7 @@ def test_livesqlbench_one_shot_accepted_with_gold():
     ns = cli.parse_args(
         _lsb_argv(["--mode", "one-shot", "--gold-file", "/abs/gold.jsonl"])
     )
-    assert ns.dataset == "livesqlbench"
+    assert ns.dataset == "livesqlbench-base-lite-sqlite"
     assert ns.gold_file == "/abs/gold.jsonl"
     assert ns.mode == "one-shot"
 
@@ -60,7 +60,7 @@ def test_dataset_hyphen_alias_normalized_to_canonical():
     ns = cli.parse_args(
         [
             "submit",
-            "--dataset", "mini_interact",
+            "--dataset", "mini-interact",
             "--framework", "pydantic_ai", "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1", "--mode", "a-interact",
@@ -68,7 +68,7 @@ def test_dataset_hyphen_alias_normalized_to_canonical():
             "--no-require-audited-gold",
         ]
     )
-    assert ns.dataset == "mini_interact"  # normalized to canonical
+    assert ns.dataset == "mini-interact"  # normalized to canonical
 
 
 def test_dataset_is_required():
@@ -92,7 +92,7 @@ def test_mode_values_accepted(mode: str) -> None:
     ns = cli.parse_args(
         [
             "submit",
-            "--dataset", "mini_interact",
+            "--dataset", "mini-interact",
             "--framework", "pydantic_ai",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -109,7 +109,7 @@ def test_unknown_mode_rejected() -> None:
         cli.parse_args(
             [
                 "submit",
-                "--dataset", "mini_interact",
+                "--dataset", "mini-interact",
                 "--framework", "pydantic_ai",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -128,7 +128,7 @@ def test_pass_through_flags_parse() -> None:
     ns = cli.parse_args(
         [
             "submit",
-            "--dataset", "mini_interact",
+            "--dataset", "mini-interact",
             "--framework", "pydantic_ai_recursive",
             "--query-mode", "raw",  # slayer is guarded for cloud (see below)
             "--agent-model", "cerebras/zai-glm-4.7",
@@ -168,7 +168,7 @@ def test_default_patience_is_500() -> None:
     ns = cli.parse_args(
         [
             "submit",
-            "--dataset", "mini_interact",
+            "--dataset", "mini-interact",
             "--framework", "pydantic_ai",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -188,7 +188,7 @@ def test_default_use_audited_gold_sql_is_true() -> None:
     ns = cli.parse_args(
         [
             "submit",
-            "--dataset", "mini_interact",
+            "--dataset", "mini-interact",
             "--framework", "pydantic_ai",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -205,7 +205,7 @@ def test_no_use_audited_gold_sql_opt_out() -> None:
     ns = cli.parse_args(
         [
             "submit",
-            "--dataset", "mini_interact",
+            "--dataset", "mini-interact",
             "--framework", "pydantic_ai",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -225,7 +225,7 @@ def test_require_audited_gold_default_on() -> None:
         cli.parse_args(
             [
                 "submit",
-                "--dataset", "mini_interact",
+                "--dataset", "mini-interact",
                 "--framework", "pydantic_ai",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -241,7 +241,7 @@ def test_require_audited_gold_disabled_when_use_audited_gold_off() -> None:
     ns = cli.parse_args(
         [
             "submit",
-            "--dataset", "mini_interact",
+            "--dataset", "mini-interact",
             "--framework", "pydantic_ai",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -329,7 +329,7 @@ def test_require_audited_gold_can_be_disabled_for_livesqlbench(
     _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
 
     ns = cli.parse_args(_lsb_audit_argv(["--no-require-audited-gold"]))
-    assert ns.dataset == "livesqlbench"
+    assert ns.dataset == "livesqlbench-base-lite-sqlite"
     assert ns.require_audited_gold is False
     assert ns.use_audited_gold_sql is True  # default-on stays on
 
@@ -347,16 +347,16 @@ def test_require_audited_gold_passes_for_livesqlbench_when_row_present(
 
     audited_root = tmp_path / "audited_gold"
     audited_root.mkdir()
-    (audited_root / "livesqlbench_audited.jsonl").write_text(
+    (audited_root / "livesqlbench-base-lite-sqlite_audited.jsonl").write_text(
         '{"instance_id":"museum_7","selected_database":"museum",'
-        '"benchmark":"livesqlbench",'
+        '"benchmark":"livesqlbench-base-lite-sqlite",'
         '"audit_status":"edited","audited_sol_sql":["SELECT 1"]}\n'
     )
     monkeypatch.setattr(_paths, "audited_gold_root", lambda: audited_root)
     _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
 
     ns = cli.parse_args(_lsb_audit_argv())
-    assert ns.dataset == "livesqlbench"
+    assert ns.dataset == "livesqlbench-base-lite-sqlite"
     assert ns.instance_ids == ["museum_7"]
 
 
@@ -364,7 +364,7 @@ def test_prompt_cache_default_on() -> None:
     ns = cli.parse_args(
         [
             "submit",
-            "--dataset", "mini_interact",
+            "--dataset", "mini-interact",
             "--framework", "pydantic_ai",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -399,7 +399,7 @@ def _slayer_argv(**over) -> list[str]:
     base.update(over)
     argv = [
         "submit",
-        "--dataset", base.get("dataset", "mini_interact"),
+        "--dataset", base.get("dataset", "mini-interact"),
         "--framework", base["framework"],
         "--query-mode", base["query_mode"],
         "--agent-model", base["agent_model"],
@@ -415,13 +415,11 @@ def _slayer_argv(**over) -> list[str]:
     return argv
 
 
-def test_slayer_pre_encoded_accepted() -> None:
-    """pre-encoded (default) + slayer + any supported framework is accepted —
-    the old hard rejection is gone."""
-    ns = cli.parse_args(_slayer_argv(mode="c-interact"))
-    assert ns.query_mode == "slayer"
-    assert ns.slayer_setup == "pre-encoded"  # default
-    assert ns.slayer_storage_root == "/data/slayer_models"  # default
+def test_slayer_pre_encoded_rejected() -> None:
+    """pre-encoded + query-mode=slayer is always rejected — on-the-fly is
+    the only valid setup for slayer mode."""
+    with pytest.raises(SystemExit):
+        cli.parse_args(_slayer_argv(mode="c-interact"))
 
 
 def test_slayer_on_the_fly_recursive_accepted() -> None:
@@ -442,24 +440,20 @@ def test_slayer_on_the_fly_otf_encode_accepted() -> None:
 
 
 def test_slayer_storage_root_override_parsed() -> None:
-    ns = cli.parse_args(_slayer_argv(slayer_storage_root="/data/custom_models"))
+    ns = cli.parse_args(_slayer_argv(
+        slayer_setup="on-the-fly", mode="a-interact",
+        slayer_storage_root="/data/custom_models",
+    ))
     assert ns.slayer_storage_root == "/data/custom_models"
 
 
-def test_on_the_fly_wrong_framework_rejected() -> None:
-    """on-the-fly only with pydantic_ai_recursive / pydantic_ai_otf_encode."""
-    with pytest.raises(SystemExit):
-        cli.parse_args(_slayer_argv(
-            framework="pydantic_ai", mode="a-interact", slayer_setup="on-the-fly",
-        ))
-
-
-def test_on_the_fly_wrong_mode_rejected() -> None:
-    with pytest.raises(SystemExit):
-        cli.parse_args(_slayer_argv(
-            framework="pydantic_ai_recursive", mode="c-interact",
-            slayer_setup="on-the-fly",
-        ))
+def test_on_the_fly_accepted_any_framework() -> None:
+    """on-the-fly + any supported framework + a-interact is accepted —
+    framework-specific validation was removed in DEV-1525."""
+    ns = cli.parse_args(_slayer_argv(
+        framework="pydantic_ai", mode="a-interact", slayer_setup="on-the-fly",
+    ))
+    assert ns.slayer_setup == "on-the-fly"
 
 
 def test_otf_encode_requires_on_the_fly() -> None:
@@ -484,7 +478,7 @@ def _ainteract_argv(**over) -> list[str]:
         "agent_model": "anthropic/claude-opus-4-7",
         "instance_ids": "shop_1",
         "mode": "a-interact",
-        "dataset": "mini_interact",
+        "dataset": "mini-interact",
         "slayer_setup": "on-the-fly",
     }
     base.update(over)
@@ -507,7 +501,7 @@ def _ainteract_argv(**over) -> list[str]:
 def test_cloud_ainteract_with_mini_interact_a_interact_on_the_fly_accepted():
     ns = cli.parse_args(_ainteract_argv())
     assert ns.framework == "claude_sdk_otf_ainteract"
-    assert ns.dataset == "mini_interact"
+    assert ns.dataset == "mini-interact"
     assert ns.mode == "a-interact"
     assert ns.slayer_setup == "on-the-fly"
 
@@ -522,18 +516,18 @@ def test_cloud_ainteract_with_livesqlbench_rejected():
     a gold-file present."""
     with pytest.raises(SystemExit):
         cli.parse_args(_ainteract_argv(
-            dataset="livesqlbench", gold_file="/abs/gold.jsonl",
+            dataset="livesqlbench-base-lite-sqlite", gold_file="/abs/gold.jsonl",
         ))
 
 
-def test_cloud_ainteract_with_one_shot_rejected():
-    """one-shot is rejected by _validate_one_shot_framework (only
-    claude_sdk_otf is whitelisted on the one-shot path)."""
-    with pytest.raises(SystemExit):
-        cli.parse_args(_ainteract_argv(
-            mode="one-shot", dataset="livesqlbench",
-            gold_file="/abs/gold.jsonl",
-        ))
+def test_cloud_ainteract_one_shot_livesqlbench_accepted():
+    """one-shot + livesqlbench is accepted — framework-specific validation
+    was removed in DEV-1525, and livesqlbench supports one-shot mode."""
+    ns = cli.parse_args(_ainteract_argv(
+        mode="one-shot", dataset="livesqlbench-base-lite-sqlite",
+        gold_file="/abs/gold.jsonl",
+    ))
+    assert ns.mode == "one-shot"
 
 
 def test_cloud_claude_sdk_otf_with_mini_interact_oracle_rejected():
@@ -548,7 +542,7 @@ def test_cloud_claude_sdk_otf_with_mini_interact_oracle_rejected():
             "--agent-model", "anthropic/claude-opus-4-7",
             "--instance-ids", "alien_1",
             "--mode", "oracle",
-            "--dataset", "mini_interact",
+            "--dataset", "mini-interact",
             "--no-require-audited-gold",
         ])
 
@@ -563,7 +557,7 @@ def test_cloud_ainteract_with_livesqlbench_oracle_rejected():
             "--agent-model", "anthropic/claude-opus-4-7",
             "--instance-ids", "alien_1",
             "--mode", "oracle",
-            "--dataset", "livesqlbench",
+            "--dataset", "livesqlbench-base-lite-sqlite",
             "--gold-file", "/abs/gold.jsonl",
             "--no-require-audited-gold",
         ])
@@ -574,7 +568,7 @@ def test_detach_and_allow_dirty_mutually_exclusive() -> None:
         cli.parse_args(
             [
                 "submit",
-                "--dataset", "mini_interact",
+                "--dataset", "mini-interact",
                 "--framework", "pydantic_ai",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -596,7 +590,7 @@ def test_empty_instance_ids_string_rejected() -> None:
         cli.parse_args(
             [
                 "submit",
-                "--dataset", "mini_interact",
+                "--dataset", "mini-interact",
                 "--framework", "pydantic_ai",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -613,7 +607,7 @@ def test_empty_instance_ids_file_rejected(tmp_path) -> None:
         cli.parse_args(
             [
                 "submit",
-                "--dataset", "mini_interact",
+                "--dataset", "mini-interact",
                 "--framework", "pydantic_ai",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
@@ -701,7 +695,7 @@ def test_subcommand_registered(sub: str) -> None:
         ns = cli.parse_args(
             [
                 "submit",
-                "--dataset", "mini_interact",
+                "--dataset", "mini-interact",
                 "--framework", "pydantic_ai",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",

@@ -152,7 +152,7 @@ _TASK = {
     "instance_id": "shop_1",
     "amb_user_query": "?",
     "knowledge_ambiguity": [],
-    "dataset": "livesqlbench",
+    "dataset": "livesqlbench-base-lite-sqlite",
 }
 
 
@@ -180,7 +180,7 @@ async def test_run_task_rejects_mini_interact_dataset():
     from bird_interact_agents.agents.claude_sdk_otf_raw.agent import ClaudeSDKOtfRawAgent
 
     agent = ClaudeSDKOtfRawAgent(model="anthropic/claude-sonnet-4-5")
-    td = dict(_TASK, dataset="mini_interact")
+    td = dict(_TASK, dataset="mini-interact")
     with pytest.raises(ValueError):
         await agent.run_task(td, "/tmp", 20.0, "raw", eval_mode="one-shot")
 
@@ -203,7 +203,7 @@ async def test_run_task_accepts_livesqlbench_alias():
     from bird_interact_agents.agents.claude_sdk_otf_raw.agent import ClaudeSDKOtfRawAgent
 
     agent = ClaudeSDKOtfRawAgent(model="openai/gpt-4o")
-    td = dict(_TASK, dataset="livesqlbench")
+    td = dict(_TASK, dataset="livesqlbench-base-lite-sqlite")
     row = await agent.run_task(td, "/tmp", 20.0, "raw", eval_mode="one-shot")
     assert row["phase1_passed"] is False
     assert "anthropic" in (row.get("error") or "").lower()

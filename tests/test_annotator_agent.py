@@ -160,7 +160,7 @@ async def test_run_task_happy_path_returns_valid_result(monkeypatch):
     result = await ann_agent.run_task(
         task_data=_task_mini(),
         data_path_base="/tmp/data",
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         model="anthropic/claude-opus-4-7",
         effort="medium",
     )
@@ -182,7 +182,7 @@ async def test_run_task_happy_path_parses_audited_gold_variants(monkeypatch):
             "instance_id": "shop_1",
             "variant_id": "primary",
             "selected_database": "shop",
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "original_sol_sql": ["SELECT COUNT(*) FROM orders;"],
             "audited_sol_sql": ["SELECT COUNT(*) FROM orders;"],
@@ -201,7 +201,7 @@ async def test_run_task_happy_path_parses_audited_gold_variants(monkeypatch):
     result = await ann_agent.run_task(
         task_data=_task_mini(),
         data_path_base="/tmp/data",
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         model="anthropic/claude-opus-4-7",
         effort="medium",
     )
@@ -224,7 +224,7 @@ async def test_run_task_turn_cap_returns_error_result(monkeypatch):
     result = await ann_agent.run_task(
         task_data=_task_mini(),
         data_path_base="/tmp/data",
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         model="anthropic/claude-opus-4-7",
         effort="medium",
     )
@@ -254,7 +254,7 @@ async def test_run_task_bad_json_then_good_json_succeeds(monkeypatch):
     result = await ann_agent.run_task(
         task_data=_task_mini(),
         data_path_base="/tmp/data",
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         model="anthropic/claude-opus-4-7",
         effort="medium",
     )
@@ -294,7 +294,7 @@ async def test_mini_interact_includes_get_ambiguity_resolutions(monkeypatch):
     await ann_agent.run_task(
         task_data=_task_mini(),
         data_path_base="/tmp/data",
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         model="anthropic/claude-opus-4-7",
         effort="medium",
     )
@@ -330,7 +330,7 @@ async def test_livesqlbench_excludes_get_ambiguity_resolutions(monkeypatch):
     await ann_agent.run_task(
         task_data=_task_livesqlbench(),
         data_path_base="/tmp/data",
-        benchmark="livesqlbench",
+        benchmark="livesqlbench-base-lite-sqlite",
         model="anthropic/claude-opus-4-7",
         effort="medium",
     )
@@ -383,7 +383,7 @@ def test_fill_audited_gold_ref_files_replaces_sentinel():
         },
     })
 
-    filled = _fill_audited_gold_ref_files(ann, benchmark="mini_interact")
+    filled = _fill_audited_gold_ref_files(ann, benchmark="mini-interact")
 
     assert filled.gold_variants[0].audited_gold_ref.file == \
         "audited_gold/mini_interact_audited.jsonl"
@@ -426,7 +426,7 @@ def test_fill_audited_gold_ref_files_livesqlbench():
         },
     })
 
-    filled = _fill_audited_gold_ref_files(ann, benchmark="livesqlbench")
+    filled = _fill_audited_gold_ref_files(ann, benchmark="livesqlbench-base-lite-sqlite")
 
     assert filled.gold_variants[0].audited_gold_ref.file == \
         "audited_gold/livesqlbench_audited.jsonl"
@@ -459,7 +459,7 @@ def test_fill_audited_gold_ref_files_noop_when_no_variants():
         },
     })
 
-    filled = _fill_audited_gold_ref_files(ann, benchmark="mini_interact")
+    filled = _fill_audited_gold_ref_files(ann, benchmark="mini-interact")
     assert filled.gold_variants == []
 
 
@@ -491,7 +491,7 @@ async def test_non_anthropic_model_returns_error_without_sdk_call(monkeypatch):
     result = await ann_agent.run_task(
         task_data=_task_mini(),
         data_path_base="/tmp/data",
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         model="openai/gpt-4o",  # not an Anthropic model
         effort="medium",
     )

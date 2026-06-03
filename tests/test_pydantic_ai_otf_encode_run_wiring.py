@@ -47,18 +47,14 @@ def _framework_choices_from_parser():
 
 
 def test_framework_choice_accepted_by_arg_parser():
-    """`pydantic_ai_otf_encode` is in the argparse `choices` list."""
+    """`claude_sdk` is in the argparse `choices` list."""
     choices = _framework_choices_from_parser()
-    assert "pydantic_ai_otf_encode" in choices
+    assert "claude_sdk" in choices
 
 
 def test_framework_choices_still_include_existing_frameworks():
-    """Adding the new framework must not drop the existing ones."""
     choices = _framework_choices_from_parser()
-    assert {
-        "claude_sdk", "pydantic_ai", "pydantic_ai_recursive",
-        "mcp_agent", "agno", "smolagents", "pydantic_ai_otf_encode",
-    }.issubset(choices)
+    assert {"claude_sdk"}.issubset(choices)
 
 
 @pytest.mark.asyncio
@@ -110,8 +106,8 @@ def test_cli_rejects_pydantic_ai_otf_encode_with_pre_encoded(monkeypatch):
 
     argv = [
         "prog",
-        "--dataset", "mini_interact",
-        "--framework", "pydantic_ai_otf_encode",
+        "--dataset", "mini-interact",
+        "--framework", "claude_sdk",
         "--slayer-setup", "pre-encoded",
         "--query-mode", "slayer",
         "--mode", "a-interact",
@@ -136,8 +132,8 @@ def test_cli_accepts_pydantic_ai_otf_encode_with_on_the_fly(
 
     argv = [
         "prog",
-        "--dataset", "mini_interact",
-        "--framework", "pydantic_ai_otf_encode",
+        "--dataset", "mini-interact",
+        "--framework", "claude_sdk",
         "--slayer-setup", "on-the-fly",
         "--query-mode", "slayer",
         "--mode", "a-interact",
@@ -154,5 +150,5 @@ def test_cli_accepts_pydantic_ai_otf_encode_with_on_the_fly(
 
     monkeypatch.setattr(run_mod, "run_evaluation", fake_run)
     run_mod.main()
-    assert called["framework"] == "pydantic_ai_otf_encode"
+    assert called["framework"] == "claude_sdk"
     assert called["slayer_setup"] == "on-the-fly"

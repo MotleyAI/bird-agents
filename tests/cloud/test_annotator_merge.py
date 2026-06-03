@@ -54,7 +54,7 @@ def _audited_gold_variant(
         "instance_id": instance_id,
         "variant_id": variant_id,
         "selected_database": db,
-        "benchmark": "mini_interact",
+        "benchmark": "mini-interact",
         "audit_status": "clean",
         "original_sol_sql": ["SELECT COUNT(*) FROM orders;"],
         "audited_sol_sql": ["SELECT COUNT(*) FROM orders;"],
@@ -96,7 +96,7 @@ def test_merge_task_annotations_writes_correct_path(tmp_path):
     annotations_root = tmp_path / "annotations"
     report = merge_task_annotations(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         annotations_root=annotations_root,
     )
 
@@ -121,7 +121,7 @@ def test_merge_task_annotations_always_overwrites_existing(tmp_path):
 
     merge_task_annotations(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         annotations_root=annotations_root,
     )
 
@@ -158,7 +158,7 @@ def test_merge_task_annotations_rejects_malformed_json(tmp_path):
     annotations_root = tmp_path / "annotations"
     report = merge_task_annotations(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         annotations_root=annotations_root,
     )
 
@@ -174,7 +174,7 @@ def test_merge_task_annotations_no_rows_dir_is_noop(tmp_path):
 
     report = merge_task_annotations(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         annotations_root=tmp_path / "annotations",
     )
 
@@ -192,7 +192,7 @@ def test_merge_task_annotations_multiple_tasks(tmp_path):
 
     report = merge_task_annotations(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         annotations_root=tmp_path / "annotations",
     )
 
@@ -215,7 +215,7 @@ def test_merge_audited_gold_variants_appends_to_jsonl(tmp_path):
     audited_gold_root = tmp_path / "audited_gold"
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold_root,
     )
 
@@ -244,7 +244,7 @@ def test_merge_audited_gold_variants_deduplicates_by_instance_and_variant(tmp_pa
 
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold_root,
     )
 
@@ -270,7 +270,7 @@ def test_merge_audited_gold_variants_different_variant_id_not_duplicate(tmp_path
 
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold_root,
     )
 
@@ -288,7 +288,7 @@ def test_merge_audited_gold_variants_empty_file_is_noop(tmp_path):
     audited_gold_root = tmp_path / "audited_gold"
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold_root,
     )
 
@@ -309,7 +309,7 @@ def test_merge_audited_gold_variants_rejects_missing_required_fields(tmp_path):
     audited_gold_root = tmp_path / "audited_gold"
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold_root,
     )
 
@@ -337,7 +337,7 @@ def test_merge_audited_gold_variants_mixed_new_and_existing(tmp_path):
 
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold_root,
     )
 
@@ -355,7 +355,7 @@ def test_merge_audited_gold_variants_no_rows_dir_is_noop(tmp_path):
 
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=tmp_path / "audited_gold",
     )
 

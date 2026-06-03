@@ -37,7 +37,7 @@ import sqlglot
 
 from bird_interact_agents import paths
 
-MINI_INTERACT_ROOT = paths.mini_interact_root()
+MINI_INTERACT_ROOT = paths.benchmark_data_root("mini-interact")
 
 REQUIRED_KEYS = {
     "instance_id",

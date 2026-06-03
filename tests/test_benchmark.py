@@ -18,14 +18,8 @@ from bird_interact_agents.benchmark import (
 
 
 def test_resolves_canonical_name():
-    assert get_benchmark("mini_interact").name == "mini_interact"
-    assert get_benchmark("livesqlbench").name == "livesqlbench"
-
-
-def test_resolves_hyphen_alias_to_underscore_canonical():
-    """`--dataset mini-interact` (hyphen) is a back-compat alias for the
-    underscore-canonical `mini_interact`."""
-    assert get_benchmark("mini-interact").name == "mini_interact"
+    assert get_benchmark("mini-interact").name == "mini-interact"
+    assert get_benchmark("livesqlbench-base-lite-sqlite").name == "livesqlbench-base-lite-sqlite"
 
 
 def test_resolves_dataset_marker():
@@ -41,8 +35,8 @@ def test_unknown_token_raises():
     assert "benchmark" in str(exc.value).lower()
 
 
-_SQLITE_BENCHMARKS = {"mini_interact", "livesqlbench"}
-_POSTGRES_BENCHMARKS = {"livesqlbench_postgres", "mini_interact_postgres"}
+_SQLITE_BENCHMARKS = {"mini-interact", "livesqlbench-base-lite-sqlite"}
+_POSTGRES_BENCHMARKS = {"livesqlbench-base-lite", "bird-interact-lite-exp"}
 _ALL_BENCHMARKS = _SQLITE_BENCHMARKS | _POSTGRES_BENCHMARKS
 
 
@@ -51,20 +45,20 @@ def test_registry_membership_and_helpers():
     assert _ALL_BENCHMARKS <= {b.name for b in all_benchmarks()}
     # argparse `--dataset` choices: canonical names + aliases, all resolvable.
     tokens = set(cli_dataset_tokens())
-    assert {"mini_interact", "mini-interact", "livesqlbench"} | _POSTGRES_BENCHMARKS <= tokens
+    assert _ALL_BENCHMARKS <= tokens
     for t in tokens:
         get_benchmark(t)  # every advertised token resolves
 
 
 def test_benchmark_is_frozen():
-    b = get_benchmark("mini_interact")
+    b = get_benchmark("mini-interact")
     with pytest.raises(ValidationError):  # pydantic frozen → ValidationError
         b.name = "mutated"  # type: ignore[misc]
 
 
 def test_mini_interact_facts():
-    b = get_benchmark("mini_interact")
-    assert b.dataset_marker == "mini_interact"
+    b = get_benchmark("mini-interact")
+    assert b.dataset_marker == "mini-interact"
     assert b.data_subdir == "mini-interact"
     assert b.data_file == "mini_interact.jsonl"
     assert b.one_shot is False
@@ -76,14 +70,14 @@ def test_mini_interact_facts():
 
 
 def test_livesqlbench_facts():
-    b = get_benchmark("livesqlbench")
-    assert b.dataset_marker == "livesqlbench"
+    b = get_benchmark("livesqlbench-base-lite-sqlite")
+    assert b.dataset_marker == "livesqlbench-base-lite-sqlite"
     assert b.data_subdir == "livesqlbench-base-lite-sqlite"
     assert b.data_file == "livesqlbench_data_sqlite.jsonl"
     assert b.one_shot is True
     assert b.gold_required is True
     assert b.per_task_db_isolation is True
-    assert b.container_data_dir == "/data/livesqlbench"
+    assert b.container_data_dir == "/data/livesqlbench-base-lite-sqlite"
     assert set(b.supported_modes) == {"one-shot", "oracle"}
 
 
@@ -96,7 +90,7 @@ def test_distinct_container_dirs_and_data_files():
 
 
 def test_type_is_benchmark():
-    assert isinstance(get_benchmark("mini_interact"), Benchmark)
+    assert isinstance(get_benchmark("mini-interact"), Benchmark)
 
 
 # ---------------------------------------------------------------------------
@@ -116,14 +110,14 @@ def test_audited_gold_layout_default_is_per_db():
 def test_mini_interact_audited_gold_layout_single_file():
     """DEV-1515: mini-interact moved to single_file (matches livesqlbench).
     Per-DB JSONLs were consolidated into ``audited_gold/mini_interact_audited.jsonl``."""
-    assert get_benchmark("mini_interact").audited_gold_layout == "single_file"
+    assert get_benchmark("mini-interact").audited_gold_layout == "single_file"
 
 
 def test_livesqlbench_audited_gold_layout_single_file():
     """DEV-1510: livesqlbench routes audited gold through one consolidated
     `audited_gold/livesqlbench_audited.jsonl`. Distinct from mini-interact
     so DBs with shared names (alien, museum, etc.) don't collide."""
-    assert get_benchmark("livesqlbench").audited_gold_layout == "single_file"
+    assert get_benchmark("livesqlbench-base-lite-sqlite").audited_gold_layout == "single_file"
 
 
 def test_audited_gold_layout_rejects_unknown_value():

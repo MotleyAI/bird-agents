@@ -108,7 +108,7 @@ def _audited_row(
     return {
         "instance_id": instance_id,
         "selected_database": "alien",
-        "benchmark": "mini_interact",
+        "benchmark": "mini-interact",
         "audit_status": "edited",
         "original_sol_sql": ["SELECT id FROM t1 WHERE id < 0"],
         "audited_sol_sql": audited_sol_sql,

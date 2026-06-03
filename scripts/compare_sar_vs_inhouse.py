@@ -24,7 +24,7 @@ def main(argv: list[str] | None = None) -> int:
 
     inhouse_path = paths.audited_gold_root() / args.db / f"{args.db}_audited.jsonl"
     sar_path = paths.sar_audited_gold_root() / args.db / f"{args.db}_sar_audited.jsonl"
-    db_path = loader.locate_db_sqlite(db=args.db, mini_interact_root=paths.mini_interact_root())
+    db_path = loader.locate_db_sqlite(db=args.db, mini_interact_root=paths.benchmark_data_root("mini-interact"))
 
     out = compare.compare_db(
         db=args.db, inhouse_path=inhouse_path, sar_path=sar_path, db_path=db_path

@@ -27,12 +27,12 @@ def spy_purges(monkeypatch, tmp_path: Path):
     """Stub the path helpers to route per-benchmark and record purge calls."""
 
     def fake_cache_root(*, benchmark=None):
-        if benchmark == "livesqlbench":
+        if benchmark == "livesqlbench-base-lite-sqlite":
             return tmp_path / "cache_livesqlbench"
         return tmp_path / "cache"
 
     def fake_ref_root(*, benchmark=None):
-        if benchmark == "livesqlbench":
+        if benchmark == "livesqlbench-base-lite-sqlite":
             return tmp_path / "ref_livesqlbench"
         return tmp_path / "ref"
 
@@ -57,7 +57,7 @@ def test_otf_rebuild_with_livesqlbench_uses_scoped_roots(spy_purges):
     run_mod._maybe_force_wipe_otf(
         otf_rebuild=True, framework="pydantic_ai_recursive",
         dbs={"alien", "credit"},
-        benchmark="livesqlbench",
+        benchmark="livesqlbench-base-lite-sqlite",
     )
     assert cache_calls == [
         (tmp_path / "cache_livesqlbench", {"alien", "credit"}),
@@ -84,7 +84,7 @@ def test_otf_rebuild_with_mini_interact_keeps_legacy_roots(spy_purges):
     assert ref_calls == [(tmp_path / "ref", {"households"})]
     # And the livesqlbench dirs were NOT touched.
     assert not any(
-        "livesqlbench" in str(p) for p, _dbs in (cache_calls + ref_calls)
+        "livesqlbench-base-lite-sqlite" in str(p) for p, _dbs in (cache_calls + ref_calls)
     )
 
 
@@ -93,7 +93,7 @@ def test_otf_rebuild_livesqlbench_never_touches_mini_interact_roots(spy_purges):
     run_mod._maybe_force_wipe_otf(
         otf_rebuild=True, framework="pydantic_ai_otf_encode",
         dbs={"alien"},
-        benchmark="livesqlbench",
+        benchmark="livesqlbench-base-lite-sqlite",
     )
     # The legacy roots `tmp_path / "cache"` and `tmp_path / "ref"` must
     # never appear in the purge call list — the whole point of B5.

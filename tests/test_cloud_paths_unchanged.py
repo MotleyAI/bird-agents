@@ -8,9 +8,9 @@ rely on a default — so a forgotten benchmark can never silently mix artifacts.
 
 The cloud derives the benchmark from the run config via small helpers
 (`driver._submit_benchmark(args)`, `ray_app._cloud_benchmark(cfg)`) that
-resolve to `"mini_interact"` today and to `"livesqlbench"` the moment a
+resolve to `"mini-interact"` today and to `"livesqlbench-base-lite-sqlite"` the moment a
 `dataset` is ever plumbed through — without a hardcoded literal scattered
-across call sites. `"mini_interact"` maps to the legacy
+across call sites. `"mini-interact"` maps to the legacy
 `slayer_otf_cache/` / `slayer_models_otf/` roots, so on-disk + cloud data
 paths are unchanged.
 """
@@ -35,29 +35,28 @@ def test_submit_benchmark_defaults_mini_interact():
     from bird_interact_agents.cloud import driver
 
     args = argparse.Namespace()  # no `dataset` attr at all
-    assert driver._submit_benchmark(args) == "mini_interact"
+    assert driver._submit_benchmark(args) == "mini-interact"
     args_mi = argparse.Namespace(dataset="mini-interact")
-    assert driver._submit_benchmark(args_mi) == "mini_interact"
+    assert driver._submit_benchmark(args_mi) == "mini-interact"
 
 
 def test_submit_benchmark_livesqlbench():
     from bird_interact_agents.cloud import driver
 
-    args = argparse.Namespace(dataset="livesqlbench")
-    assert driver._submit_benchmark(args) == "livesqlbench"
+    args = argparse.Namespace(dataset="livesqlbench-base-lite-sqlite")
+    assert driver._submit_benchmark(args) == "livesqlbench-base-lite-sqlite"
 
 
-def test_cloud_benchmark_defaults_mini_interact():
+def test_cloud_benchmark_mini_interact():
     from bird_interact_agents.cloud import ray_app
 
-    assert ray_app._cloud_benchmark({}) == "mini_interact"
-    assert ray_app._cloud_benchmark({"dataset": "mini-interact"}) == "mini_interact"
+    assert ray_app._cloud_benchmark({"dataset": "mini-interact"}) == "mini-interact"
 
 
 def test_cloud_benchmark_livesqlbench():
     from bird_interact_agents.cloud import ray_app
 
-    assert ray_app._cloud_benchmark({"dataset": "livesqlbench"}) == "livesqlbench"
+    assert ray_app._cloud_benchmark({"dataset": "livesqlbench-base-lite-sqlite"}) == "livesqlbench-base-lite-sqlite"
 
 
 # ---------------------------------------------------------------------------
@@ -124,9 +123,10 @@ def test_ray_app_artifacts_select_mini_interact_root(monkeypatch):
     monkeypatch.setattr(_paths, "slayer_otf_cache_root", _record_cache)
     monkeypatch.setattr(_paths, "slayer_models_otf_root", _record_models)
 
-    cfg = {"framework": "pydantic_ai_otf_encode", "slayer_setup": "on-the-fly"}
+    cfg = {"framework": "pydantic_ai_otf_encode", "slayer_setup": "on-the-fly",
+           "dataset": "mini-interact"}
     ray_app._slayer_artifacts_for(cfg)
-    assert seen and all(bm == "mini_interact" for _, bm in seen), seen
+    assert seen and all(bm == "mini-interact" for _, bm in seen), seen
 
 
 def _spy_path_helpers(monkeypatch):
@@ -158,10 +158,10 @@ def test_ray_app_artifacts_select_livesqlbench_root(monkeypatch):
     seen = _spy_path_helpers(monkeypatch)
     cfg = {
         "framework": "pydantic_ai_otf_encode", "slayer_setup": "on-the-fly",
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
     }
     ray_app._slayer_artifacts_for(cfg)
-    assert seen and all(bm == "livesqlbench" for _, bm in seen), seen
+    assert seen and all(bm == "livesqlbench-base-lite-sqlite" for _, bm in seen), seen
 
 
 def test_driver_uploads_select_benchmark_from_args(monkeypatch):
@@ -174,22 +174,24 @@ def test_driver_uploads_select_benchmark_from_args(monkeypatch):
     seen_mi = _spy_path_helpers(monkeypatch)
     args_mi = argparse.Namespace(
         framework="pydantic_ai_otf_encode", slayer_setup="on-the-fly",
+        dataset="mini-interact",
     )
     driver._slayer_uploads_for(args_mi)
-    assert seen_mi and all(bm == "mini_interact" for _, bm in seen_mi), seen_mi
+    assert seen_mi and all(bm == "mini-interact" for _, bm in seen_mi), seen_mi
 
     seen_lsb = _spy_path_helpers(monkeypatch)
     args_lsb = argparse.Namespace(
         framework="pydantic_ai_otf_encode", slayer_setup="on-the-fly",
-        dataset="livesqlbench",
+        dataset="livesqlbench-base-lite-sqlite",
     )
     driver._slayer_uploads_for(args_lsb)
-    assert seen_lsb and all(bm == "livesqlbench" for _, bm in seen_lsb), seen_lsb
+    assert seen_lsb and all(bm == "livesqlbench-base-lite-sqlite" for _, bm in seen_lsb), seen_lsb
 
 
-def test_mini_interact_resolves_to_legacy_roots(tmp_path, monkeypatch):
-    """`benchmark="mini_interact"` must land on the legacy dirs so the cloud
-    data paths (and on-disk layout) do not move."""
+def test_mini_interact_resolves_to_nested_roots(tmp_path, monkeypatch):
+    """`benchmark="mini-interact"` uses a nested path under the shared cache
+    root: `slayer_otf_cache/mini-interact/` (DEV-1525 unified all benchmarks
+    to the same `slayer_otf_cache/<benchmark>/` layout)."""
     from tests.test_paths import _setup_main_and_worktree
 
     paths._main_checkout_root_cached.cache_clear()
@@ -201,18 +203,18 @@ def test_mini_interact_resolves_to_legacy_roots(tmp_path, monkeypatch):
         monkeypatch.delenv(var, raising=False)
     main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
     assert (
-        paths.slayer_otf_cache_root(benchmark="mini_interact")
-        == main / "slayer_otf_cache"
+        paths.slayer_otf_cache_root(benchmark="mini-interact")
+        == main / "slayer_otf_cache" / "mini-interact"
     )
     assert (
-        paths.slayer_models_otf_root(benchmark="mini_interact")
-        == main / "slayer_models_otf"
+        paths.slayer_models_otf_root(benchmark="mini-interact")
+        == main / "slayer_models_otf" / "mini-interact"
     )
     assert (
-        paths.slayer_otf_cache_root(benchmark="mini_interact")
-        != paths.slayer_otf_cache_root(benchmark="livesqlbench")
+        paths.slayer_otf_cache_root(benchmark="mini-interact")
+        != paths.slayer_otf_cache_root(benchmark="livesqlbench-base-lite-sqlite")
     )
     assert (
-        paths.slayer_models_otf_root(benchmark="mini_interact")
-        != paths.slayer_models_otf_root(benchmark="livesqlbench")
+        paths.slayer_models_otf_root(benchmark="mini-interact")
+        != paths.slayer_models_otf_root(benchmark="livesqlbench-base-lite-sqlite")
     )

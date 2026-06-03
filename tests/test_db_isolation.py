@@ -8,7 +8,7 @@ OTF cache build that ALSO reads it. Solution: each task gets its own
 template symlinked in alongside it — so the upstream reset operates inside
 the per-task dir and never touches the stable file.
 
-The marker that gates all of this is `task["dataset"] == "livesqlbench"`
+The marker that gates all of this is `task["dataset"] == "livesqlbench-base-lite-sqlite"`
 (the loader stamps it). Mini-interact tasks must be a no-op.
 
 These tests drive the REAL upstream `reset_and_restore_database` path so
@@ -69,7 +69,7 @@ def test_sets_db_file_path_to_per_instance_dir(tmp_path):
     task = {
         "instance_id": "alien_1",
         "selected_database": "alien",
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
     }
     out = materialize_task_db(task, str(root))
     assert out is not None
@@ -97,7 +97,7 @@ def test_per_instance_dir_carries_template_as_symlink_to_real(tmp_path):
     task = {
         "instance_id": "alien_1",
         "selected_database": "alien",
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
     }
     materialize_task_db(task, str(root))
     template_in_task_dir = Path(task["db_file_path"]).parent / "alien_template.sqlite"
@@ -125,7 +125,7 @@ def test_idempotent(tmp_path):
     task = {
         "instance_id": "alien_1",
         "selected_database": "alien",
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
     }
     out1 = materialize_task_db(task, str(root))
     out2 = materialize_task_db(task, str(root))
@@ -149,7 +149,7 @@ def test_stale_symlink_rebuilds_when_data_path_changes(tmp_path):
     task = {
         "instance_id": "alien_1",
         "selected_database": "alien",
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
     }
     materialize_task_db(task, str(root1))
     first_template = Path(task["db_file_path"]).parent / "alien_template.sqlite"
@@ -177,7 +177,7 @@ def test_refuses_db_name_with_ephemeral_or_process_substring(tmp_path):
         task = {
             "instance_id": f"{offending}_1",
             "selected_database": offending,
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         }
         with pytest.raises((ValueError, RuntimeError)):
             materialize_task_db(task, str(root))
@@ -193,7 +193,7 @@ def test_all_18_real_db_names_pass_defensive_check(tmp_path):
         task = {
             "instance_id": f"{db}_1",
             "selected_database": db,
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         }
         materialize_task_db(task, str(root))  # must not raise.
 
@@ -219,7 +219,7 @@ def test_real_upstream_reset_uses_per_task_dir(tmp_path):
     task = {
         "instance_id": "alien_x1",
         "selected_database": "alien",
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
         "sol_sql": ["SELECT id FROM widgets"],
         "category": "Query",
         "conditions": {"decimal": [], "distinct": False, "order": False},
@@ -253,12 +253,12 @@ def test_concurrent_tasks_get_disjoint_per_task_dirs(tmp_path):
     task_a = {
         "instance_id": "alien_a",
         "selected_database": "alien",
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
     }
     task_b = {
         "instance_id": "alien_b",
         "selected_database": "alien",
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
     }
     materialize_task_db(task_a, str(root))
     materialize_task_db(task_b, str(root))

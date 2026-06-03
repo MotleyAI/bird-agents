@@ -42,7 +42,7 @@ from slayer.storage.yaml_storage import YAMLStorage
 from bird_interact_agents import paths
 
 SLAYER_MODELS_DIR = paths.slayer_models_root()
-DEFAULT_MINI_INTERACT_ROOT = paths.mini_interact_root()
+DEFAULT_MINI_INTERACT_ROOT = paths.benchmark_data_root("mini-interact")
 
 # Compiled at module load: first non-blank line of a deferred-KB memory
 # must match this shape exactly. The id capture group is load-bearing.

@@ -281,11 +281,11 @@ def _benchmark_for_dataset(dataset: str | None) -> str:
     its canonical benchmark name for the OTF path roots + container data dir.
 
     An absent dataset (e.g. a pre-de-bake manifest being resubmitted) falls
-    back to ``"mini_interact"``; otherwise the token is resolved through the
+    back to ``"mini-interact"``; otherwise the token is resolved through the
     registry so a third benchmark never silently aliases to mini-interact.
     """
     if not dataset:
-        return "mini_interact"
+        return "mini-interact"
     return get_benchmark(dataset).name
 
 

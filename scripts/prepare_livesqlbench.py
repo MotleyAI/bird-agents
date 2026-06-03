@@ -157,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--root", default=None,
         help=(
-            "Dataset root (default: paths.livesqlbench_root() — i.e. the "
+            "Dataset root (default: paths.benchmark_data_root('livesqlbench-base-lite-sqlite') — i.e. the "
             "sibling `livesqlbench-base-lite-sqlite/`, or whatever "
             "$BIRD_LIVESQLBENCH_ROOT points at)."
         ),
@@ -175,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    root = Path(args.root) if args.root else paths.livesqlbench_root()
+    root = Path(args.root) if args.root else paths.benchmark_data_root("livesqlbench-base-lite-sqlite")
     dbs = (
         [s.strip() for s in args.dbs.split(",") if s.strip()]
         if args.dbs else None

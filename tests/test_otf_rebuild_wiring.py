@@ -51,7 +51,7 @@ def test_otf_rebuild_wipes_both_layers_for_otf_frameworks(spy_purges, framework)
     cache_calls, ref_calls, tmp_path = spy_purges
     run_mod._maybe_force_wipe_otf(
         otf_rebuild=True, framework=framework, dbs={"db_a", "db_b"},
-        benchmark="mini_interact",
+        benchmark="mini-interact",
     )
     assert cache_calls == [(tmp_path / "cache", {"db_a", "db_b"})]
     assert ref_calls == [(tmp_path / "ref", {"db_a", "db_b"})]
@@ -61,7 +61,7 @@ def test_otf_rebuild_off_is_a_noop(spy_purges):
     cache_calls, ref_calls, _ = spy_purges
     run_mod._maybe_force_wipe_otf(
         otf_rebuild=False, framework="pydantic_ai_otf_encode", dbs={"db_a"},
-        benchmark="mini_interact",
+        benchmark="mini-interact",
     )
     assert cache_calls == []
     assert ref_calls == []
@@ -73,7 +73,7 @@ def test_otf_rebuild_noop_for_non_otf_framework(spy_purges):
     cache_calls, ref_calls, _ = spy_purges
     run_mod._maybe_force_wipe_otf(
         otf_rebuild=True, framework="pydantic_ai", dbs={"db_a"},
-        benchmark="mini_interact",
+        benchmark="mini-interact",
     )
     assert cache_calls == []
     assert ref_calls == []

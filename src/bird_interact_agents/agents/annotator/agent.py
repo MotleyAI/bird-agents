@@ -358,7 +358,7 @@ _EXPLORATION_SDK_TOOLS = [
     _get_all_knowledge_definitions_tool,
 ]
 
-_MINI_INTERACT_BENCHMARK = "mini_interact"
+_MINI_INTERACT_BENCHMARK = "mini-interact"
 
 
 def _select_annotation_sdk_tools(benchmark: str) -> list:
@@ -372,8 +372,8 @@ def _select_annotation_sdk_tools(benchmark: str) -> list:
 # ---------------------------------------------------------------------------
 
 _AUDITED_GOLD_FILE: dict[str, str] = {
-    "mini_interact": "audited_gold/mini_interact_audited.jsonl",
-    "livesqlbench": "audited_gold/livesqlbench_audited.jsonl",
+    "mini-interact": "audited_gold/mini_interact_audited.jsonl",
+    "livesqlbench-base-lite-sqlite": "audited_gold/livesqlbench_audited.jsonl",
 }
 
 

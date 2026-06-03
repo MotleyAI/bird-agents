@@ -8,7 +8,7 @@ extra responsibilities:
     the gated `--gold-file` carries them).
   * **`query` → `amb_user_query` shim** so every agent + `_ambiguity_count`
     keeps reading `amb_user_query` unchanged.
-  * **Dataset marker** `task["dataset"] = "livesqlbench"` — the loader-stamped
+  * **Dataset marker** `task["dataset"] = "livesqlbench-base-lite-sqlite"` — the loader-stamped
     irreducible source of truth for per-task DB isolation + one-shot
     `run_task`'s programmatic guard.
   * **SELECT filter** to `category == "Query"` (180 rows on the real
@@ -119,7 +119,7 @@ def test_loader_stamps_dataset_marker(tmp_path):
         rows=[{"instance_id": "alien_1"}],
     )
     rows = load_livesqlbench_tasks(str(data), str(gold), limit=100)
-    assert all(r.get("dataset") == "livesqlbench" for r in rows), (
+    assert all(r.get("dataset") == "livesqlbench-base-lite-sqlite" for r in rows), (
         "loader MUST stamp task['dataset']='livesqlbench' — it's the "
         "irreducible marker for materialize_task_db + one-shot run_task."
     )
@@ -351,6 +351,6 @@ def test_load_benchmark_tasks_nongold_applies_limit_after_filter(tmp_path):
         for i in ("a", "b", "c")
     ))
     rows = load_benchmark_tasks(
-        "mini_interact", str(p), None, limit=2, filter_ids=["c"],
+        "mini-interact", str(p), None, limit=2, filter_ids=["c"],
     )
     assert [r["instance_id"] for r in rows] == ["c"]

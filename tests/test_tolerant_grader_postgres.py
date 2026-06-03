@@ -73,7 +73,7 @@ def _dummy_audited_gold_row():
     return {
         "instance_id": "alien_pg_1",
         "selected_database": "alien",
-        "benchmark": "livesqlbench_postgres",
+        "benchmark": "livesqlbench-base-lite",
         "audit_status": "clean",
         "original_sol_sql": ["SELECT COUNT(*) FROM t"],
         "audited_sol_sql": ["SELECT COUNT(*) FROM t"],
@@ -94,7 +94,7 @@ def _dummy_audited_gold_row():
 def test_make_executor_returns_callable():
     from bird_interact_agents.eval.tolerant_grader import make_executor
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     ex = make_executor(b)
     assert callable(ex)
 
@@ -104,7 +104,7 @@ def test_make_executor_sqlite_returns_default_executor_equivalent():
     to default_executor (also callable with same signature)."""
     from bird_interact_agents.eval.tolerant_grader import make_executor, default_executor
 
-    b = get_benchmark("mini_interact")
+    b = get_benchmark("mini-interact")
     ex = make_executor(b)
     assert callable(ex)
 
@@ -114,7 +114,7 @@ def test_make_executor_postgres_executes_via_db_connection():
     from bird_interact_agents.eval.tolerant_grader import make_executor
     from bird_interact_agents.benchmark import get_benchmark
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     mock_conn = MagicMock()
     mock_cur = MagicMock()
     mock_cur.fetchall.return_value = [(5,)]
@@ -139,7 +139,7 @@ def test_multi_sql_execute_postgres_uses_shared_connection():
     uses a single shared psycopg2 connection so state (temp tables etc.) persists."""
     from bird_interact_agents.eval.tolerant_grader import make_executor
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     call_log: list = []
 
     # Track how many distinct connection objects are used across calls.
@@ -178,7 +178,7 @@ def test_multi_sql_execute_single_sql_works_without_shared_conn():
     """Single-SQL sequences never need a shared connection, postgres or not."""
     from bird_interact_agents.eval.tolerant_grader import make_executor
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     mock_conn = MagicMock()
     mock_cur = MagicMock()
     mock_cur.fetchall.return_value = [(42,)]
@@ -302,7 +302,7 @@ def test_grade_submission_with_make_executor_uses_pg_not_sqlite():
     non-existent .sqlite file and grading silently failed."""
     from bird_interact_agents.eval.tolerant_grader import make_executor
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     executor = make_executor(b)
 
     task_ann = _dummy_task_annotation()
@@ -371,7 +371,7 @@ def test_grade_submission_passes_benchmark_to_multi_sql_execute():
     shared postgres connection for multi-statement gold SQL."""
     from bird_interact_agents.eval.tolerant_grader import _multi_sql_execute
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     calls: list[tuple] = []
 
     def spy_execute(sqls, *, db_path, conn, executor, benchmark=None):

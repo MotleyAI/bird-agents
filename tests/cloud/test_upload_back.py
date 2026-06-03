@@ -261,6 +261,7 @@ def _cfg_for_otf_encode() -> dict:
         "query_mode": "slayer",
         "slayer_setup": "on-the-fly",
         "framework": "pydantic_ai_otf_encode",
+        "dataset": "mini-interact",
     }
 
 

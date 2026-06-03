@@ -27,7 +27,7 @@ def _pg_state(db_name: str = "alien", data_path_base: str = "/irrelevant"):
         status=SimpleNamespace(
             original_data={
                 "selected_database": db_name,
-                "dataset": "livesqlbench_postgres",
+                "dataset": "livesqlbench-base-lite",
                 "sol_sql": "SELECT 1",
             },
             remaining_budget=100.0,
@@ -65,7 +65,7 @@ def test_dry_run_sql_postgres_returns_none_on_success():
     from bird_interact_agents.agents._submit import _dry_run_sql
     from bird_interact_agents.benchmark import get_benchmark
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     mock_conn = _make_pg_mock_conn(rows=[(1,)], cols=["n"])
 
     with patch("bird_interact_agents.db_connection._open_psycopg2_connection", return_value=mock_conn):
@@ -79,7 +79,7 @@ def test_dry_run_sql_postgres_returns_error_on_db_error():
     from bird_interact_agents.benchmark import get_benchmark
     import psycopg2
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     mock_cur = MagicMock()
     mock_cur.execute.side_effect = psycopg2.ProgrammingError("column does not exist")
     mock_conn = MagicMock()
@@ -117,7 +117,7 @@ def test_capture_result_snapshot_postgres_uses_db_connection():
     from bird_interact_agents.agents._submit import capture_result_snapshot
     from bird_interact_agents.benchmark import get_benchmark
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     mock_conn = _make_pg_mock_conn(
         rows=[(1, "foo"), (2, "bar")],
         cols=["id", "name"],
@@ -143,7 +143,7 @@ def test_capture_result_snapshot_postgres_error_returns_error_dict():
     from bird_interact_agents.benchmark import get_benchmark
     import psycopg2
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     mock_cur = MagicMock()
     mock_cur.execute.side_effect = psycopg2.ProgrammingError("relation does not exist")
     mock_conn = MagicMock()

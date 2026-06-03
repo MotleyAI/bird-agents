@@ -151,7 +151,7 @@ def test_query_constructor_oneshot_keeps_closure_count_check():
             "instance_id": "fake_1",
             "amb_user_query": "x",
             "knowledge_ambiguity": [],
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         },
         remaining_budget=100.0, total_budget=100.0,
     )
@@ -231,7 +231,7 @@ async def test_spawn_in_oneshot_root_builds_explorer_not_clarifier(monkeypatch):
             "instance_id": "fake_1",
             "amb_user_query": "x",
             "knowledge_ambiguity": [],
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         },
         remaining_budget=100.0, total_budget=100.0,
     )

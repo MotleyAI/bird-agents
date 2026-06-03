@@ -23,7 +23,7 @@ import pytest
 # Context setup helper
 # ---------------------------------------------------------------------------
 
-def _setup_ctx(task_data: dict, benchmark: str = "mini_interact") -> None:
+def _setup_ctx(task_data: dict, benchmark: str = "mini-interact") -> None:
     from bird_interact_agents.agents.annotator import agent as ann_agent
 
     ctx: dict = {
@@ -270,7 +270,7 @@ async def test_submit_annotation_parses_audited_gold_variants():
             "instance_id": "shop_1",
             "variant_id": "primary",
             "selected_database": "shop",
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "original_sol_sql": ["SELECT 1;"],
             "audited_sol_sql": ["SELECT 1;"],
@@ -359,7 +359,7 @@ async def test_submit_annotation_variant_missing_required_field_returns_error():
         {
             "instance_id": "shop_1",
             "selected_database": "shop",
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "audited_sol_sql": ["SELECT 1;"],
             # variant_id intentionally omitted
@@ -404,7 +404,7 @@ async def test_submit_annotation_variant_wrong_instance_id_returns_error():
             "instance_id": "alien_99",  # wrong
             "selected_database": "shop",
             "variant_id": "primary",
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "audited_sol_sql": ["SELECT 1;"],
         }
@@ -431,7 +431,7 @@ async def test_submit_annotation_variant_wrong_database_returns_error():
             "instance_id": "shop_1",
             "selected_database": "alien",  # wrong
             "variant_id": "primary",
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "audited_sol_sql": ["SELECT 1;"],
         }
@@ -542,7 +542,7 @@ async def test_submit_annotation_gold_variant_ref_with_matching_row_succeeds():
             "selected_database": "shop",
             "variant_id": "canonical_only",
             "primary": True,
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "original_sol_sql": ["SELECT 1;"],
             "audited_sol_sql": ["SELECT 1;"],

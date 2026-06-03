@@ -125,19 +125,19 @@ def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
     bench = get_benchmark(benchmark)
     if bench.gold_required:
         gold_path: Optional[Path] = None
-        import os
-        env_override = os.environ.get(bench.gold_root_env or "")
-        if env_override:
-            gold_path = Path(env_override).expanduser()
-        else:
-            # Default sidecar location: <livesqlbench_root>/<gt_sidecar>
-            for candidate in (
-                paths.benchmark_data_root(benchmark)
-                / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl",
-            ):
-                if candidate.exists():
-                    gold_path = candidate
-                    break
+        # DEV-1525: gated gold lives at paths.gated_gold_root(benchmark=) /
+        # <gt_sidecar>.jsonl; a BIRD_GATED_GOLD_ROOT env var overrides the
+        # parent dir (benchmark subdir still appended).
+        gated_root = paths.gated_gold_root(benchmark=benchmark)
+        for candidate in (
+            gated_root / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl",
+            # Backwards compat: sidecar directly inside the data root.
+            paths.benchmark_data_root(benchmark)
+            / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl",
+        ):
+            if candidate.exists():
+                gold_path = candidate
+                break
         if gold_path and gold_path.exists():
             with gold_path.open() as f:
                 for line in f:

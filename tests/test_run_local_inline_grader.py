@@ -194,7 +194,7 @@ async def test_local_run_invokes_inline_grader_per_task(monkeypatch, tmp_path):
         f"inline grader should be called once per task; got: {instances}"
     )
     # Benchmark token is the canonical underscore form.
-    assert all(c["benchmark"] == "mini_interact" for c in calls), (
+    assert all(c["benchmark"] == "mini-interact" for c in calls), (
         f"benchmark must be canonicalized to underscore form; got: {calls}"
     )
     # Per-row ``submission_annotation.json`` files were written.

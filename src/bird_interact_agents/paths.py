@@ -104,32 +104,6 @@ def benchmark_data_file(benchmark: str | Benchmark) -> Path:
     return benchmark_data_root(b) / b.data_file
 
 
-def mini_interact_root() -> Path:
-    """Back-compat shim → ``benchmark_data_root("mini_interact")``."""
-    return benchmark_data_root("mini_interact")
-
-
-def mini_interact_data_file() -> Path:
-    """Back-compat shim → ``benchmark_data_file("mini_interact")``."""
-    return benchmark_data_file("mini_interact")
-
-
-def livesqlbench_root() -> Path:
-    """Back-compat shim → ``benchmark_data_root("livesqlbench")``."""
-    return benchmark_data_root("livesqlbench")
-
-
-def livesqlbench_data_file() -> Path:
-    """Back-compat shim → ``benchmark_data_file("livesqlbench")``."""
-    return benchmark_data_file("livesqlbench")
-
-
-# Set of benchmark identifiers the per-benchmark OTF roots accept. `benchmark`
-# is REQUIRED and explicit on those helpers (no `None` default) so a forgotten
-# or typo'd benchmark can never silently fall back to — and mix artifacts with
-# — mini-interact. `"mini_interact"` is itself an explicit value that maps to
-# the legacy dirs/env vars (so on-disk layout + the cloud contract are
-# unchanged). New benchmarks (e.g. Base-Full) extend this set.
 _KNOWN_BENCHMARKS: frozenset[str] = frozenset(benchmark_names())
 
 
@@ -243,69 +217,55 @@ def slayer_models_root() -> Path:
 def slayer_otf_cache_root(*, benchmark: str) -> Path:
     """Per-DB phase-1-3 ingest cache root for the on-the-fly setup path.
 
-    Single source of truth (replaces the duplicated per-agent
-    ``_otf_cache_root`` helpers). ``benchmark`` is REQUIRED and explicit so two
-    benchmarks with overlapping DB names (e.g. mini-interact and LiveSQLBench
-    both have an ``alien`` DB) keep disjoint caches and a forgotten benchmark
-    can never silently mix them:
+    All benchmarks share a single parent dir ``slayer_otf_cache/`` under the
+    main checkout; each benchmark gets its own subdirectory:
+    ``slayer_otf_cache/<benchmark>/``.
 
-    * ``benchmark="mini_interact"`` → ``<main_checkout>/slayer_otf_cache/``
-      (the LEGACY dir + LEGACY env var — on-disk layout & the dev-1470 cloud
-      contract are unchanged).
-    * ``benchmark="livesqlbench"`` →
-      ``<main_checkout>/slayer_otf_cache_livesqlbench/``.
-
-    Env overrides (the cloud actor sets these to ``/data/<...>`` so the
-    uploaded cache is found there) are PARALLEL — one per benchmark, so a
-    livesqlbench override does not steer the mini-interact root and vice versa:
-
-    * mini_interact: ``BIRD_OTF_CACHE_ROOT``
-    * livesqlbench:  ``BIRD_OTF_CACHE_ROOT_LIVESQLBENCH``
+    ``BIRD_OTF_CACHE_ROOT`` overrides the parent for ALL benchmarks —
+    benchmark subdir is still appended under it.
     """
     _validate_benchmark(benchmark)
-    if benchmark == "mini_interact":
-        override = os.environ.get("BIRD_OTF_CACHE_ROOT")
-        if override:
-            return Path(override).expanduser()
-        return main_checkout_root() / "slayer_otf_cache"
-    env_var = f"BIRD_OTF_CACHE_ROOT_{benchmark.upper()}"
-    override = os.environ.get(env_var)
-    if override:
-        return Path(override).expanduser()
-    return main_checkout_root() / f"slayer_otf_cache_{benchmark}"
+    parent_override = os.environ.get("BIRD_OTF_CACHE_ROOT")
+    if parent_override:
+        return Path(parent_override).expanduser() / benchmark
+    return main_checkout_root() / "slayer_otf_cache" / benchmark
 
 
 def slayer_models_otf_root(*, benchmark: str) -> Path:
-    """Per-DB reference models built by the DEV-1454 on-the-fly KB-encode
-    setup pass — a sibling of ``slayer_models`` under the main checkout (so
-    it is git-committable, and ``hard8_preprocessor.build_task_variant_storage``
-    resolves the ``mini-interact`` dataset path identically). NEVER the same
-    dir as ``slayer_models`` — hand-built committed models are never touched.
+    """Per-DB reference models built by the on-the-fly KB-encode setup pass.
 
-    ``benchmark`` is REQUIRED and explicit, same semantics as
-    :func:`slayer_otf_cache_root`:
+    All benchmarks share a single parent dir ``slayer_models_otf/`` under the
+    main checkout; each benchmark gets its own subdirectory:
+    ``slayer_models_otf/<benchmark>/``.
 
-    * ``benchmark="mini_interact"`` → ``<main_checkout>/slayer_models_otf/``
-      (legacy dir + legacy env var).
-    * ``benchmark="livesqlbench"`` →
-      ``<main_checkout>/slayer_models_otf_livesqlbench/``.
-
-    Env overrides (one per benchmark):
-
-    * mini_interact: ``BIRD_SLAYER_MODELS_OTF_ROOT``
-    * livesqlbench:  ``BIRD_SLAYER_MODELS_OTF_ROOT_LIVESQLBENCH``
+    ``BIRD_SLAYER_MODELS_OTF_ROOT`` overrides the parent for ALL benchmarks —
+    benchmark subdir is still appended under it.
     """
     _validate_benchmark(benchmark)
-    if benchmark == "mini_interact":
-        override = os.environ.get("BIRD_SLAYER_MODELS_OTF_ROOT")
-        if override:
-            return Path(override).expanduser()
-        return main_checkout_root() / "slayer_models_otf"
-    env_var = f"BIRD_SLAYER_MODELS_OTF_ROOT_{benchmark.upper()}"
-    override = os.environ.get(env_var)
-    if override:
-        return Path(override).expanduser()
-    return main_checkout_root() / f"slayer_models_otf_{benchmark}"
+    parent_override = os.environ.get("BIRD_SLAYER_MODELS_OTF_ROOT")
+    if parent_override:
+        return Path(parent_override).expanduser() / benchmark
+    return main_checkout_root() / "slayer_models_otf" / benchmark
+
+
+def gated_gold_root(*, benchmark: str | None) -> Path:
+    """Canonical location for gated gold sidecar files (gitignored).
+
+    Each benchmark gets its own subdirectory:
+    ``gated_gold/<benchmark>/``.
+
+    ``BIRD_GATED_GOLD_ROOT`` overrides the parent for ALL benchmarks —
+    benchmark subdir is still appended under it.
+
+    Raises ``ValueError`` for ``None`` or unknown benchmark.
+    """
+    if benchmark is None:
+        raise ValueError("benchmark must not be None")
+    _validate_benchmark(benchmark)
+    parent_override = os.environ.get("BIRD_GATED_GOLD_ROOT")
+    if parent_override:
+        return Path(parent_override).expanduser() / benchmark
+    return main_checkout_root() / "gated_gold" / benchmark
 
 
 def results_root() -> Path:

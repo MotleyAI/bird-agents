@@ -72,7 +72,7 @@ def run_db_by_name(
     """High-level entry point: load canonical files for `db`, run audit,
     write to `sar_audited_gold_root/<db>/<db>_sar_audited.jsonl`.
     """
-    mi_root = mini_interact_root or paths.mini_interact_root()
+    mi_root = mini_interact_root or paths.benchmark_data_root("mini-interact")
     sar_root = sar_audited_gold_root or paths.sar_audited_gold_root()
 
     tasks = loader.load_task_list(db=db, mini_interact_path=mi_root / "mini_interact.jsonl")

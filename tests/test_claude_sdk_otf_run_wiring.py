@@ -42,17 +42,13 @@ def _framework_choices_from_parser():
     raise AssertionError("could not find --framework choices in run.main")
 
 
-def test_framework_choice_accepts_claude_sdk_otf():
-    assert "claude_sdk_otf" in _framework_choices_from_parser()
+def test_framework_choice_accepts_claude_sdk():
+    assert "claude_sdk" in _framework_choices_from_parser()
 
 
 def test_existing_framework_choices_preserved():
     choices = _framework_choices_from_parser()
-    assert {
-        "claude_sdk", "pydantic_ai", "pydantic_ai_recursive",
-        "pydantic_ai_otf_encode", "mcp_agent", "agno", "smolagents",
-        "claude_sdk_otf",
-    }.issubset(choices)
+    assert {"claude_sdk"}.issubset(choices)
 
 
 @pytest.mark.asyncio
@@ -86,7 +82,7 @@ async def test_run_evaluation_branches_to_otf_agent(monkeypatch, tmp_path):
             mode="one-shot", query_mode="slayer",
             framework="claude_sdk_otf", slayer_setup="on-the-fly",
             reasoning_effort="high",
-            dataset="livesqlbench", gold_file=str(gold),
+            dataset="livesqlbench-base-lite-sqlite", gold_file=str(gold),
         )
     assert constructed and constructed[0].get("slayer_setup") == "on-the-fly"
     # --reasoning-effort must thread through to the agent constructor.
@@ -109,14 +105,6 @@ def test_validate_slayer_setup_requires_on_the_fly():
     )
 
 
-def test_validate_one_shot_framework_accepts_claude_sdk_otf():
-    from bird_interact_agents import run as run_mod
-
-    run_mod._validate_one_shot_framework(
-        mode="one-shot", query_mode="slayer", framework="claude_sdk_otf",
-    )
-
-
 def test_maybe_force_wipe_otf_purges_cache_for_claude_sdk_otf(monkeypatch):
     """Narrowed flavor is livesqlbench-only — wipe must target the
     livesqlbench-scoped cache root."""
@@ -132,7 +120,7 @@ def test_maybe_force_wipe_otf_purges_cache_for_claude_sdk_otf(monkeypatch):
     )
     run_mod._maybe_force_wipe_otf(
         otf_rebuild=True, framework="claude_sdk_otf",
-        dbs=["museum"], benchmark="livesqlbench",
+        dbs=["museum"], benchmark="livesqlbench-base-lite-sqlite",
     )
     assert purged.get("cache") == {"museum"}
 
@@ -146,11 +134,11 @@ def test_cli_rejects_claude_sdk_otf_with_pre_encoded(monkeypatch, tmp_path):
     gold.write_text("")
     argv = [
         "prog",
-        "--framework", "claude_sdk_otf",
+        "--framework", "claude_sdk",
         "--slayer-setup", "pre-encoded",
         "--query-mode", "slayer",
         "--mode", "one-shot",
-        "--dataset", "livesqlbench",
+        "--dataset", "livesqlbench-base-lite-sqlite",
         "--gold-file", str(gold),
         "--data", str(data_file),
         "--db-path", str(tmp_path),
@@ -178,7 +166,7 @@ def test_cloud_actor_downloads_cache_only():
     cfg = {
         "framework": "claude_sdk_otf",
         "slayer_setup": "on-the-fly",
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
     }
     artifacts = {a for (a, _root, _req) in ray_app._slayer_artifacts_for(cfg)}
     assert artifacts == {"slayer_otf_cache"}
@@ -192,7 +180,7 @@ def test_cloud_driver_uploads_cache_only():
 
     args = SimpleNamespace(
         slayer_setup="on-the-fly", framework="claude_sdk_otf",
-        dataset="livesqlbench",
+        dataset="livesqlbench-base-lite-sqlite",
     )
     names = {name for (_path, name, _req) in driver._slayer_uploads_for(args)}
     # cache only — no LLM-encoded reference upload-back for this framework
@@ -213,7 +201,7 @@ def test_cloud_resubmit_preserves_reasoning_effort():
         "user_sim_model": "anthropic/claude-sonnet-4-6",
         "patience": 500,
         "max_depth": 3,
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
         "gold_file": "/data/gold.jsonl",
         "render_inputs": {"workers": 1, "actors_per_worker": 1},
         "reasoning_effort": "high",

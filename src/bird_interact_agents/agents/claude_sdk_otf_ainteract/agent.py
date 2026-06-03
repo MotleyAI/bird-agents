@@ -243,11 +243,13 @@ class ClaudeSDKOtfAInteractAgent:
         # ``get_benchmark`` so the documented ``mini-interact`` alias is
         # accepted (matches `_validate_framework_dataset_mode`'s behavior;
         # a programmatic caller using the alias must reach the agent).
-        dataset = task_data.get("dataset") or "mini_interact"
-        if get_benchmark(dataset).name not in ("mini_interact", "mini_interact_postgres"):
+        dataset = task_data.get("dataset")
+        if not dataset:
+            raise ValueError("task_data missing required 'dataset' field")
+        if get_benchmark(dataset).one_shot:
             raise ValueError(
-                "claude_sdk_otf_ainteract is bound to --dataset mini_interact / mini_interact_postgres "
-                "(use --framework claude_sdk_otf for livesqlbench); "
+                "claude_sdk_otf_ainteract requires an a-interact benchmark "
+                "(use claude_sdk for one-shot benchmarks); "
                 f"got dataset={dataset!r}"
             )
 

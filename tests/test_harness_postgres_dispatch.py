@@ -30,7 +30,7 @@ def _pg_sample_status(db_name: str = "alien", data_path_base: str = "/data"):
         idx=0,
         original_data={
             "selected_database": db_name,
-            "dataset": "livesqlbench_postgres",
+            "dataset": "livesqlbench-base-lite",
             "amb_user_query": "How many?",
             "sol_sql": ["SELECT COUNT(*) FROM t"],
             "user_query_ambiguity": {},
@@ -90,7 +90,7 @@ def test_execute_env_action_sqlite_still_routes_to_sqlite_impl(tmp_path):
         idx=0,
         original_data={
             "selected_database": "alien",
-            "dataset": "mini_interact",
+            "dataset": "mini-interact",
             "amb_user_query": "q",
             "sol_sql": ["SELECT 1"],
             "user_query_ambiguity": {},
@@ -196,7 +196,7 @@ def test_materialize_task_db_noop_for_livesqlbench_postgres(tmp_path):
     task_data = {
         "selected_database": "alien",
         "instance_id": "alien_pg_1",
-        "dataset": "livesqlbench_postgres",
+        "dataset": "livesqlbench-base-lite",
     }
     result = materialize_task_db(task_data, str(tmp_path))
     assert result is None  # no-op for postgres, no file needed
@@ -208,7 +208,7 @@ def test_materialize_task_db_noop_for_mini_interact_postgres(tmp_path):
     task_data = {
         "selected_database": "alien",
         "instance_id": "alien_mip_1",
-        "dataset": "mini_interact_postgres",
+        "dataset": "bird-interact-lite-exp",
     }
     result = materialize_task_db(task_data, str(tmp_path))
     assert result is None
@@ -271,7 +271,7 @@ def test_grade_and_write_postgres_uses_postgres_executor(tmp_path, monkeypatch):
     grade_and_write(
         rows_dir=rows_dir,
         instance_id="alien_pg_1",
-        benchmark="livesqlbench_postgres",
+        benchmark="livesqlbench-base-lite",
         run_id="test-run",
         task_annotation=task_ann,
         audited_gold_rows=[],

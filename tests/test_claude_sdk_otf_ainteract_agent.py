@@ -348,6 +348,7 @@ _TASK = {
     "instance_id": "shop_1",
     "amb_user_query": "?",
     "knowledge_ambiguity": [],
+    "dataset": "mini-interact",
 }
 
 
@@ -410,7 +411,7 @@ async def test_run_task_rejects_livesqlbench_dataset():
     )
 
     agent = ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
-    td = dict(_TASK, dataset="livesqlbench")
+    td = dict(_TASK, dataset="livesqlbench-base-lite-sqlite")
     with pytest.raises(ValueError):
         await agent.run_task(td, "/tmp", 20.0, "slayer", eval_mode="a-interact")
 
@@ -590,7 +591,7 @@ async def test_run_task_uses_cache_resolver_with_mini_interact_benchmark(
     await agent.run_task(
         dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
     )
-    assert captured["resolve_kwargs"]["benchmark"] == "mini_interact"
+    assert captured["resolve_kwargs"]["benchmark"] == "mini-interact"
 
 
 @pytest.mark.asyncio
@@ -815,7 +816,7 @@ async def test_run_task_accepts_explicit_mini_interact_dataset(
 
     _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
-    td = dict(_TASK, dataset="mini_interact")
+    td = dict(_TASK, dataset="mini-interact")
     row = await agent.run_task(
         td, str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
     )

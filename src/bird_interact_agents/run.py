@@ -69,75 +69,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _validate_slayer_setup(  # noqa: C901  (complex but linear)
+def _validate_slayer_setup(
     *, slayer_setup: str, framework: str, query_mode: str, mode: str,
 ) -> None:
-    """Reject ``slayer_setup`` combinations the on-the-fly path doesn't
-    support, before any task starts. Used by both the CLI parser and
-    ``run_evaluation`` so direct programmatic callers can't bypass the
-    guard.
+    """Reject invalid ``slayer_setup`` / ``query_mode`` combinations.
 
-    Raises ``ValueError`` (programmatic callers); ``main`` catches and
-    re-raises via ``parser.error`` so the CLI gets the standard
-    argparse exit-2 + stderr behaviour.
+    ``raw`` query_mode has no SLayer dependency — ``slayer_setup`` is ignored.
+    ``slayer`` query_mode requires ``on-the-fly``; any other value raises.
     """
-    # Raw frameworks have no SLayer dependency — slayer_setup is irrelevant.
-    if framework in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
+    if query_mode == "raw":
         return
-    # DEV-1462: one-shot REQUIRES on-the-fly. Pre-encoded one-shot would
-    # silently target the committed `slayer_models/` which has no
-    # LiveSQLBench coverage; fail fast.
-    if mode == "one-shot" and slayer_setup != "on-the-fly":
-        raise ValueError(
-            "--mode one-shot requires --slayer-setup on-the-fly; "
-            f"got --slayer-setup {slayer_setup!r}",
-        )
-    # pydantic_ai_otf_encode and the two claude_sdk_otf flavors are
-    # on-the-fly-only adapters (DEV-1454 / DEV-1505 / DEV-1507).
-    if (
-        framework in (
-            "pydantic_ai_otf_encode", "claude_sdk_otf",
-            "claude_sdk_otf_ainteract",
-        )
-        and slayer_setup != "on-the-fly"
-    ):
-        raise ValueError(
-            f"--framework {framework} requires "
-            "--slayer-setup on-the-fly; "
-            f"got --slayer-setup {slayer_setup}"
-        )
-    if slayer_setup == "pre-encoded":
+    if slayer_setup == "on-the-fly":
         return
-    if slayer_setup != "on-the-fly":
-        raise ValueError(
-            f"--slayer-setup must be 'pre-encoded' or 'on-the-fly'; "
-            f"got {slayer_setup!r}"
-        )
-    if framework not in (
-        "pydantic_ai_recursive", "pydantic_ai_otf_encode", "claude_sdk_otf",
-        "claude_sdk_otf_ainteract",
-    ):
-        raise ValueError(
-            "--slayer-setup on-the-fly is only supported with "
-            "--framework pydantic_ai_recursive, "
-            "--framework pydantic_ai_otf_encode, "
-            "--framework claude_sdk_otf, or "
-            "--framework claude_sdk_otf_ainteract; "
-            f"got --framework {framework}"
-        )
-    if query_mode != "slayer":
-        raise ValueError(
-            "--slayer-setup on-the-fly is only supported with "
-            "--query-mode slayer; "
-            f"got --query-mode {query_mode}"
-        )
-    # DEV-1462: on-the-fly now allows {a-interact, one-shot}.
-    if mode not in ("a-interact", "one-shot"):
-        raise ValueError(
-            "--slayer-setup on-the-fly is only supported with "
-            "--mode a-interact or --mode one-shot; "
-            f"got --mode {mode}"
-        )
+    raise ValueError(
+        "--slayer-setup on-the-fly is required with --query-mode slayer; "
+        f"got --slayer-setup {slayer_setup!r}"
+    )
 
 
 def _validate_dataset_mode(dataset: str, mode: str) -> None:
@@ -158,89 +105,6 @@ def _validate_dataset_mode(dataset: str, mode: str) -> None:
         )
 
 
-def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) -> None:
-    """DEV-1462: one-shot dispatch is recursive + otf_encode + claude_sdk_otf
-    only.
-
-    ``oracle`` stays framework-agnostic; ``a-interact``/``c-interact`` keep
-    their existing per-framework dispatch. After DEV-1507
-    ``claude_sdk_otf_ainteract`` is a-interact only — explicitly NOT on this
-    list so the user-facing error names the right framework.
-    """
-    if mode != "one-shot":
-        return
-    # claude_sdk_otf_raw is the raw-SQL one-shot variant; it requires raw, not slayer.
-    if framework == "claude_sdk_otf_raw":
-        if query_mode != "raw":
-            raise ValueError(
-                "--framework claude_sdk_otf_raw requires --query-mode raw; "
-                f"got --query-mode {query_mode!r}",
-            )
-        return
-    if query_mode != "slayer":
-        raise ValueError(
-            "--mode one-shot requires --query-mode slayer; "
-            f"got --query-mode {query_mode!r}",
-        )
-    if framework not in (
-        "pydantic_ai_recursive", "pydantic_ai_otf_encode", "claude_sdk_otf",
-    ):
-        raise ValueError(
-            "--mode one-shot is only supported with --framework "
-            "pydantic_ai_recursive, --framework pydantic_ai_otf_encode, or "
-            f"--framework claude_sdk_otf; got --framework {framework!r}",
-        )
-
-
-# (framework -> (allowed datasets, bound mode)). DEV-1507: claude_sdk_otf is
-# the livesqlbench/one-shot flavor; claude_sdk_otf_ainteract is the
-# mini_interact/a-interact flavor. Every other framework is unbound —
-# they don't appear here. DEV-1523: postgres variants share the same agents
-# so both the sqlite and postgres dataset names are accepted per framework.
-_FRAMEWORK_DATASET_MODE_BINDING: dict[str, tuple[frozenset[str], str]] = {
-    "claude_sdk_otf": (frozenset({"livesqlbench", "livesqlbench_postgres"}), "one-shot"),
-    "claude_sdk_otf_ainteract": (frozenset({"mini_interact", "mini_interact_postgres"}), "a-interact"),
-    "claude_sdk_otf_raw": (frozenset({"livesqlbench", "livesqlbench_postgres"}), "one-shot"),
-    "claude_sdk_otf_ainteract_raw": (frozenset({"mini_interact", "mini_interact_postgres"}), "a-interact"),
-}
-
-
-def _validate_framework_dataset_mode(
-    *, framework: str, dataset: str, mode: str,
-) -> None:
-    """DEV-1507: reject any (framework, dataset, mode) combo that violates a
-    framework's hard binding.
-
-    Oracle does NOT bypass — picking the bound framework signals intent to
-    use that flavor's agent, and ``run_oracle_task`` short-circuits
-    framework dispatch entirely. A user who wants to oracle-eval a
-    different benchmark should drop the framework binding (oracle is
-    framework-agnostic in dispatch).
-
-    Frameworks not listed in ``_FRAMEWORK_DATASET_MODE_BINDING`` are
-    unbound and pass through silently.
-    """
-    bound = _FRAMEWORK_DATASET_MODE_BINDING.get(framework)
-    if bound is None:
-        return
-    # Canonicalize the dataset token before comparison so the documented
-    # ``mini-interact`` alias (and any future alias) is accepted —
-    # otherwise a programmatic ``run_evaluation`` / ``run_one_task`` call
-    # using the alias against the canonical binding would fail with a
-    # confusing error (Codex + CodeRabbit on PR #10). The CLI normalises
-    # at the argparse boundary, but the programmatic surface doesn't.
-    canonical_dataset = get_benchmark(dataset).name
-    allowed_datasets, bound_mode = bound
-    if canonical_dataset not in allowed_datasets:
-        raise ValueError(
-            f"--framework {framework} is bound to --dataset {sorted(allowed_datasets)!r}; "
-            f"got --dataset {dataset!r}",
-        )
-    if mode != bound_mode:
-        raise ValueError(
-            f"--framework {framework} is bound to --mode {bound_mode!r}; "
-            f"got --mode {mode!r}",
-        )
 
 
 def _maybe_force_wipe_otf(
@@ -351,6 +215,7 @@ async def run_oracle_task(task_data: dict, data_path_base: str) -> dict:
 def make_runner(
     *,
     framework: str,
+    dataset: str,
     query_mode: str,
     mode: str,
     agent_model: str,
@@ -361,33 +226,20 @@ def make_runner(
     slayer_setup: str = "pre-encoded",
     reasoning_effort: str | None = None,
 ):
-    """Public alias for `_make_runner` — the cloud actor (and other
+    """Public alias for `_make_runner`. The cloud actor (and other
     throughput-sensitive callers) call this once at startup and reuse the
     returned closure across tasks to avoid per-task agent reconstruction.
 
-    Validates ``slayer_setup`` against the framework/query_mode/mode tuple
-    upfront so a programmatic caller (cloud actor, custom driver) that
-    bypasses the CLI parser can't silently get a runner that ignores the
-    setting (Codex finding on PR #19).
-
-    DEV-1462: also validates the one-shot ⟹ slayer + framework∈{recursive,
-    otf_encode} dispatch. ``make_runner`` has no ``dataset`` argument (it
-    is a per-task runner factory); the one-shot ⟹ livesqlbench guard
-    lives further down in ``run_task`` itself, keyed on the task's
-    loader-stamped ``dataset`` marker (Codex #1).
-
-    Guard order: one-shot dispatch FIRST so a one-shot-with-wrong-framework
-    surfaces a "one-shot requires …" error, not the more generic
-    on-the-fly-framework error from ``_validate_slayer_setup``."""
-    _validate_one_shot_framework(
-        mode=mode, query_mode=query_mode, framework=framework,
-    )
+    ``dataset`` drives the dispatch for the ``claude_sdk`` framework
+    (selects the right OTF agent flavor based on benchmark.one_shot and
+    query_mode).
+    """
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
     )
     return _make_runner(
-        framework=framework, query_mode=query_mode, mode=mode,
+        framework=framework, dataset=dataset, query_mode=query_mode, mode=mode,
         agent_model=agent_model, strict=strict, prompt_cache=prompt_cache,
         max_depth=max_depth, slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup, reasoning_effort=reasoning_effort,
@@ -465,6 +317,7 @@ async def run_one_task_with_runner(
 def _make_runner(
     *,
     framework: str,
+    dataset: str = "",
     query_mode: str,
     mode: str,
     agent_model: str,
@@ -489,20 +342,48 @@ def _make_runner(
             return await run_oracle_task(td, data_dir)
         return run_one
     if framework == "claude_sdk":
-        from bird_interact_agents.agents.claude_sdk.agent import ClaudeSDKAgent
-
+        b = get_benchmark(dataset)
         if strict:
             logger.warning(
                 "[claude_sdk] --strict is a no-op for Anthropic models; ignored."
             )
-        agent = ClaudeSDKAgent(
-            slayer_storage_root=slayer_storage_root, model=agent_model,
-        )
+        if b.one_shot and query_mode == "slayer":
+            from bird_interact_agents.agents.claude_sdk_otf import ClaudeSDKOtfAgent
+            _agent: object = ClaudeSDKOtfAgent(
+                slayer_storage_root=slayer_storage_root,
+                model=agent_model,
+                slayer_setup=slayer_setup,
+                reasoning_effort=reasoning_effort,
+            )
+        elif not b.one_shot and query_mode == "slayer":
+            from bird_interact_agents.agents.claude_sdk_otf_ainteract import (
+                ClaudeSDKOtfAInteractAgent,
+            )
+            _agent = ClaudeSDKOtfAInteractAgent(
+                slayer_storage_root=slayer_storage_root,
+                model=agent_model,
+                slayer_setup=slayer_setup,
+                reasoning_effort=reasoning_effort,
+            )
+        elif b.one_shot and query_mode == "raw":
+            from bird_interact_agents.agents.claude_sdk_otf_raw import ClaudeSDKOtfRawAgent
+            _agent = ClaudeSDKOtfRawAgent(
+                model=agent_model,
+                reasoning_effort=reasoning_effort,
+            )
+        else:  # not one_shot, raw
+            from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import (
+                ClaudeSDKOtfAInteractRawAgent,
+            )
+            _agent = ClaudeSDKOtfAInteractRawAgent(
+                model=agent_model,
+                reasoning_effort=reasoning_effort,
+            )
 
         async def run_one(td: dict, data_dir: str, patience: int,
                           user_sim_model: str) -> dict:
             budget = calculate_budget(td, patience, mode=mode)
-            return await agent.run_task(
+            return await _agent.run_task(  # type: ignore[attr-defined]
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
@@ -734,6 +615,7 @@ async def run_one_task(
     *,
     data_dir: str,
     framework: str,
+    dataset: str,
     query_mode: str,
     mode: str,
     agent_model: str,
@@ -769,35 +651,13 @@ async def run_one_task(
     one-shot run on un-marked task data (Codex #1 — programmatic-bypass
     close, complementary to ``_validate_dataset_mode`` on the CLI side).
     """
-    # DEV-1507: enforce the framework-bound (dataset, mode) gate at the
-    # per-task programmatic surface too — `make_runner` has no dataset
-    # arg and `_make_runner` short-circuits to `run_oracle_task` regardless
-    # of framework, so a direct caller invoking
-    # `run_one_task(framework="claude_sdk_otf_ainteract", mode="oracle")`
-    # would otherwise bypass the "no oracle bypass" contract.
-    _validate_framework_dataset_mode(
-        framework=framework,
-        dataset=task_data.get("dataset") or "mini_interact",
-        mode=mode,
-    )
-    _validate_one_shot_framework(
-        mode=mode, query_mode=query_mode, framework=framework,
-    )
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
     )
-    if mode == "one-shot" and not get_benchmark(
-        task_data.get("dataset") or "mini_interact"
-    ).one_shot:
-        raise ValueError(
-            "--mode one-shot requires a task whose benchmark declares "
-            "one_shot=True (its loader stamps task_data['dataset']); got "
-            f"dataset={task_data.get('dataset')!r}. This guard catches "
-            "programmatic callers that bypass the one-shot loader.",
-        )
     runner = _make_runner(
         framework=framework,
+        dataset=dataset,
         query_mode=query_mode,
         mode=mode,
         agent_model=agent_model,
@@ -885,19 +745,7 @@ async def run_evaluation(
     reasoning_effort: str | None = None,
 ) -> dict:
     """Run full evaluation across all tasks."""
-    # Programmatic-caller mirror of the CLI fail-fast guards. The CLI
-    # parser rejects the same combinations in main(), but
-    # ``run_evaluation`` is also called directly from tests and other
-    # entry points; without these checks those callers would silently get
-    # unsupported behaviour (Codex finding on DEV-1455 PR #19 +
-    # DEV-1462 Codex round-2).
     _validate_dataset_mode(dataset=dataset, mode=mode)
-    _validate_framework_dataset_mode(
-        framework=framework, dataset=dataset, mode=mode,
-    )
-    _validate_one_shot_framework(
-        mode=mode, query_mode=query_mode, framework=framework,
-    )
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
@@ -965,6 +813,7 @@ async def run_evaluation(
     # the per-framework agent N times).
     runner = _make_runner(
         framework=framework,
+        dataset=dataset,
         query_mode=query_mode,
         mode=mode,
         agent_model=agent_model,
@@ -1317,14 +1166,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--framework",
-        choices=[
-            "claude_sdk", "claude_sdk_otf", "claude_sdk_otf_ainteract",
-            "claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw",
-            "pydantic_ai",
-            "pydantic_ai_recursive", "pydantic_ai_otf_encode",
-            "mcp_agent", "agno", "smolagents",
-        ],
-        default="claude_sdk",
+        choices=["claude_sdk"],
+        required=True,
         help="Agent framework to use",
     )
     parser.add_argument(
@@ -1342,12 +1185,9 @@ def main() -> None:
         required=True,
         help=(
             "Which benchmark to load (from the benchmark registry). "
-            "REQUIRED — no default, to prevent silently running the wrong "
-            "benchmark when --mode/--instance-ids happen to be consistent "
-            "with both. Pick ``mini_interact`` (``mini-interact`` accepted "
-            "as an alias) or ``livesqlbench``. ``livesqlbench`` loads "
-            "LiveSQLBench-Base-Lite-SQLite and REQUIRES --gold-file; gated to "
-            "--mode {one-shot, oracle}."
+            "REQUIRED — no default. Use canonical hyphenated names: "
+            "mini-interact, livesqlbench-base-lite-sqlite (requires --gold-file), "
+            "livesqlbench-base-lite (postgres), bird-interact-lite-exp (postgres)."
         ),
     )
     parser.add_argument(
@@ -1563,16 +1403,6 @@ def main() -> None:
         # + wrong-framework surfaces a "--mode one-shot requires …" error,
         # not the more generic on-the-fly-framework error.
         _validate_dataset_mode(dataset=args.dataset, mode=args.mode)
-        # DEV-1507: framework-bound (dataset, mode) gate. Fires right after
-        # `_validate_dataset_mode` so the error message names the framework
-        # binding, not a downstream mode/slayer-setup gate.
-        _validate_framework_dataset_mode(
-            framework=args.framework, dataset=args.dataset, mode=args.mode,
-        )
-        _validate_one_shot_framework(
-            mode=args.mode, query_mode=args.query_mode,
-            framework=args.framework,
-        )
         _validate_slayer_setup(
             slayer_setup=args.slayer_setup,
             framework=args.framework,

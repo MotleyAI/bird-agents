@@ -64,26 +64,26 @@ def test_audited_gold_variants_blob_path():
 
 def test_stable_task_annotation_blob_path():
     from bird_interact_agents.cloud import gcs
-    assert gcs.stable_task_annotation_blob("mini_interact", "shop", "shop_1") == \
+    assert gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1") == \
         "annotations/mini_interact/shop/shop_1.task.json"
 
 
 def test_stable_task_annotation_blob_normalises_dash_benchmark():
     from bird_interact_agents.cloud import gcs
     assert gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1") == \
-        gcs.stable_task_annotation_blob("mini_interact", "shop", "shop_1")
+        gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1")
 
 
 def test_stable_audited_gold_variants_blob_path():
     from bird_interact_agents.cloud import gcs
-    assert gcs.stable_audited_gold_variants_blob("mini_interact", "shop", "shop_1") == \
+    assert gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1") == \
         "audited_gold/mini_interact/shop/shop_1.variants.jsonl"
 
 
 def test_stable_audited_gold_variants_blob_normalises_dash_benchmark():
     from bird_interact_agents.cloud import gcs
     assert gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1") == \
-        gcs.stable_audited_gold_variants_blob("mini_interact", "shop", "shop_1")
+        gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1")
 
 
 # ---------------------------------------------------------------------------
@@ -128,9 +128,9 @@ def test_write_stable_task_annotation_lands_at_stable_blob(fake_gcs_bucket):
     client, store = fake_gcs_bucket
     ann = TaskAnnotation.model_validate(_minimal_task_annotation_dict())
 
-    gcs.write_stable_task_annotation("mini_interact", "shop", "shop_1", ann, client=client)
+    gcs.write_stable_task_annotation("mini-interact", "shop", "shop_1", ann, client=client)
 
-    assert gcs.stable_task_annotation_blob("mini_interact", "shop", "shop_1") in store
+    assert gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1") in store
 
 
 # ---------------------------------------------------------------------------
@@ -176,10 +176,10 @@ def test_write_stable_audited_gold_variants_lands_at_stable_blob(fake_gcs_bucket
 
     client, store = fake_gcs_bucket
     gcs.write_stable_audited_gold_variants(
-        "mini_interact", "shop", "shop_1", [], client=client
+        "mini-interact", "shop", "shop_1", [], client=client
     )
 
-    assert gcs.stable_audited_gold_variants_blob("mini_interact", "shop", "shop_1") in store
+    assert gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1") in store
 
 
 # ---------------------------------------------------------------------------

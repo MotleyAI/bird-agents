@@ -1041,20 +1041,19 @@ class PydanticAIOtfEncodeAgent:
         # ``dataset='livesqlbench'`` marker. A programmatic caller that
         # bypasses ``load_livesqlbench_tasks`` (cloud actor, custom driver)
         # MUST NOT silently get a one-shot run on un-marked data.
-        if is_one_shot and not get_benchmark(
-            task_data.get("dataset") or "mini_interact"
-        ).one_shot:
+        _dataset = task_data.get("dataset")
+        if not _dataset:
+            raise ValueError("task_data missing required 'dataset' field")
+        if is_one_shot and not get_benchmark(_dataset).one_shot:
             raise ValueError(
                 "--mode one-shot requires a task whose benchmark declares "
                 "one_shot=True (its loader stamps task_data['dataset']); got "
-                f"dataset={task_data.get('dataset')!r}",
+                f"dataset={_dataset!r}",
             )
 
         db_name = task_data["selected_database"]
         instance_id = task_data["instance_id"]
-        benchmark: str = get_benchmark(
-            task_data.get("dataset") or "mini_interact"
-        ).name
+        benchmark: str = get_benchmark(_dataset).name
 
         from slayer.storage.yaml_storage import YAMLStorage
 

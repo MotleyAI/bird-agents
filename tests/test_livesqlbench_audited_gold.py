@@ -160,7 +160,7 @@ def _livesqlbench_data_or_skip() -> Path:
     `museum_column_meaning_base.json`, the gated gold sidecar). CI runs
     without those files; local dev has them.
     """
-    root = paths.livesqlbench_root()
+    root = paths.benchmark_data_root("livesqlbench-base-lite-sqlite")
     if not root.exists():
         pytest.skip(
             f"livesqlbench data root not present: {root}. "
@@ -377,7 +377,7 @@ def test_audit_rows_tag_benchmark_and_database():
     `selected_database` (so a museum row can't claim DB=credit by typo)."""
     for row in _iter_audit_rows():
         iid = row["instance_id"]
-        assert row["benchmark"] == "livesqlbench", (
+        assert row["benchmark"] == "livesqlbench-base-lite-sqlite", (
             f"{iid}: benchmark={row['benchmark']!r} (expected 'livesqlbench')"
         )
         db = row["selected_database"]

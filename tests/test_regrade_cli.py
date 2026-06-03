@@ -84,6 +84,7 @@ def test_regrade_overwrites_existing_submission_annotation(tmp_path, monkeypatch
     monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
     # Pre-existing submission annotation at the destination.
+    # Note: _canonical_benchmark("mini-interact") → "mini_interact" (underscores).
     dest_dir = tmp_path / "annotations" / "mini_interact" / "alien"
     dest_dir.mkdir(parents=True)
     dest = dest_dir / "alien_1.submission.r1.json"
@@ -231,7 +232,7 @@ def test_build_original_sql_index_accepts_string_sol_sql(tmp_path, monkeypatch):
         lambda benchmark: data_file,
     )
 
-    out = _build_original_sql_index("mini_interact")
+    out = _build_original_sql_index("mini-interact")
     assert out["alien_string_sol"] == ["SELECT 1 FROM t"], (
         "string-shaped sol_sql must be wrapped as a 1-item list, NOT "
         "dropped or character-split"
@@ -385,6 +386,6 @@ def test_build_original_sql_index_does_not_char_split_string(
         lambda benchmark: data_file,
     )
 
-    out = _build_original_sql_index("mini_interact")
+    out = _build_original_sql_index("mini-interact")
     assert out["x_1"] == [sql]
     assert len(out["x_1"]) == 1

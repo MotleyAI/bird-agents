@@ -213,23 +213,26 @@ def _load_annotator_task_data(
     bench = get_benchmark(benchmark)
     gold_file: str | None = None
     if bench.gold_required:
-        env_val = os.environ.get(bench.gold_root_env or "")
-        if env_val:
-            gold_file = env_val
-        else:
-            candidate = (
-                paths.benchmark_data_root(benchmark)
-                / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl"
-            )
+        # DEV-1525: gated gold lives at paths.gated_gold_root(benchmark=) /
+        # <gt_sidecar>.jsonl; a BIRD_GATED_GOLD_ROOT env var overrides the
+        # parent dir (benchmark subdir still appended).
+        gated_root = paths.gated_gold_root(benchmark=benchmark)
+        for candidate in (
+            gated_root / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl",
+            # Backwards compat: sidecar directly inside the data root.
+            paths.benchmark_data_root(benchmark)
+            / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl",
+        ):
             if candidate.exists():
                 gold_file = str(candidate)
+                break
 
     if bench.gold_required and gold_file is None:
         raise RuntimeError(
             f"Benchmark {benchmark!r} requires a gold sidecar file but none was found. "
-            f"Set the {bench.gold_root_env!r} environment variable to the path of the "
-            f"gold JSONL file, or ensure the file exists at "
-            f"{paths.benchmark_data_root(benchmark) / 'livesqlbench_sqlite_gt_kg_testcases_0528.jsonl'}."
+            f"Ensure the file exists at "
+            f"{paths.gated_gold_root(benchmark=benchmark) / 'livesqlbench_sqlite_gt_kg_testcases_0528.jsonl'}"
+            f" (set BIRD_GATED_GOLD_ROOT to override the parent directory)."
         )
 
     rows = load_benchmark_tasks(

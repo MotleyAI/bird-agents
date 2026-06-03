@@ -43,7 +43,7 @@ class FakeSubmitArgs:
     allow_dirty: bool = False
     slayer_setup: str = "pre-encoded"
     slayer_storage_root: str = "/data/slayer_models"
-    dataset: str = "mini_interact"
+    dataset: str = "mini-interact"
     gold_file: str | None = None
 
 
@@ -730,12 +730,12 @@ def test_check_setup_auto_builds_missing_otf_cache(monkeypatch, tmp_path):
     # roots (not a worktree-relative path) with force=False.
     assert all(
         kw["cache_root"] == driver.paths.slayer_otf_cache_root(
-            benchmark="mini_interact",
+            benchmark="mini-interact",
         )
         for kw in seen_kwargs
     )
     assert all(
-        kw["mini_interact_root"] == driver.paths.mini_interact_root()
+        kw["mini_interact_root"] == driver.paths.benchmark_data_root("mini-interact")
         for kw in seen_kwargs
     )
     assert all(kw["force"] is False for kw in seen_kwargs)
@@ -1474,38 +1474,38 @@ def test_manifest_and_job_args_carry_benchmark(monkeypatch):
         mode="one-shot", slayer_setup="on-the-fly",
     )
     # FakeSubmitArgs predates --dataset/--gold-file; set them as the cli would.
-    args.dataset = "livesqlbench"
+    args.dataset = "livesqlbench-base-lite-sqlite"
     args.gold_file = "/abs/gold.jsonl"
 
     prefix = "benchmark-data/livesqlbench/abc123/"
     m = driver.build_manifest(
         args, image_uri="img:tag", run_id="rid", benchmark_data_prefix=prefix,
     )
-    assert m["dataset"] == "livesqlbench"
+    assert m["dataset"] == "livesqlbench-base-lite-sqlite"
     # De-bake: the gold rides along in the GCS dataset upload, so the manifest
     # stores the IN-CLUSTER path (under the benchmark's container_data_dir),
     # NOT the submitter's local path. `/abs/gold.jsonl` isn't under the data
     # root → basename fallback under /data/livesqlbench.
-    assert m["gold_file"] == "/data/livesqlbench/gold.jsonl"
+    assert m["gold_file"] == "/data/livesqlbench-base-lite-sqlite/gold.jsonl"
     assert m["benchmark_data_prefix"] == prefix
 
     # Avoid reading a real tasks file for the db-grouped sort.
     monkeypatch.setattr(
         driver, "_instance_ids_sorted_by_db",
-        lambda ids, benchmark="mini_interact": list(ids),
+        lambda ids, benchmark="mini-interact": list(ids),
     )
     ja = driver._build_job_args(
         args, "rid", attempt=1, benchmark_data_prefix=prefix,
     )
-    assert ja[ja.index("--dataset") + 1] == "livesqlbench"
-    assert ja[ja.index("--gold-file") + 1] == "/data/livesqlbench/gold.jsonl"
+    assert ja[ja.index("--dataset") + 1] == "livesqlbench-base-lite-sqlite"
+    assert ja[ja.index("--gold-file") + 1] == "/data/livesqlbench-base-lite-sqlite/gold.jsonl"
     assert ja[ja.index("--benchmark-data-prefix") + 1] == prefix
 
 
 def test_manifest_defaults_to_mini_interact_benchmark():
     args = FakeSubmitArgs()  # default dataset → mini_interact, no gold
     m = driver.build_manifest(args, image_uri="img:tag", run_id="rid")
-    assert m["dataset"] == "mini_interact"
+    assert m["dataset"] == "mini-interact"
     assert m["gold_file"] is None
     # No prefix passed → key present but None (back-compat for direct callers).
     assert m["benchmark_data_prefix"] is None
@@ -1533,7 +1533,7 @@ def test_submit_uploads_dataset_and_threads_prefix(monkeypatch):
     driver.submit(args)
 
     # Uploaded the run's benchmark dataset.
-    assert mocks["benchmark_data"].ensure_uploaded.call_args.args[0] == "mini_interact"
+    assert mocks["benchmark_data"].ensure_uploaded.call_args.args[0] == "mini-interact"
     # Manifest carries the prefix.
     manifest = mocks["gcs"].write_manifest.call_args.args[1]
     assert manifest["benchmark_data_prefix"] == "benchmark-data/mini_interact/feedface/"
@@ -1555,7 +1555,7 @@ def test_validate_gold_under_data_root_rejects_outside(monkeypatch, tmp_path):
     outside.write_text("{}\n")
 
     args = FakeSubmitArgs()
-    args.dataset = "livesqlbench"
+    args.dataset = "livesqlbench-base-lite-sqlite"
     args.gold_file = str(outside)
     with pytest.raises(ValueError, match="must live under the benchmark data root"):
         driver._validate_gold_under_data_root(args)
@@ -1572,10 +1572,10 @@ def test_validate_gold_under_data_root_accepts_inside(monkeypatch, tmp_path):
     monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
 
     args = FakeSubmitArgs()
-    args.dataset = "livesqlbench"
+    args.dataset = "livesqlbench-base-lite-sqlite"
     args.gold_file = str(gold)
     driver._validate_gold_under_data_root(args)  # no raise
-    assert driver._in_cluster_gold_file(args) == "/data/livesqlbench/sub/gold.jsonl"
+    assert driver._in_cluster_gold_file(args) == "/data/livesqlbench-base-lite-sqlite/sub/gold.jsonl"
 
 
 def test_resubmit_threads_benchmark_prefix(monkeypatch):
@@ -1583,11 +1583,11 @@ def test_resubmit_threads_benchmark_prefix(monkeypatch):
     the actor re-downloads the dataset; absent on pre-de-bake manifests."""
     monkeypatch.setattr(
         driver, "_instance_ids_sorted_by_db",
-        lambda ids, benchmark="mini_interact": list(ids),
+        lambda ids, benchmark="mini-interact": list(ids),
     )
     manifest = {
         "framework": "pydantic_ai", "query_mode": "raw", "mode": "c-interact",
-        "dataset": "mini_interact", "agent_model": "m", "user_sim_model": "u",
+        "dataset": "mini-interact", "agent_model": "m", "user_sim_model": "u",
         "benchmark_data_prefix": "benchmark-data/mini_interact/abc/",
         "render_inputs": {"workers": 1, "actors_per_worker": 1},
     }
@@ -1613,7 +1613,7 @@ def test_instance_ids_sorted_by_db_falls_back_when_data_file_absent(
         lambda *a, **k: tmp_path / "absent.jsonl",
     )
     ids = ["z_2", "a_1", "m_3"]
-    assert driver._instance_ids_sorted_by_db(ids, "mini_interact") == ids
+    assert driver._instance_ids_sorted_by_db(ids, "mini-interact") == ids
 
 
 def test_resubmit_omits_dataset_for_pre_dataset_manifest(monkeypatch):
@@ -1623,7 +1623,7 @@ def test_resubmit_omits_dataset_for_pre_dataset_manifest(monkeypatch):
     (Codex)."""
     monkeypatch.setattr(
         driver, "_instance_ids_sorted_by_db",
-        lambda ids, benchmark="mini_interact": list(ids),
+        lambda ids, benchmark="mini-interact": list(ids),
     )
     manifest = {
         "framework": "pydantic_ai", "query_mode": "raw", "mode": "c-interact",
