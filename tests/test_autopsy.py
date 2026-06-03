@@ -663,3 +663,40 @@ def test_is_genuine_miss_false_when_only_n9_passes():
         miss_diagnostics=None,
     )
     assert _is_genuine_miss(cascade) is False
+
+
+def test_build_prompt_truncates_long_trajectory():
+    """_build_prompt keeps head+tail items when trajectory exceeds _TRAJ_MAX."""
+    from bird_interact_agents.eval.autopsy import _TRAJ_HEAD, _TRAJ_MAX, _TRAJ_TAIL, _build_prompt
+
+    ta = _minimal_task_annotation()
+    n = _TRAJ_MAX + 50
+    trajectory = [{"role": "user", "content": f"step {i}"} for i in range(n)]
+    prompt = _build_prompt(
+        task_annotation=ta,
+        trajectory=trajectory,
+        kb_text="",
+        miss_diagnostics=None,
+    )
+    assert '"step 0"' in prompt
+    assert f'"step {_TRAJ_HEAD - 1}"' in prompt
+    assert f'"step {n - 1}"' in prompt
+    assert f'"step {n - _TRAJ_TAIL}"' in prompt
+    assert f'"step {_TRAJ_HEAD}"' not in prompt
+    assert "omitted for length" in prompt
+
+
+def test_build_prompt_no_truncation_at_or_below_max():
+    """_build_prompt does NOT truncate when trajectory length == _TRAJ_MAX."""
+    from bird_interact_agents.eval.autopsy import _TRAJ_MAX, _build_prompt
+
+    ta = _minimal_task_annotation()
+    trajectory = [{"role": "user", "content": f"step {i}"} for i in range(_TRAJ_MAX)]
+    prompt = _build_prompt(
+        task_annotation=ta,
+        trajectory=trajectory,
+        kb_text="",
+        miss_diagnostics=None,
+    )
+    assert "omitted for length" not in prompt
+    assert f'"step {_TRAJ_MAX - 1}"' in prompt

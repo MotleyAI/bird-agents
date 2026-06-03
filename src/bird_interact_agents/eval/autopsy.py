@@ -39,6 +39,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Maximum trajectory items included in the autopsy prompt. Long trajectories
+# (e.g. haiku runs with many tool calls) overflow the context window.
+# We keep the HEAD (initial setup/encoding) and TAIL (final decision) items.
+_TRAJ_HEAD = 20
+_TRAJ_TAIL = 30
+_TRAJ_MAX = _TRAJ_HEAD + _TRAJ_TAIL
+
 # ---------------------------------------------------------------------------
 # LLM output schema (local to this module — not exposed in annotation_schema)
 # ---------------------------------------------------------------------------
@@ -134,10 +141,22 @@ def _build_prompt(
         if miss_diagnostics is not None
         else "null"
     )
-    traj_json = json.dumps(
-        [{"index": i, **item} for i, item in enumerate(trajectory)],
-        indent=None,
-    )
+    if len(trajectory) > _TRAJ_MAX:
+        head = [{"index": i, **item} for i, item in enumerate(trajectory[:_TRAJ_HEAD])]
+        tail = [{"index": i, **item} for i, item in enumerate(
+            trajectory[len(trajectory) - _TRAJ_TAIL:], start=len(trajectory) - _TRAJ_TAIL
+        )]
+        omitted = len(trajectory) - _TRAJ_MAX
+        traj_json = (
+            json.dumps(head, indent=None)
+            + f"\n[... {omitted} trajectory items omitted for length ...]\n"
+            + json.dumps(tail, indent=None)
+        )
+    else:
+        traj_json = json.dumps(
+            [{"index": i, **item} for i, item in enumerate(trajectory)],
+            indent=None,
+        )
     return f"""\
 You are analyzing a failed data-analysis task. The task agent produced a \
 submission that failed every evaluation tier (genuine cascade miss). Your job \
