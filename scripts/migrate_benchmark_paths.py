@@ -28,9 +28,9 @@ def _mv(src: Path, dst: Path, *, dry: bool) -> None:
     if dst.exists():
         print(f"  skip (dest exists): {dst}")
         return
-    dst.parent.mkdir(parents=True, exist_ok=True)
     print(f"  mv {src} → {dst}")
     if not dry:
+        dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dst))
 
 
