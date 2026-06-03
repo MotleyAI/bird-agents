@@ -235,7 +235,9 @@ def _build_submission_annotation(
         ),
         decision_point=None,
         user_sim_interaction=(
-            user_sim_interaction or UserSimInteraction()
+            user_sim_interaction
+            if user_sim_interaction is not None
+            else UserSimInteraction(n_asks=n_ask_user_calls or 0)
         ),
     )
 
