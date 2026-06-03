@@ -436,17 +436,15 @@ async def _build_async(
     rows at prepare time; tasks with no deletions reuse the cache
     verbatim and pay zero embedding API cost.
     """
-    import os as _os
-
     is_postgres = getattr(benchmark, "db_backend", "sqlite") == "postgres"
     build_dir.mkdir(parents=True, exist_ok=True)
 
     if is_postgres:
         from urllib.parse import quote as _quote
-        host = _os.environ.get("BIRD_PG_HOST", "localhost")
-        port = _os.environ.get("BIRD_PG_PORT", "5432")
-        user = _quote(_os.environ.get("BIRD_PG_USER", "bird_interact"), safe="")
-        password = _os.environ.get("BIRD_PG_PASSWORD", "bird_interact")
+        host = os.environ.get("BIRD_PG_HOST", "localhost")
+        port = os.environ.get("BIRD_PG_PORT", "5432")
+        user = _quote(os.environ.get("BIRD_PG_USER", "bird_interact"), safe="")
+        password = os.environ.get("BIRD_PG_PASSWORD", "bird_interact")
         # Password excluded from the URL so it does not appear in subprocess
         # command-line args (visible via ps) or persist in datasources YAML.
         # Passed separately as PGPASSWORD env var instead.

@@ -32,6 +32,15 @@ class DbConnection(Protocol):
         """Execute ``sql`` and return ``(rows, column_names)``."""
         ...
 
+    def execute_sequence(self, sqls: list[str]) -> ExecutorResult:
+        """Execute all ``sqls`` in one transaction, returning the last result.
+
+        Only meaningful for Postgres (SQLiteDbConnection may raise
+        NotImplementedError). Callers that need this must ensure they are
+        working with a postgres backend.
+        """
+        ...
+
     def close(self) -> None:
         """Release the underlying connection."""
         ...
@@ -69,6 +78,9 @@ class SqliteDbConnection:
         if not self._read_only:
             self._conn.commit()
         return rows, cols
+
+    def execute_sequence(self, sqls: list[str]) -> ExecutorResult:
+        raise NotImplementedError("execute_sequence is postgres-only")
 
     def close(self) -> None:
         self._conn.close()

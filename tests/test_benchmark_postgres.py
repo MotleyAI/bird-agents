@@ -216,6 +216,54 @@ def test_load_benchmark_tasks_postgres_stamps_correct_marker(tmp_path):
     )
 
 
+def test_load_benchmark_tasks_mini_interact_postgres_stamps_correct_marker(tmp_path):
+    """load_benchmark_tasks for mini_interact_postgres must stamp
+    row['dataset'] = 'mini_interact_postgres', not 'mini_interact'.
+    The wrong marker routes postgres tasks through the SQLite path (Codex, DEV-1523)."""
+    import json
+    from bird_interact_agents.harness import load_benchmark_tasks
+
+    data_file = tmp_path / "data.jsonl"
+    with open(data_file, "w") as f:
+        f.write(json.dumps({
+            "instance_id": "alien_pg_1",
+            "selected_database": "alien",
+            "amb_user_query": "How many rows?",
+        }) + "\n")
+
+    tasks = load_benchmark_tasks(
+        "mini_interact_postgres",
+        str(data_file),
+        filter_ids=["alien_pg_1"],
+    )
+    assert tasks, "expected at least one task"
+    assert tasks[0]["dataset"] == "mini_interact_postgres", (
+        f"expected dataset='mini_interact_postgres', got {tasks[0]['dataset']!r}"
+    )
+
+
+def test_load_benchmark_tasks_sqlite_mini_interact_still_stamps_mini_interact(tmp_path):
+    """Backward-compat: the SQLite mini_interact still gets dataset='mini_interact'."""
+    import json
+    from bird_interact_agents.harness import load_benchmark_tasks
+
+    data_file = tmp_path / "data.jsonl"
+    with open(data_file, "w") as f:
+        f.write(json.dumps({
+            "instance_id": "alien_1",
+            "selected_database": "alien",
+            "amb_user_query": "How many rows?",
+        }) + "\n")
+
+    tasks = load_benchmark_tasks(
+        "mini_interact",
+        str(data_file),
+        filter_ids=["alien_1"],
+    )
+    assert tasks
+    assert tasks[0]["dataset"] == "mini_interact"
+
+
 def test_load_benchmark_tasks_sqlite_livesqlbench_still_stamps_livesqlbench(tmp_path):
     """Backward-compat: the SQLite livesqlbench still gets dataset='livesqlbench'."""
     from bird_interact_agents.harness import load_benchmark_tasks

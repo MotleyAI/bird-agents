@@ -187,7 +187,7 @@ def _pg_execute_submit_action(
                 # the whole list, so temp tables created in step N remain
                 # visible to step N+1 (unlike calling conn.execute per step,
                 # which rolls back each statement individually).
-                rows, _ = conn.execute_sequence(sqls)  # type: ignore[union-attr]
+                rows, _ = conn.execute_sequence(sqls)
                 return rows, False
         except Exception:  # noqa: BLE001
             return [], True
@@ -411,6 +411,12 @@ def load_benchmark_tasks(
         tasks = [t for t in tasks if t.get("instance_id") in wanted]
     if limit is not None:
         tasks = tasks[:limit]
+    # Stamp the canonical dataset marker so execute_submit_action dispatch
+    # routes on benchmark.db_backend correctly (Codex, DEV-1523).
+    # load_livesqlbench_tasks does this via dataset_marker= kwarg; this path
+    # must mirror it so postgres variants don't silently fall through to SQLite.
+    for t in tasks:
+        t["dataset"] = b.dataset_marker
     return tasks
 
 

@@ -382,6 +382,7 @@ def _build_missing_otf_caches(
         asyncio.run(
             ensure_db_cache(
                 db, cache_root=cache_root, mini_interact_root=data_root,
+                benchmark=get_benchmark(benchmark),
                 force=False,
             )
         )

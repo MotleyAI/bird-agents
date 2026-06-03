@@ -532,6 +532,7 @@ class ClaudeSDKOtfAgent:
                     original_sol_sql=_orig_sql,
                     submitted_sql=_submitted_sql,
                     db_path=_db_path,
+                    benchmark=benchmark,
                     user_sim_n_asks=None,
                 )
                 if _ann_from_disk and _is_genuine_miss(_cascade):
