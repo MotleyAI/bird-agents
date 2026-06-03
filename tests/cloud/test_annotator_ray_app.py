@@ -348,7 +348,6 @@ def test_run_annotator_pool_passes_benchmark_kwarg_to_run_with_actors(
     """_run_with_actors must receive benchmark= so it doesn't TypeError in
     cloud actor mode (ray_app._run_with_actors requires benchmark: str)."""
     from types import SimpleNamespace
-    from bird_interact_agents.cloud import ray_app
     from bird_interact_agents.cloud import ray_app_annotator
 
     captured_kwargs: dict = {}
@@ -365,9 +364,9 @@ def test_run_annotator_pool_passes_benchmark_kwarg_to_run_with_actors(
     fake_actor = SimpleNamespace()
     fake_actor_cls = SimpleNamespace(remote=lambda *a, **kw: fake_actor)
 
-    monkeypatch.setattr(ray_app, "HeartbeatWriter", FakeHeartbeat)
-    monkeypatch.setattr(ray_app, "_run_with_actors", fake_run_with_actors)
-    monkeypatch.setattr(ray_app, "_with_actor_env", lambda cls, env: cls)
+    monkeypatch.setattr(ray_app_annotator, "HeartbeatWriter", FakeHeartbeat)
+    monkeypatch.setattr(ray_app_annotator, "_run_with_actors", fake_run_with_actors)
+    monkeypatch.setattr(ray_app_annotator, "_with_actor_env", lambda cls, env: cls)
     monkeypatch.setattr(ray_app_annotator, "_build_annotator_actor_class",
                         lambda: fake_actor_cls)
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import datetime
 import logging
@@ -719,8 +720,7 @@ def _build_annotator_job_args(
 
 
 def submit_annotator(args) -> str:
-    import argparse as _argparse
-    _prereq_args = _argparse.Namespace(
+    _prereq_args = argparse.Namespace(
         agent_model=args.agent_model,
         user_sim_model="",
         query_mode="raw",

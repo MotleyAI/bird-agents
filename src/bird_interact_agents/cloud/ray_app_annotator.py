@@ -12,6 +12,7 @@ Worker contract:
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import logging
@@ -19,9 +20,19 @@ import os
 import time
 from typing import Any
 
-from bird_interact_agents.cloud import gcs as _gcs
-from bird_interact_agents.cloud.ray_app import download_benchmark_data
+from bird_interact_agents import paths
 from bird_interact_agents.agents.annotator.agent import AnnotatorResult
+from bird_interact_agents.benchmark import get_benchmark
+from bird_interact_agents.cloud import gcs as _gcs
+from bird_interact_agents.cloud.ray_app import (
+    HeartbeatWriter,
+    _apply_actor_env_local,
+    _load_secrets_file,
+    _run_with_actors,
+    _with_actor_env,
+    download_benchmark_data,
+)
+from bird_interact_agents.harness import load_benchmark_tasks
 
 
 logger = logging.getLogger(__name__)
@@ -197,10 +208,6 @@ def _load_annotator_task_data(
     benchmark: str,
 ) -> dict[str, dict]:
     """Load plain task data for the annotator (no audited-gold overlay)."""
-    from bird_interact_agents import paths
-    from bird_interact_agents.benchmark import get_benchmark
-    from bird_interact_agents.harness import load_benchmark_tasks
-
     bench = get_benchmark(benchmark)
     gold_file: str | None = None
     if bench.gold_required:
@@ -274,13 +281,6 @@ def run_annotator_pool(
     local_only: bool = False,
 ) -> None:
     """Dispatch annotator tasks via a Ray actor pool (or sequentially)."""
-    from bird_interact_agents.cloud.ray_app import (
-        HeartbeatWriter,
-        _apply_actor_env_local,
-        _run_with_actors,
-        _with_actor_env,
-    )
-
     client = gcs_client or default_gcs_client()
     heartbeat = HeartbeatWriter(
         run_id=run_id, total=len(instance_ids), attempt=1,
@@ -338,9 +338,6 @@ def run_annotator_pool(
 # ---------------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
-    import argparse
-    from bird_interact_agents.benchmark import get_benchmark
-
     p = argparse.ArgumentParser(description="Annotator Ray worker pool")
     p.add_argument("--run-id", required=True)
     p.add_argument("--ray-job-id", default="unknown")
@@ -360,11 +357,6 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     args.benchmark = get_benchmark(args.benchmark).name
-
-    from bird_interact_agents.cloud.ray_app import (
-        _load_secrets_file,
-        download_benchmark_data,
-    )
 
     actor_env_vars = _load_secrets_file(args.secrets_file)
     instance_ids = [s.strip() for s in args.instance_ids.split(",") if s.strip()]

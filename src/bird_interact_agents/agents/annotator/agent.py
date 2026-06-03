@@ -19,7 +19,7 @@ import logging
 import time
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
@@ -41,6 +41,7 @@ from bird_interact_agents.harness import (
     materialize_task_db,
 )
 from bird_interact_agents.model_string import is_anthropic, native_model_id
+from bird_interact_agents.agents.annotator.prompts import build_system_prompt
 
 _BY_NAME = {t.name: t for t in BIRD_INTERACT_TOOLS}
 logger = logging.getLogger(__name__)
@@ -144,8 +145,6 @@ async def get_ambiguity_resolutions(args: dict) -> dict:
 
 
 async def submit_annotation(args: dict) -> dict:
-    from pydantic import ValidationError
-
     ta_json = args.get("task_annotation_json", "")
     av_json = args.get("audited_gold_variants_json", "[]")
 
@@ -434,8 +433,6 @@ async def run_task(
         name="bird-annotator-tools", version="1.0.0", tools=all_sdk_tools
     )
 
-    from bird_interact_agents.agents.annotator.prompts import build_system_prompt
-
     system_prompt = build_system_prompt(task_data=task_data, benchmark=benchmark)
     cap = max_turns or MAX_MODEL_TURNS
 
@@ -453,6 +450,8 @@ async def run_task(
         async with ClaudeSDKClient(options=options) as client:
             await client.query(task_data["amb_user_query"])
             async for msg in client.receive_response():
+                if ctx_dict.get("_submission_done"):
+                    break
                 if type(msg).__name__ == "AssistantMessage":
                     turns += 1
                     if turns >= cap:
@@ -460,8 +459,6 @@ async def run_task(
                             "Max turns (%d) reached for %s; stopping.", cap, instance_id
                         )
                         break
-                if ctx_dict.get("_submission_done"):
-                    break
     except Exception as e:
         logger.error("Annotator error on %s: %s", instance_id, e)
         return AnnotatorResult(
