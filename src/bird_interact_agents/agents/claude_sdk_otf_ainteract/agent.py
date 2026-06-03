@@ -18,6 +18,7 @@ for Rule 0 (ask before encode) plus the shared encode-then-query rules.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from pathlib import Path
 
@@ -65,7 +66,7 @@ from bird_interact_agents.eval.grade_in_place import (
     load_task_annotation_or_implicit,
     normalize_sol_sql,
 )
-from bird_interact_agents.eval.tolerant_grader import grade_submission
+from bird_interact_agents.eval.tolerant_grader import grade_submission, make_executor
 from bird_interact_agents.slayer_otf import resolve_otf_task_storage_dir
 from bird_interact_agents.usage import TokenUsage
 
@@ -243,9 +244,9 @@ class ClaudeSDKOtfAInteractAgent:
         # accepted (matches `_validate_framework_dataset_mode`'s behavior;
         # a programmatic caller using the alias must reach the agent).
         dataset = task_data.get("dataset") or "mini_interact"
-        if get_benchmark(dataset).name != "mini_interact":
+        if get_benchmark(dataset).name not in ("mini_interact", "mini_interact_postgres"):
             raise ValueError(
-                "claude_sdk_otf_ainteract is bound to --dataset mini_interact "
+                "claude_sdk_otf_ainteract is bound to --dataset mini_interact / mini_interact_postgres "
                 "(use --framework claude_sdk_otf for livesqlbench); "
                 f"got dataset={dataset!r}"
             )
@@ -397,9 +398,11 @@ class ClaudeSDKOtfAInteractAgent:
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
-                    trajectory.append(
-                        {"type": str(type(msg).__name__), "data": str(msg)}
-                    )
+                    try:
+                        _data: object = dataclasses.asdict(msg)
+                    except TypeError:
+                        _data = str(msg)
+                    trajectory.append({"type": str(type(msg).__name__), "data": _data})
                     accumulate_assistant_usage(accum, msg, self.model)
         except Exception as e:
             logger.error(
@@ -469,6 +472,8 @@ class ClaudeSDKOtfAInteractAgent:
                     original_sol_sql=_orig_sql,
                     submitted_sql=_submitted_sql,
                     db_path=_db_path,
+                    benchmark=benchmark,
+                    executor=make_executor(benchmark),
                     user_sim_n_asks=ctx_dict.get("asks_used", 0),
                 )
                 if _ann_from_disk and _is_genuine_miss(_cascade):

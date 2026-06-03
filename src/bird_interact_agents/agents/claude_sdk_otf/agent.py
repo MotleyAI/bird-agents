@@ -21,6 +21,7 @@ the SLayer write-tool whitelist, the prompts, and the mode gating differ.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from pathlib import Path
 
@@ -65,7 +66,7 @@ from bird_interact_agents.eval.grade_in_place import (
     load_task_annotation_or_implicit,
     normalize_sol_sql,
 )
-from bird_interact_agents.eval.tolerant_grader import grade_submission
+from bird_interact_agents.eval.tolerant_grader import grade_submission, make_executor
 from bird_interact_agents.slayer_otf import resolve_otf_task_storage_dir
 from bird_interact_agents.usage import TokenUsage
 
@@ -299,9 +300,9 @@ class ClaudeSDKOtfAgent:
         # ``get_benchmark`` so documented aliases are accepted (matches
         # `_validate_framework_dataset_mode`'s behavior).
         dataset = task_data.get("dataset") or "mini_interact"
-        if get_benchmark(dataset).name != "livesqlbench":
+        if get_benchmark(dataset).name not in ("livesqlbench", "livesqlbench_postgres"):
             raise ValueError(
-                "claude_sdk_otf is bound to --dataset livesqlbench "
+                "claude_sdk_otf is bound to --dataset livesqlbench / livesqlbench_postgres "
                 "(use --framework claude_sdk_otf_ainteract for "
                 f"mini_interact); got dataset={dataset!r}"
             )
@@ -472,9 +473,11 @@ class ClaudeSDKOtfAgent:
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
-                    trajectory.append(
-                        {"type": str(type(msg).__name__), "data": str(msg)}
-                    )
+                    try:
+                        _data: object = dataclasses.asdict(msg)
+                    except TypeError:
+                        _data = str(msg)
+                    trajectory.append({"type": str(type(msg).__name__), "data": _data})
                     accumulate_assistant_usage(accum, msg, self.model)
         except Exception as e:
             logger.error(
@@ -532,6 +535,8 @@ class ClaudeSDKOtfAgent:
                     original_sol_sql=_orig_sql,
                     submitted_sql=_submitted_sql,
                     db_path=_db_path,
+                    benchmark=benchmark,
+                    executor=make_executor(benchmark),
                     user_sim_n_asks=None,
                 )
                 if _ann_from_disk and _is_genuine_miss(_cascade):

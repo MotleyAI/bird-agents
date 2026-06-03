@@ -68,7 +68,7 @@ def test_phase1_conn_string_is_absolute_from_relative_root(
     )
 
     rel_sqlite = Path("lsb") / DB / f"{DB}.sqlite"
-    orchestrator._phase1_ingest(DB, rel_sqlite, storage)
+    orchestrator._phase1_ingest(DB, storage, sqlite_path=rel_sqlite)
 
     want = absolute_sqlite_url(rel_sqlite)
     # 1) the conn string passed to `datasources create` is canonical absolute
@@ -100,7 +100,7 @@ def test_phase1_canonicalises_cli_written_yaml_regardless_of_form(
         monkeypatch, storage,
         cli_writes="sqlite://///wrong/garbage/path.sqlite",
     )
-    orchestrator._phase1_ingest(DB, rel_sqlite, storage)
+    orchestrator._phase1_ingest(DB, storage, sqlite_path=rel_sqlite)
     persisted = yaml.safe_load(
         (storage / "datasources" / f"{DB}.yaml").read_text()
     )

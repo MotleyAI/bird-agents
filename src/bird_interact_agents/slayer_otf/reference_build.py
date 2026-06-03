@@ -545,6 +545,7 @@ async def ensure_db_reference(
     build_encoder: _BuildEncoder,
     force: bool = False,
     db_root: Path | None = None,
+    benchmark: object | None = None,
 ) -> ReferenceEntry:
     """Materialise (or reuse) the durable per-DB reference at
     ``reference_root / db``. See module docstring for the lifecycle contract.
@@ -578,7 +579,7 @@ async def ensure_db_reference(
     # contents when only the reference layer is marker-absent).
     cache_entry = await ensure_db_cache(
         db, cache_root=cache_root, mini_interact_root=mini_interact_root,
-        force=force,
+        force=force, benchmark=benchmark,
     )
     fp = cache_entry.fingerprint
     kb_rows = cache_entry.kb_rows

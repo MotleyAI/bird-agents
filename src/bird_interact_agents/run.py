@@ -192,15 +192,16 @@ def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) 
         )
 
 
-# (framework -> (bound dataset, bound mode)). DEV-1507: claude_sdk_otf is
+# (framework -> (allowed datasets, bound mode)). DEV-1507: claude_sdk_otf is
 # the livesqlbench/one-shot flavor; claude_sdk_otf_ainteract is the
 # mini_interact/a-interact flavor. Every other framework is unbound —
-# they don't appear here.
-_FRAMEWORK_DATASET_MODE_BINDING = {
-    "claude_sdk_otf": ("livesqlbench", "one-shot"),
-    "claude_sdk_otf_ainteract": ("mini_interact", "a-interact"),
-    "claude_sdk_otf_raw": ("livesqlbench", "one-shot"),
-    "claude_sdk_otf_ainteract_raw": ("mini_interact", "a-interact"),
+# they don't appear here. DEV-1523: postgres variants share the same agents
+# so both the sqlite and postgres dataset names are accepted per framework.
+_FRAMEWORK_DATASET_MODE_BINDING: dict[str, tuple[frozenset[str], str]] = {
+    "claude_sdk_otf": (frozenset({"livesqlbench", "livesqlbench_postgres"}), "one-shot"),
+    "claude_sdk_otf_ainteract": (frozenset({"mini_interact", "mini_interact_postgres"}), "a-interact"),
+    "claude_sdk_otf_raw": (frozenset({"livesqlbench", "livesqlbench_postgres"}), "one-shot"),
+    "claude_sdk_otf_ainteract_raw": (frozenset({"mini_interact", "mini_interact_postgres"}), "a-interact"),
 }
 
 
@@ -229,10 +230,10 @@ def _validate_framework_dataset_mode(
     # confusing error (Codex + CodeRabbit on PR #10). The CLI normalises
     # at the argparse boundary, but the programmatic surface doesn't.
     canonical_dataset = get_benchmark(dataset).name
-    bound_dataset, bound_mode = bound
-    if canonical_dataset != bound_dataset:
+    allowed_datasets, bound_mode = bound
+    if canonical_dataset not in allowed_datasets:
         raise ValueError(
-            f"--framework {framework} is bound to --dataset {bound_dataset!r}; "
+            f"--framework {framework} is bound to --dataset {sorted(allowed_datasets)!r}; "
             f"got --dataset {dataset!r}",
         )
     if mode != bound_mode:
@@ -1126,17 +1127,20 @@ async def run_evaluation(
                 ),
             )
             return
-        # Root the per-task sqlite at the materialized copy when available
-        # (LiveSQLBench tasks: materialize_task_db sets db_file_path to an
-        # isolated $TMPDIR copy so concurrent runs don't race the shared
-        # <db>.sqlite). Fall back to data_dir/<db>/<db>.sqlite for
-        # mini-interact (materialize_task_db is a no-op there).
-        _db_file_path = td.get("db_file_path")
-        per_task_db = (
-            Path(_db_file_path)
-            if _db_file_path
-            else Path(data_dir) / selected_database / f"{selected_database}.sqlite"
-        )
+        # For postgres, db_path is a db-name carrier (executor uses
+        # db_path.stem). For SQLite, prefer the materialized per-task copy
+        # when available (LiveSQLBench tasks: materialize_task_db sets
+        # db_file_path to an isolated $TMPDIR copy so concurrent runs don't
+        # race the shared <db>.sqlite); fall back to data_dir/<db>/<db>.sqlite.
+        if getattr(b, "db_backend", "sqlite") == "postgres":
+            per_task_db = Path(selected_database)
+        else:
+            _db_file_path = td.get("db_file_path")
+            per_task_db = (
+                Path(_db_file_path)
+                if _db_file_path
+                else Path(data_dir) / selected_database / f"{selected_database}.sqlite"
+            )
         try:
             grade_one_submission(
                 task_data=td,

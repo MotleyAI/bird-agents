@@ -53,15 +53,25 @@ def _wipe_db_from_storage(storage: Path, db: str) -> None:
         shutil.rmtree(models_dir)
 
 
-def _phase1_ingest(db: str, sqlite_path: Path, storage: Path) -> None:
+def _slayer_ingest(
+    conn_str: str, storage: Path, *, db: str, pg_password: str | None = None
+) -> None:
+    """Run ``slayer datasources create`` + ``slayer ingest`` for one DB.
+
+    Extracted so tests can monkeypatch this without touching subprocess.
+    ``conn_str`` is any valid SQLAlchemy connection string (sqlite or
+    postgresql). ``db`` is the datasource name.
+
+    ``pg_password``, when provided, is passed as the ``PGPASSWORD`` environment
+    variable so it never appears in the subprocess command-line args (visible
+    via ``ps``) or in the persisted ``datasources/<db>.yaml``.
+    """
     storage.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["SLAYER_STORAGE"] = str(storage)
+    if pg_password is not None:
+        env["PGPASSWORD"] = pg_password
 
-    # Canonical absolute URL, resolved env-independently — so a RELATIVE
-    # `sqlite_path` (from a relative `--db-path`) can't become a broken
-    # `sqlite:////../…` that SQLAlchemy reads at the filesystem root.
-    conn_str = absolute_sqlite_url(sqlite_path)
     create = subprocess.run(
         ["slayer", "datasources", "create", conn_str, "--name", db],
         env=env,
@@ -99,6 +109,35 @@ def _phase1_ingest(db: str, sqlite_path: Path, storage: Path) -> None:
         )
 
 
+def _phase1_ingest(
+    db: str,
+    storage: Path,
+    *,
+    sqlite_path: Optional[Path] = None,
+    db_url: Optional[str] = None,
+    pg_password: str | None = None,
+) -> None:
+    """Phase 1: ingest a DB into SLayer storage.
+
+    Exactly one of ``sqlite_path`` or ``db_url`` must be provided.
+    ``sqlite_path`` is the legacy SQLite path; ``db_url`` is a full
+    SQLAlchemy URL (e.g. ``postgresql://...``) used for postgres backends.
+
+    ``pg_password`` is forwarded to ``_slayer_ingest`` as the ``PGPASSWORD``
+    env var so the credential never appears in subprocess args or YAML files.
+    """
+    if db_url is not None:
+        conn_str = db_url
+    elif sqlite_path is not None:
+        # Canonical absolute URL, resolved env-independently — so a RELATIVE
+        # `sqlite_path` (from a relative `--db-path`) can't become a broken
+        # `sqlite:////../…` that SQLAlchemy reads at the filesystem root.
+        conn_str = absolute_sqlite_url(sqlite_path)
+    else:
+        raise ValueError("_phase1_ingest: exactly one of sqlite_path or db_url must be provided")
+    _slayer_ingest(conn_str, storage, db=db, pg_password=pg_password)
+
+
 async def _phase2_overlay(
     storage: YAMLStorage, db: str, meanings_path: Path
 ) -> tuple[int, list[str]]:
@@ -117,19 +156,38 @@ async def _phase2_overlay(
     return touched_total, warnings
 
 
+def _detect_jsonb_columns(meanings_path: Path) -> list:
+    """Extract JSONB column entries from a column-meaning file.
+
+    Extracted as a module-level function so tests can monkeypatch it to
+    verify that postgres builds skip JSONB detection entirely.
+    """
+    import json as _json
+
+    raw = _json.loads(meanings_path.read_text(encoding="utf-8"))
+    return list(jsonb_meaning_entries(raw))
+
+
 async def _phase3_jsonb(
     storage: YAMLStorage,
     db: str,
-    meanings_path: Path,
-    sqlite_path: Path,
+    meanings_path: Optional[Path] = None,
+    sqlite_path: Optional[Path] = None,
+    *,
+    benchmark: Optional[object] = None,
 ) -> tuple[int, list[str], list[str]]:
-    import json
+    if getattr(benchmark, "db_backend", "sqlite") == "postgres":
+        return 0, [], []
 
-    raw = json.loads(meanings_path.read_text(encoding="utf-8"))
+    if meanings_path is None:
+        raise ValueError("_phase3_jsonb: meanings_path is required for non-postgres benchmarks")
+    if sqlite_path is None:
+        raise ValueError("_phase3_jsonb: sqlite_path is required for non-postgres benchmarks")
+
     added_total = 0
     typing_warnings: list[str] = []
     drift_warnings: list[str] = []
-    for table, json_col, entry in jsonb_meaning_entries(raw):
+    for table, json_col, entry in _detect_jsonb_columns(meanings_path):
         model = await storage.get_model(table, data_source=db)
         if model is None or model.data_source != db:
             typing_warnings.append(
@@ -195,9 +253,19 @@ async def _phase3_jsonb(
 async def _phase4_dates(
     storage: YAMLStorage,
     db: str,
-    sqlite_path: Path,
-    llm_model: str,
+    sqlite_path: Optional[Path] = None,
+    llm_model: Optional[str] = None,
+    *,
+    benchmark: Optional[object] = None,
 ) -> tuple[int, list[str]]:
+    if getattr(benchmark, "db_backend", "sqlite") == "postgres":
+        return 0, []
+
+    if sqlite_path is None:
+        raise ValueError("_phase4_dates: sqlite_path is required for non-postgres benchmarks")
+    if llm_model is None:
+        raise ValueError("_phase4_dates: llm_model is required for non-postgres benchmarks")
+
     client = make_anthropic_client()
     retyped_total = 0
     warnings: list[str] = []
@@ -251,7 +319,7 @@ async def regenerate(
         print(f"[phase 1] skipped (--skip-phase1; assuming live storage already populated)")
     else:
         print(f"[phase 1] slayer datasources create + ingest ({db})")
-        _phase1_ingest(db, sqlite_path, slayer_storage)
+        _phase1_ingest(db, slayer_storage, sqlite_path=sqlite_path)
 
     storage = YAMLStorage(base_dir=str(slayer_storage))
 
@@ -261,7 +329,7 @@ async def regenerate(
 
     print(f"[phase 3] JSONB leaf expansion ({db})")
     added, jsonb_typing, drift = await _phase3_jsonb(
-        storage, db, meanings_path, sqlite_path
+        storage, db, meanings_path=meanings_path, sqlite_path=sqlite_path,
     )
     print(f"  {added} leaf columns added, {len(jsonb_typing)} typing warnings, "
           f"{len(drift)} drift findings")
@@ -283,7 +351,7 @@ async def regenerate(
 
     print(f"[phase 4] LLM TEXT-as-date detection ({db})")
     model_id = llm_model or get_default_llm_model()
-    retyped, p4_warns = await _phase4_dates(storage, db, sqlite_path, model_id)
+    retyped, p4_warns = await _phase4_dates(storage, db, sqlite_path=sqlite_path, llm_model=model_id)
     print(f"  {retyped} columns retyped TIMESTAMP, {len(p4_warns)} warnings")
     date_warnings_path = _write_warnings(
         results_dir, "date_detection_warnings.txt", p4_warns

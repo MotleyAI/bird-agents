@@ -912,6 +912,7 @@ async def _resolve_otf_task_storage_dir(
         mini_interact_root=db_root_resolved,
         build_encoder=build_encoder,
         db_root=db_root_resolved,
+        benchmark=get_benchmark(benchmark) if benchmark else None,
     )
     scratch = await build_task_variant_storage(
         canonical_storage_root=reference_root,

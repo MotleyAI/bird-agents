@@ -41,12 +41,17 @@ def test_unknown_token_raises():
     assert "benchmark" in str(exc.value).lower()
 
 
+_SQLITE_BENCHMARKS = {"mini_interact", "livesqlbench"}
+_POSTGRES_BENCHMARKS = {"livesqlbench_postgres", "mini_interact_postgres"}
+_ALL_BENCHMARKS = _SQLITE_BENCHMARKS | _POSTGRES_BENCHMARKS
+
+
 def test_registry_membership_and_helpers():
-    assert set(benchmark_names()) == {"mini_interact", "livesqlbench"}
-    assert {b.name for b in all_benchmarks()} == {"mini_interact", "livesqlbench"}
+    assert _ALL_BENCHMARKS <= set(benchmark_names())
+    assert _ALL_BENCHMARKS <= {b.name for b in all_benchmarks()}
     # argparse `--dataset` choices: canonical names + aliases, all resolvable.
     tokens = set(cli_dataset_tokens())
-    assert {"mini_interact", "mini-interact", "livesqlbench"} <= tokens
+    assert {"mini_interact", "mini-interact", "livesqlbench"} | _POSTGRES_BENCHMARKS <= tokens
     for t in tokens:
         get_benchmark(t)  # every advertised token resolves
 

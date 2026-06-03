@@ -60,6 +60,13 @@ def test_classify_wrong_result_default():
     assert classify_submission(p1=False, p2=False, observation=obs) == "wrong_result"
 
 
+def test_classify_sql_runtime_error_postgres_observation():
+    """Postgres grader returns 'SQL execution error: ...' — must map to
+    sql_runtime_error, not wrong_result."""
+    obs = "SQL execution error: column 'foo' does not exist"
+    assert classify_submission(p1=False, p2=False, observation=obs) == "sql_runtime_error"
+
+
 def test_classify_wrong_result_when_no_observation():
     """Belt-and-braces: even with no observation, a non-passing,
     non-error path falls through to wrong_result."""
