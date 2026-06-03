@@ -21,6 +21,7 @@ the SLayer write-tool whitelist, the prompts, and the mode gating differ.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from pathlib import Path
 
@@ -472,9 +473,11 @@ class ClaudeSDKOtfAgent:
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
-                    trajectory.append(
-                        {"type": str(type(msg).__name__), "data": str(msg)}
-                    )
+                    try:
+                        _data: object = dataclasses.asdict(msg)
+                    except TypeError:
+                        _data = str(msg)
+                    trajectory.append({"type": str(type(msg).__name__), "data": _data})
                     accumulate_assistant_usage(accum, msg, self.model)
         except Exception as e:
             logger.error(

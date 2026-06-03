@@ -663,3 +663,105 @@ def test_is_genuine_miss_false_when_only_n9_passes():
         miss_diagnostics=None,
     )
     assert _is_genuine_miss(cascade) is False
+
+
+def test_compress_trajectory_strips_thinking():
+    """_compress_trajectory_for_autopsy replaces thinking content with a size indicator."""
+    from bird_interact_agents.eval.autopsy import _compress_trajectory_for_autopsy
+
+    thinking_text = "x" * 5000
+    trajectory = [
+        {
+            "type": "AssistantMessage",
+            "data": {
+                "content": [
+                    {"thinking": thinking_text, "signature": "abc123"},
+                    {"text": "I will now proceed."},
+                ],
+                "model": "claude-test",
+            },
+        }
+    ]
+    result = _compress_trajectory_for_autopsy(trajectory)
+    assert len(result) == 1
+    content = result[0]["data"]["content"]
+    thinking_block = content[0]
+    assert thinking_block["thinking"] == f"[thinking: {len(thinking_text)} chars]"
+    assert thinking_block["signature"] == "abc123"
+    assert content[1]["text"] == "I will now proceed."
+
+
+def test_compress_trajectory_preserves_non_thinking_content():
+    """_compress_trajectory_for_autopsy leaves text, tool use/result blocks unchanged."""
+    from bird_interact_agents.eval.autopsy import _compress_trajectory_for_autopsy
+
+    trajectory = [
+        {
+            "type": "AssistantMessage",
+            "data": {
+                "content": [
+                    {"text": "Let me check the schema."},
+                    {"id": "tu_1", "name": "slayer_query", "input": {"sql": "SELECT 1"}},
+                ],
+                "model": "claude-test",
+            },
+        },
+        {
+            "type": "UserMessage",
+            "data": {
+                "content": [
+                    {"tool_use_id": "tu_1", "content": "[(1,)]", "is_error": False}
+                ]
+            },
+        },
+    ]
+    result = _compress_trajectory_for_autopsy(trajectory)
+    assert result[0]["data"]["content"][0]["text"] == "Let me check the schema."
+    assert result[0]["data"]["content"][1]["input"]["sql"] == "SELECT 1"
+    assert result[1]["data"]["content"][0]["tool_use_id"] == "tu_1"
+
+
+def test_compress_trajectory_old_string_format_passthrough():
+    """Items whose data is a str (legacy repr format) are returned unchanged."""
+    from bird_interact_agents.eval.autopsy import _compress_trajectory_for_autopsy
+
+    legacy_item = {
+        "type": "AssistantMessage",
+        "data": "AssistantMessage(content=[ThinkingBlock(thinking='big text', signature='sig')], model='...')",
+    }
+    result = _compress_trajectory_for_autopsy([legacy_item])
+    assert len(result) == 1
+    assert result[0]["type"] == legacy_item["type"]
+    assert result[0]["data"] == legacy_item["data"]  # string unchanged
+
+
+def test_build_prompt_includes_all_items_with_compression():
+    """_build_prompt includes all trajectory items; compression strips thinking only."""
+    from bird_interact_agents.eval.autopsy import _build_prompt
+
+    ta = _minimal_task_annotation()
+    n = 200
+    trajectory = [
+        {
+            "type": "AssistantMessage",
+            "data": {
+                "content": [
+                    {"thinking": "x" * 10000, "signature": f"sig{i}"},
+                    {"text": f"step {i}"},
+                ],
+                "model": "claude-test",
+            },
+        }
+        for i in range(n)
+    ]
+    prompt = _build_prompt(
+        task_annotation=ta,
+        trajectory=trajectory,
+        kb_text="",
+        miss_diagnostics=None,
+    )
+    assert "omitted for length" not in prompt
+    assert f'"step 0"' in prompt
+    assert f'"step {n - 1}"' in prompt
+    assert "[thinking: 10000 chars]" in prompt
+    assert "x" * 10000 not in prompt
