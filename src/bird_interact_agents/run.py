@@ -1141,6 +1141,8 @@ async def run_evaluation(
             if r.get("phase2_passed"):
                 p2_count += 1
             _grade_local_row(td, r)
+            r.pop("_autopsy", None)
+            r.pop("_task_annotation", None)
 
     try:
         await asyncio.gather(*[_run_with_sem(i, td) for i, td in enumerate(tasks)])

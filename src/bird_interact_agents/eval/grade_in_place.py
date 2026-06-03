@@ -323,7 +323,7 @@ def grade_and_write(
         epsilon=epsilon,
     )
     if autopsy_result is not None:
-        ann.autopsy = autopsy_result.analysis
+        ann.autopsy = autopsy_result
         ann.decision_point = autopsy_result.decision_point
         ann.user_sim_interaction = autopsy_result.user_sim_interaction
 

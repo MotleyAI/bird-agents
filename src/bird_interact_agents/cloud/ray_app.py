@@ -1174,7 +1174,7 @@ def _run_with_actors(
                 _fp = write_failed_submission_annotation(
                     rows_dir=_ann_dir,
                     instance_id=iid,
-                    selected_database="",
+                    selected_database=task_data_by_id[iid].get("selected_database", ""),
                     benchmark=benchmark,
                     run_id=run_id,
                     trajectory_path=f"rows/{iid}/attempt-1.json",
@@ -1222,7 +1222,7 @@ def _run_with_actors(
                 _fp = write_failed_submission_annotation(
                     rows_dir=_ann_dir,
                     instance_id=iid,
-                    selected_database="",
+                    selected_database=task_data_by_id[iid].get("selected_database", ""),
                     benchmark=benchmark,
                     run_id=run_id,
                     trajectory_path=f"rows/{iid}/attempt-1.json",
@@ -1265,7 +1265,7 @@ def _run_with_actors(
                 _fp = write_failed_submission_annotation(
                     rows_dir=_ann_dir,
                     instance_id=iid,
-                    selected_database="",
+                    selected_database=task_data_by_id[iid].get("selected_database", ""),
                     benchmark=benchmark,
                     run_id=run_id,
                     trajectory_path=f"rows/{iid}/attempt-1.json",
@@ -1301,7 +1301,7 @@ def _run_with_actors(
                 _fp = write_failed_submission_annotation(
                     rows_dir=_ann_dir,
                     instance_id=iid,
-                    selected_database="",
+                    selected_database=task_data_by_id[iid].get("selected_database", ""),
                     benchmark=benchmark,
                     run_id=run_id,
                     trajectory_path=f"rows/{iid}/attempt-1.json",

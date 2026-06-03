@@ -204,15 +204,21 @@ def test_submission_annotation_autopsy_field_none():
 def test_submission_annotation_autopsy_field_filled():
     from bird_interact_agents.eval.annotation_schema import (
         AutopsyAnalysis,
+        AutopsyResult,
         FailureClassification,
         SubmissionAnnotation,
         SubmissionEvaluation,
         SubmissionMetadata,
+        UserSimInteraction,
     )
-    a = AutopsyAnalysis(
+    analysis = AutopsyAnalysis(
         pattern="slayer_generation_artifact",
         narrative="Integer division in SLayer SQL.",
         remediation="Cast to REAL.",
+    )
+    result = AutopsyResult(
+        analysis=analysis,
+        user_sim_interaction=UserSimInteraction(n_asks=0),
     )
     ann = SubmissionAnnotation(
         instance_id="x_1",
@@ -232,11 +238,11 @@ def test_submission_annotation_autopsy_field_filled():
             agent_at_fault=True,
             remediation_target="agent",
         ),
-        autopsy=a,
+        autopsy=result,
     )
-    assert ann.autopsy == a
+    assert ann.autopsy == result
     data = json.loads(ann.model_dump_json())
-    assert data["autopsy"]["pattern"] == "slayer_generation_artifact"
+    assert data["autopsy"]["analysis"]["pattern"] == "slayer_generation_artifact"
 
 
 # ---------------------------------------------------------------------------
@@ -503,7 +509,7 @@ def test_grade_and_write_embeds_autopsy(tmp_path):
     )
 
     data = json.loads(ann_path.read_text())
-    assert data["autopsy"]["pattern"] == "output_schema_misread"
+    assert data["autopsy"]["analysis"]["pattern"] == "output_schema_misread"
     assert data["decision_point"]["trajectory_item_index"] == 7
     assert data["decision_point"]["description"] == "Agent encoded wrong column at step 7."
     assert data["user_sim_interaction"]["n_asks"] == 2

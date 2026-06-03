@@ -586,7 +586,7 @@ class SubmissionAnnotation(BaseModel):
     failure_classification: FailureClassification
     decision_point: Optional[TrajectoryDecisionPoint] = None
     user_sim_interaction: UserSimInteraction = Field(default_factory=UserSimInteraction)
-    autopsy: Optional[AutopsyAnalysis] = None
+    autopsy: Optional[AutopsyResult] = None
     """LLM-produced post-mortem. Populated only for genuine cascade misses
     (all N1–N9 fail) on claude_sdk_otf* frameworks. None for passing
     submissions and for all other frameworks."""
