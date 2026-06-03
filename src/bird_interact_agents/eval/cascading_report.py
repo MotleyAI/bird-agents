@@ -52,9 +52,23 @@ def _per_row_cascade_bools(annotation_dir: Path) -> dict[str, bool]:
     return enforce_monotone_cascade(raw)
 
 
-def aggregate_cascading_phase1(rows_dir: Path) -> dict:
+def aggregate_cascading_phase1(
+    rows_dir: Path,
+    *,
+    instance_filter: set[str] | None = None,
+) -> dict:
     """Walk per-task ``submission_annotation.json`` files and return the
     cascading_phase1 block.
+
+    ``instance_filter`` (Codex r11): when set, count ONLY subdirectories
+    whose name is in the filter. Local filtered reruns preserve unrelated
+    prior annotations on disk for human inspection, but those rows MUST
+    NOT pollute the published ``eval.json`` — otherwise
+    ``cascading_phase1.n_dual_eval_tasks`` (union of new + stale) would
+    exceed ``eval.total_tasks`` (filtered count) and the rewritten
+    ``phase1_count`` / ``phase1_rate`` would become uninterpretable.
+    When unset (full local runs + cloud collation), every subdirectory
+    is counted — back-compat preserved.
 
     Output shape::
 
@@ -70,6 +84,8 @@ def aggregate_cascading_phase1(rows_dir: Path) -> dict:
     n = 0
     if rows_dir.exists():
         for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
+            if instance_filter is not None and sub.name not in instance_filter:
+                continue
             verdicts = _per_row_cascade_bools(sub)
             n += 1
             for f, v in verdicts.items():
@@ -112,13 +128,22 @@ def emit_cascading_eval_json(
     rows_dir: Path,
     out_path: Path,
     base_metrics: dict | None = None,
+    *,
+    instance_filter: set[str] | None = None,
 ) -> dict:
     """Merge ``base_metrics`` with the freshly-computed cascading block
     and write to ``out_path``. The legacy dual-eval keys are explicitly
     dropped; ``phase1_count`` / ``phase1_rate`` are REWRITTEN from N1.
 
+    ``instance_filter`` is forwarded to ``aggregate_cascading_phase1``
+    so a filtered local rerun's metrics describe ONLY the current run's
+    instances (Codex r11). Cloud collation / full local runs pass None
+    to keep back-compat.
+
     Returns the resulting metrics dict (for inline use)."""
-    block = aggregate_cascading_phase1(Path(rows_dir))
+    block = aggregate_cascading_phase1(
+        Path(rows_dir), instance_filter=instance_filter,
+    )
     out = dict(base_metrics or {})
     for k in _LEGACY_KEYS_TO_DROP:
         out.pop(k, None)

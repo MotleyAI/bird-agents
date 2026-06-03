@@ -981,6 +981,87 @@ def test_tier2_populated_on_grader_output():
 # ---------------------------------------------------------------------------
 
 
+def test_unexecutable_original_gold_does_not_kill_audited_variant_pass():
+    """Codex r9: when ``original_sol_sql`` raises at executor time
+    (invalid SQL, missing table after schema drift, …) the grader MUST
+    NOT bubble the exception out. It should degrade N1 to False but
+    let audited variants grade normally, so a valid N2/N3 pass survives
+    the broken original gold."""
+    from bird_interact_agents.eval.tolerant_grader import grade_submission
+
+    submitted = "SELECT predicted"
+    bad_original = "SELECT * FROM nonexistent_table"
+    audited_sql = "SELECT predicted"
+    executor = FakeExecutor({
+        submitted: ([(42,)], ["x"]),
+        audited_sql: ([(42,)], ["x"]),
+        # NB: ``bad_original`` is NOT in the executor's responses dict;
+        # FakeExecutor raises AssertionError on unknown SQL, which the
+        # grader's new try/except catches.
+    })
+    ann = _make_task_annotation()
+    gold_rows = [_audited_row(
+        instance_id="alien_1", variant_id="primary", primary=True,
+        audited_sol_sql=[audited_sql],
+    )]
+    verdict = grade_submission(
+        task_annotation=ann,
+        audited_gold_rows=gold_rows,
+        original_sol_sql=[bad_original],
+        submitted_sql=submitted,
+        db_path=Path("/dev/null"),
+        conn=None,
+        executor=executor,
+    )
+    # Original failed → N1 is False (no bogus pass against empty
+    # orig_rows). But N2/N3 are evaluated against the audited variant
+    # which DOES execute and matches the agent's rowset.
+    assert verdict.n1_original_gold is False, (
+        "N1 must NOT pass via _set_equal([], []) when original gold "
+        "failed to execute"
+    )
+    assert verdict.n2_audited_primary is True
+    assert verdict.n3_any_audited_variant is True
+
+
+def test_unexecutable_original_with_empty_agent_does_not_pass_n4(
+):
+    """Companion guard: original SQL fails AND agent rowset is empty.
+    Pre-fix this would cascade-pass at N4-N9 via the __original__
+    fallback's vacuous bag equality. Now both fallback gates are
+    closed."""
+    from bird_interact_agents.eval.tolerant_grader import grade_submission
+
+    submitted = "SELECT empty"
+    bad_original = "SELECT * FROM nonexistent_table"
+    executor = FakeExecutor({
+        submitted: ([], ["x"]),
+        # bad_original raises AssertionError, caught by grader.
+    })
+    ann = _make_task_annotation()
+    verdict = grade_submission(
+        task_annotation=ann,
+        # No audited variants either — the test isolates the
+        # __original__ fallback path.
+        audited_gold_rows=[],
+        original_sol_sql=[bad_original],
+        submitted_sql=submitted,
+        db_path=Path("/dev/null"),
+        conn=None,
+        executor=executor,
+    )
+    for tier in (
+        "n1_original_gold", "n2_audited_primary",
+        "n3_any_audited_variant", "n4_tie_order",
+        "n5_llm_judge", "n6_numeric_epsilon",
+        "n7_trailing_whitespace", "n8_column_order", "n9_case_fold",
+    ):
+        assert getattr(verdict, tier) is False, (
+            f"{tier} must be False; got "
+            f"{getattr(verdict, tier)} (cascade={verdict})"
+        )
+
+
 def test_missing_gold_does_not_collapse_to_n4_pass():
     """No original gold, no audited variants — every cascade tier MUST
     stay False, no matter what the agent's rowset looks like (including
@@ -1011,3 +1092,128 @@ def test_missing_gold_does_not_collapse_to_n4_pass():
     assert verdict.n7_trailing_whitespace is False
     assert verdict.n8_column_order is False
     assert verdict.n9_case_fold is False
+
+
+# ---------------------------------------------------------------------------
+# Codex r13: ``LiteLLMJudge`` parses the model's reply into True / False /
+# None per the protocol. The litellm.completion call itself isn't tested
+# here (would need network); the decision-parsing helper is, since it's
+# the load-bearing piece of the judge's behaviour.
+# ---------------------------------------------------------------------------
+
+
+def test_judge_decision_parser_recognizes_accept():
+    from bird_interact_agents.eval.tolerant_grader import (
+        _parse_judge_decision,
+    )
+
+    assert _parse_judge_decision("rationale here\nACCEPT") is True
+    assert _parse_judge_decision("ACCEPT — defensible reading") is True
+    # Trailing whitespace / case-insensitive on the last line.
+    assert _parse_judge_decision("...\nAccept this  \n") is True
+
+
+def test_judge_decision_parser_recognizes_reject():
+    from bird_interact_agents.eval.tolerant_grader import (
+        _parse_judge_decision,
+    )
+
+    assert _parse_judge_decision("REJECT") is False
+    assert _parse_judge_decision("reasoning\nREJECT — wrong column") is False
+    assert _parse_judge_decision("...\nreject\n") is False
+
+
+def test_judge_decision_parser_inconclusive_returns_none():
+    """Anything that doesn't START with ACCEPT or REJECT on the LAST
+    non-empty line → ``None`` (timeout / inconclusive fall-through per
+    LLMJudgeProtocol). Caller treats None as N5 fail."""
+    from bird_interact_agents.eval.tolerant_grader import (
+        _parse_judge_decision,
+    )
+
+    assert _parse_judge_decision("") is None
+    assert _parse_judge_decision("maybe?") is None
+    assert _parse_judge_decision(
+        "ACCEPT mentioned mid-line but final says\nunclear",
+    ) is None
+
+
+def test_litellm_judge_swallows_litellm_errors_and_returns_none():
+    """Network / API failures must NOT crash the grader — the judge
+    returns None per protocol so the cascade falls through cleanly."""
+    import bird_interact_agents.eval.tolerant_grader as tg
+
+    judge = tg.LiteLLMJudge(model="bogus/model-that-does-not-exist")
+
+    # Force the litellm call to raise; ``judge`` must catch + return None.
+    class _Boom(RuntimeError):
+        pass
+
+    def _raise(*a, **kw):
+        raise _Boom("simulated litellm failure")
+
+    import sys
+    import types
+    fake_litellm = types.ModuleType("litellm")
+    fake_litellm.completion = _raise  # type: ignore[attr-defined]
+    real_litellm = sys.modules.get("litellm")
+    sys.modules["litellm"] = fake_litellm
+    try:
+        result = judge.judge(
+            evaluator_prompt="anything",
+            gold_variants_summary=[],
+            metadata_anchors=[],
+            submitted_sql="SELECT 1",
+            predicted_rows_head=[],
+            annotation_content_hash="x",
+            gold_variants_content_hash="y",
+            instance_id="alien_1",
+        )
+        assert result is None
+    finally:
+        if real_litellm is not None:
+            sys.modules["litellm"] = real_litellm
+        else:
+            sys.modules.pop("litellm", None)
+
+
+def test_litellm_judge_parses_real_response_shape():
+    """Happy path: a mocked litellm.completion returns the standard
+    OpenAI-shaped response with ``choices[0].message.content`` → judge
+    parses the verdict."""
+    import bird_interact_agents.eval.tolerant_grader as tg
+
+    judge = tg.LiteLLMJudge(model="anthropic/claude-haiku-4-5-20251001")
+
+    def _fake_completion(**kw):
+        return {
+            "choices": [{
+                "message": {
+                    "content": "Looks defensible.\nACCEPT",
+                },
+            }],
+        }
+
+    import sys
+    import types
+    fake_litellm = types.ModuleType("litellm")
+    fake_litellm.completion = _fake_completion  # type: ignore[attr-defined]
+    real_litellm = sys.modules.get("litellm")
+    sys.modules["litellm"] = fake_litellm
+    try:
+        result = judge.judge(
+            evaluator_prompt="is this defensible?",
+            gold_variants_summary=[{"variant_id": "primary", "interpretation": "x"}],
+            metadata_anchors=["foo"],
+            submitted_sql="SELECT 1",
+            predicted_rows_head=[(1,)],
+            annotation_content_hash="x",
+            gold_variants_content_hash="y",
+            instance_id="alien_1",
+        )
+        assert result is True
+    finally:
+        if real_litellm is not None:
+            sys.modules["litellm"] = real_litellm
+        else:
+            sys.modules.pop("litellm", None)

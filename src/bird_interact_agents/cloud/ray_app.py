@@ -133,8 +133,10 @@ def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
     """
     from bird_interact_agents import paths
 
-    setup = cfg.get("slayer_setup")
     fw = cfg.get("framework")
+    if fw in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
+        return []
+    setup = cfg.get("slayer_setup")
     if setup == "pre-encoded":
         artifacts = [("slayer_models", True)]
     elif fw == "pydantic_ai_otf_encode":
@@ -531,17 +533,15 @@ def _run_one_in_actor(
     log_tmp = log_dir / "task.log"
     task_start_ts = time.time()
 
+    # `cfg["data_dir"]` is the benchmark's container_data_dir, resolved
+    # benchmark-aware in `run_pool` (mini → BIRD_DB_PATH,
+    # livesqlbench → BIRD_LIVESQLBENCH_ROOT). Hoisted out of the try block
+    # so it is always bound when the grader path runs below.
+    data_dir = cfg.get("data_dir") or "/data/mini-interact"
+
     try:
         with fd_capture(log_tmp):
             try:
-                # `cfg["data_dir"]` is the benchmark's container_data_dir,
-                # resolved benchmark-aware in `run_pool` (mini → BIRD_DB_PATH,
-                # livesqlbench → BIRD_LIVESQLBENCH_ROOT). It is authoritative —
-                # do NOT re-read BIRD_DB_PATH here, which would route a
-                # livesqlbench task back to mini-interact if BIRD_DB_PATH ever
-                # leaked into the actor env (Codex).
-                data_dir = cfg.get("data_dir") or "/data/mini-interact"
-
                 row = asyncio.run(
                     _run_one_task_async(
                         task_data=task_data,
@@ -567,8 +567,6 @@ def _run_one_in_actor(
     finally:
         pass
 
-    _gcs.write_row(run_id, iid, attempt, row, client=gcs_client)
-
     # DEV-1515: inline grader produces a SubmissionAnnotation per task
     # (cascading verdict + Tier 2 informational). Failure here MUST NOT
     # block the row/log upload — it's diagnostic, not result-of-record.
@@ -580,25 +578,47 @@ def _run_one_in_actor(
     # (unbound data_dir, missing submitted_sql, broken gold, grader
     # exception) we fall back to writing + uploading a fail-everything
     # annotation — mirrors ``run._grade_local_row``.
-    _grader_data_dir = locals().get("data_dir")
+    #
+    # Codex r7 ordering: upload the annotation BEFORE the attempt row.
+    # ``driver.wait_until_done`` returns ``done`` when
+    # ``len(attempts) >= total`` (i.e. once every attempt row blob
+    # exists in GCS). Non-detached ``submit`` then immediately calls
+    # ``fetch``; if the row landed before the annotation, fetch could
+    # race the in-flight annotation upload and the cascade aggregator
+    # would either drop ``cascading_phase1`` entirely or surface
+    # ``cascading_phase1_error``. Uploading the annotation first makes
+    # the row blob the canonical "task fully done, including
+    # annotation" marker.
     annotation_dir = Path(tempfile.mkdtemp(prefix="bird_submission_annot_"))
+    _row_submitted_sql = row.get("submitted_sql")
+    _row_selected_db = (
+        row.get("database") or task_data.get("selected_database") or ""
+    )
     try:
-        if _grader_data_dir is None:
-            raise RuntimeError("data_dir unbound; grader skipped")
-        _submitted_sql = str(row.get("submitted_sql") or "")
-        if not _submitted_sql:
-            raise RuntimeError("submitted_sql is empty; cannot grade")
-        _db = task_data.get("selected_database", "")
+        # Short-circuit BEFORE calling the real grader on a missing
+        # submission. ``str(row.get("submitted_sql") or "")`` would
+        # otherwise pass ``""`` through; SQLite may silently return an
+        # empty rowset for an empty statement, and ``_set_equal([], [])``
+        # would falsely pass N1/N2/N3 whenever the gold result is also
+        # empty (Codex r7). Mirrors ``run._grade_local_row``'s short-
+        # circuit so the cloud + local paths agree on never-submitted
+        # rows — both write a fail-everything annotation here, which the
+        # ``except`` branch below ALSO does for grader exceptions.
+        if not _row_submitted_sql or not _row_selected_db:
+            raise RuntimeError(
+                "no submitted_sql / selected_database — task errored "
+                "before reaching submit; routed to fail-everything "
+                "fallback",
+            )
         ann_path = _grade_one_submission(
             task_data=task_data,
-            submitted_sql=_submitted_sql,
+            submitted_sql=str(_row_submitted_sql),
             rows_dir=annotation_dir,
             run_id=run_id,
             benchmark=_cloud_benchmark(cfg),
-            db_path=Path(
-                task_data.get("db_file_path")
-                or Path(_grader_data_dir) / _db / f"{_db}.sqlite"
-            ),
+            db_path=Path(data_dir)
+                / str(_row_selected_db)
+                / f"{_row_selected_db}.sqlite",
             cost_usd_agent=row.get("usage", {}).get("cost_usd_agent")
                 if isinstance(row.get("usage"), dict) else None,
             cost_usd_user_sim=row.get("usage", {}).get("cost_usd_user_sim")
@@ -609,6 +629,7 @@ def _run_one_in_actor(
             n_ask_user_calls=row.get("usage", {}).get("n_ask_user_calls")
                 if isinstance(row.get("usage"), dict) else None,
             predicted_row_count=None,
+            attempt=attempt,
         )
         _gcs.write_submission_annotation(
             run_id, iid, json.loads(ann_path.read_text()),
@@ -625,7 +646,7 @@ def _run_one_in_actor(
                                       or "<unknown>"),
                 benchmark=_cloud_benchmark(cfg),
                 run_id=run_id,
-                trajectory_path=f"rows/{iid}/attempt-1.json",
+                trajectory_path=f"rows/{iid}/attempt-{attempt}.json",
                 failure_details=(
                     f"cloud inline grader raised: "
                     f"{type(grader_exc).__name__}: {grader_exc}"
@@ -642,6 +663,11 @@ def _run_one_in_actor(
             traceback.print_exc()
     finally:
         shutil.rmtree(annotation_dir, ignore_errors=True)
+
+    # Codex r7: annotation upload is now BEFORE the attempt row write,
+    # so ``wait_until_done`` (which counts attempt rows) only sees the
+    # row after the cascade annotation has landed in GCS.
+    _gcs.write_row(run_id, iid, attempt, row, client=gcs_client)
 
     try:
         log_bytes = log_tmp.read_bytes() if log_tmp.exists() else b""

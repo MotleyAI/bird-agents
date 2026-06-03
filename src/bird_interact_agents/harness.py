@@ -490,7 +490,26 @@ def apply_audited_gold_overlay(
                             benchmark.name, single_file_path,
                         )
                         continue
-                    single_rows[inst_id] = d  # latest-wins
+                    # Codex r9: DEV-1515 multi-variant audits ship N
+                    # rows per instance_id (one ``primary=True`` plus
+                    # non-primary alternates). Latest-wins would let a
+                    # later-listed alternate overwrite the primary's
+                    # audited_sol_sql, applying the wrong reading at
+                    # overlay time. Prefer primary; once recorded,
+                    # never overwrite. (A non-primary recorded first
+                    # gets overwritten by the primary later in the
+                    # file.)
+                    existing = single_rows.get(inst_id)
+                    if existing is None:
+                        single_rows[inst_id] = d
+                    elif existing.get("primary") is True:
+                        # Already have the primary — keep it.
+                        continue
+                    elif d.get("primary") is True:
+                        # Upgrade non-primary → primary.
+                        single_rows[inst_id] = d
+                    # else: both non-primary, keep the first one (no
+                    # ordering preference between alternates).
         for task in tasks:
             inst = task.get("instance_id")
             db = task.get("selected_database")

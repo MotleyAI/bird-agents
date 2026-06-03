@@ -10,8 +10,16 @@ Run::
 
     python -m bird_interact_agents.eval.regrade \\
         --run-id <id> --benchmark mini-interact \\
-        [--instance-ids ...] \\
-        [--force-llm-judge]
+        [--instance-ids ...]
+
+The N5 LLM-judge runs automatically when a task's
+``metadata_sufficiency.verdict == "insufficient"``; it uses the agent's
+own model (read from ``<run_dir>/manifest.json``) so the judge re-asks
+the same model whether its submission is a defensible novel reading
+of the ambiguous task. ``CachedLLMJudge`` persists verdicts to
+``<run_dir>/llm_judge_cache.json`` keyed on model name + content
+hashes, so re-grades reuse decisions and a model change naturally
+invalidates entries (no separate cache-clear flag).
 """
 from __future__ import annotations
 
@@ -21,7 +29,7 @@ import json
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Callable, Iterable, List, Optional
+from typing import Any, Callable, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -49,31 +57,32 @@ def _attempt_rows_dir(run_dir: Path) -> Path:
     return run_dir / "rows"
 
 
-def clear_llm_judge_cache(
-    *,
-    cache_path: Path,
-    instance_ids: Optional[Iterable[str]],
-) -> None:
-    """Drop cache entries whose embedded ``instance_id`` matches any of
-    ``instance_ids``. Entries for other instances are preserved.
+_ATTEMPT_FILE_RE = re.compile(r"attempt-(\d+)\.json")
 
-    Pass ``instance_ids=None`` to drop EVERY entry in the cache — the
-    correct behaviour for an unfiltered ``--force-llm-judge`` regrade
-    (when the caller wants the judge to re-decide every cascade-N5 row,
-    a partial clear would leave previously-cached verdicts intact).
-    """
-    if not cache_path.exists():
-        return
-    if instance_ids is None:
-        cache_path.write_text("{}\n")
-        return
-    cache = json.loads(cache_path.read_text())
-    wanted = set(instance_ids)
-    new = {
-        k: v for k, v in cache.items()
-        if v.get("instance_id") not in wanted
-    }
-    cache_path.write_text(json.dumps(new, indent=2))
+
+def _latest_attempt_file(sub: Path) -> Path | None:
+    """Return the highest-numbered ``attempt-N.json`` in ``sub`` or
+    None when no attempt file exists.
+
+    Pre-fix the regrade CLI hardcoded ``attempt-1.json`` (Codex r10), so
+    a resubmit's attempt-2 was either silently skipped (instance had ONLY
+    attempt-2) or, worse, overwritten by stale attempt-1 data — even
+    though cloud collation already treats the max attempt as canonical
+    and the round-8 fetch merge compares attempt numbers."""
+    best: tuple[int, Path] | None = None
+    for p in sub.iterdir():
+        if not p.is_file():
+            continue
+        m = _ATTEMPT_FILE_RE.match(p.name)
+        if m is None:
+            continue
+        try:
+            n = int(m.group(1))
+        except ValueError:
+            continue
+        if best is None or n > best[0]:
+            best = (n, p)
+    return best[1] if best else None
 
 
 def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
@@ -103,9 +112,13 @@ def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
                 except json.JSONDecodeError:
                     continue
                 iid = r.get("instance_id")
-                sol = r.get("sol_sql")
+                sol = normalize_sol_sql(r.get("sol_sql"))
+                # ``normalize_sol_sql`` returns ``[]`` for None / empty /
+                # missing, ``[s]`` for a string, and ``list(value)`` for
+                # a list — so a string-shaped ``sol_sql`` is no longer
+                # silently dropped at index-build time (Codex r6).
                 if iid and sol:
-                    out[iid] = list(sol) if isinstance(sol, list) else [sol]
+                    out[iid] = sol
     # Merge in livesqlbench's gated sidecar if available.
     bench = get_benchmark(benchmark)
     if bench.gold_required:
@@ -134,9 +147,9 @@ def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
                     except json.JSONDecodeError:
                         continue
                     iid = r.get("instance_id")
-                    sol = r.get("sol_sql")
-                    if iid and isinstance(sol, list) and sol:
-                        out[iid] = list(sol)
+                    sol = normalize_sol_sql(r.get("sol_sql"))
+                    if iid and sol:
+                        out[iid] = sol
     return out
 
 
@@ -146,7 +159,6 @@ def regrade_run(
     benchmark: str,
     run_dir: Path,
     instance_ids: Optional[List[str]] = None,
-    force_llm_judge: bool = False,
     grader: Callable[..., Any],
     repo_root: Optional[Path] = None,
 ) -> RegradeReport:
@@ -160,14 +172,6 @@ def regrade_run(
         return report
 
     filter_set = set(instance_ids) if instance_ids else None
-    if force_llm_judge:
-        # ``filter_set=None`` clears the whole cache — the right thing
-        # for an unfiltered regrade since otherwise stale verdicts
-        # would survive and silently override the fresh judge call.
-        clear_llm_judge_cache(
-            cache_path=run_dir / "llm_judge_cache.json",
-            instance_ids=filter_set,
-        )
 
     # Reset the fresh-rows scratch dir so a partial regrade doesn't
     # leak stale per-instance rows from a previous pass into
@@ -188,14 +192,10 @@ def regrade_run(
         if filter_set is not None and instance_id not in filter_set:
             report.skipped += 1
             continue
-        attempt_files = sorted(
-            (f for f in sub.iterdir() if re.match(r"^attempt-\d+\.json$", f.name)),
-            key=lambda f: int(re.search(r"\d+", f.name).group()),
-        )
-        if not attempt_files:
+        attempt = _latest_attempt_file(sub)
+        if attempt is None:
             report.skipped += 1
             continue
-        attempt = attempt_files[-1]
         attempt_data = json.loads(attempt.read_text())
         submitted_sql = attempt_data.get("submitted_sql", "")
         # The cloud worker writes the per-DB token to ``database``;
@@ -256,8 +256,10 @@ def regrade_run(
             ),
             evaluation=_eval_from_cascade(cascade),
             failure_classification=_skeleton_failure_classification(cascade),
+            # Pass the raw trajectory; ``_user_sim_interaction_from_trajectory``
+            # defends against dict-shaped trajectories (Codex r10).
             user_sim_interaction=_user_sim_interaction_from_trajectory(
-                list(attempt_data.get("trajectory", []) or []),
+                attempt_data.get("trajectory") or [],
             ),
         )
 
@@ -295,7 +297,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--benchmark", required=True)
     parser.add_argument("--instance-ids", default=None)
-    parser.add_argument("--force-llm-judge", action="store_true")
     args = parser.parse_args(argv)
 
     instance_ids = (
@@ -306,7 +307,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     from bird_interact_agents.eval.annotate import (
         _user_sim_interaction_from_trajectory,
     )
-    from bird_interact_agents.eval.tolerant_grader import grade_submission
+    from bird_interact_agents.eval.tolerant_grader import (
+        CachedLLMJudge,
+        LiteLLMJudge,
+        grade_submission,
+    )
     run_dir = paths.results_root() / "cloud" / args.run_id
 
     # Index the benchmark's source data once. mini_interact ships sol_sql
@@ -320,6 +325,29 @@ def main(argv: Optional[List[str]] = None) -> int:
     # ``never_asked_user`` diagnostic fires on interactive benchmarks
     # where the agent never queried the user-sim.
     _bench_is_interactive = not get_benchmark(args.benchmark).one_shot
+
+    # Codex r13: build the LLM judge ONCE from the run's recorded
+    # ``agent_model`` (read from ``<run_dir>/manifest.json``). The N5
+    # judge uses the same model the agent did — re-asking the model
+    # whether its own SQL is a defensible novel reading of the
+    # ambiguous task. ``CachedLLMJudge`` persists verdicts to
+    # ``llm_judge_cache.json`` and keys on the model name; changing
+    # the agent's model on a resubmit naturally invalidates entries
+    # (no separate ``--force-llm-judge`` flag needed).
+    _manifest_path = run_dir / "manifest.json"
+    if _manifest_path.exists():
+        _agent_model = json.loads(_manifest_path.read_text()).get(
+            "agent_model",
+        )
+    else:
+        _agent_model = None
+    if _agent_model:
+        _llm_judge: Optional[CachedLLMJudge] = CachedLLMJudge(
+            inner=LiteLLMJudge(model=_agent_model),
+            cache_path=run_dir / "llm_judge_cache.json",
+        )
+    else:
+        _llm_judge = None
 
     def _grader(*, instance_id: str, submitted_sql: str, task_row: dict, **_kw):
         # Minimal end-to-end wiring — production callers pre-build the
@@ -367,7 +395,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # interactive runs where the agent never asked. One-shot
         # benchmarks pass None so the flag stays out of miss_patterns.
         if _bench_is_interactive:
-            _traj = list(task_row.get("trajectory") or [])
+            _traj = task_row.get("trajectory") or []
             _user_sim_n_asks: Optional[int] = (
                 _user_sim_interaction_from_trajectory(_traj).n_asks
             )
@@ -378,6 +406,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             audited_gold_rows=audited,
             original_sol_sql=original_sol_sql,
             submitted_sql=submitted_sql,
+            llm_judge=_llm_judge,
             db_path=db_path,
             conn=None,
             user_sim_n_asks=_user_sim_n_asks,
@@ -385,7 +414,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     report = regrade_run(
         run_id=args.run_id, benchmark=args.benchmark, run_dir=run_dir,
-        instance_ids=instance_ids, force_llm_judge=args.force_llm_judge,
+        instance_ids=instance_ids,
         grader=_grader,
     )
     print(f"regrade: {report.regraded} instances rewritten, "

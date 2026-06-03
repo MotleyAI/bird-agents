@@ -48,7 +48,10 @@ from bird_interact_agents.eval.annotation_schema import (
     Provenance,
     TaskAnnotation,
 )
-from bird_interact_agents.eval.grade_in_place import _build_submission_annotation
+from bird_interact_agents.eval.grade_in_place import (
+    _build_submission_annotation,
+    normalize_sol_sql,
+)
 from bird_interact_agents.eval.annotate import (
     _user_sim_interaction_from_trajectory,
 )
@@ -218,7 +221,12 @@ def _process_one(
         cascade = grade_submission(
             task_annotation=task_ann,
             audited_gold_rows=audit_rows,
-            original_sol_sql=list(task_row.get("sol_sql") or []),
+            # Codex r13: ``normalize_sol_sql`` handles the bare-string
+            # shape (some mini-interact rows carry ``sol_sql`` as a
+            # single string). A bare ``list(...)`` would char-split it
+            # into ``["S", "E", "L", "E", "C", "T", ...]`` and the
+            # grader would mis-execute → N1 always False.
+            original_sol_sql=normalize_sol_sql(task_row.get("sol_sql")),
             submitted_sql=submitted_sql,
             db_path=db_path,
             conn=conn,

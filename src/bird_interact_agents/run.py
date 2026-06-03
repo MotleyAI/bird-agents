@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import logging
+import shutil
 import statistics
 import time
 from pathlib import Path
@@ -68,7 +69,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _validate_slayer_setup(
+def _validate_slayer_setup(  # noqa: C901  (complex but linear)
     *, slayer_setup: str, framework: str, query_mode: str, mode: str,
 ) -> None:
     """Reject ``slayer_setup`` combinations the on-the-fly path doesn't
@@ -80,6 +81,9 @@ def _validate_slayer_setup(
     re-raises via ``parser.error`` so the CLI gets the standard
     argparse exit-2 + stderr behaviour.
     """
+    # Raw frameworks have no SLayer dependency — slayer_setup is irrelevant.
+    if framework in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
+        return
     # DEV-1462: one-shot REQUIRES on-the-fly. Pre-encoded one-shot would
     # silently target the committed `slayer_models/` which has no
     # LiveSQLBench coverage; fail fast.
@@ -165,6 +169,14 @@ def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) 
     """
     if mode != "one-shot":
         return
+    # claude_sdk_otf_raw is the raw-SQL one-shot variant; it requires raw, not slayer.
+    if framework == "claude_sdk_otf_raw":
+        if query_mode != "raw":
+            raise ValueError(
+                "--framework claude_sdk_otf_raw requires --query-mode raw; "
+                f"got --query-mode {query_mode!r}",
+            )
+        return
     if query_mode != "slayer":
         raise ValueError(
             "--mode one-shot requires --query-mode slayer; "
@@ -187,6 +199,8 @@ def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) 
 _FRAMEWORK_DATASET_MODE_BINDING = {
     "claude_sdk_otf": ("livesqlbench", "one-shot"),
     "claude_sdk_otf_ainteract": ("mini_interact", "a-interact"),
+    "claude_sdk_otf_raw": ("livesqlbench", "one-shot"),
+    "claude_sdk_otf_ainteract_raw": ("mini_interact", "a-interact"),
 }
 
 
@@ -538,6 +552,52 @@ def _make_runner(
                           user_sim_model: str) -> dict:
             budget = calculate_budget(td, patience, mode=mode)
             return await agent_csoa.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_raw":
+        from bird_interact_agents.agents.claude_sdk_otf_raw import ClaudeSDKOtfRawAgent
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_raw] --strict is a no-op for Anthropic models; "
+                "ignored."
+            )
+        agent_csor = ClaudeSDKOtfRawAgent(
+            model=agent_model,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csor.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_ainteract_raw":
+        from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import (
+            ClaudeSDKOtfAInteractRawAgent,
+        )
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_ainteract_raw] --strict is a no-op for "
+                "Anthropic models; ignored."
+            )
+        agent_csoar = ClaudeSDKOtfAInteractRawAgent(
+            model=agent_model,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csoar.run_task(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
@@ -998,7 +1058,30 @@ async def run_evaluation(
     # cloud worker (``cloud.ray_app._grade_one_submission``) — without
     # this, local runs would silently lose the N1-N9 cascade metrics
     # whenever audited gold / per-task annotations are present.
+    #
+    # Codex r9: ``aggregate_cascading_phase1`` walks EVERY subdir under
+    # ``rows_dir`` to compute ``n_dual_eval_tasks``. Reusing the same
+    # ``output_dir`` for a fresh run (different ``--limit`` /
+    # ``--instance-id`` subset) would otherwise carry forward stale
+    # annotations from the prior pass, inflating the denominator and
+    # rewriting ``phase1_count`` / ``phase1_rate`` from the union of
+    # old + new. Wipe per-instance subdirs that THIS run is about to
+    # touch (or the whole rows dir when no filter is set) so the
+    # aggregator only sees fresh annotations. Mirrors the round-2
+    # regrade.py reset pattern.
     rows_dir = output_dir / "rows"
+    if rows_dir.exists():
+        if filter_ids is None:
+            # Full run — wipe everything.
+            shutil.rmtree(rows_dir, ignore_errors=True)
+        else:
+            # Filtered run — reset ONLY the subdirs this run will
+            # overwrite, so unrelated instances from a prior pass
+            # survive (and still contribute to the cascade block).
+            _wanted = {str(t.get("instance_id") or "") for t in tasks}
+            for sub in list(rows_dir.iterdir()):
+                if sub.is_dir() and sub.name in _wanted:
+                    shutil.rmtree(sub, ignore_errors=True)
     rows_dir.mkdir(parents=True, exist_ok=True)
     _benchmark_canonical = b.name
 
@@ -1043,13 +1126,16 @@ async def run_evaluation(
                 ),
             )
             return
-        per_task_db = Path(
-            td.get("db_file_path")
-            or (
-                paths.benchmark_data_root(_benchmark_canonical)
-                / selected_database
-                / f"{selected_database}.sqlite"
-            )
+        # Root the per-task sqlite at the materialized copy when available
+        # (LiveSQLBench tasks: materialize_task_db sets db_file_path to an
+        # isolated $TMPDIR copy so concurrent runs don't race the shared
+        # <db>.sqlite). Fall back to data_dir/<db>/<db>.sqlite for
+        # mini-interact (materialize_task_db is a no-op there).
+        _db_file_path = td.get("db_file_path")
+        per_task_db = (
+            Path(_db_file_path)
+            if _db_file_path
+            else Path(data_dir) / selected_database / f"{selected_database}.sqlite"
         )
         try:
             grade_one_submission(
@@ -1176,8 +1262,19 @@ async def run_evaluation(
         (sub / "submission_annotation.json").exists()
         for sub in rows_dir.iterdir() if sub.is_dir()
     ):
+        # Codex r11: scope the cascade aggregation to the CURRENT run's
+        # instance set. Filtered reruns preserve unrelated prior
+        # annotations on disk (round 10 design), but the published
+        # ``eval.json`` must describe ONLY the current run's row set —
+        # otherwise ``cascading_phase1.n_dual_eval_tasks`` (union) would
+        # exceed ``eval.total_tasks`` (filtered count) and the rewritten
+        # ``phase1_count`` / ``phase1_rate`` would become uninterpretable.
+        _current_iids = {
+            str(td.get("instance_id") or "") for td in tasks
+        } - {""}
         metrics = emit_cascading_eval_json(
             rows_dir, Path(output_path), base_metrics=metrics,
+            instance_filter=_current_iids,
         )
 
     logger.info(
@@ -1214,6 +1311,7 @@ def main() -> None:
         "--framework",
         choices=[
             "claude_sdk", "claude_sdk_otf", "claude_sdk_otf_ainteract",
+            "claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw",
             "pydantic_ai",
             "pydantic_ai_recursive", "pydantic_ai_otf_encode",
             "mcp_agent", "agno", "smolagents",

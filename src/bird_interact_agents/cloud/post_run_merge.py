@@ -75,6 +75,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -437,10 +438,30 @@ class AnnotationMergeReport(BaseModel):
     benchmark: str
     merged: int = 0
     skipped_existing: int = 0
+    overwritten_newer_attempt: int = 0
     rejected_invalid: int = 0
     merged_paths: list[str] = []
     skipped_paths: list[str] = []
+    overwritten_paths: list[str] = []
     rejected_paths: list[str] = []
+
+
+_ATTEMPT_RE = re.compile(r"attempt-(\d+)\.json")
+
+
+def _attempt_from_trajectory_path(traj: str | None) -> int | None:
+    """Parse ``rows/<iid>/attempt-N.json`` → ``N``. Returns None when
+    the path is missing or unparseable so callers can fall back to a
+    safe default (no-overwrite)."""
+    if not traj:
+        return None
+    m = _ATTEMPT_RE.search(traj)
+    if m is None:
+        return None
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return None
 
 
 def merge_submission_annotations(
@@ -502,8 +523,42 @@ def merge_submission_annotations(
                     repo_root=main_checkout_root,
                 )
             if dest.exists():
-                report.skipped_existing += 1
-                report.skipped_paths.append(str(dest))
+                # Resubmit reuses the same ``run_id`` and bumps the
+                # per-task ``attempt`` number; the canonical
+                # ``submission_annotation_path`` does NOT carry attempt
+                # in the filename, so a partial earlier fetch would
+                # otherwise pin attempt-1's annotation forever even
+                # when attempt-2's row is the result-of-record
+                # (Codex r7). Compare ``submission.trajectory_path``
+                # of src vs dest — overwrite ONLY when the new attempt
+                # number is strictly greater. Skip on equal / unknown
+                # to preserve the existing no-overwrite safety floor.
+                src_attempt = _attempt_from_trajectory_path(
+                    ann.submission.trajectory_path,
+                )
+                try:
+                    dest_ann = SubmissionAnnotation.model_validate_json(
+                        dest.read_text(),
+                    )
+                    dest_attempt = _attempt_from_trajectory_path(
+                        dest_ann.submission.trajectory_path,
+                    )
+                except (ValidationError, ValueError, OSError):
+                    dest_attempt = None
+                if (
+                    src_attempt is not None
+                    and dest_attempt is not None
+                    and src_attempt > dest_attempt
+                ):
+                    dest.write_text(
+                        ann.model_dump_json(indent=2, exclude_none=False)
+                        + "\n",
+                    )
+                    report.overwritten_newer_attempt += 1
+                    report.overwritten_paths.append(str(dest))
+                else:
+                    report.skipped_existing += 1
+                    report.skipped_paths.append(str(dest))
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(

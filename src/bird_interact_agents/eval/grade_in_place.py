@@ -506,6 +506,7 @@ def grade_one_submission(
     n_ask_user_calls: Optional[int] = None,
     predicted_row_count: Optional[int] = None,
     user_sim_interaction: Optional[UserSimInteraction] = None,
+    attempt: int = 1,
 ) -> Path:
     """Inline-grade one submission and write the per-row
     ``submission_annotation.json``. Idempotent at the per-(task, run)
@@ -515,6 +516,13 @@ def grade_one_submission(
     Shared between cloud (``cloud.ray_app``) and local (``run``) so the
     ``cascading_phase1`` block in ``eval.json`` is populated regardless
     of where the run was launched.
+
+    ``attempt`` MUST reflect the real per-task attempt number — the
+    post-fetch merge in ``post_run_merge.merge_submission_annotations``
+    parses ``submission.trajectory_path`` to compare resubmit attempts
+    (Codex r7); leaving the previous hardcoded ``"attempt-1"`` would
+    silently preserve attempt-1 annotations on resubmit even when
+    attempt-2's annotation is downloaded.
     """
     instance_id = task_data["instance_id"]
     selected_database = task_data["selected_database"]
@@ -540,7 +548,7 @@ def grade_one_submission(
         submitted_sql=submitted_sql,
         db_path=db_path,
         conn=conn,
-        trajectory_path=_latest_attempt_rel(rows_dir, instance_id),
+        trajectory_path=f"rows/{instance_id}/attempt-{attempt}.json",
         cost_usd_agent=cost_usd_agent,
         cost_usd_user_sim=cost_usd_user_sim,
         duration_s=duration_s,
