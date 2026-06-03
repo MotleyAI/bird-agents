@@ -238,3 +238,46 @@ def test_written_json_is_valid_utf8_and_human_readable(tmp_path):
     assert body_lines[0] == "{"
     indent_lines = [l for l in body_lines[1:-1] if l.strip()]
     assert all(l.startswith("  ") for l in indent_lines)
+
+
+# ---------------------------------------------------------------------------
+# Codex r13: ``TaskAnnotation.external_knowledge`` was ``List[int]``
+# only; some livesqlbench fixtures + forward-looking benchmark variants
+# carry the KB body inline as a dict. The widened type accepts both.
+# ---------------------------------------------------------------------------
+
+
+def test_external_knowledge_accepts_mixed_int_and_dict_entries():
+    from bird_interact_agents.eval import (
+        MetadataSufficiency, TaskAnnotation,
+    )
+    from bird_interact_agents.eval.annotation_schema import Provenance
+
+    ann = TaskAnnotation(
+        instance_id="alien_42",
+        selected_database="alien",
+        annotated_by="test",
+        annotated_at="2026-06-02",
+        amb_user_query="x",
+        external_knowledge=[
+            1,
+            {"id": 31, "label": "TETL", "definition": "ERF + LER + MDR*2"},
+            7,
+        ],
+        metadata_sufficiency=MetadataSufficiency(
+            verdict="sufficient", rationale="r",
+        ),
+        provenance=Provenance(
+            task_jsonl_path="mini_interact.jsonl",
+            task_jsonl_instance_id="alien_42",
+        ),
+    )
+    # Round-trip through JSON to confirm the dict entry survives intact.
+    decoded = TaskAnnotation.model_validate_json(
+        ann.model_dump_json(exclude_none=False)
+    )
+    assert decoded.external_knowledge[0] == 1
+    assert decoded.external_knowledge[1] == {
+        "id": 31, "label": "TETL", "definition": "ERF + LER + MDR*2",
+    }
+    assert decoded.external_knowledge[2] == 7

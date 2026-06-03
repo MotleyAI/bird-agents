@@ -180,6 +180,10 @@ def test_unrecoverable_with_empty_changes_still_fails(tmp_path: Path):
 def test_existing_inhouse_credit_still_validates_clean():
     """Regression guard: real audited_gold/credit/credit_audited.jsonl
     still passes with `--audit-set inhouse`."""
+    from bird_interact_agents import paths
+    sidecar = paths.audited_gold_root() / "credit" / "credit_audited.jsonl"
+    if not sidecar.exists():
+        pytest.skip("audited_gold/credit/credit_audited.jsonl not present on this machine")
     result = subprocess.run(
         [
             sys.executable,

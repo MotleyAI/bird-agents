@@ -13,7 +13,7 @@ Per the project Python convention, every container field uses a typed
 """
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -229,7 +229,13 @@ class TaskAnnotation(BaseModel):
     """Path or stable ID of an earlier annotation this replaces."""
 
     amb_user_query: str
-    external_knowledge: List[int] = Field(default_factory=list)
+    external_knowledge: List[Union[int, dict]] = Field(default_factory=list)
+    """KB references the task anchors against. Each entry is either an
+    integer KB id (the common mini-interact / livesqlbench shape) OR a
+    dict carrying the KB body inline (some fixture rows and forward-
+    looking benchmark variants). Codex r13: the prior ``List[int]`` was
+    overly restrictive — dict-shaped entries would be rejected by
+    pydantic at conversion time."""
     masked_terms: List[MaskedTerm] = Field(default_factory=list)
 
     metadata_sufficiency: MetadataSufficiency

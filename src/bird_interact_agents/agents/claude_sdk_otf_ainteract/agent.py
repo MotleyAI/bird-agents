@@ -393,6 +393,7 @@ class ClaudeSDKOtfAInteractAgent:
                 },
             )
 
+            # Auth env-var invariant validated at actor bootstrap; see ray_app._assert_actor_oauth_invariant.
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():

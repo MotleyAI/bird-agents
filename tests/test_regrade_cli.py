@@ -1,20 +1,22 @@
 """DEV-1515: offline re-grade CLI for already-completed runs.
 
 `python -m bird_interact_agents.eval.regrade --run-id <id>
- [--instance-ids ...] [--benchmark ...] [--force-llm-judge]`
+ [--instance-ids ...] --benchmark ...`
 
 Contract:
-* Walks `<results>/cloud/<run-id>/rows/<inst>/attempt-1.json` for each
-  instance.
+* Walks `<results>/cloud/<run-id>/rows/<inst>/attempt-N.json` for each
+  instance (highest N wins).
 * Re-runs `grade_submission` with the locally-loaded LLM-judge cache
-  at `<results>/cloud/<run-id>/llm_judge_cache.json`.
+  at `<results>/cloud/<run-id>/llm_judge_cache.json`. The judge uses
+  the agent's own model (read from `<run_dir>/manifest.json`) and is
+  invoked automatically when `metadata_sufficiency.verdict ==
+  "insufficient"`.
 * OVERWRITES `<main_checkout>/annotations/<benchmark>/<db>/<inst>.submission.<run-id>.json`
   (this is the explicit re-grade path; distinct from `fetch`'s
   no-overwrite merge).
 * Writes a fresh `<results>/cloud/<run-id>/eval_regraded.json` —
   the historical `eval.json` is NOT mutated.
 * `--instance-ids` filters which rows get re-graded.
-* `--force-llm-judge` invalidates cache entries for affected rows.
 """
 from __future__ import annotations
 
@@ -70,7 +72,7 @@ def test_regrade_walks_run_artefacts(tmp_path, monkeypatch):
         benchmark="mini-interact",
         run_dir=run_dir,
         instance_ids=None,
-        force_llm_judge=False,
+        
         grader=StubGrader(),
         repo_root=tmp_path,
     )
@@ -108,7 +110,7 @@ def test_regrade_overwrites_existing_submission_annotation(tmp_path, monkeypatch
 
     regrade_run(
         run_id="r1", benchmark="mini-interact", run_dir=run_dir,
-        instance_ids=None, force_llm_judge=False,
+        instance_ids=None,
         grader=StubGrader(), repo_root=tmp_path,
     )
     refreshed = json.loads(dest.read_text())
@@ -144,7 +146,7 @@ def test_regrade_respects_instance_id_filter(tmp_path, monkeypatch):
 
     regrade_run(
         run_id="r1", benchmark="mini-interact", run_dir=run_dir,
-        instance_ids=["alien_2"], force_llm_judge=False,
+        instance_ids=["alien_2"],
         grader=StubGrader(), repo_root=tmp_path,
     )
     assert len(seen) == 1
@@ -178,7 +180,7 @@ def test_regrade_writes_eval_regraded_not_eval_json(tmp_path, monkeypatch):
 
     regrade_run(
         run_id="r1", benchmark="mini-interact", run_dir=run_dir,
-        instance_ids=None, force_llm_judge=False,
+        instance_ids=None,
         grader=StubGrader(), repo_root=tmp_path,
     )
 
@@ -186,84 +188,6 @@ def test_regrade_writes_eval_regraded_not_eval_json(tmp_path, monkeypatch):
     assert eval_regraded.exists()
     # Historical preserved.
     assert json.loads(eval_json.read_text())["phase1_count"] == 999
-
-
-def test_regrade_force_llm_judge_clears_cache_entries(tmp_path, monkeypatch):
-    """`--force-llm-judge` MUST drop matching keys from
-    `<results>/cloud/<run-id>/llm_judge_cache.json` before re-grading.
-
-    Cache entries embed `instance_id` so the clearer can filter. The
-    contract: after `clear_llm_judge_cache(..., instance_ids=["alien_1"])`
-    NO cached entry whose key/value references `alien_1` remains; entries
-    for OTHER instances are preserved.
-    """
-    from bird_interact_agents import paths as paths_mod
-    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
-
-    run_dir = tmp_path / "results" / "cloud" / "r1"
-    _write_attempt(run_dir, "alien_1")
-
-    cache_path = run_dir / "llm_judge_cache.json"
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_path.write_text(json.dumps({
-        "k_for_alien_1": {"instance_id": "alien_1", "verdict": True},
-        "k_for_alien_2": {"instance_id": "alien_2", "verdict": False},
-    }))
-
-    from bird_interact_agents.eval.regrade import clear_llm_judge_cache
-
-    clear_llm_judge_cache(
-        cache_path=cache_path, instance_ids=["alien_1"],
-    )
-    remaining = json.loads(cache_path.read_text())
-    assert "k_for_alien_1" not in remaining, (
-        "force_llm_judge must drop the alien_1 cache entry"
-    )
-    assert "k_for_alien_2" in remaining, (
-        "entries for other instances must be preserved"
-    )
-
-
-def test_regrade_run_force_llm_judge_reinvokes_judge(tmp_path, monkeypatch):
-    """End-to-end: `regrade_run(..., force_llm_judge=True)` calls the
-    grader exactly once and the cache is empty afterward for the
-    filtered instances."""
-    from bird_interact_agents import paths as paths_mod
-    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
-
-    run_dir = tmp_path / "results" / "cloud" / "r1"
-    _write_attempt(run_dir, "alien_1")
-    cache_path = run_dir / "llm_judge_cache.json"
-    cache_path.write_text(json.dumps({
-        "k_for_alien_1": {"instance_id": "alien_1", "verdict": True},
-    }))
-
-    calls: list[dict] = []
-
-    class StubGrader:
-        def __call__(self, **kw):
-            calls.append(kw)
-            from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
-            return CascadeVerdict(
-                n1_original_gold=False, n2_audited_primary=False,
-                n3_any_audited_variant=False, n4_tie_order=False,
-                n5_llm_judge=False, n6_numeric_epsilon=False,
-                n7_trailing_whitespace=False, n8_column_order=False,
-                n9_case_fold=False,
-                matched_variant_id=None, novel_reading_judgment=None,
-                variant_matches=[], rowset_relations=[],
-            )
-
-    from bird_interact_agents.eval.regrade import regrade_run
-
-    regrade_run(
-        run_id="r1", benchmark="mini-interact", run_dir=run_dir,
-        instance_ids=["alien_1"], force_llm_judge=True,
-        grader=StubGrader(), repo_root=tmp_path,
-    )
-    assert len(calls) == 1
-    remaining = json.loads(cache_path.read_text())
-    assert "k_for_alien_1" not in remaining
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +294,7 @@ def test_regrade_picks_latest_attempt_after_resubmit(tmp_path, monkeypatch):
 
     regrade_run(
         run_id="r1", benchmark="mini-interact", run_dir=run_dir,
-        instance_ids=None, force_llm_judge=False,
+        instance_ids=None,
         grader=StubGrader(), repo_root=tmp_path,
     )
     assert len(captured) == 1
@@ -424,7 +348,7 @@ def test_regrade_grades_when_only_later_attempt_exists(tmp_path, monkeypatch):
 
     report = regrade_run(
         run_id="r1", benchmark="mini-interact", run_dir=run_dir,
-        instance_ids=None, force_llm_judge=False,
+        instance_ids=None,
         grader=StubGrader(), repo_root=tmp_path,
     )
     assert report.regraded == 1

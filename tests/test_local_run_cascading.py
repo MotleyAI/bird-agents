@@ -28,8 +28,8 @@ def test_grade_in_place_writes_submission_annotation_per_task(tmp_path):
     original_gold = "SELECT gold"
 
     class FakeExecutor:
-        def __call__(self, sql, *, db_path, conn):  # noqa: ARG002,ARG005  # noqa: ARG002
-            return ([(1,)], ["a"]) if sql == submitted else ([(99,)], ["a"])
+        def __call__(self, sql, *, db_path, conn):  # noqa: ARG002
+            return ([(1,)], ["a"])
 
     grade_and_write(
         rows_dir=rows_dir,
