@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import datetime
+import json
 import logging
 import secrets
 import signal
@@ -258,8 +260,6 @@ def _dbs_for_instances(instance_ids, benchmark: str = "mini_interact") -> list[s
     via the benchmark's tasks file (never string-split the id — DB names contain
     underscores, e.g. ``california_schools``). Returns a sorted, de-duplicated
     db list."""
-    import json as _json
-
     wanted = set(instance_ids)
     dbs: set[str] = set()
     with paths.benchmark_data_file(benchmark).open() as f:
@@ -267,7 +267,7 @@ def _dbs_for_instances(instance_ids, benchmark: str = "mini_interact") -> list[s
             line = line.strip()
             if not line:
                 continue
-            td = _json.loads(line)
+            td = json.loads(line)
             if td.get("instance_id") in wanted:
                 db = td.get("selected_database")
                 if db:
@@ -290,8 +290,15 @@ def _benchmark_for_dataset(dataset: str | None) -> str:
 
 def _submit_benchmark(args) -> str:
     """Benchmark for a submit, derived from ``args.dataset`` (defaults to
-    mini-interact when the CLI didn't set one)."""
-    return _benchmark_for_dataset(getattr(args, "dataset", None))
+    mini-interact when the CLI didn't set one).
+
+    Annotator args use ``args.benchmark`` rather than ``args.dataset``; fall
+    back to that when ``dataset`` is absent so gold-file path helpers work for
+    both submit and annotate args.
+    """
+    return _benchmark_for_dataset(
+        getattr(args, "dataset", None) or getattr(args, "benchmark", None)
+    )
 
 
 def _validate_gold_under_data_root(args) -> None:
@@ -471,7 +478,6 @@ def _instance_ids_sorted_by_db(
     typically does all encoding for a given DB and the cross-actor encode
     race is rare. Unknown iids (absent from the dataset) sort to the end
     grouped by their iid string so they still appear deterministically."""
-    import json as _json
     wanted = list(instance_ids)
     if not wanted:
         return wanted
@@ -494,7 +500,7 @@ def _instance_ids_sorted_by_db(
             line = line.strip()
             if not line:
                 continue
-            td = _json.loads(line)
+            td = json.loads(line)
             iid = td.get("instance_id")
             if iid in wanted:
                 db = td.get("selected_database") or ""
@@ -682,6 +688,139 @@ def _build_job_args(
 
 
 # ---------------------------------------------------------------------------
+# Annotator submit
+# ---------------------------------------------------------------------------
+
+_ANNOTATOR_RAY_APP_PATH = (
+    "/app/bird-interact-agents/src/bird_interact_agents/cloud/ray_app_annotator.py"
+)
+
+
+def build_annotator_manifest(
+    args, *, image_uri: str, run_id: str, benchmark_data_prefix: str | None = None,
+) -> dict:
+    """Build the manifest dict for an annotator run."""
+    manifest: dict = {
+        "run_id": run_id,
+        "framework": "annotator",
+        "mode": "annotate",
+        "query_mode": "raw",
+        "dataset": get_benchmark(args.benchmark).name,
+        "benchmark_data_prefix": benchmark_data_prefix,
+        "agent_model": args.agent_model,
+        "effort": getattr(args, "effort", "medium"),
+        "override": getattr(args, "override", False),
+        "instance_ids": list(args.instance_ids),
+        "render_inputs": {
+            "workers": args.workers,
+            "actors_per_worker": args.actors_per_worker,
+            "worker_type": args.worker_type,
+            "zone": cluster.DEFAULT_ZONE,
+            "worker_sa": cluster.DEFAULT_WORKER_SA,
+            "max_runtime_hours": args.max_runtime_hours,
+            "image_uri": image_uri,
+            "project": config.PROJECT,
+            "region": config.REGION,
+        },
+    }
+    gold_file = _in_cluster_gold_file(args)
+    if gold_file:
+        manifest["gold_file"] = gold_file
+    return manifest
+
+
+def _build_annotator_job_args(
+    args, run_id: str, *, benchmark_data_prefix: str | None = None,
+) -> list[str]:
+    benchmark = get_benchmark(args.benchmark).name
+    job_args = [
+        "--run-id", run_id,
+        "--benchmark", benchmark,
+        "--model", args.agent_model,
+        "--effort", getattr(args, "effort", "medium"),
+        "--num-actors", str(args.workers * args.actors_per_worker),
+        "--instance-ids", ",".join(args.instance_ids),
+    ]
+    if benchmark_data_prefix:
+        job_args += ["--benchmark-data-prefix", benchmark_data_prefix]
+    gold_file = _in_cluster_gold_file(args)
+    if gold_file:
+        job_args += ["--gold-file", gold_file]
+    if getattr(args, "override", False):
+        job_args.append("--override")
+    return job_args
+
+
+def submit_annotator(args) -> str:
+    # Fail fast if --gold-file is outside the benchmark data root — it must
+    # ride along in the GCS dataset upload to be present in-cluster.
+    _validate_gold_under_data_root(args)
+    _prereq_args = argparse.Namespace(
+        agent_model=args.agent_model,
+        user_sim_model="",
+        query_mode="raw",
+        framework="annotator",
+    )
+    prereqs.check(_prereq_args)
+    repo_root = submitter_repo_root()
+    tag = image.image_tag(
+        repo_root,
+        paths.audited_gold_root(),
+        allow_dirty=args.allow_dirty,
+        annotations_root=paths.annotations_root(),
+    )
+    image_uri = image.build_and_push(
+        tag, repo_root,
+        audited_gold_root=paths.audited_gold_root(),
+        annotations_root=paths.annotations_root(),
+        force=False,
+    )
+    benchmark_data_prefix = benchmark_data.ensure_uploaded(
+        get_benchmark(args.benchmark).name
+    )
+    run_id = args.run_id or mint_run_id("annotator", "raw")
+    manifest = build_annotator_manifest(
+        args, image_uri=image_uri, run_id=run_id,
+        benchmark_data_prefix=benchmark_data_prefix,
+    )
+    gcs.write_manifest(run_id, manifest)
+    yaml_path = cluster.render_from_manifest(manifest, cache_dir=yaml_cache_dir())
+    h = install_signal_handlers(run_id=run_id, yaml_path=yaml_path)
+    submit_succeeded = False
+    try:
+        cluster.up(yaml_path)
+        head = cluster.head_address(yaml_path)
+        env_vars = read_api_keys_from_local_env(
+            args.agent_model, "", query_mode="raw",
+            framework="annotator",
+        )
+        job_args = _build_annotator_job_args(
+            args, run_id, benchmark_data_prefix=benchmark_data_prefix,
+        )
+        ray_job_id = cluster.submit_job(
+            head_address=head, args=job_args, env_vars=env_vars,
+            yaml_path=yaml_path,
+            ray_app_path=_ANNOTATOR_RAY_APP_PATH,
+        )
+        submit_succeeded = True
+        gcs.write_status(run_id, {
+            "ray_job_id": ray_job_id,
+            "last_heartbeat_ts": time.time(),
+            "rows_done": 0,
+            "rows_total": len(args.instance_ids),
+            "terminal_state": None,
+            "attempt": 1,
+        })
+        if not args.detach:
+            wait_until_done(run_id, manifest)
+            fetch(run_id)
+    finally:
+        if (not args.detach) or (not submit_succeeded):
+            h.teardown(reason="finally")
+    return run_id
+
+
+# ---------------------------------------------------------------------------
 # wait_until_done
 # ---------------------------------------------------------------------------
 
@@ -754,11 +893,9 @@ def fetch(run_id: str) -> dict:
     gcs.concurrent_download_prefix(run_id, dest, client=default_gcs_client())
     manifest_path = dest / "manifest.json"
     if not manifest_path.exists():
-        import json
         manifest = gcs.read_manifest(run_id, client=default_gcs_client())
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     else:
-        import json
         manifest = json.loads(manifest_path.read_text())
     metrics = _collation.collate(dest, manifest)
     # DEV-1470: promote per-DB cloud-encoded OTF references from
@@ -785,6 +922,30 @@ def fetch(run_id: str) -> dict:
     metrics["annotation_merge_report"] = annotation_merge.model_dump()
 
     metrics = _emit_cascading_phase1_on_fetch(dest=dest, metrics=metrics)
+
+    # DEV-1518: for annotator runs, merge per-task annotation + gold variant
+    # files from the downloaded rows into local stable storage.
+    if manifest.get("framework") == "annotator":
+        task_ann_report = _post_run_merge.merge_task_annotations(
+            downloaded_run_dir=dest,
+            benchmark=_benchmark_for_dataset(manifest.get("dataset")),
+            annotations_root=paths.annotations_root(),
+        )
+        metrics["task_annotation_merge_report"] = task_ann_report.model_dump()
+        variants_report = _post_run_merge.merge_audited_gold_variants(
+            downloaded_run_dir=dest,
+            benchmark=_benchmark_for_dataset(manifest.get("dataset")),
+            audited_gold_root=paths.audited_gold_root(),
+            override=manifest.get("override", False),
+        )
+        metrics["audited_gold_variants_merge_report"] = variants_report.model_dump()
+
+    # Rewrite eval.json so annotation merge reports (added after collate()) are
+    # persisted on disk — collate() writes eval.json before these keys exist.
+    eval_path = dest / "eval.json"
+    if eval_path.exists():
+        eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
+
     return metrics
 
 
@@ -893,16 +1054,27 @@ def resubmit(run_id: str) -> None:
                 "resubmit: manifest has no 'framework' field (pre-DEV-1517); "
                 "defaulting to legacy API-key path"
             )
-        env_vars = read_api_keys_from_local_env(
-            manifest["agent_model"], manifest["user_sim_model"],
-            query_mode=manifest.get("query_mode", "raw"),
-            framework=_framework,
-        )
-        job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
-        cluster.submit_job(
-            head_address=head, args=job_args, env_vars=env_vars,
-            yaml_path=yaml_path,
-        )
+        if _framework == "annotator":
+            env_vars = read_api_keys_from_local_env(
+                manifest["agent_model"], "",
+                query_mode="raw", framework="annotator",
+            )
+            job_args = _build_annotator_resubmit_args(manifest, run_id, missing, next_attempt)
+            cluster.submit_job(
+                head_address=head, args=job_args, env_vars=env_vars,
+                yaml_path=yaml_path, ray_app_path=_ANNOTATOR_RAY_APP_PATH,
+            )
+        else:
+            env_vars = read_api_keys_from_local_env(
+                manifest["agent_model"], manifest["user_sim_model"],
+                query_mode=manifest.get("query_mode", "raw"),
+                framework=_framework,
+            )
+            job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
+            cluster.submit_job(
+                head_address=head, args=job_args, env_vars=env_vars,
+                yaml_path=yaml_path,
+            )
         wait_until_done(run_id, manifest)
         fetch(run_id)
     finally:
@@ -961,4 +1133,32 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         "--slayer-storage-root",
         manifest.get("slayer_storage_root", "/data/slayer_models"),
     ]
+    return job_args
+
+
+def _build_annotator_resubmit_args(
+    manifest: dict, run_id: str, missing: list[str], attempt: int,
+) -> list[str]:
+    benchmark = _benchmark_for_dataset(manifest.get("dataset"))
+    num_actors = (
+        manifest["render_inputs"]["workers"]
+        * manifest["render_inputs"]["actors_per_worker"]
+    )
+    job_args = [
+        "--run-id", run_id,
+        "--attempt", str(attempt),
+        "--benchmark", benchmark,
+        "--model", manifest["agent_model"],
+        "--effort", manifest.get("effort", "medium"),
+        "--num-actors", str(num_actors),
+        "--instance-ids", ",".join(missing),
+    ]
+    prefix = manifest.get("benchmark_data_prefix")
+    if prefix:
+        job_args += ["--benchmark-data-prefix", prefix]
+    gold_file = manifest.get("gold_file")
+    if gold_file:
+        job_args += ["--gold-file", str(gold_file)]
+    if manifest.get("override"):
+        job_args.append("--override")
     return job_args

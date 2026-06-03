@@ -199,12 +199,18 @@ def _rsync_secrets(
             pass
 
 
+_DEFAULT_RAY_APP_PATH = (
+    "/app/bird-interact-agents/src/bird_interact_agents/cloud/ray_app.py"
+)
+
+
 def submit_job(
     *,
     head_address: str,
     args: list[str],
     env_vars: dict[str, str],
     yaml_path: Path | None = None,
+    ray_app_path: str | None = None,
 ) -> str:
     """Submit a Ray Jobs API job by SSH-execing on the head node via
     `ray exec`. Runs `ray job submit` *inside* the head's container,
@@ -223,6 +229,7 @@ def submit_job(
 
     Returns the ray_job_id from stdout.
     """
+    app_path = ray_app_path or _DEFAULT_RAY_APP_PATH
     if yaml_path is not None:
         full_args = list(args)
         runtime_env: dict = {}
@@ -234,16 +241,13 @@ def submit_job(
         # each value-bearing token exactly once with shlex.quote; the static
         # flags need no quoting. (Avoids a fragile "skip re-quoting tokens
         # that already start with a single quote" heuristic.)
-        ray_app_path = (
-            "/app/bird-interact-agents/src/bird_interact_agents/cloud/ray_app.py"
-        )
         inner_cmd = " ".join([
             "ray", "job", "submit",
             "--no-wait",
             "--address", "http://localhost:8265",
             "--runtime-env-json", shlex.quote(json.dumps(runtime_env)),
             "--",
-            "python", ray_app_path,
+            "python", app_path,
             *[shlex.quote(a) for a in full_args],
         ])
         argv = ["ray", "exec", str(yaml_path), inner_cmd]
@@ -257,7 +261,7 @@ def submit_job(
             "--address", head_address,
             "--runtime-env-json", json.dumps(runtime_env),
             "--",
-            "python", "/app/bird-interact-agents/src/bird_interact_agents/cloud/ray_app.py",
+            "python", app_path,
             *args,
         ]
     res = subprocess.run(argv, capture_output=True, text=True, check=False)

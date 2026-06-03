@@ -87,11 +87,10 @@ def load_audited(db: str, audit_set: str = "inhouse") -> list[dict]:
                     d = json.loads(line)
                     if d.get("selected_database") == db:
                         rows.append(d)
-            if not rows:
-                raise FileNotFoundError(
-                    f"No rows for db={db!r} in {single}"
-                )
-            return rows
+            if rows:
+                return rows
+            # Consolidated file present but no rows for this DB — fall through
+            # to the per-DB sidecar path below.
     path = audited_root_for(audit_set) / db / audited_filename_for(db, audit_set)
     if not path.exists():
         raise FileNotFoundError(f"No sidecar at {path}")

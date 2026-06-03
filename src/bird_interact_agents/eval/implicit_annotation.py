@@ -34,8 +34,9 @@ def _benchmark_task_jsonl_name(benchmark: str) -> str:
     Falls back to a generic ``"<benchmark>.jsonl"`` placeholder when the
     benchmark token doesn't match a registered ``Benchmark`` descriptor
     (which is fine for tests / forks that haven't registered theirs)."""
-    if benchmark in benchmark_names():
-        return get_benchmark(benchmark).data_file
+    canonical = benchmark.replace("-", "_")
+    if canonical in benchmark_names():
+        return get_benchmark(canonical).data_file
     return f"{benchmark}.jsonl"
 
 

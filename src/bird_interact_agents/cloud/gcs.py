@@ -61,6 +61,32 @@ def submission_annotation_blob(run_id: str, instance_id: str) -> str:
     return f"runs/{run_id}/rows/{instance_id}/submission_annotation.json"
 
 
+def _normalise_benchmark(benchmark: str) -> str:
+    return benchmark.replace("-", "_")
+
+
+def task_annotation_blob(run_id: str, instance_id: str) -> str:
+    """DEV-1518: run-specific task annotation blob path."""
+    return f"runs/{run_id}/rows/{instance_id}/task_annotation.json"
+
+
+def audited_gold_variants_blob(run_id: str, instance_id: str) -> str:
+    """DEV-1518: run-specific audited gold variants blob path (JSONL)."""
+    return f"runs/{run_id}/rows/{instance_id}/audited_gold_variants.jsonl"
+
+
+def stable_task_annotation_blob(benchmark: str, db: str, instance_id: str) -> str:
+    """DEV-1518: stable (cross-run) task annotation blob path."""
+    bm = _normalise_benchmark(benchmark)
+    return f"annotations/{bm}/{db}/{instance_id}.task.json"
+
+
+def stable_audited_gold_variants_blob(benchmark: str, db: str, instance_id: str) -> str:
+    """DEV-1518: stable (cross-run) audited gold variants blob path."""
+    bm = _normalise_benchmark(benchmark)
+    return f"audited_gold/{bm}/{db}/{instance_id}.variants.jsonl"
+
+
 # ---------------------------------------------------------------------------
 # Writers
 # ---------------------------------------------------------------------------
@@ -384,3 +410,86 @@ def ensure_bucket(
         if not already_bound:
             policy.bindings.append({"role": wanted, "members": {member}})
             bucket.set_iam_policy(policy)
+
+
+# ---------------------------------------------------------------------------
+# DEV-1518: annotator GCS helpers
+# ---------------------------------------------------------------------------
+
+
+def blob_exists(blob_name: str, *, client=None) -> bool:
+    """Return True iff the blob exists in the bucket."""
+    client = client or default_gcs_client()
+    return client.bucket(BUCKET_NAME).blob(blob_name).exists()
+
+
+def write_task_annotation(
+    run_id: str,
+    instance_id: str,
+    annotation,
+    *,
+    client=None,
+) -> None:
+    """Write a TaskAnnotation to the run-specific blob path."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(task_annotation_blob(run_id, instance_id))
+    blob.upload_from_string(
+        annotation.model_dump_json(indent=2).encode(),
+        content_type="application/json",
+    )
+
+
+def write_stable_task_annotation(
+    benchmark: str,
+    db: str,
+    instance_id: str,
+    annotation,
+    *,
+    client=None,
+) -> None:
+    """Write a TaskAnnotation to the stable (cross-run) blob path."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(
+        stable_task_annotation_blob(benchmark, db, instance_id)
+    )
+    blob.upload_from_string(
+        annotation.model_dump_json(indent=2).encode(),
+        content_type="application/json",
+    )
+
+
+def write_audited_gold_variants(
+    run_id: str,
+    instance_id: str,
+    variants: list[dict],
+    *,
+    client=None,
+) -> None:
+    """Write audited gold variants as JSONL to the run-specific blob path."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(
+        audited_gold_variants_blob(run_id, instance_id)
+    )
+    content = "\n".join(json.dumps(v) for v in variants)
+    if content:
+        content += "\n"
+    blob.upload_from_string(content.encode(), content_type="application/jsonl")
+
+
+def write_stable_audited_gold_variants(
+    benchmark: str,
+    db: str,
+    instance_id: str,
+    variants: list[dict],
+    *,
+    client=None,
+) -> None:
+    """Write audited gold variants as JSONL to the stable (cross-run) blob path."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(
+        stable_audited_gold_variants_blob(benchmark, db, instance_id)
+    )
+    content = "\n".join(json.dumps(v) for v in variants)
+    if content:
+        content += "\n"
+    blob.upload_from_string(content.encode(), content_type="application/jsonl")

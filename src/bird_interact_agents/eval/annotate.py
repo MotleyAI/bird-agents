@@ -54,8 +54,23 @@ from bird_interact_agents.eval.annotation_schema import (
     UserSimResponseSummary,
 )
 from bird_interact_agents.eval.grade_in_place import _auto_failure_class
+from bird_interact_agents.eval.regrade import _latest_attempt_file
 
 PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
+
+
+def _resolve_db_sqlite_path(benchmark_data_root: Path, db: str) -> Path:
+    """Return the SQLite DB path for ``db``, falling back to ``_template.sqlite``.
+
+    LiveSQLBench uses ``{db}_template.sqlite``; mini-interact uses ``{db}.sqlite``.
+    Mirrors the fallback logic in regrade.py."""
+    db_dir = benchmark_data_root / db
+    primary = db_dir / f"{db}.sqlite"
+    if not primary.exists():
+        alt = db_dir / f"{db}_template.sqlite"
+        if alt.exists():
+            return alt
+    return primary
 
 
 # ---------------------------------------------------------------------------
@@ -74,11 +89,12 @@ def _masked_terms_from(task_row: dict) -> list[MaskedTerm]:
     amb = (task_row.get("user_query_ambiguity") or {}).get("critical_ambiguity", [])
     out: list[MaskedTerm] = []
     for entry in amb or []:
+        me = entry.get("metadata_evidence") or []
         out.append(MaskedTerm(
             term=entry.get("term", ""),
             type=entry.get("type", "intent_ambiguity"),
             is_mask=bool(entry.get("is_mask", True)),
-            metadata_evidence=list(entry.get("metadata_evidence", []) or []),
+            metadata_evidence=me if isinstance(me, list) else [me],
         ))
     return out
 
@@ -236,7 +252,8 @@ def generate_submission_annotation(
     ``grader`` is a callable that returns a CascadeVerdict given the
     submitted SQL + task row context. Tests pass a stub; production
     callers pass ``tolerant_grader.grade_submission``."""
-    attempt_path = Path(rows_dir) / instance_id / "attempt-1.json"
+    sub_dir = Path(rows_dir) / instance_id
+    attempt_path = _latest_attempt_file(sub_dir) or (sub_dir / "attempt-1.json")
     attempt = json.loads(attempt_path.read_text())
     submitted_sql = attempt.get("submitted_sql", "")
     # Don't wrap with ``list(...)`` — dict trajectories from
@@ -400,21 +417,95 @@ def main(argv: Optional[List[str]] = None) -> int:
         default="init",
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--run-id", default=None,
+        help="Cloud run ID. When provided, also generate per-submission "
+             "annotation skeletons from the run's attempt files.",
+    )
+    parser.add_argument(
+        "--submission-mode", choices=("overwrite", "init"),
+        default="overwrite",
+        help="Overwrite-semantics for submission skeletons (default: overwrite).",
+    )
     args = parser.parse_args(argv)
 
+    benchmark = get_benchmark(args.benchmark).name
     instance_ids = (
         [s.strip() for s in args.instance_ids.split(",")]
         if args.instance_ids else None
     )
-    rows = _load_task_rows(
-        benchmark=args.benchmark, instance_ids=instance_ids,
-    )
+    rows = _load_task_rows(benchmark=benchmark, instance_ids=instance_ids)
     for row in rows:
         write_task_skeleton(
-            task_row=row, benchmark=args.benchmark,
+            task_row=row, benchmark=benchmark,
             mode=args.task_mode, dry_run=args.dry_run,
         )
     print(f"task skeletons: {len(rows)} processed in mode={args.task_mode}")
+
+    if args.run_id:
+        from bird_interact_agents.eval.grade_in_place import (
+            load_audited_gold_rows_for,
+            load_task_annotation_or_implicit,
+        )
+        from bird_interact_agents.eval.tolerant_grader import grade_submission
+
+        run_dir = paths.results_root() / "cloud" / args.run_id
+        rows_dir = run_dir / "rows"
+        if not rows_dir.exists():
+            print(f"rows_dir not found: {rows_dir}")
+            return 1
+        n_sub = 0
+        n_skipped = 0
+        for row in rows:
+            iid = row["instance_id"]
+            if not (rows_dir / iid).is_dir():
+                n_skipped += 1
+                continue
+            db = row["selected_database"]
+            db_path = _resolve_db_sqlite_path(
+                paths.benchmark_data_root(benchmark), db
+            )
+            ann = load_task_annotation_or_implicit(
+                instance_id=iid, selected_database=db,
+                benchmark=benchmark, amb_user_query=row.get("amb_user_query", ""),
+            )
+            audited = load_audited_gold_rows_for(benchmark=benchmark, instance_id=iid)
+
+            def _grader(  # noqa: E731
+                *,
+                instance_id: str,
+                submitted_sql: str,
+                task_row: dict,
+                _ann=ann,
+                _audited=audited,
+                _row=row,
+                _db_path=db_path,
+                **_kw,
+            ):
+                return grade_submission(
+                    task_annotation=_ann,
+                    audited_gold_rows=_audited,
+                    original_sol_sql=_row.get("sol_sql"),
+                    submitted_sql=submitted_sql,
+                    db_path=_db_path,
+                    conn=None,
+                )
+
+            dest = write_submission_skeleton(
+                rows_dir=rows_dir,
+                instance_id=iid,
+                selected_database=db,
+                benchmark=benchmark,
+                run_id=args.run_id,
+                task_row=row,
+                grader=_grader,
+                mode=args.submission_mode,
+                dry_run=args.dry_run,
+            )
+            if dest is not None:
+                n_sub += 1
+        skip_str = f", {n_skipped} skipped (no attempt dir)" if n_skipped else ""
+        print(f"submission skeletons: {n_sub} written in mode={args.submission_mode}{skip_str}")
     return 0
 
 

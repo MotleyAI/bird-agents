@@ -113,7 +113,11 @@ def data_hash(
     data-layer input and ``data_hash`` no longer depends on it. The gated
     gold sidecar rides along inside that GCS dataset upload (it lives in the
     data root), so it is not baked either. ``audited_gold/`` (author-produced
-    corrections, code-like) stays baked + hashed."""
+    corrections, code-like) stays baked + hashed.
+
+    DEV-1515: ``annotations_root`` is optional; pass ``paths.annotations_root()``
+    to include annotations content. Defaults to ``None`` (no annotations hashed)
+    so test callers that don't supply it remain hermetic."""
     h = hashlib.sha256()
 
     # audited_gold (main-checkout-anchored, gitignored). Keyed under

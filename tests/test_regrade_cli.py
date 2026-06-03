@@ -144,12 +144,15 @@ def test_regrade_respects_instance_id_filter(tmp_path, monkeypatch):
 
     from bird_interact_agents.eval.regrade import regrade_run
 
-    regrade_run(
+    report = regrade_run(
         run_id="r1", benchmark="mini-interact", run_dir=run_dir,
         instance_ids=["alien_2"],
         grader=StubGrader(), repo_root=tmp_path,
     )
-    assert len(seen) == 1
+    assert len(seen) == 1, "grader should be called exactly once (for alien_2)"
+    assert report.regraded == 1
+    assert report.regraded_instances == ["alien_2"]
+    assert report.skipped == 2  # alien_1 and alien_3 filtered out
 
 
 def test_regrade_writes_eval_regraded_not_eval_json(tmp_path, monkeypatch):
@@ -353,6 +356,15 @@ def test_regrade_grades_when_only_later_attempt_exists(tmp_path, monkeypatch):
     )
     assert report.regraded == 1
     assert captured[0]["submitted_sql"] == "ONLY_ATTEMPT_2"
+
+
+def test_latest_attempt_file_returns_none_for_missing_dir(tmp_path):
+    """_latest_attempt_file returns None for a non-existent directory.
+    Regression: previously called iterdir() directly, raising FileNotFoundError."""
+    from bird_interact_agents.eval.regrade import _latest_attempt_file
+
+    missing = tmp_path / "no_such_instance"
+    assert _latest_attempt_file(missing) is None
 
 
 def test_build_original_sql_index_does_not_char_split_string(

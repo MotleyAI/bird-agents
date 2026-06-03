@@ -237,7 +237,7 @@ def _required_api_keys(model: str) -> tuple[str, ...]:
 
 
 def _is_claude_sdk_framework(framework: str) -> bool:
-    return framework.startswith("claude_sdk")
+    return framework.startswith("claude_sdk") or framework == "annotator"
 
 
 def check_api_keys(

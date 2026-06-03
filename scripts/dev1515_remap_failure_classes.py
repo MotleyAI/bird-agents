@@ -117,7 +117,7 @@ def _remap_raw(raw: dict) -> tuple[bool, str]:
 
 
 def main() -> None:
-    annroot = paths.annotations_root() / "mini-interact"
+    annroot = paths.annotations_root() / "mini_interact"
     n_seen = n_changed = 0
     print(f"Walking {annroot}")
     for p in sorted(annroot.glob("*/*.submission.*.json")):

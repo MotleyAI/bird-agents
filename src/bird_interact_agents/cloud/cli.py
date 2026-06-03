@@ -97,6 +97,35 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--slayer-storage-root", default="/data/slayer_models",
     )
 
+    sp_annotate = sub.add_parser("annotate")
+    sp_annotate.add_argument("--benchmark", required=True,
+                              help="Benchmark to annotate (registry token).")
+    sp_annotate.add_argument("--agent-model", required=True,
+                              help="Model for the annotator agent.")
+    sp_annotate.add_argument(
+        "--effort", default="medium", choices=("low", "medium", "high"),
+        help="Reasoning effort for the annotator agent.",
+    )
+    grp_ann = sp_annotate.add_mutually_exclusive_group(required=True)
+    grp_ann.add_argument("--instance-ids", type=_instance_ids)
+    grp_ann.add_argument("--instance-ids-file", type=str)
+    sp_annotate.add_argument("--override", action="store_true",
+                              help="Re-annotate even when stable blobs already exist.")
+    sp_annotate.add_argument(
+        "--gold-file", default=None,
+        help=(
+            "Path to the gated gold sidecar JSONL (must be under the benchmark "
+            "data root so it rides along in the GCS dataset upload)."
+        ),
+    )
+    sp_annotate.add_argument("--workers", type=int, default=4)
+    sp_annotate.add_argument("--actors-per-worker", type=int, default=4)
+    sp_annotate.add_argument("--worker-type", default="e2-standard-4")
+    sp_annotate.add_argument("--max-runtime-hours", type=int, default=8)
+    sp_annotate.add_argument("--run-id", default=None)
+    sp_annotate.add_argument("--detach", action="store_true")
+    sp_annotate.add_argument("--allow-dirty", action="store_true")
+
     for name in ("fetch", "kill", "resubmit"):
         spx = sub.add_parser(name)
         spx.add_argument("run_id")
@@ -106,6 +135,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_build.add_argument("--force", action="store_true")
 
     ns = p.parse_args(argv)
+
+    if ns.subcommand == "annotate":
+        if ns.detach and ns.allow_dirty:
+            p.error("--detach and --allow-dirty are mutually exclusive")
+        ns.benchmark = get_benchmark(ns.benchmark).name
+        if ns.instance_ids_file and not ns.instance_ids:
+            with open(ns.instance_ids_file) as f:
+                ns.instance_ids = [
+                    s.strip() for s in f.read().split() if s.strip()
+                ]
+        if not ns.instance_ids:
+            p.error(
+                "--instance-ids resolved to an empty list "
+                "(no ids parsed from `--instance-ids` or `--instance-ids-file`)"
+            )
 
     if ns.subcommand == "submit":
         if ns.detach and ns.allow_dirty:
@@ -194,6 +238,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     ns = parse_args(argv)
+    if ns.subcommand == "annotate":
+        run_id = driver.submit_annotator(ns)
+        print(f"submitted: {run_id}")
+        return 0
     if ns.subcommand == "submit":
         run_id = driver.submit(ns)
         print(f"submitted: {run_id}")
@@ -225,6 +273,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             if ignored_shards:
                 print(f"ignored {len(ignored_shards)} incomplete shard(s): "
                       f"{', '.join(ignored_shards)}")
+        for report_key, label in [
+            ("task_annotation_merge_report", "task annotation merge"),
+            ("audited_gold_variants_merge_report", "audited gold merge"),
+        ]:
+            report = metrics.get(report_key) or {}
+            n_errors = report.get("errors", 0)
+            if n_errors:
+                print(f"WARNING: {label}: {n_errors} error(s)")
+                for detail in report.get("error_details", []):
+                    print(f"  {detail}")
         return 0
     if ns.subcommand == "kill":
         driver.kill(ns.run_id)

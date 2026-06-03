@@ -43,11 +43,7 @@ def _per_row_cascade_bools(annotation_dir: Path) -> dict[str, bool]:
             ev.phase1_against_any_audited_variant == "pass"
         ),
         "n4_tie_order": ev.correct_up_to_tie_order,
-        "n5_llm_judge": (
-            ev.phase1_against_any_audited_variant == "pass"
-            or ev.correct_up_to_tie_order
-            or ev.novel_reading_judgment == "pass"
-        ),
+        "n5_llm_judge": ev.novel_reading_judgment == "pass",
         "n6_numeric_epsilon": ev.correct_under_numeric_epsilon,
         "n7_trailing_whitespace": ev.correct_under_trailing_whitespace,
         "n8_column_order": ev.correct_under_column_order,

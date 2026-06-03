@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Top-level enums kept as Literal strings so the JSON encoding is stable
 # and human-greppable.
@@ -253,12 +253,28 @@ class TaskAnnotation(BaseModel):
     fallback for novel readings but is not used by the deterministic
     grader."""
 
+    # Set when authoritative sources disagree on the same parameter (KB vs
+    # sql_snippet, KB.description vs KB.definition, etc.).  When set,
+    # audit_resolution=multi_variant should be reflected in gold_variants.
     internal_inconsistency: Optional[InternalInconsistency] = None
-    """Set when the task's authoritative sources disagree on the same
-    parameter (KB vs sql_snippet, KB.description vs KB.definition,
-    etc.). ``None`` for tasks where all sources converge — the common
-    case. When set, ``audit_resolution=multi_variant`` should also be
-    reflected in ``gold_variants`` carrying one entry per reading."""
+
+    @model_validator(mode="after")
+    def _check_gold_invariants(self) -> "TaskAnnotation":
+        primary_count = sum(1 for v in self.gold_variants if v.primary)
+        if primary_count > 1:
+            raise ValueError(
+                f"gold_variants must contain at most one primary variant; got {primary_count}"
+            )
+        if self.original_gold_is_correct and self.gold_variants:
+            raise ValueError(
+                "gold_variants must be empty when original_gold_is_correct is True"
+            )
+        if self.gold_variants and not self.original_gold_is_correct and primary_count == 0:
+            raise ValueError(
+                "gold_variants must contain exactly one primary variant; got 0. "
+                "Mark one variant with primary=True."
+            )
+        return self
 
     provenance: Provenance
 
