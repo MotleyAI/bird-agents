@@ -265,3 +265,57 @@ def test_validate_framework_dataset_mode_is_removed():
     assert not hasattr(run_mod, "_validate_framework_dataset_mode"), (
         "_validate_framework_dataset_mode must be removed from run.py"
     )
+
+
+# ---------------------------------------------------------------------------
+# _validate_framework_mode — prevents c-interact / oracle runtime surprises
+# ---------------------------------------------------------------------------
+
+from bird_interact_agents.run import _validate_framework_mode  # noqa: E402
+
+
+def test_validate_framework_mode_mini_interact_c_interact_raises():
+    """claude_sdk + mini-interact + c-interact: no agent supports this combo."""
+    with pytest.raises(ValueError, match="a-interact"):
+        _validate_framework_mode(
+            framework="claude_sdk", dataset="mini-interact", mode="c-interact",
+        )
+
+
+def test_validate_framework_mode_mini_interact_oracle_passes():
+    """claude_sdk + mini-interact + oracle: oracle bypasses the agent, always passes."""
+    _validate_framework_mode(
+        framework="claude_sdk", dataset="mini-interact", mode="oracle",
+    )  # must not raise
+
+
+def test_validate_framework_mode_mini_interact_a_interact_passes():
+    """claude_sdk + mini-interact + a-interact: the happy path."""
+    _validate_framework_mode(
+        framework="claude_sdk", dataset="mini-interact", mode="a-interact",
+    )  # must not raise
+
+
+def test_validate_framework_mode_livesqlbench_oracle_passes():
+    """claude_sdk + livesqlbench + oracle: oracle bypasses the agent, always passes."""
+    _validate_framework_mode(
+        framework="claude_sdk",
+        dataset="livesqlbench-base-lite-sqlite",
+        mode="oracle",
+    )  # must not raise
+
+
+def test_validate_framework_mode_livesqlbench_one_shot_passes():
+    """claude_sdk + livesqlbench + one-shot: the happy path."""
+    _validate_framework_mode(
+        framework="claude_sdk",
+        dataset="livesqlbench-base-lite-sqlite",
+        mode="one-shot",
+    )  # must not raise
+
+
+def test_validate_framework_mode_non_claude_sdk_is_noop():
+    """Non-claude_sdk frameworks are not affected — returns immediately."""
+    _validate_framework_mode(
+        framework="pydantic_ai", dataset="mini-interact", mode="c-interact",
+    )  # must not raise (unknown framework is a no-op)

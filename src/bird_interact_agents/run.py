@@ -105,6 +105,33 @@ def _validate_dataset_mode(dataset: str, mode: str) -> None:
         )
 
 
+def _validate_framework_mode(
+    *, framework: str, dataset: str, mode: str,
+) -> None:
+    """Validate that ``mode`` is supported by the active framework's dispatch.
+
+    ``_validate_dataset_mode`` checks the benchmark's declared ``supported_modes``,
+    but ``claude_sdk`` agents only implement a subset:
+    - one-shot benchmarks → ``one-shot`` only (ClaudeSDKOtf*)
+    - multi-turn benchmarks → ``a-interact`` only (ClaudeSDKOtfAInteract*)
+
+    Without this check, ``c-interact`` or ``oracle`` with a non-one-shot
+    benchmark (or ``oracle`` with a one-shot benchmark) would pass the
+    dataset-mode gate but fail deep inside the agent at task runtime.
+    """
+    if framework != "claude_sdk":
+        return
+    if mode == "oracle":
+        return  # oracle bypasses the agent entirely (run_oracle_task)
+    b = get_benchmark(dataset)
+    supported = ("one-shot",) if b.one_shot else ("a-interact",)
+    if mode not in supported:
+        raise ValueError(
+            f"--framework claude_sdk with {b.name!r} only supports "
+            f"--mode {' / '.join(supported)}; got {mode!r}. "
+            f"The modes {set(b.supported_modes) - set(supported)} listed in "
+            f"the benchmark spec are not yet wired to a claude_sdk agent variant."
+        )
 
 
 def _maybe_force_wipe_otf(
@@ -742,6 +769,7 @@ async def run_evaluation(
 ) -> dict:
     """Run full evaluation across all tasks."""
     _validate_dataset_mode(dataset=dataset, mode=mode)
+    _validate_framework_mode(framework=framework, dataset=dataset, mode=mode)
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
@@ -1399,6 +1427,9 @@ def main() -> None:
         # + wrong-framework surfaces a "--mode one-shot requires …" error,
         # not the more generic on-the-fly-framework error.
         _validate_dataset_mode(dataset=args.dataset, mode=args.mode)
+        _validate_framework_mode(
+            framework=args.framework, dataset=args.dataset, mode=args.mode,
+        )
         _validate_slayer_setup(
             slayer_setup=args.slayer_setup,
             framework=args.framework,
