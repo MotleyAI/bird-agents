@@ -7,7 +7,7 @@ Worker contract:
 * Skip if both stable blobs exist (unless --override).
 * Run one task → write 4 GCS paths on success (run-specific + stable for
   task_annotation and audited_gold_variants).
-* Write attempt-1.json for every outcome (annotated / skipped / error) so
+* Write attempt-N.json for every outcome (annotated / skipped / error) so
   list_attempts() / wait_until_done() work unchanged.
 """
 from __future__ import annotations
@@ -80,6 +80,7 @@ def _run_one_task(
     run_id: str,
     data_path_base: str,
     gcs_client=None,
+    attempt: int = 1,
 ) -> None:
     """Execute one annotator task and write all outputs to GCS."""
     client = gcs_client or default_gcs_client()
@@ -127,7 +128,7 @@ def _run_one_task(
                 "status": "skipped",
                 "duration_s": time.monotonic() - t0,
             }
-            _write_attempt(run_id, instance_id, attempt_row, client=client)
+            _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
             return
 
     # Run the agent.
@@ -188,9 +189,10 @@ def _write_attempt(
     instance_id: str,
     row: dict,
     *,
+    attempt: int = 1,
     client=None,
 ) -> None:
-    blob_name = f"runs/{run_id}/rows/{instance_id}/attempt-1.json"
+    blob_name = f"runs/{run_id}/rows/{instance_id}/attempt-{attempt}.json"
     client = client or default_gcs_client()
     blob = client.bucket(_gcs.BUCKET_NAME).blob(blob_name)
     blob.upload_from_string(
@@ -222,6 +224,14 @@ def _load_annotator_task_data(
             if candidate.exists():
                 gold_file = str(candidate)
 
+    if bench.gold_required and gold_file is None:
+        raise RuntimeError(
+            f"Benchmark {benchmark!r} requires a gold sidecar file but none was found. "
+            f"Set the {bench.gold_root_env!r} environment variable to the path of the "
+            f"gold JSONL file, or ensure the file exists at "
+            f"{paths.benchmark_data_root(benchmark) / 'livesqlbench_sqlite_gt_kg_testcases_0528.jsonl'}."
+        )
+
     rows = load_benchmark_tasks(
         benchmark,
         str(paths.benchmark_data_file(benchmark)),
@@ -243,10 +253,12 @@ def _build_annotator_actor_class():
 
     @ray.remote
     class AnnotatorActor:
-        def __init__(self, cfg: dict[str, Any], run_id: str, data_path_base: str):
+        def __init__(self, cfg: dict[str, Any], run_id: str, data_path_base: str,
+                     attempt: int = 1):
             self.cfg = cfg
             self.run_id = run_id
             self.data_path_base = data_path_base
+            self.attempt = attempt
             self.gcs_client = default_gcs_client()
             download_benchmark_data(cfg, client=self.gcs_client)
 
@@ -257,6 +269,7 @@ def _build_annotator_actor_class():
                 run_id=self.run_id,
                 data_path_base=self.data_path_base,
                 gcs_client=self.gcs_client,
+                attempt=self.attempt,
             )
 
     return AnnotatorActor
@@ -279,11 +292,12 @@ def run_annotator_pool(
     actor_env_vars: dict[str, str] | None = None,
     heartbeat_interval_s: float = 30.0,
     local_only: bool = False,
+    attempt: int = 1,
 ) -> None:
     """Dispatch annotator tasks via a Ray actor pool (or sequentially)."""
     client = gcs_client or default_gcs_client()
     heartbeat = HeartbeatWriter(
-        run_id=run_id, total=len(instance_ids), attempt=1,
+        run_id=run_id, total=len(instance_ids), attempt=attempt,
         ray_job_id=ray_job_id, client=client,
         interval_s=heartbeat_interval_s,
     )
@@ -308,12 +322,13 @@ def run_annotator_pool(
                     run_id=run_id,
                     data_path_base=data_path_base,
                     gcs_client=client,
+                    attempt=attempt,
                 )
                 heartbeat.tick_done()
         else:
             ActorCls = _with_actor_env(_build_annotator_actor_class(), actor_env_vars)
             actors = [
-                ActorCls.remote(cfg, run_id, data_path_base)
+                ActorCls.remote(cfg, run_id, data_path_base, attempt)
                 for _ in range(num_actors)
             ]
             _run_with_actors(
@@ -321,10 +336,10 @@ def run_annotator_pool(
                 instance_ids=instance_ids,
                 task_data_by_id=task_data_by_id,
                 run_id=run_id,
-                attempt=1,
+                attempt=attempt,
                 gcs_client=client,
                 heartbeat=heartbeat,
-                actor_factory=lambda: ActorCls.remote(cfg, run_id, data_path_base),
+                actor_factory=lambda: ActorCls.remote(cfg, run_id, data_path_base, attempt),
                 benchmark=cfg["benchmark"],
             )
         heartbeat.stop_and_flush(terminal_state="done")
@@ -354,6 +369,8 @@ def main(argv: list[str] | None = None) -> int:
         "--secrets-file", default=None,
         help="path to a JSON file of env vars (API keys) applied per-actor",
     )
+    p.add_argument("--attempt", type=int, default=1,
+                   help="attempt number (1-based); used in the GCS blob name")
     args = p.parse_args(argv)
 
     args.benchmark = get_benchmark(args.benchmark).name
@@ -392,6 +409,7 @@ def main(argv: list[str] | None = None) -> int:
         num_actors=args.num_actors,
         ray_job_id=args.ray_job_id,
         actor_env_vars=actor_env_vars,
+        attempt=args.attempt,
     )
     return 0
 

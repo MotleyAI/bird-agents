@@ -4,8 +4,8 @@ Contract:
 * Skip check requires BOTH stable task annotation AND stable audited-gold
   variants blobs; if only one is present the task must run.
 * --override bypasses the skip check.
-* Every outcome (skip / success / error) writes attempt-1.json so the
-  existing list_attempts() / wait_until_done() completion tracking works.
+* Every outcome (skip / success / error) writes attempt-N.json (default N=1)
+  so list_attempts() / wait_until_done() completion tracking works.
 * On success: run-specific task_annotation.json, audited_gold_variants.jsonl,
   AND both stable blobs are written.
 * On error: no annotation or stable blobs are written.
