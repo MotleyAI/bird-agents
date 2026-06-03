@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
 from typing import Any, Awaitable, Callable
 
@@ -23,6 +24,28 @@ logger = logging.getLogger(__name__)
 
 # Indirection seams so tests can monkey-patch without touching litellm.
 _acompletion = litellm.acompletion
+
+# DEV-1517: dedicated env var for the user-sim Anthropic API key on OAuth runs.
+# ANTHROPIC_API_KEY is absent from the worker env on OAuth runs (the SDK would
+# silently prefer it over the OAuth token), so the driver ships the key under
+# this non-standard name which LiteLLM does not auto-discover.
+_LITELLM_ANTHROPIC_KEY_ENV = "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"
+
+
+def _maybe_inject_anthropic_key(model: str, kwargs: dict) -> None:
+    """Inject the dedicated Anthropic API key into LiteLLM kwargs when present.
+
+    On OAuth runs, ANTHROPIC_API_KEY is absent from the worker env. LiteLLM
+    reads the key via this explicit kwarg instead of auto-discovering the
+    standard env var.  Does NOT mutate os.environ.
+    """
+    if not model.startswith("anthropic/"):
+        return
+    if "api_key" in kwargs:
+        return
+    dedicated = os.environ.get(_LITELLM_ANTHROPIC_KEY_ENV)
+    if dedicated:
+        kwargs["api_key"] = dedicated
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +327,7 @@ async def acompletion_tracked(
     Wrapped with `_retry_litellm` so transient rate-limit and connection
     errors don't surface as hard failures during concurrent benchmark runs.
     """
+    _maybe_inject_anthropic_key(model, kwargs)
     response = await _retry_litellm(
         lambda: _acompletion(model=model, **kwargs),
     )
