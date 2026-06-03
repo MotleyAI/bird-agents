@@ -164,6 +164,73 @@ a 53-task batch serialises through one actor and takes ~5 hours; at 1×4
 it finishes in ~80 minutes for the same per-task wallclock and identical
 cluster cost.
 
+### Waiting for a run to finish
+
+Use `driver.wait_until_done` — do **not** poll `bird-interact-cloud list`
+in a shell loop (column layout is positional and fragile):
+
+```python
+from bird_interact_agents.cloud import driver, gcs
+client = gcs.default_gcs_client()
+manifest = gcs.read_manifest("<RUN-ID>", client=client)
+result = driver.wait_until_done("<RUN-ID>", manifest, poll_interval_s=30.0)
+print(f"TERMINAL: {result.terminal_state}  {result.hint!r}")
+```
+
+Or as a one-liner:
+
+```bash
+env -u SSH_AUTH_SOCK uv run python -c "
+from bird_interact_agents.cloud import driver, gcs
+client = gcs.default_gcs_client()
+manifest = gcs.read_manifest('<RUN-ID>', client=client)
+result = driver.wait_until_done('<RUN-ID>', manifest, poll_interval_s=30.0)
+print(f'TERMINAL: {result.terminal_state}  {result.hint!r}')
+"
+```
+
+### Reading results: cascade aggregation and autopsy
+
+After `bird-interact-cloud fetch <RUN-ID>`, results land under
+`results/cloud/<RUN-ID>/`. The **cascading phase-1 block** breaks the
+pass rate across 9 tolerance tiers (N1 = strict original gold → N9 =
+case-folded):
+
+```python
+import json
+from pathlib import Path
+from bird_interact_agents.eval.cascading_report import aggregate_cascading_phase1
+
+rows_dir = Path("results/cloud/<RUN-ID>/rows")
+print(json.dumps(aggregate_cascading_phase1(rows_dir), indent=2))
+```
+
+Key fields: `counts.n1` (original gold), `counts.n2` (audited primary),
+`deltas` (incremental gains at each tier). The `eval.json` written by
+fetch already includes the full `cascading_phase1` block.
+
+**Autopsies for `agent_miss` failures** — each
+`rows/<instance_id>/submission_annotation.json` carries
+`failure_classification.primary` and `evaluation.miss_diagnostics`:
+
+```python
+import json
+from pathlib import Path
+
+rows_dir = Path("results/cloud/<RUN-ID>/rows")
+for sub in sorted(rows_dir.iterdir()):
+    ann = json.loads((sub / "submission_annotation.json").read_text())
+    fc = ann["failure_classification"]
+    if fc["primary"] == "agent_miss":
+        print(sub.name, fc["details"])
+        print(json.dumps(ann["evaluation"]["miss_diagnostics"], indent=2))
+```
+
+`miss_diagnostics` includes row counts, overlap fraction, structural
+diffs (GROUP BY / predicate count / join count), and the `miss_patterns`
+list (`disjoint_rowset`, `predicate_count_mismatch`,
+`aggregation_shape_mismatch`, `agent_undercount`, etc.).
+
 ## 3-way comparison (original ↔ raw ↔ slayer)
 
 `scripts/run_three_way.sh` runs the upstream BIRD-Interact harness, our raw-SQL flavour, and our SLayer flavour on the same `instance_id` slice and emits a side-by-side `comparison.json`.
