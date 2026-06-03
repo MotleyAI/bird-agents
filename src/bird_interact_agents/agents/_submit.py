@@ -95,8 +95,14 @@ def capture_result_snapshot(
 
     if getattr(benchmark, "db_backend", "sqlite") == "postgres":
         try:
+            # Wrap in a subquery so we cap the fetch at source rather than
+            # loading the entire result set with fetchall() before slicing.
+            _snapshot_sql = (
+                f"SELECT * FROM ({sql.strip().rstrip(';')}) AS _snap"
+                f" LIMIT {_SNAPSHOT_MAX_ROWS + 1}"
+            )
             with make_db_connection(db_name, benchmark=benchmark, read_only=True) as conn:
-                rows, col_names = conn.execute(sql)
+                rows, col_names = conn.execute(_snapshot_sql)
             truncated = len(rows) > _SNAPSHOT_MAX_ROWS
             if truncated:
                 rows = rows[:_SNAPSHOT_MAX_ROWS]

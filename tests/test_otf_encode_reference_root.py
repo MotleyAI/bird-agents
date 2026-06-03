@@ -129,7 +129,7 @@ async def test_ensure_db_reference_threads_db_root_into_build_path(
         kb_rows=[],
     )
 
-    async def fake_ensure_db_cache(db, *, cache_root, mini_interact_root, force=False):
+    async def fake_ensure_db_cache(db, *, cache_root, mini_interact_root, force=False, benchmark=None):
         return fake_entry
 
     monkeypatch.setattr(reference_build, "ensure_db_cache", fake_ensure_db_cache)

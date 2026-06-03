@@ -31,7 +31,7 @@ from bird_interact_agents import paths
 # instance_id with a later run_id.
 ROOTS = {
     "mini_interact": (
-        paths.annotations_root() / "mini-interact",
+        paths.annotations_root() / "mini_interact",
     ),
     "livesqlbench": (
         paths.annotations_root() / "livesqlbench",

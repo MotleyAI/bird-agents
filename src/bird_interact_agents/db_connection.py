@@ -120,7 +120,11 @@ class PostgresDbConnection:
 
         cur = self._conn.cursor()
         if self._read_only:
-            cur.execute("BEGIN")
+            # READ ONLY is enforced server-side: DML against permanent tables
+            # is rejected before it can run, preventing a multi-statement SQL
+            # with an embedded COMMIT from silently persisting writes before
+            # the ROLLBACK fires.  Temp-table writes are still permitted.
+            cur.execute("BEGIN READ ONLY")
         try:
             cur.execute(sql)
             # Non-SELECT statements (CREATE TEMP TABLE, SET, INSERT without

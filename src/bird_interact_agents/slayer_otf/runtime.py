@@ -31,6 +31,7 @@ from slayer.memories.models import MEMORY_CANONICAL_PREFIX
 from slayer.storage.yaml_storage import YAMLStorage
 
 from bird_interact_agents import paths as _paths
+from bird_interact_agents.benchmark import get_benchmark as _get_benchmark
 from bird_interact_agents.hard8_preprocessor import extract_deleted_kb_ids
 from bird_interact_agents.slayer_otf.cache import CacheEntry, ensure_db_cache
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
@@ -97,6 +98,7 @@ async def resolve_otf_task_storage_dir(
         db_name,
         cache_root=_paths.slayer_otf_cache_root(benchmark=benchmark),
         mini_interact_root=mini_interact_root,
+        benchmark=_get_benchmark(benchmark) if benchmark else None,
     )
     scratch = await prepare_task_storage(
         db=db_name,

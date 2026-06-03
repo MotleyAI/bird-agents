@@ -24,6 +24,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
+from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
 from bird_interact_agents.cloud import upload_back as _upload_back
@@ -85,8 +86,6 @@ def _cloud_benchmark(cfg: dict[str, Any]) -> str:
     falls back to ``"mini_interact"``; otherwise the token is resolved through
     the registry so a third benchmark never silently aliases to mini-interact.
     """
-    from bird_interact_agents.benchmark import get_benchmark
-
     dataset = cfg.get("dataset")
     if not dataset:
         return "mini_interact"
@@ -614,15 +613,20 @@ def _run_one_in_actor(
             )
         if _grader_data_dir is None:
             raise RuntimeError("data_dir unbound; grader skipped")
+        _grader_benchmark = _cloud_benchmark(cfg)
+        _grader_bench_obj = get_benchmark(_grader_benchmark)
+        grader_db_path = (
+            Path(str(_row_selected_db))
+            if getattr(_grader_bench_obj, "db_backend", "sqlite") == "postgres"
+            else Path(_grader_data_dir) / str(_row_selected_db) / f"{_row_selected_db}.sqlite"
+        )
         ann_path = _grade_one_submission(
             task_data=task_data,
             submitted_sql=str(_row_submitted_sql),
             rows_dir=annotation_dir,
             run_id=run_id,
-            benchmark=_cloud_benchmark(cfg),
-            db_path=Path(_grader_data_dir)
-                / str(_row_selected_db)
-                / f"{_row_selected_db}.sqlite",
+            benchmark=_grader_benchmark,
+            db_path=grader_db_path,
             cost_usd_agent=row.get("usage", {}).get("cost_usd_agent")
                 if isinstance(row.get("usage"), dict) else None,
             cost_usd_user_sim=row.get("usage", {}).get("cost_usd_user_sim")

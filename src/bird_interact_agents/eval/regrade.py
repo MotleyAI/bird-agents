@@ -324,6 +324,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # ``never_asked_user`` diagnostic fires on interactive benchmarks
     # where the agent never queried the user-sim.
     _bench = get_benchmark(args.benchmark)
+    args.benchmark = _bench.name  # canonicalize so annotation refs use underscore form
     _bench_is_interactive = not _bench.one_shot
     _is_postgres = getattr(_bench, "db_backend", "sqlite") == "postgres"
     _executor = make_executor(_bench) if _is_postgres else None

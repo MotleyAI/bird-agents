@@ -80,7 +80,7 @@ def fake_cache(tmp_path, monkeypatch):
     entry = CacheEntry(cache_dir=cache_dir, fingerprint="fp_abc123", kb_rows=rows)
 
     async def fake_ensure_db_cache(
-        db, *, cache_root, mini_interact_root, force=False,
+        db, *, cache_root, mini_interact_root, force=False, benchmark=None,
     ):
         return entry
 
@@ -234,7 +234,7 @@ async def test_force_is_forwarded_to_ensure_db_cache(
     inner = reference_build.ensure_db_cache
     seen: dict = {}
 
-    async def recording_cache(db, *, cache_root, mini_interact_root, force=False):
+    async def recording_cache(db, *, cache_root, mini_interact_root, force=False, benchmark=None):
         seen["force"] = force
         return await inner(
             db, cache_root=cache_root, mini_interact_root=mini_interact_root,
@@ -324,7 +324,7 @@ async def test_no_self_deadlock_when_cache_takes_same_lock(
     inner = reference_build.ensure_db_cache  # the fake installed by fake_cache
 
     async def lock_taking_cache(
-        db, *, cache_root, mini_interact_root, force=False,
+        db, *, cache_root, mini_interact_root, force=False, benchmark=None,
     ):
         async with _get_lock(db):  # the real ensure_db_cache takes this lock
             return await inner(
@@ -545,7 +545,7 @@ async def test_encoder_connection_reanchored_from_foreign_absolute_cache(
     (cache_dir / "_kb_rows.json").write_text(json.dumps(rows))
     entry = CacheEntry(cache_dir=cache_dir, fingerprint="fp_foreign", kb_rows=rows)
 
-    async def fake_ensure_db_cache(db, *, cache_root, mini_interact_root, force=False):
+    async def fake_ensure_db_cache(db, *, cache_root, mini_interact_root, force=False, benchmark=None):
         return entry
 
     monkeypatch.setattr(reference_build, "ensure_db_cache", fake_ensure_db_cache)
@@ -1139,7 +1139,7 @@ def test_ensure_db_reference_reuses_peer_commit_when_markerless_scrap_exists(tmp
         (cache_dir / "datasources").mkdir()
 
         async def fake_ensure_db_cache(db_, *, cache_root, mini_interact_root,
-                                        force=False):
+                                        force=False, benchmark=None):
             return CacheEntry(
                 cache_dir=cache_dir, fingerprint="fp-x", kb_rows=[],
             )

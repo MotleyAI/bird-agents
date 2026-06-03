@@ -275,6 +275,26 @@ def test_postgres_execute_non_select_returns_empty_rows():
     mock_cur.fetchall.assert_not_called()
 
 
+def test_postgres_read_only_uses_begin_read_only():
+    """PostgresDbConnection.execute with read_only=True must issue BEGIN READ ONLY,
+    not bare BEGIN, so embedded COMMIT in SQL cannot persist writes."""
+    from bird_interact_agents.db_connection import PostgresDbConnection
+
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_cur.description = [("n", None, None, None, None, None, None)]
+    mock_cur.fetchall.return_value = [(1,)]
+    mock_conn.cursor.return_value = mock_cur
+
+    pg = PostgresDbConnection(mock_conn, read_only=True)
+    rows, cols = pg.execute("SELECT 1 AS n")
+
+    executed_sqls = [call.args[0] for call in mock_cur.execute.call_args_list]
+    assert any("READ ONLY" in s for s in executed_sqls), (
+        f"BEGIN READ ONLY not found in executed SQL: {executed_sqls}"
+    )
+
+
 def test_grade_submission_passes_benchmark_to_multi_sql_execute():
     """grade_submission must forward benchmark so _multi_sql_execute can open a
     shared postgres connection for multi-statement gold SQL."""
