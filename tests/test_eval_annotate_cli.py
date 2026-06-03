@@ -72,6 +72,28 @@ def test_task_annotation_skeleton_fills_mechanical_fields(tmp_path):
     )
 
 
+def test_masked_terms_string_metadata_evidence_wrapped_in_list():
+    """metadata_evidence as a plain string (real task data uses e.g. 'KB 3')
+    must be wrapped in a list, not iterated char-by-char."""
+    from bird_interact_agents.eval.annotate import generate_task_annotation
+
+    row = {
+        "instance_id": "alien_1",
+        "selected_database": "alien",
+        "amb_user_query": "q",
+        "external_knowledge": [],
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {"term": "x", "metadata_evidence": "KB 3"},
+            ],
+        },
+    }
+    ann = generate_task_annotation(task_row=row, benchmark="mini-interact")
+    assert ann.masked_terms[0].metadata_evidence == ["KB 3"], (
+        f"String metadata_evidence should be wrapped as list; got {ann.masked_terms[0].metadata_evidence!r}"
+    )
+
+
 def test_task_annotation_skeleton_leaves_sentinels(tmp_path):
     from bird_interact_agents.eval.annotate import (
         PENDING_HUMAN_REVIEW,
