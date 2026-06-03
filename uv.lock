@@ -351,6 +351,9 @@ mcp-agent = [
 original = [
     { name = "mini-interact-agent" },
 ]
+postgres = [
+    { name = "psycopg2-binary" },
+]
 pydantic-ai = [
     { name = "httpx", extra = ["socks"] },
     { name = "pydantic-ai" },
@@ -384,6 +387,7 @@ requires-dist = [
     { name = "openai", marker = "extra == 'dev'" },
     { name = "psycopg2-binary", marker = "extra == 'all'", specifier = ">=2.9" },
     { name = "psycopg2-binary", marker = "extra == 'cloud'", specifier = ">=2.9" },
+    { name = "psycopg2-binary", marker = "extra == 'postgres'", specifier = ">=2.9" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-ai", marker = "extra == 'all'", specifier = ">=1.0" },
     { name = "pydantic-ai", marker = "extra == 'pydantic-ai'", specifier = ">=1.0" },
@@ -399,7 +403,7 @@ requires-dist = [
     { name = "smolagents", marker = "extra == 'smolagents'", specifier = ">=1.0" },
     { name = "sqlglot" },
 ]
-provides-extras = ["claude-sdk", "pydantic-ai", "smolagents", "agno", "mcp-agent", "slayer", "original", "cloud", "all", "dev"]
+provides-extras = ["claude-sdk", "pydantic-ai", "smolagents", "agno", "mcp-agent", "slayer", "original", "postgres", "cloud", "all", "dev"]
 
 [[package]]
 name = "boto3"

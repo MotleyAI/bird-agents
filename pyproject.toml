@@ -37,6 +37,7 @@ slayer = ["motley-slayer[embedding-search]>=0.7.0"]
 # `original` brings in the upstream BIRD-Interact mini_interact_agent harness
 # so we can call its main.py directly via `uv run python -m batch_run_bird_interact.main`.
 original = ["mini-interact-agent"]
+postgres = ["psycopg2-binary>=2.9"]
 cloud = [
     "ray[default]>=2.30",
     "google-cloud-storage>=2.18",
