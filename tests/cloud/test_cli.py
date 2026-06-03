@@ -25,7 +25,7 @@ def _lsb_argv(extra: list[str]) -> list[str]:
     # toggled deliberately.
     return [
         "submit",
-        "--framework", "pydantic_ai_otf_encode",
+        "--framework", "claude_sdk",
         "--query-mode", "slayer",
         "--agent-model", "anthropic/claude-haiku-4-5-20251001",
         "--instance-ids", "alien_1",
@@ -61,7 +61,7 @@ def test_dataset_hyphen_alias_normalized_to_canonical():
         [
             "submit",
             "--dataset", "mini-interact",
-            "--framework", "pydantic_ai", "--query-mode", "raw",
+            "--framework", "claude_sdk", "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1", "--mode", "a-interact",
             "--dataset", "mini-interact",  # hyphen alias
@@ -79,7 +79,7 @@ def test_dataset_is_required():
         cli.parse_args(
             [
                 "submit",
-                "--framework", "pydantic_ai", "--query-mode", "raw",
+                "--framework", "claude_sdk", "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
                 "--instance-ids", "db_a_1", "--mode", "a-interact",
                 "--no-require-audited-gold",
@@ -93,7 +93,7 @@ def test_mode_values_accepted(mode: str) -> None:
         [
             "submit",
             "--dataset", "mini-interact",
-            "--framework", "pydantic_ai",
+            "--framework", "claude_sdk",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
@@ -110,7 +110,7 @@ def test_unknown_mode_rejected() -> None:
             [
                 "submit",
                 "--dataset", "mini-interact",
-                "--framework", "pydantic_ai",
+                "--framework", "claude_sdk",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
                 "--instance-ids", "db_a_1",
@@ -129,7 +129,7 @@ def test_pass_through_flags_parse() -> None:
         [
             "submit",
             "--dataset", "mini-interact",
-            "--framework", "pydantic_ai_recursive",
+            "--framework", "claude_sdk",
             "--query-mode", "raw",  # slayer is guarded for cloud (see below)
             "--agent-model", "cerebras/zai-glm-4.7",
             "--instance-ids", "db_a_1,db_a_2,db_a_3",
@@ -169,7 +169,7 @@ def test_default_patience_is_500() -> None:
         [
             "submit",
             "--dataset", "mini-interact",
-            "--framework", "pydantic_ai",
+            "--framework", "claude_sdk",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
@@ -189,7 +189,7 @@ def test_default_use_audited_gold_sql_is_true() -> None:
         [
             "submit",
             "--dataset", "mini-interact",
-            "--framework", "pydantic_ai",
+            "--framework", "claude_sdk",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
@@ -206,7 +206,7 @@ def test_no_use_audited_gold_sql_opt_out() -> None:
         [
             "submit",
             "--dataset", "mini-interact",
-            "--framework", "pydantic_ai",
+            "--framework", "claude_sdk",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
@@ -226,7 +226,7 @@ def test_require_audited_gold_default_on() -> None:
             [
                 "submit",
                 "--dataset", "mini-interact",
-                "--framework", "pydantic_ai",
+                "--framework", "claude_sdk",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
                 "--instance-ids", "db_a_1",
@@ -242,7 +242,7 @@ def test_require_audited_gold_disabled_when_use_audited_gold_off() -> None:
         [
             "submit",
             "--dataset", "mini-interact",
-            "--framework", "pydantic_ai",
+            "--framework", "claude_sdk",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
@@ -365,7 +365,7 @@ def test_prompt_cache_default_on() -> None:
         [
             "submit",
             "--dataset", "mini-interact",
-            "--framework", "pydantic_ai",
+            "--framework", "claude_sdk",
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
@@ -390,7 +390,7 @@ def test_prompt_cache_default_on() -> None:
 
 def _slayer_argv(**over) -> list[str]:
     base = {
-        "framework": "pydantic_ai_recursive",
+        "framework": "claude_sdk",
         "query_mode": "slayer",
         "agent_model": "anthropic/claude-sonnet-4-5",
         "instance_ids": "db_a_1",
@@ -424,7 +424,7 @@ def test_slayer_pre_encoded_rejected() -> None:
 
 def test_slayer_on_the_fly_recursive_accepted() -> None:
     ns = cli.parse_args(_slayer_argv(
-        framework="pydantic_ai_recursive", mode="a-interact",
+        framework="claude_sdk", mode="a-interact",
         slayer_setup="on-the-fly",
     ))
     assert ns.slayer_setup == "on-the-fly"
@@ -432,10 +432,10 @@ def test_slayer_on_the_fly_recursive_accepted() -> None:
 
 def test_slayer_on_the_fly_otf_encode_accepted() -> None:
     ns = cli.parse_args(_slayer_argv(
-        framework="pydantic_ai_otf_encode", mode="a-interact",
+        framework="claude_sdk", mode="a-interact",
         slayer_setup="on-the-fly",
     ))
-    assert ns.framework == "pydantic_ai_otf_encode"
+    assert ns.framework == "claude_sdk"
     assert ns.slayer_setup == "on-the-fly"
 
 
@@ -451,7 +451,7 @@ def test_on_the_fly_accepted_any_framework() -> None:
     """on-the-fly + any supported framework + a-interact is accepted —
     framework-specific validation was removed in DEV-1525."""
     ns = cli.parse_args(_slayer_argv(
-        framework="pydantic_ai", mode="a-interact", slayer_setup="on-the-fly",
+        framework="claude_sdk", mode="a-interact", slayer_setup="on-the-fly",
     ))
     assert ns.slayer_setup == "on-the-fly"
 
@@ -461,7 +461,7 @@ def test_otf_encode_requires_on_the_fly() -> None:
     be rejected at submit."""
     with pytest.raises(SystemExit):
         cli.parse_args(_slayer_argv(
-            framework="pydantic_ai_otf_encode", mode="a-interact",
+            framework="claude_sdk", mode="a-interact",
         ))
 
 
@@ -473,7 +473,7 @@ def test_otf_encode_requires_on_the_fly() -> None:
 
 def _ainteract_argv(**over) -> list[str]:
     base = {
-        "framework": "claude_sdk_otf_ainteract",
+        "framework": "claude_sdk",
         "query_mode": "slayer",
         "agent_model": "anthropic/claude-opus-4-7",
         "instance_ids": "shop_1",
@@ -500,7 +500,7 @@ def _ainteract_argv(**over) -> list[str]:
 
 def test_cloud_ainteract_with_mini_interact_a_interact_on_the_fly_accepted():
     ns = cli.parse_args(_ainteract_argv())
-    assert ns.framework == "claude_sdk_otf_ainteract"
+    assert ns.framework == "claude_sdk"
     assert ns.dataset == "mini-interact"
     assert ns.mode == "a-interact"
     assert ns.slayer_setup == "on-the-fly"
@@ -569,7 +569,7 @@ def test_detach_and_allow_dirty_mutually_exclusive() -> None:
             [
                 "submit",
                 "--dataset", "mini-interact",
-                "--framework", "pydantic_ai",
+                "--framework", "claude_sdk",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
                 "--instance-ids", "db_a_1",
@@ -591,7 +591,7 @@ def test_empty_instance_ids_string_rejected() -> None:
             [
                 "submit",
                 "--dataset", "mini-interact",
-                "--framework", "pydantic_ai",
+                "--framework", "claude_sdk",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
                 "--instance-ids", "",
@@ -608,7 +608,7 @@ def test_empty_instance_ids_file_rejected(tmp_path) -> None:
             [
                 "submit",
                 "--dataset", "mini-interact",
-                "--framework", "pydantic_ai",
+                "--framework", "claude_sdk",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
                 "--instance-ids-file", str(empty),
@@ -721,7 +721,7 @@ def test_subcommand_registered(sub: str) -> None:
             [
                 "submit",
                 "--dataset", "mini-interact",
-                "--framework", "pydantic_ai",
+                "--framework", "claude_sdk",
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
                 "--instance-ids", "db_a_1",

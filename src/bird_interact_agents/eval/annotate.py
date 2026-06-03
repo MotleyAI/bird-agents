@@ -278,7 +278,7 @@ def generate_submission_annotation(
         instance_id=instance_id,
         selected_database=selected_database,
         task_annotation_ref=(
-            f"annotations/{benchmark.replace('-', '_')}/{selected_database}/"
+            f"annotations/{benchmark}/{selected_database}/"
             f"{instance_id}.task.json"
         ),
         annotated_by="auto-skeleton",

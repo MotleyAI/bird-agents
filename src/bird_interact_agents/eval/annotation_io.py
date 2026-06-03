@@ -37,11 +37,10 @@ ANNOTATIONS_DIRNAME = "annotations"
 
 
 def _canonical_benchmark(benchmark: str) -> str:
-    """Normalize to the registry's canonical underscore form. Both
-    ``mini-interact`` (the form the CLI / docs historically accepted)
-    and ``mini_interact`` (``benchmark.name``) resolve to the same
-    on-disk tree."""
-    return benchmark.replace("-", "_")
+    """Return the benchmark name as-is; canonical names are now hyphenated
+    (e.g. ``mini-interact``).  No normalization is applied so that
+    annotations land in the correct directory after the DEV-1525 migration."""
+    return benchmark
 
 
 def _annotations_root(repo_root: Optional[Path] = None) -> Path:

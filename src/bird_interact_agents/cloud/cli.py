@@ -22,7 +22,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sub = p.add_subparsers(dest="subcommand", required=True)
 
     sp_submit = sub.add_parser("submit")
-    sp_submit.add_argument("--framework", required=True)
+    sp_submit.add_argument("--framework", required=True, choices=["claude_sdk"])
     sp_submit.add_argument("--query-mode", required=True, choices=("raw", "slayer"))
     sp_submit.add_argument("--agent-model", required=True)
     sp_submit.add_argument(

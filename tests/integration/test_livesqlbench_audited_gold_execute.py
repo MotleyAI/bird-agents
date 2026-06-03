@@ -37,7 +37,7 @@ def museum_sqlite() -> Path:
     but `<db>.sqlite` (or `<db>_template.sqlite`) is the canonical schema-
     bearing file. We open read-only so concurrent runs are safe.
     """
-    root = paths.livesqlbench_root()
+    root = paths.benchmark_data_root("livesqlbench-base-lite-sqlite")
     candidates = [
         root / "museum" / "museum.sqlite",
         root / "museum" / "museum_template.sqlite",

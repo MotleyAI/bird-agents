@@ -100,7 +100,7 @@ def test_merge_task_annotations_writes_correct_path(tmp_path):
         annotations_root=annotations_root,
     )
 
-    dest = annotations_root / "mini_interact" / "shop" / "shop_1.task.json"
+    dest = annotations_root / "mini-interact" / "shop" / "shop_1.task.json"
     assert dest.exists()
     assert json.loads(dest.read_text())["instance_id"] == "shop_1"
     assert report.merged == 1
@@ -115,7 +115,7 @@ def test_merge_task_annotations_always_overwrites_existing(tmp_path):
     _write_task_annotation_file(downloaded / "rows", "shop_1", "shop")
 
     annotations_root = tmp_path / "annotations"
-    dest = annotations_root / "mini_interact" / "shop" / "shop_1.task.json"
+    dest = annotations_root / "mini-interact" / "shop" / "shop_1.task.json"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text('{"stale": true}')
 
@@ -143,7 +143,7 @@ def test_merge_task_annotations_normalises_dash_benchmark(tmp_path):
         annotations_root=annotations_root,
     )
 
-    dest = annotations_root / "mini_interact" / "shop" / "shop_1.task.json"
+    dest = annotations_root / "mini-interact" / "shop" / "shop_1.task.json"
     assert dest.exists()
 
 
@@ -197,7 +197,7 @@ def test_merge_task_annotations_multiple_tasks(tmp_path):
     )
 
     assert report.merged == 3
-    assert (tmp_path / "annotations" / "mini_interact" / "museum" / "museum_1.task.json").exists()
+    assert (tmp_path / "annotations" / "mini-interact" / "museum" / "museum_1.task.json").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +219,7 @@ def test_merge_audited_gold_variants_appends_to_jsonl(tmp_path):
         audited_gold_root=audited_gold_root,
     )
 
-    consolidated = audited_gold_root / "mini_interact_audited.jsonl"
+    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
     assert consolidated.exists()
     rows = [json.loads(l) for l in consolidated.read_text().splitlines() if l.strip()]
     assert len(rows) == 1
@@ -233,7 +233,7 @@ def test_merge_audited_gold_variants_deduplicates_by_instance_and_variant(tmp_pa
 
     audited_gold_root = tmp_path / "audited_gold"
     audited_gold_root.mkdir()
-    consolidated = audited_gold_root / "mini_interact_audited.jsonl"
+    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
     consolidated.write_text(json.dumps(_audited_gold_variant("shop_1", "primary")) + "\n")
 
     downloaded = tmp_path / "downloaded"
@@ -259,7 +259,7 @@ def test_merge_audited_gold_variants_different_variant_id_not_duplicate(tmp_path
 
     audited_gold_root = tmp_path / "audited_gold"
     audited_gold_root.mkdir()
-    consolidated = audited_gold_root / "mini_interact_audited.jsonl"
+    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
     consolidated.write_text(json.dumps(_audited_gold_variant("shop_1", "primary")) + "\n")
 
     downloaded = tmp_path / "downloaded"
@@ -322,7 +322,7 @@ def test_merge_audited_gold_variants_mixed_new_and_existing(tmp_path):
 
     audited_gold_root = tmp_path / "audited_gold"
     audited_gold_root.mkdir()
-    consolidated = audited_gold_root / "mini_interact_audited.jsonl"
+    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
     consolidated.write_text(json.dumps(_audited_gold_variant("shop_1")) + "\n")
 
     downloaded = tmp_path / "downloaded"

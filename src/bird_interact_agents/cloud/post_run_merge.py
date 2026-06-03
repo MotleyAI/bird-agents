@@ -598,7 +598,7 @@ _REQUIRED_VARIANT_FIELDS = {"instance_id", "selected_database", "benchmark", "au
 
 
 def _normalise_benchmark(benchmark: str) -> str:
-    return benchmark.replace("-", "_")
+    return benchmark
 
 
 def merge_task_annotations(

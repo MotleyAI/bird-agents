@@ -61,7 +61,7 @@ def _valid_submission_annotation_dict(instance_id: str = "alien_1") -> dict:
         "kind": "submission_annotation",
         "instance_id": instance_id,
         "selected_database": "alien",
-        "task_annotation_ref": f"annotations/mini_interact/alien/{instance_id}.task.json",
+        "task_annotation_ref": f"annotations/mini-interact/alien/{instance_id}.task.json",
         "annotated_by": "auto",
         "annotated_at": "2026-05-31",
         "submission": {
@@ -106,7 +106,7 @@ def test_merge_writes_annotation_to_main_checkout(tmp_path, monkeypatch):
     )
 
     dest = (
-        main_checkout / "annotations" / "mini_interact" / "alien"
+        main_checkout / "annotations" / "mini-interact" / "alien"
         / "alien_1.submission.r1.json"
     )
     assert dest.exists()
@@ -122,7 +122,7 @@ def test_merge_no_overwrite_if_present(tmp_path, monkeypatch):
     )
 
     main_checkout = tmp_path / "checkout"
-    dest_dir = main_checkout / "annotations" / "mini_interact" / "alien"
+    dest_dir = main_checkout / "annotations" / "mini-interact" / "alien"
     dest_dir.mkdir(parents=True)
     fake_ann_root = main_checkout / "annotations"
     monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
@@ -176,7 +176,7 @@ def test_merge_rejects_schema_invalid_file(tmp_path, monkeypatch):
     assert report.rejected_invalid == 1
     # Destination must NOT have been created from invalid content.
     assert not (
-        main_checkout / "annotations" / "mini_interact" / "alien"
+        main_checkout / "annotations" / "mini-interact" / "alien"
         / "alien_1.submission.r1.json"
     ).exists()
 
@@ -242,7 +242,7 @@ def test_merge_overwrites_when_new_attempt_strictly_newer(tmp_path, monkeypatch)
     )
 
     main_checkout = tmp_path / "checkout"
-    dest_dir = main_checkout / "annotations" / "mini_interact" / "alien"
+    dest_dir = main_checkout / "annotations" / "mini-interact" / "alien"
     dest_dir.mkdir(parents=True)
     fake_ann_root = main_checkout / "annotations"
     monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
@@ -286,7 +286,7 @@ def test_merge_does_not_overwrite_when_new_attempt_is_older_or_equal(tmp_path, m
     )
 
     main_checkout = tmp_path / "checkout"
-    dest_dir = main_checkout / "annotations" / "mini_interact" / "alien"
+    dest_dir = main_checkout / "annotations" / "mini-interact" / "alien"
     dest_dir.mkdir(parents=True)
     fake_ann_root = main_checkout / "annotations"
     monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
@@ -323,7 +323,7 @@ def test_merge_skips_when_attempts_equal(tmp_path, monkeypatch):
     )
 
     main_checkout = tmp_path / "checkout"
-    dest_dir = main_checkout / "annotations" / "mini_interact" / "alien"
+    dest_dir = main_checkout / "annotations" / "mini-interact" / "alien"
     dest_dir.mkdir(parents=True)
     fake_ann_root = main_checkout / "annotations"
     monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
