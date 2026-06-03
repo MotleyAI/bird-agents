@@ -361,3 +361,80 @@ def test_merge_audited_gold_variants_no_rows_dir_is_noop(tmp_path):
 
     assert report.added == 0
     assert report.errors == 0
+
+
+def test_merge_audited_gold_variants_override_replaces_existing(tmp_path):
+    """override=True: incoming rows replace existing rows with the same
+    (instance_id, variant_id) key; the consolidated file is rewritten."""
+    from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
+
+    audited_gold = tmp_path / "audited_gold"
+    audited_gold.mkdir()
+    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    old_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "clean", "audited_sol_sql": ["SELECT 1"],
+    }
+    consolidated.write_text(json.dumps(old_row) + "\n")
+
+    downloaded = tmp_path / "run"
+    sub = downloaded / "rows" / "db_a_1"
+    sub.mkdir(parents=True)
+    new_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "edited", "audited_sol_sql": ["SELECT 2"],
+    }
+    (sub / "audited_gold_variants.jsonl").write_text(json.dumps(new_row) + "\n")
+
+    report = merge_audited_gold_variants(
+        downloaded_run_dir=downloaded,
+        benchmark="mini_interact",
+        audited_gold_root=audited_gold,
+        override=True,
+    )
+
+    assert report.added == 1
+    assert report.skipped_duplicate == 1
+    lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert json.loads(lines[0])["audit_status"] == "edited"
+
+
+def test_merge_audited_gold_variants_override_false_does_not_replace(tmp_path):
+    """override=False (default): existing rows are never replaced; the new row
+    for an already-present key is skipped."""
+    from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
+
+    audited_gold = tmp_path / "audited_gold"
+    audited_gold.mkdir()
+    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    old_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "clean", "audited_sol_sql": ["SELECT 1"],
+    }
+    consolidated.write_text(json.dumps(old_row) + "\n")
+
+    downloaded = tmp_path / "run"
+    sub = downloaded / "rows" / "db_a_1"
+    sub.mkdir(parents=True)
+    new_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "edited", "audited_sol_sql": ["SELECT 2"],
+    }
+    (sub / "audited_gold_variants.jsonl").write_text(json.dumps(new_row) + "\n")
+
+    report = merge_audited_gold_variants(
+        downloaded_run_dir=downloaded,
+        benchmark="mini_interact",
+        audited_gold_root=audited_gold,
+    )
+
+    assert report.skipped_duplicate == 1
+    assert report.added == 0
+    lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert json.loads(lines[0])["audit_status"] == "clean"

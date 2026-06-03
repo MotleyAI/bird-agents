@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import signal
 import time
 from dataclasses import dataclass
@@ -1633,3 +1634,75 @@ def test_resubmit_omits_dataset_for_pre_dataset_manifest(monkeypatch):
     ja = driver._build_resubmit_args(manifest, "rid", ["db_a_1"], 2)
     assert "--dataset" not in ja
     assert "--benchmark-data-prefix" not in ja
+
+
+# ---------------------------------------------------------------------------
+# build_annotator_manifest and _build_annotator_job_args: gold_file plumbing
+# ---------------------------------------------------------------------------
+
+
+def _fake_annotate_args(gold_file: str | None = None, **overrides):
+    """Minimal args object for build_annotator_manifest / _build_annotator_job_args."""
+    ns = argparse.Namespace(
+        benchmark="mini_interact",
+        agent_model="anthropic/claude-opus-4-7",
+        effort="medium",
+        override=False,
+        workers=1,
+        actors_per_worker=2,
+        worker_type="e2-standard-4",
+        max_runtime_hours=2,
+        instance_ids=["db_a_1"],
+        gold_file=gold_file,
+    )
+    for k, v in overrides.items():
+        setattr(ns, k, v)
+    return ns
+
+
+def test_build_annotator_manifest_carries_gold_file(monkeypatch, tmp_path):
+    """build_annotator_manifest stores the IN-CLUSTER gold_file path when
+    a gold file is supplied."""
+    data_root = tmp_path / "data"
+    (data_root / "sub").mkdir(parents=True)
+    gold = data_root / "sub" / "gold.jsonl"
+    gold.write_text("{}\n")
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
+
+    args = _fake_annotate_args(gold_file=str(gold))
+    args.benchmark = "livesqlbench"
+    m = driver.build_annotator_manifest(args, image_uri="img:tag", run_id="rid")
+    assert "gold_file" in m
+    assert m["gold_file"].endswith("/sub/gold.jsonl")
+
+
+def test_build_annotator_manifest_omits_gold_file_when_absent():
+    """build_annotator_manifest must NOT include a 'gold_file' key when no
+    gold file was supplied (mini_interact never needs one)."""
+    args = _fake_annotate_args(gold_file=None)
+    m = driver.build_annotator_manifest(args, image_uri="img:tag", run_id="rid")
+    assert "gold_file" not in m
+
+
+def test_build_annotator_job_args_emits_gold_file(monkeypatch, tmp_path):
+    """_build_annotator_job_args emits --gold-file <in-cluster-path> when a
+    gold file is supplied."""
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    gold = data_root / "gold.jsonl"
+    gold.write_text("{}\n")
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
+
+    args = _fake_annotate_args(gold_file=str(gold))
+    args.benchmark = "livesqlbench"
+    ja = driver._build_annotator_job_args(args, "rid")
+    assert "--gold-file" in ja
+    assert ja[ja.index("--gold-file") + 1].endswith("/gold.jsonl")
+
+
+def test_build_annotator_job_args_omits_gold_file_when_absent():
+    """_build_annotator_job_args must NOT emit --gold-file when no gold file
+    was supplied."""
+    args = _fake_annotate_args(gold_file=None)
+    ja = driver._build_annotator_job_args(args, "rid")
+    assert "--gold-file" not in ja

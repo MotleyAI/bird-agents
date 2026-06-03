@@ -675,7 +675,7 @@ def build_annotator_manifest(
     args, *, image_uri: str, run_id: str, benchmark_data_prefix: str | None = None,
 ) -> dict:
     """Build the manifest dict for an annotator run."""
-    return {
+    manifest: dict = {
         "run_id": run_id,
         "framework": "annotator",
         "mode": "annotate",
@@ -698,6 +698,10 @@ def build_annotator_manifest(
             "region": config.REGION,
         },
     }
+    gold_file = _in_cluster_gold_file(args)
+    if gold_file:
+        manifest["gold_file"] = gold_file
+    return manifest
 
 
 def _build_annotator_job_args(
@@ -714,6 +718,9 @@ def _build_annotator_job_args(
     ]
     if benchmark_data_prefix:
         job_args += ["--benchmark-data-prefix", benchmark_data_prefix]
+    gold_file = _in_cluster_gold_file(args)
+    if gold_file:
+        job_args += ["--gold-file", gold_file]
     if getattr(args, "override", False):
         job_args.append("--override")
     return job_args
@@ -903,6 +910,7 @@ def fetch(run_id: str) -> dict:
             downloaded_run_dir=dest,
             benchmark=_benchmark_for_dataset(manifest.get("dataset")),
             audited_gold_root=paths.audited_gold_root(),
+            override=manifest.get("override", False),
         )
         metrics["audited_gold_variants_merge_report"] = variants_report.model_dump()
 
