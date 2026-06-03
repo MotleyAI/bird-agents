@@ -196,10 +196,10 @@ uv run bird-interact \
   --dataset mini-interact \
   --framework claude_sdk \
   --query-mode slayer \
+  --slayer-setup on-the-fly \
   --mode a-interact \
   --agent-model "$AGENT_MODEL" \
   --user-sim-model "$USER_SIM_MODEL" \
-  --slayer-storage-root "$MAIN_CHECKOUT/slayer_models" \
   --data "$BIRD_DATA_PATH" \
   --db-path "$BIRD_DB_PATH" \
   --filter-ids "$OUT/instance_ids.txt" \

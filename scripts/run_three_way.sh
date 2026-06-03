@@ -219,11 +219,16 @@ run_ours() {
   else
     strict_flag="--no-strict"
   fi
+  local slayer_setup_flag=""
+  if [ "$query_mode" = "slayer" ]; then
+    slayer_setup_flag="--slayer-setup on-the-fly"
+  fi
   uv run python -m bird_interact_agents.run \
     --dataset mini-interact \
     --framework "$FRAMEWORK" \
     --mode "$MODE" \
     --query-mode "$query_mode" \
+    $slayer_setup_flag \
     --data "$DATA_PATH" \
     --db-path "$DB_PATH" \
     --output "$out_dir/eval.json" \

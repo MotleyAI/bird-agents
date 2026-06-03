@@ -34,14 +34,34 @@ def _mv(src: Path, dst: Path, *, dry: bool) -> None:
         shutil.move(str(src), str(dst))
 
 
+_BENCHMARK_NAMES: frozenset[str] = frozenset({
+    "mini-interact",
+    "livesqlbench-base-lite-sqlite",
+    "livesqlbench-base-lite",
+    "bird-interact-lite-exp",
+})
+
+
 def _mv_into_subdir(src: Path, dst: Path, *, dry: bool) -> None:
-    """Move src where dst is a child of src — uses a sibling temp dir to avoid self-move."""
+    """Move src where dst is a child of src — uses a sibling temp dir to avoid self-move.
+
+    Aborts if src already contains benchmark-named subdirs (meaning new-layout
+    data was written there by the updated code before this migration ran).
+    """
     if not src.exists():
         print(f"  skip (absent): {src}")
         return
     if dst.exists():
         print(f"  skip (dest exists): {dst}")
         return
+    collision = [c.name for c in src.iterdir() if c.is_dir() and c.name in _BENCHMARK_NAMES]
+    if collision:
+        print(
+            f"\n  ERROR: {src} already contains benchmark subdirs {collision}.\n"
+            f"  New-code runs wrote to the nested layout before this migration ran.\n"
+            f"  Move those dirs out of {src.name}/ first, then re-run.\n"
+        )
+        sys.exit(1)
     tmp = src.parent / f"{src.name}_migrating_tmp"
     print(f"  mv {src} → {dst} (via temp {tmp.name})")
     if not dry:
