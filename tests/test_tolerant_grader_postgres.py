@@ -153,15 +153,22 @@ def test_multi_sql_execute_postgres_uses_shared_connection():
 
     ex = counting_executor  # Use a plain counting executor
 
-    rows, cols = _multi_sql_execute(
-        ["CREATE TEMP TABLE tmp AS SELECT 1 AS n", "SELECT n FROM tmp"],
-        db_path=Path("alien"),
-        conn=None,
-        executor=ex,
-        benchmark=b,
-    )
-    # All calls should use the same connection id (shared connection)
-    assert len(connections_used) <= 1, (
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_cur.fetchall.return_value = [(1,)]
+    mock_cur.description = [("n", None, None, None, None, None, None)]
+    mock_conn.cursor.return_value = mock_cur
+
+    with patch("bird_interact_agents.db_connection._open_psycopg2_connection", return_value=mock_conn):
+        rows, _cols = _multi_sql_execute(
+            ["CREATE TEMP TABLE tmp AS SELECT 1 AS n", "SELECT n FROM tmp"],
+            db_path=Path("alien"),
+            conn=None,
+            executor=ex,
+            benchmark=b,
+        )
+    # All calls must use the same connection id (shared connection)
+    assert len(connections_used) == 1, (
         "postgres multi-SQL must use a single shared connection"
     )
     assert rows == [(1,)]
@@ -180,7 +187,7 @@ def test_multi_sql_execute_single_sql_works_without_shared_conn():
 
     with patch("bird_interact_agents.db_connection._open_psycopg2_connection", return_value=mock_conn):
         ex = make_executor(b)
-        rows, cols = _multi_sql_execute(
+        rows, _cols = _multi_sql_execute(
             ["SELECT 42 AS n"],
             db_path=Path("alien"),
             conn=None,

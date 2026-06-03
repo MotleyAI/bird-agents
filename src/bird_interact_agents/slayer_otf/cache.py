@@ -340,7 +340,10 @@ async def ensure_db_cache(
             (meanings_path, "column-meaning"),
             (kb_path, "kb"),
         ]
-        if not is_postgres:
+        if is_postgres:
+            schema_path = effective_root / db / f"{db}_schema.txt"
+            required_files.insert(0, (schema_path, "schema"))
+        else:
             sqlite_path = effective_root / db / f"{db}.sqlite"
             required_files.insert(0, (sqlite_path, "sqlite"))
 

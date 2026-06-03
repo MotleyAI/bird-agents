@@ -214,6 +214,7 @@ def _diagnostic_payload(
     observation: str | None,
     p1: bool,
     p2: bool,
+    benchmark: Any = None,
     json_failed: bool = False,
     translation_failed: bool = False,
     dry_run_failed: bool = False,
@@ -230,19 +231,21 @@ def _diagnostic_payload(
     db_file_path = sample_status.original_data.get("db_file_path")
 
     # Dry-run failures still capture predicted/gold snapshots — the
-    # predicted snapshot will surface the same SQLite error as a
+    # predicted snapshot will surface the same DB error as a
     # `{"error": ...}` blob, which is useful offline. JSON / translation
     # failures have no submitted_sql to snapshot.
     skip_snapshots = json_failed or translation_failed
     predicted = (
         capture_result_snapshot(
             submitted_sql, db_name, data_path_base, db_file_path=db_file_path,
+            benchmark=benchmark,
         )
         if not skip_snapshots else None
     )
     gold = (
         capture_result_snapshot(
             sol_sql, db_name, data_path_base, db_file_path=db_file_path,
+            benchmark=benchmark,
         )
         if not skip_snapshots else None
     )
@@ -499,6 +502,7 @@ def submit_raw_sql(state: Any, sql: str) -> str:
             data_path_base=state.data_path_base,
             observation=msg,
             p1=False, p2=False,
+            benchmark=_benchmark,
             dry_run_failed=True,
         )
         prior = state.result or {}
@@ -536,6 +540,7 @@ def submit_raw_sql(state: Any, sql: str) -> str:
         observation=observation,
         p1=p1,
         p2=p2,
+        benchmark=_benchmark,
         infrastructure_failed=infra_failed,
         phase1_observation_audited=audited_obs,
         phase1_observation_original=original_obs,
@@ -653,6 +658,7 @@ def submit_slayer_query(
     """
     pre_phase = getattr(state.status, "current_phase", 1)
     prior = state.result or {}
+    _benchmark = None  # populated below after the JSON/shape gates
 
     def _record(*, sql: str | None, observation: str | None,
                 reward: float, p1: bool, p2: bool, finished: bool,
@@ -667,6 +673,7 @@ def submit_slayer_query(
             data_path_base=state.data_path_base,
             observation=observation,
             p1=p1, p2=p2,
+            benchmark=_benchmark,
             json_failed=json_failed,
             translation_failed=translation_failed,
             dry_run_failed=dry_run_failed,

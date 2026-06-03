@@ -677,8 +677,10 @@ def make_executor(benchmark: Any) -> ExecutorProtocol:
         db_path: Path,
         conn: Any = None,
     ) -> ExecutorResult:
-        from bird_interact_agents.db_connection import make_db_connection
+        from bird_interact_agents.db_connection import PostgresDbConnection, make_db_connection
 
+        if conn is not None and isinstance(conn, PostgresDbConnection):
+            return conn.execute(sql)
         db_name = db_path.stem
         with make_db_connection(db_name, benchmark=benchmark, read_only=True) as pg_conn:
             return pg_conn.execute(sql)
@@ -736,16 +738,27 @@ def _multi_sql_execute(
     against the same connection.
     """
     own_conn: Optional[sqlite3.Connection] = None
-    if conn is None and executor is default_executor and len(sqls) > 1:
-        try:
-            conn = sqlite3.connect(
-                f"file:{db_path}?mode=ro", uri=True, timeout=30,
-            )
-            own_conn = conn
-        except sqlite3.Error:
-            # db_path unreachable / not a sqlite file — let the
-            # downstream executor call raise with the original error.
-            conn = None
+    own_pg_conn: Optional[Any] = None
+    if conn is None and len(sqls) > 1:
+        if executor is default_executor:
+            try:
+                conn = sqlite3.connect(
+                    f"file:{db_path}?mode=ro", uri=True, timeout=30,
+                )
+                own_conn = conn
+            except sqlite3.Error:
+                # db_path unreachable / not a sqlite file — let the
+                # downstream executor call raise with the original error.
+                conn = None
+        elif getattr(benchmark, "db_backend", "sqlite") == "postgres":
+            from bird_interact_agents.db_connection import make_db_connection
+            try:
+                own_pg_conn = make_db_connection(
+                    db_path.stem, benchmark=benchmark, read_only=True
+                )
+                conn = own_pg_conn
+            except Exception:  # noqa: BLE001
+                conn = None
     try:
         rows: Sequence[Sequence] = []
         cols: Sequence[str] = []
@@ -755,6 +768,8 @@ def _multi_sql_execute(
     finally:
         if own_conn is not None:
             own_conn.close()
+        if own_pg_conn is not None:
+            own_pg_conn.close()
 
 
 def grade_submission(

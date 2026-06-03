@@ -126,11 +126,6 @@ class PostgresDbConnection:
             rows = cur.fetchall()
             cols = [d[0] for d in (cur.description or [])]
         except psycopg2.Error:
-            if self._read_only:
-                try:
-                    cur.execute("ROLLBACK")
-                except Exception:  # noqa: BLE001
-                    pass
             raise
         finally:
             if self._read_only:

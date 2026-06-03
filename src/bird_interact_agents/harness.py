@@ -15,6 +15,8 @@ import uuid
 from pathlib import Path
 from typing import Optional, Tuple
 
+from collections import Counter
+
 from bird_interact_agents.benchmark import Benchmark, get_benchmark
 from bird_interact_agents.db_connection import make_db_connection
 
@@ -152,6 +154,8 @@ def _pg_execute_submit_action(
     """
     db_name = sample_status.original_data["selected_database"]
     sol_sqls = sample_status.original_data.get("sol_sql") or []
+    if isinstance(sol_sqls, str):
+        sol_sqls = [sol_sqls]
     benchmark = get_benchmark(sample_status.original_data["dataset"])
 
     def _run(query: str) -> tuple[list, bool]:
@@ -174,8 +178,8 @@ def _pg_execute_submit_action(
         gold_rows, gold_err = _run(gold_sql)
         if gold_err:
             continue
-        # Unordered set comparison (mirrors tolerant_grader default)
-        if set(map(tuple, pred_rows)) == set(map(tuple, gold_rows)):
+        # Counter comparison preserves duplicate rows (mirrors tolerant_grader)
+        if Counter(map(tuple, pred_rows)) == Counter(map(tuple, gold_rows)):
             p1 = True
             break
 

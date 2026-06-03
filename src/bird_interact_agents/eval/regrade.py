@@ -309,6 +309,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         CachedLLMJudge,
         LiteLLMJudge,
         grade_submission,
+        make_executor,
     )
     run_dir = paths.results_root() / "cloud" / args.run_id
 
@@ -322,7 +323,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     # ``user_sim_n_asks`` plumbing on each grader call so the
     # ``never_asked_user`` diagnostic fires on interactive benchmarks
     # where the agent never queried the user-sim.
-    _bench_is_interactive = not get_benchmark(args.benchmark).one_shot
+    _bench = get_benchmark(args.benchmark)
+    _bench_is_interactive = not _bench.one_shot
+    _is_postgres = getattr(_bench, "db_backend", "sqlite") == "postgres"
+    _executor = make_executor(_bench) if _is_postgres else None
 
     # Codex r13: build the LLM judge ONCE from the run's recorded
     # ``agent_model`` (read from ``<run_dir>/manifest.json``). The N5
@@ -360,15 +364,18 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f"{instance_id}: attempt JSON missing selected_database / "
                 f"database key — cannot resolve sqlite path."
             )
-        # Real per-DB sqlite for this benchmark. ``benchmark_data_root``
-        # accepts canonical names ("mini_interact"/"livesqlbench") and
-        # the hyphenated CLI alias ("mini-interact"); the registry rejects
-        # unknown tokens, so a typo'd ``--benchmark`` fails loudly here.
-        db_path = (
-            paths.benchmark_data_root(args.benchmark)
-            / selected_database
-            / f"{selected_database}.sqlite"
-        )
+        # For postgres, db_path is used only as a db-name carrier (executor
+        # uses db_path.stem). For SQLite, root at the data root for the
+        # benchmark; ``benchmark_data_root`` accepts canonical and hyphenated
+        # alias forms, rejecting unknown tokens loudly.
+        if _is_postgres:
+            db_path = Path(selected_database)
+        else:
+            db_path = (
+                paths.benchmark_data_root(args.benchmark)
+                / selected_database
+                / f"{selected_database}.sqlite"
+            )
         ann = _load_task_annotation_or_implicit(
             instance_id=instance_id,
             selected_database=selected_database,
@@ -407,6 +414,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             llm_judge=_llm_judge,
             db_path=db_path,
             conn=None,
+            executor=_executor,
             user_sim_n_asks=_user_sim_n_asks,
         )
 

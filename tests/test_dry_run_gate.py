@@ -352,7 +352,7 @@ def test_diagnostic_payload_threads_db_file_path_into_snapshots(monkeypatch):
     from bird_interact_agents.agents import _submit
 
     seen = []
-    def spy(sql, db_name, data_path_base, db_file_path=None):
+    def spy(sql, db_name, data_path_base, db_file_path=None, benchmark=None):
         seen.append({"sql": sql, "db_name": db_name,
                      "data_path_base": data_path_base,
                      "db_file_path": db_file_path})
