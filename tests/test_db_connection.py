@@ -122,16 +122,46 @@ def test_postgres_connection_context_manager():
 
 
 def test_postgres_connection_read_only_uses_transaction():
-    """read_only=True must wrap execution in BEGIN + ROLLBACK so writes are never committed."""
+    """read_only=True must wrap execution in BEGIN READ ONLY and connection-level ROLLBACK."""
     from bird_interact_agents.db_connection import PostgresDbConnection
 
     mock_conn, mock_cur = _mock_psycopg2_connect([], [])
     pg = PostgresDbConnection(mock_conn, read_only=True)
     pg.execute("SELECT 1")
-    # Check that BEGIN and ROLLBACK were issued via the cursor
+    # BEGIN is issued via the cursor; ROLLBACK goes through connection.rollback()
     executed = [str(c.args[0]).strip().upper() for c in mock_cur.execute.call_args_list]
-    assert "BEGIN" in executed or any("BEGIN" in s for s in executed)
-    assert "ROLLBACK" in executed or any("ROLLBACK" in s for s in executed)
+    assert any("BEGIN" in s for s in executed)
+    mock_conn.rollback.assert_called_once()
+    pg.close()
+
+
+def test_postgres_connection_read_only_error_uses_conn_rollback():
+    """read_only=True error path must use connection.rollback(), not cur.execute('ROLLBACK'),
+    so the rollback succeeds even when the connection is in aborted-transaction state."""
+    import psycopg2
+
+    from bird_interact_agents.db_connection import PostgresDbConnection
+
+    mock_cur = MagicMock()
+    mock_cur.execute.side_effect = [
+        None,  # BEGIN READ ONLY succeeds
+        psycopg2.ProgrammingError("syntax error"),  # actual SQL fails
+    ]
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value = mock_cur
+
+    pg = PostgresDbConnection(mock_conn, read_only=True)
+    with pytest.raises(psycopg2.ProgrammingError):
+        pg.execute("BAD SQL")
+
+    # Must use connection-level rollback, not cur.execute("ROLLBACK")
+    mock_conn.rollback.assert_called_once()
+    rollback_via_cursor = any(
+        "ROLLBACK" in str(c.args[0]).upper()
+        for c in mock_cur.execute.call_args_list
+        if c.args
+    )
+    assert not rollback_via_cursor, "ROLLBACK must not be issued via cursor.execute"
     pg.close()
 
 
@@ -262,9 +292,9 @@ def test_postgres_execute_sequence_returns_last_result():
     assert cols == ["val"]
 
 
-def test_postgres_execute_sequence_issues_one_begin_rollback():
-    """execute_sequence must issue exactly ONE BEGIN READ ONLY and ONE ROLLBACK
-    regardless of the number of statements (not one per statement)."""
+def test_postgres_execute_sequence_issues_one_begin_conn_rollback():
+    """execute_sequence must issue exactly ONE BEGIN READ ONLY via cursor and ONE
+    connection.rollback() regardless of the number of statements."""
     from bird_interact_agents.db_connection import PostgresDbConnection
 
     issued: list[str] = []
@@ -287,9 +317,12 @@ def test_postgres_execute_sequence_issues_one_begin_rollback():
     pg.execute_sequence(["stmt1", "stmt2", "stmt3"])
 
     begin_count = sum(1 for s in issued if s in ("BEGIN", "BEGIN READ ONLY"))
-    rollback_count = sum(1 for s in issued if s == "ROLLBACK")
+    rollback_via_cursor = sum(1 for s in issued if s == "ROLLBACK")
     assert begin_count == 1, f"expected 1 BEGIN, got {begin_count}; issued={issued}"
-    assert rollback_count == 1, f"expected 1 ROLLBACK, got {rollback_count}; issued={issued}"
+    assert rollback_via_cursor == 0, (
+        f"ROLLBACK must not go through cursor.execute; issued={issued}"
+    )
+    mock_conn.rollback.assert_called_once()
 
 
 def test_make_db_connection_passes_statement_timeout_to_psycopg2(monkeypatch):

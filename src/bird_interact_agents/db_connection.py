@@ -172,7 +172,10 @@ class PostgresDbConnection:
         finally:
             if self._read_only:
                 try:
-                    cur.execute("ROLLBACK")
+                    # Use connection-level rollback (not cur.execute) so this
+                    # works even when the connection is in aborted-transaction
+                    # state after a failed cur.execute(sql).
+                    self._conn.rollback()
                 except Exception:  # noqa: BLE001
                     pass
         return rows, cols
@@ -207,7 +210,7 @@ class PostgresDbConnection:
         finally:
             if self._read_only:
                 try:
-                    cur.execute("ROLLBACK")
+                    self._conn.rollback()
                 except Exception:  # noqa: BLE001
                     pass
         return rows, cols
