@@ -339,6 +339,78 @@ def test_error_does_not_write_annotation_blobs(fake_gcs_bucket, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# run_annotator_pool → _run_with_actors kwarg contract
+# ---------------------------------------------------------------------------
+
+def test_run_annotator_pool_passes_benchmark_kwarg_to_run_with_actors(
+    fake_gcs_bucket, monkeypatch
+):
+    """_run_with_actors must receive benchmark= so it doesn't TypeError in
+    cloud actor mode (ray_app._run_with_actors requires benchmark: str)."""
+    from types import SimpleNamespace
+    from bird_interact_agents.cloud import ray_app
+    from bird_interact_agents.cloud import ray_app_annotator
+
+    captured_kwargs: dict = {}
+
+    class FakeHeartbeat:
+        def __init__(self, *a, **kw): pass
+        def start(self): pass
+        def tick_done(self): pass
+        def stop_and_flush(self, terminal_state): pass
+
+    def fake_run_with_actors(**kwargs):
+        captured_kwargs.update(kwargs)
+
+    fake_actor = SimpleNamespace()
+    fake_actor_cls = SimpleNamespace(remote=lambda *a, **kw: fake_actor)
+
+    monkeypatch.setattr(ray_app, "HeartbeatWriter", FakeHeartbeat)
+    monkeypatch.setattr(ray_app, "_run_with_actors", fake_run_with_actors)
+    monkeypatch.setattr(ray_app, "_with_actor_env", lambda cls, env: cls)
+    monkeypatch.setattr(ray_app_annotator, "_build_annotator_actor_class",
+                        lambda: fake_actor_cls)
+
+    client, _ = fake_gcs_bucket
+    ray_app_annotator.run_annotator_pool(
+        run_id="r-1",
+        instance_ids=[],
+        task_data_by_id={},
+        cfg=_cfg(),
+        data_path_base="/tmp",
+        num_actors=1,
+        gcs_client=client,
+        local_only=False,
+    )
+
+    assert "benchmark" in captured_kwargs, "_run_with_actors not called with benchmark kwarg"
+    assert captured_kwargs["benchmark"] == "mini_interact"
+
+
+def test_annotator_actor_init_calls_download_benchmark_data(monkeypatch):
+    """AnnotatorActor.__init__ must call download_benchmark_data so cloud
+    workers download the benchmark dataset before running any tasks."""
+    import sys
+    from types import SimpleNamespace
+    from bird_interact_agents.cloud import ray_app_annotator
+
+    fake_ray = SimpleNamespace(remote=lambda cls: cls)
+    monkeypatch.setitem(sys.modules, "ray", fake_ray)
+
+    download_calls: list = []
+    monkeypatch.setattr(ray_app_annotator, "download_benchmark_data",
+                        lambda cfg, client=None: download_calls.append(cfg))
+    monkeypatch.setattr(ray_app_annotator, "default_gcs_client", lambda: None)
+
+    ActorCls = ray_app_annotator._build_annotator_actor_class()
+    cfg = {**_cfg(), "dataset": "mini_interact", "benchmark_data_prefix": "gs://b/prefix"}
+    ActorCls(cfg=cfg, run_id="r-1", data_path_base="/tmp")
+
+    assert len(download_calls) == 1, "download_benchmark_data must be called in __init__"
+    assert download_calls[0].get("benchmark_data_prefix") == "gs://b/prefix"
+
+
+# ---------------------------------------------------------------------------
 # cluster.submit_job ray_app_path kwarg
 # ---------------------------------------------------------------------------
 

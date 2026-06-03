@@ -390,3 +390,57 @@ async def test_submit_annotation_variant_not_a_dict_returns_error():
     text = result["content"][0]["text"].lower()
     assert "error" in text or "invalid" in text
     assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_variant_wrong_instance_id_returns_error():
+    """A variant whose instance_id doesn't match the current task must
+    return an error so cross-task contamination is caught before GCS write."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    variant_wrong_iid = json.dumps([
+        {
+            "instance_id": "alien_99",  # wrong
+            "selected_database": "shop",
+            "variant_id": "primary",
+            "benchmark": "mini_interact",
+            "audit_status": "clean",
+            "audited_sol_sql": ["SELECT 1;"],
+        }
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": _valid_task_annotation_json("shop_1"),
+        "audited_gold_variants_json": variant_wrong_iid,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "instance_id" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_variant_wrong_database_returns_error():
+    """A variant whose selected_database doesn't match the current task must
+    return an error."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    variant_wrong_db = json.dumps([
+        {
+            "instance_id": "shop_1",
+            "selected_database": "alien",  # wrong
+            "variant_id": "primary",
+            "benchmark": "mini_interact",
+            "audit_status": "clean",
+            "audited_sol_sql": ["SELECT 1;"],
+        }
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": _valid_task_annotation_json("shop_1"),
+        "audited_gold_variants_json": variant_wrong_db,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "selected_database" in text
+    assert not ann_agent._ctx.get("_submission_done")

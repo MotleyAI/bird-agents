@@ -20,6 +20,7 @@ import time
 from typing import Any
 
 from bird_interact_agents.cloud import gcs as _gcs
+from bird_interact_agents.cloud.ray_app import download_benchmark_data
 from bird_interact_agents.agents.annotator.agent import AnnotatorResult
 
 
@@ -240,6 +241,7 @@ def _build_annotator_actor_class():
             self.run_id = run_id
             self.data_path_base = data_path_base
             self.gcs_client = default_gcs_client()
+            download_benchmark_data(cfg, client=self.gcs_client)
 
         def run_one(self, task_data: dict) -> None:
             _run_one_task(
@@ -323,6 +325,7 @@ def run_annotator_pool(
                 gcs_client=client,
                 heartbeat=heartbeat,
                 actor_factory=lambda: ActorCls.remote(cfg, run_id, data_path_base),
+                benchmark=cfg["benchmark"],
             )
         heartbeat.stop_and_flush(terminal_state="done")
     except Exception:
@@ -381,6 +384,8 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg: dict[str, Any] = {
         "benchmark": args.benchmark,
+        "dataset": args.benchmark,
+        "benchmark_data_prefix": args.benchmark_data_prefix or "",
         "model": args.model,
         "effort": args.effort,
         "override": args.override,

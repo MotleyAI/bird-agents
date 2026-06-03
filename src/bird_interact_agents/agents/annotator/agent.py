@@ -197,6 +197,16 @@ async def submit_annotation(args: dict) -> dict:
                 f"Error: audited_gold_variants[{i}] is missing required fields: "
                 f"{sorted(missing)}. Add them and retry."
             )
+        if expected_iid and variant.get("instance_id") != expected_iid:
+            return _text(
+                f"Error: audited_gold_variants[{i}].instance_id must be "
+                f"{expected_iid!r}, got {variant.get('instance_id')!r}"
+            )
+        if expected_db and variant.get("selected_database") != expected_db:
+            return _text(
+                f"Error: audited_gold_variants[{i}].selected_database must be "
+                f"{expected_db!r}, got {variant.get('selected_database')!r}"
+            )
 
     _ctx["annotation_result"] = {
         "task_annotation": task_annotation,
