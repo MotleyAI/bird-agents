@@ -35,7 +35,7 @@ def test_no_production_code_references_legacy_dual_eval_fields():
     src_root = _bird_src_root()
     offenders: list[tuple[str, int, str]] = []
     for py in src_root.rglob("*.py"):
-        if py.name == "__pycache__":
+        if "__pycache__" in py.parts:
             continue
         rel = str(py.relative_to(src_root))
         if rel in _ALLOWED_FILES_WITH_MENTION:

@@ -649,6 +649,8 @@ def test_build_subcommand_passes_audited_gold_root_to_image_tag(
     )
     fake_ag = tmp_path / "main-checkout" / "audited_gold"
     monkeypatch.setattr(_paths, "audited_gold_root", lambda: fake_ag)
+    fake_ann = tmp_path / "main-checkout" / "annotations"
+    monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann)
 
     tag_calls: list[tuple] = []
     push_calls: list[tuple] = []
@@ -675,9 +677,15 @@ def test_build_subcommand_passes_audited_gold_root_to_image_tag(
     assert tag_calls[0][1] == fake_ag, (
         f"image_tag missing audited_gold_root positional arg; got {tag_calls[0]}"
     )
+    assert tag_calls[0][3] == fake_ann, (
+        f"image_tag missing annotations_root kwarg; got {tag_calls[0]}"
+    )
     assert len(push_calls) == 1
     assert push_calls[0][2] == fake_ag, (
         f"build_and_push missing audited_gold_root kwarg; got {push_calls[0]}"
+    )
+    assert push_calls[0][3] == fake_ann, (
+        f"build_and_push missing annotations_root kwarg; got {push_calls[0]}"
     )
 
 

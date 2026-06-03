@@ -262,7 +262,7 @@ def generate_submission_annotation(
         instance_id=instance_id,
         selected_database=selected_database,
         task_annotation_ref=(
-            f"annotations/{benchmark}/{selected_database}/"
+            f"annotations/{benchmark.replace('-', '_')}/{selected_database}/"
             f"{instance_id}.task.json"
         ),
         annotated_by="auto-skeleton",
@@ -300,7 +300,12 @@ def _refresh_mechanical(existing: TaskAnnotation, fresh: TaskAnnotation) -> Task
     out.annotated_at = fresh.annotated_at
     # Sentinels mean "still pending" — re-import the sentinel only if
     # the user hasn't yet authored a real value.
-    if existing.metadata_sufficiency.rationale == PENDING_HUMAN_REVIEW:
+    if (
+        existing.metadata_sufficiency.rationale == PENDING_HUMAN_REVIEW
+        and existing.metadata_sufficiency.verdict == fresh.metadata_sufficiency.verdict
+        and existing.metadata_sufficiency.evidence_sources_consulted
+            == fresh.metadata_sufficiency.evidence_sources_consulted
+    ):
         out.metadata_sufficiency = fresh.metadata_sufficiency
     return out
 

@@ -74,6 +74,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import logging
 import os
 import re
 import tempfile
@@ -85,6 +86,10 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from bird_interact_agents.eval.annotation_io import submission_annotation_path
 from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation, TaskAnnotation
+
+from bird_interact_agents import paths
+
+logger = logging.getLogger(__name__)
 
 _MARKER = "_reference_fp.txt"
 _SIDECAR = "_source_mtimes.json"
@@ -469,11 +474,10 @@ def merge_submission_annotations(
     downloaded_run_dir: Path,
     run_id: str,
     benchmark: str,
-    main_checkout_root: Optional[Path] = None,
-    annotations_root: Optional[Path] = None,
 ) -> AnnotationMergeReport:
     """Walk ``<downloaded_run_dir>/rows/<inst>/submission_annotation.json``
-    and merge each into ``<annotations_root>/<benchmark>/<db>/<inst>.submission.<run_id>.json``.
+    and merge each into ``<annotations_root>/<benchmark>/<db>/<inst>.submission.<run_id>.json``
+    (resolved via ``paths.annotations_root()`` so ``BIRD_ANNOTATIONS_ROOT`` is honoured).
 
     Contract:
     * No-overwrite-if-present. A pre-existing destination is preserved
@@ -507,21 +511,13 @@ def merge_submission_annotations(
                     f"{src}: {type(e).__name__}: {e}"
                 )
                 continue
-            if annotations_root is not None:
-                dest = (
-                    annotations_root
-                    / benchmark.replace("-", "_")
-                    / ann.selected_database
-                    / f"{ann.instance_id}.submission.{run_id}.json"
-                )
-            else:
-                dest = submission_annotation_path(
-                    benchmark=benchmark,
-                    selected_database=ann.selected_database,
-                    instance_id=ann.instance_id,
-                    run_id=run_id,
-                    repo_root=main_checkout_root,
-                )
+            dest = submission_annotation_path(
+                benchmark=benchmark,
+                selected_database=ann.selected_database,
+                instance_id=ann.instance_id,
+                run_id=run_id,
+                repo_root=None,
+            )
             if dest.exists():
                 # Resubmit reuses the same ``run_id`` and bumps the
                 # per-task ``attempt`` number; the canonical
@@ -570,7 +566,10 @@ def merge_submission_annotations(
     # Audit log lives alongside the downloaded run dir (next to the
     # OTF merge_report.json above, for symmetry).
     audit_path = downloaded_run_dir / "annotation_merge_report.json"
-    audit_path.write_text(report.model_dump_json(indent=2) + "\n")
+    try:
+        audit_path.write_text(report.model_dump_json(indent=2) + "\n")
+    except Exception:  # noqa: BLE001
+        logger.warning("[post_run_merge] failed to write audit log %s", audit_path, exc_info=True)
     return report
 
 
