@@ -219,6 +219,13 @@ async def submit_annotation(args: dict) -> dict:
                 f"Wrap single SQL in a list: [\"SELECT ...\"]"
             )
         _VALID_AUDIT_STATUSES = {"clean", "edited", "unrecoverable", "original_correct"}
+        _status = variant.get("audit_status")
+        if _status != "unrecoverable" and not variant.get("audited_sol_sql"):
+            return _text(
+                f"Error: audited_gold_variants[{i}].audited_sol_sql must contain at least "
+                f"one SQL string when audit_status={_status!r}. "
+                f"Only audit_status='unrecoverable' permits an empty list."
+            )
         if variant.get("audit_status") not in _VALID_AUDIT_STATUSES:
             return _text(
                 f"Error: audited_gold_variants[{i}].audit_status must be one of "
@@ -251,6 +258,13 @@ async def submit_annotation(args: dict) -> dict:
                     f"primary=True but the matching audited_gold_variants row has primary=False. "
                     f"Set primary=True in the audited variant row."
                 )
+
+    primary_count = sum(1 for v in audited_gold_variants if v.get("primary", False))
+    if primary_count > 1:
+        return _text(
+            f"Validation error: at most one audited_gold_variants entry may have "
+            f"primary=True; got {primary_count}. Mark exactly the primary variant."
+        )
 
     _ctx["annotation_result"] = {
         "task_annotation": task_annotation,

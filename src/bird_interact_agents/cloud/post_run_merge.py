@@ -683,10 +683,15 @@ def merge_audited_gold_variants(
                 except (json.JSONDecodeError, KeyError):
                     pass
 
-        # Purge all existing rows for every instance that has a run directory,
-        # even when the incoming variants file is empty (e.g. re-annotated as
-        # original_gold_is_correct=True drops all prior variants).
-        rerun_iids = {sub.name for sub in rows_dir.iterdir() if sub.is_dir()}
+        # Purge existing rows only for instances whose annotator task produced
+        # an audited_gold_variants.jsonl (even empty — empty means the annotator
+        # decided original_gold_is_correct=True). Dirs with no variants file are
+        # failed annotator tasks; keep their old consolidated rows untouched.
+        rerun_iids = {
+            sub.name
+            for sub in rows_dir.iterdir()
+            if sub.is_dir() and (sub / "audited_gold_variants.jsonl").exists()
+        }
         for key in list(existing_ordered.keys()):
             if key[0] in rerun_iids:
                 del existing_ordered[key]
