@@ -1706,3 +1706,53 @@ def test_build_annotator_job_args_omits_gold_file_when_absent():
     args = _fake_annotate_args(gold_file=None)
     ja = driver._build_annotator_job_args(args, "rid")
     assert "--gold-file" not in ja
+
+
+# ---------------------------------------------------------------------------
+# _submit_benchmark: benchmark fallback for annotate args (args.benchmark)
+# ---------------------------------------------------------------------------
+
+
+def test_submit_benchmark_uses_dataset_when_present():
+    """Normal submit args carry args.dataset — _submit_benchmark must use it."""
+    args = FakeSubmitArgs()
+    args.dataset = "livesqlbench"
+    assert driver._submit_benchmark(args) == "livesqlbench"
+
+
+def test_submit_benchmark_falls_back_to_benchmark_attr():
+    """Annotate args carry args.benchmark but no args.dataset; _submit_benchmark
+    must fall back so gold-file helpers return the correct in-cluster path."""
+    ns = argparse.Namespace(benchmark="livesqlbench")
+    assert driver._submit_benchmark(ns) == "livesqlbench"
+
+
+def test_in_cluster_gold_file_annotate_args_uses_benchmark(monkeypatch, tmp_path):
+    """When called with annotate-style args (benchmark= but no dataset=),
+    _in_cluster_gold_file must derive the container path from args.benchmark,
+    not silently fall back to mini_interact."""
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    gold = data_root / "gold.jsonl"
+    gold.write_text("{}\n")
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
+
+    ns = argparse.Namespace(benchmark="livesqlbench", gold_file=str(gold))
+    result = driver._in_cluster_gold_file(ns)
+    assert result is not None
+    assert "/livesqlbench/" in result or result.startswith("/data/livesqlbench")
+
+
+def test_submit_annotator_validates_gold_outside_data_root(monkeypatch, tmp_path):
+    """submit_annotator must call _validate_gold_under_data_root before any
+    build/upload — a gold file outside the data root raises ValueError."""
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("{}\n")
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
+
+    args = _fake_annotate_args(gold_file=str(outside))
+    args.benchmark = "livesqlbench"
+    with pytest.raises((ValueError, FileNotFoundError)):
+        driver.submit_annotator(args)

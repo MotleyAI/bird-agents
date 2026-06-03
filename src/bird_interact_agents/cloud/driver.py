@@ -272,8 +272,15 @@ def _benchmark_for_dataset(dataset: str | None) -> str:
 
 def _submit_benchmark(args) -> str:
     """Benchmark for a submit, derived from ``args.dataset`` (defaults to
-    mini-interact when the CLI didn't set one)."""
-    return _benchmark_for_dataset(getattr(args, "dataset", None))
+    mini-interact when the CLI didn't set one).
+
+    Annotator args use ``args.benchmark`` rather than ``args.dataset``; fall
+    back to that when ``dataset`` is absent so gold-file path helpers work for
+    both submit and annotate args.
+    """
+    return _benchmark_for_dataset(
+        getattr(args, "dataset", None) or getattr(args, "benchmark", None)
+    )
 
 
 def _validate_gold_under_data_root(args) -> None:
@@ -727,6 +734,9 @@ def _build_annotator_job_args(
 
 
 def submit_annotator(args) -> str:
+    # Fail fast if --gold-file is outside the benchmark data root — it must
+    # ride along in the GCS dataset upload to be present in-cluster.
+    _validate_gold_under_data_root(args)
     _prereq_args = argparse.Namespace(
         agent_model=args.agent_model,
         user_sim_model="",
