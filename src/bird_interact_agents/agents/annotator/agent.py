@@ -168,6 +168,22 @@ async def submit_annotation(args: dict) -> dict:
     except (json.JSONDecodeError, TypeError) as e:
         return _text(f"Error: invalid JSON in audited_gold_variants_json: {e}")
 
+    _REQUIRED_VARIANT_FIELDS = {
+        "instance_id", "selected_database", "benchmark",
+        "audit_status", "audited_sol_sql", "variant_id",
+    }
+    for i, variant in enumerate(audited_gold_variants):
+        if not isinstance(variant, dict):
+            return _text(
+                f"Error: audited_gold_variants[{i}] is not a dict (got {type(variant).__name__})"
+            )
+        missing = _REQUIRED_VARIANT_FIELDS - variant.keys()
+        if missing:
+            return _text(
+                f"Error: audited_gold_variants[{i}] is missing required fields: "
+                f"{sorted(missing)}. Add them and retry."
+            )
+
     _ctx["annotation_result"] = {
         "task_annotation": task_annotation,
         "audited_gold_variants": audited_gold_variants,

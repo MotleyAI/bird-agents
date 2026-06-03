@@ -289,3 +289,49 @@ async def test_submit_annotation_parses_audited_gold_variants():
     stored = ann_agent._ctx.get("annotation_result")
     assert len(stored["audited_gold_variants"]) == 1
     assert stored["audited_gold_variants"][0]["variant_id"] == "primary"
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_variant_missing_required_field_returns_error():
+    """A variant dict that omits a required field (e.g. variant_id) must
+    return an error and NOT set _submission_done — so the malformed row
+    is never written to GCS stable blobs."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    # Missing 'variant_id' — a required field.
+    bad_variant = json.dumps([
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "benchmark": "mini_interact",
+            "audit_status": "clean",
+            "audited_sol_sql": ["SELECT 1;"],
+            # variant_id intentionally omitted
+        }
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": _valid_task_annotation_json("shop_1"),
+        "audited_gold_variants_json": bad_variant,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "missing" in text or "required" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_variant_not_a_dict_returns_error():
+    """If audited_gold_variants_json is an array but contains a non-dict
+    element, return an error and do NOT set _submission_done."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": _valid_task_annotation_json("shop_1"),
+        "audited_gold_variants_json": json.dumps(["not_a_dict"]),
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "invalid" in text
+    assert not ann_agent._ctx.get("_submission_done")
