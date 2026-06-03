@@ -16,6 +16,7 @@ body of all entries whose ``id`` starts with ``{db_name}_kb_``.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from pathlib import Path
@@ -39,12 +40,46 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Maximum trajectory items included in the autopsy prompt. Long trajectories
-# (e.g. haiku runs with many tool calls) overflow the context window.
-# We keep the HEAD (initial setup/encoding) and TAIL (final decision) items.
-_TRAJ_HEAD = 20
-_TRAJ_TAIL = 30
-_TRAJ_MAX = _TRAJ_HEAD + _TRAJ_TAIL
+def _strip_thinking_inplace(obj: object) -> None:
+    """Recursively strip ThinkingBlock.thinking from a nested dict/list structure.
+
+    Detects ThinkingBlock dicts by the co-presence of "thinking" and "signature"
+    keys (the two fields of ``claude_agent_sdk.ThinkingBlock``). Replaces the
+    thinking text with a char-count indicator so the autopsy prompt stays within
+    the context window without losing any other trajectory information.
+    """
+    if isinstance(obj, list):
+        for item in obj:
+            _strip_thinking_inplace(item)
+    elif isinstance(obj, dict):
+        if (
+            "thinking" in obj
+            and "signature" in obj
+            and isinstance(obj.get("thinking"), str)
+        ):
+            obj["thinking"] = f"[thinking: {len(obj['thinking'])} chars]"
+        for v in obj.values():
+            _strip_thinking_inplace(v)
+
+
+def _compress_trajectory_for_autopsy(trajectory: list[dict]) -> list[dict]:
+    """Return a copy of trajectory with ThinkingBlock.thinking content stripped.
+
+    Items whose ``data`` value is a dict (new structured format from
+    ``dataclasses.asdict``) are deep-copied and compressed. Items whose
+    ``data`` is a plain string (legacy Python repr format) are passed through
+    unchanged — the repr is already opaque and can't be selectively compressed.
+    """
+    result = []
+    for item in trajectory:
+        data = item.get("data")
+        if isinstance(data, dict):
+            data = copy.deepcopy(data)
+            _strip_thinking_inplace(data)
+            result.append({**item, "data": data})
+        else:
+            result.append(item)
+    return result
 
 # ---------------------------------------------------------------------------
 # LLM output schema (local to this module — not exposed in annotation_schema)
@@ -141,22 +176,11 @@ def _build_prompt(
         if miss_diagnostics is not None
         else "null"
     )
-    if len(trajectory) > _TRAJ_MAX:
-        head = [{"index": i, **item} for i, item in enumerate(trajectory[:_TRAJ_HEAD])]
-        tail = [{"index": i, **item} for i, item in enumerate(
-            trajectory[len(trajectory) - _TRAJ_TAIL:], start=len(trajectory) - _TRAJ_TAIL
-        )]
-        omitted = len(trajectory) - _TRAJ_MAX
-        traj_json = (
-            json.dumps(head, indent=None)
-            + f"\n[... {omitted} trajectory items omitted for length ...]\n"
-            + json.dumps(tail, indent=None)
-        )
-    else:
-        traj_json = json.dumps(
-            [{"index": i, **item} for i, item in enumerate(trajectory)],
-            indent=None,
-        )
+    compressed = _compress_trajectory_for_autopsy(trajectory)
+    traj_json = json.dumps(
+        [{"index": i, **item} for i, item in enumerate(compressed)],
+        indent=None,
+    )
     return f"""\
 You are analyzing a failed data-analysis task. The task agent produced a \
 submission that failed every evaluation tier (genuine cascade miss). Your job \
