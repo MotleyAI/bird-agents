@@ -39,7 +39,7 @@ pip install -e ".[claude-sdk,dev]"
 
 ```bash
 # Validate eval pipeline (submits ground-truth SQL, no LLM)
-bird-interact --dataset mini-interact --mode oracle \
+bird-interact --dataset mini-interact --framework claude_sdk --mode oracle \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/
 
@@ -51,6 +51,7 @@ bird-interact --dataset mini-interact --framework claude_sdk --query-mode raw --
 
 # Run with SLayer mode (requires SLayer models to be ingested)
 bird-interact --dataset mini-interact --framework claude_sdk --query-mode slayer --mode a-interact \
+  --slayer-setup on-the-fly \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/
 ```

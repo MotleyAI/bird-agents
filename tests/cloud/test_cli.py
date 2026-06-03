@@ -87,7 +87,7 @@ def test_dataset_is_required():
         )
 
 
-@pytest.mark.parametrize("mode", ["a-interact", "c-interact", "oracle"])
+@pytest.mark.parametrize("mode", ["a-interact", "oracle"])
 def test_mode_values_accepted(mode: str) -> None:
     ns = cli.parse_args(
         [
@@ -133,7 +133,7 @@ def test_pass_through_flags_parse() -> None:
             "--query-mode", "raw",  # slayer is guarded for cloud (see below)
             "--agent-model", "cerebras/zai-glm-4.7",
             "--instance-ids", "db_a_1,db_a_2,db_a_3",
-            "--mode", "c-interact",
+            "--mode", "a-interact",
             "--use-audited-gold-sql",
             "--no-require-audited-gold",  # fake ids, skip the audit-gold guard
             "--max-depth", "5",
@@ -173,7 +173,7 @@ def test_default_patience_is_500() -> None:
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
-            "--mode", "c-interact",
+            "--mode", "a-interact",
             "--no-require-audited-gold",
         ]
     )
@@ -193,7 +193,7 @@ def test_default_use_audited_gold_sql_is_true() -> None:
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
-            "--mode", "c-interact",
+            "--mode", "a-interact",
             "--no-require-audited-gold",
         ]
     )
@@ -210,7 +210,7 @@ def test_no_use_audited_gold_sql_opt_out() -> None:
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
-            "--mode", "c-interact",
+            "--mode", "a-interact",
             "--no-use-audited-gold-sql",
         ]
     )
@@ -246,7 +246,7 @@ def test_require_audited_gold_disabled_when_use_audited_gold_off() -> None:
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
-            "--mode", "c-interact",
+            "--mode", "a-interact",
             "--no-use-audited-gold-sql",
         ]
     )
@@ -369,7 +369,7 @@ def test_prompt_cache_default_on() -> None:
             "--query-mode", "raw",
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
-            "--mode", "c-interact",
+            "--mode", "a-interact",
             "--no-require-audited-gold",
         ]
     )
@@ -394,7 +394,7 @@ def _slayer_argv(**over) -> list[str]:
         "query_mode": "slayer",
         "agent_model": "anthropic/claude-sonnet-4-5",
         "instance_ids": "db_a_1",
-        "mode": "c-interact",
+        "mode": "a-interact",
     }
     base.update(over)
     argv = [
@@ -419,7 +419,7 @@ def test_slayer_pre_encoded_rejected() -> None:
     """pre-encoded + query-mode=slayer is always rejected — on-the-fly is
     the only valid setup for slayer mode."""
     with pytest.raises(SystemExit):
-        cli.parse_args(_slayer_argv(mode="c-interact"))
+        cli.parse_args(_slayer_argv(mode="a-interact"))
 
 
 def test_slayer_on_the_fly_recursive_accepted() -> None:
@@ -725,7 +725,7 @@ def test_subcommand_registered(sub: str) -> None:
                 "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
                 "--instance-ids", "db_a_1",
-                "--mode", "c-interact",
+                "--mode", "a-interact",
                 "--no-require-audited-gold",
             ]
         )
