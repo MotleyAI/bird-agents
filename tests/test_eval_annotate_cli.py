@@ -136,6 +136,52 @@ def test_submission_annotation_skeleton_fills_from_trajectory(tmp_path):
     )
 
 
+def test_submission_annotation_reads_latest_attempt_not_hardcoded(tmp_path):
+    """generate_submission_annotation picks attempt-2.json over attempt-1.json
+    when both exist (regression: previously hardcoded attempt-1.json)."""
+    from bird_interact_agents.eval.annotate import generate_submission_annotation
+
+    rows_dir = tmp_path / "rows"
+    d = rows_dir / "alien_1"
+    d.mkdir(parents=True, exist_ok=True)
+    base = {
+        "instance_id": "alien_1",
+        "trajectory": [],
+        "duration_s": 1.0,
+        "usage": {"cost_usd_agent": 0.01, "cost_usd_user_sim": 0.0,
+                  "n_agent_turns": 1, "n_ask_user_calls": 0},
+        "predicted_row_count": 0,
+    }
+    (d / "attempt-1.json").write_text(json.dumps({**base, "submitted_sql": "SELECT stale"}))
+    (d / "attempt-2.json").write_text(json.dumps({**base, "submitted_sql": "SELECT latest"}))
+
+    class StubGrader:
+        def __call__(self, *, submitted_sql, **_kw):
+            from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
+            self.seen_sql = submitted_sql
+            return CascadeVerdict(
+                n1_original_gold=True, n2_audited_primary=True,
+                n3_any_audited_variant=True, n4_tie_order=True,
+                n5_llm_judge=True, n6_numeric_epsilon=True,
+                n7_trailing_whitespace=True, n8_column_order=True,
+                n9_case_fold=True,
+                matched_variant_id="primary",
+                novel_reading_judgment=None,
+                variant_matches=[], rowset_relations=[],
+            )
+
+    grader = StubGrader()
+    generate_submission_annotation(
+        rows_dir=rows_dir, instance_id="alien_1",
+        selected_database="alien", benchmark="mini-interact",
+        run_id="r1", task_row=SAMPLE_TASK_ROW,
+        grader=grader,
+    )
+    assert grader.seen_sql == "SELECT latest", (
+        f"Expected latest attempt SQL; got {grader.seen_sql!r}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Mode matrix
 # ---------------------------------------------------------------------------

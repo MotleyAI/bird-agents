@@ -54,6 +54,7 @@ from bird_interact_agents.eval.annotation_schema import (
     UserSimResponseSummary,
 )
 from bird_interact_agents.eval.grade_in_place import _auto_failure_class
+from bird_interact_agents.eval.regrade import _latest_attempt_file
 
 PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
 
@@ -237,7 +238,8 @@ def generate_submission_annotation(
     ``grader`` is a callable that returns a CascadeVerdict given the
     submitted SQL + task row context. Tests pass a stub; production
     callers pass ``tolerant_grader.grade_submission``."""
-    attempt_path = Path(rows_dir) / instance_id / "attempt-1.json"
+    sub_dir = Path(rows_dir) / instance_id
+    attempt_path = _latest_attempt_file(sub_dir) or (sub_dir / "attempt-1.json")
     attempt = json.loads(attempt_path.read_text())
     submitted_sql = attempt.get("submitted_sql", "")
     # Don't wrap with ``list(...)`` — dict trajectories from
