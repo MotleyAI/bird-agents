@@ -24,6 +24,9 @@ from bird_interact_agents.cloud import gcs
 
 # Sibling marker blob at the prefix root (NOT under the data tree), written last.
 _MARKER = "_benchmark_data.marker"
+# GCS sub-prefix (and local subdirectory name) used to store gated gold inside
+# the benchmark data prefix, so gold rides along with the dataset upload.
+GATED_GOLD_SUBDIR = "_gated_gold"
 
 
 def _is_vcs_path(rel: Path) -> bool:
@@ -41,23 +44,30 @@ def _as_benchmark(benchmark: str | Benchmark) -> Benchmark:
     return benchmark if isinstance(benchmark, Benchmark) else get_benchmark(benchmark)
 
 
+def _hash_dir_into(h, root: Path, *, path_prefix: str = "") -> None:
+    """Feed every (non-VCS) file under ``root`` into hash ``h``.
+
+    ``path_prefix`` is prepended to each relative path so that files from
+    different source dirs are distinguished in the combined hash."""
+    for f in sorted(
+        (p for p in root.rglob("*")
+         if p.is_file() and not _is_vcs_path(p.relative_to(root))),
+        key=lambda p: p.relative_to(root).as_posix(),
+    ):
+        h.update((path_prefix + f.relative_to(root).as_posix()).encode())
+        h.update(b"\x00")
+        h.update(f.read_bytes())
+        h.update(b"\x00")
+
+
 def content_hash(root: Path) -> str:
     """Deterministic content hash over every (non-VCS) file under ``root``
     (sorted by relative path, hashing path + bytes). Two identical dataset
     trees hash the same regardless of host layout; any change flips the hash →
     a new prefix. ``.git/`` is excluded (see :func:`_is_vcs_path`) so the hash
     is stable across upstream commits — same set as the upload."""
-    root = Path(root)
     h = hashlib.sha256()
-    for f in sorted(
-        (p for p in root.rglob("*")
-         if p.is_file() and not _is_vcs_path(p.relative_to(root))),
-        key=lambda p: p.relative_to(root).as_posix(),
-    ):
-        h.update(f.relative_to(root).as_posix().encode())
-        h.update(b"\x00")
-        h.update(f.read_bytes())
-        h.update(b"\x00")
+    _hash_dir_into(h, Path(root))
     return h.hexdigest()[:16]
 
 
@@ -69,9 +79,15 @@ def benchmark_data_prefix(benchmark: str | Benchmark, chash: str) -> str:
 def ensure_uploaded(
     benchmark: str | Benchmark, *, root: Path | None = None, client=None,
 ) -> str:
-    """Upload the benchmark's dataset to its content-hashed GCS prefix if not
-    already present (marker check), and return the prefix. Idempotent: a second
-    submit of the same dataset is a no-op marker check."""
+    """Upload the benchmark's dataset (and gated gold, if present locally) to
+    a content-hashed GCS prefix if not already present (marker check), and
+    return the prefix. Idempotent: a second submit of the same dataset is a
+    no-op marker check.
+
+    Gated gold files at ``paths.gated_gold_root(benchmark=b.name)`` (if the
+    directory exists) are included in both the content hash and the upload,
+    stored under ``GATED_GOLD_SUBDIR`` inside the same prefix so they land
+    in-cluster alongside the dataset."""
     b = _as_benchmark(benchmark)
     root = Path(root) if root is not None else paths.benchmark_data_root(b)
     # Refuse to stamp a "complete" prefix for a missing dataset: an absent or
@@ -87,7 +103,12 @@ def ensure_uploaded(
             f"benchmark {b.name!r} data root {root} is missing its tasks file "
             f"{b.data_file!r}; refusing to upload an incomplete dataset"
         )
-    chash = content_hash(root)
+    gated_gold = paths.gated_gold_root(benchmark=b.name)
+    h = hashlib.sha256()
+    _hash_dir_into(h, root)
+    if gated_gold.is_dir():
+        _hash_dir_into(h, gated_gold, path_prefix=GATED_GOLD_SUBDIR + "/")
+    chash = h.hexdigest()[:16]
     prefix = benchmark_data_prefix(b, chash)
     client = client or gcs.default_gcs_client()
     marker = client.bucket(gcs.BUCKET_NAME).blob(prefix + _MARKER)
@@ -96,6 +117,12 @@ def ensure_uploaded(
     gcs.upload_dir_prefix(
         root, prefix.rstrip("/"), client=client, exclude=_is_vcs_path,
     )
+    if gated_gold.is_dir():
+        gcs.upload_dir_prefix(
+            gated_gold,
+            f"{prefix.rstrip('/')}/{GATED_GOLD_SUBDIR}",
+            client=client,
+        )
     marker.upload_from_string(chash)  # marker LAST — completeness invariant
     return prefix
 

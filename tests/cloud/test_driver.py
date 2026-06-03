@@ -1486,8 +1486,9 @@ def test_manifest_and_job_args_carry_benchmark(monkeypatch):
     # De-bake: the gold rides along in the GCS dataset upload, so the manifest
     # stores the IN-CLUSTER path (under the benchmark's container_data_dir),
     # NOT the submitter's local path. `/abs/gold.jsonl` isn't under the data
-    # root → basename fallback under /data/livesqlbench.
-    assert m["gold_file"] == "/data/livesqlbench-base-lite-sqlite/gold.jsonl"
+    # root or gated_gold_root → fallback under _gated_gold/ inside container dir.
+    _gated = driver.benchmark_data.GATED_GOLD_SUBDIR
+    assert m["gold_file"] == f"/data/livesqlbench-base-lite-sqlite/{_gated}/gold.jsonl"
     assert m["benchmark_data_prefix"] == prefix
 
     # Avoid reading a real tasks file for the db-grouped sort.
@@ -1499,7 +1500,7 @@ def test_manifest_and_job_args_carry_benchmark(monkeypatch):
         args, "rid", attempt=1, benchmark_data_prefix=prefix,
     )
     assert ja[ja.index("--dataset") + 1] == "livesqlbench-base-lite-sqlite"
-    assert ja[ja.index("--gold-file") + 1] == "/data/livesqlbench-base-lite-sqlite/gold.jsonl"
+    assert ja[ja.index("--gold-file") + 1] == f"/data/livesqlbench-base-lite-sqlite/{_gated}/gold.jsonl"
     assert ja[ja.index("--benchmark-data-prefix") + 1] == prefix
 
 
@@ -1546,12 +1547,14 @@ def test_submit_uploads_dataset_and_threads_prefix(monkeypatch):
 
 
 def test_validate_gold_under_data_root_rejects_outside(monkeypatch, tmp_path):
-    """A `--gold-file` outside the benchmark data root fails fast at submit —
-    it would otherwise be silently absent in-cluster (the gold rides along in
-    the GCS dataset upload, which only covers the data root)."""
+    """A `--gold-file` outside both the benchmark data root and the gated gold
+    root fails fast at submit — it would otherwise be silently absent in-cluster."""
     data_root = tmp_path / "data"
     data_root.mkdir()
+    gated_root = tmp_path / "gated"  # exists but gold is not under it
+    gated_root.mkdir()
     monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
+    monkeypatch.setattr(driver.paths, "gated_gold_root", lambda **k: gated_root)
     outside = tmp_path / "outside.jsonl"
     outside.write_text("{}\n")
 
@@ -1570,13 +1573,36 @@ def test_validate_gold_under_data_root_accepts_inside(monkeypatch, tmp_path):
     (data_root / "sub").mkdir(parents=True)
     gold = data_root / "sub" / "gold.jsonl"
     gold.write_text("{}\n")
+    gated_root = tmp_path / "gated"
     monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
+    monkeypatch.setattr(driver.paths, "gated_gold_root", lambda **k: gated_root)
 
     args = FakeSubmitArgs()
     args.dataset = "livesqlbench-base-lite-sqlite"
     args.gold_file = str(gold)
     driver._validate_gold_under_data_root(args)  # no raise
     assert driver._in_cluster_gold_file(args) == "/data/livesqlbench-base-lite-sqlite/sub/gold.jsonl"
+
+
+def test_validate_gold_under_data_root_accepts_gated_gold(monkeypatch, tmp_path):
+    """A `--gold-file` under gated_gold_root passes validation; `_in_cluster_gold_file`
+    maps it to container_data_dir/_gated_gold/<relpath>."""
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    gated_root = tmp_path / "gated" / "livesqlbench-base-lite-sqlite"
+    gated_root.mkdir(parents=True)
+    gold = gated_root / "gt_kg.jsonl"
+    gold.write_text("{}\n")
+    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
+    monkeypatch.setattr(driver.paths, "gated_gold_root", lambda **k: gated_root)
+
+    args = FakeSubmitArgs()
+    args.dataset = "livesqlbench-base-lite-sqlite"
+    args.gold_file = str(gold)
+    driver._validate_gold_under_data_root(args)  # no raise
+    assert driver._in_cluster_gold_file(args) == (
+        f"/data/livesqlbench-base-lite-sqlite/{driver.benchmark_data.GATED_GOLD_SUBDIR}/gt_kg.jsonl"
+    )
 
 
 def test_resubmit_threads_benchmark_prefix(monkeypatch):

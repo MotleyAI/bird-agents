@@ -83,6 +83,13 @@ def test_content_hash_excludes_git_dir(tmp_path):
     assert bd.content_hash(root) != h1
 
 
+def _no_gated_gold(tmp_path):
+    """Return a lambda that monkeypatches `gated_gold_root` to a non-existent
+    path so upload tests are isolated from any real gated gold on disk."""
+    absent = tmp_path / "no_gated_gold"
+    return lambda **_kw: absent
+
+
 def test_ensure_uploaded_excludes_git_from_upload(tmp_path, monkeypatch):
     """The upload must drop `.git/` files too (same set as the content hash),
     so the GCS dataset tree never carries repo history."""
@@ -92,6 +99,7 @@ def test_ensure_uploaded_excludes_git_from_upload(tmp_path, monkeypatch):
     (root / ".git" / "config").write_text("[core]\n")
     client = _FakeClient()
     seen_excludes: list = []
+    monkeypatch.setattr(bd.paths, "gated_gold_root", _no_gated_gold(tmp_path))
 
     def _fake_upload(local_dir, prefix, *, exclude=None, **kw):
         seen_excludes.append(exclude)
@@ -121,6 +129,7 @@ def test_ensure_uploaded_uploads_then_marks_when_absent(tmp_path, monkeypatch):
     _make_dataset(root)
     client = _FakeClient()
     calls: list = []
+    monkeypatch.setattr(bd.paths, "gated_gold_root", _no_gated_gold(tmp_path))
     monkeypatch.setattr(
         gcs, "upload_dir_prefix",
         lambda local_dir, prefix, **kw: calls.append((Path(local_dir), prefix)),
@@ -140,6 +149,7 @@ def test_ensure_uploaded_skips_when_marker_present(tmp_path, monkeypatch):
     root = tmp_path / "ds"
     _make_dataset(root)
     client = _FakeClient()
+    monkeypatch.setattr(bd.paths, "gated_gold_root", _no_gated_gold(tmp_path))
     chash = bd.content_hash(root)
     prefix = bd.benchmark_data_prefix("livesqlbench-base-lite-sqlite", chash)
     client.store[prefix + bd._MARKER] = chash.encode()  # pretend already uploaded
@@ -149,6 +159,34 @@ def test_ensure_uploaded_skips_when_marker_present(tmp_path, monkeypatch):
 
     monkeypatch.setattr(gcs, "upload_dir_prefix", _boom)
     assert bd.ensure_uploaded("livesqlbench-base-lite-sqlite", root=root, client=client) == prefix
+
+
+def test_ensure_uploaded_includes_gated_gold_in_hash_and_upload(tmp_path, monkeypatch):
+    """When gated_gold_root exists, its files are included in the content hash
+    (so adding/changing gold triggers a new prefix) and uploaded to the
+    GATED_GOLD_SUBDIR sub-prefix."""
+    root = tmp_path / "ds"
+    _make_dataset(root)
+    gated_root = tmp_path / "gated" / "livesqlbench-base-lite-sqlite"
+    gated_root.mkdir(parents=True)
+    (gated_root / "gt_kg.jsonl").write_text('{"id": 1}\n')
+    monkeypatch.setattr(bd.paths, "gated_gold_root", lambda **_kw: gated_root)
+
+    client = _FakeClient()
+    calls: list = []
+    monkeypatch.setattr(
+        gcs, "upload_dir_prefix",
+        lambda local_dir, prefix, **kw: calls.append((Path(local_dir), prefix)),
+    )
+
+    prefix = bd.ensure_uploaded("livesqlbench-base-lite-sqlite", root=root, client=client)
+
+    # Prefix differs from content_hash(root) because gated gold is included.
+    assert prefix != f"benchmark-data/livesqlbench-base-lite-sqlite/{bd.content_hash(root)}/"
+    # Two uploads: data root + gated gold subdir.
+    assert calls[0] == (root, prefix.rstrip("/"))
+    assert calls[1] == (gated_root, f"{prefix.rstrip('/')}/{bd.GATED_GOLD_SUBDIR}")
+    assert (prefix + bd._MARKER) in client.store
 
 
 # --- ensure_downloaded -----------------------------------------------------
