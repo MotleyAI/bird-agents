@@ -174,16 +174,25 @@ def _pg_execute_submit_action(
         # the agent retry; for one-shot benchmarks the task is over.
         return "SQL execution error", 0.0, False, False, benchmark.one_shot
 
-    # Compare against each gold SQL; p1=True if any gold matches
-    p1 = False
-    for gold_sql in sol_sqls:
-        gold_rows, gold_err = _run(gold_sql)
-        if gold_err:
-            continue
-        # Counter comparison preserves duplicate rows (mirrors tolerant_grader)
-        if Counter(map(tuple, pred_rows)) == Counter(map(tuple, gold_rows)):
-            p1 = True
-            break
+    # Execute all gold SQLs sequentially on a single shared connection so that
+    # multi-statement sequences (CTEs, temp tables) work correctly.  This mirrors
+    # tolerant_grader._multi_sql_execute semantics: the list is a sequence of
+    # dependent steps, not a set of independent alternatives.
+    def _run_gold_sequence(sqls: list[str]) -> tuple[list, bool]:
+        try:
+            with make_db_connection(
+                db_name, data_path_base=data_path_base, benchmark=benchmark, read_only=True
+            ) as conn:
+                rows: list = []
+                for q in sqls:
+                    rows, _ = conn.execute(q)
+                return rows, False
+        except Exception:  # noqa: BLE001
+            return [], True
+
+    gold_rows, gold_err = _run_gold_sequence(sol_sqls)
+    # Counter comparison preserves duplicate rows (mirrors tolerant_grader)
+    p1 = not gold_err and Counter(map(tuple, pred_rows)) == Counter(map(tuple, gold_rows))
 
     reward = 1.0 if p1 else 0.0
     obs = f"Submitted. Result match: {p1}"

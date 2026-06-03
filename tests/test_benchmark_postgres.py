@@ -353,3 +353,91 @@ def test_pg_submit_one_shot_finishes_on_sql_error():
         _, _, _, _, finished = _pg_execute_submit_action("BAD SQL", ss, "/data")
 
     assert finished, "one-shot benchmark must finish even on SQL execution error"
+
+
+# ---------------------------------------------------------------------------
+# Sequential gold SQL execution semantics
+# ---------------------------------------------------------------------------
+
+
+def test_pg_submit_gold_sequence_uses_shared_connection():
+    """sol_sqls with multiple statements must execute on a SINGLE shared
+    connection (not one connection per statement).  This means make_db_connection
+    is called exactly twice: once for the predicted SQL, once for the whole
+    gold sequence."""
+    from unittest.mock import patch
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    # Two-statement gold sequence.
+    ss = _make_sample_status("livesqlbench_postgres", "alien", ["stmt1", "stmt2"])
+
+    connections_opened = []
+
+    class _TrackingConn:
+        def __init__(self, idx):
+            self.idx = idx
+            self.exec_calls: list[str] = []
+
+        def execute(self, q):
+            self.exec_calls.append(q)
+            # conn 0 = predicted; conn 1 = gold sequence (both return 42)
+            return [(42,)], ["n"]
+
+    class _TrackingCM:
+        def __enter__(self):
+            c = _TrackingConn(len(connections_opened))
+            connections_opened.append(c)
+            return c
+
+        def __exit__(self, *_):
+            return False
+
+    with patch("bird_interact_agents.harness.make_db_connection", return_value=_TrackingCM()):
+        _, _, p1, _, _ = _pg_execute_submit_action("SELECT 42", ss, "/data")
+
+    assert p1, "predicted and gold match — expected p1=True"
+    assert len(connections_opened) == 2, (
+        f"expected exactly 2 DB connections (1 predicted + 1 gold sequence), "
+        f"got {len(connections_opened)}"
+    )
+    gold_conn = connections_opened[1]
+    assert gold_conn.exec_calls == ["stmt1", "stmt2"], (
+        f"gold connection must execute all stmts in order; got {gold_conn.exec_calls}"
+    )
+
+
+def test_pg_submit_gold_sequence_uses_last_result():
+    """When sol_sqls has multiple statements, the last statement's result
+    is the one compared against the predicted output (not the first)."""
+    from unittest.mock import patch, MagicMock
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    ss = _make_sample_status("livesqlbench_postgres", "alien", ["setup_stmt", "final_select"])
+
+    connections_opened = []
+
+    class _TrackingConn:
+        def __init__(self, idx):
+            self.idx = idx
+
+        def execute(self, q):
+            if self.idx == 0:
+                return [(99,)], ["n"]   # predicted — a specific value
+            # gold conn: setup_stmt returns nothing, final_select returns 99
+            if q == "final_select":
+                return [(99,)], ["n"]  # matches predicted
+            return [], ["n"]           # setup (intermediate)
+
+    class _TrackingCM:
+        def __enter__(self):
+            c = _TrackingConn(len(connections_opened))
+            connections_opened.append(c)
+            return c
+
+        def __exit__(self, *_):
+            return False
+
+    with patch("bird_interact_agents.harness.make_db_connection", return_value=_TrackingCM()):
+        _, _, p1, _, _ = _pg_execute_submit_action("SELECT 99", ss, "/data")
+
+    assert p1, "last gold stmt matches predicted — expected p1=True"
