@@ -49,9 +49,8 @@ Read-only:
 - `<lsb_root>/<db>/<db>.sqlite` (or `<db>_template.sqlite`) — live DB,
   read-only. Used for the sanity-execute step.
 
-Where `<lsb_root>` resolves to `paths.livesqlbench_root()`. For the
-test/dev environment that's
-`/home/james/Dropbox/SLayer/livesqlbench-base-lite-sqlite/`.
+Where `<lsb_root>` resolves to `paths.livesqlbench_root()` (call
+`uv run python -c "from bird_interact_agents import paths; print(paths.livesqlbench_root())"` to see the value in your env).
 
 ## Output
 

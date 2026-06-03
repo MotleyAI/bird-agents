@@ -22,6 +22,7 @@ the SLayer write-tool whitelist, the prompts, and the mode gating differ.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
@@ -55,10 +56,82 @@ from bird_interact_agents.harness import (
     materialize_task_db,
     slayer_mcp_stdio_config,
 )
+from bird_interact_agents.eval.annotation_io import (
+    task_annotation_path,
+)
+from bird_interact_agents.eval.autopsy import _is_genuine_miss, run_autopsy
+from bird_interact_agents.eval.grade_in_place import (
+    load_audited_gold_rows_for,
+    load_task_annotation_or_implicit,
+    normalize_sol_sql,
+)
+from bird_interact_agents.eval.tolerant_grader import grade_submission
 from bird_interact_agents.slayer_otf import resolve_otf_task_storage_dir
 from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
+
+
+# SLayer query tools that satisfy the pre-submit verification gate.
+# Any `query` or `query_nested` call immediately before `submit_query`
+# is treated as the required output-inspection step.
+SLAYER_QUERY_TOOLS: frozenset[str] = frozenset(
+    {"mcp__slayer__query", "mcp__slayer__query_nested"}
+)
+
+
+def _make_query_before_submit_guard():
+    """Enforce that the last completed tool call before ``submit_query``
+    is a SLayer ``query`` or ``query_nested`` call.
+
+    Returns ``(pre_submit_gate, post_tool_tracker)`` sharing a single
+    per-task ``state`` closure. The factory MUST be invoked inside
+    ``run_task`` (per task) — never on the agent constructor — to avoid
+    cross-task state bleed when a single agent instance handles concurrent
+    tasks via ``make_runner``.
+
+    * ``pre_submit_gate`` (PreToolUse, matcher ``submit_query``): denies
+      ``submit_query`` when the last completed tool call was not in
+      ``SLAYER_QUERY_TOOLS``, with an explicit message telling the agent
+      what to do next.
+    * ``post_tool_tracker`` (PostToolUse, all tools): records the name of
+      every completed tool call in ``state["last_tool"]``. PostToolUse only
+      fires when a tool actually ran (i.e. a denied PreToolUse does NOT
+      trigger PostToolUse), so a denied ``submit_query`` never overwrites
+      the last-call record with its own name.
+    """
+    state: dict = {"last_tool": None}
+
+    async def pre_submit_gate(input_data, tool_use_id, context):
+        if state["last_tool"] not in SLAYER_QUERY_TOOLS:
+            last = state["last_tool"] or "none"
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": (
+                        f"Your last tool call was `{last}`, not `query`. "
+                        "Before submitting you MUST run the exact query JSON "
+                        "you intend to submit through `query` and inspect the "
+                        "output: verify that row count is non-zero and "
+                        "plausible, that numeric aggregates are in the "
+                        "expected range (non-zero proportions, correct units, "
+                        "no all-zero values that would indicate integer "
+                        "division), and that string values have the expected "
+                        "casing and whitespace. Then call `submit_query` "
+                        "immediately — with no other tool calls in between."
+                    ),
+                }
+            }
+        return {}
+
+    async def post_tool_tracker(input_data, tool_use_id, context):
+        tool_name = input_data.get("tool_name") or ""
+        if tool_name:
+            state["last_tool"] = tool_name
+        return {}
+
+    return pre_submit_gate, post_tool_tracker
 
 
 # SLayer MCP tools the OTF agent may call. The existing claude_sdk slayer
@@ -270,6 +343,19 @@ class ClaudeSDKOtfAgent:
                 f"dataset={dataset!r}",
             )
 
+        _ann_path = task_annotation_path(
+            benchmark=benchmark.name,
+            selected_database=db_name,
+            instance_id=instance_id,
+        )
+        _ann_from_disk = _ann_path.exists()
+        task_annotation = load_task_annotation_or_implicit(
+            benchmark=benchmark.name,
+            selected_database=db_name,
+            instance_id=instance_id,
+            amb_user_query=task_data.get("amb_user_query", ""),
+        )
+
         status = SampleStatus(
             idx=0,
             original_data=task_data,
@@ -337,6 +423,10 @@ class ClaudeSDKOtfAgent:
             }
             tool_names.extend(_slayer_tool_names())
 
+            # Per-task hook factories — must be created here (not on the
+            # agent constructor) to avoid cross-task state bleed.
+            pre_query_gate, post_tool_tracker = _make_query_before_submit_guard()
+
             options = ClaudeAgentOptions(
                 system_prompt=prompt,
                 mcp_servers=mcp_servers,
@@ -362,10 +452,18 @@ class ClaudeSDKOtfAgent:
                 # submit_query) execute before the run stops — the off-by-one
                 # that previously dropped a last-turn submission.
                 max_turns=_MAX_TURNS,
-                # Nudge the agent to submit when it nears the cap.
                 hooks={
+                    "PreToolUse": [
+                        HookMatcher(
+                            matcher="mcp__bird-interact-tools__submit_query",
+                            hooks=[pre_query_gate],
+                        ),
+                    ],
                     "PostToolUse": [
                         HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
+                        # Must be last so it captures the true last-completed
+                        # tool name after all other PostToolUse hooks have run.
+                        HookMatcher(hooks=[post_tool_tracker]),
                     ],
                 },
             )
@@ -375,7 +473,7 @@ class ClaudeSDKOtfAgent:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
                     trajectory.append(
-                        {"type": str(type(msg).__name__), "data": str(msg)[:500]}
+                        {"type": str(type(msg).__name__), "data": str(msg)}
                     )
                     accumulate_assistant_usage(accum, msg, self.model)
         except Exception as e:
@@ -414,6 +512,41 @@ class ClaudeSDKOtfAgent:
             )
 
         result = (ctx_dict or {}).get("result") or {}
+        _autopsy_result = None
+        _submitted_sql = result.get("submitted_sql") or ""
+        if _submitted_sql:
+            try:
+                _audited_rows = load_audited_gold_rows_for(
+                    benchmark=benchmark.name, instance_id=instance_id,
+                )
+                _orig_sql = normalize_sol_sql(
+                    task_data.get("original_sol_sql") or task_data.get("sol_sql"),
+                )
+                _db_path = Path(
+                    task_data.get("db_file_path")
+                    or (Path(data_path_base) / db_name / f"{db_name}.sqlite")
+                )
+                _cascade = grade_submission(
+                    task_annotation=task_annotation,
+                    audited_gold_rows=_audited_rows,
+                    original_sol_sql=_orig_sql,
+                    submitted_sql=_submitted_sql,
+                    db_path=_db_path,
+                    user_sim_n_asks=None,
+                )
+                if _ann_from_disk and _is_genuine_miss(_cascade):
+                    _autopsy_result = await run_autopsy(
+                        task_annotation=task_annotation,
+                        trajectory=trajectory,
+                        slayer_storage_dir=slayer_storage_dir,
+                        miss_diagnostics=_cascade.miss_diagnostics,
+                        model=self.model,
+                    )
+            except Exception:
+                logger.exception(
+                    "[otf] autopsy grading failed for %s; continuing without autopsy",
+                    instance_id,
+                )
         return finalize_result_row(
             {
                 "task_id": instance_id,
@@ -434,6 +567,8 @@ class ClaudeSDKOtfAgent:
                 "usage": accum.model_dump(),
                 "phase1_observation_audited": result.get("phase1_observation_audited"),
                 "phase1_observation_original": result.get("phase1_observation_original"),
+                "_autopsy": _autopsy_result,
+                "_task_annotation": task_annotation,
             },
             deleted_kb_ids=deleted_kb_ids,
             slayer_storage_dir=slayer_storage_dir,

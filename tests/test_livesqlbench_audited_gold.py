@@ -293,6 +293,10 @@ def test_audit_rows_cover_select_tasks_per_db():
     by_db: dict[str, set[str]] = {}
     for iid, row in primary_rows.items():
         by_db.setdefault(row["selected_database"], set()).add(iid)
+    missing_dbs = set(EXPECTED_INSTANCE_IDS_BY_DB) - set(by_db)
+    assert not missing_dbs, (
+        f"audit file is missing expected DBs entirely: {sorted(missing_dbs)}"
+    )
     for db, ids in by_db.items():
         expected = EXPECTED_INSTANCE_IDS_BY_DB.get(db)
         assert expected is not None, (

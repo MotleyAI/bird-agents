@@ -496,6 +496,78 @@ class UserSimInteraction(BaseModel):
     undisclosed_resolutions: List[str] = Field(default_factory=list)
 
 
+AutopsyPattern = Literal[
+    "never_asked_key_question",
+    "asked_but_ignored_answer",
+    "user_sim_misleading",
+    "late_mutation_corrupted_result",
+    "wrong_join_path",
+    "output_schema_misread",
+    "slayer_generation_artifact",
+    "exhausted_budget_guessing",
+    "other",
+]
+"""LLM-produced failure taxonomy for genuine cascade misses on
+``claude_sdk_otf*`` frameworks (DEV-1521).
+
+* ``never_asked_key_question`` — agent never surfaced a critical
+  clarification; the answer was recoverable via ``ask_user`` but skipped.
+* ``asked_but_ignored_answer`` — agent asked the right question but
+  then disregarded the answer.
+* ``user_sim_misleading`` — user-sim gave an incorrect, incomplete, or
+  actively misleading answer that steered the agent wrong.
+* ``late_mutation_corrupted_result`` — correct intermediate result; a
+  late transformation (LOWER/TRIM/ROUND/CAST/schema change) corrupted
+  the final output.
+* ``wrong_join_path`` — agent joined via a wrong/missing join path, or
+  placed encoding on the wrong host model.
+* ``output_schema_misread`` — agent projected wrong columns, wrong
+  aggregation shape, or misread the expected row structure.
+* ``slayer_generation_artifact`` — SQL emitted by SLayer had a bug
+  (integer division, broken namespace) not from the agent's encoding
+  choices.
+* ``exhausted_budget_guessing`` — agent consumed all turns on
+  exploratory/repeated attempts without converging.
+* ``other`` — doesn't fit the above; details in ``AutopsyAnalysis.other_details``.
+"""
+
+
+class AutopsyAnalysis(BaseModel):
+    """LLM-produced post-mortem analysis for a genuine cascade miss.
+
+    Populated only for ``claude_sdk_otf*`` frameworks, only when all
+    N1–N9 cascade tiers fail (``failure_classification.primary ==
+    "agent_miss"``). Structured complement to the deterministic
+    ``FailureClassification`` — the two blocks describe orthogonal
+    dimensions (what vs. why).
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    pattern: AutopsyPattern
+    other_details: Optional[str] = None
+    """Non-None when ``pattern == "other"``; freeform description of
+    the failure mode."""
+    narrative: str
+    """2–5 sentence explanation of what went wrong, referencing specific
+    trajectory steps by index."""
+    remediation: str
+    """1–2 sentence actionable suggestion: what should change
+    (prompt / KB / grader / user_sim)."""
+
+
+class AutopsyResult(BaseModel):
+    """Container for all autopsy outputs mapped from ``AutopsyLLMOutput``.
+
+    Lives in the schema module (pure data, no client deps) so
+    ``grade_in_place`` can import it without pulling in the Anthropic SDK.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    analysis: AutopsyAnalysis
+    decision_point: Optional[TrajectoryDecisionPoint] = None
+    user_sim_interaction: UserSimInteraction = Field(default_factory=UserSimInteraction)
+
+
 class SubmissionAnnotation(BaseModel):
     """Per-(instance, run) annotation.
 
@@ -520,3 +592,7 @@ class SubmissionAnnotation(BaseModel):
     failure_classification: FailureClassification
     decision_point: Optional[TrajectoryDecisionPoint] = None
     user_sim_interaction: UserSimInteraction = Field(default_factory=UserSimInteraction)
+    autopsy: Optional[AutopsyResult] = None
+    """LLM-produced post-mortem. Populated only for genuine cascade misses
+    (all N1–N9 fail) on claude_sdk_otf* frameworks. None for passing
+    submissions and for all other frameworks."""

@@ -136,11 +136,11 @@ Of the $57.19, **$38.04 (66%)** went to the 4 failing tasks. Of *that*, **$30.26
 
 ## Provenance
 
-- Per-task attempt artifacts: `/home/james/Dropbox/SLayer/bird-agents/results/cloud/20260531t1008-claudes-slayer-890419/rows/<instance_id>/attempt-1.json`
-- Manifest: `/home/james/Dropbox/SLayer/bird-agents/results/cloud/20260531t1008-claudes-slayer-890419/manifest.json`
-- Eval summary: `…/eval.json` (`p1=11/15 (0.733)`)
-- Task data: `/home/james/Dropbox/SLayer/mini-interact/mini_interact.jsonl`
-- Audited gold: `/home/james/Dropbox/SLayer/bird-agents/audited_gold/households/households_audited.jsonl`
-- Households metadata: `/home/james/Dropbox/SLayer/mini-interact/households/{households_kb.jsonl, households_column_meaning_base.json, households_schema.txt}`
-- Slayer model: `/home/james/Dropbox/SLayer/bird-agents/slayer_models_otf/households/models/households/` (`households.yaml`, `transportation_assets.yaml`, `properties.yaml` — sampled_values blocks especially)
+- Per-task attempt artifacts: `results/cloud/20260531t1008-claudes-slayer-890419/rows/<instance_id>/attempt-1.json`
+- Manifest: `results/cloud/20260531t1008-claudes-slayer-890419/manifest.json`
+- Eval summary: `results/cloud/20260531t1008-claudes-slayer-890419/eval.json` (`p1=11/15 (0.733)`)
+- Task data: `<mini_interact_root>/mini_interact.jsonl` (resolve via `paths.mini_interact_root()`)
+- Audited gold: `audited_gold/households/households_audited.jsonl` (resolve via `paths.audited_gold_root()`)
+- Households metadata: `<mini_interact_root>/households/{households_kb.jsonl, households_column_meaning_base.json, households_schema.txt}`
+- Slayer model: `slayer_models_otf/households/models/households/` (`households.yaml`, `transportation_assets.yaml`, `properties.yaml` — sampled_values blocks especially)
 - Audit contract: `.claude/skills/_shared/audit-gold-sql.contract.md`

@@ -14,6 +14,8 @@ in the SKILL.md of each, not here.
   "selected_database": "<task db>",
   "benchmark": "<mini_interact | livesqlbench>",
   "audit_status": "<clean | edited | unrecoverable>",
+  "variant_id": "<short kebab-case slug, e.g. 'primary', 'labeled_snippet', 'kb_strict'>",
+  "primary": true,
   "original_sol_sql": ["<canonical gold SQL string(s)>"],
   "audited_sol_sql":  ["<audited SQL string(s)>"],
   "audited_sample_row": ["<first row of audited_sol_sql[0] against the db, or []>"],
@@ -31,6 +33,14 @@ in the SKILL.md of each, not here.
   "audited_at": "<ISO-8601 UTC>"
 }
 ```
+
+`variant_id` and `primary` are always required:
+
+- `variant_id`: a short kebab-case slug identifying this reading. For single-variant tasks use
+  `"primary"`. For multi-variant rows name each variant after its authoritative source
+  (e.g. `"labeled_snippet"`, `"kb_strict"`).
+- `primary`: boolean, exactly ONE row per `instance_id` must carry `primary: true`. For
+  single-variant tasks the single row is always `primary: true`.
 
 ### Field rules
 

@@ -494,7 +494,12 @@ def _stub_env(
     raise_after_prefill: Exception | None = None,
     prefill_asks: int = 0,
 ):
+    from pathlib import Path
     from bird_interact_agents import usage as usage_mod
+    from bird_interact_agents.eval.annotation_schema import (
+        MetadataSufficiency, Provenance, TaskAnnotation,
+    )
+    from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
 
     captured = captured if captured is not None else {}
     captured.setdefault("materialize_calls", 0)
@@ -536,6 +541,36 @@ def _stub_env(
             prefill_asks=prefill_asks,
         ),
     )
+
+    # Autopsy precondition + trigger mocks: create a real annotation file so
+    # _ann_path.exists() returns True, then return a passing cascade so the
+    # autopsy never actually fires an LLM call in unit tests.
+    ann_dir = Path(storage_dir).parent
+    ann_dir.mkdir(parents=True, exist_ok=True)
+    ann_file = ann_dir / "fake_ann.json"
+    ann_file.write_text("{}")
+    _fake_ann = TaskAnnotation(
+        instance_id=_TASK["instance_id"],
+        selected_database=_TASK["selected_database"],
+        annotated_by="test",
+        annotated_at="2024-01-01",
+        amb_user_query=_TASK["amb_user_query"],
+        metadata_sufficiency=MetadataSufficiency(verdict="sufficient", rationale="test"),
+        provenance=Provenance(
+            task_jsonl_path="mini_interact.jsonl",
+            task_jsonl_instance_id=_TASK["instance_id"],
+        ),
+    )
+    _passing_cascade = CascadeVerdict(
+        n1_original_gold=True, n2_audited_primary=True, n3_any_audited_variant=True,
+        n4_tie_order=True, n5_llm_judge=True, n6_numeric_epsilon=True,
+        n7_trailing_whitespace=True, n8_column_order=True, n9_case_fold=True,
+    )
+    monkeypatch.setattr(m, "task_annotation_path", lambda **kw: ann_file)
+    monkeypatch.setattr(m, "load_task_annotation_or_implicit", lambda **kw: _fake_ann)
+    monkeypatch.setattr(m, "grade_submission", lambda **kw: _passing_cascade)
+    monkeypatch.setattr(m, "load_audited_gold_rows_for", lambda **kw: [])
+
     return captured
 
 
@@ -614,9 +649,10 @@ async def test_run_task_whitelists_ask_user_and_submit_query(monkeypatch, tmp_pa
 async def test_run_task_registers_three_guards_plus_turn_budget(
     monkeypatch, tmp_path,
 ):
-    """Hook registration: PreToolUse has the submit-gate scoped to
-    submit_query; PostToolUse carries the ask-counter, the nag, AND the
-    existing turn-budget hook."""
+    """Hook registration: PreToolUse has one matcher (submit_query) carrying
+    two guards — the ask-user gate and the query-before-submit gate;
+    PostToolUse carries the ask-counter, the nag, the turn-budget hook, AND
+    the all-tools tracker for the query-before-submit gate."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
@@ -629,14 +665,16 @@ async def test_run_task_registers_three_guards_plus_turn_budget(
     assert "PostToolUse" in hooks
 
     pre_matchers = hooks["PreToolUse"]
-    # Exactly one PreToolUse matcher, scoped to submit_query.
+    # Exactly one PreToolUse matcher, scoped to submit_query, with two hooks:
+    # [0] ask-user gate, [1] query-before-submit gate.
     assert len(pre_matchers) == 1
     assert pre_matchers[0].matcher == "mcp__bird-interact-tools__submit_query"
+    assert len(pre_matchers[0].hooks) == 2
 
     post_matchers = hooks["PostToolUse"]
-    # Exactly three PostToolUse matchers: ask-counter (matcher == ask_user),
-    # nag (matcher None), turn-budget (matcher None).
-    assert len(post_matchers) == 3
+    # Exactly four PostToolUse matchers: ask-counter (matcher == ask_user),
+    # nag (matcher None), turn-budget (matcher None), tracker (matcher None).
+    assert len(post_matchers) == 4
     matchers = {pm.matcher for pm in post_matchers}
     assert "mcp__bird-interact-tools__ask_user" in matchers
     assert None in matchers
@@ -645,9 +683,11 @@ async def test_run_task_registers_three_guards_plus_turn_budget(
 @pytest.mark.asyncio
 async def test_run_task_registered_hooks_behave_correctly(monkeypatch, tmp_path):
     """Codex MED#2: not only count and matcher names — actually invoke the
-    captured hook callables and prove (a) the submit-gate denies before
-    ask_user has been called, (b) the ask-counter flips the gate to allow,
-    (c) the nag fires on the 10th non-ask call when ask_count == 0."""
+    captured hook callables and prove (a) the ask-user gate denies before
+    ask_user has been called, (b) the ask-counter flips it to allow,
+    (c) the nag fires on the 10th non-ask call when ask_count == 0,
+    (d) the query-before-submit gate denies when last tool was not query,
+    (e) the tracker + gate together allow after a query call."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
@@ -657,29 +697,29 @@ async def test_run_task_registered_hooks_behave_correctly(monkeypatch, tmp_path)
     )
     hooks = captured["options"].hooks
 
-    pre_submit = hooks["PreToolUse"][0].hooks[0]
+    ask_user_gate = hooks["PreToolUse"][0].hooks[0]
+    pre_query_gate = hooks["PreToolUse"][0].hooks[1]
     post_by_matcher = {pm.matcher: pm.hooks[0] for pm in hooks["PostToolUse"]}
     counter = post_by_matcher["mcp__bird-interact-tools__ask_user"]
-    # The two matcher=None hooks: one is the nag, one is the turn-budget. We
-    # can't tell them apart by matcher alone — call BOTH and pick the one
-    # that behaves as the nag. If neither fires for a slayer tool by call 10,
-    # the nag wasn't registered.
+    # The three matcher=None PostToolUse hooks: nag, turn-budget, tracker.
     matcher_none_hooks = [
         pm.hooks[0] for pm in hooks["PostToolUse"] if pm.matcher is None
     ]
-    assert len(matcher_none_hooks) == 2  # nag + turn-budget
+    assert len(matcher_none_hooks) == 3  # nag + turn-budget + tracker
+    # Tracker is the last registered None-matcher hook.
+    tracker = matcher_none_hooks[-1]
 
-    # (a) Pre-submit denies before any ask.
-    out = await pre_submit(
+    # (a) ask-user gate denies before any ask.
+    out = await ask_user_gate(
         {"tool_name": "mcp__bird-interact-tools__submit_query"}, None, None,
     )
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
-    # (b) ask-counter increments; pre-submit now allows.
+    # (b) ask-counter increments; ask-user gate now allows.
     await counter(
         {"tool_name": "mcp__bird-interact-tools__ask_user"}, None, None,
     )
-    out = await pre_submit(
+    out = await ask_user_gate(
         {"tool_name": "mcp__bird-interact-tools__submit_query"}, None, None,
     )
     assert out == {}
@@ -691,6 +731,27 @@ async def test_run_task_registered_hooks_behave_correctly(monkeypatch, tmp_path)
         assert out == {}
     out = await nag2({"tool_name": "mcp__slayer__query"}, None, None)
     assert "additionalContext" in out["hookSpecificOutput"]
+
+    # (d) Query gate denies when last_tool has not been set to a query tool.
+    out = await pre_query_gate(
+        {"tool_name": "mcp__bird-interact-tools__submit_query"}, None, None,
+    )
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "`query`" in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+    # (e) Tracker records a query call; gate now allows.
+    await tracker({"tool_name": "mcp__slayer__query"}, None, None)
+    out = await pre_query_gate(
+        {"tool_name": "mcp__bird-interact-tools__submit_query"}, None, None,
+    )
+    assert out == {}
+
+    # (f) Tracker records a non-query call after the query; gate denies again.
+    await tracker({"tool_name": "mcp__slayer__edit_model"}, None, None)
+    out = await pre_query_gate(
+        {"tool_name": "mcp__bird-interact-tools__submit_query"}, None, None,
+    )
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 @pytest.mark.asyncio
