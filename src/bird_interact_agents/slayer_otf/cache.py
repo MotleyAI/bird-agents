@@ -219,7 +219,7 @@ def fingerprint_of(
     return h.hexdigest()[:16]
 
 
-def _impl_fingerprint_of() -> str:
+def _impl_fingerprint_of(benchmark: object = None) -> str:
     """Return the implementation-version fingerprint half.
 
     Includes ONLY the components that must agree between cache-build time
@@ -235,6 +235,10 @@ def _impl_fingerprint_of() -> str:
       models. (Mitigates DEV-1508 risk #1 — Codex review of the plan.)
     - active embedding model name (or ``"none"``) — search ranks would
       degrade silently if embeddings were built against a different model.
+    - postgres connection identity (host:port:user) when benchmark is postgres
+      — the persisted datasource YAML contains the connection URL; reusing a
+      cache built against a different server would point the MCP server at the
+      wrong host.
 
     Used by :func:`ensure_db_cache` on the reuse path: recompute, compare
     against the persisted ``_impl_fp.txt`` marker, and fall through to a
@@ -243,6 +247,11 @@ def _impl_fingerprint_of() -> str:
     h = hashlib.sha256()
     h.update(f"slayer={_slayer_version()}\n".encode())
     h.update(f"embed={_active_embedding_model_or_none()}\n".encode())
+    if getattr(benchmark, "db_backend", "sqlite") == "postgres":
+        pg_host = os.environ.get("BIRD_PG_HOST", "localhost")
+        pg_port = os.environ.get("BIRD_PG_PORT", "5432")
+        pg_user = os.environ.get("BIRD_PG_USER", "bird_interact")
+        h.update(f"pg_conn={pg_host}:{pg_port}:{pg_user}\n".encode())
     return h.hexdigest()[:16]
 
 
@@ -312,7 +321,7 @@ async def ensure_db_cache(
         impl_marker = target / _IMPL_MARKER
         if not impl_marker.is_file():
             return False
-        return impl_marker.read_text().strip() == _impl_fingerprint_of()
+        return impl_marker.read_text().strip() == _impl_fingerprint_of(benchmark)
 
     # Fast path — reuse a complete cache without recomputing the FULL
     # fingerprint. The IMPL half IS recomputed; mismatch falls through to
@@ -373,7 +382,7 @@ async def ensure_db_cache(
             # marker so a successful reuse (marker present) is guaranteed
             # to find a usable ``_impl_fp.txt`` to validate. The marker is
             # still written LAST and remains the sole completeness signal.
-            (tmp_dir / _IMPL_MARKER).write_text(_impl_fingerprint_of())
+            (tmp_dir / _IMPL_MARKER).write_text(_impl_fingerprint_of(benchmark))
             # Provenance marker, written LAST.
             (tmp_dir / _CACHE_MARKER).write_text(fp)
 
