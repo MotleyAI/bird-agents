@@ -1015,7 +1015,7 @@ def resubmit(run_id: str) -> None:
             )
         if _framework == "annotator":
             env_vars = read_api_keys_from_local_env(
-                manifest["agent_model"], manifest["agent_model"],
+                manifest["agent_model"], "",
                 query_mode="raw", framework="annotator",
             )
             job_args = _build_annotator_resubmit_args(manifest, run_id, missing)

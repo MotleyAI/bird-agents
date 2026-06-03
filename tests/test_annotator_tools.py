@@ -444,3 +444,117 @@ async def test_submit_annotation_variant_wrong_database_returns_error():
     text = result["content"][0]["text"].lower()
     assert "error" in text or "selected_database" in text
     assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_gold_variant_ref_missing_audited_row_returns_error():
+    """A TaskAnnotation that references a variant_id in gold_variants but
+    doesn't include that variant_id in audited_gold_variants_json must return
+    an error — prevents the grader from falling back to wrong gold."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation_with_variant = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-02",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "KB 3 pins the tier.",
+            "evidence_sources_consulted": ["kb:3"],
+        },
+        "original_gold_is_correct": False,
+        "gold_variants": [
+            {
+                "variant_id": "canonical_only",
+                "interpretation": "KB-anchored",
+                "primary": True,
+                "anchored_in": ["kb:3"],
+                "audited_gold_ref": {
+                    "file": "__HARNESS_FILLS__",
+                    "instance_id": "shop_1",
+                    "variant_id": "canonical_only",
+                },
+            }
+        ],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
+    # Audited variants list is empty — no row for "canonical_only".
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation_with_variant,
+        "audited_gold_variants_json": "[]",
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "validation" in text or "canonical_only" in text.lower()
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_gold_variant_ref_with_matching_row_succeeds():
+    """When gold_variants refs are all satisfied by audited_gold_variants_json,
+    submission must succeed."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation_with_variant = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-02",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "r",
+            "evidence_sources_consulted": [],
+        },
+        "original_gold_is_correct": False,
+        "gold_variants": [
+            {
+                "variant_id": "canonical_only",
+                "interpretation": "KB-anchored",
+                "primary": True,
+                "anchored_in": [],
+                "audited_gold_ref": {
+                    "file": "__HARNESS_FILLS__",
+                    "instance_id": "shop_1",
+                    "variant_id": "canonical_only",
+                },
+            }
+        ],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
+    matching_variant = json.dumps([
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "variant_id": "canonical_only",
+            "benchmark": "mini_interact",
+            "audit_status": "clean",
+            "original_sol_sql": ["SELECT 1;"],
+            "audited_sol_sql": ["SELECT 1;"],
+            "audited_sample_row": [],
+            "changes": [],
+            "reasoning_summary": "correct",
+            "skill_version": "annotator-agent/1.0",
+            "audited_at": "2026-06-02",
+        }
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation_with_variant,
+        "audited_gold_variants_json": matching_variant,
+    })
+
+    assert ann_agent._ctx.get("_submission_done") is True

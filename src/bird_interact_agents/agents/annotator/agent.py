@@ -208,6 +208,18 @@ async def submit_annotation(args: dict) -> dict:
                 f"{expected_db!r}, got {variant.get('selected_database')!r}"
             )
 
+    if not task_annotation.original_gold_is_correct and task_annotation.gold_variants:
+        submitted_variant_ids = {v.get("variant_id") for v in audited_gold_variants}
+        for gvr in task_annotation.gold_variants:
+            ref_vid = gvr.audited_gold_ref.variant_id
+            if ref_vid not in submitted_variant_ids:
+                return _text(
+                    f"Validation error: gold_variants entry {gvr.variant_id!r} references "
+                    f"audited_gold_ref.variant_id={ref_vid!r} but no matching entry "
+                    f"found in audited_gold_variants_json. Add the audited row or "
+                    f"set original_gold_is_correct=True."
+                )
+
     _ctx["annotation_result"] = {
         "task_annotation": task_annotation,
         "audited_gold_variants": audited_gold_variants,
