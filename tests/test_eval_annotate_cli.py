@@ -182,6 +182,38 @@ def test_submission_annotation_reads_latest_attempt_not_hardcoded(tmp_path):
     )
 
 
+def test_resolve_db_sqlite_path_prefers_primary(tmp_path):
+    """Primary {db}.sqlite is returned when it exists."""
+    from bird_interact_agents.eval.annotate import _resolve_db_sqlite_path
+
+    db_dir = tmp_path / "alien"
+    db_dir.mkdir()
+    primary = db_dir / "alien.sqlite"
+    primary.touch()
+    (db_dir / "alien_template.sqlite").touch()
+    assert _resolve_db_sqlite_path(tmp_path, "alien") == primary
+
+
+def test_resolve_db_sqlite_path_falls_back_to_template(tmp_path):
+    """LiveSQLBench: _template.sqlite is used when {db}.sqlite is absent."""
+    from bird_interact_agents.eval.annotate import _resolve_db_sqlite_path
+
+    db_dir = tmp_path / "museum"
+    db_dir.mkdir()
+    tmpl = db_dir / "museum_template.sqlite"
+    tmpl.touch()
+    assert _resolve_db_sqlite_path(tmp_path, "museum") == tmpl
+
+
+def test_resolve_db_sqlite_path_returns_primary_even_when_missing(tmp_path):
+    """When neither file exists, primary path is returned (error surfaces at open)."""
+    from bird_interact_agents.eval.annotate import _resolve_db_sqlite_path
+
+    (tmp_path / "alien").mkdir()
+    result = _resolve_db_sqlite_path(tmp_path, "alien")
+    assert result.name == "alien.sqlite"
+
+
 # ---------------------------------------------------------------------------
 # Mode matrix
 # ---------------------------------------------------------------------------

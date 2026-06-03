@@ -59,6 +59,20 @@ from bird_interact_agents.eval.regrade import _latest_attempt_file
 PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
 
 
+def _resolve_db_sqlite_path(benchmark_data_root: Path, db: str) -> Path:
+    """Return the SQLite DB path for ``db``, falling back to ``_template.sqlite``.
+
+    LiveSQLBench uses ``{db}_template.sqlite``; mini-interact uses ``{db}.sqlite``.
+    Mirrors the fallback logic in regrade.py."""
+    db_dir = benchmark_data_root / db
+    primary = db_dir / f"{db}.sqlite"
+    if not primary.exists():
+        alt = db_dir / f"{db}_template.sqlite"
+        if alt.exists():
+            return alt
+    return primary
+
+
 # ---------------------------------------------------------------------------
 # Mechanical builders — pure, no I/O
 # ---------------------------------------------------------------------------
@@ -444,8 +458,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         for row in rows:
             iid = row["instance_id"]
             db = row["selected_database"]
-            db_path = (
-                paths.benchmark_data_root(benchmark) / db / f"{db}.sqlite"
+            db_path = _resolve_db_sqlite_path(
+                paths.benchmark_data_root(benchmark), db
             )
             ann = load_task_annotation_or_implicit(
                 instance_id=iid, selected_database=db,
