@@ -646,6 +646,7 @@ def merge_audited_gold_variants(
     downloaded_run_dir: Path,
     benchmark: str,
     audited_gold_root: Path,
+    override: bool = False,
 ) -> AuditedGoldVariantsMergeReport:
     """Merge per-task audited gold variant JSONL files into the consolidated JSONL.
 
@@ -653,6 +654,10 @@ def merge_audited_gold_variants(
     Appends new entries to ``audited_gold_root/<benchmark>_audited.jsonl``.
     Deduplicates by ``(instance_id, variant_id)``; rejects entries missing
     required fields (selected_database, benchmark, audit_status, audited_sol_sql).
+
+    When ``override=True``, incoming rows replace existing rows with the same
+    key so that a re-annotation run updates the local consolidated file rather
+    than leaving it stale.
     """
     bm = _normalise_benchmark(benchmark)
     report = AuditedGoldVariantsMergeReport()
@@ -662,7 +667,71 @@ def merge_audited_gold_variants(
 
     consolidated = audited_gold_root / f"{bm}_audited.jsonl"
 
-    # Load existing keys.
+    if override:
+        # Upsert mode: load all existing rows keyed by (instance_id, variant_id),
+        # then overwrite with incoming rows. Rewrite the whole file at the end.
+        existing_ordered: dict[tuple[str, str], str] = {}
+        if consolidated.exists():
+            for raw in consolidated.read_text().splitlines():
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    r = json.loads(raw)
+                    k: tuple[str, str] = (r["instance_id"], r.get("variant_id", ""))
+                    existing_ordered[k] = raw
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
+        # Purge existing rows only for instances whose annotator task produced
+        # an audited_gold_variants.jsonl (even empty — empty means the annotator
+        # decided original_gold_is_correct=True). Dirs with no variants file are
+        # failed annotator tasks; keep their old consolidated rows untouched.
+        rerun_iids = {
+            sub.name
+            for sub in rows_dir.iterdir()
+            if sub.is_dir() and (sub / "audited_gold_variants.jsonl").exists()
+        }
+        for key in list(existing_ordered.keys()):
+            if key[0] in rerun_iids:
+                del existing_ordered[key]
+
+        for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
+            src = sub / "audited_gold_variants.jsonl"
+            if not src.exists():
+                continue
+            for line in src.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as e:
+                    report.errors += 1
+                    report.error_details.append(f"{src}: {e}")
+                    continue
+                missing = _REQUIRED_VARIANT_FIELDS - set(row.keys())
+                if missing:
+                    report.errors += 1
+                    report.error_details.append(
+                        f"{src}: missing required fields: {missing}"
+                    )
+                    continue
+                key = (row.get("instance_id", ""), row.get("variant_id", ""))
+                existing_ordered[key] = json.dumps(row)
+                report.added += 1
+
+        if existing_ordered:
+            audited_gold_root.mkdir(parents=True, exist_ok=True)
+            consolidated.write_text(
+                "\n".join(existing_ordered.values()) + "\n"
+            )
+        elif consolidated.exists():
+            # All rows were purged; truncate rather than leaving stale content.
+            consolidated.write_text("")
+        return report
+
+    # Append-only mode (default): skip rows whose key already exists.
     existing_keys: set[tuple[str, str]] = set()
     if consolidated.exists():
         for line in consolidated.read_text().splitlines():
@@ -708,6 +777,10 @@ def merge_audited_gold_variants(
 
     if new_lines:
         audited_gold_root.mkdir(parents=True, exist_ok=True)
+        if consolidated.exists() and consolidated.stat().st_size > 0:
+            if not consolidated.read_bytes().endswith(b"\n"):
+                with consolidated.open("a") as f:
+                    f.write("\n")
         with consolidated.open("a") as f:
             for line in new_lines:
                 f.write(line + "\n")

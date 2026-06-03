@@ -361,3 +361,226 @@ def test_merge_audited_gold_variants_no_rows_dir_is_noop(tmp_path):
 
     assert report.added == 0
     assert report.errors == 0
+
+
+def test_merge_audited_gold_variants_override_replaces_existing(tmp_path):
+    """override=True: incoming rows replace existing rows with the same
+    (instance_id, variant_id) key; the consolidated file is rewritten."""
+    from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
+
+    audited_gold = tmp_path / "audited_gold"
+    audited_gold.mkdir()
+    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    old_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "clean", "audited_sol_sql": ["SELECT 1"],
+    }
+    consolidated.write_text(json.dumps(old_row) + "\n")
+
+    downloaded = tmp_path / "run"
+    sub = downloaded / "rows" / "db_a_1"
+    sub.mkdir(parents=True)
+    new_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "edited", "audited_sol_sql": ["SELECT 2"],
+    }
+    (sub / "audited_gold_variants.jsonl").write_text(json.dumps(new_row) + "\n")
+
+    report = merge_audited_gold_variants(
+        downloaded_run_dir=downloaded,
+        benchmark="mini_interact",
+        audited_gold_root=audited_gold,
+        override=True,
+    )
+
+    assert report.added == 1
+    lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert json.loads(lines[0])["audit_status"] == "edited"
+
+
+def test_merge_audited_gold_variants_override_purges_stale_rows_when_empty_file(tmp_path):
+    """override=True: when a re-annotated task now produces an empty variants
+    file (e.g. original_gold_is_correct=True), ALL existing rows for that
+    instance must be removed from the consolidated file, not left stale."""
+    from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
+
+    audited_gold = tmp_path / "audited_gold"
+    audited_gold.mkdir()
+    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    old_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "edited", "audited_sol_sql": ["SELECT 1"],
+    }
+    unrelated_row = {
+        "instance_id": "db_b_1", "variant_id": "v0",
+        "selected_database": "db_b", "benchmark": "mini_interact",
+        "audit_status": "clean", "audited_sol_sql": ["SELECT 2"],
+    }
+    consolidated.write_text(json.dumps(old_row) + "\n" + json.dumps(unrelated_row) + "\n")
+
+    downloaded = tmp_path / "run"
+    sub = downloaded / "rows" / "db_a_1"
+    sub.mkdir(parents=True)
+    # Empty variants file — re-annotation decided original is correct.
+    (sub / "audited_gold_variants.jsonl").write_text("")
+
+    report = merge_audited_gold_variants(
+        downloaded_run_dir=downloaded,
+        benchmark="mini_interact",
+        audited_gold_root=audited_gold,
+        override=True,
+    )
+
+    assert report.added == 0
+    lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert json.loads(lines[0])["instance_id"] == "db_b_1"
+
+
+def test_merge_audited_gold_variants_override_preserves_rows_for_failed_tasks(tmp_path):
+    """override=True: failed annotator tasks (no audited_gold_variants.jsonl)
+    must NOT purge their existing consolidated rows — only dirs with a variants
+    file (even empty) count as successful re-annotations to purge."""
+    from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
+
+    audited_gold = tmp_path / "audited_gold"
+    audited_gold.mkdir()
+    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    old_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "edited", "audited_sol_sql": ["SELECT 1"],
+    }
+    consolidated.write_text(json.dumps(old_row) + "\n")
+
+    downloaded = tmp_path / "run"
+    # Failed task: only attempt-1.json, no audited_gold_variants.jsonl.
+    sub = downloaded / "rows" / "db_a_1"
+    sub.mkdir(parents=True)
+    (sub / "attempt-1.json").write_text('{"status": "error"}')
+
+    merge_audited_gold_variants(
+        downloaded_run_dir=downloaded,
+        benchmark="mini_interact",
+        audited_gold_root=audited_gold,
+        override=True,
+    )
+
+    lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 1, "failed-task row must be preserved in consolidated file"
+    assert json.loads(lines[0])["instance_id"] == "db_a_1"
+
+
+def test_merge_audited_gold_variants_override_purges_all_rows_truncates_file(tmp_path):
+    """override=True: when ALL consolidated rows belong to the re-run instance
+    and the incoming variants file is empty, the consolidated file must be
+    truncated rather than left stale."""
+    from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
+
+    audited_gold = tmp_path / "audited_gold"
+    audited_gold.mkdir()
+    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    old_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "edited", "audited_sol_sql": ["SELECT 1"],
+    }
+    # Only rows for the instance being re-annotated — no unrelated rows.
+    consolidated.write_text(json.dumps(old_row) + "\n")
+
+    downloaded = tmp_path / "run"
+    sub = downloaded / "rows" / "db_a_1"
+    sub.mkdir(parents=True)
+    (sub / "audited_gold_variants.jsonl").write_text("")
+
+    merge_audited_gold_variants(
+        downloaded_run_dir=downloaded,
+        benchmark="mini_interact",
+        audited_gold_root=audited_gold,
+        override=True,
+    )
+
+    lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
+    assert lines == [], "stale rows must be removed; consolidated file must be empty"
+
+
+def test_merge_audited_gold_variants_override_false_does_not_replace(tmp_path):
+    """override=False (default): existing rows are never replaced; the new row
+    for an already-present key is skipped."""
+    from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
+
+    audited_gold = tmp_path / "audited_gold"
+    audited_gold.mkdir()
+    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    old_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "clean", "audited_sol_sql": ["SELECT 1"],
+    }
+    consolidated.write_text(json.dumps(old_row) + "\n")
+
+    downloaded = tmp_path / "run"
+    sub = downloaded / "rows" / "db_a_1"
+    sub.mkdir(parents=True)
+    new_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "edited", "audited_sol_sql": ["SELECT 2"],
+    }
+    (sub / "audited_gold_variants.jsonl").write_text(json.dumps(new_row) + "\n")
+
+    report = merge_audited_gold_variants(
+        downloaded_run_dir=downloaded,
+        benchmark="mini_interact",
+        audited_gold_root=audited_gold,
+    )
+
+    assert report.skipped_duplicate == 1
+    assert report.added == 0
+    lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert json.loads(lines[0])["audit_status"] == "clean"
+
+
+def test_merge_audited_gold_variants_append_handles_missing_trailing_newline(tmp_path):
+    """Append mode must not corrupt JSONL when the consolidated file has no
+    trailing newline (e.g. hand-edited file); the new row should appear on its
+    own line."""
+    from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
+
+    audited_gold = tmp_path / "audited_gold"
+    audited_gold.mkdir()
+    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    old_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "clean", "audited_sol_sql": ["SELECT 1"],
+    }
+    # Intentionally write without trailing newline.
+    consolidated.write_bytes(json.dumps(old_row).encode())
+
+    downloaded = tmp_path / "run"
+    sub = downloaded / "rows" / "db_a_2"
+    sub.mkdir(parents=True)
+    new_row = {
+        "instance_id": "db_a_2", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "clean", "audited_sol_sql": ["SELECT 2"],
+    }
+    (sub / "audited_gold_variants.jsonl").write_text(json.dumps(new_row) + "\n")
+
+    report = merge_audited_gold_variants(
+        downloaded_run_dir=downloaded,
+        benchmark="mini_interact",
+        audited_gold_root=audited_gold,
+    )
+
+    assert report.added == 1
+    lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 2
+    assert json.loads(lines[0])["instance_id"] == "db_a_1"
+    assert json.loads(lines[1])["instance_id"] == "db_a_2"

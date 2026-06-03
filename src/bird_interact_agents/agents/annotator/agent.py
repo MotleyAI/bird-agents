@@ -163,6 +163,7 @@ async def submit_annotation(args: dict) -> dict:
     task_data = _ctx.get("task_data") or {}
     expected_iid = task_data.get("instance_id")
     expected_db = task_data.get("selected_database")
+    expected_benchmark = _ctx.get("benchmark")
     if expected_iid and task_annotation.instance_id != expected_iid:
         return _text(
             f"Validation error: task_annotation instance_id must be "
@@ -206,6 +207,36 @@ async def submit_annotation(args: dict) -> dict:
                 f"Error: audited_gold_variants[{i}].selected_database must be "
                 f"{expected_db!r}, got {variant.get('selected_database')!r}"
             )
+        if expected_benchmark and variant.get("benchmark") != expected_benchmark:
+            return _text(
+                f"Error: audited_gold_variants[{i}].benchmark must be "
+                f"{expected_benchmark!r}, got {variant.get('benchmark')!r}"
+            )
+        if not isinstance(variant.get("audited_sol_sql"), list):
+            return _text(
+                f"Error: audited_gold_variants[{i}].audited_sol_sql must be a list "
+                f"of SQL strings, got {type(variant.get('audited_sol_sql')).__name__!r}. "
+                f"Wrap single SQL in a list: [\"SELECT ...\"]"
+            )
+        _VALID_AUDIT_STATUSES = {"clean", "edited", "unrecoverable", "original_correct"}
+        _status = variant.get("audit_status")
+        if _status != "unrecoverable" and not variant.get("audited_sol_sql"):
+            return _text(
+                f"Error: audited_gold_variants[{i}].audited_sol_sql must contain at least "
+                f"one SQL string when audit_status={_status!r}. "
+                f"Only audit_status='unrecoverable' permits an empty list."
+            )
+        if variant.get("audit_status") not in _VALID_AUDIT_STATUSES:
+            return _text(
+                f"Error: audited_gold_variants[{i}].audit_status must be one of "
+                f"{sorted(_VALID_AUDIT_STATUSES)}, got {variant.get('audit_status')!r}"
+            )
+
+    if task_annotation.original_gold_is_correct and audited_gold_variants:
+        return _text(
+            "Validation error: original_gold_is_correct=True requires an empty "
+            "audited_gold_variants array. Set audited_gold_variants_json to '[]'."
+        )
 
     if not task_annotation.original_gold_is_correct and task_annotation.gold_variants:
         submitted_variant_ids = {v.get("variant_id") for v in audited_gold_variants}
@@ -227,6 +258,13 @@ async def submit_annotation(args: dict) -> dict:
                     f"primary=True but the matching audited_gold_variants row has primary=False. "
                     f"Set primary=True in the audited variant row."
                 )
+
+    primary_count = sum(1 for v in audited_gold_variants if v.get("primary", False))
+    if primary_count > 1:
+        return _text(
+            f"Validation error: at most one audited_gold_variants entry may have "
+            f"primary=True; got {primary_count}. Mark exactly the primary variant."
+        )
 
     _ctx["annotation_result"] = {
         "task_annotation": task_annotation,
@@ -449,6 +487,8 @@ async def run_task(
         system_prompt=system_prompt,
         mcp_servers={"bird-annotator-tools": server},
         allowed_tools=tool_names_prefixed,
+        tools=[],
+        setting_sources=[],
         effort=effort,
         max_turns=cap,
         model=native_model_id(model),

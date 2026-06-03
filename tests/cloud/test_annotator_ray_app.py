@@ -441,3 +441,109 @@ def test_cluster_submit_job_accepts_ray_app_path_kwarg(monkeypatch):
     full_cmd = " ".join(str(a) for a in captured[-1])
     assert "ray_app_annotator.py" in full_cmd
     assert "ray_app.py" not in full_cmd.replace("ray_app_annotator.py", "")
+
+
+# ---------------------------------------------------------------------------
+# Skip path: copy failure → status "error" (not "skipped")
+# ---------------------------------------------------------------------------
+
+def test_skip_copy_failure_writes_error_status(fake_gcs_bucket, monkeypatch):
+    """If the stable→run-scoped blob copy raises, the attempt row must be
+    status='error' so resubmit picks the task up again instead of treating
+    it as complete with missing run-scoped blobs."""
+    from bird_interact_agents.cloud import gcs
+    from bird_interact_agents.cloud import ray_app_annotator
+
+    client, store = fake_gcs_bucket
+    # blob_exists is True (skip check passes) but blobs are absent from store,
+    # so download_as_bytes raises KeyError — simulates a GCS copy failure.
+    monkeypatch.setattr(ray_app_annotator._gcs, "blob_exists", lambda *a, **kw: True)
+    monkeypatch.setattr(ray_app_annotator, "_run_agent", lambda *a, **kw: _minimal_annotator_result())
+
+    ray_app_annotator._run_one_task(
+        task_data=_task_data(), cfg=_cfg(), run_id="r-1",
+        data_path_base="/tmp/data", gcs_client=client,
+    )
+
+    attempt_blob = "runs/r-1/rows/shop_1/attempt-1.json"
+    assert attempt_blob in store
+    row = json.loads(store[attempt_blob])
+    assert row["status"] == "error"
+    assert "copy" in row.get("error", "").lower()
+
+
+# ---------------------------------------------------------------------------
+# _load_annotator_task_data: explicit gold_file overrides env/path lookup
+# ---------------------------------------------------------------------------
+
+def test_load_annotator_task_data_explicit_gold_file_skips_env_lookup(monkeypatch, tmp_path):
+    """An explicit gold_file arg must be used directly without consulting the
+    env var or the hardcoded default path — mirrors ray_app.py --gold-file."""
+    from bird_interact_agents.cloud import ray_app_annotator
+    from bird_interact_agents.benchmark import get_benchmark
+
+    # A fake load_benchmark_tasks that captures what gold_file it receives.
+    captured: list = []
+
+    def _fake_load(benchmark, data_file, gold_file, filter_ids=None):
+        captured.append(gold_file)
+        return []
+
+    monkeypatch.setattr(ray_app_annotator, "load_benchmark_tasks", _fake_load)
+    monkeypatch.setattr(
+        ray_app_annotator.paths, "benchmark_data_file",
+        lambda b: tmp_path / "dummy.jsonl",
+    )
+    # Ensure env var is NOT consulted (set it to something different).
+    bench = get_benchmark("livesqlbench")
+    if bench.gold_root_env:
+        monkeypatch.setenv(bench.gold_root_env, "/should/not/be/used")
+
+    explicit = str(tmp_path / "custom_gold.jsonl")
+    ray_app_annotator._load_annotator_task_data(
+        [], benchmark="livesqlbench", gold_file=explicit,
+    )
+
+    assert captured == [explicit], (
+        f"Expected explicit gold_file {explicit!r} to be passed through, got {captured}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# _build_annotator_resubmit_args: gold_file propagation
+# ---------------------------------------------------------------------------
+
+def test_build_annotator_resubmit_args_emits_gold_file(monkeypatch):
+    """When manifest carries a gold_file, _build_annotator_resubmit_args must
+    emit --gold-file so LiveSQLBench resubmits can locate the gold sidecar."""
+    from bird_interact_agents.cloud import driver
+
+    manifest = {
+        "dataset": "livesqlbench",
+        "agent_model": "anthropic/claude-opus-4-7",
+        "effort": "medium",
+        "gold_file": "/data/livesqlbench_gold.jsonl",
+        "render_inputs": {"workers": 1, "actors_per_worker": 2},
+    }
+    args = driver._build_annotator_resubmit_args(manifest, "run-1", ["ls_1"], attempt=2)
+
+    assert "--gold-file" in args
+    idx = args.index("--gold-file")
+    assert args[idx + 1] == "/data/livesqlbench_gold.jsonl"
+    assert "--attempt" in args
+    assert args[args.index("--attempt") + 1] == "2"
+
+
+def test_build_annotator_resubmit_args_omits_gold_file_when_absent(monkeypatch):
+    """When manifest has no gold_file, --gold-file must not appear in args."""
+    from bird_interact_agents.cloud import driver
+
+    manifest = {
+        "dataset": "mini_interact",
+        "agent_model": "anthropic/claude-opus-4-7",
+        "effort": "medium",
+        "render_inputs": {"workers": 1, "actors_per_worker": 1},
+    }
+    args = driver._build_annotator_resubmit_args(manifest, "run-1", ["shop_1"], attempt=1)
+
+    assert "--gold-file" not in args

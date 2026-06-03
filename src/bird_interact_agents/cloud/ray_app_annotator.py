@@ -118,17 +118,26 @@ def _run_one_task(
                 ):
                     data = bucket.blob(src_name).download_as_bytes()
                     bucket.blob(dst_name).upload_from_string(data)
+                attempt_row = {
+                    "instance_id": instance_id,
+                    "database": db,
+                    "status": "skipped",
+                    "duration_s": time.monotonic() - t0,
+                }
+                _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
             except Exception as exc:
                 logger.warning(
-                    "[%s] stable→run-scoped copy failed (%s); fetch may be incomplete",
+                    "[%s] stable→run-scoped copy failed (%s); marking error so resubmit retries",
                     instance_id, exc,
                 )
-            attempt_row = {
-                "instance_id": instance_id,
-                "status": "skipped",
-                "duration_s": time.monotonic() - t0,
-            }
-            _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
+                attempt_row = {
+                    "instance_id": instance_id,
+                    "database": db,
+                    "status": "error",
+                    "error": f"stable→run-scoped copy failed: {exc}",
+                    "duration_s": time.monotonic() - t0,
+                }
+                _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
             return
 
     # Run the agent.
@@ -138,6 +147,7 @@ def _run_one_task(
         logger.error("[%s] agent raised: %s", instance_id, exc)
         attempt_row = {
             "instance_id": instance_id,
+            "database": db,
             "status": "error",
             "error": str(exc),
             "duration_s": time.monotonic() - t0,
@@ -149,6 +159,7 @@ def _run_one_task(
         logger.warning("[%s] agent returned error: %s", instance_id, result.error)
         attempt_row = {
             "instance_id": instance_id,
+            "database": db,
             "status": "error",
             "error": result.error,
             "duration_s": result.duration_s,
@@ -169,6 +180,7 @@ def _run_one_task(
         logger.error("[%s] GCS write failed after annotation: %s", instance_id, exc)
         attempt_row = {
             "instance_id": instance_id,
+            "database": db,
             "status": "error",
             "error": f"GCS write failed: {exc}",
             "duration_s": result.duration_s,
@@ -178,6 +190,7 @@ def _run_one_task(
 
     attempt_row = {
         "instance_id": instance_id,
+        "database": db,
         "status": "annotated",
         "duration_s": result.duration_s,
     }
@@ -208,11 +221,11 @@ def _load_annotator_task_data(
     instance_ids: list[str],
     *,
     benchmark: str,
+    gold_file: str | None = None,
 ) -> dict[str, dict]:
     """Load plain task data for the annotator (no audited-gold overlay)."""
     bench = get_benchmark(benchmark)
-    gold_file: str | None = None
-    if bench.gold_required:
+    if bench.gold_required and gold_file is None:
         # DEV-1525: gated gold lives at paths.gated_gold_root(benchmark=) /
         # <gt_sidecar>.jsonl; a BIRD_GATED_GOLD_ROOT env var overrides the
         # parent dir (benchmark subdir still appended).
@@ -374,6 +387,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--attempt", type=int, default=1,
                    help="attempt number (1-based); used in the GCS blob name")
+    p.add_argument("--gold-file", default=None,
+                   help="explicit path to the gold sidecar JSONL (overrides env lookup)")
     args = p.parse_args(argv)
 
     args.benchmark = get_benchmark(args.benchmark).name
@@ -385,7 +400,9 @@ def main(argv: list[str] | None = None) -> int:
         {"dataset": args.benchmark, "benchmark_data_prefix": args.benchmark_data_prefix},
     )
 
-    task_data_by_id = _load_annotator_task_data(instance_ids, benchmark=args.benchmark)
+    task_data_by_id = _load_annotator_task_data(
+        instance_ids, benchmark=args.benchmark, gold_file=args.gold_file,
+    )
 
     _b = get_benchmark(args.benchmark)
     data_path_base = (

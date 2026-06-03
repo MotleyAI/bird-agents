@@ -111,6 +111,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     grp_ann.add_argument("--instance-ids-file", type=str)
     sp_annotate.add_argument("--override", action="store_true",
                               help="Re-annotate even when stable blobs already exist.")
+    sp_annotate.add_argument(
+        "--gold-file", default=None,
+        help=(
+            "Path to the gated gold sidecar JSONL (must be under the benchmark "
+            "data root so it rides along in the GCS dataset upload)."
+        ),
+    )
     sp_annotate.add_argument("--workers", type=int, default=4)
     sp_annotate.add_argument("--actors-per-worker", type=int, default=4)
     sp_annotate.add_argument("--worker-type", default="e2-standard-4")
@@ -258,6 +265,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             if ignored_shards:
                 print(f"ignored {len(ignored_shards)} incomplete shard(s): "
                       f"{', '.join(ignored_shards)}")
+        for report_key, label in [
+            ("task_annotation_merge_report", "task annotation merge"),
+            ("audited_gold_variants_merge_report", "audited gold merge"),
+        ]:
+            report = metrics.get(report_key) or {}
+            n_errors = report.get("errors", 0)
+            if n_errors:
+                print(f"WARNING: {label}: {n_errors} error(s)")
+                for detail in report.get("error_details", []):
+                    print(f"  {detail}")
         return 0
     if ns.subcommand == "kill":
         driver.kill(ns.run_id)

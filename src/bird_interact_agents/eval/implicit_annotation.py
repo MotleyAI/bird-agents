@@ -15,7 +15,7 @@ from __future__ import annotations
 import datetime as _dt
 from typing import Optional
 
-from bird_interact_agents.benchmark import get_benchmark
+from bird_interact_agents.benchmark import benchmark_names, get_benchmark
 from bird_interact_agents.eval.annotation_schema import (
     MetadataSufficiency,
     Provenance,

@@ -352,10 +352,12 @@ async def run_autopsy(
         msg = str(exc).lower()
         if "too long" in msg or "context window" in msg or "context_window" in msg:
             logger.warning(
-                "[autopsy] context overflow on %s: trajectory has %d items; "
-                "skipping autopsy",
+                "[autopsy] context overflow on %s: trajectory has %d items, "
+                "prompt ~%d chars; api error: %s; skipping autopsy",
                 task_annotation.instance_id,
                 len(trajectory),
+                len(prompt),
+                exc,
             )
         else:
             logger.error(

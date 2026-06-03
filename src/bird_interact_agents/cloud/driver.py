@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime
+import json
 import logging
 import secrets
 import signal
@@ -259,8 +260,6 @@ def _dbs_for_instances(instance_ids, benchmark: str = "mini_interact") -> list[s
     via the benchmark's tasks file (never string-split the id — DB names contain
     underscores, e.g. ``california_schools``). Returns a sorted, de-duplicated
     db list."""
-    import json as _json
-
     wanted = set(instance_ids)
     dbs: set[str] = set()
     with paths.benchmark_data_file(benchmark).open() as f:
@@ -268,7 +267,7 @@ def _dbs_for_instances(instance_ids, benchmark: str = "mini_interact") -> list[s
             line = line.strip()
             if not line:
                 continue
-            td = _json.loads(line)
+            td = json.loads(line)
             if td.get("instance_id") in wanted:
                 db = td.get("selected_database")
                 if db:
@@ -291,8 +290,15 @@ def _benchmark_for_dataset(dataset: str | None) -> str:
 
 def _submit_benchmark(args) -> str:
     """Benchmark for a submit, derived from ``args.dataset`` (defaults to
-    mini-interact when the CLI didn't set one)."""
-    return _benchmark_for_dataset(getattr(args, "dataset", None))
+    mini-interact when the CLI didn't set one).
+
+    Annotator args use ``args.benchmark`` rather than ``args.dataset``; fall
+    back to that when ``dataset`` is absent so gold-file path helpers work for
+    both submit and annotate args.
+    """
+    return _benchmark_for_dataset(
+        getattr(args, "dataset", None) or getattr(args, "benchmark", None)
+    )
 
 
 def _validate_gold_under_data_root(args) -> None:
@@ -472,7 +478,6 @@ def _instance_ids_sorted_by_db(
     typically does all encoding for a given DB and the cross-actor encode
     race is rare. Unknown iids (absent from the dataset) sort to the end
     grouped by their iid string so they still appear deterministically."""
-    import json as _json
     wanted = list(instance_ids)
     if not wanted:
         return wanted
@@ -495,7 +500,7 @@ def _instance_ids_sorted_by_db(
             line = line.strip()
             if not line:
                 continue
-            td = _json.loads(line)
+            td = json.loads(line)
             iid = td.get("instance_id")
             if iid in wanted:
                 db = td.get("selected_database") or ""
@@ -695,7 +700,7 @@ def build_annotator_manifest(
     args, *, image_uri: str, run_id: str, benchmark_data_prefix: str | None = None,
 ) -> dict:
     """Build the manifest dict for an annotator run."""
-    return {
+    manifest: dict = {
         "run_id": run_id,
         "framework": "annotator",
         "mode": "annotate",
@@ -718,6 +723,10 @@ def build_annotator_manifest(
             "region": config.REGION,
         },
     }
+    gold_file = _in_cluster_gold_file(args)
+    if gold_file:
+        manifest["gold_file"] = gold_file
+    return manifest
 
 
 def _build_annotator_job_args(
@@ -734,12 +743,18 @@ def _build_annotator_job_args(
     ]
     if benchmark_data_prefix:
         job_args += ["--benchmark-data-prefix", benchmark_data_prefix]
+    gold_file = _in_cluster_gold_file(args)
+    if gold_file:
+        job_args += ["--gold-file", gold_file]
     if getattr(args, "override", False):
         job_args.append("--override")
     return job_args
 
 
 def submit_annotator(args) -> str:
+    # Fail fast if --gold-file is outside the benchmark data root — it must
+    # ride along in the GCS dataset upload to be present in-cluster.
+    _validate_gold_under_data_root(args)
     _prereq_args = argparse.Namespace(
         agent_model=args.agent_model,
         user_sim_model="",
@@ -878,11 +893,9 @@ def fetch(run_id: str) -> dict:
     gcs.concurrent_download_prefix(run_id, dest, client=default_gcs_client())
     manifest_path = dest / "manifest.json"
     if not manifest_path.exists():
-        import json
         manifest = gcs.read_manifest(run_id, client=default_gcs_client())
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     else:
-        import json
         manifest = json.loads(manifest_path.read_text())
     metrics = _collation.collate(dest, manifest)
     # DEV-1470: promote per-DB cloud-encoded OTF references from
@@ -923,8 +936,15 @@ def fetch(run_id: str) -> dict:
             downloaded_run_dir=dest,
             benchmark=_benchmark_for_dataset(manifest.get("dataset")),
             audited_gold_root=paths.audited_gold_root(),
+            override=manifest.get("override", False),
         )
         metrics["audited_gold_variants_merge_report"] = variants_report.model_dump()
+
+    # Rewrite eval.json so annotation merge reports (added after collate()) are
+    # persisted on disk — collate() writes eval.json before these keys exist.
+    eval_path = dest / "eval.json"
+    if eval_path.exists():
+        eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
 
     return metrics
 
@@ -1136,6 +1156,9 @@ def _build_annotator_resubmit_args(
     prefix = manifest.get("benchmark_data_prefix")
     if prefix:
         job_args += ["--benchmark-data-prefix", prefix]
+    gold_file = manifest.get("gold_file")
+    if gold_file:
+        job_args += ["--gold-file", str(gold_file)]
     if manifest.get("override"):
         job_args.append("--override")
     return job_args

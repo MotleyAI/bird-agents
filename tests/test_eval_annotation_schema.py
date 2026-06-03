@@ -319,14 +319,15 @@ def test_task_annotation_single_primary_variant_is_valid():
     assert len(ann.gold_variants) == 1
 
 
-def test_task_annotation_zero_primaries_is_allowed():
-    """A TaskAnnotation with no primary variant is valid — the grader uses
-    alphabetical tiebreak instead of primary when no primary is specified."""
-    ann = TaskAnnotation(
-        **_base_ta_kwargs(),
-        gold_variants=[_make_gold_variant("alt", primary=False)],
-    )
-    assert all(not v.primary for v in ann.gold_variants)
+def test_task_annotation_zero_primaries_raises_validation_error():
+    """A TaskAnnotation with variants but no primary=True must be rejected —
+    downstream grading relies on a primary variant for N2 scoring, so
+    an annotation with all primary=False would silently produce N2=fail."""
+    with pytest.raises(ValidationError, match="exactly one primary"):
+        TaskAnnotation(
+            **_base_ta_kwargs(),
+            gold_variants=[_make_gold_variant("alt", primary=False)],
+        )
 
 
 def test_task_annotation_multiple_primaries_raises_validation_error():

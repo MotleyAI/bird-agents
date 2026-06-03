@@ -477,7 +477,7 @@ class ClaudeSDKOtfAgent:
                 async for msg in client.receive_response():
                     try:
                         _data: object = dataclasses.asdict(msg)
-                    except TypeError:
+                    except Exception:  # noqa: BLE001
                         _data = str(msg)
                     trajectory.append({"type": str(type(msg).__name__), "data": _data})
                     accumulate_assistant_usage(accum, msg, self.model)

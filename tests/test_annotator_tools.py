@@ -245,6 +245,74 @@ async def test_submit_annotation_valid_sets_done_flag():
 
 
 @pytest.mark.asyncio
+async def test_submit_annotation_zero_primary_variants_rejected():
+    """gold_variants with no primary=True must be rejected — downstream grading
+    uses the primary variant for N2 and a zero-primary annotation would always
+    produce N2=fail regardless of answer quality."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation_no_primary = json.dumps({
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "benchmark": "mini_interact",
+        "kind": "task_annotation",
+        "original_gold_is_correct": False,
+        "metadata_sufficiency": {"verdict": "sufficient", "reason": "r"},
+        "gold_variants": [
+            {
+                "variant_id": "canonical_only",
+                "interpretation": "The canonical reading.",
+                "primary": False,
+                "audited_gold_ref": {
+                    "file": "audited_gold/mini_interact_audited.jsonl",
+                    "instance_id": "shop_1",
+                    "variant_id": "canonical_only",
+                },
+            }
+        ],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation_no_primary,
+        "audited_gold_variants_json": "[]",
+    })
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "primary" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_variant_wrong_benchmark_returns_error():
+    """A variant whose benchmark doesn't match the current run benchmark must
+    return an error so GCS routing uses the correct benchmark path."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"}, benchmark="mini_interact")
+    variant_wrong_benchmark = json.dumps([
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "variant_id": "primary",
+            "benchmark": "livesqlbench",  # wrong
+            "audit_status": "clean",
+            "audited_sol_sql": ["SELECT 1;"],
+        }
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": _valid_task_annotation_json("shop_1"),
+        "audited_gold_variants_json": variant_wrong_benchmark,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "benchmark" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
 async def test_submit_annotation_stores_annotation_result():
     from bird_interact_agents.agents.annotator import agent as ann_agent
 
@@ -265,10 +333,43 @@ async def test_submit_annotation_parses_audited_gold_variants():
     from bird_interact_agents.agents.annotator import agent as ann_agent
 
     _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    # Must use original_gold_is_correct=False with a gold_variants reference,
+    # since original_gold_is_correct=True now rejects any non-empty variants.
+    annotation_json = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-02",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "r",
+            "evidence_sources_consulted": [],
+        },
+        "original_gold_is_correct": False,
+        "gold_variants": [{
+            "variant_id": "primary",
+            "interpretation": "KB-anchored",
+            "primary": True,
+            "anchored_in": [],
+            "audited_gold_ref": {
+                "file": "__HARNESS_FILLS__",
+                "instance_id": "shop_1",
+                "variant_id": "primary",
+            },
+        }],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
     variants = json.dumps([
         {
             "instance_id": "shop_1",
             "variant_id": "primary",
+            "primary": True,
             "selected_database": "shop",
             "benchmark": "mini-interact",
             "audit_status": "clean",
@@ -282,7 +383,7 @@ async def test_submit_annotation_parses_audited_gold_variants():
         }
     ])
     await ann_agent.submit_annotation({
-        "task_annotation_json": _valid_task_annotation_json("shop_1"),
+        "task_annotation_json": annotation_json,
         "audited_gold_variants_json": variants,
     })
 
@@ -447,6 +548,60 @@ async def test_submit_annotation_variant_wrong_database_returns_error():
 
 
 @pytest.mark.asyncio
+async def test_submit_annotation_variant_audited_sol_sql_not_a_list_returns_error():
+    """audited_sol_sql must be a list; a bare string silently breaks tolerant_grader
+    which does list(v.get("audited_sol_sql") or []) and iterates characters."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    variant_string_sql = json.dumps([
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "variant_id": "primary",
+            "benchmark": "mini_interact",
+            "audit_status": "clean",
+            "audited_sol_sql": "SELECT 1;",  # string instead of list
+        }
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": _valid_task_annotation_json("shop_1"),
+        "audited_gold_variants_json": variant_string_sql,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "audited_sol_sql" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_variant_invalid_audit_status_returns_error():
+    """audit_status must be one of the known valid values; an unknown value is
+    silently ignored by the harness, so reject it at submit time."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    variant_bad_status = json.dumps([
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "variant_id": "primary",
+            "benchmark": "mini_interact",
+            "audit_status": "unknown_status",  # not a valid value
+            "audited_sol_sql": ["SELECT 1;"],
+        }
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": _valid_task_annotation_json("shop_1"),
+        "audited_gold_variants_json": variant_bad_status,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "audit_status" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
 async def test_submit_annotation_gold_variant_ref_missing_audited_row_returns_error():
     """A TaskAnnotation that references a variant_id in gold_variants but
     doesn't include that variant_id in audited_gold_variants_json must return
@@ -559,3 +714,156 @@ async def test_submit_annotation_gold_variant_ref_with_matching_row_succeeds():
     })
 
     assert ann_agent._ctx.get("_submission_done") is True
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_original_gold_correct_with_variants_rejected():
+    """original_gold_is_correct=True with a non-empty audited_gold_variants_json
+    must be rejected — a stray audited row could make future submissions pass
+    against a task marked as requiring the original gold."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    correct_gold_annotation = json.dumps({
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-02",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "r",
+            "evidence_sources_consulted": [],
+        },
+        "original_gold_is_correct": True,
+        "gold_variants": [],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
+    stray_variant = json.dumps([{
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "variant_id": "v0",
+        "benchmark": "mini_interact",
+        "audit_status": "clean",
+        "audited_sol_sql": ["SELECT 1;"],
+    }])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": correct_gold_annotation,
+        "audited_gold_variants_json": stray_variant,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "validation" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_empty_audited_sol_sql_non_unrecoverable_rejected():
+    """audited_sol_sql=[] must be rejected for non-unrecoverable audit_status —
+    a variant with empty SQL would silently behave as if no audited row exists
+    and cause wrong N2/N3 grading."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    variant_empty_sql = json.dumps([{
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "variant_id": "v0",
+        "benchmark": "mini_interact",
+        "audit_status": "clean",
+        "audited_sol_sql": [],  # empty — should be rejected for audit_status=clean
+    }])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": _valid_task_annotation_json("shop_1"),
+        "audited_gold_variants_json": variant_empty_sql,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "sql" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_multiple_primary_variants_rejected():
+    """Multiple audited_gold_variants rows with primary=True must be rejected —
+    the grader picks the first primary it sees, so multiple primaries produce
+    unstable N2 grading across different consolidated file orderings."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation_with_two_variants = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-02",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "ambiguous",
+            "rationale": "r",
+            "evidence_sources_consulted": [],
+        },
+        "original_gold_is_correct": False,
+        "gold_variants": [
+            {
+                "variant_id": "v1",
+                "interpretation": "a",
+                "primary": True,
+                "anchored_in": [],
+                "audited_gold_ref": {
+                    "file": "__HARNESS_FILLS__",
+                    "instance_id": "shop_1",
+                    "variant_id": "v1",
+                },
+            },
+            {
+                "variant_id": "v2",
+                "interpretation": "b",
+                "primary": False,
+                "anchored_in": [],
+                "audited_gold_ref": {
+                    "file": "__HARNESS_FILLS__",
+                    "instance_id": "shop_1",
+                    "variant_id": "v2",
+                },
+            },
+        ],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
+    two_primaries = json.dumps([
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "variant_id": "v1",
+            "primary": True,
+            "benchmark": "mini_interact",
+            "audit_status": "clean",
+            "audited_sol_sql": ["SELECT 1;"],
+        },
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "variant_id": "v2",
+            "primary": True,  # second primary — should be rejected
+            "benchmark": "mini_interact",
+            "audit_status": "clean",
+            "audited_sol_sql": ["SELECT 2;"],
+        },
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation_with_two_variants,
+        "audited_gold_variants_json": two_primaries,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "primary" in text
+    assert not ann_agent._ctx.get("_submission_done")
