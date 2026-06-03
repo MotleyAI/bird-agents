@@ -145,6 +145,19 @@ def _pg_execute_env_action(
         return f"SQL execution error: {e}", False
 
 
+def _pg_hashable_row(row: tuple) -> tuple:
+    """Make a psycopg2 result row hashable by JSON-serialising dict/list cells.
+
+    psycopg2 returns JSONB/JSON columns as Python dict/list, which cannot be
+    inserted into a Counter or compared via tuple equality.  Serialising to a
+    canonical JSON string preserves equality semantics while being hashable.
+    """
+    return tuple(
+        json.dumps(v, sort_keys=True, default=str) if isinstance(v, (dict, list)) else v
+        for v in row
+    )
+
+
 def _pg_execute_submit_action(
     sql: str, sample_status: "SampleStatus", data_path_base: str
 ) -> tuple[str, float, bool, bool, bool]:
@@ -195,8 +208,17 @@ def _pg_execute_submit_action(
             return [], True
 
     gold_rows, gold_err = _run_gold_sequence(sol_sqls)
-    # Counter comparison preserves duplicate rows (mirrors tolerant_grader)
-    p1 = not gold_err and Counter(map(tuple, pred_rows)) == Counter(map(tuple, gold_rows))
+    # Honour order-sensitive grading when the gold record requests it,
+    # matching the SQLite ex_base behaviour (conditions["order"]).
+    # _pg_hashable_row makes JSONB/dict/list cells hashable for Counter.
+    conditions = sample_status.original_data.get("conditions") or {}
+    ordered = bool(conditions.get("order", False))
+    pred_h = [_pg_hashable_row(r) for r in pred_rows]
+    gold_h = [_pg_hashable_row(r) for r in gold_rows]
+    if ordered:
+        p1 = not gold_err and pred_h == gold_h
+    else:
+        p1 = not gold_err and Counter(pred_h) == Counter(gold_h)
 
     reward = 1.0 if p1 else 0.0
     obs = f"Submitted. Result match: {p1}"

@@ -484,3 +484,118 @@ def test_pg_submit_gold_sequence_uses_last_result():
         _, _, p1, _, _ = _pg_execute_submit_action("SELECT 99", ss, "/data")
 
     assert p1, "execute_sequence result matches predicted — expected p1=True"
+
+
+# ---------------------------------------------------------------------------
+# JSONB / unhashable cell handling and order-sensitive grading
+# ---------------------------------------------------------------------------
+
+
+def _make_sample_status_with_conditions(
+    dataset: str, db: str, sol_sql: list[str], conditions: dict
+):
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        original_data={
+            "dataset": dataset,
+            "selected_database": db,
+            "sol_sql": sol_sql,
+            "conditions": conditions,
+        }
+    )
+
+
+def _patch_pg_conn(pred_rows, gold_rows):
+    """Return a context-manager patch that returns pred_rows for execute
+    and gold_rows for execute_sequence."""
+    from unittest.mock import patch
+
+    class _Conn:
+        def execute(self, q):
+            return pred_rows, ["col"]
+
+        def execute_sequence(self, sqls):
+            return gold_rows, ["col"]
+
+    class _CM:
+        def __enter__(self):
+            return _Conn()
+
+        def __exit__(self, *_):
+            return False
+
+    return patch("bird_interact_agents.harness.make_db_connection", return_value=_CM())
+
+
+def test_pg_submit_jsonb_cells_are_hashable():
+    """JSONB columns returned as dict by psycopg2 must not crash Counter comparison."""
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    pred = [({"key": "val"},)]
+    gold = [({"key": "val"},)]
+    ss = _make_sample_status("livesqlbench_postgres", "alien", ["SELECT col FROM t"])
+
+    with _patch_pg_conn(pred, gold):
+        _, _, p1, _, _ = _pg_execute_submit_action("SELECT col FROM t", ss, "/data")
+
+    assert p1, "matching JSONB rows should compare equal"
+
+
+def test_pg_submit_jsonb_cells_differ():
+    """Differing JSONB rows must produce p1=False."""
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    pred = [({"key": "a"},)]
+    gold = [({"key": "b"},)]
+    ss = _make_sample_status("livesqlbench_postgres", "alien", ["SELECT col FROM t"])
+
+    with _patch_pg_conn(pred, gold):
+        _, _, p1, _, _ = _pg_execute_submit_action("SELECT col FROM t", ss, "/data")
+
+    assert not p1, "differing JSONB rows should not match"
+
+
+def test_pg_submit_ordered_match_correct_order():
+    """conditions[order]=True: same rows in same order => p1=True."""
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    pred = [(1,), (2,)]
+    gold = [(1,), (2,)]
+    ss = _make_sample_status_with_conditions(
+        "livesqlbench_postgres", "alien", ["SELECT n FROM t ORDER BY n"], {"order": True}
+    )
+
+    with _patch_pg_conn(pred, gold):
+        _, _, p1, _, _ = _pg_execute_submit_action("SELECT n FROM t ORDER BY n", ss, "/data")
+
+    assert p1, "ordered match with correct order should pass"
+
+
+def test_pg_submit_ordered_match_wrong_order():
+    """conditions[order]=True: same rows in wrong order => p1=False."""
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    pred = [(2,), (1,)]
+    gold = [(1,), (2,)]
+    ss = _make_sample_status_with_conditions(
+        "livesqlbench_postgres", "alien", ["SELECT n FROM t ORDER BY n"], {"order": True}
+    )
+
+    with _patch_pg_conn(pred, gold):
+        _, _, p1, _, _ = _pg_execute_submit_action("SELECT n FROM t ORDER BY n", ss, "/data")
+
+    assert not p1, "ordered match with wrong order should fail"
+
+
+def test_pg_submit_unordered_ignores_row_order():
+    """conditions[order] absent/False: same rows different order => p1=True."""
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    pred = [(2,), (1,)]
+    gold = [(1,), (2,)]
+    ss = _make_sample_status("livesqlbench_postgres", "alien", ["SELECT n FROM t"])
+
+    with _patch_pg_conn(pred, gold):
+        _, _, p1, _, _ = _pg_execute_submit_action("SELECT n FROM t", ss, "/data")
+
+    assert p1, "unordered match should ignore row order"
