@@ -588,15 +588,17 @@ def _run_one_in_actor(
         _submitted_sql = str(row.get("submitted_sql") or "")
         if not _submitted_sql:
             raise RuntimeError("submitted_sql is empty; cannot grade")
+        _db = task_data.get("selected_database", "")
         ann_path = _grade_one_submission(
             task_data=task_data,
             submitted_sql=_submitted_sql,
             rows_dir=annotation_dir,
             run_id=run_id,
             benchmark=_cloud_benchmark(cfg),
-            db_path=Path(_grader_data_dir)
-                / str(task_data.get("selected_database", ""))
-                / f"{task_data.get('selected_database', '')}.sqlite",
+            db_path=Path(
+                task_data.get("db_file_path")
+                or Path(_grader_data_dir) / _db / f"{_db}.sqlite"
+            ),
             cost_usd_agent=row.get("usage", {}).get("cost_usd_agent")
                 if isinstance(row.get("usage"), dict) else None,
             cost_usd_user_sim=row.get("usage", {}).get("cost_usd_user_sim")

@@ -1043,10 +1043,13 @@ async def run_evaluation(
                 ),
             )
             return
-        per_task_db = (
-            paths.benchmark_data_root(_benchmark_canonical)
-            / selected_database
-            / f"{selected_database}.sqlite"
+        per_task_db = Path(
+            td.get("db_file_path")
+            or (
+                paths.benchmark_data_root(_benchmark_canonical)
+                / selected_database
+                / f"{selected_database}.sqlite"
+            )
         )
         try:
             grade_one_submission(

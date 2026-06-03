@@ -362,7 +362,7 @@ async def run_task(
 
     load_db_data_if_needed(db_name, data_path_base)
     if benchmark != _MINI_INTERACT_BENCHMARK:
-        materialize_task_db(db_name, data_path_base)
+        materialize_task_db(task_data, data_path_base)
 
     ctx_dict: dict = {
         "task_data": task_data,
