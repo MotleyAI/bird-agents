@@ -182,6 +182,38 @@ def test_submission_annotation_reads_latest_attempt_not_hardcoded(tmp_path):
     )
 
 
+def test_generate_submission_annotation_missing_dir_raises_file_not_found(tmp_path):
+    """generate_submission_annotation raises FileNotFoundError (not iterdir crash)
+    when the instance directory doesn't exist, after the _latest_attempt_file guard."""
+    from bird_interact_agents.eval.annotate import generate_submission_annotation
+    from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
+
+    rows_dir = tmp_path / "rows"
+    rows_dir.mkdir()
+    # No sub-dir for alien_1 — it never ran.
+
+    class StubGrader:
+        def __call__(self, **_kw):
+            return CascadeVerdict(
+                n1_original_gold=True, n2_audited_primary=True,
+                n3_any_audited_variant=True, n4_tie_order=True,
+                n5_llm_judge=True, n6_numeric_epsilon=True,
+                n7_trailing_whitespace=True, n8_column_order=True,
+                n9_case_fold=True,
+                matched_variant_id="primary", novel_reading_judgment=None,
+                variant_matches=[], rowset_relations=[],
+            )
+
+    import pytest
+    with pytest.raises(FileNotFoundError):
+        generate_submission_annotation(
+            rows_dir=rows_dir, instance_id="alien_1",
+            selected_database="alien", benchmark="mini-interact",
+            run_id="r1", task_row=SAMPLE_TASK_ROW,
+            grader=StubGrader(),
+        )
+
+
 def test_resolve_db_sqlite_path_prefers_primary(tmp_path):
     """Primary {db}.sqlite is returned when it exists."""
     from bird_interact_agents.eval.annotate import _resolve_db_sqlite_path

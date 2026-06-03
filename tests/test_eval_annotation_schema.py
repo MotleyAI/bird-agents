@@ -320,6 +320,8 @@ def test_task_annotation_single_primary_variant_is_valid():
 
 
 def test_task_annotation_zero_primaries_is_allowed():
+    """A TaskAnnotation with no primary variant is valid — the grader uses
+    alphabetical tiebreak instead of primary when no primary is specified."""
     ann = TaskAnnotation(
         **_base_ta_kwargs(),
         gold_variants=[_make_gold_variant("alt", primary=False)],

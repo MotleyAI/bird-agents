@@ -455,8 +455,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"rows_dir not found: {rows_dir}")
             return 1
         n_sub = 0
+        n_skipped = 0
         for row in rows:
             iid = row["instance_id"]
+            if not (rows_dir / iid).is_dir():
+                n_skipped += 1
+                continue
             db = row["selected_database"]
             db_path = _resolve_db_sqlite_path(
                 paths.benchmark_data_root(benchmark), db
@@ -500,7 +504,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
             if dest is not None:
                 n_sub += 1
-        print(f"submission skeletons: {n_sub} written in mode={args.submission_mode}")
+        skip_str = f", {n_skipped} skipped (no attempt dir)" if n_skipped else ""
+        print(f"submission skeletons: {n_sub} written in mode={args.submission_mode}{skip_str}")
     return 0
 
 
