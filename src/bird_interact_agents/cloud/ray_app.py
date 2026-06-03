@@ -133,8 +133,10 @@ def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
     """
     from bird_interact_agents import paths
 
-    setup = cfg.get("slayer_setup")
     fw = cfg.get("framework")
+    if fw in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
+        return []
+    setup = cfg.get("slayer_setup")
     if setup == "pre-encoded":
         artifacts = [("slayer_models", True)]
     elif fw == "pydantic_ai_otf_encode":
@@ -531,17 +533,15 @@ def _run_one_in_actor(
     log_tmp = log_dir / "task.log"
     task_start_ts = time.time()
 
+    # `cfg["data_dir"]` is the benchmark's container_data_dir, resolved
+    # benchmark-aware in `run_pool` (mini → BIRD_DB_PATH,
+    # livesqlbench → BIRD_LIVESQLBENCH_ROOT). Hoisted out of the try block
+    # so it is always bound when the grader path runs below.
+    data_dir = cfg.get("data_dir") or "/data/mini-interact"
+
     try:
         with fd_capture(log_tmp):
             try:
-                # `cfg["data_dir"]` is the benchmark's container_data_dir,
-                # resolved benchmark-aware in `run_pool` (mini → BIRD_DB_PATH,
-                # livesqlbench → BIRD_LIVESQLBENCH_ROOT). It is authoritative —
-                # do NOT re-read BIRD_DB_PATH here, which would route a
-                # livesqlbench task back to mini-interact if BIRD_DB_PATH ever
-                # leaked into the actor env (Codex).
-                data_dir = cfg.get("data_dir") or "/data/mini-interact"
-
                 row = asyncio.run(
                     _run_one_task_async(
                         task_data=task_data,
@@ -589,7 +589,6 @@ def _run_one_in_actor(
     # ``cascading_phase1_error``. Uploading the annotation first makes
     # the row blob the canonical "task fully done, including
     # annotation" marker.
-    _grader_data_dir = locals().get("data_dir")
     annotation_dir = Path(tempfile.mkdtemp(prefix="bird_submission_annot_"))
     _row_submitted_sql = row.get("submitted_sql")
     _row_selected_db = (
@@ -611,15 +610,13 @@ def _run_one_in_actor(
                 "before reaching submit; routed to fail-everything "
                 "fallback",
             )
-        if _grader_data_dir is None:
-            raise RuntimeError("data_dir unbound; grader skipped")
         ann_path = _grade_one_submission(
             task_data=task_data,
             submitted_sql=str(_row_submitted_sql),
             rows_dir=annotation_dir,
             run_id=run_id,
             benchmark=_cloud_benchmark(cfg),
-            db_path=Path(_grader_data_dir)
+            db_path=Path(data_dir)
                 / str(_row_selected_db)
                 / f"{_row_selected_db}.sqlite",
             cost_usd_agent=row.get("usage", {}).get("cost_usd_agent")
