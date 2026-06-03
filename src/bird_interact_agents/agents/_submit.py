@@ -207,6 +207,7 @@ def classify_submission(
         "error executing submitted sql" in obs
         or "submitted sql execution timed out" in obs
         or "error processing submission" in obs
+        or "sql execution error" in obs
     ):
         return "sql_runtime_error"
     return "wrong_result"
