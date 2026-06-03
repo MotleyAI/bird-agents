@@ -119,7 +119,7 @@ def test_maybe_force_wipe_otf_purges_cache_for_claude_sdk_otf(monkeypatch):
         rb, "purge_references", lambda root, dbs: set(),
     )
     run_mod._maybe_force_wipe_otf(
-        otf_rebuild=True, framework="claude_sdk_otf",
+        otf_rebuild=True, framework="claude_sdk",
         dbs=["museum"], benchmark="livesqlbench-base-lite-sqlite",
     )
     assert purged.get("cache") == {"museum"}

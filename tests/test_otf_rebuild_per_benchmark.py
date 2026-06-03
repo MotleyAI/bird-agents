@@ -55,7 +55,7 @@ def spy_purges(monkeypatch, tmp_path: Path):
 def test_otf_rebuild_with_livesqlbench_uses_scoped_roots(spy_purges):
     cache_calls, ref_calls, tmp_path = spy_purges
     run_mod._maybe_force_wipe_otf(
-        otf_rebuild=True, framework="pydantic_ai_recursive",
+        otf_rebuild=True, framework="claude_sdk",
         dbs={"alien", "credit"},
         benchmark="livesqlbench-base-lite-sqlite",
     )
@@ -76,7 +76,7 @@ def test_otf_rebuild_with_mini_interact_keeps_legacy_roots(spy_purges):
     mini-interact rebuild path is unchanged."""
     cache_calls, ref_calls, tmp_path = spy_purges
     run_mod._maybe_force_wipe_otf(
-        otf_rebuild=True, framework="pydantic_ai_recursive",
+        otf_rebuild=True, framework="claude_sdk",
         dbs={"households"},
         benchmark=None,
     )
@@ -91,7 +91,7 @@ def test_otf_rebuild_with_mini_interact_keeps_legacy_roots(spy_purges):
 def test_otf_rebuild_livesqlbench_never_touches_mini_interact_roots(spy_purges):
     cache_calls, ref_calls, tmp_path = spy_purges
     run_mod._maybe_force_wipe_otf(
-        otf_rebuild=True, framework="pydantic_ai_otf_encode",
+        otf_rebuild=True, framework="claude_sdk",
         dbs={"alien"},
         benchmark="livesqlbench-base-lite-sqlite",
     )

@@ -129,7 +129,7 @@ def test_maybe_force_wipe_otf_purges_cache_for_ainteract(monkeypatch):
     )
     monkeypatch.setattr(rb, "purge_references", lambda root, dbs: set())
     run_mod._maybe_force_wipe_otf(
-        otf_rebuild=True, framework="claude_sdk_otf_ainteract",
+        otf_rebuild=True, framework="claude_sdk",
         dbs=["shop"], benchmark="mini-interact",
     )
     assert purged.get("cache") == {"shop"}
@@ -160,7 +160,7 @@ def test_maybe_force_wipe_otf_passes_benchmark_kwarg_for_ainteract(monkeypatch):
     monkeypatch.setattr(rb, "purge_references", lambda root, dbs: set())
 
     run_mod._maybe_force_wipe_otf(
-        otf_rebuild=True, framework="claude_sdk_otf_ainteract",
+        otf_rebuild=True, framework="claude_sdk",
         dbs=["shop"], benchmark="mini-interact",
     )
     assert captured["cache_kwargs"] == {"benchmark": "mini-interact"}

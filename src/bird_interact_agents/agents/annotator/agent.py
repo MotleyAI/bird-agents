@@ -432,8 +432,8 @@ def _select_annotation_sdk_tools(benchmark: str) -> list:
 # ---------------------------------------------------------------------------
 
 _AUDITED_GOLD_FILE: dict[str, str] = {
-    "mini-interact": "audited_gold/mini_interact_audited.jsonl",
-    "livesqlbench-base-lite-sqlite": "audited_gold/livesqlbench_audited.jsonl",
+    "mini-interact": "audited_gold/mini-interact_audited.jsonl",
+    "livesqlbench-base-lite-sqlite": "audited_gold/livesqlbench-base-lite-sqlite_audited.jsonl",
 }
 
 

@@ -121,15 +121,11 @@ def _maybe_force_wipe_otf(
 
     DEV-1462: ``benchmark`` (REQUIRED, explicit) selects the per-benchmark
     scoped roots so a LiveSQLBench ``--otf-rebuild`` never wipes the
-    mini-interact cache (and vice versa). ``"mini_interact"`` maps to the
-    legacy roots.
+    mini-interact cache (and vice versa).
     """
     if not otf_rebuild:
         return
-    if framework not in (
-        "pydantic_ai_recursive", "pydantic_ai_otf_encode", "claude_sdk_otf",
-        "claude_sdk_otf_ainteract",
-    ):
+    if framework != "claude_sdk":
         return
     from bird_interact_agents.slayer_otf.reference_build import (
         purge_caches,

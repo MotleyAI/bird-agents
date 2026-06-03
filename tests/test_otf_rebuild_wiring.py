@@ -44,13 +44,10 @@ def spy_purges(monkeypatch, tmp_path: Path):
     return cache_calls, ref_calls, tmp_path
 
 
-@pytest.mark.parametrize(
-    "framework", ["pydantic_ai_recursive", "pydantic_ai_otf_encode"],
-)
-def test_otf_rebuild_wipes_both_layers_for_otf_frameworks(spy_purges, framework):
+def test_otf_rebuild_wipes_both_layers_for_otf_frameworks(spy_purges):
     cache_calls, ref_calls, tmp_path = spy_purges
     run_mod._maybe_force_wipe_otf(
-        otf_rebuild=True, framework=framework, dbs={"db_a", "db_b"},
+        otf_rebuild=True, framework="claude_sdk", dbs={"db_a", "db_b"},
         benchmark="mini-interact",
     )
     assert cache_calls == [(tmp_path / "cache", {"db_a", "db_b"})]
@@ -60,7 +57,7 @@ def test_otf_rebuild_wipes_both_layers_for_otf_frameworks(spy_purges, framework)
 def test_otf_rebuild_off_is_a_noop(spy_purges):
     cache_calls, ref_calls, _ = spy_purges
     run_mod._maybe_force_wipe_otf(
-        otf_rebuild=False, framework="pydantic_ai_otf_encode", dbs={"db_a"},
+        otf_rebuild=False, framework="claude_sdk", dbs={"db_a"},
         benchmark="mini-interact",
     )
     assert cache_calls == []

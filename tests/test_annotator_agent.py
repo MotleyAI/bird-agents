@@ -418,7 +418,7 @@ def test_fill_audited_gold_ref_files_replaces_sentinel():
     filled = _fill_audited_gold_ref_files(ann, benchmark="mini-interact")
 
     assert filled.gold_variants[0].audited_gold_ref.file == \
-        "audited_gold/mini_interact_audited.jsonl"
+        "audited_gold/mini-interact_audited.jsonl"
 
 
 def test_fill_audited_gold_ref_files_livesqlbench():
@@ -461,7 +461,7 @@ def test_fill_audited_gold_ref_files_livesqlbench():
     filled = _fill_audited_gold_ref_files(ann, benchmark="livesqlbench-base-lite-sqlite")
 
     assert filled.gold_variants[0].audited_gold_ref.file == \
-        "audited_gold/livesqlbench_audited.jsonl"
+        "audited_gold/livesqlbench-base-lite-sqlite_audited.jsonl"
 
 
 def test_fill_audited_gold_ref_files_noop_when_no_variants():
