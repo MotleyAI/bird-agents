@@ -46,7 +46,7 @@ def _run_agent(
     """Run the annotator agent synchronously for one task."""
     from bird_interact_agents.agents.annotator import agent as ann_agent
 
-    return asyncio.get_event_loop().run_until_complete(
+    return asyncio.run(
         ann_agent.run_task(
             task_data=task_data,
             data_path_base=data_path_base,

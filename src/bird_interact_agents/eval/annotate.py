@@ -414,13 +414,23 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
             audited = load_audited_gold_rows_for(benchmark=benchmark, instance_id=iid)
 
-            def _grader(*, instance_id: str, submitted_sql: str, task_row: dict, **_kw):  # noqa: E731
+            def _grader(  # noqa: E731
+                *,
+                instance_id: str,
+                submitted_sql: str,
+                task_row: dict,
+                _ann=ann,
+                _audited=audited,
+                _row=row,
+                _db_path=db_path,
+                **_kw,
+            ):
                 return grade_submission(
-                    task_annotation=ann,
-                    audited_gold_rows=audited,
-                    original_sol_sql=row.get("sol_sql"),
+                    task_annotation=_ann,
+                    audited_gold_rows=_audited,
+                    original_sol_sql=_row.get("sol_sql"),
                     submitted_sql=submitted_sql,
-                    db_path=db_path,
+                    db_path=_db_path,
                     conn=None,
                 )
 

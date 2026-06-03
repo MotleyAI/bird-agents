@@ -286,18 +286,19 @@ def main() -> None:
         d = json.loads(line)
         rows[d["instance_id"]] = d
 
-    # Collect every variant per instance_id. Multi-variant audits
-    # (DEV-1515 source_conflict tasks) ship N rows sharing instance_id;
-    # collapsing to a single dict per instance silently drops alternates
-    # and makes downstream N3 miscompute.
+    # Collect every variant per instance_id from per-DB sidecar files.
+    # Multi-variant audits (DEV-1515 source_conflict tasks) ship N rows
+    # sharing instance_id; collapsing to a single dict per instance silently
+    # drops alternates and makes downstream N3 miscompute.
     audit_rows: dict[str, list[dict]] = {}
-    for line in (
-        paths.audited_gold_root() / "mini_interact_audited.jsonl"
-    ).read_text().splitlines():
-        if not line.strip():
-            continue
-        d = json.loads(line)
-        audit_rows.setdefault(d["instance_id"], []).append(d)
+    for audit_file in sorted(
+        paths.audited_gold_root().glob("*/*_audited.jsonl")
+    ):
+        for line in audit_file.read_text().splitlines():
+            if not line.strip():
+                continue
+            d = json.loads(line)
+            audit_rows.setdefault(d["instance_id"], []).append(d)
 
     annotated_at = (
         _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()

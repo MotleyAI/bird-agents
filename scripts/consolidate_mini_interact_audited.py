@@ -18,10 +18,10 @@ Run once; commit; delete per-DB files.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-AUDITED = ROOT / "audited_gold"
+from bird_interact_agents import paths
+
+AUDITED = paths.audited_gold_root()
 
 MINI_INTERACT_OUT = AUDITED / "mini_interact_audited.jsonl"
 LIVESQLBENCH = AUDITED / "livesqlbench_audited.jsonl"

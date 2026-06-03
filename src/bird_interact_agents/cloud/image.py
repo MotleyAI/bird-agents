@@ -89,11 +89,6 @@ def data_hash(
     *,
     annotations_root: Path | None = None,
 ) -> str:
-    # DEV-1515: default to paths.annotations_root() so callers that omit
-    # the argument still include annotations content in the hash.
-    if annotations_root is None:
-        from bird_interact_agents import paths as _paths
-        annotations_root = _paths.annotations_root()
     """Content-based hash over the inputs that compose the DATA layers
     of `Dockerfile.cloud`: ``audited_gold/`` and the Dockerfile's DATA
     section.
@@ -118,7 +113,13 @@ def data_hash(
     data-layer input and ``data_hash`` no longer depends on it. The gated
     gold sidecar rides along inside that GCS dataset upload (it lives in the
     data root), so it is not baked either. ``audited_gold/`` (author-produced
-    corrections, code-like) stays baked + hashed."""
+    corrections, code-like) stays baked + hashed.
+
+    DEV-1515: ``annotations_root`` defaults to ``paths.annotations_root()``
+    so callers that omit the argument still include annotations content."""
+    if annotations_root is None:
+        from bird_interact_agents import paths as _paths
+        annotations_root = _paths.annotations_root()
     h = hashlib.sha256()
 
     # audited_gold (main-checkout-anchored, gitignored). Keyed under
