@@ -267,11 +267,6 @@ class TaskAnnotation(BaseModel):
                 "gold_variants must be empty when original_gold_is_correct is True"
             )
         return self
-    """Set when the task's authoritative sources disagree on the same
-    parameter (KB vs sql_snippet, KB.description vs KB.definition,
-    etc.). ``None`` for tasks where all sources converge — the common
-    case. When set, ``audit_resolution=multi_variant`` should also be
-    reflected in ``gold_variants`` carrying one entry per reading."""
 
     provenance: Provenance
 
