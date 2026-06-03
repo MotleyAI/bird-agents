@@ -225,6 +225,12 @@ async def submit_annotation(args: dict) -> dict:
                 f"{sorted(_VALID_AUDIT_STATUSES)}, got {variant.get('audit_status')!r}"
             )
 
+    if task_annotation.original_gold_is_correct and audited_gold_variants:
+        return _text(
+            "Validation error: original_gold_is_correct=True requires an empty "
+            "audited_gold_variants array. Set audited_gold_variants_json to '[]'."
+        )
+
     if not task_annotation.original_gold_is_correct and task_annotation.gold_variants:
         submitted_variant_ids = {v.get("variant_id") for v in audited_gold_variants}
         for gvr in task_annotation.gold_variants:

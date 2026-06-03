@@ -177,10 +177,42 @@ async def test_run_task_happy_path_returns_valid_result(monkeypatch):
 async def test_run_task_happy_path_parses_audited_gold_variants(monkeypatch):
     from bird_interact_agents.agents.annotator import agent as ann_agent
 
+    # original_gold_is_correct=True rejects non-empty variants; use False + ref.
+    annotation_with_variant = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-02",
+        "amb_user_query": "How many premium orders?",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "KB 3 directly pins the tier.",
+            "evidence_sources_consulted": ["kb:3"],
+        },
+        "original_gold_is_correct": False,
+        "gold_variants": [{
+            "variant_id": "primary",
+            "interpretation": "KB-anchored",
+            "primary": True,
+            "anchored_in": [],
+            "audited_gold_ref": {
+                "file": "__HARNESS_FILLS__",
+                "instance_id": "shop_1",
+                "variant_id": "primary",
+            },
+        }],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
     variants = [
         {
             "instance_id": "shop_1",
             "variant_id": "primary",
+            "primary": True,
             "selected_database": "shop",
             "benchmark": "mini_interact",
             "audit_status": "clean",
@@ -195,7 +227,7 @@ async def test_run_task_happy_path_parses_audited_gold_variants(monkeypatch):
     ]
     _make_fake_sdk(
         monkeypatch, ann_agent,
-        submit_calls=[(_valid_task_annotation_json(), json.dumps(variants))],
+        submit_calls=[(annotation_with_variant, json.dumps(variants))],
     )
 
     result = await ann_agent.run_task(
