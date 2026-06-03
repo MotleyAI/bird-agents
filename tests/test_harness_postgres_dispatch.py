@@ -137,7 +137,7 @@ def test_execute_submit_action_postgres_compares_results():
 
     call_count = [0]
 
-    def mock_open(db_name, host, port, user, password):
+    def mock_open(db_name, host, port, user, password, statement_timeout_ms=30000):
         mock_cur = MagicMock()
         # Both pred and gold return the same result
         mock_cur.fetchall.return_value = [(5,)]
@@ -164,7 +164,7 @@ def test_execute_submit_action_postgres_fails_on_mismatch():
 
     call_count = [0]
 
-    def mock_open(db_name, host, port, user, password):
+    def mock_open(db_name, host, port, user, password, statement_timeout_ms=30000):
         mock_cur = MagicMock()
         # Return different values for the two calls
         call_count[0] += 1

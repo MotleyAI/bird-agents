@@ -193,7 +193,7 @@ def test_factory_reads_pg_env_vars(monkeypatch):
 
     captured: dict = {}
 
-    def fake_open(db_name, host, port, user, password):
+    def fake_open(db_name, host, port, user, password, statement_timeout_ms=30000):
         captured.update(dict(db_name=db_name, host=host, port=port, user=user, password=password))
         mock_conn, _ = _mock_psycopg2_connect([], [])
         return mock_conn
@@ -290,3 +290,64 @@ def test_postgres_execute_sequence_issues_one_begin_rollback():
     rollback_count = sum(1 for s in issued if s == "ROLLBACK")
     assert begin_count == 1, f"expected 1 BEGIN, got {begin_count}; issued={issued}"
     assert rollback_count == 1, f"expected 1 ROLLBACK, got {rollback_count}; issued={issued}"
+
+
+def test_make_db_connection_passes_statement_timeout_to_psycopg2(monkeypatch):
+    """make_db_connection must pass BIRD_PG_STATEMENT_TIMEOUT to psycopg2.connect
+    via the options keyword so slow agent queries cannot hang workers."""
+    import os
+    from unittest.mock import patch, MagicMock
+    from types import SimpleNamespace
+    from bird_interact_agents.db_connection import make_db_connection
+
+    captured: dict = {}
+
+    def _fake_open(db_name, host, port, user, password, statement_timeout_ms=30000):
+        captured["statement_timeout_ms"] = statement_timeout_ms
+        return MagicMock()
+
+    benchmark = SimpleNamespace(db_backend="postgres")
+
+    with patch("bird_interact_agents.db_connection._open_psycopg2_connection", _fake_open):
+        monkeypatch.setenv("BIRD_PG_STATEMENT_TIMEOUT", "15000")
+        make_db_connection("mydb", benchmark=benchmark, read_only=True)
+
+    assert captured["statement_timeout_ms"] == 15000
+
+
+def test_make_db_connection_default_statement_timeout(monkeypatch):
+    """Default BIRD_PG_STATEMENT_TIMEOUT is 30000 ms."""
+    from unittest.mock import patch, MagicMock
+    from types import SimpleNamespace
+    from bird_interact_agents.db_connection import make_db_connection
+
+    captured: dict = {}
+
+    def _fake_open(db_name, host, port, user, password, statement_timeout_ms=30000):
+        captured["statement_timeout_ms"] = statement_timeout_ms
+        return MagicMock()
+
+    benchmark = SimpleNamespace(db_backend="postgres")
+
+    with patch("bird_interact_agents.db_connection._open_psycopg2_connection", _fake_open):
+        monkeypatch.delenv("BIRD_PG_STATEMENT_TIMEOUT", raising=False)
+        make_db_connection("mydb", benchmark=benchmark, read_only=True)
+
+    assert captured["statement_timeout_ms"] == 30000
+
+
+def test_open_psycopg2_connection_sets_options():
+    """_open_psycopg2_connection forwards statement_timeout_ms as -c options."""
+    import sys
+    from unittest.mock import MagicMock, patch
+    from bird_interact_agents.db_connection import _open_psycopg2_connection
+
+    fake_psycopg2 = MagicMock()
+    fake_psycopg2.connect.return_value = MagicMock()
+
+    with patch.dict(sys.modules, {"psycopg2": fake_psycopg2}):
+        _open_psycopg2_connection("db", "host", 5432, "u", "p", 20000)
+
+    assert fake_psycopg2.connect.called
+    _, kwargs = fake_psycopg2.connect.call_args
+    assert "statement_timeout=20000" in kwargs.get("options", "")

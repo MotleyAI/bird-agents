@@ -7,10 +7,11 @@ factory callers use.
 
 Postgres connection parameters are read from env vars:
 
-* ``BIRD_PG_HOST``     (default: ``localhost``)
-* ``BIRD_PG_PORT``     (default: ``5432``)
-* ``BIRD_PG_USER``     (default: ``bird_interact``)
-* ``BIRD_PG_PASSWORD`` (default: ``bird_interact``)
+* ``BIRD_PG_HOST``              (default: ``localhost``)
+* ``BIRD_PG_PORT``              (default: ``5432``)
+* ``BIRD_PG_USER``              (default: ``bird_interact``)
+* ``BIRD_PG_PASSWORD``          (default: ``bird_interact``)
+* ``BIRD_PG_STATEMENT_TIMEOUT`` (default: ``30000`` ms; 0 = no limit)
 """
 
 from __future__ import annotations
@@ -103,16 +104,19 @@ def _open_psycopg2_connection(
     port: int,
     user: str,
     password: str,
+    statement_timeout_ms: int = 30000,
 ) -> Any:
     """Open a psycopg2 connection. Extracted so tests can monkeypatch it."""
     import psycopg2  # noqa: PLC0415 — deferred to avoid hard dep without postgres extra
 
+    options = f"-c statement_timeout={statement_timeout_ms}" if statement_timeout_ms else ""
     return psycopg2.connect(
         dbname=db_name,
         host=host,
         port=port,
         user=user,
         password=password,
+        options=options,
     )
 
 
@@ -238,7 +242,8 @@ def make_db_connection(
         port = int(os.environ.get("BIRD_PG_PORT", "5432"))
         user = os.environ.get("BIRD_PG_USER", "bird_interact")
         password = os.environ.get("BIRD_PG_PASSWORD", "bird_interact")
-        conn = _open_psycopg2_connection(db_name, host, port, user, password)
+        stmt_timeout = int(os.environ.get("BIRD_PG_STATEMENT_TIMEOUT", "30000"))
+        conn = _open_psycopg2_connection(db_name, host, port, user, password, stmt_timeout)
         return PostgresDbConnection(conn, read_only=read_only)
 
     # SQLite path
