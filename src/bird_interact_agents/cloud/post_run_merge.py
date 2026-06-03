@@ -540,7 +540,7 @@ class AuditedGoldVariantsMergeReport(BaseModel):
     error_details: list[str] = []
 
 
-_REQUIRED_VARIANT_FIELDS = {"instance_id", "selected_database", "benchmark", "audit_status", "audited_sol_sql"}
+_REQUIRED_VARIANT_FIELDS = {"instance_id", "selected_database", "benchmark", "audit_status", "audited_sol_sql", "variant_id"}
 
 
 def _normalise_benchmark(benchmark: str) -> str:
