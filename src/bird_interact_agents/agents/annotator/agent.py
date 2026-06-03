@@ -32,7 +32,8 @@ from bird_interact_agents.agents._tool_specs import (
     BIRD_INTERACT_TOOLS,
     render_action,
 )
-from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+from bird_interact_agents.eval.annotation_schema import MaskedTerm, TaskAnnotation
+from bird_interact_agents.eval.implicit_annotation import _benchmark_task_jsonl_name
 from bird_interact_agents.harness import (
     MAX_MODEL_TURNS,
     SampleStatus,
@@ -259,11 +260,32 @@ async def submit_annotation(args: dict) -> dict:
                     f"Set primary=True in the audited variant row."
                 )
 
+    # Reverse cross-check: if audited variants submitted, gold_variants must reference each one.
+    if not task_annotation.original_gold_is_correct and audited_gold_variants:
+        if not task_annotation.gold_variants:
+            return _text(
+                "Validation error: audited_gold_variants is non-empty but gold_variants is "
+                "empty. Add a GoldVariantRef in gold_variants for each submitted audited variant."
+            )
+        gold_ref_ids = {gvr.audited_gold_ref.variant_id for gvr in task_annotation.gold_variants}
+        for v in audited_gold_variants:
+            vid = v.get("variant_id")
+            if vid not in gold_ref_ids:
+                return _text(
+                    f"Validation error: audited variant {vid!r} has no matching GoldVariantRef "
+                    f"in gold_variants. Add a gold_variants entry with "
+                    f"audited_gold_ref.variant_id={vid!r}."
+                )
+
     primary_count = sum(1 for v in audited_gold_variants if v.get("primary", False))
     if primary_count > 1:
         return _text(
             f"Validation error: at most one audited_gold_variants entry may have "
             f"primary=True; got {primary_count}. Mark exactly the primary variant."
+        )
+    if audited_gold_variants and primary_count == 0:
+        return _text(
+            "Validation error: at least one audited_gold_variants entry must have primary=True."
         )
 
     _ctx["annotation_result"] = {
@@ -429,6 +451,58 @@ def _fill_audited_gold_ref_files(ann: TaskAnnotation, *, benchmark: str) -> Task
     return updated
 
 
+def _fill_deterministic_fields(
+    ann: TaskAnnotation,
+    *,
+    task_data: dict,
+    benchmark: str,
+) -> TaskAnnotation:
+    """Overwrite fields that are deterministically derivable from task data.
+
+    These fields should never depend on the agent guessing: provenance paths,
+    external KB IDs, and (for mini_interact) the is_mask=True masked terms that
+    are pre-computed in critical_ambiguity.  Agent-supplied is_mask=False entries
+    (schema-linking ambiguities) are preserved.
+    """
+    updated = ann.model_copy(deep=True)
+
+    # Provenance — always authoritative from benchmark registry and instance_id.
+    updated.provenance.task_jsonl_path = _benchmark_task_jsonl_name(benchmark)
+    instance_id = task_data.get("instance_id")
+    if instance_id:
+        updated.provenance.task_jsonl_instance_id = instance_id
+
+    # External knowledge — verbatim from task data.
+    ext_kb = task_data.get("external_knowledge")
+    if ext_kb is not None:
+        updated.external_knowledge = list(ext_kb)
+
+    # Masked terms: merge critical_ambiguity (is_mask=True) without duplicating.
+    if benchmark == _MINI_INTERACT_BENCHMARK:
+        uqa = task_data.get("user_query_ambiguity", {})
+        critical = uqa.get("critical_ambiguity", []) if isinstance(uqa, dict) else []
+        if critical:
+            existing_terms = {mt.term for mt in updated.masked_terms}
+            for item in critical:
+                term = item.get("term", "")
+                if not term or term in existing_terms:
+                    continue
+                raw_evidence = item.get("metadata_evidence")
+                evidence: list = (
+                    raw_evidence if isinstance(raw_evidence, list) else []
+                )
+                updated.masked_terms = list(updated.masked_terms) + [
+                    MaskedTerm(
+                        term=term,
+                        type=item.get("type", "knowledge_linking_ambiguity"),
+                        is_mask=True,
+                        metadata_evidence=evidence,
+                    )
+                ]
+
+    return updated
+
+
 # ---------------------------------------------------------------------------
 # run_task
 # ---------------------------------------------------------------------------
@@ -533,6 +607,9 @@ async def run_task(
 
     task_annotation: TaskAnnotation = ann_result["task_annotation"]
     task_annotation = _fill_audited_gold_ref_files(task_annotation, benchmark=benchmark)
+    task_annotation = _fill_deterministic_fields(
+        task_annotation, task_data=task_data, benchmark=benchmark
+    )
     audited_gold_variants: list[dict] = ann_result["audited_gold_variants"]
 
     return AnnotatorResult(
