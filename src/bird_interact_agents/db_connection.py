@@ -151,6 +151,11 @@ class PostgresDbConnection:
             rows = cur.fetchall() if cur.description is not None else []
             cols = [d[0] for d in (cur.description or [])]
         except psycopg2.Error:
+            if not self._read_only:
+                try:
+                    self._conn.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
             raise
         finally:
             if self._read_only:
@@ -181,6 +186,11 @@ class PostgresDbConnection:
                 rows = cur.fetchall() if cur.description is not None else []
                 cols = [d[0] for d in (cur.description or [])]
         except psycopg2.Error:
+            if not self._read_only:
+                try:
+                    self._conn.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
             raise
         finally:
             if self._read_only:

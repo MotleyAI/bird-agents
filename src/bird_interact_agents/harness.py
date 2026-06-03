@@ -77,7 +77,9 @@ def _pg_execute_env_action(
 
     try:
         if action.startswith("execute("):
-            sql = action[8:-1].strip().strip("'\"")
+            sql = action[8:-1].strip()
+            if len(sql) >= 2 and sql[0] in "'\"" and sql[0] == sql[-1]:
+                sql = sql[1:-1]
             benchmark = get_benchmark(sample_status.original_data["dataset"])
             with make_db_connection(
                 db_name, data_path_base=data_path_base, benchmark=benchmark, read_only=True
