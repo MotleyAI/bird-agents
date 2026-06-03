@@ -80,7 +80,12 @@ import re
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional
+
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+from bird_interact_agents.eval.annotation_io import submission_annotation_path
+from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation, TaskAnnotation
 
 from bird_interact_agents import paths
 
@@ -429,7 +434,6 @@ def merge_post_run_into_warm_cache(
 # ---------------------------------------------------------------------------
 
 
-from pydantic import BaseModel, ConfigDict
 
 
 class AnnotationMergeReport(BaseModel):
@@ -484,15 +488,12 @@ def merge_submission_annotations(
       create a destination file.
     * Writes an audit report at
       ``<downloaded_run_dir>/annotation_merge_report.json``.
-    """
-    from bird_interact_agents.eval.annotation_io import (
-        submission_annotation_path,
-    )
-    from bird_interact_agents.eval.annotation_schema import (
-        SubmissionAnnotation,
-    )
-    from pydantic import ValidationError
 
+    ``annotations_root`` takes priority over ``main_checkout_root`` so
+    callers can honour ``BIRD_ANNOTATIONS_ROOT`` by passing
+    ``paths.annotations_root()`` directly.  When neither is given,
+    ``submission_annotation_path`` falls back to ``paths.annotations_root()``.
+    """
     rows_dir = downloaded_run_dir / "rows"
     report = AnnotationMergeReport(run_id=run_id, benchmark=benchmark)
     if rows_dir.exists():
@@ -569,4 +570,146 @@ def merge_submission_annotations(
         audit_path.write_text(report.model_dump_json(indent=2) + "\n")
     except Exception:  # noqa: BLE001
         logger.warning("[post_run_merge] failed to write audit log %s", audit_path, exc_info=True)
+    return report
+
+
+# ---------------------------------------------------------------------------
+# DEV-1518: task annotation + audited gold variant merge
+# ---------------------------------------------------------------------------
+
+class TaskAnnotationMergeReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    merged: int = 0
+    errors: int = 0
+    error_details: list[str] = []
+
+
+class AuditedGoldVariantsMergeReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    added: int = 0
+    skipped_duplicate: int = 0
+    errors: int = 0
+    error_details: list[str] = []
+
+
+_REQUIRED_VARIANT_FIELDS = {"instance_id", "selected_database", "benchmark", "audit_status", "audited_sol_sql", "variant_id"}
+
+
+def _normalise_benchmark(benchmark: str) -> str:
+    return benchmark.replace("-", "_")
+
+
+def merge_task_annotations(
+    *,
+    downloaded_run_dir: Path,
+    benchmark: str,
+    annotations_root: Path,
+) -> TaskAnnotationMergeReport:
+    """Merge per-task TaskAnnotation files from a downloaded run into local storage.
+
+    Reads from ``downloaded_run_dir/rows/<instance_id>/task_annotation.json``.
+    Writes to ``annotations_root/<benchmark>/<db>/<instance_id>.task.json``.
+    Always overwrites existing files (skip logic was upstream at the worker).
+    """
+    bm = _normalise_benchmark(benchmark)
+    report = TaskAnnotationMergeReport()
+    rows_dir = downloaded_run_dir / "rows"
+    if not rows_dir.exists():
+        return report
+
+    for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
+        src = sub / "task_annotation.json"
+        if not src.exists():
+            continue
+        try:
+            data = json.loads(src.read_text())
+            TaskAnnotation.model_validate(data)
+            db = data["selected_database"]
+            instance_id = data["instance_id"]
+        except (json.JSONDecodeError, KeyError, ValidationError) as e:
+            report.errors += 1
+            report.error_details.append(f"{src}: {e}")
+            continue
+
+        dest = annotations_root / bm / db / f"{instance_id}.task.json"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(json.dumps(data, indent=2) + "\n")
+        report.merged += 1
+
+    return report
+
+
+def merge_audited_gold_variants(
+    *,
+    downloaded_run_dir: Path,
+    benchmark: str,
+    audited_gold_root: Path,
+) -> AuditedGoldVariantsMergeReport:
+    """Merge per-task audited gold variant JSONL files into the consolidated JSONL.
+
+    Reads from ``downloaded_run_dir/rows/<instance_id>/audited_gold_variants.jsonl``.
+    Appends new entries to ``audited_gold_root/<benchmark>_audited.jsonl``.
+    Deduplicates by ``(instance_id, variant_id)``; rejects entries missing
+    required fields (selected_database, benchmark, audit_status, audited_sol_sql).
+    """
+    bm = _normalise_benchmark(benchmark)
+    report = AuditedGoldVariantsMergeReport()
+    rows_dir = downloaded_run_dir / "rows"
+    if not rows_dir.exists():
+        return report
+
+    consolidated = audited_gold_root / f"{bm}_audited.jsonl"
+
+    # Load existing keys.
+    existing_keys: set[tuple[str, str]] = set()
+    if consolidated.exists():
+        for line in consolidated.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+                existing_keys.add((row["instance_id"], row.get("variant_id", "")))
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+    new_lines: list[str] = []
+    for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
+        src = sub / "audited_gold_variants.jsonl"
+        if not src.exists():
+            continue
+        content = src.read_text()
+        for line in content.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as e:
+                report.errors += 1
+                report.error_details.append(f"{src}: {e}")
+                continue
+            missing = _REQUIRED_VARIANT_FIELDS - set(row.keys())
+            if missing:
+                report.errors += 1
+                report.error_details.append(
+                    f"{src}: missing required fields: {missing}"
+                )
+                continue
+            key = (row.get("instance_id", ""), row.get("variant_id", ""))
+            if key in existing_keys:
+                report.skipped_duplicate += 1
+                continue
+            existing_keys.add(key)
+            new_lines.append(json.dumps(row))
+            report.added += 1
+
+    if new_lines:
+        audited_gold_root.mkdir(parents=True, exist_ok=True)
+        with consolidated.open("a") as f:
+            for line in new_lines:
+                f.write(line + "\n")
+
     return report

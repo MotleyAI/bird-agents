@@ -281,3 +281,75 @@ def test_external_knowledge_accepts_mixed_int_and_dict_entries():
         "id": 31, "label": "TETL", "definition": "ERF + LER + MDR*2",
     }
     assert decoded.external_knowledge[2] == 7
+
+
+# ---------------------------------------------------------------------------
+# TaskAnnotation.gold_variants model validator
+# ---------------------------------------------------------------------------
+
+def _make_gold_variant(variant_id: str = "primary", primary: bool = True) -> GoldVariantRef:
+    return GoldVariantRef(
+        variant_id=variant_id,
+        interpretation="test interpretation",
+        primary=primary,
+        anchored_in=[],
+        audited_gold_ref=AuditedGoldRef(
+            file="audited_gold/mini_interact_audited.jsonl",
+            instance_id="alien_42",
+            variant_id=variant_id,
+        ),
+    )
+
+
+def _base_ta_kwargs() -> dict:
+    from bird_interact_agents.eval.annotation_schema import Provenance
+    return dict(
+        instance_id="alien_42",
+        selected_database="alien",
+        annotated_by="test",
+        annotated_at="2026-06-01",
+        amb_user_query="x",
+        metadata_sufficiency=MetadataSufficiency(verdict="sufficient", rationale="r"),
+        provenance=Provenance(task_jsonl_path="mini_interact.jsonl", task_jsonl_instance_id="alien_42"),
+    )
+
+
+def test_task_annotation_single_primary_variant_is_valid():
+    ann = TaskAnnotation(**_base_ta_kwargs(), gold_variants=[_make_gold_variant(primary=True)])
+    assert len(ann.gold_variants) == 1
+
+
+def test_task_annotation_zero_primaries_is_allowed():
+    """A TaskAnnotation with no primary variant is valid — the grader uses
+    alphabetical tiebreak instead of primary when no primary is specified."""
+    ann = TaskAnnotation(
+        **_base_ta_kwargs(),
+        gold_variants=[_make_gold_variant("alt", primary=False)],
+    )
+    assert all(not v.primary for v in ann.gold_variants)
+
+
+def test_task_annotation_multiple_primaries_raises_validation_error():
+    with pytest.raises(ValidationError, match="at most one primary"):
+        TaskAnnotation(
+            **_base_ta_kwargs(),
+            gold_variants=[
+                _make_gold_variant("v1", primary=True),
+                _make_gold_variant("v2", primary=True),
+            ],
+        )
+
+
+def test_task_annotation_gold_variants_with_original_gold_correct_raises():
+    with pytest.raises(ValidationError, match="gold_variants must be empty"):
+        TaskAnnotation(
+            **_base_ta_kwargs(),
+            original_gold_is_correct=True,
+            gold_variants=[_make_gold_variant(primary=True)],
+        )
+
+
+def test_task_annotation_empty_gold_variants_with_original_gold_correct_is_valid():
+    ann = TaskAnnotation(**_base_ta_kwargs(), original_gold_is_correct=True, gold_variants=[])
+    assert ann.original_gold_is_correct is True
+    assert ann.gold_variants == []

@@ -97,6 +97,23 @@ def test_implicit_task_annotation_does_not_write_to_disk(tmp_path, monkeypatch):
     )
 
 
+def test_implicit_task_annotation_alias_benchmark_uses_canonical_jsonl_name():
+    """Passing ``benchmark="mini-interact"`` (dash alias) must produce the
+    canonical ``"mini_interact.jsonl"`` in provenance, not the literal
+    ``"mini-interact.jsonl"`` fallback."""
+    from bird_interact_agents.eval.implicit_annotation import (
+        implicit_task_annotation,
+    )
+
+    ann = implicit_task_annotation(
+        instance_id="alien_1",
+        selected_database="alien",
+        benchmark="mini-interact",
+        amb_user_query="x",
+    )
+    assert ann.provenance.task_jsonl_path == "mini_interact.jsonl"
+
+
 def test_implicit_marker_distinguishes_from_human_authored():
     """Downstream consumers must be able to tell that an annotation
     was auto-synthesized vs. human-authored. ``annotated_by`` carries

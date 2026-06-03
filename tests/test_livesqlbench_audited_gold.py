@@ -127,14 +127,28 @@ def _load_audit_rows() -> dict[str, dict]:
 
     Multi-variant pattern (DEV-1515): a task may carry one primary row plus
     N non-primary alternates sharing the same instance_id. Tests that pin a
-    specific reading (e.g. museum_7 edited, museum_9 clean) should reach the
-    primary; iterating tests (citation resolvability, status consistency)
-    should use ``_iter_audit_rows`` to see every variant.
+    specific reading should reach the primary; iterating tests (citation
+    resolvability, status consistency) should use ``_iter_audit_rows`` to see
+    every variant.
+
+    Selection rule: if only one row exists for an instance, it is primary
+    regardless of the ``primary`` field. When multiple rows exist, the one
+    with ``primary=True`` wins.
     """
-    out: dict[str, dict] = {}
+    from collections import defaultdict
+    groups: dict[str, list[dict]] = defaultdict(list)
     for r in _iter_audit_rows():
-        if r.get("primary", True):
-            out[r["instance_id"]] = r
+        groups[r["instance_id"]].append(r)
+
+    out: dict[str, dict] = {}
+    for iid, rows in groups.items():
+        if len(rows) == 1:
+            out[iid] = rows[0]
+        else:
+            for r in rows:
+                if r.get("primary", False):
+                    out[iid] = r
+                    break
     return out
 
 
@@ -288,7 +302,11 @@ def test_audit_rows_cover_select_tasks_per_db():
     task (1..10) must be covered. M-suffixed Management tasks are NOT
     required (deferred per shared contract); per-DB extras outside the
     SELECT set are allowed only when they are deferred management rows
-    (`audit_status=unrecoverable` with `clause_kind="management_category"`)."""
+    (`audit_status=unrecoverable` with `clause_kind="management_category"`).
+
+    Additionally, every DB listed in EXPECTED_INSTANCE_IDS_BY_DB must
+    appear in the file — this catches the case where an entire DB's
+    rows were accidentally omitted."""
     primary_rows = _load_audit_rows()
     by_db: dict[str, set[str]] = {}
     for iid, row in primary_rows.items():
@@ -571,7 +589,7 @@ def test_clean_rows_have_substantive_reasoning_summary():
 
 
 # ---------------------------------------------------------------------------
-# Pinned decisions: museum_7 (edited) + museum_9 (clean)
+# Pinned decisions: museum_7 (edited) + museum_9 (re-audit DEV-1515)
 # ---------------------------------------------------------------------------
 
 

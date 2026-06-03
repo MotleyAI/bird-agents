@@ -99,7 +99,7 @@ Sum across the 10 instances:
 
 Per-task: museum_9 ($9.84), museum_10 ($8.69), museum_7 ($4.64), museum_2 ($4.05), museum_5 ($3.26), museum_4 ($3.01), museum_3 ($2.02), museum_1 ($1.53), museum_8 ($1.36), museum_6 ($0.36).
 
-Note: of the $38.78, **~$31** went to the 6 failing tasks. Of *that*, **~$26** went to the 4 tasks where the failure is not the agent's fault (museum_2, _3, _4, _9, _10). Fixing the KB / gold / grader issues would directly reduce the per-run cost on this slice by ~2/3 without touching the model.
+Note: of the $38.78, **~$31** went to the 6 failing tasks. Of *that*, **~$26** went to the 5 tasks where the failure is not the agent's fault (museum_2, _3, _4, _9, _10). Fixing the KB / gold / grader issues would directly reduce the per-run cost on this slice by ~2/3 without touching the model.
 
 ## Suggested follow-ups
 

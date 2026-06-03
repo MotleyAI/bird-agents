@@ -24,6 +24,7 @@ invalidates entries (no separate cache-clear flag).
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import re
 import shutil
@@ -68,6 +69,8 @@ def _latest_attempt_file(sub: Path) -> Path | None:
     attempt-2) or, worse, overwritten by stale attempt-1 data — even
     though cloud collation already treats the max attempt as canonical
     and the round-8 fetch merge compares attempt numbers."""
+    if not sub.is_dir():
+        return None
     best: tuple[int, Path] | None = None
     for p in sub.iterdir():
         if not p.is_file():
@@ -229,6 +232,11 @@ def regrade_run(
             SubmissionMetadata,
         )
         usage = attempt_data.get("usage", {}) or {}
+        annotated_at = (
+            datetime.datetime.now(datetime.timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+        )
         ann = SubmissionAnnotation(
             instance_id=instance_id,
             selected_database=selected_database,
@@ -237,7 +245,7 @@ def regrade_run(
                 f"{instance_id}.task.json"
             ),
             annotated_by="auto-regrade",
-            annotated_at="",  # populated below
+            annotated_at=annotated_at,
             submission=SubmissionMetadata(
                 cloud_run_id=run_id,
                 trajectory_path=str(attempt),
@@ -256,10 +264,6 @@ def regrade_run(
                 attempt_data.get("trajectory") or [],
             ),
         )
-        import datetime as _dt
-        ann.annotated_at = _dt.datetime.now(_dt.timezone.utc).replace(
-            microsecond=0,
-        ).isoformat()
 
         # OVERWRITE the per-(instance, run) annotation in the main checkout.
         dest = submission_annotation_path(

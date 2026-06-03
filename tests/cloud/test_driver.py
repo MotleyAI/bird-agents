@@ -1012,6 +1012,23 @@ def test_read_api_keys_oauth_missing_usersim_key_raises_prereq_error(monkeypatch
         )
 
 
+def test_read_api_keys_annotator_oauth_no_usersim_key_required(monkeypatch):
+    """annotator framework + OAuth → no ANTHROPIC_API_KEY required for user-sim.
+    Regression: resubmit() was passing agent_model as user_sim_model, which
+    caused read_api_keys_from_local_env to require ANTHROPIC_API_KEY even when
+    the annotator has no user simulator and only uses OAuth."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    # Must NOT raise — annotator has no user-sim, so no API key is needed.
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-opus-4-7", "",
+        query_mode="raw", framework="annotator",
+    )
+    assert keys["CLAUDE_CODE_OAUTH_TOKEN"] == _GOOD_TOKEN
+    assert "ANTHROPIC_API_KEY" not in keys
+    assert "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY" not in keys
+
+
 def test_build_resubmit_args_old_manifest_no_framework_uses_get(monkeypatch):
     """_build_resubmit_args must use manifest.get('framework', '') so old
     manifests without the key don't raise KeyError (DEV-1517)."""

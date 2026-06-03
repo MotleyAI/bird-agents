@@ -8,7 +8,7 @@ filters to cascade-fail submissions (those whose grader produced a
    match, group_by signals, and the full flag list.
 2. Per-flag tally — flags are NOT mutually exclusive so the totals
    overlap.
-3. An instance × flag matrix so co-occurring flags are easy to scan.
+3. An instance x flag matrix so co-occurring flags are easy to scan.
 
 Run:
 
@@ -140,11 +140,11 @@ def main() -> None:
             note = ""
         print(f"  {flag:<32} {count}{note}")
 
-    # ---- Instance × flag matrix -----------------------------------------
+    # ---- Instance x flag matrix -----------------------------------------
     all_flags = sorted(counter)
     if all_flags:
         print()
-        print("Instance × flag matrix (x = flag fired):")
+        print("Instance x flag matrix (x = flag fired):")
         header = "  " + " " * 42 + "  ".join(
             f"{f[:10]:>10}" for f in all_flags
         )

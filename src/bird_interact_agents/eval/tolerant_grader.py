@@ -165,10 +165,13 @@ def compare_tie_order(
 
     pred_buckets: dict[Tuple, list[tuple]] = {}
     gold_buckets: dict[Tuple, list[tuple]] = {}
-    for r in pred:
-        pred_buckets.setdefault(_key(r), []).append(tuple(r))
-    for r in gold:
-        gold_buckets.setdefault(_key(r), []).append(tuple(r))
+    try:
+        for r in pred:
+            pred_buckets.setdefault(_key(r), []).append(tuple(r))
+        for r in gold:
+            gold_buckets.setdefault(_key(r), []).append(tuple(r))
+    except IndexError:
+        return False
     if pred_buckets.keys() != gold_buckets.keys():
         return False
     # Cross-bucket order: the keys must appear in the same sequence in pred
@@ -1029,7 +1032,7 @@ def grade_submission(
     # 7) Tier 2 informational per variant.
     info_matches: list[VariantMatch] = []
     for v_meta, v_rows, v_cols in variant_results:
-        rel = classify_rowset_relation(pred=pred_rows, gold=v_rows)
+        rel = _bag_relation(pred=pred_rows, gold=v_rows)
         cm, nm, om = _column_diff(pred_cols=list(pred_cols), gold_cols=list(v_cols))
         fdri, fdcd = _first_divergent_row(pred=pred_rows, gold=v_rows)
         info_matches.append(VariantMatch(

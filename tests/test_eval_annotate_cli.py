@@ -72,6 +72,28 @@ def test_task_annotation_skeleton_fills_mechanical_fields(tmp_path):
     )
 
 
+def test_masked_terms_string_metadata_evidence_wrapped_in_list():
+    """metadata_evidence as a plain string (real task data uses e.g. 'KB 3')
+    must be wrapped in a list, not iterated char-by-char."""
+    from bird_interact_agents.eval.annotate import generate_task_annotation
+
+    row = {
+        "instance_id": "alien_1",
+        "selected_database": "alien",
+        "amb_user_query": "q",
+        "external_knowledge": [],
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {"term": "x", "metadata_evidence": "KB 3"},
+            ],
+        },
+    }
+    ann = generate_task_annotation(task_row=row, benchmark="mini-interact")
+    assert ann.masked_terms[0].metadata_evidence == ["KB 3"], (
+        f"String metadata_evidence should be wrapped as list; got {ann.masked_terms[0].metadata_evidence!r}"
+    )
+
+
 def test_task_annotation_skeleton_leaves_sentinels(tmp_path):
     from bird_interact_agents.eval.annotate import (
         PENDING_HUMAN_REVIEW,
@@ -83,6 +105,18 @@ def test_task_annotation_skeleton_leaves_sentinels(tmp_path):
     )
     assert ann.metadata_sufficiency.rationale == PENDING_HUMAN_REVIEW
     assert ann.evaluator_prompt is None
+
+
+def test_task_annotation_alias_benchmark_uses_canonical_jsonl_name():
+    """``benchmark="mini-interact"`` (dash alias) must resolve to the
+    canonical ``"mini_interact.jsonl"`` JSONL name, not the literal
+    ``"mini-interact.jsonl"`` fallback."""
+    from bird_interact_agents.eval.annotate import generate_task_annotation
+
+    ann = generate_task_annotation(
+        task_row=SAMPLE_TASK_ROW, benchmark="mini-interact",
+    )
+    assert ann.provenance.task_jsonl_path == "mini_interact.jsonl"
 
 
 def test_submission_annotation_skeleton_fills_from_trajectory(tmp_path):
@@ -122,6 +156,116 @@ def test_submission_annotation_skeleton_fills_from_trajectory(tmp_path):
     assert ann.task_annotation_ref.startswith("annotations/mini_interact/"), (
         f"task_annotation_ref should use underscore form; got {ann.task_annotation_ref!r}"
     )
+
+
+def test_submission_annotation_reads_latest_attempt_not_hardcoded(tmp_path):
+    """generate_submission_annotation picks attempt-2.json over attempt-1.json
+    when both exist (regression: previously hardcoded attempt-1.json)."""
+    from bird_interact_agents.eval.annotate import generate_submission_annotation
+
+    rows_dir = tmp_path / "rows"
+    d = rows_dir / "alien_1"
+    d.mkdir(parents=True, exist_ok=True)
+    base = {
+        "instance_id": "alien_1",
+        "trajectory": [],
+        "duration_s": 1.0,
+        "usage": {"cost_usd_agent": 0.01, "cost_usd_user_sim": 0.0,
+                  "n_agent_turns": 1, "n_ask_user_calls": 0},
+        "predicted_row_count": 0,
+    }
+    (d / "attempt-1.json").write_text(json.dumps({**base, "submitted_sql": "SELECT stale"}))
+    (d / "attempt-2.json").write_text(json.dumps({**base, "submitted_sql": "SELECT latest"}))
+
+    class StubGrader:
+        def __call__(self, *, submitted_sql, **_kw):
+            from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
+            self.seen_sql = submitted_sql
+            return CascadeVerdict(
+                n1_original_gold=True, n2_audited_primary=True,
+                n3_any_audited_variant=True, n4_tie_order=True,
+                n5_llm_judge=True, n6_numeric_epsilon=True,
+                n7_trailing_whitespace=True, n8_column_order=True,
+                n9_case_fold=True,
+                matched_variant_id="primary",
+                novel_reading_judgment=None,
+                variant_matches=[], rowset_relations=[],
+            )
+
+    grader = StubGrader()
+    generate_submission_annotation(
+        rows_dir=rows_dir, instance_id="alien_1",
+        selected_database="alien", benchmark="mini-interact",
+        run_id="r1", task_row=SAMPLE_TASK_ROW,
+        grader=grader,
+    )
+    assert grader.seen_sql == "SELECT latest", (
+        f"Expected latest attempt SQL; got {grader.seen_sql!r}"
+    )
+
+
+def test_generate_submission_annotation_missing_dir_raises_file_not_found(tmp_path):
+    """generate_submission_annotation raises FileNotFoundError (not iterdir crash)
+    when the instance directory doesn't exist, after the _latest_attempt_file guard."""
+    from bird_interact_agents.eval.annotate import generate_submission_annotation
+    from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
+
+    rows_dir = tmp_path / "rows"
+    rows_dir.mkdir()
+    # No sub-dir for alien_1 — it never ran.
+
+    class StubGrader:
+        def __call__(self, **_kw):
+            return CascadeVerdict(
+                n1_original_gold=True, n2_audited_primary=True,
+                n3_any_audited_variant=True, n4_tie_order=True,
+                n5_llm_judge=True, n6_numeric_epsilon=True,
+                n7_trailing_whitespace=True, n8_column_order=True,
+                n9_case_fold=True,
+                matched_variant_id="primary", novel_reading_judgment=None,
+                variant_matches=[], rowset_relations=[],
+            )
+
+    import pytest
+    with pytest.raises(FileNotFoundError):
+        generate_submission_annotation(
+            rows_dir=rows_dir, instance_id="alien_1",
+            selected_database="alien", benchmark="mini-interact",
+            run_id="r1", task_row=SAMPLE_TASK_ROW,
+            grader=StubGrader(),
+        )
+
+
+def test_resolve_db_sqlite_path_prefers_primary(tmp_path):
+    """Primary {db}.sqlite is returned when it exists."""
+    from bird_interact_agents.eval.annotate import _resolve_db_sqlite_path
+
+    db_dir = tmp_path / "alien"
+    db_dir.mkdir()
+    primary = db_dir / "alien.sqlite"
+    primary.touch()
+    (db_dir / "alien_template.sqlite").touch()
+    assert _resolve_db_sqlite_path(tmp_path, "alien") == primary
+
+
+def test_resolve_db_sqlite_path_falls_back_to_template(tmp_path):
+    """LiveSQLBench: _template.sqlite is used when {db}.sqlite is absent."""
+    from bird_interact_agents.eval.annotate import _resolve_db_sqlite_path
+
+    db_dir = tmp_path / "museum"
+    db_dir.mkdir()
+    tmpl = db_dir / "museum_template.sqlite"
+    tmpl.touch()
+    assert _resolve_db_sqlite_path(tmp_path, "museum") == tmpl
+
+
+def test_resolve_db_sqlite_path_returns_primary_even_when_missing(tmp_path):
+    """When neither file exists, primary path is returned (error surfaces at open)."""
+    from bird_interact_agents.eval.annotate import _resolve_db_sqlite_path
+
+    (tmp_path / "alien").mkdir()
+    result = _resolve_db_sqlite_path(tmp_path, "alien")
+    assert result.name == "alien.sqlite"
 
 
 # ---------------------------------------------------------------------------
