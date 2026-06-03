@@ -142,7 +142,7 @@ def _run_one_task(
             "error": str(exc),
             "duration_s": time.monotonic() - t0,
         }
-        _write_attempt(run_id, instance_id, attempt_row, client=client)
+        _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
         return
 
     if result.error:
@@ -153,7 +153,7 @@ def _run_one_task(
             "error": result.error,
             "duration_s": result.duration_s,
         }
-        _write_attempt(run_id, instance_id, attempt_row, client=client)
+        _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
         return
 
     # Success — write 4 GCS paths.
@@ -173,7 +173,7 @@ def _run_one_task(
             "error": f"GCS write failed: {exc}",
             "duration_s": result.duration_s,
         }
-        _write_attempt(run_id, instance_id, attempt_row, client=client)
+        _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
         return
 
     attempt_row = {
@@ -181,7 +181,7 @@ def _run_one_task(
         "status": "annotated",
         "duration_s": result.duration_s,
     }
-    _write_attempt(run_id, instance_id, attempt_row, client=client)
+    _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
 
 
 def _write_attempt(

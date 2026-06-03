@@ -1018,7 +1018,7 @@ def resubmit(run_id: str) -> None:
                 manifest["agent_model"], "",
                 query_mode="raw", framework="annotator",
             )
-            job_args = _build_annotator_resubmit_args(manifest, run_id, missing)
+            job_args = _build_annotator_resubmit_args(manifest, run_id, missing, next_attempt)
             cluster.submit_job(
                 head_address=head, args=job_args, env_vars=env_vars,
                 yaml_path=yaml_path, ray_app_path=_ANNOTATOR_RAY_APP_PATH,
@@ -1096,7 +1096,7 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
 
 
 def _build_annotator_resubmit_args(
-    manifest: dict, run_id: str, missing: list[str],
+    manifest: dict, run_id: str, missing: list[str], attempt: int,
 ) -> list[str]:
     benchmark = _benchmark_for_dataset(manifest.get("dataset"))
     num_actors = (
@@ -1105,6 +1105,7 @@ def _build_annotator_resubmit_args(
     )
     job_args = [
         "--run-id", run_id,
+        "--attempt", str(attempt),
         "--benchmark", benchmark,
         "--model", manifest["agent_model"],
         "--effort", manifest.get("effort", "medium"),
