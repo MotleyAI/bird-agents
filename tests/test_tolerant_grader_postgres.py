@@ -295,6 +295,77 @@ def test_postgres_read_only_uses_begin_read_only():
     )
 
 
+def test_grade_submission_with_make_executor_uses_pg_not_sqlite():
+    """Regression for DEV-1523: grade_submission(executor=make_executor(pg_benchmark))
+    must call the pg executor, never sqlite3.connect.  Without this fix the
+    agent passed benchmark= but not executor=, so default_executor opened a
+    non-existent .sqlite file and grading silently failed."""
+    from bird_interact_agents.eval.tolerant_grader import make_executor
+
+    b = get_benchmark("livesqlbench_postgres")
+    executor = make_executor(b)
+
+    task_ann = _dummy_task_annotation()
+    db_path = Path("alien")
+
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_cur.description = [("n", None, None, None, None, None, None)]
+    mock_cur.fetchall.return_value = [(1,)]
+    mock_conn.cursor.return_value = mock_cur
+
+    with patch("bird_interact_agents.db_connection._open_psycopg2_connection", return_value=mock_conn) as pg_open, \
+         patch("sqlite3.connect") as sqlite_open:
+        grade_submission(
+            task_annotation=task_ann,
+            audited_gold_rows=[_dummy_audited_gold_row()],
+            original_sol_sql=["SELECT 1 AS n"],
+            submitted_sql="SELECT 1 AS n",
+            db_path=db_path,
+            conn=None,
+            executor=executor,
+            benchmark=b,
+        )
+
+    assert sqlite_open.call_count == 0, (
+        "grade_submission with postgres executor must never call sqlite3.connect"
+    )
+    assert pg_open.call_count > 0, (
+        "grade_submission with postgres executor must call psycopg2 connect"
+    )
+
+
+def test_grade_submission_without_executor_uses_sqlite_not_pg():
+    """Verify the baseline: grade_submission without explicit executor uses
+    default_executor (sqlite3), so the fix above is meaningful."""
+    from bird_interact_agents.eval.tolerant_grader import default_executor
+
+    task_ann = _dummy_task_annotation()
+    db_path = Path("/nonexistent/alien/alien.sqlite")
+
+    with patch("sqlite3.connect") as sqlite_open, \
+         patch("bird_interact_agents.db_connection._open_psycopg2_connection") as pg_open:
+        mock_sqlite_conn = MagicMock()
+        mock_sqlite_cur = MagicMock()
+        mock_sqlite_cur.description = [("n", None, None, None, None, None, None)]
+        mock_sqlite_cur.fetchall.return_value = [(1,)]
+        mock_sqlite_conn.cursor.return_value = mock_sqlite_cur
+        sqlite_open.return_value = mock_sqlite_conn
+
+        grade_submission(
+            task_annotation=task_ann,
+            audited_gold_rows=[_dummy_audited_gold_row()],
+            original_sol_sql=["SELECT 1 AS n"],
+            submitted_sql="SELECT 1 AS n",
+            db_path=db_path,
+            conn=None,
+            executor=None,  # no executor → default_executor → sqlite3
+        )
+
+    assert sqlite_open.call_count > 0, "no executor → must use sqlite3.connect"
+    assert pg_open.call_count == 0, "no executor → must NOT call psycopg2 connect"
+
+
 def test_grade_submission_passes_benchmark_to_multi_sql_execute():
     """grade_submission must forward benchmark so _multi_sql_execute can open a
     shared postgres connection for multi-statement gold SQL."""
