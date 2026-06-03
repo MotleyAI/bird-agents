@@ -120,6 +120,7 @@ def _run_one_task(
                     bucket.blob(dst_name).upload_from_string(data)
                 attempt_row = {
                     "instance_id": instance_id,
+                    "database": db,
                     "status": "skipped",
                     "duration_s": time.monotonic() - t0,
                 }
@@ -131,6 +132,7 @@ def _run_one_task(
                 )
                 attempt_row = {
                     "instance_id": instance_id,
+                    "database": db,
                     "status": "error",
                     "error": f"stable→run-scoped copy failed: {exc}",
                     "duration_s": time.monotonic() - t0,
@@ -145,6 +147,7 @@ def _run_one_task(
         logger.error("[%s] agent raised: %s", instance_id, exc)
         attempt_row = {
             "instance_id": instance_id,
+            "database": db,
             "status": "error",
             "error": str(exc),
             "duration_s": time.monotonic() - t0,
@@ -156,6 +159,7 @@ def _run_one_task(
         logger.warning("[%s] agent returned error: %s", instance_id, result.error)
         attempt_row = {
             "instance_id": instance_id,
+            "database": db,
             "status": "error",
             "error": result.error,
             "duration_s": result.duration_s,
@@ -176,6 +180,7 @@ def _run_one_task(
         logger.error("[%s] GCS write failed after annotation: %s", instance_id, exc)
         attempt_row = {
             "instance_id": instance_id,
+            "database": db,
             "status": "error",
             "error": f"GCS write failed: {exc}",
             "duration_s": result.duration_s,
@@ -185,6 +190,7 @@ def _run_one_task(
 
     attempt_row = {
         "instance_id": instance_id,
+        "database": db,
         "status": "annotated",
         "duration_s": result.duration_s,
     }

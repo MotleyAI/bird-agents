@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime
+import json
 import logging
 import secrets
 import signal
@@ -240,8 +241,6 @@ def _dbs_for_instances(instance_ids, benchmark: str = "mini_interact") -> list[s
     via the benchmark's tasks file (never string-split the id — DB names contain
     underscores, e.g. ``california_schools``). Returns a sorted, de-duplicated
     db list."""
-    import json as _json
-
     wanted = set(instance_ids)
     dbs: set[str] = set()
     with paths.benchmark_data_file(benchmark).open() as f:
@@ -249,7 +248,7 @@ def _dbs_for_instances(instance_ids, benchmark: str = "mini_interact") -> list[s
             line = line.strip()
             if not line:
                 continue
-            td = _json.loads(line)
+            td = json.loads(line)
             if td.get("instance_id") in wanted:
                 db = td.get("selected_database")
                 if db:
@@ -459,7 +458,6 @@ def _instance_ids_sorted_by_db(
     typically does all encoding for a given DB and the cross-actor encode
     race is rare. Unknown iids (absent from the dataset) sort to the end
     grouped by their iid string so they still appear deterministically."""
-    import json as _json
     wanted = list(instance_ids)
     if not wanted:
         return wanted
@@ -482,7 +480,7 @@ def _instance_ids_sorted_by_db(
             line = line.strip()
             if not line:
                 continue
-            td = _json.loads(line)
+            td = json.loads(line)
             iid = td.get("instance_id")
             if iid in wanted:
                 db = td.get("selected_database") or ""
@@ -875,11 +873,9 @@ def fetch(run_id: str) -> dict:
     gcs.concurrent_download_prefix(run_id, dest, client=default_gcs_client())
     manifest_path = dest / "manifest.json"
     if not manifest_path.exists():
-        import json
         manifest = gcs.read_manifest(run_id, client=default_gcs_client())
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     else:
-        import json
         manifest = json.loads(manifest_path.read_text())
     metrics = _collation.collate(dest, manifest)
     # DEV-1470: promote per-DB cloud-encoded OTF references from
@@ -923,6 +919,12 @@ def fetch(run_id: str) -> dict:
             override=manifest.get("override", False),
         )
         metrics["audited_gold_variants_merge_report"] = variants_report.model_dump()
+
+    # Rewrite eval.json so annotation merge reports (added after collate()) are
+    # persisted on disk — collate() writes eval.json before these keys exist.
+    eval_path = dest / "eval.json"
+    if eval_path.exists():
+        eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
 
     return metrics
 
