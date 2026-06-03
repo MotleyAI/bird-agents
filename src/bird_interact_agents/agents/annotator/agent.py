@@ -212,6 +212,18 @@ async def submit_annotation(args: dict) -> dict:
                 f"Error: audited_gold_variants[{i}].benchmark must be "
                 f"{expected_benchmark!r}, got {variant.get('benchmark')!r}"
             )
+        if not isinstance(variant.get("audited_sol_sql"), list):
+            return _text(
+                f"Error: audited_gold_variants[{i}].audited_sol_sql must be a list "
+                f"of SQL strings, got {type(variant.get('audited_sol_sql')).__name__!r}. "
+                f"Wrap single SQL in a list: [\"SELECT ...\"]"
+            )
+        _VALID_AUDIT_STATUSES = {"clean", "edited", "unrecoverable", "original_correct"}
+        if variant.get("audit_status") not in _VALID_AUDIT_STATUSES:
+            return _text(
+                f"Error: audited_gold_variants[{i}].audit_status must be one of "
+                f"{sorted(_VALID_AUDIT_STATUSES)}, got {variant.get('audit_status')!r}"
+            )
 
     if not task_annotation.original_gold_is_correct and task_annotation.gold_variants:
         submitted_variant_ids = {v.get("variant_id") for v in audited_gold_variants}

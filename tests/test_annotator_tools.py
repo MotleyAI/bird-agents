@@ -474,6 +474,60 @@ async def test_submit_annotation_variant_wrong_database_returns_error():
 
 
 @pytest.mark.asyncio
+async def test_submit_annotation_variant_audited_sol_sql_not_a_list_returns_error():
+    """audited_sol_sql must be a list; a bare string silently breaks tolerant_grader
+    which does list(v.get("audited_sol_sql") or []) and iterates characters."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    variant_string_sql = json.dumps([
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "variant_id": "primary",
+            "benchmark": "mini_interact",
+            "audit_status": "clean",
+            "audited_sol_sql": "SELECT 1;",  # string instead of list
+        }
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": _valid_task_annotation_json("shop_1"),
+        "audited_gold_variants_json": variant_string_sql,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "audited_sol_sql" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_variant_invalid_audit_status_returns_error():
+    """audit_status must be one of the known valid values; an unknown value is
+    silently ignored by the harness, so reject it at submit time."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    variant_bad_status = json.dumps([
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "variant_id": "primary",
+            "benchmark": "mini_interact",
+            "audit_status": "unknown_status",  # not a valid value
+            "audited_sol_sql": ["SELECT 1;"],
+        }
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": _valid_task_annotation_json("shop_1"),
+        "audited_gold_variants_json": variant_bad_status,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "audit_status" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
 async def test_submit_annotation_gold_variant_ref_missing_audited_row_returns_error():
     """A TaskAnnotation that references a variant_id in gold_variants but
     doesn't include that variant_id in audited_gold_variants_json must return
