@@ -147,6 +147,18 @@ def compare_tie_order(
     if not orderby_indices:
         return _set_equal(pred, gold)
 
+    # Codex r12: a wrong-projection-width agent submission is a normal
+    # miss (e.g. forgot a column), but ``row[i]`` would raise IndexError
+    # below and bubble out of the grader, forcing the caller into a
+    # generic fail-everything fallback annotation. Bounds-check the
+    # ORDER BY indices against the NARROWEST row on either side first;
+    # any out-of-range index means tie-order cannot match → return False
+    # cleanly (same disposition as the row-count check above).
+    max_idx = max(orderby_indices)
+    rows_for_width = list(pred) + list(gold)
+    if rows_for_width and max_idx >= min(len(r) for r in rows_for_width):
+        return False
+
     def _key(row: Sequence) -> Tuple:
         return tuple(row[i] for i in orderby_indices)
 
@@ -278,9 +290,25 @@ def compare_column_order(
         return False
     pred_l = [c.lower() for c in pred_cols]
     gold_l = [c.lower() for c in gold_cols]
+    # Codex r12: duplicate column names make "column order tolerance"
+    # ill-defined. ``set(...)`` collapses duplicates, then
+    # ``pred_l.index(c)`` returns the FIRST matching position for every
+    # later occurrence — so e.g. pred ``[a, b, a]`` against gold
+    # ``[a, a, b]`` would map both gold "a" positions to pred's first
+    # "a" column and silently ignore the second pred "a" column's
+    # actual value, falsely passing N8. Reject the case at the boundary
+    # — duplicate-named projections aren't a column-order miss, they're
+    # a separate quality issue (likely a join-collision in the query).
+    if (
+        len(pred_l) != len(set(pred_l))
+        or len(gold_l) != len(set(gold_l))
+    ):
+        return False
     if set(pred_l) != set(gold_l):
         return False
-    # Permutation: position in pred for each gold column.
+    # Permutation: position in pred for each gold column. Safe because
+    # the duplicate-name guard above ensures each gold name appears
+    # exactly once on each side.
     perm = [pred_l.index(c) for c in gold_l]
     aligned = [tuple(r[i] for i in perm) for r in pred]
     return _set_equal(aligned, gold)
@@ -470,6 +498,133 @@ class CachedLLMJudge:
             self._cache[key] = entry
             self._persist()
         return result
+
+
+_JUDGE_SYSTEM_PROMPT = (
+    "You are an expert SQL evaluator. The user has issued an "
+    "ambiguous task; a strict cascade has confirmed that the agent's "
+    "SQL does NOT match any of the known acceptable readings. Your "
+    "job is to decide whether the agent's submission is a "
+    "DEFENSIBLE NOVEL reading — consistent with what the task "
+    "metadata DOES say — or whether it is genuinely wrong.\n\n"
+    "Reply concisely. The LAST line of your reply MUST begin with "
+    "either ``ACCEPT`` (valid novel reading) or ``REJECT`` (not "
+    "defensible). Anything else is treated as an inconclusive timeout."
+)
+
+
+def _format_predicted_rows(rows: Sequence[Sequence]) -> str:
+    if not rows:
+        return "(no rows returned)"
+    lines = []
+    for r in rows[:20]:
+        lines.append("  " + " | ".join(str(c) for c in r))
+    return "\n".join(lines)
+
+
+def _build_judge_user_prompt(
+    *,
+    evaluator_prompt: str,
+    gold_variants_summary: list[dict],
+    metadata_anchors: list[str],
+    submitted_sql: str,
+    predicted_rows_head: Sequence[Sequence],
+) -> str:
+    variants_block = "\n".join(
+        f"  - variant_id={v.get('variant_id')!r}, "
+        f"interpretation={v.get('interpretation')!r}"
+        for v in gold_variants_summary
+    ) or "  (no audited variants — original gold is the only reference)"
+    anchors_block = ", ".join(metadata_anchors) or "(none)"
+    return (
+        f"Task evaluator prompt (disambiguation criteria):\n"
+        f"{evaluator_prompt}\n\n"
+        f"Known acceptable readings:\n{variants_block}\n\n"
+        f"Ambiguous terms in the original task:\n{anchors_block}\n\n"
+        f"Submitted SQL:\n{submitted_sql}\n\n"
+        f"First {min(20, len(predicted_rows_head))} predicted rows:\n"
+        f"{_format_predicted_rows(predicted_rows_head)}\n\n"
+        f"Decide: is the agent's submission a defensible NOVEL reading?\n"
+        f"Reply ACCEPT or REJECT on the LAST line."
+    )
+
+
+def _parse_judge_decision(text: str) -> Optional[bool]:
+    """Parse the LLM's reply into True / False / None per the protocol."""
+    if not text:
+        return None
+    last = text.strip().splitlines()[-1].strip().upper()
+    if last.startswith("ACCEPT"):
+        return True
+    if last.startswith("REJECT"):
+        return False
+    return None
+
+
+class LiteLLMJudge:
+    """Concrete LLM judge backed by ``litellm.completion``. Returns
+    ``True`` / ``False`` / ``None`` per :class:`LLMJudgeProtocol`.
+
+    The model name is a litellm-style string (e.g.
+    ``"anthropic/claude-sonnet-4-5"``). The constructor doesn't touch
+    the network; ``judge()`` does — wrap in :class:`CachedLLMJudge` so
+    repeated calls for the same (annotation, gold-variants,
+    submitted-SQL) tuple don't burn tokens.
+    """
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        temperature: float = 0.0,
+        timeout_s: float = 60.0,
+    ) -> None:
+        self._model = model
+        self._temperature = temperature
+        self._timeout_s = timeout_s
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
+    def judge(self, **kwargs: Any) -> Optional[bool]:
+        try:
+            import litellm
+        except ImportError:
+            logger.exception("litellm not installed; LiteLLMJudge cannot fire")
+            return None
+        user_prompt = _build_judge_user_prompt(
+            evaluator_prompt=kwargs.get("evaluator_prompt") or "",
+            gold_variants_summary=kwargs.get("gold_variants_summary") or [],
+            metadata_anchors=kwargs.get("metadata_anchors") or [],
+            submitted_sql=kwargs.get("submitted_sql") or "",
+            predicted_rows_head=kwargs.get("predicted_rows_head") or [],
+        )
+        try:
+            resp = litellm.completion(
+                model=self._model,
+                temperature=self._temperature,
+                timeout=self._timeout_s,
+                messages=[
+                    {"role": "system", "content": _JUDGE_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "LiteLLMJudge.judge raised against model=%s instance=%s",
+                self._model, kwargs.get("instance_id"),
+            )
+            return None
+        try:
+            text = resp["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            logger.exception(
+                "LiteLLMJudge: malformed response shape for instance=%s",
+                kwargs.get("instance_id"),
+            )
+            return None
+        return _parse_judge_decision(text)
 
 
 # ---------------------------------------------------------------------------

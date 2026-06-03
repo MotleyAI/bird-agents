@@ -722,7 +722,7 @@ async def test_local_run_filter_ids_preserves_unrelated_rows(
         return out_dir / "submission_annotation.json"
     monkeypatch.setattr(run_mod, "grade_one_submission", _stub)
 
-    await run_mod.run_evaluation(
+    metrics = await run_mod.run_evaluation(
         framework="claude_sdk_otf_ainteract", query_mode="slayer",
         mode="a-interact", data_path="ignored",
         data_dir=str(tmp_path / "ignored_data_dir"),
@@ -745,3 +745,18 @@ async def test_local_run_filter_ids_preserves_unrelated_rows(
         (unrelated / "submission_annotation.json").read_text(),
     )
     assert surviving["annotated_by"] == "unrelated-survivor"
+    # Codex r11: published metrics MUST describe ONLY the current run's
+    # row set, NOT the union with preserved prior rows. Otherwise
+    # ``cascading_phase1.n_dual_eval_tasks`` could exceed
+    # ``total_tasks`` and the rewritten ``phase1_count`` /
+    # ``phase1_rate`` would become uninterpretable.
+    cp = metrics["cascading_phase1"]
+    assert metrics["total_tasks"] == 1, f"got {metrics['total_tasks']}"
+    assert cp["n_dual_eval_tasks"] == 1, (
+        f"cascade denominator must be scoped to the current run "
+        f"(filter_ids=[alien_1]) — got {cp['n_dual_eval_tasks']}; "
+        f"alien_99's preserved annotation must NOT pollute it"
+    )
+    assert metrics["total_tasks"] == cp["n_dual_eval_tasks"], (
+        "total_tasks and cascading_phase1.n_dual_eval_tasks MUST agree"
+    )
