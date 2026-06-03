@@ -500,6 +500,133 @@ class CachedLLMJudge:
         return result
 
 
+_JUDGE_SYSTEM_PROMPT = (
+    "You are an expert SQL evaluator. The user has issued an "
+    "ambiguous task; a strict cascade has confirmed that the agent's "
+    "SQL does NOT match any of the known acceptable readings. Your "
+    "job is to decide whether the agent's submission is a "
+    "DEFENSIBLE NOVEL reading — consistent with what the task "
+    "metadata DOES say — or whether it is genuinely wrong.\n\n"
+    "Reply concisely. The LAST line of your reply MUST begin with "
+    "either ``ACCEPT`` (valid novel reading) or ``REJECT`` (not "
+    "defensible). Anything else is treated as an inconclusive timeout."
+)
+
+
+def _format_predicted_rows(rows: Sequence[Sequence]) -> str:
+    if not rows:
+        return "(no rows returned)"
+    lines = []
+    for r in rows[:20]:
+        lines.append("  " + " | ".join(str(c) for c in r))
+    return "\n".join(lines)
+
+
+def _build_judge_user_prompt(
+    *,
+    evaluator_prompt: str,
+    gold_variants_summary: list[dict],
+    metadata_anchors: list[str],
+    submitted_sql: str,
+    predicted_rows_head: Sequence[Sequence],
+) -> str:
+    variants_block = "\n".join(
+        f"  - variant_id={v.get('variant_id')!r}, "
+        f"interpretation={v.get('interpretation')!r}"
+        for v in gold_variants_summary
+    ) or "  (no audited variants — original gold is the only reference)"
+    anchors_block = ", ".join(metadata_anchors) or "(none)"
+    return (
+        f"Task evaluator prompt (disambiguation criteria):\n"
+        f"{evaluator_prompt}\n\n"
+        f"Known acceptable readings:\n{variants_block}\n\n"
+        f"Ambiguous terms in the original task:\n{anchors_block}\n\n"
+        f"Submitted SQL:\n{submitted_sql}\n\n"
+        f"First {min(20, len(predicted_rows_head))} predicted rows:\n"
+        f"{_format_predicted_rows(predicted_rows_head)}\n\n"
+        f"Decide: is the agent's submission a defensible NOVEL reading?\n"
+        f"Reply ACCEPT or REJECT on the LAST line."
+    )
+
+
+def _parse_judge_decision(text: str) -> Optional[bool]:
+    """Parse the LLM's reply into True / False / None per the protocol."""
+    if not text:
+        return None
+    last = text.strip().splitlines()[-1].strip().upper()
+    if last.startswith("ACCEPT"):
+        return True
+    if last.startswith("REJECT"):
+        return False
+    return None
+
+
+class LiteLLMJudge:
+    """Concrete LLM judge backed by ``litellm.completion``. Returns
+    ``True`` / ``False`` / ``None`` per :class:`LLMJudgeProtocol`.
+
+    The model name is a litellm-style string (e.g.
+    ``"anthropic/claude-sonnet-4-5"``). The constructor doesn't touch
+    the network; ``judge()`` does — wrap in :class:`CachedLLMJudge` so
+    repeated calls for the same (annotation, gold-variants,
+    submitted-SQL) tuple don't burn tokens.
+    """
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        temperature: float = 0.0,
+        timeout_s: float = 60.0,
+    ) -> None:
+        self._model = model
+        self._temperature = temperature
+        self._timeout_s = timeout_s
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
+    def judge(self, **kwargs: Any) -> Optional[bool]:
+        try:
+            import litellm
+        except ImportError:
+            logger.exception("litellm not installed; LiteLLMJudge cannot fire")
+            return None
+        user_prompt = _build_judge_user_prompt(
+            evaluator_prompt=kwargs.get("evaluator_prompt") or "",
+            gold_variants_summary=kwargs.get("gold_variants_summary") or [],
+            metadata_anchors=kwargs.get("metadata_anchors") or [],
+            submitted_sql=kwargs.get("submitted_sql") or "",
+            predicted_rows_head=kwargs.get("predicted_rows_head") or [],
+        )
+        try:
+            resp = litellm.completion(
+                model=self._model,
+                temperature=self._temperature,
+                timeout=self._timeout_s,
+                messages=[
+                    {"role": "system", "content": _JUDGE_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "LiteLLMJudge.judge raised against model=%s instance=%s",
+                self._model, kwargs.get("instance_id"),
+            )
+            return None
+        try:
+            text = resp["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            logger.exception(
+                "LiteLLMJudge: malformed response shape for instance=%s",
+                kwargs.get("instance_id"),
+            )
+            return None
+        return _parse_judge_decision(text)
+
+
 # ---------------------------------------------------------------------------
 # Default executor (real SQLite path) + grade_submission orchestrator
 # ---------------------------------------------------------------------------
