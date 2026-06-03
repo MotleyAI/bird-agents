@@ -619,9 +619,10 @@ def _run_one_in_actor(
             rows_dir=annotation_dir,
             run_id=run_id,
             benchmark=_cloud_benchmark(cfg),
-            db_path=Path(_grader_data_dir)
-                / str(_row_selected_db)
-                / f"{_row_selected_db}.sqlite",
+            db_path=Path(
+                task_data.get("db_file_path")
+                or (Path(_grader_data_dir) / str(_row_selected_db) / f"{_row_selected_db}.sqlite")
+            ),
             cost_usd_agent=row.get("usage", {}).get("cost_usd_agent")
                 if isinstance(row.get("usage"), dict) else None,
             cost_usd_user_sim=row.get("usage", {}).get("cost_usd_user_sim")
@@ -1162,6 +1163,22 @@ def _run_with_actors(
                 _gcs.write_row(run_id, iid, attempt, err_row, client=gcs_client)
             except Exception:  # noqa: BLE001
                 pass
+            try:
+                _ann_dir = Path(tempfile.mkdtemp(prefix="bird_fail_ann_"))
+                _fp = write_failed_submission_annotation(
+                    rows_dir=_ann_dir,
+                    instance_id=iid,
+                    selected_database="",
+                    benchmark=_cloud_benchmark(cfg),
+                    run_id=run_id,
+                    trajectory_path=f"rows/{iid}/attempt-1.json",
+                    failure_details=err_row.get("error", "")[:200],
+                )
+                _gcs.write_submission_annotation(
+                    run_id, iid, json.loads(_fp.read_text()), client=gcs_client,
+                )
+            except Exception:  # noqa: BLE001
+                pass
             heartbeat.tick_done()
             # Do NOT recycle the failing actor — if its handle is dead /
             # unreachable, the same exception fires for every remaining
@@ -1194,6 +1211,22 @@ def _run_with_actors(
                                 client=gcs_client)
             except Exception:  # noqa: BLE001 — best effort; log is enough
                 pass
+            try:
+                _ann_dir = Path(tempfile.mkdtemp(prefix="bird_fail_ann_"))
+                _fp = write_failed_submission_annotation(
+                    rows_dir=_ann_dir,
+                    instance_id=iid,
+                    selected_database="",
+                    benchmark=_cloud_benchmark(cfg),
+                    run_id=run_id,
+                    trajectory_path=f"rows/{iid}/attempt-1.json",
+                    failure_details=err_row.get("error", "")[:200],
+                )
+                _gcs.write_submission_annotation(
+                    run_id, iid, json.loads(_fp.read_text()), client=gcs_client,
+                )
+            except Exception:  # noqa: BLE001
+                pass
             heartbeat.tick_done()
             # Mint a replacement so we don't lose throughput.
             try:
@@ -1223,6 +1256,22 @@ def _run_with_actors(
                     f"[bird-interact-cloud] write_row ALSO failed for "
                     f"{iid}: {we!r}\n"
                 )
+            try:
+                _ann_dir = Path(tempfile.mkdtemp(prefix="bird_fail_ann_"))
+                _fp = write_failed_submission_annotation(
+                    rows_dir=_ann_dir,
+                    instance_id=iid,
+                    selected_database="",
+                    benchmark=_cloud_benchmark(cfg),
+                    run_id=run_id,
+                    trajectory_path=f"rows/{iid}/attempt-1.json",
+                    failure_details=err_row.get("error", "")[:200],
+                )
+                _gcs.write_submission_annotation(
+                    run_id, iid, json.loads(_fp.read_text()), client=gcs_client,
+                )
+            except Exception:  # noqa: BLE001
+                pass
             heartbeat.tick_done()
             free_actors.append(actor)
         _fill_free()
@@ -1236,6 +1285,22 @@ def _run_with_actors(
             err_row = _build_error_row(iid, "", "undispatched: no live actors")
             try:
                 _gcs.write_row(run_id, iid, attempt, err_row, client=gcs_client)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                _ann_dir = Path(tempfile.mkdtemp(prefix="bird_fail_ann_"))
+                _fp = write_failed_submission_annotation(
+                    rows_dir=_ann_dir,
+                    instance_id=iid,
+                    selected_database="",
+                    benchmark=_cloud_benchmark(cfg),
+                    run_id=run_id,
+                    trajectory_path=f"rows/{iid}/attempt-1.json",
+                    failure_details=err_row.get("error", "")[:200],
+                )
+                _gcs.write_submission_annotation(
+                    run_id, iid, json.loads(_fp.read_text()), client=gcs_client,
+                )
             except Exception:  # noqa: BLE001
                 pass
             heartbeat.tick_done()

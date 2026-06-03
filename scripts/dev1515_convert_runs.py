@@ -58,7 +58,7 @@ from bird_interact_agents.eval.tolerant_grader import (
 )
 
 
-BENCHMARK = "mini-interact"
+BENCHMARK = "mini_interact"
 AUDIT_FILE_REL = "audited_gold/mini_interact_audited.jsonl"
 
 RUNS = {

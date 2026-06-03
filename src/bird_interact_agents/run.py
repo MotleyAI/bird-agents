@@ -1074,10 +1074,9 @@ async def run_evaluation(
         # have the agent and grader disagreeing on schema/data, and a
         # correct submission could be marked failing. Mirrors the
         # cloud worker, which uses ``cfg["data_dir"]`` (Codex r7).
-        per_task_db = (
-            Path(data_dir)
-            / selected_database
-            / f"{selected_database}.sqlite"
+        per_task_db = Path(
+            td.get("db_file_path")
+            or (Path(data_dir) / selected_database / f"{selected_database}.sqlite")
         )
         try:
             grade_one_submission(

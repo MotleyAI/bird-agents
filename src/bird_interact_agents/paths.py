@@ -156,7 +156,9 @@ def audited_gold_root() -> Path:
     """
     override = os.environ.get("BIRD_AUDITED_GOLD_ROOT")
     if override:
-        return Path(override).expanduser()
+        p = Path(override).expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
     path = main_checkout_root() / "audited_gold"
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -206,7 +208,9 @@ def annotations_root() -> Path:
     """
     override = os.environ.get("BIRD_ANNOTATIONS_ROOT")
     if override:
-        return Path(override).expanduser()
+        p = Path(override).expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
     path = main_checkout_root() / "annotations"
     path.mkdir(parents=True, exist_ok=True)
     return path

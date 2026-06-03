@@ -567,7 +567,7 @@ def _stub_env(
         n7_trailing_whitespace=True, n8_column_order=True, n9_case_fold=True,
     )
     monkeypatch.setattr(m, "task_annotation_path", lambda **kw: ann_file)
-    monkeypatch.setattr(m, "read_task_annotation", lambda _p: _fake_ann)
+    monkeypatch.setattr(m, "load_task_annotation_or_implicit", lambda **kw: _fake_ann)
     monkeypatch.setattr(m, "grade_submission", lambda **kw: _passing_cascade)
     monkeypatch.setattr(m, "load_audited_gold_rows_for", lambda **kw: [])
 

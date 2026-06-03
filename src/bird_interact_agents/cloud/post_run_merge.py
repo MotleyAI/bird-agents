@@ -74,12 +74,17 @@ from __future__ import annotations
 
 import fcntl
 import json
+import logging
 import os
 import re
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
+
+from bird_interact_agents import paths
+
+logger = logging.getLogger(__name__)
 
 _MARKER = "_reference_fp.txt"
 _SIDECAR = "_source_mtimes.json"
@@ -510,7 +515,7 @@ def merge_submission_annotations(
                 selected_database=ann.selected_database,
                 instance_id=ann.instance_id,
                 run_id=run_id,
-                repo_root=main_checkout_root,
+                repo_root=None,
             )
             if dest.exists():
                 # Resubmit reuses the same ``run_id`` and bumps the
@@ -560,5 +565,8 @@ def merge_submission_annotations(
     # Audit log lives alongside the downloaded run dir (next to the
     # OTF merge_report.json above, for symmetry).
     audit_path = downloaded_run_dir / "annotation_merge_report.json"
-    audit_path.write_text(report.model_dump_json(indent=2) + "\n")
+    try:
+        audit_path.write_text(report.model_dump_json(indent=2) + "\n")
+    except Exception:  # noqa: BLE001
+        logger.warning("[post_run_merge] failed to write audit log %s", audit_path, exc_info=True)
     return report

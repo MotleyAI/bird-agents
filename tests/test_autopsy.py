@@ -240,12 +240,13 @@ def test_submission_annotation_autopsy_field_filled():
 
 
 # ---------------------------------------------------------------------------
-# 2. Hard precondition: run_task fails fast
+# 2. Annotation precondition: missing annotation uses implicit, skips autopsy
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_run_task_ainteract_fails_fast_no_annotation(tmp_path, monkeypatch):
-    """claude_sdk_otf_ainteract.run_task returns skip row when no annotation on disk."""
+async def test_run_task_ainteract_no_annotation_uses_implicit(tmp_path, monkeypatch):
+    """claude_sdk_otf_ainteract.run_task does NOT fail fast when no annotation on disk.
+    Instead it loads an implicit annotation and only skips autopsy."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract.agent import (
         ClaudeSDKOtfAInteractAgent,
     )
@@ -266,17 +267,17 @@ async def test_run_task_ainteract_fails_fast_no_annotation(tmp_path, monkeypatch
         query_mode="slayer",
         eval_mode="a-interact",
     )
-    assert result.get("phase1_passed") is False
-    assert result.get("total_reward", 1.0) == 0.0
-    assert result.get("trajectory", None) is not None  # present in row
+    # Agent proceeds (not stopped by missing annotation) — it hits some
+    # other failure (e.g. missing DB file) or completes; either way the
+    # error is NOT the old "no TaskAnnotation" abort.
     err = result.get("error") or ""
-    assert "no TaskAnnotation" in err
-    assert "hh_1" in err
+    assert "no TaskAnnotation" not in err
 
 
 @pytest.mark.asyncio
-async def test_run_task_otf_fails_fast_no_annotation(tmp_path, monkeypatch):
-    """claude_sdk_otf.run_task returns skip row when no annotation on disk."""
+async def test_run_task_otf_no_annotation_uses_implicit(tmp_path, monkeypatch):
+    """claude_sdk_otf.run_task does NOT fail fast when no annotation on disk.
+    Instead it loads an implicit annotation and only skips autopsy."""
     from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
 
     monkeypatch.setenv("BIRD_ANNOTATIONS_ROOT", str(tmp_path / "annotations"))
@@ -295,11 +296,11 @@ async def test_run_task_otf_fails_fast_no_annotation(tmp_path, monkeypatch):
         query_mode="slayer",
         eval_mode="one-shot",
     )
-    assert result.get("phase1_passed") is False
-    assert result.get("total_reward", 1.0) == 0.0
+    # Agent proceeds (not stopped by missing annotation) — it hits some
+    # other failure (e.g. missing DB file) or completes; either way the
+    # error is NOT the old "no TaskAnnotation" abort.
     err = result.get("error") or ""
-    assert "no TaskAnnotation" in err
-    assert "lsb_1" in err
+    assert "no TaskAnnotation" not in err
 
 
 # ---------------------------------------------------------------------------

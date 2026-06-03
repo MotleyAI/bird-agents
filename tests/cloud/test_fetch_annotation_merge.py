@@ -82,13 +82,16 @@ def _valid_submission_annotation_dict(instance_id: str = "alien_1") -> dict:
     }
 
 
-def test_merge_writes_annotation_to_main_checkout(tmp_path):
+def test_merge_writes_annotation_to_main_checkout(tmp_path, monkeypatch):
+    from bird_interact_agents import paths as _paths
     from bird_interact_agents.cloud.post_run_merge import (
         merge_submission_annotations,
     )
 
     main_checkout = tmp_path / "checkout"
     main_checkout.mkdir()
+    fake_ann_root = main_checkout / "annotations"
+    monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
     downloaded = tmp_path / "downloaded"
     rows = downloaded / "rows" / "alien_1"
     rows.mkdir(parents=True)
@@ -113,7 +116,8 @@ def test_merge_writes_annotation_to_main_checkout(tmp_path):
     assert report.rejected_invalid == 0
 
 
-def test_merge_no_overwrite_if_present(tmp_path):
+def test_merge_no_overwrite_if_present(tmp_path, monkeypatch):
+    from bird_interact_agents import paths as _paths
     from bird_interact_agents.cloud.post_run_merge import (
         merge_submission_annotations,
     )
@@ -121,6 +125,8 @@ def test_merge_no_overwrite_if_present(tmp_path):
     main_checkout = tmp_path / "checkout"
     dest_dir = main_checkout / "annotations" / "mini_interact" / "alien"
     dest_dir.mkdir(parents=True)
+    fake_ann_root = main_checkout / "annotations"
+    monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
     pre = _valid_submission_annotation_dict("alien_1")
     pre["annotated_by"] = "human-pre-existing"
     (dest_dir / "alien_1.submission.r1.json").write_text(json.dumps(pre))
@@ -147,12 +153,15 @@ def test_merge_no_overwrite_if_present(tmp_path):
     assert surviving["annotated_by"] == "human-pre-existing"
 
 
-def test_merge_rejects_schema_invalid_file(tmp_path):
+def test_merge_rejects_schema_invalid_file(tmp_path, monkeypatch):
+    from bird_interact_agents import paths as _paths
     from bird_interact_agents.cloud.post_run_merge import (
         merge_submission_annotations,
     )
 
     main_checkout = tmp_path / "checkout"
+    fake_ann_root = main_checkout / "annotations"
+    monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
     downloaded = tmp_path / "downloaded"
     rows = downloaded / "rows" / "alien_1"
     rows.mkdir(parents=True)
@@ -175,12 +184,15 @@ def test_merge_rejects_schema_invalid_file(tmp_path):
     ).exists()
 
 
-def test_merge_writes_audit_report(tmp_path):
+def test_merge_writes_audit_report(tmp_path, monkeypatch):
+    from bird_interact_agents import paths as _paths
     from bird_interact_agents.cloud.post_run_merge import (
         merge_submission_annotations,
     )
 
     main_checkout = tmp_path / "checkout"
+    fake_ann_root = main_checkout / "annotations"
+    monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
     downloaded = tmp_path / "downloaded"
     rows_dir = downloaded / "rows"
     for inst in ("a_1", "a_2"):
@@ -224,10 +236,11 @@ def _make_dict_with_attempt(instance_id: str, attempt: int) -> dict:
     return body
 
 
-def test_merge_overwrites_when_new_attempt_strictly_newer(tmp_path):
+def test_merge_overwrites_when_new_attempt_strictly_newer(tmp_path, monkeypatch):
     """Resubmit pushes attempt-2's annotation; the existing dest is
     attempt-1. The merge MUST overwrite and bump the
     ``overwritten_newer_attempt`` counter."""
+    from bird_interact_agents import paths as _paths
     from bird_interact_agents.cloud.post_run_merge import (
         merge_submission_annotations,
     )
@@ -235,6 +248,8 @@ def test_merge_overwrites_when_new_attempt_strictly_newer(tmp_path):
     main_checkout = tmp_path / "checkout"
     dest_dir = main_checkout / "annotations" / "mini_interact" / "alien"
     dest_dir.mkdir(parents=True)
+    fake_ann_root = main_checkout / "annotations"
+    monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
     # Pre-existing dest from a prior partial fetch — attempt-1.
     (dest_dir / "alien_1.submission.r1.json").write_text(
         json.dumps(_make_dict_with_attempt("alien_1", 1)),
@@ -267,9 +282,10 @@ def test_merge_overwrites_when_new_attempt_strictly_newer(tmp_path):
     )
 
 
-def test_merge_does_not_overwrite_when_new_attempt_is_older_or_equal(tmp_path):
+def test_merge_does_not_overwrite_when_new_attempt_is_older_or_equal(tmp_path, monkeypatch):
     """Symmetric safety case: attempt-2 already on disk, attempt-1
     being merged — MUST keep attempt-2 (no regression to older row)."""
+    from bird_interact_agents import paths as _paths
     from bird_interact_agents.cloud.post_run_merge import (
         merge_submission_annotations,
     )
@@ -277,6 +293,8 @@ def test_merge_does_not_overwrite_when_new_attempt_is_older_or_equal(tmp_path):
     main_checkout = tmp_path / "checkout"
     dest_dir = main_checkout / "annotations" / "mini_interact" / "alien"
     dest_dir.mkdir(parents=True)
+    fake_ann_root = main_checkout / "annotations"
+    monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
     (dest_dir / "alien_1.submission.r1.json").write_text(
         json.dumps(_make_dict_with_attempt("alien_1", 2)),
     )
@@ -303,8 +321,9 @@ def test_merge_does_not_overwrite_when_new_attempt_is_older_or_equal(tmp_path):
     assert surviving["annotated_by"] == "attempt-2-grader"
 
 
-def test_merge_skips_when_attempts_equal(tmp_path):
+def test_merge_skips_when_attempts_equal(tmp_path, monkeypatch):
     """Equal attempts — preserve existing (no-op repeated fetch)."""
+    from bird_interact_agents import paths as _paths
     from bird_interact_agents.cloud.post_run_merge import (
         merge_submission_annotations,
     )
@@ -312,6 +331,8 @@ def test_merge_skips_when_attempts_equal(tmp_path):
     main_checkout = tmp_path / "checkout"
     dest_dir = main_checkout / "annotations" / "mini_interact" / "alien"
     dest_dir.mkdir(parents=True)
+    fake_ann_root = main_checkout / "annotations"
+    monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
     pre = _make_dict_with_attempt("alien_1", 1)
     pre["annotated_by"] = "human-pre-existing"
     (dest_dir / "alien_1.submission.r1.json").write_text(json.dumps(pre))

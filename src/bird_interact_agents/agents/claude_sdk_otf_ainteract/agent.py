@@ -57,12 +57,12 @@ from bird_interact_agents.harness import (
     slayer_mcp_stdio_config,
 )
 from bird_interact_agents.eval.annotation_io import (
-    read_task_annotation,
     task_annotation_path,
 )
 from bird_interact_agents.eval.autopsy import _is_genuine_miss, run_autopsy
 from bird_interact_agents.eval.grade_in_place import (
     load_audited_gold_rows_for,
+    load_task_annotation_or_implicit,
     normalize_sol_sql,
 )
 from bird_interact_agents.eval.tolerant_grader import grade_submission
@@ -282,26 +282,13 @@ class ClaudeSDKOtfAInteractAgent:
             selected_database=db_name,
             instance_id=instance_id,
         )
-        if not _ann_path.exists():
-            return finalize_result_row(
-                {
-                    "task_id": instance_id,
-                    "instance_id": instance_id,
-                    "database": db_name,
-                    "phase1_passed": False,
-                    "phase2_passed": False,
-                    "total_reward": 0.0,
-                    "trajectory": [],
-                    "error": (
-                        f"no TaskAnnotation on disk for {instance_id} — "
-                        "autopsy requires an explicit annotation; add one to "
-                        f"annotations/{benchmark.name}/{db_name}/ first"
-                    ),
-                },
-                deleted_kb_ids=[],
-                slayer_storage_dir="",
-            )
-        task_annotation = read_task_annotation(_ann_path)
+        _ann_from_disk = _ann_path.exists()
+        task_annotation = load_task_annotation_or_implicit(
+            benchmark=benchmark.name,
+            selected_database=db_name,
+            instance_id=instance_id,
+            amb_user_query=task_data.get("amb_user_query", ""),
+        )
 
         status = SampleStatus(
             idx=0,
@@ -483,7 +470,7 @@ class ClaudeSDKOtfAInteractAgent:
                     db_path=_db_path,
                     user_sim_n_asks=ctx_dict.get("asks_used", 0),
                 )
-                if _is_genuine_miss(_cascade):
+                if _ann_from_disk and _is_genuine_miss(_cascade):
                     _autopsy_result = await run_autopsy(
                         task_annotation=task_annotation,
                         trajectory=trajectory,
