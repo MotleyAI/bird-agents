@@ -181,12 +181,27 @@ def _load_annotator_task_data(
 ) -> dict[str, dict]:
     """Load plain task data for the annotator (no audited-gold overlay)."""
     from bird_interact_agents import paths
+    from bird_interact_agents.benchmark import get_benchmark
     from bird_interact_agents.harness import load_benchmark_tasks
+
+    bench = get_benchmark(benchmark)
+    gold_file: str | None = None
+    if bench.gold_required:
+        env_val = os.environ.get(bench.gold_root_env or "")
+        if env_val:
+            gold_file = env_val
+        else:
+            candidate = (
+                paths.benchmark_data_root(benchmark)
+                / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl"
+            )
+            if candidate.exists():
+                gold_file = str(candidate)
 
     rows = load_benchmark_tasks(
         benchmark,
         str(paths.benchmark_data_file(benchmark)),
-        None,
+        gold_file,
         filter_ids=instance_ids,
     )
     return {td["instance_id"]: td for td in rows}

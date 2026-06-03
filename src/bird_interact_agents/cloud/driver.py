@@ -720,7 +720,7 @@ def submit_annotator(args) -> str:
     import argparse as _argparse
     _prereq_args = _argparse.Namespace(
         agent_model=args.agent_model,
-        user_sim_model=args.agent_model,
+        user_sim_model="",
         query_mode="raw",
         framework="annotator",
     )
@@ -754,7 +754,7 @@ def submit_annotator(args) -> str:
         cluster.up(yaml_path)
         head = cluster.head_address(yaml_path)
         env_vars = read_api_keys_from_local_env(
-            args.agent_model, args.agent_model, query_mode="raw",
+            args.agent_model, "", query_mode="raw",
             framework="annotator",
         )
         job_args = _build_annotator_job_args(
