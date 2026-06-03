@@ -1,32 +1,108 @@
 """System prompt for the annotator agent (DEV-1518)."""
 from __future__ import annotations
 
-_SYSTEM_PROMPT = """\
+# ---------------------------------------------------------------------------
+# Shared fragments
+# ---------------------------------------------------------------------------
+
+_DATA_BUNDLE_ITEMS_1_5 = """\
+  1. The ambiguous query (above)
+  2. KB entries (external knowledge definitions)
+  3. Column meanings
+  4. Database schema (table/column names, types, foreign keys)
+  5. Sampled column values — use get_column_sample_values(table, column, n=50)
+     for every column of interest; this reveals the actual stored values"""
+
+_DATA_BUNDLE_INTERACT_EXTRA = """\
+  6. Critical-ambiguity resolutions: each masked term mapped to its canonical
+     SQL snippet (call get_ambiguity_resolutions to read these)
+  7. Knowledge-ambiguity definitions (also returned by get_ambiguity_resolutions)"""
+
+_SUFFICIENCY_VERDICTS = """\
+   - sufficient:    exactly one interpretation is consistent with the full bundle
+   - ambiguous:     the bundle supports multiple distinct valid readings
+   - insufficient:  the bundle lacks information needed to answer at all"""
+
+_AUDIT_CHECKLIST_TAIL = """\
+2. **Gold SQL correctness** — Does the original gold SQL match what the complete
+   bundle implies? Execute it to verify it runs and returns sensible results.
+3. **Gold variants** — If the gold is wrong or there are multiple valid readings,
+   produce audited_sol_sql entries."""
+
+_SAMPLE_VALUES_INSTRUCTION = """\
+For every column referenced in the gold SQL or the KB, call
+get_column_sample_values with n=50 to see the range of actual stored values."""
+
+# ---------------------------------------------------------------------------
+# Shared preamble — tools + task details (benchmark-agnostic)
+# ---------------------------------------------------------------------------
+
+_SHARED_PREAMBLE = """\
 You are an expert annotator for the BIRD-Interact benchmark. Your task is to
 perform a rigorous audit of a single benchmark task and produce a TaskAnnotation.
 
 You have access to:
-- Database exploration tools (execute_sql, get_schema, get_column_meaning, etc.)
-- External knowledge tools (get_knowledge_definition, etc.)
-{ambiguity_tool_note}
-
-Your annotation must cover:
-1. **Metadata sufficiency** — Can the published metadata (KB + column meanings +
-   sampled values) alone pin the answer? Verdict: sufficient / ambiguous / insufficient.
-2. **Gold SQL correctness** — Is the original gold SQL correct given the metadata?
-3. **Gold variants** — If the gold is wrong or there are multiple valid readings,
-   produce audited_sol_sql entries.
+- Database exploration tools: execute_sql, get_schema, get_column_meaning,
+  get_all_column_meanings, get_column_sample_values
+- External knowledge tools: get_knowledge_definition, get_all_knowledge_definitions
+{extra_tools_note}
 
 Task details:
 - Instance ID: {instance_id}
 - Database: {db_name}
 - Ambiguous query: {amb_user_query}
 - Gold SQL: {sol_sql}
+"""
 
-Use `get_ambiguity_resolutions` first (if available) to see the masked terms and
-KB-pinned snippets. Then verify the gold SQL executes correctly and is consistent
-with the metadata.
+_AMBIGUITY_TOOL_NOTE = (
+    "- get_ambiguity_resolutions — shows masked terms and their canonical SQL snippets,\n"
+    "  plus knowledge-ambiguity definitions"
+)
 
+# ---------------------------------------------------------------------------
+# Benchmark-specific bodies (assembled from shared fragments above)
+# ---------------------------------------------------------------------------
+
+_INTERACT_BODY = f"""\
+This is an **interactive** benchmark: the answering agent may ask the user
+clarifying questions during the session.
+
+The complete information bundle available in this setting:
+{_DATA_BUNDLE_ITEMS_1_5}
+{_DATA_BUNDLE_INTERACT_EXTRA}
+
+Your annotation must cover:
+1. **Metadata sufficiency** — Given the complete bundle above, is the intended
+   answer uniquely determined, or does genuine ambiguity remain?
+{_SUFFICIENCY_VERDICTS}
+{_AUDIT_CHECKLIST_TAIL}
+
+Start by calling get_ambiguity_resolutions, then get_all_knowledge_definitions.
+{_SAMPLE_VALUES_INSTRUCTION}
+"""
+
+_ONESHOT_BODY = f"""\
+This is a **one-shot** benchmark: the answering agent receives the query once
+and must answer without any clarifying conversation.
+
+The complete information bundle available in this setting:
+{_DATA_BUNDLE_ITEMS_1_5}
+
+Your annotation must cover:
+1. **Metadata sufficiency** — Given the complete bundle above (no clarification
+   possible), is the intended answer uniquely determined?
+{_SUFFICIENCY_VERDICTS}
+{_AUDIT_CHECKLIST_TAIL}
+
+Start by calling get_all_knowledge_definitions, then get_schema.
+{_SAMPLE_VALUES_INSTRUCTION}
+"""
+
+# ---------------------------------------------------------------------------
+# Shared field-population instructions (benchmark-agnostic)
+# ---------------------------------------------------------------------------
+
+_SHARED_FIELD_INSTRUCTIONS = """\
 ═══ FIELD-POPULATION INSTRUCTIONS ═══
 
 The following fields are filled automatically from task metadata by the harness
@@ -73,20 +149,21 @@ When you are confident in your assessment, call `submit_annotation` with:
 If submit_annotation returns an error, fix the issue and retry.
 """
 
-_AMBIGUITY_TOOL_NOTE = (
-    "- `get_ambiguity_resolutions` — shows masked terms and KB-pinned SQL snippets"
-)
-
 
 def build_system_prompt(task_data: dict, benchmark: str) -> str:
     sol_sql = task_data.get("sol_sql")
     sol_sql = sol_sql if isinstance(sol_sql, list) else ([sol_sql] if sol_sql else [])
     sol_str = "\n".join(sol_sql) if sol_sql else "(none)"
-    has_ambiguity_tool = benchmark == "mini_interact"
-    return _SYSTEM_PROMPT.format(
-        ambiguity_tool_note=_AMBIGUITY_TOOL_NOTE if has_ambiguity_tool else "",
-        instance_id=task_data.get("instance_id", ""),
+    is_interactive = benchmark == "mini_interact"
+    instance_id = task_data.get("instance_id", "")
+
+    preamble = _SHARED_PREAMBLE.format(
+        extra_tools_note=_AMBIGUITY_TOOL_NOTE if is_interactive else "",
+        instance_id=instance_id,
         db_name=task_data.get("selected_database", ""),
         amb_user_query=task_data.get("amb_user_query", ""),
         sol_sql=sol_str,
     )
+    body = _INTERACT_BODY if is_interactive else _ONESHOT_BODY
+    field_instructions = _SHARED_FIELD_INSTRUCTIONS.format(instance_id=instance_id)
+    return preamble + "\n" + body + "\n" + field_instructions

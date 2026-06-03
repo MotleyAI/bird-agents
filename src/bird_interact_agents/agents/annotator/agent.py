@@ -403,6 +403,20 @@ async def get_all_knowledge_definitions(args: dict) -> dict:
     return _run_env_sync(render_action(_BY_NAME["get_all_knowledge_definitions"]))
 
 
+async def get_column_sample_values(args: dict) -> dict:
+    table_name = args["table_name"]
+    column_name = args["column_name"]
+    n = int(args.get("n", 50))
+    sql = (
+        f'SELECT "{column_name}", COUNT(*) AS freq '
+        f'FROM "{table_name}" '
+        f'GROUP BY "{column_name}" '
+        f'ORDER BY freq DESC '
+        f'LIMIT {n}'
+    )
+    return _run_env_sync(render_action(_BY_NAME["execute_sql"], sql=sql))
+
+
 _execute_sql_tool = tool(
     "execute_sql", _BY_NAME["execute_sql"].description, {"sql": str}
 )(execute_sql)
@@ -437,6 +451,16 @@ _get_all_knowledge_definitions_tool = tool(
     {},
 )(get_all_knowledge_definitions)
 
+_get_column_sample_values_tool = tool(
+    "get_column_sample_values",
+    (
+        "Return the N most frequent distinct values in a column, ordered by frequency "
+        "descending. Use this to see the actual range of stored values for columns of "
+        "interest. Recommended: n=50."
+    ),
+    {"table_name": str, "column_name": str, "n": int},
+)(get_column_sample_values)
+
 
 _EXPLORATION_SDK_TOOLS = [
     _execute_sql_tool,
@@ -446,6 +470,7 @@ _EXPLORATION_SDK_TOOLS = [
     _get_all_external_knowledge_names_tool,
     _get_knowledge_definition_tool,
     _get_all_knowledge_definitions_tool,
+    _get_column_sample_values_tool,
 ]
 
 _MINI_INTERACT_BENCHMARK = "mini_interact"

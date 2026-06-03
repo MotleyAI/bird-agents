@@ -96,6 +96,62 @@ def _valid_task_annotation_json(instance_id: str = "shop_1") -> str:
 
 
 # ---------------------------------------------------------------------------
+# get_column_sample_values
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_column_sample_values_builds_frequency_sql(monkeypatch):
+    """get_column_sample_values must build a GROUP BY / ORDER BY freq DESC query
+    for the requested table, column, and n, and delegate to _run_env_sync."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    captured: list[str] = []
+
+    def mock_run_env_sync(action_str: str) -> dict:
+        captured.append(action_str)
+        return ann_agent._text("mocked")
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    monkeypatch.setattr(ann_agent, "_run_env_sync", mock_run_env_sync)
+
+    await ann_agent.get_column_sample_values({
+        "table_name": "orders",
+        "column_name": "status",
+        "n": 10,
+    })
+
+    assert len(captured) == 1
+    action = captured[0]
+    assert "orders" in action
+    assert "status" in action
+    assert "10" in action
+    assert "GROUP BY" in action.upper()
+    assert "ORDER BY" in action.upper()
+
+
+@pytest.mark.asyncio
+async def test_get_column_sample_values_default_n_is_50(monkeypatch):
+    """When n is omitted the query must use LIMIT 50."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    captured: list[str] = []
+
+    def mock_run_env_sync(action_str: str) -> dict:
+        captured.append(action_str)
+        return ann_agent._text("mocked")
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    monkeypatch.setattr(ann_agent, "_run_env_sync", mock_run_env_sync)
+
+    await ann_agent.get_column_sample_values({
+        "table_name": "orders",
+        "column_name": "status",
+    })
+
+    assert "50" in captured[0]
+
+
+# ---------------------------------------------------------------------------
 # get_ambiguity_resolutions
 # ---------------------------------------------------------------------------
 
