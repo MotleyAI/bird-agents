@@ -69,6 +69,11 @@ def _task_annotation(
     )
     if variant_ids is None:
         variant_ids = [("primary", True)]
+    # Schema now requires exactly one primary; auto-mark the first variant
+    # when the caller passes all-False (legacy / grader-behaviour tests that
+    # only care about the raw audited rows, not the annotation's primary flag).
+    if variant_ids and not any(p for _, p in variant_ids):
+        variant_ids = [(variant_ids[0][0], True)] + list(variant_ids[1:])
     return TaskAnnotation(
         instance_id=instance_id,
         selected_database="alien",

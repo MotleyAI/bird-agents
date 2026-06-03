@@ -683,6 +683,14 @@ def merge_audited_gold_variants(
                 except (json.JSONDecodeError, KeyError):
                     pass
 
+        # Purge all existing rows for every instance that has a run directory,
+        # even when the incoming variants file is empty (e.g. re-annotated as
+        # original_gold_is_correct=True drops all prior variants).
+        rerun_iids = {sub.name for sub in rows_dir.iterdir() if sub.is_dir()}
+        for key in list(existing_ordered.keys()):
+            if key[0] in rerun_iids:
+                del existing_ordered[key]
+
         for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
             src = sub / "audited_gold_variants.jsonl"
             if not src.exists():
@@ -705,8 +713,6 @@ def merge_audited_gold_variants(
                     )
                     continue
                 key = (row.get("instance_id", ""), row.get("variant_id", ""))
-                if key in existing_ordered:
-                    report.skipped_duplicate += 1
                 existing_ordered[key] = json.dumps(row)
                 report.added += 1
 

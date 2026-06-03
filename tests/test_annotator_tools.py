@@ -245,6 +245,47 @@ async def test_submit_annotation_valid_sets_done_flag():
 
 
 @pytest.mark.asyncio
+async def test_submit_annotation_zero_primary_variants_rejected():
+    """gold_variants with no primary=True must be rejected — downstream grading
+    uses the primary variant for N2 and a zero-primary annotation would always
+    produce N2=fail regardless of answer quality."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation_no_primary = json.dumps({
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "benchmark": "mini_interact",
+        "kind": "task_annotation",
+        "original_gold_is_correct": False,
+        "metadata_sufficiency": {"verdict": "sufficient", "reason": "r"},
+        "gold_variants": [
+            {
+                "variant_id": "canonical_only",
+                "interpretation": "The canonical reading.",
+                "primary": False,
+                "audited_gold_ref": {
+                    "file": "audited_gold/mini_interact_audited.jsonl",
+                    "instance_id": "shop_1",
+                    "variant_id": "canonical_only",
+                },
+            }
+        ],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation_no_primary,
+        "audited_gold_variants_json": "[]",
+    })
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "primary" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
 async def test_submit_annotation_variant_wrong_benchmark_returns_error():
     """A variant whose benchmark doesn't match the current run benchmark must
     return an error so GCS routing uses the correct benchmark path."""

@@ -269,6 +269,11 @@ class TaskAnnotation(BaseModel):
             raise ValueError(
                 "gold_variants must be empty when original_gold_is_correct is True"
             )
+        if self.gold_variants and not self.original_gold_is_correct and primary_count == 0:
+            raise ValueError(
+                "gold_variants must contain exactly one primary variant; got 0. "
+                "Mark one variant with primary=True."
+            )
         return self
 
     provenance: Provenance

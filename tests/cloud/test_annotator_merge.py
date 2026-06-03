@@ -396,10 +396,49 @@ def test_merge_audited_gold_variants_override_replaces_existing(tmp_path):
     )
 
     assert report.added == 1
-    assert report.skipped_duplicate == 1
     lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
     assert len(lines) == 1
     assert json.loads(lines[0])["audit_status"] == "edited"
+
+
+def test_merge_audited_gold_variants_override_purges_stale_rows_when_empty_file(tmp_path):
+    """override=True: when a re-annotated task now produces an empty variants
+    file (e.g. original_gold_is_correct=True), ALL existing rows for that
+    instance must be removed from the consolidated file, not left stale."""
+    from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
+
+    audited_gold = tmp_path / "audited_gold"
+    audited_gold.mkdir()
+    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    old_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "edited", "audited_sol_sql": ["SELECT 1"],
+    }
+    unrelated_row = {
+        "instance_id": "db_b_1", "variant_id": "v0",
+        "selected_database": "db_b", "benchmark": "mini_interact",
+        "audit_status": "clean", "audited_sol_sql": ["SELECT 2"],
+    }
+    consolidated.write_text(json.dumps(old_row) + "\n" + json.dumps(unrelated_row) + "\n")
+
+    downloaded = tmp_path / "run"
+    sub = downloaded / "rows" / "db_a_1"
+    sub.mkdir(parents=True)
+    # Empty variants file — re-annotation decided original is correct.
+    (sub / "audited_gold_variants.jsonl").write_text("")
+
+    report = merge_audited_gold_variants(
+        downloaded_run_dir=downloaded,
+        benchmark="mini_interact",
+        audited_gold_root=audited_gold,
+        override=True,
+    )
+
+    assert report.added == 0
+    lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert json.loads(lines[0])["instance_id"] == "db_b_1"
 
 
 def test_merge_audited_gold_variants_override_false_does_not_replace(tmp_path):
