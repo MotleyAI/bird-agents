@@ -207,7 +207,12 @@ def _pg_execute_submit_action(
         except Exception:  # noqa: BLE001
             return [], True
 
-    gold_rows, gold_err = _run_gold_sequence(sol_sqls)
+    if not sol_sqls:
+        # No gold SQL means we cannot grade this submission — treat as error
+        # (mirrors the SQLite evaluator's behaviour on missing sol_sql).
+        gold_rows, gold_err = [], True
+    else:
+        gold_rows, gold_err = _run_gold_sequence(sol_sqls)
     # Honour order-sensitive grading when the gold record requests it,
     # matching the SQLite ex_base behaviour (conditions["order"]).
     # _pg_hashable_row makes JSONB/dict/list cells hashable for Counter.
@@ -1259,6 +1264,11 @@ def slayer_mcp_stdio_config(
         )
     env = os.environ.copy()
     env["SLAYER_STORAGE"] = str(Path(storage_dir).resolve())
+    # Derive PGPASSWORD from BIRD_PG_PASSWORD so postgres datasources can
+    # authenticate when the MCP subprocess inherits the env — the datasource
+    # URL has no embedded password (security invariant in cache.py).
+    if "PGPASSWORD" not in env and "BIRD_PG_PASSWORD" in env:
+        env["PGPASSWORD"] = env["BIRD_PG_PASSWORD"]
     args = ["mcp"]
     if ingest_on_startup:
         args.append("--ingest-on-startup")

@@ -599,3 +599,68 @@ def test_pg_submit_unordered_ignores_row_order():
         _, _, p1, _, _ = _pg_execute_submit_action("SELECT n FROM t", ss, "/data")
 
     assert p1, "unordered match should ignore row order"
+
+
+def test_pg_submit_empty_sol_sql_never_passes():
+    """Missing/empty sol_sql must produce p1=False regardless of pred rows."""
+    from bird_interact_agents.harness import _pg_execute_submit_action
+
+    # pred returns empty result — which would falsely match empty gold
+    # if we didn't guard against missing sol_sql
+    ss = _make_sample_status("livesqlbench_postgres", "alien", [])
+
+    class _EmptyConn:
+        def execute(self, q):
+            return [], []
+
+        def execute_sequence(self, sqls):
+            return [], []
+
+    class _CM:
+        def __enter__(self):
+            return _EmptyConn()
+
+        def __exit__(self, *_):
+            return False
+
+    from unittest.mock import patch
+    with patch("bird_interact_agents.harness.make_db_connection", return_value=_CM()):
+        _, _, p1, _, _ = _pg_execute_submit_action("SELECT 1", ss, "/data")
+
+    assert not p1, "missing sol_sql must never produce p1=True"
+
+
+def test_slayer_mcp_config_derives_pgpassword_from_bird_pg_password(monkeypatch, tmp_path):
+    """slayer_mcp_stdio_config must forward BIRD_PG_PASSWORD as PGPASSWORD
+    when PGPASSWORD is not already set, so postgres SLayer datasources can
+    authenticate without embedding the password in the datasource URL."""
+    from bird_interact_agents.harness import slayer_mcp_stdio_config
+
+    monkeypatch.setenv("BIRD_PG_PASSWORD", "mysecret")
+    monkeypatch.delenv("PGPASSWORD", raising=False)
+
+    storage_dir = str(tmp_path / "storage")
+    (tmp_path / "storage").mkdir()
+
+    from unittest.mock import patch
+    with patch("bird_interact_agents.harness._resolve_slayer_command", return_value="/slayer"):
+        cfg = slayer_mcp_stdio_config(storage_dir, ingest_on_startup=False)
+
+    assert cfg["env"].get("PGPASSWORD") == "mysecret"
+
+
+def test_slayer_mcp_config_does_not_override_existing_pgpassword(monkeypatch, tmp_path):
+    """If PGPASSWORD is already set, it must not be overwritten."""
+    from bird_interact_agents.harness import slayer_mcp_stdio_config
+
+    monkeypatch.setenv("PGPASSWORD", "explicit")
+    monkeypatch.setenv("BIRD_PG_PASSWORD", "other")
+
+    storage_dir = str(tmp_path / "storage")
+    (tmp_path / "storage").mkdir()
+
+    from unittest.mock import patch
+    with patch("bird_interact_agents.harness._resolve_slayer_command", return_value="/slayer"):
+        cfg = slayer_mcp_stdio_config(storage_dir, ingest_on_startup=False)
+
+    assert cfg["env"].get("PGPASSWORD") == "explicit"
