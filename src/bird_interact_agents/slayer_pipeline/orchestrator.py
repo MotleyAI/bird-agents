@@ -184,13 +184,10 @@ async def _phase3_jsonb(
     if sqlite_path is None:
         raise ValueError("_phase3_jsonb: sqlite_path is required for non-postgres benchmarks")
 
-    import json
-
-    raw = json.loads(meanings_path.read_text(encoding="utf-8"))
     added_total = 0
     typing_warnings: list[str] = []
     drift_warnings: list[str] = []
-    for table, json_col, entry in jsonb_meaning_entries(raw):
+    for table, json_col, entry in _detect_jsonb_columns(meanings_path):
         model = await storage.get_model(table, data_source=db)
         if model is None or model.data_source != db:
             typing_warnings.append(
