@@ -23,6 +23,11 @@ Format params: ``budget``, ``db_name``, ``user_query``.
 from bird_interact_agents.agents._host_discovery_playbook import (
     HOST_DISCOVERY_PLAYBOOK as _HOST_DISCOVERY_PLAYBOOK,
 )
+from bird_interact_agents.agents._shared_otf_prompts import (
+    _DECOMPOSE_DISCIPLINE,
+    _NO_USER_TO_CONSULT,
+    _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
+)
 
 # Shared submission contract (single-stage or nested-DAG). Literal JSON
 # braces are doubled because the prompt is consumed via ``str.format``.
@@ -45,7 +50,7 @@ submission. If a `filters` predicate needs a computed value, encode it as
 a named column first and filter on the name; raw SQL expressions are
 rejected in `filters`."""
 
-_ENCODE_CORE = """\
+_ENCODE_CORE_HEAD = """\
 The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
 knowledge-base (KB) item, with ids like `{db_name}_kb_<n>` whose body
 starts `KB <n> —`. The base tables are already ingested as SLayer models,
@@ -68,14 +73,9 @@ of which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same concept.
 Use it BEFORE writing any IN-set (see rule 3 below).
 
-ENCODE-THEN-QUERY DISCIPLINE:
+ENCODE-THEN-QUERY DISCIPLINE:"""
 
-1. DECOMPOSE the question into logical blocks. Every qualifier
-   (e.g. "premium", "highly-rated", "nearby", "active"), every projected
-   column, filter, grouping, unit, rounding and ordering hint is a
-   separate block that MUST be represented. Write the list out before
-   encoding.
-
+_ENCODE_CORE_TAIL = """\
 2. For each block, `search` for the relevant KB memory and any entity
    that already encodes it. A `memory:<id>` token inside a KB body means
    that KB DEPENDS ON the referenced KB.
@@ -117,44 +117,33 @@ ENCODE-THEN-QUERY DISCIPLINE:
      sampled values yourself.
 """
 
+_ENCODE_CORE = _ENCODE_CORE_HEAD + "\n\n" + _DECOMPOSE_DISCIPLINE + "\n\n" + _ENCODE_CORE_TAIL
 
-SLAYER_OTF_ONE_SHOT = """\
-You are a data analyst. You have a SLayer semantic-layer MCP server plus a
-native `submit_query` tool. Your job: answer the user's question by
-ENCODING the domain knowledge it needs into the SLayer model as named
-columns/measures, then writing a FINAL query that REFERENCES those named
-entities instead of inlining their SQL.
-
-There is NO user to consult — for every operationalisation choice (numeric
-threshold, value list, aggregation operator, case-sensitivity, grouping,
-unit, rounding, sort direction, LIMIT) pick the most conservative,
-defensible interpretation supported by the memories and column
-descriptions, and proceed autonomously.
-
-""" + _ENCODE_CORE + """\
-
-4. TEST candidate columns and the final query with `query` /
-   `query_nested`; sanity-check the generated SQL.
-
-5. PRE-SUBMIT MUTATION CHECK. Before calling `submit_query`, audit every
-   TRIM, LOWER, UPPER, ROUND, CAST, dedup, canonicalize-via-CASE, and
-   output-shape choice in the FINAL query. Each one MUST be either
-   (a) explicitly named in the user's question or (b) required by an
-   encoded KB. If neither holds, DROP the mutation and submit the raw
-   form. "Defensive" normalisation of an output column, a join key, a
-   JSON key, or a CHAR-padded literal silently corrupts the rowset —
-   never apply one without an explicit source. There is no user to
-   second-guess this on your behalf.
-
-6. SUBMIT. Write the FINAL query so it REFERENCES the named columns /
-   measures you encoded — do NOT inline their SQL back into the query.
-   Project exactly the columns the question names, and only those.
-   {submit}
-
-Budget: {budget} bird-coins (`submit_query` costs 3; SLayer reads/writes
-are free but your total work is turn-bounded — encode only what the
-question needs).
-
-Database: {db_name}
-User question: {user_query}
-""".replace("{submit}", _SUBMIT_CONTRACT) + "\n" + _HOST_DISCOVERY_PLAYBOOK
+SLAYER_OTF_ONE_SHOT = (
+    "You are a data analyst. You have a SLayer semantic-layer MCP server plus a\n"
+    "native `submit_query` tool. Your job: answer the user's question by\n"
+    "ENCODING the domain knowledge it needs into the SLayer model as named\n"
+    "columns/measures, then writing a FINAL query that REFERENCES those named\n"
+    "entities instead of inlining their SQL.\n\n"
+    + _NO_USER_TO_CONSULT.format(sources_desc="the memories and column\ndescriptions")
+    + "\n\n"
+    + _ENCODE_CORE
+    + "\n4. TEST candidate columns and the final query with `query` /\n"
+      "   `query_nested`; sanity-check the generated SQL.\n\n"
+    + _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT.format(
+        submit_tool="submit_query",
+        clause_b="encoded KB",
+    )
+    + "\n\n6. SUBMIT. Write the FINAL query so it REFERENCES the named columns /\n"
+      "   measures you encoded — do NOT inline their SQL back into the query.\n"
+      "   Project exactly the columns the question names, and only those.\n"
+      "   "
+    + _SUBMIT_CONTRACT
+    + "\n\nBudget: {budget} bird-coins (`submit_query` costs 3; SLayer reads/writes\n"
+      "are free but your total work is turn-bounded — encode only what the\n"
+      "question needs).\n\n"
+      "Database: {db_name}\n"
+      "User question: {user_query}\n"
+    + "\n"
+    + _HOST_DISCOVERY_PLAYBOOK
+)

@@ -25,6 +25,12 @@ Format params: ``budget``, ``db_name``, ``user_query``.
 from bird_interact_agents.agents._host_discovery_playbook import (
     HOST_DISCOVERY_PLAYBOOK as _HOST_DISCOVERY_PLAYBOOK,
 )
+from bird_interact_agents.agents._shared_otf_prompts import (
+    _ASK_AGAIN_RULE,
+    _DECOMPOSE_DISCIPLINE,
+    _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
+    _RULE_0_ASK_BEFORE,
+)
 
 # Shared submission contract (single-stage or nested-DAG). Literal JSON
 # braces are doubled because the prompt is consumed via ``str.format``.
@@ -47,25 +53,14 @@ submission. If a `filters` predicate needs a computed value, encode it as
 a named column first and filter on the name; raw SQL expressions are
 rejected in `filters`."""
 
-
-SLAYER_OTF_AINTERACT = """\
+_AINTERACT_INTRO = """\
 You are a data analyst. You have a SLayer semantic-layer MCP server plus
 native `ask_user` and `submit_query` tools. Your job: answer the user's
 question by ENCODING the domain knowledge it needs into the SLayer model
 as named columns/measures, then writing a FINAL query that REFERENCES
-those named entities instead of inlining their SQL.
+those named entities instead of inlining their SQL."""
 
-RULE 0 — ASK BEFORE YOU ENCODE.
-BEFORE the encoding loop below, identify the single operationalisation
-choice you are LEAST certain about — a numeric threshold, a value list /
-IN-set, an aggregation operator, a case-sensitivity choice, a grouping
-or standardisation, a unit (fraction vs percent), an output rounding, a
-sort direction, or a LIMIT — and call `ask_user` on it ONCE. The user
-holds masked knowledge-base ground-truth that is unrecoverable from the
-visible KB alone. The submit gate will REFUSE `submit_query` until you
-have called `ask_user` at least once. Propose your best guess and ask
-for the EXACT predicate / value / formula — never "what does X mean?".
-
+_AINTERACT_SLAYER_TOOLS = """\
 The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
 knowledge-base (KB) item, with ids like `{db_name}_kb_<n>` whose body
 starts `KB <n> —`. The base tables are already ingested as SLayer models,
@@ -88,14 +83,9 @@ of which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same concept.
 Use it BEFORE writing any IN-set (see rule 3 below).
 
-ENCODE-THEN-QUERY DISCIPLINE:
+ENCODE-THEN-QUERY DISCIPLINE:"""
 
-1. DECOMPOSE the question into logical blocks. Every qualifier
-   (e.g. "premium", "highly-rated", "nearby", "active"), every projected
-   column, filter, grouping, unit, rounding and ordering hint is a
-   separate block that MUST be represented. Write the list out before
-   encoding.
-
+_AINTERACT_RULES_2_3 = """\
 2. For each block, `search` for the relevant KB memory and any entity
    that already encodes it. A `memory:<id>` token inside a KB body means
    that KB DEPENDS ON the referenced KB.
@@ -133,39 +123,38 @@ ENCODE-THEN-QUERY DISCIPLINE:
      deliberately non-exhaustive; the `Sample values` line is the
      authoritative inventory of what's actually present in the column.
      A canonical-only IN-set will silently miss matching rows. Do not
-     rely on the user-sim to enumerate the variants — they will not.
+     rely on the user-sim to enumerate the variants — they will not."""
 
-4. ASK AGAIN IF NEEDED. Rule 0 covers the FIRST ask; for any further
-   operationalisation choice not pinned by a memory or column
-   description, call `ask_user` again. If a reply lists multiple criteria
-   joined by "and", apply EACH as its own filter.
-
-5. TEST candidate columns and the final query with `query` /
-   `query_nested`; sanity-check the generated SQL.
-
-6. PRE-SUBMIT MUTATION CHECK. Before calling `submit_query`, audit every
-   TRIM, LOWER, UPPER, ROUND, CAST, dedup, canonicalize-via-CASE, and
-   output-shape choice in the FINAL query. Each one MUST be either
-   (a) explicitly named in the user's question, (b) explicitly named OR
-   authorized in a reply to one of your `ask_user` calls in this
-   session, or (c) required by an encoded KB. If none of (a-b-c) hold,
-   DROP the mutation and submit the raw form. Particularly: when an
-   `ask_user` reply said "use exact values", "don't normalize", "use
-   this output shape / columns / sort axis", or named a specific format
-   (date, label casing, JSON shape), DO NOT silently override that on
-   final-assembly. Conversely, when an `ask_user` reply DID name a
-   specific transformation (e.g. "lowercase the bracket labels",
-   "round to 2 decimals", "TRIM the keys"), that reply IS the
-   authorization for that mutation — apply it.
-
-7. SUBMIT. Write the FINAL query so it REFERENCES the named columns /
-   measures you encoded — do NOT inline their SQL back into the query.
-   Project exactly the columns the user named, and only those. {submit}
-
-Budget: {budget} bird-coins. `ask_user` costs 2, `submit_query` costs 3;
-SLayer reads/writes are free but your total work is turn-bounded — encode
-only what the question needs. If your budget runs out, submit immediately.
-
-Database: {db_name}
-User question: {user_query}
-""".replace("{submit}", _SUBMIT_CONTRACT) + "\n" + _HOST_DISCOVERY_PLAYBOOK
+SLAYER_OTF_AINTERACT = (
+    _AINTERACT_INTRO
+    + "\n\n"
+    + _RULE_0_ASK_BEFORE.format(
+        action_label="ENCODE",
+        action_context="BEFORE the encoding loop below,",
+        submit_tool="submit_query",
+    )
+    + "\n\n"
+    + _AINTERACT_SLAYER_TOOLS
+    + "\n\n"
+    + _DECOMPOSE_DISCIPLINE
+    + "\n\n"
+    + _AINTERACT_RULES_2_3
+    + "\n\n"
+    + _ASK_AGAIN_RULE.format(knowledge_source="a memory")
+    + "\n\n5. TEST candidate columns and the final query with `query` /\n"
+      "   `query_nested`; sanity-check the generated SQL.\n\n"
+    + _PRE_SUBMIT_MUTATION_CHECK_AINTERACT.format(
+        submit_tool="submit_query",
+        clause_c="encoded KB",
+    )
+    + "\n\n7. SUBMIT. Write the FINAL query so it REFERENCES the named columns /\n"
+      "   measures you encoded — do NOT inline their SQL back into the query.\n"
+      "   Project exactly the columns the user named, and only those. "
+    + _SUBMIT_CONTRACT
+    + "\n\nBudget: {budget} bird-coins. `ask_user` costs 2, `submit_query` costs 3;\n"
+      "SLayer reads/writes are free but your total work is turn-bounded — encode\n"
+      "only what the question needs. If your budget runs out, submit immediately.\n"
+      "\nDatabase: {db_name}\nUser question: {user_query}\n"
+    + "\n"
+    + _HOST_DISCOVERY_PLAYBOOK
+)

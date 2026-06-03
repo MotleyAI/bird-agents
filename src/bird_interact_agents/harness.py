@@ -383,6 +383,7 @@ def load_benchmark_tasks(
             )
         return load_livesqlbench_tasks(
             data_path, gold_file, limit=limit, filter_ids=filter_ids,
+            dataset_marker=b.dataset_marker,
         )
     # Apply `limit` AFTER `filter_ids` (not via load_tasks' own limit), so a
     # caller passing both doesn't have requested instance_ids truncated away
@@ -420,6 +421,7 @@ def load_livesqlbench_tasks(
     *,
     limit: int | None = None,
     filter_ids: list[str] | None = None,
+    dataset_marker: str = "livesqlbench",
 ) -> list[dict]:
     """Load + merge a LiveSQLBench task batch.
 
@@ -502,7 +504,7 @@ def load_livesqlbench_tasks(
         # `query` → `amb_user_query` shim. Keep `query` for traceability.
         if "query" in row and "amb_user_query" not in row:
             row["amb_user_query"] = row["query"]
-        row["dataset"] = "livesqlbench"
+        row["dataset"] = dataset_marker
         merged.append(row)
 
     # Step 5 — SELECT filter; defensive `_M_` cross-check.

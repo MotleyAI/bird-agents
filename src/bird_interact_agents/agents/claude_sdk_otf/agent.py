@@ -93,7 +93,8 @@ _TURN_BUDGET_WARN_WITHIN = 3
 
 
 def _make_turn_budget_hook(
-    max_turns: int, warn_within: int = _TURN_BUDGET_WARN_WITHIN
+    max_turns: int, warn_within: int = _TURN_BUDGET_WARN_WITHIN,
+    submit_tool: str = "submit_query",
 ):
     """Build a PostToolUse hook that nudges the agent to submit when it's
     within ``warn_within`` tool-calls of the hard ``max_turns`` cap.
@@ -117,7 +118,7 @@ def _make_turn_budget_hook(
                     "additionalContext": (
                         f"[TURN BUDGET] ~{remaining} model turn(s) remain before "
                         f"the hard limit of {max_turns}. If you have a candidate "
-                        "answer, call submit_query NOW — an un-submitted task "
+                        f"answer, call {submit_tool} NOW — an un-submitted task "
                         "scores zero."
                     ),
                 }
@@ -369,6 +370,7 @@ class ClaudeSDKOtfAgent:
                 },
             )
 
+            # Auth env-var invariant validated at actor bootstrap; see ray_app._assert_actor_oauth_invariant.
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():

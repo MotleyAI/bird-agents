@@ -116,8 +116,52 @@ def mint_run_id(framework: str, query_mode: str) -> str:
 
 def read_api_keys_from_local_env(
     agent_model: str, user_sim_model: str, *, query_mode: str = "raw",
+    framework: str = "",
 ) -> dict[str, str]:
     import os
+
+    # DEV-1517: claude_sdk* + CLAUDE_CODE_OAUTH_TOKEN present → OAuth path.
+    # Ship the token and rename the user-sim Anthropic key so the SDK cannot
+    # see ANTHROPIC_API_KEY and is forced to use the OAuth token.
+    if prereqs._is_claude_sdk_framework(framework) and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
+        if not token.startswith("sk-ant-oat01-"):
+            raise PrereqError(
+                "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai OAuth token "
+                "(expected sk-ant-oat01- prefix).",
+                remediation="claude setup-token",
+            )
+        result: dict[str, str] = {"CLAUDE_CODE_OAUTH_TOKEN": token}
+        # Track the LOCAL env var names for error messages (the worker-side names
+        # differ — e.g. ANTHROPIC_API_KEY → BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY).
+        missing_local: list[str] = []
+        # Rename the Anthropic key for user-sim; LiteLLM reads it via
+        # _maybe_inject_anthropic_key in usage.acompletion_tracked.
+        if user_sim_model.startswith("anthropic/"):
+            val = os.environ.get("ANTHROPIC_API_KEY", "")
+            result["BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"] = val
+            if not val:
+                missing_local.append("ANTHROPIC_API_KEY")
+        # Non-anthropic user-sim keys (OPENAI, CEREBRAS, GEMINI).
+        for k in _required_api_keys(user_sim_model):
+            if k != "ANTHROPIC_API_KEY":
+                result[k] = os.environ.get(k, "")
+                if not result[k]:
+                    missing_local.append(k)
+        # DEV-1468: slayer embeddings always need OPENAI_API_KEY.
+        if query_mode == "slayer":
+            result["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY", "")
+            if not result["OPENAI_API_KEY"] and "OPENAI_API_KEY" not in missing_local:
+                missing_local.append("OPENAI_API_KEY")
+        # Fail fast on missing keys (resubmit has no prereq check).
+        if missing_local:
+            missing_local_sorted = sorted(missing_local)
+            cmds = "\n".join(f"export {k}=<your-key>" for k in missing_local_sorted)
+            raise PrereqError(
+                f"missing API key env vars for job submission: {missing_local_sorted}",
+                remediation=cmds,
+            )
+        return result
 
     needed: set[str] = set()
     for model in (agent_model, user_sim_model):
@@ -129,11 +173,11 @@ def read_api_keys_from_local_env(
     # Fail fast on a missing required key instead of silently dropping it —
     # `resubmit` does NOT run prereq checks, so an absent key would otherwise
     # surface much later as an opaque per-actor auth failure (CodeRabbit).
-    missing = [k for k in sorted(needed) if not os.environ.get(k)]
-    if missing:
-        cmds = "\n".join(f"export {k}=<your-key>" for k in missing)
+    missing_keys = [k for k in sorted(needed) if not os.environ.get(k)]
+    if missing_keys:
+        cmds = "\n".join(f"export {k}=<your-key>" for k in missing_keys)
         raise PrereqError(
-            f"missing API key env vars for job submission: {missing}",
+            f"missing API key env vars for job submission: {missing_keys}",
             remediation=cmds,
         )
     return {k: os.environ[k] for k in needed}
@@ -287,8 +331,10 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
     seed so the cloud skips re-encoding that DB; if absent, the cloud encodes
     lazily on first task.
     """
-    setup = args.slayer_setup
     fw = args.framework
+    if fw in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
+        return []
+    setup = args.slayer_setup
     benchmark = _submit_benchmark(args)
     if setup == "pre-encoded":
         return [(submitter_repo_root() / "slayer_models", "slayer_models", True)]
@@ -539,6 +585,7 @@ def submit(args) -> str:
         head = cluster.head_address(yaml_path)
         env_vars = read_api_keys_from_local_env(
             args.agent_model, args.user_sim_model, query_mode=args.query_mode,
+            framework=args.framework,
         )
         job_args = _build_job_args(
             args, run_id, attempt=1,
@@ -821,9 +868,16 @@ def resubmit(run_id: str) -> None:
     try:
         cluster.up(yaml_path)
         head = cluster.head_address(yaml_path)
+        _framework = manifest.get("framework", "")
+        if not _framework:
+            logger.info(
+                "resubmit: manifest has no 'framework' field (pre-DEV-1517); "
+                "defaulting to legacy API-key path"
+            )
         env_vars = read_api_keys_from_local_env(
             manifest["agent_model"], manifest["user_sim_model"],
             query_mode=manifest.get("query_mode", "raw"),
+            framework=_framework,
         )
         job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
         cluster.submit_job(
@@ -842,7 +896,7 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
     job_args = [
         "--run-id", run_id,
         "--attempt", str(attempt),
-        "--framework", manifest["framework"],
+        "--framework", manifest.get("framework", ""),
         "--query-mode", manifest["query_mode"],
         "--mode", manifest["mode"],
         "--agent-model", manifest["agent_model"],

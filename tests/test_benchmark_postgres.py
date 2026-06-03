@@ -160,3 +160,76 @@ def test_all_benchmarks_have_distinct_dataset_markers():
     bs = list(all_benchmarks())
     markers = [b.dataset_marker for b in bs]
     assert len(markers) == len(set(markers))
+
+
+# ---------------------------------------------------------------------------
+# Loader dataset-marker threading (DEV-1523 Codex finding)
+# ---------------------------------------------------------------------------
+
+
+def _make_minimal_livesqlbench_jsonl(path, instance_ids):
+    """Write a minimal livesqlbench JSONL with the given instance_ids."""
+    import json
+    with open(path, "w") as f:
+        for iid in instance_ids:
+            f.write(json.dumps({
+                "instance_id": iid,
+                "selected_database": "alien",
+                "category": "Query",
+                "query": "How many rows?",
+            }) + "\n")
+
+
+def _make_gold_jsonl(path, instance_ids):
+    """Write a minimal gold sidecar with the given instance_ids."""
+    import json
+    with open(path, "w") as f:
+        for iid in instance_ids:
+            f.write(json.dumps({
+                "instance_id": iid,
+                "sol_sql": ["SELECT COUNT(*) FROM t"],
+            }) + "\n")
+
+
+def test_load_benchmark_tasks_postgres_stamps_correct_marker(tmp_path):
+    """load_benchmark_tasks for livesqlbench_postgres must stamp
+    row['dataset'] = 'livesqlbench_postgres', not 'livesqlbench'.
+    The wrong marker causes execute_submit_action to route postgres tasks
+    through the SQLite path (Codex finding, DEV-1523)."""
+    from bird_interact_agents.harness import load_benchmark_tasks
+
+    data_file = tmp_path / "data.jsonl"
+    gold_file = tmp_path / "gold.jsonl"
+    _make_minimal_livesqlbench_jsonl(data_file, ["alien_pg_1"])
+    _make_gold_jsonl(gold_file, ["alien_pg_1"])
+
+    tasks = load_benchmark_tasks(
+        "livesqlbench_postgres",
+        str(data_file),
+        gold_file=str(gold_file),
+        filter_ids=["alien_pg_1"],
+    )
+    assert tasks, "expected at least one task"
+    assert tasks[0]["dataset"] == "livesqlbench_postgres", (
+        f"expected dataset_marker='livesqlbench_postgres', got {tasks[0]['dataset']!r}; "
+        "harness dispatch keys off this marker to route postgres vs sqlite"
+    )
+
+
+def test_load_benchmark_tasks_sqlite_livesqlbench_still_stamps_livesqlbench(tmp_path):
+    """Backward-compat: the SQLite livesqlbench still gets dataset='livesqlbench'."""
+    from bird_interact_agents.harness import load_benchmark_tasks
+
+    data_file = tmp_path / "data.jsonl"
+    gold_file = tmp_path / "gold.jsonl"
+    _make_minimal_livesqlbench_jsonl(data_file, ["alien_1"])
+    _make_gold_jsonl(gold_file, ["alien_1"])
+
+    tasks = load_benchmark_tasks(
+        "livesqlbench",
+        str(data_file),
+        gold_file=str(gold_file),
+        filter_ids=["alien_1"],
+    )
+    assert tasks
+    assert tasks[0]["dataset"] == "livesqlbench"

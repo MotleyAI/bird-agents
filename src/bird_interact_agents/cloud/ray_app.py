@@ -132,8 +132,10 @@ def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
     """
     from bird_interact_agents import paths
 
-    setup = cfg.get("slayer_setup")
     fw = cfg.get("framework")
+    if fw in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
+        return []
+    setup = cfg.get("slayer_setup")
     if setup == "pre-encoded":
         artifacts = [("slayer_models", True)]
     elif fw == "pydantic_ai_otf_encode":
@@ -531,18 +533,16 @@ def _run_one_in_actor(
     task_start_ts = time.time()
     _grader_data_dir = None
 
+    # `cfg["data_dir"]` is the benchmark's container_data_dir, resolved
+    # benchmark-aware in `run_pool` (mini → BIRD_DB_PATH,
+    # livesqlbench → BIRD_LIVESQLBENCH_ROOT). Hoisted out of the try block
+    # so it is always bound when the grader path runs below.
+    data_dir = cfg.get("data_dir") or "/data/mini-interact"
+
     try:
         with fd_capture(log_tmp):
             try:
-                # `cfg["data_dir"]` is the benchmark's container_data_dir,
-                # resolved benchmark-aware in `run_pool` (mini → BIRD_DB_PATH,
-                # livesqlbench → BIRD_LIVESQLBENCH_ROOT). It is authoritative —
-                # do NOT re-read BIRD_DB_PATH here, which would route a
-                # livesqlbench task back to mini-interact if BIRD_DB_PATH ever
-                # leaked into the actor env (Codex).
-                data_dir = cfg.get("data_dir") or "/data/mini-interact"
                 _grader_data_dir = data_dir
-
                 row = asyncio.run(
                     _run_one_task_async(
                         task_data=task_data,
@@ -792,6 +792,8 @@ class _LocalActor:
         attempt: int,
         gcs_client=None,
     ):
+        # Auth env-var invariant: see _assert_actor_oauth_invariant.
+        _assert_actor_oauth_invariant(cfg)
         self.cfg = cfg
         self.run_id = run_id
         self.attempt = attempt
@@ -860,6 +862,8 @@ def _build_actor_class():
     @ray.remote(max_restarts=3, max_task_retries=0)
     class WorkerActor:
         def __init__(self, cfg: dict[str, Any], run_id: str, attempt: int):
+            # Auth env-var invariant: see _assert_actor_oauth_invariant.
+            _assert_actor_oauth_invariant(cfg)
             self.cfg = cfg
             self.run_id = run_id
             self.attempt = attempt
@@ -903,6 +907,54 @@ def _build_actor_class():
             )
 
     return WorkerActor
+
+
+def _assert_actor_oauth_invariant(cfg: dict[str, Any]) -> None:
+    """Raise RuntimeError if the worker env violates the OAuth precedence rule.
+
+    Called at the top of every actor's __init__ (both WorkerActor and
+    _LocalActor). In real Ray workers, runtime_env vars are already in
+    os.environ by the time __init__ runs. In local mode, _apply_actor_env_local
+    has already stripped ANTHROPIC_API_KEY before the actors are constructed.
+
+    Only active for claude_sdk* frameworks — an ambient CLAUDE_CODE_OAUTH_TOKEN
+    in the developer's shell must not falsely fire for pydantic_ai, agno, etc.
+
+    This is a last-resort safety net — if both keys somehow coexist, the
+    Claude Agent SDK would silently pick ANTHROPIC_API_KEY over the OAuth token.
+    """
+    if not cfg.get("framework", "").startswith("claude_sdk"):
+        return
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            raise RuntimeError(
+                "Both CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY are set on "
+                "this worker. Claude Agent SDK auth precedence would silently pick "
+                "the API key and bypass the subscription. The driver should ship "
+                "the user-sim API key as BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY "
+                "instead."
+            )
+        token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
+        if not token.startswith("sk-ant-oat01-"):
+            raise RuntimeError(
+                "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai OAuth "
+                "token (expected sk-ant-oat01- prefix). Re-run `claude setup-token`. "
+                "This actor will not be restarted — check the token in the manifest "
+                "secrets file rather than the Ray restart log."
+            )
+
+
+def _apply_actor_env_local(actor_env_vars: dict[str, str]) -> None:
+    """Apply actor env vars in local mode (os.environ.update + OAuth cleanup).
+
+    On the OAuth path, ANTHROPIC_API_KEY is NOT shipped in actor_env_vars
+    (the driver renamed it to BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY). We
+    must also remove it from the ambient process env so the Claude Agent SDK
+    cannot discover it and bypass the OAuth token.
+    """
+    os.environ.update(actor_env_vars)
+    if "CLAUDE_CODE_OAUTH_TOKEN" in actor_env_vars:
+        os.environ.pop("ANTHROPIC_API_KEY", None)
 
 
 def _with_actor_env(actor_cls: Any, actor_env_vars: dict[str, str] | None) -> Any:
@@ -1068,7 +1120,7 @@ def run_pool(
             # the secrets here (the per-actor runtime_env path below only
             # works for real, separate Ray worker processes).
             if actor_env_vars:
-                os.environ.update(actor_env_vars)
+                _apply_actor_env_local(actor_env_vars)
             if actor_cls is None:
                 # Our own _LocalActor takes the client at construction, so it
                 # never calls `default_gcs_client()` — which can fail without
