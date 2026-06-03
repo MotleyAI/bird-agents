@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import sqlite3
 from collections import Counter
 from pathlib import Path
@@ -504,6 +505,32 @@ def default_executor(
             conn.close()
 
 
+def make_executor(benchmark: Any) -> ExecutorProtocol:
+    """Return an ``ExecutorProtocol`` appropriate for ``benchmark``.
+
+    For postgres benchmarks, returns a callable that opens a
+    ``PostgresDbConnection`` per call using ``db_path.stem`` as the
+    database name and reads env vars for connection params. For all
+    other benchmarks (SQLite), returns ``default_executor``.
+    """
+    if getattr(benchmark, "db_backend", "sqlite") != "postgres":
+        return default_executor
+
+    def _pg_executor(
+        sql: str,
+        *,
+        db_path: Path,
+        conn: Any = None,
+    ) -> ExecutorResult:
+        from bird_interact_agents.db_connection import make_db_connection
+
+        db_name = db_path.stem
+        with make_db_connection(db_name, benchmark=benchmark, read_only=True) as pg_conn:
+            return pg_conn.execute(sql)
+
+    return _pg_executor
+
+
 # ---------------------------------------------------------------------------
 # CascadeVerdict (in-memory grader output)
 # ---------------------------------------------------------------------------
@@ -537,6 +564,7 @@ def _multi_sql_execute(
     db_path: Path,
     conn: Any,
     executor: ExecutorProtocol,
+    benchmark: Any = None,
 ) -> ExecutorResult:
     """Execute a list of SQL strings and return the rows+cols of the
     LAST one. Mirrors BIRD-Interact's evaluator semantics: prior items

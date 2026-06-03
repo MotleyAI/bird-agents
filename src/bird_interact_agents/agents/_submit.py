@@ -23,6 +23,8 @@ from typing import Any, Callable
 from pydantic import ValidationError
 
 from bird_interact_agents.agents._tool_specs import ToolSpec, render_action
+from bird_interact_agents.benchmark import get_benchmark as _get_benchmark
+from bird_interact_agents.db_connection import make_db_connection
 from bird_interact_agents.slayer_pipeline.filter_normalization import (
     normalize_query_payload,
 )
@@ -78,29 +80,50 @@ def capture_result_snapshot(
     db_name: str,
     data_path_base: str,
     db_file_path: str | None = None,
+    benchmark: Any = None,
 ) -> dict | None:
-    """Run `sql` against the canonical SQLite file and return a serialisable
-    snapshot — column names + inferred Python types + row count + a small
-    head sample.
+    """Run ``sql`` against the DB and return a serialisable snapshot —
+    column names + inferred Python types + row count + a small head sample.
 
-    DB path resolution mirrors the upstream evaluator: prefer
-    ``db_file_path`` when set on the task, fall back to
-    ``data_path_base/<db_name>/<db_name>.sqlite``. Without this kwarg,
-    tasks with an explicit DB file would snapshot the wrong DB and the
-    `predicted_result_json` / `gold_result_json` diagnostics would be
-    misleading.
-
-    Side-effect-free: opens a private connection and never touches the
-    BIRD-Interact connection cache. SELECTs run after `execute_submit_action`
-    (which reset the DB at task start) see canonical data — adequate for the
-    DBs used in this benchmark, which have no Management/phase-2 tasks.
-
-    Returns None when `sql` is empty or the DB file is absent. On any
-    runtime error returns `{"error": "<type>: <msg>"}` rather than raising,
-    so failures here don't sink the run.
+    Routes through ``DbConnection`` so it works for both SQLite and Postgres
+    benchmarks. Returns None when ``sql`` is empty or (SQLite only) the DB
+    file is absent. On any runtime error returns ``{"error": "..."}`` rather
+    than raising, so failures here don't sink the run.
     """
     if not sql or not sql.strip():
         return None
+
+    if getattr(benchmark, "db_backend", "sqlite") == "postgres":
+        try:
+            with make_db_connection(db_name, benchmark=benchmark, read_only=True) as conn:
+                rows, col_names = conn.execute(sql)
+            truncated = len(rows) > _SNAPSHOT_MAX_ROWS
+            if truncated:
+                rows = rows[:_SNAPSHOT_MAX_ROWS]
+            sample = rows[:_SNAPSHOT_SAMPLE_SIZE]
+            types: list[str] = []
+            for i, _ in enumerate(col_names):
+                inferred = "null"
+                for row in rows:
+                    if i < len(row) and row[i] is not None:
+                        inferred = type(row[i]).__name__
+                        break
+                types.append(inferred)
+            return {
+                "columns": [
+                    {"name": n, "type": t} for n, t in zip(col_names, types)
+                ],
+                "row_count": len(rows),
+                "row_count_truncated": truncated,
+                "sample_rows": [
+                    [_jsonable(v) for v in row] for row in sample
+                ],
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.debug("capture_result_snapshot failed for %s: %s", db_name, e)
+            return {"error": f"{type(e).__name__}: {e}"}
+
+    # SQLite path
     if db_file_path:
         db_path = db_file_path
     else:
@@ -119,17 +142,17 @@ def capture_result_snapshot(
                 rows = rows[:_SNAPSHOT_MAX_ROWS]
             col_names = [d[0] for d in (cur.description or [])]
             sample = rows[:_SNAPSHOT_SAMPLE_SIZE]
-            types: list[str] = []
+            types_: list[str] = []
             for i, _ in enumerate(col_names):
                 inferred = "null"
                 for row in rows:
                     if i < len(row) and row[i] is not None:
                         inferred = type(row[i]).__name__
                         break
-                types.append(inferred)
+                types_.append(inferred)
             return {
                 "columns": [
-                    {"name": n, "type": t} for n, t in zip(col_names, types)
+                    {"name": n, "type": t} for n, t in zip(col_names, types_)
                 ],
                 "row_count": len(rows),
                 "row_count_truncated": truncated,
@@ -369,40 +392,39 @@ def _dry_run_sql(
     data_path_base: str,
     db_name: str,
     db_file_path: str | None = None,
+    benchmark: Any = None,
 ) -> str | None:
-    """Execute `sql` read-only against the per-task SQLite DB and return
-    None on success or a short error string on failure.
+    """Execute ``sql`` read-only against the per-task DB and return None on
+    success or a short error string on failure.
 
-    Used as a FREE pre-eval gate inside `submit_raw_sql` and
-    `submit_slayer_query`: if the candidate SQL has a SQLite-side error
-    (missing function / missing column / syntax / window misuse), the
-    agent gets that error back without burning the 3-coin submit cost.
-    Mirrors the existing `json_failed` / `translation_failed` pattern.
+    Used as a FREE pre-eval gate inside ``submit_raw_sql`` and
+    ``submit_slayer_query``: if the candidate SQL has a DB-side error
+    (missing column / syntax / etc.), the agent gets that error back without
+    burning the 3-coin submit cost.
 
-    DB path resolution mirrors the upstream evaluator
-    (`batch_run_bird_interact.action_handler_sqlite._resolve_sqlite_db_path`):
-    use ``db_file_path`` when set on the task, fall back to the
-    template DB at ``data_path_base/<db_name>/<db_name>_template.sqlite``
-    if present, else ``data_path_base/<db_name>/<db_name>.sqlite``. The
-    template is the canonical reset state — preferring it guarantees the
-    dry-run sees the same DB the paid evaluator sees after its DB reset,
-    even when prior env-action mutations have polluted the live file.
+    For Postgres benchmarks routes through ``DbConnection`` (read_only=True
+    wraps in BEGIN/ROLLBACK so writes are never committed).
 
-    The connection is opened with `?mode=ro` so writes (UPDATE/INSERT/
-    DELETE/etc.) surface as errors rather than silently mutating the
-    per-task DB. Returns None when the DB file is missing, so a
-    misconfigured env doesn't block valid submissions — the paid path
-    will surface that error class instead.
+    For SQLite: prefer the template DB at
+    ``data_path_base/<db_name>/<db_name>_template.sqlite`` if present
+    (canonical reset state), else the live DB. Returns None when the DB file
+    is missing — misconfigured envs don't block valid submissions.
     """
     if not sql or not sql.strip():
         return None
+
+    if getattr(benchmark, "db_backend", "sqlite") == "postgres":
+        try:
+            with make_db_connection(db_name, benchmark=benchmark, read_only=True) as conn:
+                conn.execute(sql)
+            return None
+        except Exception as e:  # noqa: BLE001
+            return f"{type(e).__name__}: {e}"
+
+    # SQLite path
     if db_file_path:
         db_path = db_file_path
     else:
-        # Prefer the canonical reset state (template). For benchmarks
-        # without a template file (the default mini-interact layout has
-        # one per DB, but other datasets may not), fall back to the
-        # live DB.
         template = os.path.join(
             data_path_base, db_name, f"{db_name}_template.sqlite",
         )
@@ -433,7 +455,7 @@ def _dry_run_error_message(error: str) -> str:
     no-charge guarantee and points at the cheap schema-inspection tools
     so the next attempt is informed."""
     return (
-        f"Submitted SQL failed dry-run (SQLite error): {error}\n\n"
+        f"Submitted SQL failed dry-run (DB error): {error}\n\n"
         "Submission was NOT charged — fix the SQL and retry. To verify "
         "schema names before resubmitting, call `inspect_model` or "
         "`models_summary` (1 coin each)."
@@ -449,17 +471,25 @@ def submit_raw_sql(state: Any, sql: str) -> str:
     """
     pre_phase = getattr(state.status, "current_phase", 1)
 
-    # FREE dry-run gate: catch SQLite-side errors (missing function /
+    # FREE dry-run gate: catch DB-side errors (missing function /
     # missing column) before paying the 3-coin submit cost. Mirrors
     # `json_failed` / `translation_failed` short-circuits in
     # submit_slayer_query.
     db_name = state.status.original_data["selected_database"]
     db_file_path = state.status.original_data.get("db_file_path")
+    _dataset = state.status.original_data.get("dataset", "")
+    _benchmark = None
+    if _dataset:
+        try:
+            _benchmark = _get_benchmark(_dataset)
+        except ValueError:
+            pass
     dry_err = _dry_run_sql(
         sql,
         data_path_base=state.data_path_base,
         db_name=db_name,
         db_file_path=db_file_path,
+        benchmark=_benchmark,
     )
     if dry_err is not None:
         msg = _dry_run_error_message(dry_err)
@@ -701,17 +731,25 @@ def submit_slayer_query(
                 p1=False, p2=False, finished=False, translation_failed=True)
         return msg + _budget_note(state)
 
-    # FREE dry-run gate: catch SQLite-side errors in the rendered SQL
+    # FREE dry-run gate: catch DB-side errors in the rendered SQL
     # (missing function / missing column / etc.) before paying the
     # 3-coin submit cost. Mirrors the `json_failed` / `translation_failed`
     # short-circuits above.
     db_name = state.status.original_data["selected_database"]
     db_file_path = state.status.original_data.get("db_file_path")
+    _dataset = state.status.original_data.get("dataset", "")
+    _benchmark = None
+    if _dataset:
+        try:
+            _benchmark = _get_benchmark(_dataset)
+        except ValueError:
+            pass
     dry_err = _dry_run_sql(
         sql,
         data_path_base=state.data_path_base,
         db_name=db_name,
         db_file_path=db_file_path,
+        benchmark=_benchmark,
     )
     if dry_err is not None:
         msg = _dry_run_error_message(dry_err)

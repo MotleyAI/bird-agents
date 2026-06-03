@@ -33,6 +33,7 @@ from bird_interact_agents.eval.implicit_annotation import (
 from bird_interact_agents.eval.tolerant_grader import (
     CascadeVerdict,
     grade_submission,
+    make_executor,
 )
 
 
@@ -273,6 +274,10 @@ def grade_and_write(
     try:
         _bench = get_benchmark(benchmark)
         _is_interactive = not _bench.one_shot
+        # DEV-1523: auto-wire a postgres executor when the benchmark uses
+        # postgres and no explicit executor was supplied.
+        if executor is None and getattr(_bench, "db_backend", "sqlite") == "postgres":
+            executor = make_executor(_bench)
     except Exception:  # noqa: BLE001 — unknown benchmark token
         _is_interactive = False
     _user_sim_n_asks: Optional[int]

@@ -165,36 +165,55 @@ def _active_embedding_model_or_none() -> str:
         return "unknown"
 
 
-def fingerprint_of(*, db_name: str, mini_interact_root: Path) -> str:
+def fingerprint_of(
+    *,
+    db_name: str,
+    data_root: Path | None = None,
+    benchmark: object | None = None,
+    mini_interact_root: Path | None = None,
+) -> str:
     """Compute the cache fingerprint for one DB.
 
     Exposed publicly so tests can predict the expected cache path
     without having to mirror the algorithm. Pure function — no I/O
     beyond stat / read of the three fingerprint inputs.
 
+    Args:
+        db_name: DB identifier.
+        data_root: Root containing ``<db_name>/`` sub-dir (preferred).
+        benchmark: Benchmark descriptor (optional). Postgres benchmarks
+            hash the schema text file instead of the sqlite file stat.
+        mini_interact_root: Legacy alias for ``data_root`` (kept for
+            backward compat with existing callers).
+
     Fingerprint components:
 
     - ``slayer.__version__`` — orchestrator phase behaviour can change
       across releases.
-    - ``mini_interact_root.resolve()`` — two roots with identical file
-      stats must not share a cache (the stored absolute sqlite path
-      would point at the wrong file).
+    - ``data_root.resolve()`` — two roots with identical file stats
+      must not share a cache.
     - active embedding model name (or ``"none"``) — cache built
       without channel-3 embeddings must rebuild when embeddings are
       later enabled, OR when ``SLAYER_EMBEDDING_MODEL`` changes.
-    - sqlite size+mtime, column-meaning content, KB JSONL content —
-      the orchestrator's actual inputs.
+    - For SQLite: sqlite size+mtime.
+      For Postgres: schema-text content hash (no sqlite file to stat).
+    - column-meaning content, KB JSONL content.
     """
-    sqlite_path = mini_interact_root / db_name / f"{db_name}.sqlite"
-    meanings_path = (
-        mini_interact_root / db_name / f"{db_name}_column_meaning_base.json"
-    )
-    kb_path = mini_interact_root / db_name / f"{db_name}_kb.jsonl"
+    effective_root: Path = data_root or mini_interact_root  # type: ignore[assignment]
+    if effective_root is None:
+        raise ValueError("fingerprint_of: data_root (or mini_interact_root) is required")
+    meanings_path = effective_root / db_name / f"{db_name}_column_meaning_base.json"
+    kb_path = effective_root / db_name / f"{db_name}_kb.jsonl"
     h = hashlib.sha256()
     h.update(f"slayer={_slayer_version()}\n".encode())
-    h.update(f"root={mini_interact_root.resolve().as_posix()}\n".encode())
+    h.update(f"root={effective_root.resolve().as_posix()}\n".encode())
     h.update(f"embed={_active_embedding_model_or_none()}\n".encode())
-    h.update(f"sqlite={_hash_stat(sqlite_path)}\n".encode())
+    if getattr(benchmark, "db_backend", "sqlite") == "postgres":
+        schema_path = effective_root / db_name / f"{db_name}_schema.txt"
+        h.update(f"schema={_hash_file(schema_path)}\n".encode())
+    else:
+        sqlite_path = effective_root / db_name / f"{db_name}.sqlite"
+        h.update(f"sqlite={_hash_stat(sqlite_path)}\n".encode())
     h.update(f"meanings={_hash_file(meanings_path)}\n".encode())
     h.update(f"kb={_hash_file(kb_path)}\n".encode())
     return h.hexdigest()[:16]
@@ -251,7 +270,9 @@ async def ensure_db_cache(
     db: str,
     *,
     cache_root: Path,
-    mini_interact_root: Path,
+    mini_interact_root: Path | None = None,
+    data_root: Path | None = None,
+    benchmark: object | None = None,
     force: bool = False,
 ) -> CacheEntry:
     """Materialise (or reuse) the single authoritative per-DB cache at
@@ -305,21 +326,32 @@ async def ensure_db_cache(
         if not force and marker.is_file() and _impl_ok():
             return _load_cache_entry(target)
 
-        sqlite_path = mini_interact_root / db / f"{db}.sqlite"
-        meanings_path = mini_interact_root / db / f"{db}_column_meaning_base.json"
-        kb_path = mini_interact_root / db / f"{db}_kb.jsonl"
-        for p, label in (
-            (sqlite_path, "sqlite"),
+        effective_root: Path = data_root or mini_interact_root  # type: ignore[assignment]
+        if effective_root is None:
+            raise ValueError("ensure_db_cache: data_root (or mini_interact_root) is required")
+
+        is_postgres = getattr(benchmark, "db_backend", "sqlite") == "postgres"
+
+        meanings_path = effective_root / db / f"{db}_column_meaning_base.json"
+        kb_path = effective_root / db / f"{db}_kb.jsonl"
+        sqlite_path: Path | None = None
+
+        required_files: list[tuple[Path, str]] = [
             (meanings_path, "column-meaning"),
             (kb_path, "kb"),
-        ):
+        ]
+        if not is_postgres:
+            sqlite_path = effective_root / db / f"{db}.sqlite"
+            required_files.insert(0, (sqlite_path, "sqlite"))
+
+        for p, label in required_files:
             if not p.is_file():
                 raise FileNotFoundError(
                     f"slayer_otf cache: required {label} file missing for "
                     f"db={db}: {p}"
                 )
 
-        fp = fingerprint_of(db_name=db, mini_interact_root=mini_interact_root)
+        fp = fingerprint_of(db_name=db, data_root=effective_root, benchmark=benchmark)
         kb_rows = _load_kb_rows(kb_path)
 
         # Build into a unique tmp sibling under cache_root so a crash leaves no
@@ -332,6 +364,7 @@ async def ensure_db_cache(
                 sqlite_path=sqlite_path,
                 meanings_path=meanings_path,
                 kb_rows=kb_rows,
+                benchmark=benchmark,
             )
             # DEV-1508: persist the impl-fp half BEFORE the completeness
             # marker so a successful reuse (marker present) is guaranteed
@@ -384,9 +417,10 @@ async def _build_async(
     *,
     build_dir: Path,
     db: str,
-    sqlite_path: Path,
+    sqlite_path: Path | None,
     meanings_path: Path,
     kb_rows: list[dict],
+    benchmark: object | None = None,
 ) -> None:
     """Async equivalent of the orchestrator phases 1-3 build, used by
     ``ensure_db_cache``. Phase 1 is a sync subprocess; we wrap it in
@@ -399,8 +433,22 @@ async def _build_async(
     rows at prepare time; tasks with no deletions reuse the cache
     verbatim and pay zero embedding API cost.
     """
+    import os as _os
+
+    is_postgres = getattr(benchmark, "db_backend", "sqlite") == "postgres"
     build_dir.mkdir(parents=True, exist_ok=True)
-    await asyncio.to_thread(_phase1_ingest, db, sqlite_path, build_dir)
+
+    if is_postgres:
+        host = _os.environ.get("BIRD_PG_HOST", "localhost")
+        port = _os.environ.get("BIRD_PG_PORT", "5432")
+        user = _os.environ.get("BIRD_PG_USER", "bird_interact")
+        password = _os.environ.get("BIRD_PG_PASSWORD", "bird_interact")
+        db_url = f"postgresql://{user}:{password}@{host}:{port}/{db}"
+        await asyncio.to_thread(_phase1_ingest, db, build_dir, db_url=db_url)
+    else:
+        if sqlite_path is None:
+            raise ValueError("_build_async: sqlite_path is required for non-postgres benchmarks")
+        await asyncio.to_thread(_phase1_ingest, db, build_dir, sqlite_path=sqlite_path)
 
     storage = YAMLStorage(base_dir=str(build_dir))
     _touched, p2_warns = await _phase2_overlay(storage, db, meanings_path)
@@ -410,7 +458,8 @@ async def _build_async(
             len(p2_warns), db,
         )
     _added, jsonb_typing, drift = await _phase3_jsonb(
-        storage, db, meanings_path, sqlite_path,
+        storage, db, meanings_path=meanings_path, sqlite_path=sqlite_path,
+        benchmark=benchmark,
     )
     if jsonb_typing or drift:
         logger.info(

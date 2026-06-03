@@ -451,7 +451,7 @@ def test_slayer_submit_passes_correct_db_args_to_dry_run(monkeypatch):
 
     captured = {}
 
-    def _spy(sql, *, data_path_base, db_name, db_file_path=None):
+    def _spy(sql, *, data_path_base, db_name, db_file_path=None, benchmark=None):
         captured["sql"] = sql
         captured["data_path_base"] = data_path_base
         captured["db_name"] = db_name
@@ -480,7 +480,7 @@ def test_raw_submit_passes_correct_db_args_to_dry_run(monkeypatch):
 
     captured = {}
 
-    def _spy(sql, *, data_path_base, db_name, db_file_path=None):
+    def _spy(sql, *, data_path_base, db_name, db_file_path=None, benchmark=None):
         captured["sql"] = sql
         captured["data_path_base"] = data_path_base
         captured["db_name"] = db_name
