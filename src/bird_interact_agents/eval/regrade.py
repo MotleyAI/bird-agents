@@ -69,6 +69,8 @@ def _latest_attempt_file(sub: Path) -> Path | None:
     attempt-2) or, worse, overwritten by stale attempt-1 data — even
     though cloud collation already treats the max attempt as canonical
     and the round-8 fetch merge compares attempt numbers."""
+    if not sub.is_dir():
+        return None
     best: tuple[int, Path] | None = None
     for p in sub.iterdir():
         if not p.is_file():

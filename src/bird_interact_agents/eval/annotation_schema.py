@@ -253,6 +253,9 @@ class TaskAnnotation(BaseModel):
     fallback for novel readings but is not used by the deterministic
     grader."""
 
+    # Set when authoritative sources disagree on the same parameter (KB vs
+    # sql_snippet, KB.description vs KB.definition, etc.).  When set,
+    # audit_resolution=multi_variant should be reflected in gold_variants.
     internal_inconsistency: Optional[InternalInconsistency] = None
 
     @model_validator(mode="after")

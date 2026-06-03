@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
@@ -41,21 +40,6 @@ from bird_interact_agents.eval.tolerant_grader import (
 
 
 _AUTO_ANNOTATOR = "auto-inline-grader"
-
-
-def _latest_attempt_rel(rows_dir: Path, instance_id: str) -> str:
-    """Return a relative path string for the latest attempt-N.json file
-    under ``<rows_dir>/<instance_id>/``. Falls back to ``attempt-1.json``
-    when no attempt files are found (e.g. in tests that don't create them)."""
-    inst_dir = rows_dir / instance_id
-    attempt_files = sorted(
-        (f for f in inst_dir.iterdir() if re.match(r"^attempt-\d+\.json$", f.name))
-        if inst_dir.is_dir() else [],
-        key=lambda f: int(re.search(r"\d+", f.name).group()),
-    )
-    if attempt_files:
-        return f"rows/{instance_id}/{attempt_files[-1].name}"
-    return f"rows/{instance_id}/attempt-1.json"
 
 
 def normalize_sol_sql(value: Any) -> List[str]:

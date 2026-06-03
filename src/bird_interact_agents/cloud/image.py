@@ -115,11 +115,9 @@ def data_hash(
     data root), so it is not baked either. ``audited_gold/`` (author-produced
     corrections, code-like) stays baked + hashed.
 
-    DEV-1515: ``annotations_root`` defaults to ``paths.annotations_root()``
-    so callers that omit the argument still include annotations content."""
-    if annotations_root is None:
-        from bird_interact_agents import paths as _paths
-        annotations_root = _paths.annotations_root()
+    DEV-1515: ``annotations_root`` is optional; pass ``paths.annotations_root()``
+    to include annotations content. Defaults to ``None`` (no annotations hashed)
+    so test callers that don't supply it remain hermetic."""
     h = hashlib.sha256()
 
     # audited_gold (main-checkout-anchored, gitignored). Keyed under

@@ -358,6 +358,15 @@ def test_regrade_grades_when_only_later_attempt_exists(tmp_path, monkeypatch):
     assert captured[0]["submitted_sql"] == "ONLY_ATTEMPT_2"
 
 
+def test_latest_attempt_file_returns_none_for_missing_dir(tmp_path):
+    """_latest_attempt_file returns None for a non-existent directory.
+    Regression: previously called iterdir() directly, raising FileNotFoundError."""
+    from bird_interact_agents.eval.regrade import _latest_attempt_file
+
+    missing = tmp_path / "no_such_instance"
+    assert _latest_attempt_file(missing) is None
+
+
 def test_build_original_sql_index_does_not_char_split_string(
     tmp_path, monkeypatch,
 ):
