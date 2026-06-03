@@ -163,6 +163,7 @@ async def submit_annotation(args: dict) -> dict:
     task_data = _ctx.get("task_data") or {}
     expected_iid = task_data.get("instance_id")
     expected_db = task_data.get("selected_database")
+    expected_benchmark = _ctx.get("benchmark")
     if expected_iid and task_annotation.instance_id != expected_iid:
         return _text(
             f"Validation error: task_annotation instance_id must be "
@@ -205,6 +206,11 @@ async def submit_annotation(args: dict) -> dict:
             return _text(
                 f"Error: audited_gold_variants[{i}].selected_database must be "
                 f"{expected_db!r}, got {variant.get('selected_database')!r}"
+            )
+        if expected_benchmark and variant.get("benchmark") != expected_benchmark:
+            return _text(
+                f"Error: audited_gold_variants[{i}].benchmark must be "
+                f"{expected_benchmark!r}, got {variant.get('benchmark')!r}"
             )
 
     if not task_annotation.original_gold_is_correct and task_annotation.gold_variants:

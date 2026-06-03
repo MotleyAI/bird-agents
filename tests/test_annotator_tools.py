@@ -245,6 +245,33 @@ async def test_submit_annotation_valid_sets_done_flag():
 
 
 @pytest.mark.asyncio
+async def test_submit_annotation_variant_wrong_benchmark_returns_error():
+    """A variant whose benchmark doesn't match the current run benchmark must
+    return an error so GCS routing uses the correct benchmark path."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"}, benchmark="mini_interact")
+    variant_wrong_benchmark = json.dumps([
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "variant_id": "primary",
+            "benchmark": "livesqlbench",  # wrong
+            "audit_status": "clean",
+            "audited_sol_sql": ["SELECT 1;"],
+        }
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": _valid_task_annotation_json("shop_1"),
+        "audited_gold_variants_json": variant_wrong_benchmark,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "benchmark" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
 async def test_submit_annotation_stores_annotation_result():
     from bird_interact_agents.agents.annotator import agent as ann_agent
 

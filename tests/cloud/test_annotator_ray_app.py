@@ -441,3 +441,32 @@ def test_cluster_submit_job_accepts_ray_app_path_kwarg(monkeypatch):
     full_cmd = " ".join(str(a) for a in captured[-1])
     assert "ray_app_annotator.py" in full_cmd
     assert "ray_app.py" not in full_cmd.replace("ray_app_annotator.py", "")
+
+
+# ---------------------------------------------------------------------------
+# Skip path: copy failure → status "error" (not "skipped")
+# ---------------------------------------------------------------------------
+
+def test_skip_copy_failure_writes_error_status(fake_gcs_bucket, monkeypatch):
+    """If the stable→run-scoped blob copy raises, the attempt row must be
+    status='error' so resubmit picks the task up again instead of treating
+    it as complete with missing run-scoped blobs."""
+    from bird_interact_agents.cloud import gcs
+    from bird_interact_agents.cloud import ray_app_annotator
+
+    client, store = fake_gcs_bucket
+    # blob_exists is True (skip check passes) but blobs are absent from store,
+    # so download_as_bytes raises KeyError — simulates a GCS copy failure.
+    monkeypatch.setattr(ray_app_annotator._gcs, "blob_exists", lambda *a, **kw: True)
+    monkeypatch.setattr(ray_app_annotator, "_run_agent", lambda *a, **kw: _minimal_annotator_result())
+
+    ray_app_annotator._run_one_task(
+        task_data=_task_data(), cfg=_cfg(), run_id="r-1",
+        data_path_base="/tmp/data", gcs_client=client,
+    )
+
+    attempt_blob = "runs/r-1/rows/shop_1/attempt-1.json"
+    assert attempt_blob in store
+    row = json.loads(store[attempt_blob])
+    assert row["status"] == "error"
+    assert "copy" in row.get("error", "").lower()

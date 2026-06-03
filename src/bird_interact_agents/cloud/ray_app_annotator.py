@@ -118,17 +118,24 @@ def _run_one_task(
                 ):
                     data = bucket.blob(src_name).download_as_bytes()
                     bucket.blob(dst_name).upload_from_string(data)
+                attempt_row = {
+                    "instance_id": instance_id,
+                    "status": "skipped",
+                    "duration_s": time.monotonic() - t0,
+                }
+                _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
             except Exception as exc:
                 logger.warning(
-                    "[%s] stable→run-scoped copy failed (%s); fetch may be incomplete",
+                    "[%s] stable→run-scoped copy failed (%s); marking error so resubmit retries",
                     instance_id, exc,
                 )
-            attempt_row = {
-                "instance_id": instance_id,
-                "status": "skipped",
-                "duration_s": time.monotonic() - t0,
-            }
-            _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
+                attempt_row = {
+                    "instance_id": instance_id,
+                    "status": "error",
+                    "error": f"stable→run-scoped copy failed: {exc}",
+                    "duration_s": time.monotonic() - t0,
+                }
+                _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
             return
 
     # Run the agent.
