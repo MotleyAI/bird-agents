@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import sqlite3
 from collections import Counter
 from pathlib import Path
@@ -659,6 +660,34 @@ def default_executor(
             conn.close()
 
 
+def make_executor(benchmark: Any) -> ExecutorProtocol:
+    """Return an ``ExecutorProtocol`` appropriate for ``benchmark``.
+
+    For postgres benchmarks, returns a callable that opens a
+    ``PostgresDbConnection`` per call using ``db_path.stem`` as the
+    database name and reads env vars for connection params. For all
+    other benchmarks (SQLite), returns ``default_executor``.
+    """
+    if getattr(benchmark, "db_backend", "sqlite") != "postgres":
+        return default_executor
+
+    def _pg_executor(
+        sql: str,
+        *,
+        db_path: Path,
+        conn: Any = None,
+    ) -> ExecutorResult:
+        from bird_interact_agents.db_connection import PostgresDbConnection, make_db_connection
+
+        if conn is not None and isinstance(conn, PostgresDbConnection):
+            return conn.execute(sql)
+        db_name = db_path.stem
+        with make_db_connection(db_name, benchmark=benchmark, read_only=True) as pg_conn:
+            return pg_conn.execute(sql)
+
+    return _pg_executor
+
+
 # ---------------------------------------------------------------------------
 # CascadeVerdict (in-memory grader output)
 # ---------------------------------------------------------------------------
@@ -692,6 +721,7 @@ def _multi_sql_execute(
     db_path: Path,
     conn: Any,
     executor: ExecutorProtocol,
+    benchmark: Any = None,
 ) -> ExecutorResult:
     """Execute a list of SQL strings and return the rows+cols of the
     LAST one. Mirrors BIRD-Interact's evaluator semantics: prior items
@@ -708,16 +738,31 @@ def _multi_sql_execute(
     against the same connection.
     """
     own_conn: Optional[sqlite3.Connection] = None
-    if conn is None and executor is default_executor and len(sqls) > 1:
-        try:
-            conn = sqlite3.connect(
-                f"file:{db_path}?mode=ro", uri=True, timeout=30,
-            )
-            own_conn = conn
-        except sqlite3.Error:
-            # db_path unreachable / not a sqlite file — let the
-            # downstream executor call raise with the original error.
-            conn = None
+    own_pg_conn: Optional[Any] = None
+    if conn is None and len(sqls) > 1:
+        if executor is default_executor:
+            try:
+                conn = sqlite3.connect(
+                    f"file:{db_path}?mode=ro", uri=True, timeout=30,
+                )
+                own_conn = conn
+            except sqlite3.Error:
+                # db_path unreachable / not a sqlite file — let the
+                # downstream executor call raise with the original error.
+                conn = None
+        elif getattr(benchmark, "db_backend", "sqlite") == "postgres":
+            from bird_interact_agents.db_connection import make_db_connection
+            try:
+                # read_only=False: no per-execute BEGIN/ROLLBACK wrapping, so
+                # session state (e.g. TEMP TABLE) survives across statements.
+                # psycopg2 auto-rolls back any uncommitted txn on close, so
+                # writes cannot persist beyond this call.
+                own_pg_conn = make_db_connection(
+                    db_path.stem, benchmark=benchmark, read_only=False
+                )
+                conn = own_pg_conn
+            except Exception:  # noqa: BLE001
+                conn = None
     try:
         rows: Sequence[Sequence] = []
         cols: Sequence[str] = []
@@ -727,6 +772,8 @@ def _multi_sql_execute(
     finally:
         if own_conn is not None:
             own_conn.close()
+        if own_pg_conn is not None:
+            own_pg_conn.close()
 
 
 def grade_submission(
@@ -738,6 +785,7 @@ def grade_submission(
     db_path: Path,
     conn: Any = None,
     executor: Optional[ExecutorProtocol] = None,
+    benchmark: Any = None,
     llm_judge: Optional[Any] = None,
     epsilon: float = 1e-6,
     user_sim_n_asks: Optional[int] = None,
@@ -790,7 +838,7 @@ def grade_submission(
     try:
         orig_rows, orig_cols = _multi_sql_execute(
             list(original_sol_sql),
-            db_path=db_path, conn=conn, executor=executor,
+            db_path=db_path, conn=conn, executor=executor, benchmark=benchmark,
         )
     except Exception:  # noqa: BLE001
         logger.exception(
@@ -808,7 +856,7 @@ def grade_submission(
             continue
         try:
             v_rows, v_cols = _multi_sql_execute(
-                sqls, db_path=db_path, conn=conn, executor=executor,
+                sqls, db_path=db_path, conn=conn, executor=executor, benchmark=benchmark,
             )
         except Exception:  # noqa: BLE001
             # Variant SQL didn't execute — SKIP it instead of coercing

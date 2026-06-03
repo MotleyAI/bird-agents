@@ -161,6 +161,15 @@ def read_api_keys_from_local_env(
                 f"missing API key env vars for job submission: {missing_local_sorted}",
                 remediation=cmds,
             )
+        # Forward any postgres connection vars the user has set locally so
+        # cloud workers can reach the same postgres server.
+        for pg_var in (
+            "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+            "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
+        ):
+            val = os.environ.get(pg_var)
+            if val:
+                result[pg_var] = val
         return result
 
     needed: set[str] = set()
@@ -180,7 +189,17 @@ def read_api_keys_from_local_env(
             f"missing API key env vars for job submission: {missing_keys}",
             remediation=cmds,
         )
-    return {k: os.environ[k] for k in needed}
+    result = {k: os.environ[k] for k in needed}
+    # Forward any postgres connection vars the user has set locally so
+    # cloud workers can reach the same postgres server.
+    for pg_var in (
+        "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+        "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
+    ):
+        val = os.environ.get(pg_var)
+        if val:
+            result[pg_var] = val
+    return result
 
 
 def build_manifest(
@@ -382,6 +401,7 @@ def _build_missing_otf_caches(
         asyncio.run(
             ensure_db_cache(
                 db, cache_root=cache_root, mini_interact_root=data_root,
+                benchmark=get_benchmark(benchmark),
                 force=False,
             )
         )
@@ -797,6 +817,7 @@ def _emit_cascading_phase1_on_fetch(*, dest: Path, metrics: dict) -> dict:
         # Aggregator is strict — a missing per-row file raises so we
         # never silently under-count. Surface it as a side-channel entry
         # and leave the in-memory metrics writeable.
+        logger.warning("cascading_phase1 aggregation failed: %s", exc)
         metrics["cascading_phase1_error"] = str(exc)
         return metrics
 

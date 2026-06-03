@@ -200,6 +200,7 @@ async def _resolve_otf_task_storage_dir(
         db_name,
         cache_root=_paths.slayer_otf_cache_root(benchmark=benchmark),
         mini_interact_root=mini_interact_root,
+        benchmark=get_benchmark(benchmark) if benchmark else None,
     )
     scratch = await prepare_task_storage(
         db=db_name,

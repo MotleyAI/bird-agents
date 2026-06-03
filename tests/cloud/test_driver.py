@@ -1616,3 +1616,71 @@ def test_resubmit_omits_dataset_for_pre_dataset_manifest(monkeypatch):
     ja = driver._build_resubmit_args(manifest, "rid", ["db_a_1"], 2)
     assert "--dataset" not in ja
     assert "--benchmark-data-prefix" not in ja
+
+
+# ---------------------------------------------------------------------------
+# DEV-1523: BIRD_PG_* forwarding to cloud workers
+# ---------------------------------------------------------------------------
+
+
+def test_read_api_keys_forwards_bird_pg_vars_when_set(monkeypatch):
+    """BIRD_PG_* vars that are set locally must be included in the env dict
+    forwarded to cloud workers so postgres benchmarks can connect to the
+    same server from the worker node."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.setenv("BIRD_PG_HOST", "pg.example.com")
+    monkeypatch.setenv("BIRD_PG_PORT", "5433")
+    monkeypatch.setenv("BIRD_PG_USER", "myuser")
+    monkeypatch.setenv("BIRD_PG_PASSWORD", "mysecret")
+    monkeypatch.setenv("BIRD_PG_STATEMENT_TIMEOUT", "60000")
+
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+    )
+
+    assert keys.get("BIRD_PG_HOST") == "pg.example.com"
+    assert keys.get("BIRD_PG_PORT") == "5433"
+    assert keys.get("BIRD_PG_USER") == "myuser"
+    assert keys.get("BIRD_PG_PASSWORD") == "mysecret"
+    assert keys.get("BIRD_PG_STATEMENT_TIMEOUT") == "60000"
+
+
+def test_read_api_keys_does_not_forward_unset_bird_pg_vars(monkeypatch):
+    """If BIRD_PG_* vars are not set, they must NOT appear in the forwarded
+    dict (no empty-string keys that would shadow defaults on the worker)."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    for pg_var in ("BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+                   "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT"):
+        monkeypatch.delenv(pg_var, raising=False)
+
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+    )
+
+    for pg_var in ("BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+                   "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT"):
+        assert pg_var not in keys, f"{pg_var} must not appear when not set locally"
+
+
+def test_read_api_keys_oauth_forwards_bird_pg_vars(monkeypatch):
+    """Same forwarding must occur on the OAuth (claude_sdk) path."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.setenv("BIRD_PG_HOST", "pg.example.com")
+    monkeypatch.setenv("BIRD_PG_PASSWORD", "mysecret")
+    for pg_var in ("BIRD_PG_PORT", "BIRD_PG_USER", "BIRD_PG_STATEMENT_TIMEOUT"):
+        monkeypatch.delenv(pg_var, raising=False)
+
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+    )
+
+    assert keys.get("BIRD_PG_HOST") == "pg.example.com"
+    assert keys.get("BIRD_PG_PASSWORD") == "mysecret"
+    assert "BIRD_PG_PORT" not in keys

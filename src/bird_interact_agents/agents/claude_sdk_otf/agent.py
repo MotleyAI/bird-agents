@@ -66,7 +66,7 @@ from bird_interact_agents.eval.grade_in_place import (
     load_task_annotation_or_implicit,
     normalize_sol_sql,
 )
-from bird_interact_agents.eval.tolerant_grader import grade_submission
+from bird_interact_agents.eval.tolerant_grader import grade_submission, make_executor
 from bird_interact_agents.slayer_otf import resolve_otf_task_storage_dir
 from bird_interact_agents.usage import TokenUsage
 
@@ -300,9 +300,9 @@ class ClaudeSDKOtfAgent:
         # ``get_benchmark`` so documented aliases are accepted (matches
         # `_validate_framework_dataset_mode`'s behavior).
         dataset = task_data.get("dataset") or "mini_interact"
-        if get_benchmark(dataset).name != "livesqlbench":
+        if get_benchmark(dataset).name not in ("livesqlbench", "livesqlbench_postgres"):
             raise ValueError(
-                "claude_sdk_otf is bound to --dataset livesqlbench "
+                "claude_sdk_otf is bound to --dataset livesqlbench / livesqlbench_postgres "
                 "(use --framework claude_sdk_otf_ainteract for "
                 f"mini_interact); got dataset={dataset!r}"
             )
@@ -535,6 +535,8 @@ class ClaudeSDKOtfAgent:
                     original_sol_sql=_orig_sql,
                     submitted_sql=_submitted_sql,
                     db_path=_db_path,
+                    benchmark=benchmark,
+                    executor=make_executor(benchmark),
                     user_sim_n_asks=None,
                 )
                 if _ann_from_disk and _is_genuine_miss(_cascade):

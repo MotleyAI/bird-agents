@@ -62,6 +62,12 @@ class Benchmark(BaseModel):
     """Where the actor materialises this benchmark's data in-container, e.g.
     ``/data/mini-interact``; also the cloud ``BIRD_DB_PATH``."""
 
+    # DEV-1523: database backend.
+    db_backend: Literal["sqlite", "postgres"] = "sqlite"
+    """SQL execution backend. ``sqlite`` uses sqlite3 file-based DBs;
+    ``postgres`` connects to a running postgres server via env vars
+    (BIRD_PG_HOST / BIRD_PG_PORT / BIRD_PG_USER / BIRD_PG_PASSWORD)."""
+
     # DEV-1510: audited-gold sidecar layout.
     audited_gold_layout: Literal["per_db", "single_file"] = "per_db"
     """Where ``apply_audited_gold_overlay`` (and the cloud submit-time
@@ -121,7 +127,42 @@ LIVESQLBENCH = Benchmark(
     audited_gold_layout="single_file",
 )
 
-BENCHMARKS: dict[str, Benchmark] = {b.name: b for b in (MINI_INTERACT, LIVESQLBENCH)}
+LIVESQLBENCH_POSTGRES = Benchmark(
+    name="livesqlbench_postgres",
+    db_backend="postgres",
+    dataset_marker="livesqlbench_postgres",
+    data_subdir="livesqlbench-base-lite-postgres",
+    data_file="livesqlbench_data.jsonl",
+    data_root_env="BIRD_LIVESQLBENCH_POSTGRES_ROOT",
+    data_file_env="BIRD_LIVESQLBENCH_POSTGRES_DATA_FILE",
+    supported_modes=("one-shot",),
+    one_shot=True,
+    gold_required=True,
+    gold_root_env="BIRD_LIVESQLBENCH_POSTGRES_GOLD_FILE",
+    per_task_db_isolation=False,
+    container_data_dir="/data/livesqlbench-postgres",
+    audited_gold_layout="single_file",
+)
+
+MINI_INTERACT_POSTGRES = Benchmark(
+    name="mini_interact_postgres",
+    db_backend="postgres",
+    dataset_marker="mini_interact_postgres",
+    data_subdir="mini-interact-postgres",
+    data_file="mini_interact.jsonl",
+    data_root_env="BIRD_MINI_INTERACT_POSTGRES_ROOT",
+    data_file_env="BIRD_MINI_INTERACT_POSTGRES_DATA_FILE",
+    supported_modes=("a-interact",),
+    one_shot=False,
+    gold_required=False,
+    per_task_db_isolation=False,
+    container_data_dir="/data/mini-interact-postgres",
+    audited_gold_layout="single_file",
+)
+
+BENCHMARKS: dict[str, Benchmark] = {
+    b.name: b for b in (MINI_INTERACT, LIVESQLBENCH, LIVESQLBENCH_POSTGRES, MINI_INTERACT_POSTGRES)
+}
 
 # Every token that resolves to a benchmark: canonical name + cli aliases +
 # dataset marker. Built once; collisions across benchmarks would be a bug.

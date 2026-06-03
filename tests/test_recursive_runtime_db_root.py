@@ -158,7 +158,7 @@ async def test_recursive_resolver_passes_resolved_db_path_as_db_root(
         cache_dir=tmp_path / "cache", fingerprint="x", kb_rows=[],
     )
 
-    async def fake_ensure_db_cache(db, *, cache_root, mini_interact_root, force=False):
+    async def fake_ensure_db_cache(db, *, cache_root, mini_interact_root, benchmark=None, force=False):
         return fake_entry
 
     captured: dict = {}

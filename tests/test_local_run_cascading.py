@@ -76,10 +76,10 @@ def test_local_run_eval_json_has_cascading_block(tmp_path):
     rows_dir.mkdir()
 
     class FakePass:
-        def __call__(self, sql, *, db_path, conn):  # noqa: ARG002,ARG005  # noqa: ARG002
+        def __call__(self, sql, *, db_path, conn):  # noqa: ARG002
             return ([(1,)], ["a"])
     class FakeFail:
-        def __call__(self, sql, *, db_path, conn):  # noqa: ARG002,ARG005  # noqa: ARG002
+        def __call__(self, sql, *, db_path, conn):  # noqa: ARG002
             if "predicted" in sql:
                 return ([(99,)], ["a"])
             return ([(1,)], ["a"])

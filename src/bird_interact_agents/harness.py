@@ -5,15 +5,20 @@
 and `src.envs` packages are then importable from site-packages directly.
 """
 
+import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 import uuid
 from pathlib import Path
 from typing import Optional, Tuple
 
+from collections import Counter
+
 from bird_interact_agents.benchmark import Benchmark, get_benchmark
+from bird_interact_agents.db_connection import make_db_connection
 
 logger = logging.getLogger(__name__)
 from bird_interact_agents.hard8_preprocessor import (
@@ -27,8 +32,8 @@ from bird_interact_agents.hard8_preprocessor import (
 
 # Action execution (SQLite DB operations + submission evaluation)
 from batch_run_bird_interact.action_handler_sqlite import (
-    execute_env_action,
-    execute_submit_action,
+    execute_env_action as _sqlite_execute_env_action,
+    execute_submit_action as _sqlite_execute_submit_action,
     load_db_data_if_needed,
     close_db_connection,
     get_db_connection,
@@ -37,6 +42,8 @@ from batch_run_bird_interact.action_handler_sqlite import (
     _column_meanings_cache,
     _external_knowledge_cache,
     _filter_knowledge_for_agent,
+    KNOWLEDGE_VISIBLE_FIELDS,
+    MAX_RESULT_LENGTH,
 )
 
 # User simulator prompt building
@@ -48,6 +55,211 @@ from batch_run_bird_interact.prompt_utils import (
 
 # Sample status dataclass
 from batch_run_bird_interact.sample_status import SampleStatus
+
+
+# ---------------------------------------------------------------------------
+# Postgres dispatch for execute_env_action / execute_submit_action
+# ---------------------------------------------------------------------------
+
+
+def _pg_execute_env_action(
+    action: str, sample_status: "SampleStatus", data_path_base: str
+) -> tuple[str, bool]:
+    """Postgres-backend implementation of execute_env_action.
+
+    Cache-based actions (schema, column meanings, external knowledge) work
+    identically to the SQLite path — they read flat files populated by
+    ``load_db_data_if_needed``. Only ``execute(...)`` is different: it
+    opens a ``PostgresDbConnection`` instead of a SQLite connection.
+    """
+    db_name = sample_status.original_data["selected_database"]
+    load_db_data_if_needed(db_name, data_path_base)
+
+    try:
+        if action.startswith("execute("):
+            sql = action[8:-1].strip()
+            if len(sql) >= 2 and sql[0] in "'\"" and sql[0] == sql[-1]:
+                sql = sql[1:-1]
+            benchmark = get_benchmark(sample_status.original_data["dataset"])
+            with make_db_connection(
+                db_name, data_path_base=data_path_base, benchmark=benchmark, read_only=True
+            ) as conn:
+                rows, cols = conn.execute(sql)
+            if rows:
+                formatted = []
+                for row in rows:
+                    parts = []
+                    for cell in row:
+                        s = str(cell)
+                        if len(s) > 100:
+                            s = s[:97] + "..."
+                        parts.append(s)
+                    formatted.append(" | ".join(parts))
+                observation = "\n".join(formatted)
+                words = len(observation.split())
+                if words > MAX_RESULT_LENGTH:
+                    observation = " ".join(observation.split()[:MAX_RESULT_LENGTH]) + "..."
+            else:
+                observation = "Query executed, empty result set."
+            return observation, True
+
+        if action == "get_schema()":
+            return _schema_cache.get(db_name, "Schema not available"), True
+
+        if action == "get_all_column_meanings()":
+            return json.dumps(_column_meanings_cache.get(db_name, {}), indent=2), True
+
+        if action.startswith("get_column_meaning("):
+            m = re.search(r"get_column_meaning\((.*)\)", action)
+            if m:
+                parts = [p.strip().strip("'\"") for p in m.group(1).strip().split(",")]
+                if len(parts) == 2:
+                    key = f"{db_name}|{parts[0].lower()}|{parts[1].lower()}"
+                    return _column_meanings_cache.get(db_name, {}).get(key, "Column meaning not found"), True
+                return "Error: Invalid arguments for get_column_meaning. Expected table_name, column_name.", False
+            return "Error: Could not parse arguments for get_column_meaning.", False
+
+        if action == "get_all_external_knowledge_names()":
+            agent_kb = _filter_knowledge_for_agent(db_name, sample_status.original_data)
+            return str(list(agent_kb.keys())), True
+
+        if action.startswith("get_knowledge_definition("):
+            m = re.search(r"get_knowledge_definition\((.*)\)", action)
+            if m:
+                name = m.group(1).strip().strip("'\"")
+                agent_kb = _filter_knowledge_for_agent(db_name, sample_status.original_data)
+                if name in agent_kb:
+                    kb = agent_kb[name]
+                    return json.dumps({k: kb[k] for k in KNOWLEDGE_VISIBLE_FIELDS if k in kb}, indent=2), True
+                return "Knowledge not found or not accessible.", True
+            return "Error: Could not parse arguments for get_knowledge_definition.", False
+
+        if action == "get_all_knowledge_definitions()":
+            agent_kb = _filter_knowledge_for_agent(db_name, sample_status.original_data)
+            visible = [{k: v[k] for k in KNOWLEDGE_VISIBLE_FIELDS if k in v} for v in agent_kb.values()]
+            return json.dumps(visible, indent=2), True
+
+        return f"Unknown action: {action}", False
+
+    except Exception as e:  # noqa: BLE001
+        return f"SQL execution error: {e}", False
+
+
+def _pg_hashable_row(row: tuple) -> tuple:
+    """Make a psycopg2 result row hashable by JSON-serialising dict/list cells.
+
+    psycopg2 returns JSONB/JSON columns as Python dict/list, which cannot be
+    inserted into a Counter or compared via tuple equality.  Serialising to a
+    canonical JSON string preserves equality semantics while being hashable.
+    """
+    return tuple(
+        json.dumps(v, sort_keys=True, default=str) if isinstance(v, (dict, list)) else v
+        for v in row
+    )
+
+
+def _pg_execute_submit_action(
+    sql: str, sample_status: "SampleStatus", data_path_base: str
+) -> tuple[str, float, bool, bool, bool]:
+    """Postgres-backend implementation of execute_submit_action.
+
+    Runs ``sql`` (predicted) and each gold SQL in ``sol_sql`` against the
+    shared postgres DB, compares result sets (unordered), and returns the
+    standard ``(observation, reward, p1, p2, finished)`` tuple.
+    """
+    db_name = sample_status.original_data["selected_database"]
+    sol_sqls = sample_status.original_data.get("sol_sql") or []
+    if isinstance(sol_sqls, str):
+        sol_sqls = [sol_sqls]
+    benchmark = get_benchmark(sample_status.original_data["dataset"])
+
+    def _run(query: str) -> tuple[list, bool]:
+        try:
+            with make_db_connection(
+                db_name, data_path_base=data_path_base, benchmark=benchmark, read_only=True
+            ) as conn:
+                rows, _ = conn.execute(query)
+            return rows, False
+        except Exception:  # noqa: BLE001
+            return [], True  # error flag
+
+    pred_rows, pred_err = _run(sql)
+    if pred_err:
+        # For interactive benchmarks (one_shot=False) an execution error lets
+        # the agent retry; for one-shot benchmarks the task is over.
+        return "SQL execution error", 0.0, False, False, benchmark.one_shot
+
+    # Execute all gold SQLs sequentially on a single shared connection so that
+    # multi-statement sequences (CTEs, temp tables) work correctly.  This mirrors
+    # tolerant_grader._multi_sql_execute semantics: the list is a sequence of
+    # dependent steps, not a set of independent alternatives.
+    def _run_gold_sequence(sqls: list[str]) -> tuple[list, bool]:
+        try:
+            with make_db_connection(
+                db_name, data_path_base=data_path_base, benchmark=benchmark, read_only=True
+            ) as conn:
+                # execute_sequence issues ONE BEGIN READ ONLY / ROLLBACK for
+                # the whole list, so temp tables created in step N remain
+                # visible to step N+1 (unlike calling conn.execute per step,
+                # which rolls back each statement individually).
+                rows, _ = conn.execute_sequence(sqls)
+                return rows, False
+        except Exception:  # noqa: BLE001
+            return [], True
+
+    if not sol_sqls:
+        # No gold SQL means we cannot grade this submission — treat as error
+        # (mirrors the SQLite evaluator's behaviour on missing sol_sql).
+        gold_rows, gold_err = [], True
+    else:
+        gold_rows, gold_err = _run_gold_sequence(sol_sqls)
+    # Honour order-sensitive grading when the gold record requests it,
+    # matching the SQLite ex_base behaviour (conditions["order"]).
+    # _pg_hashable_row makes JSONB/dict/list cells hashable for Counter.
+    conditions = sample_status.original_data.get("conditions") or {}
+    ordered = bool(conditions.get("order", False))
+    pred_h = [_pg_hashable_row(r) for r in pred_rows]
+    gold_h = [_pg_hashable_row(r) for r in gold_rows]
+    if ordered:
+        p1 = not gold_err and pred_h == gold_h
+    else:
+        p1 = not gold_err and Counter(pred_h) == Counter(gold_h)
+
+    reward = 1.0 if p1 else 0.0
+    obs = f"Submitted. Result match: {p1}"
+    # p2=False: no second-pass grading metric for postgres benchmarks yet.
+    # finished: one-shot benchmarks always end after one submission; interactive
+    # ones only end when the agent's answer is correct.
+    finished = benchmark.one_shot or p1
+    return obs, reward, p1, False, finished
+
+
+def execute_env_action(
+    action: str, sample_status: "SampleStatus", data_path_base: str
+) -> tuple[str, bool]:
+    """Dispatch ``execute_env_action`` to the postgres or SQLite implementation."""
+    dataset = sample_status.original_data.get("dataset", "")
+    try:
+        b = get_benchmark(dataset)
+    except ValueError:
+        b = None
+    if b is not None and b.db_backend == "postgres":
+        return _pg_execute_env_action(action, sample_status, data_path_base)
+    return _sqlite_execute_env_action(action, sample_status, data_path_base)
+
+
+def execute_submit_action(
+    sql: str, sample_status: "SampleStatus", data_path_base: str
+) -> tuple[str, float, bool, bool, bool]:
+    """Dispatch ``execute_submit_action`` to the postgres or SQLite implementation."""
+    dataset = sample_status.original_data.get("dataset", "")
+    try:
+        b = get_benchmark(dataset)
+    except ValueError:
+        b = None
+    if b is not None and b.db_backend == "postgres":
+        return _pg_execute_submit_action(sql, sample_status, data_path_base)
+    return _sqlite_execute_submit_action(sql, sample_status, data_path_base)
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +429,7 @@ def load_benchmark_tasks(
             )
         return load_livesqlbench_tasks(
             data_path, gold_file, limit=limit, filter_ids=filter_ids,
+            dataset_marker=b.dataset_marker,
         )
     # Apply `limit` AFTER `filter_ids` (not via load_tasks' own limit), so a
     # caller passing both doesn't have requested instance_ids truncated away
@@ -227,6 +440,12 @@ def load_benchmark_tasks(
         tasks = [t for t in tasks if t.get("instance_id") in wanted]
     if limit is not None:
         tasks = tasks[:limit]
+    # Stamp the canonical dataset marker so execute_submit_action dispatch
+    # routes on benchmark.db_backend correctly (Codex, DEV-1523).
+    # load_livesqlbench_tasks does this via dataset_marker= kwarg; this path
+    # must mirror it so postgres variants don't silently fall through to SQLite.
+    for t in tasks:
+        t["dataset"] = b.dataset_marker
     return tasks
 
 
@@ -254,6 +473,7 @@ def load_livesqlbench_tasks(
     *,
     limit: int | None = None,
     filter_ids: list[str] | None = None,
+    dataset_marker: str = "livesqlbench",
 ) -> list[dict]:
     """Load + merge a LiveSQLBench task batch.
 
@@ -336,7 +556,7 @@ def load_livesqlbench_tasks(
         # `query` → `amb_user_query` shim. Keep `query` for traceability.
         if "query" in row and "amb_user_query" not in row:
             row["amb_user_query"] = row["query"]
-        row["dataset"] = "livesqlbench"
+        row["dataset"] = dataset_marker
         merged.append(row)
 
     # Step 5 — SELECT filter; defensive `_M_` cross-check.
@@ -842,7 +1062,12 @@ def materialize_task_db(
     branch. Called from ``run_oracle_task`` and each one-shot
     ``run_task`` setup before the first submit.
     """
-    if task_data.get("dataset") != "livesqlbench":
+    dataset = task_data.get("dataset", "")
+    try:
+        b = get_benchmark(dataset)
+        if not b.per_task_db_isolation:
+            return None
+    except ValueError:
         return None
 
     db = task_data.get("selected_database")
@@ -1039,6 +1264,11 @@ def slayer_mcp_stdio_config(
         )
     env = os.environ.copy()
     env["SLAYER_STORAGE"] = str(Path(storage_dir).resolve())
+    # Derive PGPASSWORD from BIRD_PG_PASSWORD so postgres datasources can
+    # authenticate when the MCP subprocess inherits the env — the datasource
+    # URL has no embedded password (security invariant in cache.py).
+    if "PGPASSWORD" not in env and "BIRD_PG_PASSWORD" in env:
+        env["PGPASSWORD"] = env["BIRD_PG_PASSWORD"]
     args = ["mcp"]
     if ingest_on_startup:
         args.append("--ingest-on-startup")

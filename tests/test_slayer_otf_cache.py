@@ -80,7 +80,7 @@ def mock_orchestrator(monkeypatch):
     layout under the build dir. Returns the call-counter dict."""
     calls = {"phase1": 0, "phase2": 0, "phase3": 0, "phase4": 0}
 
-    def fake_phase1(db, sqlite_path, storage):
+    def fake_phase1(db, storage, *, sqlite_path=None, db_url=None, pg_password=None):
         calls["phase1"] += 1
         models_dir = Path(storage) / "models" / db
         models_dir.mkdir(parents=True, exist_ok=True)
@@ -95,11 +95,11 @@ def mock_orchestrator(monkeypatch):
         calls["phase2"] += 1
         return 0, []
 
-    async def fake_phase3(storage, db, meanings_path, sqlite_path):
+    async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *, benchmark=None):
         calls["phase3"] += 1
         return 0, [], []
 
-    async def fake_phase4(storage, db, sqlite_path, llm_model):  # pragma: no cover
+    async def fake_phase4(storage, db, sqlite_path=None, llm_model=None, *, benchmark=None):  # pragma: no cover
         calls["phase4"] += 1
         return 0, []
 
@@ -329,13 +329,13 @@ async def test_failed_build_leaves_no_db_dir(
     """If phase 1 raises mid-build, the target ``<cache_root>/<db>/`` must
     NOT exist — the build is into a tmp sibling, atomic-renamed only on
     success. (tmp dirs may linger; the strict invariant is "no final dir".)"""
-    def boom(db, sqlite_path, storage):
+    def boom(db, storage, *, sqlite_path=None, db_url=None):
         raise RuntimeError("orchestrator died")
 
     async def fake_phase2(storage, db, meanings_path):  # pragma: no cover
         return 0, []
 
-    async def fake_phase3(storage, db, meanings_path, sqlite_path):  # pragma: no cover
+    async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *, benchmark=None):  # pragma: no cover
         return 0, [], []
 
     monkeypatch.setattr(otf_cache, "_phase1_ingest", boom)
@@ -457,7 +457,7 @@ async def test_concurrent_calls_for_same_db_build_once(
     cache_root = tmp_path / "cache"
     calls = {"phase1": 0}
 
-    def fake_phase1(db, sqlite_path, storage):
+    def fake_phase1(db, storage, *, sqlite_path=None, db_url=None, pg_password=None):
         calls["phase1"] += 1
         import time as _time
         _time.sleep(0.05)
@@ -473,7 +473,7 @@ async def test_concurrent_calls_for_same_db_build_once(
     async def fake_phase2(storage, db, meanings_path):
         return 0, []
 
-    async def fake_phase3(storage, db, meanings_path, sqlite_path):
+    async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *, benchmark=None):
         return 0, [], []
 
     monkeypatch.setattr(otf_cache, "_phase1_ingest", fake_phase1)
