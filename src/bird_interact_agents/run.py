@@ -1126,17 +1126,16 @@ async def run_evaluation(
                 ),
             )
             return
-        # Root the per-task sqlite at the caller-provided ``data_dir``
-        # (the same path the agent's SQL executed against) — NOT the
-        # global ``paths.benchmark_data_root``. Otherwise an alternate
-        # checkout, a tmp fixture, or a ``BIRD_DB_PATH`` override would
-        # have the agent and grader disagreeing on schema/data, and a
-        # correct submission could be marked failing. Mirrors the
-        # cloud worker, which uses ``cfg["data_dir"]`` (Codex r7).
+        # Root the per-task sqlite at the materialized copy when available
+        # (LiveSQLBench tasks: materialize_task_db sets db_file_path to an
+        # isolated $TMPDIR copy so concurrent runs don't race the shared
+        # <db>.sqlite). Fall back to data_dir/<db>/<db>.sqlite for
+        # mini-interact (materialize_task_db is a no-op there).
+        _db_file_path = td.get("db_file_path")
         per_task_db = (
-            Path(data_dir)
-            / selected_database
-            / f"{selected_database}.sqlite"
+            Path(_db_file_path)
+            if _db_file_path
+            else Path(data_dir) / selected_database / f"{selected_database}.sqlite"
         )
         try:
             grade_one_submission(
