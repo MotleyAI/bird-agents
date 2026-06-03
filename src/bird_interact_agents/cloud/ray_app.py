@@ -110,8 +110,6 @@ def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     prefix = cfg.get("benchmark_data_prefix")
     if not prefix:
         return
-    from bird_interact_agents.benchmark import get_benchmark
-
     b = get_benchmark(_cloud_benchmark(cfg))
     dest = Path(b.container_data_dir)
     client = client or default_gcs_client()

@@ -123,8 +123,16 @@ def _open_psycopg2_connection(
 class PostgresDbConnection:
     """Wraps a psycopg2 connection.
 
-    ``read_only=True`` wraps each ``execute`` call in ``BEGIN``/``ROLLBACK``
-    so writes can never be committed — this is the dry-run path.
+    ``read_only=True`` wraps each ``execute`` call in ``BEGIN READ ONLY``/
+    ``ROLLBACK`` so writes to permanent tables are rejected server-side —
+    this is the dry-run / grading path.
+
+    ``read_only=False`` skips the ``BEGIN``/``ROLLBACK`` wrapper, which lets
+    session state (TEMP tables, SET vars) persist across multiple ``execute``
+    calls on the same connection — used by ``tolerant_grader._multi_sql_execute``
+    for multi-statement gold SQL.  It does **not** commit writes: psycopg2's
+    default autocommit=False means any DML lands in an implicit open transaction
+    that is rolled back when the connection is closed.
     """
 
     def __init__(self, conn: Any, *, read_only: bool = False) -> None:
