@@ -618,7 +618,10 @@ def _run_one_in_actor(
         grader_db_path = (
             Path(str(_row_selected_db))
             if getattr(_grader_bench_obj, "db_backend", "sqlite") == "postgres"
-            else Path(_grader_data_dir) / str(_row_selected_db) / f"{_row_selected_db}.sqlite"
+            else Path(
+                task_data.get("db_file_path")
+                or (Path(_grader_data_dir) / str(_row_selected_db) / f"{_row_selected_db}.sqlite")
+            )
         )
         ann_path = _grade_one_submission(
             task_data=task_data,
@@ -637,6 +640,8 @@ def _run_one_in_actor(
             n_ask_user_calls=row.get("usage", {}).get("n_ask_user_calls")
                 if isinstance(row.get("usage"), dict) else None,
             predicted_row_count=None,
+            task_annotation=row.get("_task_annotation"),
+            autopsy_result=row.get("_autopsy"),
             attempt=attempt,
         )
         _gcs.write_submission_annotation(
@@ -671,6 +676,12 @@ def _run_one_in_actor(
             traceback.print_exc()
     finally:
         shutil.rmtree(annotation_dir, ignore_errors=True)
+
+    # Strip Pydantic objects from the row before JSON-serialising it for
+    # GCS — they were consumed by the annotation writer above and must not
+    # reach json.dumps (which raises TypeError on non-serialisable types).
+    row.pop("_task_annotation", None)
+    row.pop("_autopsy", None)
 
     # Codex r7: annotation upload is now BEFORE the attempt row write,
     # so ``wait_until_done`` (which counts attempt rows) only sees the
@@ -1167,6 +1178,7 @@ def run_pool(
                 gcs_client=client,
                 heartbeat=heartbeat,
                 actor_factory=lambda: ActorCls.remote(cfg, run_id, attempt),
+                benchmark=_cloud_benchmark(cfg),
             )
         heartbeat.stop_and_flush(terminal_state="done")
     except Exception:
@@ -1184,6 +1196,7 @@ def _run_with_actors(
     gcs_client,
     heartbeat: HeartbeatWriter,
     actor_factory: Callable[[], Any],
+    benchmark: str,
 ) -> None:
     """Drive a pool of Ray actors with precise actor→iid bookkeeping.
 
@@ -1212,7 +1225,25 @@ def _run_with_actors(
         except Exception as e:  # noqa: BLE001
             # Could not dispatch — log + write an `error` row so the iid
             # is visible in `eval.json` rather than silently missing.
+            # Codex r7: annotation BEFORE row (same ordering as the normal
+            # path) so wait_until_done/fetch don't race the annotation.
             err_row = _build_error_row(iid, "", f"dispatch-failure: {e}")
+            try:
+                _ann_dir = Path(tempfile.mkdtemp(prefix="bird_fail_ann_"))
+                _fp = write_failed_submission_annotation(
+                    rows_dir=_ann_dir,
+                    instance_id=iid,
+                    selected_database=task_data_by_id[iid].get("selected_database", ""),
+                    benchmark=benchmark,
+                    run_id=run_id,
+                    trajectory_path=f"rows/{iid}/attempt-1.json",
+                    failure_details=err_row.get("error", "")[:200],
+                )
+                _gcs.write_submission_annotation(
+                    run_id, iid, json.loads(_fp.read_text()), client=gcs_client,
+                )
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 _gcs.write_row(run_id, iid, attempt, err_row, client=gcs_client)
             except Exception:  # noqa: BLE001
@@ -1243,7 +1274,24 @@ def _run_with_actors(
             heartbeat.tick_done()
             free_actors.append(actor)
         except RayActorError:
+            # Codex r7: annotation BEFORE row.
             err_row = _build_error_row(iid, "", "actor-lost")
+            try:
+                _ann_dir = Path(tempfile.mkdtemp(prefix="bird_fail_ann_"))
+                _fp = write_failed_submission_annotation(
+                    rows_dir=_ann_dir,
+                    instance_id=iid,
+                    selected_database=task_data_by_id[iid].get("selected_database", ""),
+                    benchmark=benchmark,
+                    run_id=run_id,
+                    trajectory_path=f"rows/{iid}/attempt-1.json",
+                    failure_details=err_row.get("error", "")[:200],
+                )
+                _gcs.write_submission_annotation(
+                    run_id, iid, json.loads(_fp.read_text()), client=gcs_client,
+                )
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 _gcs.write_row(run_id, iid, attempt, err_row,
                                 client=gcs_client)
@@ -1270,6 +1318,23 @@ def _run_with_actors(
                 f"{traceback.format_exc()}\n"
             )
             err_row = _build_error_row(iid, "", f"actor-task-error: {e}")
+            # Codex r7: annotation BEFORE row.
+            try:
+                _ann_dir = Path(tempfile.mkdtemp(prefix="bird_fail_ann_"))
+                _fp = write_failed_submission_annotation(
+                    rows_dir=_ann_dir,
+                    instance_id=iid,
+                    selected_database=task_data_by_id[iid].get("selected_database", ""),
+                    benchmark=benchmark,
+                    run_id=run_id,
+                    trajectory_path=f"rows/{iid}/attempt-1.json",
+                    failure_details=err_row.get("error", "")[:200],
+                )
+                _gcs.write_submission_annotation(
+                    run_id, iid, json.loads(_fp.read_text()), client=gcs_client,
+                )
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 _gcs.write_row(run_id, iid, attempt, err_row,
                                 client=gcs_client)
@@ -1288,7 +1353,24 @@ def _run_with_actors(
     # GCS — the spec promises record-and-move-on, not record-and-drop.
     if pending:
         for iid in pending:
+            # Codex r7: annotation BEFORE row.
             err_row = _build_error_row(iid, "", "undispatched: no live actors")
+            try:
+                _ann_dir = Path(tempfile.mkdtemp(prefix="bird_fail_ann_"))
+                _fp = write_failed_submission_annotation(
+                    rows_dir=_ann_dir,
+                    instance_id=iid,
+                    selected_database=task_data_by_id[iid].get("selected_database", ""),
+                    benchmark=benchmark,
+                    run_id=run_id,
+                    trajectory_path=f"rows/{iid}/attempt-1.json",
+                    failure_details=err_row.get("error", "")[:200],
+                )
+                _gcs.write_submission_annotation(
+                    run_id, iid, json.loads(_fp.read_text()), client=gcs_client,
+                )
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 _gcs.write_row(run_id, iid, attempt, err_row, client=gcs_client)
             except Exception:  # noqa: BLE001

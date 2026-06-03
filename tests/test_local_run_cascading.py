@@ -24,7 +24,7 @@ def test_grade_in_place_writes_submission_annotation_per_task(tmp_path):
     rows_dir = tmp_path / "rows"
     rows_dir.mkdir()
 
-    submitted = "SELECT predicted"
+    submitted = "SELECT gold"
     original_gold = "SELECT gold"
 
     class FakeExecutor:

@@ -18,6 +18,10 @@ dependencies = [
     # runtime install of the `pydantic-ai` / `slayer` extras MUST resolve
     # `import bird_interact_agents...` without dev extras present.
     "sqlglot",
+    # DEV-1521: autopsy.py imports yaml at module load; claude_sdk_otf*
+    # agents import autopsy unconditionally, so pyyaml must be available
+    # in the base install (not just in the cloud/all extras).
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

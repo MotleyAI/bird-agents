@@ -67,6 +67,9 @@ def test_task_annotation_skeleton_fills_mechanical_fields(tmp_path):
     assert ann.external_knowledge == [1, 2, 3]
     assert [m.term for m in ann.masked_terms] == ["some", "aliens"]
     assert ann.provenance.task_jsonl_instance_id == "alien_1"
+    assert ann.provenance.task_jsonl_path.endswith("mini_interact.jsonl"), (
+        f"task_jsonl_path should use underscore form; got {ann.provenance.task_jsonl_path!r}"
+    )
 
 
 def test_task_annotation_skeleton_leaves_sentinels(tmp_path):
@@ -116,6 +119,9 @@ def test_submission_annotation_skeleton_fills_from_trajectory(tmp_path):
     assert ann.evaluation.phase1_against_original_gold == "pass"
     # user_sim_interaction walks the trajectory for ask_user calls.
     assert ann.user_sim_interaction.n_asks == 1
+    assert ann.task_annotation_ref.startswith("annotations/mini_interact/"), (
+        f"task_annotation_ref should use underscore form; got {ann.task_annotation_ref!r}"
+    )
 
 
 # ---------------------------------------------------------------------------

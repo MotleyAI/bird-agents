@@ -19,6 +19,7 @@ for Rule 0 (ask before encode) plus the shared encode-then-query rules.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
@@ -38,6 +39,7 @@ from bird_interact_agents.agents.claude_sdk.agent import (
 )
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
+    _make_query_before_submit_guard,
     _make_turn_budget_hook,
     _slayer_tool_names,
 )
@@ -54,6 +56,16 @@ from bird_interact_agents.harness import (
     materialize_task_db,
     slayer_mcp_stdio_config,
 )
+from bird_interact_agents.eval.annotation_io import (
+    task_annotation_path,
+)
+from bird_interact_agents.eval.autopsy import _is_genuine_miss, run_autopsy
+from bird_interact_agents.eval.grade_in_place import (
+    load_audited_gold_rows_for,
+    load_task_annotation_or_implicit,
+    normalize_sol_sql,
+)
+from bird_interact_agents.eval.tolerant_grader import grade_submission
 from bird_interact_agents.slayer_otf import resolve_otf_task_storage_dir
 from bird_interact_agents.usage import TokenUsage
 
@@ -265,6 +277,19 @@ class ClaudeSDKOtfAInteractAgent:
 
         benchmark = get_benchmark(dataset)
 
+        _ann_path = task_annotation_path(
+            benchmark=benchmark.name,
+            selected_database=db_name,
+            instance_id=instance_id,
+        )
+        _ann_from_disk = _ann_path.exists()
+        task_annotation = load_task_annotation_or_implicit(
+            benchmark=benchmark.name,
+            selected_database=db_name,
+            instance_id=instance_id,
+            amb_user_query=task_data.get("amb_user_query", ""),
+        )
+
         status = SampleStatus(
             idx=0,
             original_data=task_data,
@@ -333,8 +358,9 @@ class ClaudeSDKOtfAInteractAgent:
             }
             tool_names.extend(_slayer_tool_names())
 
-            # Per-task hook factory — never share state across tasks.
+            # Per-task hook factories — never share state across tasks.
             pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
+            pre_query_gate, post_tool_tracker = _make_query_before_submit_guard()
 
             options = ClaudeAgentOptions(
                 system_prompt=prompt,
@@ -349,7 +375,8 @@ class ClaudeSDKOtfAInteractAgent:
                     "PreToolUse": [
                         HookMatcher(
                             matcher="mcp__bird-interact-tools__submit_query",
-                            hooks=[pre_submit_gate],
+                            # ask_user gate runs first; query gate runs second.
+                            hooks=[pre_submit_gate, pre_query_gate],
                         ),
                     ],
                     "PostToolUse": [
@@ -359,6 +386,9 @@ class ClaudeSDKOtfAInteractAgent:
                         ),
                         HookMatcher(hooks=[post_nag]),
                         HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
+                        # Must be last so it captures the true last-completed
+                        # tool name after all other PostToolUse hooks have run.
+                        HookMatcher(hooks=[post_tool_tracker]),
                     ],
                 },
             )
@@ -368,7 +398,7 @@ class ClaudeSDKOtfAInteractAgent:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
                     trajectory.append(
-                        {"type": str(type(msg).__name__), "data": str(msg)[:500]}
+                        {"type": str(type(msg).__name__), "data": str(msg)}
                     )
                     accumulate_assistant_usage(accum, msg, self.model)
         except Exception as e:
@@ -419,6 +449,41 @@ class ClaudeSDKOtfAInteractAgent:
             )
 
         result = (ctx_dict or {}).get("result") or {}
+        _autopsy_result = None
+        _submitted_sql = result.get("submitted_sql") or ""
+        if _submitted_sql:
+            try:
+                _audited_rows = load_audited_gold_rows_for(
+                    benchmark=benchmark.name, instance_id=instance_id,
+                )
+                _orig_sql = normalize_sol_sql(
+                    task_data.get("original_sol_sql") or task_data.get("sol_sql"),
+                )
+                _db_path = Path(
+                    task_data.get("db_file_path")
+                    or (Path(data_path_base) / db_name / f"{db_name}.sqlite")
+                )
+                _cascade = grade_submission(
+                    task_annotation=task_annotation,
+                    audited_gold_rows=_audited_rows,
+                    original_sol_sql=_orig_sql,
+                    submitted_sql=_submitted_sql,
+                    db_path=_db_path,
+                    user_sim_n_asks=ctx_dict.get("asks_used", 0),
+                )
+                if _ann_from_disk and _is_genuine_miss(_cascade):
+                    _autopsy_result = await run_autopsy(
+                        task_annotation=task_annotation,
+                        trajectory=trajectory,
+                        slayer_storage_dir=slayer_storage_dir,
+                        miss_diagnostics=_cascade.miss_diagnostics,
+                        model=self.model,
+                    )
+            except Exception:
+                logger.exception(
+                    "[otf_ainteract] autopsy grading failed for %s; continuing without autopsy",
+                    instance_id,
+                )
         return finalize_result_row(
             {
                 "task_id": instance_id,
@@ -445,6 +510,8 @@ class ClaudeSDKOtfAInteractAgent:
                 },
                 "phase1_observation_audited": result.get("phase1_observation_audited"),
                 "phase1_observation_original": result.get("phase1_observation_original"),
+                "_autopsy": _autopsy_result,
+                "_task_annotation": task_annotation,
             },
             deleted_kb_ids=deleted_kb_ids,
             slayer_storage_dir=slayer_storage_dir,

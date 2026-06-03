@@ -222,13 +222,14 @@ async def test_local_run_invokes_inline_grader_per_task(monkeypatch, tmp_path):
     # would grade against the global sqlite, and the cascade verdict
     # could disagree with the agent's submission for purely path-routing
     # reasons.
-    expected_data_dir = str(tmp_path / "ignored_data_dir")
+    expected_data_dir = (tmp_path / "ignored_data_dir").resolve()
     for c in calls:
-        assert str(c["db_path"]).startswith(expected_data_dir), (
+        db_path = Path(c["db_path"]).resolve()
+        assert expected_data_dir in db_path.parents, (
             f"db_path must be rooted at data_dir={expected_data_dir!r}; "
             f"got db_path={c['db_path']!r}"
         )
-        assert c["db_path"].name == "alien.sqlite", (
+        assert db_path.name == "alien.sqlite", (
             f"db_path leaf must be <db>.sqlite; got {c['db_path']!r}"
         )
 
@@ -760,3 +761,135 @@ async def test_local_run_filter_ids_preserves_unrelated_rows(
     assert metrics["total_tasks"] == cp["n_dual_eval_tasks"], (
         "total_tasks and cascading_phase1.n_dual_eval_tasks MUST agree"
     )
+
+
+@pytest.mark.asyncio
+async def test_autopsy_and_task_annotation_stripped_from_local_eval_json(
+    monkeypatch, tmp_path,
+):
+    """C4: _autopsy and _task_annotation are internal pipeline keys consumed
+    by the inline grader. They must NOT appear in the published eval.json
+    results list. Pre-fix: run.py serialised them via json.dump(default=str),
+    turning Pydantic objects into ugly stringified repr — polluting the
+    public result schema."""
+    import bird_interact_agents.run as run_mod
+
+    rows = [
+        {
+            "instance_id": "alien_1",
+            "selected_database": "alien",
+            "sol_sql": ["SELECT 1"],
+            "amb_user_query": "q1",
+        },
+    ]
+    _patch_loader_returns(monkeypatch, rows)
+    monkeypatch.setattr(run_mod, "_maybe_force_wipe_otf", lambda **kw: None)
+
+    class _FakePydanticObj:
+        """Stands in for a real Pydantic model — not JSON-serialisable natively."""
+        def __str__(self):
+            return "LEAKED_PYDANTIC_OBJECT"
+
+    # Runner returns result rows WITH the internal pipeline keys.
+    async def _stub_runner(td, data_dir, patience, user_sim_model):
+        return {
+            "instance_id": td["instance_id"],
+            "database": td.get("selected_database", ""),
+            "phase1_passed": True,
+            "phase2_passed": False,
+            "total_reward": 1.0,
+            "submitted_sql": "SELECT 1",
+            "trajectory": [],
+            "usage": {},
+            "_autopsy": _FakePydanticObj(),
+            "_task_annotation": _FakePydanticObj(),
+        }
+
+    monkeypatch.setattr(run_mod, "_make_runner", lambda **kw: _stub_runner)
+
+    from bird_interact_agents.eval.annotation_schema import (
+        FailureClassification, SubmissionAnnotation, SubmissionEvaluation,
+        SubmissionMetadata, UserSimInteraction,
+    )
+
+    def _stub_grader(*, task_data, **kw):
+        out_dir = Path(kw["rows_dir"]) / task_data["instance_id"]
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ann = SubmissionAnnotation(
+            instance_id=task_data["instance_id"],
+            selected_database=task_data["selected_database"],
+            task_annotation_ref=(
+                f"annotations/mini_interact/alien/"
+                f"{task_data['instance_id']}.task.json"
+            ),
+            annotated_by="auto-inline-grader",
+            annotated_at="2026-06-02T00:00:00+00:00",
+            submission=SubmissionMetadata(
+                cloud_run_id=kw["run_id"],
+                trajectory_path=f"rows/{task_data['instance_id']}/attempt-1.json",
+            ),
+            evaluation=SubmissionEvaluation(
+                phase1_against_original_gold="pass",
+                phase1_against_audited_primary="pass",
+                phase1_against_any_audited_variant="pass",
+                phase1_against_variants=[],
+                correct_up_to_tie_order=True,
+                novel_reading_judgment=None,
+                correct_under_numeric_epsilon=True,
+                correct_under_trailing_whitespace=True,
+                correct_under_column_order=True,
+                correct_under_case_fold=True,
+                numeric_epsilon=1e-6,
+                verdict="correct",
+                matched_variant_id="primary",
+                rationale="",
+                miss_diagnostics=None,
+            ),
+            failure_classification=FailureClassification(
+                primary="no_fail",
+                agent_at_fault=False,
+                remediation_target="other",
+                details="stub",
+            ),
+            decision_point=None,
+            user_sim_interaction=UserSimInteraction(),
+        )
+        path = out_dir / "submission_annotation.json"
+        path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
+        return path
+
+    monkeypatch.setattr(run_mod, "grade_one_submission", _stub_grader)
+
+    output_path = tmp_path / "eval.json"
+    await run_mod.run_evaluation(
+        framework="claude_sdk_otf_ainteract",
+        query_mode="slayer",
+        mode="a-interact",
+        data_path="ignored",
+        data_dir=str(tmp_path / "ignored_data_dir"),
+        output_path=str(output_path),
+        concurrency=1,
+        limit=None,
+        agent_model="anthropic/claude-haiku-4-5-20251001",
+        strict=False,
+        prompt_cache=False,
+        max_depth=1,
+        slayer_storage_root=str(tmp_path / "slayer_models"),
+        slayer_setup="on-the-fly",
+        reasoning_effort=None,
+        use_audited_gold_sql=False,
+        dataset="mini-interact",
+        gold_file=None,
+        filter_ids=None,
+    )
+
+    final_eval = json.loads(output_path.read_text())
+    for r in final_eval.get("results", []):
+        assert "_autopsy" not in r, (
+            f"_autopsy leaked into eval.json result row for "
+            f"{r.get('instance_id')}: {r.get('_autopsy')!r}"
+        )
+        assert "_task_annotation" not in r, (
+            f"_task_annotation leaked into eval.json result row for "
+            f"{r.get('instance_id')}: {r.get('_task_annotation')!r}"
+        )

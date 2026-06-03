@@ -233,7 +233,7 @@ def regrade_run(
             instance_id=instance_id,
             selected_database=selected_database,
             task_annotation_ref=(
-                f"annotations/{benchmark}/{selected_database}/"
+                f"annotations/{benchmark.replace('-', '_')}/{selected_database}/"
                 f"{instance_id}.task.json"
             ),
             annotated_by="auto-regrade",
@@ -368,15 +368,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         # For postgres, db_path is used only as a db-name carrier (executor
         # uses db_path.stem). For SQLite, root at the data root for the
         # benchmark; ``benchmark_data_root`` accepts canonical and hyphenated
-        # alias forms, rejecting unknown tokens loudly.
+        # alias forms, rejecting unknown tokens loudly.  The _template.sqlite
+        # fallback supports per-task-isolated copies that use the template name.
         if _is_postgres:
             db_path = Path(selected_database)
         else:
-            db_path = (
-                paths.benchmark_data_root(args.benchmark)
-                / selected_database
-                / f"{selected_database}.sqlite"
-            )
+            _db_dir = paths.benchmark_data_root(args.benchmark) / selected_database
+            db_path = _db_dir / f"{selected_database}.sqlite"
+            if not db_path.exists():
+                _alt = _db_dir / f"{selected_database}_template.sqlite"
+                if _alt.exists():
+                    db_path = _alt
         ann = _load_task_annotation_or_implicit(
             instance_id=instance_id,
             selected_database=selected_database,

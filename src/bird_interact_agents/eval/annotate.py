@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional
 
 from bird_interact_agents import paths
-from bird_interact_agents.benchmark import benchmark_names, get_benchmark
+from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.eval.annotation_io import (
     read_submission_annotation,
     read_task_annotation,
@@ -64,9 +64,10 @@ PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
 
 
 def _benchmark_task_jsonl_name(benchmark: str) -> str:
-    if benchmark in set(benchmark_names()):
+    try:
         return get_benchmark(benchmark).data_file
-    return f"{benchmark}.jsonl"
+    except ValueError:
+        return f"{benchmark}.jsonl"
 
 
 def _masked_terms_from(task_row: dict) -> list[MaskedTerm]:
@@ -260,7 +261,7 @@ def generate_submission_annotation(
         instance_id=instance_id,
         selected_database=selected_database,
         task_annotation_ref=(
-            f"annotations/{benchmark}/{selected_database}/"
+            f"annotations/{benchmark.replace('-', '_')}/{selected_database}/"
             f"{instance_id}.task.json"
         ),
         annotated_by="auto-skeleton",
@@ -298,7 +299,12 @@ def _refresh_mechanical(existing: TaskAnnotation, fresh: TaskAnnotation) -> Task
     out.annotated_at = fresh.annotated_at
     # Sentinels mean "still pending" — re-import the sentinel only if
     # the user hasn't yet authored a real value.
-    if existing.metadata_sufficiency.rationale == PENDING_HUMAN_REVIEW:
+    if (
+        existing.metadata_sufficiency.rationale == PENDING_HUMAN_REVIEW
+        and existing.metadata_sufficiency.verdict == fresh.metadata_sufficiency.verdict
+        and existing.metadata_sufficiency.evidence_sources_consulted
+            == fresh.metadata_sufficiency.evidence_sources_consulted
+    ):
         out.metadata_sufficiency = fresh.metadata_sufficiency
     return out
 

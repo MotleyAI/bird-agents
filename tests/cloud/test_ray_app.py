@@ -966,6 +966,7 @@ def test_undispatched_pending_iids_get_error_rows(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=factory_that_also_fails,
+            benchmark="mini_interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")
@@ -978,6 +979,71 @@ def test_undispatched_pending_iids_get_error_rows(
             row = _json.loads(v)
             iids_with_rows.add(row["instance_id"])
     assert iids_with_rows == {"db_a_1", "db_a_2", "db_a_3"}
+
+
+def test_error_path_annotations_use_selected_database(
+    monkeypatch: pytest.MonkeyPatch, fake_gcs_bucket
+):
+    """C3: error-path annotations must use the real selected_database from
+    task_data_by_id, not the empty string that was previously hardcoded.
+    An empty selected_database causes the task_annotation_ref path to have
+    an empty directory segment, breaking cross-run annotation merges."""
+    import json as _json
+
+    client, store = fake_gcs_bucket
+
+    class _DeadActor:
+        class _Method:
+            def remote(self, task_data):
+                raise RuntimeError("dead handle")
+
+        def __getattr__(self, name):
+            return _DeadActor._Method()
+
+    def factory_that_also_fails():
+        raise RuntimeError("no actors")
+
+    hb = ray_app.HeartbeatWriter(
+        run_id=RUN_ID, total=2, attempt=1, ray_job_id="x",
+        client=client, interval_s=99,
+    )
+    hb.start()
+    try:
+        ray_app._run_with_actors(
+            actors=[_DeadActor()],
+            instance_ids=["households_1", "households_2"],
+            task_data_by_id={
+                "households_1": {
+                    "instance_id": "households_1",
+                    "selected_database": "households",
+                },
+                "households_2": {
+                    "instance_id": "households_2",
+                    "selected_database": "households",
+                },
+            },
+            run_id=RUN_ID,
+            attempt=1,
+            gcs_client=client,
+            heartbeat=hb,
+            actor_factory=factory_that_also_fails,
+            benchmark="mini_interact",
+        )
+    finally:
+        hb.stop_and_flush(terminal_state="done")
+
+    # Annotations must reference the real selected_database ("households"),
+    # not an empty string which would produce a broken path segment.
+    for k, v in store.items():
+        if k.endswith("submission_annotation.json"):
+            ann = _json.loads(v)
+            ref = ann.get("task_annotation_ref", "")
+            assert "/households/" in ref, (
+                f"annotation task_annotation_ref missing 'households': {ref!r}"
+            )
+            assert "//" not in ref, (
+                f"annotation task_annotation_ref has empty path segment: {ref!r}"
+            )
 
 
 def test_dispatch_failure_mints_replacement_actor(
@@ -1044,6 +1110,7 @@ def test_dispatch_failure_mints_replacement_actor(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=factory,
+            benchmark="mini_interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")
@@ -1326,6 +1393,7 @@ def test_run_with_actors_writes_actor_lost_row_for_dying_actor(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=lambda: _FakeActor(),
+            benchmark="mini_interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")
@@ -1387,6 +1455,7 @@ def test_dispatch_failure_writes_error_row(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=lambda: _BoomActor(),
+            benchmark="mini_interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")
