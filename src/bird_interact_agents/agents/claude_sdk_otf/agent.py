@@ -299,9 +299,9 @@ class ClaudeSDKOtfAgent:
         # ``get_benchmark`` so documented aliases are accepted (matches
         # `_validate_framework_dataset_mode`'s behavior).
         dataset = task_data.get("dataset") or "mini_interact"
-        if get_benchmark(dataset).name != "livesqlbench":
+        if get_benchmark(dataset).name not in ("livesqlbench", "livesqlbench_postgres"):
             raise ValueError(
-                "claude_sdk_otf is bound to --dataset livesqlbench "
+                "claude_sdk_otf is bound to --dataset livesqlbench / livesqlbench_postgres "
                 "(use --framework claude_sdk_otf_ainteract for "
                 f"mini_interact); got dataset={dataset!r}"
             )

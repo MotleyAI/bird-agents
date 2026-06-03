@@ -645,7 +645,7 @@ async def test_recursive_real_resolver_passes_benchmark_to_paths(monkeypatch, tm
         agent_mod._paths, "slayer_otf_cache_root", spy_cache_root,
     )
 
-    async def fake_ensure_db_cache(db, *, cache_root, mini_interact_root, force=False):
+    async def fake_ensure_db_cache(db, *, cache_root, mini_interact_root, benchmark=None, force=False):
         from bird_interact_agents.slayer_otf import cache as cache_mod
         Path(cache_root).mkdir(parents=True, exist_ok=True)
         (Path(cache_root) / db).mkdir(parents=True, exist_ok=True)

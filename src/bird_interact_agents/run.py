@@ -192,15 +192,16 @@ def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) 
         )
 
 
-# (framework -> (bound dataset, bound mode)). DEV-1507: claude_sdk_otf is
+# (framework -> (allowed datasets, bound mode)). DEV-1507: claude_sdk_otf is
 # the livesqlbench/one-shot flavor; claude_sdk_otf_ainteract is the
 # mini_interact/a-interact flavor. Every other framework is unbound —
-# they don't appear here.
-_FRAMEWORK_DATASET_MODE_BINDING = {
-    "claude_sdk_otf": ("livesqlbench", "one-shot"),
-    "claude_sdk_otf_ainteract": ("mini_interact", "a-interact"),
-    "claude_sdk_otf_raw": ("livesqlbench", "one-shot"),
-    "claude_sdk_otf_ainteract_raw": ("mini_interact", "a-interact"),
+# they don't appear here. DEV-1523: postgres variants share the same agents
+# so both the sqlite and postgres dataset names are accepted per framework.
+_FRAMEWORK_DATASET_MODE_BINDING: dict[str, tuple[frozenset[str], str]] = {
+    "claude_sdk_otf": (frozenset({"livesqlbench", "livesqlbench_postgres"}), "one-shot"),
+    "claude_sdk_otf_ainteract": (frozenset({"mini_interact", "mini_interact_postgres"}), "a-interact"),
+    "claude_sdk_otf_raw": (frozenset({"livesqlbench", "livesqlbench_postgres"}), "one-shot"),
+    "claude_sdk_otf_ainteract_raw": (frozenset({"mini_interact", "mini_interact_postgres"}), "a-interact"),
 }
 
 
@@ -229,10 +230,10 @@ def _validate_framework_dataset_mode(
     # confusing error (Codex + CodeRabbit on PR #10). The CLI normalises
     # at the argparse boundary, but the programmatic surface doesn't.
     canonical_dataset = get_benchmark(dataset).name
-    bound_dataset, bound_mode = bound
-    if canonical_dataset != bound_dataset:
+    allowed_datasets, bound_mode = bound
+    if canonical_dataset not in allowed_datasets:
         raise ValueError(
-            f"--framework {framework} is bound to --dataset {bound_dataset!r}; "
+            f"--framework {framework} is bound to --dataset {sorted(allowed_datasets)!r}; "
             f"got --dataset {dataset!r}",
         )
     if mode != bound_mode:
