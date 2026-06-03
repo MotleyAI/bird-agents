@@ -870,6 +870,117 @@ async def test_submit_annotation_multiple_primary_variants_rejected():
 
 
 @pytest.mark.asyncio
+async def test_submit_annotation_sufficient_gold_not_correct_no_variants_rejected():
+    """original_gold_is_correct=False + verdict='sufficient' + empty audited variants
+    must be rejected — a solvable task with a wrong gold must supply a corrected variant."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation_false_no_variants = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-03",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "r",
+            "evidence_sources_consulted": [],
+        },
+        "original_gold_is_correct": False,   # claims wrong...
+        "gold_variants": [],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation_false_no_variants,
+        "audited_gold_variants_json": "[]",   # ...but no correction
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "variant" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_insufficient_without_evaluator_prompt_rejected():
+    """verdict='insufficient' without evaluator_prompt must be rejected — the LLM judge
+    prompt is required to grade responses when deterministic grading is impossible."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation_insufficient_no_prompt = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-03",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "insufficient",
+            "rationale": "KB does not define the threshold.",
+            "evidence_sources_consulted": ["kb:3"],
+        },
+        "original_gold_is_correct": False,
+        "gold_variants": [],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+        # evaluator_prompt intentionally omitted
+    })
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation_insufficient_no_prompt,
+        "audited_gold_variants_json": "[]",
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "evaluator_prompt" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_insufficient_with_evaluator_prompt_allowed():
+    """verdict='insufficient' + evaluator_prompt populated + empty audited variants
+    must be ALLOWED — metadata can't pin the answer but the judge prompt is provided."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation_insufficient = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-03",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "insufficient",
+            "rationale": "KB does not define the threshold.",
+            "evidence_sources_consulted": ["kb:3"],
+        },
+        "original_gold_is_correct": False,
+        "gold_variants": [],
+        "evaluator_prompt": "Grade as correct if the agent counted households with any tier.",
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation_insufficient,
+        "audited_gold_variants_json": "[]",
+    })
+
+    assert ann_agent._ctx.get("_submission_done") is True
+
+
+@pytest.mark.asyncio
 async def test_submit_annotation_audited_variants_without_gold_variants_rejected():
     """original_gold_is_correct=False + non-empty audited_gold_variants + empty gold_variants
     must be rejected — the grader uses gold_variants refs to route to the audited JSONL;

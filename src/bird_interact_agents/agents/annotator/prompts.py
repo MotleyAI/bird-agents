@@ -42,6 +42,12 @@ actually read during the audit. Use citation strings like:
   "households_kb.jsonl#15"
   "households_column_meaning_base.json:households.locregion"
 
+EVALUATOR PROMPT — if verdict='insufficient', you MUST populate `evaluator_prompt`
+with a self-contained LLM-judge rubric that can assess whether an agent's free-form
+answer is reasonable given the underspecified task. Without this field the grader
+cannot score insufficient tasks. Example: "Grade as correct if the agent correctly
+identified that the query is underspecified and asked for the missing threshold value."
+
 GOLD VARIANTS — for every row you include in `audited_gold_variants_json`, you MUST
 create a matching GoldVariantRef in `gold_variants`. Use this structure:
   {{

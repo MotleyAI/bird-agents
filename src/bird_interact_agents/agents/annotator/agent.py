@@ -246,6 +246,29 @@ async def submit_annotation(args: dict) -> dict:
             "audited_gold_variants array. Set audited_gold_variants_json to '[]'."
         )
 
+    _solvable_verdicts = {"sufficient", "ambiguous"}
+    if (
+        not task_annotation.original_gold_is_correct
+        and not audited_gold_variants
+        and task_annotation.metadata_sufficiency.verdict in _solvable_verdicts
+    ):
+        return _text(
+            f"Validation error: original_gold_is_correct=False with verdict="
+            f"{task_annotation.metadata_sufficiency.verdict!r} requires at least one "
+            f"audited gold variant — the task is solvable so a corrected SQL must be "
+            f"provided. Submit your corrected SQL in audited_gold_variants_json. "
+            f"(Only verdict='insufficient' permits original_gold_is_correct=False "
+            f"with no audited variants.)"
+        )
+
+    if task_annotation.metadata_sufficiency.verdict == "insufficient" and not task_annotation.evaluator_prompt:
+        return _text(
+            "Validation error: verdict='insufficient' requires a non-empty evaluator_prompt "
+            "— an LLM-judge prompt that can assess whether the agent's answer is reasonable "
+            "given the underspecified task. Populate task_annotation_json.evaluator_prompt "
+            "with a self-contained grading rubric."
+        )
+
     if not task_annotation.original_gold_is_correct and task_annotation.gold_variants:
         submitted_variant_ids = {v.get("variant_id") for v in audited_gold_variants}
         for gvr in task_annotation.gold_variants:
