@@ -681,6 +681,7 @@ def build_annotator_manifest(
         "benchmark_data_prefix": benchmark_data_prefix,
         "agent_model": args.agent_model,
         "effort": getattr(args, "effort", "medium"),
+        "override": getattr(args, "override", False),
         "instance_ids": list(args.instance_ids),
         "render_inputs": {
             "workers": args.workers,
