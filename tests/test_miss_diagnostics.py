@@ -1168,45 +1168,73 @@ def test_back_compat_old_submission_evaluation_validates():
 
 
 # ---------------------------------------------------------------------------
-# Defensive: multi-statement gold is rejected
+# Codex r8: multi-statement gold (CREATE TEMP + SELECT, DDL prelude, etc.)
+# MUST NOT crash diagnostics. The pre-fix assertion bubbled an
+# AssertionError out of ``_compute_miss_diagnostics`` and the cloud +
+# local fallbacks dropped the structured ``miss_patterns`` for the
+# entire row. The fix uses the LAST statement of the gold's
+# ``audited_sol_sql`` list for sqlglot parsing — that's the SELECT
+# query under diagnosis; the setup statements don't constrain miss
+# patterns.
 # ---------------------------------------------------------------------------
 
 
-def test_multi_statement_audited_gold_raises_assertion(tmp_path: Path):
-    """Diagnostics only support single-statement gold (the contract for
-    SELECT tasks). A multi-statement audited_sol_sql must trigger an
-    explicit AssertionError so the bug doesn't silently parse the
-    wrong statement. Multi-statement M-tasks are out of scope."""
-    import pytest as _pytest
+def test_multi_statement_audited_gold_uses_last_for_sql_signals(
+    tmp_path: Path,
+):
+    """A 2-statement audited gold (DDL setup + SELECT) must compute
+    diagnostics successfully; the sqlglot-derived signals come from
+    the SELECT statement, NOT the DDL."""
     db = _build_db(tmp_path)
-    with _pytest.raises(AssertionError, match="single-statement"):
-        _grade(
-            db=db,
-            submitted_sql="SELECT id FROM t1 WHERE id IN (4, 5)",
-            audited_sol_sql_per_variant=[
-                ("primary", True, [
-                    "CREATE TEMP TABLE tmp AS SELECT id FROM t1",
-                    "SELECT id FROM tmp",
-                ]),
-            ],
-        )
-
-
-def test_multi_statement_original_gold_raises_assertion(tmp_path: Path):
-    """Codex major #7 — the single-statement assertion applies to
-    original_sol_sql too, not just audited. Multi-statement original
-    gold must raise the same explicit AssertionError."""
-    import pytest as _pytest
-    db = _build_db(tmp_path)
-    with _pytest.raises(AssertionError, match="single-statement"):
-        _grade(
-            db=db,
-            submitted_sql="SELECT id FROM t1 WHERE id IN (4, 5)",
-            audited_sol_sql_per_variant=[
-                ("primary", True, ["SELECT id FROM t1 WHERE id IN (1, 2)"]),
-            ],
-            original_sol_sql=[
+    # Agent reads from t1; gold's "real" reading is the SELECT against
+    # a temp table built from t1. Both reference t1 via the SELECT.
+    verdict = _grade(
+        db=db,
+        submitted_sql="SELECT id FROM t1 WHERE id = 9999",  # disjoint -> miss
+        audited_sol_sql_per_variant=[
+            ("primary", True, [
                 "CREATE TEMP TABLE tmp AS SELECT id FROM t1",
                 "SELECT id FROM tmp",
-            ],
-        )
+            ]),
+        ],
+    )
+    md = verdict.miss_diagnostics
+    assert md is not None, (
+        "multi-statement audited gold must NOT crash diagnostics; "
+        "got miss_diagnostics=None"
+    )
+    # The best-variant SQL parse used the SELECT (the LAST statement),
+    # not the CREATE TEMP TABLE (which sqlglot would also parse but
+    # would yield empty / wrong table extraction).
+    assert md.best_variant_sql_parse_ok is True
+    assert md.best_variant_tables_referenced == ["tmp"], (
+        f"best_variant_tables_referenced must be parsed from the LAST "
+        f"statement (SELECT id FROM tmp), got "
+        f"{md.best_variant_tables_referenced!r}"
+    )
+
+
+def test_multi_statement_original_gold_does_not_crash_diagnostics(
+    tmp_path: Path,
+):
+    """Original gold can also carry a multi-statement list (the
+    same DDL + SELECT shape). Diagnostics must still compute — the
+    original gold is only used for the ``original_gold_row_count``
+    field, not sqlglot parsing — so any number of statements is OK
+    as long as the cascade ran with them."""
+    db = _build_db(tmp_path)
+    verdict = _grade(
+        db=db,
+        submitted_sql="SELECT id FROM t1 WHERE id = 9999",
+        audited_sol_sql_per_variant=[
+            ("primary", True, ["SELECT id FROM t1 WHERE id IN (1, 2)"]),
+        ],
+        original_sol_sql=[
+            "CREATE TEMP TABLE tmp AS SELECT id FROM t1",
+            "SELECT id FROM tmp",
+        ],
+    )
+    md = verdict.miss_diagnostics
+    assert md is not None, (
+        "multi-statement original gold must not crash diagnostics"
+    )

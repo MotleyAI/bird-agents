@@ -147,6 +147,18 @@ def compare_tie_order(
     if not orderby_indices:
         return _set_equal(pred, gold)
 
+    # Codex r12: a wrong-projection-width agent submission is a normal
+    # miss (e.g. forgot a column), but ``row[i]`` would raise IndexError
+    # below and bubble out of the grader, forcing the caller into a
+    # generic fail-everything fallback annotation. Bounds-check the
+    # ORDER BY indices against the NARROWEST row on either side first;
+    # any out-of-range index means tie-order cannot match → return False
+    # cleanly (same disposition as the row-count check above).
+    max_idx = max(orderby_indices)
+    rows_for_width = list(pred) + list(gold)
+    if rows_for_width and max_idx >= min(len(r) for r in rows_for_width):
+        return False
+
     def _key(row: Sequence) -> Tuple:
         return tuple(row[i] for i in orderby_indices)
 
@@ -278,9 +290,25 @@ def compare_column_order(
         return False
     pred_l = [c.lower() for c in pred_cols]
     gold_l = [c.lower() for c in gold_cols]
+    # Codex r12: duplicate column names make "column order tolerance"
+    # ill-defined. ``set(...)`` collapses duplicates, then
+    # ``pred_l.index(c)`` returns the FIRST matching position for every
+    # later occurrence — so e.g. pred ``[a, b, a]`` against gold
+    # ``[a, a, b]`` would map both gold "a" positions to pred's first
+    # "a" column and silently ignore the second pred "a" column's
+    # actual value, falsely passing N8. Reject the case at the boundary
+    # — duplicate-named projections aren't a column-order miss, they're
+    # a separate quality issue (likely a join-collision in the query).
+    if (
+        len(pred_l) != len(set(pred_l))
+        or len(gold_l) != len(set(gold_l))
+    ):
+        return False
     if set(pred_l) != set(gold_l):
         return False
-    # Permutation: position in pred for each gold column.
+    # Permutation: position in pred for each gold column. Safe because
+    # the duplicate-name guard above ensures each gold name appears
+    # exactly once on each side.
     perm = [pred_l.index(c) for c in gold_l]
     aligned = [tuple(r[i] for i in perm) for r in pred]
     return _set_equal(aligned, gold)
@@ -621,9 +649,30 @@ def grade_submission(
         agent_sql_error_excerpt = f"{type(exc).__name__}: {exc}"[:200]
         pred_rows, pred_cols = [], []
 
-    orig_rows, orig_cols = _multi_sql_execute(
-        list(original_sol_sql), db_path=db_path, conn=conn, executor=executor,
-    )
+    # Codex r9: original gold execution was unguarded. If the source row's
+    # ``sol_sql`` is invalid or no longer executes against the current DB
+    # schema, the unguarded ``_multi_sql_execute`` call bubbled out of the
+    # grader and the cloud/local fallbacks wrote a generic fail-everything
+    # annotation — losing any valid audited-variant passes (N2/N3) the
+    # row would have earned. Now we degrade gracefully: ``orig_rows = []``
+    # combined with the ``original_sql_executed_ok = False`` signal makes
+    # N1 effectively False (and the cell-level tier comparators skip the
+    # ``__original__`` fallback), so audited variants continue to be
+    # evaluated normally.
+    original_sql_executed_ok = True
+    try:
+        orig_rows, orig_cols = _multi_sql_execute(
+            list(original_sol_sql),
+            db_path=db_path, conn=conn, executor=executor,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "original gold execution failed; degrading N1 to False "
+            "so audited variants can still grade. instance=%s",
+            task_annotation.instance_id,
+        )
+        orig_rows, orig_cols = [], []
+        original_sql_executed_ok = False
 
     variant_results: list[tuple[dict, Sequence[Sequence], Sequence[str]]] = []
     for v in audited_gold_rows:
@@ -658,7 +707,9 @@ def grade_submission(
     # mark N1 as a strict pass whenever the agent's SQL also returns
     # empty (execution failure or genuinely empty result). Treat
     # missing-gold as ungradable for N1 instead of as an empty bag.
-    if not original_sol_sql:
+    # Also degrade N1 when the original gold FAILED TO EXECUTE
+    # (Codex r9) — same false-pass concern.
+    if not original_sol_sql or not original_sql_executed_ok:
         n1 = False
     else:
         n1 = _set_equal(pred_rows, orig_rows)
@@ -698,13 +749,16 @@ def grade_submission(
         candidates = (
             [(primary[0], primary[1])] if primary else []
         ) + [(v[0], v[1]) for v in variant_results if not v[0].get("primary")]
-        if not candidates and original_sol_sql:
+        if not candidates and original_sol_sql and original_sql_executed_ok:
             # No variants → fall back to original gold itself. Gated on
-            # ``original_sol_sql`` because ``orig_rows`` is also ``[]``
-            # when no source gold exists, and ``compare_tie_order([], [])``
-            # returns True via set equality — without this guard a
-            # missing-gold + empty-agent row pair would falsely pass at
-            # N4 (and propagate as ``valid_interpretation`` even though
+            # ``original_sol_sql`` (round 3, missing-gold) AND on
+            # ``original_sql_executed_ok`` (Codex r9, original-exec
+            # failure) because ``orig_rows`` is ``[]`` in both cases;
+            # ``compare_tie_order([], [])`` returns True via set
+            # equality — without these guards a missing- or
+            # unexecutable-gold + empty-agent row pair would falsely
+            # pass at N4 (and propagate as ``valid_interpretation``
+            # even though
             # nothing was actually compared).
             candidates = [({}, orig_rows)]
         for v_meta, v_rows in candidates:
@@ -755,13 +809,15 @@ def grade_submission(
             novel_judgment = None
 
     # 6) N6/N7/N8/N9 — cell-level relaxations applied across all variants.
-    # When ``original_sol_sql`` is empty, ``orig_rows`` is also ``[]`` and
-    # every cell-level comparator returns True on the ``([], [])`` pair
-    # (bag equality holds vacuously). Drop the ``__original__`` fallback
-    # from the iteration list in that case — same guard as the N4 block,
-    # otherwise a missing-gold + empty-agent row would cascade-pass at N6.
+    # When ``original_sol_sql`` is empty OR its execution failed,
+    # ``orig_rows`` is ``[]`` and every cell-level comparator returns
+    # True on the ``([], [])`` pair (bag equality holds vacuously).
+    # Drop the ``__original__`` fallback from the iteration list in
+    # both cases — same guard as the N4 block (round 3 + Codex r9),
+    # otherwise a missing- or unexecutable-gold + empty-agent row
+    # would cascade-pass at N6.
     _comparator_targets: list = list(variant_results)
-    if original_sol_sql:
+    if original_sol_sql and original_sql_executed_ok:
         _comparator_targets.append(
             ({"variant_id": "__original__"}, orig_rows, orig_cols),
         )
@@ -1071,23 +1127,17 @@ def _compute_miss_diagnostics(
     SQL-derived signals are populated only when sqlglot parsing
     succeeds for the relevant side; otherwise the corresponding
     Optional[T] field stays None and ``sql_parse_error`` lands in the
-    flag list. Multi-statement gold (CREATE TEMP + final SELECT)
-    triggers a defensive AssertionError — the SELECT-task contract
-    is single-statement.
+    flag list.
+
+    Multi-statement gold (CREATE TEMP + final SELECT, etc.) is
+    handled by using the LAST statement for sqlglot parsing — that's
+    the SELECT query that actually produced the rowset under
+    diagnosis; the preceding setup statements don't constrain the
+    miss patterns. Pre-fix this path asserted single-statement gold
+    and the AssertionError leaked out of grading, causing the cloud
+    + local fallbacks to drop the structured ``miss_patterns`` for
+    multi-statement misses (Codex r8).
     """
-    # Defensive guards (single-statement gold contract).
-    for v_meta, _v_rows, _v_cols in variant_results:
-        v_sqls = list(v_meta.get("audited_sol_sql") or [])
-        assert len(v_sqls) <= 1, (
-            f"diagnostics only support single-statement audited_sol_sql; "
-            f"variant {v_meta.get('variant_id')!r} has {len(v_sqls)} stmts "
-            f"(multi-statement is M-task territory, out of scope)"
-        )
-    assert len(original_sol_sql) <= 1, (
-        f"diagnostics only support single-statement original_sol_sql; "
-        f"got {len(original_sol_sql)} stmts (multi-statement is M-task "
-        f"territory, out of scope)"
-    )
     if not variant_results:
         # Should be impossible (cascade would short-circuit) but guard.
         raise RuntimeError(
@@ -1098,7 +1148,12 @@ def _compute_miss_diagnostics(
         pred_rows=pred_rows, variant_results=variant_results,
     )
     best_variant_id = str(best_meta.get("variant_id") or "")
-    best_sql = (best_meta.get("audited_sol_sql") or [""])[0]
+    # Multi-statement gold: the LAST statement is the SELECT under
+    # diagnosis. Empty list → use empty string so the parse fails and
+    # we surface ``sql_parse_error`` (preserving the round-3 missing-
+    # gold guard pattern).
+    _best_sql_list = list(best_meta.get("audited_sol_sql") or [])
+    best_sql = _best_sql_list[-1] if _best_sql_list else ""
 
     overlap = _bag_overlap(pred_rows, best_rows)
     relation = _bag_relation(pred=pred_rows, gold=best_rows)

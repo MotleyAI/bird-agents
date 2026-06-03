@@ -567,8 +567,6 @@ def _run_one_in_actor(
     finally:
         pass
 
-    _gcs.write_row(run_id, iid, attempt, row, client=gcs_client)
-
     # DEV-1515: inline grader produces a SubmissionAnnotation per task
     # (cascading verdict + Tier 2 informational). Failure here MUST NOT
     # block the row/log upload — it's diagnostic, not result-of-record.
@@ -580,6 +578,17 @@ def _run_one_in_actor(
     # (unbound data_dir, missing submitted_sql, broken gold, grader
     # exception) we fall back to writing + uploading a fail-everything
     # annotation — mirrors ``run._grade_local_row``.
+    #
+    # Codex r7 ordering: upload the annotation BEFORE the attempt row.
+    # ``driver.wait_until_done`` returns ``done`` when
+    # ``len(attempts) >= total`` (i.e. once every attempt row blob
+    # exists in GCS). Non-detached ``submit`` then immediately calls
+    # ``fetch``; if the row landed before the annotation, fetch could
+    # race the in-flight annotation upload and the cascade aggregator
+    # would either drop ``cascading_phase1`` entirely or surface
+    # ``cascading_phase1_error``. Uploading the annotation first makes
+    # the row blob the canonical "task fully done, including
+    # annotation" marker.
     _grader_data_dir = locals().get("data_dir")
     annotation_dir = Path(tempfile.mkdtemp(prefix="bird_submission_annot_"))
     _row_submitted_sql = row.get("submitted_sql")
@@ -625,6 +634,7 @@ def _run_one_in_actor(
             predicted_row_count=None,
             task_annotation=row.get("_task_annotation"),
             autopsy_result=row.get("_autopsy"),
+            attempt=attempt,
         )
         _gcs.write_submission_annotation(
             run_id, iid, json.loads(ann_path.read_text()),
@@ -641,7 +651,7 @@ def _run_one_in_actor(
                                       or "<unknown>"),
                 benchmark=_cloud_benchmark(cfg),
                 run_id=run_id,
-                trajectory_path=f"rows/{iid}/attempt-1.json",
+                trajectory_path=f"rows/{iid}/attempt-{attempt}.json",
                 failure_details=(
                     f"cloud inline grader raised: "
                     f"{type(grader_exc).__name__}: {grader_exc}"
@@ -658,6 +668,11 @@ def _run_one_in_actor(
             traceback.print_exc()
     finally:
         shutil.rmtree(annotation_dir, ignore_errors=True)
+
+    # Codex r7: annotation upload is now BEFORE the attempt row write,
+    # so ``wait_until_done`` (which counts attempt rows) only sees the
+    # row after the cascade annotation has landed in GCS.
+    _gcs.write_row(run_id, iid, attempt, row, client=gcs_client)
 
     try:
         log_bytes = log_tmp.read_bytes() if log_tmp.exists() else b""

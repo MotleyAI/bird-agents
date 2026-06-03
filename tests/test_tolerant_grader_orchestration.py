@@ -981,6 +981,87 @@ def test_tier2_populated_on_grader_output():
 # ---------------------------------------------------------------------------
 
 
+def test_unexecutable_original_gold_does_not_kill_audited_variant_pass():
+    """Codex r9: when ``original_sol_sql`` raises at executor time
+    (invalid SQL, missing table after schema drift, …) the grader MUST
+    NOT bubble the exception out. It should degrade N1 to False but
+    let audited variants grade normally, so a valid N2/N3 pass survives
+    the broken original gold."""
+    from bird_interact_agents.eval.tolerant_grader import grade_submission
+
+    submitted = "SELECT predicted"
+    bad_original = "SELECT * FROM nonexistent_table"
+    audited_sql = "SELECT predicted"
+    executor = FakeExecutor({
+        submitted: ([(42,)], ["x"]),
+        audited_sql: ([(42,)], ["x"]),
+        # NB: ``bad_original`` is NOT in the executor's responses dict;
+        # FakeExecutor raises AssertionError on unknown SQL, which the
+        # grader's new try/except catches.
+    })
+    ann = _make_task_annotation()
+    gold_rows = [_audited_row(
+        instance_id="alien_1", variant_id="primary", primary=True,
+        audited_sol_sql=[audited_sql],
+    )]
+    verdict = grade_submission(
+        task_annotation=ann,
+        audited_gold_rows=gold_rows,
+        original_sol_sql=[bad_original],
+        submitted_sql=submitted,
+        db_path=Path("/dev/null"),
+        conn=None,
+        executor=executor,
+    )
+    # Original failed → N1 is False (no bogus pass against empty
+    # orig_rows). But N2/N3 are evaluated against the audited variant
+    # which DOES execute and matches the agent's rowset.
+    assert verdict.n1_original_gold is False, (
+        "N1 must NOT pass via _set_equal([], []) when original gold "
+        "failed to execute"
+    )
+    assert verdict.n2_audited_primary is True
+    assert verdict.n3_any_audited_variant is True
+
+
+def test_unexecutable_original_with_empty_agent_does_not_pass_n4(
+):
+    """Companion guard: original SQL fails AND agent rowset is empty.
+    Pre-fix this would cascade-pass at N4-N9 via the __original__
+    fallback's vacuous bag equality. Now both fallback gates are
+    closed."""
+    from bird_interact_agents.eval.tolerant_grader import grade_submission
+
+    submitted = "SELECT empty"
+    bad_original = "SELECT * FROM nonexistent_table"
+    executor = FakeExecutor({
+        submitted: ([], ["x"]),
+        # bad_original raises AssertionError, caught by grader.
+    })
+    ann = _make_task_annotation()
+    verdict = grade_submission(
+        task_annotation=ann,
+        # No audited variants either — the test isolates the
+        # __original__ fallback path.
+        audited_gold_rows=[],
+        original_sol_sql=[bad_original],
+        submitted_sql=submitted,
+        db_path=Path("/dev/null"),
+        conn=None,
+        executor=executor,
+    )
+    for tier in (
+        "n1_original_gold", "n2_audited_primary",
+        "n3_any_audited_variant", "n4_tie_order",
+        "n5_llm_judge", "n6_numeric_epsilon",
+        "n7_trailing_whitespace", "n8_column_order", "n9_case_fold",
+    ):
+        assert getattr(verdict, tier) is False, (
+            f"{tier} must be False; got "
+            f"{getattr(verdict, tier)} (cascade={verdict})"
+        )
+
+
 def test_missing_gold_does_not_collapse_to_n4_pass():
     """No original gold, no audited variants — every cascade tier MUST
     stay False, no matter what the agent's rowset looks like (including

@@ -117,15 +117,41 @@ def generate_task_annotation(
     )
 
 
-def _user_sim_interaction_from_trajectory(traj: list[dict]) -> UserSimInteraction:
+def _user_sim_interaction_from_trajectory(traj) -> UserSimInteraction:
+    """Build the ``UserSimInteraction`` summary from a trajectory.
+
+    Several agent flavors (``pydantic_ai_otf_encode``,
+    ``pydantic_ai_recursive``) emit ``trajectory`` as a DICT shape
+    (``{"final_output_excerpt": ..., "agents": [...]}``) instead of
+    the per-turn-step list this helper was originally designed for.
+    Without the type check below, ``list(dict_traj)`` at the call
+    site would yield the dict's KEYS (strings); iterating and calling
+    ``item.get("role")`` then raises ``AttributeError`` on a ``str``
+    and the whole grader-fallback / skeleton-build path crashes after
+    the cascade has already computed cleanly (Codex r10).
+
+    Contract: any non-list-of-dicts shape degrades to a zero-asks
+    ``UserSimInteraction()`` default. The per-step path stays the
+    same for the genuine list-of-dicts case.
+    """
+    if not isinstance(traj, list):
+        return UserSimInteraction()
     n_asks = 0
     responses: list[UserSimResponseSummary] = []
-    for i, item in enumerate(traj or []):
+    for i, item in enumerate(traj):
+        if not isinstance(item, dict):
+            # Mixed shape (or list of strings from ``list(dict)``) —
+            # skip non-dict entries instead of raising on ``.get()``.
+            continue
         if item.get("role") == "tool_call" and item.get("name") == "ask_user":
             n_asks += 1
         elif item.get("role") in ("user_sim", "user") and i > 0:
             prev = traj[i - 1]
-            if prev.get("role") == "tool_call" and prev.get("name") == "ask_user":
+            if (
+                isinstance(prev, dict)
+                and prev.get("role") == "tool_call"
+                and prev.get("name") == "ask_user"
+            ):
                 # Recently followed an ask — record short summary.
                 txt = str(item.get("content") or "")
                 responses.append(UserSimResponseSummary(
@@ -212,7 +238,11 @@ def generate_submission_annotation(
     attempt_path = Path(rows_dir) / instance_id / "attempt-1.json"
     attempt = json.loads(attempt_path.read_text())
     submitted_sql = attempt.get("submitted_sql", "")
-    traj = list(attempt.get("trajectory", []) or [])
+    # Don't wrap with ``list(...)`` — dict trajectories from
+    # pydantic_ai_otf_encode etc. would coerce to a list of keys.
+    # ``_user_sim_interaction_from_trajectory`` handles non-list
+    # shapes defensively (Codex r10).
+    traj = attempt.get("trajectory") or []
     usage = attempt.get("usage", {}) or {}
 
     cascade = grader(

@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import logging
+import shutil
 import statistics
 import time
 from pathlib import Path
@@ -998,7 +999,30 @@ async def run_evaluation(
     # cloud worker (``cloud.ray_app._grade_one_submission``) — without
     # this, local runs would silently lose the N1-N9 cascade metrics
     # whenever audited gold / per-task annotations are present.
+    #
+    # Codex r9: ``aggregate_cascading_phase1`` walks EVERY subdir under
+    # ``rows_dir`` to compute ``n_dual_eval_tasks``. Reusing the same
+    # ``output_dir`` for a fresh run (different ``--limit`` /
+    # ``--instance-id`` subset) would otherwise carry forward stale
+    # annotations from the prior pass, inflating the denominator and
+    # rewriting ``phase1_count`` / ``phase1_rate`` from the union of
+    # old + new. Wipe per-instance subdirs that THIS run is about to
+    # touch (or the whole rows dir when no filter is set) so the
+    # aggregator only sees fresh annotations. Mirrors the round-2
+    # regrade.py reset pattern.
     rows_dir = output_dir / "rows"
+    if rows_dir.exists():
+        if filter_ids is None:
+            # Full run — wipe everything.
+            shutil.rmtree(rows_dir, ignore_errors=True)
+        else:
+            # Filtered run — reset ONLY the subdirs this run will
+            # overwrite, so unrelated instances from a prior pass
+            # survive (and still contribute to the cascade block).
+            _wanted = {str(t.get("instance_id") or "") for t in tasks}
+            for sub in list(rows_dir.iterdir()):
+                if sub.is_dir() and sub.name in _wanted:
+                    shutil.rmtree(sub, ignore_errors=True)
     rows_dir.mkdir(parents=True, exist_ok=True)
     _benchmark_canonical = b.name
 
@@ -1043,8 +1067,15 @@ async def run_evaluation(
                 ),
             )
             return
+        # Root the per-task sqlite at the caller-provided ``data_dir``
+        # (the same path the agent's SQL executed against) — NOT the
+        # global ``paths.benchmark_data_root``. Otherwise an alternate
+        # checkout, a tmp fixture, or a ``BIRD_DB_PATH`` override would
+        # have the agent and grader disagreeing on schema/data, and a
+        # correct submission could be marked failing. Mirrors the
+        # cloud worker, which uses ``cfg["data_dir"]`` (Codex r7).
         per_task_db = (
-            paths.benchmark_data_root(_benchmark_canonical)
+            Path(data_dir)
             / selected_database
             / f"{selected_database}.sqlite"
         )
@@ -1175,8 +1206,19 @@ async def run_evaluation(
         (sub / "submission_annotation.json").exists()
         for sub in rows_dir.iterdir() if sub.is_dir()
     ):
+        # Codex r11: scope the cascade aggregation to the CURRENT run's
+        # instance set. Filtered reruns preserve unrelated prior
+        # annotations on disk (round 10 design), but the published
+        # ``eval.json`` must describe ONLY the current run's row set —
+        # otherwise ``cascading_phase1.n_dual_eval_tasks`` (union) would
+        # exceed ``eval.total_tasks`` (filtered count) and the rewritten
+        # ``phase1_count`` / ``phase1_rate`` would become uninterpretable.
+        _current_iids = {
+            str(td.get("instance_id") or "") for td in tasks
+        } - {""}
         metrics = emit_cascading_eval_json(
             rows_dir, Path(output_path), base_metrics=metrics,
+            instance_filter=_current_iids,
         )
 
     logger.info(

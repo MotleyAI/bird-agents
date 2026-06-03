@@ -805,3 +805,145 @@ def test_overlay_benchmark_kwarg_mini_interact_uses_single_file(tmp_path):
 # `tests/test_local_run_cascading.py`,
 # `tests/test_cascading_report.py`, and the legacy-removal grep-sweep in
 # `tests/test_legacy_field_removal.py`.
+
+
+# ---------------------------------------------------------------------------
+# Codex r9: multi-variant audited gold rows for the same instance_id
+# (one ``primary=True`` + N alternates) must NOT let an alternate
+# overwrite the primary row at index-build time. Pre-fix both index
+# helpers (``harness._load_single_file_audited_rows`` via the overlay
+# AND ``cloud._audited_gold_check._load_single_file_audit_index``)
+# wrote with latest-wins semantics. These two tests pin the new
+# primary-first contract — alternates listed AFTER the primary in the
+# file must lose the contest.
+# ---------------------------------------------------------------------------
+
+
+def test_overlay_single_file_prefers_primary_when_alternate_listed_after(
+    tmp_path,
+):
+    """Multi-variant file: primary row first, alternate row second.
+    The overlay MUST keep the primary's ``audited_sol_sql``."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    _write_single_file_audit(tmp_path, [
+        {
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "variant_id": "primary",
+            "primary": True,
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT primary_reading FROM t"],
+        },
+        {
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "variant_id": "alt_a",
+            "primary": False,
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT alt_reading FROM t"],
+        },
+    ])
+    task = {
+        "instance_id": "museum_9",
+        "selected_database": "museum",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    apply_audited_gold_overlay(
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+    )
+    assert task["sol_sql"] == ["SELECT primary_reading FROM t"], (
+        "primary row MUST win over alternates regardless of file order"
+    )
+
+
+def test_overlay_single_file_prefers_primary_when_alternate_listed_first(
+    tmp_path,
+):
+    """Symmetric case: alternate row FIRST, primary row second. The
+    primary must still take precedence at the end."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+
+    _write_single_file_audit(tmp_path, [
+        {
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "variant_id": "alt_a",
+            "primary": False,
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT alt_reading FROM t"],
+        },
+        {
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "variant_id": "primary",
+            "primary": True,
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT primary_reading FROM t"],
+        },
+    ])
+    task = {
+        "instance_id": "museum_9",
+        "selected_database": "museum",
+        "sol_sql": ["SELECT original FROM t"],
+    }
+    apply_audited_gold_overlay(
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+    )
+    assert task["sol_sql"] == ["SELECT primary_reading FROM t"], (
+        "primary row MUST win regardless of where it lands in the file"
+    )
+
+
+def test_cloud_audit_index_prefers_primary_over_alternate(tmp_path):
+    """``cloud._audited_gold_check._load_single_file_audit_index``
+    is the cloud-side guard against an audited gold layout drift —
+    same primary-first rule must hold there."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._audited_gold_check import (
+        _load_single_file_audit_index,
+    )
+
+    benchmark = get_benchmark("livesqlbench")
+    audit_path = tmp_path / f"{benchmark.name}_audited.jsonl"
+    audit_path.write_text(
+        json.dumps({
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "variant_id": "alt_a",
+            "primary": False,
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT alt_reading FROM t"],
+        }) + "\n"
+        + json.dumps({
+            "instance_id": "museum_9",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench",
+            "variant_id": "primary",
+            "primary": True,
+            # Deliberately different from the alt so we can tell which
+            # row landed in the index.
+            "audit_status": "clean",
+            "audited_sol_sql": [],
+        }) + "\n"
+    )
+
+    index = _load_single_file_audit_index(tmp_path, benchmark)
+    assert index is not None
+    status, has_audited_sql, _row_db, _row_bench = index["museum_9"]
+    # ``clean`` is the primary's status; ``edited`` is the alt's.
+    assert status == "clean", (
+        f"primary row's audit_status must survive against the alt's; "
+        f"got status={status!r} (alt's status was 'edited')"
+    )
+    assert has_audited_sql is False, (
+        "primary's empty audited_sol_sql must be the one indexed, "
+        "not the alt's non-empty list"
+    )

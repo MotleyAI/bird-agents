@@ -332,3 +332,96 @@ def test_parse_orderby_nulls_first_last_does_not_error():
         "SELECT a, b FROM t ORDER BY a NULLS LAST, b NULLS FIRST"
     )
     assert [k.column_index for k in keys] == [0, 1]
+
+
+# ---------------------------------------------------------------------------
+# Codex r12: comparator-boundary cases that pre-fix would either crash
+# the grader (compare_tie_order index out-of-range) or falsely pass
+# (compare_column_order with duplicate names). Both surface from valid
+# agent misses, so they MUST land as ``False`` cleanly, not as
+# AssertionError / silent-pass.
+# ---------------------------------------------------------------------------
+
+
+def test_compare_tie_order_returns_false_when_pred_too_narrow():
+    """A wrong-projection agent submission (fewer columns than the
+    gold ORDER BY references) must NOT crash the grader. Pre-fix
+    ``row[i]`` raised ``IndexError`` and the cloud/local fallback
+    wrote a generic fail-everything annotation instead of a structured
+    cascade-miss."""
+    from bird_interact_agents.eval.tolerant_grader import compare_tie_order
+
+    # ORDER BY column index 5 — pred only has 2 columns per row.
+    pred = [("A", 1), ("B", 2)]
+    gold = [("A", 1, 0, 0, 0, "X"), ("B", 2, 0, 0, 0, "Y")]
+    assert (
+        compare_tie_order(pred, gold, orderby_indices=[5]) is False
+    ), "must return False, not raise IndexError"
+
+
+def test_compare_tie_order_returns_false_when_gold_too_narrow():
+    """Symmetric: gold too narrow for an index also returns False
+    cleanly."""
+    from bird_interact_agents.eval.tolerant_grader import compare_tie_order
+
+    pred = [("A", 1, 0, 0, 0, "X"), ("B", 2, 0, 0, 0, "Y")]
+    gold = [("A", 1), ("B", 2)]
+    assert (
+        compare_tie_order(pred, gold, orderby_indices=[5]) is False
+    ), "must return False, not raise IndexError"
+
+
+def test_compare_column_order_rejects_duplicate_column_names_pred():
+    """N8 tolerance: pred has a duplicate-named projection. The pre-fix
+    ``pred_l.index(c)`` mapped every duplicate occurrence in gold to
+    pred's FIRST matching position, silently ignoring later
+    duplicate columns' values. With duplicates the column-order
+    concept is ill-defined — return False rather than falsely pass."""
+    from bird_interact_agents.eval.tolerant_grader import (
+        compare_column_order,
+    )
+
+    # Pred: 3 columns named (a, b, a). Values for the duplicate "a"
+    # columns DIFFER, so a real comparison must NOT pass.
+    pred = [("X", "Y", "Z"), ("X2", "Y2", "Z2")]
+    gold = [("X", "X", "Y"), ("X2", "X2", "Y2")]  # gold reads a,a,b
+    assert compare_column_order(
+        pred, gold,
+        pred_cols=["a", "b", "a"],
+        gold_cols=["a", "a", "b"],
+    ) is False, (
+        "must NOT falsely pass — pred's second 'a' column has Z/Z2 "
+        "but gold expects X/X2; duplicate names make column-order "
+        "ill-defined"
+    )
+
+
+def test_compare_column_order_rejects_duplicate_column_names_gold():
+    """Symmetric: duplicates on the GOLD side also return False."""
+    from bird_interact_agents.eval.tolerant_grader import (
+        compare_column_order,
+    )
+
+    pred = [("X", "Y", "Z")]
+    gold = [("X", "X", "Y")]
+    assert compare_column_order(
+        pred, gold,
+        pred_cols=["a", "b", "c"],
+        gold_cols=["a", "a", "b"],
+    ) is False
+
+
+def test_compare_column_order_distinct_names_still_pass():
+    """Belt-and-braces: the duplicate guard MUST NOT regress the
+    canonical "same names, different order" pass."""
+    from bird_interact_agents.eval.tolerant_grader import (
+        compare_column_order,
+    )
+
+    pred = [("X", "Y"), ("X2", "Y2")]
+    gold = [("Y", "X"), ("Y2", "X2")]
+    assert compare_column_order(
+        pred, gold,
+        pred_cols=["a", "b"],
+        gold_cols=["b", "a"],
+    ) is True

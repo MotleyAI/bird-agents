@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional
@@ -45,6 +46,34 @@ class RegradeReport(BaseModel):
 
 def _attempt_rows_dir(run_dir: Path) -> Path:
     return run_dir / "rows"
+
+
+_ATTEMPT_FILE_RE = re.compile(r"attempt-(\d+)\.json")
+
+
+def _latest_attempt_file(sub: Path) -> Path | None:
+    """Return the highest-numbered ``attempt-N.json`` in ``sub`` or
+    None when no attempt file exists.
+
+    Pre-fix the regrade CLI hardcoded ``attempt-1.json`` (Codex r10), so
+    a resubmit's attempt-2 was either silently skipped (instance had ONLY
+    attempt-2) or, worse, overwritten by stale attempt-1 data — even
+    though cloud collation already treats the max attempt as canonical
+    and the round-8 fetch merge compares attempt numbers."""
+    best: tuple[int, Path] | None = None
+    for p in sub.iterdir():
+        if not p.is_file():
+            continue
+        m = _ATTEMPT_FILE_RE.match(p.name)
+        if m is None:
+            continue
+        try:
+            n = int(m.group(1))
+        except ValueError:
+            continue
+        if best is None or n > best[0]:
+            best = (n, p)
+    return best[1] if best else None
 
 
 def clear_llm_judge_cache(
@@ -190,8 +219,8 @@ def regrade_run(
         if filter_set is not None and instance_id not in filter_set:
             report.skipped += 1
             continue
-        attempt = sub / "attempt-1.json"
-        if not attempt.exists():
+        attempt = _latest_attempt_file(sub)
+        if attempt is None:
             report.skipped += 1
             continue
         attempt_data = json.loads(attempt.read_text())
@@ -249,8 +278,10 @@ def regrade_run(
             ),
             evaluation=_eval_from_cascade(cascade),
             failure_classification=_skeleton_failure_classification(cascade),
+            # Pass the raw trajectory; ``_user_sim_interaction_from_trajectory``
+            # defends against dict-shaped trajectories (Codex r10).
             user_sim_interaction=_user_sim_interaction_from_trajectory(
-                list(attempt_data.get("trajectory", []) or []),
+                attempt_data.get("trajectory") or [],
             ),
         )
         import datetime as _dt
@@ -364,7 +395,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # interactive runs where the agent never asked. One-shot
         # benchmarks pass None so the flag stays out of miss_patterns.
         if _bench_is_interactive:
-            _traj = list(task_row.get("trajectory") or [])
+            _traj = task_row.get("trajectory") or []
             _user_sim_n_asks: Optional[int] = (
                 _user_sim_interaction_from_trajectory(_traj).n_asks
             )

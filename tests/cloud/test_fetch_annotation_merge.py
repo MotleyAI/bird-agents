@@ -201,3 +201,151 @@ def test_merge_writes_audit_report(tmp_path):
     body = json.loads(audit.read_text())
     assert body["merged"] == 2
     assert body["run_id"] == "r1"
+
+
+# ---------------------------------------------------------------------------
+# Codex r7: resubmit-aware overwrite. The canonical
+# ``submission_annotation_path`` does NOT carry the per-task ``attempt``
+# in the filename, so a partial fetch followed by a resubmit (which
+# reuses the same ``run_id`` and bumps ``attempt``) would otherwise pin
+# attempt-1's annotation forever — while ``eval.json`` / ``results.db``
+# reflect attempt-2. The merge now parses ``submission.trajectory_path``
+# (``rows/<iid>/attempt-N.json``) on both src and dest and overwrites
+# ONLY when the new attempt is strictly newer.
+# ---------------------------------------------------------------------------
+
+
+def _make_dict_with_attempt(instance_id: str, attempt: int) -> dict:
+    body = _valid_submission_annotation_dict(instance_id)
+    body["submission"]["trajectory_path"] = (
+        f"rows/{instance_id}/attempt-{attempt}.json"
+    )
+    body["annotated_by"] = f"attempt-{attempt}-grader"
+    return body
+
+
+def test_merge_overwrites_when_new_attempt_strictly_newer(tmp_path):
+    """Resubmit pushes attempt-2's annotation; the existing dest is
+    attempt-1. The merge MUST overwrite and bump the
+    ``overwritten_newer_attempt`` counter."""
+    from bird_interact_agents.cloud.post_run_merge import (
+        merge_submission_annotations,
+    )
+
+    main_checkout = tmp_path / "checkout"
+    dest_dir = main_checkout / "annotations" / "mini_interact" / "alien"
+    dest_dir.mkdir(parents=True)
+    # Pre-existing dest from a prior partial fetch — attempt-1.
+    (dest_dir / "alien_1.submission.r1.json").write_text(
+        json.dumps(_make_dict_with_attempt("alien_1", 1)),
+    )
+
+    # Newly downloaded run dir carries attempt-2's annotation.
+    downloaded = tmp_path / "downloaded"
+    rows = downloaded / "rows" / "alien_1"
+    rows.mkdir(parents=True)
+    (rows / "submission_annotation.json").write_text(
+        json.dumps(_make_dict_with_attempt("alien_1", 2)),
+    )
+
+    report = merge_submission_annotations(
+        downloaded_run_dir=downloaded,
+        run_id="r1",
+        benchmark="mini-interact",
+        main_checkout_root=main_checkout,
+    )
+
+    assert report.overwritten_newer_attempt == 1, report
+    assert report.skipped_existing == 0, report
+    assert report.merged == 0, report
+    surviving = json.loads(
+        (dest_dir / "alien_1.submission.r1.json").read_text(),
+    )
+    assert surviving["annotated_by"] == "attempt-2-grader"
+    assert surviving["submission"]["trajectory_path"] == (
+        "rows/alien_1/attempt-2.json"
+    )
+
+
+def test_merge_does_not_overwrite_when_new_attempt_is_older_or_equal(tmp_path):
+    """Symmetric safety case: attempt-2 already on disk, attempt-1
+    being merged — MUST keep attempt-2 (no regression to older row)."""
+    from bird_interact_agents.cloud.post_run_merge import (
+        merge_submission_annotations,
+    )
+
+    main_checkout = tmp_path / "checkout"
+    dest_dir = main_checkout / "annotations" / "mini_interact" / "alien"
+    dest_dir.mkdir(parents=True)
+    (dest_dir / "alien_1.submission.r1.json").write_text(
+        json.dumps(_make_dict_with_attempt("alien_1", 2)),
+    )
+
+    downloaded = tmp_path / "downloaded"
+    rows = downloaded / "rows" / "alien_1"
+    rows.mkdir(parents=True)
+    (rows / "submission_annotation.json").write_text(
+        json.dumps(_make_dict_with_attempt("alien_1", 1)),
+    )
+
+    report = merge_submission_annotations(
+        downloaded_run_dir=downloaded,
+        run_id="r1",
+        benchmark="mini-interact",
+        main_checkout_root=main_checkout,
+    )
+
+    assert report.overwritten_newer_attempt == 0, report
+    assert report.skipped_existing == 1, report
+    surviving = json.loads(
+        (dest_dir / "alien_1.submission.r1.json").read_text(),
+    )
+    assert surviving["annotated_by"] == "attempt-2-grader"
+
+
+def test_merge_skips_when_attempts_equal(tmp_path):
+    """Equal attempts — preserve existing (no-op repeated fetch)."""
+    from bird_interact_agents.cloud.post_run_merge import (
+        merge_submission_annotations,
+    )
+
+    main_checkout = tmp_path / "checkout"
+    dest_dir = main_checkout / "annotations" / "mini_interact" / "alien"
+    dest_dir.mkdir(parents=True)
+    pre = _make_dict_with_attempt("alien_1", 1)
+    pre["annotated_by"] = "human-pre-existing"
+    (dest_dir / "alien_1.submission.r1.json").write_text(json.dumps(pre))
+
+    downloaded = tmp_path / "downloaded"
+    rows = downloaded / "rows" / "alien_1"
+    rows.mkdir(parents=True)
+    fresh = _make_dict_with_attempt("alien_1", 1)
+    fresh["annotated_by"] = "auto-fresh"
+    (rows / "submission_annotation.json").write_text(json.dumps(fresh))
+
+    report = merge_submission_annotations(
+        downloaded_run_dir=downloaded,
+        run_id="r1",
+        benchmark="mini-interact",
+        main_checkout_root=main_checkout,
+    )
+    assert report.overwritten_newer_attempt == 0, report
+    assert report.skipped_existing == 1, report
+    surviving = json.loads(
+        (dest_dir / "alien_1.submission.r1.json").read_text(),
+    )
+    assert surviving["annotated_by"] == "human-pre-existing"
+
+
+def test_attempt_from_trajectory_path_parses_and_defaults():
+    """Pin the parsing helper's contract — unparseable input returns
+    None so the caller can fall back to no-overwrite."""
+    from bird_interact_agents.cloud.post_run_merge import (
+        _attempt_from_trajectory_path,
+    )
+
+    assert _attempt_from_trajectory_path("rows/alien_1/attempt-1.json") == 1
+    assert _attempt_from_trajectory_path("rows/alien_1/attempt-42.json") == 42
+    assert _attempt_from_trajectory_path(None) is None
+    assert _attempt_from_trajectory_path("") is None
+    assert _attempt_from_trajectory_path("rows/alien_1/something_else.json") is None
