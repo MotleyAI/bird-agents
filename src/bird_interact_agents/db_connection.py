@@ -148,6 +148,36 @@ class PostgresDbConnection:
                     pass
         return rows, cols
 
+    def execute_sequence(self, sqls: list[str]) -> ExecutorResult:
+        """Execute all sqls in a SINGLE transaction, returning the last result.
+
+        Unlike ``execute``, which wraps each call in its own ``BEGIN/ROLLBACK``,
+        this method issues one ``BEGIN READ ONLY`` before the first statement and
+        one ``ROLLBACK`` after the last, so intermediate DDL (temp tables, CTEs
+        materialised into session state) is visible to subsequent statements.
+        """
+        import psycopg2  # noqa: PLC0415
+
+        cur = self._conn.cursor()
+        if self._read_only:
+            cur.execute("BEGIN READ ONLY")
+        try:
+            rows: list = []
+            cols: list = []
+            for sql in sqls:
+                cur.execute(sql)
+                rows = cur.fetchall() if cur.description is not None else []
+                cols = [d[0] for d in (cur.description or [])]
+        except psycopg2.Error:
+            raise
+        finally:
+            if self._read_only:
+                try:
+                    cur.execute("ROLLBACK")
+                except Exception:  # noqa: BLE001
+                    pass
+        return rows, cols
+
     def close(self) -> None:
         self._conn.close()
 

@@ -207,3 +207,86 @@ def test_factory_reads_pg_env_vars(monkeypatch):
     assert captured["password"] == "secret"
     assert captured["db_name"] == "alien"
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# PostgresDbConnection.execute_sequence
+# ---------------------------------------------------------------------------
+
+
+def _mock_conn_sequence(result_rows_per_call: list[tuple[list, list]]):
+    """Build a fake psycopg2 connection whose cursor.execute cycles through
+    result_rows_per_call for each non-transaction-control call."""
+    call_idx = {"n": -1}  # mutable cell for the closure
+
+    class _FakeCur:
+        def __init__(self):
+            self.description = None
+            self._rows = []
+
+        def execute(self, sql):
+            s = sql.strip().upper()
+            if s in ("BEGIN", "BEGIN READ ONLY", "ROLLBACK", "COMMIT"):
+                self.description = None
+                self._rows = []
+                return
+            call_idx["n"] += 1
+            idx = min(call_idx["n"], len(result_rows_per_call) - 1)
+            rows, cols = result_rows_per_call[idx]
+            self._rows = rows
+            self.description = (
+                [(c, None, None, None, None, None, None) for c in cols]
+                if cols else None
+            )
+
+        def fetchall(self):
+            return self._rows
+
+    mock_cur = _FakeCur()
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value = mock_cur
+    return mock_conn, mock_cur
+
+
+def test_postgres_execute_sequence_returns_last_result():
+    """execute_sequence must return the result of the LAST statement."""
+    from bird_interact_agents.db_connection import PostgresDbConnection
+
+    mock_conn, _ = _mock_conn_sequence([
+        ([], []),            # setup stmt — no rows
+        ([(7,)], ["val"]),   # final SELECT
+    ])
+    pg = PostgresDbConnection(mock_conn, read_only=True)
+    rows, cols = pg.execute_sequence(["CREATE TEMP TABLE t (v INT)", "SELECT 7 AS val"])
+    assert rows == [(7,)]
+    assert cols == ["val"]
+
+
+def test_postgres_execute_sequence_issues_one_begin_rollback():
+    """execute_sequence must issue exactly ONE BEGIN READ ONLY and ONE ROLLBACK
+    regardless of the number of statements (not one per statement)."""
+    from bird_interact_agents.db_connection import PostgresDbConnection
+
+    issued: list[str] = []
+
+    class _SpyCur:
+        def __init__(self):
+            self.description = None
+
+        def execute(self, sql):
+            issued.append(sql.strip().upper())
+            self.description = None
+
+        def fetchall(self):
+            return []
+
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value = _SpyCur()
+
+    pg = PostgresDbConnection(mock_conn, read_only=True)
+    pg.execute_sequence(["stmt1", "stmt2", "stmt3"])
+
+    begin_count = sum(1 for s in issued if s in ("BEGIN", "BEGIN READ ONLY"))
+    rollback_count = sum(1 for s in issued if s == "ROLLBACK")
+    assert begin_count == 1, f"expected 1 BEGIN, got {begin_count}; issued={issued}"
+    assert rollback_count == 1, f"expected 1 ROLLBACK, got {rollback_count}; issued={issued}"

@@ -183,9 +183,11 @@ def _pg_execute_submit_action(
             with make_db_connection(
                 db_name, data_path_base=data_path_base, benchmark=benchmark, read_only=True
             ) as conn:
-                rows: list = []
-                for q in sqls:
-                    rows, _ = conn.execute(q)
+                # execute_sequence issues ONE BEGIN READ ONLY / ROLLBACK for
+                # the whole list, so temp tables created in step N remain
+                # visible to step N+1 (unlike calling conn.execute per step,
+                # which rolls back each statement individually).
+                rows, _ = conn.execute_sequence(sqls)  # type: ignore[union-attr]
                 return rows, False
         except Exception:  # noqa: BLE001
             return [], True
