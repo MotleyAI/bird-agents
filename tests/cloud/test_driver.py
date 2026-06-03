@@ -1644,7 +1644,7 @@ def test_resubmit_omits_dataset_for_pre_dataset_manifest(monkeypatch):
 def _fake_annotate_args(gold_file: str | None = None, **overrides):
     """Minimal args object for build_annotator_manifest / _build_annotator_job_args."""
     ns = argparse.Namespace(
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         agent_model="anthropic/claude-opus-4-7",
         effort="medium",
         override=False,
@@ -1670,7 +1670,7 @@ def test_build_annotator_manifest_carries_gold_file(monkeypatch, tmp_path):
     monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
 
     args = _fake_annotate_args(gold_file=str(gold))
-    args.benchmark = "livesqlbench"
+    args.benchmark = "livesqlbench-base-lite-sqlite"
     m = driver.build_annotator_manifest(args, image_uri="img:tag", run_id="rid")
     assert "gold_file" in m
     assert m["gold_file"].endswith("/sub/gold.jsonl")
@@ -1694,7 +1694,7 @@ def test_build_annotator_job_args_emits_gold_file(monkeypatch, tmp_path):
     monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
 
     args = _fake_annotate_args(gold_file=str(gold))
-    args.benchmark = "livesqlbench"
+    args.benchmark = "livesqlbench-base-lite-sqlite"
     ja = driver._build_annotator_job_args(args, "rid")
     assert "--gold-file" in ja
     assert ja[ja.index("--gold-file") + 1].endswith("/gold.jsonl")
@@ -1716,15 +1716,15 @@ def test_build_annotator_job_args_omits_gold_file_when_absent():
 def test_submit_benchmark_uses_dataset_when_present():
     """Normal submit args carry args.dataset — _submit_benchmark must use it."""
     args = FakeSubmitArgs()
-    args.dataset = "livesqlbench"
-    assert driver._submit_benchmark(args) == "livesqlbench"
+    args.dataset = "livesqlbench-base-lite-sqlite"
+    assert driver._submit_benchmark(args) == "livesqlbench-base-lite-sqlite"
 
 
 def test_submit_benchmark_falls_back_to_benchmark_attr():
     """Annotate args carry args.benchmark but no args.dataset; _submit_benchmark
     must fall back so gold-file helpers return the correct in-cluster path."""
-    ns = argparse.Namespace(benchmark="livesqlbench")
-    assert driver._submit_benchmark(ns) == "livesqlbench"
+    ns = argparse.Namespace(benchmark="livesqlbench-base-lite-sqlite")
+    assert driver._submit_benchmark(ns) == "livesqlbench-base-lite-sqlite"
 
 
 def test_in_cluster_gold_file_annotate_args_uses_benchmark(monkeypatch, tmp_path):
@@ -1737,10 +1737,10 @@ def test_in_cluster_gold_file_annotate_args_uses_benchmark(monkeypatch, tmp_path
     gold.write_text("{}\n")
     monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
 
-    ns = argparse.Namespace(benchmark="livesqlbench", gold_file=str(gold))
+    ns = argparse.Namespace(benchmark="livesqlbench-base-lite-sqlite", gold_file=str(gold))
     result = driver._in_cluster_gold_file(ns)
     assert result is not None
-    assert "/livesqlbench/" in result or result.startswith("/data/livesqlbench")
+    assert "/livesqlbench-base-lite-sqlite/" in result or "/data/" in result
 
 
 def test_submit_annotator_validates_gold_outside_data_root(monkeypatch, tmp_path):

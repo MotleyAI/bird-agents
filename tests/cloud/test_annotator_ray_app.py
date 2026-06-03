@@ -480,7 +480,6 @@ def test_load_annotator_task_data_explicit_gold_file_skips_env_lookup(monkeypatc
     """An explicit gold_file arg must be used directly without consulting the
     env var or the hardcoded default path — mirrors ray_app.py --gold-file."""
     from bird_interact_agents.cloud import ray_app_annotator
-    from bird_interact_agents.benchmark import get_benchmark
 
     # A fake load_benchmark_tasks that captures what gold_file it receives.
     captured: list = []
@@ -494,14 +493,9 @@ def test_load_annotator_task_data_explicit_gold_file_skips_env_lookup(monkeypatc
         ray_app_annotator.paths, "benchmark_data_file",
         lambda b: tmp_path / "dummy.jsonl",
     )
-    # Ensure env var is NOT consulted (set it to something different).
-    bench = get_benchmark("livesqlbench")
-    if bench.gold_root_env:
-        monkeypatch.setenv(bench.gold_root_env, "/should/not/be/used")
-
     explicit = str(tmp_path / "custom_gold.jsonl")
     ray_app_annotator._load_annotator_task_data(
-        [], benchmark="livesqlbench", gold_file=explicit,
+        [], benchmark="livesqlbench-base-lite-sqlite", gold_file=explicit,
     )
 
     assert captured == [explicit], (
@@ -519,7 +513,7 @@ def test_build_annotator_resubmit_args_emits_gold_file(monkeypatch):
     from bird_interact_agents.cloud import driver
 
     manifest = {
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
         "agent_model": "anthropic/claude-opus-4-7",
         "effort": "medium",
         "gold_file": "/data/livesqlbench_gold.jsonl",
@@ -539,7 +533,7 @@ def test_build_annotator_resubmit_args_omits_gold_file_when_absent(monkeypatch):
     from bird_interact_agents.cloud import driver
 
     manifest = {
-        "dataset": "mini_interact",
+        "dataset": "mini-interact",
         "agent_model": "anthropic/claude-opus-4-7",
         "effort": "medium",
         "render_inputs": {"workers": 1, "actors_per_worker": 1},

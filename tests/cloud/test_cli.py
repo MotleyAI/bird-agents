@@ -688,7 +688,7 @@ def test_annotate_gold_file_arg_accepted() -> None:
     provide an explicit gold sidecar path for LiveSQLBench annotation."""
     ns = cli.parse_args([
         "annotate",
-        "--benchmark", "mini_interact",
+        "--benchmark", "mini-interact",
         "--agent-model", "anthropic/claude-opus-4-7",
         "--instance-ids", "db_a_1",
         "--gold-file", "/data/livesqlbench/gold.jsonl",
@@ -701,7 +701,7 @@ def test_annotate_gold_file_defaults_to_none() -> None:
     in-cluster fallback path can take over."""
     ns = cli.parse_args([
         "annotate",
-        "--benchmark", "mini_interact",
+        "--benchmark", "mini-interact",
         "--agent-model", "anthropic/claude-opus-4-7",
         "--instance-ids", "db_a_1",
     ])

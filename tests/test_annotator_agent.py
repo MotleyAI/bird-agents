@@ -590,7 +590,7 @@ def test_fill_deterministic_fields_merges_masked_terms_from_critical_ambiguity()
         },
         "knowledge_ambiguity": [],
     }
-    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini_interact")
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
 
     terms_by_name = {mt.term: mt for mt in filled.masked_terms}
     assert "[MASKED_TIER]" in terms_by_name

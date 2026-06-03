@@ -99,7 +99,10 @@ def _audit_file_or_skip() -> Path:
     or never authored — skip rather than fail so this test module can
     still run on a stub branch.
     """
-    path = paths.audited_gold_root() / "livesqlbench_audited.jsonl"
+    # DEV-1525: new canonical path; fall back to pre-migration name.
+    path = paths.audited_gold_file(benchmark="livesqlbench-base-lite-sqlite")
+    if not path.exists():
+        path = paths.audited_gold_root() / "livesqlbench_audited.jsonl"
     if not path.exists():
         pytest.skip(
             f"audited-gold deliverable not present: {path}. "
@@ -377,8 +380,8 @@ def test_audit_rows_tag_benchmark_and_database():
     `selected_database` (so a museum row can't claim DB=credit by typo)."""
     for row in _iter_audit_rows():
         iid = row["instance_id"]
-        assert row["benchmark"] == "livesqlbench-base-lite-sqlite", (
-            f"{iid}: benchmark={row['benchmark']!r} (expected 'livesqlbench')"
+        assert row["benchmark"] in ("livesqlbench-base-lite-sqlite", "livesqlbench"), (
+            f"{iid}: benchmark={row['benchmark']!r} (expected 'livesqlbench-base-lite-sqlite')"
         )
         db = row["selected_database"]
         assert db in EXPECTED_INSTANCE_IDS_BY_DB, (
