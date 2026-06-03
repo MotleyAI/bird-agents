@@ -438,3 +438,43 @@ def test_merge_audited_gold_variants_override_false_does_not_replace(tmp_path):
     lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
     assert len(lines) == 1
     assert json.loads(lines[0])["audit_status"] == "clean"
+
+
+def test_merge_audited_gold_variants_append_handles_missing_trailing_newline(tmp_path):
+    """Append mode must not corrupt JSONL when the consolidated file has no
+    trailing newline (e.g. hand-edited file); the new row should appear on its
+    own line."""
+    from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
+
+    audited_gold = tmp_path / "audited_gold"
+    audited_gold.mkdir()
+    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    old_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "clean", "audited_sol_sql": ["SELECT 1"],
+    }
+    # Intentionally write without trailing newline.
+    consolidated.write_bytes(json.dumps(old_row).encode())
+
+    downloaded = tmp_path / "run"
+    sub = downloaded / "rows" / "db_a_2"
+    sub.mkdir(parents=True)
+    new_row = {
+        "instance_id": "db_a_2", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "clean", "audited_sol_sql": ["SELECT 2"],
+    }
+    (sub / "audited_gold_variants.jsonl").write_text(json.dumps(new_row) + "\n")
+
+    report = merge_audited_gold_variants(
+        downloaded_run_dir=downloaded,
+        benchmark="mini_interact",
+        audited_gold_root=audited_gold,
+    )
+
+    assert report.added == 1
+    lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 2
+    assert json.loads(lines[0])["instance_id"] == "db_a_1"
+    assert json.loads(lines[1])["instance_id"] == "db_a_2"

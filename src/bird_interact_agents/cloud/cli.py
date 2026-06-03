@@ -111,6 +111,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     grp_ann.add_argument("--instance-ids-file", type=str)
     sp_annotate.add_argument("--override", action="store_true",
                               help="Re-annotate even when stable blobs already exist.")
+    sp_annotate.add_argument(
+        "--gold-file", default=None,
+        help=(
+            "Path to the gated gold sidecar JSONL (must be under the benchmark "
+            "data root so it rides along in the GCS dataset upload)."
+        ),
+    )
     sp_annotate.add_argument("--workers", type=int, default=4)
     sp_annotate.add_argument("--actors-per-worker", type=int, default=4)
     sp_annotate.add_argument("--worker-type", default="e2-standard-4")

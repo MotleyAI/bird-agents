@@ -467,6 +467,8 @@ async def run_task(
         system_prompt=system_prompt,
         mcp_servers={"bird-annotator-tools": server},
         allowed_tools=tool_names_prefixed,
+        tools=[],
+        setting_sources=[],
         effort=effort,
         max_turns=cap,
         model=native_model_id(model),

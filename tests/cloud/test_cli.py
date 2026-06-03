@@ -689,6 +689,31 @@ def test_build_subcommand_passes_audited_gold_root_to_image_tag(
     )
 
 
+def test_annotate_gold_file_arg_accepted() -> None:
+    """The `annotate` subcommand must expose `--gold-file` so users can
+    provide an explicit gold sidecar path for LiveSQLBench annotation."""
+    ns = cli.parse_args([
+        "annotate",
+        "--benchmark", "mini_interact",
+        "--agent-model", "anthropic/claude-opus-4-7",
+        "--instance-ids", "db_a_1",
+        "--gold-file", "/data/livesqlbench/gold.jsonl",
+    ])
+    assert ns.gold_file == "/data/livesqlbench/gold.jsonl"
+
+
+def test_annotate_gold_file_defaults_to_none() -> None:
+    """When `--gold-file` is omitted, `ns.gold_file` must be None so the
+    in-cluster fallback path can take over."""
+    ns = cli.parse_args([
+        "annotate",
+        "--benchmark", "mini_interact",
+        "--agent-model", "anthropic/claude-opus-4-7",
+        "--instance-ids", "db_a_1",
+    ])
+    assert ns.gold_file is None
+
+
 @pytest.mark.parametrize("sub", ["submit", "fetch", "kill", "list", "build", "resubmit"])
 def test_subcommand_registered(sub: str) -> None:
     # All sub-commands at least parse to a known namespace. `fetch` / `kill`

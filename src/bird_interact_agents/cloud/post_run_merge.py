@@ -763,6 +763,10 @@ def merge_audited_gold_variants(
 
     if new_lines:
         audited_gold_root.mkdir(parents=True, exist_ok=True)
+        if consolidated.exists() and consolidated.stat().st_size > 0:
+            if not consolidated.read_bytes().endswith(b"\n"):
+                with consolidated.open("a") as f:
+                    f.write("\n")
         with consolidated.open("a") as f:
             for line in new_lines:
                 f.write(line + "\n")
