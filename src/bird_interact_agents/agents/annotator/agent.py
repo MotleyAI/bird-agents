@@ -218,6 +218,15 @@ async def submit_annotation(args: dict) -> dict:
                     f"found in audited_gold_variants_json. Add the audited row or "
                     f"set original_gold_is_correct=True."
                 )
+        variant_primary_map = {v.get("variant_id"): v.get("primary", False)
+                               for v in audited_gold_variants}
+        for gvr in task_annotation.gold_variants:
+            if gvr.primary and not variant_primary_map.get(gvr.audited_gold_ref.variant_id, False):
+                return _text(
+                    f"Validation error: gold_variants entry {gvr.variant_id!r} is marked "
+                    f"primary=True but the matching audited_gold_variants row has primary=False. "
+                    f"Set primary=True in the audited variant row."
+                )
 
     _ctx["annotation_result"] = {
         "task_annotation": task_annotation,

@@ -541,6 +541,7 @@ async def test_submit_annotation_gold_variant_ref_with_matching_row_succeeds():
             "instance_id": "shop_1",
             "selected_database": "shop",
             "variant_id": "canonical_only",
+            "primary": True,
             "benchmark": "mini_interact",
             "audit_status": "clean",
             "original_sol_sql": ["SELECT 1;"],
