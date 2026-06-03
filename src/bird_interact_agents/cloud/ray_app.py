@@ -133,8 +133,10 @@ def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
     """
     from bird_interact_agents import paths
 
-    setup = cfg.get("slayer_setup")
     fw = cfg.get("framework")
+    if fw in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
+        return []
+    setup = cfg.get("slayer_setup")
     if setup == "pre-encoded":
         artifacts = [("slayer_models", True)]
     elif fw == "pydantic_ai_otf_encode":

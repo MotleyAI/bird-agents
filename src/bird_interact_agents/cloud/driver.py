@@ -287,8 +287,10 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
     seed so the cloud skips re-encoding that DB; if absent, the cloud encodes
     lazily on first task.
     """
-    setup = args.slayer_setup
     fw = args.framework
+    if fw in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
+        return []
+    setup = args.slayer_setup
     benchmark = _submit_benchmark(args)
     if setup == "pre-encoded":
         return [(submitter_repo_root() / "slayer_models", "slayer_models", True)]

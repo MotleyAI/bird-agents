@@ -69,7 +69,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _validate_slayer_setup(
+def _validate_slayer_setup(  # noqa: C901  (complex but linear)
     *, slayer_setup: str, framework: str, query_mode: str, mode: str,
 ) -> None:
     """Reject ``slayer_setup`` combinations the on-the-fly path doesn't
@@ -81,6 +81,9 @@ def _validate_slayer_setup(
     re-raises via ``parser.error`` so the CLI gets the standard
     argparse exit-2 + stderr behaviour.
     """
+    # Raw frameworks have no SLayer dependency — slayer_setup is irrelevant.
+    if framework in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
+        return
     # DEV-1462: one-shot REQUIRES on-the-fly. Pre-encoded one-shot would
     # silently target the committed `slayer_models/` which has no
     # LiveSQLBench coverage; fail fast.
@@ -166,6 +169,14 @@ def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) 
     """
     if mode != "one-shot":
         return
+    # claude_sdk_otf_raw is the raw-SQL one-shot variant; it requires raw, not slayer.
+    if framework == "claude_sdk_otf_raw":
+        if query_mode != "raw":
+            raise ValueError(
+                "--framework claude_sdk_otf_raw requires --query-mode raw; "
+                f"got --query-mode {query_mode!r}",
+            )
+        return
     if query_mode != "slayer":
         raise ValueError(
             "--mode one-shot requires --query-mode slayer; "
@@ -188,6 +199,8 @@ def _validate_one_shot_framework(*, mode: str, query_mode: str, framework: str) 
 _FRAMEWORK_DATASET_MODE_BINDING = {
     "claude_sdk_otf": ("livesqlbench", "one-shot"),
     "claude_sdk_otf_ainteract": ("mini_interact", "a-interact"),
+    "claude_sdk_otf_raw": ("livesqlbench", "one-shot"),
+    "claude_sdk_otf_ainteract_raw": ("mini_interact", "a-interact"),
 }
 
 
@@ -539,6 +552,52 @@ def _make_runner(
                           user_sim_model: str) -> dict:
             budget = calculate_budget(td, patience, mode=mode)
             return await agent_csoa.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_raw":
+        from bird_interact_agents.agents.claude_sdk_otf_raw import ClaudeSDKOtfRawAgent
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_raw] --strict is a no-op for Anthropic models; "
+                "ignored."
+            )
+        agent_csor = ClaudeSDKOtfRawAgent(
+            model=agent_model,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csor.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_ainteract_raw":
+        from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import (
+            ClaudeSDKOtfAInteractRawAgent,
+        )
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_ainteract_raw] --strict is a no-op for "
+                "Anthropic models; ignored."
+            )
+        agent_csoar = ClaudeSDKOtfAInteractRawAgent(
+            model=agent_model,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csoar.run_task(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
@@ -1242,6 +1301,7 @@ def main() -> None:
         "--framework",
         choices=[
             "claude_sdk", "claude_sdk_otf", "claude_sdk_otf_ainteract",
+            "claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw",
             "pydantic_ai",
             "pydantic_ai_recursive", "pydantic_ai_otf_encode",
             "mcp_agent", "agno", "smolagents",
