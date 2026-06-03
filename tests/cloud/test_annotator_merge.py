@@ -441,6 +441,39 @@ def test_merge_audited_gold_variants_override_purges_stale_rows_when_empty_file(
     assert json.loads(lines[0])["instance_id"] == "db_b_1"
 
 
+def test_merge_audited_gold_variants_override_purges_all_rows_truncates_file(tmp_path):
+    """override=True: when ALL consolidated rows belong to the re-run instance
+    and the incoming variants file is empty, the consolidated file must be
+    truncated rather than left stale."""
+    from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
+
+    audited_gold = tmp_path / "audited_gold"
+    audited_gold.mkdir()
+    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    old_row = {
+        "instance_id": "db_a_1", "variant_id": "v0",
+        "selected_database": "db_a", "benchmark": "mini_interact",
+        "audit_status": "edited", "audited_sol_sql": ["SELECT 1"],
+    }
+    # Only rows for the instance being re-annotated — no unrelated rows.
+    consolidated.write_text(json.dumps(old_row) + "\n")
+
+    downloaded = tmp_path / "run"
+    sub = downloaded / "rows" / "db_a_1"
+    sub.mkdir(parents=True)
+    (sub / "audited_gold_variants.jsonl").write_text("")
+
+    merge_audited_gold_variants(
+        downloaded_run_dir=downloaded,
+        benchmark="mini_interact",
+        audited_gold_root=audited_gold,
+        override=True,
+    )
+
+    lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
+    assert lines == [], "stale rows must be removed; consolidated file must be empty"
+
+
 def test_merge_audited_gold_variants_override_false_does_not_replace(tmp_path):
     """override=False (default): existing rows are never replaced; the new row
     for an already-present key is skipped."""

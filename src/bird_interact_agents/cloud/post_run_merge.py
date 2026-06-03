@@ -721,6 +721,9 @@ def merge_audited_gold_variants(
             consolidated.write_text(
                 "\n".join(existing_ordered.values()) + "\n"
             )
+        elif consolidated.exists():
+            # All rows were purged; truncate rather than leaving stale content.
+            consolidated.write_text("")
         return report
 
     # Append-only mode (default): skip rows whose key already exists.
