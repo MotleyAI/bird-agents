@@ -34,11 +34,29 @@ def _mv(src: Path, dst: Path, *, dry: bool) -> None:
         shutil.move(str(src), str(dst))
 
 
+def _mv_into_subdir(src: Path, dst: Path, *, dry: bool) -> None:
+    """Move src where dst is a child of src — uses a sibling temp dir to avoid self-move."""
+    if not src.exists():
+        print(f"  skip (absent): {src}")
+        return
+    if dst.exists():
+        print(f"  skip (dest exists): {dst}")
+        return
+    tmp = src.parent / f"{src.name}_migrating_tmp"
+    print(f"  mv {src} → {dst} (via temp {tmp.name})")
+    if not dry:
+        shutil.move(str(src), str(tmp))
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(tmp), str(dst))
+
+
 def migrate(root: Path, *, dry: bool) -> None:
     # --- OTF cache: flat dirs → nested under new canonical names ---
     # Old: slayer_otf_cache/          (mini-interact, legacy flat)
     # New: slayer_otf_cache/mini-interact/
-    _mv(root / "slayer_otf_cache", root / "slayer_otf_cache" / "mini-interact", dry=dry)
+    _mv_into_subdir(
+        root / "slayer_otf_cache", root / "slayer_otf_cache" / "mini-interact", dry=dry
+    )
 
     # Old: slayer_otf_cache_livesqlbench/
     # New: slayer_otf_cache/livesqlbench-base-lite-sqlite/
@@ -51,7 +69,7 @@ def migrate(root: Path, *, dry: bool) -> None:
     # --- OTF models: same consolidation ---
     # Old: slayer_models_otf/          (mini-interact, legacy flat)
     # New: slayer_models_otf/mini-interact/
-    _mv(
+    _mv_into_subdir(
         root / "slayer_models_otf",
         root / "slayer_models_otf" / "mini-interact",
         dry=dry,

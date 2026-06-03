@@ -193,8 +193,8 @@ fi
 } > "$OUT/invocation.txt"
 
 uv run bird-interact \
-  --dataset mini_interact \
-  --framework pydantic_ai \
+  --dataset mini-interact \
+  --framework claude_sdk \
   --query-mode slayer \
   --mode a-interact \
   --agent-model "$AGENT_MODEL" \

@@ -39,18 +39,18 @@ pip install -e ".[claude-sdk,dev]"
 
 ```bash
 # Validate eval pipeline (submits ground-truth SQL, no LLM)
-bird-interact --dataset mini_interact --mode oracle \
+bird-interact --dataset mini-interact --mode oracle \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/
 
 # Run with Claude Agent SDK, raw SQL mode
-bird-interact --dataset mini_interact --framework claude_sdk --query-mode raw --mode a-interact \
+bird-interact --dataset mini-interact --framework claude_sdk --query-mode raw --mode a-interact \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/ \
   --limit 10 --concurrency 3
 
 # Run with SLayer mode (requires SLayer models to be ingested)
-bird-interact --dataset mini_interact --framework claude_sdk --query-mode slayer --mode a-interact \
+bird-interact --dataset mini-interact --framework claude_sdk --query-mode slayer --mode a-interact \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/
 ```
@@ -80,13 +80,16 @@ PreToolUse hooks, not prompt text.
 > when nested inside an active Claude Code session (stdio collision). Cloud
 > runs are unaffected (Ray actors don't nest).
 
-#### `claude_sdk_otf` — LiveSQLBench / one-shot only
+#### `claude_sdk` — LiveSQLBench / one-shot
 
-Recommended `--reasoning-effort high` (the smoke / baseline default).
+The `claude_sdk` framework auto-selects the correct internal agent based
+on benchmark and mode — `--framework claude_sdk` is the only name you
+need. For LiveSQLBench one-shot, pass `--dataset livesqlbench-base-lite-sqlite
+--mode one-shot`. Recommended `--reasoning-effort high` (the smoke / baseline default).
 
 ```bash
-bird-interact --framework claude_sdk_otf --query-mode slayer \
-  --slayer-setup on-the-fly --dataset livesqlbench --mode one-shot \
+bird-interact --framework claude_sdk --query-mode slayer \
+  --slayer-setup on-the-fly --dataset livesqlbench-base-lite-sqlite --mode one-shot \
   --gold-file ../livesqlbench-base-lite-sqlite/livesqlbench_sqlite_gt_kg_testcases_0528.jsonl \
   --agent-model anthropic/claude-opus-4-7 \
   --reasoning-effort high \
@@ -95,14 +98,13 @@ bird-interact --framework claude_sdk_otf --query-mode slayer \
 ```
 
 Cloud smoke (the deterministic OTF cache is uploaded from local if
-present, else built locally first — like `pydantic_ai_recursive`; no
-reference build or upload-back). `museum_6` is the canonical single-task
-smoke (passes under these defaults):
+present, else built locally first; no reference build or upload-back).
+`museum_6` is the canonical single-task smoke (passes under these defaults):
 
 ```bash
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
-  --framework claude_sdk_otf --query-mode slayer --slayer-setup on-the-fly \
-  --mode one-shot --dataset livesqlbench \
+  --framework claude_sdk --query-mode slayer --slayer-setup on-the-fly \
+  --mode one-shot --dataset livesqlbench-base-lite-sqlite \
   --gold-file ../livesqlbench-base-lite-sqlite/livesqlbench_sqlite_gt_kg_testcases_0528.jsonl \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
@@ -126,17 +128,18 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --worker-type e2-standard-4 --max-runtime-hours 3 --detach
 ```
 
-#### `claude_sdk_otf_ainteract` — mini-interact / a-interact only
+#### `claude_sdk` — mini-interact / a-interact
 
-Adds a native `ask_user` tool plus three PreToolUse/PostToolUse guards:
+For mini-interact a-interact, pass `--dataset mini-interact --mode a-interact`.
+The framework adds a native `ask_user` tool plus three PreToolUse/PostToolUse guards:
 the agent CANNOT call `submit_query` until it has called `ask_user` at
 least once (the user-sim holds masked-KB ground truth unrecoverable from
 the visible KB alone), and a nag fires every 10 tool calls until the
 first ask. Recommended `--reasoning-effort high`.
 
 ```bash
-bird-interact --framework claude_sdk_otf_ainteract --query-mode slayer \
-  --slayer-setup on-the-fly --dataset mini_interact --mode a-interact \
+bird-interact --framework claude_sdk --query-mode slayer \
+  --slayer-setup on-the-fly --dataset mini-interact --mode a-interact \
   --agent-model anthropic/claude-opus-4-7 \
   --reasoning-effort high \
   --data /path/to/mini_interact.jsonl \
@@ -148,8 +151,8 @@ both audited and original gold under these defaults):
 
 ```bash
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
-  --framework claude_sdk_otf_ainteract --query-mode slayer \
-  --slayer-setup on-the-fly --dataset mini_interact --mode a-interact \
+  --framework claude_sdk --query-mode slayer \
+  --slayer-setup on-the-fly --dataset mini-interact --mode a-interact \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
   --reasoning-effort high \
@@ -159,10 +162,9 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
 ```
 
 For multi-instance runs bump `--actors-per-worker` to 4 (see the
-`claude_sdk_otf` note above for the sizing rule). With the default 1×1
-a 53-task batch serialises through one actor and takes ~5 hours; at 1×4
-it finishes in ~80 minutes for the same per-task wallclock and identical
-cluster cost.
+sizing rule above). With the default 1×1 a 53-task batch serialises
+through one actor and takes ~5 hours; at 1×4 it finishes in ~80 minutes
+for the same per-task wallclock and identical cluster cost.
 
 ### Waiting for a run to finish
 
@@ -249,7 +251,7 @@ Run:
 bash scripts/run_three_way.sh --mode a-interact --limit 30 --concurrency 4
 ```
 
-Defaults to `--framework pydantic_ai` because `claude_sdk` cannot run from inside an active Claude Code session (stdio collision with the spawned `claude` subprocess). `--parallel` runs the three versions concurrently. The output directory contains:
+Defaults to `--framework claude_sdk`. Note that `claude_sdk` cannot run from inside an active Claude Code session (stdio collision with the spawned `claude` subprocess) — run from a plain terminal or Codex in that case. `--parallel` runs the three versions concurrently. The output directory contains:
 
 - `original/results.jsonl`, `raw/eval.json`, `slayer/eval.json` — raw per-version outputs
 - `comparison.json` — `{summary: {<version>: {n, phase1_rate, phase2_rate, avg_reward, errors}}, per_task: {<id>: {<version>: ...}}}` for direct row-by-row comparison
@@ -284,7 +286,7 @@ simulator, no `ask_user` anywhere in the spawn tree.
 ### Setup
 
 1. Clone the dataset as a sibling of this checkout (matches the
-   `paths.livesqlbench_root()` default):
+   `paths.benchmark_data_root("livesqlbench-base-lite-sqlite")` default):
 
    ```bash
    cd <parent of bird-agents>
@@ -318,7 +320,7 @@ simulator, no `ask_user` anywhere in the spawn tree.
 ### Oracle validation (first thing to land/verify)
 
 ```bash
-uv run bird-interact --dataset livesqlbench --mode oracle \
+uv run bird-interact --dataset livesqlbench-base-lite-sqlite --mode oracle \
   --gold-file <gated.jsonl> \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
@@ -330,21 +332,15 @@ Submits the gold SQL directly and scores it — no LLM. Expected
 ### One-shot run (both SLayer flavors)
 
 ```bash
-# Memory-encoding flavor (pydantic_ai_recursive — KB → SLayer memories)
-uv run bird-interact --dataset livesqlbench --mode one-shot --query-mode slayer \
-  --framework pydantic_ai_recursive --slayer-setup on-the-fly \
+uv run bird-interact --dataset livesqlbench-base-lite-sqlite --mode one-shot --query-mode slayer \
+  --framework claude_sdk --slayer-setup on-the-fly \
   --gold-file <gated.jsonl> \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
-
-# With-encoding flavor (pydantic_ai_otf_encode — KB → real SLayer models/measures)
-uv run bird-interact --dataset livesqlbench --mode one-shot --query-mode slayer \
-  --framework pydantic_ai_otf_encode --slayer-setup on-the-fly \
-  --gold-file <gated.jsonl> --data ... --db-path ...
 ```
 
-`--mode one-shot` is gated to `--dataset livesqlbench` (and conversely
-`--dataset livesqlbench` accepts `--mode {one-shot, oracle}` only).
+`--mode one-shot` is gated to `--dataset livesqlbench-base-lite-sqlite` (and conversely
+`--dataset livesqlbench-base-lite-sqlite` accepts `--mode {one-shot, oracle}` only).
 `--slayer-setup on-the-fly` is required for one-shot.
 
 ### Per-benchmark artifact roots
@@ -353,22 +349,17 @@ OTF artifacts are kept **disjoint per benchmark** so DBs that share
 names across benchmarks (e.g. `alien` appears in both mini-interact and
 livesqlbench) never collide:
 
-| Benchmark     | OTF cache                              | OTF reference                          |
-|---------------|----------------------------------------|----------------------------------------|
-| mini-interact | `slayer_otf_cache/<db>/`               | `slayer_models_otf/<db>/`              |
-| livesqlbench  | `slayer_otf_cache_livesqlbench/<db>/`  | `slayer_models_otf_livesqlbench/<db>/` |
+| Benchmark                      | OTF cache                                          | OTF reference                                        |
+|--------------------------------|----------------------------------------------------|------------------------------------------------------|
+| `mini-interact`                | `slayer_otf_cache/mini-interact/<db>/`             | `slayer_models_otf/mini-interact/<db>/`              |
+| `livesqlbench-base-lite-sqlite`| `slayer_otf_cache/livesqlbench-base-lite-sqlite/<db>/` | `slayer_models_otf/livesqlbench-base-lite-sqlite/<db>/` |
 
-Both roots live under the main checkout (worktree-safe via
-`paths.*_root(benchmark="livesqlbench")`); env overrides are parallel
-(`BIRD_OTF_CACHE_ROOT_LIVESQLBENCH`,
-`BIRD_SLAYER_MODELS_OTF_ROOT_LIVESQLBENCH`). `--otf-rebuild` purges
-only the run's benchmark roots — never the other benchmark's.
-
-Cloud LiveSQLBench submission is supported via `bird-interact-cloud submit`
-(see the "Cloud smoke" example above). What remains out of scope is the OTF
-encode → upload-back → merge round-trip: the dev-1470 upload-back and
-post-run-merge still target the mini-interact OTF roots verbatim; per-benchmark
-OTF cloud support is a separate work item.
+All roots live under the main checkout (worktree-safe via
+`paths.slayer_otf_cache_root(benchmark=...)` /
+`paths.slayer_models_otf_root(benchmark=...)`). A single env var per
+helper overrides the parent for all benchmarks: `BIRD_OTF_CACHE_ROOT`
+and `BIRD_SLAYER_MODELS_OTF_ROOT`. `--otf-rebuild` purges only the
+run's benchmark roots — never the other benchmark's.
 
 ## Query Modes
 
@@ -379,9 +370,7 @@ OTF cloud support is a separate work item.
 
 | Framework | Status | Install extra |
 |-----------|--------|--------------|
-| Claude Agent SDK (`claude_sdk`) | Active | `claude-sdk` |
-| Claude Agent SDK OTF, livesqlbench/one-shot (`claude_sdk_otf`) | Active | `claude-sdk` |
-| Claude Agent SDK OTF, mini-interact/a-interact (`claude_sdk_otf_ainteract`) | Active | `claude-sdk` |
+| Claude Agent SDK (`claude_sdk`) | Active — dispatches the right internal agent based on benchmark and mode | `claude-sdk` |
 | PydanticAI | Planned | — |
 | smolagents | Planned | — |
 | Agno | Planned | — |
