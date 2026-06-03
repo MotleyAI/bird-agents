@@ -1166,11 +1166,9 @@ def _run_with_actors(
         except Exception as e:  # noqa: BLE001
             # Could not dispatch — log + write an `error` row so the iid
             # is visible in `eval.json` rather than silently missing.
+            # Codex r7: annotation BEFORE row (same ordering as the normal
+            # path) so wait_until_done/fetch don't race the annotation.
             err_row = _build_error_row(iid, "", f"dispatch-failure: {e}")
-            try:
-                _gcs.write_row(run_id, iid, attempt, err_row, client=gcs_client)
-            except Exception:  # noqa: BLE001
-                pass
             try:
                 _ann_dir = Path(tempfile.mkdtemp(prefix="bird_fail_ann_"))
                 _fp = write_failed_submission_annotation(
@@ -1185,6 +1183,10 @@ def _run_with_actors(
                 _gcs.write_submission_annotation(
                     run_id, iid, json.loads(_fp.read_text()), client=gcs_client,
                 )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                _gcs.write_row(run_id, iid, attempt, err_row, client=gcs_client)
             except Exception:  # noqa: BLE001
                 pass
             heartbeat.tick_done()
@@ -1213,12 +1215,8 @@ def _run_with_actors(
             heartbeat.tick_done()
             free_actors.append(actor)
         except RayActorError:
+            # Codex r7: annotation BEFORE row.
             err_row = _build_error_row(iid, "", "actor-lost")
-            try:
-                _gcs.write_row(run_id, iid, attempt, err_row,
-                                client=gcs_client)
-            except Exception:  # noqa: BLE001 — best effort; log is enough
-                pass
             try:
                 _ann_dir = Path(tempfile.mkdtemp(prefix="bird_fail_ann_"))
                 _fp = write_failed_submission_annotation(
@@ -1234,6 +1232,11 @@ def _run_with_actors(
                     run_id, iid, json.loads(_fp.read_text()), client=gcs_client,
                 )
             except Exception:  # noqa: BLE001
+                pass
+            try:
+                _gcs.write_row(run_id, iid, attempt, err_row,
+                                client=gcs_client)
+            except Exception:  # noqa: BLE001 — best effort; log is enough
                 pass
             heartbeat.tick_done()
             # Mint a replacement so we don't lose throughput.
@@ -1256,14 +1259,7 @@ def _run_with_actors(
                 f"{traceback.format_exc()}\n"
             )
             err_row = _build_error_row(iid, "", f"actor-task-error: {e}")
-            try:
-                _gcs.write_row(run_id, iid, attempt, err_row,
-                                client=gcs_client)
-            except Exception as we:  # noqa: BLE001
-                sys.stderr.write(
-                    f"[bird-interact-cloud] write_row ALSO failed for "
-                    f"{iid}: {we!r}\n"
-                )
+            # Codex r7: annotation BEFORE row.
             try:
                 _ann_dir = Path(tempfile.mkdtemp(prefix="bird_fail_ann_"))
                 _fp = write_failed_submission_annotation(
@@ -1280,6 +1276,14 @@ def _run_with_actors(
                 )
             except Exception:  # noqa: BLE001
                 pass
+            try:
+                _gcs.write_row(run_id, iid, attempt, err_row,
+                                client=gcs_client)
+            except Exception as we:  # noqa: BLE001
+                sys.stderr.write(
+                    f"[bird-interact-cloud] write_row ALSO failed for "
+                    f"{iid}: {we!r}\n"
+                )
             heartbeat.tick_done()
             free_actors.append(actor)
         _fill_free()
@@ -1290,11 +1294,8 @@ def _run_with_actors(
     # GCS — the spec promises record-and-move-on, not record-and-drop.
     if pending:
         for iid in pending:
+            # Codex r7: annotation BEFORE row.
             err_row = _build_error_row(iid, "", "undispatched: no live actors")
-            try:
-                _gcs.write_row(run_id, iid, attempt, err_row, client=gcs_client)
-            except Exception:  # noqa: BLE001
-                pass
             try:
                 _ann_dir = Path(tempfile.mkdtemp(prefix="bird_fail_ann_"))
                 _fp = write_failed_submission_annotation(
@@ -1309,6 +1310,10 @@ def _run_with_actors(
                 _gcs.write_submission_annotation(
                     run_id, iid, json.loads(_fp.read_text()), client=gcs_client,
                 )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                _gcs.write_row(run_id, iid, attempt, err_row, client=gcs_client)
             except Exception:  # noqa: BLE001
                 pass
             heartbeat.tick_done()
