@@ -601,6 +601,73 @@ def test_fill_deterministic_fields_merges_masked_terms_from_critical_ambiguity()
     assert terms_by_name["area"].is_mask is False
 
 
+def test_fill_deterministic_fields_string_metadata_evidence_wrapped_in_list():
+    """metadata_evidence that is a string (e.g. 'KB 3') must be wrapped in a
+    single-element list, not silently dropped."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    ann = TaskAnnotation.model_validate(_minimal_annotation())
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {
+                    "term": "[MASKED_TIER]",
+                    "type": "knowledge_linking_ambiguity",
+                    "is_mask": True,
+                    "metadata_evidence": "KB 3",
+                }
+            ],
+            "non_critical_ambiguity": [],
+        },
+        "knowledge_ambiguity": [],
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini_interact")
+
+    mt = next(mt for mt in filled.masked_terms if mt.term == "[MASKED_TIER]")
+    assert mt.metadata_evidence == ["KB 3"]
+
+
+def test_fill_deterministic_fields_is_mask_false_same_term_does_not_block_authoritative_entry():
+    """If the agent submitted an is_mask=False entry with the same term as a critical_ambiguity
+    item, the harness must still insert the authoritative is_mask=True entry — deduplicate only
+    against existing is_mask=True entries."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    base = _minimal_annotation()
+    # Agent found [MASKED_TIER] as a schema-linking ambiguity (is_mask=False).
+    base["masked_terms"] = [
+        {"term": "[MASKED_TIER]", "type": "schema_linking_ambiguity", "is_mask": False, "metadata_evidence": []}
+    ]
+    ann = TaskAnnotation.model_validate(base)
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {
+                    "term": "[MASKED_TIER]",
+                    "type": "knowledge_linking_ambiguity",
+                    "is_mask": True,
+                    "metadata_evidence": "KB 3",
+                }
+            ],
+            "non_critical_ambiguity": [],
+        },
+        "knowledge_ambiguity": [],
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini_interact")
+
+    mask_true_entries = [mt for mt in filled.masked_terms if mt.term == "[MASKED_TIER]" and mt.is_mask]
+    assert len(mask_true_entries) == 1, (
+        "Authoritative is_mask=True entry must be present even when agent submitted "
+        "an is_mask=False entry with the same term"
+    )
+
+
 def test_fill_deterministic_fields_no_duplicate_masked_terms():
     """If critical_ambiguity contains a term already in masked_terms, it must NOT be duplicated."""
     from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
@@ -625,6 +692,41 @@ def test_fill_deterministic_fields_no_duplicate_masked_terms():
     filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
 
     assert sum(1 for mt in filled.masked_terms if mt.term == "[MASKED_TIER]") == 1
+
+
+def test_fill_deterministic_fields_authoritative_overwrites_stale_is_mask_true():
+    """If the agent already submitted an is_mask=True entry for a term that appears
+    in critical_ambiguity, the harness must REPLACE it with the authoritative
+    metadata_evidence — not skip the authoritative entry."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    base = _minimal_annotation()
+    # Agent submitted stale is_mask=True entry with wrong metadata_evidence.
+    base["masked_terms"] = [
+        {"term": "[MASKED_TIER]", "type": "knowledge_linking_ambiguity",
+         "is_mask": True, "metadata_evidence": ["stale_source"]}
+    ]
+    ann = TaskAnnotation.model_validate(base)
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {"term": "[MASKED_TIER]", "type": "knowledge_linking_ambiguity",
+                 "is_mask": True, "metadata_evidence": ["authoritative_source"]}
+            ],
+            "non_critical_ambiguity": [],
+        },
+        "knowledge_ambiguity": [],
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini_interact")
+
+    mask_entries = [mt for mt in filled.masked_terms if mt.term == "[MASKED_TIER]" and mt.is_mask]
+    assert len(mask_entries) == 1, "Must have exactly one is_mask=True entry (no duplicates)"
+    assert mask_entries[0].metadata_evidence == ["authoritative_source"], (
+        "Harness-authoritative metadata_evidence must replace the stale agent-submitted value"
+    )
 
 
 def test_fill_deterministic_fields_livesqlbench_skips_masked_terms():

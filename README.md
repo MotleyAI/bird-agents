@@ -167,6 +167,43 @@ sizing rule above). With the default 1×1 a 53-task batch serialises
 through one actor and takes ~5 hours; at 1×4 it finishes in ~80 minutes
 for the same per-task wallclock and identical cluster cost.
 
+## Annotator Agent (DEV-1518)
+
+The annotator agent audits benchmark tasks and produces `TaskAnnotation` records
+(metadata sufficiency verdict, gold SQL correctness, audited gold variants).
+It uses the `bird-interact-cloud annotate` subcommand — **not** `submit`.
+
+### Cloud smoke
+
+```bash
+env -u SSH_AUTH_SOCK uv run bird-interact-cloud annotate \
+  --benchmark mini_interact \
+  --agent-model anthropic/claude-opus-4-7 \
+  --instance-ids households_1,households_2,households_3 \
+  --workers 1 --actors-per-worker 3 \
+  --worker-type e2-standard-4 --max-runtime-hours 1 \
+  --override --detach
+```
+
+`--override` re-annotates even when stable blobs already exist in GCS.
+Omit it on production runs to skip already-annotated tasks.
+
+Bump `--actors-per-worker` to match the number of instance IDs for maximum
+parallelism (each actor handles one task). `e2-standard-4` comfortably runs
+4 concurrent Opus actors.
+
+### Fetching results
+
+Annotation outputs land under `results/cloud/<RUN-ID>/` after:
+
+```bash
+env -u SSH_AUTH_SOCK uv run bird-interact-cloud fetch <RUN-ID>
+```
+
+Each annotated task produces a `<instance_id>.task.json` (the `TaskAnnotation`)
+and, if the gold was wrong, one or more `<instance_id>.<variant_id>.gold.json`
+entries in `audited_gold/mini_interact_audited.jsonl`.
+
 ### Waiting for a run to finish
 
 Use `driver.wait_until_done` — do **not** poll `bird-interact-cloud list`
