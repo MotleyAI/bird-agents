@@ -650,3 +650,145 @@ def test_check_orchestrator_passes_framework(monkeypatch: pytest.MonkeyPatch) ->
 
     prereqs.check(_Args())
     assert captured.get("framework") == "claude_sdk_otf"
+
+
+# ---------------------------------------------------------------------------
+# DEV-1530 — --no-subscription-auth flag forces legacy API-key path.
+# ---------------------------------------------------------------------------
+
+
+def test_claude_sdk_no_subscription_auth_flag_falls_through_to_legacy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """claude_sdk + valid OAuth + no_subscription_auth=True + no ANTHROPIC_API_KEY
+    → falls through to legacy path and fails missing ANTHROPIC_API_KEY."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(prereqs.PrereqError) as exc:
+        prereqs.check_api_keys(
+            agent_model="anthropic/claude-sonnet-4-5",
+            user_sim_model="anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+            no_subscription_auth=True,
+        )
+    assert "ANTHROPIC_API_KEY" in str(exc.value)
+
+
+def test_claude_sdk_no_subscription_auth_flag_with_api_key_passes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """claude_sdk + valid OAuth + no_subscription_auth=True + ANTHROPIC_API_KEY
+    → legacy path passes."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    prereqs.check_api_keys(
+        agent_model="anthropic/claude-sonnet-4-5",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+        no_subscription_auth=True,
+    )
+
+
+def test_annotator_no_subscription_auth_flag_falls_through_to_legacy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """annotator + valid OAuth + no_subscription_auth=True + no ANTHROPIC_API_KEY
+    → falls through to legacy path and fails missing ANTHROPIC_API_KEY.
+    (On the OAuth path this would pass because annotator has no user-sim;
+    the legacy path requires ANTHROPIC_API_KEY for the agent itself.)"""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(prereqs.PrereqError) as exc:
+        prereqs.check_api_keys(
+            agent_model="anthropic/claude-opus-4-7",
+            user_sim_model="",
+            framework="annotator",
+            no_subscription_auth=True,
+        )
+    assert "ANTHROPIC_API_KEY" in str(exc.value)
+
+
+def test_no_subscription_auth_flag_noop_on_pydantic_ai(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pydantic_ai + no_subscription_auth=True → already legacy; flag is a no-op."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    prereqs.check_api_keys(
+        agent_model="anthropic/claude-sonnet-4-5",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        framework="pydantic_ai",
+        no_subscription_auth=True,
+    )
+
+
+def test_no_subscription_auth_flag_skips_bad_token_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """claude_sdk + bad OAuth token prefix + no_subscription_auth=True
+    → no PrereqError from token validation (token is ignored on legacy path)."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _BAD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    prereqs.check_api_keys(
+        agent_model="anthropic/claude-sonnet-4-5",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+        no_subscription_auth=True,
+    )
+
+
+def test_check_orchestrator_forwards_no_subscription_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`prereqs.check(args)` must forward `args.no_subscription_auth` to
+    `check_api_keys`."""
+    captured: dict = {}
+
+    def _stub_check_api_keys(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(prereqs, "check_api_keys", _stub_check_api_keys)
+    for name in (
+        "check_python_version", "check_local_tools", "check_gcloud_config",
+        "check_adc", "check_submitter_iam", "check_worker_sa_iam",
+        "ensure_bucket_and_artifact_repo",
+    ):
+        monkeypatch.setattr(prereqs, name, lambda *_a, **_kw: None)
+
+    class _Args:
+        agent_model = "anthropic/claude-sonnet-4-5"
+        user_sim_model = "anthropic/claude-haiku-4-5-20251001"
+        framework = "claude_sdk"
+        query_mode = "raw"
+        no_subscription_auth = True
+
+    prereqs.check(_Args())
+    assert captured.get("no_subscription_auth") is True
+
+
+def test_check_orchestrator_no_subscription_auth_defaults_to_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`prereqs.check(args)` uses False when args has no no_subscription_auth."""
+    captured: dict = {}
+
+    def _stub_check_api_keys(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(prereqs, "check_api_keys", _stub_check_api_keys)
+    for name in (
+        "check_python_version", "check_local_tools", "check_gcloud_config",
+        "check_adc", "check_submitter_iam", "check_worker_sa_iam",
+        "ensure_bucket_and_artifact_repo",
+    ):
+        monkeypatch.setattr(prereqs, name, lambda *_a, **_kw: None)
+
+    class _Args:
+        agent_model = "anthropic/claude-sonnet-4-5"
+        user_sim_model = "anthropic/claude-haiku-4-5-20251001"
+        framework = "claude_sdk"
+        query_mode = "raw"
+        # no no_subscription_auth attribute
+
+    prereqs.check(_Args())
+    assert captured.get("no_subscription_auth") is False
