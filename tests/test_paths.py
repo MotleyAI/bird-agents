@@ -63,6 +63,7 @@ def _isolate_paths(monkeypatch):
     paths._main_checkout_root_cached.cache_clear()
     for var in (
         "BIRD_BENCHMARKS_ROOT", "BIRD_RESULTS_ROOT",
+        "BIRD_AUDITED_GOLD_ROOT",
         "BIRD_SLAYER_MODELS_ROOT", "BIRD_OTF_CACHE_ROOT",
         "BIRD_SLAYER_MODELS_OTF_ROOT", "BIRD_GATED_GOLD_ROOT",
     ):

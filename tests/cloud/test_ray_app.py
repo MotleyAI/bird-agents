@@ -2185,6 +2185,7 @@ def test_download_benchmark_data_downloads_and_sets_env(
     assert calls == [(prefix, _P(container_dir))]
     import os as _os
     assert _os.environ["BIRD_BENCHMARKS_ROOT"] == str(_P(container_dir).parent)
+    assert _os.environ["BIRD_GATED_GOLD_ROOT"] == str(_P(container_dir) / "_gated_gold")
 
 
 def test_download_benchmark_data_noop_without_prefix(

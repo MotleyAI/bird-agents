@@ -63,6 +63,12 @@ class Benchmark(BaseModel):
     ``postgres`` connects to a running postgres server via env vars
     (BIRD_PG_HOST / BIRD_PG_PORT / BIRD_PG_USER / BIRD_PG_PASSWORD)."""
 
+    # One-shot SELECT task count (for full-run assertion in loader).
+    select_full_run_count: int | None = None
+    """Expected number of SELECT tasks on a full unfiltered one-shot run.
+    ``None`` skips the assertion (use for benchmarks whose exact size isn't
+    yet fixed or when the full dataset isn't yet available locally)."""
+
     # DEV-1510: audited-gold sidecar layout.
     audited_gold_layout: Literal["per_db", "single_file"] = "per_db"
     """Where ``apply_audited_gold_overlay`` (and the cloud submit-time
@@ -117,6 +123,7 @@ LIVESQLBENCH = Benchmark(
     per_task_db_isolation=True,
     container_data_dir="/data/livesqlbench-base-lite-sqlite",
     audited_gold_layout="single_file",
+    select_full_run_count=180,
 )
 
 LIVESQLBENCH_POSTGRES = Benchmark(

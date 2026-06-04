@@ -531,6 +531,7 @@ def load_benchmark_tasks(
         return load_livesqlbench_tasks(
             data_path, gold_file, limit=limit, filter_ids=filter_ids,
             dataset_marker=b.dataset_marker,
+            expected_count=b.select_full_run_count,
         )
     return _load_tasks_with_gold(
         data_path, gold_file, limit=limit, filter_ids=filter_ids,
@@ -563,6 +564,7 @@ def load_livesqlbench_tasks(
     limit: int | None = None,
     filter_ids: list[str] | None = None,
     dataset_marker: str = "livesqlbench-base-lite-sqlite",
+    expected_count: int | None = _LIVESQLBENCH_SELECT_FULL_RUN_COUNT,
 ) -> list[dict]:
     """Load + merge a LiveSQLBench task batch.
 
@@ -681,11 +683,11 @@ def load_livesqlbench_tasks(
     # narrows the set; otherwise a smaller count is expected by design.
     # NOT an `assert` because production guards must survive `python -O`
     # / `PYTHONOPTIMIZE`, which strips assertions (Codex review).
-    if limit is None and filter_ids is None:
-        if len(select_rows) != _LIVESQLBENCH_SELECT_FULL_RUN_COUNT:
+    if limit is None and filter_ids is None and expected_count is not None:
+        if len(select_rows) != expected_count:
             raise ValueError(
-                f"expected exactly {_LIVESQLBENCH_SELECT_FULL_RUN_COUNT} "
-                f"SELECT tasks on a full unfiltered LiveSQLBench run; got "
+                f"expected exactly {expected_count} SELECT tasks on a full "
+                f"unfiltered run of {dataset_marker!r}; got "
                 f"{len(select_rows)}. Has the dataset been truncated?"
             )
 

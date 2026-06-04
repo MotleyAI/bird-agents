@@ -24,6 +24,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
+from bird_interact_agents import paths
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
@@ -1110,7 +1111,7 @@ def run_pool(
         # downloaded tree on the head; on a baked/back-compat run it's the
         # baked path), else the canonical container dir.
         "data_dir": (
-            str(Path(os.environ["BIRD_BENCHMARKS_ROOT"]) / _b.name)
+            str(paths.benchmark_data_root(_b))
             if "BIRD_BENCHMARKS_ROOT" in os.environ
             else _b.container_data_dir
         ),

@@ -45,6 +45,7 @@ class FakeSubmitArgs:
     slayer_setup: str = "pre-encoded"
     slayer_storage_root: str = "/data/slayer_models"
     dataset: str = "mini-interact"
+    no_subscription_auth: bool = False
 
 
 def _patch_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict[str, MagicMock]:
@@ -1653,3 +1654,294 @@ def test_read_api_keys_oauth_forwards_bird_pg_vars(monkeypatch):
     assert keys.get("BIRD_PG_HOST") == "pg.example.com"
     assert keys.get("BIRD_PG_PASSWORD") == "mysecret"
     assert "BIRD_PG_PORT" not in keys
+
+
+# ---------------------------------------------------------------------------
+# DEV-1530 — --no-subscription-auth flag in read_api_keys_from_local_env
+# and build_manifest / build_annotator_manifest / resubmit.
+# ---------------------------------------------------------------------------
+
+
+def test_read_api_keys_no_subscription_auth_flag_uses_legacy_path(monkeypatch):
+    """claude_sdk + valid OAuth + no_subscription_auth=True → legacy path;
+    ANTHROPIC_API_KEY shipped directly; CLAUDE_CODE_OAUTH_TOKEN not shipped."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+        no_subscription_auth=True,
+    )
+    assert keys["ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
+    assert "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY" not in keys
+
+
+def test_read_api_keys_no_subscription_auth_flag_annotator(monkeypatch):
+    """annotator + valid OAuth + no_subscription_auth=True → legacy path;
+    ANTHROPIC_API_KEY shipped directly."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-opus-4-7", "",
+        framework="annotator",
+        no_subscription_auth=True,
+    )
+    assert keys["ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
+    assert "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY" not in keys
+
+
+def test_read_api_keys_no_subscription_auth_flag_noop_on_pydantic_ai(monkeypatch):
+    """pydantic_ai + no_subscription_auth=True → already legacy; flag is a no-op."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="pydantic_ai",
+        no_subscription_auth=True,
+    )
+    assert keys["ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
+
+
+def test_read_api_keys_no_subscription_auth_bad_token_not_validated(monkeypatch):
+    """claude_sdk + bad OAuth token prefix + no_subscription_auth=True
+    → no error; bad token is never validated when the flag is set."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-bad-prefix-token")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+        no_subscription_auth=True,
+    )
+    assert keys["ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
+
+
+def test_build_manifest_stores_no_subscription_auth() -> None:
+    """build_manifest records no_subscription_auth=True so resubmit reads it."""
+    args = FakeSubmitArgs(no_subscription_auth=True)
+    manifest = driver.build_manifest(args, image_uri="img:tag", run_id=RUN_ID)
+    assert manifest["no_subscription_auth"] is True
+
+
+def test_build_manifest_no_subscription_auth_default_false() -> None:
+    """build_manifest defaults no_subscription_auth to False when absent from args."""
+    # Manually create an args-like object without the attribute.
+    import argparse as _ap
+    args = _ap.Namespace(
+        framework="pydantic_ai", query_mode="raw",
+        agent_model="anthropic/claude-sonnet-4-5",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        mode="c-interact", instance_ids=["db_a_1"],
+        patience=3, strict=False, use_audited_gold_sql=False,
+        max_depth=3, prompt_cache=True,
+        workers=2, actors_per_worker=2,
+        worker_type="e2-standard-4", max_runtime_hours=4,
+        dataset="mini-interact", gold_file=None,
+        slayer_setup="pre-encoded",
+        slayer_storage_root="/data/slayer_models",
+    )
+    manifest = driver.build_manifest(args, image_uri="img:tag", run_id=RUN_ID)
+    assert manifest["no_subscription_auth"] is False
+
+
+def _fake_annotate_args(**overrides):
+    """Minimal args object for build_annotator_manifest / submit_annotator tests."""
+    ns = argparse.Namespace(
+        benchmark="mini-interact",
+        agent_model="anthropic/claude-opus-4-7",
+        effort="medium",
+        override=False,
+        workers=1,
+        actors_per_worker=2,
+        worker_type="e2-standard-4",
+        max_runtime_hours=2,
+        instance_ids=["db_a_1"],
+    )
+    for k, v in overrides.items():
+        setattr(ns, k, v)
+    return ns
+
+
+def test_build_annotator_manifest_stores_no_subscription_auth() -> None:
+    """build_annotator_manifest records no_subscription_auth=True."""
+    args = _fake_annotate_args(no_subscription_auth=True)
+    manifest = driver.build_annotator_manifest(args, image_uri="img:tag", run_id=RUN_ID)
+    assert manifest["no_subscription_auth"] is True
+
+
+def test_build_annotator_manifest_no_subscription_auth_default_false() -> None:
+    """build_annotator_manifest defaults no_subscription_auth to False."""
+    args = _fake_annotate_args()
+    manifest = driver.build_annotator_manifest(args, image_uri="img:tag", run_id=RUN_ID)
+    assert manifest["no_subscription_auth"] is False
+
+
+def test_submit_passes_no_subscription_auth_to_read_api_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """submit() must pass no_subscription_auth=True from args to
+    read_api_keys_from_local_env so the correct auth path is used."""
+    mocks = _patch_collaborators(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    captured: dict = {}
+    _orig = driver.read_api_keys_from_local_env
+
+    def _spy(*args, **kwargs):
+        captured.update(kwargs)
+        return _orig(*args, **kwargs)
+
+    monkeypatch.setattr(driver, "read_api_keys_from_local_env", _spy)
+    monkeypatch.setattr(driver, "wait_until_done", MagicMock())
+    monkeypatch.setattr(driver, "fetch", MagicMock())
+
+    args = FakeSubmitArgs(framework="claude_sdk", no_subscription_auth=True, detach=True)
+    driver.submit(args)
+
+    assert captured.get("no_subscription_auth") is True
+
+
+def test_submit_annotator_passes_no_subscription_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """submit_annotator() must add no_subscription_auth to _prereq_args and pass it
+    to read_api_keys_from_local_env."""
+    mocks = _patch_collaborators(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    prereqs_captured: dict = {}
+    _orig_check = driver.prereqs.check
+
+    def _spy_prereqs(args):
+        prereqs_captured["no_subscription_auth"] = getattr(
+            args, "no_subscription_auth", None
+        )
+
+    monkeypatch.setattr(driver.prereqs, "check", _spy_prereqs)
+
+    keys_captured: dict = {}
+    _orig_keys = driver.read_api_keys_from_local_env
+
+    def _spy_keys(*args, **kwargs):
+        keys_captured.update(kwargs)
+        return _orig_keys(*args, **kwargs)
+
+    monkeypatch.setattr(driver, "read_api_keys_from_local_env", _spy_keys)
+    monkeypatch.setattr(driver, "wait_until_done", MagicMock())
+    monkeypatch.setattr(driver, "fetch", MagicMock())
+
+    ann_args = _fake_annotate_args(
+        no_subscription_auth=True, run_id=None, detach=True, allow_dirty=False,
+    )
+    driver.submit_annotator(ann_args)
+
+    assert prereqs_captured.get("no_subscription_auth") is True
+    assert keys_captured.get("no_subscription_auth") is True
+
+
+def test_resubmit_reads_no_subscription_auth_from_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """resubmit reads no_subscription_auth from the manifest and passes it to
+    read_api_keys_from_local_env so the auth path matches the original submit."""
+    captured: dict = {}
+    _orig = driver.read_api_keys_from_local_env
+
+    def _spy(*args, **kwargs):
+        captured.update(kwargs)
+        return _orig(*args, **kwargs)
+
+    monkeypatch.setattr(driver, "read_api_keys_from_local_env", _spy)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    manifest = {
+        "run_id": RUN_ID,
+        "framework": "claude_sdk",
+        "mode": "c-interact",
+        "query_mode": "raw",
+        "agent_model": "anthropic/claude-sonnet-4-5",
+        "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+        "instance_ids": ["db_a_1"],
+        "no_subscription_auth": True,
+        "render_inputs": {
+            "workers": 1, "actors_per_worker": 1,
+            "worker_type": "e2-standard-4", "zone": "us-central1-a",
+            "worker_sa": "sa@project.iam.gserviceaccount.com",
+            "max_runtime_hours": 1, "image_uri": "img:tag",
+            "project": "p", "region": "us-central1",
+        },
+    }
+    mocks: dict = {}
+    for attr in ("gcs", "cluster"):
+        m = MagicMock(name=attr)
+        mocks[attr] = m
+        monkeypatch.setattr(f"bird_interact_agents.cloud.driver.{attr}", m)
+    mocks["gcs"].read_manifest.return_value = manifest
+    mocks["gcs"].list_attempts.return_value = {}
+    mocks["cluster"].render_from_manifest.return_value = Path("/tmp/cluster.yaml")
+    mocks["cluster"].head_address.return_value = "ray://10.0.0.1:10001"
+    mocks["cluster"].submit_job.return_value = "raysubmit_resub"
+    monkeypatch.setattr(driver, "wait_until_done", MagicMock())
+    monkeypatch.setattr(driver, "fetch", MagicMock())
+
+    driver.resubmit(RUN_ID)
+
+    assert captured.get("no_subscription_auth") is True
+
+
+def test_resubmit_annotator_reads_no_subscription_auth_from_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """resubmit() annotator branch also forwards no_subscription_auth from manifest."""
+    captured: dict = {}
+    _orig = driver.read_api_keys_from_local_env
+
+    def _spy(*args, **kwargs):
+        captured.update(kwargs)
+        return _orig(*args, **kwargs)
+
+    monkeypatch.setattr(driver, "read_api_keys_from_local_env", _spy)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    manifest = {
+        "run_id": RUN_ID,
+        "framework": "annotator",
+        "mode": "annotate",
+        "query_mode": "raw",
+        "agent_model": "anthropic/claude-opus-4-7",
+        "instance_ids": ["db_a_1"],
+        "no_subscription_auth": True,
+        "render_inputs": {
+            "workers": 1, "actors_per_worker": 1,
+            "worker_type": "e2-standard-4", "zone": "us-central1-a",
+            "worker_sa": "sa@project.iam.gserviceaccount.com",
+            "max_runtime_hours": 1, "image_uri": "img:tag",
+            "project": "p", "region": "us-central1",
+        },
+    }
+    mocks: dict = {}
+    for attr in ("gcs", "cluster"):
+        m = MagicMock(name=attr)
+        mocks[attr] = m
+        monkeypatch.setattr(f"bird_interact_agents.cloud.driver.{attr}", m)
+    mocks["gcs"].read_manifest.return_value = manifest
+    mocks["gcs"].list_attempts.return_value = {}
+    mocks["cluster"].render_from_manifest.return_value = Path("/tmp/cluster.yaml")
+    mocks["cluster"].head_address.return_value = "ray://10.0.0.1:10001"
+    mocks["cluster"].submit_job.return_value = "raysubmit_resub_ann"
+    monkeypatch.setattr(driver, "wait_until_done", MagicMock())
+    monkeypatch.setattr(driver, "fetch", MagicMock())
+
+    driver.resubmit(RUN_ID)
+
+    assert captured.get("no_subscription_auth") is True

@@ -17,8 +17,6 @@ from pathlib import Path
 
 from bird_interact_agents import paths as _paths
 
-REPO_ROOT = _paths.main_checkout_root()
-
 # Mini-interact DB names (used for cache cleanup)
 _MINI_INTERACT_DBS = [
     "alien",
@@ -82,7 +80,7 @@ def migrate(dry: bool) -> None:
     # The new layout is slayer_otf_cache/<benchmark>/<db>/; the old flat
     # layout had <db>/ directly under the root. Delete the old flat dirs.
     # ------------------------------------------------------------------
-    otf_cache_root = REPO_ROOT / "slayer_otf_cache"
+    otf_cache_root = _paths.slayer_otf_cache_root(benchmark="mini-interact").parent
     for db in _MINI_INTERACT_DBS:
         _rmtree(otf_cache_root / db, dry)
     # Also delete households.v3bak if present
@@ -92,7 +90,7 @@ def migrate(dry: bool) -> None:
     # Step 2: delete old flat slayer_models_otf/<db>/ dirs + .build.lock
     # Same layout transition as step 1.
     # ------------------------------------------------------------------
-    otf_models_root = REPO_ROOT / "slayer_models_otf"
+    otf_models_root = _paths.slayer_models_otf_root(benchmark="mini-interact").parent
     for db in _MINI_INTERACT_DBS:
         _rmtree(otf_models_root / db, dry)
         _rm(otf_models_root / f"{db}.build.lock", dry)
@@ -101,7 +99,7 @@ def migrate(dry: bool) -> None:
     # ------------------------------------------------------------------
     # Step 3: rename annotations/mini_interact/ → annotations/mini-interact/
     # ------------------------------------------------------------------
-    ann_root = REPO_ROOT / "annotations"
+    ann_root = _paths.annotations_root()
     src_mi = ann_root / "mini_interact"
     dst_mi = ann_root / "mini-interact"
     if src_mi.exists() and not dst_mi.exists():
@@ -114,7 +112,10 @@ def migrate(dry: bool) -> None:
                 target = dst_mi / sub.name
                 if not target.exists():
                     shutil.move(str(sub), str(target))
-            src_mi.rmdir()  # only works if empty after merge
+            if any(src_mi.iterdir()):
+                _log(f"SKIP    rmdir {src_mi} (not empty after merge; conflicting entries kept)", dry)
+            else:
+                src_mi.rmdir()
     else:
         _log(f"SKIP    {src_mi} → {dst_mi} (source absent or dest exists)", dry)
 
@@ -159,7 +160,8 @@ def migrate(dry: bool) -> None:
     # ------------------------------------------------------------------
     # Step 9: delete empty top-level models/ and datasources/ dirs
     # ------------------------------------------------------------------
-    for d in [REPO_ROOT / "models", REPO_ROOT / "datasources"]:
+    repo_root = _paths.main_checkout_root()
+    for d in [repo_root / "models", repo_root / "datasources"]:
         if d.exists() and d.is_dir():
             contents = list(d.iterdir())
             if not contents:
