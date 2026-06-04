@@ -219,7 +219,7 @@ def test_merge_audited_gold_variants_appends_to_jsonl(tmp_path):
         audited_gold_root=audited_gold_root,
     )
 
-    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
+    consolidated = audited_gold_root / "mini-interact" / "mini-interact_audited.jsonl"
     assert consolidated.exists()
     rows = [json.loads(l) for l in consolidated.read_text().splitlines() if l.strip()]
     assert len(rows) == 1
@@ -232,8 +232,8 @@ def test_merge_audited_gold_variants_deduplicates_by_instance_and_variant(tmp_pa
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold_root = tmp_path / "audited_gold"
-    audited_gold_root.mkdir()
-    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
+    (audited_gold_root / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold_root / "mini-interact" / "mini-interact_audited.jsonl"
     consolidated.write_text(json.dumps(_audited_gold_variant("shop_1", "primary")) + "\n")
 
     downloaded = tmp_path / "downloaded"
@@ -258,8 +258,8 @@ def test_merge_audited_gold_variants_different_variant_id_not_duplicate(tmp_path
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold_root = tmp_path / "audited_gold"
-    audited_gold_root.mkdir()
-    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
+    (audited_gold_root / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold_root / "mini-interact" / "mini-interact_audited.jsonl"
     consolidated.write_text(json.dumps(_audited_gold_variant("shop_1", "primary")) + "\n")
 
     downloaded = tmp_path / "downloaded"
@@ -321,8 +321,8 @@ def test_merge_audited_gold_variants_mixed_new_and_existing(tmp_path):
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold_root = tmp_path / "audited_gold"
-    audited_gold_root.mkdir()
-    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
+    (audited_gold_root / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold_root / "mini-interact" / "mini-interact_audited.jsonl"
     consolidated.write_text(json.dumps(_audited_gold_variant("shop_1")) + "\n")
 
     downloaded = tmp_path / "downloaded"
@@ -369,8 +369,8 @@ def test_merge_audited_gold_variants_override_replaces_existing(tmp_path):
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold = tmp_path / "audited_gold"
-    audited_gold.mkdir()
-    consolidated = audited_gold / "mini-interact_audited.jsonl"
+    (audited_gold / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold / "mini-interact" / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
         "selected_database": "db_a", "benchmark": "mini-interact",
@@ -408,8 +408,8 @@ def test_merge_audited_gold_variants_override_purges_stale_rows_when_empty_file(
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold = tmp_path / "audited_gold"
-    audited_gold.mkdir()
-    consolidated = audited_gold / "mini-interact_audited.jsonl"
+    (audited_gold / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold / "mini-interact" / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
         "selected_database": "db_a", "benchmark": "mini-interact",
@@ -448,8 +448,8 @@ def test_merge_audited_gold_variants_override_preserves_rows_for_failed_tasks(tm
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold = tmp_path / "audited_gold"
-    audited_gold.mkdir()
-    consolidated = audited_gold / "mini-interact_audited.jsonl"
+    (audited_gold / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold / "mini-interact" / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
         "selected_database": "db_a", "benchmark": "mini-interact",
@@ -482,8 +482,8 @@ def test_merge_audited_gold_variants_override_purges_all_rows_truncates_file(tmp
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold = tmp_path / "audited_gold"
-    audited_gold.mkdir()
-    consolidated = audited_gold / "mini-interact_audited.jsonl"
+    (audited_gold / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold / "mini-interact" / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
         "selected_database": "db_a", "benchmark": "mini-interact",
@@ -514,8 +514,8 @@ def test_merge_audited_gold_variants_override_false_does_not_replace(tmp_path):
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold = tmp_path / "audited_gold"
-    audited_gold.mkdir()
-    consolidated = audited_gold / "mini-interact_audited.jsonl"
+    (audited_gold / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold / "mini-interact" / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
         "selected_database": "db_a", "benchmark": "mini-interact",
@@ -553,8 +553,8 @@ def test_merge_audited_gold_variants_append_handles_missing_trailing_newline(tmp
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold = tmp_path / "audited_gold"
-    audited_gold.mkdir()
-    consolidated = audited_gold / "mini-interact_audited.jsonl"
+    (audited_gold / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold / "mini-interact" / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
         "selected_database": "db_a", "benchmark": "mini-interact",

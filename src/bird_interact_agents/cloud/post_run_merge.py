@@ -665,7 +665,7 @@ def merge_audited_gold_variants(
     if not rows_dir.exists():
         return report
 
-    consolidated = audited_gold_root / f"{bm}_audited.jsonl"
+    consolidated = audited_gold_root / bm / f"{bm}_audited.jsonl"
 
     if override:
         # Upsert mode: load all existing rows keyed by (instance_id, variant_id),
@@ -722,7 +722,7 @@ def merge_audited_gold_variants(
                 report.added += 1
 
         if existing_ordered:
-            audited_gold_root.mkdir(parents=True, exist_ok=True)
+            consolidated.parent.mkdir(parents=True, exist_ok=True)
             consolidated.write_text(
                 "\n".join(existing_ordered.values()) + "\n"
             )
@@ -776,7 +776,7 @@ def merge_audited_gold_variants(
             report.added += 1
 
     if new_lines:
-        audited_gold_root.mkdir(parents=True, exist_ok=True)
+        consolidated.parent.mkdir(parents=True, exist_ok=True)
         if consolidated.exists() and consolidated.stat().st_size > 0:
             if not consolidated.read_bytes().endswith(b"\n"):
                 with consolidated.open("a") as f:

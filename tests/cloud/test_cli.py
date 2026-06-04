@@ -36,24 +36,18 @@ def _lsb_argv(extra: list[str]) -> list[str]:
     ]
 
 
-def test_livesqlbench_one_shot_accepted_with_gold():
+def test_livesqlbench_one_shot_accepted():
     ns = cli.parse_args(
-        _lsb_argv(["--mode", "one-shot", "--gold-file", "/abs/gold.jsonl"])
+        _lsb_argv(["--mode", "one-shot"])
     )
     assert ns.dataset == "livesqlbench-base-lite-sqlite"
-    assert ns.gold_file == "/abs/gold.jsonl"
     assert ns.mode == "one-shot"
-
-
-def test_livesqlbench_without_gold_file_rejected():
-    with pytest.raises(SystemExit):
-        cli.parse_args(_lsb_argv(["--mode", "one-shot"]))  # no --gold-file
 
 
 def test_livesqlbench_rejects_unsupported_mode():
     # a-interact is not in livesqlbench's supported modes → gate rejects.
     with pytest.raises(SystemExit):
-        cli.parse_args(_lsb_argv(["--mode", "a-interact", "--gold-file", "/g.jsonl"]))
+        cli.parse_args(_lsb_argv(["--mode", "a-interact"]))
 
 
 def test_dataset_hyphen_alias_normalized_to_canonical():
@@ -266,12 +260,11 @@ def test_require_audited_gold_disabled_when_use_audited_gold_off() -> None:
 
 def _lsb_audit_argv(extra: list[str] | None = None) -> list[str]:
     """Like `_lsb_argv`, but with `museum_7` (the locked DEV-1510 audit
-    subject), `--mode one-shot`, `--gold-file`, and `--require-audited-gold`
-    forced back ON (overrides `_lsb_argv`'s default `--no-require-audited-gold`)
-    so the argv reaches the audited-gold guard."""
+    subject), `--mode one-shot`, and `--require-audited-gold` forced back ON
+    (overrides `_lsb_argv`'s default `--no-require-audited-gold`) so the argv
+    reaches the audited-gold guard."""
     return _lsb_argv([
         "--mode", "one-shot",
-        "--gold-file", "/tmp/fake-livesqlbench-gold.jsonl",
         "--instance-ids", "museum_7",
         "--require-audited-gold",
         *(extra or []),
@@ -346,8 +339,8 @@ def test_require_audited_gold_passes_for_livesqlbench_when_row_present(
     from bird_interact_agents import paths as _paths
 
     audited_root = tmp_path / "audited_gold"
-    audited_root.mkdir()
-    (audited_root / "livesqlbench-base-lite-sqlite_audited.jsonl").write_text(
+    (audited_root / "livesqlbench-base-lite-sqlite").mkdir(parents=True)
+    (audited_root / "livesqlbench-base-lite-sqlite" / "livesqlbench-base-lite-sqlite_audited.jsonl").write_text(
         '{"instance_id":"museum_7","selected_database":"museum",'
         '"benchmark":"livesqlbench-base-lite-sqlite",'
         '"audit_status":"edited","audited_sol_sql":["SELECT 1"]}\n'
@@ -493,8 +486,6 @@ def _ainteract_argv(**over) -> list[str]:
         "--slayer-setup", base["slayer_setup"],
         "--no-require-audited-gold",
     ]
-    if "gold_file" in over:
-        argv += ["--gold-file", over["gold_file"]]
     return argv
 
 
@@ -512,11 +503,10 @@ def test_cloud_ainteract_with_pre_encoded_rejected():
 
 
 def test_cloud_ainteract_with_livesqlbench_rejected():
-    """Dataset×framework gate: ainteract is bound to mini_interact even with
-    a gold-file present."""
+    """Dataset×framework gate: ainteract is bound to mini_interact."""
     with pytest.raises(SystemExit):
         cli.parse_args(_ainteract_argv(
-            dataset="livesqlbench-base-lite-sqlite", gold_file="/abs/gold.jsonl",
+            dataset="livesqlbench-base-lite-sqlite",
         ))
 
 
@@ -525,7 +515,6 @@ def test_cloud_ainteract_one_shot_livesqlbench_accepted():
     was removed in DEV-1525, and livesqlbench supports one-shot mode."""
     ns = cli.parse_args(_ainteract_argv(
         mode="one-shot", dataset="livesqlbench-base-lite-sqlite",
-        gold_file="/abs/gold.jsonl",
     ))
     assert ns.mode == "one-shot"
 
@@ -558,7 +547,6 @@ def test_cloud_ainteract_with_livesqlbench_oracle_rejected():
             "--instance-ids", "alien_1",
             "--mode", "oracle",
             "--dataset", "livesqlbench-base-lite-sqlite",
-            "--gold-file", "/abs/gold.jsonl",
             "--no-require-audited-gold",
         ])
 
@@ -681,31 +669,6 @@ def test_build_subcommand_passes_audited_gold_root_to_image_tag(
     assert push_calls[0][3] == fake_ann, (
         f"build_and_push missing annotations_root kwarg; got {push_calls[0]}"
     )
-
-
-def test_annotate_gold_file_arg_accepted() -> None:
-    """The `annotate` subcommand must expose `--gold-file` so users can
-    provide an explicit gold sidecar path for LiveSQLBench annotation."""
-    ns = cli.parse_args([
-        "annotate",
-        "--benchmark", "mini-interact",
-        "--agent-model", "anthropic/claude-opus-4-7",
-        "--instance-ids", "db_a_1",
-        "--gold-file", "/data/livesqlbench/gold.jsonl",
-    ])
-    assert ns.gold_file == "/data/livesqlbench/gold.jsonl"
-
-
-def test_annotate_gold_file_defaults_to_none() -> None:
-    """When `--gold-file` is omitted, `ns.gold_file` must be None so the
-    in-cluster fallback path can take over."""
-    ns = cli.parse_args([
-        "annotate",
-        "--benchmark", "mini-interact",
-        "--agent-model", "anthropic/claude-opus-4-7",
-        "--instance-ids", "db_a_1",
-    ])
-    assert ns.gold_file is None
 
 
 @pytest.mark.parametrize("sub", ["submit", "fetch", "kill", "list", "build", "resubmit"])

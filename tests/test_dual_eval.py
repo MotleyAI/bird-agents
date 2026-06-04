@@ -378,9 +378,10 @@ def _minimal_row_kwargs() -> dict:
 
 
 def _write_single_file_audit(audited_root: Path, rows: list[dict]) -> Path:
-    """Lay down `<audited_root>/livesqlbench-base-lite-sqlite_audited.jsonl` from `rows`."""
-    audited_root.mkdir(parents=True, exist_ok=True)
-    path = audited_root / "livesqlbench-base-lite-sqlite_audited.jsonl"
+    """Lay down `<audited_root>/livesqlbench-base-lite-sqlite/livesqlbench-base-lite-sqlite_audited.jsonl`."""
+    subdir = audited_root / "livesqlbench-base-lite-sqlite"
+    subdir.mkdir(parents=True, exist_ok=True)
+    path = subdir / "livesqlbench-base-lite-sqlite_audited.jsonl"
     with path.open("w") as f:
         for r in rows:
             f.write(json.dumps(r) + "\n")
@@ -774,7 +775,8 @@ def test_overlay_benchmark_kwarg_mini_interact_uses_single_file(tmp_path):
     from bird_interact_agents.benchmark import get_benchmark
     from bird_interact_agents.harness import apply_audited_gold_overlay
 
-    single_file = tmp_path / "mini-interact_audited.jsonl"
+    (tmp_path / "mini-interact").mkdir(parents=True, exist_ok=True)
+    single_file = tmp_path / "mini-interact" / "mini-interact_audited.jsonl"
     single_file.write_text(json.dumps({
         "instance_id": "alien_explicit",
         "selected_database": "alien",
@@ -911,7 +913,8 @@ def test_cloud_audit_index_prefers_primary_over_alternate(tmp_path):
     )
 
     benchmark = get_benchmark("livesqlbench-base-lite-sqlite")
-    audit_path = tmp_path / f"{benchmark.name}_audited.jsonl"
+    (tmp_path / benchmark.name).mkdir(parents=True, exist_ok=True)
+    audit_path = tmp_path / benchmark.name / f"{benchmark.name}_audited.jsonl"
     audit_path.write_text(
         json.dumps({
             "instance_id": "museum_9",

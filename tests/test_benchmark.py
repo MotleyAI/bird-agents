@@ -61,7 +61,7 @@ def test_mini_interact_facts():
     assert b.dataset_marker == "mini-interact"
     assert b.data_file == "mini_interact.jsonl"
     assert b.one_shot is False
-    assert b.gold_required is False
+    assert b.gold_required is True
     assert b.per_task_db_isolation is False
     assert b.container_data_dir == "/data/mini-interact"
     assert "a-interact" in b.supported_modes and "oracle" in b.supported_modes

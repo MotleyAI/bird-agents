@@ -336,13 +336,14 @@ def test_loader_filter_ids_assert_180_skipped_when_filter_present(tmp_path):
     assert len(rows) == 1
 
 
-def test_load_benchmark_tasks_nongold_applies_limit_after_filter(tmp_path):
+def test_load_benchmark_tasks_nongold_applies_limit_after_filter(tmp_path, monkeypatch):
     """Non-gold dispatch (mini_interact): `limit` must apply AFTER `filter_ids`.
 
     Limiting first can truncate a requested instance_id away before filtering —
     e.g. filtering to the 3rd row with limit=2 would load only [a, b], then
     filter to [] (the requested `c` dropped). Limit-after-filter yields [c]
     (CodeRabbit, mirrors the LiveSQLBench path)."""
+    import bird_interact_agents.harness as _harness
     from bird_interact_agents.harness import load_benchmark_tasks
 
     p = tmp_path / "mini.jsonl"
@@ -350,7 +351,14 @@ def test_load_benchmark_tasks_nongold_applies_limit_after_filter(tmp_path):
         json.dumps({"instance_id": i, "selected_database": "db"}) + "\n"
         for i in ("a", "b", "c")
     ))
+    gold_file = tmp_path / "gold.jsonl"
+    gold_file.write_text("".join(
+        json.dumps({"instance_id": i, "sol_sql": ["SELECT 1"]}) + "\n"
+        for i in ("a", "b", "c")
+    ))
+    monkeypatch.setattr(_harness, "_auto_discover_gold", lambda _name: str(gold_file))
+
     rows = load_benchmark_tasks(
-        "mini-interact", str(p), None, limit=2, filter_ids=["c"],
+        "mini-interact", str(p), limit=2, filter_ids=["c"],
     )
     assert [r["instance_id"] for r in rows] == ["c"]

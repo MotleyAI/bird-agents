@@ -63,7 +63,7 @@ def _load_single_file_audit_index(
     audited_root: Path, benchmark: Benchmark,
 ) -> Optional[dict[str, tuple[str, bool, str, str]]]:
     """Return ``{instance_id: (audit_status, has_audited_sql, row_db, row_benchmark)}``
-    for ``<root>/<benchmark.name>_audited.jsonl`` or ``None`` if absent.
+    for ``<root>/<benchmark.name>/<benchmark.name>_audited.jsonl`` or ``None`` if absent.
 
     ``row_db`` is the row's ``selected_database`` and ``row_benchmark``
     is the row's ``benchmark`` field; the caller uses both as defensive
@@ -71,7 +71,7 @@ def _load_single_file_audit_index(
     wrong database or the wrong benchmark would silently apply the wrong
     audit otherwise).
     """
-    path = audited_root / f"{benchmark.name}_audited.jsonl"
+    path = audited_root / benchmark.name / f"{benchmark.name}_audited.jsonl"
     if not path.exists():
         return None
     out: dict[str, tuple[str, bool, str, str]] = {}

@@ -552,11 +552,11 @@ def test_audited_gold_file_livesqlbench_anchored_to_main(tmp_path, monkeypatch):
     main, wt = _setup_main_and_worktree(tmp_path, monkeypatch)
     assert (
         paths.audited_gold_file(benchmark="livesqlbench-base-lite-sqlite")
-        == main / "audited_gold" / "livesqlbench-base-lite-sqlite_audited.jsonl"
+        == main / "audited_gold" / "livesqlbench-base-lite-sqlite" / "livesqlbench-base-lite-sqlite_audited.jsonl"
     )
     assert (
         paths.audited_gold_file(benchmark="livesqlbench-base-lite-sqlite")
-        != wt / "audited_gold" / "livesqlbench-base-lite-sqlite_audited.jsonl"
+        != wt / "audited_gold" / "livesqlbench-base-lite-sqlite" / "livesqlbench-base-lite-sqlite_audited.jsonl"
     )
 
 
@@ -568,7 +568,7 @@ def test_audited_gold_file_honours_root_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("BIRD_AUDITED_GOLD_ROOT", str(override))
     assert (
         paths.audited_gold_file(benchmark="livesqlbench-base-lite-sqlite")
-        == override / "livesqlbench-base-lite-sqlite_audited.jsonl"
+        == override / "livesqlbench-base-lite-sqlite" / "livesqlbench-base-lite-sqlite_audited.jsonl"
     )
 
 
@@ -577,7 +577,7 @@ def test_audited_gold_file_mini_interact_anchored_to_main(tmp_path, monkeypatch)
     main_root, _ = _setup_main_and_worktree(tmp_path, monkeypatch)
     assert (
         paths.audited_gold_file(benchmark="mini-interact")
-        == main_root / "audited_gold" / "mini-interact_audited.jsonl"
+        == main_root / "audited_gold" / "mini-interact" / "mini-interact_audited.jsonl"
     )
 
 

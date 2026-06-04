@@ -116,6 +116,7 @@ def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     client = client or default_gcs_client()
     _benchmark_data.ensure_downloaded(prefix, dest, client=client)
     os.environ["BIRD_BENCHMARKS_ROOT"] = str(dest.parent)
+    os.environ["BIRD_GATED_GOLD_ROOT"] = str(dest / _benchmark_data.GATED_GOLD_SUBDIR)
 
 
 def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
@@ -1394,18 +1395,16 @@ def _load_task_data(
     instance_ids: list[str],
     *,
     dataset: str,
-    gold_file: str | None = None,
     use_audited_gold_sql: bool = False,
 ) -> dict[str, dict]:
     """Load per-task dicts for ``dataset`` via the benchmark-aware loader (the
-    SAME dispatch the local runner uses): a gold-required benchmark merges its
-    gated sidecar + stamps the dataset marker + SELECT-filters; otherwise plain
-    load. Filtered to the run's ``instance_ids``.
+    SAME dispatch the local runner uses): auto-discovers gold from gated_gold/,
+    merges the sidecar + stamps the dataset marker + SELECT-filters.
+    Filtered to the run's ``instance_ids``.
 
-    DEV-1510: the audited-gold overlay now fires for ALL benchmarks. The
+    DEV-1510: the audited-gold overlay fires for ALL benchmarks. The
     per-benchmark `audited_gold_layout` on the `Benchmark` descriptor
-    selects the on-disk shape (per_db for mini-interact, single_file for
-    livesqlbench), so cloud actors evaluate against audited gold for both.
+    selects the on-disk shape (single_file for all current benchmarks).
     """
     from bird_interact_agents import paths
     from bird_interact_agents.benchmark import get_benchmark
@@ -1414,7 +1413,6 @@ def _load_task_data(
     rows = load_benchmark_tasks(
         dataset,
         str(paths.benchmark_data_file(dataset)),
-        gold_file,
         filter_ids=instance_ids,
     )
     if use_audited_gold_sql:
@@ -1463,7 +1461,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--user-sim-model", required=True)
     p.add_argument("--dataset", required=True,
                    choices=cli_dataset_tokens())
-    p.add_argument("--gold-file", default=None)
     p.add_argument(
         "--benchmark-data-prefix", default=None,
         help="content-hashed GCS prefix the benchmark dataset was uploaded to "
@@ -1512,7 +1509,6 @@ def main(argv: list[str] | None = None) -> int:
     task_data_by_id = _load_task_data(
         instance_ids,
         dataset=args.dataset,
-        gold_file=args.gold_file,
         use_audited_gold_sql=args.use_audited_gold_sql,
     )
 

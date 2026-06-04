@@ -124,7 +124,7 @@ def test_mini_interact_postgres_facts():
     assert b.db_backend == "postgres"
     assert b.data_file == "mini_interact.jsonl"
     assert b.one_shot is False
-    assert b.gold_required is False
+    assert b.gold_required is True
     assert b.per_task_db_isolation is False
     assert "a-interact" in b.supported_modes
     assert "one-shot" not in b.supported_modes
@@ -186,22 +186,24 @@ def _make_gold_jsonl(path, instance_ids):
             }) + "\n")
 
 
-def test_load_benchmark_tasks_postgres_stamps_correct_marker(tmp_path):
+def test_load_benchmark_tasks_postgres_stamps_correct_marker(tmp_path, monkeypatch):
     """load_benchmark_tasks for livesqlbench_postgres must stamp
     row['dataset'] = 'livesqlbench_postgres', not 'livesqlbench'.
     The wrong marker causes execute_submit_action to route postgres tasks
     through the SQLite path (Codex finding, DEV-1523)."""
+    import json as _json
+    import bird_interact_agents.harness as _harness
     from bird_interact_agents.harness import load_benchmark_tasks
 
     data_file = tmp_path / "data.jsonl"
-    gold_file = tmp_path / "gold.jsonl"
     _make_minimal_livesqlbench_jsonl(data_file, ["alien_pg_1"])
-    _make_gold_jsonl(gold_file, ["alien_pg_1"])
+    gold_file = tmp_path / "gold.jsonl"
+    gold_file.write_text(_json.dumps({"instance_id": "alien_pg_1", "sol_sql": ["SELECT 1"]}) + "\n")
+    monkeypatch.setattr(_harness, "_auto_discover_gold", lambda _name: str(gold_file))
 
     tasks = load_benchmark_tasks(
         "livesqlbench-base-lite",
         str(data_file),
-        gold_file=str(gold_file),
         filter_ids=["alien_pg_1"],
     )
     assert tasks, "expected at least one task"
@@ -211,11 +213,12 @@ def test_load_benchmark_tasks_postgres_stamps_correct_marker(tmp_path):
     )
 
 
-def test_load_benchmark_tasks_mini_interact_postgres_stamps_correct_marker(tmp_path):
+def test_load_benchmark_tasks_mini_interact_postgres_stamps_correct_marker(tmp_path, monkeypatch):
     """load_benchmark_tasks for mini_interact_postgres must stamp
     row['dataset'] = 'mini_interact_postgres', not 'mini_interact'.
     The wrong marker routes postgres tasks through the SQLite path (Codex, DEV-1523)."""
     import json
+    import bird_interact_agents.harness as _harness
     from bird_interact_agents.harness import load_benchmark_tasks
 
     data_file = tmp_path / "data.jsonl"
@@ -225,6 +228,9 @@ def test_load_benchmark_tasks_mini_interact_postgres_stamps_correct_marker(tmp_p
             "selected_database": "alien",
             "amb_user_query": "How many rows?",
         }) + "\n")
+    gold_file = tmp_path / "gold.jsonl"
+    gold_file.write_text(json.dumps({"instance_id": "alien_pg_1", "sol_sql": ["SELECT 1"]}) + "\n")
+    monkeypatch.setattr(_harness, "_auto_discover_gold", lambda _name: str(gold_file))
 
     tasks = load_benchmark_tasks(
         "bird-interact-lite-exp",
@@ -237,9 +243,10 @@ def test_load_benchmark_tasks_mini_interact_postgres_stamps_correct_marker(tmp_p
     )
 
 
-def test_load_benchmark_tasks_sqlite_mini_interact_still_stamps_mini_interact(tmp_path):
+def test_load_benchmark_tasks_sqlite_mini_interact_still_stamps_mini_interact(tmp_path, monkeypatch):
     """Backward-compat: the SQLite mini_interact still gets dataset='mini_interact'."""
     import json
+    import bird_interact_agents.harness as _harness
     from bird_interact_agents.harness import load_benchmark_tasks
 
     data_file = tmp_path / "data.jsonl"
@@ -249,6 +256,9 @@ def test_load_benchmark_tasks_sqlite_mini_interact_still_stamps_mini_interact(tm
             "selected_database": "alien",
             "amb_user_query": "How many rows?",
         }) + "\n")
+    gold_file = tmp_path / "gold.jsonl"
+    gold_file.write_text(json.dumps({"instance_id": "alien_1", "sol_sql": ["SELECT 1"]}) + "\n")
+    monkeypatch.setattr(_harness, "_auto_discover_gold", lambda _name: str(gold_file))
 
     tasks = load_benchmark_tasks(
         "mini-interact",
@@ -259,19 +269,21 @@ def test_load_benchmark_tasks_sqlite_mini_interact_still_stamps_mini_interact(tm
     assert tasks[0]["dataset"] == "mini-interact"
 
 
-def test_load_benchmark_tasks_sqlite_livesqlbench_still_stamps_livesqlbench(tmp_path):
+def test_load_benchmark_tasks_sqlite_livesqlbench_still_stamps_livesqlbench(tmp_path, monkeypatch):
     """Backward-compat: the SQLite livesqlbench still gets dataset='livesqlbench'."""
+    import json as _json
+    import bird_interact_agents.harness as _harness
     from bird_interact_agents.harness import load_benchmark_tasks
 
     data_file = tmp_path / "data.jsonl"
-    gold_file = tmp_path / "gold.jsonl"
     _make_minimal_livesqlbench_jsonl(data_file, ["alien_1"])
-    _make_gold_jsonl(gold_file, ["alien_1"])
+    gold_file = tmp_path / "gold.jsonl"
+    gold_file.write_text(_json.dumps({"instance_id": "alien_1", "sol_sql": ["SELECT 1"]}) + "\n")
+    monkeypatch.setattr(_harness, "_auto_discover_gold", lambda _name: str(gold_file))
 
     tasks = load_benchmark_tasks(
         "livesqlbench-base-lite-sqlite",
         str(data_file),
-        gold_file=str(gold_file),
         filter_ids=["alien_1"],
     )
     assert tasks

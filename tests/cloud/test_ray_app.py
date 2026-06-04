@@ -2175,6 +2175,7 @@ def test_download_benchmark_data_downloads_and_sets_env(
         lambda prefix, dest, **kw: calls.append((prefix, _P(dest))) or _P(dest),
     )
     monkeypatch.setenv("BIRD_BENCHMARKS_ROOT", "SENTINEL")
+    monkeypatch.setenv("BIRD_GATED_GOLD_ROOT", "SENTINEL_GATED")
 
     prefix = f"benchmark-data/{dataset}/abc123/"
     ray_app.download_benchmark_data(

@@ -21,7 +21,6 @@ under "DEV-1510: apply_audited_gold_overlay learns a `benchmark` kwarg").
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -93,11 +92,6 @@ async def test_run_evaluation_invokes_overlay_for_livesqlbench(
     monkeypatch.setattr(run_mod, "_maybe_force_wipe_otf", lambda **kw: None)
 
     output_path = tmp_path / "eval.json"
-    fake_gold = tmp_path / "fake_gold.jsonl"
-    fake_gold.write_text(
-        json.dumps({"instance_id": "museum_1", "sol_sql": ["SELECT 1"],
-                    "external_knowledge": [], "test_cases": []}) + "\n",
-    )
 
     with pytest.raises(_OverlayCalled) as exc:
         await run_mod.run_evaluation(
@@ -118,7 +112,6 @@ async def test_run_evaluation_invokes_overlay_for_livesqlbench(
             reasoning_effort=None,
             use_audited_gold_sql=True,
             dataset="livesqlbench-base-lite-sqlite",
-            gold_file=str(fake_gold),
             filter_ids=None,
         )
 
@@ -155,11 +148,6 @@ async def test_run_evaluation_does_not_invoke_overlay_when_flag_off(
     monkeypatch.setattr(run_mod, "_make_runner", _runner_sentinel)
 
     output_path = tmp_path / "eval.json"
-    fake_gold = tmp_path / "fake_gold.jsonl"
-    fake_gold.write_text(
-        json.dumps({"instance_id": "museum_1", "sol_sql": ["SELECT 1"],
-                    "external_knowledge": [], "test_cases": []}) + "\n",
-    )
 
     with pytest.raises(_RunnerCalled):
         await run_mod.run_evaluation(
@@ -180,7 +168,6 @@ async def test_run_evaluation_does_not_invoke_overlay_when_flag_off(
             reasoning_effort=None,
             use_audited_gold_sql=False,
             dataset="livesqlbench-base-lite-sqlite",
-            gold_file=str(fake_gold),
             filter_ids=None,
         )
 
@@ -255,7 +242,6 @@ def test_cloud_load_task_data_invokes_overlay_for_livesqlbench(
     out = ray_app._load_task_data(
         ["museum_7"],
         dataset="livesqlbench-base-lite-sqlite",
-        gold_file=None,
         use_audited_gold_sql=True,
     )
 
@@ -303,7 +289,6 @@ def test_cloud_load_task_data_skips_overlay_when_flag_off(monkeypatch, tmp_path)
     out = ray_app._load_task_data(
         ["museum_7"],
         dataset="livesqlbench-base-lite-sqlite",
-        gold_file=None,
         use_audited_gold_sql=False,
     )
 
@@ -355,7 +340,6 @@ def test_cloud_load_task_data_mini_interact_overlay_still_works(
     ray_app._load_task_data(
         ["db_a_1"],
         dataset="mini-interact",
-        gold_file=None,
         use_audited_gold_sql=True,
     )
 
