@@ -106,7 +106,9 @@ def _load_single_file_audit_index(
             audited = row.get("audited_sol_sql")
             has_audited_sql = isinstance(audited, list) and bool(audited)
             row_db = row.get("selected_database") or ""
-            row_benchmark = row.get("benchmark") or ""
+            # Normalise legacy underscore names (mini_interact → mini-interact)
+            # so files authored before the DEV-1525 rename still pass.
+            row_benchmark = (row.get("benchmark") or "").replace("_", "-")
             out[iid] = (status, has_audited_sql, row_db, row_benchmark)
             primary_seen[iid] = is_primary
     return out
