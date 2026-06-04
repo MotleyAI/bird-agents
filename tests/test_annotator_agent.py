@@ -538,7 +538,7 @@ def test_fill_deterministic_fields_overwrites_provenance_and_external_knowledge(
         "selected_database": "shop",
         "external_knowledge": [3, 7],
     }
-    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini_interact")
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
 
     assert filled.external_knowledge == [3, 7]
     assert filled.provenance.task_jsonl_path == "mini_interact.jsonl"
@@ -555,9 +555,9 @@ def test_fill_deterministic_fields_livesqlbench_provenance():
     base["provenance"]["task_jsonl_path"] = "WRONG"
     ann = TaskAnnotation.model_validate(base)
     task_data = {"instance_id": "flight_1", "selected_database": "flight"}
-    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="livesqlbench")
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="livesqlbench-base-lite-sqlite")
 
-    assert filled.provenance.task_jsonl_path == _benchmark_task_jsonl_name("livesqlbench")
+    assert filled.provenance.task_jsonl_path == _benchmark_task_jsonl_name("livesqlbench-base-lite-sqlite")
     assert filled.provenance.task_jsonl_instance_id == "flight_1"
 
 
@@ -624,7 +624,7 @@ def test_fill_deterministic_fields_string_metadata_evidence_wrapped_in_list():
         },
         "knowledge_ambiguity": [],
     }
-    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini_interact")
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
 
     mt = next(mt for mt in filled.masked_terms if mt.term == "[MASKED_TIER]")
     assert mt.metadata_evidence == ["KB 3"]
@@ -659,7 +659,7 @@ def test_fill_deterministic_fields_is_mask_false_same_term_does_not_block_author
         },
         "knowledge_ambiguity": [],
     }
-    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini_interact")
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
 
     mask_true_entries = [mt for mt in filled.masked_terms if mt.term == "[MASKED_TIER]" and mt.is_mask]
     assert len(mask_true_entries) == 1, (
@@ -720,7 +720,7 @@ def test_fill_deterministic_fields_authoritative_overwrites_stale_is_mask_true()
         },
         "knowledge_ambiguity": [],
     }
-    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini_interact")
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
 
     mask_entries = [mt for mt in filled.masked_terms if mt.term == "[MASKED_TIER]" and mt.is_mask]
     assert len(mask_entries) == 1, "Must have exactly one is_mask=True entry (no duplicates)"
