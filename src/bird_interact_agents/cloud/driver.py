@@ -344,11 +344,18 @@ def _check_gold_present(benchmark_name: str) -> None:
     if not b.gold_required:
         return
     gold_dir = paths.gated_gold_root(benchmark=benchmark_name)
-    if not gold_dir.is_dir() or not any(gold_dir.glob("*.jsonl")):
+    jsonls = list(gold_dir.glob("*.jsonl")) if gold_dir.is_dir() else []
+    if not jsonls:
         raise FileNotFoundError(
             f"benchmark {benchmark_name!r} requires gated gold but no "
             f"*.jsonl found in {gold_dir}. "
             f"Place the gold sidecar there before submitting."
+        )
+    if len(jsonls) > 1:
+        raise RuntimeError(
+            f"benchmark {benchmark_name!r} gold dir has multiple *.jsonl "
+            f"files — auto-discovery is ambiguous: "
+            f"{[f.name for f in jsonls]}. Remove the stale copies."
         )
 
 

@@ -143,6 +143,16 @@ def migrate(dry: bool) -> None:
     _mv(src_ag, dst_ag, dry)
 
     # ------------------------------------------------------------------
+    # Step 6b: move audited_gold/livesqlbench-base-lite-sqlite_audited.jsonl →
+    #          audited_gold/livesqlbench-base-lite-sqlite/livesqlbench-base-lite-sqlite_audited.jsonl
+    # ------------------------------------------------------------------
+    lsb_name = "livesqlbench-base-lite-sqlite"
+    src_lsb_ag = ag_root / f"{lsb_name}_audited.jsonl"
+    dst_lsb_ag = ag_root / lsb_name / f"{lsb_name}_audited.jsonl"
+    _mkdir(ag_root / lsb_name, dry)
+    _mv(src_lsb_ag, dst_lsb_ag, dry)
+
+    # ------------------------------------------------------------------
     # Step 7: delete stale audited_gold/mini_interact_audited.jsonl
     # ------------------------------------------------------------------
     _rm(ag_root / "mini_interact_audited.jsonl", dry)
