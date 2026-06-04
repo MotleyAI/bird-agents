@@ -732,3 +732,56 @@ def test_subcommand_registered(sub: str) -> None:
     else:
         ns = cli.parse_args([sub, "some-run-id"])
     assert ns.subcommand == sub
+
+
+# ---------------------------------------------------------------------------
+# DEV-1530 — --no-subscription-auth flag on submit and annotate.
+# ---------------------------------------------------------------------------
+
+
+def _minimal_submit_argv(extra: list[str] | None = None) -> list[str]:
+    return [
+        "submit",
+        "--dataset", "mini-interact",
+        "--framework", "claude_sdk",
+        "--query-mode", "raw",
+        "--agent-model", "anthropic/claude-sonnet-4-5",
+        "--instance-ids", "db_a_1",
+        "--mode", "a-interact",
+        "--no-require-audited-gold",
+        *(extra or []),
+    ]
+
+
+def _minimal_annotate_argv(extra: list[str] | None = None) -> list[str]:
+    return [
+        "annotate",
+        "--benchmark", "mini-interact",
+        "--agent-model", "anthropic/claude-opus-4-7",
+        "--instance-ids", "db_a_1",
+        *(extra or []),
+    ]
+
+
+def test_no_subscription_auth_flag_submit() -> None:
+    """--no-subscription-auth on submit sets no_subscription_auth=True."""
+    ns = cli.parse_args(_minimal_submit_argv(["--no-subscription-auth"]))
+    assert ns.no_subscription_auth is True
+
+
+def test_no_subscription_auth_default_false_submit() -> None:
+    """Omitting --no-subscription-auth on submit defaults to False."""
+    ns = cli.parse_args(_minimal_submit_argv())
+    assert ns.no_subscription_auth is False
+
+
+def test_no_subscription_auth_flag_annotate() -> None:
+    """--no-subscription-auth on annotate sets no_subscription_auth=True."""
+    ns = cli.parse_args(_minimal_annotate_argv(["--no-subscription-auth"]))
+    assert ns.no_subscription_auth is True
+
+
+def test_no_subscription_auth_default_false_annotate() -> None:
+    """Omitting --no-subscription-auth on annotate defaults to False."""
+    ns = cli.parse_args(_minimal_annotate_argv())
+    assert ns.no_subscription_auth is False

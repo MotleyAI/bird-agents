@@ -242,10 +242,15 @@ def _is_claude_sdk_framework(framework: str) -> bool:
 
 def check_api_keys(
     *, agent_model: str, user_sim_model: str, query_mode: str = "raw",
-    framework: str = "",
+    framework: str = "", no_subscription_auth: bool = False,
 ) -> None:
     # DEV-1517: claude_sdk* + CLAUDE_CODE_OAUTH_TOKEN present → OAuth path.
-    if _is_claude_sdk_framework(framework) and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+    # DEV-1530: no_subscription_auth=True forces the legacy API-key path.
+    if (
+        _is_claude_sdk_framework(framework)
+        and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+        and not no_subscription_auth
+    ):
         token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
         if not token.startswith("sk-ant-oat01-"):
             raise PrereqError(
@@ -439,6 +444,7 @@ def check(args: Any) -> None:
         user_sim_model=args.user_sim_model,
         query_mode=getattr(args, "query_mode", "raw"),
         framework=getattr(args, "framework", ""),
+        no_subscription_auth=getattr(args, "no_subscription_auth", False),
     )
     check_submitter_iam()
     ensure_bucket_and_artifact_repo()

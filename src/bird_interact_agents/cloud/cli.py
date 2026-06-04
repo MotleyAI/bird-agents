@@ -96,6 +96,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_submit.add_argument(
         "--slayer-storage-root", default="/data/slayer_models",
     )
+    sp_submit.add_argument(
+        "--no-subscription-auth", action="store_true", default=False,
+        help=(
+            "Force the legacy API-key auth path even when "
+            "CLAUDE_CODE_OAUTH_TOKEN is present in the environment."
+        ),
+    )
 
     sp_annotate = sub.add_parser("annotate")
     sp_annotate.add_argument("--benchmark", required=True,
@@ -125,6 +132,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_annotate.add_argument("--run-id", default=None)
     sp_annotate.add_argument("--detach", action="store_true")
     sp_annotate.add_argument("--allow-dirty", action="store_true")
+    sp_annotate.add_argument(
+        "--no-subscription-auth", action="store_true", default=False,
+        help=(
+            "Force the legacy API-key auth path even when "
+            "CLAUDE_CODE_OAUTH_TOKEN is present in the environment."
+        ),
+    )
 
     sp_fetch = sub.add_parser("fetch")
     sp_fetch.add_argument("run_id")
