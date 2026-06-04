@@ -95,6 +95,29 @@ def main() -> None:
         w, s = _migrate_file(jsonl)
         total_written += w
         total_skipped += s
+
+        # Move top-level files into the per-benchmark subdirectory so that
+        # the new readers (grade_in_place, _audited_gold_check, post_run_merge)
+        # can find them.  Readers look under <root>/<bench>/<bench>_audited.jsonl;
+        # a migrated file left at <root>/<bench>_audited.jsonl would be silently
+        # ignored by all of them.
+        if jsonl.parent == root:
+            bench_name = jsonl.name.removesuffix("_audited.jsonl")
+            dest_dir = root / bench_name
+            dest = dest_dir / jsonl.name
+            if dest.exists():
+                print(
+                    f"  {jsonl.name}: destination already exists at "
+                    f"{dest.relative_to(root)} — leaving top-level copy in place "
+                    f"(review and remove manually)"
+                )
+            else:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                jsonl.rename(dest)
+                print(
+                    f"  {jsonl.name}: moved to {dest.relative_to(root)}"
+                )
+
     print(f"\nDone. Total rows written: {total_written}, skipped: {total_skipped}")
 
 
