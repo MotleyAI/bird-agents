@@ -180,7 +180,7 @@ def _patch_audit_jsonl() -> None:
         )
         # Recompute audited_sample_row for the snippet_reading
         # variant against the live DB.
-        db_path = paths.mini_interact_root() / DB / f"{DB}.sqlite"
+        db_path = paths.benchmark_data_root("mini-interact") / DB / f"{DB}.sqlite"
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
         try:
             cur = conn.cursor()
@@ -318,7 +318,7 @@ def _patch_task_annotation() -> None:
 
 
 def _regrade_submission() -> None:
-    db_path = paths.mini_interact_root() / DB / f"{DB}.sqlite"
+    db_path = paths.benchmark_data_root("mini-interact") / DB / f"{DB}.sqlite"
     attempt_path = (
         paths.results_root() / "cloud" / RUN_ID / "rows"
         / INSTANCE_ID / "attempt-1.json"
@@ -337,7 +337,7 @@ def _regrade_submission() -> None:
             audit_rows.append(d)
 
     # Task row.
-    mi = paths.mini_interact_root() / "mini_interact.jsonl"
+    mi = paths.benchmark_data_root("mini-interact") / "mini_interact.jsonl"
     task_row = None
     for line in mi.read_text().splitlines():
         if not line.strip():

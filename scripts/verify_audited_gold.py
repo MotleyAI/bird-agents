@@ -37,7 +37,7 @@ import sqlglot
 
 from bird_interact_agents import paths
 
-MINI_INTERACT_ROOT = paths.mini_interact_root()
+MINI_INTERACT_ROOT = paths.benchmark_data_root("mini-interact")
 
 REQUIRED_KEYS = {
     "instance_id",
@@ -76,7 +76,7 @@ def load_audited(db: str, audit_set: str = "inhouse") -> list[dict]:
     # the consolidated `mini_interact_audited.jsonl` and filter by
     # `selected_database`. SAR audit set still uses the per_db layout.
     if audit_set == "inhouse":
-        single = audited_root_for(audit_set) / "mini_interact_audited.jsonl"
+        single = audited_root_for(audit_set) / "mini-interact_audited.jsonl"
         if single.exists():
             rows: list[dict] = []
             with single.open() as f:

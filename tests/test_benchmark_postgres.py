@@ -25,36 +25,36 @@ from bird_interact_agents.benchmark import (
 
 
 def test_resolves_livesqlbench_postgres():
-    b = get_benchmark("livesqlbench_postgres")
-    assert b.name == "livesqlbench_postgres"
+    b = get_benchmark("livesqlbench-base-lite")
+    assert b.name == "livesqlbench-base-lite"
 
 
 def test_resolves_mini_interact_postgres():
-    b = get_benchmark("mini_interact_postgres")
-    assert b.name == "mini_interact_postgres"
+    b = get_benchmark("bird-interact-lite-exp")
+    assert b.name == "bird-interact-lite-exp"
 
 
 def test_resolves_dataset_markers():
-    assert get_benchmark("livesqlbench_postgres").name == "livesqlbench_postgres"
-    assert get_benchmark("mini_interact_postgres").name == "mini_interact_postgres"
+    assert get_benchmark("livesqlbench-base-lite").name == "livesqlbench-base-lite"
+    assert get_benchmark("bird-interact-lite-exp").name == "bird-interact-lite-exp"
 
 
 def test_all_benchmarks_includes_postgres():
     names = {b.name for b in all_benchmarks()}
-    assert "livesqlbench_postgres" in names
-    assert "mini_interact_postgres" in names
+    assert "livesqlbench-base-lite" in names
+    assert "bird-interact-lite-exp" in names
 
 
 def test_benchmark_names_includes_postgres():
     names = set(benchmark_names())
-    assert "livesqlbench_postgres" in names
-    assert "mini_interact_postgres" in names
+    assert "livesqlbench-base-lite" in names
+    assert "bird-interact-lite-exp" in names
 
 
 def test_cli_dataset_tokens_includes_postgres():
     tokens = set(cli_dataset_tokens())
-    assert "livesqlbench_postgres" in tokens
-    assert "mini_interact_postgres" in tokens
+    assert "livesqlbench-base-lite" in tokens
+    assert "bird-interact-lite-exp" in tokens
     # every advertised token resolves
     for t in tokens:
         get_benchmark(t)
@@ -66,13 +66,13 @@ def test_cli_dataset_tokens_includes_postgres():
 
 
 def test_sqlite_benchmarks_have_sqlite_backend():
-    assert get_benchmark("mini_interact").db_backend == "sqlite"
-    assert get_benchmark("livesqlbench").db_backend == "sqlite"
+    assert get_benchmark("mini-interact").db_backend == "sqlite"
+    assert get_benchmark("livesqlbench-base-lite-sqlite").db_backend == "sqlite"
 
 
 def test_postgres_benchmarks_have_postgres_backend():
-    assert get_benchmark("livesqlbench_postgres").db_backend == "postgres"
-    assert get_benchmark("mini_interact_postgres").db_backend == "postgres"
+    assert get_benchmark("livesqlbench-base-lite").db_backend == "postgres"
+    assert get_benchmark("bird-interact-lite-exp").db_backend == "postgres"
 
 
 def test_db_backend_default_is_sqlite():
@@ -105,7 +105,7 @@ def test_db_backend_rejects_unknown_value():
 
 
 def test_livesqlbench_postgres_facts():
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     assert b.db_backend == "postgres"
     assert b.data_subdir == "livesqlbench-base-lite-postgres"
     assert b.data_file == "livesqlbench_data.jsonl"
@@ -114,9 +114,9 @@ def test_livesqlbench_postgres_facts():
     assert b.per_task_db_isolation is False
     assert set(b.supported_modes) == {"one-shot"}
     assert b.audited_gold_layout == "single_file"
-    assert b.container_data_dir == "/data/livesqlbench-postgres"
-    assert b.dataset_marker == "livesqlbench_postgres"
-    assert b.gold_root_env != ""
+    assert b.container_data_dir == "/data/livesqlbench-base-lite"
+    assert b.dataset_marker == "livesqlbench-base-lite"
+    assert b.gold_required is True
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ def test_livesqlbench_postgres_facts():
 
 
 def test_mini_interact_postgres_facts():
-    b = get_benchmark("mini_interact_postgres")
+    b = get_benchmark("bird-interact-lite-exp")
     assert b.db_backend == "postgres"
     assert b.data_subdir == "mini-interact-postgres"
     assert b.data_file == "mini_interact.jsonl"
@@ -135,8 +135,8 @@ def test_mini_interact_postgres_facts():
     assert "a-interact" in b.supported_modes
     assert "one-shot" not in b.supported_modes
     assert b.audited_gold_layout == "single_file"
-    assert b.container_data_dir == "/data/mini-interact-postgres"
-    assert b.dataset_marker == "mini_interact_postgres"
+    assert b.container_data_dir == "/data/bird-interact-lite-exp"
+    assert b.dataset_marker == "bird-interact-lite-exp"
 
 
 # ---------------------------------------------------------------------------
@@ -204,13 +204,13 @@ def test_load_benchmark_tasks_postgres_stamps_correct_marker(tmp_path):
     _make_gold_jsonl(gold_file, ["alien_pg_1"])
 
     tasks = load_benchmark_tasks(
-        "livesqlbench_postgres",
+        "livesqlbench-base-lite",
         str(data_file),
         gold_file=str(gold_file),
         filter_ids=["alien_pg_1"],
     )
     assert tasks, "expected at least one task"
-    assert tasks[0]["dataset"] == "livesqlbench_postgres", (
+    assert tasks[0]["dataset"] == "livesqlbench-base-lite", (
         f"expected dataset_marker='livesqlbench_postgres', got {tasks[0]['dataset']!r}; "
         "harness dispatch keys off this marker to route postgres vs sqlite"
     )
@@ -232,12 +232,12 @@ def test_load_benchmark_tasks_mini_interact_postgres_stamps_correct_marker(tmp_p
         }) + "\n")
 
     tasks = load_benchmark_tasks(
-        "mini_interact_postgres",
+        "bird-interact-lite-exp",
         str(data_file),
         filter_ids=["alien_pg_1"],
     )
     assert tasks, "expected at least one task"
-    assert tasks[0]["dataset"] == "mini_interact_postgres", (
+    assert tasks[0]["dataset"] == "bird-interact-lite-exp", (
         f"expected dataset='mini_interact_postgres', got {tasks[0]['dataset']!r}"
     )
 
@@ -256,12 +256,12 @@ def test_load_benchmark_tasks_sqlite_mini_interact_still_stamps_mini_interact(tm
         }) + "\n")
 
     tasks = load_benchmark_tasks(
-        "mini_interact",
+        "mini-interact",
         str(data_file),
         filter_ids=["alien_1"],
     )
     assert tasks
-    assert tasks[0]["dataset"] == "mini_interact"
+    assert tasks[0]["dataset"] == "mini-interact"
 
 
 def test_load_benchmark_tasks_sqlite_livesqlbench_still_stamps_livesqlbench(tmp_path):
@@ -274,13 +274,13 @@ def test_load_benchmark_tasks_sqlite_livesqlbench_still_stamps_livesqlbench(tmp_
     _make_gold_jsonl(gold_file, ["alien_1"])
 
     tasks = load_benchmark_tasks(
-        "livesqlbench",
+        "livesqlbench-base-lite-sqlite",
         str(data_file),
         gold_file=str(gold_file),
         filter_ids=["alien_1"],
     )
     assert tasks
-    assert tasks[0]["dataset"] == "livesqlbench"
+    assert tasks[0]["dataset"] == "livesqlbench-base-lite-sqlite"
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +305,7 @@ def test_pg_submit_one_shot_finishes_on_wrong_answer():
     from unittest.mock import patch, MagicMock
     from bird_interact_agents.harness import _pg_execute_submit_action
 
-    ss = _make_sample_status("livesqlbench_postgres", "alien", ["SELECT 1"])
+    ss = _make_sample_status("livesqlbench-base-lite", "alien", ["SELECT 1"])
 
     with patch("bird_interact_agents.harness.make_db_connection") as mock_conn_ctx:
         mock_conn = MagicMock()
@@ -325,7 +325,7 @@ def test_pg_submit_interactive_does_not_finish_on_wrong_answer():
     from unittest.mock import patch, MagicMock
     from bird_interact_agents.harness import _pg_execute_submit_action
 
-    ss = _make_sample_status("mini_interact_postgres", "alien", ["SELECT 1"])
+    ss = _make_sample_status("bird-interact-lite-exp", "alien", ["SELECT 1"])
 
     with patch("bird_interact_agents.harness.make_db_connection") as mock_conn_ctx:
         mock_conn = MagicMock()
@@ -345,7 +345,7 @@ def test_pg_submit_interactive_finishes_on_correct_answer():
     from unittest.mock import patch, MagicMock
     from bird_interact_agents.harness import _pg_execute_submit_action
 
-    ss = _make_sample_status("mini_interact_postgres", "alien", ["SELECT 1"])
+    ss = _make_sample_status("bird-interact-lite-exp", "alien", ["SELECT 1"])
 
     with patch("bird_interact_agents.harness.make_db_connection") as mock_conn_ctx:
         mock_conn = MagicMock()
@@ -365,7 +365,7 @@ def test_pg_submit_interactive_does_not_finish_on_sql_error():
     from unittest.mock import patch, MagicMock
     from bird_interact_agents.harness import _pg_execute_submit_action
 
-    ss = _make_sample_status("mini_interact_postgres", "alien", ["SELECT 1"])
+    ss = _make_sample_status("bird-interact-lite-exp", "alien", ["SELECT 1"])
 
     with patch("bird_interact_agents.harness.make_db_connection") as mock_conn_ctx:
         mock_conn = MagicMock()
@@ -384,7 +384,7 @@ def test_pg_submit_one_shot_finishes_on_sql_error():
     from unittest.mock import patch, MagicMock
     from bird_interact_agents.harness import _pg_execute_submit_action
 
-    ss = _make_sample_status("livesqlbench_postgres", "alien", ["SELECT 1"])
+    ss = _make_sample_status("livesqlbench-base-lite", "alien", ["SELECT 1"])
 
     with patch("bird_interact_agents.harness.make_db_connection") as mock_conn_ctx:
         mock_conn = MagicMock()
@@ -409,7 +409,7 @@ def test_pg_submit_gold_sequence_uses_execute_sequence():
     from unittest.mock import patch
     from bird_interact_agents.harness import _pg_execute_submit_action
 
-    ss = _make_sample_status("livesqlbench_postgres", "alien", ["stmt1", "stmt2"])
+    ss = _make_sample_status("livesqlbench-base-lite", "alien", ["stmt1", "stmt2"])
 
     connections_opened = []
 
@@ -456,7 +456,7 @@ def test_pg_submit_gold_sequence_uses_last_result():
     from unittest.mock import patch
     from bird_interact_agents.harness import _pg_execute_submit_action
 
-    ss = _make_sample_status("livesqlbench_postgres", "alien", ["setup_stmt", "final_select"])
+    ss = _make_sample_status("livesqlbench-base-lite", "alien", ["setup_stmt", "final_select"])
 
     connections_opened = []
 
@@ -533,7 +533,7 @@ def test_pg_submit_jsonb_cells_are_hashable():
 
     pred = [({"key": "val"},)]
     gold = [({"key": "val"},)]
-    ss = _make_sample_status("livesqlbench_postgres", "alien", ["SELECT col FROM t"])
+    ss = _make_sample_status("livesqlbench-base-lite", "alien", ["SELECT col FROM t"])
 
     with _patch_pg_conn(pred, gold):
         _, _, p1, _, _ = _pg_execute_submit_action("SELECT col FROM t", ss, "/data")
@@ -547,7 +547,7 @@ def test_pg_submit_jsonb_cells_differ():
 
     pred = [({"key": "a"},)]
     gold = [({"key": "b"},)]
-    ss = _make_sample_status("livesqlbench_postgres", "alien", ["SELECT col FROM t"])
+    ss = _make_sample_status("livesqlbench-base-lite", "alien", ["SELECT col FROM t"])
 
     with _patch_pg_conn(pred, gold):
         _, _, p1, _, _ = _pg_execute_submit_action("SELECT col FROM t", ss, "/data")
@@ -562,7 +562,7 @@ def test_pg_submit_ordered_match_correct_order():
     pred = [(1,), (2,)]
     gold = [(1,), (2,)]
     ss = _make_sample_status_with_conditions(
-        "livesqlbench_postgres", "alien", ["SELECT n FROM t ORDER BY n"], {"order": True}
+        "livesqlbench-base-lite", "alien", ["SELECT n FROM t ORDER BY n"], {"order": True}
     )
 
     with _patch_pg_conn(pred, gold):
@@ -578,7 +578,7 @@ def test_pg_submit_ordered_match_wrong_order():
     pred = [(2,), (1,)]
     gold = [(1,), (2,)]
     ss = _make_sample_status_with_conditions(
-        "livesqlbench_postgres", "alien", ["SELECT n FROM t ORDER BY n"], {"order": True}
+        "livesqlbench-base-lite", "alien", ["SELECT n FROM t ORDER BY n"], {"order": True}
     )
 
     with _patch_pg_conn(pred, gold):
@@ -593,7 +593,7 @@ def test_pg_submit_unordered_ignores_row_order():
 
     pred = [(2,), (1,)]
     gold = [(1,), (2,)]
-    ss = _make_sample_status("livesqlbench_postgres", "alien", ["SELECT n FROM t"])
+    ss = _make_sample_status("livesqlbench-base-lite", "alien", ["SELECT n FROM t"])
 
     with _patch_pg_conn(pred, gold):
         _, _, p1, _, _ = _pg_execute_submit_action("SELECT n FROM t", ss, "/data")
@@ -607,7 +607,7 @@ def test_pg_submit_empty_sol_sql_never_passes():
 
     # pred returns empty result — which would falsely match empty gold
     # if we didn't guard against missing sol_sql
-    ss = _make_sample_status("livesqlbench_postgres", "alien", [])
+    ss = _make_sample_status("livesqlbench-base-lite", "alien", [])
 
     class _EmptyConn:
         def execute(self, q):

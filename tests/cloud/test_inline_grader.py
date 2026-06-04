@@ -193,6 +193,7 @@ def test_cloud_grader_failure_uploads_fail_everything_annotation(
          "patience": 3, "strict": False, "use_audited_gold_sql": False,
          "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
          "slayer_storage_root": "/data/slayer_models",
+         "dataset": "mini-interact",
          "data_dir": "/data/mini-interact"},
         RUN_ID, 1, gcs_client=client,
     )
@@ -287,6 +288,7 @@ def test_cloud_no_submitted_sql_short_circuits_before_real_grader(
          "patience": 3, "strict": False, "use_audited_gold_sql": False,
          "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
          "slayer_storage_root": "/data/slayer_models",
+         "dataset": "mini-interact",
          "data_dir": "/data/mini-interact"},
         RUN_ID, 1, gcs_client=client,
     )
@@ -393,6 +395,7 @@ def test_cloud_uploads_annotation_before_attempt_row(
          "patience": 3, "strict": False, "use_audited_gold_sql": False,
          "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
          "slayer_storage_root": "/data/slayer_models",
+         "dataset": "mini-interact",
          "data_dir": "/data/mini-interact"},
         RUN_ID, 1, gcs_client=client,
     )

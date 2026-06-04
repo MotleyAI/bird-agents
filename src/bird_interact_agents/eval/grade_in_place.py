@@ -205,7 +205,7 @@ def _build_submission_annotation(
     )
 
     task_ann_ref = (
-        f"annotations/{benchmark.replace('-', '_')}/"
+        f"annotations/{benchmark}/"
         f"{task_annotation.selected_database}/"
         f"{task_annotation.instance_id}.task.json"
     )
@@ -378,12 +378,11 @@ def write_failed_submission_annotation(
     """
     out_dir = Path(rows_dir) / instance_id
     out_dir.mkdir(parents=True, exist_ok=True)
-    benchmark_canonical = benchmark.replace("-", "_")
     ann = SubmissionAnnotation(
         instance_id=instance_id,
         selected_database=selected_database,
         task_annotation_ref=(
-            f"annotations/{benchmark_canonical}/{selected_database}/"
+            f"annotations/{benchmark}/{selected_database}/"
             f"{instance_id}.task.json"
         ),
         annotated_by=_AUTO_ANNOTATOR,
@@ -475,7 +474,7 @@ def load_audited_gold_rows_for(
     from bird_interact_agents.benchmark import get_benchmark
 
     try:
-        bench = get_benchmark(benchmark.replace("-", "_"))
+        bench = get_benchmark(benchmark)
     except Exception:  # noqa: BLE001
         return []
     if getattr(bench, "audited_gold_layout", None) != "single_file":

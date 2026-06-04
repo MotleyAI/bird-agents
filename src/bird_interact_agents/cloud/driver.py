@@ -255,7 +255,7 @@ def build_manifest(
 # ---------------------------------------------------------------------------
 
 
-def _dbs_for_instances(instance_ids, benchmark: str = "mini_interact") -> list[str]:
+def _dbs_for_instances(instance_ids, benchmark: str = "mini-interact") -> list[str]:
     """Map the selected instance_ids to their distinct ``selected_database``
     via the benchmark's tasks file (never string-split the id — DB names contain
     underscores, e.g. ``california_schools``). Returns a sorted, de-duplicated
@@ -280,11 +280,11 @@ def _benchmark_for_dataset(dataset: str | None) -> str:
     its canonical benchmark name for the OTF path roots + container data dir.
 
     An absent dataset (e.g. a pre-de-bake manifest being resubmitted) falls
-    back to ``"mini_interact"``; otherwise the token is resolved through the
+    back to ``"mini-interact"``; otherwise the token is resolved through the
     registry so a third benchmark never silently aliases to mini-interact.
     """
     if not dataset:
-        return "mini_interact"
+        return "mini-interact"
     return get_benchmark(dataset).name
 
 
@@ -302,47 +302,57 @@ def _submit_benchmark(args) -> str:
 
 
 def _validate_gold_under_data_root(args) -> None:
-    """The gated gold sidecar rides along inside the GCS dataset upload (it
-    lives in the benchmark data root), so it MUST physically sit under that
-    root. Fail fast at submit if ``--gold-file`` points elsewhere — otherwise
-    it would be silently absent in-cluster and every task would fail to
+    """The gated gold sidecar rides along in the GCS dataset upload, so it
+    MUST physically sit under the benchmark data root OR under
+    ``paths.gated_gold_root(benchmark=...)``. Fail fast at submit otherwise —
+    the file would be silently absent in-cluster and every task would fail to
     score. No-op when no gold file is given."""
     gold_file = getattr(args, "gold_file", None)
     if not gold_file:
         return
-    data_root = paths.benchmark_data_root(_submit_benchmark(args)).resolve()
+    bench = _submit_benchmark(args)
+    data_root = paths.benchmark_data_root(bench).resolve()
+    gated_gold = paths.gated_gold_root(benchmark=bench).resolve()
     gp = Path(gold_file).expanduser().resolve()
     if not gp.is_file():
         raise FileNotFoundError(f"--gold-file not found: {gp}")
-    if not gp.is_relative_to(data_root):
+    if not (gp.is_relative_to(data_root) or gp.is_relative_to(gated_gold)):
         raise ValueError(
             f"--gold-file {gp} must live under the benchmark data root "
-            f"{data_root} so it rides along in the GCS dataset upload; "
-            f"move the gold sidecar into the data dir."
+            f"{data_root} or the gated gold root {gated_gold} so it rides "
+            f"along in the GCS dataset upload."
         )
 
 
 def _in_cluster_gold_file(args) -> str | None:
     """Translate the local ``--gold-file`` to its in-cluster path.
 
-    The gold rides along in the GCS dataset upload and the actor downloads the
-    dataset into the benchmark's ``container_data_dir``, so the gold lands at
-    ``container_data_dir/<path-relative-to-data-root>``. Falls back to the
-    basename when the gold isn't under the data root (defensive — submit's
-    :func:`_validate_gold_under_data_root` enforces the contract for real
-    submits; direct ``build_manifest`` callers in tests may pass an arbitrary
-    path)."""
+    The gold rides along in the GCS dataset upload:
+    * Gold under ``benchmark_data_root`` lands at
+      ``container_data_dir/<path-relative-to-data-root>``.
+    * Gold under ``gated_gold_root`` lands at
+      ``container_data_dir/<GATED_GOLD_SUBDIR>/<path-relative-to-gated-root>``
+      (uploaded to ``GATED_GOLD_SUBDIR/`` inside the prefix by
+      :func:`benchmark_data.ensure_uploaded`).
+
+    Falls back to ``GATED_GOLD_SUBDIR/<basename>`` for direct
+    ``build_manifest`` callers in tests that pass an arbitrary path."""
     gold_file = getattr(args, "gold_file", None)
     if not gold_file:
         return None
-    benchmark = _submit_benchmark(args)
-    data_root = paths.benchmark_data_root(benchmark).resolve()
-    gp = Path(gold_file).expanduser()
+    bench = _submit_benchmark(args)
+    data_root = paths.benchmark_data_root(bench).resolve()
+    gated_gold = paths.gated_gold_root(benchmark=bench).resolve()
+    container = Path(get_benchmark(bench).container_data_dir)
+    gp = Path(gold_file).expanduser().resolve()
     try:
-        rel = gp.resolve().relative_to(data_root)
+        return str(container / gp.relative_to(data_root))
     except ValueError:
-        rel = Path(gp.name)
-    return str(Path(get_benchmark(benchmark).container_data_dir) / rel)
+        pass
+    try:
+        return str(container / benchmark_data.GATED_GOLD_SUBDIR / gp.relative_to(gated_gold))
+    except ValueError:
+        return str(container / benchmark_data.GATED_GOLD_SUBDIR / gp.name)
 
 
 def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
@@ -390,7 +400,7 @@ def _artifact_present(root: Path, db: str, artifact: str) -> bool:
 
 
 def _build_missing_otf_caches(
-    cache_root: Path, dbs: list[str], benchmark: str = "mini_interact",
+    cache_root: Path, dbs: list[str], benchmark: str = "mini-interact",
 ) -> None:
     """Build the deterministic OTF ingest cache locally for each DB in `dbs`.
 
@@ -471,7 +481,7 @@ def _upload_slayer_setup(args, run_id: str, dbs: list[str]) -> None:
 
 
 def _instance_ids_sorted_by_db(
-    instance_ids, benchmark: str = "mini_interact",
+    instance_ids, benchmark: str = "mini-interact",
 ) -> list[str]:
     """DEV-1470: sort iids by ``(selected_database, instance_id)`` so same-db
     tasks are adjacent in the ActorPool dispatch order — a single actor then

@@ -32,7 +32,8 @@ from bird_interact_agents.agents._tool_specs import (
     BIRD_INTERACT_TOOLS,
     render_action,
 )
-from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+from bird_interact_agents.eval.annotation_schema import EVIDENCE_SOURCE_PREFIXES, MaskedTerm, TaskAnnotation
+from bird_interact_agents.eval.implicit_annotation import _benchmark_task_jsonl_name
 from bird_interact_agents.harness import (
     MAX_MODEL_TURNS,
     SampleStatus,
@@ -153,17 +154,27 @@ async def submit_annotation(args: dict) -> dict:
     except json.JSONDecodeError as e:
         return _text(f"Error: invalid JSON in task_annotation_json: {e}")
 
+    if not isinstance(ta_dict, dict):
+        return _text("Validation error in task_annotation_json: expected a JSON object.")
+    # Pre-inject harness-determined provenance so model_validate passes even
+    # when the agent correctly left those fields unpopulated per the prompt.
+    task_data = _ctx.get("task_data") or {}
+    _benchmark = _ctx.get("benchmark", "")
+    _prov = ta_dict.setdefault("provenance", {})
+    if not isinstance(_prov, dict):
+        return _text("Validation error in task_annotation_json: provenance must be an object.")
+    _prov.setdefault("task_jsonl_path", _benchmark_task_jsonl_name(_benchmark) if _benchmark else "")
+    _prov.setdefault("task_jsonl_instance_id", task_data.get("instance_id", ""))
+
     try:
         task_annotation = TaskAnnotation.model_validate(ta_dict)
     except ValidationError as e:
         return _text(f"Validation error in task_annotation_json: {e}")
     except Exception as e:
         return _text(f"Error parsing task_annotation_json: {e}")
-
-    task_data = _ctx.get("task_data") or {}
     expected_iid = task_data.get("instance_id")
     expected_db = task_data.get("selected_database")
-    expected_benchmark = _ctx.get("benchmark")
+    expected_benchmark = _benchmark
     if expected_iid and task_annotation.instance_id != expected_iid:
         return _text(
             f"Validation error: task_annotation instance_id must be "
@@ -231,11 +242,58 @@ async def submit_annotation(args: dict) -> dict:
                 f"Error: audited_gold_variants[{i}].audit_status must be one of "
                 f"{sorted(_VALID_AUDIT_STATUSES)}, got {variant.get('audit_status')!r}"
             )
+        _primary_val = variant.get("primary")
+        if _primary_val is not None and not isinstance(_primary_val, bool):
+            return _text(
+                f"Error: audited_gold_variants[{i}].primary must be a boolean "
+                f"(true or false), got {type(_primary_val).__name__!r}. "
+                f"Use JSON true/false, not 1/0 or strings."
+            )
+
+    _seen_vids: set[str] = set()
+    for i, variant in enumerate(audited_gold_variants):
+        vid = variant.get("variant_id", "")
+        if vid in _seen_vids:
+            return _text(
+                f"Validation error: duplicate variant_id {vid!r} in audited_gold_variants "
+                f"(entries {[j for j, v in enumerate(audited_gold_variants) if v.get('variant_id') == vid]}). "
+                f"Each submitted variant must have a unique variant_id."
+            )
+        _seen_vids.add(vid)
 
     if task_annotation.original_gold_is_correct and audited_gold_variants:
         return _text(
             "Validation error: original_gold_is_correct=True requires an empty "
             "audited_gold_variants array. Set audited_gold_variants_json to '[]'."
+        )
+
+    _solvable_verdicts = {"sufficient", "ambiguous"}
+    if (
+        not task_annotation.original_gold_is_correct
+        and not audited_gold_variants
+        and task_annotation.metadata_sufficiency.verdict in _solvable_verdicts
+    ):
+        return _text(
+            f"Validation error: original_gold_is_correct=False with verdict="
+            f"{task_annotation.metadata_sufficiency.verdict!r} requires at least one "
+            f"audited gold variant — the task is solvable so a corrected SQL must be "
+            f"provided. Submit your corrected SQL in audited_gold_variants_json. "
+            f"(Only verdict='insufficient' permits original_gold_is_correct=False "
+            f"with no audited variants.)"
+        )
+
+    if not task_annotation.metadata_sufficiency.evidence_sources_consulted:
+        return _text(
+            "Validation error: evidence_sources_consulted is empty. "
+            "Populate it with every source you actually read during the audit "
+            f"using the canonical prefixes: {', '.join(EVIDENCE_SOURCE_PREFIXES)}"
+        )
+    if task_annotation.metadata_sufficiency.verdict == "insufficient" and not task_annotation.evaluator_prompt:
+        return _text(
+            "Validation error: verdict='insufficient' requires a non-empty evaluator_prompt "
+            "— an LLM-judge prompt that can assess whether the agent's answer is reasonable "
+            "given the underspecified task. Populate task_annotation_json.evaluator_prompt "
+            "with a self-contained grading rubric."
         )
 
     if not task_annotation.original_gold_is_correct and task_annotation.gold_variants:
@@ -259,11 +317,32 @@ async def submit_annotation(args: dict) -> dict:
                     f"Set primary=True in the audited variant row."
                 )
 
+    # Reverse cross-check: if audited variants submitted, gold_variants must reference each one.
+    if not task_annotation.original_gold_is_correct and audited_gold_variants:
+        if not task_annotation.gold_variants:
+            return _text(
+                "Validation error: audited_gold_variants is non-empty but gold_variants is "
+                "empty. Add a GoldVariantRef in gold_variants for each submitted audited variant."
+            )
+        gold_ref_ids = {gvr.audited_gold_ref.variant_id for gvr in task_annotation.gold_variants}
+        for v in audited_gold_variants:
+            vid = v.get("variant_id")
+            if vid not in gold_ref_ids:
+                return _text(
+                    f"Validation error: audited variant {vid!r} has no matching GoldVariantRef "
+                    f"in gold_variants. Add a gold_variants entry with "
+                    f"audited_gold_ref.variant_id={vid!r}."
+                )
+
     primary_count = sum(1 for v in audited_gold_variants if v.get("primary", False))
     if primary_count > 1:
         return _text(
             f"Validation error: at most one audited_gold_variants entry may have "
             f"primary=True; got {primary_count}. Mark exactly the primary variant."
+        )
+    if audited_gold_variants and primary_count == 0:
+        return _text(
+            "Validation error: at least one audited_gold_variants entry must have primary=True."
         )
 
     _ctx["annotation_result"] = {
@@ -351,6 +430,25 @@ async def get_all_knowledge_definitions(args: dict) -> dict:
     return _run_env_sync(render_action(_BY_NAME["get_all_knowledge_definitions"]))
 
 
+async def get_column_sample_values(args: dict) -> dict:
+    table_name = args["table_name"]
+    column_name = args["column_name"]
+    try:
+        n = int(args.get("n", 50))
+    except (TypeError, ValueError):
+        return _text("Error: n must be an integer between 1 and 50.")
+    if not 1 <= n <= 50:
+        return _text(f"Error: n must be between 1 and 50, got {n}.")
+    sql = (
+        f'SELECT "{column_name}", COUNT(*) AS freq '
+        f'FROM "{table_name}" '
+        f'GROUP BY "{column_name}" '
+        f'ORDER BY freq DESC '
+        f'LIMIT {n}'
+    )
+    return _run_env_sync(render_action(_BY_NAME["execute_sql"], sql=sql))
+
+
 _execute_sql_tool = tool(
     "execute_sql", _BY_NAME["execute_sql"].description, {"sql": str}
 )(execute_sql)
@@ -385,6 +483,16 @@ _get_all_knowledge_definitions_tool = tool(
     {},
 )(get_all_knowledge_definitions)
 
+_get_column_sample_values_tool = tool(
+    "get_column_sample_values",
+    (
+        "Return the N most frequent distinct values in a column, ordered by frequency "
+        "descending. Use this to see the actual range of stored values for columns of "
+        "interest. Recommended: n=50."
+    ),
+    {"table_name": str, "column_name": str, "n": int},
+)(get_column_sample_values)
+
 
 _EXPLORATION_SDK_TOOLS = [
     _execute_sql_tool,
@@ -394,9 +502,10 @@ _EXPLORATION_SDK_TOOLS = [
     _get_all_external_knowledge_names_tool,
     _get_knowledge_definition_tool,
     _get_all_knowledge_definitions_tool,
+    _get_column_sample_values_tool,
 ]
 
-_MINI_INTERACT_BENCHMARK = "mini_interact"
+_MINI_INTERACT_BENCHMARK = "mini-interact"
 
 
 def _select_annotation_sdk_tools(benchmark: str) -> list:
@@ -410,8 +519,8 @@ def _select_annotation_sdk_tools(benchmark: str) -> list:
 # ---------------------------------------------------------------------------
 
 _AUDITED_GOLD_FILE: dict[str, str] = {
-    "mini_interact": "audited_gold/mini_interact_audited.jsonl",
-    "livesqlbench": "audited_gold/livesqlbench_audited.jsonl",
+    "mini-interact": "audited_gold/mini-interact_audited.jsonl",
+    "livesqlbench-base-lite-sqlite": "audited_gold/livesqlbench-base-lite-sqlite_audited.jsonl",
 }
 
 
@@ -426,6 +535,66 @@ def _fill_audited_gold_ref_files(ann: TaskAnnotation, *, benchmark: str) -> Task
     for gvr in updated.gold_variants:
         if gvr.audited_gold_ref and gvr.audited_gold_ref.file == "__HARNESS_FILLS__":
             gvr.audited_gold_ref.file = canonical_file
+    return updated
+
+
+def _fill_deterministic_fields(
+    ann: TaskAnnotation,
+    *,
+    task_data: dict,
+    benchmark: str,
+) -> TaskAnnotation:
+    """Overwrite fields that are deterministically derivable from task data.
+
+    These fields should never depend on the agent guessing: provenance paths,
+    external KB IDs, and (for mini_interact) the is_mask=True masked terms that
+    are pre-computed in critical_ambiguity.  Agent-supplied is_mask=False entries
+    (schema-linking ambiguities) are preserved.
+    """
+    updated = ann.model_copy(deep=True)
+
+    # Provenance — always authoritative from benchmark registry and instance_id.
+    updated.provenance.task_jsonl_path = _benchmark_task_jsonl_name(benchmark)
+    instance_id = task_data.get("instance_id")
+    if instance_id:
+        updated.provenance.task_jsonl_instance_id = instance_id
+
+    # External knowledge — verbatim from task data.
+    ext_kb = task_data.get("external_knowledge")
+    if ext_kb is not None:
+        updated.external_knowledge = list(ext_kb)
+
+    # Masked terms: merge critical_ambiguity (is_mask=True) without duplicating.
+    if benchmark == _MINI_INTERACT_BENCHMARK:
+        uqa = task_data.get("user_query_ambiguity", {})
+        critical = uqa.get("critical_ambiguity", []) if isinstance(uqa, dict) else []
+        if critical:
+            for item in critical:
+                term = item.get("term", "")
+                if not term:
+                    continue
+                # Harness is authoritative: drop any stale agent-submitted entry.
+                updated.masked_terms = [
+                    mt for mt in updated.masked_terms
+                    if not (mt.is_mask and mt.term == term)
+                ]
+                raw_evidence = item.get("metadata_evidence")
+                if isinstance(raw_evidence, list):
+                    evidence: list = raw_evidence
+                elif isinstance(raw_evidence, str) and raw_evidence:
+                    evidence = [raw_evidence]
+                else:
+                    evidence = []
+                updated.masked_terms = [
+                    *updated.masked_terms,
+                    MaskedTerm(
+                        term=term,
+                        type=item.get("type", "knowledge_linking_ambiguity"),
+                        is_mask=True,
+                        metadata_evidence=evidence,
+                    ),
+                ]
+
     return updated
 
 
@@ -533,6 +702,9 @@ async def run_task(
 
     task_annotation: TaskAnnotation = ann_result["task_annotation"]
     task_annotation = _fill_audited_gold_ref_files(task_annotation, benchmark=benchmark)
+    task_annotation = _fill_deterministic_fields(
+        task_annotation, task_data=task_data, benchmark=benchmark
+    )
     audited_gold_variants: list[dict] = ann_result["audited_gold_variants"]
 
     return AnnotatorResult(

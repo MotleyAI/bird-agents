@@ -210,7 +210,7 @@ def _stage_sar_db(tmp_path: Path, db: str):
     """Create the minimum on-disk artefacts for a synthetic DB so the
     verifier can run against it: kb.jsonl, column_meaning_base.json,
     mini_interact.jsonl, and a sqlite file with table t."""
-    mi_root = tmp_path / "mini_interact"
+    mi_root = tmp_path / "mini-interact"
     db_dir = mi_root / db
     db_dir.mkdir(parents=True, exist_ok=True)
 
@@ -243,8 +243,8 @@ def _stage_sar_db(tmp_path: Path, db: str):
 def _run_verifier(tmp_path: Path, db: str, audit_set: str):
     """Runs the verifier with env vars pointing at the synthetic dirs."""
     env_overrides = {
-        "BIRD_DB_PATH": str(tmp_path / "mini_interact"),
-        "BIRD_DATA_PATH": str(tmp_path / "mini_interact" / "mini_interact.jsonl"),
+        "BIRD_DB_PATH": str(tmp_path / "mini-interact"),
+        "BIRD_DATA_PATH": str(tmp_path / "mini-interact" / "mini_interact.jsonl"),
         "BIRD_AUDITED_GOLD_ROOT": str(tmp_path / "audited_gold"),
         "BIRD_SAR_AUDITED_GOLD_ROOT": str(tmp_path / "sar_audited_gold"),
     }

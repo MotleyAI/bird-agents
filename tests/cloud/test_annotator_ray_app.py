@@ -86,7 +86,7 @@ def _error_result(instance_id: str = "shop_1"):
 
 def _cfg(override: bool = False) -> dict:
     return {
-        "benchmark": "mini_interact",
+        "benchmark": "mini-interact",
         "model": "anthropic/claude-opus-4-7",
         "effort": "medium",
         "override": override,
@@ -102,8 +102,8 @@ def test_skip_when_both_stable_blobs_exist(fake_gcs_bucket, monkeypatch):
     from bird_interact_agents.cloud import ray_app_annotator
 
     client, store = fake_gcs_bucket
-    store[gcs.stable_task_annotation_blob("mini_interact", "shop", "shop_1")] = b"{}"
-    store[gcs.stable_audited_gold_variants_blob("mini_interact", "shop", "shop_1")] = b""
+    store[gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1")] = b"{}"
+    store[gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1")] = b""
 
     agent_calls = []
     monkeypatch.setattr(
@@ -128,8 +128,8 @@ def test_skip_copies_stable_blobs_to_run_scoped_paths(fake_gcs_bucket, monkeypat
     client, store = fake_gcs_bucket
     ann_content = b'{"instance_id":"shop_1"}'
     var_content = b'{"variant_id":"primary"}\n'
-    store[gcs.stable_task_annotation_blob("mini_interact", "shop", "shop_1")] = ann_content
-    store[gcs.stable_audited_gold_variants_blob("mini_interact", "shop", "shop_1")] = var_content
+    store[gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1")] = ann_content
+    store[gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1")] = var_content
     monkeypatch.setattr(ray_app_annotator, "_run_agent", lambda *a, **kw: _minimal_annotator_result())
 
     ray_app_annotator._run_one_task(
@@ -146,8 +146,8 @@ def test_skip_writes_attempt_row_with_skipped_status(fake_gcs_bucket, monkeypatc
     from bird_interact_agents.cloud import ray_app_annotator
 
     client, store = fake_gcs_bucket
-    store[gcs.stable_task_annotation_blob("mini_interact", "shop", "shop_1")] = b"{}"
-    store[gcs.stable_audited_gold_variants_blob("mini_interact", "shop", "shop_1")] = b""
+    store[gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1")] = b"{}"
+    store[gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1")] = b""
     monkeypatch.setattr(ray_app_annotator, "_run_agent", lambda *a, **kw: _minimal_annotator_result())
 
     ray_app_annotator._run_one_task(
@@ -169,7 +169,7 @@ def test_skip_requires_both_blobs_missing_variants_blob_runs_agent(fake_gcs_buck
 
     client, store = fake_gcs_bucket
     # Only task annotation blob present; no variants blob
-    store[gcs.stable_task_annotation_blob("mini_interact", "shop", "shop_1")] = b"{}"
+    store[gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1")] = b"{}"
 
     agent_calls = []
     monkeypatch.setattr(
@@ -191,7 +191,7 @@ def test_skip_requires_both_blobs_missing_annotation_blob_runs_agent(fake_gcs_bu
     from bird_interact_agents.cloud import ray_app_annotator
 
     client, store = fake_gcs_bucket
-    store[gcs.stable_audited_gold_variants_blob("mini_interact", "shop", "shop_1")] = b""
+    store[gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1")] = b""
 
     agent_calls = []
     monkeypatch.setattr(
@@ -212,8 +212,8 @@ def test_override_bypasses_skip(fake_gcs_bucket, monkeypatch):
     from bird_interact_agents.cloud import ray_app_annotator
 
     client, store = fake_gcs_bucket
-    store[gcs.stable_task_annotation_blob("mini_interact", "shop", "shop_1")] = b"{}"
-    store[gcs.stable_audited_gold_variants_blob("mini_interact", "shop", "shop_1")] = b""
+    store[gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1")] = b"{}"
+    store[gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1")] = b""
 
     agent_calls = []
     monkeypatch.setattr(
@@ -275,8 +275,8 @@ def test_success_writes_both_stable_blobs(fake_gcs_bucket, monkeypatch):
         data_path_base="/tmp/data", gcs_client=client,
     )
 
-    assert gcs.stable_task_annotation_blob("mini_interact", "shop", "shop_1") in store
-    assert gcs.stable_audited_gold_variants_blob("mini_interact", "shop", "shop_1") in store
+    assert gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1") in store
+    assert gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1") in store
 
 
 def test_success_writes_attempt_row_with_annotated_status(fake_gcs_bucket, monkeypatch):
@@ -334,8 +334,8 @@ def test_error_does_not_write_annotation_blobs(fake_gcs_bucket, monkeypatch):
     )
 
     assert gcs.task_annotation_blob("r-1", "shop_1") not in store
-    assert gcs.stable_task_annotation_blob("mini_interact", "shop", "shop_1") not in store
-    assert gcs.stable_audited_gold_variants_blob("mini_interact", "shop", "shop_1") not in store
+    assert gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1") not in store
+    assert gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1") not in store
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +383,7 @@ def test_run_annotator_pool_passes_benchmark_kwarg_to_run_with_actors(
     )
 
     assert "benchmark" in captured_kwargs, "_run_with_actors not called with benchmark kwarg"
-    assert captured_kwargs["benchmark"] == "mini_interact"
+    assert captured_kwargs["benchmark"] == "mini-interact"
 
 
 def test_annotator_actor_init_calls_download_benchmark_data(monkeypatch):
@@ -402,7 +402,7 @@ def test_annotator_actor_init_calls_download_benchmark_data(monkeypatch):
     monkeypatch.setattr(ray_app_annotator, "default_gcs_client", lambda: None)
 
     ActorCls = ray_app_annotator._build_annotator_actor_class()
-    cfg = {**_cfg(), "dataset": "mini_interact", "benchmark_data_prefix": "gs://b/prefix"}
+    cfg = {**_cfg(), "dataset": "mini-interact", "benchmark_data_prefix": "gs://b/prefix"}
     ActorCls(cfg=cfg, run_id="r-1", data_path_base="/tmp")
 
     assert len(download_calls) == 1, "download_benchmark_data must be called in __init__"
@@ -429,7 +429,7 @@ def test_cluster_submit_job_accepts_ray_app_path_kwarg(monkeypatch):
 
     cluster.submit_job(
         head_address="http://localhost:8265",
-        args=["--benchmark", "mini_interact"],
+        args=["--benchmark", "mini-interact"],
         env_vars={},
         ray_app_path=(
             "/app/bird-interact-agents/src/"
@@ -480,7 +480,6 @@ def test_load_annotator_task_data_explicit_gold_file_skips_env_lookup(monkeypatc
     """An explicit gold_file arg must be used directly without consulting the
     env var or the hardcoded default path — mirrors ray_app.py --gold-file."""
     from bird_interact_agents.cloud import ray_app_annotator
-    from bird_interact_agents.benchmark import get_benchmark
 
     # A fake load_benchmark_tasks that captures what gold_file it receives.
     captured: list = []
@@ -494,14 +493,9 @@ def test_load_annotator_task_data_explicit_gold_file_skips_env_lookup(monkeypatc
         ray_app_annotator.paths, "benchmark_data_file",
         lambda b: tmp_path / "dummy.jsonl",
     )
-    # Ensure env var is NOT consulted (set it to something different).
-    bench = get_benchmark("livesqlbench")
-    if bench.gold_root_env:
-        monkeypatch.setenv(bench.gold_root_env, "/should/not/be/used")
-
     explicit = str(tmp_path / "custom_gold.jsonl")
     ray_app_annotator._load_annotator_task_data(
-        [], benchmark="livesqlbench", gold_file=explicit,
+        [], benchmark="livesqlbench-base-lite-sqlite", gold_file=explicit,
     )
 
     assert captured == [explicit], (
@@ -519,7 +513,7 @@ def test_build_annotator_resubmit_args_emits_gold_file(monkeypatch):
     from bird_interact_agents.cloud import driver
 
     manifest = {
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
         "agent_model": "anthropic/claude-opus-4-7",
         "effort": "medium",
         "gold_file": "/data/livesqlbench_gold.jsonl",
@@ -539,7 +533,7 @@ def test_build_annotator_resubmit_args_omits_gold_file_when_absent(monkeypatch):
     from bird_interact_agents.cloud import driver
 
     manifest = {
-        "dataset": "mini_interact",
+        "dataset": "mini-interact",
         "agent_model": "anthropic/claude-opus-4-7",
         "effort": "medium",
         "render_inputs": {"workers": 1, "actors_per_worker": 1},

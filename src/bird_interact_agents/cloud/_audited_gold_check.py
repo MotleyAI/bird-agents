@@ -38,8 +38,8 @@ def _load_dataset_instance_db_map(
     interact (back-compat with the DEV-1478 callers).
     """
     if data_path is None:
-        if benchmark is None or benchmark.name == "mini_interact":
-            data_path = paths.mini_interact_data_file()
+        if benchmark is None or benchmark.name == "mini-interact":
+            data_path = paths.benchmark_data_file("mini-interact")
         else:
             data_path = paths.benchmark_data_file(benchmark.name)
     out: dict[str, str] = {}

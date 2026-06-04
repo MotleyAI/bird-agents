@@ -27,7 +27,7 @@ def test_fingerprint_of_postgres_does_not_require_sqlite_file(tmp_path):
     a <db>.sqlite file — it fingerprints schema text + KB + column meanings."""
     from bird_interact_agents.slayer_otf.cache import fingerprint_of
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     db_name = "alien"
     data_root = tmp_path / "livesqlbench-base-lite-postgres"
     db_dir = data_root / db_name
@@ -47,7 +47,7 @@ def test_fingerprint_of_postgres_changes_when_schema_changes(tmp_path):
     """Changing schema text must change the fingerprint."""
     from bird_interact_agents.slayer_otf.cache import fingerprint_of
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     db_name = "alien"
     data_root = tmp_path / "livesqlbench-base-lite-postgres"
     db_dir = data_root / db_name
@@ -69,7 +69,7 @@ def test_fingerprint_of_sqlite_backward_compat(tmp_path):
     from bird_interact_agents.slayer_otf.cache import fingerprint_of
     import sqlite3
 
-    b = get_benchmark("mini_interact")
+    b = get_benchmark("mini-interact")
     db_name = "alien"
     mini_root = tmp_path / "mini-interact"
     db_dir = mini_root / db_name
@@ -151,7 +151,7 @@ def test_ensure_db_cache_postgres_skips_sqlite_check(tmp_path):
     from bird_interact_agents.slayer_otf.cache import ensure_db_cache
     from bird_interact_agents.benchmark import get_benchmark
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     db_name = "alien"
     cache_root = tmp_path / "cache"
     data_root = tmp_path / "livesqlbench-base-lite-postgres"
@@ -188,7 +188,7 @@ def test_phase3_skipped_for_postgres(tmp_path):
     import asyncio
     from bird_interact_agents.slayer_pipeline.orchestrator import _phase3_jsonb
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     storage = MagicMock()
 
     with patch("bird_interact_agents.slayer_pipeline.orchestrator._detect_jsonb_columns") as mock_detect:
@@ -203,7 +203,7 @@ def test_phase4_skipped_for_postgres(tmp_path):
     import asyncio
     from bird_interact_agents.slayer_pipeline.orchestrator import _phase4_dates
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     storage = MagicMock()
 
     with patch("bird_interact_agents.slayer_pipeline.orchestrator.detect_and_apply") as mock_detect:
@@ -282,7 +282,7 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
     from bird_interact_agents.slayer_otf import cache as otf_cache
     from bird_interact_agents.benchmark import get_benchmark
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     build_dir = tmp_path / "build"
 
     phase1_calls: list[dict] = []

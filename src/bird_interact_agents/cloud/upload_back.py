@@ -237,7 +237,13 @@ def upload_otf_reference_delta(
     try:
         from bird_interact_agents import paths  # local import: tests stub `paths`
 
-        benchmark = get_benchmark(cfg.get("dataset") or "mini_interact").name
+        dataset = cfg.get("dataset")
+        if not dataset:
+            raise ValueError(
+                "upload_otf_reference_delta requires cfg['dataset'] — "
+                "task data is missing the required 'dataset' field"
+            )
+        benchmark = get_benchmark(dataset).name
         ref_root = paths.slayer_models_otf_root(benchmark=benchmark)
         if not ref_root.is_dir():
             return

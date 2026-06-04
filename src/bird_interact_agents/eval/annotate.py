@@ -278,7 +278,7 @@ def generate_submission_annotation(
         instance_id=instance_id,
         selected_database=selected_database,
         task_annotation_ref=(
-            f"annotations/{benchmark.replace('-', '_')}/{selected_database}/"
+            f"annotations/{benchmark}/{selected_database}/"
             f"{instance_id}.task.json"
         ),
         annotated_by="auto-skeleton",
@@ -393,7 +393,7 @@ def write_submission_skeleton(
 
 def _load_task_rows(*, benchmark: str, instance_ids: Optional[Iterable[str]]) -> list[dict]:
     """Load task rows for the given instance IDs from the benchmark JSONL."""
-    bench = get_benchmark(benchmark.replace("-", "_"))
+    bench = get_benchmark(benchmark)
     data_path = paths.benchmark_data_root(bench) / bench.data_file
     rows = [json.loads(line) for line in data_path.read_text().splitlines() if line.strip()]
     if instance_ids:

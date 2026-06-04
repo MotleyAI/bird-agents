@@ -160,7 +160,7 @@ async def test_run_task_happy_path_returns_valid_result(monkeypatch):
     result = await ann_agent.run_task(
         task_data=_task_mini(),
         data_path_base="/tmp/data",
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         model="anthropic/claude-opus-4-7",
         effort="medium",
     )
@@ -214,7 +214,7 @@ async def test_run_task_happy_path_parses_audited_gold_variants(monkeypatch):
             "variant_id": "primary",
             "primary": True,
             "selected_database": "shop",
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "original_sol_sql": ["SELECT COUNT(*) FROM orders;"],
             "audited_sol_sql": ["SELECT COUNT(*) FROM orders;"],
@@ -233,7 +233,7 @@ async def test_run_task_happy_path_parses_audited_gold_variants(monkeypatch):
     result = await ann_agent.run_task(
         task_data=_task_mini(),
         data_path_base="/tmp/data",
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         model="anthropic/claude-opus-4-7",
         effort="medium",
     )
@@ -256,7 +256,7 @@ async def test_run_task_turn_cap_returns_error_result(monkeypatch):
     result = await ann_agent.run_task(
         task_data=_task_mini(),
         data_path_base="/tmp/data",
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         model="anthropic/claude-opus-4-7",
         effort="medium",
     )
@@ -286,7 +286,7 @@ async def test_run_task_bad_json_then_good_json_succeeds(monkeypatch):
     result = await ann_agent.run_task(
         task_data=_task_mini(),
         data_path_base="/tmp/data",
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         model="anthropic/claude-opus-4-7",
         effort="medium",
     )
@@ -326,7 +326,7 @@ async def test_mini_interact_includes_get_ambiguity_resolutions(monkeypatch):
     await ann_agent.run_task(
         task_data=_task_mini(),
         data_path_base="/tmp/data",
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         model="anthropic/claude-opus-4-7",
         effort="medium",
     )
@@ -362,7 +362,7 @@ async def test_livesqlbench_excludes_get_ambiguity_resolutions(monkeypatch):
     await ann_agent.run_task(
         task_data=_task_livesqlbench(),
         data_path_base="/tmp/data",
-        benchmark="livesqlbench",
+        benchmark="livesqlbench-base-lite-sqlite",
         model="anthropic/claude-opus-4-7",
         effort="medium",
     )
@@ -415,10 +415,10 @@ def test_fill_audited_gold_ref_files_replaces_sentinel():
         },
     })
 
-    filled = _fill_audited_gold_ref_files(ann, benchmark="mini_interact")
+    filled = _fill_audited_gold_ref_files(ann, benchmark="mini-interact")
 
     assert filled.gold_variants[0].audited_gold_ref.file == \
-        "audited_gold/mini_interact_audited.jsonl"
+        "audited_gold/mini-interact_audited.jsonl"
 
 
 def test_fill_audited_gold_ref_files_livesqlbench():
@@ -458,10 +458,10 @@ def test_fill_audited_gold_ref_files_livesqlbench():
         },
     })
 
-    filled = _fill_audited_gold_ref_files(ann, benchmark="livesqlbench")
+    filled = _fill_audited_gold_ref_files(ann, benchmark="livesqlbench-base-lite-sqlite")
 
     assert filled.gold_variants[0].audited_gold_ref.file == \
-        "audited_gold/livesqlbench_audited.jsonl"
+        "audited_gold/livesqlbench-base-lite-sqlite_audited.jsonl"
 
 
 def test_fill_audited_gold_ref_files_noop_when_no_variants():
@@ -491,8 +491,272 @@ def test_fill_audited_gold_ref_files_noop_when_no_variants():
         },
     })
 
-    filled = _fill_audited_gold_ref_files(ann, benchmark="mini_interact")
+    filled = _fill_audited_gold_ref_files(ann, benchmark="mini-interact")
     assert filled.gold_variants == []
+
+
+# ---------------------------------------------------------------------------
+# Non-Anthropic model short-circuits
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# _fill_deterministic_fields
+# ---------------------------------------------------------------------------
+
+def _minimal_annotation(instance_id: str = "shop_1", db: str = "shop") -> dict:
+    return {
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": instance_id,
+        "selected_database": db,
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-02",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "r",
+            "evidence_sources_consulted": [],
+        },
+        "original_gold_is_correct": True,
+        "gold_variants": [],
+        "provenance": {
+            "task_jsonl_path": "PLACEHOLDER",
+            "task_jsonl_instance_id": "PLACEHOLDER",
+        },
+    }
+
+
+def test_fill_deterministic_fields_overwrites_provenance_and_external_knowledge():
+    """_fill_deterministic_fields must overwrite provenance.* and external_knowledge
+    from task_data regardless of what the agent placed in those fields."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    ann = TaskAnnotation.model_validate(_minimal_annotation())
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "external_knowledge": [3, 7],
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
+
+    assert filled.external_knowledge == [3, 7]
+    assert filled.provenance.task_jsonl_path == "mini_interact.jsonl"
+    assert filled.provenance.task_jsonl_instance_id == "shop_1"
+
+
+def test_fill_deterministic_fields_livesqlbench_provenance():
+    """livesqlbench benchmark produces the correct task_jsonl_path from the registry."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+    from bird_interact_agents.eval.implicit_annotation import _benchmark_task_jsonl_name
+
+    base = _minimal_annotation("flight_1", "flight")
+    base["provenance"]["task_jsonl_path"] = "WRONG"
+    ann = TaskAnnotation.model_validate(base)
+    task_data = {"instance_id": "flight_1", "selected_database": "flight"}
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="livesqlbench-base-lite-sqlite")
+
+    assert filled.provenance.task_jsonl_path == _benchmark_task_jsonl_name("livesqlbench-base-lite-sqlite")
+    assert filled.provenance.task_jsonl_instance_id == "flight_1"
+
+
+def test_fill_deterministic_fields_merges_masked_terms_from_critical_ambiguity():
+    """For mini_interact, _fill_deterministic_fields must merge critical_ambiguity
+    entries as is_mask=True MaskedTerm objects without duplicating existing entries."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import MaskedTerm, TaskAnnotation
+
+    base = _minimal_annotation()
+    # Agent already found one schema-linking term (is_mask=False)
+    base["masked_terms"] = [
+        {"term": "area", "type": "schema_linking_ambiguity", "is_mask": False, "metadata_evidence": []}
+    ]
+    ann = TaskAnnotation.model_validate(base)
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {
+                    "term": "[MASKED_TIER]",
+                    "type": "knowledge_linking_ambiguity",
+                    "is_mask": True,
+                    "metadata_evidence": "KB 3",
+                    "sql_snippet": "tier='Premium'",
+                }
+            ],
+            "non_critical_ambiguity": [],
+        },
+        "knowledge_ambiguity": [],
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
+
+    terms_by_name = {mt.term: mt for mt in filled.masked_terms}
+    assert "[MASKED_TIER]" in terms_by_name
+    assert terms_by_name["[MASKED_TIER]"].is_mask is True
+    assert terms_by_name["[MASKED_TIER]"].type == "knowledge_linking_ambiguity"
+    # Agent's is_mask=False entry must be preserved
+    assert "area" in terms_by_name
+    assert terms_by_name["area"].is_mask is False
+
+
+def test_fill_deterministic_fields_string_metadata_evidence_wrapped_in_list():
+    """metadata_evidence that is a string (e.g. 'KB 3') must be wrapped in a
+    single-element list, not silently dropped."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    ann = TaskAnnotation.model_validate(_minimal_annotation())
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {
+                    "term": "[MASKED_TIER]",
+                    "type": "knowledge_linking_ambiguity",
+                    "is_mask": True,
+                    "metadata_evidence": "KB 3",
+                }
+            ],
+            "non_critical_ambiguity": [],
+        },
+        "knowledge_ambiguity": [],
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
+
+    mt = next(mt for mt in filled.masked_terms if mt.term == "[MASKED_TIER]")
+    assert mt.metadata_evidence == ["KB 3"]
+
+
+def test_fill_deterministic_fields_is_mask_false_same_term_does_not_block_authoritative_entry():
+    """If the agent submitted an is_mask=False entry with the same term as a critical_ambiguity
+    item, the harness must still insert the authoritative is_mask=True entry — deduplicate only
+    against existing is_mask=True entries."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    base = _minimal_annotation()
+    # Agent found [MASKED_TIER] as a schema-linking ambiguity (is_mask=False).
+    base["masked_terms"] = [
+        {"term": "[MASKED_TIER]", "type": "schema_linking_ambiguity", "is_mask": False, "metadata_evidence": []}
+    ]
+    ann = TaskAnnotation.model_validate(base)
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {
+                    "term": "[MASKED_TIER]",
+                    "type": "knowledge_linking_ambiguity",
+                    "is_mask": True,
+                    "metadata_evidence": "KB 3",
+                }
+            ],
+            "non_critical_ambiguity": [],
+        },
+        "knowledge_ambiguity": [],
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
+
+    mask_true_entries = [mt for mt in filled.masked_terms if mt.term == "[MASKED_TIER]" and mt.is_mask]
+    assert len(mask_true_entries) == 1, (
+        "Authoritative is_mask=True entry must be present even when agent submitted "
+        "an is_mask=False entry with the same term"
+    )
+
+
+def test_fill_deterministic_fields_no_duplicate_masked_terms():
+    """If critical_ambiguity contains a term already in masked_terms, it must NOT be duplicated."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    base = _minimal_annotation()
+    base["masked_terms"] = [
+        {"term": "[MASKED_TIER]", "type": "knowledge_linking_ambiguity", "is_mask": True, "metadata_evidence": []}
+    ]
+    ann = TaskAnnotation.model_validate(base)
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {"term": "[MASKED_TIER]", "type": "knowledge_linking_ambiguity", "is_mask": True, "metadata_evidence": "KB 3"}
+            ],
+            "non_critical_ambiguity": [],
+        },
+        "knowledge_ambiguity": [],
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
+
+    assert sum(1 for mt in filled.masked_terms if mt.term == "[MASKED_TIER]") == 1
+
+
+def test_fill_deterministic_fields_authoritative_overwrites_stale_is_mask_true():
+    """If the agent already submitted an is_mask=True entry for a term that appears
+    in critical_ambiguity, the harness must REPLACE it with the authoritative
+    metadata_evidence — not skip the authoritative entry."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    base = _minimal_annotation()
+    # Agent submitted stale is_mask=True entry with wrong metadata_evidence.
+    base["masked_terms"] = [
+        {"term": "[MASKED_TIER]", "type": "knowledge_linking_ambiguity",
+         "is_mask": True, "metadata_evidence": ["stale_source"]}
+    ]
+    ann = TaskAnnotation.model_validate(base)
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {"term": "[MASKED_TIER]", "type": "knowledge_linking_ambiguity",
+                 "is_mask": True, "metadata_evidence": ["authoritative_source"]}
+            ],
+            "non_critical_ambiguity": [],
+        },
+        "knowledge_ambiguity": [],
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
+
+    mask_entries = [mt for mt in filled.masked_terms if mt.term == "[MASKED_TIER]" and mt.is_mask]
+    assert len(mask_entries) == 1, "Must have exactly one is_mask=True entry (no duplicates)"
+    assert mask_entries[0].metadata_evidence == ["authoritative_source"], (
+        "Harness-authoritative metadata_evidence must replace the stale agent-submitted value"
+    )
+
+
+def test_fill_deterministic_fields_livesqlbench_skips_masked_terms():
+    """For livesqlbench (no user_query_ambiguity), masked_terms must be left untouched."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    base = _minimal_annotation("flight_1", "flight")
+    ann = TaskAnnotation.model_validate(base)
+    task_data = {"instance_id": "flight_1", "selected_database": "flight"}
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="livesqlbench-base-lite-sqlite")
+
+    assert filled.masked_terms == []
+
+
+def test_fill_deterministic_fields_does_not_mutate_original():
+    """_fill_deterministic_fields must return a new object; the input annotation is unchanged."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    ann = TaskAnnotation.model_validate(_minimal_annotation())
+    original_path = ann.provenance.task_jsonl_path
+
+    _fill_deterministic_fields(
+        ann,
+        task_data={"instance_id": "shop_1", "external_knowledge": [99]},
+        benchmark="mini-interact",
+    )
+
+    assert ann.provenance.task_jsonl_path == original_path
 
 
 # ---------------------------------------------------------------------------
@@ -523,7 +787,7 @@ async def test_non_anthropic_model_returns_error_without_sdk_call(monkeypatch):
     result = await ann_agent.run_task(
         task_data=_task_mini(),
         data_path_base="/tmp/data",
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         model="openai/gpt-4o",  # not an Anthropic model
         effort="medium",
     )

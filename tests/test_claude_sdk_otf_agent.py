@@ -156,7 +156,7 @@ _TASK = {
     "instance_id": "shop_1",
     "amb_user_query": "?",
     "knowledge_ambiguity": [],
-    "dataset": "livesqlbench",
+    "dataset": "livesqlbench-base-lite-sqlite",
 }
 
 
@@ -193,7 +193,7 @@ async def test_run_task_accepts_livesqlbench_alias():
     from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
 
     agent = ClaudeSDKOtfAgent(model="openai/gpt-4o")
-    td = dict(_TASK, dataset="livesqlbench")  # canonical
+    td = dict(_TASK, dataset="livesqlbench-base-lite-sqlite")  # canonical
     row = await agent.run_task(
         td, "/tmp", 20.0, "slayer", eval_mode="one-shot",
     )
@@ -210,7 +210,7 @@ async def test_run_task_rejects_mini_interact_dataset():
     from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
 
     agent = ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
-    td = dict(_TASK, dataset="mini_interact")
+    td = dict(_TASK, dataset="mini-interact")
     with pytest.raises(ValueError):
         await agent.run_task(td, "/tmp", 20.0, "slayer", eval_mode="one-shot")
 
@@ -391,7 +391,7 @@ async def test_run_task_uses_cache_resolver_not_committed(monkeypatch, tmp_path)
     )
     assert "resolve_kwargs" in captured
     # Narrowed flavor is livesqlbench-only — the cache root is scoped accordingly.
-    assert captured["resolve_kwargs"]["benchmark"] == "livesqlbench"
+    assert captured["resolve_kwargs"]["benchmark"] == "livesqlbench-base-lite-sqlite"
 
 
 @pytest.mark.asyncio
@@ -582,7 +582,7 @@ async def test_run_task_one_shot_livesqlbench(monkeypatch, tmp_path):
         dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
 
-    assert captured["resolve_kwargs"]["benchmark"] == "livesqlbench"
+    assert captured["resolve_kwargs"]["benchmark"] == "livesqlbench-base-lite-sqlite"
     assert captured["materialize_calls"] == 1
 
 

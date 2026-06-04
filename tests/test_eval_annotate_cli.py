@@ -153,8 +153,8 @@ def test_submission_annotation_skeleton_fills_from_trajectory(tmp_path):
     assert ann.evaluation.phase1_against_original_gold == "pass"
     # user_sim_interaction walks the trajectory for ask_user calls.
     assert ann.user_sim_interaction.n_asks == 1
-    assert ann.task_annotation_ref.startswith("annotations/mini_interact/"), (
-        f"task_annotation_ref should use underscore form; got {ann.task_annotation_ref!r}"
+    assert ann.task_annotation_ref.startswith("annotations/mini-interact/"), (
+        f"task_annotation_ref should use hyphenated form; got {ann.task_annotation_ref!r}"
     )
 
 

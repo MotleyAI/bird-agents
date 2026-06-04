@@ -5,7 +5,7 @@ Picks the smallest real mini-interact DB by KB row count and exercises
 No LLM agent — this test is intentionally cheap so it can run in CI as
 long as the mini-interact data submodule is present.
 
-Skipped cleanly when ``paths.mini_interact_root()`` doesn't resolve.
+Skipped cleanly when ``paths.benchmark_data_root("mini-interact")`` doesn't resolve.
 
 The behavioural contract under test (Codex finding): the agent's
 ``search(question=..., datasource=db)`` MUST surface the KB memories
@@ -53,7 +53,7 @@ def _has_resolvable_child(row: dict, kb_ids: set[int]) -> bool:
 def _pick_smallest_db() -> tuple[str, Path, list[dict]] | None:
     """Return ``(db_name, kb_path, kb_rows)`` for the mini-interact DB
     with the fewest KB rows, or ``None`` if the data isn't present."""
-    root = paths.mini_interact_root()
+    root = paths.benchmark_data_root("mini-interact")
     if not root.exists():
         return None
     candidates: list[tuple[int, str, Path, list[dict]]] = []
@@ -161,11 +161,11 @@ async def test_on_the_fly_build_produces_expected_layout(
     entry = await otf_cache.ensure_db_cache(
         db,
         cache_root=cache_root,
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
     )
 
     scratch = await otf_runtime.prepare_task_storage(
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
         db=db,
         deleted_kb_ids=set(),
         cache_entry=entry,
@@ -198,7 +198,7 @@ async def test_on_the_fly_build_produces_expected_layout(
     )
 
     # Models count matches sqlite table count.
-    sqlite_path = paths.mini_interact_root() / db / f"{db}.sqlite"
+    sqlite_path = paths.benchmark_data_root("mini-interact") / db / f"{db}.sqlite"
     con = sqlite3.connect(sqlite_path)
     try:
         # Exclude SQLite engine-internal tables (sqlite_sequence,
@@ -238,10 +238,10 @@ async def test_memories_match_kb_rows_and_carry_bare_db_entity(
 
     entry = await otf_cache.ensure_db_cache(
         db, cache_root=cache_root,
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
     )
     scratch = await otf_runtime.prepare_task_storage(
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
         db=db, deleted_kb_ids=set(), cache_entry=entry, work_dir=work_dir,
     )
 
@@ -284,10 +284,10 @@ async def test_at_least_one_cross_ref_when_corpus_has_one(
 
     entry = await otf_cache.ensure_db_cache(
         db, cache_root=cache_root,
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
     )
     scratch = await otf_runtime.prepare_task_storage(
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
         db=db, deleted_kb_ids=set(), cache_entry=entry, work_dir=work_dir,
     )
     storage = YAMLStorage(base_dir=str(scratch))
@@ -335,10 +335,10 @@ async def test_search_service_recency_fallback_under_datasource_filter(
 
     entry = await otf_cache.ensure_db_cache(
         db, cache_root=cache_root,
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
     )
     scratch = await otf_runtime.prepare_task_storage(
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
         db=db, deleted_kb_ids=set(), cache_entry=entry, work_dir=work_dir,
     )
 
@@ -378,10 +378,10 @@ async def test_search_service_surfaces_kb_memory_under_datasource_filter(
 
     entry = await otf_cache.ensure_db_cache(
         db, cache_root=cache_root,
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
     )
     scratch = await otf_runtime.prepare_task_storage(
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
         db=db, deleted_kb_ids=set(), cache_entry=entry, work_dir=work_dir,
     )
 
@@ -440,10 +440,10 @@ async def test_memory_embeddings_are_populated_in_cache_when_available(
 
     entry = await otf_cache.ensure_db_cache(
         db, cache_root=cache_root,
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
     )
     scratch = await otf_runtime.prepare_task_storage(
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
         db=db, deleted_kb_ids=set(),
         cache_entry=entry, work_dir=work_dir,
     )
@@ -493,10 +493,10 @@ async def test_deletion_prunes_embedding_rows(smallest_db, shared_cache_root: Pa
 
     entry = await otf_cache.ensure_db_cache(
         db, cache_root=cache_root,
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
     )
     scratch = await otf_runtime.prepare_task_storage(
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
         db=db, deleted_kb_ids=deleted,
         cache_entry=entry, work_dir=work_dir,
     )
@@ -630,10 +630,10 @@ async def test_deletion_removes_memory_and_strips_dangling_refs(
 
     entry = await otf_cache.ensure_db_cache(
         db, cache_root=cache_root,
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
     )
     scratch = await otf_runtime.prepare_task_storage(
-        mini_interact_root=paths.mini_interact_root(),
+        mini_interact_root=paths.benchmark_data_root("mini-interact"),
         db=db,
         deleted_kb_ids={referred},
         cache_entry=entry,

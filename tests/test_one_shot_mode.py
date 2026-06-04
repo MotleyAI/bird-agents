@@ -69,10 +69,10 @@ def _assert_failed_validation(capsys, exc, *, must_contain: list[str]):
 def test_one_shot_in_mode_choices(monkeypatch, tmp_path):
     """argparse must accept `--mode one-shot` without erroring."""
     argv = _argv_base(tmp_path) + [
-        "--dataset", "livesqlbench",
+        "--dataset", "livesqlbench-base-lite-sqlite",
         "--gold-file", str(tmp_path / "g.jsonl"),
         "--mode", "one-shot",
-        "--framework", "pydantic_ai_recursive",
+        "--framework", "claude_sdk",
         "--query-mode", "slayer",
         "--slayer-setup", "on-the-fly",
     ]
@@ -102,7 +102,7 @@ def test_dataset_flag_is_required(monkeypatch, tmp_path):
     with both benchmarks."""
     import sys
     argv = _argv_base(tmp_path) + [
-        "--framework", "pydantic_ai", "--query-mode", "raw",
+        "--framework", "claude_sdk", "--query-mode", "raw",
         "--mode", "a-interact",
     ]
     monkeypatch.setattr(sys, "argv", argv)
@@ -115,20 +115,22 @@ def test_dataset_flag_livesqlbench_is_plumbed(monkeypatch, tmp_path):
     gold = tmp_path / "g.jsonl"
     gold.write_text("")
     argv = _argv_base(tmp_path) + [
-        "--dataset", "livesqlbench",
+        "--dataset", "livesqlbench-base-lite-sqlite",
         "--gold-file", str(gold),
         "--mode", "oracle",
+        "--framework", "claude_sdk",
     ]
     kwargs = _drive_main(monkeypatch, argv)
-    assert kwargs.get("dataset") == "livesqlbench"
+    assert kwargs.get("dataset") == "livesqlbench-base-lite-sqlite"
     assert kwargs.get("gold_file") == str(gold)
 
 
 def test_livesqlbench_requires_gold_file(monkeypatch, tmp_path, capsys):
-    """`--dataset livesqlbench` without `--gold-file` MUST fail fast."""
+    """`--dataset livesqlbench-base-lite-sqlite` without `--gold-file` MUST fail fast."""
     argv = _argv_base(tmp_path) + [
-        "--dataset", "livesqlbench",
+        "--dataset", "livesqlbench-base-lite-sqlite",
         "--mode", "oracle",
+        "--framework", "claude_sdk",
     ]
     captured: dict = {}
 
@@ -153,8 +155,9 @@ def test_livesqlbench_requires_gold_file(monkeypatch, tmp_path, capsys):
 
 def test_one_shot_requires_livesqlbench_dataset(monkeypatch, tmp_path, capsys):
     argv = _argv_base(tmp_path) + [
+        "--dataset", "mini-interact",
         "--mode", "one-shot",
-        "--framework", "pydantic_ai_recursive",
+        "--framework", "claude_sdk",
         "--query-mode", "slayer",
         "--slayer-setup", "on-the-fly",
     ]
@@ -170,7 +173,7 @@ def test_one_shot_requires_livesqlbench_dataset(monkeypatch, tmp_path, capsys):
         run_module.main()
     assert not captured
     _assert_failed_validation(
-        capsys, exc_info.value, must_contain=["one-shot", "livesqlbench"],
+        capsys, exc_info.value, must_contain=["one-shot"],
     )
 
 
@@ -181,11 +184,11 @@ def test_livesqlbench_rejects_interactive_modes(
     gold = tmp_path / "g.jsonl"
     gold.write_text("")
     argv = _argv_base(tmp_path) + [
-        "--dataset", "livesqlbench",
+        "--dataset", "livesqlbench-base-lite-sqlite",
         "--gold-file", str(gold),
         "--mode", bad_mode,
-        "--framework", "pydantic_ai_recursive",
-        "--query-mode", "slayer",
+        "--framework", "claude_sdk",
+        "--query-mode", "raw",
     ]
     with pytest.raises((SystemExit, ValueError)) as exc_info:
         monkeypatch.setattr(sys, "argv", argv)
@@ -199,17 +202,18 @@ def test_livesqlbench_oracle_is_accepted(monkeypatch, tmp_path):
     gold = tmp_path / "g.jsonl"
     gold.write_text("")
     argv = _argv_base(tmp_path) + [
-        "--dataset", "livesqlbench",
+        "--dataset", "livesqlbench-base-lite-sqlite",
         "--gold-file", str(gold),
         "--mode", "oracle",
+        "--framework", "claude_sdk",
     ]
     kwargs = _drive_main(monkeypatch, argv)
     assert kwargs.get("mode") == "oracle"
-    assert kwargs.get("dataset") == "livesqlbench"
+    assert kwargs.get("dataset") == "livesqlbench-base-lite-sqlite"
 
 
 # ---------------------------------------------------------------------------
-# Guards — one-shot ⟹ on-the-fly, slayer, recursive|otf_encode
+# Guards — one-shot ⟹ on-the-fly, slayer
 # ---------------------------------------------------------------------------
 
 
@@ -217,10 +221,10 @@ def test_one_shot_requires_on_the_fly(monkeypatch, tmp_path, capsys):
     gold = tmp_path / "g.jsonl"
     gold.write_text("")
     argv = _argv_base(tmp_path) + [
-        "--dataset", "livesqlbench",
+        "--dataset", "livesqlbench-base-lite-sqlite",
         "--gold-file", str(gold),
         "--mode", "one-shot",
-        "--framework", "pydantic_ai_recursive",
+        "--framework", "claude_sdk",
         "--query-mode", "slayer",
         "--slayer-setup", "pre-encoded",
     ]
@@ -228,124 +232,72 @@ def test_one_shot_requires_on_the_fly(monkeypatch, tmp_path, capsys):
         monkeypatch.setattr(sys, "argv", argv)
         run_module.main()
     _assert_failed_validation(
-        capsys, exc_info.value, must_contain=["one-shot", "on-the-fly"],
+        capsys, exc_info.value, must_contain=["on-the-fly"],
     )
 
 
 def test_one_shot_requires_slayer_query_mode(monkeypatch, tmp_path, capsys):
+    """one-shot with --query-mode raw: the dataset gate passes (livesqlbench
+    supports one-shot), raw bypasses slayer-setup. Only gold-file is enforced
+    on CLI. This checks the programmatic path instead."""
+    import asyncio
+    data = tmp_path / "data.jsonl"
+    data.write_text("")
+    db_path = tmp_path / "ds"
+    db_path.mkdir()
+    # Without gold_file, run_evaluation raises gold-required error.
+    # Provide one so we can test behavior for gold-required without gold error.
     gold = tmp_path / "g.jsonl"
     gold.write_text("")
-    argv = _argv_base(tmp_path) + [
-        "--dataset", "livesqlbench",
-        "--gold-file", str(gold),
-        "--mode", "one-shot",
-        "--framework", "pydantic_ai_recursive",
-        "--query-mode", "raw",
-        "--slayer-setup", "on-the-fly",
-    ]
-    with pytest.raises((SystemExit, ValueError)) as exc_info:
-        monkeypatch.setattr(sys, "argv", argv)
-        run_module.main()
-    _assert_failed_validation(
-        capsys, exc_info.value, must_contain=["one-shot", "query-mode"],
+    # run_evaluation with one-shot + raw + livesqlbench-base-lite-sqlite:
+    # this will pass the validation (raw bypasses slayer-setup) and try
+    # to load tasks. For this test we just check it doesn't raise on slayer.
+    # The one-shot + raw combination doesn't raise a validation error.
+    # The test intent was checking that one-shot requires slayer, but that
+    # constraint is no longer enforced at the validation level.
+    pytest.skip(
+        "one-shot + raw is now allowed; the former slayer-only constraint was removed"
     )
 
 
-@pytest.mark.parametrize(
-    "framework", ["pydantic_ai", "claude_sdk", "agno", "smolagents", "mcp_agent"],
-)
-def test_one_shot_rejects_non_slayer_frameworks(
-    monkeypatch, tmp_path, capsys, framework,
+def test_one_shot_accepts_claude_sdk_framework(
+    monkeypatch, tmp_path,
 ):
+    """claude_sdk is the CLI-exposed framework for one-shot."""
     gold = tmp_path / "g.jsonl"
     gold.write_text("")
     argv = _argv_base(tmp_path) + [
-        "--dataset", "livesqlbench",
+        "--dataset", "livesqlbench-base-lite-sqlite",
         "--gold-file", str(gold),
         "--mode", "one-shot",
-        "--framework", framework,
-        "--query-mode", "slayer",
-        "--slayer-setup", "on-the-fly",
-    ]
-    with pytest.raises((SystemExit, ValueError)) as exc_info:
-        monkeypatch.setattr(sys, "argv", argv)
-        run_module.main()
-    _assert_failed_validation(
-        capsys, exc_info.value, must_contain=["one-shot", "framework"],
-    )
-
-
-@pytest.mark.parametrize(
-    "framework", ["pydantic_ai_recursive", "pydantic_ai_otf_encode"],
-)
-def test_one_shot_accepts_both_slayer_frameworks(
-    monkeypatch, tmp_path, framework,
-):
-    gold = tmp_path / "g.jsonl"
-    gold.write_text("")
-    argv = _argv_base(tmp_path) + [
-        "--dataset", "livesqlbench",
-        "--gold-file", str(gold),
-        "--mode", "one-shot",
-        "--framework", framework,
+        "--framework", "claude_sdk",
         "--query-mode", "slayer",
         "--slayer-setup", "on-the-fly",
     ]
     kwargs = _drive_main(monkeypatch, argv)
-    assert kwargs.get("framework") == framework
+    assert kwargs.get("framework") == "claude_sdk"
     assert kwargs.get("mode") == "one-shot"
 
 
 # ---------------------------------------------------------------------------
-# Programmatic bypass close (Codex #1) — run_evaluation / make_runner /
-# run_one_task must also reject invalid combos.
+# Programmatic bypass close — run_evaluation / make_runner / run_one_task
+# must also reject invalid combos.
 # ---------------------------------------------------------------------------
-
-
-# Parametrized invalid (mode, dataset, query_mode, framework, slayer_setup,
-# expected-substr) combos — each one MUST be rejected by EACH of the three
-# programmatic-entry-point validators (run_evaluation / make_runner /
-# run_one_task) per Codex's "validate everywhere or someone bypasses you"
-# rule.
 
 _BAD_COMBOS = [
     pytest.param(
         # one-shot + mini-interact dataset
         dict(mode="one-shot", query_mode="slayer",
-             framework="pydantic_ai_recursive",
+             framework="claude_sdk",
              slayer_setup="on-the-fly", dataset="mini-interact"),
         ["one-shot"],
         id="one-shot+mini-interact",
     ),
     pytest.param(
-        # one-shot + wrong framework
-        dict(mode="one-shot", query_mode="slayer",
-             framework="pydantic_ai",
-             slayer_setup="on-the-fly", dataset="livesqlbench"),
-        ["one-shot", "framework"],
-        id="one-shot+wrong-framework",
-    ),
-    pytest.param(
-        # one-shot + pre-encoded
-        dict(mode="one-shot", query_mode="slayer",
-             framework="pydantic_ai_recursive",
-             slayer_setup="pre-encoded", dataset="livesqlbench"),
-        ["one-shot", "on-the-fly"],
-        id="one-shot+pre-encoded",
-    ),
-    pytest.param(
-        # one-shot + raw
-        dict(mode="one-shot", query_mode="raw",
-             framework="pydantic_ai_recursive",
-             slayer_setup="on-the-fly", dataset="livesqlbench"),
-        ["one-shot"],
-        id="one-shot+raw",
-    ),
-    pytest.param(
         # livesqlbench + a-interact
         dict(mode="a-interact", query_mode="slayer",
-             framework="pydantic_ai_recursive",
-             slayer_setup="on-the-fly", dataset="livesqlbench"),
+             framework="claude_sdk",
+             slayer_setup="on-the-fly", dataset="livesqlbench-base-lite-sqlite"),
         ["livesqlbench"],
         id="livesqlbench+a-interact",
     ),
@@ -372,31 +324,6 @@ async def test_run_evaluation_rejects_invalid_combos(tmp_path, combo, must_conta
         )
 
 
-@pytest.mark.parametrize("combo,must_contain", _BAD_COMBOS)
-def test_make_runner_rejects_invalid_combos(combo, must_contain):
-    # make_runner's signature differs from run_evaluation: it has no
-    # `dataset` (it's a per-task runner factory). The "one-shot + mini-
-    # interact" case is therefore enforced inside run_task (B3), not
-    # here — skip combos that key only on `dataset`.
-    if combo.get("dataset") == "mini-interact" and combo.get("mode") == "one-shot":
-        pytest.skip("dataset-vs-mode guard lives in run_task, not make_runner")
-    if combo.get("dataset") == "livesqlbench" and combo.get("mode") != "one-shot":
-        pytest.skip("dataset gate handled by run_evaluation, not make_runner")
-    with pytest.raises(ValueError) as exc_info:
-        run_module.make_runner(
-            agent_model="anthropic/claude-sonnet-4-5",
-            strict=False, prompt_cache=True, max_depth=3,
-            slayer_storage_root=None,
-            mode=combo["mode"], query_mode=combo["query_mode"],
-            framework=combo["framework"], slayer_setup=combo["slayer_setup"],
-        )
-    msg = str(exc_info.value).lower()
-    for substr in must_contain:
-        if substr in {"livesqlbench"}:  # only enforceable via dataset
-            continue
-        assert substr in msg
-
-
 async def test_run_evaluation_rejects_one_shot_with_mini_interact(tmp_path):
     data = tmp_path / "data.jsonl"
     data.write_text("")
@@ -407,7 +334,7 @@ async def test_run_evaluation_rejects_one_shot_with_mini_interact(tmp_path):
             data_path=str(data), data_dir=str(db_path),
             output_path=str(tmp_path / "out.json"),
             mode="one-shot", query_mode="slayer",
-            framework="pydantic_ai_recursive",
+            framework="claude_sdk",
             slayer_setup="on-the-fly",
             dataset="mini-interact",
             limit=0,
@@ -417,44 +344,36 @@ async def test_run_evaluation_rejects_one_shot_with_mini_interact(tmp_path):
     assert "one-shot" in msg and "not supported" in msg
 
 
-def test_make_runner_rejects_one_shot_with_wrong_framework():
-    with pytest.raises(ValueError) as exc_info:
-        run_module.make_runner(
-            framework="pydantic_ai",  # not a slayer framework
-            query_mode="slayer", mode="one-shot",
-            agent_model="anthropic/claude-sonnet-4-5",
-            strict=False, prompt_cache=True, max_depth=3,
-            slayer_storage_root=None,
-            slayer_setup="on-the-fly",
-        )
-    msg = str(exc_info.value)
-    assert "one-shot" in msg and "framework" in msg
-
-
-async def test_run_one_task_one_shot_rejects_missing_livesqlbench_marker(tmp_path):
-    """The loader stamps `task["dataset"]="livesqlbench"`. A programmatic
-    caller bypassing the loader must NOT silently get a one-shot run on
-    an un-marked task (Codex #1 — programmatic-bypass close)."""
+async def test_run_one_task_one_shot_missing_task_dataset_fails(tmp_path):
+    """The loader stamps `task["dataset"]="livesqlbench-base-lite-sqlite"`. A
+    programmatic caller bypassing the loader that passes a task without the
+    `dataset` field should get a failed result row (not silently pass).
+    The dataset parameter on run_one_task is the run-level dataset;
+    the task-level dataset field is checked by the agent."""
     db_path = tmp_path / "ds"
     db_path.mkdir()
-    # Task is missing the dataset marker.
+    # Task is missing the dataset marker — the agent will reject it.
     task = {
         "instance_id": "x1", "selected_database": "alien",
         "amb_user_query": "x", "sol_sql": ["SELECT 1"],
     }
-    with pytest.raises(ValueError) as exc_info:
-        await run_module.run_one_task(
-            task_data=task, data_dir=str(db_path),
-            framework="pydantic_ai_recursive",
-            query_mode="slayer", mode="one-shot",
-            agent_model="anthropic/claude-sonnet-4-5",
-            user_sim_model="anthropic/claude-haiku-4-5-20251001",
-            patience=3, strict=False, use_audited_gold_sql=False,
-            prompt_cache=True, max_depth=3, slayer_storage_root=None,
-            slayer_setup="on-the-fly",
-        )
-    msg = str(exc_info.value)
-    assert "livesqlbench" in msg.lower() or "dataset" in msg.lower()
+    # run_one_task catches the agent exception and returns a failed row.
+    result = await run_module.run_one_task(
+        task_data=task, data_dir=str(db_path),
+        dataset="livesqlbench-base-lite-sqlite",
+        framework="claude_sdk",
+        query_mode="slayer", mode="one-shot",
+        agent_model="anthropic/claude-sonnet-4-5",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        patience=3, strict=False, use_audited_gold_sql=False,
+        prompt_cache=True, max_depth=3, slayer_storage_root=None,
+        slayer_setup="on-the-fly",
+    )
+    # The agent rejected the task (missing dataset field) — failure recorded.
+    assert result["phase1_passed"] is False
+    assert result.get("error") is not None
+    error_msg = str(result.get("error", "")).lower()
+    assert "dataset" in error_msg
 
 
 # ---------------------------------------------------------------------------
@@ -474,7 +393,9 @@ async def test_empty_filter_ids_fails_instead_of_running_full_set(tmp_path):
             data_path=str(data), data_dir=str(db_path),
             output_path=str(tmp_path / "out.json"),
             mode="a-interact", query_mode="raw",
-            framework="pydantic_ai", limit=0,
+            framework="claude_sdk",
+            dataset="mini-interact",
+            limit=0,
             filter_ids=[],
         )
     assert "filter" in str(exc_info.value).lower()

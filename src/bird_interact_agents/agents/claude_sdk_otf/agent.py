@@ -299,12 +299,14 @@ class ClaudeSDKOtfAgent:
         # by passing task_data with the wrong marker. Canonicalize via
         # ``get_benchmark`` so documented aliases are accepted (matches
         # `_validate_framework_dataset_mode`'s behavior).
-        dataset = task_data.get("dataset") or "mini_interact"
-        if get_benchmark(dataset).name not in ("livesqlbench", "livesqlbench_postgres"):
+        dataset = task_data.get("dataset")
+        if not dataset:
+            raise ValueError("task_data missing required 'dataset' field")
+        if not get_benchmark(dataset).one_shot:
             raise ValueError(
-                "claude_sdk_otf is bound to --dataset livesqlbench / livesqlbench_postgres "
-                "(use --framework claude_sdk_otf_ainteract for "
-                f"mini_interact); got dataset={dataset!r}"
+                "claude_sdk_otf requires a one-shot benchmark "
+                "(use claude_sdk for a-interact benchmarks); "
+                f"got dataset={dataset!r}"
             )
 
         instance_id = task_data["instance_id"]

@@ -49,8 +49,8 @@ def _cli_env(tmp_path: Path) -> dict:
     flip on the always-fail injection knob used by the test stubs."""
     return {
         **os.environ,
-        "BIRD_DB_PATH": str(tmp_path / "mini_interact"),
-        "BIRD_DATA_PATH": str(tmp_path / "mini_interact" / "mini_interact.jsonl"),
+        "BIRD_DB_PATH": str(tmp_path / "mini-interact"),
+        "BIRD_DATA_PATH": str(tmp_path / "mini-interact" / "mini_interact.jsonl"),
         "BIRD_SAR_AUDITED_GOLD_ROOT": str(tmp_path / "sar_audited_gold"),
         # When set, the CLI substitutes a stub SAR factory that always raises.
         "SAR_AUDIT_FORCE_FAILURE": "1",
@@ -58,7 +58,7 @@ def _cli_env(tmp_path: Path) -> dict:
 
 
 def test_cli_returns_nonzero_when_any_task_fails(tmp_path: Path):
-    _stage_minimal_db(tmp_path / "mini_interact", db="fake_cli")
+    _stage_minimal_db(tmp_path / "mini-interact", db="fake_cli")
     result = subprocess.run(
         [sys.executable, str(CLI_SCRIPT), "--db", "fake_cli"],
         capture_output=True,
@@ -77,7 +77,7 @@ def test_cli_returns_nonzero_when_any_task_fails(tmp_path: Path):
 
 
 def test_cli_returns_zero_on_clean_success(tmp_path: Path):
-    _stage_minimal_db(tmp_path / "mini_interact", db="fake_cli")
+    _stage_minimal_db(tmp_path / "mini-interact", db="fake_cli")
     env = _cli_env(tmp_path)
     # The clean-success knob: stub returns one clean verdict per task.
     env.pop("SAR_AUDIT_FORCE_FAILURE", None)

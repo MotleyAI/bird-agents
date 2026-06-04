@@ -89,11 +89,11 @@ def _latest_attempt_file(sub: Path) -> Path | None:
 
 def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
     """Map ``instance_id`` → list-of-SQL-strings for the benchmark's
-    original gold. mini_interact carries ``sol_sql`` inline on each task
-    row in ``mini_interact.jsonl``; livesqlbench ships an empty
-    ``sol_sql`` on the public ``livesqlbench_data_sqlite.jsonl`` and the
-    real list lives on the gated gold sidecar (env override
-    ``BIRD_LIVESQLBENCH_GOLD_FILE``). Look it up once at CLI startup so
+    original gold. mini-interact carries ``sol_sql`` inline on each task
+    row in the benchmark JSONL; livesqlbench-base-lite-sqlite ships an
+    empty ``sol_sql`` on the public ``livesqlbench_data_sqlite.jsonl``
+    and the real list lives in ``gated_gold/<benchmark>/``. Look it up
+    once at CLI startup so
     the per-row grader doesn't repeatedly parse a multi-megabyte JSONL.
     Empty rows fall back to ``[]`` so the cascade's N1 just doesn't fire
     for instances whose source row genuinely has no gold (rather than
@@ -125,19 +125,19 @@ def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
     bench = get_benchmark(benchmark)
     if bench.gold_required:
         gold_path: Optional[Path] = None
-        import os
-        env_override = os.environ.get(bench.gold_root_env or "")
-        if env_override:
-            gold_path = Path(env_override).expanduser()
-        else:
-            # Default sidecar location: <livesqlbench_root>/<gt_sidecar>
-            for candidate in (
-                paths.benchmark_data_root(benchmark)
-                / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl",
-            ):
-                if candidate.exists():
-                    gold_path = candidate
-                    break
+        # DEV-1525: gated gold lives at paths.gated_gold_root(benchmark=) /
+        # <gt_sidecar>.jsonl; a BIRD_GATED_GOLD_ROOT env var overrides the
+        # parent dir (benchmark subdir still appended).
+        gated_root = paths.gated_gold_root(benchmark=benchmark)
+        for candidate in (
+            gated_root / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl",
+            # Backwards compat: sidecar directly inside the data root.
+            paths.benchmark_data_root(benchmark)
+            / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl",
+        ):
+            if candidate.exists():
+                gold_path = candidate
+                break
         if gold_path and gold_path.exists():
             with gold_path.open() as f:
                 for line in f:
@@ -241,7 +241,7 @@ def regrade_run(
             instance_id=instance_id,
             selected_database=selected_database,
             task_annotation_ref=(
-                f"annotations/{benchmark.replace('-', '_')}/{selected_database}/"
+                f"annotations/{benchmark}/{selected_database}/"
                 f"{instance_id}.task.json"
             ),
             annotated_by="auto-regrade",

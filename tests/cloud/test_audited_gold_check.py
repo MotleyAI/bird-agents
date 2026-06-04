@@ -340,7 +340,7 @@ def _write_lsb_audited(audited_root: Path, rows: list[dict]) -> Path:
     """Lay down `<audited_root>/livesqlbench_audited.jsonl` for the
     single_file layout.
 
-    Injects ``benchmark: "livesqlbench"`` into any row that doesn't
+    Injects ``benchmark: "livesqlbench-base-lite-sqlite"`` into any row that doesn't
     already set it, so existing test cases (which only set
     ``selected_database``) keep passing the new benchmark-field guard.
     Tests that DELIBERATELY omit ``benchmark`` to exercise the guard
@@ -348,11 +348,11 @@ def _write_lsb_audited(audited_root: Path, rows: list[dict]) -> Path:
     or set an explicit wrong value.
     """
     audited_root.mkdir(parents=True, exist_ok=True)
-    sidecar = audited_root / "livesqlbench_audited.jsonl"
+    sidecar = audited_root / "livesqlbench-base-lite-sqlite_audited.jsonl"
     normalised = []
     for r in rows:
         if "benchmark" not in r:
-            r = {**r, "benchmark": "livesqlbench"}
+            r = {**r, "benchmark": "livesqlbench-base-lite-sqlite"}
         normalised.append(r)
     sidecar.write_text("\n".join(json.dumps(r) for r in normalised) + "\n")
     return sidecar
@@ -380,7 +380,7 @@ def test_lsb_clean_row_passes(tmp_path: Path) -> None:
     missing = missing_audited_gold_ids(
         ["museum_9"],
         audited_root=audited_root, data_path=data,
-        benchmark=get_benchmark("livesqlbench"),
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert missing == []
 
@@ -404,7 +404,7 @@ def test_lsb_edited_with_audited_sol_sql_passes(tmp_path: Path) -> None:
     missing = missing_audited_gold_ids(
         ["museum_7"],
         audited_root=audited_root, data_path=data,
-        benchmark=get_benchmark("livesqlbench"),
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert missing == []
 
@@ -430,7 +430,7 @@ def test_lsb_edited_missing_sol_sql_is_reported(tmp_path: Path) -> None:
     missing = missing_audited_gold_ids(
         ["museum_7"],
         audited_root=audited_root, data_path=data,
-        benchmark=get_benchmark("livesqlbench"),
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert missing == ["museum_7"]
 
@@ -456,7 +456,7 @@ def test_lsb_missing_row_is_reported(tmp_path: Path) -> None:
     missing = missing_audited_gold_ids(
         ["museum_1", "museum_7"],
         audited_root=audited_root, data_path=data,
-        benchmark=get_benchmark("livesqlbench"),
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert missing == ["museum_7"]
 
@@ -477,7 +477,7 @@ def test_lsb_missing_file_reports_every_id(tmp_path: Path) -> None:
     missing = missing_audited_gold_ids(
         ["museum_1"],
         audited_root=audited_root, data_path=data,
-        benchmark=get_benchmark("livesqlbench"),
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert missing == ["museum_1"]
 
@@ -506,7 +506,7 @@ def test_lsb_row_db_mismatch_is_reported(tmp_path: Path) -> None:
     missing = missing_audited_gold_ids(
         ["museum_7"],
         audited_root=audited_root, data_path=data,
-        benchmark=get_benchmark("livesqlbench"),
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert missing == ["museum_7"]
 
@@ -537,7 +537,7 @@ def test_lsb_row_with_no_selected_database_is_reported(tmp_path: Path) -> None:
     missing = missing_audited_gold_ids(
         ["museum_7"],
         audited_root=audited_root, data_path=data,
-        benchmark=get_benchmark("livesqlbench"),
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert missing == ["museum_7"], (
         "row with no selected_database must be reported; the overlay "
@@ -566,7 +566,7 @@ def test_lsb_row_with_empty_selected_database_is_reported(tmp_path: Path) -> Non
     missing = missing_audited_gold_ids(
         ["museum_7"],
         audited_root=audited_root, data_path=data,
-        benchmark=get_benchmark("livesqlbench"),
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert missing == ["museum_7"]
 
@@ -589,14 +589,14 @@ def test_lsb_row_with_wrong_benchmark_is_reported(tmp_path: Path) -> None:
     audited_root = tmp_path / "audited_gold"
     _write_lsb_audited(audited_root, [
         {"instance_id": "museum_7", "selected_database": "museum",
-         "benchmark": "mini_interact",  # wrong benchmark
+         "benchmark": "mini-interact",  # wrong benchmark
          "audit_status": "edited", "audited_sol_sql": ["SELECT 1"]},
     ])
 
     missing = missing_audited_gold_ids(
         ["museum_7"],
         audited_root=audited_root, data_path=data,
-        benchmark=get_benchmark("livesqlbench"),
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert missing == ["museum_7"]
 
@@ -627,7 +627,7 @@ def test_lsb_row_with_no_benchmark_field_is_reported(tmp_path: Path) -> None:
     missing = missing_audited_gold_ids(
         ["museum_7"],
         audited_root=audited_root, data_path=data,
-        benchmark=get_benchmark("livesqlbench"),
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert missing == ["museum_7"]
 
@@ -689,6 +689,6 @@ def test_lsb_partial_batch_reports_only_failing_ids(tmp_path: Path) -> None:
     missing = missing_audited_gold_ids(
         ["museum_1", "museum_2", "museum_7", "museum_9", "museum_10"],
         audited_root=audited_root, data_path=data,
-        benchmark=get_benchmark("livesqlbench"),
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert missing == ["museum_7", "museum_10"]

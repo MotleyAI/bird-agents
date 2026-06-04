@@ -193,9 +193,9 @@ async def test_local_run_invokes_inline_grader_per_task(monkeypatch, tmp_path):
     assert instances == ["alien_1", "alien_2"], (
         f"inline grader should be called once per task; got: {instances}"
     )
-    # Benchmark token is the canonical underscore form.
-    assert all(c["benchmark"] == "mini_interact" for c in calls), (
-        f"benchmark must be canonicalized to underscore form; got: {calls}"
+    # Benchmark token is the canonical hyphenated form.
+    assert all(c["benchmark"] == "mini-interact" for c in calls), (
+        f"benchmark must be the canonical hyphenated form; got: {calls}"
     )
     # Per-row ``submission_annotation.json`` files were written.
     rows_dir = output_path.parent / "rows"

@@ -21,8 +21,8 @@ import pytest
 def test_effective_db_root_with_explicit_root_overrides_env(monkeypatch, tmp_path):
     from bird_interact_agents.slayer_otf import reference_build
 
-    monkeypatch.setenv("BIRD_DB_PATH", str(tmp_path / "mini_interact"))
-    livesqlbench = tmp_path / "livesqlbench"
+    monkeypatch.setenv("BIRD_DB_PATH", str(tmp_path / "mini-interact"))
+    livesqlbench = tmp_path / "livesqlbench-base-lite-sqlite"
     livesqlbench.mkdir()
     out = reference_build._effective_db_root(
         livesqlbench, db_root=livesqlbench,
@@ -97,7 +97,7 @@ async def test_ensure_db_reference_threads_db_root_into_build_path(
     from bird_interact_agents.slayer_otf import reference_build
 
     monkeypatch.setenv("BIRD_DB_PATH", str(tmp_path / "mini_interact_env"))
-    livesqlbench = tmp_path / "livesqlbench"
+    livesqlbench = tmp_path / "livesqlbench-base-lite-sqlite"
     (livesqlbench / "alien").mkdir(parents=True)
     received: list = []
 
@@ -183,7 +183,7 @@ def test_resolve_committed_connection_string_db_root_overrides_env(
     env_root.mkdir()
     monkeypatch.setenv("BIRD_DB_PATH", str(env_root))
 
-    explicit = tmp_path / "livesqlbench"
+    explicit = tmp_path / "livesqlbench-base-lite-sqlite"
     explicit.mkdir()
 
     rel = "sqlite:///alien/alien.sqlite"
@@ -238,7 +238,7 @@ async def test_build_task_variant_storage_db_root_threads_into_resolver(
     )
 
     monkeypatch.setenv("BIRD_DB_PATH", str(tmp_path / "mini_via_env"))
-    livesqlbench_root = tmp_path / "livesqlbench"
+    livesqlbench_root = tmp_path / "livesqlbench-base-lite-sqlite"
     livesqlbench_root.mkdir()
 
     # Set up a minimal canonical storage with a datasource carrying a
@@ -298,7 +298,7 @@ async def test_resolve_datasource_for_build_passes_db_root_to_effective_root(
     from bird_interact_agents.slayer_otf import reference_build
 
     monkeypatch.setenv("BIRD_DB_PATH", str(tmp_path / "mini_interact_env"))
-    livesqlbench = tmp_path / "livesqlbench"
+    livesqlbench = tmp_path / "livesqlbench-base-lite-sqlite"
     livesqlbench.mkdir()
     seen: list = []
 

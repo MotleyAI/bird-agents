@@ -378,9 +378,9 @@ def _minimal_row_kwargs() -> dict:
 
 
 def _write_single_file_audit(audited_root: Path, rows: list[dict]) -> Path:
-    """Lay down `<audited_root>/livesqlbench_audited.jsonl` from `rows`."""
+    """Lay down `<audited_root>/livesqlbench-base-lite-sqlite_audited.jsonl` from `rows`."""
     audited_root.mkdir(parents=True, exist_ok=True)
-    path = audited_root / "livesqlbench_audited.jsonl"
+    path = audited_root / "livesqlbench-base-lite-sqlite_audited.jsonl"
     with path.open("w") as f:
         for r in rows:
             f.write(json.dumps(r) + "\n")
@@ -397,7 +397,7 @@ def test_overlay_single_file_basic_swap_for_edited(tmp_path):
         {
             "instance_id": "museum_7",
             "selected_database": "museum",
-            "benchmark": "livesqlbench",
+            "benchmark": "livesqlbench-base-lite-sqlite",
             "audit_status": "edited",
             "audited_sol_sql": ["SELECT audited FROM t"],
         },
@@ -408,7 +408,7 @@ def test_overlay_single_file_basic_swap_for_edited(tmp_path):
         "sol_sql": ["SELECT original FROM t"],
     }
     log = apply_audited_gold_overlay(
-        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
 
     assert log["museum_7"] == "edited"
@@ -426,7 +426,7 @@ def test_overlay_single_file_clean_keeps_original_and_stamps_snapshot(tmp_path):
         {
             "instance_id": "museum_9",
             "selected_database": "museum",
-            "benchmark": "livesqlbench",
+            "benchmark": "livesqlbench-base-lite-sqlite",
             "audit_status": "clean",
         },
     ])
@@ -436,7 +436,7 @@ def test_overlay_single_file_clean_keeps_original_and_stamps_snapshot(tmp_path):
         "sol_sql": ["SELECT identical FROM t"],
     }
     log = apply_audited_gold_overlay(
-        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
 
     assert log["museum_9"] == "clean"
@@ -457,7 +457,7 @@ def test_overlay_single_file_missing_file_logs_missing_for_all(tmp_path):
         "sol_sql": ["SELECT original FROM t"],
     }
     log = apply_audited_gold_overlay(
-        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
 
     assert log["museum_7"] == "missing-file"
@@ -484,7 +484,7 @@ def test_overlay_single_file_missing_row(tmp_path):
         "sol_sql": ["SELECT original FROM t"],
     }
     log = apply_audited_gold_overlay(
-        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
 
     assert log["museum_7"] == "missing-row"
@@ -506,7 +506,7 @@ def test_overlay_single_file_row_db_mismatch_is_missing_row(tmp_path, caplog):
         {
             "instance_id": "museum_7",
             "selected_database": "WRONG_db",  # mismatch
-            "benchmark": "livesqlbench",
+            "benchmark": "livesqlbench-base-lite-sqlite",
             "audit_status": "edited",
             "audited_sol_sql": ["SELECT audited FROM t"],
         },
@@ -518,7 +518,7 @@ def test_overlay_single_file_row_db_mismatch_is_missing_row(tmp_path, caplog):
     }
     with caplog.at_level(logging.WARNING, logger="bird_interact_agents.harness"):
         log = apply_audited_gold_overlay(
-            [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+            [task], tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
         )
 
     assert log["museum_7"] == "missing-row"
@@ -548,7 +548,7 @@ def test_overlay_single_file_row_with_no_selected_database_is_missing_row(
         {
             # NB: no `selected_database` field at all.
             "instance_id": "museum_7",
-            "benchmark": "livesqlbench",
+            "benchmark": "livesqlbench-base-lite-sqlite",
             "audit_status": "edited",
             "audited_sol_sql": ["SELECT audited FROM t"],
         },
@@ -560,7 +560,7 @@ def test_overlay_single_file_row_with_no_selected_database_is_missing_row(
     }
     with caplog.at_level(logging.WARNING, logger="bird_interact_agents.harness"):
         log = apply_audited_gold_overlay(
-            [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+            [task], tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
         )
 
     assert log["museum_7"] == "missing-row", (
@@ -601,7 +601,7 @@ def test_overlay_single_file_row_with_empty_selected_database_is_missing_row(
         "sol_sql": ["SELECT original FROM t"],
     }
     log = apply_audited_gold_overlay(
-        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
 
     assert log["museum_7"] == "missing-row"
@@ -626,7 +626,7 @@ def test_overlay_single_file_row_with_wrong_benchmark_is_missing_row(
         {
             "instance_id": "museum_7",
             "selected_database": "museum",
-            "benchmark": "mini_interact",  # wrong benchmark
+            "benchmark": "mini-interact",  # wrong benchmark
             "audit_status": "edited",
             "audited_sol_sql": ["SELECT audited FROM t"],
         },
@@ -638,13 +638,13 @@ def test_overlay_single_file_row_with_wrong_benchmark_is_missing_row(
     }
     with caplog.at_level(logging.WARNING, logger="bird_interact_agents.harness"):
         log = apply_audited_gold_overlay(
-            [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+            [task], tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
         )
 
     assert log["museum_7"] == "missing-row"
     assert task["sol_sql"] == ["SELECT original FROM t"]
     assert any(
-        "museum_7" in rec.getMessage() and "mini_interact" in rec.getMessage()
+        "museum_7" in rec.getMessage() and "mini-interact" in rec.getMessage()
         for rec in caplog.records
     ), (
         "expected a wrong-benchmark warning; got: "
@@ -673,7 +673,7 @@ def test_overlay_single_file_row_with_no_benchmark_is_missing_row(tmp_path):
         "sol_sql": ["SELECT original FROM t"],
     }
     log = apply_audited_gold_overlay(
-        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
 
     assert log["museum_7"] == "missing-row"
@@ -690,7 +690,7 @@ def test_overlay_single_file_unrecoverable_swaps_and_records(tmp_path):
         {
             "instance_id": "museum_5",
             "selected_database": "museum",
-            "benchmark": "livesqlbench",
+            "benchmark": "livesqlbench-base-lite-sqlite",
             "audit_status": "unrecoverable",
             "audited_sol_sql": ["SELECT fallback FROM t"],
         },
@@ -701,7 +701,7 @@ def test_overlay_single_file_unrecoverable_swaps_and_records(tmp_path):
         "sol_sql": ["SELECT original FROM t"],
     }
     log = apply_audited_gold_overlay(
-        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
 
     assert log["museum_5"] == "unrecoverable"
@@ -718,7 +718,7 @@ def test_overlay_single_file_reads_audit_jsonl_only_once(tmp_path, monkeypatch):
 
     _write_single_file_audit(tmp_path, [
         {"instance_id": f"museum_{i}", "selected_database": "museum",
-         "benchmark": "livesqlbench", "audit_status": "clean"}
+         "benchmark": "livesqlbench-base-lite-sqlite", "audit_status": "clean"}
         for i in range(1, 11)
     ])
     tasks = [
@@ -730,13 +730,13 @@ def test_overlay_single_file_reads_audit_jsonl_only_once(tmp_path, monkeypatch):
     real_open = Path.open
 
     def counting_open(self, *args, **kwargs):
-        if self.name == "livesqlbench_audited.jsonl":
+        if self.name == "livesqlbench-base-lite-sqlite_audited.jsonl":
             open_calls["n"] += 1
         return real_open(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", counting_open)
     harness.apply_audited_gold_overlay(
-        tasks, tmp_path, benchmark=get_benchmark("livesqlbench"),
+        tasks, tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert open_calls["n"] == 1, (
         f"expected one read of the single-file audit, got {open_calls['n']}"
@@ -774,11 +774,11 @@ def test_overlay_benchmark_kwarg_mini_interact_uses_single_file(tmp_path):
     from bird_interact_agents.benchmark import get_benchmark
     from bird_interact_agents.harness import apply_audited_gold_overlay
 
-    single_file = tmp_path / "mini_interact_audited.jsonl"
+    single_file = tmp_path / "mini-interact_audited.jsonl"
     single_file.write_text(json.dumps({
         "instance_id": "alien_explicit",
         "selected_database": "alien",
-        "benchmark": "mini_interact",
+        "benchmark": "mini-interact",
         "variant_id": "primary",
         "primary": True,
         "audit_status": "edited",
@@ -790,7 +790,7 @@ def test_overlay_benchmark_kwarg_mini_interact_uses_single_file(tmp_path):
         "sol_sql": ["SELECT original FROM t"],
     }
     log = apply_audited_gold_overlay(
-        [task], tmp_path, benchmark=get_benchmark("mini_interact"),
+        [task], tmp_path, benchmark=get_benchmark("mini-interact"),
     )
     assert log["alien_explicit"] == "edited"
     assert task["sol_sql"] == ["SELECT audited FROM t"]
@@ -831,7 +831,7 @@ def test_overlay_single_file_prefers_primary_when_alternate_listed_after(
         {
             "instance_id": "museum_9",
             "selected_database": "museum",
-            "benchmark": "livesqlbench",
+            "benchmark": "livesqlbench-base-lite-sqlite",
             "variant_id": "primary",
             "primary": True,
             "audit_status": "edited",
@@ -840,7 +840,7 @@ def test_overlay_single_file_prefers_primary_when_alternate_listed_after(
         {
             "instance_id": "museum_9",
             "selected_database": "museum",
-            "benchmark": "livesqlbench",
+            "benchmark": "livesqlbench-base-lite-sqlite",
             "variant_id": "alt_a",
             "primary": False,
             "audit_status": "edited",
@@ -853,7 +853,7 @@ def test_overlay_single_file_prefers_primary_when_alternate_listed_after(
         "sol_sql": ["SELECT original FROM t"],
     }
     apply_audited_gold_overlay(
-        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert task["sol_sql"] == ["SELECT primary_reading FROM t"], (
         "primary row MUST win over alternates regardless of file order"
@@ -872,7 +872,7 @@ def test_overlay_single_file_prefers_primary_when_alternate_listed_first(
         {
             "instance_id": "museum_9",
             "selected_database": "museum",
-            "benchmark": "livesqlbench",
+            "benchmark": "livesqlbench-base-lite-sqlite",
             "variant_id": "alt_a",
             "primary": False,
             "audit_status": "edited",
@@ -881,7 +881,7 @@ def test_overlay_single_file_prefers_primary_when_alternate_listed_first(
         {
             "instance_id": "museum_9",
             "selected_database": "museum",
-            "benchmark": "livesqlbench",
+            "benchmark": "livesqlbench-base-lite-sqlite",
             "variant_id": "primary",
             "primary": True,
             "audit_status": "edited",
@@ -894,7 +894,7 @@ def test_overlay_single_file_prefers_primary_when_alternate_listed_first(
         "sol_sql": ["SELECT original FROM t"],
     }
     apply_audited_gold_overlay(
-        [task], tmp_path, benchmark=get_benchmark("livesqlbench"),
+        [task], tmp_path, benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
     )
     assert task["sol_sql"] == ["SELECT primary_reading FROM t"], (
         "primary row MUST win regardless of where it lands in the file"
@@ -910,13 +910,13 @@ def test_cloud_audit_index_prefers_primary_over_alternate(tmp_path):
         _load_single_file_audit_index,
     )
 
-    benchmark = get_benchmark("livesqlbench")
+    benchmark = get_benchmark("livesqlbench-base-lite-sqlite")
     audit_path = tmp_path / f"{benchmark.name}_audited.jsonl"
     audit_path.write_text(
         json.dumps({
             "instance_id": "museum_9",
             "selected_database": "museum",
-            "benchmark": "livesqlbench",
+            "benchmark": "livesqlbench-base-lite-sqlite",
             "variant_id": "alt_a",
             "primary": False,
             "audit_status": "edited",
@@ -925,7 +925,7 @@ def test_cloud_audit_index_prefers_primary_over_alternate(tmp_path):
         + json.dumps({
             "instance_id": "museum_9",
             "selected_database": "museum",
-            "benchmark": "livesqlbench",
+            "benchmark": "livesqlbench-base-lite-sqlite",
             "variant_id": "primary",
             "primary": True,
             # Deliberately different from the alt so we can tell which

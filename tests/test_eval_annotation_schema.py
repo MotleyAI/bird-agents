@@ -54,7 +54,7 @@ def _make_task_annotation() -> TaskAnnotation:
         metadata_sufficiency=MetadataSufficiency(
             verdict="ambiguous",
             rationale="KB hedges; sampled values show variants",
-            evidence_sources_consulted=["alien_kb.jsonl#1"],
+            evidence_sources_consulted=["kb:1"],
         ),
         gold_variants=[
             GoldVariantRef(
@@ -63,7 +63,7 @@ def _make_task_annotation() -> TaskAnnotation:
                 primary=True,
                 anchored_in=["alien_kb.jsonl#1"],
                 audited_gold_ref=AuditedGoldRef(
-                    file="audited_gold/mini_interact_audited.jsonl",
+                    file="audited_gold/mini-interact_audited.jsonl",
                     instance_id="alien_42",
                     variant_id="canonical_only",
                 ),
@@ -194,17 +194,15 @@ def test_submission_annotation_forbid_extra():
 
 
 def test_path_helpers(tmp_path):
-    # ``annotation_io`` normalizes the dash form to the canonical
-    # underscore form so cloud workers (``_cloud_benchmark`` → ``mini_interact``)
-    # and CLI callers (``--benchmark mini-interact``) write to the
-    # same tree.
+    # Post-DEV-1525: no normalization — the canonical hyphenated name
+    # ``mini-interact`` is used as-is for the directory component.
     t = task_annotation_path(
         benchmark="mini-interact",
         selected_database="alien",
         instance_id="alien_42",
         repo_root=tmp_path,
     )
-    assert t == tmp_path / "annotations" / "mini_interact" / "alien" / "alien_42.task.json"
+    assert t == tmp_path / "annotations" / "mini-interact" / "alien" / "alien_42.task.json"
     s = submission_annotation_path(
         benchmark="mini-interact",
         selected_database="alien",
@@ -215,7 +213,7 @@ def test_path_helpers(tmp_path):
     assert s == (
         tmp_path
         / "annotations"
-        / "mini_interact"
+        / "mini-interact"
         / "alien"
         / "alien_42.submission.20260531t1008-claudes-slayer-890419.json"
     )
@@ -294,7 +292,7 @@ def _make_gold_variant(variant_id: str = "primary", primary: bool = True) -> Gol
         primary=primary,
         anchored_in=[],
         audited_gold_ref=AuditedGoldRef(
-            file="audited_gold/mini_interact_audited.jsonl",
+            file="audited_gold/mini-interact_audited.jsonl",
             instance_id="alien_42",
             variant_id=variant_id,
         ),

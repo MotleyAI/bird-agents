@@ -83,6 +83,13 @@ def test_content_hash_excludes_git_dir(tmp_path):
     assert bd.content_hash(root) != h1
 
 
+def _no_gated_gold(tmp_path):
+    """Return a lambda that monkeypatches `gated_gold_root` to a non-existent
+    path so upload tests are isolated from any real gated gold on disk."""
+    absent = tmp_path / "no_gated_gold"
+    return lambda **_kw: absent
+
+
 def test_ensure_uploaded_excludes_git_from_upload(tmp_path, monkeypatch):
     """The upload must drop `.git/` files too (same set as the content hash),
     so the GCS dataset tree never carries repo history."""
@@ -92,12 +99,13 @@ def test_ensure_uploaded_excludes_git_from_upload(tmp_path, monkeypatch):
     (root / ".git" / "config").write_text("[core]\n")
     client = _FakeClient()
     seen_excludes: list = []
+    monkeypatch.setattr(bd.paths, "gated_gold_root", _no_gated_gold(tmp_path))
 
     def _fake_upload(local_dir, prefix, *, exclude=None, **kw):
         seen_excludes.append(exclude)
 
     monkeypatch.setattr(gcs, "upload_dir_prefix", _fake_upload)
-    bd.ensure_uploaded("livesqlbench", root=root, client=client)
+    bd.ensure_uploaded("livesqlbench-base-lite-sqlite", root=root, client=client)
     assert len(seen_excludes) == 1
     exclude = seen_excludes[0]
     assert exclude is not None
@@ -110,8 +118,8 @@ def test_prefix_is_benchmark_and_hash_keyed(tmp_path):
     root = tmp_path / "ds"
     _make_dataset(root)
     chash = bd.content_hash(root)
-    prefix = bd.benchmark_data_prefix("livesqlbench", chash)
-    assert prefix == f"benchmark-data/livesqlbench/{chash}/"
+    prefix = bd.benchmark_data_prefix("livesqlbench-base-lite-sqlite", chash)
+    assert prefix == f"benchmark-data/livesqlbench-base-lite-sqlite/{chash}/"
 
 
 # --- ensure_uploaded -------------------------------------------------------
@@ -121,15 +129,16 @@ def test_ensure_uploaded_uploads_then_marks_when_absent(tmp_path, monkeypatch):
     _make_dataset(root)
     client = _FakeClient()
     calls: list = []
+    monkeypatch.setattr(bd.paths, "gated_gold_root", _no_gated_gold(tmp_path))
     monkeypatch.setattr(
         gcs, "upload_dir_prefix",
         lambda local_dir, prefix, **kw: calls.append((Path(local_dir), prefix)),
     )
 
-    prefix = bd.ensure_uploaded("livesqlbench", root=root, client=client)
+    prefix = bd.ensure_uploaded("livesqlbench-base-lite-sqlite", root=root, client=client)
 
     chash = bd.content_hash(root)
-    assert prefix == f"benchmark-data/livesqlbench/{chash}/"
+    assert prefix == f"benchmark-data/livesqlbench-base-lite-sqlite/{chash}/"
     # data uploaded to the prefix (no trailing slash, matching upload_dir_prefix)
     assert calls == [(root, prefix.rstrip("/"))]
     # marker written LAST, at the prefix root
@@ -140,21 +149,50 @@ def test_ensure_uploaded_skips_when_marker_present(tmp_path, monkeypatch):
     root = tmp_path / "ds"
     _make_dataset(root)
     client = _FakeClient()
+    monkeypatch.setattr(bd.paths, "gated_gold_root", _no_gated_gold(tmp_path))
     chash = bd.content_hash(root)
-    prefix = bd.benchmark_data_prefix("livesqlbench", chash)
+    prefix = bd.benchmark_data_prefix("livesqlbench-base-lite-sqlite", chash)
     client.store[prefix + bd._MARKER] = chash.encode()  # pretend already uploaded
 
     def _boom(*a, **k):
         raise AssertionError("must not re-upload when marker present")
 
     monkeypatch.setattr(gcs, "upload_dir_prefix", _boom)
-    assert bd.ensure_uploaded("livesqlbench", root=root, client=client) == prefix
+    assert bd.ensure_uploaded("livesqlbench-base-lite-sqlite", root=root, client=client) == prefix
+
+
+def test_ensure_uploaded_includes_gated_gold_in_hash_and_upload(tmp_path, monkeypatch):
+    """When gated_gold_root exists, its files are included in the content hash
+    (so adding/changing gold triggers a new prefix) and uploaded to the
+    GATED_GOLD_SUBDIR sub-prefix."""
+    root = tmp_path / "ds"
+    _make_dataset(root)
+    gated_root = tmp_path / "gated" / "livesqlbench-base-lite-sqlite"
+    gated_root.mkdir(parents=True)
+    (gated_root / "gt_kg.jsonl").write_text('{"id": 1}\n')
+    monkeypatch.setattr(bd.paths, "gated_gold_root", lambda **_kw: gated_root)
+
+    client = _FakeClient()
+    calls: list = []
+    monkeypatch.setattr(
+        gcs, "upload_dir_prefix",
+        lambda local_dir, prefix, **kw: calls.append((Path(local_dir), prefix)),
+    )
+
+    prefix = bd.ensure_uploaded("livesqlbench-base-lite-sqlite", root=root, client=client)
+
+    # Prefix differs from content_hash(root) because gated gold is included.
+    assert prefix != f"benchmark-data/livesqlbench-base-lite-sqlite/{bd.content_hash(root)}/"
+    # Two uploads: data root + gated gold subdir.
+    assert calls[0] == (root, prefix.rstrip("/"))
+    assert calls[1] == (gated_root, f"{prefix.rstrip('/')}/{bd.GATED_GOLD_SUBDIR}")
+    assert (prefix + bd._MARKER) in client.store
 
 
 # --- ensure_downloaded -----------------------------------------------------
 
 def test_ensure_downloaded_downloads_then_marks(tmp_path, monkeypatch):
-    dest = tmp_path / "data" / "livesqlbench"
+    dest = tmp_path / "data" / "livesqlbench-base-lite-sqlite"
     client = _FakeClient()
     prefix = "benchmark-data/livesqlbench/abc/"
     # The remote completeness marker must be present for the download to be
@@ -175,7 +213,7 @@ def test_ensure_downloaded_downloads_then_marks(tmp_path, monkeypatch):
 def test_ensure_downloaded_refuses_prefix_without_remote_marker(tmp_path, monkeypatch):
     """No remote completeness marker → partial/wrong/GC'd prefix → must raise,
     never cache a local marker over an empty/partial download."""
-    dest = tmp_path / "data" / "livesqlbench"
+    dest = tmp_path / "data" / "livesqlbench-base-lite-sqlite"
     client = _FakeClient()  # store empty → no remote marker
 
     def _boom(*a, **k):
@@ -188,7 +226,7 @@ def test_ensure_downloaded_refuses_prefix_without_remote_marker(tmp_path, monkey
 
 
 def test_ensure_downloaded_skips_when_local_marker_present(tmp_path, monkeypatch):
-    dest = tmp_path / "data" / "livesqlbench"
+    dest = tmp_path / "data" / "livesqlbench-base-lite-sqlite"
     dest.mkdir(parents=True)
     (dest / bd._MARKER).write_text("benchmark-data/livesqlbench/abc/")
 
@@ -204,7 +242,7 @@ def test_ensure_downloaded_redownloads_on_prefix_mismatch(tmp_path, monkeypatch)
     a cache hit — `dest` is benchmark-scoped, not hash-scoped, so a benchmark
     update lands a new prefix into the same dir. ensure_downloaded must clear
     the stale tree and re-download (CodeRabbit)."""
-    dest = tmp_path / "data" / "livesqlbench"
+    dest = tmp_path / "data" / "livesqlbench-base-lite-sqlite"
     dest.mkdir(parents=True)
     (dest / bd._MARKER).write_text("benchmark-data/livesqlbench/OLDHASH/")
     (dest / "stale.jsonl").write_text("old")  # a file the new dataset removed
@@ -230,7 +268,7 @@ def test_ensure_downloaded_clears_partial_dest_without_marker(tmp_path, monkeypa
     """A partial dest (files present, NO marker — a crashed prior download) is
     cleared + re-downloaded under the lock; the marker (written LAST) is the
     only completeness signal (Codex)."""
-    dest = tmp_path / "data" / "livesqlbench"
+    dest = tmp_path / "data" / "livesqlbench-base-lite-sqlite"
     dest.mkdir(parents=True)
     (dest / "partial.jsonl").write_text("half")  # leftover from a crash, no marker
     client = _FakeClient()

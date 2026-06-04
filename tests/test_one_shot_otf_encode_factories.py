@@ -193,7 +193,7 @@ def _make_ctx_with_loaded_kb():
             "instance_id": "fake_1",
             "amb_user_query": "x",
             "knowledge_ambiguity": [],
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         },
         remaining_budget=100.0, total_budget=100.0,
     )

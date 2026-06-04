@@ -280,6 +280,7 @@ _TASK = {
     "instance_id": "shop_1",
     "amb_user_query": "?",
     "knowledge_ambiguity": [],
+    "dataset": "mini-interact",
 }
 
 
@@ -317,7 +318,7 @@ async def test_run_task_rejects_livesqlbench_dataset():
     )
 
     agent = ClaudeSDKOtfAInteractRawAgent(model="anthropic/claude-sonnet-4-5")
-    td = dict(_TASK, dataset="livesqlbench")
+    td = dict(_TASK, dataset="livesqlbench-base-lite-sqlite")
     with pytest.raises(ValueError):
         await agent.run_task(td, "/tmp", 20.0, "raw", eval_mode="a-interact")
 

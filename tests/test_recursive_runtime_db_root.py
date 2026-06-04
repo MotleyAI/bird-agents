@@ -67,7 +67,7 @@ async def test_rewrite_db_root_overrides_env(monkeypatch, tmp_path):
     env_root.mkdir()
     monkeypatch.setenv("BIRD_DB_PATH", str(env_root))
 
-    db_root = tmp_path / "livesqlbench"
+    db_root = tmp_path / "livesqlbench-base-lite-sqlite"
     db_root.mkdir()
 
     scratch = tmp_path / "scratch"
@@ -105,7 +105,7 @@ async def test_prepare_task_storage_threads_db_root_into_reanchor(
     env_root.mkdir()
     monkeypatch.setenv("BIRD_DB_PATH", str(env_root))
 
-    db_root = tmp_path / "livesqlbench"
+    db_root = tmp_path / "livesqlbench-base-lite-sqlite"
     db_root.mkdir()
 
     # Minimal cache dir holding just the datasource — the no-deletion path
@@ -151,8 +151,8 @@ async def test_recursive_resolver_passes_resolved_db_path_as_db_root(
     mirroring the otf_encode adapter."""
     from bird_interact_agents.agents.pydantic_ai_recursive import agent as rec_agent
 
-    data_path_base = str(tmp_path / "livesqlbench")
-    (tmp_path / "livesqlbench").mkdir()
+    data_path_base = str(tmp_path / "livesqlbench-base-lite-sqlite")
+    (tmp_path / "livesqlbench-base-lite-sqlite").mkdir()
 
     fake_entry = CacheEntry(
         cache_dir=tmp_path / "cache", fingerprint="x", kb_rows=[],
@@ -176,7 +176,7 @@ async def test_recursive_resolver_passes_resolved_db_path_as_db_root(
         db_name="alien",
         task_data={"instance_id": "alien_1"},
         data_path_base=data_path_base,
-        benchmark="livesqlbench",
+        benchmark="livesqlbench-base-lite-sqlite",
     )
 
     assert captured["db_root"] == Path(data_path_base).resolve(), (

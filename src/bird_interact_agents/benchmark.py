@@ -2,12 +2,11 @@
 consumed symmetrically by the local runner (`run.py`/`harness.py`/`paths.py`) and
 the cloud runner (`cloud/{cli,driver,ray_app,image}.py`).
 
-Adding a benchmark is one `BENCHMARKS` entry; no consumer edits. Tokens are
-underscore-canonical (`mini_interact`, `livesqlbench`); the hyphenated
-`mini-interact` is kept as a back-compat CLI alias. The dataset marker (stamped
-into `task_data["dataset"]` by the loaders) also resolves back to its benchmark,
-so an agent that derives its benchmark from task data and a CLI that parses
-`--dataset` both funnel through `get_benchmark()`.
+Adding a benchmark is one `BENCHMARKS` entry; no consumer edits. Canonical names
+are the official hyphenated forms (mini-interact, livesqlbench-base-lite-sqlite, …).
+The dataset marker (stamped into `task_data["dataset"]` by the loaders) equals
+the canonical name so that `get_benchmark()` is the single resolution path from
+any context.
 """
 
 from __future__ import annotations
@@ -19,18 +18,16 @@ from pydantic import BaseModel, ConfigDict
 
 class Benchmark(BaseModel):
     """Immutable per-benchmark descriptor. Every per-benchmark fact the harness
-    branches on lives here (no scattered `"livesqlbench"` literals)."""
+    branches on lives here (no scattered ``"livesqlbench"`` literals)."""
 
     model_config = ConfigDict(frozen=True)
 
     name: str
-    """Canonical underscore token, e.g. ``mini_interact`` / ``livesqlbench``."""
+    """Canonical hyphenated token, e.g. ``mini-interact`` / ``livesqlbench-base-lite-sqlite``."""
     cli_aliases: tuple[str, ...] = ()
-    """Extra `--dataset` spellings that resolve to this benchmark (e.g. the
-    hyphenated ``mini-interact``)."""
+    """Extra `--dataset` spellings that resolve to this benchmark."""
     dataset_marker: str
-    """Stamped into ``task_data["dataset"]`` by the loaders; drives the agents'
-    benchmark derivation and the one-shot guard."""
+    """Stamped into ``task_data["dataset"]`` by the loaders; must equal ``name``."""
 
     # Data location (resolved by paths.benchmark_data_root / _data_file).
     data_subdir: str
@@ -51,8 +48,6 @@ class Benchmark(BaseModel):
     gold_required: bool
     """True when scoring needs a gated gold sidecar (the data JSONL ships
     ``sol_sql`` empty); False when gold is inline in the data JSONL."""
-    gold_root_env: str = ""
-    """Env var that overrides the gated gold-sidecar location (when required)."""
 
     # Per-task DB isolation (livesqlbench copies a stable per-task sqlite).
     per_task_db_isolation: bool
@@ -86,9 +81,9 @@ class Benchmark(BaseModel):
 
 
 MINI_INTERACT = Benchmark(
-    name="mini_interact",
-    cli_aliases=("mini-interact",),
-    dataset_marker="mini_interact",
+    name="mini-interact",
+    cli_aliases=(),
+    dataset_marker="mini-interact",
     data_subdir="mini-interact",
     data_file="mini_interact.jsonl",
     data_root_env="BIRD_DB_PATH",
@@ -98,18 +93,13 @@ MINI_INTERACT = Benchmark(
     gold_required=False,
     per_task_db_isolation=False,
     container_data_dir="/data/mini-interact",
-    # DEV-1515: switched to the single-file layout (matches livesqlbench).
-    # Per-DB JSONLs at audited_gold/<db>/<db>_audited.jsonl have been
-    # consolidated into audited_gold/mini_interact_audited.jsonl with
-    # variant_id + primary fields added per row (DEV-1515 multi-variant
-    # support). See scripts/consolidate_mini_interact_audited.py.
     audited_gold_layout="single_file",
 )
 
 LIVESQLBENCH = Benchmark(
-    name="livesqlbench",
+    name="livesqlbench-base-lite-sqlite",
     cli_aliases=(),
-    dataset_marker="livesqlbench",
+    dataset_marker="livesqlbench-base-lite-sqlite",
     data_subdir="livesqlbench-base-lite-sqlite",
     data_file="livesqlbench_data_sqlite.jsonl",
     data_root_env="BIRD_LIVESQLBENCH_ROOT",
@@ -117,20 +107,15 @@ LIVESQLBENCH = Benchmark(
     supported_modes=("one-shot", "oracle"),
     one_shot=True,
     gold_required=True,
-    gold_root_env="BIRD_LIVESQLBENCH_GOLD_FILE",
     per_task_db_isolation=True,
-    container_data_dir="/data/livesqlbench",
-    # DEV-1510: a per-db sidecar dir under audited_gold/ would clash with
-    # mini-interact (overlapping DB names: alien, museum, …). The
-    # consolidated single-file layout uses the row's `selected_database`
-    # as the per-db discriminator.
+    container_data_dir="/data/livesqlbench-base-lite-sqlite",
     audited_gold_layout="single_file",
 )
 
 LIVESQLBENCH_POSTGRES = Benchmark(
-    name="livesqlbench_postgres",
+    name="livesqlbench-base-lite",
     db_backend="postgres",
-    dataset_marker="livesqlbench_postgres",
+    dataset_marker="livesqlbench-base-lite",
     data_subdir="livesqlbench-base-lite-postgres",
     data_file="livesqlbench_data.jsonl",
     data_root_env="BIRD_LIVESQLBENCH_POSTGRES_ROOT",
@@ -138,16 +123,15 @@ LIVESQLBENCH_POSTGRES = Benchmark(
     supported_modes=("one-shot",),
     one_shot=True,
     gold_required=True,
-    gold_root_env="BIRD_LIVESQLBENCH_POSTGRES_GOLD_FILE",
     per_task_db_isolation=False,
-    container_data_dir="/data/livesqlbench-postgres",
+    container_data_dir="/data/livesqlbench-base-lite",
     audited_gold_layout="single_file",
 )
 
 MINI_INTERACT_POSTGRES = Benchmark(
-    name="mini_interact_postgres",
+    name="bird-interact-lite-exp",
     db_backend="postgres",
-    dataset_marker="mini_interact_postgres",
+    dataset_marker="bird-interact-lite-exp",
     data_subdir="mini-interact-postgres",
     data_file="mini_interact.jsonl",
     data_root_env="BIRD_MINI_INTERACT_POSTGRES_ROOT",
@@ -156,7 +140,7 @@ MINI_INTERACT_POSTGRES = Benchmark(
     one_shot=False,
     gold_required=False,
     per_task_db_isolation=False,
-    container_data_dir="/data/mini-interact-postgres",
+    container_data_dir="/data/bird-interact-lite-exp",
     audited_gold_layout="single_file",
 )
 

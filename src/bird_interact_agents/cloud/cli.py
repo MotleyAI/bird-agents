@@ -22,7 +22,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sub = p.add_subparsers(dest="subcommand", required=True)
 
     sp_submit = sub.add_parser("submit")
-    sp_submit.add_argument("--framework", required=True)
+    sp_submit.add_argument("--framework", required=True, choices=["claude_sdk"])
     sp_submit.add_argument("--query-mode", required=True, choices=("raw", "slayer"))
     sp_submit.add_argument("--agent-model", required=True)
     sp_submit.add_argument(
@@ -165,19 +165,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ns.dataset = get_benchmark(ns.dataset).name
         from bird_interact_agents.run import (
             _validate_dataset_mode,
-            _validate_framework_dataset_mode,
-            _validate_one_shot_framework,
+            _validate_framework_mode,
             _validate_slayer_setup,
         )
         try:
-            # Same dataset⟺mode⟺framework gates the local CLI uses — one source
+            # Same dataset⟺mode gates the local CLI uses — one source
             # of truth, so an unsupported cloud combo fails fast at submit.
             _validate_dataset_mode(dataset=ns.dataset, mode=ns.mode)
-            _validate_framework_dataset_mode(
+            _validate_framework_mode(
                 framework=ns.framework, dataset=ns.dataset, mode=ns.mode,
-            )
-            _validate_one_shot_framework(
-                mode=ns.mode, query_mode=ns.query_mode, framework=ns.framework,
             )
             _validate_slayer_setup(
                 slayer_setup=ns.slayer_setup, framework=ns.framework,

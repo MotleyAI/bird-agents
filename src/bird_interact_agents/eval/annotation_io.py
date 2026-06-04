@@ -7,14 +7,10 @@ Path conventions:
 * Submission annotation:
   ``<repo_root>/annotations/<benchmark>/<db>/<instance_id>.submission.<run_id>.json``
 
-``<benchmark>`` is normalized to the canonical underscore form
-(``mini_interact``, ``livesqlbench``) at every path-building site so
-callers passing the dash form (``mini-interact``) write/read to the
-same tree as callers passing the underscore form. The canonical form
-matches the benchmark registry's ``name`` field, which is what the
-cloud worker resolves via ``_cloud_benchmark``. Without this
-normalization the disk grows two parallel trees and the cloud cascade
-silently misses every annotation written via the dash form.
+``<benchmark>`` is the canonical hyphenated name (``mini-interact``,
+``livesqlbench-base-lite-sqlite``) as returned by
+:func:`bird_interact_agents.benchmark.get_benchmark`. The name is used
+as-is in path components; callers must pass the canonical form.
 
 ``<db>`` matches the task's ``selected_database`` field.
 
@@ -37,11 +33,10 @@ ANNOTATIONS_DIRNAME = "annotations"
 
 
 def _canonical_benchmark(benchmark: str) -> str:
-    """Normalize to the registry's canonical underscore form. Both
-    ``mini-interact`` (the form the CLI / docs historically accepted)
-    and ``mini_interact`` (``benchmark.name``) resolve to the same
-    on-disk tree."""
-    return benchmark.replace("-", "_")
+    """Return the benchmark name as-is; canonical names are now hyphenated
+    (e.g. ``mini-interact``).  No normalization is applied so that
+    annotations land in the correct directory after the DEV-1525 migration."""
+    return benchmark
 
 
 def _annotations_root(repo_root: Optional[Path] = None) -> Path:

@@ -276,8 +276,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--mini-interact-jsonl",
-        default=str(paths.mini_interact_data_file()),
-        help=f"Path to mini_interact.jsonl (default: {paths.mini_interact_data_file()}).",
+        default=str(paths.benchmark_data_file("mini-interact")),
+        help=f"Path to mini_interact.jsonl (default: {paths.benchmark_data_file('mini-interact')}).",
     )
     p.add_argument(
         "--output-dir",

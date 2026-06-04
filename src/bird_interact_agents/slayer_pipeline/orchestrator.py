@@ -37,7 +37,7 @@ from .jsonb import detect_drift, expand_one_column, jsonb_meaning_entries
 from .overlay import apply_overlay, load_meanings
 from .portable_connection import absolute_sqlite_url
 
-DEFAULT_MINI_INTERACT_ROOT = paths.mini_interact_root()
+DEFAULT_MINI_INTERACT_ROOT = paths.benchmark_data_root("mini-interact")
 DEFAULT_RESULTS_ROOT = paths.results_root()
 DEFAULT_SLAYER_STORAGE = Path(
     os.environ.get("SLAYER_STORAGE", str(Path.home() / ".local" / "share" / "slayer"))

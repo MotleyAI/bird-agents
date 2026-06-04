@@ -49,7 +49,7 @@ def _make_task(instance_id: str, db: str) -> dict:
     return {
         "instance_id": instance_id,
         "selected_database": db,
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
     }
 
 
@@ -351,7 +351,7 @@ def test_upstream_reset_still_works_after_pre_copy(tmp_path):
     task = {
         "instance_id": "alien_reset",
         "selected_database": "alien",
-        "dataset": "livesqlbench",
+        "dataset": "livesqlbench-base-lite-sqlite",
         "sol_sql": ["SELECT id FROM widgets"],
         "category": "Query",
         "conditions": {"decimal": [], "distinct": False, "order": False},

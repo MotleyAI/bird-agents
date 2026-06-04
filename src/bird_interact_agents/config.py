@@ -29,12 +29,12 @@ class Settings(BaseSettings):
     def db_path(self) -> str:
         """mini-interact/ data dir as a string — delegates to paths.py so
         worktree resolution kicks in automatically."""
-        return str(paths.mini_interact_root())
+        return str(paths.benchmark_data_root("mini-interact"))
 
     @property
     def data_path(self) -> str:
         """mini_interact.jsonl as a string — delegates to paths.py."""
-        return str(paths.mini_interact_data_file())
+        return str(paths.benchmark_data_file("mini-interact"))
 
 
 settings = Settings()

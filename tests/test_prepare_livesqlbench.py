@@ -45,7 +45,7 @@ def test_script_file_exists():
 
 
 def test_copies_template_to_stable_sqlite(tmp_path):
-    root = tmp_path / "livesqlbench"
+    root = tmp_path / "livesqlbench-base-lite-sqlite"
     make_lsb_dataset(root, dbs=["alien", "credit"], tasks=[])
     res = _run(["--root", str(root)])
     assert res.returncode == 0, (
@@ -65,7 +65,7 @@ def test_refuses_lfs_pointer_template(tmp_path, capsys):
     """An LFS-pointer template MUST exit non-zero with `git lfs pull`
     guidance — silently ingesting a 132-byte pointer would corrupt the
     OTF cache fingerprint AND poison every downstream task."""
-    root = tmp_path / "livesqlbench"
+    root = tmp_path / "livesqlbench-base-lite-sqlite"
     make_lsb_dataset(
         root, dbs=["alien"], tasks=[], template_as_lfs_pointer=True,
     )
@@ -84,7 +84,7 @@ def test_refuses_lfs_pointer_template(tmp_path, capsys):
 
 def test_is_idempotent(tmp_path):
     """Re-running the script must not re-copy when the stable file is up to date."""
-    root = tmp_path / "livesqlbench"
+    root = tmp_path / "livesqlbench-base-lite-sqlite"
     make_lsb_dataset(root, dbs=["alien"], tasks=[])
     res1 = _run(["--root", str(root)])
     assert res1.returncode == 0
@@ -104,7 +104,7 @@ def test_force_overwrites_existing_stable(tmp_path):
     Drive the difference by truncating the stable file after the first run;
     `--force` must re-copy it from the template (restoring the byte count).
     """
-    root = tmp_path / "livesqlbench"
+    root = tmp_path / "livesqlbench-base-lite-sqlite"
     make_lsb_dataset(root, dbs=["alien"], tasks=[])
     res1 = _run(["--root", str(root)])
     assert res1.returncode == 0
@@ -124,7 +124,7 @@ def test_force_overwrites_existing_stable(tmp_path):
 def test_dbs_subset_only_acts_on_listed_dbs(tmp_path):
     """`--dbs db1,db2` must restrict materialisation to that set; an
     omitted DB keeps no stable file."""
-    root = tmp_path / "livesqlbench"
+    root = tmp_path / "livesqlbench-base-lite-sqlite"
     make_lsb_dataset(root, dbs=["alien", "credit", "fake"], tasks=[])
     res = _run(["--root", str(root), "--dbs", "alien,credit"])
     assert res.returncode == 0
@@ -138,7 +138,7 @@ def test_dbs_subset_only_acts_on_listed_dbs(tmp_path):
 def test_prints_per_db_summary(tmp_path):
     """The script must surface a per-DB status line so a user can verify
     what landed without re-listing the dir."""
-    root = tmp_path / "livesqlbench"
+    root = tmp_path / "livesqlbench-base-lite-sqlite"
     make_lsb_dataset(root, dbs=["alien"], tasks=[])
     res = _run(["--root", str(root)])
     assert res.returncode == 0

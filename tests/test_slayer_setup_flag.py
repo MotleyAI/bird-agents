@@ -1,10 +1,8 @@
 """Tests for the ``--slayer-setup`` CLI flag and its fail-fast guards.
 
 The flag is orthogonal to ``--framework`` / ``--query-mode`` / ``--mode``
-but only ``pydantic_ai_recursive + slayer + a-interact`` accepts the
-``on-the-fly`` value. Invalid combinations must fail BEFORE any task
-runs (Codex finding: today's per-task error path stamps a bogus result
-row instead of failing fast).
+but ``slayer`` query_mode REQUIRES ``on-the-fly``; using ``pre-encoded``
+with slayer must fail fast BEFORE any task runs.
 
 These tests drive ``run.main`` directly with synthesised argv so they
 exercise both argparse and the validation hook.
@@ -29,7 +27,7 @@ def _argv_base(tmp_path: Path) -> list[str]:
     db_path.mkdir()
     return [
         "bird-interact",
-        "--dataset", "mini_interact",
+        "--dataset", "mini-interact",
         "--data", str(data),
         "--db-path", str(db_path),
         "--output", str(tmp_path / "out.json"),
@@ -86,10 +84,10 @@ def _assert_failed_validation(
 def test_default_is_pre_encoded(monkeypatch, tmp_path: Path):
     """When ``--slayer-setup`` is omitted, ``run_evaluation`` receives
     ``slayer_setup='pre-encoded'`` so the existing pre-encoded path
-    runs unchanged."""
+    runs unchanged. Use --query-mode raw so pre-encoded is valid."""
     argv = _argv_base(tmp_path) + [
-        "--framework", "pydantic_ai_recursive",
-        "--query-mode", "slayer",
+        "--framework", "claude_sdk",
+        "--query-mode", "raw",
         "--mode", "a-interact",
     ]
     kwargs = _drive_main(monkeypatch, argv)
@@ -97,20 +95,20 @@ def test_default_is_pre_encoded(monkeypatch, tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# Happy path: on-the-fly + pydantic_ai_recursive + slayer + a-interact
+# Happy path: on-the-fly + claude_sdk + slayer + a-interact
 # ---------------------------------------------------------------------------
 
 
 def test_on_the_fly_with_valid_combo_is_accepted(monkeypatch, tmp_path: Path):
     argv = _argv_base(tmp_path) + [
         "--slayer-setup", "on-the-fly",
-        "--framework", "pydantic_ai_recursive",
+        "--framework", "claude_sdk",
         "--query-mode", "slayer",
         "--mode", "a-interact",
     ]
     kwargs = _drive_main(monkeypatch, argv)
     assert kwargs.get("slayer_setup") == "on-the-fly"
-    assert kwargs.get("framework") == "pydantic_ai_recursive"
+    assert kwargs.get("framework") == "claude_sdk"
     assert kwargs.get("query_mode") == "slayer"
     assert kwargs.get("mode") == "a-interact"
 
@@ -144,14 +142,25 @@ def test_on_the_fly_is_plumbed_to_agent_constructor(monkeypatch, tmp_path: Path)
 
     # Real evaluation drives load_tasks; we feed it an empty jsonl so the
     # task loop is a no-op but the agent constructor is still hit.
-    argv = _argv_base(tmp_path) + [
-        "--slayer-setup", "on-the-fly",
-        "--framework", "pydantic_ai_recursive",
-        "--query-mode", "slayer",
-        "--mode", "a-interact",
-    ]
-    monkeypatch.setattr(sys, "argv", argv)
-    run_module.main()
+    # Use pydantic_ai_recursive directly via run_evaluation (not CLI) to
+    # avoid the CLI's framework choices restriction.
+    data = tmp_path / "data.jsonl"
+    data.write_text("")
+    db_path = tmp_path / "mini-interact"
+    db_path.mkdir()
+
+    import asyncio
+    asyncio.run(run_module.run_evaluation(
+        data_path=str(data),
+        data_dir=str(db_path),
+        output_path=str(tmp_path / "out.json"),
+        mode="a-interact",
+        query_mode="slayer",
+        framework="pydantic_ai_recursive",
+        slayer_setup="on-the-fly",
+        dataset="mini-interact",
+        limit=0,
+    ))
 
     assert captured_init.get("slayer_setup") == "on-the-fly", (
         f"slayer_setup must reach the agent constructor; "
@@ -160,74 +169,62 @@ def test_on_the_fly_is_plumbed_to_agent_constructor(monkeypatch, tmp_path: Path)
 
 
 # ---------------------------------------------------------------------------
-# Fail-fast guards — Codex finding: validate before any task runs
+# Fail-fast guards — validate before any task runs
 # ---------------------------------------------------------------------------
 
 
-def test_on_the_fly_rejects_wrong_framework(monkeypatch, tmp_path: Path, capsys):
-    """``on-the-fly`` only makes sense for ``pydantic_ai_recursive`` —
-    any other framework must fail fast with a clear error naming both
-    flags."""
-    captured: dict = {}
+def test_pre_encoded_with_slayer_is_rejected_by_run_evaluation(
+    tmp_path: Path,
+):
+    """``pre-encoded`` + ``slayer`` query mode must fail fast — the only
+    valid setup for slayer is on-the-fly."""
+    import asyncio
 
-    async def fake_run_evaluation(**kwargs):  # pragma: no cover - should not run
-        captured.update(kwargs)
-        return {}
+    data = tmp_path / "data.jsonl"
+    data.write_text("")
+    db_path = tmp_path / "mini-interact"
+    db_path.mkdir()
 
-    monkeypatch.setattr(run_module, "run_evaluation", fake_run_evaluation)
-    monkeypatch.setattr(
-        sys, "argv",
-        _argv_base(tmp_path) + [
-            "--slayer-setup", "on-the-fly",
-            "--framework", "pydantic_ai",
-            "--query-mode", "slayer",
-            "--mode", "a-interact",
-        ],
-    )
-    with pytest.raises((SystemExit, ValueError)) as exc_info:
-        run_module.main()
-    assert not captured, "run_evaluation must not be called"
-    _assert_failed_validation(
-        capsys, exc_info.value, must_contain=["slayer-setup", "framework"],
-    )
+    with pytest.raises(ValueError) as exc_info:
+        asyncio.run(run_module.run_evaluation(
+            data_path=str(data),
+            data_dir=str(db_path),
+            output_path=str(tmp_path / "out.json"),
+            mode="a-interact",
+            query_mode="slayer",
+            framework="claude_sdk",
+            slayer_setup="pre-encoded",
+            dataset="mini-interact",
+            limit=0,
+        ))
+    msg = str(exc_info.value)
+    assert "slayer-setup" in msg or "on-the-fly" in msg
 
 
-def test_on_the_fly_rejects_raw_query_mode(monkeypatch, tmp_path: Path, capsys):
-    """``on-the-fly`` needs SLayer storage; ``--query-mode raw`` makes
-    no sense and must fail fast."""
-    captured: dict = {}
-
-    async def fake_run_evaluation(**kwargs):  # pragma: no cover
-        captured.update(kwargs)
-        return {}
-
-    monkeypatch.setattr(run_module, "run_evaluation", fake_run_evaluation)
-    monkeypatch.setattr(
-        sys, "argv",
-        _argv_base(tmp_path) + [
-            "--slayer-setup", "on-the-fly",
-            "--framework", "pydantic_ai_recursive",
-            "--query-mode", "raw",
-            "--mode", "a-interact",
-        ],
-    )
-    with pytest.raises((SystemExit, ValueError)) as exc_info:
-        run_module.main()
-    assert not captured
-    _assert_failed_validation(
-        capsys, exc_info.value, must_contain=["slayer-setup", "query-mode"],
+def test_make_runner_accepts_on_the_fly_for_any_framework():
+    """With the simplified validator, on-the-fly is always accepted for
+    slayer query mode (framework is no longer checked)."""
+    # Should not raise
+    run_module.make_runner(
+        framework="claude_sdk",
+        dataset="mini-interact",
+        query_mode="slayer",
+        mode="a-interact",
+        agent_model="anthropic/claude-sonnet-4-5",
+        strict=False,
+        prompt_cache=True,
+        max_depth=3,
+        slayer_storage_root=None,
+        slayer_setup="on-the-fly",
     )
 
 
-def test_make_runner_rejects_invalid_slayer_setup_programmatically():
-    """Codex finding (round-4): ``make_runner`` is the public factory
-    used by the cloud actor and other throughput-sensitive callers
-    that bypass the CLI. A caller passing on-the-fly with an
-    unsupported framework must hit a ValueError, not silently get a
-    runner that ignores the setting."""
+def test_make_runner_rejects_pre_encoded_with_slayer():
+    """``pre-encoded`` + ``slayer`` is always rejected by make_runner."""
     with pytest.raises(ValueError) as exc_info:
         run_module.make_runner(
-            framework="pydantic_ai",      # wrong framework
+            framework="claude_sdk",
+            dataset="mini-interact",
             query_mode="slayer",
             mode="a-interact",
             agent_model="anthropic/claude-sonnet-4-5",
@@ -235,28 +232,25 @@ def test_make_runner_rejects_invalid_slayer_setup_programmatically():
             prompt_cache=True,
             max_depth=3,
             slayer_storage_root=None,
-            slayer_setup="on-the-fly",
+            slayer_setup="pre-encoded",
         )
     msg = str(exc_info.value)
-    assert "slayer-setup" in msg or "slayer_setup" in msg
-    assert "framework" in msg
+    assert "slayer-setup" in msg or "on-the-fly" in msg
 
 
-async def test_run_one_task_rejects_invalid_slayer_setup_programmatically(
+async def test_run_one_task_rejects_pre_encoded_with_slayer(
     tmp_path: Path,
 ):
-    """Codex finding (round-5): ``run_one_task`` is the public one-task
-    API the cloud actor uses. It must validate ``slayer_setup`` against
-    framework/query_mode/mode before constructing the runner; otherwise
-    a cloud caller passing on-the-fly with the wrong framework would
-    silently get a pre-encoded runner."""
+    """``run_one_task`` must validate ``slayer_setup`` against query_mode
+    before constructing the runner."""
     data_dir = tmp_path / "mini-interact"
     data_dir.mkdir()
     with pytest.raises(ValueError) as exc_info:
         await run_module.run_one_task(
             task_data={"instance_id": "x", "selected_database": "x"},
             data_dir=str(data_dir),
-            framework="pydantic_ai",      # wrong framework
+            dataset="mini-interact",
+            framework="claude_sdk",
             query_mode="slayer",
             mode="a-interact",
             agent_model="anthropic/claude-sonnet-4-5",
@@ -267,21 +261,18 @@ async def test_run_one_task_rejects_invalid_slayer_setup_programmatically(
             prompt_cache=True,
             max_depth=3,
             slayer_storage_root=None,
-            slayer_setup="on-the-fly",
+            slayer_setup="pre-encoded",
         )
     msg = str(exc_info.value)
-    assert "slayer-setup" in msg or "slayer_setup" in msg
-    assert "framework" in msg
+    assert "slayer-setup" in msg or "on-the-fly" in msg
 
 
-async def test_run_evaluation_rejects_invalid_slayer_setup_programmatically(
+async def test_run_evaluation_rejects_pre_encoded_with_slayer(
     tmp_path: Path,
 ):
-    """Codex finding: a programmatic caller that bypasses the CLI parser
-    and calls ``run_evaluation(...)`` directly with an unsupported
-    combination must also get a fail-fast error — not silently see
-    the option ignored or fail later per task.
-    """
+    """A programmatic caller that bypasses the CLI parser and calls
+    ``run_evaluation(...)`` directly with ``pre-encoded`` + ``slayer``
+    must get a fail-fast error."""
     data = tmp_path / "data.jsonl"
     data.write_text("")
     db_path = tmp_path / "mini-interact"
@@ -295,13 +286,13 @@ async def test_run_evaluation_rejects_invalid_slayer_setup_programmatically(
             output_path=str(output),
             mode="a-interact",
             query_mode="slayer",
-            framework="pydantic_ai",      # wrong framework
+            framework="claude_sdk",
+            slayer_setup="pre-encoded",
+            dataset="mini-interact",
             limit=0,
-            slayer_setup="on-the-fly",
         )
     msg = str(exc_info.value)
-    assert "slayer-setup" in msg or "slayer_setup" in msg
-    assert "framework" in msg
+    assert "slayer-setup" in msg or "on-the-fly" in msg
 
 
 # ---------------------------------------------------------------------------
@@ -311,8 +302,18 @@ async def test_run_evaluation_rejects_invalid_slayer_setup_programmatically(
 
 
 def _otf_argv(tmp_path: Path, *extra: str) -> list[str]:
-    return _argv_base(tmp_path) + [
-        "--framework", "pydantic_ai_otf_encode",
+    data = tmp_path / "data.jsonl"
+    data.write_text("")
+    db_path = tmp_path / "mini-interact"
+    db_path.mkdir()
+    return [
+        "bird-interact",
+        "--dataset", "mini-interact",
+        "--data", str(data),
+        "--db-path", str(db_path),
+        "--output", str(tmp_path / "out.json"),
+        "--limit", "0",
+        "--framework", "claude_sdk",
         "--query-mode", "slayer",
         "--mode", "a-interact",
         "--slayer-setup", "on-the-fly",
@@ -335,33 +336,3 @@ def test_otf_rebuild_reference_alias_still_works(monkeypatch, tmp_path: Path):
 def test_otf_rebuild_default_false(monkeypatch, tmp_path: Path):
     kwargs = _drive_main(monkeypatch, _otf_argv(tmp_path))
     assert kwargs.get("otf_rebuild") is False
-
-
-def test_on_the_fly_rejects_non_a_interact_mode(
-    monkeypatch, tmp_path: Path, capsys,
-):
-    """The PydanticAI recursive agent only supports a-interact today;
-    on-the-fly inherits that constraint and must fail fast on c-interact
-    or oracle."""
-    captured: dict = {}
-
-    async def fake_run_evaluation(**kwargs):  # pragma: no cover
-        captured.update(kwargs)
-        return {}
-
-    monkeypatch.setattr(run_module, "run_evaluation", fake_run_evaluation)
-    monkeypatch.setattr(
-        sys, "argv",
-        _argv_base(tmp_path) + [
-            "--slayer-setup", "on-the-fly",
-            "--framework", "pydantic_ai_recursive",
-            "--query-mode", "slayer",
-            "--mode", "c-interact",
-        ],
-    )
-    with pytest.raises((SystemExit, ValueError)) as exc_info:
-        run_module.main()
-    assert not captured
-    _assert_failed_validation(
-        capsys, exc_info.value, must_contain=["slayer-setup", "mode"],
-    )

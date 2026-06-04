@@ -101,6 +101,7 @@ def test_actor_pool_dispatches_each_id_once(
             iid: {"instance_id": iid, "selected_database": "db_a"}
             for iid in instance_ids
         },
+        dataset="mini-interact",
         local_only=True,
         actor_cls=RecordingActor,
     )
@@ -154,6 +155,7 @@ def test_failing_task_isolated(
             iid: {"instance_id": iid, "selected_database": "db_a"}
             for iid in instance_ids
         },
+        dataset="mini-interact",
         local_only=True,
     )
 
@@ -297,6 +299,7 @@ def test_slayer_combo_threads_kwargs_into_run_one_task(
         },
         slayer_setup=slayer_setup,
         slayer_storage_root="/data/slayer_models",
+        dataset="mini-interact",
         local_only=True,
     )
 
@@ -348,6 +351,7 @@ def test_actor_downloads_slayer_setup_once_per_process(
         },
         slayer_setup="on-the-fly",
         slayer_storage_root="/data/slayer_models",
+        dataset="mini-interact",
         local_only=True,
     )
 
@@ -387,6 +391,7 @@ def test_actor_does_not_download_in_raw_mode(
         num_actors=1,
         attempt=1,
         task_data_by_id={"db_a_1": {"instance_id": "db_a_1", "selected_database": "db_a"}},
+        dataset="mini-interact",
         local_only=True,
     )
     # The actor gates the download call on query_mode=="slayer", so raw mode
@@ -438,20 +443,25 @@ def test_download_slayer_setup_lands_at_combo_root(
     cfg = {
         "query_mode": "slayer", "slayer_setup": slayer_setup,
         "framework": framework,
+        "dataset": "mini-interact",
     }
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
 
-    assert (dest_root / "db_a" / "models" / "db_a" / "x.yaml").read_text() == "name: x\n"
-    assert (dest_root / "db_a" / "embeddings.db").read_bytes() == b"SQLite format 3\x00\xff"
-    assert (dest_root / "db_b" / "_marker").read_bytes() == b"m2"
+    # For benchmark-scoped artifacts (slayer_otf_cache, slayer_models_otf),
+    # the env var is the PARENT and the actual root is parent/benchmark.
+    _BENCHMARK_SCOPED = {"slayer_otf_cache", "slayer_models_otf"}
+    actual_root = (dest_root / "mini-interact") if artifact in _BENCHMARK_SCOPED else dest_root
+    assert (actual_root / "db_a" / "models" / "db_a" / "x.yaml").read_text() == "name: x\n"
+    assert (actual_root / "db_a" / "embeddings.db").read_bytes() == b"SQLite format 3\x00\xff"
+    assert (actual_root / "db_b" / "_marker").read_bytes() == b"m2"
     # DEV-1470: required artifacts use `.download_complete`; the optional
     # `slayer_models_otf` seed uses `.optional_seed_download_complete` instead.
     expected_marker = (
         ".optional_seed_download_complete" if artifact == "slayer_models_otf"
         else ".download_complete"
     )
-    assert (dest_root / expected_marker).is_file(), (
-        f"expected {expected_marker} marker under {dest_root}"
+    assert (actual_root / expected_marker).is_file(), (
+        f"expected {expected_marker} marker under {actual_root}"
     )
 
 
@@ -476,13 +486,16 @@ def test_download_slayer_setup_idempotent_under_two_actors(
     cfg = {
         "query_mode": "slayer", "slayer_setup": "on-the-fly",
         "framework": "pydantic_ai_otf_encode",
+        "dataset": "mini-interact",
     }
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)  # must no-op
 
-    assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"fp"
-    assert (cache_root / ".download_complete").is_file()
-    assert (ref_root / ".optional_seed_download_complete").is_file()
+    # OTF roots are benchmark-scoped: env var is the parent, actual root is
+    # parent / "mini-interact".
+    assert (ref_root / "mini-interact" / "db_a" / "_reference_fp.txt").read_bytes() == b"fp"
+    assert (cache_root / "mini-interact" / ".download_complete").is_file()
+    assert (ref_root / "mini-interact" / ".optional_seed_download_complete").is_file()
 
 
 def test_download_slayer_setup_noop_in_raw(
@@ -514,12 +527,15 @@ def test_download_slayer_setup_rename_race_is_success(
     monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(dest_root))
     store[f"runs/{RUN_ID}/slayer_setup/slayer_otf_cache/db_a/_cache_fp.txt"] = b"fp"
 
+    # OTF roots are benchmark-scoped: env var is the parent, actual root is
+    # parent / "mini-interact".
+    actual_root = dest_root / "mini-interact"
     real_rename = os.rename
 
     def racing_rename(src, dst):
-        if Path(dst) == dest_root and not dest_root.exists():
-            dest_root.mkdir(parents=True)
-            (dest_root / ".download_complete").write_text("peer")
+        if Path(dst) == actual_root and not actual_root.exists():
+            actual_root.mkdir(parents=True)
+            (actual_root / ".download_complete").write_text("peer")
             raise OSError("Directory not empty")
         return real_rename(src, dst)
 
@@ -527,10 +543,11 @@ def test_download_slayer_setup_rename_race_is_success(
     cfg = {
         "query_mode": "slayer", "slayer_setup": "on-the-fly",
         "framework": "pydantic_ai_recursive",
+        "dataset": "mini-interact",
     }
     # Must not raise.
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
-    assert (dest_root / ".download_complete").is_file()
+    assert (actual_root / ".download_complete").is_file()
 
 
 def test_download_slayer_setup_rename_error_without_marker_reraises(
@@ -550,6 +567,7 @@ def test_download_slayer_setup_rename_error_without_marker_reraises(
     cfg = {
         "query_mode": "slayer", "slayer_setup": "on-the-fly",
         "framework": "pydantic_ai_recursive",
+        "dataset": "mini-interact",
     }
     with pytest.raises(OSError, match="disk on fire"):
         ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
@@ -568,12 +586,15 @@ def test_download_slayer_setup_empty_prefix_raises(
     cfg = {
         "query_mode": "slayer", "slayer_setup": "on-the-fly",
         "framework": "pydantic_ai_recursive",
+        "dataset": "mini-interact",
     }
     with pytest.raises(FileNotFoundError):
         ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
+    # OTF roots are benchmark-scoped: actual root is dest_root / "mini-interact".
     # Nothing cached — a retry (after fixing the upload) can still run.
-    assert not (dest_root / ".download_complete").exists()
-    assert not dest_root.exists()
+    actual_root = dest_root / "mini-interact"
+    assert not (actual_root / ".download_complete").exists()
+    assert not actual_root.exists()
 
 
 def test_local_actor_uses_injected_gcs_client(
@@ -652,6 +673,7 @@ def test_run_pool_threads_injected_client_into_local_actors(
             iid: {"instance_id": iid, "selected_database": "db_a"}
             for iid in ("db_a_1", "db_a_2")
         },
+        dataset="mini-interact",
         local_only=True,
         gcs_client=injected,
         actor_cls=_CaptureActor,
@@ -747,6 +769,7 @@ def test_run_pool_local_applies_actor_env_to_os_environ(
         attempt=1,
         task_data_by_id={"db_a_1": {"instance_id": "db_a_1",
                                     "selected_database": "db_a"}},
+        dataset="mini-interact",
         local_only=True,
         actor_env_vars={"BIRD_TEST_SECRET": "hunter2"},
     )
@@ -789,6 +812,7 @@ def test_run_pool_local_default_actor_skips_default_gcs_client(
         attempt=1,
         task_data_by_id={"db_a_1": {"instance_id": "db_a_1",
                                     "selected_database": "db_a"}},
+        dataset="mini-interact",
         local_only=True,
         gcs_client=injected,  # no actor_cls → default _LocalActor path
     )
@@ -912,12 +936,14 @@ def test_load_task_data_applies_audited_gold_overlay(
     )
 
     # Off → overlay not called.
-    out = ray_app._load_task_data(["db_a_1"], use_audited_gold_sql=False)
+    out = ray_app._load_task_data(["db_a_1"], dataset="mini-interact",
+                                  use_audited_gold_sql=False)
     assert out["db_a_1"]["sol_sql"] == "SELECT raw"
     assert overlay_calls == []
 
     # On → overlay called and applied.
-    out = ray_app._load_task_data(["db_a_1"], use_audited_gold_sql=True)
+    out = ray_app._load_task_data(["db_a_1"], dataset="mini-interact",
+                                  use_audited_gold_sql=True)
     assert overlay_calls, "overlay was not applied"
     assert out["db_a_1"]["sol_sql"] == "SELECT audited"
 
@@ -966,7 +992,7 @@ def test_undispatched_pending_iids_get_error_rows(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=factory_that_also_fails,
-            benchmark="mini_interact",
+            benchmark="mini-interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")
@@ -1027,7 +1053,7 @@ def test_error_path_annotations_use_selected_database(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=factory_that_also_fails,
-            benchmark="mini_interact",
+            benchmark="mini-interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")
@@ -1110,7 +1136,7 @@ def test_dispatch_failure_mints_replacement_actor(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=factory,
-            benchmark="mini_interact",
+            benchmark="mini-interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")
@@ -1175,6 +1201,7 @@ def test_actor_caches_runner_for_raw_mode(
             iid: {"instance_id": iid, "selected_database": "db_a"}
             for iid in ("db_a_1", "db_a_2", "db_a_3")
         },
+        dataset="mini-interact",
         local_only=True,
     )
 
@@ -1243,6 +1270,7 @@ def test_actor_no_runner_cache_for_slayer_mode(
         },
         slayer_setup="on-the-fly",
         slayer_storage_root="/data/slayer_models",
+        dataset="mini-interact",
         local_only=True,
     )
 
@@ -1306,6 +1334,7 @@ def test_per_task_tmp_dirs_are_cleaned(
         },
         slayer_setup="on-the-fly",
         slayer_storage_root="/data/slayer_models",
+        dataset="mini-interact",
         local_only=True,
     )
 
@@ -1393,7 +1422,7 @@ def test_run_with_actors_writes_actor_lost_row_for_dying_actor(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=lambda: _FakeActor(),
-            benchmark="mini_interact",
+            benchmark="mini-interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")
@@ -1455,7 +1484,7 @@ def test_dispatch_failure_writes_error_row(
             gcs_client=client,
             heartbeat=hb,
             actor_factory=lambda: _BoomActor(),
-            benchmark="mini_interact",
+            benchmark="mini-interact",
         )
     finally:
         hb.stop_and_flush(terminal_state="done")
@@ -1520,6 +1549,7 @@ def test_actor_uses_env_resolved_paths(
         task_data_by_id={
             "db_a_1": {"instance_id": "db_a_1", "selected_database": "db_a"}
         },
+        dataset="mini-interact",
         local_only=True,
     )
 
@@ -1555,14 +1585,18 @@ def test_download_slayer_setup_otf_encode_downloads_both_cache_and_reference(
     store[f"{rpfx}/db_a/models/x.yaml"] = b"name: x\n"
 
     cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
-           "framework": "pydantic_ai_otf_encode"}
+           "framework": "pydantic_ai_otf_encode", "dataset": "mini-interact"}
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
 
+    # OTF roots are benchmark-scoped: env var is the parent, actual root is
+    # parent / "mini-interact".
+    actual_cache = cache_root / "mini-interact"
+    actual_ref = ref_root / "mini-interact"
     # Both roots populated, both markers written.
-    assert (cache_root / "db_a" / "_cache_fp.txt").read_bytes() == b"cache-fp"
-    assert (cache_root / ".download_complete").is_file()
-    assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"ref-fp"
-    assert (ref_root / "db_a" / "models" / "x.yaml").read_bytes() == b"name: x\n"
+    assert (actual_cache / "db_a" / "_cache_fp.txt").read_bytes() == b"cache-fp"
+    assert (actual_cache / ".download_complete").is_file()
+    assert (actual_ref / "db_a" / "_reference_fp.txt").read_bytes() == b"ref-fp"
+    assert (actual_ref / "db_a" / "models" / "x.yaml").read_bytes() == b"name: x\n"
 
 
 def test_download_slayer_setup_otf_encode_optional_reference_empty_is_noop(
@@ -1583,17 +1617,21 @@ def test_download_slayer_setup_otf_encode_optional_reference_empty_is_noop(
     store[f"{cpfx}/db_a/_cache_fp.txt"] = b"cache-fp"
 
     cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
-           "framework": "pydantic_ai_otf_encode"}
+           "framework": "pydantic_ai_otf_encode", "dataset": "mini-interact"}
     # MUST NOT raise — the optional artifact is allowed to be absent.
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
 
+    # OTF roots are benchmark-scoped: env var is the parent, actual root is
+    # parent / "mini-interact".
+    actual_cache = cache_root / "mini-interact"
+    actual_ref = ref_root / "mini-interact"
     # Cache landed.
-    assert (cache_root / "db_a" / "_cache_fp.txt").read_bytes() == b"cache-fp"
-    assert (cache_root / ".download_complete").is_file()
+    assert (actual_cache / "db_a" / "_cache_fp.txt").read_bytes() == b"cache-fp"
+    assert (actual_cache / ".download_complete").is_file()
     # Reference root either absent or empty — must NOT carry the marker
     # (the cloud will encode references into this root; a marker would
     # prevent retries).
-    assert not (ref_root / ".download_complete").exists()
+    assert not (actual_ref / ".download_complete").exists()
 
 
 def test_download_slayer_setup_otf_encode_optional_reference_skipped_on_restart(
@@ -1620,26 +1658,29 @@ def test_download_slayer_setup_otf_encode_optional_reference_skipped_on_restart(
     store[f"{rpfx}/db_a/_reference_fp.txt"] = b"seed-fp"
     store[f"{rpfx}/db_a/models/x.yaml"] = b"name: SEED-OLD\n"
 
+    # OTF roots are benchmark-scoped: env var is the parent, actual root is
+    # parent / "mini-interact".
+    actual_ref = ref_root / "mini-interact"
     # Simulate a prior actor having built a CLOUD reference for db_b
     # locally — must not be touched.
-    (ref_root / "db_b" / "models").mkdir(parents=True)
-    (ref_root / "db_b" / "models" / "y.yaml").write_bytes(b"CLOUD-BUILT\n")
-    (ref_root / "db_b" / "_reference_fp.txt").write_bytes(b"cloud-fp-b")
+    (actual_ref / "db_b" / "models").mkdir(parents=True)
+    (actual_ref / "db_b" / "models" / "y.yaml").write_bytes(b"CLOUD-BUILT\n")
+    (actual_ref / "db_b" / "_reference_fp.txt").write_bytes(b"cloud-fp-b")
     cloud_built_mtime = time.time() + 100
-    for p in (ref_root / "db_b").rglob("*"):
+    for p in (actual_ref / "db_b").rglob("*"):
         if p.is_file():
             os.utime(p, (cloud_built_mtime, cloud_built_mtime))
 
     cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
-           "framework": "pydantic_ai_otf_encode"}
+           "framework": "pydantic_ai_otf_encode", "dataset": "mini-interact"}
     # MUST NOT raise; cloud-built db_b must survive.
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
 
     # db_b cloud-built reference UNTOUCHED.
-    assert (ref_root / "db_b" / "models" / "y.yaml").read_bytes() == b"CLOUD-BUILT\n"
-    assert (ref_root / "db_b" / "_reference_fp.txt").read_bytes() == b"cloud-fp-b"
+    assert (actual_ref / "db_b" / "models" / "y.yaml").read_bytes() == b"CLOUD-BUILT\n"
+    assert (actual_ref / "db_b" / "_reference_fp.txt").read_bytes() == b"cloud-fp-b"
     # db_a SEED arrived (no prior local content for db_a).
-    assert (ref_root / "db_a" / "_reference_fp.txt").read_bytes() == b"seed-fp"
+    assert (actual_ref / "db_a" / "_reference_fp.txt").read_bytes() == b"seed-fp"
 
 
 def test_download_slayer_setup_optional_seed_does_not_clobber_local(
@@ -1665,14 +1706,17 @@ def test_download_slayer_setup_optional_seed_does_not_clobber_local(
     store[f"{rpfx}/db_a/models/x.yaml"] = b"SEED-CONTENT\n"
     store[f"{rpfx}/db_a/models/y.yaml"] = b"SEED-Y\n"
 
+    # OTF roots are benchmark-scoped: env var is the parent, actual root is
+    # parent / "mini-interact".
+    actual_ref = ref_root / "mini-interact"
     # Local already has a cloud-built x.yaml (from a prior actor on this
     # VM). MUST NOT be overwritten by the seed.
-    local_db = ref_root / "db_a"
+    local_db = actual_ref / "db_a"
     (local_db / "models").mkdir(parents=True)
     (local_db / "models" / "x.yaml").write_bytes(b"CLOUD-BUILT\n")
 
     cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
-           "framework": "pydantic_ai_otf_encode"}
+           "framework": "pydantic_ai_otf_encode", "dataset": "mini-interact"}
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
 
     assert (local_db / "models" / "x.yaml").read_bytes() == b"CLOUD-BUILT\n", (
@@ -1712,10 +1756,13 @@ def test_download_slayer_setup_optional_seed_marker_makes_rerun_noop(
     store[f"{rpfx}/db_a/models/x.yaml"] = b"seed-content\n"
 
     cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
-           "framework": "pydantic_ai_otf_encode"}
+           "framework": "pydantic_ai_otf_encode", "dataset": "mini-interact"}
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
 
-    marker = ref_root / ".optional_seed_download_complete"
+    # OTF roots are benchmark-scoped: env var is the parent, actual root is
+    # parent / "mini-interact".
+    actual_ref = ref_root / "mini-interact"
+    marker = actual_ref / ".optional_seed_download_complete"
     assert marker.is_file(), (
         "optional seed download must drop `.optional_seed_download_complete` "
         "after a successful merge"
@@ -1724,7 +1771,7 @@ def test_download_slayer_setup_optional_seed_marker_makes_rerun_noop(
     # Mutate the GCS seed content — a second call MUST NOT re-download it.
     store[f"{rpfx}/db_a/models/x.yaml"] = b"NEW-SEED-MUST-NOT-LAND\n"
     ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
-    assert (ref_root / "db_a" / "models" / "x.yaml").read_bytes() == b"seed-content\n", (
+    assert (actual_ref / "db_a" / "models" / "x.yaml").read_bytes() == b"seed-content\n", (
         "second call must no-op when the marker is present"
     )
 
@@ -1772,11 +1819,13 @@ def test_optional_seed_download_blocks_on_per_db_build_lock(
     store[f"{rpfx}/db_a/_reference_fp.txt"] = b"seed"
     store[f"{rpfx}/db_a/models/x.yaml"] = b"seed-content\n"
 
+    # OTF roots are benchmark-scoped: actual lock dir is ref_root / "mini-interact".
+    actual_ref = ref_root / "mini-interact"
     sentinel = tmp_path / "holder.txt"
     ctx = multiprocessing.get_context("spawn")
     p = ctx.Process(
         target=_otf_seed_lock_holder,
-        args=((str(ref_root), "db_a", 2.0, str(sentinel)),),
+        args=((str(actual_ref), "db_a", 2.0, str(sentinel)),),
     )
     p.start()
     try:
@@ -1786,7 +1835,7 @@ def test_optional_seed_download_blocks_on_per_db_build_lock(
         assert sentinel.exists(), "holder failed to acquire the lock"
 
         cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
-               "framework": "pydantic_ai_otf_encode"}
+               "framework": "pydantic_ai_otf_encode", "dataset": "mini-interact"}
         t0 = _t.time()
         ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
         elapsed = _t.time() - t0
@@ -1814,7 +1863,7 @@ def test_download_slayer_setup_otf_encode_missing_cache_still_raises(
     monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(ref_root))
 
     cfg = {"query_mode": "slayer", "slayer_setup": "on-the-fly",
-           "framework": "pydantic_ai_otf_encode"}
+           "framework": "pydantic_ai_otf_encode", "dataset": "mini-interact"}
     with pytest.raises(FileNotFoundError):
         ray_app.download_slayer_setup(RUN_ID, cfg, client=client)
 
@@ -1885,7 +1934,7 @@ def test_run_one_in_actor_invokes_upload_back_after_row_and_log(
          "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
          "patience": 3, "strict": False, "use_audited_gold_sql": False,
          "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
-         "slayer_storage_root": "/data/slayer_models"},
+         "slayer_storage_root": "/data/slayer_models", "dataset": "mini-interact"},
         RUN_ID, 1, gcs_client=client,
     )
     actor.run_one({"instance_id": "db_a_1", "selected_database": "db_a"})
@@ -1953,7 +2002,7 @@ def test_run_one_in_actor_swallows_upload_back_exceptions(
          "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
          "patience": 3, "strict": False, "use_audited_gold_sql": False,
          "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
-         "slayer_storage_root": "/data/slayer_models"},
+         "slayer_storage_root": "/data/slayer_models", "dataset": "mini-interact"},
         RUN_ID, 1, gcs_client=client,
     )
     # Must NOT raise.
@@ -1992,6 +2041,7 @@ def test_actor_captures_uploaded_dbs_and_initial_seed_fps_from_gcs(
         "patience": 3, "strict": False, "use_audited_gold_sql": False,
         "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
         "slayer_storage_root": "/data/slayer_models",
+        "dataset": "mini-interact",
     }
     actor = ray_app._LocalActor(cfg, RUN_ID, 1, gcs_client=client)
 
@@ -2043,6 +2093,7 @@ def test_actor_seed_snapshot_ignores_local_only_cloud_built_refs(
         "patience": 3, "strict": False, "use_audited_gold_sql": False,
         "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
         "slayer_storage_root": "/data/slayer_models",
+        "dataset": "mini-interact",
     }
     actor = ray_app._LocalActor(cfg, RUN_ID, 1, gcs_client=client)
 
@@ -2090,6 +2141,7 @@ def test_actor_initial_seed_fps_empty_when_no_seed(
         "patience": 3, "strict": False, "use_audited_gold_sql": False,
         "prompt_cache": True, "max_depth": 3, "slayer_setup": "on-the-fly",
         "slayer_storage_root": "/data/slayer_models",
+        "dataset": "mini-interact",
     }
     actor = ray_app._LocalActor(cfg, RUN_ID, 1, gcs_client=client)
     assert actor.initial_seed_fp_by_db == {}
@@ -2107,9 +2159,9 @@ def test_actor_initial_seed_fps_empty_when_no_seed(
 @pytest.mark.parametrize(
     "dataset, container_dir, root_env, file_env, data_file",
     [
-        ("mini_interact", "/data/mini-interact", "BIRD_DB_PATH",
+        ("mini-interact", "/data/mini-interact", "BIRD_DB_PATH",
          "BIRD_DATA_PATH", "mini_interact.jsonl"),
-        ("livesqlbench", "/data/livesqlbench", "BIRD_LIVESQLBENCH_ROOT",
+        ("livesqlbench-base-lite-sqlite", "/data/livesqlbench-base-lite-sqlite", "BIRD_LIVESQLBENCH_ROOT",
          "BIRD_LIVESQLBENCH_DATA_FILE", "livesqlbench_data_sqlite.jsonl"),
     ],
 )
@@ -2153,7 +2205,7 @@ def test_download_benchmark_data_noop_without_prefix(
         ray_app._benchmark_data, "ensure_downloaded",
         lambda *a, **k: called.append(1),
     )
-    ray_app.download_benchmark_data({"dataset": "mini_interact"}, client=object())
+    ray_app.download_benchmark_data({"dataset": "mini-interact"}, client=object())
     assert called == []
 
 
@@ -2182,7 +2234,7 @@ def test_run_pool_cfg_carries_dataset_and_prefix(
         num_actors=1,
         attempt=1,
         task_data_by_id={"alien_1": {"instance_id": "alien_1", "selected_database": "alien"}},
-        dataset="livesqlbench",
+        dataset="livesqlbench-base-lite-sqlite",
         benchmark_data_prefix="benchmark-data/livesqlbench/abc/",
         gcs_client=client,
         local_only=True,
@@ -2190,9 +2242,9 @@ def test_run_pool_cfg_carries_dataset_and_prefix(
     )
     assert seen_cfgs, "actor never constructed"
     cfg = seen_cfgs[0]
-    assert cfg["dataset"] == "livesqlbench"
+    assert cfg["dataset"] == "livesqlbench-base-lite-sqlite"
     assert cfg["benchmark_data_prefix"] == "benchmark-data/livesqlbench/abc/"
-    assert cfg["data_dir"] == "/data/livesqlbench"
+    assert cfg["data_dir"] == "/data/livesqlbench-base-lite-sqlite"
 
 
 def test_local_actor_init_downloads_benchmark_data(
@@ -2214,7 +2266,7 @@ def test_local_actor_init_downloads_benchmark_data(
         "strict": False, "use_audited_gold_sql": False, "prompt_cache": True,
         "max_depth": 3, "slayer_setup": "pre-encoded",
         "slayer_storage_root": "/data/slayer_models",
-        "dataset": "mini_interact",
+        "dataset": "mini-interact",
         "benchmark_data_prefix": "benchmark-data/mini_interact/abc/",
     }
     ray_app._LocalActor(cfg, RUN_ID, 1, gcs_client=client)
@@ -2241,7 +2293,7 @@ def test_main_downloads_benchmark_data_before_task_load(
         "--run-id", RUN_ID, "--attempt", "1",
         "--framework", "pydantic_ai", "--query-mode", "raw",
         "--mode", "c-interact", "--agent-model", "m", "--user-sim-model", "u",
-        "--dataset", "mini_interact",
+        "--dataset", "mini-interact",
         "--benchmark-data-prefix", "benchmark-data/mini_interact/abc/",
         "--instance-ids", "db_a_1",
     ])
@@ -2268,8 +2320,8 @@ def test_main_canonicalizes_dataset_alias(monkeypatch: pytest.MonkeyPatch):
         "--dataset", "mini-interact",  # hyphen alias
         "--instance-ids", "db_a_1",
     ])
-    assert seen["load"] == "mini_interact"
-    assert seen["pool"] == "mini_interact"
+    assert seen["load"] == "mini-interact"
+    assert seen["pool"] == "mini-interact"
 
 
 def test_main_rejects_unknown_dataset(monkeypatch: pytest.MonkeyPatch):

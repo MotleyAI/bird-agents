@@ -82,13 +82,15 @@ def _cloud_benchmark(cfg: dict[str, Any]) -> str:
     """Canonical benchmark name for the run's OTF path roots + container data
     dir, derived from the run cfg's ``dataset``.
 
-    An absent ``dataset`` (a pre-de-bake run whose driver never stamped it)
-    falls back to ``"mini_interact"``; otherwise the token is resolved through
-    the registry so a third benchmark never silently aliases to mini-interact.
+    Raises ``ValueError`` if ``dataset`` is absent or empty — every run cfg
+    produced by DEV-1525 and later carries an explicit ``dataset`` field.
     """
     dataset = cfg.get("dataset")
     if not dataset:
-        return "mini_interact"
+        raise ValueError(
+            "_cloud_benchmark: run cfg missing required 'dataset' key. "
+            "All cfgs produced post-DEV-1525 must carry an explicit dataset."
+        )
     return get_benchmark(dataset).name
 
 
@@ -454,6 +456,7 @@ def _build_error_row(iid: str, database: str, message: str) -> dict:
 async def _run_one_task_async(
     *,
     task_data: dict,
+    dataset: str,
     framework: str,
     query_mode: str,
     mode: str,
@@ -483,6 +486,7 @@ async def _run_one_task_async(
         task_data=task_data,
         data_dir=data_dir,
         framework=framework,
+        dataset=dataset,
         query_mode=query_mode,
         mode=mode,
         agent_model=agent_model,
@@ -544,6 +548,7 @@ def _run_one_in_actor(
                 row = asyncio.run(
                     _run_one_task_async(
                         task_data=task_data,
+                        dataset=cfg["dataset"],
                         framework=cfg["framework"],
                         query_mode=cfg["query_mode"],
                         mode=cfg["mode"],
@@ -851,6 +856,7 @@ def _maybe_build_cached_runner(cfg: dict[str, Any]):
     from bird_interact_agents import run as run_mod
     return run_mod.make_runner(
         framework=cfg["framework"],
+        dataset=cfg["dataset"],
         query_mode=cfg["query_mode"],
         mode=cfg["mode"],
         agent_model=cfg["agent_model"],
@@ -1052,7 +1058,7 @@ def run_pool(
     num_actors: int,
     attempt: int,
     task_data_by_id: dict[str, dict],
-    dataset: str = "mini_interact",
+    dataset: str,
     benchmark_data_prefix: str | None = None,
     user_sim_model: str = "anthropic/claude-haiku-4-5-20251001",
     patience: int = 3,
@@ -1385,7 +1391,7 @@ def _run_with_actors(
 def _load_task_data(
     instance_ids: list[str],
     *,
-    dataset: str = "mini_interact",
+    dataset: str,
     gold_file: str | None = None,
     use_audited_gold_sql: bool = False,
 ) -> dict[str, dict]:
@@ -1453,7 +1459,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--mode", required=True)
     p.add_argument("--agent-model", required=True)
     p.add_argument("--user-sim-model", required=True)
-    p.add_argument("--dataset", default="mini_interact",
+    p.add_argument("--dataset", required=True,
                    choices=cli_dataset_tokens())
     p.add_argument("--gold-file", default=None)
     p.add_argument(

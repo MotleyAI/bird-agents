@@ -53,7 +53,7 @@ DEFAULT_SLAYER_STORAGE = Path(os.environ.get(
     "SLAYER_STORAGE",
     str(Path.home() / ".local" / "share" / "slayer"),
 ))
-DEFAULT_MINI_INTERACT_ROOT = paths.mini_interact_root()
+DEFAULT_MINI_INTERACT_ROOT = paths.benchmark_data_root("mini-interact")
 
 # Matches a [kb=<id>]<body>[/kb=<id>] block, allowing surrounding blank
 # lines so re-runs collapse them rather than accumulating whitespace.

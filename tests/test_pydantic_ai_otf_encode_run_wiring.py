@@ -47,26 +47,21 @@ def _framework_choices_from_parser():
 
 
 def test_framework_choice_accepted_by_arg_parser():
-    """`pydantic_ai_otf_encode` is in the argparse `choices` list."""
+    """`claude_sdk` is in the argparse `choices` list."""
     choices = _framework_choices_from_parser()
-    assert "pydantic_ai_otf_encode" in choices
+    assert "claude_sdk" in choices
 
 
 def test_framework_choices_still_include_existing_frameworks():
-    """Adding the new framework must not drop the existing ones."""
     choices = _framework_choices_from_parser()
-    assert {
-        "claude_sdk", "pydantic_ai", "pydantic_ai_recursive",
-        "mcp_agent", "agno", "smolagents", "pydantic_ai_otf_encode",
-    }.issubset(choices)
+    assert {"claude_sdk"}.issubset(choices)
 
 
 @pytest.mark.asyncio
 async def test_run_evaluation_branches_to_new_agent(monkeypatch, tmp_path):
-    """When `framework='pydantic_ai_otf_encode'`, `run_evaluation`
-    instantiates `PydanticAIOtfEncodeAgent` and uses its `run_task`.
-    We intercept the constructor to confirm and short-circuit the
-    rest by raising a sentinel."""
+    """When `framework='claude_sdk'` with a non-one-shot dataset and slayer query
+    mode, `run_evaluation` instantiates `ClaudeSDKOtfAInteractAgent`.
+    We intercept the constructor to confirm and short-circuit the rest."""
     from bird_interact_agents import run as run_mod
 
     constructed = []
@@ -80,8 +75,8 @@ async def test_run_evaluation_branches_to_new_agent(monkeypatch, tmp_path):
             raise _Sentinel("stop here")
 
     monkeypatch.setattr(
-        "bird_interact_agents.agents.pydantic_ai_otf_encode."
-        "PydanticAIOtfEncodeAgent",
+        "bird_interact_agents.agents.claude_sdk_otf_ainteract."
+        "ClaudeSDKOtfAInteractAgent",
         _FakeAgent,
         raising=False,
     )
@@ -93,7 +88,8 @@ async def test_run_evaluation_branches_to_new_agent(monkeypatch, tmp_path):
             data_path="/tmp/x.jsonl", data_dir="/tmp",
             output_path=str(tmp_path / "eval.json"),
             mode="a-interact", query_mode="slayer",
-            framework="pydantic_ai_otf_encode",
+            framework="claude_sdk",
+            dataset="mini-interact",
             slayer_setup="on-the-fly",
         )
     assert len(constructed) == 1
@@ -110,8 +106,8 @@ def test_cli_rejects_pydantic_ai_otf_encode_with_pre_encoded(monkeypatch):
 
     argv = [
         "prog",
-        "--dataset", "mini_interact",
-        "--framework", "pydantic_ai_otf_encode",
+        "--dataset", "mini-interact",
+        "--framework", "claude_sdk",
         "--slayer-setup", "pre-encoded",
         "--query-mode", "slayer",
         "--mode", "a-interact",
@@ -136,8 +132,8 @@ def test_cli_accepts_pydantic_ai_otf_encode_with_on_the_fly(
 
     argv = [
         "prog",
-        "--dataset", "mini_interact",
-        "--framework", "pydantic_ai_otf_encode",
+        "--dataset", "mini-interact",
+        "--framework", "claude_sdk",
         "--slayer-setup", "on-the-fly",
         "--query-mode", "slayer",
         "--mode", "a-interact",
@@ -154,5 +150,5 @@ def test_cli_accepts_pydantic_ai_otf_encode_with_on_the_fly(
 
     monkeypatch.setattr(run_mod, "run_evaluation", fake_run)
     run_mod.main()
-    assert called["framework"] == "pydantic_ai_otf_encode"
+    assert called["framework"] == "claude_sdk"
     assert called["slayer_setup"] == "on-the-fly"

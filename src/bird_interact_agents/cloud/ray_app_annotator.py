@@ -226,23 +226,30 @@ def _load_annotator_task_data(
     """Load plain task data for the annotator (no audited-gold overlay)."""
     bench = get_benchmark(benchmark)
     if bench.gold_required and gold_file is None:
-        env_val = os.environ.get(bench.gold_root_env or "")
-        if env_val:
-            gold_file = env_val
-        else:
-            candidate = (
-                paths.benchmark_data_root(benchmark)
-                / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl"
+        # DEV-1525: gated gold lives at paths.gated_gold_root(benchmark=) /
+        # <gt_sidecar>.jsonl; a BIRD_GATED_GOLD_ROOT env var overrides the
+        # parent dir (benchmark subdir still appended).
+        gated_root = paths.gated_gold_root(benchmark=benchmark)
+        search_dirs = [gated_root]
+        candidates = [
+            f for d in search_dirs if d.is_dir()
+            for f in sorted(d.glob("*.jsonl"))
+        ]
+        if len(candidates) == 1:
+            gold_file = str(candidates[0])
+        elif len(candidates) > 1:
+            raise RuntimeError(
+                f"Benchmark {benchmark!r} requires a gold sidecar but multiple "
+                f"*.jsonl files were found: {candidates}. "
+                f"Pass --gold-file explicitly to disambiguate."
             )
-            if candidate.exists():
-                gold_file = str(candidate)
 
     if bench.gold_required and gold_file is None:
         raise RuntimeError(
             f"Benchmark {benchmark!r} requires a gold sidecar file but none was found. "
-            f"Set the {bench.gold_root_env!r} environment variable to the path of the "
-            f"gold JSONL file, or ensure the file exists at "
-            f"{paths.benchmark_data_root(benchmark) / 'livesqlbench_sqlite_gt_kg_testcases_0528.jsonl'}."
+            f"Place a single *.jsonl in {paths.gated_gold_root(benchmark=benchmark)} "
+            f"(set BIRD_GATED_GOLD_ROOT to override the parent directory) "
+            f"or pass --gold-file explicitly."
         )
 
     rows = load_benchmark_tasks(

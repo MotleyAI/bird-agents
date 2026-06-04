@@ -54,7 +54,7 @@ def _audited_gold_variant(
         "instance_id": instance_id,
         "variant_id": variant_id,
         "selected_database": db,
-        "benchmark": "mini_interact",
+        "benchmark": "mini-interact",
         "audit_status": "clean",
         "original_sol_sql": ["SELECT COUNT(*) FROM orders;"],
         "audited_sol_sql": ["SELECT COUNT(*) FROM orders;"],
@@ -96,11 +96,11 @@ def test_merge_task_annotations_writes_correct_path(tmp_path):
     annotations_root = tmp_path / "annotations"
     report = merge_task_annotations(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         annotations_root=annotations_root,
     )
 
-    dest = annotations_root / "mini_interact" / "shop" / "shop_1.task.json"
+    dest = annotations_root / "mini-interact" / "shop" / "shop_1.task.json"
     assert dest.exists()
     assert json.loads(dest.read_text())["instance_id"] == "shop_1"
     assert report.merged == 1
@@ -115,13 +115,13 @@ def test_merge_task_annotations_always_overwrites_existing(tmp_path):
     _write_task_annotation_file(downloaded / "rows", "shop_1", "shop")
 
     annotations_root = tmp_path / "annotations"
-    dest = annotations_root / "mini_interact" / "shop" / "shop_1.task.json"
+    dest = annotations_root / "mini-interact" / "shop" / "shop_1.task.json"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text('{"stale": true}')
 
     merge_task_annotations(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         annotations_root=annotations_root,
     )
 
@@ -143,7 +143,7 @@ def test_merge_task_annotations_normalises_dash_benchmark(tmp_path):
         annotations_root=annotations_root,
     )
 
-    dest = annotations_root / "mini_interact" / "shop" / "shop_1.task.json"
+    dest = annotations_root / "mini-interact" / "shop" / "shop_1.task.json"
     assert dest.exists()
 
 
@@ -158,7 +158,7 @@ def test_merge_task_annotations_rejects_malformed_json(tmp_path):
     annotations_root = tmp_path / "annotations"
     report = merge_task_annotations(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         annotations_root=annotations_root,
     )
 
@@ -174,7 +174,7 @@ def test_merge_task_annotations_no_rows_dir_is_noop(tmp_path):
 
     report = merge_task_annotations(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         annotations_root=tmp_path / "annotations",
     )
 
@@ -192,12 +192,12 @@ def test_merge_task_annotations_multiple_tasks(tmp_path):
 
     report = merge_task_annotations(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         annotations_root=tmp_path / "annotations",
     )
 
     assert report.merged == 3
-    assert (tmp_path / "annotations" / "mini_interact" / "museum" / "museum_1.task.json").exists()
+    assert (tmp_path / "annotations" / "mini-interact" / "museum" / "museum_1.task.json").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -215,11 +215,11 @@ def test_merge_audited_gold_variants_appends_to_jsonl(tmp_path):
     audited_gold_root = tmp_path / "audited_gold"
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold_root,
     )
 
-    consolidated = audited_gold_root / "mini_interact_audited.jsonl"
+    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
     assert consolidated.exists()
     rows = [json.loads(l) for l in consolidated.read_text().splitlines() if l.strip()]
     assert len(rows) == 1
@@ -233,7 +233,7 @@ def test_merge_audited_gold_variants_deduplicates_by_instance_and_variant(tmp_pa
 
     audited_gold_root = tmp_path / "audited_gold"
     audited_gold_root.mkdir()
-    consolidated = audited_gold_root / "mini_interact_audited.jsonl"
+    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
     consolidated.write_text(json.dumps(_audited_gold_variant("shop_1", "primary")) + "\n")
 
     downloaded = tmp_path / "downloaded"
@@ -244,7 +244,7 @@ def test_merge_audited_gold_variants_deduplicates_by_instance_and_variant(tmp_pa
 
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold_root,
     )
 
@@ -259,7 +259,7 @@ def test_merge_audited_gold_variants_different_variant_id_not_duplicate(tmp_path
 
     audited_gold_root = tmp_path / "audited_gold"
     audited_gold_root.mkdir()
-    consolidated = audited_gold_root / "mini_interact_audited.jsonl"
+    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
     consolidated.write_text(json.dumps(_audited_gold_variant("shop_1", "primary")) + "\n")
 
     downloaded = tmp_path / "downloaded"
@@ -270,7 +270,7 @@ def test_merge_audited_gold_variants_different_variant_id_not_duplicate(tmp_path
 
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold_root,
     )
 
@@ -288,7 +288,7 @@ def test_merge_audited_gold_variants_empty_file_is_noop(tmp_path):
     audited_gold_root = tmp_path / "audited_gold"
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold_root,
     )
 
@@ -309,7 +309,7 @@ def test_merge_audited_gold_variants_rejects_missing_required_fields(tmp_path):
     audited_gold_root = tmp_path / "audited_gold"
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold_root,
     )
 
@@ -322,7 +322,7 @@ def test_merge_audited_gold_variants_mixed_new_and_existing(tmp_path):
 
     audited_gold_root = tmp_path / "audited_gold"
     audited_gold_root.mkdir()
-    consolidated = audited_gold_root / "mini_interact_audited.jsonl"
+    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
     consolidated.write_text(json.dumps(_audited_gold_variant("shop_1")) + "\n")
 
     downloaded = tmp_path / "downloaded"
@@ -337,7 +337,7 @@ def test_merge_audited_gold_variants_mixed_new_and_existing(tmp_path):
 
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold_root,
     )
 
@@ -355,7 +355,7 @@ def test_merge_audited_gold_variants_no_rows_dir_is_noop(tmp_path):
 
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=tmp_path / "audited_gold",
     )
 
@@ -370,10 +370,10 @@ def test_merge_audited_gold_variants_override_replaces_existing(tmp_path):
 
     audited_gold = tmp_path / "audited_gold"
     audited_gold.mkdir()
-    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    consolidated = audited_gold / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
-        "selected_database": "db_a", "benchmark": "mini_interact",
+        "selected_database": "db_a", "benchmark": "mini-interact",
         "audit_status": "clean", "audited_sol_sql": ["SELECT 1"],
     }
     consolidated.write_text(json.dumps(old_row) + "\n")
@@ -383,14 +383,14 @@ def test_merge_audited_gold_variants_override_replaces_existing(tmp_path):
     sub.mkdir(parents=True)
     new_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
-        "selected_database": "db_a", "benchmark": "mini_interact",
+        "selected_database": "db_a", "benchmark": "mini-interact",
         "audit_status": "edited", "audited_sol_sql": ["SELECT 2"],
     }
     (sub / "audited_gold_variants.jsonl").write_text(json.dumps(new_row) + "\n")
 
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold,
         override=True,
     )
@@ -409,15 +409,15 @@ def test_merge_audited_gold_variants_override_purges_stale_rows_when_empty_file(
 
     audited_gold = tmp_path / "audited_gold"
     audited_gold.mkdir()
-    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    consolidated = audited_gold / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
-        "selected_database": "db_a", "benchmark": "mini_interact",
+        "selected_database": "db_a", "benchmark": "mini-interact",
         "audit_status": "edited", "audited_sol_sql": ["SELECT 1"],
     }
     unrelated_row = {
         "instance_id": "db_b_1", "variant_id": "v0",
-        "selected_database": "db_b", "benchmark": "mini_interact",
+        "selected_database": "db_b", "benchmark": "mini-interact",
         "audit_status": "clean", "audited_sol_sql": ["SELECT 2"],
     }
     consolidated.write_text(json.dumps(old_row) + "\n" + json.dumps(unrelated_row) + "\n")
@@ -430,7 +430,7 @@ def test_merge_audited_gold_variants_override_purges_stale_rows_when_empty_file(
 
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold,
         override=True,
     )
@@ -449,10 +449,10 @@ def test_merge_audited_gold_variants_override_preserves_rows_for_failed_tasks(tm
 
     audited_gold = tmp_path / "audited_gold"
     audited_gold.mkdir()
-    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    consolidated = audited_gold / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
-        "selected_database": "db_a", "benchmark": "mini_interact",
+        "selected_database": "db_a", "benchmark": "mini-interact",
         "audit_status": "edited", "audited_sol_sql": ["SELECT 1"],
     }
     consolidated.write_text(json.dumps(old_row) + "\n")
@@ -465,7 +465,7 @@ def test_merge_audited_gold_variants_override_preserves_rows_for_failed_tasks(tm
 
     merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold,
         override=True,
     )
@@ -483,10 +483,10 @@ def test_merge_audited_gold_variants_override_purges_all_rows_truncates_file(tmp
 
     audited_gold = tmp_path / "audited_gold"
     audited_gold.mkdir()
-    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    consolidated = audited_gold / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
-        "selected_database": "db_a", "benchmark": "mini_interact",
+        "selected_database": "db_a", "benchmark": "mini-interact",
         "audit_status": "edited", "audited_sol_sql": ["SELECT 1"],
     }
     # Only rows for the instance being re-annotated — no unrelated rows.
@@ -499,7 +499,7 @@ def test_merge_audited_gold_variants_override_purges_all_rows_truncates_file(tmp
 
     merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold,
         override=True,
     )
@@ -515,10 +515,10 @@ def test_merge_audited_gold_variants_override_false_does_not_replace(tmp_path):
 
     audited_gold = tmp_path / "audited_gold"
     audited_gold.mkdir()
-    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    consolidated = audited_gold / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
-        "selected_database": "db_a", "benchmark": "mini_interact",
+        "selected_database": "db_a", "benchmark": "mini-interact",
         "audit_status": "clean", "audited_sol_sql": ["SELECT 1"],
     }
     consolidated.write_text(json.dumps(old_row) + "\n")
@@ -528,14 +528,14 @@ def test_merge_audited_gold_variants_override_false_does_not_replace(tmp_path):
     sub.mkdir(parents=True)
     new_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
-        "selected_database": "db_a", "benchmark": "mini_interact",
+        "selected_database": "db_a", "benchmark": "mini-interact",
         "audit_status": "edited", "audited_sol_sql": ["SELECT 2"],
     }
     (sub / "audited_gold_variants.jsonl").write_text(json.dumps(new_row) + "\n")
 
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold,
     )
 
@@ -554,10 +554,10 @@ def test_merge_audited_gold_variants_append_handles_missing_trailing_newline(tmp
 
     audited_gold = tmp_path / "audited_gold"
     audited_gold.mkdir()
-    consolidated = audited_gold / "mini_interact_audited.jsonl"
+    consolidated = audited_gold / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
-        "selected_database": "db_a", "benchmark": "mini_interact",
+        "selected_database": "db_a", "benchmark": "mini-interact",
         "audit_status": "clean", "audited_sol_sql": ["SELECT 1"],
     }
     # Intentionally write without trailing newline.
@@ -568,14 +568,14 @@ def test_merge_audited_gold_variants_append_handles_missing_trailing_newline(tmp
     sub.mkdir(parents=True)
     new_row = {
         "instance_id": "db_a_2", "variant_id": "v0",
-        "selected_database": "db_a", "benchmark": "mini_interact",
+        "selected_database": "db_a", "benchmark": "mini-interact",
         "audit_status": "clean", "audited_sol_sql": ["SELECT 2"],
     }
     (sub / "audited_gold_variants.jsonl").write_text(json.dumps(new_row) + "\n")
 
     report = merge_audited_gold_variants(
         downloaded_run_dir=downloaded,
-        benchmark="mini_interact",
+        benchmark="mini-interact",
         audited_gold_root=audited_gold,
     )
 

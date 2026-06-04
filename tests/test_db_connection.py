@@ -201,7 +201,7 @@ def test_factory_dispatches_postgres_for_postgres_backend(monkeypatch):
     from bird_interact_agents.db_connection import make_db_connection, PostgresDbConnection
     from bird_interact_agents.benchmark import get_benchmark
 
-    b = get_benchmark("livesqlbench_postgres")
+    b = get_benchmark("livesqlbench-base-lite")
     mock_conn, _ = _mock_psycopg2_connect([], [])
 
     with patch("bird_interact_agents.db_connection._open_psycopg2_connection", return_value=mock_conn):
@@ -215,7 +215,7 @@ def test_factory_reads_pg_env_vars(monkeypatch):
     from bird_interact_agents.db_connection import make_db_connection
     from bird_interact_agents.benchmark import get_benchmark
 
-    b = get_benchmark("mini_interact_postgres")
+    b = get_benchmark("bird-interact-lite-exp")
     monkeypatch.setenv("BIRD_PG_HOST", "pg.example.com")
     monkeypatch.setenv("BIRD_PG_PORT", "5433")
     monkeypatch.setenv("BIRD_PG_USER", "testuser")

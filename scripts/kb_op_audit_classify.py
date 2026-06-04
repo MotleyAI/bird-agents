@@ -43,7 +43,7 @@ from anthropic import (
 
 from bird_interact_agents import paths
 
-DEFAULT_MINI_INTERACT_ROOT = paths.mini_interact_root()
+DEFAULT_MINI_INTERACT_ROOT = paths.benchmark_data_root("mini-interact")
 
 MODEL = "claude-haiku-4-5-20251001"
 

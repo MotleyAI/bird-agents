@@ -349,7 +349,7 @@ def _find_smallest_kb_file() -> tuple[str, Path, list[dict]] | None:
     """
     from bird_interact_agents import paths
 
-    root = paths.mini_interact_root()
+    root = paths.benchmark_data_root("mini-interact")
     if not root.exists():
         return None
     candidates: list[tuple[int, str, Path, list[dict]]] = []

@@ -7,7 +7,7 @@ exercises the orchestration without touching real LLMs or MCP.
 Pins:
 * call order root → resolver → constructor (just like a-interact).
 * `eval_mode="one-shot"` accepted; `c-interact` / `oracle` still raise.
-* `task["dataset"]=="livesqlbench"` required (Codex #1 programmatic-bypass close).
+* `task["dataset"]=="livesqlbench-base-lite-sqlite"` required (Codex #1 programmatic-bypass close).
 * user-sim never constructed; no `ask_user` tool in the spawn tree.
 * constructor reserve = `submit_query` only (no `2*ask_user`).
 * benchmark-scoped `cache_root`/`reference_root` derived from `task["dataset"]`.
@@ -144,7 +144,7 @@ async def test_recursive_one_shot_wires_root_resolver_constructor(
             "instance_id": "alien_1",
             "amb_user_query": "show me X",
             "knowledge_ambiguity": [],
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         },
         data_path_base=str(tmp_path),
         budget=30.0,
@@ -188,7 +188,7 @@ async def test_recursive_one_shot_rejects_missing_livesqlbench_marker(
             eval_mode="one-shot",
         )
     msg = str(exc_info.value).lower()
-    assert "livesqlbench" in msg or "dataset" in msg
+    assert "livesqlbench-base-lite-sqlite" in msg or "dataset" in msg
 
 
 @pytest.mark.asyncio
@@ -216,7 +216,7 @@ async def test_recursive_one_shot_rejects_pre_encoded_slayer_setup(
                 "selected_database": "alien",
                 "instance_id": "alien_1",
                 "amb_user_query": "x",
-                "dataset": "livesqlbench",
+                "dataset": "livesqlbench-base-lite-sqlite",
             },
             data_path_base=str(tmp_path),
             budget=30.0,
@@ -245,7 +245,7 @@ async def test_recursive_one_shot_rejects_c_interact_and_oracle(
                     "selected_database": "alien",
                     "instance_id": "alien_1",
                     "amb_user_query": "x",
-                    "dataset": "livesqlbench",
+                    "dataset": "livesqlbench-base-lite-sqlite",
                 },
                 data_path_base=str(tmp_path),
                 budget=30.0,
@@ -309,7 +309,7 @@ async def test_recursive_one_shot_reserve_is_submit_query_only(
             "instance_id": "alien_1",
             "amb_user_query": "x",
             "knowledge_ambiguity": [],
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         },
         data_path_base=str(tmp_path), budget=30.0,
         query_mode="slayer", eval_mode="one-shot",
@@ -372,13 +372,13 @@ async def test_recursive_one_shot_passes_benchmark_scoped_cache_root(
             "instance_id": "alien_1",
             "amb_user_query": "x",
             "knowledge_ambiguity": [],
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         },
         data_path_base=str(tmp_path), budget=30.0,
         query_mode="slayer", eval_mode="one-shot",
     )
     assert captured_kw, "_resolve_otf_task_storage_dir must have been called"
-    assert captured_kw[0].get("benchmark") == "livesqlbench", (
+    assert captured_kw[0].get("benchmark") == "livesqlbench-base-lite-sqlite", (
         f"_resolve_otf_task_storage_dir must receive benchmark='livesqlbench'; "
         f"got kwargs={captured_kw[0]}"
     )
@@ -439,7 +439,7 @@ async def test_recursive_one_shot_empty_resolver_skips_constructor(
             "instance_id": "alien_1",
             "amb_user_query": "x",
             "knowledge_ambiguity": [],
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         },
         data_path_base=str(tmp_path), budget=30.0,
         query_mode="slayer", eval_mode="one-shot",
@@ -536,7 +536,7 @@ async def test_otf_encode_one_shot_wires_root_resolver_constructor(
             "instance_id": "alien_1",
             "amb_user_query": "x",
             "knowledge_ambiguity": [],
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         },
         data_path_base=str(tmp_path), budget=30.0,
         query_mode="slayer", eval_mode="one-shot",
@@ -608,12 +608,12 @@ async def test_otf_encode_one_shot_passes_benchmark_scoped_reference_root(
             "instance_id": "alien_1",
             "amb_user_query": "x",
             "knowledge_ambiguity": [],
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         },
         data_path_base=str(tmp_path), budget=30.0,
         query_mode="slayer", eval_mode="one-shot",
     )
-    assert captured_kw[0].get("benchmark") == "livesqlbench"
+    assert captured_kw[0].get("benchmark") == "livesqlbench-base-lite-sqlite"
     assert materialize_calls, (
         "otf_encode one-shot run_task MUST call materialize_task_db "
         "(benchmark-scope test)"
@@ -622,7 +622,7 @@ async def test_otf_encode_one_shot_passes_benchmark_scoped_reference_root(
 
 # ---------------------------------------------------------------------------
 # Deeper benchmark-scope check (Codex Medium #4): the previous tests stub
-# `_resolve_otf_task_storage_dir` and verify it receives benchmark="livesqlbench"
+# `_resolve_otf_task_storage_dir` and verify it receives benchmark="livesqlbench-base-lite-sqlite"
 # — but they can't catch a regression where the real resolver ignores that
 # kwarg and calls `paths.*_root()` with no benchmark, silently falling back
 # to mini-interact. Drive the REAL resolver with spies on the path helpers.
@@ -666,9 +666,9 @@ async def test_recursive_real_resolver_passes_benchmark_to_paths(monkeypatch, tm
     await agent_mod._resolve_otf_task_storage_dir(
         db_name="alien", task_data=task,
         data_path_base=str(tmp_path / "data"),
-        benchmark="livesqlbench",
+        benchmark="livesqlbench-base-lite-sqlite",
     )
-    assert ("cache_root", "livesqlbench") in seen_benchmark, (
+    assert ("cache_root", "livesqlbench-base-lite-sqlite") in seen_benchmark, (
         "real _resolve_otf_task_storage_dir MUST pass benchmark='livesqlbench' "
         f"to paths.slayer_otf_cache_root; got: {seen_benchmark!r}"
     )
@@ -727,13 +727,13 @@ async def test_otf_encode_real_resolver_passes_benchmark_to_paths(monkeypatch, t
         db_name="alien", task_data=task,
         data_path_base=str(tmp_path / "data"),
         build_encoder=lambda *a, **kw: None,
-        benchmark="livesqlbench",
+        benchmark="livesqlbench-base-lite-sqlite",
     )
-    assert ("cache_root", "livesqlbench") in seen_benchmark, (
+    assert ("cache_root", "livesqlbench-base-lite-sqlite") in seen_benchmark, (
         "otf_encode _resolve_otf_task_storage_dir MUST pass benchmark to "
         f"paths.slayer_otf_cache_root; got: {seen_benchmark!r}"
     )
-    assert ("ref_root", "livesqlbench") in seen_benchmark, (
+    assert ("ref_root", "livesqlbench-base-lite-sqlite") in seen_benchmark, (
         "otf_encode _resolve_otf_task_storage_dir MUST pass benchmark to "
         f"paths.slayer_models_otf_root; got: {seen_benchmark!r}"
     )
@@ -757,7 +757,7 @@ async def test_otf_encode_one_shot_rejects_c_interact_and_oracle(monkeypatch, tm
                     "selected_database": "alien",
                     "instance_id": "alien_1",
                     "amb_user_query": "x",
-                    "dataset": "livesqlbench",
+                    "dataset": "livesqlbench-base-lite-sqlite",
                 },
                 data_path_base=str(tmp_path), budget=30.0,
                 query_mode="slayer", eval_mode=bad_mode,
@@ -829,7 +829,7 @@ async def test_otf_encode_one_shot_reserve_is_submit_query_only(monkeypatch, tmp
             "instance_id": "alien_1",
             "amb_user_query": "x",
             "knowledge_ambiguity": [],
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         },
         data_path_base=str(tmp_path), budget=30.0,
         query_mode="slayer", eval_mode="one-shot",
@@ -903,7 +903,7 @@ async def test_otf_encode_one_shot_empty_resolver_skips_constructor(monkeypatch,
             "instance_id": "alien_1",
             "amb_user_query": "x",
             "knowledge_ambiguity": [],
-            "dataset": "livesqlbench",
+            "dataset": "livesqlbench-base-lite-sqlite",
         },
         data_path_base=str(tmp_path), budget=30.0,
         query_mode="slayer", eval_mode="one-shot",
@@ -936,4 +936,4 @@ async def test_otf_encode_one_shot_rejects_missing_marker(monkeypatch, tmp_path)
             query_mode="slayer", eval_mode="one-shot",
         )
     msg = str(exc_info.value).lower()
-    assert "livesqlbench" in msg or "dataset" in msg
+    assert "livesqlbench-base-lite-sqlite" in msg or "dataset" in msg

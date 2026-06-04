@@ -206,10 +206,12 @@ class ClaudeSDKOtfAInteractRawAgent:
                 f"got {eval_mode!r}"
             )
 
-        dataset = task_data.get("dataset") or "mini_interact"
-        if get_benchmark(dataset).name != "mini_interact":
+        dataset = task_data.get("dataset")
+        if not dataset:
+            raise ValueError("task_data missing required 'dataset' field")
+        if get_benchmark(dataset).one_shot:
             raise ValueError(
-                "claude_sdk_otf_ainteract_raw is bound to --dataset mini_interact; "
+                "claude_sdk_otf_ainteract_raw requires an a-interact benchmark; "
                 f"got dataset={dataset!r}"
             )
 

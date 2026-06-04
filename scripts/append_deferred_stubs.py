@@ -19,7 +19,7 @@ import verify_kb_coverage as v  # type: ignore
 from bird_interact_agents import paths
 
 NOTES_DIR = paths.slayer_models_root() / "_notes"
-DEFAULT_MINI_INTERACT_ROOT = paths.mini_interact_root()
+DEFAULT_MINI_INTERACT_ROOT = paths.benchmark_data_root("mini-interact")
 
 STUB_TEMPLATE = """\
 ## KB {id} — {name}

@@ -218,7 +218,8 @@ async def test_run_task_smoke_flow_root_to_constructor(
     inst = _agent.PydanticAIOtfEncodeAgent(slayer_setup="on-the-fly")
     row = await inst.run_task(
         {"selected_database": "x", "instance_id": "i",
-         "amb_user_query": "?", "knowledge_ambiguity": []},
+         "amb_user_query": "?", "knowledge_ambiguity": [],
+         "dataset": "mini-interact"},
         data_path_base="/tmp", budget=100.0,
         query_mode="slayer", eval_mode="a-interact",
     )
@@ -375,7 +376,8 @@ async def test_run_task_smoke_with_real_kb_to_slayer_invocation(
     inst = _agent.PydanticAIOtfEncodeAgent(slayer_setup="on-the-fly")
     row = await inst.run_task(
         {"selected_database": "x", "instance_id": "i",
-         "amb_user_query": "?", "knowledge_ambiguity": []},
+         "amb_user_query": "?", "knowledge_ambiguity": [],
+         "dataset": "mini-interact"},
         data_path_base="/tmp", budget=100.0,
         query_mode="slayer", eval_mode="a-interact",
     )

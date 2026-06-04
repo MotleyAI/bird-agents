@@ -117,12 +117,12 @@ async def test_run_evaluation_invokes_overlay_for_livesqlbench(
             slayer_setup="on-the-fly",
             reasoning_effort=None,
             use_audited_gold_sql=True,
-            dataset="livesqlbench",
+            dataset="livesqlbench-base-lite-sqlite",
             gold_file=str(fake_gold),
             filter_ids=None,
         )
 
-    assert exc.value.kwargs.get("benchmark") is get_benchmark("livesqlbench"), (
+    assert exc.value.kwargs.get("benchmark") is get_benchmark("livesqlbench-base-lite-sqlite"), (
         f"overlay must be called with benchmark=LIVESQLBENCH; got "
         f"{exc.value.kwargs!r}"
     )
@@ -179,7 +179,7 @@ async def test_run_evaluation_does_not_invoke_overlay_when_flag_off(
             slayer_setup="on-the-fly",
             reasoning_effort=None,
             use_audited_gold_sql=False,
-            dataset="livesqlbench",
+            dataset="livesqlbench-base-lite-sqlite",
             gold_file=str(fake_gold),
             filter_ids=None,
         )
@@ -254,14 +254,14 @@ def test_cloud_load_task_data_invokes_overlay_for_livesqlbench(
 
     out = ray_app._load_task_data(
         ["museum_7"],
-        dataset="livesqlbench",
+        dataset="livesqlbench-base-lite-sqlite",
         gold_file=None,
         use_audited_gold_sql=True,
     )
 
     # Overlay was called (gate flipped) with the explicit benchmark.
     assert overlay_calls, "overlay was not invoked for livesqlbench"
-    assert overlay_calls[0]["benchmark"] is get_benchmark("livesqlbench")
+    assert overlay_calls[0]["benchmark"] is get_benchmark("livesqlbench-base-lite-sqlite")
     # And the mutation propagated to the actor's task dict.
     assert out["museum_7"]["sol_sql"] == ["SELECT audited"]
 
@@ -302,7 +302,7 @@ def test_cloud_load_task_data_skips_overlay_when_flag_off(monkeypatch, tmp_path)
 
     out = ray_app._load_task_data(
         ["museum_7"],
-        dataset="livesqlbench",
+        dataset="livesqlbench-base-lite-sqlite",
         gold_file=None,
         use_audited_gold_sql=False,
     )
@@ -354,10 +354,10 @@ def test_cloud_load_task_data_mini_interact_overlay_still_works(
 
     ray_app._load_task_data(
         ["db_a_1"],
-        dataset="mini_interact",
+        dataset="mini-interact",
         gold_file=None,
         use_audited_gold_sql=True,
     )
 
     assert overlay_calls, "mini-interact overlay regressed"
-    assert overlay_calls[0]["benchmark"] is get_benchmark("mini_interact")
+    assert overlay_calls[0]["benchmark"] is get_benchmark("mini-interact")

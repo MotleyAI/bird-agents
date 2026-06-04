@@ -15,7 +15,7 @@ from __future__ import annotations
 import datetime as _dt
 from typing import Optional
 
-from bird_interact_agents.benchmark import benchmark_names, get_benchmark
+from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.eval.annotation_schema import (
     MetadataSufficiency,
     Provenance,
@@ -34,10 +34,10 @@ def _benchmark_task_jsonl_name(benchmark: str) -> str:
     Falls back to a generic ``"<benchmark>.jsonl"`` placeholder when the
     benchmark token doesn't match a registered ``Benchmark`` descriptor
     (which is fine for tests / forks that haven't registered theirs)."""
-    canonical = benchmark.replace("-", "_")
-    if canonical in benchmark_names():
-        return get_benchmark(canonical).data_file
-    return f"{benchmark}.jsonl"
+    try:
+        return get_benchmark(benchmark).data_file
+    except ValueError:
+        return f"{benchmark}.jsonl"
 
 
 def implicit_task_annotation(

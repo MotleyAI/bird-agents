@@ -18,8 +18,8 @@ from bird_interact_agents import paths
 
 # Set defaults for environment variables before any bird_interact_agents
 # imports that read them at module level (e.g. mini-interact-agent harness).
-os.environ.setdefault("BIRD_DATA_PATH", str(paths.mini_interact_data_file()))
-os.environ.setdefault("BIRD_DB_PATH", str(paths.mini_interact_root()))
+os.environ.setdefault("BIRD_DATA_PATH", str(paths.benchmark_data_file("mini-interact")))
+os.environ.setdefault("BIRD_DB_PATH", str(paths.benchmark_data_root("mini-interact")))
 
 
 # DEV-1508 perf: session-scoped cache for ``YAMLStorage.get_model`` /

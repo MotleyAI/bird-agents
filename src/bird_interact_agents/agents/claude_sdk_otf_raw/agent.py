@@ -142,10 +142,12 @@ class ClaudeSDKOtfRawAgent:
                 f"got {eval_mode!r}"
             )
 
-        dataset = task_data.get("dataset") or "livesqlbench"
-        if get_benchmark(dataset).name != "livesqlbench":
+        dataset = task_data.get("dataset")
+        if not dataset:
+            raise ValueError("task_data missing required 'dataset' field")
+        if not get_benchmark(dataset).one_shot:
             raise ValueError(
-                "claude_sdk_otf_raw is bound to --dataset livesqlbench; "
+                "claude_sdk_otf_raw requires a one-shot benchmark; "
                 f"got dataset={dataset!r}"
             )
 

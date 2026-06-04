@@ -14,7 +14,7 @@ set -euo pipefail
 MODE="a-interact"
 LIMIT=10
 CONCURRENCY=3
-FRAMEWORK="pydantic_ai"
+FRAMEWORK="claude_sdk"
 AGENT_MODEL="anthropic/claude-sonnet-4-5"
 USER_SIM_MODEL="anthropic/claude-haiku-4-5-20251001"
 OUTPUT_DIR=""
@@ -28,12 +28,11 @@ Usage: $0 [options]
   --limit N                         (default: 10)
   --concurrency K                   (default: 3)
   --output-dir DIR                  (default: results/3way_<timestamp>)
-  --framework {claude_sdk,pydantic_ai,smolagents,agno,mcp_agent}
-                                    (default: pydantic_ai — claude_sdk
-                                    cannot run from inside another
-                                    Claude Code session due to stdio
-                                    contention with the spawned `claude`
-                                    subprocess)
+  --framework FRAMEWORK             (default: claude_sdk — note: cannot run
+                                    from inside an active Claude Code session
+                                    due to stdio contention with the spawned
+                                    `claude` subprocess; use a plain terminal
+                                    or Codex in that case)
   --agent-model MODEL               LiteLLM-style PROVIDER/MODEL_ID
                                     (default: anthropic/claude-sonnet-4-5).
                                     Examples: cerebras/zai-glm-4.7,
@@ -220,11 +219,16 @@ run_ours() {
   else
     strict_flag="--no-strict"
   fi
+  local slayer_setup_flag=""
+  if [ "$query_mode" = "slayer" ]; then
+    slayer_setup_flag="--slayer-setup on-the-fly"
+  fi
   uv run python -m bird_interact_agents.run \
-    --dataset mini_interact \
+    --dataset mini-interact \
     --framework "$FRAMEWORK" \
     --mode "$MODE" \
     --query-mode "$query_mode" \
+    $slayer_setup_flag \
     --data "$DATA_PATH" \
     --db-path "$DB_PATH" \
     --output "$out_dir/eval.json" \

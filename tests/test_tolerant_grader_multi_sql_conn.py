@@ -33,7 +33,7 @@ def _audited_row(*, audited_sol_sql: list[str]) -> dict:
     return {
         "instance_id": "alien_1",
         "selected_database": "alien",
-        "benchmark": "mini_interact",
+        "benchmark": "mini-interact",
         "audit_status": "edited",
         "original_sol_sql": ["SELECT id FROM base WHERE id = 1"],
         "audited_sol_sql": audited_sol_sql,

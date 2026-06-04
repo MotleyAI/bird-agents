@@ -473,7 +473,7 @@ def load_livesqlbench_tasks(
     *,
     limit: int | None = None,
     filter_ids: list[str] | None = None,
-    dataset_marker: str = "livesqlbench",
+    dataset_marker: str = "livesqlbench-base-lite-sqlite",
 ) -> list[dict]:
     """Load + merge a LiveSQLBench task batch.
 
