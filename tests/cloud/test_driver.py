@@ -1487,9 +1487,9 @@ def test_manifest_and_job_args_carry_benchmark(monkeypatch):
     # De-bake: the gold rides along in the GCS dataset upload, so the manifest
     # stores the IN-CLUSTER path (under the benchmark's container_data_dir),
     # NOT the submitter's local path. `/abs/gold.jsonl` isn't under the data
-    # root or gated_gold_root → fallback under _gated_gold/ inside container dir.
+    # root or gated_gold_root → fallback under _gated_gold/<benchmark>/ inside container dir.
     _gated = driver.benchmark_data.GATED_GOLD_SUBDIR
-    assert m["gold_file"] == f"/data/livesqlbench-base-lite-sqlite/{_gated}/gold.jsonl"
+    assert m["gold_file"] == f"/data/livesqlbench-base-lite-sqlite/{_gated}/livesqlbench-base-lite-sqlite/gold.jsonl"
     assert m["benchmark_data_prefix"] == prefix
 
     # Avoid reading a real tasks file for the db-grouped sort.
@@ -1501,7 +1501,7 @@ def test_manifest_and_job_args_carry_benchmark(monkeypatch):
         args, "rid", attempt=1, benchmark_data_prefix=prefix,
     )
     assert ja[ja.index("--dataset") + 1] == "livesqlbench-base-lite-sqlite"
-    assert ja[ja.index("--gold-file") + 1] == f"/data/livesqlbench-base-lite-sqlite/{_gated}/gold.jsonl"
+    assert ja[ja.index("--gold-file") + 1] == f"/data/livesqlbench-base-lite-sqlite/{_gated}/livesqlbench-base-lite-sqlite/gold.jsonl"
     assert ja[ja.index("--benchmark-data-prefix") + 1] == prefix
 
 
@@ -1602,7 +1602,7 @@ def test_validate_gold_under_data_root_accepts_gated_gold(monkeypatch, tmp_path)
     args.gold_file = str(gold)
     driver._validate_gold_under_data_root(args)  # no raise
     assert driver._in_cluster_gold_file(args) == (
-        f"/data/livesqlbench-base-lite-sqlite/{driver.benchmark_data.GATED_GOLD_SUBDIR}/gt_kg.jsonl"
+        f"/data/livesqlbench-base-lite-sqlite/{driver.benchmark_data.GATED_GOLD_SUBDIR}/livesqlbench-base-lite-sqlite/gt_kg.jsonl"
     )
 
 

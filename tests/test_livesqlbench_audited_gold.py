@@ -292,10 +292,23 @@ def test_audit_file_exists_when_other_audits_are_present():
             f"no audited_gold/<db>/<db>_audited.jsonl present in {root}; "
             "no audit work in this checkout, so no DEV-1510 deliverable expected"
         )
-    path = root / "livesqlbench_audited.jsonl"
+    path = paths.audited_gold_file(benchmark="livesqlbench-base-lite-sqlite")
+    if not path.exists():
+        # Backward-compat: pre-migration name.
+        path = root / "livesqlbench_audited.jsonl"
+    # No task_annotation.json files → annotator hasn't run yet; audit can't
+    # exist. Skip rather than fail — the audit file is a downstream deliverable.
+    ann_root = paths.annotations_root() / "livesqlbench-base-lite-sqlite"
+    has_task_annotations = ann_root.is_dir() and any(ann_root.rglob("task_annotation.json"))
+    if not has_task_annotations:
+        pytest.skip(
+            "no livesqlbench task_annotation.json files found; "
+            "annotator hasn't run yet so the audit file can't exist"
+        )
     assert path.exists(), (
         f"expected audited-gold deliverable at {path}; mini-interact audits "
-        "are present but the livesqlbench single-file (DEV-1510) is not. "
+        "are present and livesqlbench annotations exist, but the "
+        "livesqlbench single-file (DEV-1510) is not. "
         "Re-author via the `audit-gold-sql-livesqlbench` skill."
     )
 

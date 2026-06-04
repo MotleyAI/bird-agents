@@ -118,6 +118,7 @@ def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     _benchmark_data.ensure_downloaded(prefix, dest, client=client)
     os.environ[b.data_root_env] = str(dest)
     os.environ[b.data_file_env] = str(dest / b.data_file)
+    os.environ["BIRD_GATED_GOLD_ROOT"] = str(dest / _benchmark_data.GATED_GOLD_SUBDIR)
 
 
 def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:

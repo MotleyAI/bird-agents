@@ -362,9 +362,9 @@ def _in_cluster_gold_file(args) -> str | None:
     except ValueError:
         pass
     try:
-        return str(container / benchmark_data.GATED_GOLD_SUBDIR / gp.relative_to(gated_gold))
+        return str(container / benchmark_data.GATED_GOLD_SUBDIR / bench / gp.relative_to(gated_gold))
     except ValueError:
-        return str(container / benchmark_data.GATED_GOLD_SUBDIR / gp.name)
+        return str(container / benchmark_data.GATED_GOLD_SUBDIR / bench / gp.name)
 
 
 def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:

@@ -185,7 +185,7 @@ def test_ensure_uploaded_includes_gated_gold_in_hash_and_upload(tmp_path, monkey
     assert prefix != f"benchmark-data/livesqlbench-base-lite-sqlite/{bd.content_hash(root)}/"
     # Two uploads: data root + gated gold subdir.
     assert calls[0] == (root, prefix.rstrip("/"))
-    assert calls[1] == (gated_root, f"{prefix.rstrip('/')}/{bd.GATED_GOLD_SUBDIR}")
+    assert calls[1] == (gated_root, f"{prefix.rstrip('/')}/{bd.GATED_GOLD_SUBDIR}/livesqlbench-base-lite-sqlite")
     assert (prefix + bd._MARKER) in client.store
 
 

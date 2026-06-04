@@ -2183,6 +2183,7 @@ def test_download_benchmark_data_downloads_and_sets_env(
     # under test writes os.environ directly).
     monkeypatch.setenv(root_env, "SENTINEL")
     monkeypatch.setenv(file_env, "SENTINEL")
+    monkeypatch.setenv("BIRD_GATED_GOLD_ROOT", "SENTINEL")
 
     prefix = f"benchmark-data/{dataset}/abc123/"
     ray_app.download_benchmark_data(
@@ -2193,6 +2194,7 @@ def test_download_benchmark_data_downloads_and_sets_env(
     import os as _os
     assert _os.environ[root_env] == container_dir
     assert _os.environ[file_env] == f"{container_dir}/{data_file}"
+    assert _os.environ["BIRD_GATED_GOLD_ROOT"] == f"{container_dir}/{ray_app._benchmark_data.GATED_GOLD_SUBDIR}"
 
 
 def test_download_benchmark_data_noop_without_prefix(
