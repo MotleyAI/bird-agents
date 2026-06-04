@@ -157,11 +157,16 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
         # Create the application role that the harness connects as.
         pg_user = os.environ.get("BIRD_PG_USER", "bird_interact")
         pg_pass = os.environ.get("BIRD_PG_PASSWORD", "bird_interact")
+        if not _SAFE_DB_NAME.match(pg_user):
+            raise RuntimeError(
+                f"Unsafe BIRD_PG_USER {pg_user!r}: must match [A-Za-z_][A-Za-z0-9_]*"
+            )
+        pg_pass_sql = pg_pass.replace("'", "''")  # SQL-escape single quotes
         subprocess.run(
             ["runuser", "-u", "postgres", "--", "psql", "-c",
              f"DO $$ BEGIN "
              f"IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{pg_user}') "
-             f"THEN CREATE ROLE {pg_user} LOGIN SUPERUSER PASSWORD '{pg_pass}'; "
+             f"THEN CREATE ROLE {pg_user} LOGIN SUPERUSER PASSWORD '{pg_pass_sql}'; "
              f"END IF; END $$;"],
             check=True,
             capture_output=True,
