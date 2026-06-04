@@ -545,6 +545,25 @@ def test_fill_deterministic_fields_overwrites_provenance_and_external_knowledge(
     assert filled.provenance.task_jsonl_instance_id == "shop_1"
 
 
+def test_fill_deterministic_fields_overwrites_amb_user_query():
+    """_fill_deterministic_fields must overwrite amb_user_query from task_data so
+    a truncated or misquoted agent copy is silently corrected."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    base = _minimal_annotation()
+    base["amb_user_query"] = "truncated query..."  # agent abbreviated it
+    ann = TaskAnnotation.model_validate(base)
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "amb_user_query": "Full canonical query text from the benchmark data file.",
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
+
+    assert filled.amb_user_query == "Full canonical query text from the benchmark data file."
+
+
 def test_fill_deterministic_fields_livesqlbench_provenance():
     """livesqlbench benchmark produces the correct task_jsonl_path from the registry."""
     from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields

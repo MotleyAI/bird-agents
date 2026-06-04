@@ -530,6 +530,11 @@ def _fill_deterministic_fields(
     if instance_id:
         updated.provenance.task_jsonl_instance_id = instance_id
 
+    # Ambiguous query — always authoritative from task data (never trust agent copy).
+    amb_user_query = task_data.get("amb_user_query")
+    if amb_user_query:
+        updated.amb_user_query = amb_user_query
+
     # External knowledge — verbatim from task data.
     ext_kb = task_data.get("external_knowledge")
     if ext_kb is not None:

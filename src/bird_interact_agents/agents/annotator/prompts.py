@@ -107,6 +107,7 @@ _SHARED_FIELD_INSTRUCTIONS = """\
 
 The following fields are filled automatically from task metadata by the harness
 after you submit — do NOT attempt to populate them yourself:
+  • amb_user_query (harness copies the canonical text; any value you supply is overwritten)
   • external_knowledge
   • masked_terms (the is_mask=True entries from critical_ambiguity)
   • provenance.task_jsonl_path and provenance.task_jsonl_instance_id
