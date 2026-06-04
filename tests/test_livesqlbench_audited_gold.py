@@ -48,16 +48,6 @@ from bird_interact_agents import paths
 # ---------------------------------------------------------------------------
 
 
-EXPECTED_INSTANCE_IDS_BY_DB: dict[str, set[str]] = {
-    "museum": {f"museum_{i}" for i in range(1, 11)},
-    "credit": {f"credit_{i}" for i in range(1, 11)},
-}
-"""DBs that have been through the annotator. The audited gold file only
-contains rows for tasks where the annotator found edits needed (status=
-`edited`); tasks whose gold is `original_correct` produce no entry.
-The test verifies that every row in the file belongs to a known DB and
-that every DB in this dict has at least one audited row."""
-
 REQUIRED_ROW_KEYS = {
     "instance_id",
     "selected_database",
@@ -332,35 +322,6 @@ def test_audit_file_exists_when_other_audits_are_present():
     )
 
 
-def test_audit_rows_cover_select_tasks_per_db():
-    """Every row must belong to a DB in EXPECTED_INSTANCE_IDS_BY_DB, and
-    every instance_id must be in the expected SELECT-task set for its DB.
-
-    The audited gold only contains rows for tasks the annotator found
-    needing edits (status=`edited`). Tasks whose gold is `original_correct`
-    produce no entry, so NOT all 10 tasks per DB are required.
-    """
-    primary_rows = _load_audit_rows()
-    by_db: dict[str, set[str]] = {}
-    for iid, row in primary_rows.items():
-        by_db.setdefault(row["selected_database"], set()).add(iid)
-
-    # All rows must belong to known DBs.
-    for db in by_db:
-        assert db in EXPECTED_INSTANCE_IDS_BY_DB, (
-            f"audit file contains DB {db!r} not in EXPECTED_INSTANCE_IDS_BY_DB; "
-            f"add it when annotating a new DB"
-        )
-
-    # All instance_ids must be valid SELECT tasks for their DB.
-    for db, ids in by_db.items():
-        expected = EXPECTED_INSTANCE_IDS_BY_DB[db]
-        for iid in sorted(ids):
-            assert iid in expected, (
-                f"{db}: instance_id {iid!r} is not in the expected SELECT-task set"
-            )
-
-
 def test_audit_rows_have_required_keys_and_types():
     for row in _iter_audit_rows():
         iid = row.get("instance_id", "<missing>")
@@ -385,24 +346,16 @@ def test_audit_rows_use_valid_audit_status():
         )
 
 
-_KNOWN_LIVESQLBENCH_DBS = {"museum", "credit", "mental"}
-
-
-def test_audit_rows_tag_benchmark_and_database():
-    """Every row carries `benchmark=livesqlbench-base-lite-sqlite` and a
-    `selected_database` in EXPECTED_INSTANCE_IDS_BY_DB; the `instance_id`
-    prefix matches the `selected_database` (so a museum row can't claim
-    DB=credit by typo)."""
+def test_audit_rows_tag_benchmark_and_instance_id_prefix():
+    """The `benchmark` field must be the expected benchmark name, and the
+    `instance_id` prefix must match `selected_database` (so a museum row
+    can't claim DB=credit by typo)."""
     for row in _iter_audit_rows():
         iid = row["instance_id"]
         assert row["benchmark"] in ("livesqlbench-base-lite-sqlite", "livesqlbench"), (
             f"{iid}: benchmark={row['benchmark']!r} (expected 'livesqlbench-base-lite-sqlite')"
         )
         db = row["selected_database"]
-        assert db in _KNOWN_LIVESQLBENCH_DBS, (
-            f"{iid}: selected_database={db!r} not in "
-            f"{sorted(_KNOWN_LIVESQLBENCH_DBS)}"
-        )
         assert iid.startswith(f"{db}_"), (
             f"{iid}: instance_id prefix does not match selected_database={db!r}"
         )

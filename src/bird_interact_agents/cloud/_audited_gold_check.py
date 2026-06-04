@@ -243,7 +243,7 @@ def missing_audited_gold_ids(
                 continue
             if status in ("clean", "original"):
                 continue
-            if status == "edited" and has_audited_sql:
+            if status in ("edited", "unrecoverable") and has_audited_sql:
                 continue
             missing.append(iid)
         return missing

@@ -13,6 +13,7 @@ import contextlib
 import fcntl
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -118,6 +119,7 @@ def _pg_version() -> str:
 
 _PG_INIT_LOCK = Path("/tmp/pg_init.lock")
 _PG_LOADED_MARKER = Path("/tmp/pg_loaded.marker")
+_SAFE_DB_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 def _ensure_postgres_loaded(data_dir: Path) -> None:
@@ -147,19 +149,38 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
             capture_output=True,
         )
 
+        # Create the application role that the harness connects as.
+        pg_user = os.environ.get("BIRD_PG_USER", "bird_interact")
+        pg_pass = os.environ.get("BIRD_PG_PASSWORD", "bird_interact")
+        subprocess.run(
+            ["runuser", "-u", "postgres", "--", "psql", "-c",
+             f"DO $$ BEGIN "
+             f"IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{pg_user}') "
+             f"THEN CREATE ROLE {pg_user} LOGIN SUPERUSER PASSWORD '{pg_pass}'; "
+             f"END IF; END $$;"],
+            check=True,
+            capture_output=True,
+        )
+
         for db_dir in sorted(pg_dumps_dir.iterdir()):
             if not db_dir.is_dir():
                 continue
             db = db_dir.name
+            if not _SAFE_DB_NAME.match(db):
+                raise RuntimeError(
+                    f"Unsafe database name {db!r} in pg_dumps/. "
+                    "DB names must start with a letter or underscore and contain "
+                    "only letters, digits, and underscores."
+                )
             subprocess.run(
-                ["su", "-", "postgres", "-c", f"createdb {db}"],
+                ["runuser", "-u", "postgres", "--", "createdb", db],
                 check=False,  # already exists on retry → non-zero, that's fine
                 capture_output=True,
             )
             for sql_file in sorted(db_dir.glob("*.sql")):
                 subprocess.run(
-                    ["su", "-", "postgres", "-c",
-                     f"psql -d {db} -f {sql_file}"],
+                    ["runuser", "-u", "postgres", "--",
+                     "psql", "-d", db, "-f", str(sql_file)],
                     check=True,
                 )
 

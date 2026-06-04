@@ -25,8 +25,8 @@ def _make_pg_dumps_dir(tmp_path: Path, dbs: list[str]) -> Path:
     return tmp_path
 
 
-def _su_postgres(cmd_str: str) -> list[str]:
-    return ["su", "-", "postgres", "-c", cmd_str]
+def _runuser_postgres(*args: str) -> list[str]:
+    return ["runuser", "-u", "postgres", "--", *args]
 
 
 # ---------------------------------------------------------------------------
@@ -56,13 +56,18 @@ def test_ensure_postgres_loaded_calls_subprocess(
 
     assert calls_seen[0] == ["pg_ctlcluster", "17", "main", "start"]
 
-    assert _su_postgres("createdb alien") in calls_seen
-    assert _su_postgres("createdb bird") in calls_seen
+    # role-creation call appears before any createdb
+    role_calls = [c for c in calls_seen if "psql" in c and "-c" in c]
+    assert len(role_calls) == 1
+    assert "bird_interact" in role_calls[0][-1]
+
+    assert _runuser_postgres("createdb", "alien") in calls_seen
+    assert _runuser_postgres("createdb", "bird") in calls_seen
 
     alien_sql = str(data_dir / "pg_dumps" / "alien" / "alien.sql")
     bird_sql = str(data_dir / "pg_dumps" / "bird" / "bird.sql")
-    assert _su_postgres(f"psql -d alien -f {alien_sql}") in calls_seen
-    assert _su_postgres(f"psql -d bird -f {bird_sql}") in calls_seen
+    assert _runuser_postgres("psql", "-d", "alien", "-f", alien_sql) in calls_seen
+    assert _runuser_postgres("psql", "-d", "bird", "-f", bird_sql) in calls_seen
 
     assert (tmp_path / "pg_loaded.marker").exists()
 
@@ -155,6 +160,8 @@ def test_ensure_postgres_loaded_concurrent_actors_serialize(
     t1.join(timeout=5)
     t2.join(timeout=5)
 
+    assert not t1.is_alive(), f"t1 still alive; errors: {errors}"
+    assert not t2.is_alive(), f"t2 still alive; errors: {errors}"
     assert errors == [], f"thread errors: {errors}"
     assert pg_ctlcluster_call_count[0] == 1, (
         f"pg_ctlcluster called {pg_ctlcluster_call_count[0]} times, expected 1"
