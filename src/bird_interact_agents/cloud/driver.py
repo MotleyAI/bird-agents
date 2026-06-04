@@ -118,14 +118,19 @@ def mint_run_id(framework: str, query_mode: str) -> str:
 
 def read_api_keys_from_local_env(
     agent_model: str, user_sim_model: str, *, query_mode: str = "raw",
-    framework: str = "",
+    framework: str = "", no_subscription_auth: bool = False,
 ) -> dict[str, str]:
     import os
 
     # DEV-1517: claude_sdk* + CLAUDE_CODE_OAUTH_TOKEN present → OAuth path.
     # Ship the token and rename the user-sim Anthropic key so the SDK cannot
     # see ANTHROPIC_API_KEY and is forced to use the OAuth token.
-    if prereqs._is_claude_sdk_framework(framework) and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+    # DEV-1530: no_subscription_auth=True forces the legacy API-key path.
+    if (
+        prereqs._is_claude_sdk_framework(framework)
+        and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+        and not no_subscription_auth
+    ):
         token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
         if not token.startswith("sk-ant-oat01-"):
             raise PrereqError(
@@ -236,6 +241,7 @@ def build_manifest(
         "slayer_storage_root": getattr(
             args, "slayer_storage_root", "/data/slayer_models"
         ),
+        "no_subscription_auth": bool(getattr(args, "no_subscription_auth", False)),
         "render_inputs": {
             "workers": args.workers,
             "actors_per_worker": args.actors_per_worker,
@@ -622,6 +628,7 @@ def submit(args) -> str:
         env_vars = read_api_keys_from_local_env(
             args.agent_model, args.user_sim_model, query_mode=args.query_mode,
             framework=args.framework,
+            no_subscription_auth=getattr(args, "no_subscription_auth", False),
         )
         job_args = _build_job_args(
             args, run_id, attempt=1,
@@ -721,6 +728,7 @@ def build_annotator_manifest(
         "effort": getattr(args, "effort", "medium"),
         "override": getattr(args, "override", False),
         "instance_ids": list(args.instance_ids),
+        "no_subscription_auth": bool(getattr(args, "no_subscription_auth", False)),
         "render_inputs": {
             "workers": args.workers,
             "actors_per_worker": args.actors_per_worker,
@@ -770,6 +778,7 @@ def submit_annotator(args) -> str:
         user_sim_model="",
         query_mode="raw",
         framework="annotator",
+        no_subscription_auth=getattr(args, "no_subscription_auth", False),
     )
     prereqs.check(_prereq_args)
     repo_root = submitter_repo_root()
@@ -803,6 +812,7 @@ def submit_annotator(args) -> str:
         env_vars = read_api_keys_from_local_env(
             args.agent_model, "", query_mode="raw",
             framework="annotator",
+            no_subscription_auth=getattr(args, "no_subscription_auth", False),
         )
         job_args = _build_annotator_job_args(
             args, run_id, benchmark_data_prefix=benchmark_data_prefix,
@@ -1059,6 +1069,7 @@ def resubmit(run_id: str) -> None:
         cluster.up(yaml_path)
         head = cluster.head_address(yaml_path)
         _framework = manifest.get("framework", "")
+        _no_subscription_auth = bool(manifest.get("no_subscription_auth", False))
         if not _framework:
             logger.info(
                 "resubmit: manifest has no 'framework' field (pre-DEV-1517); "
@@ -1068,6 +1079,7 @@ def resubmit(run_id: str) -> None:
             env_vars = read_api_keys_from_local_env(
                 manifest["agent_model"], "",
                 query_mode="raw", framework="annotator",
+                no_subscription_auth=_no_subscription_auth,
             )
             job_args = _build_annotator_resubmit_args(manifest, run_id, missing, next_attempt)
             cluster.submit_job(
@@ -1079,6 +1091,7 @@ def resubmit(run_id: str) -> None:
                 manifest["agent_model"], manifest["user_sim_model"],
                 query_mode=manifest.get("query_mode", "raw"),
                 framework=_framework,
+                no_subscription_auth=_no_subscription_auth,
             )
             job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
             cluster.submit_job(
