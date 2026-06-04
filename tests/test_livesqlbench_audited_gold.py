@@ -292,7 +292,7 @@ def test_audit_file_exists_when_other_audits_are_present():
             f"no audited_gold/<db>/<db>_audited.jsonl present in {root}; "
             "no audit work in this checkout, so no DEV-1510 deliverable expected"
         )
-    path = root / "livesqlbench_audited.jsonl"
+    path = paths.audited_gold_file(benchmark="livesqlbench-base-lite-sqlite")
     assert path.exists(), (
         f"expected audited-gold deliverable at {path}; mini-interact audits "
         "are present but the livesqlbench single-file (DEV-1510) is not. "

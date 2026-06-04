@@ -221,41 +221,13 @@ def _load_annotator_task_data(
     instance_ids: list[str],
     *,
     benchmark: str,
-    gold_file: str | None = None,
 ) -> dict[str, dict]:
-    """Load plain task data for the annotator (no audited-gold overlay)."""
-    bench = get_benchmark(benchmark)
-    if bench.gold_required and gold_file is None:
-        # DEV-1525: gated gold lives at paths.gated_gold_root(benchmark=) /
-        # <gt_sidecar>.jsonl; a BIRD_GATED_GOLD_ROOT env var overrides the
-        # parent dir (benchmark subdir still appended).
-        gated_root = paths.gated_gold_root(benchmark=benchmark)
-        search_dirs = [gated_root]
-        candidates = [
-            f for d in search_dirs if d.is_dir()
-            for f in sorted(d.glob("*.jsonl"))
-        ]
-        if len(candidates) == 1:
-            gold_file = str(candidates[0])
-        elif len(candidates) > 1:
-            raise RuntimeError(
-                f"Benchmark {benchmark!r} requires a gold sidecar but multiple "
-                f"*.jsonl files were found: {candidates}. "
-                f"Pass --gold-file explicitly to disambiguate."
-            )
-
-    if bench.gold_required and gold_file is None:
-        raise RuntimeError(
-            f"Benchmark {benchmark!r} requires a gold sidecar file but none was found. "
-            f"Place a single *.jsonl in {paths.gated_gold_root(benchmark=benchmark)} "
-            f"(set BIRD_GATED_GOLD_ROOT to override the parent directory) "
-            f"or pass --gold-file explicitly."
-        )
-
+    """Load plain task data for the annotator (no audited-gold overlay).
+    Gold is auto-discovered from gated_gold/<benchmark>/ via load_benchmark_tasks.
+    """
     rows = load_benchmark_tasks(
         benchmark,
         str(paths.benchmark_data_file(benchmark)),
-        gold_file,
         filter_ids=instance_ids,
     )
     return {td["instance_id"]: td for td in rows}
@@ -391,8 +363,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--attempt", type=int, default=1,
                    help="attempt number (1-based); used in the GCS blob name")
-    p.add_argument("--gold-file", default=None,
-                   help="explicit path to the gold sidecar JSONL (overrides env lookup)")
     args = p.parse_args(argv)
 
     args.benchmark = get_benchmark(args.benchmark).name
@@ -405,13 +375,13 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     task_data_by_id = _load_annotator_task_data(
-        instance_ids, benchmark=args.benchmark, gold_file=args.gold_file,
+        instance_ids, benchmark=args.benchmark,
     )
 
     _b = get_benchmark(args.benchmark)
     data_path_base = (
         args.data_path_base
-        or os.environ.get(_b.data_root_env)
+        or (str(paths.benchmark_data_root(_b)) if os.environ.get("BIRD_BENCHMARKS_ROOT") else None)
         or _b.container_data_dir
     )
 

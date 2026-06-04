@@ -59,10 +59,9 @@ def test_benchmark_is_frozen():
 def test_mini_interact_facts():
     b = get_benchmark("mini-interact")
     assert b.dataset_marker == "mini-interact"
-    assert b.data_subdir == "mini-interact"
     assert b.data_file == "mini_interact.jsonl"
     assert b.one_shot is False
-    assert b.gold_required is False
+    assert b.gold_required is True
     assert b.per_task_db_isolation is False
     assert b.container_data_dir == "/data/mini-interact"
     assert "a-interact" in b.supported_modes and "oracle" in b.supported_modes
@@ -72,7 +71,6 @@ def test_mini_interact_facts():
 def test_livesqlbench_facts():
     b = get_benchmark("livesqlbench-base-lite-sqlite")
     assert b.dataset_marker == "livesqlbench-base-lite-sqlite"
-    assert b.data_subdir == "livesqlbench-base-lite-sqlite"
     assert b.data_file == "livesqlbench_data_sqlite.jsonl"
     assert b.one_shot is True
     assert b.gold_required is True
@@ -81,12 +79,10 @@ def test_livesqlbench_facts():
     assert set(b.supported_modes) == {"one-shot", "oracle"}
 
 
-def test_distinct_container_dirs_and_data_files():
-    """No two benchmarks may share a container data dir or data filename — that
-    would re-introduce the cross-benchmark collision this registry prevents."""
+def test_distinct_container_dirs():
+    """No two benchmarks may share a container data dir."""
     bs = all_benchmarks()
     assert len({b.container_data_dir for b in bs}) == len(bs)
-    assert len({(b.data_subdir, b.data_file) for b in bs}) == len(bs)
 
 
 def test_type_is_benchmark():
@@ -127,10 +123,7 @@ def test_audited_gold_layout_rejects_unknown_value():
         Benchmark(
             name="x",
             dataset_marker="x",
-            data_subdir="x",
             data_file="x.jsonl",
-            data_root_env="X_ROOT",
-            data_file_env="X_DATA",
             supported_modes=("one-shot",),
             one_shot=True,
             gold_required=False,

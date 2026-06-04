@@ -211,18 +211,17 @@ def test_driver_fetch_twice_idempotent(
     ).encode()
 
     monkeypatch.setattr(driver, "default_gcs_client", lambda: client)
-    monkeypatch.setattr(
-        driver, "local_results_root",
-        lambda: tmp_path,
-    )
+    monkeypatch.setattr(driver.paths, "results_root", lambda: tmp_path)
 
     driver.fetch(RUN_ID)
-    rows1 = _read_rows(tmp_path / RUN_ID / "results.db")
-    eval1 = json.loads((tmp_path / RUN_ID / "eval.json").read_text())
+    # Manifest has no "dataset", so benchmark defaults to "mini-interact".
+    dest = tmp_path / "mini-interact" / "cloud" / RUN_ID
+    rows1 = _read_rows(dest / "results.db")
+    eval1 = json.loads((dest / "eval.json").read_text())
 
     driver.fetch(RUN_ID)
-    rows2 = _read_rows(tmp_path / RUN_ID / "results.db")
-    eval2 = json.loads((tmp_path / RUN_ID / "eval.json").read_text())
+    rows2 = _read_rows(dest / "results.db")
+    eval2 = json.loads((dest / "eval.json").read_text())
 
     assert len(rows1) == 1
     assert len(rows2) == 1

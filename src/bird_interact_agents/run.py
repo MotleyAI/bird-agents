@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import datetime
 import json
 import logging
 import shutil
@@ -764,7 +765,6 @@ async def run_evaluation(
     slayer_setup: str = "pre-encoded",
     otf_rebuild: bool = False,
     dataset: str = "mini-interact",
-    gold_file: str | None = None,
     reasoning_effort: str | None = None,
 ) -> dict:
     """Run full evaluation across all tasks."""
@@ -775,12 +775,6 @@ async def run_evaluation(
         query_mode=query_mode, mode=mode,
     )
     b = get_benchmark(dataset)
-    if b.gold_required and not gold_file:
-        raise ValueError(
-            f"--dataset {b.name} requires --gold-file (the gated sidecar "
-            "carrying sol_sql / external_knowledge / test_cases keyed by "
-            "instance_id)",
-        )
 
     # B3 empty-filter footgun hardening: a caller that passes
     # `filter_ids=[]` (e.g. `--instance-id ",,, "` collapsing to empty)
@@ -796,7 +790,7 @@ async def run_evaluation(
     # a gold-required benchmark merges its gated sidecar + stamps the marker +
     # SELECT-filters; otherwise plain load + optional instance-id filter.
     tasks = load_benchmark_tasks(
-        dataset, data_path, gold_file, limit=limit, filter_ids=filter_ids,
+        dataset, data_path, limit=limit, filter_ids=filter_ids,
     )
 
     # --otf-rebuild: force-wipe BOTH on-the-fly layers (cache + reference) for
@@ -1210,18 +1204,8 @@ def main() -> None:
         help=(
             "Which benchmark to load (from the benchmark registry). "
             "REQUIRED — no default. Use canonical hyphenated names: "
-            "mini-interact, livesqlbench-base-lite-sqlite (requires --gold-file), "
+            "mini-interact, livesqlbench-base-lite-sqlite, "
             "livesqlbench-base-lite (postgres), bird-interact-lite-exp (postgres)."
-        ),
-    )
-    parser.add_argument(
-        "--gold-file",
-        default=None,
-        help=(
-            "Path to the gated LiveSQLBench gold sidecar "
-            "(`*_gt_kg_testcases_*.jsonl`) — required when "
-            "--dataset livesqlbench. Carries sol_sql / external_knowledge / "
-            "test_cases keyed by instance_id."
         ),
     )
     parser.add_argument(
@@ -1238,8 +1222,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default=str(paths.results_root() / "eval.json"),
-        help="Output JSON path (default: <main_checkout>/results/eval.json)",
+        default=None,
+        help=(
+            "Output JSON path. Defaults to "
+            "results/<benchmark>/<YYYYMMDDtHHMM>_<framework>_<query_mode>/eval.json "
+            "under the main checkout."
+        ),
     )
     parser.add_argument("--limit", type=int, default=None, help="Max tasks to run")
     parser.add_argument("--concurrency", type=int, default=3)
@@ -1436,15 +1424,17 @@ def main() -> None:
             query_mode=args.query_mode,
             mode=args.mode,
         )
-        _b = get_benchmark(args.dataset)
-        if _b.gold_required and not args.gold_file:
-            raise ValueError(
-                f"--dataset {_b.name} requires --gold-file (the gated "
-                "sidecar carrying sol_sql / external_knowledge / test_cases "
-                "keyed by instance_id).",
-            )
     except ValueError as e:
         parser.error(str(e))
+
+    if args.output is None:
+        ts = datetime.datetime.now().strftime("%Y%m%dt%H%M")
+        args.output = str(
+            paths.results_root()
+            / args.dataset
+            / f"{ts}_{args.framework}_{args.query_mode}"
+            / "eval.json"
+        )
 
     if args.price_overrides:
         _apply_price_overrides(args.price_overrides)
@@ -1487,7 +1477,6 @@ def main() -> None:
             slayer_setup=args.slayer_setup,
             otf_rebuild=args.otf_rebuild,
             dataset=args.dataset,
-            gold_file=args.gold_file,
             reasoning_effort=args.reasoning_effort,
         )
     )

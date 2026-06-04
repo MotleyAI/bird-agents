@@ -24,6 +24,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
+from bird_interact_agents import paths
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
@@ -97,14 +98,13 @@ def _cloud_benchmark(cfg: dict[str, Any]) -> str:
 def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     """Download the run's benchmark dataset from its content-hashed GCS prefix
     into the benchmark's ``container_data_dir`` (once per node via the local
-    completeness marker), then point the benchmark's data-root/data-file env
-    vars at it so ``paths.benchmark_data_*`` + the per-task loaders/ingest
-    resolve to the downloaded tree.
+    completeness marker), then set ``BIRD_BENCHMARKS_ROOT`` to the parent of
+    the downloaded tree so ``paths.benchmark_data_*`` + the per-task
+    loaders/ingest resolve to the downloaded data.
 
-    De-bake: this replaces the image-baked ``/data/mini-interact`` and the
-    ``BIRD_DB_PATH``/``BIRD_DATA_PATH`` env vars that ``cluster.yaml.j2`` used
-    to pin. Runs in BOTH the head job driver (before ``_load_task_data``) AND
-    each worker actor's ``__init__`` (before ingest), mirroring the per-worker
+    De-bake: this replaces the image-baked ``/data/<benchmark>`` tree.
+    Runs in BOTH the head job driver (before ``_load_task_data``) AND each
+    worker actor's ``__init__`` (before ingest), mirroring the per-worker
     slayer-artifact download.
 
     No-op when ``cfg['benchmark_data_prefix']`` is falsy — a pre-de-bake run
@@ -116,8 +116,8 @@ def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     dest = Path(b.container_data_dir)
     client = client or default_gcs_client()
     _benchmark_data.ensure_downloaded(prefix, dest, client=client)
-    os.environ[b.data_root_env] = str(dest)
-    os.environ[b.data_file_env] = str(dest / b.data_file)
+    os.environ["BIRD_BENCHMARKS_ROOT"] = str(dest.parent)
+    os.environ["BIRD_GATED_GOLD_ROOT"] = str(dest / _benchmark_data.GATED_GOLD_SUBDIR)
 
 
 def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
@@ -535,10 +535,10 @@ def _run_one_in_actor(
     task_start_ts = time.time()
     _grader_data_dir = None
 
-    # `cfg["data_dir"]` is the benchmark's container_data_dir, resolved
-    # benchmark-aware in `run_pool` (mini → BIRD_DB_PATH,
-    # livesqlbench → BIRD_LIVESQLBENCH_ROOT). Hoisted out of the try block
-    # so it is always bound when the grader path runs below.
+    # `cfg["data_dir"]` is the benchmark's data root on this node —
+    # either BIRD_BENCHMARKS_ROOT/<name> (download_benchmark_data sets it)
+    # or the baked container_data_dir. Hoisted out of the try block so it
+    # is always bound when the grader path runs below.
     data_dir = cfg.get("data_dir") or "/data/mini-interact"
 
     try:
@@ -1110,7 +1110,11 @@ def run_pool(
         # data-root env override first (download_benchmark_data sets it to the
         # downloaded tree on the head; on a baked/back-compat run it's the
         # baked path), else the canonical container dir.
-        "data_dir": os.environ.get(_b.data_root_env) or _b.container_data_dir,
+        "data_dir": (
+            str(paths.benchmark_data_root(_b))
+            if "BIRD_BENCHMARKS_ROOT" in os.environ
+            else _b.container_data_dir
+        ),
     }
 
     heartbeat = HeartbeatWriter(
@@ -1392,18 +1396,16 @@ def _load_task_data(
     instance_ids: list[str],
     *,
     dataset: str,
-    gold_file: str | None = None,
     use_audited_gold_sql: bool = False,
 ) -> dict[str, dict]:
     """Load per-task dicts for ``dataset`` via the benchmark-aware loader (the
-    SAME dispatch the local runner uses): a gold-required benchmark merges its
-    gated sidecar + stamps the dataset marker + SELECT-filters; otherwise plain
-    load. Filtered to the run's ``instance_ids``.
+    SAME dispatch the local runner uses): auto-discovers gold from gated_gold/,
+    merges the sidecar + stamps the dataset marker + SELECT-filters.
+    Filtered to the run's ``instance_ids``.
 
-    DEV-1510: the audited-gold overlay now fires for ALL benchmarks. The
+    DEV-1510: the audited-gold overlay fires for ALL benchmarks. The
     per-benchmark `audited_gold_layout` on the `Benchmark` descriptor
-    selects the on-disk shape (per_db for mini-interact, single_file for
-    livesqlbench), so cloud actors evaluate against audited gold for both.
+    selects the on-disk shape (single_file for all current benchmarks).
     """
     from bird_interact_agents import paths
     from bird_interact_agents.benchmark import get_benchmark
@@ -1412,7 +1414,6 @@ def _load_task_data(
     rows = load_benchmark_tasks(
         dataset,
         str(paths.benchmark_data_file(dataset)),
-        gold_file,
         filter_ids=instance_ids,
     )
     if use_audited_gold_sql:
@@ -1461,7 +1462,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--user-sim-model", required=True)
     p.add_argument("--dataset", required=True,
                    choices=cli_dataset_tokens())
-    p.add_argument("--gold-file", default=None)
     p.add_argument(
         "--benchmark-data-prefix", default=None,
         help="content-hashed GCS prefix the benchmark dataset was uploaded to "
@@ -1510,7 +1510,6 @@ def main(argv: list[str] | None = None) -> int:
     task_data_by_id = _load_task_data(
         instance_ids,
         dataset=args.dataset,
-        gold_file=args.gold_file,
         use_audited_gold_sql=args.use_audited_gold_sql,
     )
 

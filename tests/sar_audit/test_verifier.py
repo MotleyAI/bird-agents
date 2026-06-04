@@ -64,7 +64,7 @@ def test_verifier_accepts_audit_set_flag():
     assert "sar" in result.stdout
 
 
-def test_sar_ambiguous_row_with_change_passes(tmp_path: Path, monkeypatch):
+def test_sar_ambiguous_row_with_change_passes(tmp_path: Path):
     """Synthetic ambiguous SAR row with one sar_ambiguous change validates."""
     _stage_sar_db(tmp_path, "fake_db_ambig")
 
@@ -243,8 +243,7 @@ def _stage_sar_db(tmp_path: Path, db: str):
 def _run_verifier(tmp_path: Path, db: str, audit_set: str):
     """Runs the verifier with env vars pointing at the synthetic dirs."""
     env_overrides = {
-        "BIRD_DB_PATH": str(tmp_path / "mini-interact"),
-        "BIRD_DATA_PATH": str(tmp_path / "mini-interact" / "mini_interact.jsonl"),
+        "BIRD_BENCHMARKS_ROOT": str(tmp_path),
         "BIRD_AUDITED_GOLD_ROOT": str(tmp_path / "audited_gold"),
         "BIRD_SAR_AUDITED_GOLD_ROOT": str(tmp_path / "sar_audited_gold"),
     }

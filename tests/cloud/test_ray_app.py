@@ -1511,12 +1511,11 @@ def test_actor_uses_env_resolved_paths(
     monkeypatch.setattr(ray_app, "default_gcs_client", lambda: client)
     monkeypatch.setattr(ray_app, "_maybe_build_cached_runner", lambda _cfg: None)
 
-    mi = tmp_path / "mi"
+    mi = tmp_path / "mini-interact"
     mi.mkdir()
     (mi / "mini_interact.jsonl").write_text("")
     results = tmp_path / "results"
-    monkeypatch.setenv("BIRD_DB_PATH", str(mi))
-    monkeypatch.setenv("BIRD_DATA_PATH", str(mi / "mini_interact.jsonl"))
+    monkeypatch.setenv("BIRD_BENCHMARKS_ROOT", str(tmp_path))
     monkeypatch.setenv("BIRD_RESULTS_ROOT", str(results))
 
     seen: list[tuple[str, str | None]] = []
@@ -1555,7 +1554,7 @@ def test_actor_uses_env_resolved_paths(
 
     assert seen, "actor never invoked run_one_task"
     _iid, data_dir = seen[0]
-    # The actor passes the env-resolved BIRD_DB_PATH as `data_dir`.
+    # The actor passes BIRD_BENCHMARKS_ROOT/<name> as `data_dir`.
     assert data_dir == str(mi)
 
 
@@ -2150,28 +2149,24 @@ def test_actor_initial_seed_fps_empty_when_no_seed(
 
 # ---------------------------------------------------------------------------
 # De-bake: download_benchmark_data pulls the run's dataset from its GCS prefix
-# into the benchmark's container_data_dir and points the benchmark's
-# data-root/data-file env vars at it. Runs on the head (before task-load) AND
-# in each actor's __init__ (before ingest).
+# into the benchmark's container_data_dir and sets BIRD_BENCHMARKS_ROOT to the
+# parent so paths.benchmark_data_root resolves the downloaded tree.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "dataset, container_dir, root_env, file_env, data_file",
+    "dataset, container_dir",
     [
-        ("mini-interact", "/data/mini-interact", "BIRD_DB_PATH",
-         "BIRD_DATA_PATH", "mini_interact.jsonl"),
-        ("livesqlbench-base-lite-sqlite", "/data/livesqlbench-base-lite-sqlite", "BIRD_LIVESQLBENCH_ROOT",
-         "BIRD_LIVESQLBENCH_DATA_FILE", "livesqlbench_data_sqlite.jsonl"),
+        ("mini-interact", "/data/mini-interact"),
+        ("livesqlbench-base-lite-sqlite", "/data/livesqlbench-base-lite-sqlite"),
     ],
 )
 def test_download_benchmark_data_downloads_and_sets_env(
-    monkeypatch: pytest.MonkeyPatch, dataset, container_dir, root_env,
-    file_env, data_file,
+    monkeypatch: pytest.MonkeyPatch, dataset, container_dir,
 ):
     """The dataset is downloaded into the benchmark's container_data_dir and
-    the benchmark's data-root/data-file env vars point at it, so
-    `paths.benchmark_data_*` + the loaders resolve the downloaded tree."""
+    BIRD_BENCHMARKS_ROOT is set to the parent dir so paths.benchmark_data_root
+    resolves the downloaded tree for any benchmark."""
     from pathlib import Path as _P
 
     calls: list = []
@@ -2179,10 +2174,8 @@ def test_download_benchmark_data_downloads_and_sets_env(
         ray_app._benchmark_data, "ensure_downloaded",
         lambda prefix, dest, **kw: calls.append((prefix, _P(dest))) or _P(dest),
     )
-    # Pre-set the env keys so monkeypatch restores them on teardown (the code
-    # under test writes os.environ directly).
-    monkeypatch.setenv(root_env, "SENTINEL")
-    monkeypatch.setenv(file_env, "SENTINEL")
+    monkeypatch.setenv("BIRD_BENCHMARKS_ROOT", "SENTINEL")
+    monkeypatch.setenv("BIRD_GATED_GOLD_ROOT", "SENTINEL_GATED")
 
     prefix = f"benchmark-data/{dataset}/abc123/"
     ray_app.download_benchmark_data(
@@ -2191,8 +2184,8 @@ def test_download_benchmark_data_downloads_and_sets_env(
     )
     assert calls == [(prefix, _P(container_dir))]
     import os as _os
-    assert _os.environ[root_env] == container_dir
-    assert _os.environ[file_env] == f"{container_dir}/{data_file}"
+    assert _os.environ["BIRD_BENCHMARKS_ROOT"] == str(_P(container_dir).parent)
+    assert _os.environ["BIRD_GATED_GOLD_ROOT"] == str(_P(container_dir) / "_gated_gold")
 
 
 def test_download_benchmark_data_noop_without_prefix(

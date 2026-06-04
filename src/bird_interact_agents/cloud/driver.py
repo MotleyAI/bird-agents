@@ -214,18 +214,14 @@ def build_manifest(
 ) -> dict:
     """Build the manifest dict from a SubmitArgs-like object.
 
-    ``gold_file`` is stored as the IN-CLUSTER path (under the benchmark's
-    ``container_data_dir``), not the submitter's local path, so ``resubmit``
-    on any machine re-derives identical job args. ``benchmark_data_prefix`` is
-    the content-hashed GCS prefix the dataset was uploaded to at submit; the
-    actor downloads from it per node."""
+    ``benchmark_data_prefix`` is the content-hashed GCS prefix the dataset was
+    uploaded to at submit; the actor downloads from it per node."""
     instance_ids = list(args.instance_ids)
     return {
         "run_id": run_id,
         "framework": args.framework,
         "mode": args.mode,
         "dataset": _submit_benchmark(args),
-        "gold_file": _in_cluster_gold_file(args),
         "benchmark_data_prefix": benchmark_data_prefix,
         "query_mode": args.query_mode,
         "agent_model": args.agent_model,
@@ -307,60 +303,6 @@ def _submit_benchmark(args) -> str:
     )
 
 
-def _validate_gold_under_data_root(args) -> None:
-    """The gated gold sidecar rides along in the GCS dataset upload, so it
-    MUST physically sit under the benchmark data root OR under
-    ``paths.gated_gold_root(benchmark=...)``. Fail fast at submit otherwise —
-    the file would be silently absent in-cluster and every task would fail to
-    score. No-op when no gold file is given."""
-    gold_file = getattr(args, "gold_file", None)
-    if not gold_file:
-        return
-    bench = _submit_benchmark(args)
-    data_root = paths.benchmark_data_root(bench).resolve()
-    gated_gold = paths.gated_gold_root(benchmark=bench).resolve()
-    gp = Path(gold_file).expanduser().resolve()
-    if not gp.is_file():
-        raise FileNotFoundError(f"--gold-file not found: {gp}")
-    if not (gp.is_relative_to(data_root) or gp.is_relative_to(gated_gold)):
-        raise ValueError(
-            f"--gold-file {gp} must live under the benchmark data root "
-            f"{data_root} or the gated gold root {gated_gold} so it rides "
-            f"along in the GCS dataset upload."
-        )
-
-
-def _in_cluster_gold_file(args) -> str | None:
-    """Translate the local ``--gold-file`` to its in-cluster path.
-
-    The gold rides along in the GCS dataset upload:
-    * Gold under ``benchmark_data_root`` lands at
-      ``container_data_dir/<path-relative-to-data-root>``.
-    * Gold under ``gated_gold_root`` lands at
-      ``container_data_dir/<GATED_GOLD_SUBDIR>/<path-relative-to-gated-root>``
-      (uploaded to ``GATED_GOLD_SUBDIR/`` inside the prefix by
-      :func:`benchmark_data.ensure_uploaded`).
-
-    Falls back to ``GATED_GOLD_SUBDIR/<basename>`` for direct
-    ``build_manifest`` callers in tests that pass an arbitrary path."""
-    gold_file = getattr(args, "gold_file", None)
-    if not gold_file:
-        return None
-    bench = _submit_benchmark(args)
-    data_root = paths.benchmark_data_root(bench).resolve()
-    gated_gold = paths.gated_gold_root(benchmark=bench).resolve()
-    container = Path(get_benchmark(bench).container_data_dir)
-    gp = Path(gold_file).expanduser().resolve()
-    try:
-        return str(container / gp.relative_to(data_root))
-    except ValueError:
-        pass
-    try:
-        return str(container / benchmark_data.GATED_GOLD_SUBDIR / gp.relative_to(gated_gold))
-    except ValueError:
-        return str(container / benchmark_data.GATED_GOLD_SUBDIR / gp.name)
-
-
 def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
     """Return the local-dir → GCS-artifact-name uploads to ship for this
     combo, each tagged ``required`` (must exist + non-empty) or optional
@@ -392,6 +334,29 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
         (paths.slayer_otf_cache_root(benchmark=benchmark),
          "slayer_otf_cache", True),
     ]
+
+
+def _check_gold_present(benchmark_name: str) -> None:
+    """Fail early if the benchmark requires gated gold but none is found locally.
+    Called at submit time so the error surfaces before the image build / GCS upload."""
+    from bird_interact_agents.benchmark import get_benchmark as _gb
+    b = _gb(benchmark_name)
+    if not b.gold_required:
+        return
+    gold_dir = paths.gated_gold_root(benchmark=benchmark_name)
+    jsonls = list(gold_dir.glob("*.jsonl")) if gold_dir.is_dir() else []
+    if not jsonls:
+        raise FileNotFoundError(
+            f"benchmark {benchmark_name!r} requires gated gold but no "
+            f"*.jsonl found in {gold_dir}. "
+            f"Place the gold sidecar there before submitting."
+        )
+    if len(jsonls) > 1:
+        raise RuntimeError(
+            f"benchmark {benchmark_name!r} gold dir has multiple *.jsonl "
+            f"files — auto-discovery is ambiguous: "
+            f"{[f.name for f in jsonls]}. Remove the stale copies."
+        )
 
 
 def _artifact_present(root: Path, db: str, artifact: str) -> bool:
@@ -584,9 +549,6 @@ class WaitResult:
 
 def submit(args) -> str:
     prereqs.check(args)
-    # Gated gold must ride along in the GCS dataset upload — fail fast at
-    # submit if it's outside the data root (before any build/upload/cluster).
-    _validate_gold_under_data_root(args)
     repo_root = submitter_repo_root()
     # DEV-1468: slayer fail-fast — verify the local setup is present BEFORE
     # building/pushing the image or bringing up a cluster (no in-cloud builds).
@@ -608,6 +570,7 @@ def submit(args) -> str:
     # De-bake: upload the benchmark dataset ONCE to its content-hashed GCS
     # prefix (skipped when the hash already exists). The actor downloads it
     # per node — the dataset is no longer baked into the image.
+    _check_gold_present(_submit_benchmark(args))
     benchmark_data_prefix = benchmark_data.ensure_uploaded(_submit_benchmark(args))
     run_id = args.run_id or mint_run_id(args.framework, args.query_mode)
     manifest = build_manifest(
@@ -683,9 +646,6 @@ def _build_job_args(
     ]
     if benchmark_data_prefix:
         job_args += ["--benchmark-data-prefix", benchmark_data_prefix]
-    gold_file = _in_cluster_gold_file(args)
-    if gold_file:
-        job_args += ["--gold-file", gold_file]
     if args.strict:
         job_args.append("--strict")
     if args.use_audited_gold_sql:
@@ -741,9 +701,6 @@ def build_annotator_manifest(
             "region": config.REGION,
         },
     }
-    gold_file = _in_cluster_gold_file(args)
-    if gold_file:
-        manifest["gold_file"] = gold_file
     return manifest
 
 
@@ -761,18 +718,12 @@ def _build_annotator_job_args(
     ]
     if benchmark_data_prefix:
         job_args += ["--benchmark-data-prefix", benchmark_data_prefix]
-    gold_file = _in_cluster_gold_file(args)
-    if gold_file:
-        job_args += ["--gold-file", gold_file]
     if getattr(args, "override", False):
         job_args.append("--override")
     return job_args
 
 
 def submit_annotator(args) -> str:
-    # Fail fast if --gold-file is outside the benchmark data root — it must
-    # ride along in the GCS dataset upload to be present in-cluster.
-    _validate_gold_under_data_root(args)
     _prereq_args = argparse.Namespace(
         agent_model=args.agent_model,
         user_sim_model="",
@@ -794,6 +745,7 @@ def submit_annotator(args) -> str:
         annotations_root=paths.annotations_root(),
         force=False,
     )
+    _check_gold_present(get_benchmark(args.benchmark).name)
     benchmark_data_prefix = benchmark_data.ensure_uploaded(
         get_benchmark(args.benchmark).name
     )
@@ -909,14 +861,14 @@ def wait_until_done(run_id: str, manifest: dict, *,
 
 
 def fetch(run_id: str) -> dict:
-    dest = local_results_root() / run_id
-    gcs.concurrent_download_prefix(run_id, dest, client=default_gcs_client())
+    client = default_gcs_client()
+    manifest = gcs.read_manifest(run_id, client=client)
+    benchmark = _benchmark_for_dataset(manifest.get("dataset"))
+    dest = paths.results_root() / benchmark / "cloud" / run_id
+    gcs.concurrent_download_prefix(run_id, dest, client=client)
     manifest_path = dest / "manifest.json"
-    if not manifest_path.exists():
-        manifest = gcs.read_manifest(run_id, client=default_gcs_client())
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-    else:
-        manifest = json.loads(manifest_path.read_text())
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     metrics = _collation.collate(dest, manifest)
     # DEV-1470: promote per-DB cloud-encoded OTF references from
     # <run_dir>/post_run/slayer_models_otf/<shard>/<db>/ into the global
@@ -1030,7 +982,12 @@ def list_runs() -> list[dict]:
         except Exception:  # noqa: BLE001
             continue
         attempts = gcs.list_attempts(rid, client=client)
-        status = "live" if cluster.head_is_alive(rid) else "done"
+        run_status = gcs.read_status(rid, client=client) or {}
+        terminal = run_status.get("terminal_state")
+        if terminal in ("done", "error"):
+            status = terminal
+        else:
+            status = "live" if cluster.head_is_alive(rid) else "done"
         out.append({
             "run_id": rid,
             "framework": mf.get("framework"),
@@ -1136,11 +1093,6 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
     prefix = manifest.get("benchmark_data_prefix")
     if prefix:
         job_args += ["--benchmark-data-prefix", prefix]
-    # Manifest gold_file is ALREADY the in-cluster path (build_manifest
-    # translated it at submit), so pass it through unchanged.
-    gold_file = manifest.get("gold_file")
-    if gold_file:
-        job_args += ["--gold-file", str(gold_file)]
     if manifest.get("strict"):
         job_args.append("--strict")
     if manifest.get("use_audited_gold_sql"):
@@ -1179,9 +1131,6 @@ def _build_annotator_resubmit_args(
     prefix = manifest.get("benchmark_data_prefix")
     if prefix:
         job_args += ["--benchmark-data-prefix", prefix]
-    gold_file = manifest.get("gold_file")
-    if gold_file:
-        job_args += ["--gold-file", str(gold_file)]
     if manifest.get("override"):
         job_args.append("--override")
     return job_args

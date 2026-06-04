@@ -7,6 +7,10 @@ are the official hyphenated forms (mini-interact, livesqlbench-base-lite-sqlite,
 The dataset marker (stamped into `task_data["dataset"]` by the loaders) equals
 the canonical name so that `get_benchmark()` is the single resolution path from
 any context.
+
+Data directories follow a uniform layout: all benchmarks are checked out as sibling
+directories of the main repo, named by their canonical benchmark name. The single
+`BIRD_BENCHMARKS_ROOT` env var overrides the parent for all benchmarks at once.
 """
 
 from __future__ import annotations
@@ -30,14 +34,10 @@ class Benchmark(BaseModel):
     """Stamped into ``task_data["dataset"]`` by the loaders; must equal ``name``."""
 
     # Data location (resolved by paths.benchmark_data_root / _data_file).
-    data_subdir: str
-    """Sibling dir name next to the main checkout, e.g. ``mini-interact``."""
+    # The data directory is <BIRD_BENCHMARKS_ROOT>/<name>/ — no per-benchmark
+    # env vars. ``data_file`` is the tasks JSONL filename within that directory.
     data_file: str
     """Tasks JSONL filename within the data root."""
-    data_root_env: str
-    """Env var that overrides the data root (cloud actor / tests set it)."""
-    data_file_env: str
-    """Env var that overrides the data file path."""
 
     # Modes / gating.
     supported_modes: tuple[str, ...]
@@ -55,13 +55,19 @@ class Benchmark(BaseModel):
     # Cloud.
     container_data_dir: str
     """Where the actor materialises this benchmark's data in-container, e.g.
-    ``/data/mini-interact``; also the cloud ``BIRD_DB_PATH``."""
+    ``/data/mini-interact``; also the cloud data root for this benchmark."""
 
     # DEV-1523: database backend.
     db_backend: Literal["sqlite", "postgres"] = "sqlite"
     """SQL execution backend. ``sqlite`` uses sqlite3 file-based DBs;
     ``postgres`` connects to a running postgres server via env vars
     (BIRD_PG_HOST / BIRD_PG_PORT / BIRD_PG_USER / BIRD_PG_PASSWORD)."""
+
+    # One-shot SELECT task count (for full-run assertion in loader).
+    select_full_run_count: int | None = None
+    """Expected number of SELECT tasks on a full unfiltered one-shot run.
+    ``None`` skips the assertion (use for benchmarks whose exact size isn't
+    yet fixed or when the full dataset isn't yet available locally)."""
 
     # DEV-1510: audited-gold sidecar layout.
     audited_gold_layout: Literal["per_db", "single_file"] = "per_db"
@@ -84,15 +90,25 @@ MINI_INTERACT = Benchmark(
     name="mini-interact",
     cli_aliases=(),
     dataset_marker="mini-interact",
-    data_subdir="mini-interact",
     data_file="mini_interact.jsonl",
-    data_root_env="BIRD_DB_PATH",
-    data_file_env="BIRD_DATA_PATH",
     supported_modes=("a-interact", "c-interact", "oracle"),
     one_shot=False,
-    gold_required=False,
+    gold_required=True,
     per_task_db_isolation=False,
     container_data_dir="/data/mini-interact",
+    audited_gold_layout="single_file",
+)
+
+BIRD_INTERACT_FULL = Benchmark(
+    name="bird-interact-full",
+    cli_aliases=(),
+    dataset_marker="bird-interact-full",
+    data_file="bird_interact_full.jsonl",
+    supported_modes=("a-interact", "c-interact", "oracle"),
+    one_shot=False,
+    gold_required=True,
+    per_task_db_isolation=False,
+    container_data_dir="/data/bird-interact-full",
     audited_gold_layout="single_file",
 )
 
@@ -100,26 +116,21 @@ LIVESQLBENCH = Benchmark(
     name="livesqlbench-base-lite-sqlite",
     cli_aliases=(),
     dataset_marker="livesqlbench-base-lite-sqlite",
-    data_subdir="livesqlbench-base-lite-sqlite",
     data_file="livesqlbench_data_sqlite.jsonl",
-    data_root_env="BIRD_LIVESQLBENCH_ROOT",
-    data_file_env="BIRD_LIVESQLBENCH_DATA_FILE",
     supported_modes=("one-shot", "oracle"),
     one_shot=True,
     gold_required=True,
     per_task_db_isolation=True,
     container_data_dir="/data/livesqlbench-base-lite-sqlite",
     audited_gold_layout="single_file",
+    select_full_run_count=180,
 )
 
 LIVESQLBENCH_POSTGRES = Benchmark(
     name="livesqlbench-base-lite",
     db_backend="postgres",
     dataset_marker="livesqlbench-base-lite",
-    data_subdir="livesqlbench-base-lite-postgres",
     data_file="livesqlbench_data.jsonl",
-    data_root_env="BIRD_LIVESQLBENCH_POSTGRES_ROOT",
-    data_file_env="BIRD_LIVESQLBENCH_POSTGRES_DATA_FILE",
     supported_modes=("one-shot",),
     one_shot=True,
     gold_required=True,
@@ -128,24 +139,55 @@ LIVESQLBENCH_POSTGRES = Benchmark(
     audited_gold_layout="single_file",
 )
 
+LIVESQLBENCH_BASE_FULL = Benchmark(
+    name="livesqlbench-base-full",
+    cli_aliases=(),
+    dataset_marker="livesqlbench-base-full",
+    data_file="livesqlbench_base_full_sqlite.jsonl",
+    supported_modes=("one-shot", "oracle"),
+    one_shot=True,
+    gold_required=True,
+    per_task_db_isolation=True,
+    container_data_dir="/data/livesqlbench-base-full",
+    audited_gold_layout="single_file",
+)
+
+LIVESQLBENCH_LARGE = Benchmark(
+    name="livesqlbench-large",
+    cli_aliases=(),
+    dataset_marker="livesqlbench-large",
+    data_file="livesqlbench_large_sqlite.jsonl",
+    supported_modes=("one-shot", "oracle"),
+    one_shot=True,
+    gold_required=True,
+    per_task_db_isolation=True,
+    container_data_dir="/data/livesqlbench-large",
+    audited_gold_layout="single_file",
+)
+
 MINI_INTERACT_POSTGRES = Benchmark(
     name="bird-interact-lite-exp",
     db_backend="postgres",
     dataset_marker="bird-interact-lite-exp",
-    data_subdir="mini-interact-postgres",
     data_file="mini_interact.jsonl",
-    data_root_env="BIRD_MINI_INTERACT_POSTGRES_ROOT",
-    data_file_env="BIRD_MINI_INTERACT_POSTGRES_DATA_FILE",
     supported_modes=("a-interact",),
     one_shot=False,
-    gold_required=False,
+    gold_required=True,
     per_task_db_isolation=False,
     container_data_dir="/data/bird-interact-lite-exp",
     audited_gold_layout="single_file",
 )
 
 BENCHMARKS: dict[str, Benchmark] = {
-    b.name: b for b in (MINI_INTERACT, LIVESQLBENCH, LIVESQLBENCH_POSTGRES, MINI_INTERACT_POSTGRES)
+    b.name: b for b in (
+        MINI_INTERACT,
+        BIRD_INTERACT_FULL,
+        LIVESQLBENCH,
+        LIVESQLBENCH_POSTGRES,
+        LIVESQLBENCH_BASE_FULL,
+        LIVESQLBENCH_LARGE,
+        MINI_INTERACT_POSTGRES,
+    )
 }
 
 # Every token that resolves to a benchmark: canonical name + cli aliases +
@@ -162,29 +204,30 @@ for _b in BENCHMARKS.values():
 
 
 def get_benchmark(token: str) -> Benchmark:
-    """Resolve a canonical name, CLI alias, or dataset marker to its Benchmark.
-    Raises ValueError on an unknown token (no silent fallback)."""
+    """Resolve any accepted token (canonical name, alias, or dataset marker)
+    to its ``Benchmark`` descriptor. Raises ``ValueError`` for unknown tokens."""
     b = _BY_TOKEN.get(token)
     if b is None:
         raise ValueError(
-            f"unknown benchmark token {token!r}; expected one of "
-            f"{sorted(_BY_TOKEN)}"
+            f"Unknown benchmark token {token!r}. "
+            f"Known tokens: {sorted(_BY_TOKEN)}"
         )
     return b
 
 
-def all_benchmarks() -> tuple[Benchmark, ...]:
-    return tuple(BENCHMARKS.values())
+def benchmark_names() -> list[str]:
+    """Return the canonical names of all registered benchmarks."""
+    return list(BENCHMARKS)
 
 
-def benchmark_names() -> tuple[str, ...]:
-    """Canonical names only."""
-    return tuple(BENCHMARKS)
+def all_benchmarks() -> list[Benchmark]:
+    """Return all registered benchmark descriptors."""
+    return list(BENCHMARKS.values())
 
 
 def cli_dataset_tokens() -> tuple[str, ...]:
-    """All tokens valid as a `--dataset` value (canonical names + aliases),
-    de-duplicated, for argparse `choices`."""
+    """All tokens valid as a ``--dataset`` value (canonical names + aliases),
+    de-duplicated, for argparse ``choices``."""
     seen: list[str] = []
     for b in BENCHMARKS.values():
         for tok in (b.name, *b.cli_aliases):

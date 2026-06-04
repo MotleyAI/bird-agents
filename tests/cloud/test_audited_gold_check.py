@@ -337,8 +337,8 @@ def _write_lsb_dataset(data_path: Path, rows: list[dict]) -> None:
 
 
 def _write_lsb_audited(audited_root: Path, rows: list[dict]) -> Path:
-    """Lay down `<audited_root>/livesqlbench_audited.jsonl` for the
-    single_file layout.
+    """Lay down `<audited_root>/livesqlbench-base-lite-sqlite/livesqlbench-base-lite-sqlite_audited.jsonl`
+    for the single_file layout.
 
     Injects ``benchmark: "livesqlbench-base-lite-sqlite"`` into any row that doesn't
     already set it, so existing test cases (which only set
@@ -347,8 +347,8 @@ def _write_lsb_audited(audited_root: Path, rows: list[dict]) -> Path:
     should set ``benchmark`` to ``None`` (which the helper preserves)
     or set an explicit wrong value.
     """
-    audited_root.mkdir(parents=True, exist_ok=True)
-    sidecar = audited_root / "livesqlbench-base-lite-sqlite_audited.jsonl"
+    (audited_root / "livesqlbench-base-lite-sqlite").mkdir(parents=True, exist_ok=True)
+    sidecar = audited_root / "livesqlbench-base-lite-sqlite" / "livesqlbench-base-lite-sqlite_audited.jsonl"
     normalised = []
     for r in rows:
         if "benchmark" not in r:

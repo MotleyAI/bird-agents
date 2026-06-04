@@ -5,9 +5,8 @@ spawned from this repo. They exercise the three behaviours that matter:
 
 * `main_checkout_root` traces through `git rev-parse --git-common-dir` so
   that worktrees still find the canonical checkout.
-* `benchmark_data_root` / `benchmark_data_file` honour the per-benchmark
-  env-var overrides (e.g. `BIRD_DB_PATH` / `BIRD_DATA_PATH` for mini-interact,
-  `BIRD_LIVESQLBENCH_ROOT` for livesqlbench-base-lite-sqlite).
+* `benchmark_data_root` / `benchmark_data_file` use the canonical benchmark
+  name as the subdir under the shared `BIRD_BENCHMARKS_ROOT` parent.
 * The output-sink helpers (`audited_gold_root`, `slayer_models_root`,
   `results_root`, `benchmarks_root`) are anchored to the main checkout,
   not the worktree, so benchmark results written from a worktree land
@@ -63,10 +62,10 @@ def _isolate_paths(monkeypatch):
     """
     paths._main_checkout_root_cached.cache_clear()
     for var in (
-        "BIRD_DB_PATH", "BIRD_DATA_PATH", "BIRD_RESULTS_ROOT",
+        "BIRD_BENCHMARKS_ROOT", "BIRD_RESULTS_ROOT",
+        "BIRD_AUDITED_GOLD_ROOT",
         "BIRD_SLAYER_MODELS_ROOT", "BIRD_OTF_CACHE_ROOT",
         "BIRD_SLAYER_MODELS_OTF_ROOT", "BIRD_GATED_GOLD_ROOT",
-        "BIRD_LIVESQLBENCH_ROOT", "BIRD_LIVESQLBENCH_DATA_FILE",
     ):
         monkeypatch.delenv(var, raising=False)
     yield
@@ -162,38 +161,11 @@ def test_main_checkout_root_from_nested_lookup_dir(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# benchmark_data_root("mini-interact")
+# benchmark_data_root / benchmark_data_file — uniform BIRD_BENCHMARKS_ROOT
 # ---------------------------------------------------------------------------
 
 
-def test_mini_interact_root_env_override(tmp_path, monkeypatch):
-    override = tmp_path / "elsewhere" / "mini-interact"
-    override.mkdir(parents=True)
-    monkeypatch.setenv("BIRD_DB_PATH", str(override))
-    assert paths.benchmark_data_root("mini-interact") == override
-
-
-def test_mini_interact_root_env_override_wins_when_default_would_fail(
-    tmp_path, monkeypatch,
-):
-    """Even if main_checkout_root can't be resolved, the env override must win."""
-    not_a_repo = tmp_path / "not_a_repo"
-    not_a_repo.mkdir()
-    monkeypatch.setattr(paths, "_LOOKUP_DIR", not_a_repo)
-    override = tmp_path / "explicit_db_path"
-    monkeypatch.setenv("BIRD_DB_PATH", str(override))
-    assert paths.benchmark_data_root("mini-interact") == override
-
-
-def test_mini_interact_root_override_nonexistent_path_accepted(tmp_path, monkeypatch):
-    """Helper is a path-resolver, not a validator — non-existent paths pass through."""
-    nonexistent = tmp_path / "does" / "not" / "exist"
-    monkeypatch.setenv("BIRD_DB_PATH", str(nonexistent))
-    assert paths.benchmark_data_root("mini-interact") == nonexistent
-    assert not paths.benchmark_data_root("mini-interact").exists()
-
-
-def test_mini_interact_root_default_sibling_of_main(tmp_path, monkeypatch):
+def test_benchmark_data_root_default_sibling_of_main(tmp_path, monkeypatch):
     main = tmp_path / "main_repo"
     _init_repo(main)
     (tmp_path / "mini-interact").mkdir()
@@ -201,15 +173,14 @@ def test_mini_interact_root_default_sibling_of_main(tmp_path, monkeypatch):
     assert paths.benchmark_data_root("mini-interact") == (tmp_path / "mini-interact").resolve()
 
 
-def test_mini_interact_root_from_worktree_points_at_main_sibling(
+def test_benchmark_data_root_from_worktree_points_at_main_sibling(
     tmp_path, monkeypatch,
 ):
     main = tmp_path / "main_repo"
     _init_repo(main)
     wt = tmp_path / "wt"
     subprocess.run(
-        ["git", "-C", str(main), "worktree", "add", "-q",
-         str(wt), "-b", "b1"],
+        ["git", "-C", str(main), "worktree", "add", "-q", str(wt), "-b", "b1"],
         check=True,
     )
     (tmp_path / "mini-interact").mkdir()
@@ -217,30 +188,41 @@ def test_mini_interact_root_from_worktree_points_at_main_sibling(
     assert paths.benchmark_data_root("mini-interact") == (tmp_path / "mini-interact").resolve()
 
 
-# ---------------------------------------------------------------------------
-# benchmark_data_file("mini-interact")
-# ---------------------------------------------------------------------------
-
-
-def test_mini_interact_data_file_env_override(tmp_path, monkeypatch):
-    f = tmp_path / "custom_tasks.jsonl"
-    f.write_text("")
-    monkeypatch.setenv("BIRD_DATA_PATH", str(f))
-    assert paths.benchmark_data_file("mini-interact") == f
-
-
-def test_mini_interact_data_file_env_override_wins_when_default_would_fail(
+def test_bird_benchmarks_root_env_overrides_parent_for_all_benchmarks(
     tmp_path, monkeypatch,
 ):
+    """`BIRD_BENCHMARKS_ROOT` overrides the parent dir; benchmark name is appended."""
+    parent = tmp_path / "custom_root"
+    monkeypatch.setenv("BIRD_BENCHMARKS_ROOT", str(parent))
+    assert paths.benchmark_data_root("mini-interact") == parent / "mini-interact"
+    assert (
+        paths.benchmark_data_root("livesqlbench-base-lite-sqlite")
+        == parent / "livesqlbench-base-lite-sqlite"
+    )
+    assert paths.benchmark_data_root("livesqlbench-base-lite") == parent / "livesqlbench-base-lite"
+    assert paths.benchmark_data_root("bird-interact-lite-exp") == parent / "bird-interact-lite-exp"
+
+
+def test_bird_benchmarks_root_env_wins_when_default_would_fail(tmp_path, monkeypatch):
+    """Even if main_checkout_root can't be resolved, BIRD_BENCHMARKS_ROOT wins."""
     not_a_repo = tmp_path / "not_a_repo"
     not_a_repo.mkdir()
     monkeypatch.setattr(paths, "_LOOKUP_DIR", not_a_repo)
-    override = tmp_path / "tasks.jsonl"
-    monkeypatch.setenv("BIRD_DATA_PATH", str(override))
-    assert paths.benchmark_data_file("mini-interact") == override
+    parent = tmp_path / "override_root"
+    monkeypatch.setenv("BIRD_BENCHMARKS_ROOT", str(parent))
+    assert paths.benchmark_data_root("mini-interact") == parent / "mini-interact"
 
 
-def test_mini_interact_data_file_default(tmp_path, monkeypatch):
+def test_benchmark_data_root_nonexistent_path_accepted(tmp_path, monkeypatch):
+    """Helper is a path-resolver, not a validator — non-existent paths pass through."""
+    parent = tmp_path / "does" / "not" / "exist"
+    monkeypatch.setenv("BIRD_BENCHMARKS_ROOT", str(parent))
+    result = paths.benchmark_data_root("mini-interact")
+    assert result == parent / "mini-interact"
+    assert not result.exists()
+
+
+def test_benchmark_data_file_default(tmp_path, monkeypatch):
     main = tmp_path / "main_repo"
     _init_repo(main)
     (tmp_path / "mini-interact").mkdir()
@@ -399,67 +381,6 @@ def test_results_root_env_override_wins_when_default_would_fail(
 def test_benchmarks_root_anchored_to_main(tmp_path, monkeypatch):
     main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
     assert paths.benchmarks_root() == main / ".benchmarks"
-
-
-# ---------------------------------------------------------------------------
-# benchmark_data_root("livesqlbench-base-lite-sqlite") — same pattern as
-# mini-interact; env vars come from the Benchmark dataclass fields.
-# ---------------------------------------------------------------------------
-
-
-def test_livesqlbench_root_default_sibling_of_main(tmp_path, monkeypatch):
-    main = tmp_path / "main_repo"
-    _init_repo(main)
-    (tmp_path / "livesqlbench-base-lite-sqlite").mkdir()
-    monkeypatch.setattr(paths, "_LOOKUP_DIR", main)
-    assert (
-        paths.benchmark_data_root("livesqlbench-base-lite-sqlite")
-        == (tmp_path / "livesqlbench-base-lite-sqlite").resolve()
-    )
-
-
-def test_livesqlbench_root_env_override(tmp_path, monkeypatch):
-    override = tmp_path / "elsewhere" / "livesqlbench-base-lite-sqlite"
-    override.mkdir(parents=True)
-    monkeypatch.setenv("BIRD_LIVESQLBENCH_ROOT", str(override))
-    assert paths.benchmark_data_root("livesqlbench-base-lite-sqlite") == override
-
-
-def test_livesqlbench_root_env_override_wins_when_default_would_fail(
-    tmp_path, monkeypatch,
-):
-    not_a_repo = tmp_path / "not_a_repo"
-    not_a_repo.mkdir()
-    monkeypatch.setattr(paths, "_LOOKUP_DIR", not_a_repo)
-    override = tmp_path / "explicit_livesqlbench_path"
-    monkeypatch.setenv("BIRD_LIVESQLBENCH_ROOT", str(override))
-    assert paths.benchmark_data_root("livesqlbench-base-lite-sqlite") == override
-
-
-def test_livesqlbench_root_from_worktree_points_at_main_sibling(
-    tmp_path, monkeypatch,
-):
-    main = tmp_path / "main_repo"
-    _init_repo(main)
-    wt = tmp_path / "wt"
-    subprocess.run(
-        ["git", "-C", str(main), "worktree", "add", "-q",
-         str(wt), "-b", "b1"],
-        check=True,
-    )
-    (tmp_path / "livesqlbench-base-lite-sqlite").mkdir()
-    monkeypatch.setattr(paths, "_LOOKUP_DIR", wt)
-    assert (
-        paths.benchmark_data_root("livesqlbench-base-lite-sqlite")
-        == (tmp_path / "livesqlbench-base-lite-sqlite").resolve()
-    )
-
-
-def test_livesqlbench_data_file_env_override(tmp_path, monkeypatch):
-    f = tmp_path / "custom_lsb_tasks.jsonl"
-    f.write_text("")
-    monkeypatch.setenv("BIRD_LIVESQLBENCH_DATA_FILE", str(f))
-    assert paths.benchmark_data_file("livesqlbench-base-lite-sqlite") == f
 
 
 def test_livesqlbench_data_file_default(tmp_path, monkeypatch):
@@ -632,11 +553,11 @@ def test_audited_gold_file_livesqlbench_anchored_to_main(tmp_path, monkeypatch):
     main, wt = _setup_main_and_worktree(tmp_path, monkeypatch)
     assert (
         paths.audited_gold_file(benchmark="livesqlbench-base-lite-sqlite")
-        == main / "audited_gold" / "livesqlbench-base-lite-sqlite_audited.jsonl"
+        == main / "audited_gold" / "livesqlbench-base-lite-sqlite" / "livesqlbench-base-lite-sqlite_audited.jsonl"
     )
     assert (
         paths.audited_gold_file(benchmark="livesqlbench-base-lite-sqlite")
-        != wt / "audited_gold" / "livesqlbench-base-lite-sqlite_audited.jsonl"
+        != wt / "audited_gold" / "livesqlbench-base-lite-sqlite" / "livesqlbench-base-lite-sqlite_audited.jsonl"
     )
 
 
@@ -648,7 +569,7 @@ def test_audited_gold_file_honours_root_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("BIRD_AUDITED_GOLD_ROOT", str(override))
     assert (
         paths.audited_gold_file(benchmark="livesqlbench-base-lite-sqlite")
-        == override / "livesqlbench-base-lite-sqlite_audited.jsonl"
+        == override / "livesqlbench-base-lite-sqlite" / "livesqlbench-base-lite-sqlite_audited.jsonl"
     )
 
 
@@ -657,7 +578,7 @@ def test_audited_gold_file_mini_interact_anchored_to_main(tmp_path, monkeypatch)
     main_root, _ = _setup_main_and_worktree(tmp_path, monkeypatch)
     assert (
         paths.audited_gold_file(benchmark="mini-interact")
-        == main_root / "audited_gold" / "mini-interact_audited.jsonl"
+        == main_root / "audited_gold" / "mini-interact" / "mini-interact_audited.jsonl"
     )
 
 

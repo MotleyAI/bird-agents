@@ -34,6 +34,7 @@ from typing import Any, Callable, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from bird_interact_agents import paths
+from bird_interact_agents.harness import _auto_discover_gold
 from bird_interact_agents.eval.annotation_io import (
     submission_annotation_path,
     write_submission_annotation,
@@ -125,19 +126,10 @@ def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
     bench = get_benchmark(benchmark)
     if bench.gold_required:
         gold_path: Optional[Path] = None
-        # DEV-1525: gated gold lives at paths.gated_gold_root(benchmark=) /
-        # <gt_sidecar>.jsonl; a BIRD_GATED_GOLD_ROOT env var overrides the
-        # parent dir (benchmark subdir still appended).
-        gated_root = paths.gated_gold_root(benchmark=benchmark)
-        for candidate in (
-            gated_root / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl",
-            # Backwards compat: sidecar directly inside the data root.
-            paths.benchmark_data_root(benchmark)
-            / "livesqlbench_sqlite_gt_kg_testcases_0528.jsonl",
-        ):
-            if candidate.exists():
-                gold_path = candidate
-                break
+        try:
+            gold_path = Path(_auto_discover_gold(benchmark))
+        except FileNotFoundError:
+            pass  # Gold not locally available; inline sol_sql (if any) is used.
         if gold_path and gold_path.exists():
             with gold_path.open() as f:
                 for line in f:
