@@ -22,7 +22,6 @@ from bird_interact_agents.eval import cascading_report as _cascading_report
 # Imported by NAME (not via the `gcs` module attr) so tests that mock
 # `driver.gcs` still get the real pure mapping — only the I/O helpers
 # (`gcs.upload_dir_prefix` etc.) need to be mockable.
-from bird_interact_agents.cloud.gcs import slayer_artifact_name
 # Imported by NAME so they survive tests that mock `driver.prereqs`. PrereqError
 # must be the real class for the raise in `read_api_keys_from_local_env`, and
 # `_required_api_keys` must be the REAL provider→key mapping so submit/resubmit
@@ -285,6 +284,13 @@ def _benchmark_for_dataset(dataset: str | None) -> str:
     """
     if not dataset:
         return "mini-interact"
+    # Legacy: manifests submitted before DEV-1525 used underscore/short forms.
+    _LEGACY: dict[str, str] = {
+        "mini_interact": "mini-interact",
+        "livesqlbench": "livesqlbench-base-lite-sqlite",
+    }
+    if dataset in _LEGACY:
+        return _LEGACY[dataset]
     return get_benchmark(dataset).name
 
 

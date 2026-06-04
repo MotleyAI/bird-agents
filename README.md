@@ -204,6 +204,25 @@ Each annotated task produces a `<instance_id>.task.json` (the `TaskAnnotation`)
 and, if the gold was wrong, one or more `<instance_id>.<variant_id>.gold.json`
 entries in `audited_gold/mini-interact_audited.jsonl`.
 
+### Checking and fetching all completed runs
+
+`scripts/check_annotation_runs.sh` inspects every live annotation run and
+auto-fetches those whose tasks are all done:
+
+```bash
+bash scripts/check_annotation_runs.sh          # fetch completed annotation runs
+bash scripts/check_annotation_runs.sh --all    # fetch any completed run type
+bash scripts/check_annotation_runs.sh --dry-run  # preview without fetching
+```
+
+A run counts as complete when `done == total` in `bird-interact-cloud list`
+(all submitted tasks have produced results) or when its state is `done`
+(cluster shut down). The script exits 0 if at least one run was fetched,
+1 otherwise — suitable for use in a polling loop.
+
+The script is pre-approved in `~/.claude/settings.json` so Claude Code runs
+it without a confirmation prompt.
+
 ### Waiting for a run to finish
 
 Use `driver.wait_until_done` — do **not** poll `bird-interact-cloud list`
