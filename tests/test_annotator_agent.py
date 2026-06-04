@@ -694,6 +694,41 @@ def test_fill_deterministic_fields_no_duplicate_masked_terms():
     assert sum(1 for mt in filled.masked_terms if mt.term == "[MASKED_TIER]") == 1
 
 
+def test_fill_deterministic_fields_authoritative_overwrites_stale_is_mask_true():
+    """If the agent already submitted an is_mask=True entry for a term that appears
+    in critical_ambiguity, the harness must REPLACE it with the authoritative
+    metadata_evidence — not skip the authoritative entry."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    base = _minimal_annotation()
+    # Agent submitted stale is_mask=True entry with wrong metadata_evidence.
+    base["masked_terms"] = [
+        {"term": "[MASKED_TIER]", "type": "knowledge_linking_ambiguity",
+         "is_mask": True, "metadata_evidence": ["stale_source"]}
+    ]
+    ann = TaskAnnotation.model_validate(base)
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "user_query_ambiguity": {
+            "critical_ambiguity": [
+                {"term": "[MASKED_TIER]", "type": "knowledge_linking_ambiguity",
+                 "is_mask": True, "metadata_evidence": ["authoritative_source"]}
+            ],
+            "non_critical_ambiguity": [],
+        },
+        "knowledge_ambiguity": [],
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini_interact")
+
+    mask_entries = [mt for mt in filled.masked_terms if mt.term == "[MASKED_TIER]" and mt.is_mask]
+    assert len(mask_entries) == 1, "Must have exactly one is_mask=True entry (no duplicates)"
+    assert mask_entries[0].metadata_evidence == ["authoritative_source"], (
+        "Harness-authoritative metadata_evidence must replace the stale agent-submitted value"
+    )
+
+
 def test_fill_deterministic_fields_livesqlbench_skips_masked_terms():
     """For livesqlbench (no user_query_ambiguity), masked_terms must be left untouched."""
     from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields

@@ -151,6 +151,40 @@ async def test_get_column_sample_values_default_n_is_50(monkeypatch):
     assert "50" in captured[0]
 
 
+@pytest.mark.asyncio
+async def test_get_column_sample_values_invalid_n_returns_error():
+    """A non-integer n must return an error message without calling _run_env_sync."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+
+    result = await ann_agent.get_column_sample_values({
+        "table_name": "orders",
+        "column_name": "status",
+        "n": "bad",
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text
+
+
+@pytest.mark.asyncio
+async def test_get_column_sample_values_out_of_range_n_returns_error():
+    """n outside 1..50 must return an error without calling _run_env_sync."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+
+    result = await ann_agent.get_column_sample_values({
+        "table_name": "orders",
+        "column_name": "status",
+        "n": 0,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text
+
+
 # ---------------------------------------------------------------------------
 # get_ambiguity_resolutions
 # ---------------------------------------------------------------------------
@@ -1276,3 +1310,89 @@ async def test_submit_annotation_invalid_evidence_prefix_rejected():
     text = result["content"][0]["text"].lower()
     assert "error" in text or "validation" in text or "prefix" in text
     assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_duplicate_variant_id_rejected():
+    """Two audited_gold_variants with the same variant_id must be rejected."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-04",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "r",
+            "evidence_sources_consulted": ["kb:3"],
+        },
+        "original_gold_is_correct": False,
+        "gold_variants": [],
+    })
+    dup_variant = json.dumps([
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "benchmark": "mini_interact",
+            "variant_id": "v1",
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT 1"],
+            "primary": True,
+        },
+        {
+            "instance_id": "shop_1",
+            "selected_database": "shop",
+            "benchmark": "mini_interact",
+            "variant_id": "v1",
+            "audit_status": "edited",
+            "audited_sol_sql": ["SELECT 2"],
+            "primary": False,
+        },
+    ])
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation,
+        "audited_gold_variants_json": dup_variant,
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "duplicate" in text or "variant_id" in text or "error" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_missing_provenance_succeeds_via_pre_fill():
+    """Omitting provenance fields (as the prompt instructs) must succeed — the
+    harness pre-fills them before schema validation runs."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation_no_provenance = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-04",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "r",
+            "evidence_sources_consulted": ["kb:3"],
+        },
+        "original_gold_is_correct": True,
+        "gold_variants": [],
+        # provenance deliberately omitted
+    })
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation_no_provenance,
+        "audited_gold_variants_json": "[]",
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" not in text
+    assert ann_agent._ctx.get("_submission_done")

@@ -32,7 +32,7 @@ from bird_interact_agents.agents._tool_specs import (
     BIRD_INTERACT_TOOLS,
     render_action,
 )
-from bird_interact_agents.eval.annotation_schema import MaskedTerm, TaskAnnotation
+from bird_interact_agents.eval.annotation_schema import EVIDENCE_SOURCE_PREFIXES, MaskedTerm, TaskAnnotation
 from bird_interact_agents.eval.implicit_annotation import _benchmark_task_jsonl_name
 from bird_interact_agents.harness import (
     MAX_MODEL_TURNS,
@@ -154,17 +154,23 @@ async def submit_annotation(args: dict) -> dict:
     except json.JSONDecodeError as e:
         return _text(f"Error: invalid JSON in task_annotation_json: {e}")
 
+    # Pre-inject harness-determined provenance so model_validate passes even
+    # when the agent correctly left those fields unpopulated per the prompt.
+    task_data = _ctx.get("task_data") or {}
+    _benchmark = _ctx.get("benchmark", "")
+    _prov = ta_dict.setdefault("provenance", {})
+    _prov.setdefault("task_jsonl_path", _benchmark_task_jsonl_name(_benchmark) if _benchmark else "")
+    _prov.setdefault("task_jsonl_instance_id", task_data.get("instance_id", ""))
+
     try:
         task_annotation = TaskAnnotation.model_validate(ta_dict)
     except ValidationError as e:
         return _text(f"Validation error in task_annotation_json: {e}")
     except Exception as e:
         return _text(f"Error parsing task_annotation_json: {e}")
-
-    task_data = _ctx.get("task_data") or {}
     expected_iid = task_data.get("instance_id")
     expected_db = task_data.get("selected_database")
-    expected_benchmark = _ctx.get("benchmark")
+    expected_benchmark = _benchmark
     if expected_iid and task_annotation.instance_id != expected_iid:
         return _text(
             f"Validation error: task_annotation instance_id must be "
@@ -240,6 +246,17 @@ async def submit_annotation(args: dict) -> dict:
                 f"Use JSON true/false, not 1/0 or strings."
             )
 
+    _seen_vids: set[str] = set()
+    for i, variant in enumerate(audited_gold_variants):
+        vid = variant.get("variant_id", "")
+        if vid in _seen_vids:
+            return _text(
+                f"Validation error: duplicate variant_id {vid!r} in audited_gold_variants "
+                f"(entries {[j for j, v in enumerate(audited_gold_variants) if v.get('variant_id') == vid]}). "
+                f"Each submitted variant must have a unique variant_id."
+            )
+        _seen_vids.add(vid)
+
     if task_annotation.original_gold_is_correct and audited_gold_variants:
         return _text(
             "Validation error: original_gold_is_correct=True requires an empty "
@@ -265,10 +282,7 @@ async def submit_annotation(args: dict) -> dict:
         return _text(
             "Validation error: evidence_sources_consulted is empty. "
             "Populate it with every source you actually read during the audit "
-            "using the canonical prefixes: kb:<N>, column:<table>.<col>, "
-            "schema:<table>, sample_values:<table>.<col>, sql:<description>, "
-            "critical_ambiguity:<term>, critical_ambiguity_evidence:<term>, "
-            "knowledge_ambiguity:<term>."
+            f"using the canonical prefixes: {', '.join(EVIDENCE_SOURCE_PREFIXES)}"
         )
     if task_annotation.metadata_sufficiency.verdict == "insufficient" and not task_annotation.evaluator_prompt:
         return _text(
@@ -415,7 +429,12 @@ async def get_all_knowledge_definitions(args: dict) -> dict:
 async def get_column_sample_values(args: dict) -> dict:
     table_name = args["table_name"]
     column_name = args["column_name"]
-    n = int(args.get("n", 50))
+    try:
+        n = int(args.get("n", 50))
+    except (TypeError, ValueError):
+        return _text("Error: n must be an integer between 1 and 50.")
+    if not 1 <= n <= 50:
+        return _text(f"Error: n must be between 1 and 50, got {n}.")
     sql = (
         f'SELECT "{column_name}", COUNT(*) AS freq '
         f'FROM "{table_name}" '
@@ -546,11 +565,15 @@ def _fill_deterministic_fields(
         uqa = task_data.get("user_query_ambiguity", {})
         critical = uqa.get("critical_ambiguity", []) if isinstance(uqa, dict) else []
         if critical:
-            existing_terms = {mt.term for mt in updated.masked_terms if mt.is_mask}
             for item in critical:
                 term = item.get("term", "")
-                if not term or term in existing_terms:
+                if not term:
                     continue
+                # Harness is authoritative: drop any stale agent-submitted entry.
+                updated.masked_terms = [
+                    mt for mt in updated.masked_terms
+                    if not (mt.is_mask and mt.term == term)
+                ]
                 raw_evidence = item.get("metadata_evidence")
                 if isinstance(raw_evidence, list):
                     evidence: list = raw_evidence
@@ -558,13 +581,14 @@ def _fill_deterministic_fields(
                     evidence = [raw_evidence]
                 else:
                     evidence = []
-                updated.masked_terms = list(updated.masked_terms) + [
+                updated.masked_terms = [
+                    *updated.masked_terms,
                     MaskedTerm(
                         term=term,
                         type=item.get("type", "knowledge_linking_ambiguity"),
                         is_mask=True,
                         metadata_evidence=evidence,
-                    )
+                    ),
                 ]
 
     return updated
