@@ -787,6 +787,7 @@ def submit_annotator(args) -> str:
             args.agent_model, "", query_mode="raw",
             framework="annotator",
             no_subscription_auth=getattr(args, "no_subscription_auth", False),
+            dataset=getattr(args, "dataset", None) or getattr(args, "benchmark", ""),
         )
         job_args = _build_annotator_job_args(
             args, run_id, benchmark_data_prefix=benchmark_data_prefix,
@@ -1073,6 +1074,7 @@ def resubmit(run_id: str) -> None:
                 manifest["agent_model"], "",
                 query_mode="raw", framework="annotator",
                 no_subscription_auth=_no_subscription_auth,
+                dataset=manifest.get("dataset", manifest.get("benchmark", "")),
             )
             job_args = _build_annotator_resubmit_args(manifest, run_id, missing, next_attempt)
             cluster.submit_job(

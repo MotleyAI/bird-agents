@@ -59,19 +59,29 @@ if ! pg_ctl -D "$PGDATA" status >/dev/null 2>&1; then
     echo "==> Starting postgres on port $PGPORT"
     pg_ctl -D "$PGDATA" -l "$PGDATA/pg.log" \
         -o "-p $PGPORT -h $PGHOST -k /tmp" start
-    # Give it a moment to accept connections
-    sleep 2
 else
     echo "==> Postgres already running"
 fi
 
+# Wait until postgres is actually accepting connections (up to 30 s).
+for i in $(seq 1 30); do
+    pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PG_USER" -q && break
+    sleep 1
+done
+pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PG_USER" -q || {
+    echo "ERROR: postgres is not reachable at $PGHOST:$PGPORT after 30 s (PGDATA=$PGDATA)"
+    exit 1
+}
+
 # ---------------------------------------------------------------------------
 # 3. Load dumps for this benchmark (idempotent — skips existing DBs)
 # ---------------------------------------------------------------------------
-DATA_ROOT=$(uv run python -c "
+DATA_ROOT=$(uv run python - "$BENCHMARK" <<'PYEOF'
+import sys
 from bird_interact_agents import paths
-print(paths.benchmark_data_root('$BENCHMARK'))
-")
+print(paths.benchmark_data_root(sys.argv[1]))
+PYEOF
+)
 DUMPS_DIR="$DATA_ROOT/pg_dumps"
 
 if [[ ! -d "$DUMPS_DIR" ]]; then

@@ -37,12 +37,16 @@ def _runuser_postgres(*args: str) -> list[str]:
 def test_ensure_postgres_loaded_calls_subprocess(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """_ensure_postgres_loaded invokes pg_ctlcluster start, createdb, and
-    psql -f for each SQL file, in order."""
+    """_ensure_postgres_loaded invokes pg_ctlcluster start, dropdb, createdb,
+    and psql -f for each SQL file, in order."""
     data_dir = _make_pg_dumps_dir(tmp_path, ["alien", "bird"])
     monkeypatch.setattr(ray_app, "_pg_version", lambda: "17")
     monkeypatch.setattr(ray_app, "_PG_INIT_LOCK", tmp_path / "pg_init.lock")
     monkeypatch.setattr(ray_app, "_PG_LOADED_MARKER", tmp_path / "pg_loaded.marker")
+    monkeypatch.setattr(
+        ray_app, "_pg_db_marker",
+        lambda db: tmp_path / f"pg_db_loaded_{db}.marker",
+    )
 
     calls_seen: list[list[str]] = []
 
@@ -61,6 +65,9 @@ def test_ensure_postgres_loaded_calls_subprocess(
     assert len(role_calls) == 1
     assert "bird_interact" in role_calls[0][-1]
 
+    # Each DB: dropdb --if-exists then createdb then psql -f
+    assert _runuser_postgres("dropdb", "--if-exists", "alien") in calls_seen
+    assert _runuser_postgres("dropdb", "--if-exists", "bird") in calls_seen
     assert _runuser_postgres("createdb", "alien") in calls_seen
     assert _runuser_postgres("createdb", "bird") in calls_seen
 
@@ -69,6 +76,9 @@ def test_ensure_postgres_loaded_calls_subprocess(
     assert _runuser_postgres("psql", "-d", "alien", "-f", alien_sql) in calls_seen
     assert _runuser_postgres("psql", "-d", "bird", "-f", bird_sql) in calls_seen
 
+    # Both per-DB markers and the global marker must be written.
+    assert (tmp_path / "pg_db_loaded_alien.marker").exists()
+    assert (tmp_path / "pg_db_loaded_bird.marker").exists()
     assert (tmp_path / "pg_loaded.marker").exists()
 
 
@@ -124,6 +134,48 @@ def test_ensure_postgres_loaded_missing_pg_dumps(
 # ---------------------------------------------------------------------------
 
 
+def test_ensure_postgres_loaded_retry_skips_completed_dbs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """On retry, DBs whose per-DB marker already exists are skipped; only
+    the remaining DB is dropped, created, and loaded."""
+    data_dir = _make_pg_dumps_dir(tmp_path, ["alien", "bird"])
+    monkeypatch.setattr(ray_app, "_pg_version", lambda: "17")
+    monkeypatch.setattr(ray_app, "_PG_INIT_LOCK", tmp_path / "pg_init.lock")
+    monkeypatch.setattr(ray_app, "_PG_LOADED_MARKER", tmp_path / "pg_loaded.marker")
+    monkeypatch.setattr(
+        ray_app, "_pg_db_marker",
+        lambda db: tmp_path / f"pg_db_loaded_{db}.marker",
+    )
+    # Simulate "alien" completed in a prior attempt.
+    (tmp_path / "pg_db_loaded_alien.marker").touch()
+
+    calls_seen: list[list[str]] = []
+
+    def fake_run(cmd, *, check=False, capture_output=False):  # noqa: ARG001
+        calls_seen.append(list(cmd))
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr(ray_app.subprocess, "run", fake_run)
+
+    ray_app._ensure_postgres_loaded(data_dir)
+
+    # alien must not be touched at all.
+    assert _runuser_postgres("dropdb", "--if-exists", "alien") not in calls_seen
+    assert _runuser_postgres("createdb", "alien") not in calls_seen
+    alien_sql = str(data_dir / "pg_dumps" / "alien" / "alien.sql")
+    assert _runuser_postgres("psql", "-d", "alien", "-f", alien_sql) not in calls_seen
+
+    # bird must be fully loaded.
+    assert _runuser_postgres("dropdb", "--if-exists", "bird") in calls_seen
+    assert _runuser_postgres("createdb", "bird") in calls_seen
+    bird_sql = str(data_dir / "pg_dumps" / "bird" / "bird.sql")
+    assert _runuser_postgres("psql", "-d", "bird", "-f", bird_sql) in calls_seen
+
+    assert (tmp_path / "pg_db_loaded_bird.marker").exists()
+    assert (tmp_path / "pg_loaded.marker").exists()
+
+
 def test_ensure_postgres_loaded_concurrent_actors_serialize(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -135,6 +187,10 @@ def test_ensure_postgres_loaded_concurrent_actors_serialize(
     monkeypatch.setattr(ray_app, "_pg_version", lambda: "17")
     monkeypatch.setattr(ray_app, "_PG_INIT_LOCK", tmp_path / "pg_init.lock")
     monkeypatch.setattr(ray_app, "_PG_LOADED_MARKER", marker_path)
+    monkeypatch.setattr(
+        ray_app, "_pg_db_marker",
+        lambda db: tmp_path / f"pg_db_loaded_{db}.marker",
+    )
 
     pg_ctlcluster_call_count = [0]
 

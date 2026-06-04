@@ -122,6 +122,10 @@ _PG_LOADED_MARKER = Path("/tmp/pg_loaded.marker")
 _SAFE_DB_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
+def _pg_db_marker(db: str) -> Path:
+    return Path(f"/tmp/pg_db_loaded_{db}.marker")
+
+
 def _ensure_postgres_loaded(data_dir: Path) -> None:
     """Start a local PostgreSQL server and load benchmark databases.
 
@@ -129,7 +133,8 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
     (one SQL file per database, produced by ``pg_dump``).
 
     Idempotent: a node-level lock serialises concurrent actors; a marker
-    file prevents re-loading on second actor init within the same node."""
+    file prevents re-loading on second actor init within the same node.
+    Per-DB markers allow safe retry when psql fails mid-dump."""
     pg_dumps_dir = data_dir / "pg_dumps"
     if not pg_dumps_dir.is_dir():
         raise RuntimeError(
@@ -172,9 +177,18 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
                     "DB names must start with a letter or underscore and contain "
                     "only letters, digits, and underscores."
                 )
+            # Skip databases that completed successfully in a prior attempt.
+            if _pg_db_marker(db).exists():
+                continue
+            # Drop any partial load from a prior failed attempt before retrying.
+            subprocess.run(
+                ["runuser", "-u", "postgres", "--", "dropdb", "--if-exists", db],
+                check=True,
+                capture_output=True,
+            )
             subprocess.run(
                 ["runuser", "-u", "postgres", "--", "createdb", db],
-                check=False,  # already exists on retry → non-zero, that's fine
+                check=True,
                 capture_output=True,
             )
             for sql_file in sorted(db_dir.glob("*.sql")):
@@ -183,6 +197,7 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
                      "psql", "-d", db, "-f", str(sql_file)],
                     check=True,
                 )
+            _pg_db_marker(db).touch()
 
         _PG_LOADED_MARKER.touch()
 
