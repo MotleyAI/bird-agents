@@ -730,9 +730,21 @@ def merge_audited_gold_variants(
         return out
 
     def _read_incoming_rows(src: Path) -> "list[AuditedGoldRow]":
-        """Parse all valid AuditedGoldRow entries from a per-task JSONL file."""
+        """Parse all valid AuditedGoldRow entries from a per-task JSONL file.
+
+        Handles both new grouped format (one line per task) and legacy flat
+        format (one line per variant). Legacy flat rows are grouped by
+        instance_id so multi-variant tasks are not silently truncated.
+        """
+        from bird_interact_agents.eval.annotation_schema import AuditedGoldRow
+
         rows: list[AuditedGoldRow] = []
+        flat_by_iid: dict[str, list[dict]] = {}
+
         for line in src.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
             result = _parse_audited_gold_row(src, line)
             if result is None:
                 continue
@@ -740,31 +752,64 @@ def merge_audited_gold_variants(
                 report.errors += 1
                 report.error_details.append(result)
                 continue
-            rows.append(result)
+            if result.variants and len(result.variants) > 1:
+                # Grouped format — all variants present, use directly.
+                rows.append(result)
+            else:
+                # Could be grouped (single-variant) or a legacy flat row
+                # that _parse_audited_gold_row wrapped as a single-element
+                # group. Group by iid to accumulate multi-variant flat files.
+                flat_by_iid.setdefault(result.instance_id, []).append(result)
+
+        # Merge single-or-flat rows: if there is only one row per iid, use it
+        # directly; if multiple accumulated, rebuild from their variant lists.
+        for iid, iid_rows in flat_by_iid.items():
+            if len(iid_rows) == 1:
+                rows.append(iid_rows[0])
+            else:
+                # Multiple flat-format rows for the same task: merge variants.
+                all_variants = [v for r in iid_rows for v in r.variants]
+                if not any(v.primary for v in all_variants):
+                    all_variants[0] = all_variants[0].model_copy(update={"primary": True})
+                first = iid_rows[0]
+                try:
+                    merged = AuditedGoldRow(
+                        instance_id=first.instance_id,
+                        selected_database=first.selected_database,
+                        benchmark=first.benchmark,
+                        variants=all_variants,
+                    )
+                    rows.append(merged)
+                except Exception as e:
+                    report.errors += 1
+                    report.error_details.append(f"{src}: merge error for {iid}: {e}")
+
         return rows
 
     if override:
         # Upsert mode: replace all rows for re-annotated instance_ids.
         existing_ordered = _read_consolidated()
 
-        # Purge existing rows only for instances whose annotator task produced
-        # an audited_gold_variants.jsonl (even empty — empty means original_gold_is_correct=True).
-        rerun_iids = {
-            sub.name
-            for sub in rows_dir.iterdir()
-            if sub.is_dir() and (sub / "audited_gold_variants.jsonl").exists()
-        }
-        for iid in list(existing_ordered.keys()):
-            if iid in rerun_iids:
-                del existing_ordered[iid]
-
+        # Collect all valid incoming rows before touching existing_ordered so
+        # that a validation failure on new data never silently drops old rows.
+        incoming: dict[str, str] = {}  # instance_id → serialised AuditedGoldRow
+        rerun_iids: set[str] = set()
         for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
             src = sub / "audited_gold_variants.jsonl"
             if not src.exists():
                 continue
+            rerun_iids.add(sub.name)
             for row in _read_incoming_rows(src):
-                existing_ordered[row.instance_id] = row.model_dump_json()
-                report.added += 1
+                incoming[row.instance_id] = row.model_dump_json()
+
+        # Purge only after all new rows are validated and ready.
+        for iid in list(existing_ordered.keys()):
+            if iid in rerun_iids:
+                del existing_ordered[iid]
+
+        for iid, serialised in incoming.items():
+            existing_ordered[iid] = serialised
+            report.added += 1
 
         if existing_ordered:
             consolidated.parent.mkdir(parents=True, exist_ok=True)

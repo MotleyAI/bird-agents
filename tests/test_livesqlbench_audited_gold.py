@@ -334,7 +334,7 @@ def test_audit_file_exists_when_other_audits_are_present():
 
 def test_audit_rows_cover_select_tasks_per_db():
     """Every row must belong to a DB in EXPECTED_INSTANCE_IDS_BY_DB, and
-    each expected DB must have at least one audited row.
+    every instance_id must be in the expected SELECT-task set for its DB.
 
     The audited gold only contains rows for tasks the annotator found
     needing edits (status=`edited`). Tasks whose gold is `original_correct`

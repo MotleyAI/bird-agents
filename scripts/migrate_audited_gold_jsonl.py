@@ -29,7 +29,11 @@ def _migrate_file(jsonl_path: Path) -> tuple[int, int]:
         print(f"  {jsonl_path.name}: empty — skipping")
         return 0, 0
 
-    first = json.loads(lines[0])
+    try:
+        first = json.loads(lines[0])
+    except json.JSONDecodeError as e:
+        print(f"  {jsonl_path.name}: first line is not valid JSON ({e}) — skipping")
+        return 0, 0
     if "variants" in first:
         print(f"  {jsonl_path.name}: already in grouped format — skipping")
         return 0, 0
