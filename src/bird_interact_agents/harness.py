@@ -690,6 +690,7 @@ def apply_audited_gold_overlay(
             single_rows = None
         else:
             single_rows = {}
+            flat_rows_by_iid: dict[str, list[dict]] = {}
             with single_file_path.open() as f:
                 for line in f:
                     line = line.strip()
@@ -703,33 +704,56 @@ def apply_audited_gold_overlay(
                             benchmark.name, single_file_path, e,
                         )
                         continue
-                    inst_id = d.get("instance_id")
-                    if not inst_id:
-                        logger.warning(
-                            "audited-gold row missing instance_id for benchmark=%s at %s",
-                            benchmark.name, single_file_path,
-                        )
+                    if not isinstance(d, dict):
                         continue
-                    # Codex r9: DEV-1515 multi-variant audits ship N
-                    # rows per instance_id (one ``primary=True`` plus
-                    # non-primary alternates). Latest-wins would let a
-                    # later-listed alternate overwrite the primary's
-                    # audited_sol_sql, applying the wrong reading at
-                    # overlay time. Prefer primary; once recorded,
-                    # never overwrite. (A non-primary recorded first
-                    # gets overwritten by the primary later in the
-                    # file.)
-                    existing = single_rows.get(inst_id)
-                    if existing is None:
-                        single_rows[inst_id] = d
-                    elif existing.get("primary") is True:
-                        # Already have the primary — keep it.
-                        continue
-                    elif d.get("primary") is True:
-                        # Upgrade non-primary → primary.
-                        single_rows[inst_id] = d
-                    # else: both non-primary, keep the first one (no
-                    # ordering preference between alternates).
+                    if "variants" in d:
+                        # New grouped format — parse as AuditedGoldRow.
+                        from bird_interact_agents.eval.annotation_schema import AuditedGoldRow as _AuditedGoldRow
+                        try:
+                            agr = _AuditedGoldRow.model_validate(d)
+                        except Exception as e:
+                            logger.warning(
+                                "invalid AuditedGoldRow for benchmark=%s at %s: %s",
+                                benchmark.name, single_file_path, e,
+                            )
+                            continue
+                        # Flatten the primary variant into the dict that the
+                        # downstream overlay code expects: selected_database,
+                        # benchmark, audit_status, audited_sol_sql.
+                        pv = agr.primary_variant
+                        single_rows[agr.instance_id] = {
+                            "instance_id": agr.instance_id,
+                            "selected_database": agr.selected_database,
+                            "benchmark": agr.benchmark,
+                            "audit_status": pv.audit_status,
+                            "audited_sol_sql": pv.audited_sol_sql,
+                            "primary": True,
+                        }
+                    else:
+                        # Legacy flat-row format — buffer by instance_id.
+                        inst_id = d.get("instance_id")
+                        if inst_id:
+                            flat_rows_by_iid.setdefault(inst_id, []).append(d)
+            # Convert buffered legacy flat rows by reading directly.
+            # We do NOT use from_flat_rows here: legacy rows may lack variant_id,
+            # may have audit_status="unrecoverable" (which from_flat_rows skips),
+            # or may have empty audited_sol_sql for clean rows.  Reading directly
+            # preserves all status values and lets the downstream overlay decide.
+            for inst_id, flat_rows in flat_rows_by_iid.items():
+                if inst_id in single_rows:
+                    continue
+                # Prefer the row marked primary=True; fall back to the first row.
+                primary_row = next(
+                    (r for r in flat_rows if r.get("primary")), flat_rows[0]
+                )
+                single_rows[inst_id] = {
+                    "instance_id": primary_row.get("instance_id", inst_id),
+                    "selected_database": primary_row.get("selected_database") or "",
+                    "benchmark": primary_row.get("benchmark") or "",
+                    "audit_status": primary_row.get("audit_status") or "missing-row",
+                    "audited_sol_sql": primary_row.get("audited_sol_sql") or [],
+                    "primary": True,
+                }
         for task in tasks:
             inst = task.get("instance_id")
             db = task.get("selected_database")
@@ -791,7 +815,7 @@ def apply_audited_gold_overlay(
                 continue
             status = entry.get("audit_status")
             overlay_log[inst] = status or "missing-row"
-            if status in ("edited", "unrecoverable"):
+            if status in ("edited", "unrecoverable"):  # keep "unrecoverable" for legacy rows
                 audited = entry.get("audited_sol_sql")
                 if isinstance(audited, list) and audited:
                     task["sol_sql"] = list(audited)

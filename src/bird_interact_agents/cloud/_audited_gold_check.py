@@ -70,45 +70,64 @@ def _load_single_file_audit_index(
     cross-benchmark guards (an instance_id collision that pointed at the
     wrong database or the wrong benchmark would silently apply the wrong
     audit otherwise).
+
+    Supports both the new grouped format (``AuditedGoldRow`` — one line per
+    task with a ``variants`` list) and the legacy flat-row format (one line
+    per variant). Primary-variant preference is enforced via the ``primary``
+    flag on ``AuditedGoldVariant``.
     """
+    from bird_interact_agents.eval.annotation_schema import AuditedGoldRow
+
     path = audited_root / f"{benchmark.name}_audited.jsonl"
     if not path.exists():
         return None
     out: dict[str, tuple[str, bool, str, str]] = {}
-    # Track whether each iid's current row came from a primary-tagged
-    # source so we can prefer ``primary=True`` over alternates when
-    # multi-variant rows share an instance_id (Codex r9). Mirrors
-    # ``harness._load_single_file_audited_rows``.
-    primary_seen: dict[str, bool] = {}
+    flat_rows_by_iid: dict[str, list[dict]] = {}
+
     with path.open() as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
             try:
-                row = json.loads(line)
+                d = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            iid = row.get("instance_id")
-            if not iid:
+            if not isinstance(d, dict):
                 continue
-            is_primary = row.get("primary") is True
-            existing_is_primary = primary_seen.get(iid, False)
-            if iid in out and existing_is_primary and not is_primary:
-                # Already have the primary recorded — never let an
-                # alternate stomp on it.
-                continue
-            if iid in out and not existing_is_primary and not is_primary:
-                # Two non-primary alternates — keep the first (no
-                # ordering preference).
-                continue
-            status = row.get("audit_status") or "missing-row"
-            audited = row.get("audited_sol_sql")
-            has_audited_sql = isinstance(audited, list) and bool(audited)
-            row_db = row.get("selected_database") or ""
-            row_benchmark = row.get("benchmark") or ""
-            out[iid] = (status, has_audited_sql, row_db, row_benchmark)
-            primary_seen[iid] = is_primary
+
+            if "variants" in d:
+                # New grouped format.
+                try:
+                    row = AuditedGoldRow.model_validate(d)
+                except Exception:
+                    continue
+                pv = row.primary_variant
+                has_audited_sql = bool(pv.audited_sol_sql)
+                out[row.instance_id] = (
+                    pv.audit_status, has_audited_sql,
+                    row.selected_database, row.benchmark,
+                )
+            else:
+                # Legacy flat-row format — buffer and group by instance_id.
+                iid = d.get("instance_id")
+                if iid:
+                    flat_rows_by_iid.setdefault(iid, []).append(d)
+
+    # Convert buffered legacy flat rows by reading directly (no from_flat_rows).
+    # Legacy rows may lack variant_id, have audit_status="unrecoverable", or
+    # have empty audited_sol_sql for clean rows — all of which from_flat_rows
+    # cannot handle cleanly.  Mirrors _load_db_audit_index's direct approach.
+    for iid, flat_rows in flat_rows_by_iid.items():
+        if iid in out:
+            continue
+        primary_row = next((r for r in flat_rows if r.get("primary")), flat_rows[0])
+        status = primary_row.get("audit_status") or "missing-row"
+        audited = primary_row.get("audited_sol_sql")
+        has_audited_sql = isinstance(audited, list) and bool(audited)
+        row_db = primary_row.get("selected_database") or ""
+        row_benchmark = primary_row.get("benchmark") or ""
+        out[iid] = (status, has_audited_sql, row_db, row_benchmark)
     return out
 
 
@@ -171,16 +190,16 @@ def missing_audited_gold_ids(
       - (single_file only) the row's ``selected_database`` doesn't match
         the dataset's mapping for the id (cross-benchmark id collision —
         treating as missing avoids silently applying the wrong audit), OR
-      - the row's ``audit_status`` is ``edited`` or ``unrecoverable`` but
-        ``audited_sol_sql`` is missing or not a non-empty list (the
-        overlay would silently fall back to the original un-audited gold
-        for such rows, defeating the guard).
+      - the row's ``audit_status`` is ``"edited"`` but ``audited_sol_sql``
+        is missing or not a non-empty list (the overlay would silently fall
+        back to the original un-audited gold for such rows, defeating the
+        guard).
 
-    A row with ``audit_status == "clean"`` passes regardless of
-    ``audited_sol_sql`` because the overlay deliberately leaves
-    ``sol_sql`` untouched for clean rows — the original IS the audited
-    gold by design. Returns the missing ids in input order; an empty
-    list means everyone has audited gold.
+    A row with ``audit_status == "original"`` (or legacy ``"clean"``) passes
+    regardless of ``audited_sol_sql`` because the overlay deliberately leaves
+    ``sol_sql`` untouched for those rows — the original IS the audited gold
+    by design. Returns the missing ids in input order; an empty list means
+    everyone has audited gold.
     """
     audited_root = audited_root or paths.audited_gold_root()
     inst_to_db = _load_dataset_instance_db_map(data_path, benchmark=benchmark)
@@ -222,9 +241,9 @@ def missing_audited_gold_ids(
             if not row_benchmark or row_benchmark != benchmark.name:
                 missing.append(iid)
                 continue
-            if status == "clean":
+            if status in ("clean", "original"):
                 continue
-            if status in ("edited", "unrecoverable") and has_audited_sql:
+            if status == "edited" and has_audited_sql:
                 continue
             missing.append(iid)
         return missing
@@ -248,7 +267,7 @@ def missing_audited_gold_ids(
             missing.append(iid)
             continue
         status, has_audited_sql = entry
-        if status == "clean":
+        if status in ("clean", "original"):
             continue
         if status in ("edited", "unrecoverable") and has_audited_sql:
             continue

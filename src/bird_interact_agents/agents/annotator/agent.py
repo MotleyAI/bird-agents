@@ -32,7 +32,12 @@ from bird_interact_agents.agents._tool_specs import (
     BIRD_INTERACT_TOOLS,
     render_action,
 )
-from bird_interact_agents.eval.annotation_schema import EVIDENCE_SOURCE_PREFIXES, MaskedTerm, TaskAnnotation
+from bird_interact_agents.eval.annotation_schema import (
+    EVIDENCE_SOURCE_PREFIXES,
+    AuditedGoldVariant,
+    MaskedTerm,
+    TaskAnnotation,
+)
 from bird_interact_agents.eval.implicit_annotation import _benchmark_task_jsonl_name
 from bird_interact_agents.harness import (
     MAX_MODEL_TURNS,
@@ -193,75 +198,30 @@ async def submit_annotation(args: dict) -> dict:
     except (json.JSONDecodeError, TypeError) as e:
         return _text(f"Error: invalid JSON in audited_gold_variants_json: {e}")
 
-    _REQUIRED_VARIANT_FIELDS = {
-        "instance_id", "selected_database", "benchmark",
-        "audit_status", "audited_sol_sql", "variant_id",
-    }
+    # Validate each variant with AuditedGoldVariant. Task-level fields
+    # (instance_id, selected_database, benchmark) are NOT required in the
+    # variant dict — the runner injects them when writing to GCS.
+    parsed_variants: list[AuditedGoldVariant] = []
     for i, variant in enumerate(audited_gold_variants):
         if not isinstance(variant, dict):
             return _text(
                 f"Error: audited_gold_variants[{i}] is not a dict (got {type(variant).__name__})"
             )
-        missing = _REQUIRED_VARIANT_FIELDS - variant.keys()
-        if missing:
-            return _text(
-                f"Error: audited_gold_variants[{i}] is missing required fields: "
-                f"{sorted(missing)}. Add them and retry."
-            )
-        if expected_iid and variant.get("instance_id") != expected_iid:
-            return _text(
-                f"Error: audited_gold_variants[{i}].instance_id must be "
-                f"{expected_iid!r}, got {variant.get('instance_id')!r}"
-            )
-        if expected_db and variant.get("selected_database") != expected_db:
-            return _text(
-                f"Error: audited_gold_variants[{i}].selected_database must be "
-                f"{expected_db!r}, got {variant.get('selected_database')!r}"
-            )
-        if expected_benchmark and variant.get("benchmark") != expected_benchmark:
-            return _text(
-                f"Error: audited_gold_variants[{i}].benchmark must be "
-                f"{expected_benchmark!r}, got {variant.get('benchmark')!r}"
-            )
-        if not isinstance(variant.get("audited_sol_sql"), list):
-            return _text(
-                f"Error: audited_gold_variants[{i}].audited_sol_sql must be a list "
-                f"of SQL strings, got {type(variant.get('audited_sol_sql')).__name__!r}. "
-                f"Wrap single SQL in a list: [\"SELECT ...\"]"
-            )
-        _VALID_AUDIT_STATUSES = {"clean", "edited", "unrecoverable", "original_correct"}
-        _status = variant.get("audit_status")
-        if _status != "unrecoverable" and not variant.get("audited_sol_sql"):
-            return _text(
-                f"Error: audited_gold_variants[{i}].audited_sol_sql must contain at least "
-                f"one SQL string when audit_status={_status!r}. "
-                f"Only audit_status='unrecoverable' permits an empty list."
-            )
-        if variant.get("audit_status") not in _VALID_AUDIT_STATUSES:
-            return _text(
-                f"Error: audited_gold_variants[{i}].audit_status must be one of "
-                f"{sorted(_VALID_AUDIT_STATUSES)}, got {variant.get('audit_status')!r}"
-            )
-        _primary_val = variant.get("primary")
-        if _primary_val is not None and not isinstance(_primary_val, bool):
-            return _text(
-                f"Error: audited_gold_variants[{i}].primary must be a boolean "
-                f"(true or false), got {type(_primary_val).__name__!r}. "
-                f"Use JSON true/false, not 1/0 or strings."
-            )
+        try:
+            parsed_variants.append(AuditedGoldVariant.model_validate(variant))
+        except ValidationError as e:
+            return _text(f"Validation error in audited_gold_variants[{i}]: {e}")
 
     _seen_vids: set[str] = set()
-    for i, variant in enumerate(audited_gold_variants):
-        vid = variant.get("variant_id", "")
-        if vid in _seen_vids:
+    for i, v in enumerate(parsed_variants):
+        if v.variant_id in _seen_vids:
             return _text(
-                f"Validation error: duplicate variant_id {vid!r} in audited_gold_variants "
-                f"(entries {[j for j, v in enumerate(audited_gold_variants) if v.get('variant_id') == vid]}). "
-                f"Each submitted variant must have a unique variant_id."
+                f"Validation error: duplicate variant_id {v.variant_id!r} in "
+                f"audited_gold_variants. Each submitted variant must have a unique variant_id."
             )
-        _seen_vids.add(vid)
+        _seen_vids.add(v.variant_id)
 
-    if task_annotation.original_gold_is_correct and audited_gold_variants:
+    if task_annotation.original_gold_is_correct and parsed_variants:
         return _text(
             "Validation error: original_gold_is_correct=True requires an empty "
             "audited_gold_variants array. Set audited_gold_variants_json to '[]'."
@@ -270,7 +230,7 @@ async def submit_annotation(args: dict) -> dict:
     _solvable_verdicts = {"sufficient", "ambiguous"}
     if (
         not task_annotation.original_gold_is_correct
-        and not audited_gold_variants
+        and not parsed_variants
         and task_annotation.metadata_sufficiency.verdict in _solvable_verdicts
     ):
         return _text(
@@ -281,6 +241,18 @@ async def submit_annotation(args: dict) -> dict:
             f"(Only verdict='insufficient' permits original_gold_is_correct=False "
             f"with no audited variants.)"
         )
+
+    # Guard: original_gold_is_correct=False but every variant has status='original'
+    # means the annotator said "gold is wrong" but only submitted the original
+    # unchanged answer — that combination is contradictory.
+    if not task_annotation.original_gold_is_correct and parsed_variants:
+        if all(v.audit_status == "original" for v in parsed_variants):
+            return _text(
+                "Validation error: original_gold_is_correct=False but all submitted "
+                "variants have audit_status='original'. If the original gold is the only "
+                "correct answer, set original_gold_is_correct=True and submit "
+                "audited_gold_variants_json='[]'."
+            )
 
     if not task_annotation.metadata_sufficiency.evidence_sources_consulted:
         return _text(
@@ -297,7 +269,7 @@ async def submit_annotation(args: dict) -> dict:
         )
 
     if not task_annotation.original_gold_is_correct and task_annotation.gold_variants:
-        submitted_variant_ids = {v.get("variant_id") for v in audited_gold_variants}
+        submitted_variant_ids = {v.variant_id for v in parsed_variants}
         for gvr in task_annotation.gold_variants:
             ref_vid = gvr.audited_gold_ref.variant_id
             if ref_vid not in submitted_variant_ids:
@@ -307,8 +279,7 @@ async def submit_annotation(args: dict) -> dict:
                     f"found in audited_gold_variants_json. Add the audited row or "
                     f"set original_gold_is_correct=True."
                 )
-        variant_primary_map = {v.get("variant_id"): v.get("primary", False)
-                               for v in audited_gold_variants}
+        variant_primary_map = {v.variant_id: v.primary for v in parsed_variants}
         for gvr in task_annotation.gold_variants:
             if gvr.primary and not variant_primary_map.get(gvr.audited_gold_ref.variant_id, False):
                 return _text(
@@ -317,37 +288,37 @@ async def submit_annotation(args: dict) -> dict:
                     f"Set primary=True in the audited variant row."
                 )
 
-    # Reverse cross-check: if audited variants submitted, gold_variants must reference each one.
-    if not task_annotation.original_gold_is_correct and audited_gold_variants:
+    # Reverse cross-check: every audited variant must be referenced by gold_variants.
+    if not task_annotation.original_gold_is_correct and parsed_variants:
         if not task_annotation.gold_variants:
             return _text(
                 "Validation error: audited_gold_variants is non-empty but gold_variants is "
                 "empty. Add a GoldVariantRef in gold_variants for each submitted audited variant."
             )
         gold_ref_ids = {gvr.audited_gold_ref.variant_id for gvr in task_annotation.gold_variants}
-        for v in audited_gold_variants:
-            vid = v.get("variant_id")
-            if vid not in gold_ref_ids:
+        for v in parsed_variants:
+            if v.variant_id not in gold_ref_ids:
                 return _text(
-                    f"Validation error: audited variant {vid!r} has no matching GoldVariantRef "
-                    f"in gold_variants. Add a gold_variants entry with "
-                    f"audited_gold_ref.variant_id={vid!r}."
+                    f"Validation error: audited variant {v.variant_id!r} has no matching "
+                    f"GoldVariantRef in gold_variants. Add a gold_variants entry with "
+                    f"audited_gold_ref.variant_id={v.variant_id!r}."
                 )
 
-    primary_count = sum(1 for v in audited_gold_variants if v.get("primary", False))
+    primary_count = sum(1 for v in parsed_variants if v.primary)
     if primary_count > 1:
         return _text(
             f"Validation error: at most one audited_gold_variants entry may have "
             f"primary=True; got {primary_count}. Mark exactly the primary variant."
         )
-    if audited_gold_variants and primary_count == 0:
+    if parsed_variants and primary_count == 0:
         return _text(
             "Validation error: at least one audited_gold_variants entry must have primary=True."
         )
 
     _ctx["annotation_result"] = {
         "task_annotation": task_annotation,
-        "audited_gold_variants": audited_gold_variants,
+        # Store normalized variant dicts (task-level fields injected by runner).
+        "audited_gold_variants": [v.model_dump() for v in parsed_variants],
     }
     _ctx["_submission_done"] = True
     return _text("Annotation submitted successfully.")

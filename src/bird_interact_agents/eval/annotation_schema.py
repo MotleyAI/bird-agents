@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator  # noqa: F401
 
 # Valid prefixes for evidence_sources_consulted entries.
 EVIDENCE_SOURCE_PREFIXES: tuple[str, ...] = (
@@ -33,6 +33,115 @@ EVIDENCE_SOURCE_PREFIXES: tuple[str, ...] = (
 # and human-greppable.
 MetadataSufficiencyVerdict = Literal["sufficient", "ambiguous", "insufficient"]
 AuditStatus = Literal["clean", "edited", "unrecoverable", "original_correct"]
+
+
+class AuditedGoldVariant(BaseModel):
+    """One audited SQL variant for a task.
+
+    Normalises legacy status values at ingestion: ``clean`` and
+    ``original_correct`` → ``"original"``; ``unrecoverable`` is rejected
+    (those tasks are represented by ``verdict="insufficient"`` in the task
+    annotation instead).
+
+    ``primary=True`` designates the single preferred variant the harness
+    and grader use when only one answer is needed.  Exactly one variant
+    per task must carry this flag.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    variant_id: str
+    audit_status: Literal["original", "edited"]
+    audited_sol_sql: list[str]
+    primary: bool = False
+    notes: str | None = None
+
+    @field_validator("audit_status", mode="before")
+    @classmethod
+    def _normalise_status(cls, v: object) -> str:
+        if v in ("clean", "original_correct"):
+            return "original"
+        if v == "unrecoverable":
+            raise ValueError(
+                "unrecoverable variants must not be stored in the audited gold JSONL; "
+                "use verdict='insufficient' + evaluator_prompt in the task annotation instead"
+            )
+        return str(v)
+
+    @model_validator(mode="after")
+    def _non_empty_sql(self) -> "AuditedGoldVariant":
+        if not self.audited_sol_sql:
+            raise ValueError("audited_sol_sql must contain at least one SQL string")
+        return self
+
+
+class AuditedGoldRow(BaseModel):
+    """One task's complete audited gold — all variants grouped.
+
+    One line per ``instance_id`` in the consolidated JSONL.  Replaces the
+    legacy flat-row-per-variant layout.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    instance_id: str
+    selected_database: str
+    benchmark: str
+    variants: list[AuditedGoldVariant]
+
+    @model_validator(mode="after")
+    def _check_variants(self) -> "AuditedGoldRow":
+        if not self.variants:
+            raise ValueError(f"{self.instance_id}: variants must be non-empty")
+        n_primary = sum(1 for v in self.variants if v.primary)
+        if n_primary != 1:
+            raise ValueError(
+                f"{self.instance_id}: exactly one variant must have primary=True; "
+                f"got {n_primary}"
+            )
+        return self
+
+    @property
+    def primary_variant(self) -> "AuditedGoldVariant":
+        return next(v for v in self.variants if v.primary)
+
+    @classmethod
+    def from_flat_rows(cls, rows: list[dict]) -> "AuditedGoldRow":
+        """Build from legacy flat rows (one dict per variant). Skips unrecoverable rows.
+
+        If no variant has ``primary=True``, defaults the first surviving
+        variant to primary.  ``variant_id`` is auto-generated as ``"v{i}"``
+        when absent (legacy files pre-date the field).
+        """
+        variants: list[AuditedGoldVariant] = []
+        for i, r in enumerate(rows):
+            d = dict(r)
+            if d.get("audit_status") == "unrecoverable":
+                continue
+            if "variant_id" not in d:
+                d["variant_id"] = f"v{i}"
+            if "variant_description" in d and "notes" not in d:
+                d["notes"] = d.pop("variant_description")
+            else:
+                d.pop("variant_description", None)
+            d.pop("is_gold", None)
+            try:
+                variants.append(AuditedGoldVariant.model_validate(d))
+            except (ValidationError, Exception):
+                continue
+        if not variants:
+            raise ValueError("no valid variants after filtering unrecoverable rows")
+        if not any(v.primary for v in variants):
+            variants[0] = variants[0].model_copy(update={"primary": True})
+        first = rows[0]
+        return cls(
+            instance_id=first["instance_id"],
+            selected_database=first["selected_database"],
+            benchmark=first["benchmark"],
+            variants=variants,
+        )
+
+
 RowsetRelation = Literal[
     "equal_rowset",
     "strict_subset_of",

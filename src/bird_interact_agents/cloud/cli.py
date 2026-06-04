@@ -299,6 +299,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"WARNING: {label}: {n_errors} error(s)")
                 for detail in report.get("error_details", []):
                     print(f"  {detail}")
+        if kill_err := metrics.get("kill_after_fetch_error"):
+            print(f"WARNING: auto-kill failed — cluster may still be running: {kill_err}")
         return 0
     if ns.subcommand == "kill":
         driver.kill(ns.run_id)

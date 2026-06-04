@@ -1996,6 +1996,22 @@ def test_fetch_kills_cluster_when_attempts_reach_total_no_terminal_state(monkeyp
     assert kill_calls == [RUN_ID], "kill must be called when attempts == total"
 
 
+def test_fetch_surfaces_kill_error_in_metrics(monkeypatch, tmp_path):
+    """When kill() raises during auto-teardown, fetch() must catch the exception,
+    store it in metrics["kill_after_fetch_error"], and return normally — so
+    successfully collated results are not lost."""
+    _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    monkeypatch.setattr(driver, "kill", lambda _rid: (_ for _ in ()).throw(RuntimeError("cluster gone")))
+
+    metrics = driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert "kill_after_fetch_error" in metrics
+    assert "cluster gone" in metrics["kill_after_fetch_error"]
+
+
 # ---------------------------------------------------------------------------
 # DEV-1530 — --no-subscription-auth flag in read_api_keys_from_local_env
 # and build_manifest / build_annotator_manifest / resubmit.
