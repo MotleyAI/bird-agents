@@ -494,6 +494,9 @@ def _load_tasks_with_gold(
         wanted = set(filter_ids)
         merged = [r for r in merged if r.get("instance_id") in wanted]
 
+    if limit is not None:
+        merged = merged[:limit]
+
     missing_gold = [r["instance_id"] for r in merged if not r.get("sol_sql")]
     if missing_gold:
         raise ValueError(
@@ -502,8 +505,6 @@ def _load_tasks_with_gold(
             + ("..." if len(missing_gold) > 5 else "")
         )
 
-    if limit is not None:
-        merged = merged[:limit]
     return merged
 
 
