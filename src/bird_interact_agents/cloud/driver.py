@@ -558,6 +558,45 @@ def install_signal_handlers(*, run_id: str, yaml_path: Path) -> _Handler:
 
 
 # ---------------------------------------------------------------------------
+# Instance-ID validation (fail fast before any cloud touch)
+# ---------------------------------------------------------------------------
+
+
+def _validate_instance_ids(instance_ids, benchmark: str) -> None:
+    """Raise ValueError if any requested instance_id is not in the local
+    benchmark data file.
+
+    Runs before prereqs, image build, or any GCS/cluster call so typos and
+    non-existent IDs surface immediately rather than after paying for a cluster
+    spin-up that produces only dispatch-failure rows."""
+    data_file = paths.benchmark_data_file(benchmark)
+    if not data_file.is_file():
+        # Data not present locally (e.g. resubmit on a machine without the
+        # dataset) — skip the check rather than blocking.
+        return
+    known: set[str] = set()
+    with data_file.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                td = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            iid = td.get("instance_id")
+            if iid:
+                known.add(iid)
+    requested = set(instance_ids)
+    missing = sorted(requested - known)
+    if missing:
+        raise ValueError(
+            f"instance_id(s) not found in {data_file.name} for benchmark "
+            f"{benchmark!r}: {missing}. Check spelling or benchmark name."
+        )
+
+
+# ---------------------------------------------------------------------------
 # submit
 # ---------------------------------------------------------------------------
 
@@ -569,6 +608,7 @@ class WaitResult:
 
 
 def submit(args) -> str:
+    _validate_instance_ids(args.instance_ids, _submit_benchmark(args))
     prereqs.check(args)
     repo_root = submitter_repo_root()
     # DEV-1468: slayer fail-fast — verify the local setup is present BEFORE
@@ -746,6 +786,7 @@ def _build_annotator_job_args(
 
 
 def submit_annotator(args) -> str:
+    _validate_instance_ids(args.instance_ids, get_benchmark(args.benchmark).name)
     _prereq_args = argparse.Namespace(
         agent_model=args.agent_model,
         user_sim_model="",
