@@ -484,7 +484,7 @@ def load_audited_gold_rows_for(
         return []
     if getattr(bench, "audited_gold_layout", None) != "single_file":
         return []
-    consolidated = paths.audited_gold_root() / f"{bench.name}_audited.jsonl"
+    consolidated = paths.audited_gold_root() / bench.name / f"{bench.name}_audited.jsonl"
     if not consolidated.exists():
         return []
 

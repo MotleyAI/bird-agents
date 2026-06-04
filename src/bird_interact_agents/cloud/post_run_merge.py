@@ -768,9 +768,23 @@ def merge_audited_gold_variants(
                 rows.append(iid_rows[0])
             else:
                 # Multiple flat-format rows for the same task: merge variants.
+                # Each single-element AuditedGoldRow from from_flat_rows([d])
+                # defaults its variant to primary=True, so all_variants can
+                # have multiple primaries. Normalise to exactly one.
                 all_variants = [v for r in iid_rows for v in r.variants]
-                if not any(v.primary for v in all_variants):
-                    all_variants[0] = all_variants[0].model_copy(update={"primary": True})
+                first_primary_seen = False
+                normalized: list = []
+                for v in all_variants:
+                    if v.primary and not first_primary_seen:
+                        normalized.append(v)
+                        first_primary_seen = True
+                    elif v.primary:
+                        normalized.append(v.model_copy(update={"primary": False}))
+                    else:
+                        normalized.append(v)
+                if not first_primary_seen and normalized:
+                    normalized[0] = normalized[0].model_copy(update={"primary": True})
+                all_variants = normalized
                 first = iid_rows[0]
                 try:
                     merged = AuditedGoldRow(
