@@ -255,7 +255,7 @@ def build_manifest(
 # ---------------------------------------------------------------------------
 
 
-def _dbs_for_instances(instance_ids, benchmark: str = "mini_interact") -> list[str]:
+def _dbs_for_instances(instance_ids, benchmark: str = "mini-interact") -> list[str]:
     """Map the selected instance_ids to their distinct ``selected_database``
     via the benchmark's tasks file (never string-split the id — DB names contain
     underscores, e.g. ``california_schools``). Returns a sorted, de-duplicated
@@ -400,7 +400,7 @@ def _artifact_present(root: Path, db: str, artifact: str) -> bool:
 
 
 def _build_missing_otf_caches(
-    cache_root: Path, dbs: list[str], benchmark: str = "mini_interact",
+    cache_root: Path, dbs: list[str], benchmark: str = "mini-interact",
 ) -> None:
     """Build the deterministic OTF ingest cache locally for each DB in `dbs`.
 
@@ -481,7 +481,7 @@ def _upload_slayer_setup(args, run_id: str, dbs: list[str]) -> None:
 
 
 def _instance_ids_sorted_by_db(
-    instance_ids, benchmark: str = "mini_interact",
+    instance_ids, benchmark: str = "mini-interact",
 ) -> list[str]:
     """DEV-1470: sort iids by ``(selected_database, instance_id)`` so same-db
     tasks are adjacent in the ActorPool dispatch order — a single actor then

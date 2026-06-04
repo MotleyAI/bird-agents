@@ -89,11 +89,11 @@ def _latest_attempt_file(sub: Path) -> Path | None:
 
 def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
     """Map ``instance_id`` → list-of-SQL-strings for the benchmark's
-    original gold. mini_interact carries ``sol_sql`` inline on each task
-    row in ``mini_interact.jsonl``; livesqlbench ships an empty
-    ``sol_sql`` on the public ``livesqlbench_data_sqlite.jsonl`` and the
-    real list lives on the gated gold sidecar (env override
-    ``BIRD_LIVESQLBENCH_GOLD_FILE``). Look it up once at CLI startup so
+    original gold. mini-interact carries ``sol_sql`` inline on each task
+    row in the benchmark JSONL; livesqlbench-base-lite-sqlite ships an
+    empty ``sol_sql`` on the public ``livesqlbench_data_sqlite.jsonl``
+    and the real list lives in ``gated_gold/<benchmark>/``. Look it up
+    once at CLI startup so
     the per-row grader doesn't repeatedly parse a multi-megabyte JSONL.
     Empty rows fall back to ``[]`` so the cascade's N1 just doesn't fire
     for instances whose source row genuinely has no gold (rather than

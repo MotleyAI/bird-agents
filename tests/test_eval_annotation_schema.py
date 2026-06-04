@@ -63,7 +63,7 @@ def _make_task_annotation() -> TaskAnnotation:
                 primary=True,
                 anchored_in=["alien_kb.jsonl#1"],
                 audited_gold_ref=AuditedGoldRef(
-                    file="audited_gold/mini_interact_audited.jsonl",
+                    file="audited_gold/mini-interact_audited.jsonl",
                     instance_id="alien_42",
                     variant_id="canonical_only",
                 ),
@@ -292,7 +292,7 @@ def _make_gold_variant(variant_id: str = "primary", primary: bool = True) -> Gol
         primary=primary,
         anchored_in=[],
         audited_gold_ref=AuditedGoldRef(
-            file="audited_gold/mini_interact_audited.jsonl",
+            file="audited_gold/mini-interact_audited.jsonl",
             instance_id="alien_42",
             variant_id=variant_id,
         ),

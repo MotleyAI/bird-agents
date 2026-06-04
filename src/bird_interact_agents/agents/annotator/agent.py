@@ -154,11 +154,15 @@ async def submit_annotation(args: dict) -> dict:
     except json.JSONDecodeError as e:
         return _text(f"Error: invalid JSON in task_annotation_json: {e}")
 
+    if not isinstance(ta_dict, dict):
+        return _text("Validation error in task_annotation_json: expected a JSON object.")
     # Pre-inject harness-determined provenance so model_validate passes even
     # when the agent correctly left those fields unpopulated per the prompt.
     task_data = _ctx.get("task_data") or {}
     _benchmark = _ctx.get("benchmark", "")
     _prov = ta_dict.setdefault("provenance", {})
+    if not isinstance(_prov, dict):
+        return _text("Validation error in task_annotation_json: provenance must be an object.")
     _prov.setdefault("task_jsonl_path", _benchmark_task_jsonl_name(_benchmark) if _benchmark else "")
     _prov.setdefault("task_jsonl_instance_id", task_data.get("instance_id", ""))
 

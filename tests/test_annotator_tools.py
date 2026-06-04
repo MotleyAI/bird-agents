@@ -345,7 +345,7 @@ async def test_submit_annotation_zero_primary_variants_rejected():
     annotation_no_primary = json.dumps({
         "instance_id": "shop_1",
         "selected_database": "shop",
-        "benchmark": "mini_interact",
+        "benchmark": "mini-interact",
         "kind": "task_annotation",
         "original_gold_is_correct": False,
         "metadata_sufficiency": {"verdict": "sufficient", "reason": "r"},
@@ -381,13 +381,13 @@ async def test_submit_annotation_variant_wrong_benchmark_returns_error():
     return an error so GCS routing uses the correct benchmark path."""
     from bird_interact_agents.agents.annotator import agent as ann_agent
 
-    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"}, benchmark="mini_interact")
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"}, benchmark="mini-interact")
     variant_wrong_benchmark = json.dumps([
         {
             "instance_id": "shop_1",
             "selected_database": "shop",
             "variant_id": "primary",
-            "benchmark": "livesqlbench",  # wrong
+            "benchmark": "livesqlbench-base-lite-sqlite",  # wrong
             "audit_status": "clean",
             "audited_sol_sql": ["SELECT 1;"],
         }
@@ -649,7 +649,7 @@ async def test_submit_annotation_variant_audited_sol_sql_not_a_list_returns_erro
             "instance_id": "shop_1",
             "selected_database": "shop",
             "variant_id": "primary",
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "audited_sol_sql": "SELECT 1;",  # string instead of list
         }
@@ -676,7 +676,7 @@ async def test_submit_annotation_variant_invalid_audit_status_returns_error():
             "instance_id": "shop_1",
             "selected_database": "shop",
             "variant_id": "primary",
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "unknown_status",  # not a valid value
             "audited_sol_sql": ["SELECT 1;"],
         }
@@ -838,7 +838,7 @@ async def test_submit_annotation_original_gold_correct_with_variants_rejected():
         "instance_id": "shop_1",
         "selected_database": "shop",
         "variant_id": "v0",
-        "benchmark": "mini_interact",
+        "benchmark": "mini-interact",
         "audit_status": "clean",
         "audited_sol_sql": ["SELECT 1;"],
     }])
@@ -864,7 +864,7 @@ async def test_submit_annotation_empty_audited_sol_sql_non_unrecoverable_rejecte
         "instance_id": "shop_1",
         "selected_database": "shop",
         "variant_id": "v0",
-        "benchmark": "mini_interact",
+        "benchmark": "mini-interact",
         "audit_status": "clean",
         "audited_sol_sql": [],  # empty — should be rejected for audit_status=clean
     }])
@@ -935,7 +935,7 @@ async def test_submit_annotation_multiple_primary_variants_rejected():
             "selected_database": "shop",
             "variant_id": "v1",
             "primary": True,
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "audited_sol_sql": ["SELECT 1;"],
         },
@@ -944,7 +944,7 @@ async def test_submit_annotation_multiple_primary_variants_rejected():
             "selected_database": "shop",
             "variant_id": "v2",
             "primary": True,  # second primary — should be rejected
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "audited_sol_sql": ["SELECT 2;"],
         },
@@ -1104,7 +1104,7 @@ async def test_submit_annotation_audited_variants_without_gold_variants_rejected
             "selected_database": "shop",
             "variant_id": "primary",
             "primary": True,
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "audited_sol_sql": ["SELECT 1;"],
         }
@@ -1163,7 +1163,7 @@ async def test_submit_annotation_variant_non_boolean_primary_rejected():
             "selected_database": "shop",
             "variant_id": "primary",
             "primary": 1,   # integer, not boolean
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "audited_sol_sql": ["SELECT 1;"],
         }
@@ -1221,7 +1221,7 @@ async def test_submit_annotation_audited_variants_no_primary_rejected():
             "selected_database": "shop",
             "variant_id": "primary",
             "primary": False,   # no primary — should be rejected
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "audit_status": "clean",
             "audited_sol_sql": ["SELECT 1;"],
         }
@@ -1338,7 +1338,7 @@ async def test_submit_annotation_duplicate_variant_id_rejected():
         {
             "instance_id": "shop_1",
             "selected_database": "shop",
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "variant_id": "v1",
             "audit_status": "edited",
             "audited_sol_sql": ["SELECT 1"],
@@ -1347,7 +1347,7 @@ async def test_submit_annotation_duplicate_variant_id_rejected():
         {
             "instance_id": "shop_1",
             "selected_database": "shop",
-            "benchmark": "mini_interact",
+            "benchmark": "mini-interact",
             "variant_id": "v1",
             "audit_status": "edited",
             "audited_sol_sql": ["SELECT 2"],

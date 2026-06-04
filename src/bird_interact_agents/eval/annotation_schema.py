@@ -143,7 +143,7 @@ class AuditedGoldRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     file: str
-    """E.g. ``audited_gold/mini_interact_audited.jsonl``."""
+    """E.g. ``audited_gold/mini-interact_audited.jsonl``."""
     instance_id: str
     variant_id: str = "primary"
 

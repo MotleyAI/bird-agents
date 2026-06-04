@@ -177,7 +177,7 @@ It uses the `bird-interact-cloud annotate` subcommand — **not** `submit`.
 
 ```bash
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud annotate \
-  --benchmark mini_interact \
+  --benchmark mini-interact \
   --agent-model anthropic/claude-opus-4-7 \
   --instance-ids households_1,households_2,households_3 \
   --workers 1 --actors-per-worker 3 \
@@ -202,7 +202,7 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud fetch <RUN-ID>
 
 Each annotated task produces a `<instance_id>.task.json` (the `TaskAnnotation`)
 and, if the gold was wrong, one or more `<instance_id>.<variant_id>.gold.json`
-entries in `audited_gold/mini_interact_audited.jsonl`.
+entries in `audited_gold/mini-interact_audited.jsonl`.
 
 ### Waiting for a run to finish
 

@@ -524,7 +524,7 @@ def test_slayer_otf_cache_root_env_override_is_parent_for_all_benchmarks(
     tmp_path, monkeypatch,
 ):
     """`BIRD_OTF_CACHE_ROOT` is the parent dir; benchmark is appended as a subdir."""
-    main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
+    _main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
     parent = tmp_path / "elsewhere"
     monkeypatch.setenv("BIRD_OTF_CACHE_ROOT", str(parent))
     assert (
@@ -581,7 +581,7 @@ def test_slayer_models_otf_root_env_override_is_parent_for_all_benchmarks(
     tmp_path, monkeypatch,
 ):
     """`BIRD_SLAYER_MODELS_OTF_ROOT` is the parent dir; benchmark is appended."""
-    main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
+    _main, _wt = _setup_main_and_worktree(tmp_path, monkeypatch)
     parent = tmp_path / "elsewhere_models"
     monkeypatch.setenv("BIRD_SLAYER_MODELS_OTF_ROOT", str(parent))
     assert (
