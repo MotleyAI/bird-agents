@@ -594,7 +594,6 @@ class AuditedGoldVariantsMergeReport(BaseModel):
     error_details: list[str] = []
 
 
-_REQUIRED_AUDITED_GOLD_ROW_FIELDS = {"instance_id", "selected_database", "benchmark", "variants"}
 
 
 def _normalise_benchmark(benchmark: str) -> str:
@@ -639,44 +638,6 @@ def merge_task_annotations(
         report.merged += 1
 
     return report
-
-
-def _parse_audited_gold_row(src: Path, line: str) -> "AuditedGoldRow | None | str":
-    """Parse a single JSONL line as an ``AuditedGoldRow``.
-
-    Returns the parsed row, ``None`` for an empty line, or an error string.
-    Handles both the new grouped format (``variants`` key present) and the
-    legacy flat-row format (one dict per variant) for backward compatibility.
-    """
-    from pydantic import ValidationError
-    from bird_interact_agents.eval.annotation_schema import AuditedGoldRow
-
-    line = line.strip()
-    if not line:
-        return None
-    try:
-        d = json.loads(line)
-    except json.JSONDecodeError as e:
-        return f"{src}: JSON decode error: {e}"
-
-    if not isinstance(d, dict):
-        return f"{src}: expected a JSON object, got {type(d).__name__}"
-
-    if "variants" in d:
-        # New grouped format.
-        try:
-            return AuditedGoldRow.model_validate(d)
-        except (ValidationError, Exception) as e:
-            return f"{src}: AuditedGoldRow validation error: {e}"
-
-    # Legacy flat-row format — wrap in a single-element group.
-    missing = _REQUIRED_AUDITED_GOLD_ROW_FIELDS - {"variants"} - set(d.keys())
-    if missing:
-        return f"{src}: flat-row missing required fields: {missing}"
-    try:
-        return AuditedGoldRow.from_flat_rows([d])
-    except (ValueError, Exception) as e:
-        return f"{src}: from_flat_rows error: {e}"
 
 
 def merge_audited_gold_variants(
@@ -730,17 +691,58 @@ def merge_audited_gold_variants(
         return out
 
     def _read_incoming_rows(src: Path) -> "list[AuditedGoldRow]":
-        """Parse all valid AuditedGoldRow entries from a per-task JSONL file."""
+        """Parse all valid AuditedGoldRow entries from a per-task JSONL file.
+
+        New grouped-format lines (``variants`` key present) are returned as-is.
+        Legacy flat rows are grouped by ``instance_id`` first so all variants
+        for the same task are consolidated into one ``AuditedGoldRow``.
+        """
         rows: list[AuditedGoldRow] = []
-        for line in src.read_text().splitlines():
-            result = _parse_audited_gold_row(src, line)
-            if result is None:
+        flat_by_iid: dict[str, list[dict]] = {}
+        flat_order: list[str] = []
+        for raw_line in src.read_text().splitlines():
+            raw_line = raw_line.strip()
+            if not raw_line:
                 continue
-            if isinstance(result, str):
+            try:
+                d = json.loads(raw_line)
+            except json.JSONDecodeError as e:
                 report.errors += 1
-                report.error_details.append(result)
+                report.error_details.append(f"{src}: JSON decode error: {e}")
                 continue
-            rows.append(result)
+            if not isinstance(d, dict):
+                report.errors += 1
+                report.error_details.append(
+                    f"{src}: expected JSON object, got {type(d).__name__}"
+                )
+                continue
+            if "variants" in d:
+                try:
+                    rows.append(AuditedGoldRow.model_validate(d))
+                except Exception as e:  # noqa: BLE001
+                    report.errors += 1
+                    report.error_details.append(
+                        f"{src}: AuditedGoldRow validation error: {e}"
+                    )
+            else:
+                iid = d.get("instance_id", "")
+                if not iid:
+                    report.errors += 1
+                    report.error_details.append(
+                        f"{src}: flat-row missing required field 'instance_id'"
+                    )
+                    continue
+                if iid not in flat_by_iid:
+                    flat_order.append(iid)
+                flat_by_iid.setdefault(iid, []).append(d)
+        for iid in flat_order:
+            try:
+                rows.append(AuditedGoldRow.from_flat_rows(flat_by_iid[iid]))
+            except (ValueError, Exception) as e:  # noqa: BLE001
+                report.errors += 1
+                report.error_details.append(
+                    f"{src}: from_flat_rows error for {iid}: {e}"
+                )
         return rows
 
     if override:
