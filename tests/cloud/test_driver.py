@@ -1945,3 +1945,67 @@ def test_resubmit_annotator_reads_no_subscription_auth_from_manifest(
     driver.resubmit(RUN_ID)
 
     assert captured.get("no_subscription_auth") is True
+
+
+# ---------------------------------------------------------------------------
+# Postgres benchmark: read_api_keys_from_local_env must NOT forward BIRD_PG_*
+# ---------------------------------------------------------------------------
+
+
+def test_read_api_keys_no_pg_vars_for_postgres_benchmark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BIRD_PG_* env vars must NOT be forwarded when the dataset is a postgres
+    benchmark (livesqlbench-base-lite) — the worker runs its own bundled server
+    and forwarding an external address would override localhost."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-anthropic")
+    monkeypatch.setenv("BIRD_PG_HOST", "external.db.host")
+    monkeypatch.setenv("BIRD_PG_PORT", "5432")
+    monkeypatch.setenv("BIRD_PG_USER", "pguser")
+    monkeypatch.setenv("BIRD_PG_PASSWORD", "pgpass")
+
+    result = driver.read_api_keys_from_local_env(
+        "anthropic/claude-haiku-4-5-20251001",
+        "anthropic/claude-haiku-4-5-20251001",
+        dataset="livesqlbench-base-lite",
+    )
+
+    for pg_key in ("BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+                   "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT"):
+        assert pg_key not in result, (
+            f"{pg_key} must not be forwarded for postgres benchmarks"
+        )
+
+
+def test_read_api_keys_forwards_pg_vars_for_sqlite_benchmark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BIRD_PG_* env vars ARE forwarded for non-postgres (sqlite) benchmarks."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-anthropic")
+    monkeypatch.setenv("BIRD_PG_HOST", "external.db.host")
+    monkeypatch.setenv("BIRD_PG_PORT", "5432")
+
+    result = driver.read_api_keys_from_local_env(
+        "anthropic/claude-haiku-4-5-20251001",
+        "anthropic/claude-haiku-4-5-20251001",
+        dataset="mini-interact",
+    )
+
+    assert result.get("BIRD_PG_HOST") == "external.db.host"
+    assert result.get("BIRD_PG_PORT") == "5432"
+
+
+def test_read_api_keys_pg_vars_forwarded_for_empty_dataset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When dataset is empty (legacy call), BIRD_PG_* are still forwarded."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-anthropic")
+    monkeypatch.setenv("BIRD_PG_HOST", "external.db.host")
+
+    result = driver.read_api_keys_from_local_env(
+        "anthropic/claude-haiku-4-5-20251001",
+        "anthropic/claude-haiku-4-5-20251001",
+        dataset="",
+    )
+
+    assert result.get("BIRD_PG_HOST") == "external.db.host"

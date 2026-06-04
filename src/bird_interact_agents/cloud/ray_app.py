@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -95,6 +96,76 @@ def _cloud_benchmark(cfg: dict[str, Any]) -> str:
     return get_benchmark(dataset).name
 
 
+def _pg_version() -> str:
+    """Return the installed PostgreSQL major version string (e.g. ``"17"``).
+
+    Reads the single entry under ``/etc/postgresql/``; raises ``RuntimeError``
+    if the directory is absent or ambiguous (no postgres in the image)."""
+    pg_etc = Path("/etc/postgresql")
+    if not pg_etc.is_dir():
+        raise RuntimeError(
+            "PostgreSQL not found in image — /etc/postgresql missing. "
+            "Add postgresql to Dockerfile.cloud apt-get install."
+        )
+    versions = [d.name for d in pg_etc.iterdir() if d.is_dir()]
+    if len(versions) != 1:
+        raise RuntimeError(
+            f"Expected exactly one PostgreSQL version under /etc/postgresql; "
+            f"got: {versions}"
+        )
+    return versions[0]
+
+
+_PG_INIT_LOCK = Path("/tmp/pg_init.lock")
+_PG_LOADED_MARKER = Path("/tmp/pg_loaded.marker")
+
+
+def _ensure_postgres_loaded(data_dir: Path) -> None:
+    """Start a local PostgreSQL server and load benchmark databases.
+
+    Database dumps are expected at ``data_dir/pg_dumps/<db>/<db>.sql``
+    (one SQL file per database, produced by ``pg_dump``).
+
+    Idempotent: a node-level lock serialises concurrent actors; a marker
+    file prevents re-loading on second actor init within the same node."""
+    pg_dumps_dir = data_dir / "pg_dumps"
+    if not pg_dumps_dir.is_dir():
+        raise RuntimeError(
+            f"pg_dumps/ directory missing under {data_dir}. "
+            "Download SQL dumps with scripts/download_pg_dumps.py first."
+        )
+
+    with open(_PG_INIT_LOCK, "w") as _lf:
+        fcntl.flock(_lf, fcntl.LOCK_EX)
+        if _PG_LOADED_MARKER.exists():
+            return
+
+        pg_ver = _pg_version()
+        subprocess.run(
+            ["pg_ctlcluster", pg_ver, "main", "start"],
+            check=False,  # exit 2 means "already running" — that's fine
+            capture_output=True,
+        )
+
+        for db_dir in sorted(pg_dumps_dir.iterdir()):
+            if not db_dir.is_dir():
+                continue
+            db = db_dir.name
+            subprocess.run(
+                ["su", "-", "postgres", "-c", f"createdb {db}"],
+                check=False,  # already exists on retry → non-zero, that's fine
+                capture_output=True,
+            )
+            for sql_file in sorted(db_dir.glob("*.sql")):
+                subprocess.run(
+                    ["su", "-", "postgres", "-c",
+                     f"psql -d {db} -f {sql_file}"],
+                    check=True,
+                )
+
+        _PG_LOADED_MARKER.touch()
+
+
 def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     """Download the run's benchmark dataset from its content-hashed GCS prefix
     into the benchmark's ``container_data_dir`` (once per node via the local
@@ -118,6 +189,8 @@ def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     _benchmark_data.ensure_downloaded(prefix, dest, client=client)
     os.environ["BIRD_BENCHMARKS_ROOT"] = str(dest.parent)
     os.environ["BIRD_GATED_GOLD_ROOT"] = str(dest / _benchmark_data.GATED_GOLD_SUBDIR)
+    if getattr(b, "db_backend", "sqlite") == "postgres":
+        _ensure_postgres_loaded(dest)
 
 
 def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:

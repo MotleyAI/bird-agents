@@ -84,6 +84,16 @@ def submitter_repo_root() -> Path:
 # ---------------------------------------------------------------------------
 
 
+def _is_postgres_benchmark(dataset: str) -> bool:
+    """True when ``dataset`` maps to a benchmark with ``db_backend="postgres"``."""
+    if not dataset:
+        return False
+    try:
+        return getattr(get_benchmark(dataset), "db_backend", "sqlite") == "postgres"
+    except Exception:  # noqa: BLE001
+        return False
+
+
 # GCP's compute-instance-name regex caps the FULL name at 63 chars
 # (`[a-z]([-a-z0-9]{0,61}[a-z0-9])?` → 1+61+1 = 63). Ray composes the name as
 # `ray-<run_id>-worker-<uuid8>-compute` (worst case: "worker" 6 > "head" 4;
@@ -119,6 +129,7 @@ def mint_run_id(framework: str, query_mode: str) -> str:
 def read_api_keys_from_local_env(
     agent_model: str, user_sim_model: str, *, query_mode: str = "raw",
     framework: str = "", no_subscription_auth: bool = False,
+    dataset: str = "",
 ) -> dict[str, str]:
     import os
 
@@ -168,15 +179,17 @@ def read_api_keys_from_local_env(
                 f"missing API key env vars for job submission: {missing_local_sorted}",
                 remediation=cmds,
             )
-        # Forward any postgres connection vars the user has set locally so
-        # cloud workers can reach the same postgres server.
-        for pg_var in (
-            "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
-            "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
-        ):
-            val = os.environ.get(pg_var)
-            if val:
-                result[pg_var] = val
+        # Forward postgres connection vars only for non-postgres benchmarks.
+        # Postgres benchmarks start a bundled local server on the worker —
+        # forwarding external BIRD_PG_* vars would override localhost.
+        if not _is_postgres_benchmark(dataset):
+            for pg_var in (
+                "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+                "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
+            ):
+                val = os.environ.get(pg_var)
+                if val:
+                    result[pg_var] = val
         return result
 
     needed: set[str] = set()
@@ -197,15 +210,17 @@ def read_api_keys_from_local_env(
             remediation=cmds,
         )
     result = {k: os.environ[k] for k in needed}
-    # Forward any postgres connection vars the user has set locally so
-    # cloud workers can reach the same postgres server.
-    for pg_var in (
-        "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
-        "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
-    ):
-        val = os.environ.get(pg_var)
-        if val:
-            result[pg_var] = val
+    # Forward postgres connection vars only for non-postgres benchmarks.
+    # Postgres benchmarks start a bundled local server on the worker —
+    # forwarding external BIRD_PG_* vars would override localhost.
+    if not _is_postgres_benchmark(dataset):
+        for pg_var in (
+            "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+            "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
+        ):
+            val = os.environ.get(pg_var)
+            if val:
+                result[pg_var] = val
     return result
 
 
@@ -592,6 +607,7 @@ def submit(args) -> str:
             args.agent_model, args.user_sim_model, query_mode=args.query_mode,
             framework=args.framework,
             no_subscription_auth=getattr(args, "no_subscription_auth", False),
+            dataset=getattr(args, "dataset", ""),
         )
         job_args = _build_job_args(
             args, run_id, attempt=1,
@@ -1049,6 +1065,7 @@ def resubmit(run_id: str) -> None:
                 query_mode=manifest.get("query_mode", "raw"),
                 framework=_framework,
                 no_subscription_auth=_no_subscription_auth,
+                dataset=manifest.get("dataset", ""),
             )
             job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
             cluster.submit_job(
