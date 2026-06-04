@@ -97,14 +97,13 @@ def _cloud_benchmark(cfg: dict[str, Any]) -> str:
 def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     """Download the run's benchmark dataset from its content-hashed GCS prefix
     into the benchmark's ``container_data_dir`` (once per node via the local
-    completeness marker), then point the benchmark's data-root/data-file env
-    vars at it so ``paths.benchmark_data_*`` + the per-task loaders/ingest
-    resolve to the downloaded tree.
+    completeness marker), then set ``BIRD_BENCHMARKS_ROOT`` to the parent of
+    the downloaded tree so ``paths.benchmark_data_*`` + the per-task
+    loaders/ingest resolve to the downloaded data.
 
-    De-bake: this replaces the image-baked ``/data/mini-interact`` and the
-    ``BIRD_DB_PATH``/``BIRD_DATA_PATH`` env vars that ``cluster.yaml.j2`` used
-    to pin. Runs in BOTH the head job driver (before ``_load_task_data``) AND
-    each worker actor's ``__init__`` (before ingest), mirroring the per-worker
+    De-bake: this replaces the image-baked ``/data/<benchmark>`` tree.
+    Runs in BOTH the head job driver (before ``_load_task_data``) AND each
+    worker actor's ``__init__`` (before ingest), mirroring the per-worker
     slayer-artifact download.
 
     No-op when ``cfg['benchmark_data_prefix']`` is falsy — a pre-de-bake run
@@ -534,10 +533,10 @@ def _run_one_in_actor(
     task_start_ts = time.time()
     _grader_data_dir = None
 
-    # `cfg["data_dir"]` is the benchmark's container_data_dir, resolved
-    # benchmark-aware in `run_pool` (mini → BIRD_DB_PATH,
-    # livesqlbench → BIRD_LIVESQLBENCH_ROOT). Hoisted out of the try block
-    # so it is always bound when the grader path runs below.
+    # `cfg["data_dir"]` is the benchmark's data root on this node —
+    # either BIRD_BENCHMARKS_ROOT/<name> (download_benchmark_data sets it)
+    # or the baked container_data_dir. Hoisted out of the try block so it
+    # is always bound when the grader path runs below.
     data_dir = cfg.get("data_dir") or "/data/mini-interact"
 
     try:

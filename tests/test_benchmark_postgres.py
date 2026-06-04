@@ -86,10 +86,7 @@ def test_db_backend_rejects_unknown_value():
         Benchmark(
             name="x",
             dataset_marker="x",
-            data_subdir="x",
             data_file="x.jsonl",
-            data_root_env="X_ROOT",
-            data_file_env="X_DATA",
             supported_modes=("one-shot",),
             one_shot=True,
             gold_required=False,
