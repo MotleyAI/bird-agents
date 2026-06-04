@@ -29,7 +29,7 @@ class FakeSubmitArgs:
     agent_model: str = "anthropic/claude-sonnet-4-5"
     user_sim_model: str = "anthropic/claude-haiku-4-5-20251001"
     mode: str = "c-interact"
-    instance_ids: tuple[str, ...] = ("db_a_1", "db_a_2", "db_a_3")
+    instance_ids: tuple[str, ...] = ("alien_1", "alien_2", "alien_3")
     patience: int = 3
     strict: bool = False
     use_audited_gold_sql: bool = False
@@ -1469,12 +1469,95 @@ def test_fetch_continues_when_merge_returns_no_shards(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_manifest_defaults_to_mini_interact_benchmark(monkeypatch):
-    args = FakeSubmitArgs()  # default dataset → mini_interact
+def test_manifest_and_job_args_carry_benchmark(monkeypatch):
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer",
+        mode="one-shot", slayer_setup="on-the-fly",
+    )
+    args.dataset = "livesqlbench-base-lite-sqlite"
+
+    prefix = "benchmark-data/livesqlbench/abc123/"
+    m = driver.build_manifest(
+        args, image_uri="img:tag", run_id="rid", benchmark_data_prefix=prefix,
+    )
+    assert m["dataset"] == "livesqlbench-base-lite-sqlite"
+    assert m["benchmark_data_prefix"] == prefix
+
+    # Avoid reading a real tasks file for the db-grouped sort.
+    monkeypatch.setattr(
+        driver, "_instance_ids_sorted_by_db",
+        lambda ids, benchmark="mini-interact": list(ids),
+    )
+    ja = driver._build_job_args(
+        args, "rid", attempt=1, benchmark_data_prefix=prefix,
+    )
+    assert ja[ja.index("--dataset") + 1] == "livesqlbench-base-lite-sqlite"
+    assert "--gold-file" not in ja
+    assert ja[ja.index("--benchmark-data-prefix") + 1] == prefix
+
+
+def test_manifest_defaults_to_mini_interact_benchmark():
+    args = FakeSubmitArgs()  # default dataset → mini_interact, no gold
     m = driver.build_manifest(args, image_uri="img:tag", run_id="rid")
     assert m["dataset"] == "mini-interact"
     # No prefix passed → key present but None (back-compat for direct callers).
     assert m["benchmark_data_prefix"] is None
+
+
+# ---------------------------------------------------------------------------
+# _validate_instance_ids: fail fast before any cloud touch
+# ---------------------------------------------------------------------------
+
+
+def test_validate_instance_ids_raises_for_unknown_ids(tmp_path):
+    """Unknown instance_ids must raise ValueError before any cloud call."""
+    data_file = tmp_path / "mini_interact.jsonl"
+    data_file.write_text(
+        '{"instance_id": "alien_1", "selected_database": "alien"}\n'
+        '{"instance_id": "alien_2", "selected_database": "alien"}\n'
+    )
+    import bird_interact_agents.paths as _paths
+    import unittest.mock as _mock
+    with _mock.patch.object(_paths, "benchmark_data_file", return_value=data_file):
+        with pytest.raises(ValueError, match="shop_1"):
+            driver._validate_instance_ids(["alien_1", "shop_1"], "mini-interact")
+
+
+def test_validate_instance_ids_passes_for_known_ids(tmp_path):
+    """All-known instance_ids must not raise."""
+    data_file = tmp_path / "mini_interact.jsonl"
+    data_file.write_text(
+        '{"instance_id": "alien_1", "selected_database": "alien"}\n'
+    )
+    import bird_interact_agents.paths as _paths
+    import unittest.mock as _mock
+    with _mock.patch.object(_paths, "benchmark_data_file", return_value=data_file):
+        driver._validate_instance_ids(["alien_1"], "mini-interact")  # no raise
+
+
+def test_validate_instance_ids_skips_when_data_file_absent(tmp_path):
+    """Missing local data file → no error (resubmit on a machine without data)."""
+    import bird_interact_agents.paths as _paths
+    import unittest.mock as _mock
+    with _mock.patch.object(
+        _paths, "benchmark_data_file", return_value=tmp_path / "absent.jsonl"
+    ):
+        driver._validate_instance_ids(["nonexistent_1"], "mini-interact")  # no raise
+
+
+def test_submit_raises_before_cloud_for_invalid_instance_ids(monkeypatch, tmp_path):
+    """submit() must raise ValueError for unknown instance_ids before touching
+    prereqs, image build, or any GCS/cluster call."""
+    mocks = _patch_collaborators(monkeypatch)
+    data_file = tmp_path / "mini_interact.jsonl"
+    data_file.write_text('{"instance_id": "alien_1", "selected_database": "alien"}\n')
+    monkeypatch.setattr(driver.paths, "benchmark_data_file", lambda *a, **k: data_file)
+
+    with pytest.raises(ValueError, match="shop_1"):
+        driver.submit(FakeSubmitArgs(instance_ids=("shop_1", "fake_99")))
+    mocks["prereqs"].check.assert_not_called()
+    mocks["image"].build_and_push.assert_not_called()
+    mocks["cluster"].up.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -1508,7 +1591,6 @@ def test_submit_uploads_dataset_and_threads_prefix(monkeypatch):
     assert job_args[job_args.index("--benchmark-data-prefix") + 1] == (
         "benchmark-data/mini_interact/feedface/"
     )
-
 
 
 def test_resubmit_threads_benchmark_prefix(monkeypatch):
@@ -1657,6 +1739,165 @@ def test_read_api_keys_oauth_forwards_bird_pg_vars(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# kill_after_fetch — auto-teardown when the cluster is still up after fetch.
+# ---------------------------------------------------------------------------
+
+
+def _setup_fetch_mocks(monkeypatch, tmp_path, *, head_alive, terminal_state, n_attempts, n_total):
+    """Patch all collaborators needed by driver.fetch and return the mock set."""
+    mocks = _patch_collaborators(monkeypatch)
+    fake_results = tmp_path / "results"
+    monkeypatch.setattr(driver, "local_results_root", lambda: fake_results)
+    monkeypatch.setattr(
+        driver.paths, "slayer_models_otf_root",
+        lambda *, benchmark=None: tmp_path / "warm" / "slayer_models_otf",
+    )
+    monkeypatch.setattr(
+        driver.paths, "annotations_root",
+        lambda: tmp_path / "annotations",
+    )
+    mocks["gcs"].read_manifest.return_value = {
+        "run_id": RUN_ID,
+        "instance_ids": [f"db_a_{i}" for i in range(n_total)],
+    }
+    mocks["gcs"].read_status.return_value = (
+        {"terminal_state": terminal_state} if terminal_state else {}
+    )
+    mocks["gcs"].list_attempts.return_value = {
+        f"db_a_{i}": [1] for i in range(n_attempts)
+    }
+    mocks["cluster"].head_is_alive.return_value = head_alive
+
+    def fake_download(run_id, dest, **kw):
+        Path(dest).mkdir(parents=True, exist_ok=True)
+    mocks["gcs"].concurrent_download_prefix.side_effect = fake_download
+
+    from bird_interact_agents.cloud import post_run_merge as _prm
+    monkeypatch.setattr(
+        driver._collation, "collate",
+        lambda run_dir, manifest: {"phase_passes": 1},
+    )
+    monkeypatch.setattr(
+        _prm, "merge_post_run_into_warm_cache",
+        lambda **kw: {"merged_dbs": [], "ignored_shards": []},
+    )
+    monkeypatch.setattr(
+        _prm, "merge_submission_annotations",
+        lambda **kw: _prm.AnnotationMergeReport(run_id=RUN_ID, benchmark="mini_interact"),
+    )
+    return mocks
+
+
+def test_fetch_kills_cluster_when_complete_and_head_alive(monkeypatch, tmp_path):
+    """fetch() with kill_after_fetch=True must call kill() when the run is
+    complete (terminal_state=done) and the cluster head is still alive."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [RUN_ID], "kill must be called exactly once with the run_id"
+
+
+def test_fetch_does_not_kill_when_head_already_dead(monkeypatch, tmp_path):
+    """fetch() must not attempt kill() when head_is_alive returns False — the
+    cluster is already gone."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=False, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [], "kill must NOT be called when head is already dead"
+
+
+def test_fetch_does_not_kill_when_run_incomplete(monkeypatch, tmp_path):
+    """fetch() must not kill a cluster whose run is still mid-flight (fewer
+    attempts than total instance_ids, no terminal_state set)."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state=None, n_attempts=1, n_total=3,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [], "kill must NOT be called for an incomplete run"
+
+
+def test_fetch_does_not_kill_when_kill_after_fetch_false(monkeypatch, tmp_path):
+    """Default behaviour (kill_after_fetch=False): cluster is never killed even
+    when the run is complete and the head is alive."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID)  # kill_after_fetch defaults to False
+
+    assert kill_calls == [], "kill must NOT be called when kill_after_fetch=False"
+    # head_is_alive should not even be checked when kill_after_fetch=False.
+    mocks["cluster"].head_is_alive.assert_not_called()
+
+
+def test_fetch_kills_cluster_when_terminal_state_is_error(monkeypatch, tmp_path):
+    """fetch() with kill_after_fetch=True must call kill() when terminal_state
+    is 'error' (not just 'done') — both are complete terminal states."""
+    _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="error", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [RUN_ID], "kill must be called when terminal_state=error"
+
+
+def test_fetch_kills_cluster_when_attempts_reach_total_no_terminal_state(monkeypatch, tmp_path):
+    """fetch() with kill_after_fetch=True must call kill() when all attempts
+    have been recorded but no terminal_state is set yet — the count-based
+    completion branch."""
+    _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state=None, n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [RUN_ID], "kill must be called when attempts == total"
+
+
+def test_fetch_surfaces_kill_error_in_metrics(monkeypatch, tmp_path):
+    """When kill() raises during auto-teardown, fetch() must catch the exception,
+    store it in metrics["kill_after_fetch_error"], and return normally — so
+    successfully collated results are not lost."""
+    _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    monkeypatch.setattr(driver, "kill", lambda _rid: (_ for _ in ()).throw(RuntimeError("cluster gone")))
+
+    metrics = driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert "kill_after_fetch_error" in metrics
+    assert "cluster gone" in metrics["kill_after_fetch_error"]
+
+
+# ---------------------------------------------------------------------------
 # DEV-1530 — --no-subscription-auth flag in read_api_keys_from_local_env
 # and build_manifest / build_annotator_manifest / resubmit.
 # ---------------------------------------------------------------------------
@@ -1761,7 +2002,7 @@ def _fake_annotate_args(**overrides):
         actors_per_worker=2,
         worker_type="e2-standard-4",
         max_runtime_hours=2,
-        instance_ids=["db_a_1"],
+        instance_ids=["alien_1"],
     )
     for k, v in overrides.items():
         setattr(ns, k, v)
@@ -1945,3 +2186,67 @@ def test_resubmit_annotator_reads_no_subscription_auth_from_manifest(
     driver.resubmit(RUN_ID)
 
     assert captured.get("no_subscription_auth") is True
+
+
+# ---------------------------------------------------------------------------
+# Postgres benchmark: read_api_keys_from_local_env must NOT forward BIRD_PG_*
+# ---------------------------------------------------------------------------
+
+
+def test_read_api_keys_no_pg_vars_for_postgres_benchmark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BIRD_PG_* env vars must NOT be forwarded when the dataset is a postgres
+    benchmark (livesqlbench-base-lite) — the worker runs its own bundled server
+    and forwarding an external address would override localhost."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-anthropic")
+    monkeypatch.setenv("BIRD_PG_HOST", "external.db.host")
+    monkeypatch.setenv("BIRD_PG_PORT", "5432")
+    monkeypatch.setenv("BIRD_PG_USER", "pguser")
+    monkeypatch.setenv("BIRD_PG_PASSWORD", "pgpass")
+
+    result = driver.read_api_keys_from_local_env(
+        "anthropic/claude-haiku-4-5-20251001",
+        "anthropic/claude-haiku-4-5-20251001",
+        dataset="livesqlbench-base-lite",
+    )
+
+    for pg_key in ("BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+                   "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT"):
+        assert pg_key not in result, (
+            f"{pg_key} must not be forwarded for postgres benchmarks"
+        )
+
+
+def test_read_api_keys_forwards_pg_vars_for_sqlite_benchmark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BIRD_PG_* env vars ARE forwarded for non-postgres (sqlite) benchmarks."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-anthropic")
+    monkeypatch.setenv("BIRD_PG_HOST", "external.db.host")
+    monkeypatch.setenv("BIRD_PG_PORT", "5432")
+
+    result = driver.read_api_keys_from_local_env(
+        "anthropic/claude-haiku-4-5-20251001",
+        "anthropic/claude-haiku-4-5-20251001",
+        dataset="mini-interact",
+    )
+
+    assert result.get("BIRD_PG_HOST") == "external.db.host"
+    assert result.get("BIRD_PG_PORT") == "5432"
+
+
+def test_read_api_keys_pg_vars_forwarded_for_empty_dataset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When dataset is empty (legacy call), BIRD_PG_* are still forwarded."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-anthropic")
+    monkeypatch.setenv("BIRD_PG_HOST", "external.db.host")
+
+    result = driver.read_api_keys_from_local_env(
+        "anthropic/claude-haiku-4-5-20251001",
+        "anthropic/claude-haiku-4-5-20251001",
+        dataset="",
+    )
+
+    assert result.get("BIRD_PG_HOST") == "external.db.host"

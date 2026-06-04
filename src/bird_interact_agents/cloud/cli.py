@@ -123,7 +123,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
 
-    for name in ("fetch", "kill", "resubmit"):
+    sp_fetch = sub.add_parser("fetch")
+    sp_fetch.add_argument("run_id")
+    sp_fetch.add_argument(
+        "--no-kill", action="store_true",
+        help="Do not shut down the cluster after a successful fetch.",
+    )
+    for name in ("kill", "resubmit"):
         spx = sub.add_parser(name)
         spx.add_argument("run_id")
 
@@ -235,7 +241,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"submitted: {run_id}")
         return 0
     if ns.subcommand == "fetch":
-        metrics = driver.fetch(ns.run_id)
+        metrics = driver.fetch(ns.run_id, kill_after_fetch=not ns.no_kill)
         # Codex r6: surface the merge report so post-run merge failures
         # (ignored shards, skipped dbs) are visible at fetch time rather
         # than buried in the on-disk merge_report.json.
@@ -271,6 +277,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"WARNING: {label}: {n_errors} error(s)")
                 for detail in report.get("error_details", []):
                     print(f"  {detail}")
+        if kill_err := metrics.get("kill_after_fetch_error"):
+            print(f"WARNING: auto-kill failed — cluster may still be running: {kill_err}")
         return 0
     if ns.subcommand == "kill":
         driver.kill(ns.run_id)

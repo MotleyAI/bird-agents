@@ -22,7 +22,6 @@ from bird_interact_agents.eval import cascading_report as _cascading_report
 # Imported by NAME (not via the `gcs` module attr) so tests that mock
 # `driver.gcs` still get the real pure mapping — only the I/O helpers
 # (`gcs.upload_dir_prefix` etc.) need to be mockable.
-from bird_interact_agents.cloud.gcs import slayer_artifact_name
 # Imported by NAME so they survive tests that mock `driver.prereqs`. PrereqError
 # must be the real class for the raise in `read_api_keys_from_local_env`, and
 # `_required_api_keys` must be the REAL provider→key mapping so submit/resubmit
@@ -84,6 +83,16 @@ def submitter_repo_root() -> Path:
 # ---------------------------------------------------------------------------
 
 
+def _is_postgres_benchmark(dataset: str) -> bool:
+    """True when ``dataset`` maps to a benchmark with ``db_backend="postgres"``."""
+    if not dataset:
+        return False
+    try:
+        return getattr(get_benchmark(dataset), "db_backend", "sqlite") == "postgres"
+    except Exception:  # noqa: BLE001
+        return False
+
+
 # GCP's compute-instance-name regex caps the FULL name at 63 chars
 # (`[a-z]([-a-z0-9]{0,61}[a-z0-9])?` → 1+61+1 = 63). Ray composes the name as
 # `ray-<run_id>-worker-<uuid8>-compute` (worst case: "worker" 6 > "head" 4;
@@ -119,6 +128,7 @@ def mint_run_id(framework: str, query_mode: str) -> str:
 def read_api_keys_from_local_env(
     agent_model: str, user_sim_model: str, *, query_mode: str = "raw",
     framework: str = "", no_subscription_auth: bool = False,
+    dataset: str = "",
 ) -> dict[str, str]:
     import os
 
@@ -168,15 +178,17 @@ def read_api_keys_from_local_env(
                 f"missing API key env vars for job submission: {missing_local_sorted}",
                 remediation=cmds,
             )
-        # Forward any postgres connection vars the user has set locally so
-        # cloud workers can reach the same postgres server.
-        for pg_var in (
-            "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
-            "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
-        ):
-            val = os.environ.get(pg_var)
-            if val:
-                result[pg_var] = val
+        # Forward postgres connection vars only for non-postgres benchmarks.
+        # Postgres benchmarks start a bundled local server on the worker —
+        # forwarding external BIRD_PG_* vars would override localhost.
+        if not _is_postgres_benchmark(dataset):
+            for pg_var in (
+                "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+                "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
+            ):
+                val = os.environ.get(pg_var)
+                if val:
+                    result[pg_var] = val
         return result
 
     needed: set[str] = set()
@@ -197,15 +209,17 @@ def read_api_keys_from_local_env(
             remediation=cmds,
         )
     result = {k: os.environ[k] for k in needed}
-    # Forward any postgres connection vars the user has set locally so
-    # cloud workers can reach the same postgres server.
-    for pg_var in (
-        "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
-        "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
-    ):
-        val = os.environ.get(pg_var)
-        if val:
-            result[pg_var] = val
+    # Forward postgres connection vars only for non-postgres benchmarks.
+    # Postgres benchmarks start a bundled local server on the worker —
+    # forwarding external BIRD_PG_* vars would override localhost.
+    if not _is_postgres_benchmark(dataset):
+        for pg_var in (
+            "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+            "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
+        ):
+            val = os.environ.get(pg_var)
+            if val:
+                result[pg_var] = val
     return result
 
 
@@ -287,6 +301,13 @@ def _benchmark_for_dataset(dataset: str | None) -> str:
     """
     if not dataset:
         return "mini-interact"
+    # Legacy: manifests submitted before DEV-1525 used underscore/short forms.
+    _LEGACY: dict[str, str] = {
+        "mini_interact": "mini-interact",
+        "livesqlbench": "livesqlbench-base-lite-sqlite",
+    }
+    if dataset in _LEGACY:
+        return _LEGACY[dataset]
     return get_benchmark(dataset).name
 
 
@@ -537,6 +558,45 @@ def install_signal_handlers(*, run_id: str, yaml_path: Path) -> _Handler:
 
 
 # ---------------------------------------------------------------------------
+# Instance-ID validation (fail fast before any cloud touch)
+# ---------------------------------------------------------------------------
+
+
+def _validate_instance_ids(instance_ids, benchmark: str) -> None:
+    """Raise ValueError if any requested instance_id is not in the local
+    benchmark data file.
+
+    Runs before prereqs, image build, or any GCS/cluster call so typos and
+    non-existent IDs surface immediately rather than after paying for a cluster
+    spin-up that produces only dispatch-failure rows."""
+    data_file = paths.benchmark_data_file(benchmark)
+    if not data_file.is_file():
+        # Data not present locally (e.g. resubmit on a machine without the
+        # dataset) — skip the check rather than blocking.
+        return
+    known: set[str] = set()
+    with data_file.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                td = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            iid = td.get("instance_id")
+            if iid:
+                known.add(iid)
+    requested = set(instance_ids)
+    missing = sorted(requested - known)
+    if missing:
+        raise ValueError(
+            f"instance_id(s) not found in {data_file.name} for benchmark "
+            f"{benchmark!r}: {missing}. Check spelling or benchmark name."
+        )
+
+
+# ---------------------------------------------------------------------------
 # submit
 # ---------------------------------------------------------------------------
 
@@ -548,6 +608,7 @@ class WaitResult:
 
 
 def submit(args) -> str:
+    _validate_instance_ids(args.instance_ids, _submit_benchmark(args))
     prereqs.check(args)
     repo_root = submitter_repo_root()
     # DEV-1468: slayer fail-fast — verify the local setup is present BEFORE
@@ -592,6 +653,7 @@ def submit(args) -> str:
             args.agent_model, args.user_sim_model, query_mode=args.query_mode,
             framework=args.framework,
             no_subscription_auth=getattr(args, "no_subscription_auth", False),
+            dataset=getattr(args, "dataset", ""),
         )
         job_args = _build_job_args(
             args, run_id, attempt=1,
@@ -724,6 +786,7 @@ def _build_annotator_job_args(
 
 
 def submit_annotator(args) -> str:
+    _validate_instance_ids(args.instance_ids, get_benchmark(args.benchmark).name)
     _prereq_args = argparse.Namespace(
         agent_model=args.agent_model,
         user_sim_model="",
@@ -860,7 +923,7 @@ def wait_until_done(run_id: str, manifest: dict, *,
 # ---------------------------------------------------------------------------
 
 
-def fetch(run_id: str) -> dict:
+def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
     client = default_gcs_client()
     manifest = gcs.read_manifest(run_id, client=client)
     benchmark = _benchmark_for_dataset(manifest.get("dataset"))
@@ -917,6 +980,20 @@ def fetch(run_id: str) -> dict:
     eval_path = dest / "eval.json"
     if eval_path.exists():
         eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
+
+    if kill_after_fetch and cluster.head_is_alive(run_id):
+        _status = gcs.read_status(run_id) or {}
+        _terminal = _status.get("terminal_state")
+        _attempts = gcs.list_attempts(run_id)
+        _total = len(manifest.get("instance_ids", []))
+        _complete = (_terminal in ("done", "error")) or (len(_attempts) >= _total > 0)
+        if _complete:
+            logger.info("Run %s complete; shutting down cluster.", run_id)
+            try:
+                kill(run_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("auto-kill after fetch failed for %s: %s", run_id, exc)
+                metrics["kill_after_fetch_error"] = str(exc)
 
     return metrics
 
@@ -1049,6 +1126,7 @@ def resubmit(run_id: str) -> None:
                 query_mode=manifest.get("query_mode", "raw"),
                 framework=_framework,
                 no_subscription_auth=_no_subscription_auth,
+                dataset=manifest.get("dataset", ""),
             )
             job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
             cluster.submit_job(
