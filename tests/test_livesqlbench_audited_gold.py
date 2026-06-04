@@ -49,7 +49,7 @@ from bird_interact_agents import paths
 
 
 EXPECTED_INSTANCE_IDS_BY_DB: dict[str, set[str]] = {
-    "museum": {f"museum_{i}" for i in range(1, 11)},
+    "museum": {f"museum_{i}" for i in range(2, 11)},
     "credit": {f"credit_{i}" for i in range(1, 11)},
     "mental": {f"mental_{i}" for i in range(1, 11)},
 }

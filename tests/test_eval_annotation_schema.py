@@ -54,7 +54,7 @@ def _make_task_annotation() -> TaskAnnotation:
         metadata_sufficiency=MetadataSufficiency(
             verdict="ambiguous",
             rationale="KB hedges; sampled values show variants",
-            evidence_sources_consulted=["alien_kb.jsonl#1"],
+            evidence_sources_consulted=["kb:1"],
         ),
         gold_variants=[
             GoldVariantRef(

@@ -261,6 +261,15 @@ async def submit_annotation(args: dict) -> dict:
             f"with no audited variants.)"
         )
 
+    if not task_annotation.metadata_sufficiency.evidence_sources_consulted:
+        return _text(
+            "Validation error: evidence_sources_consulted is empty. "
+            "Populate it with every source you actually read during the audit "
+            "using the canonical prefixes: kb:<N>, column:<table>.<col>, "
+            "schema:<table>, sample_values:<table>.<col>, sql:<description>, "
+            "critical_ambiguity:<term>, critical_ambiguity_evidence:<term>, "
+            "knowledge_ambiguity:<term>."
+        )
     if task_annotation.metadata_sufficiency.verdict == "insufficient" and not task_annotation.evaluator_prompt:
         return _text(
             "Validation error: verdict='insufficient' requires a non-empty evaluator_prompt "

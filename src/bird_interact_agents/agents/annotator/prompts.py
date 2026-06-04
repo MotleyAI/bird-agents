@@ -114,9 +114,19 @@ after you submit — do NOT attempt to populate them yourself:
 You are responsible for the judgment fields below.
 
 EVIDENCE SOURCES — populate `evidence_sources_consulted` with every source you
-actually read during the audit. Use citation strings like:
-  "households_kb.jsonl#15"
-  "households_column_meaning_base.json:households.locregion"
+actually read during the audit. This field is REQUIRED (non-empty). Use exactly
+one of these canonical prefixes per entry:
+
+  kb:<N>                          — KB entry N (get_knowledge_definition)
+  column:<table>.<col>            — column meaning (get_column_meaning)
+  schema:<table>                  — schema for a table (get_schema)
+  sample_values:<table>.<col>     — sampled values (get_column_sample_values)
+  sql:<short description>         — ad-hoc query result (execute_sql)
+  critical_ambiguity:<term>       — sql_snippet for a masked term (interactive only)
+  critical_ambiguity_evidence:<term> — metadata_evidence for a masked term (interactive only)
+  knowledge_ambiguity:<term>      — knowledge_ambiguity definition (interactive only)
+
+Examples: "kb:15", "column:households.locregion", "critical_ambiguity:receiving aid"
 
 EVALUATOR PROMPT — if verdict='insufficient', you MUST populate `evaluator_prompt`
 with a self-contained LLM-judge rubric that can assess whether an agent's free-form

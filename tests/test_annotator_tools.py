@@ -402,7 +402,7 @@ async def test_submit_annotation_parses_audited_gold_variants():
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "r",
-            "evidence_sources_consulted": [],
+            "evidence_sources_consulted": ["kb:3"],
         },
         "original_gold_is_correct": False,
         "gold_variants": [{
@@ -484,7 +484,7 @@ async def test_submit_annotation_wrong_database_returns_error():
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "r",
-            "evidence_sources_consulted": [],
+            "evidence_sources_consulted": ["kb:3"],
         },
         "original_gold_is_correct": True,
         "gold_variants": [],
@@ -726,7 +726,7 @@ async def test_submit_annotation_gold_variant_ref_with_matching_row_succeeds():
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "r",
-            "evidence_sources_consulted": [],
+            "evidence_sources_consulted": ["kb:3"],
         },
         "original_gold_is_correct": False,
         "gold_variants": [
@@ -791,7 +791,7 @@ async def test_submit_annotation_original_gold_correct_with_variants_rejected():
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "r",
-            "evidence_sources_consulted": [],
+            "evidence_sources_consulted": ["kb:3"],
         },
         "original_gold_is_correct": True,
         "gold_variants": [],
@@ -863,7 +863,7 @@ async def test_submit_annotation_multiple_primary_variants_rejected():
         "metadata_sufficiency": {
             "verdict": "ambiguous",
             "rationale": "r",
-            "evidence_sources_consulted": [],
+            "evidence_sources_consulted": ["kb:3"],
         },
         "original_gold_is_correct": False,
         "gold_variants": [
@@ -943,7 +943,7 @@ async def test_submit_annotation_sufficient_gold_not_correct_no_variants_rejecte
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "r",
-            "evidence_sources_consulted": [],
+            "evidence_sources_consulted": ["kb:3"],
         },
         "original_gold_is_correct": False,   # claims wrong...
         "gold_variants": [],
@@ -1055,7 +1055,7 @@ async def test_submit_annotation_audited_variants_without_gold_variants_rejected
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "r",
-            "evidence_sources_consulted": [],
+            "evidence_sources_consulted": ["kb:3"],
         },
         "original_gold_is_correct": False,
         "gold_variants": [],   # empty — should trigger reverse cross-check
@@ -1103,7 +1103,7 @@ async def test_submit_annotation_variant_non_boolean_primary_rejected():
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "r",
-            "evidence_sources_consulted": [],
+            "evidence_sources_consulted": ["kb:3"],
         },
         "original_gold_is_correct": False,
         "gold_variants": [{
@@ -1162,7 +1162,7 @@ async def test_submit_annotation_audited_variants_no_primary_rejected():
         "metadata_sufficiency": {
             "verdict": "sufficient",
             "rationale": "r",
-            "evidence_sources_consulted": [],
+            "evidence_sources_consulted": ["kb:3"],
         },
         "original_gold_is_correct": False,
         "gold_variants": [{
@@ -1199,4 +1199,80 @@ async def test_submit_annotation_audited_variants_no_primary_rejected():
 
     text = result["content"][0]["text"].lower()
     assert "error" in text or "primary" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_empty_evidence_sources_rejected():
+    """evidence_sources_consulted=[] must be rejected — an audit trail is required
+    to distinguish genuine review from a rubber-stamp annotation."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation_no_evidence = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-04",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "r",
+            "evidence_sources_consulted": [],
+        },
+        "original_gold_is_correct": True,
+        "gold_variants": [],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation_no_evidence,
+        "audited_gold_variants_json": "[]",
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "evidence" in text
+    assert not ann_agent._ctx.get("_submission_done")
+
+
+@pytest.mark.asyncio
+async def test_submit_annotation_invalid_evidence_prefix_rejected():
+    """evidence_sources_consulted entries with unrecognised prefixes must be
+    rejected at Pydantic validation time — enforces the canonical format."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _setup_ctx({"instance_id": "shop_1", "selected_database": "shop"})
+    annotation_bad_evidence = json.dumps({
+        "schema_version": 1,
+        "kind": "task_annotation",
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "annotated_by": "annotator-agent",
+        "annotated_at": "2026-06-04",
+        "amb_user_query": "q",
+        "metadata_sufficiency": {
+            "verdict": "sufficient",
+            "rationale": "r",
+            "evidence_sources_consulted": [
+                "households_kb.jsonl#15",   # old free-form format — must be rejected
+            ],
+        },
+        "original_gold_is_correct": True,
+        "gold_variants": [],
+        "provenance": {
+            "task_jsonl_path": "mini_interact.jsonl",
+            "task_jsonl_instance_id": "shop_1",
+        },
+    })
+    result = await ann_agent.submit_annotation({
+        "task_annotation_json": annotation_bad_evidence,
+        "audited_gold_variants_json": "[]",
+    })
+
+    text = result["content"][0]["text"].lower()
+    assert "error" in text or "validation" in text or "prefix" in text
     assert not ann_agent._ctx.get("_submission_done")

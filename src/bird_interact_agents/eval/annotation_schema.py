@@ -15,7 +15,19 @@ from __future__ import annotations
 
 from typing import List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+# Valid prefixes for evidence_sources_consulted entries.
+EVIDENCE_SOURCE_PREFIXES: tuple[str, ...] = (
+    "kb:",                        # get_knowledge_definition — KB entry N
+    "column:",                    # get_column_meaning — <table>.<col>
+    "schema:",                    # get_schema — <table>
+    "sample_values:",             # get_column_sample_values — <table>.<col>
+    "sql:",                       # execute_sql — ad-hoc query description
+    "critical_ambiguity:",        # get_ambiguity_resolutions — sql_snippet for masked term
+    "critical_ambiguity_evidence:",  # get_ambiguity_resolutions — metadata_evidence for masked term
+    "knowledge_ambiguity:",       # get_ambiguity_resolutions — knowledge_ambiguity definition
+)
 
 # Top-level enums kept as Literal strings so the JSON encoding is stable
 # and human-greppable.
@@ -108,6 +120,17 @@ class MetadataSufficiency(BaseModel):
     verdict: MetadataSufficiencyVerdict
     rationale: str
     evidence_sources_consulted: List[str] = Field(default_factory=list)
+
+    @field_validator("evidence_sources_consulted")
+    @classmethod
+    def _validate_evidence_prefixes(cls, v: List[str]) -> List[str]:
+        bad = [s for s in v if not any(s.startswith(p) for p in EVIDENCE_SOURCE_PREFIXES)]
+        if bad:
+            raise ValueError(
+                f"evidence_sources_consulted entries have unrecognised prefixes: {bad}. "
+                f"Valid prefixes: {', '.join(EVIDENCE_SOURCE_PREFIXES)}"
+            )
+        return v
 
 
 class AuditedGoldRef(BaseModel):
