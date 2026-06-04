@@ -1,16 +1,15 @@
 """Central path helper — resolves sibling data and output sinks from any checkout.
 
-The repo expects `mini-interact/` to sit at `<main_checkout>/../mini-interact/`
-and writes outputs (`audited_gold/`, `slayer_models/`, `results/`,
-`.benchmarks/`) under the checkout root. From a `git worktree`, both
-assumptions break: relative paths point into the `.worktrees/` container, and
-benchmark output would scatter across throwaway worktrees.
+Benchmark data directories sit next to the main checkout, each named by the
+benchmark's canonical hyphenated name (e.g. ``mini-interact/``,
+``livesqlbench-base-lite-sqlite/``). The single ``BIRD_BENCHMARKS_ROOT`` env var
+overrides the parent directory for ALL benchmarks at once — no per-benchmark
+env vars.
 
-`main_checkout_root()` short-circuits that by asking git for the *common* git
-dir (shared across all worktrees of a repo) and returning its parent — i.e.
-the original checkout. All other helpers anchor off that. Env vars override
-the default for the sibling data dir (`BIRD_DB_PATH`, `BIRD_DATA_PATH`) and
-for the results dir (`BIRD_RESULTS_ROOT`).
+From a ``git worktree``, relative paths would point into the ``.worktrees/``
+container and benchmark outputs would scatter. ``main_checkout_root()`` prevents
+that by asking git for the *common* git dir (shared across all worktrees) and
+returning its parent — the original checkout. All helpers anchor off that.
 """
 
 from __future__ import annotations
@@ -85,22 +84,21 @@ def _as_benchmark(benchmark: str | Benchmark) -> Benchmark:
 
 def benchmark_data_root(benchmark: str | Benchmark) -> Path:
     """Sibling data dir for ``benchmark`` (per-DB SQLite + KB + tasks JSONL).
-    Honours the benchmark's data-root env override; else sits next to the main
-    checkout at ``<parent>/<data_subdir>``."""
+
+    Layout: ``<BIRD_BENCHMARKS_ROOT>/<benchmark.name>/``.
+    Default parent: the directory next to the main checkout.
+    ``BIRD_BENCHMARKS_ROOT`` overrides the parent for ALL benchmarks at once.
+    """
     b = _as_benchmark(benchmark)
-    override = os.environ.get(b.data_root_env)
-    if override:
-        return Path(override).expanduser()
-    return main_checkout_root().parent / b.data_subdir
+    parent_override = os.environ.get("BIRD_BENCHMARKS_ROOT")
+    if parent_override:
+        return Path(parent_override).expanduser() / b.name
+    return main_checkout_root().parent / b.name
 
 
 def benchmark_data_file(benchmark: str | Benchmark) -> Path:
-    """Tasks JSONL for ``benchmark`` — honours the benchmark's data-file env
-    override; else ``<data_root>/<data_file>``."""
+    """Tasks JSONL for ``benchmark``: ``<benchmark_data_root>/<data_file>``."""
     b = _as_benchmark(benchmark)
-    override = os.environ.get(b.data_file_env)
-    if override:
-        return Path(override).expanduser()
     return benchmark_data_root(b) / b.data_file
 
 

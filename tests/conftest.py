@@ -1,8 +1,7 @@
 """Shared test fixtures and configuration.
 
-Pre-seeds `BIRD_DATA_PATH` / `BIRD_DB_PATH` from the central `paths` helper
-so tests work from any checkout (canonical or `git worktree`) without
-requiring per-developer env-var setup.
+Pre-seeds `BIRD_DB_PATH` from the central `paths` helper so tests that use
+``portable_connection`` work from any checkout without per-developer env setup.
 """
 
 import os
@@ -16,9 +15,7 @@ import pytest
 
 from bird_interact_agents import paths
 
-# Set defaults for environment variables before any bird_interact_agents
-# imports that read them at module level (e.g. mini-interact-agent harness).
-os.environ.setdefault("BIRD_DATA_PATH", str(paths.benchmark_data_file("mini-interact")))
+# Set BIRD_DB_PATH for portable_connection.py SQLite re-anchoring in tests.
 os.environ.setdefault("BIRD_DB_PATH", str(paths.benchmark_data_root("mini-interact")))
 
 

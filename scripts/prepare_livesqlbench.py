@@ -157,9 +157,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--root", default=None,
         help=(
-            "Dataset root (default: paths.benchmark_data_root('livesqlbench-base-lite-sqlite') — i.e. the "
-            "sibling `livesqlbench-base-lite-sqlite/`, or whatever "
-            "$BIRD_LIVESQLBENCH_ROOT points at)."
+            "Dataset root (default: paths.benchmark_data_root('livesqlbench-base-lite-sqlite') — "
+            "i.e. `$BIRD_BENCHMARKS_ROOT/livesqlbench-base-lite-sqlite/`, or the "
+            "sibling directory next to the main checkout)."
         ),
     )
     parser.add_argument(

@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 from bird_interact_agents import paths
@@ -409,9 +410,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     _b = get_benchmark(args.benchmark)
+    _bm_root = os.environ.get("BIRD_BENCHMARKS_ROOT")
     data_path_base = (
         args.data_path_base
-        or os.environ.get(_b.data_root_env)
+        or (str(Path(_bm_root) / _b.name) if _bm_root else None)
         or _b.container_data_dir
     )
 

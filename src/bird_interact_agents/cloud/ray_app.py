@@ -116,8 +116,7 @@ def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     dest = Path(b.container_data_dir)
     client = client or default_gcs_client()
     _benchmark_data.ensure_downloaded(prefix, dest, client=client)
-    os.environ[b.data_root_env] = str(dest)
-    os.environ[b.data_file_env] = str(dest / b.data_file)
+    os.environ["BIRD_BENCHMARKS_ROOT"] = str(dest.parent)
 
 
 def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
@@ -1110,7 +1109,11 @@ def run_pool(
         # data-root env override first (download_benchmark_data sets it to the
         # downloaded tree on the head; on a baked/back-compat run it's the
         # baked path), else the canonical container dir.
-        "data_dir": os.environ.get(_b.data_root_env) or _b.container_data_dir,
+        "data_dir": (
+            str(Path(os.environ["BIRD_BENCHMARKS_ROOT"]) / _b.name)
+            if "BIRD_BENCHMARKS_ROOT" in os.environ
+            else _b.container_data_dir
+        ),
     }
 
     heartbeat = HeartbeatWriter(

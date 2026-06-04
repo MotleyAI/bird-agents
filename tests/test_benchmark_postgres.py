@@ -107,7 +107,6 @@ def test_db_backend_rejects_unknown_value():
 def test_livesqlbench_postgres_facts():
     b = get_benchmark("livesqlbench-base-lite")
     assert b.db_backend == "postgres"
-    assert b.data_subdir == "livesqlbench-base-lite-postgres"
     assert b.data_file == "livesqlbench_data.jsonl"
     assert b.one_shot is True
     assert b.gold_required is True
@@ -116,7 +115,6 @@ def test_livesqlbench_postgres_facts():
     assert b.audited_gold_layout == "single_file"
     assert b.container_data_dir == "/data/livesqlbench-base-lite"
     assert b.dataset_marker == "livesqlbench-base-lite"
-    assert b.gold_required is True
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +125,6 @@ def test_livesqlbench_postgres_facts():
 def test_mini_interact_postgres_facts():
     b = get_benchmark("bird-interact-lite-exp")
     assert b.db_backend == "postgres"
-    assert b.data_subdir == "mini-interact-postgres"
     assert b.data_file == "mini_interact.jsonl"
     assert b.one_shot is False
     assert b.gold_required is False
@@ -150,9 +147,10 @@ def test_all_benchmarks_have_distinct_container_dirs():
     assert len(dirs) == len(set(dirs)), f"duplicate container_data_dir: {dirs}"
 
 
-def test_all_benchmarks_have_distinct_data_subdir_file_pairs():
+def test_all_benchmarks_have_distinct_name_file_pairs():
+    """Each benchmark has a unique (name, data_file) combination."""
     bs = list(all_benchmarks())
-    pairs = [(b.data_subdir, b.data_file) for b in bs]
+    pairs = [(b.name, b.data_file) for b in bs]
     assert len(pairs) == len(set(pairs))
 
 
