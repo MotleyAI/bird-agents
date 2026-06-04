@@ -982,7 +982,12 @@ def list_runs() -> list[dict]:
         except Exception:  # noqa: BLE001
             continue
         attempts = gcs.list_attempts(rid, client=client)
-        status = "live" if cluster.head_is_alive(rid) else "done"
+        run_status = gcs.read_status(rid, client=client) or {}
+        terminal = run_status.get("terminal_state")
+        if terminal in ("done", "error"):
+            status = terminal
+        else:
+            status = "live" if cluster.head_is_alive(rid) else "done"
         out.append({
             "run_id": rid,
             "framework": mf.get("framework"),
