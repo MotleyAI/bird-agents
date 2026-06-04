@@ -126,7 +126,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_annotate.add_argument("--detach", action="store_true")
     sp_annotate.add_argument("--allow-dirty", action="store_true")
 
-    for name in ("fetch", "kill", "resubmit"):
+    sp_fetch = sub.add_parser("fetch")
+    sp_fetch.add_argument("run_id")
+    sp_fetch.add_argument(
+        "--no-kill", action="store_true",
+        help="Do not shut down the cluster after a successful fetch.",
+    )
+    for name in ("kill", "resubmit"):
         spx = sub.add_parser(name)
         spx.add_argument("run_id")
 
@@ -243,7 +249,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"submitted: {run_id}")
         return 0
     if ns.subcommand == "fetch":
-        metrics = driver.fetch(ns.run_id)
+        metrics = driver.fetch(ns.run_id, kill_after_fetch=not ns.no_kill)
         # Codex r6: surface the merge report so post-run merge failures
         # (ignored shards, skipped dbs) are visible at fetch time rather
         # than buried in the on-disk merge_report.json.

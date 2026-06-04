@@ -904,7 +904,7 @@ def wait_until_done(run_id: str, manifest: dict, *,
 # ---------------------------------------------------------------------------
 
 
-def fetch(run_id: str) -> dict:
+def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
     dest = local_results_root() / run_id
     gcs.concurrent_download_prefix(run_id, dest, client=default_gcs_client())
     manifest_path = dest / "manifest.json"
@@ -961,6 +961,16 @@ def fetch(run_id: str) -> dict:
     eval_path = dest / "eval.json"
     if eval_path.exists():
         eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
+
+    if kill_after_fetch and cluster.head_is_alive(run_id):
+        _status = gcs.read_status(run_id) or {}
+        _terminal = _status.get("terminal_state")
+        _attempts = gcs.list_attempts(run_id)
+        _total = len(manifest.get("instance_ids", []))
+        _complete = (_terminal in ("done", "error")) or (len(_attempts) >= _total > 0)
+        if _complete:
+            logger.info("Run %s complete; shutting down cluster.", run_id)
+            kill(run_id)
 
     return metrics
 
