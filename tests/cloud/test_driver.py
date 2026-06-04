@@ -1965,6 +1965,37 @@ def test_fetch_does_not_kill_when_kill_after_fetch_false(monkeypatch, tmp_path):
     mocks["cluster"].head_is_alive.assert_not_called()
 
 
+def test_fetch_kills_cluster_when_terminal_state_is_error(monkeypatch, tmp_path):
+    """fetch() with kill_after_fetch=True must call kill() when terminal_state
+    is 'error' (not just 'done') — both are complete terminal states."""
+    _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="error", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [RUN_ID], "kill must be called when terminal_state=error"
+
+
+def test_fetch_kills_cluster_when_attempts_reach_total_no_terminal_state(monkeypatch, tmp_path):
+    """fetch() with kill_after_fetch=True must call kill() when all attempts
+    have been recorded but no terminal_state is set yet — the count-based
+    completion branch."""
+    _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state=None, n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [RUN_ID], "kill must be called when attempts == total"
+
+
 # ---------------------------------------------------------------------------
 # DEV-1530 — --no-subscription-auth flag in read_api_keys_from_local_env
 # and build_manifest / build_annotator_manifest / resubmit.

@@ -980,7 +980,11 @@ def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
         _complete = (_terminal in ("done", "error")) or (len(_attempts) >= _total > 0)
         if _complete:
             logger.info("Run %s complete; shutting down cluster.", run_id)
-            kill(run_id)
+            try:
+                kill(run_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("auto-kill after fetch failed for %s: %s", run_id, exc)
+                metrics["kill_after_fetch_error"] = str(exc)
 
     return metrics
 

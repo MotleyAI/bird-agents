@@ -30,13 +30,18 @@ for arg in "$@"; do
     esac
 done
 
-LIST_OUTPUT=$($CLOUD list 2>&1) || true
+if ! LIST_OUTPUT=$($CLOUD list 2>&1); then
+    echo "ERROR: failed to list runs:" >&2
+    echo "$LIST_OUTPUT" >&2
+    exit 2
+fi
 if [[ -z "$LIST_OUTPUT" ]]; then
     echo "No runs found."
     exit 1
 fi
 
 FETCHED=0
+WOULD_FETCH=0
 LIVE_FOUND=0
 
 while IFS= read -r line; do
@@ -58,13 +63,17 @@ while IFS= read -r line; do
     if [[ "$total_count" -gt 0 && "$done_count" -eq "$total_count" ]]; then
         if [[ "$DRY_RUN" -eq 1 ]]; then
             echo "[dry-run] $run_id ($combo): $progress — would fetch + kill"
+            WOULD_FETCH=$((WOULD_FETCH + 1))
         else
             echo "Fetching $run_id ($combo, $progress) ..."
             # fetch auto-kills the cluster when all tasks are done (default behaviour)
-            $CLOUD fetch "$run_id" || echo "  WARNING: fetch failed for $run_id (continuing)"
+            if $CLOUD fetch "$run_id"; then
+                FETCHED=$((FETCHED + 1))
+            else
+                echo "  WARNING: fetch failed for $run_id (continuing)"
+            fi
             echo ""
         fi
-        FETCHED=$((FETCHED + 1))
     else
         echo "In progress: $run_id ($combo)  $done_count / $total_count tasks done"
     fi
@@ -74,7 +83,7 @@ echo ""
 if [[ "$LIVE_FOUND" -eq 0 ]]; then
     echo "No live annotator clusters found."
 elif [[ "$DRY_RUN" -eq 1 ]]; then
-    echo "Dry run complete — $FETCHED run(s) would be fetched."
+    echo "Dry run complete — $WOULD_FETCH run(s) would be fetched."
 else
     echo "Done — $FETCHED run(s) fetched."
 fi

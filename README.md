@@ -206,19 +206,19 @@ entries in `audited_gold/mini-interact_audited.jsonl`.
 
 ### Checking and fetching all completed runs
 
-`scripts/check_annotation_runs.sh` inspects every live annotation run and
-auto-fetches those whose tasks are all done:
+`scripts/check_annotation_runs.sh` inspects every **live** annotator cluster
+and auto-fetches those whose tasks are all done. Runs whose cluster has already
+shut down (`state=done`) are ignored — fetch them manually with
+`bird-interact-cloud fetch <run-id>`.
 
 ```bash
-bash scripts/check_annotation_runs.sh          # fetch completed annotation runs
-bash scripts/check_annotation_runs.sh --all    # fetch any completed run type
-bash scripts/check_annotation_runs.sh --dry-run  # preview without fetching
+bash scripts/check_annotation_runs.sh           # fetch completed live annotator runs
+bash scripts/check_annotation_runs.sh --dry-run # preview without fetching
 ```
 
 A run counts as complete when `done == total` in `bird-interact-cloud list`
-(all submitted tasks have produced results) or when its state is `done`
-(cluster shut down). The script exits 0 if at least one run was fetched,
-1 otherwise — suitable for use in a polling loop.
+(all submitted tasks have produced results). The script exits 0 if at least one
+run was fetched, 1 otherwise — suitable for use in a polling loop.
 
 The script is pre-approved in `~/.claude/settings.json` so Claude Code runs
 it without a confirmation prompt.
