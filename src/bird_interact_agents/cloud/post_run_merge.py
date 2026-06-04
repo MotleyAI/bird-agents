@@ -594,7 +594,7 @@ class AuditedGoldVariantsMergeReport(BaseModel):
     error_details: list[str] = []
 
 
-_REQUIRED_VARIANT_FIELDS = {"instance_id", "selected_database", "benchmark", "audit_status", "audited_sol_sql", "variant_id"}
+_REQUIRED_AUDITED_GOLD_ROW_FIELDS = {"instance_id", "selected_database", "benchmark", "variants"}
 
 
 def _normalise_benchmark(benchmark: str) -> str:
@@ -641,6 +641,44 @@ def merge_task_annotations(
     return report
 
 
+def _parse_audited_gold_row(src: Path, line: str) -> "AuditedGoldRow | None | str":
+    """Parse a single JSONL line as an ``AuditedGoldRow``.
+
+    Returns the parsed row, ``None`` for an empty line, or an error string.
+    Handles both the new grouped format (``variants`` key present) and the
+    legacy flat-row format (one dict per variant) for backward compatibility.
+    """
+    from pydantic import ValidationError
+    from bird_interact_agents.eval.annotation_schema import AuditedGoldRow
+
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        d = json.loads(line)
+    except json.JSONDecodeError as e:
+        return f"{src}: JSON decode error: {e}"
+
+    if not isinstance(d, dict):
+        return f"{src}: expected a JSON object, got {type(d).__name__}"
+
+    if "variants" in d:
+        # New grouped format.
+        try:
+            return AuditedGoldRow.model_validate(d)
+        except (ValidationError, Exception) as e:
+            return f"{src}: AuditedGoldRow validation error: {e}"
+
+    # Legacy flat-row format — wrap in a single-element group.
+    missing = _REQUIRED_AUDITED_GOLD_ROW_FIELDS - {"variants"} - set(d.keys())
+    if missing:
+        return f"{src}: flat-row missing required fields: {missing}"
+    try:
+        return AuditedGoldRow.from_flat_rows([d])
+    except (ValueError, Exception) as e:
+        return f"{src}: from_flat_rows error: {e}"
+
+
 def merge_audited_gold_variants(
     *,
     downloaded_run_dir: Path,
@@ -651,14 +689,20 @@ def merge_audited_gold_variants(
     """Merge per-task audited gold variant JSONL files into the consolidated JSONL.
 
     Reads from ``downloaded_run_dir/rows/<instance_id>/audited_gold_variants.jsonl``.
-    Appends new entries to ``audited_gold_root/<benchmark>_audited.jsonl``.
-    Deduplicates by ``(instance_id, variant_id)``; rejects entries missing
-    required fields (selected_database, benchmark, audit_status, audited_sol_sql).
+    Writes to ``audited_gold_root/<benchmark>_audited.jsonl`` as one grouped
+    ``AuditedGoldRow`` JSON line per ``instance_id``.
+
+    Deduplicates by ``instance_id`` (clean-slate per task — all variants for a
+    re-annotated task replace the old row). An empty source file signals
+    ``original_gold_is_correct=True``; those instances are purged from the
+    consolidated JSONL (no row = original is the gold).
 
     When ``override=True``, incoming rows replace existing rows with the same
-    key so that a re-annotation run updates the local consolidated file rather
-    than leaving it stale.
+    ``instance_id`` so that a re-annotation run updates the local consolidated
+    file rather than leaving it stale.
     """
+    from bird_interact_agents.eval.annotation_schema import AuditedGoldRow
+
     bm = _normalise_benchmark(benchmark)
     report = AuditedGoldVariantsMergeReport()
     rows_dir = downloaded_run_dir / "rows"
@@ -667,58 +711,59 @@ def merge_audited_gold_variants(
 
     consolidated = audited_gold_root / bm / f"{bm}_audited.jsonl"
 
+    def _read_consolidated() -> dict[str, str]:
+        """Return existing rows as {instance_id: raw_json_line}."""
+        out: dict[str, str] = {}
+        if not consolidated.exists():
+            return out
+        for raw in consolidated.read_text().splitlines():
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                d = json.loads(raw)
+                iid = d.get("instance_id") or d.get("variants", [{}])[0].get("instance_id", "")  # type: ignore[index]
+            except Exception:
+                continue
+            if iid:
+                out[iid] = raw
+        return out
+
+    def _read_incoming_rows(src: Path) -> "list[AuditedGoldRow]":
+        """Parse all valid AuditedGoldRow entries from a per-task JSONL file."""
+        rows: list[AuditedGoldRow] = []
+        for line in src.read_text().splitlines():
+            result = _parse_audited_gold_row(src, line)
+            if result is None:
+                continue
+            if isinstance(result, str):
+                report.errors += 1
+                report.error_details.append(result)
+                continue
+            rows.append(result)
+        return rows
+
     if override:
-        # Upsert mode: load all existing rows keyed by (instance_id, variant_id),
-        # then overwrite with incoming rows. Rewrite the whole file at the end.
-        existing_ordered: dict[tuple[str, str], str] = {}
-        if consolidated.exists():
-            for raw in consolidated.read_text().splitlines():
-                raw = raw.strip()
-                if not raw:
-                    continue
-                try:
-                    r = json.loads(raw)
-                    k: tuple[str, str] = (r["instance_id"], r.get("variant_id", ""))
-                    existing_ordered[k] = raw
-                except (json.JSONDecodeError, KeyError):
-                    pass
+        # Upsert mode: replace all rows for re-annotated instance_ids.
+        existing_ordered = _read_consolidated()
 
         # Purge existing rows only for instances whose annotator task produced
-        # an audited_gold_variants.jsonl (even empty — empty means the annotator
-        # decided original_gold_is_correct=True). Dirs with no variants file are
-        # failed annotator tasks; keep their old consolidated rows untouched.
+        # an audited_gold_variants.jsonl (even empty — empty means original_gold_is_correct=True).
         rerun_iids = {
             sub.name
             for sub in rows_dir.iterdir()
             if sub.is_dir() and (sub / "audited_gold_variants.jsonl").exists()
         }
-        for key in list(existing_ordered.keys()):
-            if key[0] in rerun_iids:
-                del existing_ordered[key]
+        for iid in list(existing_ordered.keys()):
+            if iid in rerun_iids:
+                del existing_ordered[iid]
 
         for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
             src = sub / "audited_gold_variants.jsonl"
             if not src.exists():
                 continue
-            for line in src.read_text().splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError as e:
-                    report.errors += 1
-                    report.error_details.append(f"{src}: {e}")
-                    continue
-                missing = _REQUIRED_VARIANT_FIELDS - set(row.keys())
-                if missing:
-                    report.errors += 1
-                    report.error_details.append(
-                        f"{src}: missing required fields: {missing}"
-                    )
-                    continue
-                key = (row.get("instance_id", ""), row.get("variant_id", ""))
-                existing_ordered[key] = json.dumps(row)
+            for row in _read_incoming_rows(src):
+                existing_ordered[row.instance_id] = row.model_dump_json()
                 report.added += 1
 
         if existing_ordered:
@@ -727,52 +772,23 @@ def merge_audited_gold_variants(
                 "\n".join(existing_ordered.values()) + "\n"
             )
         elif consolidated.exists():
-            # All rows were purged; truncate rather than leaving stale content.
             consolidated.write_text("")
         return report
 
-    # Append-only mode (default): skip rows whose key already exists.
-    existing_keys: set[tuple[str, str]] = set()
-    if consolidated.exists():
-        for line in consolidated.read_text().splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-                existing_keys.add((row["instance_id"], row.get("variant_id", "")))
-            except (json.JSONDecodeError, KeyError):
-                pass
+    # Append-only mode (default): skip rows whose instance_id already exists.
+    existing_ids: set[str] = set(_read_consolidated().keys())
 
     new_lines: list[str] = []
     for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
         src = sub / "audited_gold_variants.jsonl"
         if not src.exists():
             continue
-        content = src.read_text()
-        for line in content.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as e:
-                report.errors += 1
-                report.error_details.append(f"{src}: {e}")
-                continue
-            missing = _REQUIRED_VARIANT_FIELDS - set(row.keys())
-            if missing:
-                report.errors += 1
-                report.error_details.append(
-                    f"{src}: missing required fields: {missing}"
-                )
-                continue
-            key = (row.get("instance_id", ""), row.get("variant_id", ""))
-            if key in existing_keys:
+        for row in _read_incoming_rows(src):
+            if row.instance_id in existing_ids:
                 report.skipped_duplicate += 1
                 continue
-            existing_keys.add(key)
-            new_lines.append(json.dumps(row))
+            existing_ids.add(row.instance_id)
+            new_lines.append(row.model_dump_json())
             report.added += 1
 
     if new_lines:

@@ -173,7 +173,10 @@ def _run_one_task(
 
     try:
         _gcs.write_task_annotation(run_id, instance_id, ann, client=client)
-        _gcs.write_audited_gold_variants(run_id, instance_id, variants, client=client)
+        _gcs.write_audited_gold_variants(
+            run_id, instance_id, variants,
+            benchmark=benchmark, selected_database=db, client=client,
+        )
         _gcs.write_stable_task_annotation(benchmark, db, instance_id, ann, client=client)
         _gcs.write_stable_audited_gold_variants(benchmark, db, instance_id, variants, client=client)
     except Exception as exc:

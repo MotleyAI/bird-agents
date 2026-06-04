@@ -22,7 +22,6 @@ from bird_interact_agents.eval import cascading_report as _cascading_report
 # Imported by NAME (not via the `gcs` module attr) so tests that mock
 # `driver.gcs` still get the real pure mapping — only the I/O helpers
 # (`gcs.upload_dir_prefix` etc.) need to be mockable.
-from bird_interact_agents.cloud.gcs import slayer_artifact_name
 # Imported by NAME so they survive tests that mock `driver.prereqs`. PrereqError
 # must be the real class for the raise in `read_api_keys_from_local_env`, and
 # `_required_api_keys` must be the REAL provider→key mapping so submit/resubmit
@@ -302,6 +301,13 @@ def _benchmark_for_dataset(dataset: str | None) -> str:
     """
     if not dataset:
         return "mini-interact"
+    # Legacy: manifests submitted before DEV-1525 used underscore/short forms.
+    _LEGACY: dict[str, str] = {
+        "mini_interact": "mini-interact",
+        "livesqlbench": "livesqlbench-base-lite-sqlite",
+    }
+    if dataset in _LEGACY:
+        return _LEGACY[dataset]
     return get_benchmark(dataset).name
 
 
@@ -876,7 +882,7 @@ def wait_until_done(run_id: str, manifest: dict, *,
 # ---------------------------------------------------------------------------
 
 
-def fetch(run_id: str) -> dict:
+def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
     client = default_gcs_client()
     manifest = gcs.read_manifest(run_id, client=client)
     benchmark = _benchmark_for_dataset(manifest.get("dataset"))
@@ -933,6 +939,20 @@ def fetch(run_id: str) -> dict:
     eval_path = dest / "eval.json"
     if eval_path.exists():
         eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
+
+    if kill_after_fetch and cluster.head_is_alive(run_id):
+        _status = gcs.read_status(run_id) or {}
+        _terminal = _status.get("terminal_state")
+        _attempts = gcs.list_attempts(run_id)
+        _total = len(manifest.get("instance_ids", []))
+        _complete = (_terminal in ("done", "error")) or (len(_attempts) >= _total > 0)
+        if _complete:
+            logger.info("Run %s complete; shutting down cluster.", run_id)
+            try:
+                kill(run_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("auto-kill after fetch failed for %s: %s", run_id, exc)
+                metrics["kill_after_fetch_error"] = str(exc)
 
     return metrics
 

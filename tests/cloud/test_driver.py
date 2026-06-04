@@ -1469,8 +1469,35 @@ def test_fetch_continues_when_merge_returns_no_shards(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_manifest_defaults_to_mini_interact_benchmark(monkeypatch):
-    args = FakeSubmitArgs()  # default dataset → mini_interact
+def test_manifest_and_job_args_carry_benchmark(monkeypatch):
+    args = FakeSubmitArgs(
+        framework="pydantic_ai_otf_encode", query_mode="slayer",
+        mode="one-shot", slayer_setup="on-the-fly",
+    )
+    args.dataset = "livesqlbench-base-lite-sqlite"
+
+    prefix = "benchmark-data/livesqlbench/abc123/"
+    m = driver.build_manifest(
+        args, image_uri="img:tag", run_id="rid", benchmark_data_prefix=prefix,
+    )
+    assert m["dataset"] == "livesqlbench-base-lite-sqlite"
+    assert m["benchmark_data_prefix"] == prefix
+
+    # Avoid reading a real tasks file for the db-grouped sort.
+    monkeypatch.setattr(
+        driver, "_instance_ids_sorted_by_db",
+        lambda ids, benchmark="mini-interact": list(ids),
+    )
+    ja = driver._build_job_args(
+        args, "rid", attempt=1, benchmark_data_prefix=prefix,
+    )
+    assert ja[ja.index("--dataset") + 1] == "livesqlbench-base-lite-sqlite"
+    assert "--gold-file" not in ja
+    assert ja[ja.index("--benchmark-data-prefix") + 1] == prefix
+
+
+def test_manifest_defaults_to_mini_interact_benchmark():
+    args = FakeSubmitArgs()  # default dataset → mini_interact, no gold
     m = driver.build_manifest(args, image_uri="img:tag", run_id="rid")
     assert m["dataset"] == "mini-interact"
     # No prefix passed → key present but None (back-compat for direct callers).
@@ -1508,7 +1535,6 @@ def test_submit_uploads_dataset_and_threads_prefix(monkeypatch):
     assert job_args[job_args.index("--benchmark-data-prefix") + 1] == (
         "benchmark-data/mini_interact/feedface/"
     )
-
 
 
 def test_resubmit_threads_benchmark_prefix(monkeypatch):
@@ -1654,6 +1680,165 @@ def test_read_api_keys_oauth_forwards_bird_pg_vars(monkeypatch):
     assert keys.get("BIRD_PG_HOST") == "pg.example.com"
     assert keys.get("BIRD_PG_PASSWORD") == "mysecret"
     assert "BIRD_PG_PORT" not in keys
+
+
+# ---------------------------------------------------------------------------
+# kill_after_fetch — auto-teardown when the cluster is still up after fetch.
+# ---------------------------------------------------------------------------
+
+
+def _setup_fetch_mocks(monkeypatch, tmp_path, *, head_alive, terminal_state, n_attempts, n_total):
+    """Patch all collaborators needed by driver.fetch and return the mock set."""
+    mocks = _patch_collaborators(monkeypatch)
+    fake_results = tmp_path / "results"
+    monkeypatch.setattr(driver, "local_results_root", lambda: fake_results)
+    monkeypatch.setattr(
+        driver.paths, "slayer_models_otf_root",
+        lambda *, benchmark=None: tmp_path / "warm" / "slayer_models_otf",
+    )
+    monkeypatch.setattr(
+        driver.paths, "annotations_root",
+        lambda: tmp_path / "annotations",
+    )
+    mocks["gcs"].read_manifest.return_value = {
+        "run_id": RUN_ID,
+        "instance_ids": [f"db_a_{i}" for i in range(n_total)],
+    }
+    mocks["gcs"].read_status.return_value = (
+        {"terminal_state": terminal_state} if terminal_state else {}
+    )
+    mocks["gcs"].list_attempts.return_value = {
+        f"db_a_{i}": [1] for i in range(n_attempts)
+    }
+    mocks["cluster"].head_is_alive.return_value = head_alive
+
+    def fake_download(run_id, dest, **kw):
+        Path(dest).mkdir(parents=True, exist_ok=True)
+    mocks["gcs"].concurrent_download_prefix.side_effect = fake_download
+
+    from bird_interact_agents.cloud import post_run_merge as _prm
+    monkeypatch.setattr(
+        driver._collation, "collate",
+        lambda run_dir, manifest: {"phase_passes": 1},
+    )
+    monkeypatch.setattr(
+        _prm, "merge_post_run_into_warm_cache",
+        lambda **kw: {"merged_dbs": [], "ignored_shards": []},
+    )
+    monkeypatch.setattr(
+        _prm, "merge_submission_annotations",
+        lambda **kw: _prm.AnnotationMergeReport(run_id=RUN_ID, benchmark="mini_interact"),
+    )
+    return mocks
+
+
+def test_fetch_kills_cluster_when_complete_and_head_alive(monkeypatch, tmp_path):
+    """fetch() with kill_after_fetch=True must call kill() when the run is
+    complete (terminal_state=done) and the cluster head is still alive."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [RUN_ID], "kill must be called exactly once with the run_id"
+
+
+def test_fetch_does_not_kill_when_head_already_dead(monkeypatch, tmp_path):
+    """fetch() must not attempt kill() when head_is_alive returns False — the
+    cluster is already gone."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=False, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [], "kill must NOT be called when head is already dead"
+
+
+def test_fetch_does_not_kill_when_run_incomplete(monkeypatch, tmp_path):
+    """fetch() must not kill a cluster whose run is still mid-flight (fewer
+    attempts than total instance_ids, no terminal_state set)."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state=None, n_attempts=1, n_total=3,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [], "kill must NOT be called for an incomplete run"
+
+
+def test_fetch_does_not_kill_when_kill_after_fetch_false(monkeypatch, tmp_path):
+    """Default behaviour (kill_after_fetch=False): cluster is never killed even
+    when the run is complete and the head is alive."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID)  # kill_after_fetch defaults to False
+
+    assert kill_calls == [], "kill must NOT be called when kill_after_fetch=False"
+    # head_is_alive should not even be checked when kill_after_fetch=False.
+    mocks["cluster"].head_is_alive.assert_not_called()
+
+
+def test_fetch_kills_cluster_when_terminal_state_is_error(monkeypatch, tmp_path):
+    """fetch() with kill_after_fetch=True must call kill() when terminal_state
+    is 'error' (not just 'done') — both are complete terminal states."""
+    _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="error", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [RUN_ID], "kill must be called when terminal_state=error"
+
+
+def test_fetch_kills_cluster_when_attempts_reach_total_no_terminal_state(monkeypatch, tmp_path):
+    """fetch() with kill_after_fetch=True must call kill() when all attempts
+    have been recorded but no terminal_state is set yet — the count-based
+    completion branch."""
+    _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state=None, n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [RUN_ID], "kill must be called when attempts == total"
+
+
+def test_fetch_surfaces_kill_error_in_metrics(monkeypatch, tmp_path):
+    """When kill() raises during auto-teardown, fetch() must catch the exception,
+    store it in metrics["kill_after_fetch_error"], and return normally — so
+    successfully collated results are not lost."""
+    _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    monkeypatch.setattr(driver, "kill", lambda _rid: (_ for _ in ()).throw(RuntimeError("cluster gone")))
+
+    metrics = driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert "kill_after_fetch_error" in metrics
+    assert "cluster gone" in metrics["kill_after_fetch_error"]
 
 
 # ---------------------------------------------------------------------------

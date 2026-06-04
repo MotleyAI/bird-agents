@@ -463,16 +463,31 @@ def write_audited_gold_variants(
     instance_id: str,
     variants: list[dict],
     *,
+    benchmark: str,
+    selected_database: str,
     client=None,
 ) -> None:
-    """Write audited gold variants as JSONL to the run-specific blob path."""
+    """Write audited gold variants as JSONL to the run-specific blob path.
+
+    Writes a single ``AuditedGoldRow`` JSON line when variants is non-empty,
+    or an empty file when variants is empty (original_gold_is_correct=True).
+    """
+    from bird_interact_agents.eval.annotation_schema import AuditedGoldRow
+
     client = client or default_gcs_client()
     blob = client.bucket(BUCKET_NAME).blob(
         audited_gold_variants_blob(run_id, instance_id)
     )
-    content = "\n".join(json.dumps(v) for v in variants)
-    if content:
-        content += "\n"
+    if variants:
+        row = AuditedGoldRow(
+            instance_id=instance_id,
+            selected_database=selected_database,
+            benchmark=benchmark,
+            variants=variants,  # AuditedGoldRow accepts dicts via model_validate coercion
+        )
+        content = row.model_dump_json() + "\n"
+    else:
+        content = ""
     blob.upload_from_string(content.encode(), content_type="application/jsonl")
 
 
@@ -484,12 +499,25 @@ def write_stable_audited_gold_variants(
     *,
     client=None,
 ) -> None:
-    """Write audited gold variants as JSONL to the stable (cross-run) blob path."""
+    """Write audited gold variants as JSONL to the stable (cross-run) blob path.
+
+    Writes a single ``AuditedGoldRow`` JSON line when variants is non-empty,
+    or an empty file when variants is empty (original_gold_is_correct=True).
+    """
+    from bird_interact_agents.eval.annotation_schema import AuditedGoldRow
+
     client = client or default_gcs_client()
     blob = client.bucket(BUCKET_NAME).blob(
         stable_audited_gold_variants_blob(benchmark, db, instance_id)
     )
-    content = "\n".join(json.dumps(v) for v in variants)
-    if content:
-        content += "\n"
+    if variants:
+        row = AuditedGoldRow(
+            instance_id=instance_id,
+            selected_database=db,
+            benchmark=benchmark,
+            variants=variants,
+        )
+        content = row.model_dump_json() + "\n"
+    else:
+        content = ""
     blob.upload_from_string(content.encode(), content_type="application/jsonl")
