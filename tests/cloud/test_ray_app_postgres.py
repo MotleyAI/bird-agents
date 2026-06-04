@@ -56,6 +56,11 @@ def test_ensure_postgres_loaded_calls_subprocess(
 
     assert calls_seen[0] == ["pg_ctlcluster", "17", "main", "start"]
 
+    # role-creation call appears before any createdb
+    role_calls = [c for c in calls_seen if "psql" in c and "-c" in c]
+    assert len(role_calls) == 1
+    assert "bird_interact" in role_calls[0][-1]
+
     assert _runuser_postgres("createdb", "alien") in calls_seen
     assert _runuser_postgres("createdb", "bird") in calls_seen
 
