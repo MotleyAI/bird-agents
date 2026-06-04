@@ -151,17 +151,19 @@ def test_prints_per_db_summary(tmp_path):
 
 def test_default_root_is_paths_livesqlbench_root(monkeypatch, tmp_path):
     """With no `--root`, the script falls back to
-    `paths.livesqlbench_root()` (worktree-safe, env-overridable)."""
-    root = tmp_path / "lsb_via_env"
+    `paths.benchmark_data_root('livesqlbench-base-lite-sqlite')`, which is
+    driven by `BIRD_BENCHMARKS_ROOT`."""
+    benchmarks_root = tmp_path / "benchmarks"
+    root = benchmarks_root / "livesqlbench-base-lite-sqlite"
     make_lsb_dataset(root, dbs=["alien"], tasks=[])
-    env = {"BIRD_LIVESQLBENCH_ROOT": str(root)}
+    env = {"BIRD_BENCHMARKS_ROOT": str(benchmarks_root)}
     res = subprocess.run(
         [sys.executable, str(_script_path())],
         capture_output=True, text=True, check=False,
         env={**__import__("os").environ, **env},
     )
     assert res.returncode == 0, (
-        f"prepare_livesqlbench must honour BIRD_LIVESQLBENCH_ROOT when "
+        f"prepare_livesqlbench must honour BIRD_BENCHMARKS_ROOT when "
         f"--root is omitted; stdout={res.stdout!r} stderr={res.stderr!r}"
     )
     assert (root / "alien" / "alien.sqlite").exists()

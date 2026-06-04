@@ -182,7 +182,6 @@ async def test_local_run_invokes_inline_grader_per_task(monkeypatch, tmp_path):
         reasoning_effort=None,
         use_audited_gold_sql=False,
         dataset="mini-interact",
-        gold_file=None,
         filter_ids=None,
     )
 
@@ -352,7 +351,6 @@ async def test_local_run_grader_failure_writes_fail_everything_annotation(
         reasoning_effort=None,
         use_audited_gold_sql=False,
         dataset="mini-interact",
-        gold_file=None,
         filter_ids=None,
     )
 
@@ -506,7 +504,6 @@ async def test_local_run_no_submitted_sql_writes_fail_everything_annotation(
         reasoning_effort=None,
         use_audited_gold_sql=False,
         dataset="mini-interact",
-        gold_file=None,
         filter_ids=None,
     )
 
@@ -624,7 +621,7 @@ async def test_local_run_wipes_stale_rows_when_no_filter(monkeypatch, tmp_path):
         slayer_storage_root=str(tmp_path / "slayer_models"),
         slayer_setup="on-the-fly", reasoning_effort=None,
         use_audited_gold_sql=False, dataset="mini-interact",
-        gold_file=None, filter_ids=None,
+        filter_ids=None,
     )
     assert not stale_dir.exists(), (
         "rows/stale_old_iid should have been wiped before the run"
@@ -734,7 +731,6 @@ async def test_local_run_filter_ids_preserves_unrelated_rows(
         slayer_storage_root=str(tmp_path / "slayer_models"),
         slayer_setup="on-the-fly", reasoning_effort=None,
         use_audited_gold_sql=False, dataset="mini-interact",
-        gold_file=None,
         # Filter: only alien_1 — alien_99's prior annotation should survive.
         filter_ids=["alien_1"],
     )
@@ -879,7 +875,6 @@ async def test_autopsy_and_task_annotation_stripped_from_local_eval_json(
         reasoning_effort=None,
         use_audited_gold_sql=False,
         dataset="mini-interact",
-        gold_file=None,
         filter_ids=None,
     )
 

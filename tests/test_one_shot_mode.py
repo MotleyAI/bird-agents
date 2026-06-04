@@ -70,13 +70,11 @@ def test_one_shot_in_mode_choices(monkeypatch, tmp_path):
     """argparse must accept `--mode one-shot` without erroring."""
     argv = _argv_base(tmp_path) + [
         "--dataset", "livesqlbench-base-lite-sqlite",
-        "--gold-file", str(tmp_path / "g.jsonl"),
         "--mode", "one-shot",
         "--framework", "claude_sdk",
         "--query-mode", "slayer",
         "--slayer-setup", "on-the-fly",
     ]
-    (tmp_path / "g.jsonl").write_text("")
     kwargs = _drive_main(monkeypatch, argv)
     assert kwargs.get("mode") == "one-shot"
 
@@ -112,40 +110,13 @@ def test_dataset_flag_is_required(monkeypatch, tmp_path):
 
 
 def test_dataset_flag_livesqlbench_is_plumbed(monkeypatch, tmp_path):
-    gold = tmp_path / "g.jsonl"
-    gold.write_text("")
     argv = _argv_base(tmp_path) + [
         "--dataset", "livesqlbench-base-lite-sqlite",
-        "--gold-file", str(gold),
         "--mode", "oracle",
         "--framework", "claude_sdk",
     ]
     kwargs = _drive_main(monkeypatch, argv)
     assert kwargs.get("dataset") == "livesqlbench-base-lite-sqlite"
-    assert kwargs.get("gold_file") == str(gold)
-
-
-def test_livesqlbench_requires_gold_file(monkeypatch, tmp_path, capsys):
-    """`--dataset livesqlbench-base-lite-sqlite` without `--gold-file` MUST fail fast."""
-    argv = _argv_base(tmp_path) + [
-        "--dataset", "livesqlbench-base-lite-sqlite",
-        "--mode", "oracle",
-        "--framework", "claude_sdk",
-    ]
-    captured: dict = {}
-
-    async def fake_run_evaluation(**kwargs):
-        captured.update(kwargs)
-        return {}
-
-    monkeypatch.setattr(run_module, "run_evaluation", fake_run_evaluation)
-    monkeypatch.setattr(sys, "argv", argv)
-    with pytest.raises((SystemExit, ValueError)) as exc_info:
-        run_module.main()
-    assert not captured
-    _assert_failed_validation(
-        capsys, exc_info.value, must_contain=["gold-file"],
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -181,11 +152,8 @@ def test_one_shot_requires_livesqlbench_dataset(monkeypatch, tmp_path, capsys):
 def test_livesqlbench_rejects_interactive_modes(
     monkeypatch, tmp_path, capsys, bad_mode,
 ):
-    gold = tmp_path / "g.jsonl"
-    gold.write_text("")
     argv = _argv_base(tmp_path) + [
         "--dataset", "livesqlbench-base-lite-sqlite",
-        "--gold-file", str(gold),
         "--mode", bad_mode,
         "--framework", "claude_sdk",
         "--query-mode", "raw",
@@ -199,11 +167,8 @@ def test_livesqlbench_rejects_interactive_modes(
 
 
 def test_livesqlbench_oracle_is_accepted(monkeypatch, tmp_path):
-    gold = tmp_path / "g.jsonl"
-    gold.write_text("")
     argv = _argv_base(tmp_path) + [
         "--dataset", "livesqlbench-base-lite-sqlite",
-        "--gold-file", str(gold),
         "--mode", "oracle",
         "--framework", "claude_sdk",
     ]
@@ -218,11 +183,8 @@ def test_livesqlbench_oracle_is_accepted(monkeypatch, tmp_path):
 
 
 def test_one_shot_requires_on_the_fly(monkeypatch, tmp_path, capsys):
-    gold = tmp_path / "g.jsonl"
-    gold.write_text("")
     argv = _argv_base(tmp_path) + [
         "--dataset", "livesqlbench-base-lite-sqlite",
-        "--gold-file", str(gold),
         "--mode", "one-shot",
         "--framework", "claude_sdk",
         "--query-mode", "slayer",
@@ -264,11 +226,8 @@ def test_one_shot_accepts_claude_sdk_framework(
     monkeypatch, tmp_path,
 ):
     """claude_sdk is the CLI-exposed framework for one-shot."""
-    gold = tmp_path / "g.jsonl"
-    gold.write_text("")
     argv = _argv_base(tmp_path) + [
         "--dataset", "livesqlbench-base-lite-sqlite",
-        "--gold-file", str(gold),
         "--mode", "one-shot",
         "--framework", "claude_sdk",
         "--query-mode", "slayer",

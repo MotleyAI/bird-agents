@@ -145,30 +145,42 @@ def test_write_audited_gold_variants_empty_creates_blob(fake_gcs_bucket):
     from bird_interact_agents.cloud import gcs
 
     client, store = fake_gcs_bucket
-    gcs.write_audited_gold_variants("run-1", "shop_1", [], client=client)
+    gcs.write_audited_gold_variants(
+        "run-1", "shop_1", [],
+        benchmark="mini-interact", selected_database="shop", client=client,
+    )
 
     blob = gcs.audited_gold_variants_blob("run-1", "shop_1")
     assert blob in store
-    # Empty JSONL: no non-blank lines
-    lines = [l for l in store[blob].decode().splitlines() if l.strip()]
+    # Empty variants → empty JSONL.
+    lines = [ln for ln in store[blob].decode().splitlines() if ln.strip()]
     assert lines == []
 
 
-def test_write_audited_gold_variants_two_entries_two_lines(fake_gcs_bucket):
+def test_write_audited_gold_variants_two_entries_one_row(fake_gcs_bucket):
+    """Non-empty variants are written as a single AuditedGoldRow JSON line."""
     from bird_interact_agents.cloud import gcs
 
     client, store = fake_gcs_bucket
     variants = [
-        {"instance_id": "shop_1", "variant_id": "primary", "audit_status": "clean"},
-        {"instance_id": "shop_1", "variant_id": "alt", "audit_status": "edited"},
+        {"variant_id": "v_primary", "audit_status": "edited",
+         "audited_sol_sql": ["SELECT 1"], "primary": True},
+        {"variant_id": "v_alt", "audit_status": "original",
+         "audited_sol_sql": ["SELECT 2"], "primary": False},
     ]
-    gcs.write_audited_gold_variants("run-1", "shop_1", variants, client=client)
+    gcs.write_audited_gold_variants(
+        "run-1", "shop_1", variants,
+        benchmark="mini-interact", selected_database="shop", client=client,
+    )
 
     blob = gcs.audited_gold_variants_blob("run-1", "shop_1")
-    lines = [l for l in store[blob].decode().splitlines() if l.strip()]
-    assert len(lines) == 2
-    assert json.loads(lines[0])["variant_id"] == "primary"
-    assert json.loads(lines[1])["variant_id"] == "alt"
+    lines = [ln for ln in store[blob].decode().splitlines() if ln.strip()]
+    assert len(lines) == 1
+    row = json.loads(lines[0])
+    assert row["instance_id"] == "shop_1"
+    assert row["selected_database"] == "shop"
+    assert len(row["variants"]) == 2
+    assert row["variants"][0]["variant_id"] == "v_primary"
 
 
 # ---------------------------------------------------------------------------

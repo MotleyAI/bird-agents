@@ -13,8 +13,10 @@ import contextlib
 import fcntl
 import json
 import os
+import re
 import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -24,6 +26,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
+from bird_interact_agents import paths
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
@@ -94,17 +97,111 @@ def _cloud_benchmark(cfg: dict[str, Any]) -> str:
     return get_benchmark(dataset).name
 
 
+def _pg_version() -> str:
+    """Return the installed PostgreSQL major version string (e.g. ``"17"``).
+
+    Reads the single entry under ``/etc/postgresql/``; raises ``RuntimeError``
+    if the directory is absent or ambiguous (no postgres in the image)."""
+    pg_etc = Path("/etc/postgresql")
+    if not pg_etc.is_dir():
+        raise RuntimeError(
+            "PostgreSQL not found in image — /etc/postgresql missing. "
+            "Add postgresql to Dockerfile.cloud apt-get install."
+        )
+    versions = [d.name for d in pg_etc.iterdir() if d.is_dir()]
+    if len(versions) != 1:
+        raise RuntimeError(
+            f"Expected exactly one PostgreSQL version under /etc/postgresql; "
+            f"got: {versions}"
+        )
+    return versions[0]
+
+
+_PG_INIT_LOCK = Path("/tmp/pg_init.lock")
+_PG_LOADED_MARKER = Path("/tmp/pg_loaded.marker")
+_SAFE_DB_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _ensure_postgres_loaded(data_dir: Path) -> None:
+    """Start a local PostgreSQL server and load benchmark databases.
+
+    Database dumps are expected at ``data_dir/pg_dumps/<db>/<db>.sql``
+    (one SQL file per database, produced by ``pg_dump``).
+
+    Idempotent: a node-level lock serialises concurrent actors; a marker
+    file prevents re-loading on second actor init within the same node."""
+    pg_dumps_dir = data_dir / "pg_dumps"
+    if not pg_dumps_dir.is_dir():
+        raise RuntimeError(
+            f"pg_dumps/ directory missing under {data_dir}. "
+            "Download SQL dumps with scripts/download_pg_dumps.py first."
+        )
+
+    with open(_PG_INIT_LOCK, "w") as _lf:
+        fcntl.flock(_lf, fcntl.LOCK_EX)
+        if _PG_LOADED_MARKER.exists():
+            return
+
+        pg_ver = _pg_version()
+        subprocess.run(
+            ["pg_ctlcluster", pg_ver, "main", "start"],
+            check=False,  # exit 2 means "already running" — that's fine
+            capture_output=True,
+        )
+
+        # Create the application role that the harness connects as.
+        pg_user = os.environ.get("BIRD_PG_USER", "bird_interact")
+        pg_pass = os.environ.get("BIRD_PG_PASSWORD", "bird_interact")
+        if not _SAFE_DB_NAME.match(pg_user):
+            raise RuntimeError(
+                f"Unsafe BIRD_PG_USER {pg_user!r}; must match ^[a-zA-Z_][a-zA-Z0-9_]*$"
+            )
+        pg_pass_escaped = pg_pass.replace("'", "''")
+        subprocess.run(
+            ["runuser", "-u", "postgres", "--", "psql", "-c",
+             f"DO $$ BEGIN "
+             f"IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{pg_user}') "
+             f"THEN CREATE ROLE {pg_user} LOGIN SUPERUSER PASSWORD '{pg_pass_escaped}'; "
+             f"END IF; END $$;"],
+            check=True,
+            capture_output=True,
+        )
+
+        for db_dir in sorted(pg_dumps_dir.iterdir()):
+            if not db_dir.is_dir():
+                continue
+            db = db_dir.name
+            if not _SAFE_DB_NAME.match(db):
+                raise RuntimeError(
+                    f"Unsafe database name {db!r} in pg_dumps/. "
+                    "DB names must start with a letter or underscore and contain "
+                    "only letters, digits, and underscores."
+                )
+            subprocess.run(
+                ["runuser", "-u", "postgres", "--", "createdb", db],
+                check=False,  # already exists on retry → non-zero, that's fine
+                capture_output=True,
+            )
+            for sql_file in sorted(db_dir.glob("*.sql")):
+                subprocess.run(
+                    ["runuser", "-u", "postgres", "--",
+                     "psql", "-d", db, "-f", str(sql_file)],
+                    check=True,
+                )
+
+        _PG_LOADED_MARKER.touch()
+
+
 def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     """Download the run's benchmark dataset from its content-hashed GCS prefix
     into the benchmark's ``container_data_dir`` (once per node via the local
-    completeness marker), then point the benchmark's data-root/data-file env
-    vars at it so ``paths.benchmark_data_*`` + the per-task loaders/ingest
-    resolve to the downloaded tree.
+    completeness marker), then set ``BIRD_BENCHMARKS_ROOT`` to the parent of
+    the downloaded tree so ``paths.benchmark_data_*`` + the per-task
+    loaders/ingest resolve to the downloaded data.
 
-    De-bake: this replaces the image-baked ``/data/mini-interact`` and the
-    ``BIRD_DB_PATH``/``BIRD_DATA_PATH`` env vars that ``cluster.yaml.j2`` used
-    to pin. Runs in BOTH the head job driver (before ``_load_task_data``) AND
-    each worker actor's ``__init__`` (before ingest), mirroring the per-worker
+    De-bake: this replaces the image-baked ``/data/<benchmark>`` tree.
+    Runs in BOTH the head job driver (before ``_load_task_data``) AND each
+    worker actor's ``__init__`` (before ingest), mirroring the per-worker
     slayer-artifact download.
 
     No-op when ``cfg['benchmark_data_prefix']`` is falsy — a pre-de-bake run
@@ -116,8 +213,10 @@ def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     dest = Path(b.container_data_dir)
     client = client or default_gcs_client()
     _benchmark_data.ensure_downloaded(prefix, dest, client=client)
-    os.environ[b.data_root_env] = str(dest)
-    os.environ[b.data_file_env] = str(dest / b.data_file)
+    os.environ["BIRD_BENCHMARKS_ROOT"] = str(dest.parent)
+    os.environ["BIRD_GATED_GOLD_ROOT"] = str(dest / _benchmark_data.GATED_GOLD_SUBDIR)
+    if getattr(b, "db_backend", "sqlite") == "postgres":
+        _ensure_postgres_loaded(dest)
 
 
 def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
@@ -535,10 +634,10 @@ def _run_one_in_actor(
     task_start_ts = time.time()
     _grader_data_dir = None
 
-    # `cfg["data_dir"]` is the benchmark's container_data_dir, resolved
-    # benchmark-aware in `run_pool` (mini → BIRD_DB_PATH,
-    # livesqlbench → BIRD_LIVESQLBENCH_ROOT). Hoisted out of the try block
-    # so it is always bound when the grader path runs below.
+    # `cfg["data_dir"]` is the benchmark's data root on this node —
+    # either BIRD_BENCHMARKS_ROOT/<name> (download_benchmark_data sets it)
+    # or the baked container_data_dir. Hoisted out of the try block so it
+    # is always bound when the grader path runs below.
     data_dir = cfg.get("data_dir") or "/data/mini-interact"
 
     try:
@@ -1110,7 +1209,11 @@ def run_pool(
         # data-root env override first (download_benchmark_data sets it to the
         # downloaded tree on the head; on a baked/back-compat run it's the
         # baked path), else the canonical container dir.
-        "data_dir": os.environ.get(_b.data_root_env) or _b.container_data_dir,
+        "data_dir": (
+            str(paths.benchmark_data_root(_b))
+            if "BIRD_BENCHMARKS_ROOT" in os.environ
+            else _b.container_data_dir
+        ),
     }
 
     heartbeat = HeartbeatWriter(
@@ -1392,18 +1495,16 @@ def _load_task_data(
     instance_ids: list[str],
     *,
     dataset: str,
-    gold_file: str | None = None,
     use_audited_gold_sql: bool = False,
 ) -> dict[str, dict]:
     """Load per-task dicts for ``dataset`` via the benchmark-aware loader (the
-    SAME dispatch the local runner uses): a gold-required benchmark merges its
-    gated sidecar + stamps the dataset marker + SELECT-filters; otherwise plain
-    load. Filtered to the run's ``instance_ids``.
+    SAME dispatch the local runner uses): auto-discovers gold from gated_gold/,
+    merges the sidecar + stamps the dataset marker + SELECT-filters.
+    Filtered to the run's ``instance_ids``.
 
-    DEV-1510: the audited-gold overlay now fires for ALL benchmarks. The
+    DEV-1510: the audited-gold overlay fires for ALL benchmarks. The
     per-benchmark `audited_gold_layout` on the `Benchmark` descriptor
-    selects the on-disk shape (per_db for mini-interact, single_file for
-    livesqlbench), so cloud actors evaluate against audited gold for both.
+    selects the on-disk shape (single_file for all current benchmarks).
     """
     from bird_interact_agents import paths
     from bird_interact_agents.benchmark import get_benchmark
@@ -1412,7 +1513,6 @@ def _load_task_data(
     rows = load_benchmark_tasks(
         dataset,
         str(paths.benchmark_data_file(dataset)),
-        gold_file,
         filter_ids=instance_ids,
     )
     if use_audited_gold_sql:
@@ -1461,7 +1561,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--user-sim-model", required=True)
     p.add_argument("--dataset", required=True,
                    choices=cli_dataset_tokens())
-    p.add_argument("--gold-file", default=None)
     p.add_argument(
         "--benchmark-data-prefix", default=None,
         help="content-hashed GCS prefix the benchmark dataset was uploaded to "
@@ -1510,7 +1609,6 @@ def main(argv: list[str] | None = None) -> int:
     task_data_by_id = _load_task_data(
         instance_ids,
         dataset=args.dataset,
-        gold_file=args.gold_file,
         use_audited_gold_sql=args.use_audited_gold_sql,
     )
 

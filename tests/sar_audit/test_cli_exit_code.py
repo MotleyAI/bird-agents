@@ -49,8 +49,7 @@ def _cli_env(tmp_path: Path) -> dict:
     flip on the always-fail injection knob used by the test stubs."""
     return {
         **os.environ,
-        "BIRD_DB_PATH": str(tmp_path / "mini-interact"),
-        "BIRD_DATA_PATH": str(tmp_path / "mini-interact" / "mini_interact.jsonl"),
+        "BIRD_BENCHMARKS_ROOT": str(tmp_path),
         "BIRD_SAR_AUDITED_GOLD_ROOT": str(tmp_path / "sar_audited_gold"),
         # When set, the CLI substitutes a stub SAR factory that always raises.
         "SAR_AUDIT_FORCE_FAILURE": "1",

@@ -128,7 +128,7 @@ async def test_run_evaluation_branches_to_raw_otf_agent(monkeypatch, tmp_path):
             mode="one-shot", query_mode="raw",
             framework="claude_sdk_otf_raw", slayer_setup="pre-encoded",
             reasoning_effort=None,
-            dataset="livesqlbench-base-lite-sqlite", gold_file=str(gold),
+            dataset="livesqlbench-base-lite-sqlite",
         )
     assert constructed
 

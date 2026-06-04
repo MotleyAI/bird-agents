@@ -4,9 +4,10 @@ Contract:
 * merge_task_annotations: writes to correct local path, always overwrites
   (skip logic was upstream at worker), handles missing rows/, rejects malformed,
   normalises benchmark name dash↔underscore.
-* merge_audited_gold_variants: deduplicates by (instance_id, variant_id),
-  appends new entries, skips empty JSONL files, rejects entries missing
-  required fields (selected_database, benchmark, audit_status, audited_sol_sql).
+* merge_audited_gold_variants: deduplicates by instance_id (clean-slate per
+  task — all variants for a task are replaced together); appends new entries;
+  skips empty JSONL files (signals original_gold_is_correct=True); validates
+  each incoming row as AuditedGoldRow.
 """
 from __future__ import annotations
 
@@ -49,20 +50,45 @@ def _audited_gold_variant(
     instance_id: str = "shop_1",
     variant_id: str = "primary",
     db: str = "shop",
+    audit_status: str = "original",
+    primary: bool = True,
 ) -> dict:
+    """Legacy flat-row format — used only to test backward-compat reading."""
     return {
         "instance_id": instance_id,
         "variant_id": variant_id,
         "selected_database": db,
         "benchmark": "mini-interact",
-        "audit_status": "clean",
-        "original_sol_sql": ["SELECT COUNT(*) FROM orders;"],
+        "audit_status": audit_status,
         "audited_sol_sql": ["SELECT COUNT(*) FROM orders;"],
-        "audited_sample_row": [42],
-        "changes": [],
-        "reasoning_summary": "Gold SQL is fully justified by KB 1.",
-        "skill_version": "annotator-agent/1.0",
-        "audited_at": "2026-06-02",
+        "primary": primary,
+    }
+
+
+def _audited_gold_row(
+    instance_id: str = "shop_1",
+    variant_id: str = "primary",
+    db: str = "shop",
+    audit_status: str = "edited",
+    primary: bool = True,
+    extra_variants: list | None = None,
+) -> dict:
+    """New grouped AuditedGoldRow format — used for per-task source files."""
+    variants = [
+        {
+            "variant_id": variant_id,
+            "audit_status": audit_status,
+            "audited_sol_sql": ["SELECT COUNT(*) FROM orders;"],
+            "primary": primary,
+        }
+    ]
+    if extra_variants:
+        variants.extend(extra_variants)
+    return {
+        "instance_id": instance_id,
+        "selected_database": db,
+        "benchmark": "mini-interact",
+        "variants": variants,
     }
 
 
@@ -74,10 +100,13 @@ def _write_task_annotation_file(rows_dir: Path, instance_id: str, db: str) -> No
     )
 
 
-def _write_audited_gold_file(rows_dir: Path, instance_id: str, variants: list) -> None:
+def _write_audited_gold_file(rows_dir: Path, instance_id: str, rows: list) -> None:
+    """Write per-task audited_gold_variants.jsonl. Each item in ``rows`` may
+    be a flat variant dict (legacy format) or a grouped AuditedGoldRow dict
+    (new format). Writes one line per item."""
     task_dir = rows_dir / instance_id
     task_dir.mkdir(parents=True, exist_ok=True)
-    content = "\n".join(json.dumps(v) for v in variants)
+    content = "\n".join(json.dumps(v) for v in rows)
     (task_dir / "audited_gold_variants.jsonl").write_text(
         content + "\n" if content else ""
     )
@@ -209,7 +238,7 @@ def test_merge_audited_gold_variants_appends_to_jsonl(tmp_path):
 
     downloaded = tmp_path / "downloaded"
     _write_audited_gold_file(
-        downloaded / "rows", "shop_1", [_audited_gold_variant("shop_1")]
+        downloaded / "rows", "shop_1", [_audited_gold_row("shop_1")]
     )
 
     audited_gold_root = tmp_path / "audited_gold"
@@ -219,27 +248,31 @@ def test_merge_audited_gold_variants_appends_to_jsonl(tmp_path):
         audited_gold_root=audited_gold_root,
     )
 
-    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
+    consolidated = audited_gold_root / "mini-interact" / "mini-interact_audited.jsonl"
     assert consolidated.exists()
-    rows = [json.loads(l) for l in consolidated.read_text().splitlines() if l.strip()]
+    rows = [json.loads(ln) for ln in consolidated.read_text().splitlines() if ln.strip()]
     assert len(rows) == 1
     assert rows[0]["instance_id"] == "shop_1"
+    assert "variants" in rows[0]
     assert report.added == 1
     assert report.skipped_duplicate == 0
 
 
-def test_merge_audited_gold_variants_deduplicates_by_instance_and_variant(tmp_path):
+def test_merge_audited_gold_variants_deduplicates_by_instance_id(tmp_path):
+    """Dedup key is instance_id only. Incoming row for an existing instance_id
+    is skipped in append mode regardless of its variant content."""
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold_root = tmp_path / "audited_gold"
-    audited_gold_root.mkdir()
-    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
+    (audited_gold_root / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold_root / "mini-interact" / "mini-interact_audited.jsonl"
+    # Pre-populate with old flat-row format (backward compat).
     consolidated.write_text(json.dumps(_audited_gold_variant("shop_1", "primary")) + "\n")
 
     downloaded = tmp_path / "downloaded"
     _write_audited_gold_file(
         downloaded / "rows", "shop_1",
-        [_audited_gold_variant("shop_1", "primary")],  # same key — should skip
+        [_audited_gold_row("shop_1")],  # same instance_id — should skip
     )
 
     report = merge_audited_gold_variants(
@@ -248,24 +281,28 @@ def test_merge_audited_gold_variants_deduplicates_by_instance_and_variant(tmp_pa
         audited_gold_root=audited_gold_root,
     )
 
-    rows = [json.loads(l) for l in consolidated.read_text().splitlines() if l.strip()]
+    rows = [json.loads(ln) for ln in consolidated.read_text().splitlines() if ln.strip()]
     assert len(rows) == 1  # not doubled
     assert report.added == 0
     assert report.skipped_duplicate == 1
 
 
-def test_merge_audited_gold_variants_different_variant_id_not_duplicate(tmp_path):
+def test_merge_audited_gold_variants_different_variant_id_is_still_duplicate(tmp_path):
+    """In append mode, different variant_ids for the same instance_id are
+    deduplicated because the dedup key is instance_id only. Use override=True
+    to replace an existing instance's variants with new ones."""
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold_root = tmp_path / "audited_gold"
-    audited_gold_root.mkdir()
-    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
+    (audited_gold_root / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold_root / "mini-interact" / "mini-interact_audited.jsonl"
     consolidated.write_text(json.dumps(_audited_gold_variant("shop_1", "primary")) + "\n")
 
     downloaded = tmp_path / "downloaded"
     _write_audited_gold_file(
         downloaded / "rows", "shop_1",
-        [_audited_gold_variant("shop_1", "alt_reading")],  # different variant_id
+        # Different variant_id but same instance — still a duplicate by instance_id.
+        [_audited_gold_row("shop_1", variant_id="alt_reading")],
     )
 
     report = merge_audited_gold_variants(
@@ -274,16 +311,17 @@ def test_merge_audited_gold_variants_different_variant_id_not_duplicate(tmp_path
         audited_gold_root=audited_gold_root,
     )
 
-    rows = [json.loads(l) for l in consolidated.read_text().splitlines() if l.strip()]
-    assert len(rows) == 2
-    assert report.added == 1
+    rows = [json.loads(ln) for ln in consolidated.read_text().splitlines() if ln.strip()]
+    assert len(rows) == 1  # skipped — not added
+    assert report.added == 0
+    assert report.skipped_duplicate == 1
 
 
 def test_merge_audited_gold_variants_empty_file_is_noop(tmp_path):
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     downloaded = tmp_path / "downloaded"
-    _write_audited_gold_file(downloaded / "rows", "shop_1", [])  # clean gold → empty
+    _write_audited_gold_file(downloaded / "rows", "shop_1", [])  # original_gold_is_correct=True → empty
 
     audited_gold_root = tmp_path / "audited_gold"
     report = merge_audited_gold_variants(
@@ -296,12 +334,38 @@ def test_merge_audited_gold_variants_empty_file_is_noop(tmp_path):
     assert report.errors == 0
 
 
-def test_merge_audited_gold_variants_rejects_missing_required_fields(tmp_path):
-    """Variants missing selected_database, benchmark, audit_status, or audited_sol_sql
-    must be rejected — not silently stored (overlay/grader require these fields)."""
+def test_merge_audited_gold_variants_rejects_invalid_rows(tmp_path):
+    """Rows failing AuditedGoldRow validation are rejected — not silently stored."""
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
-    bad = {"instance_id": "shop_1", "variant_id": "primary"}  # missing everything
+    # A grouped row with no variants → invalid (AuditedGoldRow requires non-empty variants).
+    bad = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "benchmark": "mini-interact",
+        "variants": [],  # invalid: empty variants list
+    }
+
+    downloaded = tmp_path / "downloaded"
+    _write_audited_gold_file(downloaded / "rows", "shop_1", [bad])
+
+    audited_gold_root = tmp_path / "audited_gold"
+    report = merge_audited_gold_variants(
+        downloaded_run_dir=downloaded,
+        benchmark="mini-interact",
+        audited_gold_root=audited_gold_root,
+    )
+
+    assert report.added == 0
+    assert report.errors >= 1
+
+
+def test_merge_audited_gold_variants_rejects_flat_row_missing_required_fields(tmp_path):
+    """Legacy flat rows missing instance_id / selected_database / benchmark
+    must be rejected — not silently stored."""
+    from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
+
+    bad = {"variant_id": "primary", "audit_status": "edited"}  # missing instance_id etc.
 
     downloaded = tmp_path / "downloaded"
     _write_audited_gold_file(downloaded / "rows", "shop_1", [bad])
@@ -321,18 +385,19 @@ def test_merge_audited_gold_variants_mixed_new_and_existing(tmp_path):
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold_root = tmp_path / "audited_gold"
-    audited_gold_root.mkdir()
-    consolidated = audited_gold_root / "mini-interact_audited.jsonl"
+    (audited_gold_root / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold_root / "mini-interact" / "mini-interact_audited.jsonl"
+    # Old flat-row format in consolidated — backward compat.
     consolidated.write_text(json.dumps(_audited_gold_variant("shop_1")) + "\n")
 
     downloaded = tmp_path / "downloaded"
     _write_audited_gold_file(
         downloaded / "rows", "shop_1",
-        [_audited_gold_variant("shop_1")],  # duplicate
+        [_audited_gold_row("shop_1")],  # duplicate by instance_id
     )
     _write_audited_gold_file(
         downloaded / "rows", "shop_2",
-        [_audited_gold_variant("shop_2", db="shop")],  # new
+        [_audited_gold_row("shop_2", db="shop")],  # new instance
     )
 
     report = merge_audited_gold_variants(
@@ -341,7 +406,7 @@ def test_merge_audited_gold_variants_mixed_new_and_existing(tmp_path):
         audited_gold_root=audited_gold_root,
     )
 
-    rows = [json.loads(l) for l in consolidated.read_text().splitlines() if l.strip()]
+    rows = [json.loads(ln) for ln in consolidated.read_text().splitlines() if ln.strip()]
     assert len(rows) == 2
     assert report.added == 1
     assert report.skipped_duplicate == 1
@@ -365,27 +430,25 @@ def test_merge_audited_gold_variants_no_rows_dir_is_noop(tmp_path):
 
 def test_merge_audited_gold_variants_override_replaces_existing(tmp_path):
     """override=True: incoming rows replace existing rows with the same
-    (instance_id, variant_id) key; the consolidated file is rewritten."""
+    instance_id; the consolidated file is rewritten in grouped format."""
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold = tmp_path / "audited_gold"
-    audited_gold.mkdir()
-    consolidated = audited_gold / "mini-interact_audited.jsonl"
+    (audited_gold / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold / "mini-interact" / "mini-interact_audited.jsonl"
+    # Old flat-row format in consolidated.
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
         "selected_database": "db_a", "benchmark": "mini-interact",
-        "audit_status": "clean", "audited_sol_sql": ["SELECT 1"],
+        "audit_status": "original", "audited_sol_sql": ["SELECT 1"],
+        "primary": True,
     }
     consolidated.write_text(json.dumps(old_row) + "\n")
 
     downloaded = tmp_path / "run"
     sub = downloaded / "rows" / "db_a_1"
     sub.mkdir(parents=True)
-    new_row = {
-        "instance_id": "db_a_1", "variant_id": "v0",
-        "selected_database": "db_a", "benchmark": "mini-interact",
-        "audit_status": "edited", "audited_sol_sql": ["SELECT 2"],
-    }
+    new_row = _audited_gold_row("db_a_1", db="db_a", audit_status="edited")
     (sub / "audited_gold_variants.jsonl").write_text(json.dumps(new_row) + "\n")
 
     report = merge_audited_gold_variants(
@@ -398,7 +461,9 @@ def test_merge_audited_gold_variants_override_replaces_existing(tmp_path):
     assert report.added == 1
     lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
     assert len(lines) == 1
-    assert json.loads(lines[0])["audit_status"] == "edited"
+    row = json.loads(lines[0])
+    assert "variants" in row
+    assert row["variants"][0]["audit_status"] == "edited"
 
 
 def test_merge_audited_gold_variants_override_purges_stale_rows_when_empty_file(tmp_path):
@@ -408,8 +473,8 @@ def test_merge_audited_gold_variants_override_purges_stale_rows_when_empty_file(
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold = tmp_path / "audited_gold"
-    audited_gold.mkdir()
-    consolidated = audited_gold / "mini-interact_audited.jsonl"
+    (audited_gold / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold / "mini-interact" / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
         "selected_database": "db_a", "benchmark": "mini-interact",
@@ -418,7 +483,7 @@ def test_merge_audited_gold_variants_override_purges_stale_rows_when_empty_file(
     unrelated_row = {
         "instance_id": "db_b_1", "variant_id": "v0",
         "selected_database": "db_b", "benchmark": "mini-interact",
-        "audit_status": "clean", "audited_sol_sql": ["SELECT 2"],
+        "audit_status": "original", "audited_sol_sql": ["SELECT 2"],
     }
     consolidated.write_text(json.dumps(old_row) + "\n" + json.dumps(unrelated_row) + "\n")
 
@@ -448,8 +513,8 @@ def test_merge_audited_gold_variants_override_preserves_rows_for_failed_tasks(tm
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold = tmp_path / "audited_gold"
-    audited_gold.mkdir()
-    consolidated = audited_gold / "mini-interact_audited.jsonl"
+    (audited_gold / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold / "mini-interact" / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
         "selected_database": "db_a", "benchmark": "mini-interact",
@@ -482,8 +547,8 @@ def test_merge_audited_gold_variants_override_purges_all_rows_truncates_file(tmp
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold = tmp_path / "audited_gold"
-    audited_gold.mkdir()
-    consolidated = audited_gold / "mini-interact_audited.jsonl"
+    (audited_gold / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold / "mini-interact" / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
         "selected_database": "db_a", "benchmark": "mini-interact",
@@ -510,27 +575,24 @@ def test_merge_audited_gold_variants_override_purges_all_rows_truncates_file(tmp
 
 def test_merge_audited_gold_variants_override_false_does_not_replace(tmp_path):
     """override=False (default): existing rows are never replaced; the new row
-    for an already-present key is skipped."""
+    for an already-present instance_id is skipped."""
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold = tmp_path / "audited_gold"
-    audited_gold.mkdir()
-    consolidated = audited_gold / "mini-interact_audited.jsonl"
+    (audited_gold / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold / "mini-interact" / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
         "selected_database": "db_a", "benchmark": "mini-interact",
-        "audit_status": "clean", "audited_sol_sql": ["SELECT 1"],
+        "audit_status": "original", "audited_sol_sql": ["SELECT 1"],
+        "primary": True,
     }
     consolidated.write_text(json.dumps(old_row) + "\n")
 
     downloaded = tmp_path / "run"
     sub = downloaded / "rows" / "db_a_1"
     sub.mkdir(parents=True)
-    new_row = {
-        "instance_id": "db_a_1", "variant_id": "v0",
-        "selected_database": "db_a", "benchmark": "mini-interact",
-        "audit_status": "edited", "audited_sol_sql": ["SELECT 2"],
-    }
+    new_row = _audited_gold_row("db_a_1", db="db_a", audit_status="edited")
     (sub / "audited_gold_variants.jsonl").write_text(json.dumps(new_row) + "\n")
 
     report = merge_audited_gold_variants(
@@ -543,7 +605,8 @@ def test_merge_audited_gold_variants_override_false_does_not_replace(tmp_path):
     assert report.added == 0
     lines = [ln for ln in consolidated.read_text().splitlines() if ln.strip()]
     assert len(lines) == 1
-    assert json.loads(lines[0])["audit_status"] == "clean"
+    # Old flat row preserved unchanged (original status, not edited).
+    assert json.loads(lines[0]).get("audit_status") == "original"
 
 
 def test_merge_audited_gold_variants_append_handles_missing_trailing_newline(tmp_path):
@@ -553,12 +616,13 @@ def test_merge_audited_gold_variants_append_handles_missing_trailing_newline(tmp
     from bird_interact_agents.cloud.post_run_merge import merge_audited_gold_variants
 
     audited_gold = tmp_path / "audited_gold"
-    audited_gold.mkdir()
-    consolidated = audited_gold / "mini-interact_audited.jsonl"
+    (audited_gold / "mini-interact").mkdir(parents=True)
+    consolidated = audited_gold / "mini-interact" / "mini-interact_audited.jsonl"
     old_row = {
         "instance_id": "db_a_1", "variant_id": "v0",
         "selected_database": "db_a", "benchmark": "mini-interact",
-        "audit_status": "clean", "audited_sol_sql": ["SELECT 1"],
+        "audit_status": "original", "audited_sol_sql": ["SELECT 1"],
+        "primary": True,
     }
     # Intentionally write without trailing newline.
     consolidated.write_bytes(json.dumps(old_row).encode())
@@ -566,11 +630,7 @@ def test_merge_audited_gold_variants_append_handles_missing_trailing_newline(tmp
     downloaded = tmp_path / "run"
     sub = downloaded / "rows" / "db_a_2"
     sub.mkdir(parents=True)
-    new_row = {
-        "instance_id": "db_a_2", "variant_id": "v0",
-        "selected_database": "db_a", "benchmark": "mini-interact",
-        "audit_status": "clean", "audited_sol_sql": ["SELECT 2"],
-    }
+    new_row = _audited_gold_row("db_a_2", db="db_a", audit_status="edited")
     (sub / "audited_gold_variants.jsonl").write_text(json.dumps(new_row) + "\n")
 
     report = merge_audited_gold_variants(

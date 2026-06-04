@@ -29,7 +29,7 @@ class FakeSubmitArgs:
     agent_model: str = "anthropic/claude-sonnet-4-5"
     user_sim_model: str = "anthropic/claude-haiku-4-5-20251001"
     mode: str = "c-interact"
-    instance_ids: tuple[str, ...] = ("db_a_1", "db_a_2", "db_a_3")
+    instance_ids: tuple[str, ...] = ("alien_1", "alien_2", "alien_3")
     patience: int = 3
     strict: bool = False
     use_audited_gold_sql: bool = False
@@ -45,7 +45,7 @@ class FakeSubmitArgs:
     slayer_setup: str = "pre-encoded"
     slayer_storage_root: str = "/data/slayer_models"
     dataset: str = "mini-interact"
-    gold_file: str | None = None
+    no_subscription_auth: bool = False
 
 
 def _patch_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict[str, MagicMock]:
@@ -1394,7 +1394,7 @@ def test_fetch_calls_post_run_merge_after_collation(monkeypatch, tmp_path):
 
     mocks = _patch_collaborators(monkeypatch)
     fake_results = tmp_path / "results"
-    monkeypatch.setattr(driver, "local_results_root", lambda: fake_results)
+    monkeypatch.setattr(driver.paths, "results_root", lambda: fake_results)
     fake_ref_root = tmp_path / "warm" / "slayer_models_otf"
     monkeypatch.setattr(driver.paths, "slayer_models_otf_root", lambda *, benchmark=None: fake_ref_root)
     mocks["gcs"].read_manifest.return_value = {
@@ -1439,7 +1439,7 @@ def test_fetch_continues_when_merge_returns_no_shards(monkeypatch, tmp_path):
 
     mocks = _patch_collaborators(monkeypatch)
     fake_results = tmp_path / "results"
-    monkeypatch.setattr(driver, "local_results_root", lambda: fake_results)
+    monkeypatch.setattr(driver.paths, "results_root", lambda: fake_results)
     monkeypatch.setattr(
         driver.paths, "slayer_models_otf_root",
         lambda *, benchmark=None: tmp_path / "warm" / "slayer_models_otf",
@@ -1464,8 +1464,8 @@ def test_fetch_continues_when_merge_returns_no_shards(monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Benchmark plumbing: dataset + gold_file flow through the manifest and the
-# actor job args; the actor + instance→db read the benchmark's tasks file.
+# Benchmark plumbing: dataset flows through the manifest and the actor job args;
+# the actor + instance→db read the benchmark's tasks file.
 # ---------------------------------------------------------------------------
 
 
@@ -1474,21 +1474,13 @@ def test_manifest_and_job_args_carry_benchmark(monkeypatch):
         framework="pydantic_ai_otf_encode", query_mode="slayer",
         mode="one-shot", slayer_setup="on-the-fly",
     )
-    # FakeSubmitArgs predates --dataset/--gold-file; set them as the cli would.
     args.dataset = "livesqlbench-base-lite-sqlite"
-    args.gold_file = "/abs/gold.jsonl"
 
     prefix = "benchmark-data/livesqlbench/abc123/"
     m = driver.build_manifest(
         args, image_uri="img:tag", run_id="rid", benchmark_data_prefix=prefix,
     )
     assert m["dataset"] == "livesqlbench-base-lite-sqlite"
-    # De-bake: the gold rides along in the GCS dataset upload, so the manifest
-    # stores the IN-CLUSTER path (under the benchmark's container_data_dir),
-    # NOT the submitter's local path. `/abs/gold.jsonl` isn't under the data
-    # root or gated_gold_root → fallback under _gated_gold/ inside container dir.
-    _gated = driver.benchmark_data.GATED_GOLD_SUBDIR
-    assert m["gold_file"] == f"/data/livesqlbench-base-lite-sqlite/{_gated}/gold.jsonl"
     assert m["benchmark_data_prefix"] == prefix
 
     # Avoid reading a real tasks file for the db-grouped sort.
@@ -1500,7 +1492,7 @@ def test_manifest_and_job_args_carry_benchmark(monkeypatch):
         args, "rid", attempt=1, benchmark_data_prefix=prefix,
     )
     assert ja[ja.index("--dataset") + 1] == "livesqlbench-base-lite-sqlite"
-    assert ja[ja.index("--gold-file") + 1] == f"/data/livesqlbench-base-lite-sqlite/{_gated}/gold.jsonl"
+    assert "--gold-file" not in ja
     assert ja[ja.index("--benchmark-data-prefix") + 1] == prefix
 
 
@@ -1508,9 +1500,64 @@ def test_manifest_defaults_to_mini_interact_benchmark():
     args = FakeSubmitArgs()  # default dataset → mini_interact, no gold
     m = driver.build_manifest(args, image_uri="img:tag", run_id="rid")
     assert m["dataset"] == "mini-interact"
-    assert m["gold_file"] is None
     # No prefix passed → key present but None (back-compat for direct callers).
     assert m["benchmark_data_prefix"] is None
+
+
+# ---------------------------------------------------------------------------
+# _validate_instance_ids: fail fast before any cloud touch
+# ---------------------------------------------------------------------------
+
+
+def test_validate_instance_ids_raises_for_unknown_ids(tmp_path):
+    """Unknown instance_ids must raise ValueError before any cloud call."""
+    data_file = tmp_path / "mini_interact.jsonl"
+    data_file.write_text(
+        '{"instance_id": "alien_1", "selected_database": "alien"}\n'
+        '{"instance_id": "alien_2", "selected_database": "alien"}\n'
+    )
+    import bird_interact_agents.paths as _paths
+    import unittest.mock as _mock
+    with _mock.patch.object(_paths, "benchmark_data_file", return_value=data_file):
+        with pytest.raises(ValueError, match="shop_1"):
+            driver._validate_instance_ids(["alien_1", "shop_1"], "mini-interact")
+
+
+def test_validate_instance_ids_passes_for_known_ids(tmp_path):
+    """All-known instance_ids must not raise."""
+    data_file = tmp_path / "mini_interact.jsonl"
+    data_file.write_text(
+        '{"instance_id": "alien_1", "selected_database": "alien"}\n'
+    )
+    import bird_interact_agents.paths as _paths
+    import unittest.mock as _mock
+    with _mock.patch.object(_paths, "benchmark_data_file", return_value=data_file):
+        driver._validate_instance_ids(["alien_1"], "mini-interact")  # no raise
+
+
+def test_validate_instance_ids_skips_when_data_file_absent(tmp_path):
+    """Missing local data file → no error (resubmit on a machine without data)."""
+    import bird_interact_agents.paths as _paths
+    import unittest.mock as _mock
+    with _mock.patch.object(
+        _paths, "benchmark_data_file", return_value=tmp_path / "absent.jsonl"
+    ):
+        driver._validate_instance_ids(["nonexistent_1"], "mini-interact")  # no raise
+
+
+def test_submit_raises_before_cloud_for_invalid_instance_ids(monkeypatch, tmp_path):
+    """submit() must raise ValueError for unknown instance_ids before touching
+    prereqs, image build, or any GCS/cluster call."""
+    mocks = _patch_collaborators(monkeypatch)
+    data_file = tmp_path / "mini_interact.jsonl"
+    data_file.write_text('{"instance_id": "alien_1", "selected_database": "alien"}\n')
+    monkeypatch.setattr(driver.paths, "benchmark_data_file", lambda *a, **k: data_file)
+
+    with pytest.raises(ValueError, match="shop_1"):
+        driver.submit(FakeSubmitArgs(instance_ids=("shop_1", "fake_99")))
+    mocks["prereqs"].check.assert_not_called()
+    mocks["image"].build_and_push.assert_not_called()
+    mocks["cluster"].up.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -1543,65 +1590,6 @@ def test_submit_uploads_dataset_and_threads_prefix(monkeypatch):
     job_args = mocks["cluster"].submit_job.call_args.kwargs["args"]
     assert job_args[job_args.index("--benchmark-data-prefix") + 1] == (
         "benchmark-data/mini_interact/feedface/"
-    )
-
-
-def test_validate_gold_under_data_root_rejects_outside(monkeypatch, tmp_path):
-    """A `--gold-file` outside both the benchmark data root and the gated gold
-    root fails fast at submit — it would otherwise be silently absent in-cluster."""
-    data_root = tmp_path / "data"
-    data_root.mkdir()
-    gated_root = tmp_path / "gated"  # exists but gold is not under it
-    gated_root.mkdir()
-    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
-    monkeypatch.setattr(driver.paths, "gated_gold_root", lambda **k: gated_root)
-    outside = tmp_path / "outside.jsonl"
-    outside.write_text("{}\n")
-
-    args = FakeSubmitArgs()
-    args.dataset = "livesqlbench-base-lite-sqlite"
-    args.gold_file = str(outside)
-    with pytest.raises(ValueError, match="must live under the benchmark data root"):
-        driver._validate_gold_under_data_root(args)
-
-
-def test_validate_gold_under_data_root_accepts_inside(monkeypatch, tmp_path):
-    """A `--gold-file` inside the data root passes the guard, and
-    `_in_cluster_gold_file` maps it to its container path preserving the
-    relative location."""
-    data_root = tmp_path / "data"
-    (data_root / "sub").mkdir(parents=True)
-    gold = data_root / "sub" / "gold.jsonl"
-    gold.write_text("{}\n")
-    gated_root = tmp_path / "gated"
-    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
-    monkeypatch.setattr(driver.paths, "gated_gold_root", lambda **k: gated_root)
-
-    args = FakeSubmitArgs()
-    args.dataset = "livesqlbench-base-lite-sqlite"
-    args.gold_file = str(gold)
-    driver._validate_gold_under_data_root(args)  # no raise
-    assert driver._in_cluster_gold_file(args) == "/data/livesqlbench-base-lite-sqlite/sub/gold.jsonl"
-
-
-def test_validate_gold_under_data_root_accepts_gated_gold(monkeypatch, tmp_path):
-    """A `--gold-file` under gated_gold_root passes validation; `_in_cluster_gold_file`
-    maps it to container_data_dir/_gated_gold/<relpath>."""
-    data_root = tmp_path / "data"
-    data_root.mkdir()
-    gated_root = tmp_path / "gated" / "livesqlbench-base-lite-sqlite"
-    gated_root.mkdir(parents=True)
-    gold = gated_root / "gt_kg.jsonl"
-    gold.write_text("{}\n")
-    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
-    monkeypatch.setattr(driver.paths, "gated_gold_root", lambda **k: gated_root)
-
-    args = FakeSubmitArgs()
-    args.dataset = "livesqlbench-base-lite-sqlite"
-    args.gold_file = str(gold)
-    driver._validate_gold_under_data_root(args)  # no raise
-    assert driver._in_cluster_gold_file(args) == (
-        f"/data/livesqlbench-base-lite-sqlite/{driver.benchmark_data.GATED_GOLD_SUBDIR}/gt_kg.jsonl"
     )
 
 
@@ -1663,78 +1651,6 @@ def test_resubmit_omits_dataset_for_pre_dataset_manifest(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# build_annotator_manifest and _build_annotator_job_args: gold_file plumbing
-# ---------------------------------------------------------------------------
-
-
-def _fake_annotate_args(gold_file: str | None = None, **overrides):
-    """Minimal args object for build_annotator_manifest / _build_annotator_job_args."""
-    ns = argparse.Namespace(
-        benchmark="mini-interact",
-        agent_model="anthropic/claude-opus-4-7",
-        effort="medium",
-        override=False,
-        workers=1,
-        actors_per_worker=2,
-        worker_type="e2-standard-4",
-        max_runtime_hours=2,
-        instance_ids=["db_a_1"],
-        gold_file=gold_file,
-    )
-    for k, v in overrides.items():
-        setattr(ns, k, v)
-    return ns
-
-
-def test_build_annotator_manifest_carries_gold_file(monkeypatch, tmp_path):
-    """build_annotator_manifest stores the IN-CLUSTER gold_file path when
-    a gold file is supplied."""
-    data_root = tmp_path / "data"
-    (data_root / "sub").mkdir(parents=True)
-    gold = data_root / "sub" / "gold.jsonl"
-    gold.write_text("{}\n")
-    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
-
-    args = _fake_annotate_args(gold_file=str(gold))
-    args.benchmark = "livesqlbench-base-lite-sqlite"
-    m = driver.build_annotator_manifest(args, image_uri="img:tag", run_id="rid")
-    assert "gold_file" in m
-    assert m["gold_file"].endswith("/sub/gold.jsonl")
-
-
-def test_build_annotator_manifest_omits_gold_file_when_absent():
-    """build_annotator_manifest must NOT include a 'gold_file' key when no
-    gold file was supplied (mini_interact never needs one)."""
-    args = _fake_annotate_args(gold_file=None)
-    m = driver.build_annotator_manifest(args, image_uri="img:tag", run_id="rid")
-    assert "gold_file" not in m
-
-
-def test_build_annotator_job_args_emits_gold_file(monkeypatch, tmp_path):
-    """_build_annotator_job_args emits --gold-file <in-cluster-path> when a
-    gold file is supplied."""
-    data_root = tmp_path / "data"
-    data_root.mkdir()
-    gold = data_root / "gold.jsonl"
-    gold.write_text("{}\n")
-    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
-
-    args = _fake_annotate_args(gold_file=str(gold))
-    args.benchmark = "livesqlbench-base-lite-sqlite"
-    ja = driver._build_annotator_job_args(args, "rid")
-    assert "--gold-file" in ja
-    assert ja[ja.index("--gold-file") + 1].endswith("/gold.jsonl")
-
-
-def test_build_annotator_job_args_omits_gold_file_when_absent():
-    """_build_annotator_job_args must NOT emit --gold-file when no gold file
-    was supplied."""
-    args = _fake_annotate_args(gold_file=None)
-    ja = driver._build_annotator_job_args(args, "rid")
-    assert "--gold-file" not in ja
-
-
-# ---------------------------------------------------------------------------
 # _submit_benchmark: benchmark fallback for annotate args (args.benchmark)
 # ---------------------------------------------------------------------------
 
@@ -1748,40 +1664,10 @@ def test_submit_benchmark_uses_dataset_when_present():
 
 def test_submit_benchmark_falls_back_to_benchmark_attr():
     """Annotate args carry args.benchmark but no args.dataset; _submit_benchmark
-    must fall back so gold-file helpers return the correct in-cluster path."""
+    must fall back to derive the correct benchmark."""
     ns = argparse.Namespace(benchmark="livesqlbench-base-lite-sqlite")
     assert driver._submit_benchmark(ns) == "livesqlbench-base-lite-sqlite"
 
-
-def test_in_cluster_gold_file_annotate_args_uses_benchmark(monkeypatch, tmp_path):
-    """When called with annotate-style args (benchmark= but no dataset=),
-    _in_cluster_gold_file must derive the container path from args.benchmark,
-    not silently fall back to mini_interact."""
-    data_root = tmp_path / "data"
-    data_root.mkdir()
-    gold = data_root / "gold.jsonl"
-    gold.write_text("{}\n")
-    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
-    monkeypatch.setattr(driver.paths, "gated_gold_root", lambda **_kw: tmp_path / "no_gated_gold")
-
-    ns = argparse.Namespace(benchmark="livesqlbench-base-lite-sqlite", gold_file=str(gold))
-    result = driver._in_cluster_gold_file(ns)
-    assert result == "/data/livesqlbench-base-lite-sqlite/gold.jsonl"
-
-
-def test_submit_annotator_validates_gold_outside_data_root(monkeypatch, tmp_path):
-    """submit_annotator must call _validate_gold_under_data_root before any
-    build/upload — a gold file outside the data root raises ValueError."""
-    data_root = tmp_path / "data"
-    data_root.mkdir()
-    outside = tmp_path / "outside.jsonl"
-    outside.write_text("{}\n")
-    monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
-
-    args = _fake_annotate_args(gold_file=str(outside))
-    args.benchmark = "livesqlbench"
-    with pytest.raises((ValueError, FileNotFoundError)):
-        driver.submit_annotator(args)
 
 
 # ---------------------------------------------------------------------------
@@ -1850,3 +1736,517 @@ def test_read_api_keys_oauth_forwards_bird_pg_vars(monkeypatch):
     assert keys.get("BIRD_PG_HOST") == "pg.example.com"
     assert keys.get("BIRD_PG_PASSWORD") == "mysecret"
     assert "BIRD_PG_PORT" not in keys
+
+
+# ---------------------------------------------------------------------------
+# kill_after_fetch — auto-teardown when the cluster is still up after fetch.
+# ---------------------------------------------------------------------------
+
+
+def _setup_fetch_mocks(monkeypatch, tmp_path, *, head_alive, terminal_state, n_attempts, n_total):
+    """Patch all collaborators needed by driver.fetch and return the mock set."""
+    mocks = _patch_collaborators(monkeypatch)
+    fake_results = tmp_path / "results"
+    monkeypatch.setattr(driver, "local_results_root", lambda: fake_results)
+    monkeypatch.setattr(
+        driver.paths, "slayer_models_otf_root",
+        lambda *, benchmark=None: tmp_path / "warm" / "slayer_models_otf",
+    )
+    monkeypatch.setattr(
+        driver.paths, "annotations_root",
+        lambda: tmp_path / "annotations",
+    )
+    mocks["gcs"].read_manifest.return_value = {
+        "run_id": RUN_ID,
+        "instance_ids": [f"db_a_{i}" for i in range(n_total)],
+    }
+    mocks["gcs"].read_status.return_value = (
+        {"terminal_state": terminal_state} if terminal_state else {}
+    )
+    mocks["gcs"].list_attempts.return_value = {
+        f"db_a_{i}": [1] for i in range(n_attempts)
+    }
+    mocks["cluster"].head_is_alive.return_value = head_alive
+
+    def fake_download(run_id, dest, **kw):
+        Path(dest).mkdir(parents=True, exist_ok=True)
+    mocks["gcs"].concurrent_download_prefix.side_effect = fake_download
+
+    from bird_interact_agents.cloud import post_run_merge as _prm
+    monkeypatch.setattr(
+        driver._collation, "collate",
+        lambda run_dir, manifest: {"phase_passes": 1},
+    )
+    monkeypatch.setattr(
+        _prm, "merge_post_run_into_warm_cache",
+        lambda **kw: {"merged_dbs": [], "ignored_shards": []},
+    )
+    monkeypatch.setattr(
+        _prm, "merge_submission_annotations",
+        lambda **kw: _prm.AnnotationMergeReport(run_id=RUN_ID, benchmark="mini_interact"),
+    )
+    return mocks
+
+
+def test_fetch_kills_cluster_when_complete_and_head_alive(monkeypatch, tmp_path):
+    """fetch() with kill_after_fetch=True must call kill() when the run is
+    complete (terminal_state=done) and the cluster head is still alive."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [RUN_ID], "kill must be called exactly once with the run_id"
+
+
+def test_fetch_does_not_kill_when_head_already_dead(monkeypatch, tmp_path):
+    """fetch() must not attempt kill() when head_is_alive returns False — the
+    cluster is already gone."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=False, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [], "kill must NOT be called when head is already dead"
+
+
+def test_fetch_does_not_kill_when_run_incomplete(monkeypatch, tmp_path):
+    """fetch() must not kill a cluster whose run is still mid-flight (fewer
+    attempts than total instance_ids, no terminal_state set)."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state=None, n_attempts=1, n_total=3,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [], "kill must NOT be called for an incomplete run"
+
+
+def test_fetch_does_not_kill_when_kill_after_fetch_false(monkeypatch, tmp_path):
+    """Default behaviour (kill_after_fetch=False): cluster is never killed even
+    when the run is complete and the head is alive."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID)  # kill_after_fetch defaults to False
+
+    assert kill_calls == [], "kill must NOT be called when kill_after_fetch=False"
+    # head_is_alive should not even be checked when kill_after_fetch=False.
+    mocks["cluster"].head_is_alive.assert_not_called()
+
+
+def test_fetch_kills_cluster_when_terminal_state_is_error(monkeypatch, tmp_path):
+    """fetch() with kill_after_fetch=True must call kill() when terminal_state
+    is 'error' (not just 'done') — both are complete terminal states."""
+    _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="error", n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [RUN_ID], "kill must be called when terminal_state=error"
+
+
+def test_fetch_kills_cluster_when_attempts_reach_total_no_terminal_state(monkeypatch, tmp_path):
+    """fetch() with kill_after_fetch=True must call kill() when all attempts
+    have been recorded but no terminal_state is set yet — the count-based
+    completion branch."""
+    _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state=None, n_attempts=2, n_total=2,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [RUN_ID], "kill must be called when attempts == total"
+
+
+def test_fetch_surfaces_kill_error_in_metrics(monkeypatch, tmp_path):
+    """When kill() raises during auto-teardown, fetch() must catch the exception,
+    store it in metrics["kill_after_fetch_error"], and return normally — so
+    successfully collated results are not lost."""
+    _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state="done", n_attempts=2, n_total=2,
+    )
+    monkeypatch.setattr(driver, "kill", lambda _rid: (_ for _ in ()).throw(RuntimeError("cluster gone")))
+
+    metrics = driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert "kill_after_fetch_error" in metrics
+    assert "cluster gone" in metrics["kill_after_fetch_error"]
+
+
+# ---------------------------------------------------------------------------
+# DEV-1530 — --no-subscription-auth flag in read_api_keys_from_local_env
+# and build_manifest / build_annotator_manifest / resubmit.
+# ---------------------------------------------------------------------------
+
+
+def test_read_api_keys_no_subscription_auth_flag_uses_legacy_path(monkeypatch):
+    """claude_sdk + valid OAuth + no_subscription_auth=True → legacy path;
+    ANTHROPIC_API_KEY shipped directly; CLAUDE_CODE_OAUTH_TOKEN not shipped."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+        no_subscription_auth=True,
+    )
+    assert keys["ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
+    assert "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY" not in keys
+
+
+def test_read_api_keys_no_subscription_auth_flag_annotator(monkeypatch):
+    """annotator + valid OAuth + no_subscription_auth=True → legacy path;
+    ANTHROPIC_API_KEY shipped directly."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-opus-4-7", "",
+        framework="annotator",
+        no_subscription_auth=True,
+    )
+    assert keys["ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
+    assert "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY" not in keys
+
+
+def test_read_api_keys_no_subscription_auth_flag_noop_on_pydantic_ai(monkeypatch):
+    """pydantic_ai + no_subscription_auth=True → already legacy; flag is a no-op."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="pydantic_ai",
+        no_subscription_auth=True,
+    )
+    assert keys["ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
+
+
+def test_read_api_keys_no_subscription_auth_bad_token_not_validated(monkeypatch):
+    """claude_sdk + bad OAuth token prefix + no_subscription_auth=True
+    → no error; bad token is never validated when the flag is set."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-bad-prefix-token")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+        no_subscription_auth=True,
+    )
+    assert keys["ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
+
+
+def test_build_manifest_stores_no_subscription_auth() -> None:
+    """build_manifest records no_subscription_auth=True so resubmit reads it."""
+    args = FakeSubmitArgs(no_subscription_auth=True)
+    manifest = driver.build_manifest(args, image_uri="img:tag", run_id=RUN_ID)
+    assert manifest["no_subscription_auth"] is True
+
+
+def test_build_manifest_no_subscription_auth_default_false() -> None:
+    """build_manifest defaults no_subscription_auth to False when absent from args."""
+    # Manually create an args-like object without the attribute.
+    import argparse as _ap
+    args = _ap.Namespace(
+        framework="pydantic_ai", query_mode="raw",
+        agent_model="anthropic/claude-sonnet-4-5",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        mode="c-interact", instance_ids=["db_a_1"],
+        patience=3, strict=False, use_audited_gold_sql=False,
+        max_depth=3, prompt_cache=True,
+        workers=2, actors_per_worker=2,
+        worker_type="e2-standard-4", max_runtime_hours=4,
+        dataset="mini-interact", gold_file=None,
+        slayer_setup="pre-encoded",
+        slayer_storage_root="/data/slayer_models",
+    )
+    manifest = driver.build_manifest(args, image_uri="img:tag", run_id=RUN_ID)
+    assert manifest["no_subscription_auth"] is False
+
+
+def _fake_annotate_args(**overrides):
+    """Minimal args object for build_annotator_manifest / submit_annotator tests."""
+    ns = argparse.Namespace(
+        benchmark="mini-interact",
+        agent_model="anthropic/claude-opus-4-7",
+        effort="medium",
+        override=False,
+        workers=1,
+        actors_per_worker=2,
+        worker_type="e2-standard-4",
+        max_runtime_hours=2,
+        instance_ids=["alien_1"],
+    )
+    for k, v in overrides.items():
+        setattr(ns, k, v)
+    return ns
+
+
+def test_build_annotator_manifest_stores_no_subscription_auth() -> None:
+    """build_annotator_manifest records no_subscription_auth=True."""
+    args = _fake_annotate_args(no_subscription_auth=True)
+    manifest = driver.build_annotator_manifest(args, image_uri="img:tag", run_id=RUN_ID)
+    assert manifest["no_subscription_auth"] is True
+
+
+def test_build_annotator_manifest_no_subscription_auth_default_false() -> None:
+    """build_annotator_manifest defaults no_subscription_auth to False."""
+    args = _fake_annotate_args()
+    manifest = driver.build_annotator_manifest(args, image_uri="img:tag", run_id=RUN_ID)
+    assert manifest["no_subscription_auth"] is False
+
+
+def test_submit_passes_no_subscription_auth_to_read_api_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """submit() must pass no_subscription_auth=True from args to
+    read_api_keys_from_local_env so the correct auth path is used."""
+    mocks = _patch_collaborators(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    captured: dict = {}
+    _orig = driver.read_api_keys_from_local_env
+
+    def _spy(*args, **kwargs):
+        captured.update(kwargs)
+        return _orig(*args, **kwargs)
+
+    monkeypatch.setattr(driver, "read_api_keys_from_local_env", _spy)
+    monkeypatch.setattr(driver, "wait_until_done", MagicMock())
+    monkeypatch.setattr(driver, "fetch", MagicMock())
+
+    args = FakeSubmitArgs(framework="claude_sdk", no_subscription_auth=True, detach=True)
+    driver.submit(args)
+
+    assert captured.get("no_subscription_auth") is True
+
+
+def test_submit_annotator_passes_no_subscription_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """submit_annotator() must add no_subscription_auth to _prereq_args and pass it
+    to read_api_keys_from_local_env."""
+    mocks = _patch_collaborators(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    prereqs_captured: dict = {}
+    _orig_check = driver.prereqs.check
+
+    def _spy_prereqs(args):
+        prereqs_captured["no_subscription_auth"] = getattr(
+            args, "no_subscription_auth", None
+        )
+
+    monkeypatch.setattr(driver.prereqs, "check", _spy_prereqs)
+
+    keys_captured: dict = {}
+    _orig_keys = driver.read_api_keys_from_local_env
+
+    def _spy_keys(*args, **kwargs):
+        keys_captured.update(kwargs)
+        return _orig_keys(*args, **kwargs)
+
+    monkeypatch.setattr(driver, "read_api_keys_from_local_env", _spy_keys)
+    monkeypatch.setattr(driver, "wait_until_done", MagicMock())
+    monkeypatch.setattr(driver, "fetch", MagicMock())
+
+    ann_args = _fake_annotate_args(
+        no_subscription_auth=True, run_id=None, detach=True, allow_dirty=False,
+    )
+    driver.submit_annotator(ann_args)
+
+    assert prereqs_captured.get("no_subscription_auth") is True
+    assert keys_captured.get("no_subscription_auth") is True
+
+
+def test_resubmit_reads_no_subscription_auth_from_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """resubmit reads no_subscription_auth from the manifest and passes it to
+    read_api_keys_from_local_env so the auth path matches the original submit."""
+    captured: dict = {}
+    _orig = driver.read_api_keys_from_local_env
+
+    def _spy(*args, **kwargs):
+        captured.update(kwargs)
+        return _orig(*args, **kwargs)
+
+    monkeypatch.setattr(driver, "read_api_keys_from_local_env", _spy)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    manifest = {
+        "run_id": RUN_ID,
+        "framework": "claude_sdk",
+        "mode": "c-interact",
+        "query_mode": "raw",
+        "agent_model": "anthropic/claude-sonnet-4-5",
+        "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+        "instance_ids": ["db_a_1"],
+        "no_subscription_auth": True,
+        "render_inputs": {
+            "workers": 1, "actors_per_worker": 1,
+            "worker_type": "e2-standard-4", "zone": "us-central1-a",
+            "worker_sa": "sa@project.iam.gserviceaccount.com",
+            "max_runtime_hours": 1, "image_uri": "img:tag",
+            "project": "p", "region": "us-central1",
+        },
+    }
+    mocks: dict = {}
+    for attr in ("gcs", "cluster"):
+        m = MagicMock(name=attr)
+        mocks[attr] = m
+        monkeypatch.setattr(f"bird_interact_agents.cloud.driver.{attr}", m)
+    mocks["gcs"].read_manifest.return_value = manifest
+    mocks["gcs"].list_attempts.return_value = {}
+    mocks["cluster"].render_from_manifest.return_value = Path("/tmp/cluster.yaml")
+    mocks["cluster"].head_address.return_value = "ray://10.0.0.1:10001"
+    mocks["cluster"].submit_job.return_value = "raysubmit_resub"
+    monkeypatch.setattr(driver, "wait_until_done", MagicMock())
+    monkeypatch.setattr(driver, "fetch", MagicMock())
+
+    driver.resubmit(RUN_ID)
+
+    assert captured.get("no_subscription_auth") is True
+
+
+def test_resubmit_annotator_reads_no_subscription_auth_from_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """resubmit() annotator branch also forwards no_subscription_auth from manifest."""
+    captured: dict = {}
+    _orig = driver.read_api_keys_from_local_env
+
+    def _spy(*args, **kwargs):
+        captured.update(kwargs)
+        return _orig(*args, **kwargs)
+
+    monkeypatch.setattr(driver, "read_api_keys_from_local_env", _spy)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    manifest = {
+        "run_id": RUN_ID,
+        "framework": "annotator",
+        "mode": "annotate",
+        "query_mode": "raw",
+        "agent_model": "anthropic/claude-opus-4-7",
+        "instance_ids": ["db_a_1"],
+        "no_subscription_auth": True,
+        "render_inputs": {
+            "workers": 1, "actors_per_worker": 1,
+            "worker_type": "e2-standard-4", "zone": "us-central1-a",
+            "worker_sa": "sa@project.iam.gserviceaccount.com",
+            "max_runtime_hours": 1, "image_uri": "img:tag",
+            "project": "p", "region": "us-central1",
+        },
+    }
+    mocks: dict = {}
+    for attr in ("gcs", "cluster"):
+        m = MagicMock(name=attr)
+        mocks[attr] = m
+        monkeypatch.setattr(f"bird_interact_agents.cloud.driver.{attr}", m)
+    mocks["gcs"].read_manifest.return_value = manifest
+    mocks["gcs"].list_attempts.return_value = {}
+    mocks["cluster"].render_from_manifest.return_value = Path("/tmp/cluster.yaml")
+    mocks["cluster"].head_address.return_value = "ray://10.0.0.1:10001"
+    mocks["cluster"].submit_job.return_value = "raysubmit_resub_ann"
+    monkeypatch.setattr(driver, "wait_until_done", MagicMock())
+    monkeypatch.setattr(driver, "fetch", MagicMock())
+
+    driver.resubmit(RUN_ID)
+
+    assert captured.get("no_subscription_auth") is True
+
+
+# ---------------------------------------------------------------------------
+# Postgres benchmark: read_api_keys_from_local_env must NOT forward BIRD_PG_*
+# ---------------------------------------------------------------------------
+
+
+def test_read_api_keys_no_pg_vars_for_postgres_benchmark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BIRD_PG_* env vars must NOT be forwarded when the dataset is a postgres
+    benchmark (livesqlbench-base-lite) — the worker runs its own bundled server
+    and forwarding an external address would override localhost."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-anthropic")
+    monkeypatch.setenv("BIRD_PG_HOST", "external.db.host")
+    monkeypatch.setenv("BIRD_PG_PORT", "5432")
+    monkeypatch.setenv("BIRD_PG_USER", "pguser")
+    monkeypatch.setenv("BIRD_PG_PASSWORD", "pgpass")
+
+    result = driver.read_api_keys_from_local_env(
+        "anthropic/claude-haiku-4-5-20251001",
+        "anthropic/claude-haiku-4-5-20251001",
+        dataset="livesqlbench-base-lite",
+    )
+
+    for pg_key in ("BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+                   "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT"):
+        assert pg_key not in result, (
+            f"{pg_key} must not be forwarded for postgres benchmarks"
+        )
+
+
+def test_read_api_keys_forwards_pg_vars_for_sqlite_benchmark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BIRD_PG_* env vars ARE forwarded for non-postgres (sqlite) benchmarks."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-anthropic")
+    monkeypatch.setenv("BIRD_PG_HOST", "external.db.host")
+    monkeypatch.setenv("BIRD_PG_PORT", "5432")
+
+    result = driver.read_api_keys_from_local_env(
+        "anthropic/claude-haiku-4-5-20251001",
+        "anthropic/claude-haiku-4-5-20251001",
+        dataset="mini-interact",
+    )
+
+    assert result.get("BIRD_PG_HOST") == "external.db.host"
+    assert result.get("BIRD_PG_PORT") == "5432"
+
+
+def test_read_api_keys_pg_vars_forwarded_for_empty_dataset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When dataset is empty (legacy call), BIRD_PG_* are still forwarded."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-anthropic")
+    monkeypatch.setenv("BIRD_PG_HOST", "external.db.host")
+
+    result = driver.read_api_keys_from_local_env(
+        "anthropic/claude-haiku-4-5-20251001",
+        "anthropic/claude-haiku-4-5-20251001",
+        dataset="",
+    )
+
+    assert result.get("BIRD_PG_HOST") == "external.db.host"

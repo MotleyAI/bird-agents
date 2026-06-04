@@ -107,7 +107,7 @@ def ensure_uploaded(
     h = hashlib.sha256()
     _hash_dir_into(h, root)
     if gated_gold.is_dir():
-        _hash_dir_into(h, gated_gold, path_prefix=GATED_GOLD_SUBDIR + "/")
+        _hash_dir_into(h, gated_gold, path_prefix=f"{GATED_GOLD_SUBDIR}/{b.name}/")
     chash = h.hexdigest()[:16]
     prefix = benchmark_data_prefix(b, chash)
     client = client or gcs.default_gcs_client()
@@ -120,7 +120,7 @@ def ensure_uploaded(
     if gated_gold.is_dir():
         gcs.upload_dir_prefix(
             gated_gold,
-            f"{prefix.rstrip('/')}/{GATED_GOLD_SUBDIR}",
+            f"{prefix.rstrip('/')}/{GATED_GOLD_SUBDIR}/{b.name}",
             client=client,
             exclude=_is_vcs_path,
         )

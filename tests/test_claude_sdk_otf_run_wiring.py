@@ -82,7 +82,7 @@ async def test_run_evaluation_branches_to_otf_agent(monkeypatch, tmp_path):
             mode="one-shot", query_mode="slayer",
             framework="claude_sdk_otf", slayer_setup="on-the-fly",
             reasoning_effort="high",
-            dataset="livesqlbench-base-lite-sqlite", gold_file=str(gold),
+            dataset="livesqlbench-base-lite-sqlite",
         )
     assert constructed and constructed[0].get("slayer_setup") == "on-the-fly"
     # --reasoning-effort must thread through to the agent constructor.
@@ -130,8 +130,6 @@ def test_cli_rejects_claude_sdk_otf_with_pre_encoded(monkeypatch, tmp_path):
 
     data_file = tmp_path / "x.jsonl"
     data_file.write_text("")
-    gold = tmp_path / "gold.jsonl"
-    gold.write_text("")
     argv = [
         "prog",
         "--framework", "claude_sdk",
@@ -139,7 +137,6 @@ def test_cli_rejects_claude_sdk_otf_with_pre_encoded(monkeypatch, tmp_path):
         "--query-mode", "slayer",
         "--mode", "one-shot",
         "--dataset", "livesqlbench-base-lite-sqlite",
-        "--gold-file", str(gold),
         "--data", str(data_file),
         "--db-path", str(tmp_path),
     ]

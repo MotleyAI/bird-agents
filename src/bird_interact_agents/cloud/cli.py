@@ -38,17 +38,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "Which benchmark to run (registry token; `mini-interact` accepted "
             "as an alias). REQUIRED — no default, to prevent silently running "
             "mini-interact when --mode/--instance-ids happen to be consistent "
-            "with both. `livesqlbench` REQUIRES --gold-file and --mode "
-            "{one-shot, oracle}."
-        ),
-    )
-    sp_submit.add_argument(
-        "--gold-file", default=None,
-        help=(
-            "Path to the gated gold sidecar for benchmarks whose data JSONL "
-            "ships gold empty (e.g. livesqlbench). MUST live under the "
-            "benchmark data root so it rides along in the GCS dataset upload; "
-            "merged by instance_id at task load in-cluster."
+            "with both."
         ),
     )
     sp_submit.add_argument("--patience", type=int, default=500)
@@ -96,6 +86,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_submit.add_argument(
         "--slayer-storage-root", default="/data/slayer_models",
     )
+    sp_submit.add_argument(
+        "--no-subscription-auth", action="store_true", default=False,
+        help=(
+            "Force the legacy API-key auth path even when "
+            "CLAUDE_CODE_OAUTH_TOKEN is present in the environment."
+        ),
+    )
 
     sp_annotate = sub.add_parser("annotate")
     sp_annotate.add_argument("--benchmark", required=True,
@@ -111,13 +108,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     grp_ann.add_argument("--instance-ids-file", type=str)
     sp_annotate.add_argument("--override", action="store_true",
                               help="Re-annotate even when stable blobs already exist.")
-    sp_annotate.add_argument(
-        "--gold-file", default=None,
-        help=(
-            "Path to the gated gold sidecar JSONL (must be under the benchmark "
-            "data root so it rides along in the GCS dataset upload)."
-        ),
-    )
     sp_annotate.add_argument("--workers", type=int, default=4)
     sp_annotate.add_argument("--actors-per-worker", type=int, default=4)
     sp_annotate.add_argument("--worker-type", default="e2-standard-4")
@@ -125,8 +115,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_annotate.add_argument("--run-id", default=None)
     sp_annotate.add_argument("--detach", action="store_true")
     sp_annotate.add_argument("--allow-dirty", action="store_true")
+    sp_annotate.add_argument(
+        "--no-subscription-auth", action="store_true", default=False,
+        help=(
+            "Force the legacy API-key auth path even when "
+            "CLAUDE_CODE_OAUTH_TOKEN is present in the environment."
+        ),
+    )
 
-    for name in ("fetch", "kill", "resubmit"):
+    sp_fetch = sub.add_parser("fetch")
+    sp_fetch.add_argument("run_id")
+    sp_fetch.add_argument(
+        "--no-kill", action="store_true",
+        help="Do not shut down the cluster after a successful fetch.",
+    )
+    for name in ("kill", "resubmit"):
         spx = sub.add_parser(name)
         spx.add_argument("run_id")
 
@@ -179,11 +182,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 slayer_setup=ns.slayer_setup, framework=ns.framework,
                 query_mode=ns.query_mode, mode=ns.mode,
             )
-            if get_benchmark(ns.dataset).gold_required and not ns.gold_file:
-                raise ValueError(
-                    f"--dataset {ns.dataset} requires --gold-file (the gated "
-                    "gold sidecar).",
-                )
         except ValueError as e:
             p.error(str(e))
         if ns.instance_ids_file and not ns.instance_ids:
@@ -243,7 +241,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"submitted: {run_id}")
         return 0
     if ns.subcommand == "fetch":
-        metrics = driver.fetch(ns.run_id)
+        metrics = driver.fetch(ns.run_id, kill_after_fetch=not ns.no_kill)
         # Codex r6: surface the merge report so post-run merge failures
         # (ignored shards, skipped dbs) are visible at fetch time rather
         # than buried in the on-disk merge_report.json.
@@ -279,6 +277,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"WARNING: {label}: {n_errors} error(s)")
                 for detail in report.get("error_details", []):
                     print(f"  {detail}")
+        if kill_err := metrics.get("kill_after_fetch_error"):
+            print(f"WARNING: auto-kill failed — cluster may still be running: {kill_err}")
         return 0
     if ns.subcommand == "kill":
         driver.kill(ns.run_id)

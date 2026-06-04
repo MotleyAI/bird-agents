@@ -215,9 +215,9 @@ async def test_run_task_happy_path_parses_audited_gold_variants(monkeypatch):
             "primary": True,
             "selected_database": "shop",
             "benchmark": "mini-interact",
-            "audit_status": "clean",
+            "audit_status": "edited",
             "original_sol_sql": ["SELECT COUNT(*) FROM orders;"],
-            "audited_sol_sql": ["SELECT COUNT(*) FROM orders;"],
+            "audited_sol_sql": ["SELECT COUNT(*) FROM orders WHERE active = 1;"],
             "audited_sample_row": [],
             "changes": [],
             "reasoning_summary": "Gold is correct.",
@@ -418,7 +418,7 @@ def test_fill_audited_gold_ref_files_replaces_sentinel():
     filled = _fill_audited_gold_ref_files(ann, benchmark="mini-interact")
 
     assert filled.gold_variants[0].audited_gold_ref.file == \
-        "audited_gold/mini-interact_audited.jsonl"
+        "audited_gold/mini-interact/mini-interact_audited.jsonl"
 
 
 def test_fill_audited_gold_ref_files_livesqlbench():
@@ -461,7 +461,7 @@ def test_fill_audited_gold_ref_files_livesqlbench():
     filled = _fill_audited_gold_ref_files(ann, benchmark="livesqlbench-base-lite-sqlite")
 
     assert filled.gold_variants[0].audited_gold_ref.file == \
-        "audited_gold/livesqlbench-base-lite-sqlite_audited.jsonl"
+        "audited_gold/livesqlbench-base-lite-sqlite/livesqlbench-base-lite-sqlite_audited.jsonl"
 
 
 def test_fill_audited_gold_ref_files_noop_when_no_variants():
@@ -543,6 +543,25 @@ def test_fill_deterministic_fields_overwrites_provenance_and_external_knowledge(
     assert filled.external_knowledge == [3, 7]
     assert filled.provenance.task_jsonl_path == "mini_interact.jsonl"
     assert filled.provenance.task_jsonl_instance_id == "shop_1"
+
+
+def test_fill_deterministic_fields_overwrites_amb_user_query():
+    """_fill_deterministic_fields must overwrite amb_user_query from task_data so
+    a truncated or misquoted agent copy is silently corrected."""
+    from bird_interact_agents.agents.annotator.agent import _fill_deterministic_fields
+    from bird_interact_agents.eval.annotation_schema import TaskAnnotation
+
+    base = _minimal_annotation()
+    base["amb_user_query"] = "truncated query..."  # agent abbreviated it
+    ann = TaskAnnotation.model_validate(base)
+    task_data = {
+        "instance_id": "shop_1",
+        "selected_database": "shop",
+        "amb_user_query": "Full canonical query text from the benchmark data file.",
+    }
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
+
+    assert filled.amb_user_query == "Full canonical query text from the benchmark data file."
 
 
 def test_fill_deterministic_fields_livesqlbench_provenance():

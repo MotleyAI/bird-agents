@@ -467,11 +467,16 @@ def load_task_annotation_or_implicit(
 def load_audited_gold_rows_for(
     *, benchmark: str, instance_id: str,
 ) -> list[dict]:
-    """Load every audited-gold row for ``instance_id`` from the
-    consolidated JSONL. Empty list when no rows exist (graceful default
-    — see ``implicit_task_annotation``)."""
+    """Load audited-gold variant dicts for ``instance_id`` from the consolidated JSONL.
+
+    Returns a flat list of variant dicts (one per ``AuditedGoldVariant``) so
+    the tolerant grader's ``audited_gold_rows`` contract is preserved.
+    Returns an empty list when no rows exist (graceful default — see
+    ``implicit_task_annotation``).
+    """
     from bird_interact_agents import paths
     from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.eval.annotation_schema import AuditedGoldRow
 
     try:
         bench = get_benchmark(benchmark)
@@ -479,21 +484,46 @@ def load_audited_gold_rows_for(
         return []
     if getattr(bench, "audited_gold_layout", None) != "single_file":
         return []
-    consolidated = paths.audited_gold_root() / f"{bench.name}_audited.jsonl"
+    consolidated = paths.audited_gold_root() / bench.name / f"{bench.name}_audited.jsonl"
     if not consolidated.exists():
         return []
-    out: list[dict] = []
+
+    flat_rows_by_iid: dict[str, list[dict]] = {}
     for line in consolidated.read_text().splitlines():
         line = line.strip()
         if not line:
             continue
         try:
-            row = json.loads(line)
+            d = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if row.get("instance_id") == instance_id:
-            out.append(row)
-    return out
+        if not isinstance(d, dict):
+            continue
+
+        if "variants" in d:
+            # New grouped format.
+            if d.get("instance_id") != instance_id:
+                continue
+            try:
+                row = AuditedGoldRow.model_validate(d)
+                return [v.model_dump() for v in row.variants]
+            except Exception:
+                return []
+        else:
+            # Legacy flat-row format.
+            iid = d.get("instance_id")
+            if iid and iid == instance_id:
+                flat_rows_by_iid.setdefault(iid, []).append(d)
+
+    # Convert legacy flat rows.
+    flat_rows = flat_rows_by_iid.get(instance_id, [])
+    if not flat_rows:
+        return []
+    try:
+        row = AuditedGoldRow.from_flat_rows(flat_rows)
+        return [v.model_dump() for v in row.variants]
+    except Exception:
+        return []
 
 
 def grade_one_submission(

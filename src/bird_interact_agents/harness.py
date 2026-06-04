@@ -19,6 +19,7 @@ from collections import Counter
 
 from bird_interact_agents.benchmark import Benchmark, get_benchmark
 from bird_interact_agents.db_connection import make_db_connection
+from bird_interact_agents import paths as _paths
 
 logger = logging.getLogger(__name__)
 from bird_interact_agents.hard8_preprocessor import (
@@ -403,10 +404,113 @@ def load_tasks(jsonl_path: str, limit: int | None = None) -> list[dict]:
     return tasks
 
 
+def _auto_discover_gold(benchmark_name: str) -> str:
+    """Return the path to the single *.jsonl gold file for ``benchmark_name``.
+
+    Looks in ``paths.gated_gold_root(benchmark=benchmark_name)``. Raises
+    ``FileNotFoundError`` when the directory or the file is absent, and
+    ``RuntimeError`` when multiple candidate files are found (ambiguous).
+    """
+    gold_dir = _paths.gated_gold_root(benchmark=benchmark_name)
+    if not gold_dir.is_dir():
+        raise FileNotFoundError(
+            f"Benchmark {benchmark_name!r} gold directory not found: {gold_dir}\n"
+            "Place the gated gold JSONL file there "
+            "(or set BIRD_GATED_GOLD_ROOT to override the parent directory)."
+        )
+    candidates = sorted(gold_dir.glob("*.jsonl"))
+    if not candidates:
+        raise FileNotFoundError(
+            f"No *.jsonl gold file found in {gold_dir} for benchmark "
+            f"{benchmark_name!r}"
+        )
+    if len(candidates) > 1:
+        raise RuntimeError(
+            f"Multiple *.jsonl files in {gold_dir}: "
+            f"{[c.name for c in candidates]}. "
+            "Ensure exactly one gold file is present per benchmark directory."
+        )
+    return str(candidates[0])
+
+
+def _load_tasks_with_gold(
+    data_path: str,
+    gold_file: str,
+    *,
+    limit: int | None = None,
+    filter_ids: list[str] | None = None,
+    dataset_marker: str,
+) -> list[dict]:
+    """Generic gold-merge loader for non-one-shot benchmarks.
+
+    Reads the public task JSONL, merges ``sol_sql``, ``external_knowledge``,
+    and ``test_cases`` from the gated gold sidecar by ``instance_id``, stamps
+    the dataset marker, applies ``filter_ids`` and ``limit``, then fail-fasts
+    on any kept task with empty ``sol_sql``.
+
+    No SELECT-category filter (livesqlbench-specific); no count assertion.
+    """
+    import json as _json
+
+    data_path_p = Path(data_path)
+    gold_path = Path(gold_file)
+    if not data_path_p.is_file():
+        raise FileNotFoundError(f"data file missing: {data_path_p}")
+    if not gold_path.is_file():
+        raise FileNotFoundError(f"gold file missing: {gold_path}")
+
+    public_rows: list[dict] = []
+    with data_path_p.open() as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                public_rows.append(_json.loads(line))
+
+    gold_by_id: dict[str, dict] = {}
+    with gold_path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            entry = _json.loads(line)
+            inst = entry.get("instance_id")
+            if inst:
+                gold_by_id[inst] = entry
+
+    merged: list[dict] = []
+    for row in public_rows:
+        inst = row.get("instance_id")
+        gold = gold_by_id.get(inst, {}) if inst else {}
+        if "sol_sql" in gold:
+            row["sol_sql"] = gold["sol_sql"]
+        if "external_knowledge" in gold:
+            row["external_knowledge"] = gold["external_knowledge"]
+        if "test_cases" in gold:
+            row["test_cases"] = gold["test_cases"]
+        row["dataset"] = dataset_marker
+        merged.append(row)
+
+    if filter_ids is not None:
+        wanted = set(filter_ids)
+        merged = [r for r in merged if r.get("instance_id") in wanted]
+
+    if limit is not None:
+        merged = merged[:limit]
+
+    missing_gold = [r["instance_id"] for r in merged if not r.get("sol_sql")]
+    if missing_gold:
+        raise ValueError(
+            f"gold sidecar is incomplete: {len(missing_gold)} task(s) have "
+            f"empty sol_sql after merge: {missing_gold[:5]}"
+            + ("..." if len(missing_gold) > 5 else "")
+        )
+
+    return merged
+
+
 def load_benchmark_tasks(
     dataset: str,
     data_path: str,
-    gold_file: str | None = None,
     *,
     limit: int | None = None,
     filter_ids: list[str] | None = None,
@@ -414,39 +518,26 @@ def load_benchmark_tasks(
     """Benchmark-aware task loader — the single dispatch point both the local
     runner and the cloud actor call, so the loader selection lives in ONE place.
 
-    A benchmark with a gated gold sidecar (``gold_required``) uses
-    :func:`load_livesqlbench_tasks` (merges the gold by instance_id, stamps the
-    dataset marker, filters to SELECT, is filter_ids-aware). Otherwise the plain
-    :func:`load_tasks` path (gold is inline in the data JSONL), with an optional
-    instance-id filter applied here.
+    Gold is always auto-discovered from ``paths.gated_gold_root(benchmark=)``;
+    all benchmarks require a gated gold sidecar (``gold_required=True``). Raises
+    ``FileNotFoundError`` when the directory or file is absent.
+
+    One-shot benchmarks use :func:`load_livesqlbench_tasks` (SELECT filter +
+    count assertion). Non-one-shot benchmarks use :func:`_load_tasks_with_gold`
+    (generic merge, no filter or count assertion).
     """
     b = get_benchmark(dataset)
-    if b.gold_required:
-        if not gold_file:
-            raise ValueError(
-                f"benchmark {b.name!r} requires a gold sidecar (gold_file); "
-                "got none.",
-            )
+    gold_file = _auto_discover_gold(b.name)
+    if b.one_shot:
         return load_livesqlbench_tasks(
             data_path, gold_file, limit=limit, filter_ids=filter_ids,
             dataset_marker=b.dataset_marker,
+            expected_count=b.select_full_run_count,
         )
-    # Apply `limit` AFTER `filter_ids` (not via load_tasks' own limit), so a
-    # caller passing both doesn't have requested instance_ids truncated away
-    # before filtering — mirrors the LiveSQLBench path (CodeRabbit).
-    tasks = load_tasks(data_path)
-    if filter_ids is not None:
-        wanted = set(filter_ids)
-        tasks = [t for t in tasks if t.get("instance_id") in wanted]
-    if limit is not None:
-        tasks = tasks[:limit]
-    # Stamp the canonical dataset marker so execute_submit_action dispatch
-    # routes on benchmark.db_backend correctly (Codex, DEV-1523).
-    # load_livesqlbench_tasks does this via dataset_marker= kwarg; this path
-    # must mirror it so postgres variants don't silently fall through to SQLite.
-    for t in tasks:
-        t["dataset"] = b.dataset_marker
-    return tasks
+    return _load_tasks_with_gold(
+        data_path, gold_file, limit=limit, filter_ids=filter_ids,
+        dataset_marker=b.dataset_marker,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -474,6 +565,7 @@ def load_livesqlbench_tasks(
     limit: int | None = None,
     filter_ids: list[str] | None = None,
     dataset_marker: str = "livesqlbench-base-lite-sqlite",
+    expected_count: int | None = _LIVESQLBENCH_SELECT_FULL_RUN_COUNT,
 ) -> list[dict]:
     """Load + merge a LiveSQLBench task batch.
 
@@ -592,11 +684,11 @@ def load_livesqlbench_tasks(
     # narrows the set; otherwise a smaller count is expected by design.
     # NOT an `assert` because production guards must survive `python -O`
     # / `PYTHONOPTIMIZE`, which strips assertions (Codex review).
-    if limit is None and filter_ids is None:
-        if len(select_rows) != _LIVESQLBENCH_SELECT_FULL_RUN_COUNT:
+    if limit is None and filter_ids is None and expected_count is not None:
+        if len(select_rows) != expected_count:
             raise ValueError(
-                f"expected exactly {_LIVESQLBENCH_SELECT_FULL_RUN_COUNT} "
-                f"SELECT tasks on a full unfiltered LiveSQLBench run; got "
+                f"expected exactly {expected_count} SELECT tasks on a full "
+                f"unfiltered run of {dataset_marker!r}; got "
                 f"{len(select_rows)}. Has the dataset been truncated?"
             )
 
@@ -636,7 +728,7 @@ def apply_audited_gold_overlay(
       ``<audited_root>/<db>/<db>_audited.jsonl``. Cached on first read
       per DB.
     * ``single_file`` (DEV-1510 — livesqlbench): one consolidated JSONL
-      at ``<audited_root>/<benchmark.name>_audited.jsonl``, with
+      at ``<audited_root>/<benchmark.name>/<benchmark.name>_audited.jsonl``, with
       ``instance_id`` as the lookup key and ``selected_database`` as
       the per-DB discriminator on each row. Read ONCE per call.
 
@@ -679,7 +771,7 @@ def apply_audited_gold_overlay(
         # An absent file is benign: log once + return "missing-file" for
         # every task (without ever opening a per-db path that doesn't
         # exist in this layout).
-        single_file_path = audited_root / f"{benchmark.name}_audited.jsonl"
+        single_file_path = audited_root / benchmark.name / f"{benchmark.name}_audited.jsonl"
         single_rows: dict[str, dict] | None
         if not single_file_path.exists():
             logger.warning(
@@ -690,6 +782,7 @@ def apply_audited_gold_overlay(
             single_rows = None
         else:
             single_rows = {}
+            flat_rows_by_iid: dict[str, list[dict]] = {}
             with single_file_path.open() as f:
                 for line in f:
                     line = line.strip()
@@ -703,33 +796,56 @@ def apply_audited_gold_overlay(
                             benchmark.name, single_file_path, e,
                         )
                         continue
-                    inst_id = d.get("instance_id")
-                    if not inst_id:
-                        logger.warning(
-                            "audited-gold row missing instance_id for benchmark=%s at %s",
-                            benchmark.name, single_file_path,
-                        )
+                    if not isinstance(d, dict):
                         continue
-                    # Codex r9: DEV-1515 multi-variant audits ship N
-                    # rows per instance_id (one ``primary=True`` plus
-                    # non-primary alternates). Latest-wins would let a
-                    # later-listed alternate overwrite the primary's
-                    # audited_sol_sql, applying the wrong reading at
-                    # overlay time. Prefer primary; once recorded,
-                    # never overwrite. (A non-primary recorded first
-                    # gets overwritten by the primary later in the
-                    # file.)
-                    existing = single_rows.get(inst_id)
-                    if existing is None:
-                        single_rows[inst_id] = d
-                    elif existing.get("primary") is True:
-                        # Already have the primary — keep it.
-                        continue
-                    elif d.get("primary") is True:
-                        # Upgrade non-primary → primary.
-                        single_rows[inst_id] = d
-                    # else: both non-primary, keep the first one (no
-                    # ordering preference between alternates).
+                    if "variants" in d:
+                        # New grouped format — parse as AuditedGoldRow.
+                        from bird_interact_agents.eval.annotation_schema import AuditedGoldRow as _AuditedGoldRow
+                        try:
+                            agr = _AuditedGoldRow.model_validate(d)
+                        except Exception as e:
+                            logger.warning(
+                                "invalid AuditedGoldRow for benchmark=%s at %s: %s",
+                                benchmark.name, single_file_path, e,
+                            )
+                            continue
+                        # Flatten the primary variant into the dict that the
+                        # downstream overlay code expects: selected_database,
+                        # benchmark, audit_status, audited_sol_sql.
+                        pv = agr.primary_variant
+                        single_rows[agr.instance_id] = {
+                            "instance_id": agr.instance_id,
+                            "selected_database": agr.selected_database,
+                            "benchmark": agr.benchmark,
+                            "audit_status": pv.audit_status,
+                            "audited_sol_sql": pv.audited_sol_sql,
+                            "primary": True,
+                        }
+                    else:
+                        # Legacy flat-row format — buffer by instance_id.
+                        inst_id = d.get("instance_id")
+                        if inst_id:
+                            flat_rows_by_iid.setdefault(inst_id, []).append(d)
+            # Convert buffered legacy flat rows by reading directly.
+            # We do NOT use from_flat_rows here: legacy rows may lack variant_id,
+            # may have audit_status="unrecoverable" (which from_flat_rows skips),
+            # or may have empty audited_sol_sql for clean rows.  Reading directly
+            # preserves all status values and lets the downstream overlay decide.
+            for inst_id, flat_rows in flat_rows_by_iid.items():
+                if inst_id in single_rows:
+                    continue
+                # Prefer the row marked primary=True; fall back to the first row.
+                primary_row = next(
+                    (r for r in flat_rows if r.get("primary")), flat_rows[0]
+                )
+                single_rows[inst_id] = {
+                    "instance_id": primary_row.get("instance_id", inst_id),
+                    "selected_database": primary_row.get("selected_database") or "",
+                    "benchmark": primary_row.get("benchmark") or "",
+                    "audit_status": primary_row.get("audit_status") or "missing-row",
+                    "audited_sol_sql": primary_row.get("audited_sol_sql") or [],
+                    "primary": True,
+                }
         for task in tasks:
             inst = task.get("instance_id")
             db = task.get("selected_database")
@@ -791,7 +907,7 @@ def apply_audited_gold_overlay(
                 continue
             status = entry.get("audit_status")
             overlay_log[inst] = status or "missing-row"
-            if status in ("edited", "unrecoverable"):
+            if status in ("edited", "unrecoverable"):  # keep "unrecoverable" for legacy rows
                 audited = entry.get("audited_sol_sql")
                 if isinstance(audited, list) and audited:
                     task["sol_sql"] = list(audited)

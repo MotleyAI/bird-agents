@@ -94,8 +94,11 @@ def test_cli_dataset_tokens_contains_new_names():
     tokens = set(cli_dataset_tokens())
     new_names = {
         "mini-interact",
+        "bird-interact-full",
         "livesqlbench-base-lite-sqlite",
         "livesqlbench-base-lite",
+        "livesqlbench-base-full",
+        "livesqlbench-large",
         "bird-interact-lite-exp",
     }
     missing = new_names - tokens
@@ -120,8 +123,11 @@ def test_benchmark_names_are_hyphenated():
     names = set(benchmark_names())
     expected = {
         "mini-interact",
+        "bird-interact-full",
         "livesqlbench-base-lite-sqlite",
         "livesqlbench-base-lite",
+        "livesqlbench-base-full",
+        "livesqlbench-large",
         "bird-interact-lite-exp",
     }
     assert names == expected, (
