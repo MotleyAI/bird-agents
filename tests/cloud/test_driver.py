@@ -1762,11 +1762,11 @@ def test_in_cluster_gold_file_annotate_args_uses_benchmark(monkeypatch, tmp_path
     gold = data_root / "gold.jsonl"
     gold.write_text("{}\n")
     monkeypatch.setattr(driver.paths, "benchmark_data_root", lambda *a, **k: data_root)
+    monkeypatch.setattr(driver.paths, "gated_gold_root", lambda **_kw: tmp_path / "no_gated_gold")
 
     ns = argparse.Namespace(benchmark="livesqlbench-base-lite-sqlite", gold_file=str(gold))
     result = driver._in_cluster_gold_file(ns)
-    assert result is not None
-    assert "/livesqlbench-base-lite-sqlite/" in result or "/data/" in result
+    assert result == "/data/livesqlbench-base-lite-sqlite/gold.jsonl"
 
 
 def test_submit_annotator_validates_gold_outside_data_root(monkeypatch, tmp_path):

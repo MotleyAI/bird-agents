@@ -69,9 +69,11 @@ def test_stable_task_annotation_blob_path():
 
 
 def test_stable_task_annotation_blob_normalises_dash_benchmark():
+    """Hyphens in benchmark names are replaced with underscores for GCS paths,
+    so the canonical 'mini-interact' and legacy 'mini_interact' land in the same tree."""
     from bird_interact_agents.cloud import gcs
     assert gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1") == \
-        gcs.stable_task_annotation_blob("mini-interact", "shop", "shop_1")
+        gcs.stable_task_annotation_blob("mini_interact", "shop", "shop_1")
 
 
 def test_stable_audited_gold_variants_blob_path():
@@ -81,9 +83,11 @@ def test_stable_audited_gold_variants_blob_path():
 
 
 def test_stable_audited_gold_variants_blob_normalises_dash_benchmark():
+    """Hyphens in benchmark names are replaced with underscores for GCS paths,
+    so the canonical 'mini-interact' and legacy 'mini_interact' land in the same tree."""
     from bird_interact_agents.cloud import gcs
     assert gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1") == \
-        gcs.stable_audited_gold_variants_blob("mini-interact", "shop", "shop_1")
+        gcs.stable_audited_gold_variants_blob("mini_interact", "shop", "shop_1")
 
 
 # ---------------------------------------------------------------------------

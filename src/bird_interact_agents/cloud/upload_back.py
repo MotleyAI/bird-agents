@@ -239,7 +239,10 @@ def upload_otf_reference_delta(
 
         dataset = cfg.get("dataset")
         if not dataset:
-            return
+            raise ValueError(
+                "upload_otf_reference_delta requires cfg['dataset'] — "
+                "task data is missing the required 'dataset' field"
+            )
         benchmark = get_benchmark(dataset).name
         ref_root = paths.slayer_models_otf_root(benchmark=benchmark)
         if not ref_root.is_dir():

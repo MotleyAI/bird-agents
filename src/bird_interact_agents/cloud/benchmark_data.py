@@ -122,6 +122,7 @@ def ensure_uploaded(
             gated_gold,
             f"{prefix.rstrip('/')}/{GATED_GOLD_SUBDIR}",
             client=client,
+            exclude=_is_vcs_path,
         )
     marker.upload_from_string(chash)  # marker LAST — completeness invariant
     return prefix

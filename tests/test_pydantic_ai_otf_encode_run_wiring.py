@@ -59,10 +59,9 @@ def test_framework_choices_still_include_existing_frameworks():
 
 @pytest.mark.asyncio
 async def test_run_evaluation_branches_to_new_agent(monkeypatch, tmp_path):
-    """When `framework='pydantic_ai_otf_encode'`, `run_evaluation`
-    instantiates `PydanticAIOtfEncodeAgent` and uses its `run_task`.
-    We intercept the constructor to confirm and short-circuit the
-    rest by raising a sentinel."""
+    """When `framework='claude_sdk'` with a non-one-shot dataset and slayer query
+    mode, `run_evaluation` instantiates `ClaudeSDKOtfAInteractAgent`.
+    We intercept the constructor to confirm and short-circuit the rest."""
     from bird_interact_agents import run as run_mod
 
     constructed = []
@@ -76,8 +75,8 @@ async def test_run_evaluation_branches_to_new_agent(monkeypatch, tmp_path):
             raise _Sentinel("stop here")
 
     monkeypatch.setattr(
-        "bird_interact_agents.agents.pydantic_ai_otf_encode."
-        "PydanticAIOtfEncodeAgent",
+        "bird_interact_agents.agents.claude_sdk_otf_ainteract."
+        "ClaudeSDKOtfAInteractAgent",
         _FakeAgent,
         raising=False,
     )
@@ -89,7 +88,8 @@ async def test_run_evaluation_branches_to_new_agent(monkeypatch, tmp_path):
             data_path="/tmp/x.jsonl", data_dir="/tmp",
             output_path=str(tmp_path / "eval.json"),
             mode="a-interact", query_mode="slayer",
-            framework="pydantic_ai_otf_encode",
+            framework="claude_sdk",
+            dataset="mini-interact",
             slayer_setup="on-the-fly",
         )
     assert len(constructed) == 1

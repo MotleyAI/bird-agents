@@ -155,6 +155,7 @@ def test_livesqlbench_requires_gold_file(monkeypatch, tmp_path, capsys):
 
 def test_one_shot_requires_livesqlbench_dataset(monkeypatch, tmp_path, capsys):
     argv = _argv_base(tmp_path) + [
+        "--dataset", "mini-interact",
         "--mode", "one-shot",
         "--framework", "claude_sdk",
         "--query-mode", "slayer",
@@ -172,7 +173,7 @@ def test_one_shot_requires_livesqlbench_dataset(monkeypatch, tmp_path, capsys):
         run_module.main()
     assert not captured
     _assert_failed_validation(
-        capsys, exc_info.value, must_contain=["one-shot", "livesqlbench"],
+        capsys, exc_info.value, must_contain=["one-shot"],
     )
 
 

@@ -230,7 +230,7 @@ def _load_annotator_task_data(
         # <gt_sidecar>.jsonl; a BIRD_GATED_GOLD_ROOT env var overrides the
         # parent dir (benchmark subdir still appended).
         gated_root = paths.gated_gold_root(benchmark=benchmark)
-        search_dirs = [gated_root, paths.benchmark_data_root(benchmark)]
+        search_dirs = [gated_root]
         candidates = [
             f for d in search_dirs if d.is_dir()
             for f in sorted(d.glob("*.jsonl"))

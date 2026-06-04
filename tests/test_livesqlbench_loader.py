@@ -120,8 +120,8 @@ def test_loader_stamps_dataset_marker(tmp_path):
     )
     rows = load_livesqlbench_tasks(str(data), str(gold), limit=100)
     assert all(r.get("dataset") == "livesqlbench-base-lite-sqlite" for r in rows), (
-        "loader MUST stamp task['dataset']='livesqlbench' — it's the "
-        "irreducible marker for materialize_task_db + one-shot run_task."
+        "loader MUST stamp task['dataset']='livesqlbench-base-lite-sqlite' — "
+        "it's the irreducible marker for materialize_task_db + one-shot run_task."
     )
 
 

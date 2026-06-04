@@ -622,7 +622,7 @@ def test_fill_deterministic_fields_no_duplicate_masked_terms():
         },
         "knowledge_ambiguity": [],
     }
-    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini_interact")
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="mini-interact")
 
     assert sum(1 for mt in filled.masked_terms if mt.term == "[MASKED_TIER]") == 1
 
@@ -635,7 +635,7 @@ def test_fill_deterministic_fields_livesqlbench_skips_masked_terms():
     base = _minimal_annotation("flight_1", "flight")
     ann = TaskAnnotation.model_validate(base)
     task_data = {"instance_id": "flight_1", "selected_database": "flight"}
-    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="livesqlbench")
+    filled = _fill_deterministic_fields(ann, task_data=task_data, benchmark="livesqlbench-base-lite-sqlite")
 
     assert filled.masked_terms == []
 
@@ -651,7 +651,7 @@ def test_fill_deterministic_fields_does_not_mutate_original():
     _fill_deterministic_fields(
         ann,
         task_data={"instance_id": "shop_1", "external_knowledge": [99]},
-        benchmark="mini_interact",
+        benchmark="mini-interact",
     )
 
     assert ann.provenance.task_jsonl_path == original_path
