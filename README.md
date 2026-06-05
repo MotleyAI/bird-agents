@@ -129,6 +129,25 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --worker-type e2-standard-4 --max-runtime-hours 3 --detach
 ```
 
+> **⚠️ PostgreSQL benchmarks require larger instances.**
+> `livesqlbench-base-lite`, `livesqlbench-base-full`, `livesqlbench-large`,
+> `bird-interact-lite-exp`, and `bird-interact-full` start a bundled PostgreSQL
+> server that loads all benchmark databases at actor startup — this adds
+> **1–3 GB of RAM overhead** on top of the LLM agent footprint.
+> **Never run more than 1 actor per `e2-standard-4` worker on postgres benchmarks;
+> the combination reliably OOMs and silently loses tasks.**
+> The recommended setup for postgres benchmarks is one actor per worker on
+> `e2-standard-8` (8 vCPU / 32 GB), which gives ample headroom:
+>
+> ```bash
+> env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
+>   --dataset livesqlbench-base-lite --mode one-shot \
+>   ... \
+>   --instance-ids alien_1,alien_2,...,alien_10 \
+>   --workers 10 --actors-per-worker 1 \
+>   --worker-type e2-standard-8 --max-runtime-hours 3 --detach
+> ```
+
 #### `claude_sdk` — mini-interact / a-interact
 
 For mini-interact a-interact, pass `--dataset mini-interact --mode a-interact`.
@@ -167,6 +186,10 @@ sizing rule above). With the default 1×1 a 53-task batch serialises
 through one actor and takes ~5 hours; at 1×4 it finishes in ~80 minutes
 for the same per-task wallclock and identical cluster cost.
 
+> **⚠️ mini-interact is SQLite-backed and fine on `e2-standard-4` × 4 actors.
+> For postgres-backed a-interact (`bird-interact-lite-exp`, `bird-interact-full`)
+> use `e2-standard-8` × 1 actor per the sizing rule above.**
+
 ## Annotator Agent (DEV-1518)
 
 The annotator agent audits benchmark tasks and produces `TaskAnnotation` records
@@ -180,17 +203,35 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud annotate \
   --benchmark mini-interact \
   --agent-model anthropic/claude-opus-4-7 \
   --instance-ids households_1,households_2,households_3 \
-  --workers 1 --actors-per-worker 3 \
+  --workers 3 --actors-per-worker 1 \
   --worker-type e2-standard-4 --max-runtime-hours 1 \
   --override --detach
 ```
 
-`--override` re-annotates even when stable blobs already exist in GCS.
-Omit it on production runs to skip already-annotated tasks.
+**Always pass `--override`** unless you have a specific reason not to — it
+re-annotates even when stable blobs already exist in GCS and is the safe
+default. Omit it only when explicitly resuming a partial run and you want
+to skip already-completed tasks.
 
-Bump `--actors-per-worker` to match the number of instance IDs for maximum
-parallelism (each actor handles one task). `e2-standard-4` comfortably runs
-4 concurrent Opus actors.
+Bump `--workers` to match the number of instance IDs for maximum parallelism
+(each actor handles one task at a time).
+
+> **⚠️ PostgreSQL benchmarks require `e2-standard-8`, not `e2-standard-4`.**
+> The annotator uses Opus, which together with the bundled PostgreSQL server
+> exhausts e2-standard-4's 16 GB during startup and **silently kills actors**,
+> losing all tasks assigned to those workers.
+> **Always use `e2-standard-8` (32 GB) for annotator runs on
+> `livesqlbench-base-full`, `livesqlbench-large`, `bird-interact-full`, etc:**
+>
+> ```bash
+> env -u SSH_AUTH_SOCK uv run bird-interact-cloud annotate \
+>   --benchmark bird-interact-full \
+>   --agent-model anthropic/claude-opus-4-7 \
+>   --instance-ids households_1,...,households_20 \
+>   --workers 20 --actors-per-worker 1 \
+>   --worker-type e2-standard-8 --max-runtime-hours 3 \
+>   --override --detach
+> ```
 
 ### Fetching results
 
