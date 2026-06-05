@@ -604,6 +604,61 @@ def test_build_manifest_propagates_all_knobs() -> None:
     assert ri.get("region")
 
 
+def test_resubmit_resets_heartbeat_for_new_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: resubmit must clear last_heartbeat_ts before calling
+    wait_until_done. The previous attempt's timestamp (especially when the
+    prior attempt ended via the heartbeat-stall path) is still in GCS, and
+    if not cleared, the new attempt's watcher reads that stale value and
+    falsely returns `stalled` again before the new in-job HeartbeatWriter
+    writes its first row. Mirrors the submit/annotate initial-status write
+    that left last_heartbeat_ts=None."""
+    mocks = _patch_collaborators(monkeypatch)
+    mocks["cluster"].render_from_manifest.return_value = Path("/tmp/x.yaml")
+    mocks["cluster"].head_address.return_value = "http://localhost:8265"
+    mocks["cluster"].submit_job.return_value = "raysubmit_attempt2"
+
+    mocks["gcs"].read_manifest.return_value = {
+        "run_id": RUN_ID,
+        "framework": "pydantic_ai",
+        "query_mode": "raw",
+        "mode": "c-interact",
+        "agent_model": "anthropic/claude-haiku-4-5-20251001",
+        "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+        "instance_ids": ["db_a_1", "db_a_2", "db_a_3"],
+        "patience": 3,
+        "strict": False,
+        "use_audited_gold_sql": False,
+        "max_depth": 3,
+        "prompt_cache": True,
+        "render_inputs": {"workers": 1, "actors_per_worker": 2},
+    }
+    mocks["gcs"].list_attempts.return_value = {
+        "db_a_1": [1], "db_a_2": [1], "db_a_3": [1],
+    }
+    # One done, two missing → resubmit proceeds with 2 missing.
+    mocks["gcs"].read_row.side_effect = lambda rid, iid, n: (
+        {"error": None} if iid == "db_a_1" else {"error": "boom"}
+    )
+    # Capture writes; bypass polling/fetch.
+    writes: list[tuple[str, dict]] = []
+    mocks["gcs"].write_status.side_effect = lambda rid, payload, **_: writes.append((rid, payload))
+    monkeypatch.setattr(driver, "wait_until_done", lambda *a, **k: None)
+    monkeypatch.setattr(driver, "fetch", lambda *a, **k: {})
+
+    driver.resubmit(RUN_ID)
+
+    reset = [p for _, p in writes if p.get("attempt") == 2]
+    assert reset, f"expected an attempt=2 status write, got {writes}"
+    payload = reset[-1]
+    assert payload["last_heartbeat_ts"] is None
+    assert payload["rows_done"] == 0
+    assert payload["rows_total"] == 3
+    assert payload["terminal_state"] is None
+    assert payload["ray_job_id"] == "raysubmit_attempt2"
+
+
 def test_resubmit_passes_yaml_path_to_submit_job(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

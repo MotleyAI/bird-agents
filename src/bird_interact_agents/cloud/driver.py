@@ -1151,7 +1151,7 @@ def resubmit(run_id: str) -> None:
                 dataset=manifest.get("dataset", manifest.get("benchmark", "")),
             )
             job_args = _build_annotator_resubmit_args(manifest, run_id, missing, next_attempt)
-            cluster.submit_job(
+            ray_job_id = cluster.submit_job(
                 head_address=head, args=job_args, env_vars=env_vars,
                 yaml_path=yaml_path, ray_app_path=_ANNOTATOR_RAY_APP_PATH,
             )
@@ -1164,10 +1164,22 @@ def resubmit(run_id: str) -> None:
                 dataset=manifest.get("dataset", ""),
             )
             job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
-            cluster.submit_job(
+            ray_job_id = cluster.submit_job(
                 head_address=head, args=job_args, env_vars=env_vars,
                 yaml_path=yaml_path,
             )
+        # Reset status for the new attempt: clear the previous attempt's
+        # last_heartbeat_ts so wait_until_done doesn't read a stale timestamp
+        # and trip the HEARTBEAT_STALL_SECONDS check before the new in-job
+        # HeartbeatWriter writes its first row. Mirrors submit/annotate.
+        gcs.write_status(run_id, {
+            "ray_job_id": ray_job_id,
+            "last_heartbeat_ts": None,
+            "rows_done": 0,
+            "rows_total": len(manifest.get("instance_ids", [])),
+            "terminal_state": None,
+            "attempt": next_attempt,
+        })
         wait_until_done(run_id, manifest)
         fetch(run_id)
     finally:
