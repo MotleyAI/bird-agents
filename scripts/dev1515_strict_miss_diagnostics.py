@@ -44,7 +44,7 @@ def main() -> None:
             label = f"{iid}@{bench}" if len(benchmarks) > 1 else iid
             submissions.append((label, ann.model_dump(), md.model_dump()))
 
-    submissions.sort()
+    submissions.sort(key=lambda r: r[0])
 
     print("=" * 110)
     print(

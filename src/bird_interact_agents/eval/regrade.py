@@ -267,11 +267,11 @@ def regrade_run(
         report.regraded += 1
         report.regraded_instances.append(instance_id)
 
-    # Emit eval_regraded.json from runs/ filtered to regraded instances.
-    regraded_set = set(report.regraded_instances) or None
+    if not report.regraded_instances:
+        return report
     emit_cascading_eval_json(
         benchmark, run_id, run_dir / "eval_regraded.json",
-        base_metrics={}, instance_filter=regraded_set,
+        base_metrics={}, instance_filter=set(report.regraded_instances),
     )
     return report
 

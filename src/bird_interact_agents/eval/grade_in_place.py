@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 from bird_interact_agents.eval.annotation_io import (
     run_annotation_path,
     run_trajectory_path,
-    write_run_annotation_no_overwrite,
+    write_run_annotation,
 )
 from bird_interact_agents.eval.implicit_annotation import (
     implicit_task_annotation,
@@ -280,30 +280,30 @@ def _write_to_runs(
         instance_id=ann.instance_id,
         run_id=run_id,
     )
-    write_run_annotation_no_overwrite(ann, dest)
+    write_run_annotation(ann, dest)
 
-    # Trajectory sidecar — best-effort (never raises).
+    # Trajectory sidecar — best-effort (never raises). Always overwrite so
+    # reruns with the same run_id update the sidecar too.
     traj_dest = run_trajectory_path(
         benchmark=benchmark,
         selected_database=ann.selected_database,
         instance_id=ann.instance_id,
         run_id=run_id,
     )
-    if not traj_dest.exists():
-        traj_content: Any = {"trajectory_path": ann.submission.trajectory_path}
-        traj_src_rel = ann.submission.trajectory_path or ""
-        m = re.search(r"rows/(.+)$", traj_src_rel)
-        if m:
-            traj_src = rows_dir / m.group(1)
-            if traj_src.exists():
-                try:
-                    traj_content = json.loads(traj_src.read_text())
-                except Exception:  # noqa: BLE001
-                    pass
-        traj_dest.parent.mkdir(parents=True, exist_ok=True)
-        traj_dest.write_text(
-            json.dumps(traj_content, indent=2, default=str) + "\n"
-        )
+    traj_content: Any = {"trajectory_path": ann.submission.trajectory_path}
+    traj_src_rel = ann.submission.trajectory_path or ""
+    m = re.search(r"rows/(.+)$", traj_src_rel)
+    if m:
+        traj_src = rows_dir / m.group(1)
+        if traj_src.exists():
+            try:
+                traj_content = json.loads(traj_src.read_text())
+            except Exception:  # noqa: BLE001
+                pass
+    traj_dest.parent.mkdir(parents=True, exist_ok=True)
+    traj_dest.write_text(
+        json.dumps(traj_content, indent=2, default=str) + "\n"
+    )
 
 
 def _write_harness_confirmed_annotation(
@@ -732,8 +732,12 @@ def grade_one_submission(
     # Harness short-circuit: the upstream harness is authoritative for
     # phase1_passed=True (it normalises floats to 2dp before comparison;
     # re-running here with epsilon=1e-6 would disagree on float-heavy
-    # tasks). Skip all SQL re-execution and write a confirmed annotation.
-    if harness_passed is True:
+    # tasks). Only apply when the original gold is authoritative — if the
+    # original was annotated as wrong, the harness may have compared
+    # against audited gold; we must fall through to full grading so the
+    # cascade tiers are computed correctly.
+    _orig_correct = getattr(task_annotation, "original_gold_is_correct", None)
+    if harness_passed is True and _orig_correct is not False:
         return _write_harness_confirmed_annotation(
             rows_dir=Path(rows_dir),
             instance_id=instance_id,

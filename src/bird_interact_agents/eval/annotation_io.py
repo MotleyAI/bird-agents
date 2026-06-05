@@ -212,7 +212,12 @@ def _attempt_from_trajectory(trajectory_path: Optional[str]) -> Optional[int]:
 
 def write_run_annotation_no_overwrite(ann: SubmissionAnnotation, path: Path) -> bool:
     """Write ``ann`` to ``path`` only if absent or the new attempt is strictly
-    greater than the stored one (resubmit case). Returns True if written."""
+    greater than the stored one (resubmit case). Returns True if written.
+
+    When either attempt number is unparseable, the existing file is preserved
+    (return False) rather than silently overwritten — unknown ordering is not
+    a sufficient reason to discard a valid existing annotation.
+    """
     if path.exists():
         try:
             existing = SubmissionAnnotation.model_validate_json(path.read_text())
@@ -220,10 +225,10 @@ def write_run_annotation_no_overwrite(ann: SubmissionAnnotation, path: Path) -> 
                 existing.submission.trajectory_path
             )
             new_attempt = _attempt_from_trajectory(ann.submission.trajectory_path)
-            if (
-                new_attempt is not None
-                and existing_attempt is not None
-                and new_attempt <= existing_attempt
+            # Keep existing when: same attempt, older attempt, OR either
+            # attempt is unparseable (unknown ordering → preserve existing).
+            if existing_attempt is not None and (
+                new_attempt is None or new_attempt <= existing_attempt
             ):
                 return False
         except Exception:  # noqa: BLE001

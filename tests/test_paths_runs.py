@@ -9,12 +9,14 @@ from __future__ import annotations
 
 def test_runs_root_anchors_at_main_checkout(monkeypatch, tmp_path):
     import bird_interact_agents.paths as p
+    monkeypatch.delenv("BIRD_RUNS_ROOT", raising=False)
     monkeypatch.setattr(p, "main_checkout_root", lambda: tmp_path)
     assert p.runs_root() == tmp_path / "runs"
 
 
-def test_runs_root_not_under_worktrees():
+def test_runs_root_not_under_worktrees(monkeypatch):
     import bird_interact_agents.paths as p
+    monkeypatch.delenv("BIRD_RUNS_ROOT", raising=False)
     root = p.runs_root()
     assert ".worktrees" not in root.parts
 

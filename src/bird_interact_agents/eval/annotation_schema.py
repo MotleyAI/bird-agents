@@ -381,10 +381,16 @@ class TaskAnnotation(BaseModel):
 
     metadata_sufficiency: MetadataSufficiency
 
-    original_gold_is_correct: bool = False
+    original_gold_is_correct: Optional[bool] = None
     """True iff metadata_sufficiency.verdict == 'sufficient' AND the
     task's original ``sol_sql`` is the correct answer. When True,
-    ``gold_variants`` SHOULD be empty (the original gold is authoritative)."""
+    ``gold_variants`` SHOULD be empty (the original gold is authoritative).
+
+    ``None`` means the field was absent when the annotation was written
+    (legacy / pre-DEV-1533 annotation). The grader treats ``None`` as
+    ``True`` — preserving the old monotone behaviour for unannotated tasks
+    so that N1=True still implies N2+ when the gold provenance is unknown.
+    Explicit ``False`` means the annotator confirmed the original is wrong."""
     gold_variants: List[GoldVariantRef] = Field(default_factory=list)
 
     evaluator_prompt: Optional[str] = None

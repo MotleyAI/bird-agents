@@ -1111,7 +1111,7 @@ def grade_submission(
     _gold_rows_for_result: Optional[list] = None
     if primary is not None:
         _gold_rows_for_result = [list(r) for r in primary[1]]
-    elif orig_rows:
+    elif orig_rows is not None:
         _gold_rows_for_result = [list(r) for r in orig_rows]
 
     return CascadeVerdict(

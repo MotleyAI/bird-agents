@@ -68,7 +68,7 @@ def test_grade_and_write_no_overwrite_in_runs_for_same_attempt(monkeypatch, tmp_
         def __call__(self, sql, *, db_path, conn):  # noqa: ARG002
             return ([(1,)], ["a"])
 
-    def _grade():
+    def _grade(submitted_sql: str = "SELECT 1"):
         grade_and_write(
             rows_dir=rows_dir,
             instance_id="alien_1",
@@ -80,22 +80,24 @@ def test_grade_and_write_no_overwrite_in_runs_for_same_attempt(monkeypatch, tmp_
             ),
             audited_gold_rows=[],
             original_sol_sql=["SELECT 1"],
-            submitted_sql="SELECT 1",
+            submitted_sql=submitted_sql,
             db_path=Path("/dev/null"),
             conn=None,
             executor=FakeExec(),
             trajectory_path="rows/alien_1/attempt-1.json",
         )
 
-    _grade()
+    _grade("SELECT 1")
     runs_dest = run_annotation_path(
         benchmark="mini-interact", selected_database="alien",
         instance_id="alien_1", run_id="test-run",
     )
-    mtime_first = runs_dest.stat().st_mtime
-    _grade()
-    # File must NOT be re-written (same attempt → no-overwrite).
-    assert runs_dest.stat().st_mtime == mtime_first
+    first_content = runs_dest.read_text()
+    _grade("SELECT 999")
+    # local rerun with different SQL — runs/ should be UPDATED (always overwrite)
+    assert runs_dest.read_text() != first_content, (
+        "grade_and_write must update runs/ on rerun even when run_id is the same"
+    )
 
 
 def test_write_failed_submission_annotation_also_writes_to_runs(monkeypatch, tmp_path):

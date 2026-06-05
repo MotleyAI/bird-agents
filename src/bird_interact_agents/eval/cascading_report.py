@@ -373,9 +373,8 @@ def emit_cascading_eval_json(
     and write to ``out_path``.
 
     Reads run annotations from ``runs/<benchmark>/``. If no run
-    annotations are found there (e.g. because a test-stub bypasses
-    ``_write_to_runs``), falls back to the legacy ``rows_dir`` reader
-    so existing tests and scripts continue to work.
+    annotations are found for this ``run_id``, the cascading_phase1 block
+    will have zero counts.
 
     The legacy dual-eval keys are explicitly dropped; ``phase1_count`` /
     ``phase1_rate`` are REWRITTEN from N1.
