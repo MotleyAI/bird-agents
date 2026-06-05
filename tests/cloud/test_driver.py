@@ -1818,9 +1818,14 @@ def test_fetch_does_not_kill_when_head_already_dead(monkeypatch, tmp_path):
     assert kill_calls == [], "kill must NOT be called when head is already dead"
 
 
-def test_fetch_does_not_kill_when_run_incomplete(monkeypatch, tmp_path):
-    """fetch() must not kill a cluster whose run is still mid-flight (fewer
-    attempts than total instance_ids, no terminal_state set)."""
+def test_fetch_kills_even_when_run_incomplete(monkeypatch, tmp_path):
+    """fetch() with kill_after_fetch=True must kill the cluster regardless of
+    run completion. Previously the auto-kill guarded on
+    ``terminal in ('done', 'error')`` OR ``all_attempts_present``, which
+    silently leaked clusters when a waiter terminated with ``timed-out`` /
+    ``stalled`` / ``headless`` (the cluster only writes ``done``/``error``
+    itself; waiter-side terminals never reach ``status.json``). The CLI's
+    ``--no-kill`` flag is the documented escape hatch for mid-run inspection."""
     mocks = _setup_fetch_mocks(
         monkeypatch, tmp_path,
         head_alive=True, terminal_state=None, n_attempts=1, n_total=3,
@@ -1830,7 +1835,29 @@ def test_fetch_does_not_kill_when_run_incomplete(monkeypatch, tmp_path):
 
     driver.fetch(RUN_ID, kill_after_fetch=True)
 
-    assert kill_calls == [], "kill must NOT be called for an incomplete run"
+    assert kill_calls == [RUN_ID], (
+        "kill MUST be called when kill_after_fetch=True and head is alive, "
+        "regardless of completion — caller intent is authoritative"
+    )
+
+
+def test_fetch_kills_on_waiter_timeout_terminal(monkeypatch, tmp_path):
+    """Regression test: a waiter that returned ``timed-out`` invokes fetch
+    with kill_after_fetch=True. The cluster's own ``status.json`` still
+    shows no terminal (cluster is alive and slow), but the operator has
+    given up — fetch must kill the cluster anyway. The pre-fix behaviour
+    leaked the cluster because ``timed-out`` isn't in ``(done, error)``
+    and attempt count was below total."""
+    mocks = _setup_fetch_mocks(
+        monkeypatch, tmp_path,
+        head_alive=True, terminal_state=None, n_attempts=297, n_total=298,
+    )
+    kill_calls: list[str] = []
+    monkeypatch.setattr(driver, "kill", lambda rid: kill_calls.append(rid))
+
+    driver.fetch(RUN_ID, kill_after_fetch=True)
+
+    assert kill_calls == [RUN_ID]
 
 
 def test_fetch_does_not_kill_when_kill_after_fetch_false(monkeypatch, tmp_path):
