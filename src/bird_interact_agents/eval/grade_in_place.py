@@ -63,6 +63,13 @@ def decode_result_json(payload: Any) -> Any:
     inline grader raises ``ValidationError`` (DEV-1533 regression). When
     the payload is already a list (legacy / pre-decoded callers) it's
     returned unchanged.
+
+    Any dict that does NOT carry a list-shaped ``sample_rows`` is treated
+    as an invalid snapshot and returns ``None`` — notably
+    ``capture_result_snapshot`` returns ``{"error": "..."}`` on runtime
+    failure (``agents/_submit.py:130, 173``), and the old fall-through
+    ``return payload`` for the dict path reproduced the exact
+    ValidationError this helper exists to prevent.
     """
     if payload is None:
         return None
@@ -71,7 +78,7 @@ def decode_result_json(payload: Any) -> Any:
             payload = json.loads(payload)
         except (TypeError, ValueError):
             return None
-    if isinstance(payload, dict) and "sample_rows" in payload:
+    if isinstance(payload, dict):
         sample = payload.get("sample_rows")
         return sample if isinstance(sample, list) else None
     return payload

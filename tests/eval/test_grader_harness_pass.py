@@ -428,6 +428,15 @@ def test_decode_result_json_normalises_snapshot_dict():
     assert decode_result_json("{not json") is None
     # Snapshot dict whose ``sample_rows`` is missing or wrong type → None.
     assert decode_result_json({"columns": [], "sample_rows": "oops"}) is None
+    # ``sample_rows`` key entirely absent (e.g. caller passed a
+    # ``row_count``-only summary dict) → None, not the dict.
+    assert decode_result_json({"columns": [], "row_count": 0}) is None
+    # ``capture_result_snapshot`` returns ``{"error": "..."}`` on SQL /
+    # runtime failure (``agents/_submit.py:130, 173``). Pre-fix this fell
+    # through as ``return payload`` and the inline grader raised
+    # ValidationError on the dict.
+    assert decode_result_json({"error": "QueryError: bad SQL"}) is None
+    assert decode_result_json(json.dumps({"error": "boom"})) is None
 
 
 def test_harness_pass_accepts_snapshot_dict_predicted_result(monkeypatch, tmp_path):
