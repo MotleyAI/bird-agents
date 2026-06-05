@@ -12,13 +12,18 @@ Object layout (see SPEC §6.4):
 from __future__ import annotations
 
 import json
+import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from google.api_core.exceptions import NotFound as _GcsNotFound
 
 from bird_interact_agents.cloud import config
+
+
+logger = logging.getLogger(__name__)
 
 
 BUCKET_NAME = config.BUCKET_NAME
@@ -238,6 +243,7 @@ def download_prefix(
     *,
     max_workers: int = 32,
     client=None,
+    skip_missing_blobs: bool = False,
 ) -> None:
     """Download every blob under `prefix` to `dest/<path-after-prefix>`.
 
@@ -247,6 +253,20 @@ def download_prefix(
     so a blob `runs/<id>/slayer_setup/slayer_otf_cache/<db>/x.yaml` downloaded
     with `prefix='runs/<id>/slayer_setup/slayer_otf_cache/'` lands at
     `dest/<db>/x.yaml`.
+
+    ``skip_missing_blobs`` (default ``False``): when True, ``NotFound``
+    (404) errors raised mid-download are logged and skipped instead of
+    propagating. Only the ``fetch``-from-live-run path needs this — the
+    cluster constantly rewrites hot blobs (``status.json``, heartbeat),
+    and the SDK pins the generation seen at ``list_blobs`` into the
+    download URL, so a concurrent write between listing and downloading
+    raises ``NotFound`` on the old generation. The swallow is
+    deliberately narrowed to ``NotFound``: transient network / auth /
+    5xx errors still propagate even when the flag is on, so the caller
+    doesn't tear down the cluster on a partial download. Strict callers
+    (slayer-setup, benchmark-data) leave the flag ``False`` so even
+    expected-missing blobs surface instead of silently landing a
+    partial cache.
     """
     client = client or default_gcs_client()
     bucket = client.bucket(BUCKET_NAME)
@@ -261,7 +281,21 @@ def download_prefix(
             return
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        data = blob.download_as_bytes()
+        try:
+            data = blob.download_as_bytes()
+        except _GcsNotFound as exc:
+            # Generation-pin 404: the blob was rewritten between
+            # ``list_blobs`` and the per-blob download. Only swallow this
+            # specific class — let auth / 5xx / network errors propagate
+            # so the caller doesn't tear down the cluster on a partial
+            # fetch (would lose the only copy of the missing data).
+            if not skip_missing_blobs:
+                raise
+            logger.warning(
+                "[download_prefix] skipping %s: %s: %s",
+                blob.name, type(exc).__name__, exc,
+            )
+            return
         target.write_bytes(data)
 
     blobs = list(bucket.list_blobs(prefix=prefix))
@@ -280,14 +314,19 @@ def concurrent_download_prefix(
     *,
     max_workers: int = 32,
     client=None,
+    skip_missing_blobs: bool = True,
 ) -> None:
     """Download every blob under `runs/<run_id>/` to `dest/<relative-path>`.
 
     Thin wrapper over `download_prefix` (one shared code path); the semantics
-    `fetch` needs.
+    `fetch` needs. ``skip_missing_blobs`` defaults to ``True`` because the
+    canonical caller (``driver.fetch``) races with a live cluster that's
+    constantly rewriting hot blobs — see ``download_prefix`` for the full
+    rationale.
     """
     download_prefix(
         f"runs/{run_id}/", dest, max_workers=max_workers, client=client,
+        skip_missing_blobs=skip_missing_blobs,
     )
 
 

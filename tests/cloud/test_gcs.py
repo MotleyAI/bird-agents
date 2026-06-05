@@ -355,6 +355,109 @@ def test_download_prefix_empty_is_noop(fake_gcs_bucket, tmp_path: Path) -> None:
     assert not dest.exists() or not any(dest.iterdir())
 
 
+def _fake_bucket_with_one_racing_blob(
+    racing_name: str,
+    *,
+    prefix_root: str = "runs/r",
+    racing_exc: Exception | None = None,
+):
+    """Helper: build an in-memory bucket where ``racing_name`` raises on
+    download but every other listed blob succeeds. ``racing_exc``
+    defaults to the SDK's ``google.api_core.exceptions.NotFound`` —
+    that's what the production code path actually raises when the
+    generation-pinned URL hits a rewritten blob; tests must mirror it
+    so the narrowed ``except NotFound`` is exercised."""
+    from types import SimpleNamespace
+
+    if racing_exc is None:
+        from google.api_core.exceptions import NotFound
+        racing_exc = NotFound("simulated 404 (object replaced)")
+
+    payloads = {
+        f"{prefix_root}/manifest.json": b"manifest\n",
+        racing_name: b"will race",
+        f"{prefix_root}/rows/db_a/attempt-1.json": b"row\n",
+    }
+
+    def _blob(name: str):
+        def _download():
+            if name == racing_name:
+                raise racing_exc
+            return payloads[name]
+
+        return SimpleNamespace(name=name, download_as_bytes=_download)
+
+    def _list_blobs(*, prefix: str = "", **_kw):
+        return [_blob(k) for k in sorted(payloads) if k.startswith(prefix)]
+
+    bucket = SimpleNamespace(blob=_blob, list_blobs=_list_blobs,
+                              name="motley-team-birdbench")
+    return SimpleNamespace(bucket=lambda _name: bucket)
+
+
+def test_download_prefix_skip_missing_blobs_true_keeps_going(tmp_path: Path) -> None:
+    """Regression test for the fetch-vs-live-cluster race: when
+    ``skip_missing_blobs=True`` is set (the canonical caller is
+    ``driver.fetch`` via ``concurrent_download_prefix``), one blob's
+    download raising must NOT crash the entire fetch — otherwise the
+    auto-kill step at the end of fetch never runs and the cluster leaks."""
+    client = _fake_bucket_with_one_racing_blob("runs/r/status.json")
+    dest = tmp_path / "out"
+    gcs.download_prefix("runs/r/", dest, client=client, skip_missing_blobs=True)
+    # Successful blobs still landed on disk.
+    assert (dest / "manifest.json").read_bytes() == b"manifest\n"
+    assert (dest / "rows" / "db_a" / "attempt-1.json").read_bytes() == b"row\n"
+    # The racing blob was skipped, not corruptly written.
+    assert not (dest / "status.json").exists()
+
+
+def test_download_prefix_default_propagates_failures(tmp_path: Path) -> None:
+    """Default ``skip_missing_blobs=False`` MUST propagate per-blob failures
+    so strict callers (slayer-setup at ``ray_app.py:303,361``, benchmark-data
+    at ``benchmark_data.py:181``) don't silently land a partial cache and
+    let the cluster proceed with bad inputs. The fetch-side tolerance is
+    opt-in only."""
+    from google.api_core.exceptions import NotFound
+
+    client = _fake_bucket_with_one_racing_blob("runs/r/status.json")
+    dest = tmp_path / "out"
+    with pytest.raises(NotFound):
+        gcs.download_prefix("runs/r/", dest, client=client)
+
+
+def test_download_prefix_skip_missing_propagates_non_notfound(tmp_path: Path) -> None:
+    """Regression for the Codex follow-up: even with ``skip_missing_blobs=True``,
+    non-``NotFound`` errors (transient network / 5xx / auth) MUST propagate.
+    Swallowing them would let ``driver.fetch`` log+ignore a transient failure
+    and then auto-kill the cluster — losing the only source of the missing
+    rows. The narrowed ``except NotFound`` keeps the race-tolerance scoped
+    to the actual race-class error."""
+    from google.api_core.exceptions import ServiceUnavailable
+
+    transient = ServiceUnavailable("simulated 503")
+    client = _fake_bucket_with_one_racing_blob(
+        "runs/r/status.json", racing_exc=transient,
+    )
+    dest = tmp_path / "out"
+    with pytest.raises(ServiceUnavailable):
+        gcs.download_prefix(
+            "runs/r/", dest, client=client, skip_missing_blobs=True,
+        )
+
+
+def test_concurrent_download_prefix_skips_by_default(tmp_path: Path) -> None:
+    """``concurrent_download_prefix`` is the fetch path — it must default
+    ``skip_missing_blobs=True`` so the documented race-tolerance is the
+    out-of-box behaviour for ``driver.fetch`` callers."""
+    client = _fake_bucket_with_one_racing_blob(
+        "runs/test-id/status.json", prefix_root="runs/test-id",
+    )
+    dest = tmp_path / "dl"
+    # No explicit skip flag — the wrapper's default must already be True.
+    gcs.concurrent_download_prefix("test-id", dest, client=client)
+    assert (dest / "manifest.json").read_bytes() == b"manifest\n"
+
+
 @pytest.mark.parametrize(
     "slayer_setup, framework, expected",
     [
