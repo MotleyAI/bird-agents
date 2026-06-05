@@ -48,6 +48,22 @@ from bird_interact_agents.eval.tolerant_grader import (
 )
 
 
+def decode_result_json(payload: Any) -> Any:
+    """Decode the JSON-string snapshots that the harness stores on the
+    result row (``predicted_result_json`` / ``gold_result_json``) back into
+    a list payload suitable for ``SubmissionAnnotation.predicted_result``
+    and ``.gold_result``. Returns ``None`` on missing/unparseable input —
+    the schema fields are optional, so callers tolerate ``None``."""
+    if payload is None:
+        return None
+    if not isinstance(payload, str):
+        return payload
+    try:
+        return json.loads(payload)
+    except (TypeError, ValueError):
+        return None
+
+
 _AUTO_ANNOTATOR = "auto-inline-grader"
 
 
@@ -322,6 +338,9 @@ def _write_harness_confirmed_annotation(
     n_ask_user_calls: Optional[int],
     predicted_row_count: Optional[int],
     user_sim_interaction: Optional[UserSimInteraction],
+    submitted_sql: Optional[str] = None,
+    predicted_result: Optional[List[Any]] = None,
+    gold_result: Optional[List[Any]] = None,
 ) -> Path:
     """Write an all-pass annotation without re-executing SQL.
 
@@ -385,6 +404,9 @@ def _write_harness_confirmed_annotation(
         ),
         decision_point=None,
         user_sim_interaction=user_sim_interaction or UserSimInteraction(),
+        submitted_sql=submitted_sql,
+        predicted_result=predicted_result,
+        gold_result=gold_result,
         original_gold_annotated_correct=original_gold_is_correct,
     )
     out_path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
@@ -700,6 +722,8 @@ def grade_one_submission(
     autopsy_result: Optional["AutopsyResult"] = None,
     attempt: int = 1,
     harness_passed: Optional[bool] = None,
+    predicted_result: Optional[List[Any]] = None,
+    gold_result: Optional[List[Any]] = None,
 ) -> Path:
     """Inline-grade one submission and write the per-row
     ``submission_annotation.json``. Idempotent at the per-(task, run)
@@ -753,6 +777,9 @@ def grade_one_submission(
             n_ask_user_calls=n_ask_user_calls,
             predicted_row_count=predicted_row_count,
             user_sim_interaction=user_sim_interaction,
+            submitted_sql=submitted_sql,
+            predicted_result=predicted_result,
+            gold_result=gold_result,
         )
 
     audited_rows = load_audited_gold_rows_for(

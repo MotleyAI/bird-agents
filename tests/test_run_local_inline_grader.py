@@ -927,3 +927,86 @@ async def test_autopsy_and_task_annotation_stripped_from_local_eval_json(
             f"_task_annotation leaked into eval.json result row for "
             f"{r.get('instance_id')}: {r.get('_task_annotation')!r}"
         )
+
+
+@pytest.mark.asyncio
+async def test_local_cascade_emission_failure_surfaces_on_metrics(
+    monkeypatch, tmp_path, caplog,
+):
+    """Codex (DEV-1533 third pass): when ``emit_cascading_eval_json``
+    raises during local-run finalization, the failure MUST land on the
+    metrics dict as ``cascading_phase1_error`` AND a warning log line so
+    the operator sees that the PR's primary metric block is missing.
+    Pre-fix the bare ``except: pass`` silently dropped the failure."""
+    import logging
+    import bird_interact_agents.paths as paths_mod
+    import bird_interact_agents.run as run_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+
+    rows = [
+        {"instance_id": "alien_1", "selected_database": "alien",
+         "sol_sql": ["SELECT 1"], "amb_user_query": "q1"},
+    ]
+    _patch_loader_returns(monkeypatch, rows)
+    monkeypatch.setattr(run_mod, "_maybe_force_wipe_otf", lambda **kw: None)
+    _stub_runner_factory(monkeypatch, {
+        "alien_1": {
+            "instance_id": "alien_1",
+            "database": "alien",
+            "phase1_passed": True,
+            "phase2_passed": False,
+            "total_reward": 1.0,
+            "submitted_sql": "SELECT 1",
+            "trajectory": [],
+            "usage": {"n_agent_turns": 1, "n_ask_user_calls": 0},
+        },
+    })
+
+    # Stub grader is a no-op — the test only cares about the post-loop
+    # emit call.
+    def _stub_grader(*, task_data, **kw):
+        out_dir = Path(kw["rows_dir"]) / task_data["instance_id"]
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / "submission_annotation.json"
+        path.write_text("{}")
+        return path
+
+    monkeypatch.setattr(run_mod, "grade_one_submission", _stub_grader)
+
+    # Force the cascade emission to blow up.
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom: simulated aggregation failure")
+
+    monkeypatch.setattr(run_mod, "emit_cascading_eval_json", _boom)
+
+    output_path = tmp_path / "eval.json"
+    with caplog.at_level(logging.WARNING, logger="bird_interact_agents.run"):
+        metrics = await run_mod.run_evaluation(
+            framework="claude_sdk_otf_ainteract",
+            query_mode="slayer",
+            mode="a-interact",
+            data_path="ignored",
+            data_dir=str(tmp_path / "ignored_data_dir"),
+            output_path=str(output_path),
+            concurrency=1,
+            limit=None,
+            agent_model="anthropic/claude-haiku-4-5-20251001",
+            strict=False,
+            prompt_cache=False,
+            max_depth=1,
+            slayer_storage_root=str(tmp_path / "slayer_models"),
+            slayer_setup="on-the-fly",
+            reasoning_effort=None,
+            use_audited_gold_sql=False,
+            dataset="mini-interact",
+            filter_ids=None,
+        )
+
+    assert metrics.get("cascading_phase1_error", "").startswith("boom"), (
+        f"cascading_phase1_error must be populated when the emission "
+        f"raises; got metrics keys={sorted(metrics)}"
+    )
+    assert any(
+        "cascading_phase1 aggregation failed" in rec.message
+        for rec in caplog.records
+    ), f"expected warning log; got {[r.message for r in caplog.records]}"

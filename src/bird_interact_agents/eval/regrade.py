@@ -41,7 +41,11 @@ from bird_interact_agents.eval.annotation_io import (
 )
 from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
-from bird_interact_agents.eval.grade_in_place import normalize_sol_sql
+from bird_interact_agents.eval.grade_in_place import (
+    decode_result_json,
+    load_task_annotation_or_implicit,
+    normalize_sol_sql,
+)
 
 
 class RegradeReport(BaseModel):
@@ -229,6 +233,21 @@ def regrade_run(
             .replace(microsecond=0)
             .isoformat()
         )
+        # DEV-1533: load the task annotation so the L1/L2 partition tier
+        # can be reconstructed from ``original_gold_is_correct``. The
+        # attempt JSON carries the raw result snapshots that the harness
+        # captured at run time — decode them back into list-shaped
+        # ``predicted_result`` / ``gold_result`` so the regrade preserves
+        # the data DEV-1533 stores alongside the cascade verdict.
+        task_annotation_for_orig = load_task_annotation_or_implicit(
+            instance_id=instance_id,
+            selected_database=selected_database,
+            benchmark=benchmark,
+            amb_user_query=attempt_data.get("amb_user_query", ""),
+        )
+        original_gold_is_correct = getattr(
+            task_annotation_for_orig, "original_gold_is_correct", None,
+        )
         ann = SubmissionAnnotation(
             instance_id=instance_id,
             selected_database=selected_database,
@@ -255,6 +274,14 @@ def regrade_run(
             user_sim_interaction=_user_sim_interaction_from_trajectory(
                 attempt_data.get("trajectory") or [],
             ),
+            submitted_sql=submitted_sql or None,
+            predicted_result=decode_result_json(
+                attempt_data.get("predicted_result_json"),
+            ),
+            gold_result=decode_result_json(
+                attempt_data.get("gold_result_json"),
+            ),
+            original_gold_annotated_correct=original_gold_is_correct,
         )
 
         # OVERWRITE the per-(instance, run) annotation in the golden store.

@@ -17,6 +17,7 @@ from bird_interact_agents import paths
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
 from bird_interact_agents.eval.grade_in_place import (
+    decode_result_json as _decode_result_json,
     grade_one_submission,
     write_failed_submission_annotation,
 )
@@ -1023,6 +1024,8 @@ async def run_evaluation(
                 task_annotation=r.get("_task_annotation"),
                 autopsy_result=r.get("_autopsy"),
                 harness_passed=r.get("phase1_passed") is True,
+                predicted_result=_decode_result_json(r.get("predicted_result_json")),
+                gold_result=_decode_result_json(r.get("gold_result_json")),
             )
         except Exception as exc:  # noqa: BLE001 — keep the loop alive
             logger.exception(
@@ -1146,8 +1149,13 @@ async def run_evaluation(
             _benchmark_canonical, run_id, Path(output_path),
             base_metrics=metrics, instance_filter=_current_iids,
         )
-    except Exception:  # noqa: BLE001
-        pass  # leave the already-written eval.json as-is
+    except Exception as exc:  # noqa: BLE001
+        # Mirror cloud/driver._emit_cascading_phase1_on_fetch: surface the
+        # failure on the metrics dict + log a warning instead of silently
+        # dropping it. Otherwise local runs ship an eval.json missing the
+        # PR's primary metric block with no operator signal.
+        logger.warning("cascading_phase1 aggregation failed: %s", exc)
+        metrics["cascading_phase1_error"] = str(exc)
 
     logger.info(
         "Done. Tasks: %d, P1: %d/%d (%.1f%%), Avg Reward: %.4f",

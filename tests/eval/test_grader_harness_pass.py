@@ -302,3 +302,46 @@ def test_harness_confirmed_counts_in_cascade_report(monkeypatch, tmp_path):
     block = aggregate_cascading_phase1("mini-interact", "r1")
     assert block["counts"]["n1"] == 1
     assert block["rates"]["n1"] == pytest.approx(1.0)
+
+
+def test_harness_pass_preserves_dev1533_run_result_fields(monkeypatch, tmp_path):
+    """DEV-1533: ``submitted_sql``, ``predicted_result`` and ``gold_result``
+    must land on the harness-confirmed annotation. Without this, every
+    passing row in a run with audited gold loses the run data the PR was
+    created to preserve."""
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+
+    from bird_interact_agents.eval.grade_in_place import grade_one_submission
+    from bird_interact_agents.eval.implicit_annotation import implicit_task_annotation
+
+    task_data = {
+        "instance_id": "alien_1",
+        "selected_database": "alien",
+        "sol_sql": ["SELECT gold"],
+        "amb_user_query": "q1",
+    }
+    rows_dir = tmp_path / "rows"
+
+    predicted_payload = [[1, "a"], [2, "b"]]
+    gold_payload = [[1, "a"], [2, "b"]]
+
+    out = grade_one_submission(
+        task_data=task_data,
+        submitted_sql="SELECT a, b FROM t",
+        rows_dir=rows_dir,
+        run_id="r1",
+        benchmark="mini-interact",
+        db_path=Path("/nonexistent/db.sqlite"),
+        task_annotation=implicit_task_annotation(
+            instance_id="alien_1", selected_database="alien",
+            benchmark="mini-interact", amb_user_query="q1",
+        ),
+        harness_passed=True,
+        predicted_result=predicted_payload,
+        gold_result=gold_payload,
+    )
+    ann = json.loads(out.read_text())
+    assert ann["submitted_sql"] == "SELECT a, b FROM t"
+    assert ann["predicted_result"] == predicted_payload
+    assert ann["gold_result"] == gold_payload

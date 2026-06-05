@@ -32,6 +32,7 @@ from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
 from bird_interact_agents.cloud import upload_back as _upload_back
 from bird_interact_agents.eval.grade_in_place import (
+    decode_result_json as _decode_result_json,
     grade_and_write,
     grade_one_submission,
     load_audited_gold_rows_for as _load_audited_gold_rows_for,
@@ -746,6 +747,8 @@ def _run_one_in_actor(
             autopsy_result=row.get("_autopsy"),
             attempt=attempt,
             harness_passed=row.get("phase1_passed") is True,
+            predicted_result=_decode_result_json(row.get("predicted_result_json")),
+            gold_result=_decode_result_json(row.get("gold_result_json")),
         )
         _gcs.write_submission_annotation(
             run_id, iid, json.loads(ann_path.read_text()),

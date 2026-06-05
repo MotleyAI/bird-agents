@@ -193,6 +193,88 @@ def test_regrade_writes_eval_regraded_not_eval_json(tmp_path, monkeypatch):
     assert json.loads(eval_json.read_text())["phase1_count"] == 999
 
 
+def test_regrade_preserves_dev1533_run_result_fields(tmp_path, monkeypatch):
+    """DEV-1533: regrade must populate ``submitted_sql``,
+    ``predicted_result``, ``gold_result`` AND
+    ``original_gold_annotated_correct`` on the rewritten annotation.
+    Pre-fix the regrade-built annotation omitted all four, so OVERWRITING
+    the runs/ store erased the data that DEV-1533 was created to keep
+    (and flipped the L1/L2 partition tier signal to None)."""
+    from bird_interact_agents import paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+
+    run_dir = tmp_path / "results" / "cloud" / "r1"
+    # Hand-craft the attempt so it carries the same run-data fields the
+    # harness writes at run time.
+    d = run_dir / "rows" / "alien_1"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "attempt-1.json").write_text(json.dumps({
+        "instance_id": "alien_1",
+        "selected_database": "alien",
+        "submitted_sql": "SELECT agent_sql",
+        "trajectory": [],
+        "usage": {"cost_usd_agent": 0.0, "cost_usd_user_sim": 0.0,
+                  "n_agent_turns": 0, "n_ask_user_calls": 0},
+        "duration_s": 0.0,
+        "predicted_row_count": 2,
+        "sol_sql": ["SELECT gold"],
+        "original_sol_sql": ["SELECT gold"],
+        "predicted_result_json": json.dumps([[1, "x"], [2, "y"]]),
+        "gold_result_json": json.dumps([[1, "x"], [2, "y"]]),
+    }))
+
+    # Pre-populate a task annotation marking the original gold as wrong;
+    # the regrade MUST surface that on
+    # ``original_gold_annotated_correct`` so the cascade's L1/L2
+    # partition tier comes out right.
+    from bird_interact_agents.eval.implicit_annotation import (
+        implicit_task_annotation,
+    )
+    ta = implicit_task_annotation(
+        instance_id="alien_1", selected_database="alien",
+        benchmark="mini-interact", amb_user_query="q",
+    )
+    ta = ta.model_copy(update={"original_gold_is_correct": False})
+    task_dir = tmp_path / "annotations" / "mini-interact" / "alien"
+    task_dir.mkdir(parents=True)
+    (task_dir / "alien_1.task.json").write_text(
+        ta.model_dump_json(indent=2, exclude_none=False) + "\n"
+    )
+
+    class StubGrader:
+        def __call__(self, **kw):
+            from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
+            return CascadeVerdict(
+                n1_original_gold=True, n2_audited_primary=True,
+                n3_any_audited_variant=True, n4_tie_order=True,
+                n5_llm_judge=True, n6_numeric_epsilon=True,
+                n7_trailing_whitespace=True, n8_column_order=True,
+                n9_case_fold=True,
+                matched_variant_id="primary",
+                novel_reading_judgment=None,
+                variant_matches=[], rowset_relations=[],
+            )
+
+    from bird_interact_agents.eval.regrade import regrade_run
+
+    regrade_run(
+        run_id="r1", benchmark="mini-interact", run_dir=run_dir,
+        instance_ids=None,
+        grader=StubGrader(), repo_root=tmp_path,
+    )
+
+    written = tmp_path / "runs" / "mini-interact" / "alien" / "alien_1" / "r1.json"
+    assert written.exists()
+    body = json.loads(written.read_text())
+    assert body["submitted_sql"] == "SELECT agent_sql"
+    assert body["predicted_result"] == [[1, "x"], [2, "y"]]
+    assert body["gold_result"] == [[1, "x"], [2, "y"]]
+    assert body["original_gold_annotated_correct"] is False, (
+        "regrade must read original_gold_is_correct from the task "
+        "annotation; got %r" % body.get("original_gold_annotated_correct")
+    )
+
+
 def test_regrade_with_explicit_repo_root_aggregates_from_that_root(
     tmp_path, monkeypatch,
 ):
