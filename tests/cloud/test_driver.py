@@ -185,6 +185,64 @@ def test_wait_until_done_detects_stall(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "resubmit" in result.hint.lower()
 
 
+def test_wait_until_done_skips_stall_when_heartbeat_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: before the in-job HeartbeatWriter has written its first
+    row, status.last_heartbeat_ts is None (intentional — see driver.submit/
+    annotate). The heartbeat-stall check must NOT fire in that window, even
+    after lots of wall time elapses. The no-progress deadline is still the
+    backstop. Originally bitten by livesqlbench-large (1.2 GB pg_dumps load
+    on workers) where the driver pre-stamped time.time() and stalled the
+    watcher at the 5-min threshold before any real heartbeat arrived."""
+    mocks = _patch_collaborators(monkeypatch)
+    now = [1_000_000.0]
+    # last_heartbeat_ts intentionally None (matches driver.submit/annotate).
+    mocks["gcs"].read_status.return_value = {
+        "ray_job_id": "raysubmit_abc",
+        "last_heartbeat_ts": None,
+        "rows_done": 0,
+        "rows_total": 5,
+        "terminal_state": None,
+    }
+    # One row lands between polls so the no-progress deadline keeps resetting
+    # (we want to prove the stall check is skipped, not the no-progress one).
+    rows = [
+        {},
+        {"db_a_1": [1]},
+        {"db_a_1": [1], "db_a_2": [1]},
+        {"db_a_1": [1], "db_a_2": [1], "db_a_3": [1]},
+        {"db_a_1": [1], "db_a_2": [1], "db_a_3": [1], "db_a_4": [1]},
+        {"db_a_1": [1], "db_a_2": [1], "db_a_3": [1], "db_a_4": [1], "db_a_5": [1]},
+    ]
+    idx = {"n": 0}
+
+    def fake_list_attempts(_rid):
+        v = rows[min(idx["n"], len(rows) - 1)]
+        idx["n"] += 1
+        return v
+
+    mocks["gcs"].list_attempts.side_effect = fake_list_attempts
+    mocks["cluster"].head_is_alive.return_value = True
+    # Advance clock far past HEARTBEAT_STALL_SECONDS (300s) on each poll —
+    # the only thing keeping this run alive is `last is None` skipping the
+    # stall check.
+    monkeypatch.setattr(driver.time, "time", lambda: now[0])
+
+    def fake_sleep(_s):
+        now[0] += 600.0  # 10 min per poll, > HEARTBEAT_STALL_SECONDS
+
+    monkeypatch.setattr(driver.time, "sleep", fake_sleep)
+
+    manifest = {
+        "run_id": RUN_ID,
+        "instance_ids": ["db_a_1", "db_a_2", "db_a_3", "db_a_4", "db_a_5"],
+    }
+    result = driver.wait_until_done(RUN_ID, manifest, poll_interval_s=0.001)
+    assert result.terminal_state == "done"
+    assert result.hint == ""
+
+
 def test_wait_until_done_no_progress_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
     """A fresh heartbeat with terminal_state=None forever AND zero rows (e.g.
     workers never autoscale, actor sits PENDING) must NOT poll until the VM

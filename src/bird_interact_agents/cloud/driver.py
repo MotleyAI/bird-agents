@@ -666,9 +666,14 @@ def submit(args) -> str:
             yaml_path=yaml_path,
         )
         submit_succeeded = True
+        # last_heartbeat_ts is left None: the first real heartbeat is written
+        # by the in-job HeartbeatWriter after download_benchmark_data returns.
+        # Pre-stamping time.time() here would falsely trip the
+        # HEARTBEAT_STALL_SECONDS check on benchmarks whose data-load is
+        # legitimately long (e.g. livesqlbench-large's 1.2 GB pg_dumps).
         gcs.write_status(run_id, {
             "ray_job_id": ray_job_id,
-            "last_heartbeat_ts": time.time(),
+            "last_heartbeat_ts": None,
             "rows_done": 0,
             "rows_total": len(args.instance_ids),
             "terminal_state": None,
@@ -841,9 +846,13 @@ def submit_annotator(args) -> str:
             ray_app_path=_ANNOTATOR_RAY_APP_PATH,
         )
         submit_succeeded = True
+        # See note in `submit`: last_heartbeat_ts stays None until the in-job
+        # HeartbeatWriter starts. Otherwise long data-load benchmarks
+        # (livesqlbench-large = 1.2 GB pg_dumps) trip the stall check before
+        # the first real heartbeat is written.
         gcs.write_status(run_id, {
             "ray_job_id": ray_job_id,
-            "last_heartbeat_ts": time.time(),
+            "last_heartbeat_ts": None,
             "rows_done": 0,
             "rows_total": len(args.instance_ids),
             "terminal_state": None,
