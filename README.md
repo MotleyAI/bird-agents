@@ -226,15 +226,23 @@ For larger `--actors-per-worker` values:
 For multi-worker runs (`--workers N`), every worker gets its own VM at this
 size — so 3 workers × 10 actors each = 3 × `e2-standard-8`.
 
-> **⚠️ PostgreSQL benchmarks: bigger VMs (sizing under investigation).**
-> For `livesqlbench-base-full`, `livesqlbench-large`, `bird-interact-full`,
-> etc. each worker VM runs ONE bundled PostgreSQL server (shared across all
-> actors on that VM) loading all 18–22 benchmark databases at startup —
-> 1–3 GB per worker, not per actor.  `e2-standard-4` (16 GB) is too small
-> when several Opus actors share the VM; the empirical recommendation is
-> `e2-standard-8` (32 GB) for runs of 10–20 households-style tasks.
-> Per-actor packing density on each tier hasn't been characterised yet —
-> err on the side of bigger VMs until we have repro data.
+> **⚠️ PostgreSQL benchmarks: step the VM size up one tier vs SQLite.**
+> Each worker VM runs ONE bundled PostgreSQL server shared across all
+> actors on that VM (loading 18–22 benchmark databases at startup), so the
+> 1–3 GB postgres overhead is per-worker not per-actor.  Confirmed working
+> for the annotator: `--workers 1 --actors-per-worker 10 --worker-type
+> e2-standard-8` (all 10 households tasks annotated cleanly, no OOMs).
+> e2-standard-4 (16 GB) is too small for ≥10 concurrent Opus actors with
+> postgres.  Use the **PostgreSQL** column below:
+>
+> | `--actors-per-worker` | SQLite | PostgreSQL |
+> |----------------------:|--------|------------|
+> | ≤ 4                   | `e2-standard-4`  | `e2-standard-8`  |
+> | 5–10                  | `e2-standard-8`  | `e2-standard-8`  |
+> | 11–20                 | `e2-standard-16` | `e2-standard-16` |
+>
+> (Postgres = SQLite tier + the constant per-worker postgres overhead.
+> Tiers ≥ e2-standard-8 absorb that overhead without stepping up further.)
 
 ### Fetching results
 
