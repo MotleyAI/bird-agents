@@ -7,6 +7,7 @@ import asyncio
 import datetime
 import json
 import logging
+import os
 import secrets
 import signal
 import sys
@@ -81,6 +82,27 @@ def submitter_repo_root() -> Path:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+_PG_FORWARD_VARS = (
+    "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+    "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
+)
+
+
+def _maybe_forward_pg_vars(result: dict, dataset: str) -> None:
+    """Copy BIRD_PG_* env vars into ``result`` for non-postgres benchmarks.
+
+    Postgres benchmarks start a bundled local server on the worker —
+    forwarding external BIRD_PG_* vars would override localhost with an
+    unreachable external address.
+    """
+    if _is_postgres_benchmark(dataset):
+        return
+    for pg_var in _PG_FORWARD_VARS:
+        val = os.environ.get(pg_var)
+        if val:
+            result[pg_var] = val
 
 
 def _is_postgres_benchmark(dataset: str) -> bool:
@@ -178,17 +200,7 @@ def read_api_keys_from_local_env(
                 f"missing API key env vars for job submission: {missing_local_sorted}",
                 remediation=cmds,
             )
-        # Forward postgres connection vars only for non-postgres benchmarks.
-        # Postgres benchmarks start a bundled local server on the worker —
-        # forwarding external BIRD_PG_* vars would override localhost.
-        if not _is_postgres_benchmark(dataset):
-            for pg_var in (
-                "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
-                "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
-            ):
-                val = os.environ.get(pg_var)
-                if val:
-                    result[pg_var] = val
+        _maybe_forward_pg_vars(result, dataset)
         return result
 
     needed: set[str] = set()
@@ -209,17 +221,7 @@ def read_api_keys_from_local_env(
             remediation=cmds,
         )
     result = {k: os.environ[k] for k in needed}
-    # Forward postgres connection vars only for non-postgres benchmarks.
-    # Postgres benchmarks start a bundled local server on the worker —
-    # forwarding external BIRD_PG_* vars would override localhost.
-    if not _is_postgres_benchmark(dataset):
-        for pg_var in (
-            "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
-            "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
-        ):
-            val = os.environ.get(pg_var)
-            if val:
-                result[pg_var] = val
+    _maybe_forward_pg_vars(result, dataset)
     return result
 
 
@@ -828,6 +830,7 @@ def submit_annotator(args) -> str:
             args.agent_model, "", query_mode="raw",
             framework="annotator",
             no_subscription_auth=getattr(args, "no_subscription_auth", False),
+            dataset=getattr(args, "dataset", None) or getattr(args, "benchmark", ""),
         )
         job_args = _build_annotator_job_args(
             args, run_id, benchmark_data_prefix=benchmark_data_prefix,
@@ -956,11 +959,12 @@ def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
     )
     metrics["annotation_merge_report"] = annotation_merge.model_dump()
 
-    metrics = _emit_cascading_phase1_on_fetch(
-        dest=dest, metrics=metrics,
-        benchmark=_benchmark_for_dataset(manifest.get("dataset")),
-        run_id=run_id,
-    )
+    if manifest.get("framework") != "annotator":
+        metrics = _emit_cascading_phase1_on_fetch(
+            dest=dest, metrics=metrics,
+            benchmark=_benchmark_for_dataset(manifest.get("dataset")),
+            run_id=run_id,
+        )
 
     # DEV-1518: for annotator runs, merge per-task annotation + gold variant
     # files from the downloaded rows into local stable storage.
@@ -1135,6 +1139,7 @@ def resubmit(run_id: str) -> None:
                 manifest["agent_model"], "",
                 query_mode="raw", framework="annotator",
                 no_subscription_auth=_no_subscription_auth,
+                dataset=manifest.get("dataset", manifest.get("benchmark", "")),
             )
             job_args = _build_annotator_resubmit_args(manifest, run_id, missing, next_attempt)
             cluster.submit_job(

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -119,18 +120,48 @@ def _pg_version() -> str:
 
 
 _PG_INIT_LOCK = Path("/tmp/pg_init.lock")
-_PG_LOADED_MARKER = Path("/tmp/pg_loaded.marker")
 _SAFE_DB_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
-def _ensure_postgres_loaded(data_dir: Path) -> None:
+def _pg_dir_tag(data_dir: Path, content_tag: "str | None" = None) -> str:
+    """Short stable identifier scoping markers by both data_dir AND the
+    benchmark-data content (when supplied).
+
+    ``content_tag`` is typically the benchmark-data GCS prefix (which is itself
+    a content hash). Including it ensures that if the same ``data_dir`` is
+    repopulated with a different content version on the same node, the
+    postgres load runs again instead of skipping with stale databases."""
+    key = f"{data_dir}|{content_tag or ''}"
+    return hashlib.sha1(key.encode()).hexdigest()[:8]
+
+
+def _pg_loaded_marker(data_dir: Path, content_tag: "str | None" = None) -> Path:
+    return Path(f"/tmp/pg_loaded_{_pg_dir_tag(data_dir, content_tag)}.marker")
+
+
+def _pg_db_marker(
+    db: str, data_dir: Path, content_tag: "str | None" = None,
+) -> Path:
+    return Path(
+        f"/tmp/pg_db_loaded_{_pg_dir_tag(data_dir, content_tag)}_{db}.marker"
+    )
+
+
+def _ensure_postgres_loaded(
+    data_dir: Path, content_tag: "str | None" = None,
+) -> None:
     """Start a local PostgreSQL server and load benchmark databases.
 
     Database dumps are expected at ``data_dir/pg_dumps/<db>/<db>.sql``
     (one SQL file per database, produced by ``pg_dump``).
 
+    ``content_tag`` (typically the benchmark-data GCS prefix) is folded into
+    the marker name so a content refresh on the same data_dir triggers a
+    reload instead of being skipped via a stale marker.
+
     Idempotent: a node-level lock serialises concurrent actors; a marker
-    file prevents re-loading on second actor init within the same node."""
+    file prevents re-loading on second actor init within the same node.
+    Per-DB markers allow safe retry when psql fails mid-dump."""
     pg_dumps_dir = data_dir / "pg_dumps"
     if not pg_dumps_dir.is_dir():
         raise RuntimeError(
@@ -138,9 +169,10 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
             "Download SQL dumps with scripts/download_pg_dumps.py first."
         )
 
+    loaded_marker = _pg_loaded_marker(data_dir, content_tag)
     with open(_PG_INIT_LOCK, "w") as _lf:
         fcntl.flock(_lf, fcntl.LOCK_EX)
-        if _PG_LOADED_MARKER.exists():
+        if loaded_marker.exists():
             return
 
         pg_ver = _pg_version()
@@ -155,14 +187,14 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
         pg_pass = os.environ.get("BIRD_PG_PASSWORD", "bird_interact")
         if not _SAFE_DB_NAME.match(pg_user):
             raise RuntimeError(
-                f"Unsafe BIRD_PG_USER {pg_user!r}; must match ^[a-zA-Z_][a-zA-Z0-9_]*$"
+                f"Unsafe BIRD_PG_USER {pg_user!r}: must match [A-Za-z_][A-Za-z0-9_]*"
             )
-        pg_pass_escaped = pg_pass.replace("'", "''")
+        pg_pass_sql = pg_pass.replace("'", "''")  # SQL-escape single quotes
         subprocess.run(
             ["runuser", "-u", "postgres", "--", "psql", "-c",
              f"DO $$ BEGIN "
              f"IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{pg_user}') "
-             f"THEN CREATE ROLE {pg_user} LOGIN SUPERUSER PASSWORD '{pg_pass_escaped}'; "
+             f"THEN CREATE ROLE {pg_user} LOGIN SUPERUSER PASSWORD '{pg_pass_sql}'; "
              f"END IF; END $$;"],
             check=True,
             capture_output=True,
@@ -178,9 +210,18 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
                     "DB names must start with a letter or underscore and contain "
                     "only letters, digits, and underscores."
                 )
+            # Skip databases that completed successfully in a prior attempt.
+            if _pg_db_marker(db, data_dir, content_tag).exists():
+                continue
+            # Drop any partial load from a prior failed attempt before retrying.
+            subprocess.run(
+                ["runuser", "-u", "postgres", "--", "dropdb", "--if-exists", db],
+                check=True,
+                capture_output=True,
+            )
             subprocess.run(
                 ["runuser", "-u", "postgres", "--", "createdb", db],
-                check=False,  # already exists on retry → non-zero, that's fine
+                check=True,
                 capture_output=True,
             )
             for sql_file in sorted(db_dir.glob("*.sql")):
@@ -189,8 +230,9 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
                      "psql", "-d", db, "-f", str(sql_file)],
                     check=True,
                 )
+            _pg_db_marker(db, data_dir, content_tag).touch()
 
-        _PG_LOADED_MARKER.touch()
+        loaded_marker.touch()
 
 
 def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
@@ -217,7 +259,7 @@ def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     os.environ["BIRD_BENCHMARKS_ROOT"] = str(dest.parent)
     os.environ["BIRD_GATED_GOLD_ROOT"] = str(dest / _benchmark_data.GATED_GOLD_SUBDIR)
     if getattr(b, "db_backend", "sqlite") == "postgres":
-        _ensure_postgres_loaded(dest)
+        _ensure_postgres_loaded(dest, content_tag=prefix)
 
 
 def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:

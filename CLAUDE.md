@@ -123,6 +123,14 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   pass that to the `ray exec` inspection commands below. Use
   `uv run bird-interact-cloud list` / `fetch <run-id>` / `kill <run-id>` /
   `resubmit <run-id>` for the rest of the lifecycle.
+- **Postgres benchmarks (livesqlbench-base-lite, livesqlbench-base-full,
+  livesqlbench-large, bird-interact-lite-exp, bird-interact-full)**: at worker
+  startup `_ensure_postgres_loaded` starts ONE PostgreSQL instance per VM
+  (shared by all actors via `/tmp/pg_init.lock` + the per-data_dir marker)
+  and loads all databases from `pg_dumps/`. This adds 1–3 GB of RAM overhead
+  per worker, not per actor. e2-standard-4 (16 GB) is too small with
+  concurrent Opus actors + postgres; use e2-standard-8 (32 GB) for runs of
+  10–20 tasks until per-actor density on each tier is characterised.
 
 ## Waiting on a cloud run to finish — use `driver.wait_until_done`, never bash
 

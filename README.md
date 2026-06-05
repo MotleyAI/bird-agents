@@ -127,6 +127,16 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --worker-type e2-standard-4 --max-runtime-hours 3 --detach
 ```
 
+> **⚠️ PostgreSQL benchmarks need bigger VMs.**
+> `livesqlbench-base-lite`, `livesqlbench-base-full`, `livesqlbench-large`,
+> `bird-interact-lite-exp`, and `bird-interact-full` start ONE bundled
+> PostgreSQL server per worker VM (shared by all actors on that VM) that
+> loads 18–22 benchmark databases at startup — 1–3 GB of RAM overhead per
+> worker, not per actor.  `e2-standard-4` (16 GB) OOMs with concurrent Opus
+> actors + postgres.  Recommended: `e2-standard-8` (32 GB) for runs of
+> 10–20 tasks; per-actor packing density on each tier is still under
+> investigation.
+
 #### `claude_sdk` — mini-interact / a-interact
 
 For mini-interact a-interact, pass `--dataset mini-interact --mode a-interact`.
@@ -165,6 +175,10 @@ sizing rule above). With the default 1×1 a 53-task batch serialises
 through one actor and takes ~5 hours; at 1×4 it finishes in ~80 minutes
 for the same per-task wallclock and identical cluster cost.
 
+> **⚠️ mini-interact is SQLite-backed and fine on `e2-standard-4` × 4 actors.
+> For postgres-backed a-interact (`bird-interact-lite-exp`, `bird-interact-full`)
+> use `e2-standard-8` × 1 actor per the sizing rule above.**
+
 ## Annotator Agent (DEV-1518)
 
 The annotator agent audits benchmark tasks and produces `TaskAnnotation` records
@@ -179,14 +193,16 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud annotate \
   --agent-model anthropic/claude-opus-4-7 \
   --effort high \
   --instance-ids households_1,households_2,households_3 \
-  --workers 1 --actors-per-worker 3 \
+  --workers 3 --actors-per-worker 1 \
   --worker-type e2-standard-4 --max-runtime-hours 1 \
   --no-subscription-auth \
   --override --detach
 ```
 
-`--override` re-annotates even when stable blobs already exist in GCS.
-Omit it on production runs to skip already-annotated tasks.
+**Always pass `--override`** unless you have a specific reason not to — it
+re-annotates even when stable blobs already exist in GCS and is the safe
+default. Omit it only when explicitly resuming a partial run and you want
+to skip already-completed tasks.
 
 `--effort` controls the annotator's reasoning depth: `low / medium / high`
 (default `high`). Downgrade to `medium` for bulk sweeps where speed matters
@@ -195,10 +211,10 @@ more than thoroughness; `low` only for cheap triage passes.
 `--no-subscription-auth` forces API-key auth (reads `ANTHROPIC_API_KEY`).
 Omit if you authenticate via OAuth / Claude.ai subscription.
 
-**Instance sizing:** each actor handles one task end-to-end (Opus only, no
-user-sim), so workloads are mostly network-bound. `e2-standard-4` (4 vCPU /
-16 GB) comfortably runs 4 concurrent Opus actors. For larger
-`--actors-per-worker` values:
+**Instance sizing (SQLite benchmarks):** each actor handles one task
+end-to-end (Opus only, no user-sim), so workloads are mostly network-bound.
+`e2-standard-4` (4 vCPU / 16 GB) comfortably runs 4 concurrent Opus actors.
+For larger `--actors-per-worker` values:
 
 | `--actors-per-worker` | recommended `--worker-type` |
 |----------------------:|-----------------------------|
@@ -209,6 +225,24 @@ user-sim), so workloads are mostly network-bound. `e2-standard-4` (4 vCPU /
 
 For multi-worker runs (`--workers N`), every worker gets its own VM at this
 size — so 3 workers × 10 actors each = 3 × `e2-standard-8`.
+
+> **⚠️ PostgreSQL benchmarks: step the VM size up one tier vs SQLite.**
+> Each worker VM runs ONE bundled PostgreSQL server shared across all
+> actors on that VM (loading 18–22 benchmark databases at startup), so the
+> 1–3 GB postgres overhead is per-worker not per-actor.  Confirmed working
+> for the annotator: `--workers 1 --actors-per-worker 10 --worker-type
+> e2-standard-8` (all 10 households tasks annotated cleanly, no OOMs).
+> e2-standard-4 (16 GB) is too small for ≥10 concurrent Opus actors with
+> postgres.  Use the **PostgreSQL** column below:
+>
+> | `--actors-per-worker` | SQLite | PostgreSQL |
+> |----------------------:|--------|------------|
+> | ≤ 4                   | `e2-standard-4`  | `e2-standard-8`  |
+> | 5–10                  | `e2-standard-8`  | `e2-standard-8`  |
+> | 11–20                 | `e2-standard-16` | `e2-standard-16` |
+>
+> (Postgres = SQLite tier + the constant per-worker postgres overhead.
+> Tiers ≥ e2-standard-8 absorb that overhead without stepping up further.)
 
 ### Fetching results
 

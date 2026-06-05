@@ -672,8 +672,16 @@ def merge_audited_gold_variants(
     consolidated = audited_gold_root / bm / f"{bm}_audited.jsonl"
 
     def _read_consolidated() -> dict[str, str]:
-        """Return existing rows as {instance_id: raw_json_line}."""
+        """Return existing rows as {instance_id: grouped_row_json}.
+
+        Handles both the current grouped format (``variants`` key present,
+        one object per instance_id) and the legacy flat format (one object
+        per variant, multiple rows per instance_id).  Legacy rows are
+        grouped via ``AuditedGoldRow.from_flat_rows`` so that all variants
+        survive a partial override rerun."""
         out: dict[str, str] = {}
+        flat_by_iid: dict[str, list[dict]] = {}
+        flat_order: list[str] = []
         if not consolidated.exists():
             return out
         for raw in consolidated.read_text().splitlines():
@@ -682,11 +690,35 @@ def merge_audited_gold_variants(
                 continue
             try:
                 d = json.loads(raw)
-                iid = d.get("instance_id") or d.get("variants", [{}])[0].get("instance_id", "")  # type: ignore[index]
+                if not isinstance(d, dict):
+                    continue
+                if "variants" in d:
+                    row = AuditedGoldRow.model_validate(d)
+                    out[row.instance_id] = row.model_dump_json()
+                    continue
+                iid = d.get("instance_id", "")
             except Exception:
                 continue
             if iid:
-                out[iid] = raw
+                if iid not in flat_by_iid:
+                    flat_order.append(iid)
+                flat_by_iid.setdefault(iid, []).append(d)
+        for iid in flat_order:
+            if iid in out:
+                continue
+            try:
+                out[iid] = AuditedGoldRow.from_flat_rows(flat_by_iid[iid]).model_dump_json()
+            except Exception as e:  # noqa: BLE001
+                # Surface the drop in the merge report so a partial-override
+                # rerun against a legacy file with unrecoverable / malformed
+                # rows doesn't silently lose those tasks (override=True
+                # rewrites the consolidated file from this map).
+                report.errors += 1
+                report.error_details.append(
+                    f"{consolidated}: legacy flat row(s) for {iid} dropped "
+                    f"during migration to grouped format: {e}"
+                )
+                continue
         return out
 
     def _read_incoming_rows(src: Path) -> "list[AuditedGoldRow]":
