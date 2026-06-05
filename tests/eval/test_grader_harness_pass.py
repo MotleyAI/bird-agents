@@ -399,3 +399,84 @@ def test_harness_pass_preserves_dev1533_run_result_fields(monkeypatch, tmp_path)
     assert ann["submitted_sql"] == "SELECT a, b FROM t"
     assert ann["predicted_result"] == predicted_payload
     assert ann["gold_result"] == gold_payload
+
+
+def test_decode_result_json_normalises_snapshot_dict():
+    """DEV-1533 regression: ``predicted_result_json`` on the result row is
+    the ``capture_result_snapshot`` shape — a dict with ``sample_rows`` —
+    not a flat list. ``decode_result_json`` MUST extract ``sample_rows``
+    so the ``Optional[List[Any]]`` schema slot accepts it. Pre-fix the
+    decoded dict reached Pydantic and the inline grader raised
+    ``ValidationError`` (7 of the cloud-run tasks failed this way)."""
+    from bird_interact_agents.eval.grade_in_place import decode_result_json
+
+    snapshot = {
+        "columns": [{"name": "a", "type": "int"}, {"name": "b", "type": "str"}],
+        "row_count": 2,
+        "row_count_truncated": False,
+        "sample_rows": [[1, "x"], [2, "y"]],
+    }
+
+    # JSON-string of the snapshot dict (the on-wire shape).
+    assert decode_result_json(json.dumps(snapshot)) == [[1, "x"], [2, "y"]]
+    # Already-decoded dict (defensive against pre-decoded callers).
+    assert decode_result_json(snapshot) == [[1, "x"], [2, "y"]]
+    # JSON-string of a bare list (legacy / hand-crafted callers).
+    assert decode_result_json(json.dumps([[1, "x"]])) == [[1, "x"]]
+    # Missing / unparseable.
+    assert decode_result_json(None) is None
+    assert decode_result_json("{not json") is None
+    # Snapshot dict whose ``sample_rows`` is missing or wrong type → None.
+    assert decode_result_json({"columns": [], "sample_rows": "oops"}) is None
+
+
+def test_harness_pass_accepts_snapshot_dict_predicted_result(monkeypatch, tmp_path):
+    """End-to-end DEV-1533 regression: passing the ``capture_result_snapshot``
+    dict shape (the actual on-wire shape from cloud + local) through
+    ``grade_one_submission(predicted_result=..., gold_result=...)`` MUST
+    NOT raise. Pre-fix Pydantic rejected the dict at SubmissionAnnotation
+    construction, the inline grader raised, and the task surfaced as
+    ``verdict=eval_failed`` with no real cascade verdict."""
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+
+    from bird_interact_agents.eval.grade_in_place import (
+        decode_result_json, grade_one_submission,
+    )
+    from bird_interact_agents.eval.implicit_annotation import implicit_task_annotation
+
+    snapshot = {
+        "columns": [{"name": "x", "type": "int"}],
+        "row_count": 3,
+        "row_count_truncated": False,
+        "sample_rows": [[1], [2], [3]],
+    }
+
+    rows_dir = tmp_path / "rows"
+    out = grade_one_submission(
+        task_data={
+            "instance_id": "alien_1",
+            "selected_database": "alien",
+            "sol_sql": ["SELECT gold"],
+            "amb_user_query": "q",
+        },
+        submitted_sql="SELECT x FROM t",
+        rows_dir=rows_dir,
+        run_id="r1",
+        benchmark="mini-interact",
+        db_path=Path("/nonexistent/db.sqlite"),
+        task_annotation=implicit_task_annotation(
+            instance_id="alien_1", selected_database="alien",
+            benchmark="mini-interact", amb_user_query="q",
+        ),
+        harness_passed=True,
+        # Callers (run.py + ray_app.py) pipe the raw row through
+        # ``decode_result_json`` — exercise the same code path here so a
+        # future short-circuit can't quietly skip the normalisation.
+        predicted_result=decode_result_json(snapshot),
+        gold_result=decode_result_json(snapshot),
+    )
+    ann = json.loads(out.read_text())
+    assert ann["predicted_result"] == [[1], [2], [3]]
+    assert ann["gold_result"] == [[1], [2], [3]]
+    assert ann["evaluation"]["rationale"] == "harness_confirmed"
