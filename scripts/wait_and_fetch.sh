@@ -21,14 +21,16 @@ set -euo pipefail
 
 RUN_ID="${1:?Usage: $0 <run-id>}"
 
-env -u SSH_AUTH_SOCK uv run python -c "
+env -u SSH_AUTH_SOCK uv run python - "$RUN_ID" <<'PYEOF'
+import sys
 from bird_interact_agents.cloud import driver, gcs
+run_id = sys.argv[1]
 client = gcs.default_gcs_client()
-manifest = gcs.read_manifest('$RUN_ID', client=client)
-print(f'Waiting for $RUN_ID ({manifest.get(\"dataset\")})...', flush=True)
-result = driver.wait_until_done('$RUN_ID', manifest, poll_interval_s=30.0)
-print(f'TERMINAL: {result.terminal_state}  {result.hint!r}', flush=True)
-"
+manifest = gcs.read_manifest(run_id, client=client)
+print(f"Waiting for {run_id} ({manifest.get('dataset')})...", flush=True)
+result = driver.wait_until_done(run_id, manifest, poll_interval_s=30.0)
+print(f"TERMINAL: {result.terminal_state}  {result.hint!r}", flush=True)
+PYEOF
 
 echo "Fetching $RUN_ID..."
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud fetch "$RUN_ID"
