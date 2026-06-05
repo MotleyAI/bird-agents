@@ -82,6 +82,14 @@ pg_isready -h "$PGHOST" -p "$PGPORT" -U "$ADMIN_USER" -q || {
 }
 
 # Create the application role used by the cache builder (matches cloud default).
+# Validate CACHE_USER first — it's used both as an identifier AND in a string
+# literal AND as the password, so any non-[A-Za-z_][A-Za-z0-9_]* character
+# would break the SQL or open an injection vector. Mirrors the _SAFE_DB_NAME
+# check in ray_app.py::_ensure_postgres_loaded.
+if ! [[ "$CACHE_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    echo "ERROR: CACHE_USER must match [A-Za-z_][A-Za-z0-9_]* (got: '$CACHE_USER')"
+    exit 1
+fi
 psql -h "$PGHOST" -p "$PGPORT" -U "$ADMIN_USER" -d postgres -c \
     "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$CACHE_USER') \
      THEN CREATE ROLE $CACHE_USER LOGIN SUPERUSER PASSWORD '$CACHE_USER'; \
