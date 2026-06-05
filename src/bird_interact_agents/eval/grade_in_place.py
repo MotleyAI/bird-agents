@@ -53,15 +53,35 @@ def decode_result_json(payload: Any) -> Any:
     result row (``predicted_result_json`` / ``gold_result_json``) back into
     a list payload suitable for ``SubmissionAnnotation.predicted_result``
     and ``.gold_result``. Returns ``None`` on missing/unparseable input —
-    the schema fields are optional, so callers tolerate ``None``."""
+    the schema fields are optional, so callers tolerate ``None``.
+
+    The harness writes the snapshot via ``capture_result_snapshot``, whose
+    shape is ``{"columns": [...], "row_count": N, "row_count_truncated":
+    bool, "sample_rows": [[...], ...]}``. The schema slot is
+    ``Optional[List[Any]]``, so we extract ``sample_rows`` from the
+    snapshot dict — without that step Pydantic rejects the dict and the
+    inline grader raises ``ValidationError`` (DEV-1533 regression). When
+    the payload is already a list (legacy / pre-decoded callers) it's
+    returned unchanged.
+
+    Any dict that does NOT carry a list-shaped ``sample_rows`` is treated
+    as an invalid snapshot and returns ``None`` — notably
+    ``capture_result_snapshot`` returns ``{"error": "..."}`` on runtime
+    failure (``agents/_submit.py:130, 173``), and the old fall-through
+    ``return payload`` for the dict path reproduced the exact
+    ValidationError this helper exists to prevent.
+    """
     if payload is None:
         return None
-    if not isinstance(payload, str):
-        return payload
-    try:
-        return json.loads(payload)
-    except (TypeError, ValueError):
-        return None
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError):
+            return None
+    if isinstance(payload, dict):
+        sample = payload.get("sample_rows")
+        return sample if isinstance(sample, list) else None
+    return payload
 
 
 _AUTO_ANNOTATOR = "auto-inline-grader"

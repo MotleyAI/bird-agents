@@ -328,7 +328,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         grade_submission,
         make_executor,
     )
-    run_dir = paths.results_root() / "cloud" / args.run_id
+    # The cloud fetch lands runs under
+    # ``results_root() / <benchmark> / cloud / <run-id>`` (see
+    # ``cloud.driver.fetch``); the legacy flat ``results_root() / cloud /
+    # <run-id>`` is kept as a fallback for older local layouts.
+    run_dir = paths.results_root() / args.benchmark / "cloud" / args.run_id
+    if not run_dir.exists():
+        legacy = paths.results_root() / "cloud" / args.run_id
+        if legacy.exists():
+            run_dir = legacy
 
     # Index the benchmark's source data once. mini_interact ships sol_sql
     # inline; livesqlbench's gated sidecar carries sol_sql under
