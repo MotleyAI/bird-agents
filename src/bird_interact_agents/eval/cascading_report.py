@@ -48,7 +48,6 @@ import json
 from pathlib import Path
 from typing import Iterable, Optional
 
-from bird_interact_agents import paths as _paths
 from bird_interact_agents.eval.annotation_io import (
     iter_run_annotations,
     latest_run_per_instance,
@@ -352,7 +351,12 @@ def aggregate_cascading_latest(
     timestamp-formatted.
     """
     latest = latest_run_per_instance(benchmark=benchmark, repo_root=repo_root)
-    pairs = [(_paths.runs_root(), ann) for (_run_id, ann) in latest.values()]
+    # The path slot in the tuple is unused by ``_aggregate_from_annotations``
+    # (iterated as ``for _path, ann in ...``); a ``Path()`` placeholder
+    # avoids the ``paths.runs_root()`` mkdir side-effect, which otherwise
+    # creates the default-checkout runs/ directory even when the caller
+    # passed an explicit ``repo_root`` to stay off it.
+    pairs = [(Path(), ann) for (_run_id, ann) in latest.values()]
     return _aggregate_from_annotations(pairs)
 
 

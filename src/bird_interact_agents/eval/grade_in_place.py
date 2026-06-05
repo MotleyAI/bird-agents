@@ -350,12 +350,16 @@ def _write_harness_confirmed_annotation(
 
     ``rationale="harness_confirmed"`` is a sentinel so consumers can tell
     N2/N3 were not independently verified by the inline grader.
+
+    On rerun with the same ``rows_dir`` BOTH the per-row file AND the
+    DEV-1533 runs/ annotation are re-written. Pre-fix the function
+    early-returned on existing ``submission_annotation.json``, which left
+    the golden runs/ store missing whenever rows_dir was carried over
+    from an earlier pass.
     """
     out_dir = Path(rows_dir) / instance_id
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "submission_annotation.json"
-    if out_path.exists():
-        return out_path  # idempotent
 
     original_gold_is_correct = getattr(
         task_annotation, "original_gold_is_correct", None

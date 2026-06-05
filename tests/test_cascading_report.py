@@ -411,3 +411,43 @@ def test_partition_cumsum_sums_to_n(monkeypatch, tmp_path):
     # The last tier's cumsum must equal n_tasks
     last_tier = p["tiers"]["l11_fail"]
     assert last_tier["cumsum"] == 3
+
+
+def test_aggregate_cascading_latest_with_repo_root_does_not_touch_default(
+    monkeypatch, tmp_path,
+):
+    """``aggregate_cascading_latest(repo_root=X)`` MUST read from X AND
+    must not create / mkdir the default-checkout runs/ directory. Pre-fix
+    the dummy ``(path, ann)`` tuples called ``paths.runs_root()`` whose
+    mkdir side-effect created ``<main_checkout>/runs`` even when the
+    caller asked for an explicit alt root."""
+    from bird_interact_agents.eval.cascading_report import (
+        aggregate_cascading_latest,
+    )
+    import bird_interact_agents.paths as paths_mod
+
+    # Point the default checkout at a deliberately read-only sentinel
+    # location. Any mkdir attempt on it would either OSError or land a
+    # ``runs`` directory on disk — both are observable failures.
+    default_root = tmp_path / "default-root"
+    default_root.mkdir()
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: default_root)
+
+    alt_root = tmp_path / "alt-root"
+    alt_root.mkdir()
+    ann = _make_annotation_json(
+        instance_id="alien_1", selected_database=_DB,
+        n1=True, n2=True, n3=True, n4=True, n5=True,
+        n6=True, n7=True, n8=True,
+    )
+    _write_run_annotation(alt_root / "runs", ann)
+
+    block = aggregate_cascading_latest(_BENCHMARK, repo_root=alt_root)
+
+    assert block["n_dual_eval_tasks"] == 1, (
+        f"latest aggregator must read from alt_root; got block={block!r}"
+    )
+    assert not (default_root / "runs").exists(), (
+        "aggregate_cascading_latest(repo_root=X) must not create the "
+        "default-checkout runs/ directory as a side effect"
+    )

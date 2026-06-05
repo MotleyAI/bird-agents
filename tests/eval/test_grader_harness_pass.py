@@ -304,6 +304,60 @@ def test_harness_confirmed_counts_in_cascade_report(monkeypatch, tmp_path):
     assert block["rates"]["n1"] == pytest.approx(1.0)
 
 
+def test_harness_pass_writes_runs_store_even_when_rows_dir_file_exists(
+    monkeypatch, tmp_path,
+):
+    """DEV-1533: a rerun reusing the same rows_dir MUST still populate
+    the runs/ golden store on the harness-shortcut path. Pre-fix, an
+    existing ``rows_dir/<inst>/submission_annotation.json`` made
+    ``_write_harness_confirmed_annotation`` early-return BEFORE writing
+    to runs/, so cascade aggregation off the golden store saw a missing
+    row even though rows_dir looked fine."""
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+
+    from bird_interact_agents.eval.annotation_io import run_annotation_path
+    from bird_interact_agents.eval.grade_in_place import grade_one_submission
+    from bird_interact_agents.eval.implicit_annotation import implicit_task_annotation
+
+    rows_dir = tmp_path / "rows"
+    (rows_dir / "alien_1").mkdir(parents=True)
+    # Pre-existing rows_dir submission_annotation — simulates a rerun.
+    (rows_dir / "alien_1" / "submission_annotation.json").write_text(
+        '{"stale": "from prior run"}'
+    )
+
+    grade_one_submission(
+        task_data={
+            "instance_id": "alien_1",
+            "selected_database": "alien",
+            "sol_sql": ["SELECT gold"],
+            "amb_user_query": "q",
+        },
+        submitted_sql="SELECT gold",
+        rows_dir=rows_dir,
+        run_id="r1",
+        benchmark="mini-interact",
+        db_path=Path("/nonexistent/db.sqlite"),
+        task_annotation=implicit_task_annotation(
+            instance_id="alien_1", selected_database="alien",
+            benchmark="mini-interact", amb_user_query="q",
+        ),
+        harness_passed=True,
+    )
+
+    runs_path = run_annotation_path(
+        benchmark="mini-interact", selected_database="alien",
+        instance_id="alien_1", run_id="r1",
+    )
+    assert runs_path.exists(), (
+        "runs/ annotation MUST be written even when rows_dir's "
+        "submission_annotation.json already exists; got missing"
+    )
+    body = json.loads(runs_path.read_text())
+    assert body["evaluation"]["rationale"] == "harness_confirmed"
+
+
 def test_harness_pass_preserves_dev1533_run_result_fields(monkeypatch, tmp_path):
     """DEV-1533: ``submitted_sql``, ``predicted_result`` and ``gold_result``
     must land on the harness-confirmed annotation. Without this, every
