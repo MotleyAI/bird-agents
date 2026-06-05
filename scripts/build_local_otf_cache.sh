@@ -126,8 +126,16 @@ for db_dir in "$DUMPS_DIR"/*/; do
     else
         echo "  loading: $db"
         createdb -h "$PGHOST" -p "$PGPORT" -U "$ADMIN_USER" "$db"
-        psql -h "$PGHOST" -p "$PGPORT" -U "$ADMIN_USER" -d "$db" -f "$sql_file" \
-            -q --output /dev/null
+        # Drop the partial DB if psql fails — otherwise next run sees the
+        # DB name and skips it, building the cache against incomplete data.
+        # Matches the cloud loader's dropdb-before-retry pattern in
+        # ray_app.py::_ensure_postgres_loaded.
+        if ! psql -h "$PGHOST" -p "$PGPORT" -U "$ADMIN_USER" -d "$db" \
+                -f "$sql_file" -q --output /dev/null; then
+            echo "    load FAILED — dropping partial $db so the next run reloads"
+            dropdb -h "$PGHOST" -p "$PGPORT" -U "$ADMIN_USER" --if-exists "$db" || true
+            exit 1
+        fi
         ((loaded++)) || true
     fi
 done
