@@ -708,7 +708,16 @@ def merge_audited_gold_variants(
                 continue
             try:
                 out[iid] = AuditedGoldRow.from_flat_rows(flat_by_iid[iid]).model_dump_json()
-            except Exception:
+            except Exception as e:  # noqa: BLE001
+                # Surface the drop in the merge report so a partial-override
+                # rerun against a legacy file with unrecoverable / malformed
+                # rows doesn't silently lose those tasks (override=True
+                # rewrites the consolidated file from this map).
+                report.errors += 1
+                report.error_details.append(
+                    f"{consolidated}: legacy flat row(s) for {iid} dropped "
+                    f"during migration to grouped format: {e}"
+                )
                 continue
         return out
 
