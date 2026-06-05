@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from google.api_core.exceptions import NotFound as _GcsNotFound
 
 from bird_interact_agents.cloud import config
 
@@ -253,15 +254,19 @@ def download_prefix(
     with `prefix='runs/<id>/slayer_setup/slayer_otf_cache/'` lands at
     `dest/<db>/x.yaml`.
 
-    ``skip_missing_blobs`` (default ``False``): when True, per-blob download
-    failures are logged and skipped instead of propagating. Only the
-    ``fetch``-from-live-run path needs this — the cluster constantly
-    rewrites hot blobs (``status.json``, heartbeat), and the SDK pins the
-    generation seen at ``list_blobs`` into the download URL, so a
-    concurrent write between listing and downloading raises 404 on the
-    old generation. Strict callers (slayer-setup, benchmark-data) must
-    leave it ``False`` so a transient failure surfaces instead of
-    silently landing a partial cache.
+    ``skip_missing_blobs`` (default ``False``): when True, ``NotFound``
+    (404) errors raised mid-download are logged and skipped instead of
+    propagating. Only the ``fetch``-from-live-run path needs this — the
+    cluster constantly rewrites hot blobs (``status.json``, heartbeat),
+    and the SDK pins the generation seen at ``list_blobs`` into the
+    download URL, so a concurrent write between listing and downloading
+    raises ``NotFound`` on the old generation. The swallow is
+    deliberately narrowed to ``NotFound``: transient network / auth /
+    5xx errors still propagate even when the flag is on, so the caller
+    doesn't tear down the cluster on a partial download. Strict callers
+    (slayer-setup, benchmark-data) leave the flag ``False`` so even
+    expected-missing blobs surface instead of silently landing a
+    partial cache.
     """
     client = client or default_gcs_client()
     bucket = client.bucket(BUCKET_NAME)
@@ -278,7 +283,12 @@ def download_prefix(
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
             data = blob.download_as_bytes()
-        except Exception as exc:  # noqa: BLE001
+        except _GcsNotFound as exc:
+            # Generation-pin 404: the blob was rewritten between
+            # ``list_blobs`` and the per-blob download. Only swallow this
+            # specific class — let auth / 5xx / network errors propagate
+            # so the caller doesn't tear down the cluster on a partial
+            # fetch (would lose the only copy of the missing data).
             if not skip_missing_blobs:
                 raise
             logger.warning(

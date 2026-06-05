@@ -355,11 +355,23 @@ def test_download_prefix_empty_is_noop(fake_gcs_bucket, tmp_path: Path) -> None:
     assert not dest.exists() or not any(dest.iterdir())
 
 
-def _fake_bucket_with_one_racing_blob(racing_name: str, *, prefix_root: str = "runs/r"):
+def _fake_bucket_with_one_racing_blob(
+    racing_name: str,
+    *,
+    prefix_root: str = "runs/r",
+    racing_exc: Exception | None = None,
+):
     """Helper: build an in-memory bucket where ``racing_name`` raises on
-    download but every other listed blob succeeds. Used by the
-    skip_missing_blobs tests."""
+    download but every other listed blob succeeds. ``racing_exc``
+    defaults to the SDK's ``google.api_core.exceptions.NotFound`` —
+    that's what the production code path actually raises when the
+    generation-pinned URL hits a rewritten blob; tests must mirror it
+    so the narrowed ``except NotFound`` is exercised."""
     from types import SimpleNamespace
+
+    if racing_exc is None:
+        from google.api_core.exceptions import NotFound
+        racing_exc = NotFound("simulated 404 (object replaced)")
 
     payloads = {
         f"{prefix_root}/manifest.json": b"manifest\n",
@@ -370,7 +382,7 @@ def _fake_bucket_with_one_racing_blob(racing_name: str, *, prefix_root: str = "r
     def _blob(name: str):
         def _download():
             if name == racing_name:
-                raise RuntimeError("simulated 404 (object replaced)")
+                raise racing_exc
             return payloads[name]
 
         return SimpleNamespace(name=name, download_as_bytes=_download)
@@ -405,10 +417,32 @@ def test_download_prefix_default_propagates_failures(tmp_path: Path) -> None:
     at ``benchmark_data.py:181``) don't silently land a partial cache and
     let the cluster proceed with bad inputs. The fetch-side tolerance is
     opt-in only."""
+    from google.api_core.exceptions import NotFound
+
     client = _fake_bucket_with_one_racing_blob("runs/r/status.json")
     dest = tmp_path / "out"
-    with pytest.raises(RuntimeError, match="simulated 404"):
+    with pytest.raises(NotFound):
         gcs.download_prefix("runs/r/", dest, client=client)
+
+
+def test_download_prefix_skip_missing_propagates_non_notfound(tmp_path: Path) -> None:
+    """Regression for the Codex follow-up: even with ``skip_missing_blobs=True``,
+    non-``NotFound`` errors (transient network / 5xx / auth) MUST propagate.
+    Swallowing them would let ``driver.fetch`` log+ignore a transient failure
+    and then auto-kill the cluster — losing the only source of the missing
+    rows. The narrowed ``except NotFound`` keeps the race-tolerance scoped
+    to the actual race-class error."""
+    from google.api_core.exceptions import ServiceUnavailable
+
+    transient = ServiceUnavailable("simulated 503")
+    client = _fake_bucket_with_one_racing_blob(
+        "runs/r/status.json", racing_exc=transient,
+    )
+    dest = tmp_path / "out"
+    with pytest.raises(ServiceUnavailable):
+        gcs.download_prefix(
+            "runs/r/", dest, client=client, skip_missing_blobs=True,
+        )
 
 
 def test_concurrent_download_prefix_skips_by_default(tmp_path: Path) -> None:
