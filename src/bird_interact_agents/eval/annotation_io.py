@@ -216,7 +216,9 @@ def write_run_annotation_no_overwrite(ann: SubmissionAnnotation, path: Path) -> 
 
     When either attempt number is unparseable, the existing file is preserved
     (return False) rather than silently overwritten — unknown ordering is not
-    a sufficient reason to discard a valid existing annotation.
+    a sufficient reason to discard a valid existing annotation. The only path
+    that overwrites is: parseable new attempt > parseable existing attempt, OR
+    the existing file is corrupt (validation raised).
     """
     if path.exists():
         try:
@@ -225,10 +227,12 @@ def write_run_annotation_no_overwrite(ann: SubmissionAnnotation, path: Path) -> 
                 existing.submission.trajectory_path
             )
             new_attempt = _attempt_from_trajectory(ann.submission.trajectory_path)
-            # Keep existing when: same attempt, older attempt, OR either
-            # attempt is unparseable (unknown ordering → preserve existing).
-            if existing_attempt is not None and (
-                new_attempt is None or new_attempt <= existing_attempt
+            # Preserve existing unless we can prove the new attempt is strictly
+            # newer. Unknown ordering on either side → preserve.
+            if (
+                existing_attempt is None
+                or new_attempt is None
+                or new_attempt <= existing_attempt
             ):
                 return False
         except Exception:  # noqa: BLE001

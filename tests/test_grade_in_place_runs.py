@@ -52,8 +52,14 @@ def test_grade_and_write_also_writes_to_runs(monkeypatch, tmp_path):
     assert ann["instance_id"] == "alien_1"
 
 
-def test_grade_and_write_no_overwrite_in_runs_for_same_attempt(monkeypatch, tmp_path):
-    """Second call with same attempt must not overwrite runs/ annotation."""
+def test_grade_and_write_overwrites_runs_on_local_rerun(monkeypatch, tmp_path):
+    """Second call with same run_id (local rerun) must UPDATE runs/ annotation.
+
+    The no-overwrite-on-same-attempt guard lives only in
+    ``write_run_annotation_no_overwrite`` (used by the cloud fetch merge
+    path). ``grade_and_write`` always overwrites so local reruns reusing
+    the same output_dir / run_id pick up fresh grades.
+    """
     import bird_interact_agents.paths as paths_mod
     monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
