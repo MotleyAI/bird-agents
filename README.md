@@ -179,18 +179,38 @@ It uses the `bird-interact-cloud annotate` subcommand — **not** `submit`.
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud annotate \
   --benchmark mini-interact \
   --agent-model anthropic/claude-opus-4-7 \
+  --effort high \
   --instance-ids households_1,households_2,households_3 \
   --workers 1 --actors-per-worker 3 \
   --worker-type e2-standard-4 --max-runtime-hours 1 \
+  --no-subscription-auth \
   --override --detach
 ```
 
 `--override` re-annotates even when stable blobs already exist in GCS.
 Omit it on production runs to skip already-annotated tasks.
 
-Bump `--actors-per-worker` to match the number of instance IDs for maximum
-parallelism (each actor handles one task). `e2-standard-4` comfortably runs
-4 concurrent Opus actors.
+`--effort` controls the annotator's reasoning depth: `low / medium / high`
+(default `high`). Downgrade to `medium` for bulk sweeps where speed matters
+more than thoroughness; `low` only for cheap triage passes.
+
+`--no-subscription-auth` forces API-key auth (reads `ANTHROPIC_API_KEY`).
+Omit if you authenticate via OAuth / Claude.ai subscription.
+
+**Instance sizing:** each actor handles one task end-to-end (Opus only, no
+user-sim), so workloads are mostly network-bound. `e2-standard-4` (4 vCPU /
+16 GB) comfortably runs 4 concurrent Opus actors. For larger
+`--actors-per-worker` values:
+
+| `--actors-per-worker` | recommended `--worker-type` |
+|----------------------:|-----------------------------|
+| ≤ 4                   | `e2-standard-4`             |
+| 5–10                  | `e2-standard-8`             |
+| 11–20                 | `e2-standard-16`            |
+| 21–30                 | `e2-standard-32`            |
+
+For multi-worker runs (`--workers N`), every worker gets its own VM at this
+size — so 3 workers × 10 actors each = 3 × `e2-standard-8`.
 
 ### Fetching results
 
@@ -202,7 +222,30 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud fetch <RUN-ID>
 
 Each annotated task produces a `<instance_id>.task.json` (the `TaskAnnotation`)
 and, if the gold was wrong, one or more `<instance_id>.<variant_id>.gold.json`
-entries in `audited_gold/mini-interact_audited.jsonl`.
+entries in `audited_gold/<benchmark>_audited.jsonl`.
+
+Fetch also **merges task annotations into the main checkout** under
+`annotations/<benchmark>/<db>/<instance_id>.task.json`
+(resolved via `paths.annotations_root()`). These are the authoritative local
+records — the `results/cloud/<RUN-ID>/` directory is the raw per-run dump.
+
+**Checking annotation status** — count annotated tasks per DB for any benchmark:
+
+```bash
+uv run python -c "
+from bird_interact_agents import paths
+import collections
+ann_root = paths.annotations_root()
+for benchmark in ['mini-interact', 'livesqlbench-base-lite-sqlite']:
+    bdir = ann_root / benchmark
+    if not bdir.exists():
+        continue
+    per_db = collections.Counter(p.parent.name for p in bdir.rglob('*.task.json'))
+    print(benchmark)
+    for db, n in sorted(per_db.items()):
+        print(f'  {db}: {n}')
+"
+```
 
 ### Checking and fetching all completed runs
 
