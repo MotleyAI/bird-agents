@@ -1,9 +1,12 @@
 """Diagnose a benchmark x query-mode by picking the latest run per task.
 
 Walks ``runs/<benchmark>/<db>/<inst>/<run_id>.json``, filters to run_ids whose
-slug matches the requested query-mode (``slayer`` -> ``-slayer-``, ``raw`` ->
-``-raw-``), then keeps the latest annotation per ``(db, instance_id)`` by
-``annotated_at``. Reports the same cascade + autopsy view used at fetch time.
+slug contains the requested query-mode token (``slayer`` or ``raw``) — match
+is tokenized on ``-`` / ``_`` so both cloud (``20260605t1305-claudes-slayer-
+55e16b``) and local (``20260605t1500_claude_sdk_slayer``) run_ids are picked
+up. Then keeps the latest annotation per ``(db, instance_id)`` by
+``annotated_at`` and reports the same cascade + autopsy view used at
+fetch time.
 
 Usage::
 
@@ -18,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -27,11 +31,15 @@ from bird_interact_agents.eval.annotation_io import read_submission_annotation
 from bird_interact_agents.eval.cascading_report import _aggregate_from_annotations
 
 
-_QUERY_MODE_SLUGS = {
-    "slayer": "-slayer-",
-    "raw": "-raw-",
+_QUERY_MODE_TOKENS = {
+    "slayer": "slayer",
+    "raw": "raw",
     "any": None,
 }
+
+_RUN_ID_TOKEN_RE = re.compile(r"[-_]")
+
+_PASS_VERDICTS = frozenset({"correct", "valid_interpretation"})
 
 
 def _agent_mode_from_manifest(benchmark: str, run_id: str) -> str | None:
@@ -55,7 +63,7 @@ def _walk_latest(
     runs_root = paths.runs_root() / benchmark
     if not runs_root.exists():
         return {}
-    slug_needle = _QUERY_MODE_SLUGS[query_mode]
+    needle_token = _QUERY_MODE_TOKENS[query_mode]
     agent_mode_cache: dict[str, str | None] = {}
     best: dict[tuple[str, str], tuple[str, str, object, Path]] = {}
     for fp in sorted(runs_root.rglob("*.json")):
@@ -70,8 +78,10 @@ def _walk_latest(
             continue
         db, iid, run_file = parts
         run_id = run_file[:-5]
-        if slug_needle is not None and slug_needle not in run_id:
-            continue
+        if needle_token is not None:
+            tokens = _RUN_ID_TOKEN_RE.split(run_id)
+            if needle_token not in tokens:
+                continue
         if agent_mode is not None:
             cached = agent_mode_cache.get(run_id, "__miss__")
             if cached == "__miss__":
@@ -149,7 +159,7 @@ def report(
         used_run_ids[run_id] += 1
         verdict = _verdict(ann) or "?"
         per_db_total[db] += 1
-        if verdict == "correct":
+        if verdict in _PASS_VERDICTS:
             passes.append(iid)
             per_db_pass[db] += 1
         elif verdict == "eval_failed":
@@ -213,9 +223,15 @@ def _instance_filter(arg: str | None) -> set[str] | None:
         return None
     if arg.startswith("@"):
         fp = Path(arg[1:])
-        return {
-            s.strip() for s in fp.read_text().split() if s.strip()
-        }
+        try:
+            text = fp.read_text()
+        except OSError as exc:
+            print(
+                f"Failed to read instance filter file {fp}: {exc}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        return {s.strip() for s in text.split() if s.strip()}
     return {s.strip() for s in arg.split(",") if s.strip()}
 
 
