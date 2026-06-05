@@ -34,10 +34,15 @@ from bird_interact_agents.eval.annotation_schema import (
     VariantMatch,
 )
 from bird_interact_agents.eval.annotation_io import (
+    iter_run_annotations,
+    latest_run_per_instance,
     read_submission_annotation,
     read_task_annotation,
+    run_annotation_path,
+    run_trajectory_path,
     submission_annotation_path,
     task_annotation_path,
+    write_run_annotation,
     write_submission_annotation,
     write_task_annotation,
 )
@@ -56,10 +61,18 @@ __all__ = [
     "UserSimInteraction",
     "VariantInformational",
     "VariantMatch",
-    "read_submission_annotation",
+    # Task annotations (unchanged from DEV-1515)
     "read_task_annotation",
-    "submission_annotation_path",
     "task_annotation_path",
-    "write_submission_annotation",
     "write_task_annotation",
+    # Run annotations (DEV-1533 — replaces submission_annotation_path)
+    "iter_run_annotations",
+    "latest_run_per_instance",
+    "read_submission_annotation",
+    "run_annotation_path",
+    "run_trajectory_path",
+    "write_run_annotation",
+    # Kept for backward compat — new code should use run_annotation_path
+    "submission_annotation_path",
+    "write_submission_annotation",
 ]

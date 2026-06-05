@@ -13,9 +13,11 @@ import json
 from pathlib import Path
 
 
-def test_grade_in_place_writes_submission_annotation_per_task(tmp_path):
+def test_grade_in_place_writes_submission_annotation_per_task(tmp_path, monkeypatch):
     """The shared helper writes one
     ``<rows_dir>/<instance>/submission_annotation.json`` per task."""
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
     from bird_interact_agents.eval.grade_in_place import grade_and_write
     from bird_interact_agents.eval.implicit_annotation import (
         implicit_task_annotation,
@@ -61,9 +63,11 @@ def test_grade_in_place_writes_submission_annotation_per_task(tmp_path):
     assert data["evaluation"]["phase1_against_original_gold"] == "pass"
 
 
-def test_local_run_eval_json_has_cascading_block(tmp_path):
+def test_local_run_eval_json_has_cascading_block(tmp_path, monkeypatch):
     """End-to-end: simulate a 2-task local run; final eval.json carries
     cascading_phase1 derived from the per-row annotations."""
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
     from bird_interact_agents.eval.cascading_report import (
         emit_cascading_eval_json,
     )
@@ -112,7 +116,8 @@ def test_local_run_eval_json_has_cascading_block(tmp_path):
 
     out = tmp_path / "eval.json"
     emit_cascading_eval_json(
-        rows_dir, out, base_metrics={"phase1_count": 1, "phase1_rate": 0.5},
+        "mini-interact", "local-test-run", out,
+        base_metrics={"phase1_count": 1, "phase1_rate": 0.5},
     )
     metrics = json.loads(out.read_text())
     assert metrics["cascading_phase1"]["counts"]["n1"] == 1

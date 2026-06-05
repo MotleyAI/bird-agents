@@ -258,6 +258,29 @@ def gated_gold_root(*, benchmark: str | None) -> Path:
     return main_checkout_root() / "gated_gold" / benchmark
 
 
+def runs_root() -> Path:
+    """DEV-1533: per-(task, run) annotation + trajectory store.
+
+    Layout: ``runs/<benchmark>/<db>/<instance_id>/<run_id>.json`` for
+    the enriched :class:`SubmissionAnnotation`, with a sidecar
+    ``<run_id>.trajectory.json`` for the raw agent session log.
+
+    Honours ``BIRD_RUNS_ROOT`` override for tests / forks that mount the
+    runs tree from elsewhere.
+
+    Always creates the directory if missing — same posture as
+    ``annotations_root``.
+    """
+    override = os.environ.get("BIRD_RUNS_ROOT")
+    if override:
+        p = Path(override).expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    path = main_checkout_root() / "runs"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def results_root() -> Path:
     """Benchmark output root. Honours `BIRD_RESULTS_ROOT`; otherwise main
     checkout's `results/` so all worktree runs aggregate in one place.

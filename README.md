@@ -91,7 +91,6 @@ need. For LiveSQLBench one-shot, pass `--dataset livesqlbench-base-lite-sqlite
 ```bash
 bird-interact --framework claude_sdk --query-mode slayer \
   --slayer-setup on-the-fly --dataset livesqlbench-base-lite-sqlite --mode one-shot \
-  --gold-file ../livesqlbench-base-lite-sqlite/livesqlbench_sqlite_gt_kg_testcases_0528.jsonl \
   --agent-model anthropic/claude-opus-4-7 \
   --reasoning-effort high \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
@@ -106,7 +105,6 @@ present, else built locally first; no reference build or upload-back).
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --framework claude_sdk --query-mode slayer --slayer-setup on-the-fly \
   --mode one-shot --dataset livesqlbench-base-lite-sqlite \
-  --gold-file ../livesqlbench-base-lite-sqlite/livesqlbench_sqlite_gt_kg_testcases_0528.jsonl \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
   --reasoning-effort high \
@@ -202,9 +200,11 @@ It uses the `bird-interact-cloud annotate` subcommand — **not** `submit`.
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud annotate \
   --benchmark mini-interact \
   --agent-model anthropic/claude-opus-4-7 \
+  --effort high \
   --instance-ids households_1,households_2,households_3 \
   --workers 3 --actors-per-worker 1 \
   --worker-type e2-standard-4 --max-runtime-hours 1 \
+  --no-subscription-auth \
   --override --detach
 ```
 
@@ -213,15 +213,37 @@ re-annotates even when stable blobs already exist in GCS and is the safe
 default. Omit it only when explicitly resuming a partial run and you want
 to skip already-completed tasks.
 
-Bump `--workers` to match the number of instance IDs for maximum parallelism
-(each actor handles one task at a time).
+`--effort` controls the annotator's reasoning depth: `low / medium / high`
+(default `high`). Downgrade to `medium` for bulk sweeps where speed matters
+more than thoroughness; `low` only for cheap triage passes.
 
-> **⚠️ PostgreSQL benchmarks require `e2-standard-8`, not `e2-standard-4`.**
-> The annotator uses Opus, which together with the bundled PostgreSQL server
-> exhausts e2-standard-4's 16 GB during startup and **silently kills actors**,
-> losing all tasks assigned to those workers.
-> **Always use `e2-standard-8` (32 GB) for annotator runs on
-> `livesqlbench-base-full`, `livesqlbench-large`, `bird-interact-full`, etc:**
+`--no-subscription-auth` forces API-key auth (reads `ANTHROPIC_API_KEY`).
+Omit if you authenticate via OAuth / Claude.ai subscription.
+
+**Instance sizing (SQLite benchmarks):** each actor handles one task
+end-to-end (Opus only, no user-sim), so workloads are mostly network-bound.
+`e2-standard-4` (4 vCPU / 16 GB) comfortably runs 4 concurrent Opus actors.
+For larger `--actors-per-worker` values:
+
+| `--actors-per-worker` | recommended `--worker-type` |
+|----------------------:|-----------------------------|
+| ≤ 4                   | `e2-standard-4`             |
+| 5–10                  | `e2-standard-8`             |
+| 11–20                 | `e2-standard-16`            |
+| 21–30                 | `e2-standard-32`            |
+
+For multi-worker runs (`--workers N`), every worker gets its own VM at this
+size — so 3 workers × 10 actors each = 3 × `e2-standard-8`.
+
+> **⚠️ PostgreSQL benchmarks (annotator): always `e2-standard-8` × 1 actor.**
+> The sizing table above applies to SQLite benchmarks only.  For
+> `livesqlbench-base-full`, `livesqlbench-large`, `bird-interact-full`, etc.
+> the bundled PostgreSQL server adds 1–3 GB of RAM overhead per actor on top
+> of the Opus footprint; e2-standard-4 (16 GB) **silently kills actors during
+> startup** and loses all their tasks (confirmed in production with the
+> bird-interact-full households sweep — 10/20 tasks lost). **Always use
+> `e2-standard-8` (32 GB) with `--actors-per-worker 1` for postgres
+> benchmarks**:
 >
 > ```bash
 > env -u SSH_AUTH_SOCK uv run bird-interact-cloud annotate \
@@ -243,7 +265,30 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud fetch <RUN-ID>
 
 Each annotated task produces a `<instance_id>.task.json` (the `TaskAnnotation`)
 and, if the gold was wrong, one or more `<instance_id>.<variant_id>.gold.json`
-entries in `audited_gold/mini-interact_audited.jsonl`.
+entries in `audited_gold/<benchmark>_audited.jsonl`.
+
+Fetch also **merges task annotations into the main checkout** under
+`annotations/<benchmark>/<db>/<instance_id>.task.json`
+(resolved via `paths.annotations_root()`). These are the authoritative local
+records — the `results/cloud/<RUN-ID>/` directory is the raw per-run dump.
+
+**Checking annotation status** — count annotated tasks per DB for any benchmark:
+
+```bash
+uv run python -c "
+from bird_interact_agents import paths
+import collections
+ann_root = paths.annotations_root()
+for benchmark in ['mini-interact', 'livesqlbench-base-lite-sqlite']:
+    bdir = ann_root / benchmark
+    if not bdir.exists():
+        continue
+    per_db = collections.Counter(p.parent.name for p in bdir.rglob('*.task.json'))
+    print(benchmark)
+    for db, n in sorted(per_db.items()):
+        print(f'  {db}: {n}')
+"
+```
 
 ### Checking and fetching all completed runs
 
@@ -414,14 +459,13 @@ simulator, no `ask_user` anywhere in the spawn tree.
    `livesqlbench_gt_kg_testcases_*.jsonl`) — the public dataset ships
    `sol_sql` / `external_knowledge` / `test_cases` empty; the gated
    file carries them keyed by `instance_id`. See the LiveSQLBench repo
-   for access. The harness merges the gold in via `--gold-file`; it is
-   never committed here.
+   for access. Place it under `gated_gold/livesqlbench-base-lite-sqlite/`
+   in the main checkout; the harness auto-discovers it from there.
 
 ### Oracle validation (first thing to land/verify)
 
 ```bash
 uv run bird-interact --dataset livesqlbench-base-lite-sqlite --mode oracle \
-  --gold-file <gated.jsonl> \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
 ```
@@ -434,7 +478,6 @@ Submits the gold SQL directly and scores it — no LLM. Expected
 ```bash
 uv run bird-interact --dataset livesqlbench-base-lite-sqlite --mode one-shot --query-mode slayer \
   --framework claude_sdk --slayer-setup on-the-fly \
-  --gold-file <gated.jsonl> \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
 ```

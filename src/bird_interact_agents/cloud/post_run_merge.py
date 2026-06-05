@@ -77,6 +77,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -84,7 +85,11 @@ from typing import Iterator
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from bird_interact_agents.eval.annotation_io import submission_annotation_path
+from bird_interact_agents.eval.annotation_io import (
+    run_annotation_path,
+    run_trajectory_path,
+    write_run_annotation_no_overwrite,
+)
 from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation, TaskAnnotation
 
 logger = logging.getLogger(__name__)
@@ -509,57 +514,53 @@ def merge_submission_annotations(
                     f"{src}: {type(e).__name__}: {e}"
                 )
                 continue
-            dest = submission_annotation_path(
+            # DEV-1533: write to runs/<benchmark>/<db>/<inst>/<run_id>.json
+            dest = run_annotation_path(
                 benchmark=benchmark,
                 selected_database=ann.selected_database,
                 instance_id=ann.instance_id,
                 run_id=run_id,
                 repo_root=None,
             )
-            if dest.exists():
-                # Resubmit reuses the same ``run_id`` and bumps the
-                # per-task ``attempt`` number; the canonical
-                # ``submission_annotation_path`` does NOT carry attempt
-                # in the filename, so a partial earlier fetch would
-                # otherwise pin attempt-1's annotation forever even
-                # when attempt-2's row is the result-of-record
-                # (Codex r7). Compare ``submission.trajectory_path``
-                # of src vs dest — overwrite ONLY when the new attempt
-                # number is strictly greater. Skip on equal / unknown
-                # to preserve the existing no-overwrite safety floor.
-                src_attempt = _attempt_from_trajectory_path(
-                    ann.submission.trajectory_path,
-                )
-                try:
-                    dest_ann = SubmissionAnnotation.model_validate_json(
-                        dest.read_text(),
-                    )
-                    dest_attempt = _attempt_from_trajectory_path(
-                        dest_ann.submission.trajectory_path,
-                    )
-                except (ValidationError, ValueError, OSError):
-                    dest_attempt = None
-                if (
-                    src_attempt is not None
-                    and dest_attempt is not None
-                    and src_attempt > dest_attempt
-                ):
-                    dest.write_text(
-                        ann.model_dump_json(indent=2, exclude_none=False)
-                        + "\n",
-                    )
+            dest_existed = dest.exists()
+            written = write_run_annotation_no_overwrite(ann, dest)
+            if written:
+                if dest_existed:
                     report.overwritten_newer_attempt += 1
                     report.overwritten_paths.append(str(dest))
                 else:
-                    report.skipped_existing += 1
-                    report.skipped_paths.append(str(dest))
-                continue
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(
-                ann.model_dump_json(indent=2, exclude_none=False) + "\n",
+                    report.merged += 1
+                    report.merged_paths.append(str(dest))
+            else:
+                report.skipped_existing += 1
+                report.skipped_paths.append(str(dest))
+
+            # Trajectory sidecar — best-effort copy of attempt-N.json.
+            # Refresh whenever the annotation itself was (re)written so an
+            # accepted newer attempt never leaves the prior attempt's
+            # trajectory sitting next to the new annotation. When the
+            # annotation was preserved (``written`` False), leave the
+            # existing sidecar alone.
+            traj_dest = run_trajectory_path(
+                benchmark=benchmark,
+                selected_database=ann.selected_database,
+                instance_id=ann.instance_id,
+                run_id=run_id,
+                repo_root=None,
             )
-            report.merged += 1
-            report.merged_paths.append(str(dest))
+            if written:
+                traj_rel = ann.submission.trajectory_path or ""
+                m = re.search(r"rows/(.+)$", traj_rel)
+                if m:
+                    traj_src = rows_dir / ann.instance_id / Path(m.group(1)).name
+                    if not traj_src.exists():
+                        traj_src = rows_dir / m.group(1)
+                    if traj_src.exists():
+                        traj_dest.parent.mkdir(parents=True, exist_ok=True)
+                        try:
+                            shutil.copy2(traj_src, traj_dest)
+                        except Exception:  # noqa: BLE001
+                            pass
 
     # Audit log lives alongside the downloaded run dir (next to the
     # OTF merge_report.json above, for symmetry).
