@@ -957,7 +957,8 @@ def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
     )
     metrics["annotation_merge_report"] = annotation_merge.model_dump()
 
-    metrics = _emit_cascading_phase1_on_fetch(dest=dest, metrics=metrics)
+    if manifest.get("framework") != "annotator":
+        metrics = _emit_cascading_phase1_on_fetch(dest=dest, metrics=metrics)
 
     # DEV-1518: for annotator runs, merge per-task annotation + gold variant
     # files from the downloaded rows into local stable storage.
