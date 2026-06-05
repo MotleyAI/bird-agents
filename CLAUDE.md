@@ -123,6 +123,12 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   pass that to the `ray exec` inspection commands below. Use
   `uv run bird-interact-cloud list` / `fetch <run-id>` / `kill <run-id>` /
   `resubmit <run-id>` for the rest of the lifecycle.
+- **Postgres benchmarks (livesqlbench-base-lite, livesqlbench-base-full,
+  livesqlbench-large, bird-interact-lite-exp, bird-interact-full)**: at worker
+  startup `_ensure_postgres_loaded` starts a local PostgreSQL instance and loads
+  all databases from `pg_dumps/`. This adds ~1-2 GB of memory overhead.
+  Use `--actors-per-worker 1` (not 2) on e2-standard-4, or step up to
+  `e2-standard-8` if you need 2+ concurrent actors on a postgres benchmark.
 
 ## Waiting on a cloud run to finish — use `driver.wait_until_done`, never bash
 

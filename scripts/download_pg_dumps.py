@@ -1,5 +1,36 @@
 """Stage PostgreSQL database dumps for cloud benchmark runs.
 
+== RECOMMENDED: extract dumps from the official Docker images ==
+
+The official LiveSQLBench PostgreSQL databases are published as Docker Hub images.
+This is the fastest and most reliable way to get the dumps:
+
+  # base-lite (18 DBs) — also used by bird-interact-lite-exp
+  docker run -d --name livesql_lite -e POSTGRES_USER=root -e POSTGRES_PASSWORD=123123 \\
+    shawnxxh/bird-interact-postgresql:latest
+  # wait for "Done creating real DBs" in `docker logs livesql_lite`
+  for db in alien archeology credit cross_db crypto cybermarket disaster fake gaming \\
+             insider mental museum news polar robot solar vaccine virtual; do
+    mkdir -p <livesqlbench-base-lite>/pg_dumps/$db
+    mkdir -p <bird-interact-lite-exp>/pg_dumps/$db
+    docker exec livesql_lite pg_dump -U root -d $db --no-owner --no-acl -F p \\
+      > <livesqlbench-base-lite>/pg_dumps/$db/$db.sql
+    cp <livesqlbench-base-lite>/pg_dumps/$db/$db.sql \\
+       <bird-interact-lite-exp>/pg_dumps/$db/$db.sql
+  done
+  docker rm -f livesql_lite
+
+  # base-full (22 DBs) — also used by bird-interact-full
+  docker run -d --name livesql_full -e POSTGRES_USER=root -e POSTGRES_PASSWORD=123123 \\
+    shawnxxh/bird-interact-postgresql-full:latest
+  # wait, then dump each db (archeology_scan cold_chain_pharma_compliance
+  # cross_border crypto_exchange ...) into livesqlbench-base-full/pg_dumps/
+  # and copy to bird-interact-full/pg_dumps/.
+
+  # large-v1 (21 DBs) — no pre-built Docker image; use the Google Drive zip below.
+
+== FALLBACK: extract from Google Drive zips ==
+
 Usage:
     uv run python scripts/download_pg_dumps.py \\
         --benchmark livesqlbench-base-lite \\
@@ -11,7 +42,8 @@ Downloads are available from:
   livesqlbench-large-v1:   https://drive.google.com/file/d/1u1L-SvJtOZGfcIST-dINw8DnGEQDMu6C
 
 bird-interact-lite-exp and bird-interact-full share the same upstream
-database dumps as livesqlbench-base-lite (same DBs, postgres backend).
+database dumps as livesqlbench-base-lite / livesqlbench-base-full respectively
+(same DBs, postgres backend).
 
 The script extracts the zip and reorganises the dumps into:
     <benchmark_data_root>/pg_dumps/<db>/<db>.sql
