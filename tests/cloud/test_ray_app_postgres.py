@@ -29,6 +29,18 @@ def _runuser_postgres(*args: str) -> list[str]:
     return ["runuser", "-u", "postgres", "--", *args]
 
 
+def _patch_pg_markers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Monkeypatch both marker functions to use tmp_path instead of /tmp."""
+    monkeypatch.setattr(
+        ray_app, "_pg_loaded_marker",
+        lambda data_dir: tmp_path / "pg_loaded.marker",
+    )
+    monkeypatch.setattr(
+        ray_app, "_pg_db_marker",
+        lambda db, data_dir: tmp_path / f"pg_db_loaded_{db}.marker",
+    )
+
+
 # ---------------------------------------------------------------------------
 # _ensure_postgres_loaded — basic: calls pg_ctlcluster, createdb, psql -f
 # ---------------------------------------------------------------------------
@@ -42,11 +54,7 @@ def test_ensure_postgres_loaded_calls_subprocess(
     data_dir = _make_pg_dumps_dir(tmp_path, ["alien", "bird"])
     monkeypatch.setattr(ray_app, "_pg_version", lambda: "17")
     monkeypatch.setattr(ray_app, "_PG_INIT_LOCK", tmp_path / "pg_init.lock")
-    monkeypatch.setattr(ray_app, "_PG_LOADED_MARKER", tmp_path / "pg_loaded.marker")
-    monkeypatch.setattr(
-        ray_app, "_pg_db_marker",
-        lambda db: tmp_path / f"pg_db_loaded_{db}.marker",
-    )
+    _patch_pg_markers(monkeypatch, tmp_path)
 
     calls_seen: list[list[str]] = []
 
@@ -97,7 +105,10 @@ def test_ensure_postgres_loaded_idempotent(
 
     monkeypatch.setattr(ray_app, "_pg_version", lambda: "17")
     monkeypatch.setattr(ray_app, "_PG_INIT_LOCK", tmp_path / "pg_init.lock")
-    monkeypatch.setattr(ray_app, "_PG_LOADED_MARKER", marker_path)
+    monkeypatch.setattr(
+        ray_app, "_pg_loaded_marker",
+        lambda data_dir: marker_path,
+    )
 
     calls_seen: list = []
     monkeypatch.setattr(
@@ -123,7 +134,10 @@ def test_ensure_postgres_loaded_missing_pg_dumps(
     data_dir.mkdir()
     monkeypatch.setattr(ray_app, "_pg_version", lambda: "17")
     monkeypatch.setattr(ray_app, "_PG_INIT_LOCK", tmp_path / "pg_init.lock")
-    monkeypatch.setattr(ray_app, "_PG_LOADED_MARKER", tmp_path / "pg_loaded.marker")
+    monkeypatch.setattr(
+        ray_app, "_pg_loaded_marker",
+        lambda data_dir: tmp_path / "pg_loaded.marker",
+    )
 
     with pytest.raises(RuntimeError, match="pg_dumps/ directory missing"):
         ray_app._ensure_postgres_loaded(data_dir)
@@ -142,11 +156,7 @@ def test_ensure_postgres_loaded_retry_skips_completed_dbs(
     data_dir = _make_pg_dumps_dir(tmp_path, ["alien", "bird"])
     monkeypatch.setattr(ray_app, "_pg_version", lambda: "17")
     monkeypatch.setattr(ray_app, "_PG_INIT_LOCK", tmp_path / "pg_init.lock")
-    monkeypatch.setattr(ray_app, "_PG_LOADED_MARKER", tmp_path / "pg_loaded.marker")
-    monkeypatch.setattr(
-        ray_app, "_pg_db_marker",
-        lambda db: tmp_path / f"pg_db_loaded_{db}.marker",
-    )
+    _patch_pg_markers(monkeypatch, tmp_path)
     # Simulate "alien" completed in a prior attempt.
     (tmp_path / "pg_db_loaded_alien.marker").touch()
 
@@ -182,15 +192,10 @@ def test_ensure_postgres_loaded_concurrent_actors_serialize(
     """Two threads calling _ensure_postgres_loaded concurrently must not
     double-init: pg_ctlcluster is called exactly once."""
     data_dir = _make_pg_dumps_dir(tmp_path, ["alien"])
-    marker_path = tmp_path / "pg_loaded.marker"
 
     monkeypatch.setattr(ray_app, "_pg_version", lambda: "17")
     monkeypatch.setattr(ray_app, "_PG_INIT_LOCK", tmp_path / "pg_init.lock")
-    monkeypatch.setattr(ray_app, "_PG_LOADED_MARKER", marker_path)
-    monkeypatch.setattr(
-        ray_app, "_pg_db_marker",
-        lambda db: tmp_path / f"pg_db_loaded_{db}.marker",
-    )
+    _patch_pg_markers(monkeypatch, tmp_path)
 
     pg_ctlcluster_call_count = [0]
 
@@ -222,4 +227,4 @@ def test_ensure_postgres_loaded_concurrent_actors_serialize(
     assert pg_ctlcluster_call_count[0] == 1, (
         f"pg_ctlcluster called {pg_ctlcluster_call_count[0]} times, expected 1"
     )
-    assert marker_path.exists()
+    assert (tmp_path / "pg_loaded.marker").exists()

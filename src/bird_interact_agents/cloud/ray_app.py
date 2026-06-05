@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -118,12 +119,20 @@ def _pg_version() -> str:
 
 
 _PG_INIT_LOCK = Path("/tmp/pg_init.lock")
-_PG_LOADED_MARKER = Path("/tmp/pg_loaded.marker")
 _SAFE_DB_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
-def _pg_db_marker(db: str) -> Path:
-    return Path(f"/tmp/pg_db_loaded_{db}.marker")
+def _pg_dir_tag(data_dir: Path) -> str:
+    """Short stable identifier derived from data_dir — scopes markers per benchmark."""
+    return hashlib.sha1(str(data_dir).encode()).hexdigest()[:8]
+
+
+def _pg_loaded_marker(data_dir: Path) -> Path:
+    return Path(f"/tmp/pg_loaded_{_pg_dir_tag(data_dir)}.marker")
+
+
+def _pg_db_marker(db: str, data_dir: Path) -> Path:
+    return Path(f"/tmp/pg_db_loaded_{_pg_dir_tag(data_dir)}_{db}.marker")
 
 
 def _ensure_postgres_loaded(data_dir: Path) -> None:
@@ -142,9 +151,10 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
             "Download SQL dumps with scripts/download_pg_dumps.py first."
         )
 
+    loaded_marker = _pg_loaded_marker(data_dir)
     with open(_PG_INIT_LOCK, "w") as _lf:
         fcntl.flock(_lf, fcntl.LOCK_EX)
-        if _PG_LOADED_MARKER.exists():
+        if loaded_marker.exists():
             return
 
         pg_ver = _pg_version()
@@ -183,7 +193,7 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
                     "only letters, digits, and underscores."
                 )
             # Skip databases that completed successfully in a prior attempt.
-            if _pg_db_marker(db).exists():
+            if _pg_db_marker(db, data_dir).exists():
                 continue
             # Drop any partial load from a prior failed attempt before retrying.
             subprocess.run(
@@ -202,9 +212,9 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
                      "psql", "-d", db, "-f", str(sql_file)],
                     check=True,
                 )
-            _pg_db_marker(db).touch()
+            _pg_db_marker(db, data_dir).touch()
 
-        _PG_LOADED_MARKER.touch()
+        loaded_marker.touch()
 
 
 def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
