@@ -564,18 +564,10 @@ def _test_museum_7_is_edited_with_null_safe_three_of_four_predicate_DISABLED():
             f"contradicts KB 16. Got SQL: {sql_blob!r}"
         )
 
-    # Citations: must cite kb:16 AND external_knowledge:16 (16 is in the
-    # task's external_knowledge anchor list).
-    tokens = {
-        t for change in row["changes"] for t in change["justified_by"]
-    }
-    assert "kb:16" in tokens, (
-        f"museum_7 changes must cite kb:16; got tokens={sorted(tokens)}"
-    )
-    assert "external_knowledge:16" in tokens, (
-        f"museum_7 changes must cite external_knowledge:16 (KB 16 is in the "
-        f"task's anchor list); got tokens={sorted(tokens)}"
-    )
+    # Note: the legacy `changes[].justified_by` citation field was removed in
+    # the grouped AuditedGoldRow schema.  Citation checks (kb:16,
+    # external_knowledge:16) must be verified via the task_annotation.json
+    # produced by the annotator agent, not via the audited gold JSONL.
 
 
 def _test_museum_9_is_clean_with_column_meaning_justification_DISABLED():
@@ -589,59 +581,21 @@ def _test_museum_9_is_clean_with_column_meaning_justification_DISABLED():
     rows = _load_audit_rows()
     row = rows.get("museum_9")
     assert row is not None, "museum_9 must be in the audit file"
-    assert row["audit_status"] == "clean", (
-        f"museum_9 must be 'clean'; got {row['audit_status']!r}"
+    # "clean" was normalised to "original" in the grouped AuditedGoldRow schema.
+    assert row["audit_status"] == "original", (
+        f"museum_9 must be 'original' (was 'clean'); got {row['audit_status']!r}"
     )
-    assert row["audited_sol_sql"] == row["original_sol_sql"], (
-        "museum_9 is 'clean' — audited_sol_sql must equal original_sol_sql"
-    )
-    assert row["changes"] == [], (
-        f"museum_9 is 'clean' — changes must be empty; got {row['changes']!r}"
-    )
-
-    rs = row["reasoning_summary"]
-    rs_lower = rs.lower()
-    # Both candidate join chains named, AND the discriminating endpoints
-    # cited. A bare "usagerecords" or "conditionassessments" mention
-    # would let the reasoning slip past with no actual explanation of
-    # the underspec — pin the FK column and the alternative chain's
-    # discriminator so the audit trail is meaningful.
-    assert "usagerecords" in rs_lower, (
-        f"museum_9 reasoning_summary must name the alternative UsageRecords "
-        f"chain (the one the agent picked) so the audit explains the "
-        f"disambiguation; got: {rs!r}"
-    )
-    # The agent's chain pivots through Showcases / EnvironmentalReadingsCore
-    # to find a light reading — naming at least one of those endpoints
-    # demonstrates the audit understood the 3-hop chain.
-    assert (
-        "environmentalreadingscore" in rs_lower
-        or "showcaseref" in rs_lower
-        or "showcases" in rs_lower
-    ), (
-        f"museum_9 reasoning_summary must name an endpoint of the "
-        f"UsageRecords→Showcases→EnvironmentalReadingsCore→LightAndRadiationReadings "
-        f"chain (Showcases / EnvironmentalReadingsCore / ShowcaseRef) so "
-        f"the audit shows what makes that chain weaker than gold's. "
-        f"Got: {rs!r}"
-    )
-    # Gold's chain is single-hop via LightReadRefObserved; the audit
-    # MUST name that FK column explicitly (it's the discriminator that
-    # resolves the KB-alone underspec).
-    assert "lightreadrefobserved" in rs_lower, (
-        f"museum_9 reasoning_summary must name "
-        f"ConditionAssessments.LightReadRefObserved — the single-hop FK "
-        f"that resolves the KB underspec; got: {rs!r}"
-    )
-    # And the column-meaning citation MUST appear in the exact token form
-    # the verifier resolves against `museum_column_meaning_base.json`. A
-    # loose substring match would let `LightReadRefObserved` mentioned in
-    # prose-only count, which weakens the resolvability guarantee.
-    assert "column_meaning:ConditionAssessments|LightReadRefObserved" in rs, (
-        f"museum_9 reasoning_summary must contain the EXACT citation token "
-        f"'column_meaning:ConditionAssessments|LightReadRefObserved' so "
-        f"the resolvability test catches typos; got: {rs!r}"
-    )
+    # For an original row the audited SQL must be non-empty (validated by schema).
+    assert row["audited_sol_sql"], "museum_9 audited_sol_sql must be non-empty"
+    # Note: reasoning_summary, original_sol_sql, and changes[].justified_by were
+    # removed in the grouped AuditedGoldRow schema.  The join-chain reasoning
+    # (UsageRecords vs ConditionAssessments.LightReadRefObserved) and citation
+    # checks must be verified via the task_annotation.json produced by the
+    # annotator agent (metadata_sufficiency.evidence_sources_consulted), not
+    # via the audited gold JSONL.
+    # Note: the column_meaning:ConditionAssessments|LightReadRefObserved citation
+    # and reasoning_summary checks above were also removed because reasoning_summary
+    # no longer exists in the audited gold schema.
 
 
 # ---------------------------------------------------------------------------

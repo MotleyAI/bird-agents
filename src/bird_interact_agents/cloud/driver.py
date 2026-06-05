@@ -7,6 +7,7 @@ import asyncio
 import datetime
 import json
 import logging
+import os
 import secrets
 import signal
 import sys
@@ -81,6 +82,27 @@ def submitter_repo_root() -> Path:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+_PG_FORWARD_VARS = (
+    "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
+    "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
+)
+
+
+def _maybe_forward_pg_vars(result: dict, dataset: str) -> None:
+    """Copy BIRD_PG_* env vars into ``result`` for non-postgres benchmarks.
+
+    Postgres benchmarks start a bundled local server on the worker —
+    forwarding external BIRD_PG_* vars would override localhost with an
+    unreachable external address.
+    """
+    if _is_postgres_benchmark(dataset):
+        return
+    for pg_var in _PG_FORWARD_VARS:
+        val = os.environ.get(pg_var)
+        if val:
+            result[pg_var] = val
 
 
 def _is_postgres_benchmark(dataset: str) -> bool:
@@ -178,17 +200,7 @@ def read_api_keys_from_local_env(
                 f"missing API key env vars for job submission: {missing_local_sorted}",
                 remediation=cmds,
             )
-        # Forward postgres connection vars only for non-postgres benchmarks.
-        # Postgres benchmarks start a bundled local server on the worker —
-        # forwarding external BIRD_PG_* vars would override localhost.
-        if not _is_postgres_benchmark(dataset):
-            for pg_var in (
-                "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
-                "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
-            ):
-                val = os.environ.get(pg_var)
-                if val:
-                    result[pg_var] = val
+        _maybe_forward_pg_vars(result, dataset)
         return result
 
     needed: set[str] = set()
@@ -209,17 +221,7 @@ def read_api_keys_from_local_env(
             remediation=cmds,
         )
     result = {k: os.environ[k] for k in needed}
-    # Forward postgres connection vars only for non-postgres benchmarks.
-    # Postgres benchmarks start a bundled local server on the worker —
-    # forwarding external BIRD_PG_* vars would override localhost.
-    if not _is_postgres_benchmark(dataset):
-        for pg_var in (
-            "BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER",
-            "BIRD_PG_PASSWORD", "BIRD_PG_STATEMENT_TIMEOUT",
-        ):
-            val = os.environ.get(pg_var)
-            if val:
-                result[pg_var] = val
+    _maybe_forward_pg_vars(result, dataset)
     return result
 
 

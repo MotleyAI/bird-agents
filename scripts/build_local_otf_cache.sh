@@ -30,9 +30,17 @@ BENCHMARK="${1:?Usage: $0 <benchmark-name>  e.g. livesqlbench-base-lite}"
 # Postgres settings (user-space, no sudo)
 # ---------------------------------------------------------------------------
 PGDATA="${PGDATA:-$HOME/.local/share/bird-agents/pgdata}"
-PGPORT="${PGPORT:-5435}"
+# IMPORTANT: the OTF cache implementation fingerprint embeds
+# BIRD_PG_HOST:BIRD_PG_PORT:BIRD_PG_USER (cache.py _impl_fp.txt).
+# Cloud workers default to localhost:5432:bird_interact — so this script
+# defaults to the same port/user so pre-built caches are reused on cloud
+# without a fingerprint-mismatch rebuild.  If port 5432 conflicts with a
+# system postgres on your dev machine, set PGPORT=5435 (or any free port)
+# but be aware that caches built that way will NOT be reused by cloud workers.
+PGPORT="${PGPORT:-5432}"
 PGHOST="${PGHOST:-localhost}"
-PG_USER="postgres"   # the role created by initdb inside this user-space cluster
+ADMIN_USER="postgres"  # role created by initdb; used only for admin operations
+CACHE_USER="${CACHE_USER:-bird_interact}"  # role used for cache build — must match cloud
 
 # Locate pg binaries (prefer 16 → 14 → PATH).
 for PG_BIN in /usr/lib/postgresql/16/bin /usr/lib/postgresql/14/bin ""; do
@@ -49,7 +57,7 @@ command -v pg_ctl >/dev/null || { echo "ERROR: pg_ctl not found"; exit 1; }
 if [[ ! -d "$PGDATA/global" ]]; then
     echo "==> Initialising postgres data dir at $PGDATA"
     mkdir -p "$PGDATA"
-    initdb -D "$PGDATA" -U "$PG_USER" --auth=trust --no-instructions
+    initdb -D "$PGDATA" -U "$ADMIN_USER" --auth=trust --no-instructions
 fi
 
 # ---------------------------------------------------------------------------
@@ -65,13 +73,19 @@ fi
 
 # Wait until postgres is actually accepting connections (up to 30 s).
 for i in $(seq 1 30); do
-    pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PG_USER" -q && break
+    pg_isready -h "$PGHOST" -p "$PGPORT" -U "$ADMIN_USER" -q && break
     sleep 1
 done
-pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PG_USER" -q || {
+pg_isready -h "$PGHOST" -p "$PGPORT" -U "$ADMIN_USER" -q || {
     echo "ERROR: postgres is not reachable at $PGHOST:$PGPORT after 30 s (PGDATA=$PGDATA)"
     exit 1
 }
+
+# Create the application role used by the cache builder (matches cloud default).
+psql -h "$PGHOST" -p "$PGPORT" -U "$ADMIN_USER" -d postgres -c \
+    "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$CACHE_USER') \
+     THEN CREATE ROLE $CACHE_USER LOGIN SUPERUSER PASSWORD '$CACHE_USER'; \
+     END IF; END \$\$;" -q
 
 # ---------------------------------------------------------------------------
 # 3. Load dumps for this benchmark (idempotent — skips existing DBs)
@@ -97,14 +111,14 @@ for db_dir in "$DUMPS_DIR"/*/; do
     sql_file="$db_dir/$db.sql"
     [[ -f "$sql_file" ]] || continue
 
-    if psql -h "$PGHOST" -p "$PGPORT" -U "$PG_USER" -lqt \
+    if psql -h "$PGHOST" -p "$PGPORT" -U "$ADMIN_USER" -lqt \
             | cut -d'|' -f1 | grep -qw "$db"; then
         echo "  skip (exists): $db"
         ((skipped++)) || true
     else
         echo "  loading: $db"
-        createdb -h "$PGHOST" -p "$PGPORT" -U "$PG_USER" "$db"
-        psql -h "$PGHOST" -p "$PGPORT" -U "$PG_USER" -d "$db" -f "$sql_file" \
+        createdb -h "$PGHOST" -p "$PGPORT" -U "$ADMIN_USER" "$db"
+        psql -h "$PGHOST" -p "$PGPORT" -U "$ADMIN_USER" -d "$db" -f "$sql_file" \
             -q --output /dev/null
         ((loaded++)) || true
     fi
@@ -118,8 +132,8 @@ echo "==> Building OTF slayer cache for $BENCHMARK"
 
 BIRD_PG_HOST="$PGHOST" \
 BIRD_PG_PORT="$PGPORT" \
-BIRD_PG_USER="$PG_USER" \
-BIRD_PG_PASSWORD="" \
+BIRD_PG_USER="$CACHE_USER" \
+BIRD_PG_PASSWORD="$CACHE_USER" \
 uv run python - "$BENCHMARK" <<'PYEOF'
 import asyncio, sys
 from bird_interact_agents import paths
