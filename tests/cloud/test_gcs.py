@@ -355,6 +355,47 @@ def test_download_prefix_empty_is_noop(fake_gcs_bucket, tmp_path: Path) -> None:
     assert not dest.exists() or not any(dest.iterdir())
 
 
+def test_download_prefix_skips_blob_that_raises_404(tmp_path: Path) -> None:
+    """Regression test: live runs constantly rewrite ``status.json`` and
+    heartbeat blobs; the SDK pins the generation seen at ``list_blobs`` time
+    into the per-blob download URL, so a concurrent write between list and
+    download raises 404 on the old generation. ``download_prefix`` must
+    swallow per-blob errors and keep going — otherwise a single racing
+    download crashes the whole fetch (and prevents the kill-after-fetch
+    step from ever running)."""
+    from types import SimpleNamespace
+
+    payloads = {
+        "runs/r/manifest.json": b"manifest\n",
+        "runs/r/status.json": b"will race",  # this one will raise on download
+        "runs/r/rows/db_a/attempt-1.json": b"row\n",
+    }
+
+    def _blob(name: str):
+        def _download():
+            if name == "runs/r/status.json":
+                raise RuntimeError("simulated 404 (object replaced)")
+            return payloads[name]
+
+        return SimpleNamespace(name=name, download_as_bytes=_download)
+
+    def _list_blobs(*, prefix: str = "", **_kw):
+        return [_blob(k) for k in sorted(payloads) if k.startswith(prefix)]
+
+    bucket = SimpleNamespace(blob=_blob, list_blobs=_list_blobs,
+                              name="motley-team-birdbench")
+    client = SimpleNamespace(bucket=lambda _name: bucket)
+
+    dest = tmp_path / "out"
+    # Must NOT raise even though one blob's download throws.
+    gcs.download_prefix("runs/r/", dest, client=client)
+    # Successful blobs still landed on disk.
+    assert (dest / "manifest.json").read_bytes() == b"manifest\n"
+    assert (dest / "rows" / "db_a" / "attempt-1.json").read_bytes() == b"row\n"
+    # The racing blob was skipped, not corruptly written.
+    assert not (dest / "status.json").exists()
+
+
 @pytest.mark.parametrize(
     "slayer_setup, framework, expected",
     [

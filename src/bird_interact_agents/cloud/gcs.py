@@ -12,6 +12,7 @@ Object layout (see SPEC §6.4):
 from __future__ import annotations
 
 import json
+import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -19,6 +20,9 @@ from typing import Any
 
 
 from bird_interact_agents.cloud import config
+
+
+logger = logging.getLogger(__name__)
 
 
 BUCKET_NAME = config.BUCKET_NAME
@@ -261,7 +265,21 @@ def download_prefix(
             return
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        data = blob.download_as_bytes()
+        try:
+            data = blob.download_as_bytes()
+        except Exception as exc:  # noqa: BLE001
+            # Live runs constantly rewrite hot blobs (e.g. `status.json`,
+            # heartbeat). The SDK pins the generation seen at `list_blobs`
+            # time into the download URL, so a concurrent write between
+            # listing and downloading raises 404 / InvalidResponse on the
+            # old generation. Swallow per-blob errors so one racing
+            # download doesn't kill the whole fetch (and prevent the
+            # auto-kill step from running).
+            logger.warning(
+                "[download_prefix] skipping %s: %s: %s",
+                blob.name, type(exc).__name__, exc,
+            )
+            return
         target.write_bytes(data)
 
     blobs = list(bucket.list_blobs(prefix=prefix))

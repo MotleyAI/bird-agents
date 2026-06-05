@@ -986,18 +986,24 @@ def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
         eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
 
     if kill_after_fetch and cluster.head_is_alive(run_id):
-        _status = gcs.read_status(run_id) or {}
-        _terminal = _status.get("terminal_state")
-        _attempts = gcs.list_attempts(run_id)
-        _total = len(manifest.get("instance_ids", []))
-        _complete = (_terminal in ("done", "error")) or (len(_attempts) >= _total > 0)
-        if _complete:
-            logger.info("Run %s complete; shutting down cluster.", run_id)
-            try:
-                kill(run_id)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("auto-kill after fetch failed for %s: %s", run_id, exc)
-                metrics["kill_after_fetch_error"] = str(exc)
+        # Trust the caller's intent: ``kill_after_fetch=True`` (the CLI
+        # default unless ``--no-kill`` was passed) means "I am done with
+        # this cluster". Previously this branch guarded on
+        # ``terminal_state in ('done','error')`` OR ``all_attempts_present``,
+        # which silently skipped the kill whenever a waiter terminated
+        # with a non-natural state — ``timed-out`` / ``stalled`` /
+        # ``headless`` (the cluster only writes ``done``/``error`` itself;
+        # waiter-side terminals never reach ``status.json``). The result
+        # was leaked clusters on the runs `bird-interact-cloud fetch`
+        # was clearly invoked to tear down. Inspecting a still-running
+        # cluster without killing it now goes through ``fetch --no-kill``,
+        # which is what the flag is for.
+        logger.info("Shutting down cluster %s after fetch.", run_id)
+        try:
+            kill(run_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("auto-kill after fetch failed for %s: %s", run_id, exc)
+            metrics["kill_after_fetch_error"] = str(exc)
 
     return metrics
 
