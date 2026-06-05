@@ -34,9 +34,9 @@ from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.eval.annotation_io import (
     read_submission_annotation,
     read_task_annotation,
-    submission_annotation_path,
+    run_annotation_path,
     task_annotation_path,
-    write_submission_annotation,
+    write_run_annotation,
     write_task_annotation,
 )
 from bird_interact_agents.eval.annotation_schema import (
@@ -370,7 +370,7 @@ def write_submission_skeleton(
     repo_root: Optional[Path] = None,
 ) -> Optional[Path]:
     repo_root = repo_root or paths.main_checkout_root()
-    dest = submission_annotation_path(
+    dest = run_annotation_path(
         benchmark=benchmark, selected_database=selected_database,
         instance_id=instance_id, run_id=run_id, repo_root=repo_root,
     )
@@ -382,7 +382,7 @@ def write_submission_skeleton(
         run_id=run_id, task_row=task_row, grader=grader,
     )
     if not dry_run:
-        write_submission_annotation(ann, dest)
+        write_run_annotation(ann, dest)
     return dest
 
 

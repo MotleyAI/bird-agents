@@ -13,7 +13,7 @@ Per the project Python convention, every container field uses a typed
 """
 from __future__ import annotations
 
-from typing import List, Literal, Optional, Union
+from typing import Any, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator  # noqa: F401
 
@@ -189,7 +189,8 @@ RemediationTarget = Literal["agent", "prompt", "kb", "audit", "grader", "user_si
 SubmissionVerdict = Literal[
     "correct",
     "valid_interpretation",
-    "invalid",
+    "agent_miss",          # all cascade tiers failed; task is evaluable
+    "eval_failed",         # infrastructure failure / no gold / grader raised
     "reject_quarantined",
     "pending",
 ]
@@ -727,10 +728,32 @@ class AutopsyResult(BaseModel):
 class SubmissionAnnotation(BaseModel):
     """Per-(instance, run) annotation.
 
-    Path:
-    ``annotations/<benchmark>/<db>/<instance_id>.submission.<run_id>.json``.
+    Path (DEV-1533):
+    ``runs/<benchmark>/<db>/<instance_id>/<run_id>.json``.
     """
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_invalid_verdict(cls, data: Any) -> Any:
+        """Silently upgrade legacy verdict="invalid" annotations on read.
+
+        Old on-disk annotations use "invalid" for two different cases that
+        are now distinguished: genuine agent misses ("agent_miss") and
+        grader/infrastructure failures ("eval_failed").
+        failure_classification.primary="other" → infra failure → "eval_failed";
+        anything else → "agent_miss".
+        """
+        if not isinstance(data, dict):
+            return data
+        ev = data.get("evaluation")
+        fc = data.get("failure_classification")
+        if isinstance(ev, dict) and ev.get("verdict") == "invalid":
+            if isinstance(fc, dict) and fc.get("primary") == "other":
+                ev["verdict"] = "eval_failed"
+            else:
+                ev["verdict"] = "agent_miss"
+        return data
 
     schema_version: Literal[1] = 1
     kind: Literal["submission_annotation"] = "submission_annotation"
@@ -752,3 +775,17 @@ class SubmissionAnnotation(BaseModel):
     """LLM-produced post-mortem. Populated only for genuine cascade misses
     (all N1–N9 fail) on claude_sdk_otf* frameworks. None for passing
     submissions and for all other frameworks."""
+
+    # DEV-1533: run-level data stored alongside the grading result.
+    submitted_sql: Optional[str] = None
+    """The agent's final submitted SQL string."""
+    predicted_result: Optional[List[Any]] = None
+    """The rows returned by executing the agent's SQL against the DB."""
+    gold_result: Optional[List[Any]] = None
+    """The reference gold rows (from executing the best-matching gold SQL)."""
+    original_gold_annotated_correct: Optional[bool] = None
+    """Whether the original sol_sql was annotated as correct in the task
+    annotation (``task_annotation.original_gold_is_correct``). Used by the
+    partition cascade to distinguish L1 (correct original matched) from L2
+    (wrong original coincidentally matched). None for migrated/legacy
+    annotations that pre-date DEV-1533."""

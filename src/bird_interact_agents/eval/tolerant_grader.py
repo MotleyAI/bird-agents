@@ -402,15 +402,32 @@ _CASCADE_ORDER = [
 ]
 
 
-def enforce_monotone_cascade(raw: dict[str, bool]) -> dict[str, bool]:
-    """Given raw N1..N8 bools, return a monotone-enforced version: once
-    True, every subsequent level stays True (a pass at level N implies
-    a pass at level N+1)."""
+def enforce_monotone_cascade(
+    raw: dict[str, bool],
+    *,
+    original_gold_is_correct: bool = True,
+) -> dict[str, bool]:
+    """Given raw N1..N9 bools, return a monotone-enforced version.
+
+    Normally once any tier is True every subsequent tier stays True (a
+    pass at tier N implies a pass at tier N+1).
+
+    Exception (DEV-1533): when ``original_gold_is_correct=False``, N1
+    (match against the original, now-considered-wrong gold) does NOT
+    propagate to N2+.  N2 onwards are still monotone among themselves.
+    This prevents an agent that coincidentally matched the wrong original
+    gold from receiving N2/N3 "pass" credit for the audited-correct
+    answer.
+    """
     out: dict[str, bool] = {}
     seen_true = False
-    for f in _CASCADE_ORDER:
+    for i, f in enumerate(_CASCADE_ORDER):
         v = bool(raw.get(f, False))
-        if seen_true or v:
+        if i == 0 and not original_gold_is_correct:
+            # N1 is recorded faithfully but never starts the cascade
+            # when the original gold was annotated as wrong.
+            out[f] = v
+        elif seen_true or v:
             out[f] = True
             seen_true = True
         else:
@@ -716,6 +733,11 @@ class CascadeVerdict(BaseModel):
     variant_matches: List[VariantMatch] = Field(default_factory=list)
     rowset_relations: List[VariantMatch] = Field(default_factory=list)
     miss_diagnostics: Optional["MissDiagnostics"] = None
+    # DEV-1533: result sets for enriching the run annotation.
+    predicted_rows: Optional[List[Any]] = None
+    """Rows returned by executing the agent's SQL (None if execution failed)."""
+    gold_rows: Optional[List[Any]] = None
+    """Rows from the primary audited variant (or original gold if no variants)."""
 
 
 def _multi_sql_execute(
@@ -1055,7 +1077,14 @@ def grade_submission(
         "n7_trailing_whitespace": n7, "n8_column_order": n8,
         "n9_case_fold": n9,
     }
-    enforced = enforce_monotone_cascade(raw)
+    original_gold_is_correct = getattr(
+        task_annotation, "original_gold_is_correct", True
+    )
+    if original_gold_is_correct is None:
+        original_gold_is_correct = True
+    enforced = enforce_monotone_cascade(
+        raw, original_gold_is_correct=original_gold_is_correct,
+    )
 
     # 8) Strict-miss diagnostics — populated ONLY when no cascade tier
     # passed AND at least one audited variant exists. Captures rowset
@@ -1078,12 +1107,21 @@ def grade_submission(
             user_sim_n_asks=user_sim_n_asks,
         )
 
+    # DEV-1533: capture result sets for run annotation enrichment.
+    _gold_rows_for_result: Optional[list] = None
+    if primary is not None:
+        _gold_rows_for_result = [list(r) for r in primary[1]]
+    elif orig_rows:
+        _gold_rows_for_result = [list(r) for r in orig_rows]
+
     return CascadeVerdict(
         **enforced,
         matched_variant_id=matched_variant,
         novel_reading_judgment=novel_judgment,
         variant_matches=info_matches,
         miss_diagnostics=miss_diagnostics,
+        predicted_rows=[list(r) for r in pred_rows] if agent_sql_executed_ok else None,
+        gold_rows=_gold_rows_for_result,
     )
 
 

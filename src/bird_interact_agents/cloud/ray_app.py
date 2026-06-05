@@ -745,6 +745,7 @@ def _run_one_in_actor(
             task_annotation=row.get("_task_annotation"),
             autopsy_result=row.get("_autopsy"),
             attempt=attempt,
+            harness_passed=row.get("phase1_passed") is True,
         )
         _gcs.write_submission_annotation(
             run_id, iid, json.loads(ann_path.read_text()),

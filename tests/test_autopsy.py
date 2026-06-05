@@ -187,7 +187,7 @@ def test_submission_annotation_autopsy_field_none():
             phase1_against_original_gold="fail",
             phase1_against_audited_primary="fail",
             phase1_against_any_audited_variant="fail",
-            verdict="invalid",
+            verdict="agent_miss",
         ),
         failure_classification=FailureClassification(
             primary="agent_miss",
@@ -231,7 +231,7 @@ def test_submission_annotation_autopsy_field_filled():
             phase1_against_original_gold="fail",
             phase1_against_audited_primary="fail",
             phase1_against_any_audited_variant="fail",
-            verdict="invalid",
+            verdict="agent_miss",
         ),
         failure_classification=FailureClassification(
             primary="agent_miss",

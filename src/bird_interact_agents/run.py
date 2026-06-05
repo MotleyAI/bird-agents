@@ -1022,6 +1022,7 @@ async def run_evaluation(
                 predicted_row_count=r.get("predicted_row_count"),
                 task_annotation=r.get("_task_annotation"),
                 autopsy_result=r.get("_autopsy"),
+                harness_passed=r.get("phase1_passed") is True,
             )
         except Exception as exc:  # noqa: BLE001 — keep the loop alive
             logger.exception(
@@ -1132,25 +1133,21 @@ async def run_evaluation(
     with open(output_path, "w") as f:
         json.dump(metrics, f, indent=2, default=str)
 
-    rows_dir = Path(output_path).parent / "rows"
-    if rows_dir.exists() and any(
-        (sub / "submission_annotation.json").exists()
-        for sub in rows_dir.iterdir() if sub.is_dir()
-    ):
-        # Codex r11: scope the cascade aggregation to the CURRENT run's
-        # instance set. Filtered reruns preserve unrelated prior
-        # annotations on disk (round 10 design), but the published
-        # ``eval.json`` must describe ONLY the current run's row set —
-        # otherwise ``cascading_phase1.n_dual_eval_tasks`` (union) would
-        # exceed ``eval.total_tasks`` (filtered count) and the rewritten
-        # ``phase1_count`` / ``phase1_rate`` would become uninterpretable.
-        _current_iids = {
-            str(td.get("instance_id") or "") for td in tasks
-        } - {""}
+    # DEV-1533: emit the cascading_phase1 block from the runs/ golden
+    # store. grade_and_write already wrote each task's annotation there
+    # during execution, so runs/ is populated by the time we reach here.
+    # Codex r11: scope to the CURRENT run's instance set so filtered
+    # reruns don't mix stale annotations into the published metrics.
+    _current_iids = {
+        str(td.get("instance_id") or "") for td in tasks
+    } - {""}
+    try:
         metrics = emit_cascading_eval_json(
-            rows_dir, Path(output_path), base_metrics=metrics,
-            instance_filter=_current_iids,
+            _benchmark_canonical, run_id, Path(output_path),
+            base_metrics=metrics, instance_filter=_current_iids,
         )
+    except Exception:  # noqa: BLE001
+        pass  # leave the already-written eval.json as-is
 
     logger.info(
         "Done. Tasks: %d, P1: %d/%d (%.1f%%), Avg Reward: %.4f",

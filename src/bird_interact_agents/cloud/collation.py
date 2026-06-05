@@ -176,18 +176,15 @@ def collate(run_dir: Path, manifest: dict) -> dict[str, Any]:
 
     metrics = _build_metrics(manifest, ordered_rows, attempts)
     eval_path = run_dir / "eval.json"
-    rows_dir = run_dir / "rows"
-    has_per_row_anns = rows_dir.exists() and any(
-        (rd / "submission_annotation.json").exists()
-        for rd in rows_dir.iterdir() if rd.is_dir()
-    )
-    if has_per_row_anns:
+    run_id = manifest["run_id"]
+    benchmark = manifest.get("benchmark") or manifest.get("dataset")
+    if benchmark:
         from bird_interact_agents.eval import cascading_report as _cr
         try:
             metrics = _cr.emit_cascading_eval_json(
-                rows_dir=rows_dir, out_path=eval_path, base_metrics=metrics,
+                benchmark, run_id, eval_path, base_metrics=metrics,
             )
-        except FileNotFoundError as exc:
+        except Exception as exc:  # noqa: BLE001
             metrics["cascading_phase1_error"] = str(exc)
             eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
     else:

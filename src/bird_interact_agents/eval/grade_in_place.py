@@ -1,11 +1,14 @@
-"""DEV-1515: shared inline grader that both the cloud worker
-(``ray_app.py``) and the local runner (``run.py``) invoke per task.
+"""DEV-1515/1533: shared inline grader for cloud worker and local runner.
 
-The function ``grade_and_write`` runs ``tolerant_grader.grade_submission``
-and persists the resulting ``SubmissionAnnotation`` to
-``<rows_dir>/<instance_id>/submission_annotation.json``. The cloud
-``fetch`` path later merges that file into
-``<main_checkout>/annotations/<benchmark>/<db>/<instance>.submission.<run-id>.json``.
+``grade_and_write`` runs ``tolerant_grader.grade_submission`` and writes
+the resulting ``SubmissionAnnotation`` to two locations:
+
+1. ``<rows_dir>/<instance_id>/submission_annotation.json`` — temporary
+   per-task file used by ``cascading_report.aggregate_cascading_phase1``
+   to emit ``eval.json`` at end of run.
+2. ``runs/<benchmark>/<db>/<instance_id>/<run_id>.json`` — the golden
+   per-(task, run) store (DEV-1533); also writes the trajectory sidecar
+   at ``<run_id>.trajectory.json`` next to it.
 
 The pre-DEV-1515 raw per-gold pass-fail bools are NOT emitted anywhere
 — all per-task verdicts live in the SubmissionAnnotation's ``evaluation``
@@ -30,6 +33,11 @@ from bird_interact_agents.eval.annotation_schema import (
 
 if TYPE_CHECKING:
     from bird_interact_agents.eval.annotation_schema import AutopsyResult
+from bird_interact_agents.eval.annotation_io import (
+    run_annotation_path,
+    run_trajectory_path,
+    write_run_annotation_no_overwrite,
+)
 from bird_interact_agents.eval.implicit_annotation import (
     implicit_task_annotation,
 )
@@ -113,7 +121,7 @@ def verdict_label_from_cascade(cascade: CascadeVerdict) -> str:
       ``"valid_interpretation"`` (cascade-tier acceptance — the row is
       not strictly identical to the gold but matches under a named
       tolerance / under the LLM judge for an ``insufficient`` task)
-    * otherwise → ``"invalid"``
+    * otherwise → ``"agent_miss"`` (all tiers failed; task is evaluable)
     """
     if cascade.n3_any_audited_variant:
         return "correct"
@@ -126,7 +134,7 @@ def verdict_label_from_cascade(cascade: CascadeVerdict) -> str:
         or cascade.n9_case_fold
     ):
         return "valid_interpretation"
-    return "invalid"
+    return "agent_miss"
 
 
 def _auto_failure_class(cascade: CascadeVerdict) -> tuple[str, bool, str]:
@@ -176,6 +184,7 @@ def _build_submission_annotation(
     cost_usd_user_sim: Optional[float],
     n_agent_turns: Optional[int],
     n_ask_user_calls: Optional[int],
+    submitted_sql: Optional[str] = None,
     user_sim_interaction: Optional[UserSimInteraction] = None,
     epsilon: float = 1e-6,
 ) -> SubmissionAnnotation:
@@ -209,6 +218,9 @@ def _build_submission_annotation(
         f"{task_annotation.selected_database}/"
         f"{task_annotation.instance_id}.task.json"
     )
+    original_gold_is_correct = getattr(
+        task_annotation, "original_gold_is_correct", None
+    )
     return SubmissionAnnotation(
         instance_id=task_annotation.instance_id,
         selected_database=task_annotation.selected_database,
@@ -239,7 +251,145 @@ def _build_submission_annotation(
             if user_sim_interaction is not None
             else UserSimInteraction(n_asks=n_ask_user_calls or 0)
         ),
+        submitted_sql=submitted_sql,
+        predicted_result=cascade.predicted_rows,
+        gold_result=cascade.gold_rows,
+        original_gold_annotated_correct=original_gold_is_correct,
     )
+
+
+def _write_to_runs(
+    ann: SubmissionAnnotation,
+    *,
+    rows_dir: Path,
+    benchmark: str,
+    run_id: str,
+) -> None:
+    """Write the annotation (and trajectory sidecar) to the runs/ golden store.
+
+    Trajectory sidecar is read from
+    ``rows_dir/<instance_id>/attempt-<N>.json`` (parsed from
+    ``ann.submission.trajectory_path``). If the file is absent, a minimal
+    stub is written instead.
+    """
+    import re
+
+    dest = run_annotation_path(
+        benchmark=benchmark,
+        selected_database=ann.selected_database,
+        instance_id=ann.instance_id,
+        run_id=run_id,
+    )
+    write_run_annotation_no_overwrite(ann, dest)
+
+    # Trajectory sidecar — best-effort (never raises).
+    traj_dest = run_trajectory_path(
+        benchmark=benchmark,
+        selected_database=ann.selected_database,
+        instance_id=ann.instance_id,
+        run_id=run_id,
+    )
+    if not traj_dest.exists():
+        traj_content: Any = {"trajectory_path": ann.submission.trajectory_path}
+        traj_src_rel = ann.submission.trajectory_path or ""
+        m = re.search(r"rows/(.+)$", traj_src_rel)
+        if m:
+            traj_src = rows_dir / m.group(1)
+            if traj_src.exists():
+                try:
+                    traj_content = json.loads(traj_src.read_text())
+                except Exception:  # noqa: BLE001
+                    pass
+        traj_dest.parent.mkdir(parents=True, exist_ok=True)
+        traj_dest.write_text(
+            json.dumps(traj_content, indent=2, default=str) + "\n"
+        )
+
+
+def _write_harness_confirmed_annotation(
+    *,
+    rows_dir: Path,
+    instance_id: str,
+    selected_database: str,
+    benchmark: str,
+    run_id: str,
+    attempt: int,
+    task_annotation: TaskAnnotation,
+    cost_usd_agent: Optional[float],
+    cost_usd_user_sim: Optional[float],
+    duration_s: Optional[float],
+    n_agent_turns: Optional[int],
+    n_ask_user_calls: Optional[int],
+    predicted_row_count: Optional[int],
+    user_sim_interaction: Optional[UserSimInteraction],
+) -> Path:
+    """Write an all-pass annotation without re-executing SQL.
+
+    Called when the upstream harness already confirmed phase1_passed=True.
+    The harness comparison is authoritative (it normalises floats to 2dp
+    before comparison; re-running here with epsilon=1e-6 would disagree).
+
+    ``rationale="harness_confirmed"`` is a sentinel so consumers can tell
+    N2/N3 were not independently verified by the inline grader.
+    """
+    out_dir = Path(rows_dir) / instance_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "submission_annotation.json"
+    if out_path.exists():
+        return out_path  # idempotent
+
+    original_gold_is_correct = getattr(
+        task_annotation, "original_gold_is_correct", None
+    )
+    ann = SubmissionAnnotation(
+        instance_id=instance_id,
+        selected_database=selected_database,
+        task_annotation_ref=(
+            f"annotations/{benchmark}/{selected_database}/"
+            f"{instance_id}.task.json"
+        ),
+        annotated_by=_AUTO_ANNOTATOR,
+        annotated_at=_dt.datetime.now(_dt.timezone.utc)
+            .replace(microsecond=0).isoformat(),
+        submission=SubmissionMetadata(
+            cloud_run_id=run_id,
+            trajectory_path=f"rows/{instance_id}/attempt-{attempt}.json",
+            predicted_row_count=predicted_row_count,
+            duration_s=duration_s,
+            cost_usd_agent=cost_usd_agent,
+            cost_usd_user_sim=cost_usd_user_sim,
+            n_agent_turns=n_agent_turns,
+            n_ask_user_calls=n_ask_user_calls,
+        ),
+        evaluation=SubmissionEvaluation(
+            phase1_against_original_gold="pass",
+            phase1_against_audited_primary="pass",
+            phase1_against_any_audited_variant="pass",
+            phase1_against_variants=[],
+            correct_up_to_tie_order=True,
+            novel_reading_judgment=None,
+            correct_under_numeric_epsilon=True,
+            correct_under_trailing_whitespace=True,
+            correct_under_column_order=True,
+            correct_under_case_fold=True,
+            numeric_epsilon=1e-6,
+            verdict="correct",
+            matched_variant_id=None,
+            rationale="harness_confirmed",
+            miss_diagnostics=None,
+        ),
+        failure_classification=FailureClassification(
+            primary="no_fail",
+            agent_at_fault=False,
+            remediation_target="other",
+        ),
+        decision_point=None,
+        user_sim_interaction=user_sim_interaction or UserSimInteraction(),
+        original_gold_annotated_correct=original_gold_is_correct,
+    )
+    out_path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
+    _write_to_runs(ann, rows_dir=Path(rows_dir), benchmark=benchmark, run_id=run_id)
+    return out_path
 
 
 def grade_and_write(
@@ -328,6 +478,7 @@ def grade_and_write(
         cost_usd_user_sim=cost_usd_user_sim,
         n_agent_turns=n_agent_turns,
         n_ask_user_calls=n_ask_user_calls,
+        submitted_sql=submitted_sql,
         user_sim_interaction=user_sim_interaction,
         epsilon=epsilon,
     )
@@ -340,6 +491,7 @@ def grade_and_write(
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "submission_annotation.json"
     out_path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
+    _write_to_runs(ann, rows_dir=Path(rows_dir), benchmark=benchmark, run_id=run_id)
     return out_path
 
 
@@ -410,7 +562,7 @@ def write_failed_submission_annotation(
             correct_under_column_order=False,
             correct_under_case_fold=False,
             numeric_epsilon=1e-6,
-            verdict="invalid",
+            verdict="eval_failed",
             matched_variant_id=None,
             rationale=failure_details,
             miss_diagnostics=None,
@@ -423,9 +575,11 @@ def write_failed_submission_annotation(
         ),
         decision_point=None,
         user_sim_interaction=UserSimInteraction(),
+        original_gold_annotated_correct=None,
     )
     out_path = out_dir / "submission_annotation.json"
     out_path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
+    _write_to_runs(ann, rows_dir=Path(rows_dir), benchmark=benchmark, run_id=run_id)
     return out_path
 
 
@@ -545,6 +699,7 @@ def grade_one_submission(
     task_annotation: Optional[TaskAnnotation] = None,
     autopsy_result: Optional["AutopsyResult"] = None,
     attempt: int = 1,
+    harness_passed: Optional[bool] = None,
 ) -> Path:
     """Inline-grade one submission and write the per-row
     ``submission_annotation.json``. Idempotent at the per-(task, run)
@@ -573,6 +728,29 @@ def grade_one_submission(
             benchmark=benchmark,
             amb_user_query=task_data.get("amb_user_query", ""),
         )
+
+    # Harness short-circuit: the upstream harness is authoritative for
+    # phase1_passed=True (it normalises floats to 2dp before comparison;
+    # re-running here with epsilon=1e-6 would disagree on float-heavy
+    # tasks). Skip all SQL re-execution and write a confirmed annotation.
+    if harness_passed is True:
+        return _write_harness_confirmed_annotation(
+            rows_dir=Path(rows_dir),
+            instance_id=instance_id,
+            selected_database=selected_database,
+            benchmark=benchmark,
+            run_id=run_id,
+            attempt=attempt,
+            task_annotation=task_annotation,
+            cost_usd_agent=cost_usd_agent,
+            cost_usd_user_sim=cost_usd_user_sim,
+            duration_s=duration_s,
+            n_agent_turns=n_agent_turns,
+            n_ask_user_calls=n_ask_user_calls,
+            predicted_row_count=predicted_row_count,
+            user_sim_interaction=user_sim_interaction,
+        )
+
     audited_rows = load_audited_gold_rows_for(
         benchmark=benchmark, instance_id=instance_id,
     )

@@ -21,6 +21,27 @@ from typing import Any
 import pytest
 
 
+def _also_write_to_runs(ann, *, benchmark: str, run_id: str) -> None:
+    """Write ``ann`` to the runs/ golden store (DEV-1533).
+
+    Called from every grader stub that manually constructs a
+    SubmissionAnnotation — the real ``grade_and_write`` / ``_write_to_runs``
+    are bypassed when the stub patches ``grade_one_submission`` directly.
+    Relies on ``main_checkout_root`` being patched to ``tmp_path`` by the
+    enclosing test so the write goes to the isolated temp directory.
+    """
+    from bird_interact_agents.eval.annotation_io import (
+        run_annotation_path, write_run_annotation,
+    )
+    dest = run_annotation_path(
+        benchmark=benchmark,
+        selected_database=ann.selected_database,
+        instance_id=ann.instance_id,
+        run_id=run_id,
+    )
+    write_run_annotation(ann, dest)
+
+
 def _patch_loader_returns(monkeypatch, rows: list[dict]) -> None:
     """Same shape as the DEV-1510 wiring test — patch the loader so
     `run_evaluation` reaches the runner-call loop without real data."""
@@ -48,7 +69,9 @@ def _stub_runner_factory(monkeypatch, results_by_inst: dict[str, dict]):
 async def test_local_run_invokes_inline_grader_per_task(monkeypatch, tmp_path):
     """End-to-end: 2 fake tasks → inline grader called twice → the
     rows-dir aggregator emits ``cascading_phase1`` in ``eval.json``."""
+    import bird_interact_agents.paths as paths_mod
     import bird_interact_agents.run as run_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
     rows = [
         {
@@ -141,7 +164,7 @@ async def test_local_run_invokes_inline_grader_per_task(monkeypatch, tmp_path):
                 correct_under_column_order=passed,
                 correct_under_case_fold=passed,
                 numeric_epsilon=1e-6,
-                verdict="correct" if passed else "invalid",
+                verdict="correct" if passed else "agent_miss",
                 matched_variant_id="primary" if passed else None,
                 rationale="",
                 miss_diagnostics=None,
@@ -159,6 +182,7 @@ async def test_local_run_invokes_inline_grader_per_task(monkeypatch, tmp_path):
         )
         path = out_dir / "submission_annotation.json"
         path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
+        _also_write_to_runs(ann, benchmark=benchmark, run_id=run_id)
         return path
 
     monkeypatch.setattr(run_mod, "grade_one_submission", _stub_grader)
@@ -243,7 +267,9 @@ async def test_local_run_grader_failure_writes_fail_everything_annotation(
     stays at ``len(tasks)``. Pre-fix the broken instance was silently
     dropped, inflating ``cascading_phase1.rates`` (Codex round-4 finding
     on ``run.py:1007-1012``)."""
+    import bird_interact_agents.paths as paths_mod
     import bird_interact_agents.run as run_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
     rows = [
         {"instance_id": "alien_1", "selected_database": "alien",
@@ -283,6 +309,7 @@ async def test_local_run_grader_failure_writes_fail_everything_annotation(
         # has something parseable to read.
         rows_dir = Path(kw["rows_dir"])
         run_id = kw["run_id"]
+        benchmark = kw["benchmark"]
         out_dir = rows_dir / task_data["instance_id"]
         out_dir.mkdir(parents=True, exist_ok=True)
         ann = SubmissionAnnotation(
@@ -310,7 +337,7 @@ async def test_local_run_grader_failure_writes_fail_everything_annotation(
                 correct_under_column_order=False,
                 correct_under_case_fold=False,
                 numeric_epsilon=1e-6,
-                verdict="invalid",
+                verdict="agent_miss",
                 matched_variant_id=None,
                 rationale="",
                 miss_diagnostics=None,
@@ -326,6 +353,7 @@ async def test_local_run_grader_failure_writes_fail_everything_annotation(
         )
         path = out_dir / "submission_annotation.json"
         path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
+        _also_write_to_runs(ann, benchmark=benchmark, run_id=run_id)
         return path
 
     monkeypatch.setattr(
@@ -385,7 +413,7 @@ async def test_local_run_grader_failure_writes_fail_everything_annotation(
         (rows_dir / "alien_1" / "submission_annotation.json").read_text(),
     )
     assert alien1["failure_classification"]["primary"] == "other"
-    assert alien1["evaluation"]["verdict"] == "invalid"
+    assert alien1["evaluation"]["verdict"] == "eval_failed"
     assert "grader raised" in alien1["failure_classification"]["details"]
 
 
@@ -398,7 +426,9 @@ async def test_local_run_no_submitted_sql_writes_fail_everything_annotation(
     annotation so the cascade denominator stays honest. Pre-fix the
     no-submit row was silently dropped from
     ``cascading_phase1.n_dual_eval_tasks``."""
+    import bird_interact_agents.paths as paths_mod
     import bird_interact_agents.run as run_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
     rows = [
         {"instance_id": "alien_1", "selected_database": "alien",
@@ -436,6 +466,8 @@ async def test_local_run_no_submitted_sql_writes_fail_everything_annotation(
     def _stub_grader_for_alien_2(*, task_data, **kw):
         # Only called for alien_2 — alien_1 is short-circuited by the
         # no-submitted_sql check before reaching the grader.
+        run_id = kw["run_id"]
+        benchmark = kw["benchmark"]
         out_dir = Path(kw["rows_dir"]) / task_data["instance_id"]
         out_dir.mkdir(parents=True, exist_ok=True)
         ann = SubmissionAnnotation(
@@ -463,7 +495,7 @@ async def test_local_run_no_submitted_sql_writes_fail_everything_annotation(
                 correct_under_column_order=False,
                 correct_under_case_fold=False,
                 numeric_epsilon=1e-6,
-                verdict="invalid",
+                verdict="agent_miss",
                 matched_variant_id=None,
                 rationale="",
                 miss_diagnostics=None,
@@ -479,6 +511,7 @@ async def test_local_run_no_submitted_sql_writes_fail_everything_annotation(
         )
         path = out_dir / "submission_annotation.json"
         path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
+        _also_write_to_runs(ann, benchmark=benchmark, run_id=run_id)
         return path
 
     monkeypatch.setattr(
@@ -531,7 +564,9 @@ async def test_local_run_wipes_stale_rows_when_no_filter(monkeypatch, tmp_path):
     MUST wipe ``rows/`` first, so the aggregator only sees the current
     run's annotations. Pre-fix a stale ``rows/old_iid/...`` from a prior
     pass would inflate ``cascading_phase1.n_dual_eval_tasks``."""
+    import bird_interact_agents.paths as paths_mod
     import bird_interact_agents.run as run_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
     output_path = tmp_path / "eval.json"
     rows_dir = output_path.parent / "rows"
@@ -591,7 +626,7 @@ async def test_local_run_wipes_stale_rows_when_no_filter(monkeypatch, tmp_path):
                 correct_under_column_order=False,
                 correct_under_case_fold=False,
                 numeric_epsilon=1e-6,
-                verdict="invalid",
+                verdict="agent_miss",
                 matched_variant_id=None,
                 rationale="",
                 miss_diagnostics=None,
@@ -607,6 +642,7 @@ async def test_local_run_wipes_stale_rows_when_no_filter(monkeypatch, tmp_path):
         )
         path = out_dir / "submission_annotation.json"
         path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
+        _also_write_to_runs(ann, benchmark=kw["benchmark"], run_id=kw["run_id"])
         return path
     monkeypatch.setattr(run_mod, "grade_one_submission", _stub)
 
@@ -640,7 +676,9 @@ async def test_local_run_filter_ids_preserves_unrelated_rows(
     """Symmetric case: filtered reruns must NOT wipe rows from a prior
     full run if those instances aren't in the current task set. Only
     the subdirs we're about to overwrite get reset."""
+    import bird_interact_agents.paths as paths_mod
     import bird_interact_agents.run as run_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
     output_path = tmp_path / "eval.json"
     rows_dir = output_path.parent / "rows"
@@ -676,7 +714,7 @@ async def test_local_run_filter_ids_preserves_unrelated_rows(
                 correct_under_column_order=False,
                 correct_under_case_fold=False,
                 numeric_epsilon=1e-6,
-                verdict="invalid",
+                verdict="agent_miss",
                 matched_variant_id=None,
                 rationale="",
                 miss_diagnostics=None,
@@ -713,10 +751,11 @@ async def test_local_run_filter_ids_preserves_unrelated_rows(
     def _stub(*, task_data, **kw):
         out_dir = Path(kw["rows_dir"]) / task_data["instance_id"]
         out_dir.mkdir(parents=True, exist_ok=True)
+        ann = _make_ann(task_data["instance_id"], "fresh")
         (out_dir / "submission_annotation.json").write_text(
-            _make_ann(task_data["instance_id"], "fresh")
-            .model_dump_json(indent=2, exclude_none=False) + "\n",
+            ann.model_dump_json(indent=2, exclude_none=False) + "\n",
         )
+        _also_write_to_runs(ann, benchmark=kw["benchmark"], run_id=kw["run_id"])
         return out_dir / "submission_annotation.json"
     monkeypatch.setattr(run_mod, "grade_one_submission", _stub)
 

@@ -83,11 +83,10 @@ def test_regrade_overwrites_existing_submission_annotation(tmp_path, monkeypatch
     from bird_interact_agents import paths as paths_mod
     monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
-    # Pre-existing submission annotation at the destination.
-    # Post-DEV-1525: canonical name is hyphenated ("mini-interact").
-    dest_dir = tmp_path / "annotations" / "mini-interact" / "alien"
+    # Pre-existing run annotation at the destination (DEV-1533: runs/).
+    dest_dir = tmp_path / "runs" / "mini-interact" / "alien" / "alien_1"
     dest_dir.mkdir(parents=True)
-    dest = dest_dir / "alien_1.submission.r1.json"
+    dest = dest_dir / "r1.json"
     dest.write_text('{"annotated_by": "stale", "kind": "submission_annotation"}')
 
     run_dir = tmp_path / "results" / "cloud" / "r1"

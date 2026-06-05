@@ -212,7 +212,7 @@ def test_cloud_grader_failure_uploads_fail_everything_annotation(
     payload = json.loads(store[ann_blob_keys[0]].decode())
     # Fail-everything shape: every cascade tier is fail/False, verdict
     # is invalid, primary is 'other' (the cascade was never actually run).
-    assert payload["evaluation"]["verdict"] == "invalid"
+    assert payload["evaluation"]["verdict"] == "eval_failed"
     assert payload["evaluation"]["phase1_against_original_gold"] == "fail"
     assert payload["evaluation"]["phase1_against_any_audited_variant"] == "fail"
     assert payload["evaluation"]["correct_up_to_tie_order"] is False
@@ -310,7 +310,7 @@ def test_cloud_no_submitted_sql_short_circuits_before_real_grader(
         f"fail-everything annotation missing from upload; keys={sorted(store)}"
     )
     payload = json.loads(store[ann_keys[0]].decode())
-    assert payload["evaluation"]["verdict"] == "invalid"
+    assert payload["evaluation"]["verdict"] == "eval_failed"
     assert payload["failure_classification"]["primary"] == "other"
     assert (
         "no submitted_sql" in payload["failure_classification"]["details"]

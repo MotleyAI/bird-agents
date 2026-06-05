@@ -90,8 +90,7 @@ def test_merge_writes_annotation_to_main_checkout(tmp_path, monkeypatch):
 
     main_checkout = tmp_path / "checkout"
     main_checkout.mkdir()
-    fake_ann_root = main_checkout / "annotations"
-    monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
+    monkeypatch.setattr(_paths, "main_checkout_root", lambda: main_checkout)
     downloaded = tmp_path / "downloaded"
     rows = downloaded / "rows" / "alien_1"
     rows.mkdir(parents=True)
@@ -105,10 +104,8 @@ def test_merge_writes_annotation_to_main_checkout(tmp_path, monkeypatch):
         benchmark="mini-interact",
     )
 
-    dest = (
-        main_checkout / "annotations" / "mini-interact" / "alien"
-        / "alien_1.submission.r1.json"
-    )
+    # DEV-1533: annotations now land in runs/<benchmark>/<db>/<instance>/<run_id>.json
+    dest = main_checkout / "runs" / "mini-interact" / "alien" / "alien_1" / "r1.json"
     assert dest.exists()
     assert report.merged == 1
     assert report.skipped_existing == 0
@@ -188,8 +185,8 @@ def test_merge_writes_audit_report(tmp_path, monkeypatch):
     )
 
     main_checkout = tmp_path / "checkout"
-    fake_ann_root = main_checkout / "annotations"
-    monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
+    main_checkout.mkdir()
+    monkeypatch.setattr(_paths, "main_checkout_root", lambda: main_checkout)
     downloaded = tmp_path / "downloaded"
     rows_dir = downloaded / "rows"
     for inst in ("a_1", "a_2"):
@@ -242,12 +239,13 @@ def test_merge_overwrites_when_new_attempt_strictly_newer(tmp_path, monkeypatch)
     )
 
     main_checkout = tmp_path / "checkout"
-    dest_dir = main_checkout / "annotations" / "mini-interact" / "alien"
+    main_checkout.mkdir()
+    # DEV-1533: pre-existing run annotation lives in runs/
+    dest_dir = main_checkout / "runs" / "mini-interact" / "alien" / "alien_1"
     dest_dir.mkdir(parents=True)
-    fake_ann_root = main_checkout / "annotations"
-    monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
+    monkeypatch.setattr(_paths, "main_checkout_root", lambda: main_checkout)
     # Pre-existing dest from a prior partial fetch — attempt-1.
-    (dest_dir / "alien_1.submission.r1.json").write_text(
+    (dest_dir / "r1.json").write_text(
         json.dumps(_make_dict_with_attempt("alien_1", 1)),
     )
 
@@ -269,7 +267,7 @@ def test_merge_overwrites_when_new_attempt_strictly_newer(tmp_path, monkeypatch)
     assert report.skipped_existing == 0, report
     assert report.merged == 0, report
     surviving = json.loads(
-        (dest_dir / "alien_1.submission.r1.json").read_text(),
+        (dest_dir / "r1.json").read_text(),
     )
     assert surviving["annotated_by"] == "attempt-2-grader"
     assert surviving["submission"]["trajectory_path"] == (

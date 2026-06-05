@@ -1,15 +1,14 @@
-"""DEV-1515: cascading-report aggregator + legacy-field removal.
+"""DEV-1515/1533: cascading-report aggregator + eval.json writer.
 
 Pins:
-* eval.json carries a single ``cascading_phase1`` block with N1..N8
+* eval.json carries a single ``cascading_phase1`` block with N1..N9
   counts, rates, deltas, and n_dual_eval_tasks.
 * ``phase1_count`` / ``phase1_rate`` stay (basic back-compat) but map
   to N1 of the cascade.
-* The legacy dual-eval block (``n_dual_eval_tasks`` standalone,
-  ``phase1_rate_audited``, ``phase1_rate_original`` etc.) is removed.
-* Aggregator reads per-row ``submission_annotation.json`` files; if
-  any row is missing the file, the aggregator raises (no silent
-  under-counts).
+* The legacy dual-eval block is removed.
+* Aggregator reads from ``runs/<benchmark>/<db>/<inst>/<run_id>.json``
+  (DEV-1533 golden store) via BIRD_RUNS_ROOT override in tests.
+* Each task maps to exactly one partition tier in ``cascading_partition``.
 """
 from __future__ import annotations
 
@@ -18,13 +17,21 @@ import json
 import pytest
 
 
-def _make_submission_annotation_json(
+_BENCHMARK = "mini-interact"
+_RUN_ID = "test-run-001"
+_DB = "alien"
+
+
+def _make_annotation_json(
     *,
     instance_id: str,
     selected_database: str,
     n1: bool, n2: bool, n3: bool, n4: bool, n5: bool,
     n6: bool, n7: bool, n8: bool, n9: bool = False,
     verdict: str = "correct",
+    original_gold_annotated_correct: bool = True,
+    rationale: str = "",
+    annotated_at: str = "2026-06-01T10:00:00+00:00",
 ) -> dict:
     """Build the JSON shape produced by tolerant_grader → SubmissionAnnotation."""
     return {
@@ -33,13 +40,13 @@ def _make_submission_annotation_json(
         "instance_id": instance_id,
         "selected_database": selected_database,
         "task_annotation_ref": (
-            f"annotations/mini-interact/{selected_database}/"
+            f"annotations/{_BENCHMARK}/{selected_database}/"
             f"{instance_id}.task.json"
         ),
         "annotated_by": "auto",
-        "annotated_at": "2026-05-31",
+        "annotated_at": annotated_at,
         "submission": {
-            "cloud_run_id": "test-run",
+            "cloud_run_id": _RUN_ID,
             "trajectory_path": f"rows/{instance_id}/attempt-1.json",
             "submitted_sql_path": None,
             "predicted_row_count": 1,
@@ -63,7 +70,7 @@ def _make_submission_annotation_json(
             "numeric_epsilon": 1e-6,
             "verdict": verdict,
             "matched_variant_id": "primary" if n3 else None,
-            "rationale": "",
+            "rationale": rationale,
         },
         "failure_classification": {
             "primary": "other",
@@ -78,45 +85,50 @@ def _make_submission_annotation_json(
             "n_asks": 0, "key_responses": [],
             "disclosed_resolutions": [], "undisclosed_resolutions": [],
         },
+        "original_gold_annotated_correct": original_gold_annotated_correct,
     }
 
 
+def _write_run_annotation(tmp_path, annotation: dict, run_id: str = _RUN_ID) -> None:
+    """Write annotation to runs/<benchmark>/<db>/<inst>/<run_id>.json."""
+    db = annotation["selected_database"]
+    iid = annotation["instance_id"]
+    dest = tmp_path / _BENCHMARK / db / iid / f"{run_id}.json"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(annotation))
+
+
 # ---------------------------------------------------------------------------
-# Aggregator — builds cascading_phase1 block from per-row SubmissionAnnotation
+# Aggregator — builds cascading_phase1 block from runs/ annotations
 # ---------------------------------------------------------------------------
 
 
-def test_aggregator_emits_cascading_phase1_block(tmp_path):
-    from bird_interact_agents.eval.cascading_report import (
-        aggregate_cascading_phase1,
-    )
+def test_aggregator_emits_cascading_phase1_block(monkeypatch, tmp_path):
+    from bird_interact_agents.eval.cascading_report import aggregate_cascading_phase1
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
-    rows_dir = tmp_path / "rows"
-    rows_dir.mkdir()
-    # 3 rows: full pass, only-N4, all-fail.
     annotations = [
-        _make_submission_annotation_json(
-            instance_id="alien_1", selected_database="alien",
+        _make_annotation_json(
+            instance_id="alien_1", selected_database=_DB,
             n1=True, n2=True, n3=True, n4=True, n5=True,
             n6=True, n7=True, n8=True,
         ),
-        _make_submission_annotation_json(
-            instance_id="alien_2", selected_database="alien",
+        _make_annotation_json(
+            instance_id="alien_2", selected_database=_DB,
             n1=False, n2=False, n3=False, n4=True, n5=True,
             n6=True, n7=True, n8=True,
         ),
-        _make_submission_annotation_json(
-            instance_id="alien_3", selected_database="alien",
+        _make_annotation_json(
+            instance_id="alien_3", selected_database=_DB,
             n1=False, n2=False, n3=False, n4=False, n5=False,
             n6=False, n7=False, n8=False,
         ),
     ]
     for ann in annotations:
-        d = rows_dir / ann["instance_id"]
-        d.mkdir()
-        (d / "submission_annotation.json").write_text(json.dumps(ann))
+        _write_run_annotation(tmp_path / "runs", ann)
 
-    block = aggregate_cascading_phase1(rows_dir)
+    block = aggregate_cascading_phase1(_BENCHMARK, _RUN_ID)
     assert block["n_dual_eval_tasks"] == 3
     counts = block["counts"]
     assert counts["n1"] == 1
@@ -138,204 +150,264 @@ def test_aggregator_emits_cascading_phase1_block(tmp_path):
     assert deltas["n4"] == 1  # alien_2 added at N4
 
 
-def test_aggregator_instance_filter_scopes_to_current_run(tmp_path):
-    """Codex r11: filtered local reruns preserve unrelated prior
-    annotations on disk for human inspection. The aggregator MUST
-    accept an ``instance_filter`` so the published cascade describes
-    only the CURRENT run's row set — otherwise
-    ``n_dual_eval_tasks`` (union of new + stale) would exceed the
-    rest of ``eval.json``'s ``total_tasks`` (filtered count) and
-    rewritten ``phase1_count`` / ``phase1_rate`` would become
-    uninterpretable."""
-    from bird_interact_agents.eval.cascading_report import (
-        aggregate_cascading_phase1,
-    )
+def test_aggregator_instance_filter_scopes_to_current_run(monkeypatch, tmp_path):
+    """Filtered local reruns: instance_filter scopes the cascade to only
+    the current run's instances."""
+    from bird_interact_agents.eval.cascading_report import aggregate_cascading_phase1
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
-    rows_dir = tmp_path / "rows"
-    rows_dir.mkdir()
-    # Three on-disk annotations; the current run only touches alien_1
-    # (and alien_3, which fails). alien_2 is a leftover from a
-    # previous full run.
     annotations = [
-        _make_submission_annotation_json(
-            instance_id="alien_1", selected_database="alien",
+        _make_annotation_json(
+            instance_id="alien_1", selected_database=_DB,
             n1=True, n2=True, n3=True, n4=True, n5=True,
             n6=True, n7=True, n8=True,
         ),
-        _make_submission_annotation_json(
-            instance_id="alien_2_stale", selected_database="alien",
+        _make_annotation_json(
+            instance_id="alien_2_stale", selected_database=_DB,
             n1=True, n2=True, n3=True, n4=True, n5=True,
             n6=True, n7=True, n8=True,
         ),
-        _make_submission_annotation_json(
-            instance_id="alien_3", selected_database="alien",
+        _make_annotation_json(
+            instance_id="alien_3", selected_database=_DB,
             n1=False, n2=False, n3=False, n4=False, n5=False,
             n6=False, n7=False, n8=False,
         ),
     ]
     for ann in annotations:
-        d = rows_dir / ann["instance_id"]
-        d.mkdir()
-        (d / "submission_annotation.json").write_text(json.dumps(ann))
+        _write_run_annotation(tmp_path / "runs", ann)
 
-    # No filter — back-compat path counts every dir.
-    block_all = aggregate_cascading_phase1(rows_dir)
+    block_all = aggregate_cascading_phase1(_BENCHMARK, _RUN_ID)
     assert block_all["n_dual_eval_tasks"] == 3
-    assert block_all["counts"]["n1"] == 2  # alien_1 + alien_2_stale
+    assert block_all["counts"]["n1"] == 2
 
-    # With filter — only the current run's two iids are counted.
     block_filtered = aggregate_cascading_phase1(
-        rows_dir,
+        _BENCHMARK, _RUN_ID,
         instance_filter={"alien_1", "alien_3"},
     )
     assert block_filtered["n_dual_eval_tasks"] == 2
-    assert block_filtered["counts"]["n1"] == 1, (
-        "alien_2_stale's n1=True must NOT contribute to the filtered "
-        "count; only alien_1 passes"
-    )
-    # And the stale dir is still on disk — the aggregator filter does
-    # NOT delete anything, only scopes the count.
-    assert (rows_dir / "alien_2_stale" / "submission_annotation.json").exists()
+    assert block_filtered["counts"]["n1"] == 1
 
 
-def test_aggregator_enforces_monotonicity_on_tampered_row(tmp_path):
-    """The aggregator MUST enforce monotonicity. We deliberately feed a
-    violating row (N5=True, N6=False) — a "later level is more strict
-    than earlier" pattern that breaks the cascade. The aggregator must
-    repair this so the published `cascading_phase1` counts respect
-    N1 ≤ N2 ≤ ... ≤ N8.
-    """
-    from bird_interact_agents.eval.cascading_report import (
-        aggregate_cascading_phase1,
-    )
+def test_aggregator_enforces_monotonicity_on_tampered_row(monkeypatch, tmp_path):
+    """Aggregator must enforce monotone: a row with N5=True but N6=False
+    is repaired so N6+ also become True."""
+    from bird_interact_agents.eval.cascading_report import aggregate_cascading_phase1
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
-    rows_dir = tmp_path / "rows"
-    rows_dir.mkdir()
-    ann = _make_submission_annotation_json(
+    ann = _make_annotation_json(
         instance_id="x_1", selected_database="x",
         n1=False, n2=False, n3=False, n4=False, n5=True,
-        n6=False,  # VIOLATES monotone: passes at N5 must also pass at N6.
+        n6=False,  # VIOLATES monotone
         n7=False, n8=False,
     )
-    d = rows_dir / "x_1"
-    d.mkdir()
-    (d / "submission_annotation.json").write_text(json.dumps(ann))
+    _write_run_annotation(tmp_path / "runs", ann)
 
-    block = aggregate_cascading_phase1(rows_dir)
+    block = aggregate_cascading_phase1(_BENCHMARK, _RUN_ID)
     counts = block["counts"]
-    # After enforcement, every level from N5 onward inherits the pass.
     assert counts["n5"] == 1
-    assert counts["n6"] == 1, (
-        "monotone enforcement: N5 pass must propagate to N6"
-    )
+    assert counts["n6"] == 1
     assert counts["n7"] == 1
     assert counts["n8"] == 1
 
 
-def test_aggregator_surfaces_n9_case_fold(tmp_path):
-    """Regression for DEV-1515 follow-up: N9 was added to
-    ``tolerant_grader._CASCADE_ORDER`` but the aggregator's
-    ``_per_row_cascade_bools`` was hardcoded to N1..N8, leaving
-    ``counts['n9']`` stuck at 0 (and no ``deltas['n9']``) even when
-    the per-row annotation reported a case-fold-only pass."""
-    from bird_interact_agents.eval.cascading_report import (
-        aggregate_cascading_phase1,
-    )
+def test_aggregator_surfaces_n9_case_fold(monkeypatch, tmp_path):
+    """N9 case-fold must be counted; was previously dropped."""
+    from bird_interact_agents.eval.cascading_report import aggregate_cascading_phase1
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
-    rows_dir = tmp_path / "rows"
-    rows_dir.mkdir()
-    # One row: case-fold-only pass — every earlier level fails.
-    ann = _make_submission_annotation_json(
-        instance_id="alien_1", selected_database="alien",
+    ann = _make_annotation_json(
+        instance_id="alien_1", selected_database=_DB,
         n1=False, n2=False, n3=False, n4=False, n5=False,
         n6=False, n7=False, n8=False, n9=True,
     )
-    d = rows_dir / "alien_1"
-    d.mkdir()
-    (d / "submission_annotation.json").write_text(json.dumps(ann))
+    _write_run_annotation(tmp_path / "runs", ann)
 
-    block = aggregate_cascading_phase1(rows_dir)
-    assert block["counts"]["n9"] == 1, (
-        "n9_case_fold must increment counts['n9'] — it was previously "
-        "dropped because _per_row_cascade_bools hardcoded n1..n8 only"
-    )
+    block = aggregate_cascading_phase1(_BENCHMARK, _RUN_ID)
+    assert block["counts"]["n9"] == 1
     assert block["rates"]["n9"] == pytest.approx(1.0)
-    assert "n9" in block["deltas"], (
-        "deltas must extend to n9, not stop at n8"
-    )
-    # Monotone enforcement walks N1→N9, so a case-fold-only pass leaves
-    # every stricter level (N1..N8) at 0 and only N9 at 1. The point of
-    # this regression test is that N9 is SURFACED at all — pre-fix it
-    # was stuck at 0 because the aggregator hardcoded N1..N8.
+    assert "n9" in block["deltas"]
     for k in ("n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8"):
-        assert block["counts"][k] == 0, (
-            f"only n9 was True in the raw row; {k} must remain 0"
-        )
+        assert block["counts"][k] == 0
 
 
-def test_aggregator_raises_when_row_missing_submission_annotation(tmp_path):
-    """If any per-row dir is missing submission_annotation.json, the
-    aggregator must raise — silent under-count is forbidden."""
-    from bird_interact_agents.eval.cascading_report import (
-        aggregate_cascading_phase1,
-    )
+def test_aggregator_empty_runs_returns_zero_counts(monkeypatch, tmp_path):
+    """When no run annotations exist for the run_id, aggregator returns zeros."""
+    from bird_interact_agents.eval.cascading_report import aggregate_cascading_phase1
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
-    rows_dir = tmp_path / "rows"
-    rows_dir.mkdir()
-    (rows_dir / "alien_1").mkdir()  # empty — no submission_annotation.json
-
-    with pytest.raises(FileNotFoundError):
-        aggregate_cascading_phase1(rows_dir)
+    block = aggregate_cascading_phase1(_BENCHMARK, _RUN_ID)
+    assert block["n_dual_eval_tasks"] == 0
+    assert all(v == 0 for v in block["counts"].values())
 
 
 # ---------------------------------------------------------------------------
-# eval.json shape — `cascading_phase1` present; legacy block removed
+# eval.json shape — cascading_phase1 present; legacy block removed
 # ---------------------------------------------------------------------------
 
 
-def test_eval_json_contains_cascading_phase1_after_run(tmp_path):
-    """End-to-end: a synthetic local run emits eval.json with the new
-    block AND has dropped the legacy dual-eval keys."""
-    from bird_interact_agents.eval.cascading_report import (
-        emit_cascading_eval_json,
-    )
+def test_eval_json_contains_cascading_phase1_after_run(monkeypatch, tmp_path):
+    """End-to-end: write runs, call emit_cascading_eval_json, check eval.json."""
+    from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
 
-    rows_dir = tmp_path / "rows"
-    rows_dir.mkdir()
-    # 2 instances: one passes at N1, one fails everything.
     for inst, n1 in (("pass_1", True), ("fail_1", False)):
-        ann = _make_submission_annotation_json(
+        ann = _make_annotation_json(
             instance_id=inst, selected_database="x",
             n1=n1, n2=n1, n3=n1, n4=n1, n5=n1,
             n6=n1, n7=n1, n8=n1,
+            verdict="correct" if n1 else "agent_miss",
         )
-        d = rows_dir / inst
-        d.mkdir()
-        (d / "submission_annotation.json").write_text(json.dumps(ann))
+        _write_run_annotation(tmp_path / "runs", ann)
 
-    # Deliberately wrong base metrics — emit_cascading_eval_json must
-    # REWRITE phase1_count/phase1_rate from the freshly-computed N1,
-    # not blindly carry the stale base value forward.
     out = tmp_path / "eval.json"
     emit_cascading_eval_json(
-        rows_dir, out,
+        _BENCHMARK, _RUN_ID, out,
         base_metrics={"phase1_count": 999, "phase1_rate": 0.42},
     )
     metrics = json.loads(out.read_text())
     assert "cascading_phase1" in metrics
     assert metrics["cascading_phase1"]["counts"]["n1"] == 1
-    # phase1_count is REWRITTEN from cascade N1 (back-compat alias);
-    # it must match counts["n1"], NOT the stale base value.
     assert metrics["phase1_count"] == 1
     assert metrics["phase1_count"] == metrics["cascading_phase1"]["counts"]["n1"]
-    # And phase1_rate is rewritten too: 1/2 = 0.5.
     assert metrics["phase1_rate"] == pytest.approx(0.5)
-    # Legacy dual-eval keys MUST be absent.
     for k in (
         "phase1_count_audited", "phase1_count_original",
         "phase1_rate_audited", "phase1_rate_original",
-        "n_dual_eval_tasks",   # moved INTO cascading_phase1
+        "n_dual_eval_tasks",
     ):
-        assert k not in metrics, (
-            f"legacy key {k} must be removed from eval.json top level"
-        )
+        assert k not in metrics
+
+
+# ---------------------------------------------------------------------------
+# Partition tests (DEV-1533)
+# ---------------------------------------------------------------------------
+
+
+def test_partition_l1_correct_original(monkeypatch, tmp_path):
+    """N1=True + original_gold_annotated_correct=True → L1."""
+    from bird_interact_agents.eval.cascading_report import aggregate_cascading_phase1
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+
+    ann = _make_annotation_json(
+        instance_id="alien_1", selected_database=_DB,
+        n1=True, n2=True, n3=True, n4=True, n5=True,
+        n6=True, n7=True, n8=True,
+        original_gold_annotated_correct=True,
+    )
+    _write_run_annotation(tmp_path / "runs", ann)
+
+    block = aggregate_cascading_phase1(_BENCHMARK, _RUN_ID)
+    p = block["cascading_partition"]
+    assert p["tiers"]["l1_correct_original"]["count"] == 1
+    assert p["tiers"]["l2_wrong_original"]["count"] == 0
+    assert p["pass_count"] == 1
+
+
+def test_partition_l2_wrong_original_not_counted_as_pass(monkeypatch, tmp_path):
+    """N1=True + original_gold_annotated_correct=False + N2=False → L2 (diagnostic)."""
+    from bird_interact_agents.eval.cascading_report import aggregate_cascading_phase1
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+
+    # N1=True means agent matched original (which is wrong);
+    # N2/N3 are False because original != audited and agent didn't match audited.
+    ann = _make_annotation_json(
+        instance_id="alien_1", selected_database=_DB,
+        n1=True, n2=False, n3=False, n4=False, n5=False,
+        n6=False, n7=False, n8=False,
+        original_gold_annotated_correct=False,
+        verdict="agent_miss",
+    )
+    _write_run_annotation(tmp_path / "runs", ann)
+
+    block = aggregate_cascading_phase1(_BENCHMARK, _RUN_ID)
+    p = block["cascading_partition"]
+    assert p["tiers"]["l2_wrong_original"]["count"] == 1
+    assert p["tiers"]["l1_correct_original"]["count"] == 0
+    assert p["pass_count"] == 0, "L2 must NOT count as a pass"
+
+
+def test_partition_l3_audited_primary(monkeypatch, tmp_path):
+    """N2=True + N1=False → L3 (matched audited primary, not original)."""
+    from bird_interact_agents.eval.cascading_report import aggregate_cascading_phase1
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+
+    ann = _make_annotation_json(
+        instance_id="alien_1", selected_database=_DB,
+        n1=False, n2=True, n3=True, n4=True, n5=True,
+        n6=True, n7=True, n8=True,
+        original_gold_annotated_correct=False,
+        verdict="correct",
+    )
+    _write_run_annotation(tmp_path / "runs", ann)
+
+    block = aggregate_cascading_phase1(_BENCHMARK, _RUN_ID)
+    p = block["cascading_partition"]
+    assert p["tiers"]["l3_audited_primary"]["count"] == 1
+    assert p["tiers"]["l1_correct_original"]["count"] == 0
+    assert p["pass_count"] == 1
+
+
+def test_partition_l11_fail(monkeypatch, tmp_path):
+    """All-fail annotation → L11."""
+    from bird_interact_agents.eval.cascading_report import aggregate_cascading_phase1
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+
+    ann = _make_annotation_json(
+        instance_id="alien_1", selected_database=_DB,
+        n1=False, n2=False, n3=False, n4=False, n5=False,
+        n6=False, n7=False, n8=False,
+        verdict="agent_miss",
+    )
+    _write_run_annotation(tmp_path / "runs", ann)
+
+    block = aggregate_cascading_phase1(_BENCHMARK, _RUN_ID)
+    p = block["cascading_partition"]
+    assert p["tiers"]["l11_fail"]["count"] == 1
+    assert p["pass_count"] == 0
+
+
+def test_partition_cumsum_sums_to_n(monkeypatch, tmp_path):
+    """The final cumsum of partition tiers must equal n_tasks."""
+    from bird_interact_agents.eval.cascading_report import aggregate_cascading_phase1
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+
+    annotations = [
+        _make_annotation_json(
+            instance_id="alien_1", selected_database=_DB,
+            n1=True, n2=True, n3=True, n4=True, n5=True,
+            n6=True, n7=True, n8=True,
+        ),
+        _make_annotation_json(
+            instance_id="alien_2", selected_database=_DB,
+            n1=True, n2=False, n3=False, n4=False, n5=False,
+            n6=False, n7=False, n8=False,
+            original_gold_annotated_correct=False,
+            verdict="agent_miss",
+        ),
+        _make_annotation_json(
+            instance_id="alien_3", selected_database=_DB,
+            n1=False, n2=False, n3=False, n4=False, n5=False,
+            n6=False, n7=False, n8=False,
+            verdict="agent_miss",
+        ),
+    ]
+    for ann in annotations:
+        _write_run_annotation(tmp_path / "runs", ann)
+
+    block = aggregate_cascading_phase1(_BENCHMARK, _RUN_ID)
+    p = block["cascading_partition"]
+    total = sum(t["count"] for t in p["tiers"].values())
+    assert total == 3, "Partition tiers must sum to n_tasks"
+    # The last tier's cumsum must equal n_tasks
+    last_tier = p["tiers"]["l11_fail"]
+    assert last_tier["cumsum"] == 3

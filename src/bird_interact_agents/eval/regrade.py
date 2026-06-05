@@ -36,8 +36,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from bird_interact_agents import paths
 from bird_interact_agents.harness import _auto_discover_gold
 from bird_interact_agents.eval.annotation_io import (
-    submission_annotation_path,
-    write_submission_annotation,
+    run_annotation_path,
+    write_run_annotation,
 )
 from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
@@ -257,29 +257,21 @@ def regrade_run(
             ),
         )
 
-        # OVERWRITE the per-(instance, run) annotation in the main checkout.
-        dest = submission_annotation_path(
+        # OVERWRITE the per-(instance, run) annotation in the golden store.
+        dest = run_annotation_path(
             benchmark=benchmark, selected_database=selected_database,
             instance_id=instance_id, run_id=run_id, repo_root=repo_root,
         )
-        write_submission_annotation(ann, dest)
-
-        # Stash the per-row file in a fresh dir so the cascading_phase1
-        # block in eval_regraded.json is built from THIS regrade pass, not
-        # the historical run's annotations.
-        fresh_sub = fresh_rows_dir / instance_id
-        fresh_sub.mkdir(parents=True, exist_ok=True)
-        (fresh_sub / "submission_annotation.json").write_text(
-            ann.model_dump_json(indent=2, exclude_none=False) + "\n",
-        )
+        write_run_annotation(ann, dest)
 
         report.regraded += 1
         report.regraded_instances.append(instance_id)
 
-    # Emit eval_regraded.json — NEVER touch eval.json.
+    # Emit eval_regraded.json from runs/ filtered to regraded instances.
+    regraded_set = set(report.regraded_instances) or None
     emit_cascading_eval_json(
-        fresh_rows_dir, run_dir / "eval_regraded.json",
-        base_metrics={},
+        benchmark, run_id, run_dir / "eval_regraded.json",
+        base_metrics={}, instance_filter=regraded_set,
     )
     return report
 
