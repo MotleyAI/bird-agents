@@ -143,7 +143,8 @@ def _load_audit_rows() -> dict[str, dict]:
 
     Selection rule: if only one row exists for an instance, it is primary
     regardless of the ``primary`` field. When multiple rows exist, the one
-    with ``primary=True`` wins.
+    with ``primary=True`` wins; if none carries ``primary=True``, the first
+    row is used as fallback.
     """
     from collections import defaultdict
     groups: dict[str, list[dict]] = defaultdict(list)

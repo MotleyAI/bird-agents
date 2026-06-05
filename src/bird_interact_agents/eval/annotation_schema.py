@@ -133,7 +133,15 @@ class AuditedGoldRow(BaseModel):
             raise ValueError("no valid variants after filtering unrecoverable rows")
         if not any(v.primary for v in variants):
             variants[0] = variants[0].model_copy(update={"primary": True})
-        first = rows[0]
+        first = next(
+            (r for r in rows if r.get("instance_id") and r.get("selected_database") and r.get("benchmark")),
+            None,
+        )
+        if first is None:
+            raise ValueError(
+                "legacy rows missing required task-level fields: "
+                "instance_id, selected_database, benchmark"
+            )
         return cls(
             instance_id=first["instance_id"],
             selected_database=first["selected_database"],
@@ -252,7 +260,7 @@ class AuditedGoldRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     file: str
-    """E.g. ``audited_gold/mini-interact_audited.jsonl``."""
+    """E.g. ``audited_gold/mini-interact/mini-interact_audited.jsonl``."""
     instance_id: str
     variant_id: str = "primary"
 

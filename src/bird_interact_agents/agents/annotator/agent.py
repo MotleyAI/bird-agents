@@ -489,19 +489,11 @@ def _select_annotation_sdk_tools(benchmark: str) -> list:
 # Harness helper: fill AuditedGoldRef.file
 # ---------------------------------------------------------------------------
 
-_AUDITED_GOLD_FILE: dict[str, str] = {
-    "mini-interact": "audited_gold/mini-interact_audited.jsonl",
-    "livesqlbench-base-lite-sqlite": "audited_gold/livesqlbench-base-lite-sqlite_audited.jsonl",
-}
-
-
 def _fill_audited_gold_ref_files(ann: TaskAnnotation, *, benchmark: str) -> TaskAnnotation:
     """Replace __HARNESS_FILLS__ sentinel in AuditedGoldRef.file."""
     if not ann.gold_variants:
         return ann
-    canonical_file = _AUDITED_GOLD_FILE.get(
-        benchmark, f"audited_gold/{benchmark}_audited.jsonl"
-    )
+    canonical_file = f"audited_gold/{benchmark}/{benchmark}_audited.jsonl"
     updated = ann.model_copy(deep=True)
     for gvr in updated.gold_variants:
         if gvr.audited_gold_ref and gvr.audited_gold_ref.file == "__HARNESS_FILLS__":
@@ -529,6 +521,11 @@ def _fill_deterministic_fields(
     instance_id = task_data.get("instance_id")
     if instance_id:
         updated.provenance.task_jsonl_instance_id = instance_id
+
+    # Ambiguous query — always authoritative from task data (never trust agent copy).
+    amb_user_query = task_data.get("amb_user_query")
+    if amb_user_query:
+        updated.amb_user_query = amb_user_query
 
     # External knowledge — verbatim from task data.
     ext_kb = task_data.get("external_knowledge")

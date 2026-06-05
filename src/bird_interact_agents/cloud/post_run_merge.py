@@ -80,14 +80,12 @@ import re
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from bird_interact_agents.eval.annotation_io import submission_annotation_path
 from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation, TaskAnnotation
-
-from bird_interact_agents import paths
 
 logger = logging.getLogger(__name__)
 
@@ -772,24 +770,26 @@ def merge_audited_gold_variants(
         # Upsert mode: replace all rows for re-annotated instance_ids.
         existing_ordered = _read_consolidated()
 
-        # Purge existing rows only for instances whose annotator task produced
-        # an audited_gold_variants.jsonl (even empty — empty means original_gold_is_correct=True).
-        rerun_iids = {
-            sub.name
-            for sub in rows_dir.iterdir()
-            if sub.is_dir() and (sub / "audited_gold_variants.jsonl").exists()
-        }
-        for iid in list(existing_ordered.keys()):
-            if iid in rerun_iids:
-                del existing_ordered[iid]
-
+        # Collect all valid incoming rows before touching existing_ordered so
+        # that a validation failure on new data never silently drops old rows.
+        incoming: dict[str, str] = {}  # instance_id → serialised AuditedGoldRow
+        rerun_iids: set[str] = set()
         for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
             src = sub / "audited_gold_variants.jsonl"
             if not src.exists():
                 continue
+            rerun_iids.add(sub.name)
             for row in _read_incoming_rows(src):
-                existing_ordered[row.instance_id] = row.model_dump_json()
-                report.added += 1
+                incoming[row.instance_id] = row.model_dump_json()
+
+        # Purge only after all new rows are validated and ready.
+        for iid in list(existing_ordered.keys()):
+            if iid in rerun_iids:
+                del existing_ordered[iid]
+
+        for iid, serialised in incoming.items():
+            existing_ordered[iid] = serialised
+            report.added += 1
 
         if existing_ordered:
             consolidated.parent.mkdir(parents=True, exist_ok=True)

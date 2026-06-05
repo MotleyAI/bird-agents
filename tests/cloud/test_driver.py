@@ -29,7 +29,7 @@ class FakeSubmitArgs:
     agent_model: str = "anthropic/claude-sonnet-4-5"
     user_sim_model: str = "anthropic/claude-haiku-4-5-20251001"
     mode: str = "c-interact"
-    instance_ids: tuple[str, ...] = ("db_a_1", "db_a_2", "db_a_3")
+    instance_ids: tuple[str, ...] = ("alien_1", "alien_2", "alien_3")
     patience: int = 3
     strict: bool = False
     use_audited_gold_sql: bool = False
@@ -1505,6 +1505,62 @@ def test_manifest_defaults_to_mini_interact_benchmark():
 
 
 # ---------------------------------------------------------------------------
+# _validate_instance_ids: fail fast before any cloud touch
+# ---------------------------------------------------------------------------
+
+
+def test_validate_instance_ids_raises_for_unknown_ids(tmp_path):
+    """Unknown instance_ids must raise ValueError before any cloud call."""
+    data_file = tmp_path / "mini_interact.jsonl"
+    data_file.write_text(
+        '{"instance_id": "alien_1", "selected_database": "alien"}\n'
+        '{"instance_id": "alien_2", "selected_database": "alien"}\n'
+    )
+    import bird_interact_agents.paths as _paths
+    import unittest.mock as _mock
+    with _mock.patch.object(_paths, "benchmark_data_file", return_value=data_file):
+        with pytest.raises(ValueError, match="shop_1"):
+            driver._validate_instance_ids(["alien_1", "shop_1"], "mini-interact")
+
+
+def test_validate_instance_ids_passes_for_known_ids(tmp_path):
+    """All-known instance_ids must not raise."""
+    data_file = tmp_path / "mini_interact.jsonl"
+    data_file.write_text(
+        '{"instance_id": "alien_1", "selected_database": "alien"}\n'
+    )
+    import bird_interact_agents.paths as _paths
+    import unittest.mock as _mock
+    with _mock.patch.object(_paths, "benchmark_data_file", return_value=data_file):
+        driver._validate_instance_ids(["alien_1"], "mini-interact")  # no raise
+
+
+def test_validate_instance_ids_skips_when_data_file_absent(tmp_path):
+    """Missing local data file → no error (resubmit on a machine without data)."""
+    import bird_interact_agents.paths as _paths
+    import unittest.mock as _mock
+    with _mock.patch.object(
+        _paths, "benchmark_data_file", return_value=tmp_path / "absent.jsonl"
+    ):
+        driver._validate_instance_ids(["nonexistent_1"], "mini-interact")  # no raise
+
+
+def test_submit_raises_before_cloud_for_invalid_instance_ids(monkeypatch, tmp_path):
+    """submit() must raise ValueError for unknown instance_ids before touching
+    prereqs, image build, or any GCS/cluster call."""
+    mocks = _patch_collaborators(monkeypatch)
+    data_file = tmp_path / "mini_interact.jsonl"
+    data_file.write_text('{"instance_id": "alien_1", "selected_database": "alien"}\n')
+    monkeypatch.setattr(driver.paths, "benchmark_data_file", lambda *a, **k: data_file)
+
+    with pytest.raises(ValueError, match="shop_1"):
+        driver.submit(FakeSubmitArgs(instance_ids=("shop_1", "fake_99")))
+    mocks["prereqs"].check.assert_not_called()
+    mocks["image"].build_and_push.assert_not_called()
+    mocks["cluster"].up.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # De-bake: submit uploads the dataset to GCS (upload-once) and threads the
 # returned prefix into the manifest + actor job args; the gated gold must live
 # under the data root so it rides along in that upload.
@@ -1946,7 +2002,7 @@ def _fake_annotate_args(**overrides):
         actors_per_worker=2,
         worker_type="e2-standard-4",
         max_runtime_hours=2,
-        instance_ids=["db_a_1"],
+        instance_ids=["alien_1"],
     )
     for k, v in overrides.items():
         setattr(ns, k, v)
