@@ -25,8 +25,10 @@ _specs/
 audited_gold/
 sar_audited_gold/
 gated_gold/
-# DEV-1515: per-task / per-submission annotations. Same posture as
-# audited_gold/ — kept local to avoid contaminating the benchmark
-# distribution; baked into the cloud image at build time via the
+# DEV-1515: per-task annotations. Same posture as audited_gold/ — kept
+# local; baked into the cloud image at build time via the
 # `paths.annotations_root()` build context.
 annotations/
+# DEV-1533: per-run submission annotations + trajectory sidecars.
+# Same posture as annotations/ — local only, not committed.
+runs/

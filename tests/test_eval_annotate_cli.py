@@ -421,8 +421,8 @@ def test_submission_mode_overwrite_rewrites_existing(tmp_path, monkeypatch):
 
     from bird_interact_agents.eval import (
         FailureClassification, SubmissionAnnotation, SubmissionEvaluation,
-        SubmissionMetadata, submission_annotation_path,
-        write_submission_annotation,
+        SubmissionMetadata, run_annotation_path,
+        write_run_annotation,
     )
     existing = SubmissionAnnotation(
         instance_id="alien_1", selected_database="alien",
@@ -439,11 +439,11 @@ def test_submission_mode_overwrite_rewrites_existing(tmp_path, monkeypatch):
             primary="other", agent_at_fault=False, remediation_target="other",
         ),
     )
-    p = submission_annotation_path(
+    p = run_annotation_path(
         benchmark="mini-interact", selected_database="alien",
         instance_id="alien_1", run_id="r1", repo_root=tmp_path,
     )
-    write_submission_annotation(existing, p)
+    write_run_annotation(existing, p)
 
     rows_dir = tmp_path / "rows"
     _write_attempt_json(rows_dir, "alien_1", submitted_sql="SELECT x")
@@ -471,7 +471,7 @@ def test_submission_mode_overwrite_rewrites_existing(tmp_path, monkeypatch):
     )
     assert written == p
     from bird_interact_agents.eval import read_submission_annotation
-    fresh = read_submission_annotation(p)
+    fresh = read_submission_annotation(written)
     assert fresh.annotated_by != "stale-author"
 
 
@@ -513,8 +513,8 @@ def test_submission_mode_init_skips_existing(tmp_path, monkeypatch):
 
     from bird_interact_agents.eval import (
         FailureClassification, SubmissionAnnotation, SubmissionEvaluation,
-        SubmissionMetadata, submission_annotation_path,
-        write_submission_annotation,
+        SubmissionMetadata, run_annotation_path,
+        write_run_annotation,
     )
     existing = SubmissionAnnotation(
         instance_id="alien_1", selected_database="alien",
@@ -532,11 +532,11 @@ def test_submission_mode_init_skips_existing(tmp_path, monkeypatch):
             primary="other", agent_at_fault=False, remediation_target="other",
         ),
     )
-    p = submission_annotation_path(
+    p = run_annotation_path(
         benchmark="mini-interact", selected_database="alien",
         instance_id="alien_1", run_id="r1", repo_root=tmp_path,
     )
-    write_submission_annotation(existing, p)
+    write_run_annotation(existing, p)
     pre = p.read_bytes()
 
     rows_dir = tmp_path / "rows"

@@ -176,20 +176,12 @@ def collate(run_dir: Path, manifest: dict) -> dict[str, Any]:
 
     metrics = _build_metrics(manifest, ordered_rows, attempts)
     eval_path = run_dir / "eval.json"
-    rows_dir = run_dir / "rows"
-    has_per_row_anns = rows_dir.exists() and any(
-        (rd / "submission_annotation.json").exists()
-        for rd in rows_dir.iterdir() if rd.is_dir()
-    )
-    if has_per_row_anns:
-        from bird_interact_agents.eval import cascading_report as _cr
-        try:
-            metrics = _cr.emit_cascading_eval_json(
-                rows_dir=rows_dir, out_path=eval_path, base_metrics=metrics,
-            )
-        except FileNotFoundError as exc:
-            metrics["cascading_phase1_error"] = str(exc)
-            eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
-    else:
-        eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
+    # DEV-1533: cascade emission moved to the post-merge step
+    # (`driver._emit_cascading_phase1_on_fetch`). At collate time the
+    # runs/ golden store is not yet populated for this run, so calling
+    # `emit_cascading_eval_json` here would publish zero counts in the
+    # intermediate eval.json. Callers that need cascade metrics must run
+    # `merge_submission_annotations` first, then call
+    # `emit_cascading_eval_json(benchmark, run_id, eval_path, base_metrics=metrics)`.
+    eval_path.write_text(json.dumps(metrics, indent=2, default=str) + "\n")
     return metrics

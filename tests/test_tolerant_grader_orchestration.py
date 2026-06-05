@@ -119,7 +119,25 @@ def test_n1_passes_when_predicted_matches_original_gold():
         original_gold: ([(1,)], ["a"]),
         audited: ([(99,)], ["a"]),  # different — only original matches
     })
-    ann = _make_task_annotation()
+    # original_gold_is_correct=True: original IS the right answer, so N1
+    # propagates via monotone to N2+ (even though the audited SQL returns a
+    # different result — the monotone models "agent got it right per original").
+    from bird_interact_agents.eval import MetadataSufficiency, TaskAnnotation
+    from bird_interact_agents.eval.annotation_schema import Provenance
+    ann = TaskAnnotation(
+        instance_id="alien_1",
+        selected_database="alien",
+        annotated_by="test",
+        annotated_at="2026-05-31",
+        amb_user_query="x",
+        original_gold_is_correct=True,
+        gold_variants=[],  # required when original_gold_is_correct=True
+        metadata_sufficiency=MetadataSufficiency(verdict="sufficient", rationale="r"),
+        provenance=Provenance(
+            task_jsonl_path="mini_interact.jsonl",
+            task_jsonl_instance_id="alien_1",
+        ),
+    )
     gold_rows = [_audited_row(
         instance_id="alien_1", variant_id="primary", primary=True,
         audited_sol_sql=[audited],

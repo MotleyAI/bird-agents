@@ -6,7 +6,7 @@ fixture: ``grade_in_place._build_submission_annotation`` (the cloud
 + local inline grader) and ``annotate._eval_from_cascade`` (the
 skeleton CLI + the regrade CLI). Before extracting
 ``verdict_label_from_cascade`` the annotate path returned
-``verdict="invalid"`` for every cascade tier below N3, while the
+``verdict="agent_miss"`` for every cascade tier below N3, while the
 inline grader returned ``"valid_interpretation"`` for N4/N5/N6/N7/N8.
 
 Pin each cascade-tier → verdict mapping AND assert both helpers emit
@@ -113,5 +113,5 @@ def test_n9_only_yields_valid_interpretation_on_both_paths():
 
 def test_no_tier_yields_invalid_on_both_paths():
     inline, annotate = _both_verdicts(_cascade())
-    assert inline == "invalid"
-    assert annotate == "invalid"
+    assert inline == "agent_miss"
+    assert annotate == "agent_miss"

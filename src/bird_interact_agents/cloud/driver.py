@@ -956,7 +956,11 @@ def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
     )
     metrics["annotation_merge_report"] = annotation_merge.model_dump()
 
-    metrics = _emit_cascading_phase1_on_fetch(dest=dest, metrics=metrics)
+    metrics = _emit_cascading_phase1_on_fetch(
+        dest=dest, metrics=metrics,
+        benchmark=_benchmark_for_dataset(manifest.get("dataset")),
+        run_id=run_id,
+    )
 
     # DEV-1518: for annotator runs, merge per-task annotation + gold variant
     # files from the downloaded rows into local stable storage.
@@ -998,18 +1002,32 @@ def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
     return metrics
 
 
-def _emit_cascading_phase1_on_fetch(*, dest: Path, metrics: dict) -> dict:
-    """Aggregate per-row submission_annotation.json files into the
-    ``cascading_phase1`` block on the fetched run's eval.json.
+def _emit_cascading_phase1_on_fetch(
+    *, dest: Path, metrics: dict,
+    benchmark: "str | None" = None,
+    run_id: "str | None" = None,
+) -> dict:
+    """Aggregate cascade metrics into the fetched run's eval.json.
 
-    Extracted so the post-fetch behaviour can be exercised in unit tests
-    without round-tripping through GCS download + collation. Older runs
-    (pre-DEV-1515 worker code) won't have per-row annotation files; skip
-    rather than fail.
+    DEV-1533: reads from ``runs/<benchmark>/`` (the golden store populated
+    by ``merge_submission_annotations``). Falls back to legacy rows_dir
+    behaviour when ``benchmark`` / ``run_id`` are absent (older runs).
     """
-    rows_dir = dest / "rows"
     eval_path = dest / "eval.json"
-    if not rows_dir.exists() or not eval_path.exists():
+    if not eval_path.exists():
+        return metrics
+    if benchmark and run_id:
+        try:
+            return _cascading_report.emit_cascading_eval_json(
+                benchmark, run_id, eval_path, base_metrics=metrics,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("cascading_phase1 aggregation failed: %s", exc)
+            metrics["cascading_phase1_error"] = str(exc)
+            return metrics
+    # Legacy fallback: rows_dir-based aggregation for older runs.
+    rows_dir = dest / "rows"
+    if not rows_dir.exists():
         return metrics
     has_per_row_anns = any(
         (row_dir / "submission_annotation.json").exists()
@@ -1018,15 +1036,18 @@ def _emit_cascading_phase1_on_fetch(*, dest: Path, metrics: dict) -> dict:
     if not has_per_row_anns:
         return metrics
     try:
-        return _cascading_report.emit_cascading_eval_json(
-            rows_dir=rows_dir,
-            out_path=eval_path,
-            base_metrics=metrics,
+        from bird_interact_agents.eval.cascading_report import (
+            _aggregate_cascading_phase1_legacy,
         )
+        block = _aggregate_cascading_phase1_legacy(rows_dir)
+        metrics["cascading_phase1"] = block
+        metrics["phase1_count"] = block["counts"]["n1"]
+        metrics["phase1_rate"] = block["rates"]["n1"]
+        eval_path.write_text(
+            __import__("json").dumps(metrics, indent=2, default=str) + "\n"
+        )
+        return metrics
     except FileNotFoundError as exc:
-        # Aggregator is strict — a missing per-row file raises so we
-        # never silently under-count. Surface it as a side-channel entry
-        # and leave the in-memory metrics writeable.
         logger.warning("cascading_phase1 aggregation failed: %s", exc)
         metrics["cascading_phase1_error"] = str(exc)
         return metrics
