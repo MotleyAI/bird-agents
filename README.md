@@ -127,24 +127,15 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --worker-type e2-standard-4 --max-runtime-hours 3 --detach
 ```
 
-> **⚠️ PostgreSQL benchmarks require larger instances.**
+> **⚠️ PostgreSQL benchmarks need bigger VMs.**
 > `livesqlbench-base-lite`, `livesqlbench-base-full`, `livesqlbench-large`,
-> `bird-interact-lite-exp`, and `bird-interact-full` start a bundled PostgreSQL
-> server that loads all benchmark databases at actor startup — this adds
-> **1–3 GB of RAM overhead** on top of the LLM agent footprint.
-> **Never run more than 1 actor per `e2-standard-4` worker on postgres benchmarks;
-> the combination reliably OOMs and silently loses tasks.**
-> The recommended setup for postgres benchmarks is one actor per worker on
-> `e2-standard-8` (8 vCPU / 32 GB), which gives ample headroom:
->
-> ```bash
-> env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
->   --dataset livesqlbench-base-lite --mode one-shot \
->   ... \
->   --instance-ids alien_1,alien_2,...,alien_10 \
->   --workers 10 --actors-per-worker 1 \
->   --worker-type e2-standard-8 --max-runtime-hours 3 --detach
-> ```
+> `bird-interact-lite-exp`, and `bird-interact-full` start ONE bundled
+> PostgreSQL server per worker VM (shared by all actors on that VM) that
+> loads 18–22 benchmark databases at startup — 1–3 GB of RAM overhead per
+> worker, not per actor.  `e2-standard-4` (16 GB) OOMs with concurrent Opus
+> actors + postgres.  Recommended: `e2-standard-8` (32 GB) for runs of
+> 10–20 tasks; per-actor packing density on each tier is still under
+> investigation.
 
 #### `claude_sdk` — mini-interact / a-interact
 
@@ -235,25 +226,15 @@ For larger `--actors-per-worker` values:
 For multi-worker runs (`--workers N`), every worker gets its own VM at this
 size — so 3 workers × 10 actors each = 3 × `e2-standard-8`.
 
-> **⚠️ PostgreSQL benchmarks (annotator): always `e2-standard-8` × 1 actor.**
-> The sizing table above applies to SQLite benchmarks only.  For
-> `livesqlbench-base-full`, `livesqlbench-large`, `bird-interact-full`, etc.
-> the bundled PostgreSQL server adds 1–3 GB of RAM overhead per actor on top
-> of the Opus footprint; e2-standard-4 (16 GB) **silently kills actors during
-> startup** and loses all their tasks (confirmed in production with the
-> bird-interact-full households sweep — 10/20 tasks lost). **Always use
-> `e2-standard-8` (32 GB) with `--actors-per-worker 1` for postgres
-> benchmarks**:
->
-> ```bash
-> env -u SSH_AUTH_SOCK uv run bird-interact-cloud annotate \
->   --benchmark bird-interact-full \
->   --agent-model anthropic/claude-opus-4-7 \
->   --instance-ids households_1,...,households_20 \
->   --workers 20 --actors-per-worker 1 \
->   --worker-type e2-standard-8 --max-runtime-hours 3 \
->   --override --detach
-> ```
+> **⚠️ PostgreSQL benchmarks: bigger VMs (sizing under investigation).**
+> For `livesqlbench-base-full`, `livesqlbench-large`, `bird-interact-full`,
+> etc. each worker VM runs ONE bundled PostgreSQL server (shared across all
+> actors on that VM) loading all 18–22 benchmark databases at startup —
+> 1–3 GB per worker, not per actor.  `e2-standard-4` (16 GB) is too small
+> when several Opus actors share the VM; the empirical recommendation is
+> `e2-standard-8` (32 GB) for runs of 10–20 households-style tasks.
+> Per-actor packing density on each tier hasn't been characterised yet —
+> err on the side of bigger VMs until we have repro data.
 
 ### Fetching results
 

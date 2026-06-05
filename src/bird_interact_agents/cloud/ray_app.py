@@ -123,24 +123,41 @@ _PG_INIT_LOCK = Path("/tmp/pg_init.lock")
 _SAFE_DB_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
-def _pg_dir_tag(data_dir: Path) -> str:
-    """Short stable identifier derived from data_dir — scopes markers per benchmark."""
-    return hashlib.sha1(str(data_dir).encode()).hexdigest()[:8]
+def _pg_dir_tag(data_dir: Path, content_tag: "str | None" = None) -> str:
+    """Short stable identifier scoping markers by both data_dir AND the
+    benchmark-data content (when supplied).
+
+    ``content_tag`` is typically the benchmark-data GCS prefix (which is itself
+    a content hash). Including it ensures that if the same ``data_dir`` is
+    repopulated with a different content version on the same node, the
+    postgres load runs again instead of skipping with stale databases."""
+    key = f"{data_dir}|{content_tag or ''}"
+    return hashlib.sha1(key.encode()).hexdigest()[:8]
 
 
-def _pg_loaded_marker(data_dir: Path) -> Path:
-    return Path(f"/tmp/pg_loaded_{_pg_dir_tag(data_dir)}.marker")
+def _pg_loaded_marker(data_dir: Path, content_tag: "str | None" = None) -> Path:
+    return Path(f"/tmp/pg_loaded_{_pg_dir_tag(data_dir, content_tag)}.marker")
 
 
-def _pg_db_marker(db: str, data_dir: Path) -> Path:
-    return Path(f"/tmp/pg_db_loaded_{_pg_dir_tag(data_dir)}_{db}.marker")
+def _pg_db_marker(
+    db: str, data_dir: Path, content_tag: "str | None" = None,
+) -> Path:
+    return Path(
+        f"/tmp/pg_db_loaded_{_pg_dir_tag(data_dir, content_tag)}_{db}.marker"
+    )
 
 
-def _ensure_postgres_loaded(data_dir: Path) -> None:
+def _ensure_postgres_loaded(
+    data_dir: Path, content_tag: "str | None" = None,
+) -> None:
     """Start a local PostgreSQL server and load benchmark databases.
 
     Database dumps are expected at ``data_dir/pg_dumps/<db>/<db>.sql``
     (one SQL file per database, produced by ``pg_dump``).
+
+    ``content_tag`` (typically the benchmark-data GCS prefix) is folded into
+    the marker name so a content refresh on the same data_dir triggers a
+    reload instead of being skipped via a stale marker.
 
     Idempotent: a node-level lock serialises concurrent actors; a marker
     file prevents re-loading on second actor init within the same node.
@@ -152,7 +169,7 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
             "Download SQL dumps with scripts/download_pg_dumps.py first."
         )
 
-    loaded_marker = _pg_loaded_marker(data_dir)
+    loaded_marker = _pg_loaded_marker(data_dir, content_tag)
     with open(_PG_INIT_LOCK, "w") as _lf:
         fcntl.flock(_lf, fcntl.LOCK_EX)
         if loaded_marker.exists():
@@ -194,7 +211,7 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
                     "only letters, digits, and underscores."
                 )
             # Skip databases that completed successfully in a prior attempt.
-            if _pg_db_marker(db, data_dir).exists():
+            if _pg_db_marker(db, data_dir, content_tag).exists():
                 continue
             # Drop any partial load from a prior failed attempt before retrying.
             subprocess.run(
@@ -213,7 +230,7 @@ def _ensure_postgres_loaded(data_dir: Path) -> None:
                      "psql", "-d", db, "-f", str(sql_file)],
                     check=True,
                 )
-            _pg_db_marker(db, data_dir).touch()
+            _pg_db_marker(db, data_dir, content_tag).touch()
 
         loaded_marker.touch()
 
@@ -242,7 +259,7 @@ def download_benchmark_data(cfg: dict[str, Any], *, client=None) -> None:
     os.environ["BIRD_BENCHMARKS_ROOT"] = str(dest.parent)
     os.environ["BIRD_GATED_GOLD_ROOT"] = str(dest / _benchmark_data.GATED_GOLD_SUBDIR)
     if getattr(b, "db_backend", "sqlite") == "postgres":
-        _ensure_postgres_loaded(dest)
+        _ensure_postgres_loaded(dest, content_tag=prefix)
 
 
 def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:

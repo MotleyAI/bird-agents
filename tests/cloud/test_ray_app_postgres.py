@@ -33,11 +33,11 @@ def _patch_pg_markers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Monkeypatch both marker functions to use tmp_path instead of /tmp."""
     monkeypatch.setattr(
         ray_app, "_pg_loaded_marker",
-        lambda data_dir: tmp_path / "pg_loaded.marker",
+        lambda data_dir, content_tag=None: tmp_path / "pg_loaded.marker",
     )
     monkeypatch.setattr(
         ray_app, "_pg_db_marker",
-        lambda db, data_dir: tmp_path / f"pg_db_loaded_{db}.marker",
+        lambda db, data_dir, content_tag=None: tmp_path / f"pg_db_loaded_{db}.marker",
     )
 
 
@@ -107,7 +107,7 @@ def test_ensure_postgres_loaded_idempotent(
     monkeypatch.setattr(ray_app, "_PG_INIT_LOCK", tmp_path / "pg_init.lock")
     monkeypatch.setattr(
         ray_app, "_pg_loaded_marker",
-        lambda data_dir: marker_path,
+        lambda data_dir, content_tag=None: marker_path,
     )
 
     calls_seen: list = []
