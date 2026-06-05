@@ -64,7 +64,10 @@ from pathlib import Path
 
 
 def _find_sql_files(extracted: Path) -> list[Path]:
-    return sorted(extracted.rglob("*.sql"))
+    return sorted(
+        p for p in extracted.rglob("*.sql")
+        if "__MACOSX" not in p.parts  # skip macOS resource-fork sidecars
+    )
 
 
 def stage_dumps(benchmark: str, zip_path: Path, *, dry_run: bool = False) -> None:
@@ -99,22 +102,29 @@ def stage_dumps(benchmark: str, zip_path: Path, *, dry_run: bool = False) -> Non
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(tmp)
 
-        # Walk extracted tree and move <db>.sql files into pg_dumps/<db>/<db>.sql
-        # Strip a trailing "_template" suffix: the upstream zips use
-        # e.g. alien_template/alien_template.sql, but the benchmark instances
-        # reference the DB as "alien".
-        placed = 0
-        seen_targets: set[Path] = set()
+        # Walk extracted tree and move the best SQL dump for each DB into
+        # pg_dumps/<db>/<db>.sql.  Strip a trailing "_template" suffix: the
+        # upstream zips use e.g. alien_template/alien_template.sql, but
+        # benchmark instances reference the DB as "alien".
+        #
+        # When multiple SQL files map to the same target (e.g. large-v1 ships
+        # per-table files alongside a <db>_full.sql), pick the largest file —
+        # that is always the combined full-dump, not a single-table file.
+        candidates: dict[Path, Path] = {}  # target → best sql_file so far
         for sql_file in _find_sql_files(tmp):
             raw_db = sql_file.parent.name if sql_file.parent != tmp else sql_file.stem
             db = raw_db.removesuffix("_template")
             db_dir = dest / db
+            target = db_dir / f"{db}.sql"
+            prev = candidates.get(target)
+            if prev is None or sql_file.stat().st_size > prev.stat().st_size:
+                candidates[target] = sql_file
+
+        placed = 0
+        for target, sql_file in sorted(candidates.items()):
+            db_dir = target.parent
             if not dry_run:
                 db_dir.mkdir(parents=True, exist_ok=True)
-            target = db_dir / f"{db}.sql"
-            if target in seen_targets:
-                continue  # duplicate after suffix-stripping — first one wins
-            seen_targets.add(target)
             if target.exists():
                 print(f"  skip (exists): {target.relative_to(data_root)}")
             else:
