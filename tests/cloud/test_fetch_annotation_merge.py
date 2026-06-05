@@ -349,6 +349,99 @@ def test_merge_skips_when_attempts_equal(tmp_path, monkeypatch):
     assert surviving["annotated_by"] == "human-pre-existing"
 
 
+def test_merge_refreshes_trajectory_sidecar_on_newer_attempt(tmp_path, monkeypatch):
+    """When the merge accepts a newer attempt, the trajectory sidecar
+    MUST also be refreshed — otherwise an older attempt's trajectory sits
+    next to the newer annotation and downstream analyses read a mismatched
+    pair."""
+    from bird_interact_agents import paths as _paths
+    from bird_interact_agents.cloud.post_run_merge import (
+        merge_submission_annotations,
+    )
+
+    main_checkout = tmp_path / "checkout"
+    main_checkout.mkdir()
+    monkeypatch.setattr(_paths, "main_checkout_root", lambda: main_checkout)
+
+    dest_dir = main_checkout / "runs" / "mini-interact" / "alien" / "alien_1"
+    dest_dir.mkdir(parents=True)
+    # Pre-existing attempt-1 annotation + sidecar.
+    (dest_dir / "r1.json").write_text(
+        json.dumps(_make_dict_with_attempt("alien_1", 1)),
+    )
+    stale_sidecar = dest_dir / "r1.trajectory.json"
+    stale_sidecar.write_text('{"attempt": 1, "marker": "stale"}')
+
+    # Newly downloaded run carries attempt-2 + its trajectory.
+    downloaded = tmp_path / "downloaded"
+    rows = downloaded / "rows" / "alien_1"
+    rows.mkdir(parents=True)
+    (rows / "submission_annotation.json").write_text(
+        json.dumps(_make_dict_with_attempt("alien_1", 2)),
+    )
+    (rows / "attempt-2.json").write_text('{"attempt": 2, "marker": "fresh"}')
+
+    report = merge_submission_annotations(
+        downloaded_run_dir=downloaded,
+        run_id="r1",
+        benchmark="mini-interact",
+    )
+
+    assert report.overwritten_newer_attempt == 1, report
+    # Sidecar must reflect the same attempt as the annotation.
+    body = json.loads(stale_sidecar.read_text())
+    assert body["marker"] == "fresh", (
+        "trajectory sidecar must be refreshed when the annotation is "
+        "overwritten by a newer attempt; got stale content"
+    )
+
+
+def test_merge_preserves_trajectory_sidecar_when_annotation_preserved(
+    tmp_path, monkeypatch,
+):
+    """Symmetric case: when the merge declines to overwrite (equal or
+    older attempt), the existing trajectory sidecar MUST be preserved."""
+    from bird_interact_agents import paths as _paths
+    from bird_interact_agents.cloud.post_run_merge import (
+        merge_submission_annotations,
+    )
+
+    main_checkout = tmp_path / "checkout"
+    main_checkout.mkdir()
+    monkeypatch.setattr(_paths, "main_checkout_root", lambda: main_checkout)
+
+    dest_dir = main_checkout / "runs" / "mini-interact" / "alien" / "alien_1"
+    dest_dir.mkdir(parents=True)
+    (dest_dir / "r1.json").write_text(
+        json.dumps(_make_dict_with_attempt("alien_1", 2)),
+    )
+    existing_sidecar = dest_dir / "r1.trajectory.json"
+    existing_sidecar.write_text('{"attempt": 2, "marker": "keep"}')
+
+    downloaded = tmp_path / "downloaded"
+    rows = downloaded / "rows" / "alien_1"
+    rows.mkdir(parents=True)
+    # Older attempt being merged — the merge should decline.
+    (rows / "submission_annotation.json").write_text(
+        json.dumps(_make_dict_with_attempt("alien_1", 1)),
+    )
+    (rows / "attempt-1.json").write_text('{"attempt": 1, "marker": "older"}')
+
+    report = merge_submission_annotations(
+        downloaded_run_dir=downloaded,
+        run_id="r1",
+        benchmark="mini-interact",
+    )
+
+    assert report.skipped_existing == 1, report
+    assert report.overwritten_newer_attempt == 0, report
+    body = json.loads(existing_sidecar.read_text())
+    assert body["marker"] == "keep", (
+        "trajectory sidecar must be preserved when the annotation is "
+        "preserved; got overwritten content"
+    )
+
+
 def test_attempt_from_trajectory_path_parses_and_defaults():
     """Pin the parsing helper's contract — unparseable input returns
     None so the caller can fall back to no-overwrite."""

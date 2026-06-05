@@ -126,6 +126,35 @@ def test_iter_run_annotations_skips_trajectory_sidecars(monkeypatch, tmp_path):
     assert anns[0][0].name == "r1.json"
 
 
+def test_iter_run_annotations_warns_on_corrupt_file(monkeypatch, tmp_path, caplog):
+    """Corrupt run-annotation files MUST be reported via a logger.warning
+    so the operator sees the denominator shrink — silent skip lets
+    cascade-aggregated rates inflate without anyone noticing."""
+    import logging
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+    from bird_interact_agents.eval.annotation_io import iter_run_annotations
+
+    runs = tmp_path / "runs" / "mini-interact" / "alien"
+    (runs / "alien_1").mkdir(parents=True)
+    (runs / "alien_1" / "r1.json").write_text(
+        json.dumps(_make_ann_dict("alien_1", "alien", "r1", "2026-06-01T10:00:00+00:00"))
+    )
+    # Corrupt second file — invalid JSON.
+    (runs / "alien_2").mkdir(parents=True)
+    corrupt = runs / "alien_2" / "r1.json"
+    corrupt.write_text("{not valid json")
+
+    with caplog.at_level(logging.WARNING, logger="bird_interact_agents.eval.annotation_io"):
+        anns = iter_run_annotations(benchmark="mini-interact", run_id="r1")
+
+    assert len(anns) == 1, "valid file should still be returned"
+    assert any(
+        "iter_run_annotations" in rec.message and str(corrupt) in rec.message
+        for rec in caplog.records
+    ), f"expected warning naming {corrupt}; got {[r.message for r in caplog.records]}"
+
+
 def test_latest_run_per_instance_picks_max_annotated_at(monkeypatch, tmp_path):
     import bird_interact_agents.paths as paths_mod
     monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)

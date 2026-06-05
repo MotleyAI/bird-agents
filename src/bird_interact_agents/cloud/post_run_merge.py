@@ -77,6 +77,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -535,6 +536,11 @@ def merge_submission_annotations(
                 report.skipped_paths.append(str(dest))
 
             # Trajectory sidecar — best-effort copy of attempt-N.json.
+            # Refresh whenever the annotation itself was (re)written so an
+            # accepted newer attempt never leaves the prior attempt's
+            # trajectory sitting next to the new annotation. When the
+            # annotation was preserved (``written`` False), leave the
+            # existing sidecar alone.
             traj_dest = run_trajectory_path(
                 benchmark=benchmark,
                 selected_database=ann.selected_database,
@@ -542,10 +548,9 @@ def merge_submission_annotations(
                 run_id=run_id,
                 repo_root=None,
             )
-            if not traj_dest.exists():
-                import re as _re
+            if written:
                 traj_rel = ann.submission.trajectory_path or ""
-                m = _re.search(r"rows/(.+)$", traj_rel)
+                m = re.search(r"rows/(.+)$", traj_rel)
                 if m:
                     traj_src = rows_dir / ann.instance_id / Path(m.group(1)).name
                     if not traj_src.exists():
@@ -553,8 +558,7 @@ def merge_submission_annotations(
                     if traj_src.exists():
                         traj_dest.parent.mkdir(parents=True, exist_ok=True)
                         try:
-                            import shutil as _shutil
-                            _shutil.copy2(traj_src, traj_dest)
+                            shutil.copy2(traj_src, traj_dest)
                         except Exception:  # noqa: BLE001
                             pass
 

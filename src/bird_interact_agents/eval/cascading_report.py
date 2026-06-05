@@ -323,6 +323,7 @@ def aggregate_cascading_phase1(
     run_id: str,
     *,
     instance_filter: "set[str] | None" = None,
+    repo_root: "Path | None" = None,
 ) -> dict:
     """Aggregate cascade metrics for a specific run from ``runs/``.
 
@@ -330,19 +331,27 @@ def aggregate_cascading_phase1(
     in the filter are counted (same Codex r11 semantics as the legacy
     ``rows_dir`` version — filtered reruns exclude stale prior annotations
     from the published metrics).
+
+    ``repo_root``: when set, read from ``<repo_root>/runs/`` instead of
+    the default ``paths.runs_root()`` — required by callers (e.g.
+    ``regrade_run``) that pin annotation I/O to an explicit checkout.
     """
-    annotations = iter_run_annotations(benchmark=benchmark, run_id=run_id)
+    annotations = iter_run_annotations(
+        benchmark=benchmark, run_id=run_id, repo_root=repo_root,
+    )
     return _aggregate_from_annotations(annotations, instance_filter=instance_filter)
 
 
-def aggregate_cascading_latest(benchmark: str) -> dict:
+def aggregate_cascading_latest(
+    benchmark: str, *, repo_root: "Path | None" = None,
+) -> dict:
     """Aggregate cascade metrics using the latest run per task.
 
     "Latest" is determined by ``annotated_at`` field (max per
     ``(db, instance_id)`` pair) — safe for local run_ids that are not
     timestamp-formatted.
     """
-    latest = latest_run_per_instance(benchmark=benchmark)
+    latest = latest_run_per_instance(benchmark=benchmark, repo_root=repo_root)
     pairs = [(_paths.runs_root(), ann) for (_run_id, ann) in latest.values()]
     return _aggregate_from_annotations(pairs)
 
@@ -368,6 +377,7 @@ def emit_cascading_eval_json(
     base_metrics: "dict | None" = None,
     *,
     instance_filter: "set[str] | None" = None,
+    repo_root: "Path | None" = None,
 ) -> dict:
     """Merge ``base_metrics`` with the freshly-computed cascading block
     and write to ``out_path``.
@@ -376,13 +386,18 @@ def emit_cascading_eval_json(
     annotations are found for this ``run_id``, the cascading_phase1 block
     will have zero counts.
 
+    ``repo_root``: forwarded to ``aggregate_cascading_phase1`` so the
+    aggregator reads from the same checkout the caller is writing to.
+
     The legacy dual-eval keys are explicitly dropped; ``phase1_count`` /
     ``phase1_rate`` are REWRITTEN from N1.
 
     Returns the resulting metrics dict.
     """
     block = aggregate_cascading_phase1(
-        benchmark, run_id, instance_filter=instance_filter,
+        benchmark, run_id,
+        instance_filter=instance_filter,
+        repo_root=repo_root,
     )
     out = dict(base_metrics or {})
     for k in _LEGACY_KEYS_TO_DROP:

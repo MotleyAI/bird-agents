@@ -193,6 +193,71 @@ def test_regrade_writes_eval_regraded_not_eval_json(tmp_path, monkeypatch):
     assert json.loads(eval_json.read_text())["phase1_count"] == 999
 
 
+def test_regrade_with_explicit_repo_root_aggregates_from_that_root(
+    tmp_path, monkeypatch,
+):
+    """When the caller passes ``repo_root=X`` (not the default
+    ``paths.main_checkout_root()``), the writer lands annotations under
+    ``X/runs/`` AND the aggregator MUST read from the SAME root so
+    ``eval_regraded.json`` reflects the just-written annotations
+    instead of computing zero counts off an unrelated default tree."""
+    from bird_interact_agents import paths as paths_mod
+    # Deliberately pin the default ``main_checkout_root`` to a SEPARATE
+    # directory so the aggregator falling back to it would read an empty
+    # tree. The fix threads ``repo_root`` through so the right tree is
+    # used.
+    default_root = tmp_path / "default-root"
+    default_root.mkdir()
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: default_root)
+
+    alt_root = tmp_path / "alt-root"
+    alt_root.mkdir()
+
+    run_dir = alt_root / "results" / "cloud" / "r1"
+    _write_attempt(run_dir, "alien_1")
+
+    class StubGrader:
+        def __call__(self, **kw):
+            from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
+            return CascadeVerdict(
+                n1_original_gold=True, n2_audited_primary=True,
+                n3_any_audited_variant=True, n4_tie_order=True,
+                n5_llm_judge=True, n6_numeric_epsilon=True,
+                n7_trailing_whitespace=True, n8_column_order=True,
+                n9_case_fold=True,
+                matched_variant_id="primary",
+                novel_reading_judgment=None,
+                variant_matches=[], rowset_relations=[],
+            )
+
+    from bird_interact_agents.eval.regrade import regrade_run
+
+    regrade_run(
+        run_id="r1", benchmark="mini-interact", run_dir=run_dir,
+        instance_ids=None,
+        grader=StubGrader(), repo_root=alt_root,
+    )
+
+    # Annotation went to alt_root.
+    written = alt_root / "runs" / "mini-interact" / "alien" / "alien_1" / "r1.json"
+    assert written.exists(), "regrade should write under alt_root/runs/"
+    # The default root must NOT have been written to.
+    assert not (default_root / "runs").exists(), (
+        "explicit repo_root must not leak writes into the default root"
+    )
+
+    # The aggregator must read from alt_root too — otherwise eval_regraded.json
+    # reports zero counts off the (empty) default root.
+    eval_regraded = run_dir / "eval_regraded.json"
+    assert eval_regraded.exists()
+    body = json.loads(eval_regraded.read_text())
+    assert body["phase1_count"] == 1, (
+        f"eval_regraded.json must reflect annotations from alt_root; "
+        f"got phase1_count={body.get('phase1_count')} (likely the "
+        f"aggregator fell back to the default root and saw no annotations)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Codex round 6: ``_build_original_sql_index`` MUST accept string-shaped
 # ``sol_sql``. The mini_interact JSONL carries both shapes (post-DEV-1478

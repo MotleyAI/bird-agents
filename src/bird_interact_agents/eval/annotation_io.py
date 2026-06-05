@@ -22,6 +22,7 @@ or similar). Here we only do schema-validated JSON I/O.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -30,6 +31,8 @@ from bird_interact_agents.eval.annotation_schema import (
     SubmissionAnnotation,
     TaskAnnotation,
 )
+
+logger = logging.getLogger(__name__)
 
 ANNOTATIONS_DIRNAME = "annotations"
 RUNS_DIRNAME = "runs"
@@ -263,8 +266,13 @@ def iter_run_annotations(
             continue
         try:
             out.append((path, read_submission_annotation(path)))
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # Surface corruption to operators: silent skip masks denominator
+            # shrinkage in downstream cascade aggregation.
+            logger.warning(
+                "[iter_run_annotations] skipping unreadable %s: %s: %s",
+                path, type(exc).__name__, exc,
+            )
     return out
 
 
@@ -301,7 +309,11 @@ def latest_run_per_instance(
         run_id = run_file[:-5]  # strip .json
         try:
             ann = read_submission_annotation(path)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[latest_run_per_instance] skipping unreadable %s: %s: %s",
+                path, type(exc).__name__, exc,
+            )
             continue
         key = (db, iid)
         annotated_at = ann.annotated_at or ""

@@ -271,7 +271,9 @@ def regrade_run(
         return report
     emit_cascading_eval_json(
         benchmark, run_id, run_dir / "eval_regraded.json",
-        base_metrics={}, instance_filter=set(report.regraded_instances),
+        base_metrics={},
+        instance_filter=set(report.regraded_instances),
+        repo_root=repo_root,
     )
     return report
 
