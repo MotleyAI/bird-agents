@@ -355,25 +355,21 @@ def test_download_prefix_empty_is_noop(fake_gcs_bucket, tmp_path: Path) -> None:
     assert not dest.exists() or not any(dest.iterdir())
 
 
-def test_download_prefix_skips_blob_that_raises_404(tmp_path: Path) -> None:
-    """Regression test: live runs constantly rewrite ``status.json`` and
-    heartbeat blobs; the SDK pins the generation seen at ``list_blobs`` time
-    into the per-blob download URL, so a concurrent write between list and
-    download raises 404 on the old generation. ``download_prefix`` must
-    swallow per-blob errors and keep going — otherwise a single racing
-    download crashes the whole fetch (and prevents the kill-after-fetch
-    step from ever running)."""
+def _fake_bucket_with_one_racing_blob(racing_name: str, *, prefix_root: str = "runs/r"):
+    """Helper: build an in-memory bucket where ``racing_name`` raises on
+    download but every other listed blob succeeds. Used by the
+    skip_missing_blobs tests."""
     from types import SimpleNamespace
 
     payloads = {
-        "runs/r/manifest.json": b"manifest\n",
-        "runs/r/status.json": b"will race",  # this one will raise on download
-        "runs/r/rows/db_a/attempt-1.json": b"row\n",
+        f"{prefix_root}/manifest.json": b"manifest\n",
+        racing_name: b"will race",
+        f"{prefix_root}/rows/db_a/attempt-1.json": b"row\n",
     }
 
     def _blob(name: str):
         def _download():
-            if name == "runs/r/status.json":
+            if name == racing_name:
                 raise RuntimeError("simulated 404 (object replaced)")
             return payloads[name]
 
@@ -384,16 +380,48 @@ def test_download_prefix_skips_blob_that_raises_404(tmp_path: Path) -> None:
 
     bucket = SimpleNamespace(blob=_blob, list_blobs=_list_blobs,
                               name="motley-team-birdbench")
-    client = SimpleNamespace(bucket=lambda _name: bucket)
+    return SimpleNamespace(bucket=lambda _name: bucket)
 
+
+def test_download_prefix_skip_missing_blobs_true_keeps_going(tmp_path: Path) -> None:
+    """Regression test for the fetch-vs-live-cluster race: when
+    ``skip_missing_blobs=True`` is set (the canonical caller is
+    ``driver.fetch`` via ``concurrent_download_prefix``), one blob's
+    download raising must NOT crash the entire fetch — otherwise the
+    auto-kill step at the end of fetch never runs and the cluster leaks."""
+    client = _fake_bucket_with_one_racing_blob("runs/r/status.json")
     dest = tmp_path / "out"
-    # Must NOT raise even though one blob's download throws.
-    gcs.download_prefix("runs/r/", dest, client=client)
+    gcs.download_prefix("runs/r/", dest, client=client, skip_missing_blobs=True)
     # Successful blobs still landed on disk.
     assert (dest / "manifest.json").read_bytes() == b"manifest\n"
     assert (dest / "rows" / "db_a" / "attempt-1.json").read_bytes() == b"row\n"
     # The racing blob was skipped, not corruptly written.
     assert not (dest / "status.json").exists()
+
+
+def test_download_prefix_default_propagates_failures(tmp_path: Path) -> None:
+    """Default ``skip_missing_blobs=False`` MUST propagate per-blob failures
+    so strict callers (slayer-setup at ``ray_app.py:303,361``, benchmark-data
+    at ``benchmark_data.py:181``) don't silently land a partial cache and
+    let the cluster proceed with bad inputs. The fetch-side tolerance is
+    opt-in only."""
+    client = _fake_bucket_with_one_racing_blob("runs/r/status.json")
+    dest = tmp_path / "out"
+    with pytest.raises(RuntimeError, match="simulated 404"):
+        gcs.download_prefix("runs/r/", dest, client=client)
+
+
+def test_concurrent_download_prefix_skips_by_default(tmp_path: Path) -> None:
+    """``concurrent_download_prefix`` is the fetch path — it must default
+    ``skip_missing_blobs=True`` so the documented race-tolerance is the
+    out-of-box behaviour for ``driver.fetch`` callers."""
+    client = _fake_bucket_with_one_racing_blob(
+        "runs/test-id/status.json", prefix_root="runs/test-id",
+    )
+    dest = tmp_path / "dl"
+    # No explicit skip flag — the wrapper's default must already be True.
+    gcs.concurrent_download_prefix("test-id", dest, client=client)
+    assert (dest / "manifest.json").read_bytes() == b"manifest\n"
 
 
 @pytest.mark.parametrize(

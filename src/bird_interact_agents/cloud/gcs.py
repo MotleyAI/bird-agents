@@ -242,6 +242,7 @@ def download_prefix(
     *,
     max_workers: int = 32,
     client=None,
+    skip_missing_blobs: bool = False,
 ) -> None:
     """Download every blob under `prefix` to `dest/<path-after-prefix>`.
 
@@ -251,6 +252,16 @@ def download_prefix(
     so a blob `runs/<id>/slayer_setup/slayer_otf_cache/<db>/x.yaml` downloaded
     with `prefix='runs/<id>/slayer_setup/slayer_otf_cache/'` lands at
     `dest/<db>/x.yaml`.
+
+    ``skip_missing_blobs`` (default ``False``): when True, per-blob download
+    failures are logged and skipped instead of propagating. Only the
+    ``fetch``-from-live-run path needs this — the cluster constantly
+    rewrites hot blobs (``status.json``, heartbeat), and the SDK pins the
+    generation seen at ``list_blobs`` into the download URL, so a
+    concurrent write between listing and downloading raises 404 on the
+    old generation. Strict callers (slayer-setup, benchmark-data) must
+    leave it ``False`` so a transient failure surfaces instead of
+    silently landing a partial cache.
     """
     client = client or default_gcs_client()
     bucket = client.bucket(BUCKET_NAME)
@@ -268,13 +279,8 @@ def download_prefix(
         try:
             data = blob.download_as_bytes()
         except Exception as exc:  # noqa: BLE001
-            # Live runs constantly rewrite hot blobs (e.g. `status.json`,
-            # heartbeat). The SDK pins the generation seen at `list_blobs`
-            # time into the download URL, so a concurrent write between
-            # listing and downloading raises 404 / InvalidResponse on the
-            # old generation. Swallow per-blob errors so one racing
-            # download doesn't kill the whole fetch (and prevent the
-            # auto-kill step from running).
+            if not skip_missing_blobs:
+                raise
             logger.warning(
                 "[download_prefix] skipping %s: %s: %s",
                 blob.name, type(exc).__name__, exc,
@@ -298,14 +304,19 @@ def concurrent_download_prefix(
     *,
     max_workers: int = 32,
     client=None,
+    skip_missing_blobs: bool = True,
 ) -> None:
     """Download every blob under `runs/<run_id>/` to `dest/<relative-path>`.
 
     Thin wrapper over `download_prefix` (one shared code path); the semantics
-    `fetch` needs.
+    `fetch` needs. ``skip_missing_blobs`` defaults to ``True`` because the
+    canonical caller (``driver.fetch``) races with a live cluster that's
+    constantly rewriting hot blobs — see ``download_prefix`` for the full
+    rationale.
     """
     download_prefix(
         f"runs/{run_id}/", dest, max_workers=max_workers, client=client,
+        skip_missing_blobs=skip_missing_blobs,
     )
 
 
