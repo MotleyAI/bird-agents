@@ -26,7 +26,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_submit.add_argument("--query-mode", required=True, choices=("raw", "slayer"))
     sp_submit.add_argument("--agent-model", required=True)
     sp_submit.add_argument(
-        "--user-sim-model", default="anthropic/claude-haiku-4-5-20251001"
+        "--user-sim-model", default="anthropic/claude-sonnet-4-6"
     )
     grp = sp_submit.add_mutually_exclusive_group(required=True)
     grp.add_argument("--instance-ids", type=_instance_ids)

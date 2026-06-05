@@ -91,7 +91,6 @@ need. For LiveSQLBench one-shot, pass `--dataset livesqlbench-base-lite-sqlite
 ```bash
 bird-interact --framework claude_sdk --query-mode slayer \
   --slayer-setup on-the-fly --dataset livesqlbench-base-lite-sqlite --mode one-shot \
-  --gold-file ../livesqlbench-base-lite-sqlite/livesqlbench_sqlite_gt_kg_testcases_0528.jsonl \
   --agent-model anthropic/claude-opus-4-7 \
   --reasoning-effort high \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
@@ -106,7 +105,6 @@ present, else built locally first; no reference build or upload-back).
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --framework claude_sdk --query-mode slayer --slayer-setup on-the-fly \
   --mode one-shot --dataset livesqlbench-base-lite-sqlite \
-  --gold-file ../livesqlbench-base-lite-sqlite/livesqlbench_sqlite_gt_kg_testcases_0528.jsonl \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
   --reasoning-effort high \
@@ -373,14 +371,13 @@ simulator, no `ask_user` anywhere in the spawn tree.
    `livesqlbench_gt_kg_testcases_*.jsonl`) — the public dataset ships
    `sol_sql` / `external_knowledge` / `test_cases` empty; the gated
    file carries them keyed by `instance_id`. See the LiveSQLBench repo
-   for access. The harness merges the gold in via `--gold-file`; it is
-   never committed here.
+   for access. Place it under `gated_gold/livesqlbench-base-lite-sqlite/`
+   in the main checkout; the harness auto-discovers it from there.
 
 ### Oracle validation (first thing to land/verify)
 
 ```bash
 uv run bird-interact --dataset livesqlbench-base-lite-sqlite --mode oracle \
-  --gold-file <gated.jsonl> \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
 ```
@@ -393,7 +390,6 @@ Submits the gold SQL directly and scores it — no LLM. Expected
 ```bash
 uv run bird-interact --dataset livesqlbench-base-lite-sqlite --mode one-shot --query-mode slayer \
   --framework claude_sdk --slayer-setup on-the-fly \
-  --gold-file <gated.jsonl> \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
 ```
