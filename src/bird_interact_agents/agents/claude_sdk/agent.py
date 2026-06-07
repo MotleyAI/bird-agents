@@ -1,21 +1,33 @@
-"""Claude Agent SDK implementation for BIRD-Interact."""
+"""Claude Agent SDK @tool definitions shared by the OTF agents.
+
+This module is the SHARED HOME of the in-process tool functions every
+``claude_sdk*`` OTF agent registers on its bird-interact-tools MCP
+server. The OTF entrypoints (one_shot / a-interact, slayer / raw) own
+their own run loops, prompts, and tool lists — they import the tools
+they need from here:
+
+* Raw-mode exploration: ``execute_sql``, ``get_schema``,
+  ``get_all_column_meanings`` / ``get_column_meaning``,
+  ``get_all_external_knowledge_names`` / ``get_knowledge_definition`` /
+  ``get_all_knowledge_definitions``.
+* Shared submission: ``ask_user``, ``submit_sql``, ``submit_query``.
+* DEV-1534 Fix C SLayer-mode wrappers: ``query`` / ``query_nested``
+  (filter-normalization opt-out aware; replace SLayer's MCP
+  ``query`` / ``query_nested`` in the OTF agents' allowlist).
+
+The contextvar plumbing (``_ctx_var``, ``_CtxProxy``,
+``accumulate_assistant_usage``, ``_state_view``, ``_gate``,
+``_run_env``) is also defined here and reused verbatim by every OTF
+agent.
+"""
 
 import contextvars
 import logging
 from types import SimpleNamespace
 
-from claude_agent_sdk import (
-    ClaudeAgentOptions,
-    ClaudeSDKClient,
-    create_sdk_mcp_server,
-    tool,
-)
+from claude_agent_sdk import tool
 
 from bird_interact_agents.agents import _query as _query_mod
-from bird_interact_agents.agents._prompt_builders import (
-    build_raw_c_interact_prompt,
-    build_slayer_c_interact_prompt,
-)
 from bird_interact_agents.agents._submit import (
     ask_user_impl,
     submit_raw_sql,
@@ -25,21 +37,10 @@ from bird_interact_agents.agents._tool_specs import (
     BIRD_INTERACT_TOOLS,
     render_action,
 )
-from bird_interact_agents.agents.claude_sdk.prompts import (
-    RAW_A_INTERACT,
-    SLAYER_A_INTERACT,
-)
 from bird_interact_agents.harness import (
     ACTION_COSTS,
-    MAX_MODEL_TURNS,
     SampleStatus,
     execute_env_action,
-    execute_submit_action,
-    finalize_result_row,
-    load_db_data_if_needed,
-    parse_encoder_response,
-    resolve_task_storage_dir,
-    slayer_mcp_stdio_config,
     update_budget,
 )
 from bird_interact_agents.usage import TokenUsage
@@ -502,317 +503,70 @@ async def query(args: dict) -> dict:
     return _text(result if isinstance(result, str) else str(result))
 
 
-# ---------------------------------------------------------------------------
-# Tool lists
-# ---------------------------------------------------------------------------
-
-# DEV-1534 Fix C: only these SLayer MCP tools are allowlisted from
-# the slayer subprocess MCP server. `query` is served by our own
-# wrapper on bird-interact-tools instead.
-SLAYER_MCP_TOOL_NAMES = (
-    "help",
-    "list_datasources",
-    "models_summary",
-    "inspect_model",
-    "search",
+# DEV-1534 Fix C: same opt-out logic for SLayer's MCP `query_nested`.
+# A nested-DAG preview goes through this wrapper so each stage's filters
+# can opt out of the default `lower(trim(...))` normalization.
+_QUERY_NESTED_TOOL_DESC = (
+    "Run a nested-DAG SLayer query (one stage's measure feeding the next "
+    "stage's dimension) and return SLayer's formatted result. Same shape "
+    "as SLayer's MCP `query_nested` tool — `queries` (required, a list "
+    "of stage objects; last is the DAG root; non-final stages need a "
+    "`name`; later stages reference earlier ones via `source_model: "
+    "\"<sibling name>\"`), `variables`, `show_sql`, `dry_run`, `explain`, "
+    "`format` (markdown/json/csv). The 7th parameter `normalize_filters` "
+    "(default true) controls our text-equality filter auto-normalization "
+    "for every stage's `filters` list: when true, every `col == 'X'` "
+    "filter becomes `lower(trim(col)) == 'x'`; when false, filters are "
+    "forwarded verbatim (exact-case equality). Do NOT wrap `queries` in "
+    "`{\"queries\": ...}` — pass the bare list."
 )
 
 
-RAW_A_TOOLS = [
-    execute_sql,
-    get_schema,
-    get_all_column_meanings,
-    get_column_meaning,
-    get_all_external_knowledge_names,
-    get_knowledge_definition,
-    get_all_knowledge_definitions,
-    ask_user,
-    submit_sql,
-]
+@tool(
+    "query_nested",
+    _QUERY_NESTED_TOOL_DESC,
+    {
+        "type": "object",
+        "properties": {
+            "queries": {"type": "array"},
+            "variables": {"type": "object"},
+            "show_sql": {"type": "boolean", "default": False},
+            "dry_run": {"type": "boolean", "default": False},
+            "explain": {"type": "boolean", "default": False},
+            "format": {"type": "string", "default": "markdown"},
+            "normalize_filters": {"type": "boolean", "default": True},
+        },
+        "required": ["queries"],
+    },
+)
+async def query_nested(args: dict) -> dict:
+    storage = _ctx.get("_slayer_storage")
+    if storage is None:
+        _slayer_client()
+        storage = _ctx["_slayer_storage"]
+    _query_mod.attach_storage(storage)
 
-# c-interact: schema and knowledge are injected in the prompt; agent only
-# clarifies and submits.
-RAW_C_TOOLS = [ask_user, submit_sql]
-
-# In SLayer mode, exploration tools (help, models_summary, inspect_model,
-# list_datasources, search) come from the slayer MCP server itself —
-# wired into ClaudeAgentOptions.mcp_servers. We also expose the native
-# bird-interact knowledge tools so SLayer agents have the same access
-# to external domain knowledge that raw agents do.
-# DEV-1534 Fix C: `query` is served by our own wrapper on the
-# bird-interact-tools SDK MCP server (above) so the agent can opt out
-# of filter normalization via the new `normalize_filters` parameter;
-# it's NOT in SLAYER_MCP_TOOL_NAMES.
-SLAYER_A_TOOLS = [
-    get_all_external_knowledge_names,
-    get_knowledge_definition,
-    get_all_knowledge_definitions,
-    ask_user,
-    query,
-    submit_query,
-]
-# c-interact slayer: knowledge is injected upfront in the prompt (matches
-# raw c-interact's contract), so no separate knowledge tools are needed.
-SLAYER_C_TOOLS = [ask_user, query, submit_query]
+    result = await _query_mod.query_nested_impl(
+        queries=args["queries"],
+        variables=args.get("variables"),
+        show_sql=bool(args.get("show_sql", False)),
+        dry_run=bool(args.get("dry_run", False)),
+        explain=bool(args.get("explain", False)),
+        format=args.get("format", "markdown"),
+        normalize_filters=bool(args.get("normalize_filters", True)),
+    )
+    return _text(result if isinstance(result, str) else str(result))
 
 
-def _select_tools(query_mode: str, eval_mode: str) -> list:
-    if query_mode == "raw" and eval_mode == "a-interact":
-        return RAW_A_TOOLS
-    if query_mode == "raw" and eval_mode == "c-interact":
-        return RAW_C_TOOLS
-    if query_mode == "slayer" and eval_mode == "a-interact":
-        return SLAYER_A_TOOLS
-    if query_mode == "slayer" and eval_mode == "c-interact":
-        return SLAYER_C_TOOLS
-    raise ValueError(f"Unknown mode combo: query_mode={query_mode} eval_mode={eval_mode}")
-
-
-# ---------------------------------------------------------------------------
-# Prompt builders
-# ---------------------------------------------------------------------------
-
-async def _build_prompt(
-    query_mode: str, eval_mode: str, task_data: dict, budget: float
-) -> str:
-    user_query = task_data["amb_user_query"]
-    db_name = task_data["selected_database"]
-
-    if query_mode == "raw" and eval_mode == "a-interact":
-        return RAW_A_INTERACT.format(
-            budget=budget, db_name=db_name, user_query=user_query
-        )
-
-    if query_mode == "raw" and eval_mode == "c-interact":
-        return await build_raw_c_interact_prompt(
-            budget=budget,
-            db_name=db_name,
-            user_query=user_query,
-            task_data=task_data,
-        )
-
-    if query_mode == "slayer" and eval_mode == "a-interact":
-        return SLAYER_A_INTERACT.format(budget=budget, user_query=user_query)
-
-    if query_mode == "slayer" and eval_mode == "c-interact":
-        return await build_slayer_c_interact_prompt(
-            budget=budget,
-            user_query=user_query,
-            slayer_storage_dir=_ctx["slayer_storage_dir"],
-            db_name=db_name,
-            task_data=task_data,
-        )
-
-    raise ValueError(f"Unknown mode combo: query_mode={query_mode} eval_mode={eval_mode}")
-
-
-# ---------------------------------------------------------------------------
-# Agent class
-# ---------------------------------------------------------------------------
-
-
-class ClaudeSDKAgent:
-    """SystemAgent implementation using the Claude Agent SDK.
-
-    The SDK is locked to Anthropic models — passing a non-Anthropic
-    `model` causes `run_task` to short-circuit with a skip-shaped row so
-    the 3-way comparison still renders cleanly. Use a different
-    framework (`pydantic_ai`, `smolagents`, ...) for non-Anthropic models.
-    """
-
-    def __init__(
-        self,
-        slayer_storage_root: str | None = None,
-        model: str = "anthropic/claude-sonnet-4-5",
-    ) -> None:
-        self.slayer_storage_root = slayer_storage_root
-        self.model = model
-
-    async def run_task(
-        self,
-        task_data: dict,
-        data_path_base: str,
-        budget: float,
-        query_mode: str,
-        eval_mode: str = "a-interact",
-        user_sim_model: str = "anthropic/claude-haiku-4-5-20251001",
-        user_sim_prompt_version: str = "v2",
-    ) -> dict:
-        from bird_interact_agents.model_string import is_anthropic
-
-        instance_id = task_data["instance_id"]
-        db_name = task_data["selected_database"]
-        if not is_anthropic(self.model):
-            msg = (
-                f"claude_sdk requires an Anthropic model; got {self.model!r}. "
-                "Skipped — use --framework pydantic_ai for non-Anthropic models."
-            )
-            logger.warning("[%s] %s", instance_id, msg)
-            return finalize_result_row(
-                {
-                    "task_id": instance_id,
-                    "instance_id": instance_id,
-                    "database": db_name,
-                    "phase1_passed": False,
-                    "phase2_passed": False,
-                    "total_reward": 0.0,
-                    "trajectory": [],
-                    "error": msg,
-                },
-                deleted_kb_ids=[],
-                slayer_storage_dir="",
-            )
-
-
-        status = SampleStatus(
-            idx=0,
-            original_data=task_data,
-            remaining_budget=budget,
-            total_budget=budget,
-        )
-        load_db_data_if_needed(db_name, data_path_base)
-
-        # Per-task SLayer storage path (only relevant for slayer query mode).
-        # Builds a HARD-8 variant on-the-fly when the task has
-        # knowledge_ambiguity[*].deleted_knowledge entries.
-        slayer_storage_dir, deleted_kb_ids = await resolve_task_storage_dir(
-            slayer_storage_root=self.slayer_storage_root,
-            db_name=db_name,
-            task_data=task_data,
-            query_mode=query_mode,
-        )
-
-        # Number of clarification turns the c-interact contract grants to the
-        # agent — used for the post-ask_user "turns remaining" notice.
-        from bird_interact_agents.harness import _ambiguity_count
-
-        max_asks = _ambiguity_count(task_data) + 3  # +patience(3); matches ADK
-
-        # Set the per-task context dict via contextvars — concurrent task
-        # runs each get their own dict instance. The LOCAL `ctx_dict`
-        # binding is what the exception path reads from, so a stale
-        # ContextVar from a prior task in the same async context cannot
-        # leak its `result` into this row.
-        accum = TokenUsage()
-        ctx_dict: dict = {
-            "status": status,
-            "data_path_base": data_path_base,
-            "user_sim_model": user_sim_model,
-            "user_sim_prompt_version": user_sim_prompt_version,
-            "slayer_storage_dir": slayer_storage_dir,
-            "_slayer_client": None,
-            "_slayer_storage": None,
-            "result": None,
-            "eval_mode": eval_mode,
-            "query_mode": query_mode,
-            "max_asks": max_asks,
-            "asks_used": 0,
-            "usage": accum,
-        }
-        _ctx_var.set(ctx_dict)
-
-        tools = _select_tools(query_mode, eval_mode)
-        prompt = await _build_prompt(query_mode, eval_mode, task_data, budget)
-
-        server = create_sdk_mcp_server(
-            name="bird-interact-tools", version="1.0.0", tools=tools
-        )
-        tool_names = [f"mcp__bird-interact-tools__{t.name}" for t in tools]
-
-        mcp_servers: dict = {"bird-interact-tools": server}
-        if query_mode == "slayer":
-            mcp_servers["slayer"] = slayer_mcp_stdio_config(slayer_storage_dir)
-            # DEV-1534 Fix C: `query` is served by our own wrapper on the
-            # bird-interact-tools SDK MCP server (see `_query.query_impl`)
-            # so the agent can opt out of filter normalization mid-flight
-            # via the separate `normalize_filters` parameter. The other
-            # exploration tools come from SLayer's subprocess MCP server.
-            tool_names.extend(f"mcp__slayer__{t}" for t in SLAYER_MCP_TOOL_NAMES)
-
-        options = ClaudeAgentOptions(
-            system_prompt=prompt,
-            mcp_servers=mcp_servers,
-            allowed_tools=tool_names,
-        )
-
-        trajectory: list[dict] = []
-        try:
-            # Auth env-var invariant validated at actor bootstrap; see ray_app._assert_actor_oauth_invariant.
-            async with ClaudeSDKClient(options=options) as client:
-                await client.query(task_data["amb_user_query"])
-                turns = 0
-                async for msg in client.receive_response():
-                    trajectory.append(
-                        {"type": str(type(msg).__name__), "data": str(msg)[:500]}
-                    )
-                    # Each assistant turn carries a `usage` block (a dict);
-                    # fold it in so we record partial usage on exception or
-                    # early break.
-                    accumulate_assistant_usage(accum, msg, self.model)
-                    # Count assistant model turns; cap at MAX_MODEL_TURNS to
-                    # match the original mini_interact_agent (--max_turns=60)
-                    # and ADK before_model_callback.
-                    if type(msg).__name__ == "AssistantMessage":
-                        turns += 1
-                        if turns >= MAX_MODEL_TURNS:
-                            logger.warning(
-                                "Max model turns (%d) reached for %s; stopping.",
-                                MAX_MODEL_TURNS, instance_id,
-                            )
-                            break
-        except Exception as e:
-            logger.error("Agent error on %s: %s", instance_id, e)
-            # Read from the LOCAL ctx_dict (not _ctx_var.get()) so a stale
-            # context from a prior task in the same async context cannot
-            # leak its diagnostics into this row.
-            result = ctx_dict.get("result") or {}
-            return finalize_result_row(
-                {
-                    "task_id": instance_id,
-                    "instance_id": instance_id,
-                    "database": db_name,
-                    "phase1_passed": result.get("phase1_passed", False),
-                    "phase2_passed": result.get("phase2_passed", False),
-                    "total_reward": result.get("total_reward", 0.0),
-                    "submitted_sql": result.get("submitted_sql"),
-                    "submitted_query": result.get("submitted_query"),
-                    "submission_status": result.get("submission_status"),
-                    "predicted_result_json": result.get("predicted_result_json"),
-                    "gold_result_json": result.get("gold_result_json"),
-                    "phase1_observation": result.get("phase1_observation"),
-                    "phase2_observation": result.get("phase2_observation"),
-                    "trajectory": trajectory,
-                    "error": str(e),
-                    "usage": accum.model_dump(),
-                    "phase1_observation_audited": result.get("phase1_observation_audited"),
-                    "phase1_observation_original": result.get("phase1_observation_original"),
-                },
-                deleted_kb_ids=deleted_kb_ids,
-                slayer_storage_dir=slayer_storage_dir,
-            )
-
-        result = ctx_dict.get("result") or {}
-        return finalize_result_row(
-            {
-                "task_id": instance_id,
-                "instance_id": instance_id,
-                "database": db_name,
-                "phase1_passed": result.get("phase1_passed", False),
-                "phase2_passed": result.get("phase2_passed", False),
-                "total_reward": result.get("total_reward", 0.0),
-                "submitted_sql": result.get("submitted_sql"),
-                "submitted_query": result.get("submitted_query"),
-                "submission_status": result.get("submission_status"),
-                "predicted_result_json": result.get("predicted_result_json"),
-                "gold_result_json": result.get("gold_result_json"),
-                "phase1_observation": result.get("phase1_observation"),
-                "phase2_observation": result.get("phase2_observation"),
-                "trajectory": trajectory,
-                "error": None,
-                "usage": accum.model_dump(),
-                "phase1_observation_audited": result.get("phase1_observation_audited"),
-                "phase1_observation_original": result.get("phase1_observation_original"),
-            },
-            deleted_kb_ids=deleted_kb_ids,
-            slayer_storage_dir=slayer_storage_dir,
-        )
+# NOTE: this module no longer exports a top-level ``ClaudeSDKAgent``
+# class, ``RAW_A_TOOLS`` / ``RAW_C_TOOLS`` / ``SLAYER_A_TOOLS`` /
+# ``SLAYER_C_TOOLS`` tool lists, ``SLAYER_MCP_TOOL_NAMES``, or
+# ``_select_tools`` / ``_build_prompt`` helpers. The production CLI
+# (``--framework claude_sdk``) dispatches via ``run.py`` to one of four
+# narrow OTF agents (``claude_sdk_otf{,_ainteract,_raw,_ainteract_raw}``)
+# — each owns its own run loop, prompt, tool list, and pre-submit
+# guards, and imports the in-process @tool functions above from THIS
+# module. The pre-OTF orchestrator class + its tool-list constants /
+# prompt-dispatch helpers were unreachable from the CLI after DEV-1507
+# (livesqlbench OTF split) and are removed in DEV-1534 to avoid
+# duplicate maintenance.

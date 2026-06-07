@@ -41,6 +41,8 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     get_all_external_knowledge_names,
     get_all_knowledge_definitions,
     get_knowledge_definition,
+    query,
+    query_nested,
     submit_query,
 )
 from bird_interact_agents.agents.claude_sdk_otf.prompts import (
@@ -76,8 +78,15 @@ logger = logging.getLogger(__name__)
 # SLayer query tools that satisfy the pre-submit verification gate.
 # Any `query` or `query_nested` call immediately before `submit_query`
 # is treated as the required output-inspection step.
+#
+# DEV-1534 Fix C: these now point at our bird-interact-tools wrappers
+# (which forward to SLayer's MCP query/query_nested but with the
+# `normalize_filters` opt-out), NOT at the raw subprocess MCP tools.
 SLAYER_QUERY_TOOLS: frozenset[str] = frozenset(
-    {"mcp__slayer__query", "mcp__slayer__query_nested"}
+    {
+        "mcp__bird-interact-tools__query",
+        "mcp__bird-interact-tools__query_nested",
+    }
 )
 
 
@@ -137,16 +146,20 @@ def _make_query_before_submit_guard():
 
 # SLayer MCP tools the OTF agent may call. The existing claude_sdk slayer
 # mode is read-only; this adapter ADDS the write tools (create_model /
-# edit_model / save_memory / validate_models) plus query_nested so the
-# agent can encode KB items and submit nested-DAG queries.
+# edit_model / save_memory / validate_models) so the agent can encode KB
+# items.
+#
+# DEV-1534 Fix C: `query` and `query_nested` are served by our own
+# wrappers on the bird-interact-tools SDK MCP server (registered via
+# `_KNOWLEDGE_TOOLS` below) so the agent can opt out of filter
+# normalization mid-flight via the `normalize_filters` parameter. They
+# are NOT in this allowlist.
 SLAYER_MCP_TOOLS = [
     "help",
     "list_datasources",
     "models_summary",
     "inspect_model",
     "search",
-    "query",
-    "query_nested",
     "create_model",
     "edit_model",
     "save_memory",
@@ -207,10 +220,16 @@ def _make_turn_budget_hook(
 # knowledge-lookup tools + `submit_query` are the only natives the agent
 # needs. (The a-interact flavor adds `ask_user` in
 # ``claude_sdk_otf_ainteract``.)
+#
+# DEV-1534 Fix C: `query` / `query_nested` are bird-interact-tools
+# wrappers (not SLayer subprocess tools) so the agent can opt out of
+# filter normalization mid-flight.
 _KNOWLEDGE_TOOLS = [
     get_all_external_knowledge_names,
     get_knowledge_definition,
     get_all_knowledge_definitions,
+    query,
+    query_nested,
 ]
 
 

@@ -27,9 +27,13 @@ from bird_interact_agents.agents._host_discovery_playbook import (
 )
 from bird_interact_agents.agents._shared_otf_prompts import (
     _ASK_AGAIN_RULE,
+    _COLUMN_NAMES_DONT_AFFECT_GRADING,
     _DECOMPOSE_DISCIPLINE,
+    _PIVOT_AFTER_REPEATED_FAILURES,
     _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
     _RULE_0_ASK_BEFORE,
+    _SLAYER_SQL_ARTIFACT_CHECK,
+    _USER_SIM_TRUST_CALIBRATION,
 )
 
 # Shared submission contract (single-stage or nested-DAG). Literal JSON
@@ -141,15 +145,35 @@ SLAYER_OTF_AINTERACT = (
     + _AINTERACT_RULES_2_3
     + "\n\n"
     + _ASK_AGAIN_RULE.format(knowledge_source="a memory")
+    + "\n\n   "
+    + _USER_SIM_TRUST_CALIBRATION.format(knowledge_label="KB")
+    + "\n\n   "
+    + _PIVOT_AFTER_REPEATED_FAILURES.format(
+        artifact_inspect_step=(
+            "Inspect the generated SQL for SLayer artifacts (GROUP BY\n"
+            "     dedup, `lower(trim(...))` coercion, broken WHERE\n"
+            "     precedence; see the artifact-check rule below)."
+        ),
+        extra_hypothesis_axes=(
+            ", or `normalize_filters=false` on the offending `query` /\n"
+            "     `query_nested` / `submit_query` call"
+        ),
+    )
     + "\n\n5. TEST candidate columns and the final query with `query` /\n"
       "   `query_nested`; sanity-check the generated SQL.\n\n"
+      "   "
+    + _SLAYER_SQL_ARTIFACT_CHECK
+    + "\n\n"
     + _PRE_SUBMIT_MUTATION_CHECK_AINTERACT.format(
         submit_tool="submit_query",
         clause_c="encoded KB",
     )
     + "\n\n7. SUBMIT. Write the FINAL query so it REFERENCES the named columns /\n"
       "   measures you encoded — do NOT inline their SQL back into the query.\n"
-      "   Project exactly the columns the user named, and only those. "
+      "   Project exactly the columns the user named, and only those.\n\n"
+      "   "
+    + _COLUMN_NAMES_DONT_AFFECT_GRADING
+    + "\n\n   "
     + _SUBMIT_CONTRACT
     + "\n\nBudget: {budget} bird-coins. `ask_user` costs 2, `submit_query` costs 3;\n"
       "SLayer reads/writes are free but your total work is turn-bounded — encode\n"

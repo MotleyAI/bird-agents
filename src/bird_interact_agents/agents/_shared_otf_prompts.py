@@ -86,3 +86,78 @@ _PRE_SUBMIT_MUTATION_CHECK_AINTERACT = """\
    specific transformation (e.g. "lowercase the bracket labels",
    "round to 2 decimals", "TRIM the keys"), that reply IS the
    authorization for that mutation — apply it."""
+
+# DEV-1534 Fix B — applies to all 4 OTF flavors (grader behaviour, not
+# mode-specific). No format params.
+_COLUMN_NAMES_DONT_AFFECT_GRADING = """\
+COLUMN HEADERS DO NOT AFFECT GRADING. The grader compares value tuples
+POSITIONALLY — column COUNT, positional ORDER, value TYPES, and VALUES
+matter; column NAMES do not. Do not waste turns renaming projection
+aliases to match the user's wording or any reference/gold labels."""
+
+# DEV-1534 Fix D — slayer-mode only (one-shot + a-interact). No format
+# params. The `normalize_filters` opt-out applies to `query`,
+# `query_nested`, AND `submit_query` — all served by our bird-interact-
+# tools wrappers in the OTF agents.
+_SLAYER_SQL_ARTIFACT_CHECK = """\
+SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query` /
+`query_nested` returns, inspect the rendered SQL for these patterns
+before submitting:
+
+  1. GROUP BY on every projected column with NO aggregate functions —
+     silently deduplicates rows. Fix: add the table's primary-key column
+     as a dimension, or restructure as a nested-DAG stage with a
+     `*:count` measure.
+  2. `lower(trim(col)) = '<lowercase literal>'` on string equality
+     filters — wrapped automatically by default. When the gold answer
+     requires exact-case equality (proper-noun categories with
+     known-fixed casing), pass `normalize_filters=false` as a SEPARATE
+     parameter on the offending `query` / `query_nested` / `submit_query`
+     call (the flag lives OUTSIDE the JSON DSL).
+  3. Broken operator precedence on WHERE arithmetic:
+     `expr1*w1 + expr2*w2 > threshold` without outer parens — the
+     comparator binds only to the last additive term. Fix: push the
+     score into a HAVING on a nested-stage measure rather than a WHERE
+     on a raw formula."""
+
+# DEV-1534 Fix E — a-interact only (one-shot variants get exactly ONE
+# submission, so the "after 3 failed" trigger never fires). Format
+# params:
+#   {artifact_inspect_step} — slayer prompts pass the SLayer-artifact
+#       inspection text + cross-ref to the artifact-check rule below;
+#       raw prompts pass a mode-agnostic "inspect the SQL you submitted"
+#       paragraph instead.
+#   {extra_hypothesis_axes} — slayer prompts add the
+#       `normalize_filters=false` axis to the structural-hypothesis
+#       list; raw prompts pass an empty string.
+_PIVOT_AFTER_REPEATED_FAILURES = """\
+PIVOT AFTER 3 FAILED SUBMISSIONS WITH THE SAME OPAQUE ERROR. Stop
+varying surface parameters and:
+
+  1. {artifact_inspect_step}
+  2. Enumerate ≤4 structurally different hypotheses not yet tested:
+     different row grain, formula kernel, join path, or output column
+     count/type{extra_hypothesis_axes}.
+  3. Call `ask_user` ONCE with those hypotheses as concrete options to
+     get directional guidance (cheaper than many resubmissions of
+     near-identical queries).
+  4. Test each surviving hypothesis exactly once — never re-submit a
+     query structurally identical to a prior attempt."""
+
+# DEV-1534 Fix F — a-interact only (one-shot variants have no user
+# simulator). No format params.
+_USER_SIM_TRUST_CALIBRATION = """\
+USER-SIM ANSWERS ARE CLARIFICATIONS, NOT GROUND TRUTH.
+
+  - Cross-check user-sim formulas against the {knowledge_label} before
+    submitting. If they contradict (e.g. the user-sim denies a column
+    the {knowledge_label} explicitly names), try the
+    {knowledge_label}-grounded interpretation first.
+  - After ≥2 failures with a user-sim-confirmed interpretation, try
+    the {knowledge_label}-literal / schema-literal interpretation as a
+    fallback submission.
+  - When a user-sim constraint makes the required output cardinality
+    impossible (e.g. "use only table X" but X has 4 distinct values
+    and the task needs top-5), call `ask_user` again to flag the
+    contradiction explicitly rather than submitting an impossible
+    query."""

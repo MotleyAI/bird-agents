@@ -36,6 +36,8 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     get_all_external_knowledge_names,
     get_all_knowledge_definitions,
     get_knowledge_definition,
+    query,
+    query_nested,
     submit_query,
 )
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
@@ -154,10 +156,15 @@ def _make_ask_user_guards():
     return pre_submit_gate, post_ask_counter, post_nag
 
 
+# DEV-1534 Fix C: `query` / `query_nested` are bird-interact-tools
+# wrappers (not SLayer subprocess tools) so the agent can opt out of
+# filter normalization mid-flight via the `normalize_filters` parameter.
 _KNOWLEDGE_TOOLS = [
     get_all_external_knowledge_names,
     get_knowledge_definition,
     get_all_knowledge_definitions,
+    query,
+    query_nested,
 ]
 
 

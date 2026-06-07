@@ -22,12 +22,17 @@ import pytest
 # Hashes were captured from the pre-refactoring source.
 # ---------------------------------------------------------------------------
 
-_ONE_SHOT_SHA256 = "6efc7c8e669f94742cc99381cd87a7cc122f6455b42b8887421afd4b8ab7aa63"
-_AINTERACT_SHA256 = "c2957ea702b2014a27d5ddface8dda48123fd533b21378cb3e91ba70b4dc5392"
+# Hashes re-baselined for the DEV-1534 Fix B/D/E/F prompt additions
+# (column-names rule, SLayer artifact sanity-check, pivot-after-3-failures
+# discipline, user-sim trust calibration). The snapshot's purpose is the
+# same — catch ACCIDENTAL prompt drift on later refactors; deliberate
+# prompt changes re-baseline here.
+_ONE_SHOT_SHA256 = "2edbd941d409883d16dfcc68740aef4e5d7ba9d778752d060e990ab8479ba2dc"
+_AINTERACT_SHA256 = "cda8eae5cdfe0825f8e8010e0045daaa26baf0b12d57dab0e12ade6849229bca"
 
 
 def test_slayer_otf_one_shot_unchanged():
-    """Byte-for-byte contract: refactoring must not alter the rendered prompt."""
+    """Byte-for-byte contract against the re-baselined snapshot."""
     from bird_interact_agents.agents.claude_sdk_otf.prompts import SLAYER_OTF_ONE_SHOT
 
     digest = hashlib.sha256(SLAYER_OTF_ONE_SHOT.encode()).hexdigest()
@@ -39,7 +44,7 @@ def test_slayer_otf_one_shot_unchanged():
 
 
 def test_slayer_otf_ainteract_unchanged():
-    """Byte-for-byte contract: refactoring must not alter the rendered prompt."""
+    """Byte-for-byte contract against the re-baselined snapshot."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
         SLAYER_OTF_AINTERACT,
     )

@@ -9,6 +9,7 @@ Format params: ``budget``, ``db_name``, ``user_query``.
 """
 
 from bird_interact_agents.agents._shared_otf_prompts import (
+    _COLUMN_NAMES_DONT_AFFECT_GRADING,
     _DECOMPOSE_DISCIPLINE,
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
@@ -89,7 +90,9 @@ RAW_OTF_ONE_SHOT = (
     + "\n\n6. SUBMIT. Call `submit_sql` with your final SQL — a prose answer is\n"
       "   not a submission. Project exactly the columns the question names,\n"
       "   and only those.\n\n"
-      "Budget: {budget} bird-coins (`submit_sql` costs 3; exploration tools\n"
+      "   "
+    + _COLUMN_NAMES_DONT_AFFECT_GRADING
+    + "\n\nBudget: {budget} bird-coins (`submit_sql` costs 3; exploration tools\n"
       "are free but your total work is turn-bounded — explore only what the\n"
       "question needs).\n\n"
       "Database: {db_name}\n"

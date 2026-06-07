@@ -39,9 +39,11 @@ def _tool_names(tools):
     return {t.name for t in tools}
 
 
-def test_select_tools_one_shot_returns_four_native_tools():
-    """3 knowledge tools + submit_query = 4 native; no ask_user.
-    Total tool count (with 11 slayer) is 15."""
+def test_select_tools_one_shot_returns_six_native_tools():
+    """3 knowledge tools + the DEV-1534 Fix C query/query_nested wrappers
+    + submit_query = 6 native; no ask_user. Total tool count (with 9
+    slayer subprocess tools after Fix C moves query/query_nested out
+    of the subprocess allowlist) is 15."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as m
 
     names = _tool_names(m._select_tools("one-shot"))
@@ -49,6 +51,8 @@ def test_select_tools_one_shot_returns_four_native_tools():
         "get_all_external_knowledge_names",
         "get_knowledge_definition",
         "get_all_knowledge_definitions",
+        "query",
+        "query_nested",
         "submit_query",
     }
     assert "ask_user" not in names
@@ -65,7 +69,9 @@ def test_select_tools_rejects_a_interact_and_others():
 
 def test_slayer_tool_names_include_write_tools():
     """The OTF agent must be able to WRITE models, unlike the read-only
-    claude_sdk slayer mode. 11 slayer tools total."""
+    claude_sdk slayer mode. After DEV-1534 Fix C, ``query`` and
+    ``query_nested`` are served by our bird-interact-tools wrappers
+    (NOT the SLayer subprocess), leaving 9 SLayer subprocess tools."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as m
 
     names = set(m._slayer_tool_names())
@@ -73,14 +79,20 @@ def test_slayer_tool_names_include_write_tools():
         "mcp__slayer__create_model",
         "mcp__slayer__edit_model",
         "mcp__slayer__save_memory",
-        "mcp__slayer__query_nested",
         "mcp__slayer__validate_models",
     ):
         assert t in names, f"missing write tool {t}"
-    # read tools still present
-    for t in ("mcp__slayer__query", "mcp__slayer__search", "mcp__slayer__inspect_model"):
+    # Discovery / read tools still come from the SLayer subprocess MCP.
+    for t in ("mcp__slayer__search", "mcp__slayer__inspect_model"):
         assert t in names
-    assert len(names) == 11
+    # DEV-1534 Fix C: query / query_nested moved off the SLayer
+    # subprocess allowlist onto bird-interact-tools wrappers.
+    for t in ("mcp__slayer__query", "mcp__slayer__query_nested"):
+        assert t not in names, (
+            f"{t} should be served by the bird-interact-tools wrapper "
+            "after DEV-1534 Fix C, not the SLayer subprocess MCP server."
+        )
+    assert len(names) == 9
 
 
 # ---------------------------------------------------------------------------

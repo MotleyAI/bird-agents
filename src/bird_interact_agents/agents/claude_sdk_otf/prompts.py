@@ -24,9 +24,11 @@ from bird_interact_agents.agents._host_discovery_playbook import (
     HOST_DISCOVERY_PLAYBOOK as _HOST_DISCOVERY_PLAYBOOK,
 )
 from bird_interact_agents.agents._shared_otf_prompts import (
+    _COLUMN_NAMES_DONT_AFFECT_GRADING,
     _DECOMPOSE_DISCIPLINE,
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
+    _SLAYER_SQL_ARTIFACT_CHECK,
 )
 
 # Shared submission contract (single-stage or nested-DAG). Literal JSON
@@ -130,6 +132,9 @@ SLAYER_OTF_ONE_SHOT = (
     + _ENCODE_CORE
     + "\n4. TEST candidate columns and the final query with `query` /\n"
       "   `query_nested`; sanity-check the generated SQL.\n\n"
+      "   "
+    + _SLAYER_SQL_ARTIFACT_CHECK
+    + "\n\n"
     + _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT.format(
         submit_tool="submit_query",
         clause_b="encoded KB",
@@ -138,6 +143,8 @@ SLAYER_OTF_ONE_SHOT = (
       "   measures you encoded — do NOT inline their SQL back into the query.\n"
       "   Project exactly the columns the question names, and only those.\n"
       "   "
+    + _COLUMN_NAMES_DONT_AFFECT_GRADING
+    + "\n\n   "
     + _SUBMIT_CONTRACT
     + "\n\nBudget: {budget} bird-coins (`submit_query` costs 3; SLayer reads/writes\n"
       "are free but your total work is turn-bounded — encode only what the\n"

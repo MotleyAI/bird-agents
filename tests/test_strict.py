@@ -177,12 +177,16 @@ def test_mcp_agent_strict_false_constructs_normally():
 # claude_sdk — strict flag is a documented no-op (Anthropic has no strict)
 # ---------------------------------------------------------------------------
 
-def test_claude_sdk_constructs_with_strict_flag_as_noop():
+def test_claude_sdk_otf_constructs_with_strict_flag_as_noop():
     """claude_sdk doesn't expose a strict CLI knob on the agent class — it's
-    handled at the run.py boundary (logged warning, then ignored). Verify
-    the agent constructs normally with our default Anthropic model so we
-    don't accidentally regress that path."""
-    from bird_interact_agents.agents.claude_sdk.agent import ClaudeSDKAgent
+    handled at the run.py boundary (logged warning, then ignored). DEV-1534
+    deleted the pre-OTF ``ClaudeSDKAgent`` orchestrator; the production
+    --framework claude_sdk path dispatches to one of four OTF agents
+    instead. Verify the canonical OTF flavor constructs normally with our
+    default Anthropic model so we don't accidentally regress that path."""
+    from bird_interact_agents.agents.claude_sdk_otf.agent import (
+        ClaudeSDKOtfAgent,
+    )
 
-    agent = ClaudeSDKAgent(model="anthropic/claude-sonnet-4-5")
+    agent = ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
     assert agent.model == "anthropic/claude-sonnet-4-5"

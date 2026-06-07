@@ -61,8 +61,10 @@ def _tool_names(tools):
     return {t.name for t in tools}
 
 
-def test_select_tools_a_interact_returns_five_native_tools():
-    """4 knowledge tools + submit_query + ask_user = 5 native; 11 slayer = 16."""
+def test_select_tools_a_interact_returns_seven_native_tools():
+    """3 knowledge tools + the DEV-1534 Fix C query/query_nested wrappers
+    + submit_query + ask_user = 7 native; 9 slayer subprocess (after
+    query/query_nested move off the subprocess allowlist) = 16."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
 
     names = _tool_names(m._select_tools("a-interact"))
@@ -70,10 +72,12 @@ def test_select_tools_a_interact_returns_five_native_tools():
         "get_all_external_knowledge_names",
         "get_knowledge_definition",
         "get_all_knowledge_definitions",
+        "query",
+        "query_nested",
         "submit_query",
         "ask_user",
     }
-    assert len(m._select_tools("a-interact")) == 5
+    assert len(m._select_tools("a-interact")) == 7
 
 
 def test_select_tools_rejects_unknown_eval_mode():
@@ -85,7 +89,10 @@ def test_select_tools_rejects_unknown_eval_mode():
 
 
 def test_slayer_tool_names_include_write_tools():
-    """The ainteract OTF agent must also expose SLayer write tools."""
+    """The ainteract OTF agent must also expose SLayer write tools.
+    After DEV-1534 Fix C, ``query`` and ``query_nested`` move off the
+    SLayer subprocess allowlist onto our bird-interact-tools wrappers,
+    leaving 9 SLayer subprocess tools."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
 
     names = set(m._slayer_tool_names())
@@ -93,12 +100,10 @@ def test_slayer_tool_names_include_write_tools():
         "mcp__slayer__create_model",
         "mcp__slayer__edit_model",
         "mcp__slayer__save_memory",
-        "mcp__slayer__query_nested",
         "mcp__slayer__validate_models",
     ):
         assert t in names, f"missing slayer write tool {t}"
     for t in (
-        "mcp__slayer__query",
         "mcp__slayer__search",
         "mcp__slayer__inspect_model",
         "mcp__slayer__help",
@@ -106,7 +111,13 @@ def test_slayer_tool_names_include_write_tools():
         "mcp__slayer__models_summary",
     ):
         assert t in names
-    assert len(names) == 11
+    # DEV-1534 Fix C: query / query_nested are bird-interact-tools wrappers.
+    for t in ("mcp__slayer__query", "mcp__slayer__query_nested"):
+        assert t not in names, (
+            f"{t} should be served by the bird-interact-tools wrapper "
+            "after DEV-1534 Fix C, not the SLayer subprocess MCP server."
+        )
+    assert len(names) == 9
 
 
 # ---------------------------------------------------------------------------
@@ -728,9 +739,13 @@ async def test_run_task_registered_hooks_behave_correctly(monkeypatch, tmp_path)
     # (c) Reset for an isolated nag test: a FRESH factory has ask_count==0.
     pre_gate2, _counter2, nag2 = m._make_ask_user_guards()
     for _ in range(9):
-        out = await nag2({"tool_name": "mcp__slayer__query"}, None, None)
+        out = await nag2(
+            {"tool_name": "mcp__bird-interact-tools__query"}, None, None,
+        )
         assert out == {}
-    out = await nag2({"tool_name": "mcp__slayer__query"}, None, None)
+    out = await nag2(
+        {"tool_name": "mcp__bird-interact-tools__query"}, None, None,
+    )
     assert "additionalContext" in out["hookSpecificOutput"]
 
     # (d) Query gate denies when last_tool has not been set to a query tool.
@@ -740,8 +755,13 @@ async def test_run_task_registered_hooks_behave_correctly(monkeypatch, tmp_path)
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert "`query`" in out["hookSpecificOutput"]["permissionDecisionReason"]
 
-    # (e) Tracker records a query call; gate now allows.
-    await tracker({"tool_name": "mcp__slayer__query"}, None, None)
+    # (e) Tracker records a query call; gate now allows. DEV-1534 Fix C:
+    # the SLAYER_QUERY_TOOLS allowlist points at the bird-interact-tools
+    # wrappers (not the SLayer subprocess tools), so the satisfying name
+    # is `mcp__bird-interact-tools__query`.
+    await tracker(
+        {"tool_name": "mcp__bird-interact-tools__query"}, None, None,
+    )
     out = await pre_query_gate(
         {"tool_name": "mcp__bird-interact-tools__submit_query"}, None, None,
     )

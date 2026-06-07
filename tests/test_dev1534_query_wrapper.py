@@ -259,6 +259,99 @@ async def test_query_wrapper_filters_none_default_safe(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# `query_nested` wrapper — same opt-out logic per stage
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_query_nested_wrapper_default_normalizes_each_stage(monkeypatch):
+    """Default (normalize_filters=True): every stage's `filters` list is
+    pre-processed before forwarding to SLayer's MCP `query_nested`."""
+    from bird_interact_agents.agents import _query
+
+    forwarded = {}
+    async def fake(**kwargs):
+        forwarded.update(kwargs)
+        return "<formatted>"
+
+    monkeypatch.setattr(
+        _query, "_get_slayer_tool_fn",
+        lambda name: fake if name == "query_nested" else None,
+    )
+
+    stages = [
+        {
+            "name": "stage1",
+            "source_model": "orders",
+            "filters": ["region == 'EU'"],
+        },
+        {
+            "source_model": "stage1",
+            "filters": ["category == 'Gadgets'"],
+        },
+    ]
+    await _query.query_nested_impl(queries=stages)
+    out_stages = forwarded["queries"]
+    assert out_stages[0]["filters"] == ["lower(trim(region)) == 'eu'"]
+    assert out_stages[1]["filters"] == ["lower(trim(category)) == 'gadgets'"]
+    # Inputs were deep-copied (verbatim — never mutated).
+    assert stages[0]["filters"] == ["region == 'EU'"]
+
+
+@pytest.mark.asyncio
+async def test_query_nested_wrapper_opt_out_passes_each_stage_verbatim(
+    monkeypatch,
+):
+    """`normalize_filters=False`: every stage's `filters` is forwarded
+    BYTE-VERBATIM (no lower/trim wrap, no literal lowercasing)."""
+    from bird_interact_agents.agents import _query
+
+    forwarded = {}
+    async def fake(**kwargs):
+        forwarded.update(kwargs)
+        return ""
+
+    monkeypatch.setattr(
+        _query, "_get_slayer_tool_fn",
+        lambda name: fake if name == "query_nested" else None,
+    )
+
+    stages = [
+        {"source_model": "orders", "filters": ["region == 'EU'"]},
+        {"source_model": "products", "filters": ["category == 'Gadgets'"]},
+    ]
+    await _query.query_nested_impl(queries=stages, normalize_filters=False)
+    out_stages = forwarded["queries"]
+    assert out_stages[0]["filters"] == ["region == 'EU'"]
+    assert out_stages[1]["filters"] == ["category == 'Gadgets'"]
+
+
+@pytest.mark.asyncio
+async def test_query_nested_wrapper_does_not_forward_normalize_filters(
+    monkeypatch,
+):
+    """`normalize_filters` is OUR directive — MUST NOT appear in the
+    kwargs forwarded to SLayer's MCP `query_nested`."""
+    from bird_interact_agents.agents import _query
+
+    forwarded_keys: list[str] = []
+    async def fake(**kwargs):
+        forwarded_keys.extend(kwargs.keys())
+        return ""
+
+    monkeypatch.setattr(
+        _query, "_get_slayer_tool_fn",
+        lambda name: fake if name == "query_nested" else None,
+    )
+
+    await _query.query_nested_impl(
+        queries=[{"source_model": "w"}],
+        normalize_filters=False,
+    )
+    assert "normalize_filters" not in forwarded_keys
+
+
+# ---------------------------------------------------------------------------
 # Extraction path — `_get_slayer_query_fn` uses `create_mcp_server`
 # ---------------------------------------------------------------------------
 
@@ -410,51 +503,69 @@ def test_attach_storage_invalidates_on_storage_swap(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_claude_sdk_slayer_mode_does_not_allowlist_mcp_slayer_query():
-    """When the claude_sdk agent runs in slayer mode, the allowed
-    `mcp__slayer__*` tools MUST NOT include `query` — our wrapper
-    replaces it."""
-    from bird_interact_agents.agents.claude_sdk import agent as agent_mod
+def test_otf_one_shot_slayer_allowlist_excludes_subprocess_query():
+    """When the production OTF slayer one-shot agent runs, the allowed
+    `mcp__slayer__*` tools MUST NOT include `query` or `query_nested` —
+    our bird-interact-tools wrappers replace them so the agent can opt
+    out of filter normalization via `normalize_filters=false`."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as otf_mod
 
-    # The slayer_tools list is defined inline in the run loop; pull it
-    # from the module-level constant if one was exposed, otherwise
-    # parse the loop. The implementation should expose it as a constant
-    # (e.g. `SLAYER_MCP_TOOL_NAMES`) so tests can pin it.
-    names = getattr(agent_mod, "SLAYER_MCP_TOOL_NAMES", None)
-    assert names is not None, (
-        "claude_sdk must expose `SLAYER_MCP_TOOL_NAMES` for the slayer "
-        "subprocess MCP allowlist so tests can pin which tools come from "
-        "SLayer vs from our wrapper."
-    )
-    assert "query" not in names, (
+    assert "query" not in otf_mod.SLAYER_MCP_TOOLS, (
         "DEV-1534: `query` must come from bird-interact-tools (our wrapper), "
         "NOT from mcp__slayer__query."
     )
+    assert "query_nested" not in otf_mod.SLAYER_MCP_TOOLS, (
+        "DEV-1534: `query_nested` must come from bird-interact-tools (our "
+        "wrapper), NOT from mcp__slayer__query_nested."
+    )
     # Spot-check the other slayer MCP tools are still there.
-    for kept in ("help", "list_datasources", "models_summary", "inspect_model"):
-        assert kept in names, f"unexpectedly dropped SLayer MCP tool: {kept}"
+    for kept in (
+        "help", "list_datasources", "models_summary", "inspect_model",
+        "search", "create_model", "edit_model", "save_memory",
+        "validate_models",
+    ):
+        assert kept in otf_mod.SLAYER_MCP_TOOLS, (
+            f"unexpectedly dropped SLayer MCP tool: {kept}"
+        )
 
 
-def test_query_wrapper_in_slayer_a_tools_list():
-    """The new wrapper is included in `SLAYER_A_TOOLS` (a-interact slayer
-    mode) so claude_sdk registers it on the bird-interact-tools SDK MCP
-    server."""
-    from bird_interact_agents.agents.claude_sdk import agent as agent_mod
+def test_query_wrapper_in_otf_slayer_one_shot_tool_list():
+    """The new wrapper is included in the OTF slayer one-shot agent's
+    in-process tool list so it's registered on bird-interact-tools (and
+    NOT on the subprocess slayer MCP allowlist)."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as otf_mod
 
-    names = {getattr(t, "name", None) for t in agent_mod.SLAYER_A_TOOLS}
+    names = {getattr(t, "name", None) for t in otf_mod._KNOWLEDGE_TOOLS}
     assert "query" in names, (
-        "the new `query` wrapper must be in SLAYER_A_TOOLS so it's "
-        "registered on bird-interact-tools (visible to claude_sdk as "
+        "the `query` wrapper must be in _KNOWLEDGE_TOOLS so it's registered "
+        "on bird-interact-tools (visible to the OTF one-shot agent as "
         "mcp__bird-interact-tools__query)."
     )
+    assert "query_nested" in names
 
 
-def test_query_wrapper_in_slayer_c_tools_list():
-    """Same for c-interact slayer mode."""
-    from bird_interact_agents.agents.claude_sdk import agent as agent_mod
+def test_query_wrapper_in_otf_slayer_ainteract_tool_list():
+    """Same for the OTF slayer a-interact agent."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import (
+        agent as otf_mod,
+    )
 
-    names = {getattr(t, "name", None) for t in agent_mod.SLAYER_C_TOOLS}
+    names = {getattr(t, "name", None) for t in otf_mod._KNOWLEDGE_TOOLS}
     assert "query" in names
+    assert "query_nested" in names
+
+
+def test_otf_slayer_pre_submit_gate_accepts_wrapper_tool_names():
+    """DEV-1534 Fix C: the OTF pre-submit verification gate
+    (`SLAYER_QUERY_TOOLS`) must list the bird-interact-tools wrapper
+    names — not the SLayer subprocess names — so a `query` /
+    `query_nested` call from the agent satisfies the gate."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as otf_mod
+
+    assert otf_mod.SLAYER_QUERY_TOOLS == frozenset({
+        "mcp__bird-interact-tools__query",
+        "mcp__bird-interact-tools__query_nested",
+    })
 
 
 # ---------------------------------------------------------------------------
