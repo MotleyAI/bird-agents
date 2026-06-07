@@ -42,6 +42,12 @@ logger = logging.getLogger(__name__)
 # GCS client default (overridable in tests via monkeypatch)
 # ---------------------------------------------------------------------------
 
+def _default_ray_job_id() -> str:
+    """Read the Ray Jobs API submission id (`raysubmit_*`) from the runtime
+    env Ray sets inside the job. Falls back to `"unknown"` for local runs."""
+    return os.environ.get("RAY_JOB_SUBMISSION_ID", "unknown")
+
+
 def default_gcs_client():
     return _gcs.default_gcs_client()
 
@@ -350,7 +356,7 @@ def run_annotator_pool(
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Annotator Ray worker pool")
     p.add_argument("--run-id", required=True)
-    p.add_argument("--ray-job-id", default="unknown")
+    p.add_argument("--ray-job-id", default=_default_ray_job_id())
     p.add_argument("--benchmark", required=True)
     p.add_argument("--model", default="anthropic/claude-opus-4-7")
     p.add_argument("--effort", default="medium",
