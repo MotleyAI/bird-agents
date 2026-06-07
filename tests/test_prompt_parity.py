@@ -29,13 +29,6 @@ def _load_alien():
     load_db_data_if_needed("alien", settings.db_path)
 
 
-async def _claude_sdk_prompt(query_mode: str, eval_mode: str) -> str:
-    from bird_interact_agents.agents.claude_sdk import agent as cs
-
-    cs._ctx_var.set({"slayer_storage_dir": _SLAYER_DIR})
-    return await cs._build_prompt(query_mode, eval_mode, _TASK, _BUDGET)
-
-
 async def _pydantic_ai_prompt(query_mode: str, eval_mode: str) -> str:
     from bird_interact_agents.agents.pydantic_ai.agent import (
         PydanticAIAgent,
@@ -85,8 +78,11 @@ async def _smolagents_prompt(query_mode: str, eval_mode: str) -> str:
     )
 
 
+# DEV-1534 removed the pre-OTF ``ClaudeSDKAgent`` orchestrator + its
+# c-interact prompt dispatcher. ``pydantic_ai`` is the only remaining
+# adapter that documents itself as the canonical pre-OTF c-interact
+# reference, so use it as the parity baseline below.
 _BUILDERS = [
-    ("claude_sdk", _claude_sdk_prompt),
     ("pydantic_ai", _pydantic_ai_prompt),
     ("agno", _agno_prompt),
     ("mcp_agent", _mcp_agent_prompt),
@@ -104,17 +100,17 @@ async def test_c_interact_prompts_are_byte_identical_across_adapters(
     for name, fn in _BUILDERS:
         prompts[name] = await fn(query_mode, eval_mode)
 
-    reference = prompts["claude_sdk"]
+    reference = prompts["pydantic_ai"]
     for name, p in prompts.items():
         assert p == reference, (
-            f"{name} {query_mode}/{eval_mode} prompt diverges from claude_sdk"
+            f"{name} {query_mode}/{eval_mode} prompt diverges from pydantic_ai"
         )
 
 
 @pytest.mark.asyncio
 async def test_raw_c_interact_knowledge_block_is_valid_json():
     """The knowledge section must be parseable JSON, not a markdown bullet list."""
-    prompt = await _claude_sdk_prompt("raw", "c-interact")
+    prompt = await _pydantic_ai_prompt("raw", "c-interact")
     block = prompt.split("# External Knowledge\n", 1)[1]
     json_text, _, _ = block.partition("\nUser question:")
     json_text = json_text.strip()
@@ -127,7 +123,7 @@ async def test_raw_c_interact_knowledge_block_is_valid_json():
 @pytest.mark.asyncio
 async def test_slayer_c_interact_no_8_item_truncation():
     """Models summary must include all of a model's columns, not [:8]."""
-    prompt = await _claude_sdk_prompt("slayer", "c-interact")
+    prompt = await _pydantic_ai_prompt("slayer", "c-interact")
     assert "# Available models" in prompt
     summary_block = prompt.split("# Available models\n", 1)[1]
     summary_block = summary_block.split("\n# External knowledge", 1)[0]
@@ -164,5 +160,5 @@ async def test_slayer_c_interact_no_8_item_truncation():
 @pytest.mark.asyncio
 async def test_slayer_c_interact_includes_knowledge_section():
     """Slayer c-interact must include the {knowledge} placeholder rendering."""
-    prompt = await _claude_sdk_prompt("slayer", "c-interact")
+    prompt = await _pydantic_ai_prompt("slayer", "c-interact")
     assert "# External knowledge" in prompt

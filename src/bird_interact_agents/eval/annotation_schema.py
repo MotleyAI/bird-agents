@@ -455,10 +455,22 @@ class VariantInformational(BaseModel):
 
     rowset_relation: RowsetRelation
     column_count_match: bool
-    column_name_match_case_insensitive: bool
     column_order_match: bool
     first_divergent_row_index: Optional[int] = None
     first_divergent_cell_diff: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_legacy_naming_field(cls, data):
+        # DEV-1534 Fix A: column NAMING signals are no longer recorded
+        # (autopsy agents misattributed cascade-fails to "column naming
+        # mismatch" when the real cause was value differences). Strip
+        # the named legacy key on load so pre-Fix-A on-disk annotations
+        # still parse. Other unknowns still hit `extra="forbid"`.
+        if isinstance(data, dict) and "column_name_match_case_insensitive" in data:
+            data = {k: v for k, v in data.items()
+                    if k != "column_name_match_case_insensitive"}
+        return data
 
 
 class VariantMatch(BaseModel):
@@ -518,11 +530,12 @@ MissPattern = Literal[
 #   * Pure column-NAME divergence with matching counts AND non-matching
 #     normalised sets is INTENTIONALLY NOT FLAGGED — that's stylistic
 #     (agent projected meaningfully different columns) and would fire
-#     spuriously on every slayer-namespaced submission. The
-#     column-shape fields (column_count_match,
-#     column_name_match_case_insensitive, column_order_match,
-#     agent_columns, best_variant_columns) stay populated as
-#     informational signals so downstream tooling can inspect.
+#     spuriously on every slayer-namespaced submission. Only
+#     ``column_count_match`` and ``column_order_match`` are surfaced
+#     post-DEV-1534 (Fix A removed the NAMING signal — autopsy agents
+#     misattributed cascade-fails to "column naming mismatch" when the
+#     real cause was value differences; column ORDER stays as a real
+#     positional cause).
 
 
 class MissDiagnostics(BaseModel):
@@ -558,14 +571,14 @@ class MissDiagnostics(BaseModel):
     overlap_with_best: int
     rowset_relation_to_best: RowsetRelation
 
-    # Column shape.
+    # Column shape. (DEV-1534 Fix A removed
+    # column_name_match_case_insensitive, agent_columns, and
+    # best_variant_columns — column NAMING is irrelevant to grading;
+    # column ORDER stays as a real positional cause.)
     agent_column_count: int
     best_variant_column_count: int
     column_count_match: bool
-    column_name_match_case_insensitive: bool
     column_order_match: bool
-    agent_columns: List[str] = Field(default_factory=list)
-    best_variant_columns: List[str] = Field(default_factory=list)
     first_divergent_cell_diff: Optional[str] = None
 
     # SQL parse status gates the SQL-derived fields below.
@@ -603,6 +616,24 @@ class MissDiagnostics(BaseModel):
     # Independent flag list — every applicable rule appends. Sorted
     # alphabetically before persist for stable JSON diffs.
     miss_patterns: List[MissPattern] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_legacy_naming_fields(cls, data):
+        # DEV-1534 Fix A: strip the named legacy column-NAMING fields so
+        # pre-Fix-A on-disk annotations still parse. The allowlist is
+        # scoped to keys that WERE fields on this model — other unknown
+        # keys still hit `extra="forbid"`.
+        if not isinstance(data, dict):
+            return data
+        legacy = (
+            "column_name_match_case_insensitive",
+            "agent_columns",
+            "best_variant_columns",
+        )
+        if any(k in data for k in legacy):
+            data = {k: v for k, v in data.items() if k not in legacy}
+        return data
 
 
 class SubmissionEvaluation(BaseModel):

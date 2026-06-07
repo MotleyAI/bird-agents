@@ -974,9 +974,10 @@ def test_tier2_populated_on_grader_output():
     assert verdict.variant_matches
     info = verdict.variant_matches[0].informational
     assert info is not None
-    # Same column count + names + order ⇒ all three structural flags True.
+    # Same column count + order ⇒ structural flags True.
+    # (DEV-1534 Fix A removed column_name_match_case_insensitive — naming
+    # is irrelevant to grading; column ORDER stays as a real signal.)
     assert info.column_count_match is True
-    assert info.column_name_match_case_insensitive is True
     assert info.column_order_match is True
     # Disjoint rowsets (pred=[(1,"x")], gold=[(2,"x")]).
     assert info.rowset_relation == "disjoint"

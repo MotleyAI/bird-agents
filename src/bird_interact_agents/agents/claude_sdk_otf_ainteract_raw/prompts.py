@@ -14,9 +14,12 @@ Format params: ``budget``, ``db_name``, ``user_query``.
 
 from bird_interact_agents.agents._shared_otf_prompts import (
     _ASK_AGAIN_RULE,
+    _COLUMN_NAMES_DONT_AFFECT_GRADING,
     _DECOMPOSE_DISCIPLINE,
+    _PIVOT_AFTER_REPEATED_FAILURES,
     _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
     _RULE_0_ASK_BEFORE,
+    _USER_SIM_TRUST_CALIBRATION,
 )
 
 _RAW_AINTERACT_INTRO = """\
@@ -90,6 +93,19 @@ RAW_OTF_AINTERACT = (
     + _RAW_AINTERACT_RULES_2_3
     + "\n\n"
     + _ASK_AGAIN_RULE.format(knowledge_source="a knowledge definition")
+    + "\n\n   "
+    + _USER_SIM_TRUST_CALIBRATION.format(knowledge_label="knowledge definition")
+    + "\n\n   "
+    + _PIVOT_AFTER_REPEATED_FAILURES.format(
+        artifact_inspect_step=(
+            "Inspect the SQL you submitted for the obvious failure modes:\n"
+            "     a stray GROUP BY that silently dedups rows, an arithmetic\n"
+            "     WHERE clause missing outer parens (the comparator binds\n"
+            "     only to the last additive term), or a CASE/CAST/format\n"
+            "     coercion that drops rows."
+        ),
+        extra_hypothesis_axes="",
+    )
     + "\n\n5. TEST the final query with `execute_sql`; sanity-check the result\n"
       "   shape, row count, and values.\n\n"
     + _PRE_SUBMIT_MUTATION_CHECK_AINTERACT.format(
@@ -99,7 +115,9 @@ RAW_OTF_AINTERACT = (
     + "\n\n7. SUBMIT. Call `submit_sql` with your final SQL — a prose answer is\n"
       "   not a submission. Project exactly the columns the user named, and\n"
       "   only those.\n\n"
-      "Budget: {budget} bird-coins. `ask_user` costs 2, `submit_sql` costs 3;\n"
+      "   "
+    + _COLUMN_NAMES_DONT_AFFECT_GRADING
+    + "\n\nBudget: {budget} bird-coins. `ask_user` costs 2, `submit_sql` costs 3;\n"
       "exploration tools are free but your total work is turn-bounded — explore\n"
       "only what the question needs. If your budget runs out, submit immediately.\n"
       "\nDatabase: {db_name}\nUser question: {user_query}\n"

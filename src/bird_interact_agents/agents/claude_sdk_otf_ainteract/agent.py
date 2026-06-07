@@ -36,12 +36,16 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     get_all_external_knowledge_names,
     get_all_knowledge_definitions,
     get_knowledge_definition,
+    query,
+    query_nested,
     submit_query,
 )
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
+    _NORMALIZE_WRITE_FILTERS_MATCHER,
     _make_query_before_submit_guard,
     _make_turn_budget_hook,
+    _normalize_write_tool_filters_hook,
     _slayer_tool_names,
 )
 from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
@@ -154,10 +158,15 @@ def _make_ask_user_guards():
     return pre_submit_gate, post_ask_counter, post_nag
 
 
+# DEV-1534 Fix C: `query` / `query_nested` are bird-interact-tools
+# wrappers (not SLayer subprocess tools) so the agent can opt out of
+# filter normalization mid-flight via the `normalize_filters` parameter.
 _KNOWLEDGE_TOOLS = [
     get_all_external_knowledge_names,
     get_knowledge_definition,
     get_all_knowledge_definitions,
+    query,
+    query_nested,
 ]
 
 
@@ -380,6 +389,15 @@ class ClaudeSDKOtfAInteractAgent:
                             matcher="mcp__bird-interact-tools__submit_query",
                             # ask_user gate runs first; query gate runs second.
                             hooks=[pre_submit_gate, pre_query_gate],
+                        ),
+                        # Codex post-merge: normalize backing-query filters
+                        # baked into create_model / edit_model payloads so
+                        # the persisted model definition matches the
+                        # filter-normalization contract the query path
+                        # already enforces.
+                        HookMatcher(
+                            matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
+                            hooks=[_normalize_write_tool_filters_hook],
                         ),
                     ],
                     "PostToolUse": [

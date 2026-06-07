@@ -478,8 +478,9 @@ def test_column_name_only_divergence_no_column_flag(tmp_path: Path):
     md = verdict.miss_diagnostics
     assert md is not None
     assert md.column_count_match is True
-    # column-name signal is populated as informational.
-    assert md.column_name_match_case_insensitive is False
+    # DEV-1534 Fix A: column-NAME signal removed from MissDiagnostics;
+    # column-NAME-only divergence is intentionally unflagged (stylistic /
+    # actually-different projection, not a positional cause).
     flags = set(md.miss_patterns)
     # No column-shape flag fires; the rowset flags do the talking.
     assert "column_count_mismatch" not in flags

@@ -248,11 +248,14 @@ def test_compare_results_handles_ours_shape_unchanged():
 
 
 @pytest.mark.asyncio
-async def test_claude_sdk_skips_non_anthropic_model_with_clear_error():
-    """claude_sdk is locked to Anthropic by SDK design. When --agent-model
-    is non-Anthropic, run_task must return a skip-shaped row (not crash) so
-    the 3-way comparison still renders cleanly."""
-    from bird_interact_agents.agents.claude_sdk import agent as agent_mod
+async def test_claude_sdk_otf_raw_skips_non_anthropic_model_with_clear_error():
+    """claude_sdk is locked to Anthropic by SDK design. DEV-1534 removed
+    the pre-OTF orchestrator; verify the production OTF raw a-interact
+    flavor still returns a skip-shaped row (not crash) on a non-Anthropic
+    model so the comparison still renders cleanly."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.agent import (
+        ClaudeSDKOtfAInteractRawAgent,
+    )
     from bird_interact_agents.harness import load_db_data_if_needed
 
     task_data = {
@@ -260,12 +263,11 @@ async def test_claude_sdk_skips_non_anthropic_model_with_clear_error():
         "knowledge_ambiguity": [],
         "instance_id": "alien_1",
         "amb_user_query": "any",
+        "dataset": "mini-interact",
     }
     load_db_data_if_needed("alien", settings.db_path)
 
-    agent = agent_mod.ClaudeSDKAgent(
-        slayer_storage_root=None, model="cerebras/zai-glm-4.7"
-    )
+    agent = ClaudeSDKOtfAInteractRawAgent(model="cerebras/zai-glm-4.7")
     result = await agent.run_task(
         task_data, settings.db_path, budget=12.0, query_mode="raw",
         eval_mode="a-interact",

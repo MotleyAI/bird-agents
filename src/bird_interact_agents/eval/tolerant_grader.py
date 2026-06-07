@@ -373,15 +373,25 @@ def _first_divergent_row(
 def _column_diff(
     *,
     pred_cols: Sequence[str], gold_cols: Sequence[str],
-) -> Tuple[bool, bool, bool]:
-    """(count_match, name_match_case_insensitive, order_match)."""
+) -> Tuple[bool, bool]:
+    """(count_match, order_match).
+
+    DEV-1534 Fix A: the legacy `name_match_case_insensitive` element was
+    dropped — column NAMING is irrelevant to grading; column ORDER is
+    still a real positional cause.
+
+    Names are normalized via :func:`_normalize_col` (lowercase + strip
+    the longest dot-prefix) before comparison so SLayer's namespacing
+    convention (`<db>.<table>.<col>`) compares equal to the gold's bare
+    column names — otherwise `order_match` would leak the very naming
+    signal Fix A removed (Codex post-merge catch).
+    """
     count = len(pred_cols) == len(gold_cols)
-    nm_set = (
-        count
-        and set(c.lower() for c in pred_cols) == set(c.lower() for c in gold_cols)
+    order = count and (
+        [_normalize_col(c) for c in pred_cols]
+        == [_normalize_col(c) for c in gold_cols]
     )
-    order = count and [c.lower() for c in pred_cols] == [c.lower() for c in gold_cols]
-    return count, nm_set, order
+    return count, order
 
 
 # ---------------------------------------------------------------------------
@@ -1055,7 +1065,7 @@ def grade_submission(
     info_matches: list[VariantMatch] = []
     for v_meta, v_rows, v_cols in variant_results:
         rel = _bag_relation(pred=pred_rows, gold=v_rows)
-        cm, nm, om = _column_diff(pred_cols=list(pred_cols), gold_cols=list(v_cols))
+        cm, om = _column_diff(pred_cols=list(pred_cols), gold_cols=list(v_cols))
         fdri, fdcd = _first_divergent_row(pred=pred_rows, gold=v_rows)
         info_matches.append(VariantMatch(
             variant_id=v_meta.get("variant_id", "primary"),
@@ -1063,7 +1073,6 @@ def grade_submission(
             informational=VariantInformational(
                 rowset_relation=rel,
                 column_count_match=cm,
-                column_name_match_case_insensitive=nm,
                 column_order_match=om,
                 first_divergent_row_index=fdri,
                 first_divergent_cell_diff=fdcd,
@@ -1302,14 +1311,22 @@ def _column_match_signals(
     *,
     agent_cols: List[str],
     gold_cols: List[str],
-) -> Tuple[bool, bool, bool]:
-    """(column_count_match, name_match_case_insensitive, order_match)."""
+) -> Tuple[bool, bool]:
+    """(column_count_match, order_match).
+
+    DEV-1534 Fix A: legacy `name_match_case_insensitive` element dropped;
+    column NAMING is irrelevant to grading; column ORDER stays. Names
+    are normalized via :func:`_normalize_col` (lowercase + strip the
+    longest dot-prefix) before comparison so SLayer's namespacing
+    convention (``<db>.<table>.<col>``) compares equal to the gold's
+    bare column names — otherwise ``order_match`` would re-introduce
+    the very naming signal Fix A removed (Codex post-merge catch).
+    """
     count_match = len(agent_cols) == len(gold_cols)
-    a_lower = [c.lower() for c in agent_cols]
-    g_lower = [c.lower() for c in gold_cols]
-    name_match_ci = set(a_lower) == set(g_lower) and count_match
-    order_match = a_lower == g_lower
-    return count_match, name_match_ci, order_match
+    a_norm = [_normalize_col(c) for c in agent_cols]
+    g_norm = [_normalize_col(c) for c in gold_cols]
+    order_match = a_norm == g_norm
+    return count_match, order_match
 
 
 def _normalize_col(name: str) -> str:
@@ -1374,7 +1391,7 @@ def _compute_miss_diagnostics(
     overlap = _bag_overlap(pred_rows, best_rows)
     relation = _bag_relation(pred=pred_rows, gold=best_rows)
 
-    count_match, name_match_ci, order_match = _column_match_signals(
+    count_match, order_match = _column_match_signals(
         agent_cols=list(pred_cols), gold_cols=list(best_cols),
     )
 
@@ -1404,10 +1421,7 @@ def _compute_miss_diagnostics(
         agent_column_count=len(pred_cols),
         best_variant_column_count=len(best_cols),
         column_count_match=count_match,
-        column_name_match_case_insensitive=name_match_ci,
         column_order_match=order_match,
-        agent_columns=list(pred_cols),
-        best_variant_columns=list(best_cols),
         first_divergent_cell_diff=fdcd,
         agent_sql_parse_ok=a_ok,
         best_variant_sql_parse_ok=b_ok,

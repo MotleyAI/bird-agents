@@ -315,6 +315,14 @@ gold_variant_interpretations:
 ## Knowledge-base items
 {kb_text if kb_text else "(no KB items found)"}
 
+## Column-shape guidance (read before scoring miss diagnostics)
+Column-header NAMES in the agent's output are irrelevant to correctness — \
+the grader compares value tuples positionally. Do not diagnose "column \
+naming mismatch" or "namespaced column names" as a root cause. Column-tuple \
+COUNT and positional ORDER (column_count_mismatch, column_order_mismatch) \
+ARE genuine root causes; focus there, along with row count, row values, \
+value types, and formula choices.
+
 ## Grader miss diagnostics
 {diag_json}
 

@@ -41,6 +41,8 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     get_all_external_knowledge_names,
     get_all_knowledge_definitions,
     get_knowledge_definition,
+    query,
+    query_nested,
     submit_query,
 )
 from bird_interact_agents.agents.claude_sdk_otf.prompts import (
@@ -68,6 +70,9 @@ from bird_interact_agents.eval.grade_in_place import (
 )
 from bird_interact_agents.eval.tolerant_grader import grade_submission, make_executor
 from bird_interact_agents.slayer_otf import resolve_otf_task_storage_dir
+from bird_interact_agents.slayer_pipeline.filter_normalization import (
+    normalize_tool_filters,
+)
 from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -76,8 +81,15 @@ logger = logging.getLogger(__name__)
 # SLayer query tools that satisfy the pre-submit verification gate.
 # Any `query` or `query_nested` call immediately before `submit_query`
 # is treated as the required output-inspection step.
+#
+# DEV-1534 Fix C: these now point at our bird-interact-tools wrappers
+# (which forward to SLayer's MCP query/query_nested but with the
+# `normalize_filters` opt-out), NOT at the raw subprocess MCP tools.
 SLAYER_QUERY_TOOLS: frozenset[str] = frozenset(
-    {"mcp__slayer__query", "mcp__slayer__query_nested"}
+    {
+        "mcp__bird-interact-tools__query",
+        "mcp__bird-interact-tools__query_nested",
+    }
 )
 
 
@@ -137,16 +149,20 @@ def _make_query_before_submit_guard():
 
 # SLayer MCP tools the OTF agent may call. The existing claude_sdk slayer
 # mode is read-only; this adapter ADDS the write tools (create_model /
-# edit_model / save_memory / validate_models) plus query_nested so the
-# agent can encode KB items and submit nested-DAG queries.
+# edit_model / save_memory / validate_models) so the agent can encode KB
+# items.
+#
+# DEV-1534 Fix C: `query` and `query_nested` are served by our own
+# wrappers on the bird-interact-tools SDK MCP server (registered via
+# `_KNOWLEDGE_TOOLS` below) so the agent can opt out of filter
+# normalization mid-flight via the `normalize_filters` parameter. They
+# are NOT in this allowlist.
 SLAYER_MCP_TOOLS = [
     "help",
     "list_datasources",
     "models_summary",
     "inspect_model",
     "search",
-    "query",
-    "query_nested",
     "create_model",
     "edit_model",
     "save_memory",
@@ -156,6 +172,55 @@ SLAYER_MCP_TOOLS = [
 
 def _slayer_tool_names() -> list[str]:
     return [f"mcp__slayer__{t}" for t in SLAYER_MCP_TOOLS]
+
+
+# Full MCP tool names whose payloads carry backing-query filter strings
+# that we need to normalize (lower(trim(col)) wrap) before SLayer
+# persists them on a model. Without this hook, the agent's `create_model`
+# / `edit_model` calls baked raw text-equality filters into the stored
+# entity definition — and the DEV-1534 Fix C `query` / `query_nested`
+# wrappers can never repair filters hidden inside the model's own
+# backing SQL (Codex post-merge catch; the pydantic_ai_otf_encode
+# adapter already runs the same `normalize_tool_filters` call on every
+# write).
+_WRITE_TOOLS_NEEDING_NORMALIZATION = (
+    "mcp__slayer__create_model",
+    "mcp__slayer__edit_model",
+)
+_NORMALIZE_WRITE_FILTERS_MATCHER = "|".join(_WRITE_TOOLS_NEEDING_NORMALIZATION)
+
+
+async def _normalize_write_tool_filters_hook(input_data, tool_use_id, context):
+    """PreToolUse hook: rewrite ``create_model`` / ``edit_model`` payloads
+    so their backing-query ``filters`` strings are wrapped in
+    ``lower(trim(col)) = '<lower>'`` before SLayer persists them.
+
+    Returns the SDK's ``updatedInput`` directive on the
+    ``hookSpecificOutput`` envelope — the Claude Agent SDK applies it to
+    the tool invocation (see ``PreToolUseHookSpecificOutput`` in
+    ``claude_agent_sdk.types``). When normalization is a no-op (no
+    in-scope filters), the hook still returns the deep-copy
+    ``normalize_tool_filters`` produced — harmless and keeps the hook
+    side-effect-free with respect to the original input dict.
+    """
+    tool_name = input_data.get("tool_name") or ""
+    if tool_name not in _WRITE_TOOLS_NEEDING_NORMALIZATION:
+        return {}
+    # Strip the `mcp__slayer__` prefix so `normalize_tool_filters` sees
+    # the bare SLayer tool name it expects (`create_model` / `edit_model`).
+    bare = tool_name.split("__", 2)[-1]
+    tool_input = input_data.get("tool_input") or {}
+    if not isinstance(tool_input, dict):
+        return {}
+    updated = normalize_tool_filters(bare, tool_input)
+    if not isinstance(updated, dict):
+        return {}
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "updatedInput": updated,
+        }
+    }
 
 
 # Encode-then-query is turn-expensive (one turn per KB column created/tested),
@@ -207,10 +272,16 @@ def _make_turn_budget_hook(
 # knowledge-lookup tools + `submit_query` are the only natives the agent
 # needs. (The a-interact flavor adds `ask_user` in
 # ``claude_sdk_otf_ainteract``.)
+#
+# DEV-1534 Fix C: `query` / `query_nested` are bird-interact-tools
+# wrappers (not SLayer subprocess tools) so the agent can opt out of
+# filter normalization mid-flight.
 _KNOWLEDGE_TOOLS = [
     get_all_external_knowledge_names,
     get_knowledge_definition,
     get_all_knowledge_definitions,
+    query,
+    query_nested,
 ]
 
 
@@ -460,6 +531,15 @@ class ClaudeSDKOtfAgent:
                         HookMatcher(
                             matcher="mcp__bird-interact-tools__submit_query",
                             hooks=[pre_query_gate],
+                        ),
+                        # Codex post-merge: normalize backing-query filters
+                        # baked into create_model / edit_model payloads so
+                        # the persisted model definition matches the
+                        # filter-normalization contract the query path
+                        # already enforces.
+                        HookMatcher(
+                            matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
+                            hooks=[_normalize_write_tool_filters_hook],
                         ),
                     ],
                     "PostToolUse": [

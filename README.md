@@ -367,6 +367,15 @@ diffs (GROUP BY / predicate count / join count), and the `miss_patterns`
 list (`disjoint_rowset`, `predicate_count_mismatch`,
 `aggregation_shape_mismatch`, `agent_undercount`, etc.).
 
+### Cross-run failure analysis
+
+**Cross-run failure analysis** must use the *latest-per-instance*
+approach: for each `instance_id` under `runs/<benchmark>/`, take the
+annotation file with the lexicographically largest timestamp prefix.
+Never analyse a single run ID in isolation — re-runs, partial recoveries,
+and grader fixes all sit in newer timestamp files for the same instance,
+and a per-run-ID analysis silently misses them.
+
 ## 3-way comparison (original ↔ raw ↔ slayer)
 
 `scripts/run_three_way.sh` runs the upstream BIRD-Interact harness, our raw-SQL flavour, and our SLayer flavour on the same `instance_id` slice and emits a side-by-side `comparison.json`.

@@ -22,12 +22,17 @@ import pytest
 # Hashes were captured from the pre-refactoring source.
 # ---------------------------------------------------------------------------
 
-_ONE_SHOT_SHA256 = "6efc7c8e669f94742cc99381cd87a7cc122f6455b42b8887421afd4b8ab7aa63"
-_AINTERACT_SHA256 = "c2957ea702b2014a27d5ddface8dda48123fd533b21378cb3e91ba70b4dc5392"
+# Hashes re-baselined for the DEV-1534 Fix B/D/E/F prompt additions
+# (column-names rule, SLayer artifact sanity-check, pivot-after-3-failures
+# discipline, user-sim trust calibration). The snapshot's purpose is the
+# same — catch ACCIDENTAL prompt drift on later refactors; deliberate
+# prompt changes re-baseline here.
+_ONE_SHOT_SHA256 = "2edbd941d409883d16dfcc68740aef4e5d7ba9d778752d060e990ab8479ba2dc"
+_AINTERACT_SHA256 = "cda8eae5cdfe0825f8e8010e0045daaa26baf0b12d57dab0e12ade6849229bca"
 
 
 def test_slayer_otf_one_shot_unchanged():
-    """Byte-for-byte contract: refactoring must not alter the rendered prompt."""
+    """Byte-for-byte contract against the re-baselined snapshot."""
     from bird_interact_agents.agents.claude_sdk_otf.prompts import SLAYER_OTF_ONE_SHOT
 
     digest = hashlib.sha256(SLAYER_OTF_ONE_SHOT.encode()).hexdigest()
@@ -39,7 +44,7 @@ def test_slayer_otf_one_shot_unchanged():
 
 
 def test_slayer_otf_ainteract_unchanged():
-    """Byte-for-byte contract: refactoring must not alter the rendered prompt."""
+    """Byte-for-byte contract against the re-baselined snapshot."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
         SLAYER_OTF_AINTERACT,
     )
@@ -57,7 +62,13 @@ def test_slayer_otf_ainteract_unchanged():
 # ---------------------------------------------------------------------------
 
 def test_shared_constants_all_nonempty():
-    """All six exported template constants must be non-empty strings."""
+    """All exported template constants must be non-empty strings.
+
+    Covers the six original constants AND the four DEV-1534 additions
+    (column-names rule, SLayer artifact sanity-check, pivot-after-3,
+    user-sim trust calibration) so a future re-baseline that
+    accidentally drops one is caught here.
+    """
     from bird_interact_agents.agents._shared_otf_prompts import (
         _NO_USER_TO_CONSULT,
         _DECOMPOSE_DISCIPLINE,
@@ -65,6 +76,10 @@ def test_shared_constants_all_nonempty():
         _ASK_AGAIN_RULE,
         _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
         _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
+        _COLUMN_NAMES_DONT_AFFECT_GRADING,
+        _SLAYER_SQL_ARTIFACT_CHECK,
+        _PIVOT_AFTER_REPEATED_FAILURES,
+        _USER_SIM_TRUST_CALIBRATION,
     )
 
     for name, val in [
@@ -74,6 +89,10 @@ def test_shared_constants_all_nonempty():
         ("_ASK_AGAIN_RULE", _ASK_AGAIN_RULE),
         ("_PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT", _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT),
         ("_PRE_SUBMIT_MUTATION_CHECK_AINTERACT", _PRE_SUBMIT_MUTATION_CHECK_AINTERACT),
+        ("_COLUMN_NAMES_DONT_AFFECT_GRADING", _COLUMN_NAMES_DONT_AFFECT_GRADING),
+        ("_SLAYER_SQL_ARTIFACT_CHECK", _SLAYER_SQL_ARTIFACT_CHECK),
+        ("_PIVOT_AFTER_REPEATED_FAILURES", _PIVOT_AFTER_REPEATED_FAILURES),
+        ("_USER_SIM_TRUST_CALIBRATION", _USER_SIM_TRUST_CALIBRATION),
     ]:
         assert isinstance(val, str) and val.strip(), f"{name} must be a non-empty string"
 

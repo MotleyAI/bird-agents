@@ -10,12 +10,17 @@ plan adds:
 The pre-DEV-1515 `VariantMatch` only carried `variant_id` + `match`.
 The plan extends it with an optional `informational: VariantInformational`
 sub-block carrying:
-* rowset_relation, column_count_match,
-  column_name_match_case_insensitive, column_order_match,
+* rowset_relation, column_count_match, column_order_match,
 * first_divergent_row_index, first_divergent_cell_diff.
 
 These tests prove the schema actually carries the new fields, with
 ``extra="forbid"`` still in effect.
+
+DEV-1534 Fix A removed `column_name_match_case_insensitive` from
+`VariantInformational` (column NAMING is irrelevant to grading;
+column ORDER remains a real signal). See
+`tests/test_dev1534_column_signal_removal.py` for the migration-shim
+coverage and field-absence assertions.
 """
 from __future__ import annotations
 
@@ -94,7 +99,6 @@ def test_variant_match_has_optional_informational():
     info = VariantInformational(
         rowset_relation="strict_subset_of",
         column_count_match=True,
-        column_name_match_case_insensitive=False,
         column_order_match=True,
         first_divergent_row_index=3,
         first_divergent_cell_diff="cell[3][1]: 'X' vs 'Y'",
@@ -115,7 +119,6 @@ def test_variant_informational_extra_forbid():
     payload = VariantInformational(
         rowset_relation="equal_rowset",
         column_count_match=True,
-        column_name_match_case_insensitive=True,
         column_order_match=True,
         first_divergent_row_index=None,
         first_divergent_cell_diff=None,

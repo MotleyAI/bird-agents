@@ -94,26 +94,30 @@ async def test_submit_query_tool_with_invalid_json(tmp_path):
     assert "Invalid JSON" in text or "submission aborted" in text
 
 
-def test_slayer_a_tools_include_knowledge_for_parity():
-    """SLAYER_A_TOOLS exposes the bird-interact knowledge tools so SLayer
-    agents have the same access to external domain knowledge that raw
-    agents do (slayer MCP handles SLayer schema discovery)."""
-    from bird_interact_agents.agents.claude_sdk import agent as agent_mod
+def test_otf_slayer_one_shot_tool_list_includes_dev1534_wrappers():
+    """DEV-1534 Fix C migration target for the (now-deleted) SLAYER_A_TOOLS
+    assertion: the production OTF slayer one-shot agent must register
+    `query` AND `query_nested` on bird-interact-tools (not allowlist
+    SLayer's subprocess `query`/`query_nested`) so the agent can pass
+    `normalize_filters=false` mid-flight."""
+    from bird_interact_agents.agents.claude_sdk_otf import agent as otf_mod
 
-    names = {t.name for t in agent_mod.SLAYER_A_TOOLS}
-    assert names == {
-        "ask_user",
-        "submit_query",
-        "get_all_external_knowledge_names",
-        "get_knowledge_definition",
-        "get_all_knowledge_definitions",
-    }
+    knowledge_names = {t.name for t in otf_mod._KNOWLEDGE_TOOLS}
+    assert "query" in knowledge_names
+    assert "query_nested" in knowledge_names
+    # The slayer subprocess allowlist must NOT carry query/query_nested
+    # (they're served by our wrappers now).
+    assert "query" not in otf_mod.SLAYER_MCP_TOOLS
+    assert "query_nested" not in otf_mod.SLAYER_MCP_TOOLS
 
 
-def test_slayer_c_tools_only_native():
-    """SLAYER_C_TOOLS stays minimal — knowledge is injected upfront in the
-    c-interact prompt, no fetch tool needed."""
-    from bird_interact_agents.agents.claude_sdk import agent as agent_mod
+def test_otf_slayer_ainteract_tool_list_includes_dev1534_wrappers():
+    """DEV-1534 Fix C migration target for the (now-deleted) SLAYER_C_TOOLS
+    assertion: same contract for the OTF slayer a-interact agent."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import (
+        agent as otf_mod,
+    )
 
-    names = {t.name for t in agent_mod.SLAYER_C_TOOLS}
-    assert names == {"ask_user", "submit_query"}
+    knowledge_names = {t.name for t in otf_mod._KNOWLEDGE_TOOLS}
+    assert "query" in knowledge_names
+    assert "query_nested" in knowledge_names
