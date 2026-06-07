@@ -63,22 +63,19 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
 
 def _resolve_runs_root(arg: Optional[str]) -> Path:
+    """DEV-1541 r2 (CodeRabbit): always defer to the project's
+    ``paths.runs_root()`` helper for the default. The earlier manual
+    reconstruction (``results_root().parent / "runs"``) violated the
+    project rule "every gitignored input/output lives in the MAIN
+    checkout, NEVER in the worktree" — the only correct path is the
+    helper, which anchors at the main checkout via git's common dir."""
     if arg is not None:
-        return Path(arg)
+        return Path(arg).expanduser()
     env = os.environ.get("BIRD_RUNS_ROOT")
     if env:
-        return Path(env)
-    try:
-        from bird_interact_agents import paths
-        # ``results_root`` and ``runs_root`` aren't unified in paths.py
-        # yet; the runs/ store sits next to results/ at the main
-        # checkout root. Use ``main_checkout_root`` if exposed; else
-        # derive from results_root's parent.
-        if hasattr(paths, "runs_root"):
-            return paths.runs_root()  # type: ignore[attr-defined]
-        return paths.results_root().parent / "runs"
-    except Exception:
-        return Path.cwd() / "runs"
+        return Path(env).expanduser()
+    from bird_interact_agents import paths
+    return paths.runs_root()
 
 
 def main(argv: Optional[list[str]] = None) -> int:

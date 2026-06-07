@@ -660,7 +660,16 @@ def write_failed_submission_annotation(
             details=failure_details,
         ),
         decision_point=None,
-        user_sim_interaction=UserSimInteraction(),
+        # DEV-1541 r2 (CodeRabbit): one-shot benchmarks failing before
+        # grading must persist user_sim_interaction=null too. The
+        # pre-DEV-1541 code hard-coded UserSimInteraction(), which is
+        # the same fake zero-asks block the rest of the spec is trying
+        # to retire.
+        user_sim_interaction=_resolve_default_user_sim(
+            benchmark=benchmark,
+            provided=None,
+            n_ask_user_calls=n_ask_user_calls,
+        ),
         original_gold_annotated_correct=None,
     )
     out_path = out_dir / "submission_annotation.json"

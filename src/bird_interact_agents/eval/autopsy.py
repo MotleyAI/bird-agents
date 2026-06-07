@@ -537,26 +537,36 @@ async def run_autopsy(
     descriptors. The one-shot path drops ``ask_user``-related patterns
     and fields entirely; ``user_sim_interaction`` resolves to ``None``.
     """
-    kb_text = _read_kb_text(
-        slayer_storage_dir,
-        task_annotation.selected_database,
-        task_annotation.external_knowledge,
-    )
-    prompt = _build_prompt(
-        task_annotation=task_annotation,
-        trajectory=trajectory,
-        kb_text=kb_text,
-        miss_diagnostics=miss_diagnostics,
-        is_one_shot=is_one_shot,
-    )
-    tool_schema = (
-        _AUTOPSY_TOOL_SCHEMA_ONE_SHOT if is_one_shot else _AUTOPSY_TOOL_SCHEMA
-    )
-    schema_cls = (
-        AutopsyLLMOutputOneShot if is_one_shot else AutopsyLLMOutput
-    )
-
+    # DEV-1541 r2 (CodeRabbit outside-diff): the KB read + prompt build +
+    # schema selection must live INSIDE the error boundary too. If
+    # ``_read_kb_text`` or ``_build_prompt`` raises (corrupt
+    # ``memories.yaml``, oversized task fields, …), the agent caller's
+    # top-level ``except Exception:`` would still swallow the exception
+    # and re-introduce the silent ``autopsy=None`` regression DEV-1541
+    # exists to kill. Pre-initialise to empty strings so the error path
+    # can still record ``prompt_chars`` / ``kb_chars`` even when prep
+    # never completed.
+    kb_text = ""
+    prompt = ""
     try:
+        kb_text = _read_kb_text(
+            slayer_storage_dir,
+            task_annotation.selected_database,
+            task_annotation.external_knowledge,
+        )
+        prompt = _build_prompt(
+            task_annotation=task_annotation,
+            trajectory=trajectory,
+            kb_text=kb_text,
+            miss_diagnostics=miss_diagnostics,
+            is_one_shot=is_one_shot,
+        )
+        tool_schema = (
+            _AUTOPSY_TOOL_SCHEMA_ONE_SHOT if is_one_shot else _AUTOPSY_TOOL_SCHEMA
+        )
+        schema_cls = (
+            AutopsyLLMOutputOneShot if is_one_shot else AutopsyLLMOutput
+        )
         client = anthropic.AsyncAnthropic()
         response = await client.messages.create(
             model=native_model_id(model),

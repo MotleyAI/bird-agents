@@ -1201,7 +1201,12 @@ def test_submission_annotation_user_sim_explicit_none_persists():
 # ---------------------------------------------------------------------------
 
 _ASK_USER_TOKENS = (
+    # Codex r2 #9 + CodeRabbit r2: include spaced/hyphenated phrasings —
+    # the prompt is Python-generated so this is defensive against future
+    # edits introducing "ask user" or "ask-user" wording.
     "ask_user",
+    "ask user",
+    "ask-user",
     "disclosed_resolutions",
     "undisclosed_resolutions",
     "user_sim",
@@ -1780,6 +1785,51 @@ def test_grade_and_write_one_shot_benchmark_user_sim_is_null(tmp_path):
     assert data["user_sim_interaction"] is None
 
 
+def test_write_failed_submission_annotation_one_shot_user_sim_none(tmp_path):
+    """CodeRabbit r2: one-shot benchmarks failing BEFORE the grader runs
+    must also persist user_sim_interaction=null, not a fake zero-asks
+    UserSimInteraction()."""
+    from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation
+    from bird_interact_agents.eval.grade_in_place import (
+        write_failed_submission_annotation,
+    )
+
+    out_path = write_failed_submission_annotation(
+        rows_dir=tmp_path / "rows",
+        instance_id="x_1",
+        selected_database="x",
+        benchmark="livesqlbench-base-lite-sqlite",
+        run_id="r",
+        trajectory_path="rows/x_1/attempt-1.json",
+        failure_details="boom",
+    )
+    ann = SubmissionAnnotation.model_validate_json(out_path.read_text())
+    assert ann.user_sim_interaction is None
+
+
+def test_write_failed_submission_annotation_a_interact_user_sim_default(tmp_path):
+    """Regression guard: a-interact failed-submission writers keep the
+    legacy zero-asks default."""
+    from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation
+    from bird_interact_agents.eval.grade_in_place import (
+        write_failed_submission_annotation,
+    )
+
+    out_path = write_failed_submission_annotation(
+        rows_dir=tmp_path / "rows",
+        instance_id="x_1",
+        selected_database="x",
+        benchmark="mini-interact",
+        run_id="r",
+        trajectory_path="rows/x_1/attempt-1.json",
+        failure_details="boom",
+        n_ask_user_calls=3,
+    )
+    ann = SubmissionAnnotation.model_validate_json(out_path.read_text())
+    assert ann.user_sim_interaction is not None
+    assert ann.user_sim_interaction.n_asks == 3
+
+
 def test_grade_and_write_a_interact_benchmark_user_sim_default(tmp_path):
     """End-to-end regression guard: grade_and_write on an a-interact
     benchmark with no user_sim provided → annotation has the legacy
@@ -1814,17 +1864,10 @@ def test_grade_and_write_a_interact_benchmark_user_sim_default(tmp_path):
 
 # H.1 — AutopsyLLMOutput / AutopsyLLMOutputOneShot direct contracts (Codex r2 #4, #5)
 
-_ALL_AUTOPSY_PATTERNS_LIST = [
-    "never_asked_key_question",
-    "asked_but_ignored_answer",
-    "user_sim_misleading",
-    "late_mutation_corrupted_result",
-    "wrong_join_path",
-    "output_schema_misread",
-    "slayer_generation_artifact",
-    "exhausted_budget_guessing",
-    "other",
-]
+# CodeRabbit r2 nitpick: alias the canonical list at module top to
+# avoid drift between the schema parametrize and the LLM-output
+# parametrize.
+_ALL_AUTOPSY_PATTERNS_LIST = _ALL_AUTOPSY_PATTERNS
 
 
 @pytest.mark.parametrize("pattern", _ALL_AUTOPSY_PATTERNS_LIST)
@@ -2140,6 +2183,47 @@ def test_write_harness_confirmed_annotation_user_sim_a_interact(tmp_path):
 
 
 # H.6 — AutopsyError field-level cap normalization (Codex r2 #7)
+
+@pytest.mark.asyncio
+async def test_run_autopsy_kb_read_raise_yields_unknown_error(tmp_path):
+    """CodeRabbit r2: prep-time exceptions (KB read, prompt build) must
+    NOT bypass the error boundary. If ``_read_kb_text`` raises before
+    the LLM call ever happens, run_autopsy must still return
+    AutopsyResult(error=AutopsyError(kind="unknown", ...)) — anything
+    else lets the agent caller's outer except swallow it and persist
+    autopsy=None, which is the silent-fail this PR exists to kill."""
+    from bird_interact_agents.eval.annotation_schema import AutopsyResult
+    from bird_interact_agents.eval.autopsy import run_autopsy
+
+    task_ann = _minimal_task_annotation()
+
+    # Anthropic client should never be instantiated — exception fires
+    # before we get there.
+    with patch(
+        "bird_interact_agents.eval.autopsy._read_kb_text",
+        side_effect=RuntimeError("KB read boom"),
+    ), patch("anthropic.AsyncAnthropic") as mock_anthropic:
+        result = await run_autopsy(
+            task_annotation=task_ann,
+            trajectory=[],
+            slayer_storage_dir=str(tmp_path),
+            miss_diagnostics=None,
+            model="anthropic/claude-sonnet-4-5",
+            is_one_shot=False,
+        )
+
+    mock_anthropic.assert_not_called()
+    assert isinstance(result, AutopsyResult)
+    assert result.analysis is None
+    assert result.error is not None
+    assert result.error.kind == "unknown"
+    assert "RuntimeError" in result.error.exception_class
+    assert "KB read boom" in result.error.message_excerpt
+    # Stats reflect that prep never finished — prompt_chars is 0 because
+    # _build_prompt never ran; kb_chars is 0 because _read_kb_text raised.
+    assert result.error.prompt_chars == 0
+    assert result.error.kb_chars == 0
+
 
 def test_autopsy_error_message_excerpt_capped_at_construction():
     """An overlong message_excerpt passed at construction time gets

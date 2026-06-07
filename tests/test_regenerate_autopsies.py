@@ -604,3 +604,329 @@ def test_regenerate_sidecar_takes_precedence_over_cloud_results(tmp_path):
     assert not any("FROM CLOUD" in p for p in captured_prompts), (
         "cloud-results trajectory should not be read when sidecar present"
     )
+
+
+# ---------------------------------------------------------------------------
+# §F. Process-reviews r2 — scan/regenerate correctness fixes
+# ---------------------------------------------------------------------------
+
+def test_scan_parse_failure_counts_io_error(tmp_path):
+    """Codex r2 + CodeRabbit r2: an unreadable annotation file must bump
+    `RegenerationReport.io_errors` instead of being silently skipped."""
+    from bird_interact_agents.eval.regenerate_autopsies import regenerate
+
+    runs = tmp_path / "runs"
+    # Write a corrupt JSON at the canonical annotation path.
+    bad = runs / "livesqlbench-base-lite-sqlite" / "robot" / "robot_10" / "r1.json"
+    bad.parent.mkdir(parents=True, exist_ok=True)
+    bad.write_text("{ this is not valid json")
+    # Also write a valid one alongside so scan covers both.
+    _write_annotation(
+        runs_root=runs,
+        benchmark="livesqlbench-base-lite-sqlite",
+        db_name="museum",
+        instance_id="museum_2",
+        run_id="r1",
+        autopsy=None,
+    )
+    _write_trajectory_sidecar(
+        runs_root=runs,
+        benchmark="livesqlbench-base-lite-sqlite",
+        db_name="museum",
+        instance_id="museum_2",
+        run_id="r1",
+    )
+
+    mock_tool = MagicMock()
+    mock_tool.type = "tool_use"
+    mock_tool.name = "autopsy_output"
+    mock_tool.input = {
+        "pattern": "exhausted_budget_guessing",
+        "other_details": None,
+        "narrative": "n",
+        "remediation": "r",
+        "decision_point_trajectory_index": None,
+        "decision_point_description": None,
+    }
+    mock_response = MagicMock()
+    mock_response.content = [mock_tool]
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+    with patch("anthropic.AsyncAnthropic", return_value=mock_client):
+        report = regenerate(
+            runs_root=runs,
+            benchmark="livesqlbench-base-lite-sqlite",
+            model="anthropic/claude-haiku-4-5-20251001",
+            dry_run=False,
+        )
+    # Parse-failure bumps io_errors; museum_2 still regenerates.
+    assert report.io_errors == 1
+    assert report.regenerated == 1
+    assert report.exit_code() != 0
+
+
+def test_scan_picks_up_legacy_invalid_verdict(tmp_path):
+    """Codex r2: pre-DEV-1533 annotations have `verdict: "invalid"` for
+    genuine misses. SubmissionAnnotation._migrate_invalid_verdict
+    normalises those to `agent_miss` on read; the scan must apply the
+    same migration rule to raw JSON or it skips legacy misses."""
+    from bird_interact_agents.eval.regenerate_autopsies import scan_work_list
+
+    runs = tmp_path / "runs"
+    # Build a legacy annotation: verdict="invalid", primary != "other".
+    payload = {
+        "schema_version": 1,
+        "kind": "submission_annotation",
+        "instance_id": "robot_10",
+        "selected_database": "robot",
+        "task_annotation_ref": "ref",
+        "annotated_by": "test",
+        "annotated_at": "2026-01-01",
+        "submission": {"cloud_run_id": "r1", "trajectory_path": "t"},
+        "evaluation": {
+            "phase1_against_original_gold": "fail",
+            "phase1_against_audited_primary": "fail",
+            "phase1_against_any_audited_variant": "fail",
+            "verdict": "invalid",
+        },
+        "failure_classification": {
+            "primary": "agent_miss",
+            "agent_at_fault": True,
+            "remediation_target": "agent",
+        },
+        "autopsy": None,
+    }
+    dest = runs / "livesqlbench-base-lite-sqlite" / "robot" / "robot_10" / "r1.json"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(payload, indent=2))
+
+    items = scan_work_list(
+        runs_root=runs,
+        benchmark="livesqlbench-base-lite-sqlite",
+    )
+    assert len(items) == 1
+    assert items[0].instance_id == "robot_10"
+
+
+def test_scan_skips_legacy_invalid_eval_failed_kind(tmp_path):
+    """Mirror: legacy `verdict="invalid"` with `primary="other"` is the
+    eval-failed migration path, NOT a genuine miss. Must NOT be in
+    work-list."""
+    from bird_interact_agents.eval.regenerate_autopsies import scan_work_list
+
+    runs = tmp_path / "runs"
+    payload = {
+        "schema_version": 1,
+        "kind": "submission_annotation",
+        "instance_id": "robot_10",
+        "selected_database": "robot",
+        "task_annotation_ref": "ref",
+        "annotated_by": "test",
+        "annotated_at": "2026-01-01",
+        "submission": {"cloud_run_id": "r1", "trajectory_path": "t"},
+        "evaluation": {
+            "phase1_against_original_gold": "fail",
+            "phase1_against_audited_primary": "fail",
+            "phase1_against_any_audited_variant": "fail",
+            "verdict": "invalid",
+        },
+        "failure_classification": {
+            "primary": "other",  # infra failure
+            "agent_at_fault": False,
+            "remediation_target": "other",
+        },
+        "autopsy": None,
+    }
+    dest = runs / "livesqlbench-base-lite-sqlite" / "robot" / "robot_10" / "r1.json"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(payload, indent=2))
+    items = scan_work_list(
+        runs_root=runs,
+        benchmark="livesqlbench-base-lite-sqlite",
+    )
+    assert items == []
+
+
+def test_regenerate_promotes_analysis_to_top_level(tmp_path):
+    """Codex r2: a successful regenerated autopsy must promote
+    decision_point + user_sim_interaction to the top-level fields,
+    mirroring grade_and_write. Otherwise backfilled annotations are
+    internally inconsistent with inline-graded ones."""
+    from bird_interact_agents.eval.regenerate_autopsies import regenerate
+
+    runs = tmp_path / "runs"
+    # Use an a-interact benchmark so user_sim is populated by the autopsy.
+    dest = _write_annotation(
+        runs_root=runs,
+        benchmark="mini-interact",
+        db_name="households",
+        instance_id="households_1",
+        run_id="r1",
+        autopsy=None,
+    )
+    _write_trajectory_sidecar(
+        runs_root=runs,
+        benchmark="mini-interact",
+        db_name="households",
+        instance_id="households_1",
+        run_id="r1",
+    )
+
+    mock_tool = MagicMock()
+    mock_tool.type = "tool_use"
+    mock_tool.name = "autopsy_output"
+    mock_tool.input = {
+        "pattern": "wrong_join_path",
+        "other_details": None,
+        "narrative": "n",
+        "remediation": "r",
+        "decision_point_trajectory_index": 5,
+        "decision_point_description": "wrong join at step 5",
+        "n_asks": 2,
+        "key_asks": [],
+        "disclosed_resolutions": ["threshold=5"],
+        "undisclosed_resolutions": [],
+    }
+    mock_response = MagicMock()
+    mock_response.content = [mock_tool]
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+    with patch("anthropic.AsyncAnthropic", return_value=mock_client):
+        report = regenerate(
+            runs_root=runs,
+            benchmark="mini-interact",
+            model="anthropic/claude-haiku-4-5-20251001",
+            dry_run=False,
+        )
+
+    assert report.regenerated == 1
+    data = json.loads(dest.read_text())
+    # autopsy.analysis populated, no error.
+    assert data["autopsy"]["analysis"] is not None
+    assert data["autopsy"]["error"] is None
+    # Top-level decision_point was promoted from the autopsy.
+    assert data["decision_point"] is not None
+    assert data["decision_point"]["trajectory_item_index"] == 5
+    # Top-level user_sim_interaction was promoted (n_asks=2, threshold).
+    assert data["user_sim_interaction"]["n_asks"] == 2
+    assert data["user_sim_interaction"]["disclosed_resolutions"] == ["threshold=5"]
+
+
+def test_regenerate_does_not_promote_when_autopsy_errored(tmp_path):
+    """Conversely: when the regenerated autopsy returns an
+    AutopsyError, the top-level fields must NOT be overwritten —
+    same guard as grade_and_write."""
+    import anthropic
+    from bird_interact_agents.eval.regenerate_autopsies import regenerate
+
+    runs = tmp_path / "runs"
+    dest = _write_annotation(
+        runs_root=runs,
+        benchmark="mini-interact",
+        db_name="households",
+        instance_id="households_1",
+        run_id="r1",
+        autopsy=None,
+    )
+    # Pre-seed the on-disk annotation with a known top-level user_sim
+    # so we can assert it survives.
+    pre = json.loads(dest.read_text())
+    pre["user_sim_interaction"] = {
+        "n_asks": 7,
+        "key_responses": [],
+        "disclosed_resolutions": ["should_survive=42"],
+        "undisclosed_resolutions": [],
+    }
+    dest.write_text(json.dumps(pre, indent=2))
+    _write_trajectory_sidecar(
+        runs_root=runs,
+        benchmark="mini-interact",
+        db_name="households",
+        instance_id="households_1",
+        run_id="r1",
+    )
+
+    mock_client = AsyncMock()
+    mock_client.messages.create.side_effect = anthropic.BadRequestError(
+        message="prompt is too long",
+        response=MagicMock(status_code=400),
+        body={},
+    )
+    with patch("anthropic.AsyncAnthropic", return_value=mock_client):
+        report = regenerate(
+            runs_root=runs,
+            benchmark="mini-interact",
+            model="anthropic/claude-haiku-4-5-20251001",
+            dry_run=False,
+        )
+    assert report.autopsy_errors == 1
+    data = json.loads(dest.read_text())
+    assert data["autopsy"]["error"]["kind"] == "context_overflow"
+    # The pre-seeded top-level user_sim survived the autopsy_error.
+    assert data["user_sim_interaction"]["n_asks"] == 7
+    assert data["user_sim_interaction"]["disclosed_resolutions"] == ["should_survive=42"]
+
+
+def test_regenerate_default_results_root_via_paths_helper(tmp_path, monkeypatch):
+    """CodeRabbit r2: when results_root=None, regenerate() must resolve
+    it via paths.results_root() so the sidecar→cloud-results fallback
+    is reachable for the normal CLI path."""
+    from bird_interact_agents.eval.regenerate_autopsies import regenerate
+
+    runs = tmp_path / "runs"
+    _write_annotation(
+        runs_root=runs,
+        benchmark="mini-interact",
+        db_name="households",
+        instance_id="households_1",
+        run_id="r1",
+        autopsy=None,
+    )
+    # NO sidecar — must come from the fallback the helper resolves to.
+    fake_results_root = tmp_path / "fake_results"
+    fake_traj = (
+        fake_results_root / "mini-interact" / "cloud" / "r1"
+        / "rows" / "households_1" / "attempt-1.json"
+    )
+    fake_traj.parent.mkdir(parents=True, exist_ok=True)
+    fake_traj.write_text(json.dumps(
+        {"trajectory": [{"role": "user", "content": "from results_root helper"}]}
+    ))
+
+    monkeypatch.setattr(
+        "bird_interact_agents.paths.results_root",
+        lambda: fake_results_root,
+    )
+
+    mock_tool = MagicMock()
+    mock_tool.type = "tool_use"
+    mock_tool.name = "autopsy_output"
+    mock_tool.input = {
+        "pattern": "wrong_join_path",
+        "other_details": None,
+        "narrative": "n",
+        "remediation": "r",
+        "decision_point_trajectory_index": None,
+        "decision_point_description": None,
+        "n_asks": 0,
+        "key_asks": [],
+        "disclosed_resolutions": [],
+        "undisclosed_resolutions": [],
+    }
+    mock_response = MagicMock()
+    mock_response.content = [mock_tool]
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+    with patch("anthropic.AsyncAnthropic", return_value=mock_client):
+        report = regenerate(
+            runs_root=runs,
+            benchmark="mini-interact",
+            model="anthropic/claude-haiku-4-5-20251001",
+            dry_run=False,
+            # NOTE: NOT passing results_root — must default via paths helper.
+        )
+    assert report.regenerated == 1
+    assert report.io_errors == 0

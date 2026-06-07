@@ -28,7 +28,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from pydantic import BaseModel
 
@@ -78,9 +78,20 @@ class RegenerationReport(BaseModel):
 
 def _annotation_needs_backfill(payload: dict) -> bool:
     """True iff this annotation is a genuine miss AND its autopsy is
-    missing or carries an error."""
+    missing or carries an error.
+
+    DEV-1541 r2 (Codex): also picks up pre-DEV-1533 annotations whose
+    raw verdict is ``"invalid"``. ``SubmissionAnnotation._migrate_invalid_verdict``
+    normalises those to ``"agent_miss"`` on read when
+    ``failure_classification.primary != "other"`` (i.e. a real agent
+    miss, not an infra failure). The scan walks raw JSON before
+    validation, so we mirror the same migration rule here."""
     ev = payload.get("evaluation") or {}
-    if ev.get("verdict") != "agent_miss":
+    fc = payload.get("failure_classification") or {}
+    verdict = ev.get("verdict")
+    if verdict == "invalid" and fc.get("primary") != "other":
+        verdict = "agent_miss"
+    if verdict != "agent_miss":
         return False
     autopsy = payload.get("autopsy")
     if autopsy is None:
@@ -96,10 +107,16 @@ def scan_work_list(
     benchmark: str,
     run_id: Optional[str] = None,
     instance_ids: Optional[Iterable[str]] = None,
+    on_parse_error: Optional[Callable[[Path, Exception], None]] = None,
 ) -> list[WorkItem]:
     """Walk ``runs_root/<benchmark>/*/*/*.json`` and return the work
     items. The optional ``run_id`` and ``instance_ids`` filters narrow
-    the scan to a subset; both are AND-combined."""
+    the scan to a subset; both are AND-combined.
+
+    DEV-1541 r2 (Codex + CodeRabbit): an unreadable / unparseable
+    annotation file invokes ``on_parse_error(path, exc)`` (when
+    supplied) before being skipped, so callers can count it toward
+    ``RegenerationReport.io_errors`` instead of dropping it silently."""
     inst_filter = set(instance_ids) if instance_ids else None
     bench_root = Path(runs_root) / benchmark
     if not bench_root.exists():
@@ -112,8 +129,13 @@ def scan_work_list(
         # Path layout: <benchmark>/<db>/<instance>/<run_id>.json
         try:
             payload = json.loads(ann_path.read_text())
-        except Exception:  # noqa: BLE001
-            logger.warning("[regenerate] failed to parse %s; skipping", ann_path)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[regenerate] failed to parse %s; counting as io_error: %s",
+                ann_path, exc,
+            )
+            if on_parse_error is not None:
+                on_parse_error(ann_path, exc)
             continue
         if not _annotation_needs_backfill(payload):
             continue
@@ -284,6 +306,15 @@ async def _regenerate_one(
     )
 
     ann.autopsy = result
+    # DEV-1541 r2 (Codex): mirror grade_and_write's guarded promotion —
+    # when the autopsy actually succeeded, propagate its
+    # decision_point + user_sim_interaction up to the top-level
+    # annotation fields so a backfilled annotation looks identical to
+    # one written inline at grade time. On the error path we leave the
+    # existing top-level fields alone.
+    if result.analysis is not None:
+        ann.decision_point = result.decision_point
+        ann.user_sim_interaction = result.user_sim_interaction
     # Persist; preserve indent=2 like the original writers.
     try:
         item.annotation_path.write_text(
@@ -319,12 +350,29 @@ def regenerate(
 
     ``--dry-run`` reports the work-list without instantiating the
     Anthropic client. ``--run-id`` and ``--instance-ids`` narrow the
-    scan to a subset (AND-combined)."""
+    scan to a subset (AND-combined).
+
+    DEV-1541 r2 (CodeRabbit): when ``results_root`` is ``None`` we
+    resolve it from ``paths.results_root()`` so the advertised
+    sidecar→cloud-results trajectory fallback is reachable for the
+    normal CLI path (the CLI doesn't pass ``--results-root``)."""
+    if results_root is None:
+        try:
+            from bird_interact_agents import paths
+            results_root = paths.results_root()
+        except Exception:  # noqa: BLE001
+            results_root = None
+    report = RegenerationReport()
+    # DEV-1541 r2 (Codex + CodeRabbit): unreadable annotation files
+    # bump io_errors via this callback instead of being dropped.
+    def _on_parse_error(_path: Path, _exc: Exception) -> None:
+        report.io_errors += 1
     items = scan_work_list(
         runs_root=runs_root, benchmark=benchmark,
         run_id=run_id, instance_ids=instance_ids,
+        on_parse_error=_on_parse_error,
     )
-    report = RegenerationReport(work_items=len(items))
+    report.work_items = len(items)
 
     if dry_run:
         for it in items:
