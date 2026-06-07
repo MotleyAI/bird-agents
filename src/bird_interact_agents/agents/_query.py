@@ -46,10 +46,18 @@ _cached_slayer_query_fn: Any = None
 
 
 def attach_storage(storage: Any) -> None:
-    """Wire the SLayer storage handle for the current task. Invalidates
-    the cached ``query.fn`` so subsequent calls re-extract against the
-    new storage."""
+    """Wire the SLayer storage handle for the current task.
+
+    Invalidates the cached ``query.fn`` ONLY when the storage object
+    actually changes — calling this per-tool-invocation with the same
+    storage is a no-op. (The claude_sdk handler attaches per-call so the
+    wrapper survives storage swaps between tasks; without this guard
+    the cache never hits and ``create_mcp_server`` re-runs on every
+    query call. Flagged by CodeRabbit on PR #38.)
+    """
     global _slayer_storage, _cached_slayer_query_fn
+    if storage is _slayer_storage:
+        return
     _slayer_storage = storage
     _cached_slayer_query_fn = None
 

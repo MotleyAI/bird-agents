@@ -315,6 +315,97 @@ def test_get_slayer_query_fn_extracts_from_create_mcp_server(monkeypatch):
     assert fn is fake_inner_query
 
 
+def test_attach_storage_idempotent_keeps_cache(monkeypatch):
+    """Post-CR-review: `attach_storage(storage)` called repeatedly with
+    the SAME storage object must NOT invalidate the cached `query.fn`.
+    Otherwise the per-call `attach_storage` in claude_sdk's `query`
+    handler defeats the cache and `create_mcp_server` re-runs every time.
+    """
+    from bird_interact_agents.agents import _query
+    from slayer.mcp import server as slayer_mcp_server
+
+    _query._slayer_storage = None
+    _query._cached_slayer_query_fn = None
+
+    calls = {"count": 0}
+
+    class _FakeTool:
+        def __init__(self, fn): self.fn = fn
+
+    class _FakeManager:
+        def __init__(self, tools): self._tools = tools
+
+    class _FakeFastMCP:
+        def __init__(self, tools): self._tool_manager = _FakeManager(tools)
+
+    async def fake_inner_query(**kwargs): return "ok"
+
+    def fake_create_mcp_server(storage, **kwargs):
+        calls["count"] += 1
+        return _FakeFastMCP({"query": _FakeTool(fake_inner_query)})
+
+    monkeypatch.setattr(
+        slayer_mcp_server, "create_mcp_server", fake_create_mcp_server,
+    )
+
+    storage = object()  # the same identity attached three times.
+    _query.attach_storage(storage)
+    _query._get_slayer_query_fn()
+    _query.attach_storage(storage)
+    _query._get_slayer_query_fn()
+    _query.attach_storage(storage)
+    _query._get_slayer_query_fn()
+
+    assert calls["count"] == 1, (
+        f"create_mcp_server should run ONCE when attach_storage is called "
+        f"repeatedly with the SAME storage object; ran {calls['count']} times."
+    )
+
+
+def test_attach_storage_invalidates_on_storage_swap(monkeypatch):
+    """Sanity check the OTHER side: a NEW storage object DOES invalidate
+    the cache and triggers a fresh extraction. (The guard mustn't ALSO
+    miss real swaps between tasks.)"""
+    from bird_interact_agents.agents import _query
+    from slayer.mcp import server as slayer_mcp_server
+
+    _query._slayer_storage = None
+    _query._cached_slayer_query_fn = None
+
+    calls = {"count": 0}
+
+    class _FakeTool:
+        def __init__(self, fn): self.fn = fn
+
+    class _FakeManager:
+        def __init__(self, tools): self._tools = tools
+
+    class _FakeFastMCP:
+        def __init__(self, tools): self._tool_manager = _FakeManager(tools)
+
+    async def fake_inner_query(**kwargs): return "ok"
+
+    def fake_create_mcp_server(storage, **kwargs):
+        calls["count"] += 1
+        return _FakeFastMCP({"query": _FakeTool(fake_inner_query)})
+
+    monkeypatch.setattr(
+        slayer_mcp_server, "create_mcp_server", fake_create_mcp_server,
+    )
+
+    storage_a = object()
+    storage_b = object()
+    _query.attach_storage(storage_a)
+    _query._get_slayer_query_fn()
+    _query.attach_storage(storage_b)  # different identity → invalidates
+    _query._get_slayer_query_fn()
+
+    assert calls["count"] == 2, (
+        f"create_mcp_server should re-run when storage identity changes; "
+        f"ran {calls['count']} times."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Allowlist swap — claude_sdk uses bird-interact-tools `query`, not slayer's
 # ---------------------------------------------------------------------------
@@ -365,6 +456,52 @@ def test_query_wrapper_in_slayer_c_tools_list():
 
     names = {getattr(t, "name", None) for t in agent_mod.SLAYER_C_TOOLS}
     assert "query" in names
+
+
+# ---------------------------------------------------------------------------
+# SDK tool schema — ONLY `source_model` is required
+# ---------------------------------------------------------------------------
+
+
+def test_query_wrapper_tool_schema_only_requires_source_model():
+    """Post-PR-review (CodeRabbit/Codex): the SDK tool's INPUT SCHEMA must
+    be an explicit JSON Schema dict declaring ONLY `source_model` as
+    required. A flat `{key: type}` schema would make `claude_agent_sdk`
+    convert it to `required: list(properties.keys())` (see
+    `_build_schema`), forcing every caller to supply every parameter and
+    breaking SLayer MCP `query`'s actual contract (only `source_model` is
+    positional in the upstream signature)."""
+    from bird_interact_agents.agents.claude_sdk import agent as agent_mod
+
+    tool = agent_mod.query
+    schema = None
+    for attr in ("inputSchema", "input_schema", "schema", "args_schema"):
+        s = getattr(tool, attr, None)
+        if s is not None:
+            schema = s
+            break
+    assert schema is not None and isinstance(schema, dict) and "properties" in schema, (
+        f"query wrapper must expose an explicit JSON Schema dict; got "
+        f"{schema!r}"
+    )
+    required = schema.get("required", [])
+    assert required == ["source_model"], (
+        f"query wrapper must mark ONLY `source_model` as required (matches "
+        f"SLayer MCP query's positional contract); got: {required!r}"
+    )
+    # Every other SLayer param + `normalize_filters` must still be in
+    # properties so the agent knows they exist.
+    props = schema["properties"]
+    for name in (
+        "source_model", "measures", "dimensions", "filters",
+        "time_dimensions", "order", "limit", "offset",
+        "whole_periods_only", "show_sql", "dry_run", "explain",
+        "format", "variables", "normalize_filters",
+    ):
+        assert name in props, f"property {name!r} missing from query wrapper schema"
+    # Booleans declared as `boolean`, not anything else.
+    assert props["normalize_filters"]["type"] == "boolean"
+    assert props["normalize_filters"].get("default") is True
 
 
 # ---------------------------------------------------------------------------

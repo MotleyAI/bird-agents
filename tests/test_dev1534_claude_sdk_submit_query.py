@@ -176,29 +176,30 @@ def test_submit_query_tool_schema_advertises_normalize_filters_as_bool():
         f"(checked inputSchema/input_schema/schema/args_schema); cannot "
         f"verify the `normalize_filters` parameter. Tool object: {tool!r}"
     )
-    # Schema shape varies by SDK; we accept either:
-    #   (a) a JSON-schema dict with `properties` carrying `query_json`
-    #       and `normalize_filters`, OR
-    #   (b) a flat {"query_json": str, "normalize_filters": bool} mapping
-    #       (the @tool decorator's third arg in this codebase).
+    # Post-PR-review (CodeRabbit/Codex): the schema MUST be an explicit
+    # JSON Schema dict declaring only `query_json` as required. A flat
+    # `{key: type}` schema would make the SDK convert it to
+    # `required: list(properties.keys())` (see claude_agent_sdk
+    # `_build_schema`), forcing every caller to supply `normalize_filters`
+    # despite the handler defaulting it to True.
     if isinstance(schema, dict) and "properties" in schema:
         props = schema["properties"]
         assert "query_json" in props
         assert "normalize_filters" in props
         nf = props["normalize_filters"]
-        # JSON Schema bool type.
         nf_type = nf.get("type") if isinstance(nf, dict) else None
         assert nf_type == "boolean", (
             f"normalize_filters must be declared as boolean in input schema; "
             f"got {nf!r}"
         )
-    elif isinstance(schema, dict):
-        # Flat decorator-arg shape.
-        assert "query_json" in schema
-        assert "normalize_filters" in schema
-        assert schema["normalize_filters"] is bool, (
-            f"normalize_filters must be declared as bool; got "
-            f"{schema['normalize_filters']!r}"
+        qj = props["query_json"]
+        qj_type = qj.get("type") if isinstance(qj, dict) else None
+        assert qj_type == "string"
+        required = schema.get("required", [])
+        assert required == ["query_json"], (
+            f"submit_query schema must mark ONLY `query_json` as required "
+            f"(the SDK marks every key required for flat-dict schemas, so "
+            f"the explicit list is load-bearing). got: {required!r}"
         )
     else:
         pytest.fail(

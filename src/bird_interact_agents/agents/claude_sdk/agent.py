@@ -384,7 +384,19 @@ def _slayer_client():
         "semantically correct for most NL questions that carry no casing "
         "info)."
     ),
-    {"query_json": str, "normalize_filters": bool},
+    # Explicit JSON Schema dict so only `query_json` is required. A flat
+    # `{key: type}` schema would make the SDK mark every key as required
+    # (see claude_agent_sdk._build_schema → `"required": list(properties.keys())`),
+    # which would force every caller to supply `normalize_filters` despite
+    # the handler defaulting it to True.
+    {
+        "type": "object",
+        "properties": {
+            "query_json": {"type": "string"},
+            "normalize_filters": {"type": "boolean", "default": True},
+        },
+        "required": ["query_json"],
+    },
 )
 async def submit_query(args: dict) -> dict:
     state = _state_view()
@@ -427,22 +439,31 @@ _QUERY_TOOL_DESC = (
 @tool(
     "query",
     _QUERY_TOOL_DESC,
+    # Explicit JSON Schema dict so only `source_model` is required. A flat
+    # `{key: type}` schema would make the SDK mark every key required (see
+    # claude_agent_sdk._build_schema → `"required": list(properties.keys())`),
+    # which would break SLayer's MCP `query` semantics (only `source_model`
+    # is positional in the upstream signature).
     {
-        "source_model": str,
-        "measures": list,
-        "dimensions": list,
-        "filters": list,
-        "time_dimensions": list,
-        "order": list,
-        "limit": int,
-        "offset": int,
-        "whole_periods_only": bool,
-        "show_sql": bool,
-        "dry_run": bool,
-        "explain": bool,
-        "format": str,
-        "variables": dict,
-        "normalize_filters": bool,
+        "type": "object",
+        "properties": {
+            "source_model": {"type": "string"},
+            "measures": {"type": "array"},
+            "dimensions": {"type": "array"},
+            "filters": {"type": "array"},
+            "time_dimensions": {"type": "array"},
+            "order": {"type": "array"},
+            "limit": {"type": "integer"},
+            "offset": {"type": "integer"},
+            "whole_periods_only": {"type": "boolean", "default": False},
+            "show_sql": {"type": "boolean", "default": False},
+            "dry_run": {"type": "boolean", "default": False},
+            "explain": {"type": "boolean", "default": False},
+            "format": {"type": "string", "default": "markdown"},
+            "variables": {"type": "object"},
+            "normalize_filters": {"type": "boolean", "default": True},
+        },
+        "required": ["source_model"],
     },
 )
 async def query(args: dict) -> dict:
