@@ -127,6 +127,16 @@ def scan_work_list(
         if ann_path.name.endswith(".trajectory.json"):
             continue
         # Path layout: <benchmark>/<db>/<instance>/<run_id>.json
+        # DEV-1541 r3 (Codex): derive the filter values from the path
+        # BEFORE opening the file. A targeted `--instance-ids` /
+        # `--run-id` backfill should not bump io_errors for unrelated
+        # corrupt files outside the filter.
+        path_inst = ann_path.parent.name
+        path_run = ann_path.stem
+        if run_id is not None and path_run != run_id:
+            continue
+        if inst_filter is not None and path_inst not in inst_filter:
+            continue
         try:
             payload = json.loads(ann_path.read_text())
         except Exception as exc:  # noqa: BLE001
@@ -139,13 +149,11 @@ def scan_work_list(
             continue
         if not _annotation_needs_backfill(payload):
             continue
-        inst = payload.get("instance_id") or ann_path.parent.name
+        # Prefer the payload's authoritative instance_id / db; fall back
+        # to the path-derived values when missing.
+        inst = payload.get("instance_id") or path_inst
         db = payload.get("selected_database") or ann_path.parent.parent.name
-        run = ann_path.stem  # filename without .json
-        if run_id is not None and run != run_id:
-            continue
-        if inst_filter is not None and inst not in inst_filter:
-            continue
+        run = path_run
         items.append(WorkItem(
             instance_id=inst,
             selected_database=db,
@@ -168,17 +176,25 @@ def _load_trajectory(
     instance_id: str,
     run_id: str,
     results_root: Optional[Path],
+    submission_trajectory_path: Optional[str] = None,
 ) -> Optional[list[dict]]:
     """Resolve the trajectory for a single work item.
 
     Preference order:
     1. ``<runs>/<benchmark>/<db>/<inst>/<run_id>.trajectory.json`` —
        the DEV-1533 sidecar.
-    2. ``<results>/<benchmark>/cloud/<run_id>/rows/<inst>/attempt-1.json``
-       — the cloud-results attempt JSON.
+    2. ``<results>/<benchmark>/cloud/<run_id>/<submission.trajectory_path>``
+       — uses the actual ``submission.trajectory_path`` from the
+       annotation (e.g. ``rows/<inst>/attempt-2.json`` for resubmits).
+       Falls back to the legacy hardcoded ``rows/<inst>/attempt-1.json``
+       only when the annotation has no trajectory_path.
+
+    DEV-1541 r3 (Codex): the previous implementation hardcoded
+    ``attempt-1.json`` regardless of which attempt the annotation
+    actually referred to, so backfilling a resubmit would silently
+    regenerate the autopsy from the wrong agent session.
 
     Returns ``None`` if neither exists (counts as an IO error)."""
-    sidecar = annotation_path.with_suffix("").with_suffix(".trajectory.json")
     # `with_suffix("").with_suffix(...)` only strips ONE suffix; the
     # explicit path is more reliable for files like `r1.json`:
     sidecar = annotation_path.parent / f"{annotation_path.stem}.trajectory.json"
@@ -191,9 +207,18 @@ def _load_trajectory(
         except Exception:  # noqa: BLE001
             logger.warning("[regenerate] sidecar parse failed at %s", sidecar)
     if results_root is not None:
-        fallback = (
-            Path(results_root) / benchmark / "cloud" / run_id
-            / "rows" / instance_id / "attempt-1.json"
+        # Prefer the annotation's actual trajectory_path so resubmits
+        # (attempt-2+) load the right session. Fall back to the legacy
+        # hardcoded path only when the annotation doesn't record one.
+        if submission_trajectory_path:
+            fallback = (
+                Path(results_root) / benchmark / "cloud" / run_id
+                / submission_trajectory_path
+            )
+        else:
+            fallback = (
+                Path(results_root) / benchmark / "cloud" / run_id
+                / "rows" / instance_id / "attempt-1.json"
         )
         if fallback.exists():
             try:
@@ -259,6 +284,14 @@ async def _regenerate_one(
         instance_id=item.instance_id,
         run_id=item.run_id,
         results_root=results_root,
+        # DEV-1541 r3 (Codex): use the annotation's own trajectory_path
+        # so the cloud-results fallback resolves the correct attempt
+        # (resubmits land at attempt-2+).
+        submission_trajectory_path=(
+            ann.submission.trajectory_path
+            if ann.submission is not None
+            else None
+        ),
     )
     if trajectory is None:
         logger.error(

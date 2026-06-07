@@ -869,6 +869,171 @@ def test_regenerate_does_not_promote_when_autopsy_errored(tmp_path):
     assert data["user_sim_interaction"]["disclosed_resolutions"] == ["should_survive=42"]
 
 
+def test_scan_filtered_subset_ignores_unrelated_corrupt_file(tmp_path):
+    """Codex r3: a targeted `--instance-ids` / `--run-id` backfill must
+    NOT bump io_errors for unrelated corrupt files outside the filter.
+    The pre-fix scan parsed every file under the benchmark and only
+    applied the filter afterwards."""
+    from bird_interact_agents.eval.regenerate_autopsies import regenerate
+
+    runs = tmp_path / "runs"
+    # Unrelated corrupt file under a DIFFERENT instance — outside the
+    # `instance_ids=["museum_2"]` filter below.
+    corrupt = runs / "livesqlbench-base-lite-sqlite" / "robot" / "robot_10" / "r1.json"
+    corrupt.parent.mkdir(parents=True, exist_ok=True)
+    corrupt.write_text("{ this is not valid json")
+    # Target instance — a clean annotation.
+    _write_annotation(
+        runs_root=runs,
+        benchmark="livesqlbench-base-lite-sqlite",
+        db_name="museum",
+        instance_id="museum_2",
+        run_id="r1",
+        autopsy=None,
+    )
+    _write_trajectory_sidecar(
+        runs_root=runs,
+        benchmark="livesqlbench-base-lite-sqlite",
+        db_name="museum",
+        instance_id="museum_2",
+        run_id="r1",
+    )
+
+    mock_tool = MagicMock()
+    mock_tool.type = "tool_use"
+    mock_tool.name = "autopsy_output"
+    mock_tool.input = {
+        "pattern": "exhausted_budget_guessing",
+        "other_details": None,
+        "narrative": "n",
+        "remediation": "r",
+        "decision_point_trajectory_index": None,
+        "decision_point_description": None,
+    }
+    mock_response = MagicMock()
+    mock_response.content = [mock_tool]
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+    with patch("anthropic.AsyncAnthropic", return_value=mock_client):
+        report = regenerate(
+            runs_root=runs,
+            benchmark="livesqlbench-base-lite-sqlite",
+            model="anthropic/claude-haiku-4-5-20251001",
+            dry_run=False,
+            instance_ids={"museum_2"},
+        )
+
+    assert report.regenerated == 1
+    # Crucially: the corrupt robot_10 file was outside the filter and
+    # NEVER opened, so it does not count as an io_error.
+    assert report.io_errors == 0
+    assert report.exit_code() == 0
+
+
+def test_regenerate_uses_submission_trajectory_path_for_cloud_fallback(tmp_path, monkeypatch):
+    """Codex r3: the cloud-results fallback must respect the
+    annotation's `submission.trajectory_path` (e.g. `attempt-2.json` for
+    resubmits) instead of hardcoding `attempt-1.json`. The pre-fix
+    backfill silently regenerated the autopsy from the wrong agent
+    session for any resubmit."""
+    from bird_interact_agents.eval.regenerate_autopsies import regenerate
+
+    runs = tmp_path / "runs"
+    # Write an annotation whose submission.trajectory_path points at
+    # attempt-2, mimicking a resubmit.
+    dest = runs / "mini-interact" / "households" / "households_1" / "r1.json"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": 1,
+        "kind": "submission_annotation",
+        "instance_id": "households_1",
+        "selected_database": "households",
+        "task_annotation_ref": "ref",
+        "annotated_by": "test",
+        "annotated_at": "2026-01-01",
+        "submission": {
+            "cloud_run_id": "r1",
+            "trajectory_path": "rows/households_1/attempt-2.json",
+        },
+        "evaluation": {
+            "phase1_against_original_gold": "fail",
+            "phase1_against_audited_primary": "fail",
+            "phase1_against_any_audited_variant": "fail",
+            "verdict": "agent_miss",
+        },
+        "failure_classification": {
+            "primary": "agent_miss",
+            "agent_at_fault": True,
+            "remediation_target": "agent",
+        },
+        "autopsy": None,
+    }
+    dest.write_text(json.dumps(payload, indent=2))
+
+    # No sidecar — must use the cloud-results fallback.
+    fake_results_root = tmp_path / "results"
+    attempt_2 = (
+        fake_results_root / "mini-interact" / "cloud" / "r1"
+        / "rows" / "households_1" / "attempt-2.json"
+    )
+    attempt_2.parent.mkdir(parents=True, exist_ok=True)
+    # Marker the test will look for in the captured prompt.
+    attempt_2.write_text(json.dumps(
+        {"trajectory": [{"role": "user", "content": "FROM ATTEMPT 2"}]}
+    ))
+    # ALSO write an attempt-1 with a different marker — the pre-fix code
+    # would have loaded this one instead. The fix should ignore it.
+    attempt_1 = attempt_2.with_name("attempt-1.json")
+    attempt_1.write_text(json.dumps(
+        {"trajectory": [{"role": "user", "content": "FROM ATTEMPT 1"}]}
+    ))
+
+    captured_prompts: list[str] = []
+
+    async def _capture(**kwargs):
+        for m in kwargs.get("messages", []):
+            if m.get("role") == "user":
+                captured_prompts.append(m.get("content", ""))
+        mock_tool = MagicMock()
+        mock_tool.type = "tool_use"
+        mock_tool.name = "autopsy_output"
+        mock_tool.input = {
+            "pattern": "wrong_join_path",
+            "other_details": None,
+            "narrative": "n",
+            "remediation": "r",
+            "decision_point_trajectory_index": None,
+            "decision_point_description": None,
+            "n_asks": 0,
+            "key_asks": [],
+            "disclosed_resolutions": [],
+            "undisclosed_resolutions": [],
+        }
+        mock_response = MagicMock()
+        mock_response.content = [mock_tool]
+        return mock_response
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(side_effect=_capture)
+
+    with patch("anthropic.AsyncAnthropic", return_value=mock_client):
+        report = regenerate(
+            runs_root=runs,
+            benchmark="mini-interact",
+            model="anthropic/claude-haiku-4-5-20251001",
+            dry_run=False,
+            results_root=fake_results_root,
+        )
+    assert report.regenerated == 1
+    assert any("FROM ATTEMPT 2" in p for p in captured_prompts), (
+        "must load the attempt named in submission.trajectory_path"
+    )
+    assert not any("FROM ATTEMPT 1" in p for p in captured_prompts), (
+        "must NOT silently fall back to hardcoded attempt-1"
+    )
+
+
 def test_regenerate_default_results_root_via_paths_helper(tmp_path, monkeypatch):
     """CodeRabbit r2: when results_root=None, regenerate() must resolve
     it via paths.results_root() so the sidecar→cloud-results fallback
