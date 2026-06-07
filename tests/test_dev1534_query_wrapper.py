@@ -501,6 +501,20 @@ def test_query_wrapper_tool_schema_only_requires_source_model():
     # Booleans declared as `boolean`, not anything else.
     assert props["normalize_filters"]["type"] == "boolean"
     assert props["normalize_filters"].get("default") is True
+    # `source_model` must accept BOTH a model-name string AND an inline
+    # ModelExtension object (SLayer's MCP query signature is
+    # `str | ModelExtension | SlayerModel`; SLAYER_A_INTERACT explicitly
+    # documents the inline-object form). Codex round-3 catch.
+    sm = props["source_model"]
+    one_of = sm.get("oneOf")
+    assert isinstance(one_of, list) and len(one_of) >= 2, (
+        f"source_model must use oneOf to permit str | object; got {sm!r}"
+    )
+    type_keys = {entry.get("type") for entry in one_of if isinstance(entry, dict)}
+    assert {"string", "object"}.issubset(type_keys), (
+        f"source_model schema must permit both `string` and `object`; "
+        f"types seen: {type_keys}"
+    )
 
 
 # ---------------------------------------------------------------------------

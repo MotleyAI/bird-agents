@@ -447,7 +447,12 @@ _QUERY_TOOL_DESC = (
     {
         "type": "object",
         "properties": {
-            "source_model": {"type": "string"},
+            # SLayer's `query` accepts `source_model: str | ModelExtension |
+            # SlayerModel` — i.e. a model name OR an inline object with
+            # `name` / `data_source` / `sql` / `columns`. The SLAYER_A_INTERACT
+            # prompt explicitly tells the agent to pass inline ModelExtension
+            # objects for ad-hoc derived-column filters (Codex round-3 catch).
+            "source_model": {"oneOf": [{"type": "string"}, {"type": "object"}]},
             "measures": {"type": "array"},
             "dimensions": {"type": "array"},
             "filters": {"type": "array"},
