@@ -604,16 +604,16 @@ def test_build_manifest_propagates_all_knobs() -> None:
     assert ri.get("region")
 
 
-def test_resubmit_resets_heartbeat_for_new_attempt(
+def test_resubmit_resets_heartbeat_before_submit_job(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Regression: resubmit must clear last_heartbeat_ts before calling
-    wait_until_done. The previous attempt's timestamp (especially when the
-    prior attempt ended via the heartbeat-stall path) is still in GCS, and
-    if not cleared, the new attempt's watcher reads that stale value and
-    falsely returns `stalled` again before the new in-job HeartbeatWriter
-    writes its first row. Mirrors the submit/annotate initial-status write
-    that left last_heartbeat_ts=None."""
+    """Regression: resubmit must clear last_heartbeat_ts *before* calling
+    cluster.submit_job (so the in-job HeartbeatWriter — which races against
+    this reset — cannot have its first real heartbeat clobbered). The
+    previous attempt's timestamp (especially after a heartbeat-stall) is
+    still in GCS; without this reset the new attempt's watcher reads that
+    stale value and falsely returns `stalled` again. ray_job_id is None in
+    this pre-submit write (the in-job HeartbeatWriter writes the real id)."""
     mocks = _patch_collaborators(monkeypatch)
     mocks["cluster"].render_from_manifest.return_value = Path("/tmp/x.yaml")
     mocks["cluster"].head_address.return_value = "http://localhost:8265"
@@ -641,9 +641,16 @@ def test_resubmit_resets_heartbeat_for_new_attempt(
     mocks["gcs"].read_row.side_effect = lambda rid, iid, n: (
         {"error": None} if iid == "db_a_1" else {"error": "boom"}
     )
-    # Capture writes; bypass polling/fetch.
+    # Record the call order so we can assert write_status happens before
+    # submit_job (closes the race against the in-job HeartbeatWriter).
+    call_order: list[str] = []
     writes: list[tuple[str, dict]] = []
-    mocks["gcs"].write_status.side_effect = lambda rid, payload, **_: writes.append((rid, payload))
+    mocks["gcs"].write_status.side_effect = lambda rid, payload, **_: (
+        writes.append((rid, payload)) or call_order.append("write_status")
+    )
+    mocks["cluster"].submit_job.side_effect = lambda **_: (
+        call_order.append("submit_job") or "raysubmit_attempt2"
+    )
     monkeypatch.setattr(driver, "wait_until_done", lambda *a, **k: None)
     monkeypatch.setattr(driver, "fetch", lambda *a, **k: {})
 
@@ -656,7 +663,13 @@ def test_resubmit_resets_heartbeat_for_new_attempt(
     assert payload["rows_done"] == 0
     assert payload["rows_total"] == 3
     assert payload["terminal_state"] is None
-    assert payload["ray_job_id"] == "raysubmit_attempt2"
+    assert payload["ray_job_id"] is None  # in-job writer fills the real id
+    # The write_status reset must precede cluster.submit_job — otherwise the
+    # in-job HeartbeatWriter (which starts asynchronously inside the Ray job)
+    # can land its first real heartbeat before our reset overwrites it.
+    assert call_order.index("write_status") < call_order.index("submit_job"), (
+        f"write_status must precede submit_job; got {call_order}"
+    )
 
 
 def test_resubmit_passes_yaml_path_to_submit_job(

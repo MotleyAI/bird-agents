@@ -661,24 +661,26 @@ def submit(args) -> str:
             args, run_id, attempt=1,
             benchmark_data_prefix=benchmark_data_prefix,
         )
-        ray_job_id = cluster.submit_job(
-            head_address=head, args=job_args, env_vars=env_vars,
-            yaml_path=yaml_path,
-        )
-        submit_succeeded = True
-        # last_heartbeat_ts is left None: the first real heartbeat is written
-        # by the in-job HeartbeatWriter after download_benchmark_data returns.
-        # Pre-stamping time.time() here would falsely trip the
-        # HEARTBEAT_STALL_SECONDS check on benchmarks whose data-load is
-        # legitimately long (e.g. livesqlbench-large's 1.2 GB pg_dumps).
+        # Write status BEFORE submit_job so the in-job HeartbeatWriter — which
+        # starts asynchronously inside the Ray job — cannot have its first real
+        # heartbeat clobbered by our None reset. ray_job_id is unknown at this
+        # point; HeartbeatWriter writes the real value when it ticks.
+        # last_heartbeat_ts stays None so wait_until_done's stall check skips
+        # until the in-job writer takes over (long postgres dataset loads must
+        # not trip HEARTBEAT_STALL_SECONDS).
         gcs.write_status(run_id, {
-            "ray_job_id": ray_job_id,
+            "ray_job_id": None,
             "last_heartbeat_ts": None,
             "rows_done": 0,
             "rows_total": len(args.instance_ids),
             "terminal_state": None,
             "attempt": 1,
         })
+        cluster.submit_job(
+            head_address=head, args=job_args, env_vars=env_vars,
+            yaml_path=yaml_path,
+        )
+        submit_succeeded = True
         if not args.detach:
             wait_until_done(run_id, manifest)
             fetch(run_id)
@@ -840,24 +842,23 @@ def submit_annotator(args) -> str:
         job_args = _build_annotator_job_args(
             args, run_id, benchmark_data_prefix=benchmark_data_prefix,
         )
-        ray_job_id = cluster.submit_job(
-            head_address=head, args=job_args, env_vars=env_vars,
-            yaml_path=yaml_path,
-            ray_app_path=_ANNOTATOR_RAY_APP_PATH,
-        )
-        submit_succeeded = True
-        # See note in `submit`: last_heartbeat_ts stays None until the in-job
-        # HeartbeatWriter starts. Otherwise long data-load benchmarks
-        # (livesqlbench-large = 1.2 GB pg_dumps) trip the stall check before
-        # the first real heartbeat is written.
+        # Write status BEFORE submit_job (see note in `submit`): the in-job
+        # HeartbeatWriter races against this reset; writing first guarantees
+        # the real heartbeat is not clobbered.
         gcs.write_status(run_id, {
-            "ray_job_id": ray_job_id,
+            "ray_job_id": None,
             "last_heartbeat_ts": None,
             "rows_done": 0,
             "rows_total": len(args.instance_ids),
             "terminal_state": None,
             "attempt": 1,
         })
+        cluster.submit_job(
+            head_address=head, args=job_args, env_vars=env_vars,
+            yaml_path=yaml_path,
+            ray_app_path=_ANNOTATOR_RAY_APP_PATH,
+        )
+        submit_succeeded = True
         if not args.detach:
             wait_until_done(run_id, manifest)
             fetch(run_id)
@@ -1143,6 +1144,18 @@ def resubmit(run_id: str) -> None:
                 "resubmit: manifest has no 'framework' field (pre-DEV-1517); "
                 "defaulting to legacy API-key path"
             )
+        # Reset status BEFORE submit_job so the new attempt's in-job
+        # HeartbeatWriter cannot have its first real heartbeat clobbered by
+        # this reset. Mirrors submit/annotate. ray_job_id is unknown at this
+        # point; the in-job HeartbeatWriter writes the real value.
+        gcs.write_status(run_id, {
+            "ray_job_id": None,
+            "last_heartbeat_ts": None,
+            "rows_done": 0,
+            "rows_total": len(manifest.get("instance_ids", [])),
+            "terminal_state": None,
+            "attempt": next_attempt,
+        })
         if _framework == "annotator":
             env_vars = read_api_keys_from_local_env(
                 manifest["agent_model"], "",
@@ -1151,7 +1164,7 @@ def resubmit(run_id: str) -> None:
                 dataset=manifest.get("dataset", manifest.get("benchmark", "")),
             )
             job_args = _build_annotator_resubmit_args(manifest, run_id, missing, next_attempt)
-            ray_job_id = cluster.submit_job(
+            cluster.submit_job(
                 head_address=head, args=job_args, env_vars=env_vars,
                 yaml_path=yaml_path, ray_app_path=_ANNOTATOR_RAY_APP_PATH,
             )
@@ -1164,22 +1177,10 @@ def resubmit(run_id: str) -> None:
                 dataset=manifest.get("dataset", ""),
             )
             job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
-            ray_job_id = cluster.submit_job(
+            cluster.submit_job(
                 head_address=head, args=job_args, env_vars=env_vars,
                 yaml_path=yaml_path,
             )
-        # Reset status for the new attempt: clear the previous attempt's
-        # last_heartbeat_ts so wait_until_done doesn't read a stale timestamp
-        # and trip the HEARTBEAT_STALL_SECONDS check before the new in-job
-        # HeartbeatWriter writes its first row. Mirrors submit/annotate.
-        gcs.write_status(run_id, {
-            "ray_job_id": ray_job_id,
-            "last_heartbeat_ts": None,
-            "rows_done": 0,
-            "rows_total": len(manifest.get("instance_ids", [])),
-            "terminal_state": None,
-            "attempt": next_attempt,
-        })
         wait_until_done(run_id, manifest)
         fetch(run_id)
     finally:
