@@ -71,10 +71,13 @@ def test_i1_detached_returns_fast(tmp_path) -> None:
 
     try:
         assert elapsed < 300, f"submit --detach took {elapsed:.0f}s"
-        # status.json may take a few seconds to land after detach returns.
-        # Poll up to 60s for it to appear, then assert it's mid-run.
+        # status.json now lands immediately (driver writes a reset row pre-
+        # submit), but ray_job_id is None until the in-job HeartbeatWriter
+        # ticks and writes the real raysubmit_* id from RAY_JOB_SUBMISSION_ID.
+        # Poll up to 5 min for ray_job_id to become non-empty — that's the
+        # contract: the run is mid-flight and a real ray_job_id is recorded.
         status = None
-        deadline = time.time() + 60
+        deadline = time.time() + 300
         while time.time() < deadline:
             try:
                 status_raw = subprocess.check_output(
@@ -85,12 +88,17 @@ def test_i1_detached_returns_fast(tmp_path) -> None:
                     text=True, timeout=10,
                 )
                 status = json.loads(status_raw)
-                break
+                if status.get("ray_job_id"):
+                    break
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                time.sleep(5)
-        assert status is not None, "status.json never appeared within 60s"
+                pass
+            time.sleep(5)
+        assert status is not None, "status.json never appeared within 5 min"
         assert status.get("terminal_state") is None
-        assert status.get("ray_job_id")
+        assert status.get("ray_job_id"), (
+            "ray_job_id never landed within 5 min (HeartbeatWriter hasn't "
+            "started — workers may not have come up)"
+        )
     finally:
         subprocess.run(
             ["bird-interact-cloud", "kill", run_id],
