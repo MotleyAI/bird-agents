@@ -280,3 +280,54 @@ def test_column_match_signals_same_set_different_order():
 
     cm, om = _column_match_signals(agent_cols=["b", "a"], gold_cols=["a", "b"])
     assert (cm, om) == (True, False)
+
+
+# ---------------------------------------------------------------------------
+# Codex post-merge: column-order signal must not leak NAMING differences
+# (e.g. SLayer's `<db>.<table>.<col>` namespacing vs gold's bare column
+# names). Both informational helpers normalize via `_normalize_col` (lowercase
+# + strip the longest dot-prefix) before comparing — otherwise `order_match`
+# re-introduces the very naming signal Fix A removed.
+# ---------------------------------------------------------------------------
+
+
+def test_column_diff_namespaced_pred_vs_bare_gold_order_true():
+    from bird_interact_agents.eval.tolerant_grader import _column_diff
+
+    cm, om = _column_diff(
+        pred_cols=["orders.status", "orders.amount"],
+        gold_cols=["status", "amount"],
+    )
+    assert (cm, om) == (True, True)
+
+
+def test_column_diff_namespaced_pred_vs_bare_gold_order_false_when_swapped():
+    """Same SLayer/bare prefix difference, but the agent ALSO swapped
+    column positions — `order_match` correctly reports False."""
+    from bird_interact_agents.eval.tolerant_grader import _column_diff
+
+    cm, om = _column_diff(
+        pred_cols=["orders.amount", "orders.status"],
+        gold_cols=["status", "amount"],
+    )
+    assert (cm, om) == (True, False)
+
+
+def test_column_match_signals_namespaced_pred_vs_bare_gold_order_true():
+    from bird_interact_agents.eval.tolerant_grader import _column_match_signals
+
+    cm, om = _column_match_signals(
+        agent_cols=["households.housenum", "households.income"],
+        gold_cols=["housenum", "income"],
+    )
+    assert (cm, om) == (True, True)
+
+
+def test_column_match_signals_case_only_difference_order_true():
+    from bird_interact_agents.eval.tolerant_grader import _column_match_signals
+
+    cm, om = _column_match_signals(
+        agent_cols=["Status", "Amount"],
+        gold_cols=["status", "amount"],
+    )
+    assert (cm, om) == (True, True)

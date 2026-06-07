@@ -379,9 +379,18 @@ def _column_diff(
     DEV-1534 Fix A: the legacy `name_match_case_insensitive` element was
     dropped — column NAMING is irrelevant to grading; column ORDER is
     still a real positional cause.
+
+    Names are normalized via :func:`_normalize_col` (lowercase + strip
+    the longest dot-prefix) before comparison so SLayer's namespacing
+    convention (`<db>.<table>.<col>`) compares equal to the gold's bare
+    column names — otherwise `order_match` would leak the very naming
+    signal Fix A removed (Codex post-merge catch).
     """
     count = len(pred_cols) == len(gold_cols)
-    order = count and [c.lower() for c in pred_cols] == [c.lower() for c in gold_cols]
+    order = count and (
+        [_normalize_col(c) for c in pred_cols]
+        == [_normalize_col(c) for c in gold_cols]
+    )
     return count, order
 
 
@@ -1268,12 +1277,17 @@ def _column_match_signals(
     """(column_count_match, order_match).
 
     DEV-1534 Fix A: legacy `name_match_case_insensitive` element dropped;
-    column NAMING is irrelevant to grading; column ORDER stays.
+    column NAMING is irrelevant to grading; column ORDER stays. Names
+    are normalized via :func:`_normalize_col` (lowercase + strip the
+    longest dot-prefix) before comparison so SLayer's namespacing
+    convention (``<db>.<table>.<col>``) compares equal to the gold's
+    bare column names — otherwise ``order_match`` would re-introduce
+    the very naming signal Fix A removed (Codex post-merge catch).
     """
     count_match = len(agent_cols) == len(gold_cols)
-    a_lower = [c.lower() for c in agent_cols]
-    g_lower = [c.lower() for c in gold_cols]
-    order_match = a_lower == g_lower
+    a_norm = [_normalize_col(c) for c in agent_cols]
+    g_norm = [_normalize_col(c) for c in gold_cols]
+    order_match = a_norm == g_norm
     return count_match, order_match
 
 
