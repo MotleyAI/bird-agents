@@ -13,9 +13,26 @@ Per the project Python convention, every container field uses a typed
 """
 from __future__ import annotations
 
-from typing import Any, List, Literal, Optional, Union
+import datetime as _dt
+from typing import Annotated, Any, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator  # noqa: F401
+
+# DEV-1541: caps for AutopsyError excerpt fields.
+_AUTOPSY_ERROR_MESSAGE_CAP = 500
+_AUTOPSY_ERROR_TRACEBACK_CAP = 2000
+_AUTOPSY_ERROR_TRUNCATION_SUFFIX = "...[truncated]"
+
+
+def _cap_excerpt(value: str, cap: int) -> str:
+    """Hard-cap an excerpt string at ``cap`` chars, appending a marker
+    when truncation occurred. Used by AutopsyError field validators."""
+    if not isinstance(value, str) or len(value) <= cap:
+        return value
+    keep = cap - len(_AUTOPSY_ERROR_TRUNCATION_SUFFIX)
+    if keep <= 0:
+        return _AUTOPSY_ERROR_TRUNCATION_SUFFIX[:cap]
+    return value[:keep] + _AUTOPSY_ERROR_TRUNCATION_SUFFIX
 
 # Valid prefixes for evidence_sources_consulted entries.
 EVIDENCE_SOURCE_PREFIXES: tuple[str, ...] = (
@@ -673,6 +690,21 @@ AutopsyPattern = Literal[
 """LLM-produced failure taxonomy for genuine cascade misses on
 ``claude_sdk_otf*`` frameworks (DEV-1521).
 
+A-interact (claude_sdk_otf_ainteract) tasks use this full 9-pattern set."""
+
+AutopsyPatternOneShot = Literal[
+    "late_mutation_corrupted_result",
+    "wrong_join_path",
+    "output_schema_misread",
+    "slayer_generation_artifact",
+    "exhausted_budget_guessing",
+    "other",
+]
+"""DEV-1541: one-shot benchmarks (livesqlbench) have no user-sim and
+must NOT be tagged with ``never_asked_key_question`` /
+``asked_but_ignored_answer`` / ``user_sim_misleading`` — those patterns
+are unactionable on one-shot.
+
 * ``never_asked_key_question`` — agent never surfaced a critical
   clarification; the answer was recoverable via ``ask_user`` but skipped.
 * ``asked_but_ignored_answer`` — agent asked the right question but
@@ -696,16 +728,15 @@ AutopsyPattern = Literal[
 
 
 class AutopsyAnalysis(BaseModel):
-    """LLM-produced post-mortem analysis for a genuine cascade miss.
+    """LLM-produced post-mortem analysis for an a-interact cascade miss.
 
-    Populated only for ``claude_sdk_otf*`` frameworks, only when all
-    N1–N9 cascade tiers fail (``failure_classification.primary ==
-    "agent_miss"``). Structured complement to the deterministic
-    ``FailureClassification`` — the two blocks describe orthogonal
-    dimensions (what vs. why).
+    Populated only for ``claude_sdk_otf_ainteract`` runs.
+    ``kind="a_interact"`` is the discriminator tag for the
+    ``AutopsyResult.analysis`` discriminated union (DEV-1541).
     """
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["a_interact"] = "a_interact"
     pattern: AutopsyPattern
     other_details: Optional[str] = None
     """Non-None when ``pattern == "other"``; freeform description of
@@ -718,17 +749,115 @@ class AutopsyAnalysis(BaseModel):
     (prompt / KB / grader / user_sim)."""
 
 
+class AutopsyAnalysisOneShot(BaseModel):
+    """LLM-produced post-mortem analysis for a one-shot cascade miss.
+
+    Populated only for ``claude_sdk_otf`` runs on one-shot benchmarks
+    (livesqlbench). ``kind="one_shot"`` is the discriminator tag for the
+    ``AutopsyResult.analysis`` discriminated union (DEV-1541).
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["one_shot"] = "one_shot"
+    pattern: AutopsyPatternOneShot
+    other_details: Optional[str] = None
+    narrative: str
+    remediation: str
+
+
+_AutopsyErrorKind = Literal[
+    "validation_error",
+    "context_overflow",
+    "api_error",
+    "network_error",
+    "missing_tool_use",
+    "unknown",
+]
+
+
+class AutopsyError(BaseModel):
+    """DEV-1541: persisted record of an autopsy failure.
+
+    Before DEV-1541, autopsy failures were swallowed (``except Exception:
+    return None``) and the resulting ``autopsy=None`` annotation was
+    indistinguishable from "autopsy didn't run". This type captures the
+    failure shape so backfill tooling and reviewers can tell
+    silent-fail from skipped from succeeded.
+
+    ``message_excerpt`` and ``traceback_excerpt`` are auto-capped (hard
+    truncate with ``...[truncated]`` suffix) at construction time so the
+    contract holds even when a caller forgets to pre-truncate.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    kind: _AutopsyErrorKind
+    exception_class: str
+    """Fully-qualified class name, e.g. ``pydantic_core._pydantic_core.ValidationError``."""
+
+    message_excerpt: str
+    """Exception message; capped to 500 chars."""
+
+    traceback_excerpt: str
+    """``traceback.format_exc()``; capped to 2000 chars."""
+
+    prompt_chars: int
+    kb_chars: int
+    trajectory_items: int
+    model: str
+    timestamp: _dt.datetime
+
+    @field_validator("message_excerpt", mode="before")
+    @classmethod
+    def _cap_message(cls, v: Any) -> Any:
+        return _cap_excerpt(v, _AUTOPSY_ERROR_MESSAGE_CAP) if isinstance(v, str) else v
+
+    @field_validator("traceback_excerpt", mode="before")
+    @classmethod
+    def _cap_traceback(cls, v: Any) -> Any:
+        return _cap_excerpt(v, _AUTOPSY_ERROR_TRACEBACK_CAP) if isinstance(v, str) else v
+
+
+_AnalysisUnion = Annotated[
+    Union[AutopsyAnalysis, AutopsyAnalysisOneShot],
+    Field(discriminator="kind"),
+]
+
+
 class AutopsyResult(BaseModel):
-    """Container for all autopsy outputs mapped from ``AutopsyLLMOutput``.
+    """Container for autopsy outputs.
+
+    Either ``analysis`` (successful autopsy) OR ``error`` (DEV-1541
+    failure capture) is set, never both, never neither.
 
     Lives in the schema module (pure data, no client deps) so
     ``grade_in_place`` can import it without pulling in the Anthropic SDK.
     """
     model_config = ConfigDict(extra="forbid")
 
-    analysis: AutopsyAnalysis
+    analysis: Optional[_AnalysisUnion] = None
+    error: Optional[AutopsyError] = None
     decision_point: Optional[TrajectoryDecisionPoint] = None
-    user_sim_interaction: UserSimInteraction = Field(default_factory=UserSimInteraction)
+    user_sim_interaction: Optional[UserSimInteraction] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _inject_legacy_kind(cls, data: Any) -> Any:
+        """DEV-1541 back-compat: pre-DEV-1541 on-disk annotations have
+        an ``analysis`` dict without ``kind``. Treat them as ``a_interact``
+        (the only shape the old code emitted)."""
+        if isinstance(data, dict):
+            analysis = data.get("analysis")
+            if isinstance(analysis, dict) and "kind" not in analysis:
+                analysis["kind"] = "a_interact"
+        return data
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> "AutopsyResult":
+        if (self.analysis is None) == (self.error is None):
+            raise ValueError(
+                "AutopsyResult must have exactly one of `analysis` or `error` set"
+            )
+        return self
 
 
 class SubmissionAnnotation(BaseModel):
@@ -776,7 +905,12 @@ class SubmissionAnnotation(BaseModel):
     evaluation: SubmissionEvaluation
     failure_classification: FailureClassification
     decision_point: Optional[TrajectoryDecisionPoint] = None
-    user_sim_interaction: UserSimInteraction = Field(default_factory=UserSimInteraction)
+    user_sim_interaction: Optional[UserSimInteraction] = Field(default_factory=UserSimInteraction)
+    """DEV-1541: type widened to ``Optional`` so one-shot runs can persist
+    ``null``. The ``default_factory`` is retained so missing-from-JSON
+    legacy annotations still parse to ``UserSimInteraction(n_asks=0)``
+    rather than ``None`` — preserving the pre-DEV-1541 zero-asks meaning
+    of an omitted field."""
     autopsy: Optional[AutopsyResult] = None
     """LLM-produced post-mortem. Populated only for genuine cascade misses
     (all N1–N9 fail) on claude_sdk_otf* frameworks. None for passing

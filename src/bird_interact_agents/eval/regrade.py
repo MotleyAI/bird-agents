@@ -92,6 +92,16 @@ def _latest_attempt_file(sub: Path) -> Path | None:
     return best[1] if best else None
 
 
+def _regrade_benchmark_is_one_shot(benchmark: str) -> bool:
+    """DEV-1541: resolve ``benchmark`` token to ``one_shot``; unknown
+    tokens degrade to a-interact for safety in legacy regrade contexts."""
+    from bird_interact_agents.benchmark import get_benchmark
+    try:
+        return get_benchmark(benchmark).one_shot
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _build_original_sql_index(benchmark: str) -> dict[str, list[str]]:
     """Map ``instance_id`` → list-of-SQL-strings for the benchmark's
     original gold. mini-interact carries ``sol_sql`` inline on each task
@@ -271,8 +281,11 @@ def regrade_run(
             failure_classification=_skeleton_failure_classification(cascade),
             # Pass the raw trajectory; ``_user_sim_interaction_from_trajectory``
             # defends against dict-shaped trajectories (Codex r10).
+            # DEV-1541: one-shot benchmarks have no user-sim — the helper
+            # returns None and the persisted annotation reflects that.
             user_sim_interaction=_user_sim_interaction_from_trajectory(
                 attempt_data.get("trajectory") or [],
+                one_shot=_regrade_benchmark_is_one_shot(benchmark),
             ),
             submitted_sql=submitted_sql or None,
             predicted_result=decode_result_json(
@@ -429,9 +442,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         # benchmarks pass None so the flag stays out of miss_patterns.
         if _bench_is_interactive:
             _traj = task_row.get("trajectory") or []
-            _user_sim_n_asks: Optional[int] = (
-                _user_sim_interaction_from_trajectory(_traj).n_asks
-            )
+            # DEV-1541: pass one_shot=False here — _bench_is_interactive
+            # is already True, so the helper returns a populated
+            # UserSimInteraction (not None).
+            _us = _user_sim_interaction_from_trajectory(_traj, one_shot=False)
+            _user_sim_n_asks: Optional[int] = _us.n_asks if _us is not None else 0
         else:
             _user_sim_n_asks = None
         return grade_submission(

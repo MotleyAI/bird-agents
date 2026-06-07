@@ -548,6 +548,7 @@ class ClaudeSDKOtfAgent:
                         slayer_storage_dir=slayer_storage_dir,
                         miss_diagnostics=_cascade.miss_diagnostics,
                         model=self.model,
+                        is_one_shot=True,
                     )
             except Exception:
                 logger.exception(
