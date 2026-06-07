@@ -272,12 +272,9 @@ def test_get_slayer_query_fn_extracts_from_create_mcp_server(monkeypatch):
     from bird_interact_agents.agents import _query
     from slayer.mcp import server as slayer_mcp_server
 
-    # Reset any cached fn so the test exercises the extraction path
-    # cleanly (the wrapper caches by storage; we monkeypatch the
-    # factory so the cache key doesn't matter).
-    cache_attr = "_cached_slayer_query_fn"
-    if hasattr(_query, cache_attr):
-        setattr(_query, cache_attr, None)
+    # Reset cached fn via monkeypatch so pytest teardown restores it;
+    # bare `setattr(_query, ..., None)` would leak across tests.
+    monkeypatch.setattr(_query, "_cached_slayer_query_fn", None)
 
     seen = {"create_mcp_server_called": False}
 
@@ -324,8 +321,10 @@ def test_attach_storage_idempotent_keeps_cache(monkeypatch):
     from bird_interact_agents.agents import _query
     from slayer.mcp import server as slayer_mcp_server
 
-    _query._slayer_storage = None
-    _query._cached_slayer_query_fn = None
+    # monkeypatch so pytest restores module globals on teardown — bare
+    # assignments would leak cache/storage state into later tests.
+    monkeypatch.setattr(_query, "_slayer_storage", None)
+    monkeypatch.setattr(_query, "_cached_slayer_query_fn", None)
 
     calls = {"count": 0}
 
@@ -369,8 +368,8 @@ def test_attach_storage_invalidates_on_storage_swap(monkeypatch):
     from bird_interact_agents.agents import _query
     from slayer.mcp import server as slayer_mcp_server
 
-    _query._slayer_storage = None
-    _query._cached_slayer_query_fn = None
+    monkeypatch.setattr(_query, "_slayer_storage", None)
+    monkeypatch.setattr(_query, "_cached_slayer_query_fn", None)
 
     calls = {"count": 0}
 
