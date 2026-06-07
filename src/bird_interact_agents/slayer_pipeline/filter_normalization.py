@@ -177,17 +177,53 @@ def _normalize_filters_list(filters: Any) -> Any:
     ]
 
 
+def normalize_filters_list(
+    filters: Any, *, normalize: bool = True,
+) -> Any:
+    """Public helper: deep-copy + (optionally) normalize a bare filters list.
+
+    The ``mcp__bird-interact-tools__query`` wrapper (DEV-1534 Fix C) uses
+    this to pre-process its ``filters`` arg before forwarding to SLayer's
+    MCP ``query``. Returns ``None`` unchanged so the wrapper can forward
+    ``filters: Optional[List[str]] = None`` without special-casing.
+
+    With ``normalize=False`` (the opt-out path): returns a deep-copy of
+    the input list, leaving each filter string verbatim. The agent gets
+    case-sensitive equality semantics. With ``normalize=True`` (default):
+    each string filter is wrapped in ``lower(trim(...))`` and the literal
+    is lowercased, per ``normalize_mode_b_filter``.
+    """
+    if filters is None:
+        return None
+    if not isinstance(filters, list):
+        return copy.deepcopy(filters)
+    if not normalize:
+        return copy.deepcopy(filters)
+    return _normalize_filters_list(filters)
+
+
 def _normalize_stage(stage: Any) -> None:
     """In-place (on an already-copied stage dict): normalize its ``filters``."""
     if isinstance(stage, dict) and isinstance(stage.get("filters"), list):
         stage["filters"] = _normalize_filters_list(stage["filters"])
 
 
-def normalize_query_payload(parsed: Any) -> Any:
+def normalize_query_payload(parsed: Any, *, normalize: bool = True) -> Any:
     """``submit_slayer_query`` variant: a single SlayerQuery dict OR a list of
     stage dicts (the two shapes ``_compile_sql`` accepts). Deep-copies; never
-    mutates the input."""
+    mutates the input.
+
+    DEV-1534 Fix C: with ``normalize=False`` (the opt-out path), returns
+    a deep-copy of ``parsed`` with every filter string VERBATIM (no
+    ``lower(trim(...))`` wrap, no literal lowercasing). The agent gets
+    case-sensitive equality semantics. This is wired into
+    ``submit_slayer_query`` via a separate ``normalize_filters`` tool
+    parameter — the flag lives OUTSIDE the JSON DSL so the recorded
+    ``submitted_query`` stays the agent's original payload.
+    """
     parsed = copy.deepcopy(parsed)
+    if not normalize:
+        return parsed
     if isinstance(parsed, dict):
         _normalize_stage(parsed)
     elif isinstance(parsed, list):

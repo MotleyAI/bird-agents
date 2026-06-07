@@ -97,13 +97,17 @@ async def test_submit_query_tool_with_invalid_json(tmp_path):
 def test_slayer_a_tools_include_knowledge_for_parity():
     """SLAYER_A_TOOLS exposes the bird-interact knowledge tools so SLayer
     agents have the same access to external domain knowledge that raw
-    agents do (slayer MCP handles SLayer schema discovery)."""
+    agents do (slayer MCP handles SLayer schema discovery).
+
+    DEV-1534 Fix C added `query` (our filter-normalization-aware wrapper
+    that replaces `mcp__slayer__query` in the allowlist)."""
     from bird_interact_agents.agents.claude_sdk import agent as agent_mod
 
     names = {t.name for t in agent_mod.SLAYER_A_TOOLS}
     assert names == {
         "ask_user",
         "submit_query",
+        "query",
         "get_all_external_knowledge_names",
         "get_knowledge_definition",
         "get_all_knowledge_definitions",
@@ -112,8 +116,10 @@ def test_slayer_a_tools_include_knowledge_for_parity():
 
 def test_slayer_c_tools_only_native():
     """SLAYER_C_TOOLS stays minimal — knowledge is injected upfront in the
-    c-interact prompt, no fetch tool needed."""
+    c-interact prompt, no fetch tool needed.
+
+    DEV-1534 Fix C added `query` (our filter-normalization-aware wrapper)."""
     from bird_interact_agents.agents.claude_sdk import agent as agent_mod
 
     names = {t.name for t in agent_mod.SLAYER_C_TOOLS}
-    assert names == {"ask_user", "submit_query"}
+    assert names == {"ask_user", "submit_query", "query"}

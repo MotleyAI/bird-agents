@@ -642,6 +642,8 @@ def submit_slayer_query(
     state: Any,
     query_json: str,
     slayer_client_factory: Callable[[Any], Any],
+    *,
+    normalize_filters: bool = True,
 ) -> str:
     """Submit a SLayer JSON query: render to SQL, then evaluate.
 
@@ -662,6 +664,13 @@ def submit_slayer_query(
 
     Records both the original JSON DSL and the rendered SQL on
     ``state.result``. Budget bookkeeping mirrors ``submit_raw_sql``.
+
+    DEV-1534 Fix C: ``normalize_filters`` (default True) controls the
+    deterministic text-equality filter normalization. The flag lives
+    OUTSIDE the JSON DSL — passed as a separate kwarg from the tool
+    layer — so the recorded ``submitted_query`` stays the agent's
+    ORIGINAL ``query_json`` string byte-for-byte. The flag flows through
+    a single arg to ``normalize_query_payload(..., normalize=...)``.
     """
     pre_phase = getattr(state.status, "current_phase", 1)
     prior = state.result or {}
@@ -734,7 +743,10 @@ def submit_slayer_query(
     # dimensions / joins are left alone. The recorded `submitted_query` below
     # stays the agent's ORIGINAL DSL; only the compiled `submitted_sql`
     # reflects the normalization.
-    parsed = normalize_query_payload(parsed)
+    # DEV-1534 Fix C: when the agent's tool call passed `normalize_filters=False`
+    # (separate kwarg, OUTSIDE the JSON), `normalize_query_payload` deep-copies
+    # `parsed` unchanged — case-sensitive equality survives.
+    parsed = normalize_query_payload(parsed, normalize=normalize_filters)
 
     client = slayer_client_factory(state)
     try:

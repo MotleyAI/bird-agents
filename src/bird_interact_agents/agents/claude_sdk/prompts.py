@@ -209,6 +209,52 @@ MUST FULLY REPRESENT THE QUESTION. Every adjective
    ...}}` — that shape is rejected.
 
 Specific traps to avoid:
+- **Column names in your output do not affect grading** — only the
+  number of columns, their positional order, their types, and their
+  values matter. Don't waste turns renaming projection aliases to match
+  the user's wording or the gold's labels; the grader compares value
+  tuples positionally.
+- **Inspect the SQL SLayer generated before submitting.** After calling
+  `query`, check the rendered SQL for these artifacts:
+
+  1. **GROUP BY on every projected column with no aggregate functions**
+     — silently deduplicates rows. Fix: add the table's primary-key
+     column as a dimension, or restructure as a nested DAG stage with a
+     `:count` measure.
+  2. **`lower(trim(col)) = 'lowercase_literal'` on string equality
+     filters** — applied automatically by default. When the gold likely
+     uses exact-case equality (e.g. proper-noun categories with
+     known-fixed casing), pass `normalize_filters=false` as a separate
+     parameter to `query` (for previewing) and to `submit_query` (for
+     the final submission). The flag lives outside the JSON.
+  3. **Broken operator precedence on WHERE arithmetic**:
+     `expr1*w1 + expr2*w2 > threshold` without outer parens — the
+     comparator binds only to the last additive term. Fix: push the
+     score into a HAVING on a nested-stage measure rather than a WHERE
+     on a raw formula.
+- **Pivot after 3 failed submissions with the same opaque error.**
+  Stop varying surface parameters and:
+  1. Inspect the generated SQL for SLayer artifacts (GROUP BY dedup,
+     `lower(trim(...))` coercion, broken WHERE precedence).
+  2. Enumerate ≤4 structurally different hypotheses not yet tested:
+     different row grain, formula kernel, join path, output column
+     count/type, or `normalize_filters=false`.
+  3. Call `ask_user` once with those hypotheses as concrete options to
+     get directional guidance (cheaper than many 3-coin re-submissions
+     of near-identical queries).
+  4. Test each surviving hypothesis exactly once — never re-submit a
+     query structurally identical to a prior attempt.
+- **User-sim answers are clarifications, not ground truth.**
+  - Cross-check user-sim formulas against the KB definition before
+    submitting. If they contradict (e.g. the user-sim denies a column
+    the KB explicitly names), try the KB-grounded interpretation first.
+  - After ≥2 failures with a user-sim-confirmed interpretation, try
+    the KB-literal / schema-literal interpretation as a fallback
+    submission.
+  - When a user-sim constraint makes the required output cardinality
+    impossible (e.g. "use only table X" but X has 4 distinct values
+    and the task needs top-5), call `ask_user` again to flag the
+    contradiction explicitly rather than submitting an impossible query.
 - **Don't filter on a JSONB / JSON column with `LIKE '%foo%'`**. All fields from jsonb columns are available as distinct model columns.
 - **Don't drop a qualifier just because you can't find a matching named measure on first look.** . 
     Instead, call search for that, then use an entity that search returned if possible, else define a new column 

@@ -11,6 +11,7 @@ from claude_agent_sdk import (
     tool,
 )
 
+from bird_interact_agents.agents import _query as _query_mod
 from bird_interact_agents.agents._prompt_builders import (
     build_raw_c_interact_prompt,
     build_slayer_c_interact_prompt,
@@ -375,14 +376,28 @@ def _slayer_client():
         '["amount:sum"]}) or a nested-DAG array of stage objects (same '
         "shape `query_nested` accepts; last element is the DAG root). "
         "The chosen query is translated to SQL deterministically and "
-        "tested against the ground truth."
+        "tested against the ground truth. "
+        "`normalize_filters` (default true) controls whether text-equality "
+        "filter predicates are auto-wrapped in lower(trim(...)) with the "
+        "literal lowercased. Pass `normalize_filters=false` when the gold "
+        "answer requires exact-case equality (rare; the default is "
+        "semantically correct for most NL questions that carry no casing "
+        "info)."
     ),
-    {"query_json": str},
+    {"query_json": str, "normalize_filters": bool},
 )
 async def submit_query(args: dict) -> dict:
     state = _state_view()
+    # DEV-1534 Fix C: `normalize_filters` is a SEPARATE tool parameter,
+    # not a JSON-payload field. Default True preserves the deterministic
+    # case/whitespace tolerance that's semantically correct for most NL
+    # questions; `normalize_filters=false` is the escape hatch for the
+    # exact-case-equality failure mode surfaced in the 298-instance
+    # mini-interact analysis.
+    normalize_filters = bool(args.get("normalize_filters", True))
     observation = submit_slayer_query(
         state, args["query_json"], lambda _s: _slayer_client(),
+        normalize_filters=normalize_filters,
     )
     if state.result is None:
         # Helper already charged + appended the budget note for the
@@ -392,9 +407,90 @@ async def submit_query(args: dict) -> dict:
     return _text(observation)
 
 
+# DEV-1534 Fix C: wrap SLayer's MCP `query` so the agent can opt out
+# of Mode-B filter normalization mid-flight via a separate
+# `normalize_filters` tool parameter. The 14 positional params mirror
+# SLayer's MCP `query` exactly; the 15th is our directive.
+_QUERY_TOOL_DESC = (
+    "Run a SLayer query and return SLayer's formatted result. Same "
+    "shape as SLayer's MCP `query` tool — `source_model` (required), "
+    "`dimensions`, `measures`, `filters`, `time_dimensions`, `order`, "
+    "`limit`, `offset`, `whole_periods_only`, `show_sql`, `dry_run`, "
+    "`explain`, `format` (markdown/json/csv), `variables`. The 15th "
+    "parameter `normalize_filters` (default true) controls our text-"
+    "equality filter auto-normalization: when true, every `col == 'X'` "
+    "filter becomes `lower(trim(col)) == 'x'` (case/whitespace-tolerant); "
+    "when false, filters are forwarded verbatim (exact-case equality)."
+)
+
+
+@tool(
+    "query",
+    _QUERY_TOOL_DESC,
+    {
+        "source_model": str,
+        "measures": list,
+        "dimensions": list,
+        "filters": list,
+        "time_dimensions": list,
+        "order": list,
+        "limit": int,
+        "offset": int,
+        "whole_periods_only": bool,
+        "show_sql": bool,
+        "dry_run": bool,
+        "explain": bool,
+        "format": str,
+        "variables": dict,
+        "normalize_filters": bool,
+    },
+)
+async def query(args: dict) -> dict:
+    # Defer storage attach until first call so the per-task storage
+    # set in _slayer_client() is already in _ctx.
+    storage = _ctx.get("_slayer_storage")
+    if storage is None:
+        _slayer_client()  # populates _ctx["_slayer_storage"] as side-effect
+        storage = _ctx["_slayer_storage"]
+    _query_mod.attach_storage(storage)
+
+    # `source_model` is required; everything else is optional with the
+    # SLayer MCP defaults.
+    result = await _query_mod.query_impl(
+        source_model=args["source_model"],
+        measures=args.get("measures"),
+        dimensions=args.get("dimensions"),
+        filters=args.get("filters"),
+        time_dimensions=args.get("time_dimensions"),
+        order=args.get("order"),
+        limit=args.get("limit"),
+        offset=args.get("offset"),
+        whole_periods_only=bool(args.get("whole_periods_only", False)),
+        show_sql=bool(args.get("show_sql", False)),
+        dry_run=bool(args.get("dry_run", False)),
+        explain=bool(args.get("explain", False)),
+        format=args.get("format", "markdown"),
+        variables=args.get("variables"),
+        normalize_filters=bool(args.get("normalize_filters", True)),
+    )
+    return _text(result if isinstance(result, str) else str(result))
+
+
 # ---------------------------------------------------------------------------
 # Tool lists
 # ---------------------------------------------------------------------------
+
+# DEV-1534 Fix C: only these SLayer MCP tools are allowlisted from
+# the slayer subprocess MCP server. `query` is served by our own
+# wrapper on bird-interact-tools instead.
+SLAYER_MCP_TOOL_NAMES = (
+    "help",
+    "list_datasources",
+    "models_summary",
+    "inspect_model",
+    "search",
+)
+
 
 RAW_A_TOOLS = [
     execute_sql,
@@ -413,20 +509,25 @@ RAW_A_TOOLS = [
 RAW_C_TOOLS = [ask_user, submit_sql]
 
 # In SLayer mode, exploration tools (help, models_summary, inspect_model,
-# query, list_datasources) come from the slayer MCP server itself —
+# list_datasources, search) come from the slayer MCP server itself —
 # wired into ClaudeAgentOptions.mcp_servers. We also expose the native
 # bird-interact knowledge tools so SLayer agents have the same access
 # to external domain knowledge that raw agents do.
+# DEV-1534 Fix C: `query` is served by our own wrapper on the
+# bird-interact-tools SDK MCP server (above) so the agent can opt out
+# of filter normalization via the new `normalize_filters` parameter;
+# it's NOT in SLAYER_MCP_TOOL_NAMES.
 SLAYER_A_TOOLS = [
     get_all_external_knowledge_names,
     get_knowledge_definition,
     get_all_knowledge_definitions,
     ask_user,
+    query,
     submit_query,
 ]
 # c-interact slayer: knowledge is injected upfront in the prompt (matches
 # raw c-interact's contract), so no separate knowledge tools are needed.
-SLAYER_C_TOOLS = [ask_user, submit_query]
+SLAYER_C_TOOLS = [ask_user, query, submit_query]
 
 
 def _select_tools(query_mode: str, eval_mode: str) -> list:
@@ -595,16 +696,12 @@ class ClaudeSDKAgent:
         mcp_servers: dict = {"bird-interact-tools": server}
         if query_mode == "slayer":
             mcp_servers["slayer"] = slayer_mcp_stdio_config(slayer_storage_dir)
-            # Allow the slayer MCP tools the agent will need
-            slayer_tools = [
-                "help",
-                "list_datasources",
-                "models_summary",
-                "inspect_model",
-                "search",
-                "query",
-            ]
-            tool_names.extend(f"mcp__slayer__{t}" for t in slayer_tools)
+            # DEV-1534 Fix C: `query` is served by our own wrapper on the
+            # bird-interact-tools SDK MCP server (see `_query.query_impl`)
+            # so the agent can opt out of filter normalization mid-flight
+            # via the separate `normalize_filters` parameter. The other
+            # exploration tools come from SLayer's subprocess MCP server.
+            tool_names.extend(f"mcp__slayer__{t}" for t in SLAYER_MCP_TOOL_NAMES)
 
         options = ClaudeAgentOptions(
             system_prompt=prompt,
