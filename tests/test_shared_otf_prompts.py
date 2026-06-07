@@ -62,7 +62,13 @@ def test_slayer_otf_ainteract_unchanged():
 # ---------------------------------------------------------------------------
 
 def test_shared_constants_all_nonempty():
-    """All six exported template constants must be non-empty strings."""
+    """All exported template constants must be non-empty strings.
+
+    Covers the six original constants AND the four DEV-1534 additions
+    (column-names rule, SLayer artifact sanity-check, pivot-after-3,
+    user-sim trust calibration) so a future re-baseline that
+    accidentally drops one is caught here.
+    """
     from bird_interact_agents.agents._shared_otf_prompts import (
         _NO_USER_TO_CONSULT,
         _DECOMPOSE_DISCIPLINE,
@@ -70,6 +76,10 @@ def test_shared_constants_all_nonempty():
         _ASK_AGAIN_RULE,
         _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
         _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
+        _COLUMN_NAMES_DONT_AFFECT_GRADING,
+        _SLAYER_SQL_ARTIFACT_CHECK,
+        _PIVOT_AFTER_REPEATED_FAILURES,
+        _USER_SIM_TRUST_CALIBRATION,
     )
 
     for name, val in [
@@ -79,6 +89,10 @@ def test_shared_constants_all_nonempty():
         ("_ASK_AGAIN_RULE", _ASK_AGAIN_RULE),
         ("_PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT", _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT),
         ("_PRE_SUBMIT_MUTATION_CHECK_AINTERACT", _PRE_SUBMIT_MUTATION_CHECK_AINTERACT),
+        ("_COLUMN_NAMES_DONT_AFFECT_GRADING", _COLUMN_NAMES_DONT_AFFECT_GRADING),
+        ("_SLAYER_SQL_ARTIFACT_CHECK", _SLAYER_SQL_ARTIFACT_CHECK),
+        ("_PIVOT_AFTER_REPEATED_FAILURES", _PIVOT_AFTER_REPEATED_FAILURES),
+        ("_USER_SIM_TRUST_CALIBRATION", _USER_SIM_TRUST_CALIBRATION),
     ]:
         assert isinstance(val, str) and val.strip(), f"{name} must be a non-empty string"
 

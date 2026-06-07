@@ -517,8 +517,8 @@ _QUERY_NESTED_TOOL_DESC = (
     "(default true) controls our text-equality filter auto-normalization "
     "for every stage's `filters` list: when true, every `col == 'X'` "
     "filter becomes `lower(trim(col)) == 'x'`; when false, filters are "
-    "forwarded verbatim (exact-case equality). Do NOT wrap `queries` in "
-    "`{\"queries\": ...}` — pass the bare list."
+    "forwarded verbatim (exact-case equality). Pass the stage list in "
+    "the `queries` argument."
 )
 
 

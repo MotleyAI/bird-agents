@@ -33,6 +33,7 @@ Out of scope: pydantic_ai_* adapters (their existing
 """
 from __future__ import annotations
 
+import copy
 from typing import Any, Optional
 
 from bird_interact_agents.slayer_pipeline.filter_normalization import (
@@ -153,13 +154,21 @@ async def query_impl(
 def _processed_nested_stages(queries: Any, *, normalize: bool) -> Any:
     """Deep-copy ``queries`` and (optionally) normalize each stage's
     ``filters`` list. Returns non-list inputs (None, dict, etc.)
-    unchanged so SLayer can produce its own validation error."""
+    unchanged so SLayer can produce its own validation error.
+
+    Each stage dict is ``copy.deepcopy``-ed (NOT ``dict(stage)``) so
+    nested mutables — ``dimensions`` / ``measures`` / ``time_dimensions``
+    / ``order`` / ``variables`` / nested objects inside ``filters`` —
+    are not aliased to the input. Matches the deep-copy contract that
+    the sibling ``normalize_query_payload`` already honours for the
+    submit-side path.
+    """
     if not isinstance(queries, list):
         return queries
     out: list = []
     for stage in queries:
         if isinstance(stage, dict):
-            stage_copy = dict(stage)
+            stage_copy = copy.deepcopy(stage)
             if "filters" in stage_copy:
                 stage_copy["filters"] = normalize_filters_list(
                     stage_copy.get("filters"), normalize=normalize,
