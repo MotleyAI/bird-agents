@@ -185,6 +185,59 @@ def test_wait_until_done_detects_stall(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "resubmit" in result.hint.lower()
 
 
+def test_wait_until_done_min_attempt_ignores_prior_attempt_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: on a resubmit, every iid in the manifest already has a
+    row from the prior (failed) attempt, so the default `len(attempts) >=
+    total` check would return `done` immediately without waiting for the
+    new attempt. wait_until_done(..., min_attempt=N) must only count iids
+    that have at least one row with attempt >= N."""
+    mocks = _patch_collaborators(monkeypatch)
+    now = [1_000_000.0]
+    mocks["gcs"].read_status.return_value = {
+        "ray_job_id": "raysubmit_attempt2",
+        "last_heartbeat_ts": None,
+        "rows_done": 0,
+        "rows_total": 3,
+        "terminal_state": None,
+    }
+    # All 3 iids have a prior-attempt row; the new attempt 2 lands rows for
+    # b and c (one per poll) so the run reaches done — but never via the
+    # spurious "all iids already have rows" path.
+    rows_seq = [
+        {"db_a_1": [1], "db_a_2": [1], "db_a_3": [1]},
+        {"db_a_1": [1], "db_a_2": [1, 2], "db_a_3": [1]},
+        {"db_a_1": [1], "db_a_2": [1, 2], "db_a_3": [1, 2]},
+        {"db_a_1": [1, 2], "db_a_2": [1, 2], "db_a_3": [1, 2]},
+    ]
+    idx = {"n": 0}
+
+    def fake_list_attempts(_rid):
+        v = rows_seq[min(idx["n"], len(rows_seq) - 1)]
+        idx["n"] += 1
+        return v
+
+    mocks["gcs"].list_attempts.side_effect = fake_list_attempts
+    mocks["cluster"].head_is_alive.return_value = True
+    monkeypatch.setattr(driver.time, "time", lambda: now[0])
+    monkeypatch.setattr(driver.time, "sleep", lambda _s: None)
+
+    manifest = {
+        "run_id": RUN_ID,
+        "instance_ids": ["db_a_1", "db_a_2", "db_a_3"],
+    }
+    result = driver.wait_until_done(
+        RUN_ID, manifest, poll_interval_s=0.001, min_attempt=2,
+    )
+    assert result.terminal_state == "done"
+    assert idx["n"] >= 4, (
+        f"wait_until_done must wait until ALL 3 iids have an attempt-2 row "
+        f"(saw {idx['n']} polls; would have terminated at 1 if min_attempt "
+        f"was ignored)"
+    )
+
+
 def test_wait_until_done_skips_stall_when_heartbeat_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -651,7 +704,13 @@ def test_resubmit_resets_heartbeat_before_submit_job(
     mocks["cluster"].submit_job.side_effect = lambda **_: (
         call_order.append("submit_job") or "raysubmit_attempt2"
     )
-    monkeypatch.setattr(driver, "wait_until_done", lambda *a, **k: None)
+    wait_calls: list[dict] = []
+
+    def fake_wait(_rid, _manifest, **kwargs):
+        wait_calls.append(kwargs)
+        return None
+
+    monkeypatch.setattr(driver, "wait_until_done", fake_wait)
     monkeypatch.setattr(driver, "fetch", lambda *a, **k: {})
 
     driver.resubmit(RUN_ID)
@@ -669,6 +728,11 @@ def test_resubmit_resets_heartbeat_before_submit_job(
     # can land its first real heartbeat before our reset overwrites it.
     assert call_order.index("write_status") < call_order.index("submit_job"), (
         f"write_status must precede submit_job; got {call_order}"
+    )
+    # Resubmit must pass min_attempt=next_attempt so wait_until_done doesn't
+    # count prior-attempt rows toward this retry's completion.
+    assert wait_calls and wait_calls[-1].get("min_attempt") == 2, (
+        f"expected min_attempt=2 in wait_until_done kwargs, got {wait_calls}"
     )
 
 

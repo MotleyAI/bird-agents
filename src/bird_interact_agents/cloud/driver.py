@@ -878,7 +878,8 @@ HEARTBEAT_STALL_SECONDS = 300.0
 
 def wait_until_done(run_id: str, manifest: dict, *,
                      poll_interval_s: float = 10.0,
-                     no_progress_deadline_s: float = 3600.0) -> WaitResult:
+                     no_progress_deadline_s: float = 3600.0,
+                     min_attempt: int = 1) -> WaitResult:
     total = len(manifest.get("instance_ids", []))
     # `no_progress_deadline_s` is a NO-PROGRESS deadline, not a wall-clock
     # cap: it resets every time a new row lands. A wedged job (workers never
@@ -886,6 +887,17 @@ def wait_until_done(run_id: str, manifest: dict, *,
     # `max_runtime_hours` can be many hours — keeps resetting it and runs to
     # completion. (The VM self-delete timer + the headless check below bound
     # the absolute runtime.)
+    #
+    # `min_attempt` filters the completion + progress checks to rows whose
+    # attempt number is >= min_attempt. Without this, resubmit() would return
+    # `done` immediately because the manifest's instance_ids all already have
+    # rows from the failed prior attempts. Defaults to 1 (counts everything),
+    # preserving the original submit/annotate semantics.
+    def _done_count(atts: dict[str, list[int]]) -> int:
+        if min_attempt <= 1:
+            return len(atts)
+        return sum(1 for ns in atts.values() if any(n >= min_attempt for n in ns))
+
     last_progress = -1
     last_progress_ts = time.time()
     while True:
@@ -894,11 +906,15 @@ def wait_until_done(run_id: str, manifest: dict, *,
         terminal = status.get("terminal_state")
         if terminal in ("done", "error"):
             return WaitResult(terminal_state=terminal)
-        if len(attempts) >= total and total > 0:
+        done_count = _done_count(attempts)
+        if done_count >= total and total > 0:
             return WaitResult(terminal_state="done")
-        # Progress = number of iids with at least one attempt row in GCS.
-        if len(attempts) > last_progress:
-            last_progress = len(attempts)
+        # Progress = number of iids with at least one row at or after the
+        # current attempt. Counting only current-attempt rows means the
+        # no-progress deadline stays meaningful on a resubmit (it'd be
+        # instantly maxed out if we counted prior-attempt rows here too).
+        if done_count > last_progress:
+            last_progress = done_count
             last_progress_ts = time.time()
         last = status.get("last_heartbeat_ts")
         if last is not None and (time.time() - float(last)) > HEARTBEAT_STALL_SECONDS:
@@ -1181,7 +1197,11 @@ def resubmit(run_id: str) -> None:
                 head_address=head, args=job_args, env_vars=env_vars,
                 yaml_path=yaml_path,
             )
-        wait_until_done(run_id, manifest)
+        # min_attempt=next_attempt: don't count rows from previous (failed)
+        # attempts toward this retry's completion check — otherwise
+        # wait_until_done would return `done` instantly because every IID in
+        # the manifest already has a prior-attempt row.
+        wait_until_done(run_id, manifest, min_attempt=next_attempt)
         fetch(run_id)
     finally:
         h.teardown(reason="resubmit-finally")
