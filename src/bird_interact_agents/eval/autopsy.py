@@ -1,9 +1,32 @@
-"""DEV-1521: LLM-powered autopsy agent for genuine cascade misses.
+"""DEV-1521 + DEV-1541: LLM-powered autopsy agent for genuine cascade misses.
 
 ``run_autopsy`` is called inline from ``claude_sdk_otf*`` ``run_task``
 after the agent session ends, when all N1–N9 cascade tiers fail. It
 produces a structured ``AutopsyResult`` that ``grade_and_write`` embeds
 into the ``SubmissionAnnotation``.
+
+DEV-1541 extends the original DEV-1521 design with three orthogonal
+changes:
+
+1. **One-shot vs. a-interact split.** A second LLM-output schema
+   (``AutopsyLLMOutputOneShot``) and tool descriptor
+   (``_AUTOPSY_TOOL_SCHEMA_ONE_SHOT``) drop the four ``ask_user``-shaped
+   fields and the three ``ask_user``-related pattern enum values, which
+   the LLM has no way to populate correctly on a one-shot benchmark
+   (livesqlbench has no user-sim). ``_build_prompt`` and ``_map_output``
+   branch on ``is_one_shot``.
+
+2. **Typed exception capture.** ``run_autopsy`` no longer returns
+   ``None`` on failure; every error path returns
+   ``AutopsyResult(error=AutopsyError(...))`` so the silent-fail mode
+   from the production incident (7 of 67 livesqlbench failures with
+   ``autopsy=None`` indistinguishable from "autopsy didn't run") cannot
+   recur.
+
+3. **Backfill-friendly metadata.** The persisted ``AutopsyError``
+   carries the fully-qualified exception class, a capped message and
+   traceback excerpt, and prompt/KB/trajectory size stats so reviewers
+   can triage failures without re-running the autopsy.
 
 ``_is_genuine_miss`` is the single canonical check for the trigger
 condition: since ``grade_submission`` enforces a monotone cascade,
@@ -17,15 +40,24 @@ body of all entries whose ``id`` starts with ``{db_name}_kb_``.
 from __future__ import annotations
 
 import copy
+import datetime as _dt
 import json
 import logging
+import traceback as _tb
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 
+import anthropic
+import pydantic
 import yaml
+from pydantic import BaseModel
 
 from bird_interact_agents.eval.annotation_schema import (
     AutopsyAnalysis,
+    AutopsyAnalysisOneShot,
+    AutopsyError,
+    AutopsyPattern,
+    AutopsyPatternOneShot,
     AutopsyResult,
     MissDiagnostics,
     TaskAnnotation,
@@ -39,6 +71,24 @@ if TYPE_CHECKING:
     from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
 
 logger = logging.getLogger(__name__)
+
+# Truncation suffix kept in sync with annotation_schema._cap_excerpt.
+_TRUNCATION_SUFFIX = "...[truncated]"
+
+
+def _truncate(value: str, cap: int) -> str:
+    """Hard-cap an excerpt with a marker suffix.
+
+    Mirrors ``annotation_schema._cap_excerpt`` so callers can pre-cap
+    explicitly (the AutopsyError validator also caps as a defensive
+    backstop)."""
+    if not isinstance(value, str) or len(value) <= cap:
+        return value
+    keep = cap - len(_TRUNCATION_SUFFIX)
+    if keep <= 0:
+        return _TRUNCATION_SUFFIX[:cap]
+    return value[:keep] + _TRUNCATION_SUFFIX
+
 
 def _strip_thinking_inplace(obj: object) -> None:
     """Recursively strip ThinkingBlock.thinking from a nested dict/list structure.
@@ -81,11 +131,11 @@ def _compress_trajectory_for_autopsy(trajectory: list[dict]) -> list[dict]:
             result.append(item)
     return result
 
-# ---------------------------------------------------------------------------
-# LLM output schema (local to this module — not exposed in annotation_schema)
-# ---------------------------------------------------------------------------
 
-from pydantic import BaseModel
+# ---------------------------------------------------------------------------
+# LLM output schemas (local to this module — never persisted directly;
+# mapped to annotation_schema.AutopsyAnalysis* before storage).
+# ---------------------------------------------------------------------------
 
 
 class _KeyAsk(BaseModel):
@@ -94,12 +144,8 @@ class _KeyAsk(BaseModel):
 
 
 class AutopsyLLMOutput(BaseModel):
-    """Structured output produced by the autopsy LLM call.
-
-    LLM output type only — never persisted directly; mapped to
-    ``AutopsyResult`` before storage.
-    """
-    pattern: str
+    """Structured output produced by the autopsy LLM call on a-interact runs."""
+    pattern: AutopsyPattern
     other_details: Optional[str] = None
     narrative: str
     remediation: str
@@ -109,6 +155,21 @@ class AutopsyLLMOutput(BaseModel):
     key_asks: List[_KeyAsk]
     disclosed_resolutions: List[str]
     undisclosed_resolutions: List[str]
+
+
+class AutopsyLLMOutputOneShot(BaseModel):
+    """Structured output produced by the autopsy LLM call on one-shot runs.
+
+    Drops the four ``ask_user``-shaped fields (``n_asks``, ``key_asks``,
+    ``disclosed_resolutions``, ``undisclosed_resolutions``) and constrains
+    ``pattern`` to the six one-shot-valid values.
+    """
+    pattern: AutopsyPatternOneShot
+    other_details: Optional[str] = None
+    narrative: str
+    remediation: str
+    decision_point_trajectory_index: Optional[int] = None
+    decision_point_description: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +189,7 @@ def _is_genuine_miss(cascade: "CascadeVerdict") -> bool:
 def _read_kb_text(
     slayer_storage_dir: str,
     db_name: str,
-    external_knowledge: list[int],
+    external_knowledge: list,
 ) -> str:
     """Read KB SLayer memories relevant to this task from ``memories.yaml``.
 
@@ -146,7 +207,7 @@ def _read_kb_text(
     except Exception:  # noqa: BLE001
         logger.warning("[autopsy] failed to parse %s", memories_path)
         return ""
-    allowed_ids = {f"{db_name}_kb_{n}" for n in external_knowledge}
+    allowed_ids = {f"{db_name}_kb_{n}" for n in external_knowledge if isinstance(n, int)}
     paragraphs = []
     for entry in entries:
         if isinstance(entry, dict) and entry.get("id") in allowed_ids:
@@ -156,12 +217,44 @@ def _read_kb_text(
     return "\n\n".join(paragraphs)
 
 
+_PATTERN_DEFINITIONS_A_INTERACT = """\
+- never_asked_key_question: agent never surfaced a critical clarification \
+recoverable via ask_user
+- asked_but_ignored_answer: agent asked the right question but disregarded \
+the answer
+- user_sim_misleading: user-sim gave incorrect/misleading answer
+- late_mutation_corrupted_result: correct intermediate; a LOWER/TRIM/ROUND/ \
+CAST/schema change corrupted the final output
+- wrong_join_path: wrong or missing join path, or wrong host model for encoding
+- output_schema_misread: wrong columns, wrong aggregation shape, or wrong row \
+structure
+- slayer_generation_artifact: SLayer emitted buggy SQL (integer division, \
+broken namespace) unrelated to encoding choices
+- exhausted_budget_guessing: agent used all turns on exploratory attempts \
+without converging
+- other: doesn't fit the above (describe in other_details)"""
+
+
+_PATTERN_DEFINITIONS_ONE_SHOT = """\
+- late_mutation_corrupted_result: correct intermediate; a LOWER/TRIM/ROUND/ \
+CAST/schema change corrupted the final output
+- wrong_join_path: wrong or missing join path, or wrong host model for encoding
+- output_schema_misread: wrong columns, wrong aggregation shape, or wrong row \
+structure
+- slayer_generation_artifact: SLayer emitted buggy SQL (integer division, \
+broken namespace) unrelated to encoding choices
+- exhausted_budget_guessing: agent used all turns on exploratory attempts \
+without converging
+- other: doesn't fit the above (describe in other_details)"""
+
+
 def _build_prompt(
     *,
     task_annotation: TaskAnnotation,
     trajectory: list[dict],
     kb_text: str,
     miss_diagnostics: Optional[MissDiagnostics],
+    is_one_shot: bool,
 ) -> str:
     masked_terms = [
         f"  - {mt.term} ({mt.type})"
@@ -181,10 +274,33 @@ def _build_prompt(
         [{"index": i, **item} for i, item in enumerate(compressed)],
         indent=None,
     )
+
+    if is_one_shot:
+        # One-shot benchmarks: positively framed, six-pattern menu only.
+        # No mention of the dropped patterns — naming them (even in a
+        # negative "do NOT use" clause) still encourages the LLM to
+        # latch onto the noun (Codex r1 #7).
+        context_intro = (
+            "This task is a single-turn benchmark submission. The agent "
+            "produced one final answer; there is no interactive turn "
+            "exchange and no clarification mechanism. Choose the failure "
+            "pattern from the six listed below."
+        )
+        pattern_definitions = _PATTERN_DEFINITIONS_ONE_SHOT
+    else:
+        context_intro = (
+            "This task is an interactive benchmark submission with a "
+            "user-sim component. Choose the failure pattern from the "
+            "nine listed below."
+        )
+        pattern_definitions = _PATTERN_DEFINITIONS_A_INTERACT
+
     return f"""\
 You are analyzing a failed data-analysis task. The task agent produced a \
 submission that failed every evaluation tier (genuine cascade miss). Your job \
 is to determine the root cause and suggest a remediation.
+
+{context_intro}
 
 ## Task context
 instance_id: {task_annotation.instance_id}
@@ -206,27 +322,20 @@ gold_variant_interpretations:
 {traj_json}
 
 ## Failure pattern definitions
-- never_asked_key_question: agent never surfaced a critical clarification \
-recoverable via ask_user
-- asked_but_ignored_answer: agent asked the right question but disregarded \
-the answer
-- user_sim_misleading: user-sim gave incorrect/misleading answer
-- late_mutation_corrupted_result: correct intermediate; a LOWER/TRIM/ROUND/ \
-CAST/schema change corrupted the final output
-- wrong_join_path: wrong or missing join path, or wrong host model for encoding
-- output_schema_misread: wrong columns, wrong aggregation shape, or wrong row \
-structure
-- slayer_generation_artifact: SLayer emitted buggy SQL (integer division, \
-broken namespace) unrelated to encoding choices
-- exhausted_budget_guessing: agent used all turns on exploratory attempts \
-without converging
-- other: doesn't fit the above (describe in other_details)
+{pattern_definitions}
 
 Call the `autopsy_output` tool with your analysis.
 """
 
 
-def _map_output(output: AutopsyLLMOutput) -> AutopsyResult:
+def _map_output(
+    output, is_one_shot: bool,
+) -> AutopsyResult:
+    """Map LLM-output Pydantic instance to a persisted ``AutopsyResult``.
+
+    On one-shot benchmarks the result has no user-sim component
+    (``user_sim_interaction=None``) by construction.
+    """
     decision_point = None
     if (
         output.decision_point_trajectory_index is not None
@@ -236,6 +345,22 @@ def _map_output(output: AutopsyLLMOutput) -> AutopsyResult:
             trajectory_item_index=output.decision_point_trajectory_index,
             description=output.decision_point_description,
         )
+
+    if is_one_shot:
+        assert isinstance(output, AutopsyLLMOutputOneShot)
+        analysis = AutopsyAnalysisOneShot(
+            pattern=output.pattern,
+            other_details=output.other_details,
+            narrative=output.narrative,
+            remediation=output.remediation,
+        )
+        return AutopsyResult(
+            analysis=analysis,
+            decision_point=decision_point,
+            user_sim_interaction=None,
+        )
+
+    assert isinstance(output, AutopsyLLMOutput)
     user_sim = UserSimInteraction(
         n_asks=output.n_asks,
         key_responses=[
@@ -248,19 +373,20 @@ def _map_output(output: AutopsyLLMOutput) -> AutopsyResult:
         disclosed_resolutions=list(output.disclosed_resolutions),
         undisclosed_resolutions=list(output.undisclosed_resolutions),
     )
+    analysis = AutopsyAnalysis(
+        pattern=output.pattern,
+        other_details=output.other_details,
+        narrative=output.narrative,
+        remediation=output.remediation,
+    )
     return AutopsyResult(
-        analysis=AutopsyAnalysis(
-            pattern=output.pattern,  # type: ignore[arg-type]
-            other_details=output.other_details,
-            narrative=output.narrative,
-            remediation=output.remediation,
-        ),
+        analysis=analysis,
         decision_point=decision_point,
         user_sim_interaction=user_sim,
     )
 
 
-# JSON schema for the autopsy_output tool (derived from AutopsyLLMOutput)
+# JSON schema for the autopsy_output tool (derived from AutopsyLLMOutput).
 _AUTOPSY_TOOL_SCHEMA = {
     "name": "autopsy_output",
     "description": "Report the root-cause analysis of the agent failure.",
@@ -309,6 +435,82 @@ _AUTOPSY_TOOL_SCHEMA = {
 }
 
 
+# DEV-1541: one-shot tool schema. Drops four ask_user-shaped properties
+# (n_asks, key_asks, disclosed_resolutions, undisclosed_resolutions) and
+# three of those from `required` (n_asks was never required). Pattern
+# enum is the six-value subset.
+_AUTOPSY_TOOL_SCHEMA_ONE_SHOT = {
+    "name": "autopsy_output",
+    "description": "Report the root-cause analysis of the agent failure.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "enum": [
+                    "late_mutation_corrupted_result",
+                    "wrong_join_path",
+                    "output_schema_misread",
+                    "slayer_generation_artifact",
+                    "exhausted_budget_guessing",
+                    "other",
+                ],
+            },
+            "other_details": {"type": ["string", "null"]},
+            "narrative": {"type": "string"},
+            "remediation": {"type": "string"},
+            "decision_point_trajectory_index": {"type": ["integer", "null"]},
+            "decision_point_description": {"type": ["string", "null"]},
+        },
+        "required": ["pattern", "narrative", "remediation"],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# DEV-1541: error-result construction + classification
+# ---------------------------------------------------------------------------
+
+def _looks_like_context_overflow(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return (
+        "too long" in msg
+        or "context window" in msg
+        or "context_window" in msg
+    )
+
+
+def _fqn(exc: BaseException) -> str:
+    return f"{type(exc).__module__}.{type(exc).__qualname__}"
+
+
+def _autopsy_error_result(
+    *,
+    kind: str,
+    exc: BaseException,
+    prompt: str,
+    kb_text: str,
+    trajectory: list,
+    model: str,
+) -> AutopsyResult:
+    """Build an ``AutopsyResult(error=AutopsyError(...))`` for any failure
+    path. Centralises the truncation + FQN + stats capture so every
+    exception clause produces the same shape."""
+    return AutopsyResult(
+        error=AutopsyError(
+            kind=kind,  # type: ignore[arg-type]
+            exception_class=_fqn(exc),
+            message_excerpt=_truncate(str(exc), 500),
+            traceback_excerpt=_truncate(_tb.format_exc(), 2000),
+            prompt_chars=len(prompt),
+            kb_chars=len(kb_text),
+            trajectory_items=len(trajectory),
+            model=model,
+            timestamp=_dt.datetime.now(_dt.timezone.utc).replace(microsecond=0),
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -320,14 +522,21 @@ async def run_autopsy(
     slayer_storage_dir: str,
     miss_diagnostics: Optional[MissDiagnostics],
     model: str,
-) -> Optional[AutopsyResult]:
+    is_one_shot: bool,
+) -> AutopsyResult:
     """Run an LLM autopsy on a genuine cascade miss and return the result.
 
-    Returns ``None`` if the prompt exceeds the context window or if any
-    error occurs — autopsy failures must never propagate.
-    """
-    import anthropic
+    DEV-1541: never returns ``None`` on failure. Any error during the
+    LLM call or its output parsing results in an
+    ``AutopsyResult(error=AutopsyError(...))`` carrying the failure
+    metadata (kind, FQN, message + traceback excerpts, prompt/KB/traj
+    stats). Returning ``None`` was the silent-failure bug that DEV-1541
+    fixes.
 
+    ``is_one_shot`` selects between two LLM-output schemas and tool
+    descriptors. The one-shot path drops ``ask_user``-related patterns
+    and fields entirely; ``user_sim_interaction`` resolves to ``None``.
+    """
     kb_text = _read_kb_text(
         slayer_storage_dir,
         task_annotation.selected_database,
@@ -338,53 +547,109 @@ async def run_autopsy(
         trajectory=trajectory,
         kb_text=kb_text,
         miss_diagnostics=miss_diagnostics,
+        is_one_shot=is_one_shot,
     )
+    tool_schema = (
+        _AUTOPSY_TOOL_SCHEMA_ONE_SHOT if is_one_shot else _AUTOPSY_TOOL_SCHEMA
+    )
+    schema_cls = (
+        AutopsyLLMOutputOneShot if is_one_shot else AutopsyLLMOutput
+    )
+
     try:
         client = anthropic.AsyncAnthropic()
         response = await client.messages.create(
             model=native_model_id(model),
             max_tokens=2048,
-            tools=[_AUTOPSY_TOOL_SCHEMA],
+            tools=[tool_schema],
             tool_choice={"type": "tool", "name": "autopsy_output"},
             messages=[{"role": "user", "content": prompt}],
         )
     except anthropic.BadRequestError as exc:
-        msg = str(exc).lower()
-        if "too long" in msg or "context window" in msg or "context_window" in msg:
-            logger.warning(
-                "[autopsy] context overflow on %s: trajectory has %d items, "
-                "prompt ~%d chars; api error: %s; skipping autopsy",
-                task_annotation.instance_id,
-                len(trajectory),
-                len(prompt),
-                exc,
-            )
-        else:
-            logger.error(
-                "[autopsy] BadRequestError on %s: %s",
-                task_annotation.instance_id,
-                exc,
-                exc_info=True,
-            )
-        return None
-    except Exception:  # noqa: BLE001
+        kind = "context_overflow" if _looks_like_context_overflow(exc) else "api_error"
         logger.error(
-            "[autopsy] unexpected error on %s",
-            task_annotation.instance_id,
+            "[autopsy] BadRequestError on %s (kind=%s): %s",
+            task_annotation.instance_id, kind, exc,
             exc_info=True,
         )
-        return None
+        return _autopsy_error_result(
+            kind=kind, exc=exc, prompt=prompt, kb_text=kb_text,
+            trajectory=trajectory, model=model,
+        )
+    except anthropic.APIConnectionError as exc:
+        # Codex r1 #5: must be ordered BEFORE APIError, since
+        # APIConnectionError is a sibling (not subclass) of APIStatusError
+        # in the anthropic SDK; APITimeoutError is a subclass of
+        # APIConnectionError and resolves here too.
+        logger.error(
+            "[autopsy] APIConnectionError on %s: %s",
+            task_annotation.instance_id, exc, exc_info=True,
+        )
+        return _autopsy_error_result(
+            kind="network_error", exc=exc, prompt=prompt, kb_text=kb_text,
+            trajectory=trajectory, model=model,
+        )
+    except anthropic.APIError as exc:
+        logger.error(
+            "[autopsy] APIError on %s: %s",
+            task_annotation.instance_id, exc, exc_info=True,
+        )
+        return _autopsy_error_result(
+            kind="api_error", exc=exc, prompt=prompt, kb_text=kb_text,
+            trajectory=trajectory, model=model,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[autopsy] unexpected error on %s",
+            task_annotation.instance_id, exc_info=True,
+        )
+        return _autopsy_error_result(
+            kind="unknown", exc=exc, prompt=prompt, kb_text=kb_text,
+            trajectory=trajectory, model=model,
+        )
 
     try:
         tool_use = next(
             b for b in response.content if getattr(b, "type", None) == "tool_use"
         )
-        llm_output = AutopsyLLMOutput.model_validate(tool_use.input)
-        return _map_output(llm_output)
-    except Exception:  # noqa: BLE001
+    except StopIteration as exc:
         logger.error(
-            "[autopsy] failed to parse LLM output on %s",
-            task_annotation.instance_id,
+            "[autopsy] no tool_use block in response on %s",
+            task_annotation.instance_id, exc_info=True,
+        )
+        return _autopsy_error_result(
+            kind="missing_tool_use", exc=exc, prompt=prompt, kb_text=kb_text,
+            trajectory=trajectory, model=model,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[autopsy] iterating response.content failed on %s",
+            task_annotation.instance_id, exc_info=True,
+        )
+        return _autopsy_error_result(
+            kind="unknown", exc=exc, prompt=prompt, kb_text=kb_text,
+            trajectory=trajectory, model=model,
+        )
+
+    try:
+        llm_output = schema_cls.model_validate(tool_use.input)
+        return _map_output(llm_output, is_one_shot=is_one_shot)
+    except pydantic.ValidationError as exc:
+        logger.error(
+            "[autopsy] LLM output failed schema validation on %s: %s",
+            task_annotation.instance_id, exc,
             exc_info=True,
         )
-        return None
+        return _autopsy_error_result(
+            kind="validation_error", exc=exc, prompt=prompt, kb_text=kb_text,
+            trajectory=trajectory, model=model,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[autopsy] mapping LLM output failed on %s",
+            task_annotation.instance_id, exc_info=True,
+        )
+        return _autopsy_error_result(
+            kind="unknown", exc=exc, prompt=prompt, kb_text=kb_text,
+            trajectory=trajectory, model=model,
+        )

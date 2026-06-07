@@ -48,6 +48,35 @@ from bird_interact_agents.eval.tolerant_grader import (
 )
 
 
+def _resolve_default_user_sim(
+    *,
+    benchmark: str,
+    provided: Optional[UserSimInteraction],
+    n_ask_user_calls: Optional[int],
+) -> Optional[UserSimInteraction]:
+    """DEV-1541: default-construct ``user_sim_interaction`` based on the
+    benchmark's ``one_shot`` flag.
+
+    * Explicit ``provided`` always wins.
+    * One-shot benchmarks (livesqlbench) have no user-sim → ``None``.
+    * A-interact benchmarks default to zero-asks ``UserSimInteraction``
+      (or ``n_ask_user_calls`` if known) — preserving the pre-DEV-1541
+      behaviour.
+
+    Unknown benchmark tokens are treated as a-interact (the safe default
+    for the long tail of legacy run aggregations)."""
+    if provided is not None:
+        return provided
+    from bird_interact_agents.benchmark import get_benchmark
+    try:
+        one_shot = get_benchmark(benchmark).one_shot
+    except Exception:  # noqa: BLE001 — unknown benchmark token
+        one_shot = False
+    if one_shot:
+        return None
+    return UserSimInteraction(n_asks=n_ask_user_calls or 0)
+
+
 def decode_result_json(payload: Any) -> Any:
     """Decode the JSON-string snapshots that the harness stores on the
     result row (``predicted_result_json`` / ``gold_result_json``) back into
@@ -282,10 +311,10 @@ def _build_submission_annotation(
             details=_failure_details_for(cascade, auto_primary),
         ),
         decision_point=None,
-        user_sim_interaction=(
-            user_sim_interaction
-            if user_sim_interaction is not None
-            else UserSimInteraction(n_asks=n_ask_user_calls or 0)
+        user_sim_interaction=_resolve_default_user_sim(
+            benchmark=benchmark,
+            provided=user_sim_interaction,
+            n_ask_user_calls=n_ask_user_calls,
         ),
         submitted_sql=submitted_sql,
         predicted_result=cascade.predicted_rows,
@@ -427,7 +456,11 @@ def _write_harness_confirmed_annotation(
             remediation_target="other",
         ),
         decision_point=None,
-        user_sim_interaction=user_sim_interaction or UserSimInteraction(),
+        user_sim_interaction=_resolve_default_user_sim(
+            benchmark=benchmark,
+            provided=user_sim_interaction,
+            n_ask_user_calls=n_ask_user_calls,
+        ),
         submitted_sql=submitted_sql,
         predicted_result=predicted_result,
         gold_result=gold_result,
@@ -530,8 +563,15 @@ def grade_and_write(
     )
     if autopsy_result is not None:
         ann.autopsy = autopsy_result
-        ann.decision_point = autopsy_result.decision_point
-        ann.user_sim_interaction = autopsy_result.user_sim_interaction
+        # DEV-1541: ONLY promote autopsy-side decision_point / user_sim
+        # to the top-level fields when the autopsy actually succeeded
+        # (analysis populated). On the error path the autopsy carries
+        # no analysis, no usable decision_point, and no user-sim signal —
+        # blindly overwriting would clobber the grader-computed top-level
+        # user_sim summary with None.
+        if autopsy_result.analysis is not None:
+            ann.decision_point = autopsy_result.decision_point
+            ann.user_sim_interaction = autopsy_result.user_sim_interaction
 
     out_dir = Path(rows_dir) / instance_id
     out_dir.mkdir(parents=True, exist_ok=True)

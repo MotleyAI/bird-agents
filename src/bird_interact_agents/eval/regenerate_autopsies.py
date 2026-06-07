@@ -1,0 +1,354 @@
+"""DEV-1541: backfill missing / errored autopsies on persisted submission
+annotations.
+
+Scans the per-(instance, run) annotation store
+(``runs/<benchmark>/<db>/<instance>/<run_id>.json``) for entries whose
+``evaluation.verdict == "agent_miss"`` AND whose autopsy is either
+absent or carries an ``AutopsyError``. For each work item, reloads the
+saved trajectory (preferring the ``runs/`` sidecar, falling back to the
+cloud-results attempt JSON) and re-invokes ``run_autopsy`` with the
+benchmark's ``is_one_shot`` flag. Overwrites the annotation on disk.
+
+Two failure modes are tracked separately:
+
+* ``io_errors`` — missing trajectory, unparseable annotation, or any
+  failure that prevents the autopsy from being attempted at all.
+* ``autopsy_errors`` — autopsy completed but ``run_autopsy`` returned
+  an ``AutopsyError`` (e.g. context_overflow). The annotation still
+  gets updated with the new error payload.
+
+``RegenerationReport.exit_code()`` returns nonzero only on
+``io_errors`` so a cron driver does not loop on transient LLM errors
+(Codex r1 #9).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from pathlib import Path
+from typing import Iterable, Optional
+
+from pydantic import BaseModel
+
+from bird_interact_agents.eval.annotation_schema import (
+    SubmissionAnnotation,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Data shapes
+# ---------------------------------------------------------------------------
+
+
+class WorkItem(BaseModel):
+    """One annotation that needs an autopsy re-run."""
+    model_config = {"frozen": True}
+
+    instance_id: str
+    selected_database: str
+    run_id: str
+    annotation_path: Path
+
+
+class RegenerationReport(BaseModel):
+    """Per-call summary of a ``regenerate`` invocation."""
+    model_config = {"arbitrary_types_allowed": True}
+
+    work_items: int = 0
+    regenerated: int = 0
+    autopsy_errors: int = 0
+    io_errors: int = 0
+
+    def exit_code(self) -> int:
+        """Codex r1 #9: io_errors are real failures (annotation file
+        unreadable, trajectory missing, write failed). LLM-returned
+        ``AutopsyError`` is data, not a backfill failure — the
+        annotation got updated either way."""
+        return 1 if self.io_errors > 0 else 0
+
+
+# ---------------------------------------------------------------------------
+# Scan
+# ---------------------------------------------------------------------------
+
+
+def _annotation_needs_backfill(payload: dict) -> bool:
+    """True iff this annotation is a genuine miss AND its autopsy is
+    missing or carries an error."""
+    ev = payload.get("evaluation") or {}
+    if ev.get("verdict") != "agent_miss":
+        return False
+    autopsy = payload.get("autopsy")
+    if autopsy is None:
+        return True
+    if isinstance(autopsy, dict) and autopsy.get("error") is not None:
+        return True
+    return False
+
+
+def scan_work_list(
+    *,
+    runs_root: Path,
+    benchmark: str,
+    run_id: Optional[str] = None,
+    instance_ids: Optional[Iterable[str]] = None,
+) -> list[WorkItem]:
+    """Walk ``runs_root/<benchmark>/*/*/*.json`` and return the work
+    items. The optional ``run_id`` and ``instance_ids`` filters narrow
+    the scan to a subset; both are AND-combined."""
+    inst_filter = set(instance_ids) if instance_ids else None
+    bench_root = Path(runs_root) / benchmark
+    if not bench_root.exists():
+        return []
+    items: list[WorkItem] = []
+    for ann_path in sorted(bench_root.glob("*/*/*.json")):
+        # Skip the trajectory sidecars: <run_id>.trajectory.json.
+        if ann_path.name.endswith(".trajectory.json"):
+            continue
+        # Path layout: <benchmark>/<db>/<instance>/<run_id>.json
+        try:
+            payload = json.loads(ann_path.read_text())
+        except Exception:  # noqa: BLE001
+            logger.warning("[regenerate] failed to parse %s; skipping", ann_path)
+            continue
+        if not _annotation_needs_backfill(payload):
+            continue
+        inst = payload.get("instance_id") or ann_path.parent.name
+        db = payload.get("selected_database") or ann_path.parent.parent.name
+        run = ann_path.stem  # filename without .json
+        if run_id is not None and run != run_id:
+            continue
+        if inst_filter is not None and inst not in inst_filter:
+            continue
+        items.append(WorkItem(
+            instance_id=inst,
+            selected_database=db,
+            run_id=run,
+            annotation_path=ann_path,
+        ))
+    return items
+
+
+# ---------------------------------------------------------------------------
+# Trajectory loader (sidecar → cloud-results fallback)
+# ---------------------------------------------------------------------------
+
+
+def _load_trajectory(
+    *,
+    annotation_path: Path,
+    benchmark: str,
+    selected_database: str,
+    instance_id: str,
+    run_id: str,
+    results_root: Optional[Path],
+) -> Optional[list[dict]]:
+    """Resolve the trajectory for a single work item.
+
+    Preference order:
+    1. ``<runs>/<benchmark>/<db>/<inst>/<run_id>.trajectory.json`` —
+       the DEV-1533 sidecar.
+    2. ``<results>/<benchmark>/cloud/<run_id>/rows/<inst>/attempt-1.json``
+       — the cloud-results attempt JSON.
+
+    Returns ``None`` if neither exists (counts as an IO error)."""
+    sidecar = annotation_path.with_suffix("").with_suffix(".trajectory.json")
+    # `with_suffix("").with_suffix(...)` only strips ONE suffix; the
+    # explicit path is more reliable for files like `r1.json`:
+    sidecar = annotation_path.parent / f"{annotation_path.stem}.trajectory.json"
+    if sidecar.exists():
+        try:
+            payload = json.loads(sidecar.read_text())
+            traj = payload.get("trajectory") if isinstance(payload, dict) else None
+            if isinstance(traj, list):
+                return traj
+        except Exception:  # noqa: BLE001
+            logger.warning("[regenerate] sidecar parse failed at %s", sidecar)
+    if results_root is not None:
+        fallback = (
+            Path(results_root) / benchmark / "cloud" / run_id
+            / "rows" / instance_id / "attempt-1.json"
+        )
+        if fallback.exists():
+            try:
+                payload = json.loads(fallback.read_text())
+                traj = payload.get("trajectory") if isinstance(payload, dict) else None
+                if isinstance(traj, list):
+                    return traj
+            except Exception:  # noqa: BLE001
+                logger.warning("[regenerate] fallback parse failed at %s", fallback)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Per-task autopsy re-run
+# ---------------------------------------------------------------------------
+
+
+def _resolve_slayer_storage_dir(benchmark: str, db_name: str) -> str:
+    """Resolve the per-DB SLayer OTF model dir (the source of KB
+    memories). Missing dirs degrade gracefully — ``_read_kb_text``
+    returns ``""`` when the dir is absent, so a missing path doesn't
+    crash the backfill."""
+    try:
+        from bird_interact_agents import paths
+        return str(paths.slayer_models_otf_root(benchmark=benchmark) / db_name)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+async def _regenerate_one(
+    item: WorkItem,
+    *,
+    benchmark: str,
+    model: str,
+    results_root: Optional[Path],
+) -> tuple[str, Optional[Exception]]:
+    """Re-run autopsy for one item and overwrite the annotation.
+
+    Returns a tuple ``(outcome, exc)`` where ``outcome`` is one of:
+
+    * ``"regenerated"`` — autopsy succeeded; analysis written back.
+    * ``"autopsy_error"`` — autopsy completed but returned an
+      ``AutopsyError``; the error payload was written back.
+    * ``"io_error"`` — couldn't load/save; nothing was written.
+    """
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.eval.autopsy import run_autopsy
+
+    try:
+        ann_payload = json.loads(item.annotation_path.read_text())
+        ann = SubmissionAnnotation.model_validate(ann_payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[regenerate] failed to load annotation at %s: %s",
+            item.annotation_path, exc,
+        )
+        return ("io_error", exc)
+
+    trajectory = _load_trajectory(
+        annotation_path=item.annotation_path,
+        benchmark=benchmark,
+        selected_database=item.selected_database,
+        instance_id=item.instance_id,
+        run_id=item.run_id,
+        results_root=results_root,
+    )
+    if trajectory is None:
+        logger.error(
+            "[regenerate] no trajectory available for %s/%s/%s",
+            benchmark, item.instance_id, item.run_id,
+        )
+        return ("io_error", FileNotFoundError(
+            f"no trajectory for {item.instance_id}/{item.run_id}"
+        ))
+
+    # Build the task annotation (used to seed the prompt). Falls back to
+    # an implicit one if no on-disk task annotation exists. The helper
+    # lives in grade_in_place.py (it's re-exported from there as the
+    # only public surface).
+    from bird_interact_agents.eval.grade_in_place import (
+        load_task_annotation_or_implicit,
+    )
+    try:
+        task_ann = load_task_annotation_or_implicit(
+            instance_id=item.instance_id,
+            selected_database=item.selected_database,
+            benchmark=benchmark,
+            amb_user_query=ann_payload.get("submission", {}).get(
+                "amb_user_query", ""
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[regenerate] failed to load task annotation for %s: %s",
+            item.instance_id, exc,
+        )
+        return ("io_error", exc)
+
+    miss_diagnostics = ann.evaluation.miss_diagnostics
+    slayer_dir = _resolve_slayer_storage_dir(benchmark, item.selected_database)
+    is_one_shot = get_benchmark(benchmark).one_shot
+
+    result = await run_autopsy(
+        task_annotation=task_ann,
+        trajectory=trajectory,
+        slayer_storage_dir=slayer_dir,
+        miss_diagnostics=miss_diagnostics,
+        model=model,
+        is_one_shot=is_one_shot,
+    )
+
+    ann.autopsy = result
+    # Persist; preserve indent=2 like the original writers.
+    try:
+        item.annotation_path.write_text(
+            ann.model_dump_json(indent=2, exclude_none=False) + "\n"
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[regenerate] failed to write %s: %s", item.annotation_path, exc,
+        )
+        return ("io_error", exc)
+
+    if result.error is not None:
+        return ("autopsy_error", None)
+    return ("regenerated", None)
+
+
+# ---------------------------------------------------------------------------
+# Top-level entry point
+# ---------------------------------------------------------------------------
+
+
+def regenerate(
+    *,
+    runs_root: Path,
+    benchmark: str,
+    model: str,
+    dry_run: bool = False,
+    run_id: Optional[str] = None,
+    instance_ids: Optional[Iterable[str]] = None,
+    results_root: Optional[Path] = None,
+) -> RegenerationReport:
+    """Backfill missing or errored autopsies under ``runs_root/<benchmark>/``.
+
+    ``--dry-run`` reports the work-list without instantiating the
+    Anthropic client. ``--run-id`` and ``--instance-ids`` narrow the
+    scan to a subset (AND-combined)."""
+    items = scan_work_list(
+        runs_root=runs_root, benchmark=benchmark,
+        run_id=run_id, instance_ids=instance_ids,
+    )
+    report = RegenerationReport(work_items=len(items))
+
+    if dry_run:
+        for it in items:
+            print(
+                f"[dry-run] would regenerate "
+                f"{it.instance_id} / {it.run_id} "
+                f"({it.annotation_path})"
+            )
+        return report
+
+    async def _drive() -> None:
+        for it in items:
+            outcome, _ = await _regenerate_one(
+                it,
+                benchmark=benchmark,
+                model=model,
+                results_root=results_root,
+            )
+            if outcome == "regenerated":
+                report.regenerated += 1
+            elif outcome == "autopsy_error":
+                report.autopsy_errors += 1
+            elif outcome == "io_error":
+                report.io_errors += 1
+
+    asyncio.run(_drive())
+    return report

@@ -134,8 +134,25 @@ def generate_task_annotation(
     )
 
 
-def _user_sim_interaction_from_trajectory(traj) -> UserSimInteraction:
+def _benchmark_is_one_shot(benchmark: str) -> bool:
+    """Resolve a benchmark token to its ``one_shot`` flag, treating
+    unknown tokens as a-interact (safe default for legacy aggregations)."""
+    from bird_interact_agents.benchmark import get_benchmark
+    try:
+        return get_benchmark(benchmark).one_shot
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _user_sim_interaction_from_trajectory(
+    traj, one_shot: bool = False,
+) -> Optional[UserSimInteraction]:
     """Build the ``UserSimInteraction`` summary from a trajectory.
+
+    DEV-1541: on one-shot benchmarks the trajectory carries no user-sim
+    turn exchange — return ``None`` so the persisted annotation
+    semantically reflects "no user-sim involved" rather than a
+    bogus zero-asks default.
 
     Several agent flavors (``pydantic_ai_otf_encode``,
     ``pydantic_ai_recursive``) emit ``trajectory`` as a DICT shape
@@ -151,6 +168,8 @@ def _user_sim_interaction_from_trajectory(traj) -> UserSimInteraction:
     ``UserSimInteraction()`` default. The per-step path stays the
     same for the genuine list-of-dicts case.
     """
+    if one_shot:
+        return None
     if not isinstance(traj, list):
         return UserSimInteraction()
     n_asks = 0
@@ -296,7 +315,9 @@ def generate_submission_annotation(
         evaluation=ev,
         failure_classification=_skeleton_failure_classification(cascade),
         decision_point=None,
-        user_sim_interaction=_user_sim_interaction_from_trajectory(traj),
+        user_sim_interaction=_user_sim_interaction_from_trajectory(
+            traj, one_shot=_benchmark_is_one_shot(benchmark),
+        ),
     )
 
 
