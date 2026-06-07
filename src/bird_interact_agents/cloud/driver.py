@@ -1197,11 +1197,16 @@ def resubmit(run_id: str) -> None:
                 head_address=head, args=job_args, env_vars=env_vars,
                 yaml_path=yaml_path,
             )
-        # min_attempt=next_attempt: don't count rows from previous (failed)
-        # attempts toward this retry's completion check — otherwise
-        # wait_until_done would return `done` instantly because every IID in
-        # the manifest already has a prior-attempt row.
-        wait_until_done(run_id, manifest, min_attempt=next_attempt)
+        # Pass a derived manifest scoped to `missing`: resubmit only
+        # dispatches the missing IIDs, so previously-succeeded IIDs will
+        # never get a `next_attempt` row. Comparing the per-attempt
+        # done-count against the FULL manifest length would prevent the
+        # row-count completion fallback from ever firing on a partial
+        # retry, leaving the run reliant on a single terminal-state write.
+        # min_attempt=next_attempt: don't count failed prior-attempt rows
+        # toward this retry's completion.
+        retry_manifest = {**manifest, "instance_ids": missing}
+        wait_until_done(run_id, retry_manifest, min_attempt=next_attempt)
         fetch(run_id)
     finally:
         h.teardown(reason="resubmit-finally")

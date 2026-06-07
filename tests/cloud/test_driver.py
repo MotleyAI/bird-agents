@@ -185,6 +185,54 @@ def test_wait_until_done_detects_stall(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "resubmit" in result.hint.lower()
 
 
+def test_wait_until_done_partial_retry_completes_via_row_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: on a partial retry, only the `missing` IIDs are
+    dispatched, so previously-succeeded IIDs never receive a `next_attempt`
+    row. Resubmit must pass a manifest scoped to `missing` so the row-count
+    completion check (`done_count >= total`) can fire — otherwise the run
+    would hang on the terminal-state write only (no row-count fallback)."""
+    mocks = _patch_collaborators(monkeypatch)
+    now = [1_000_000.0]
+    mocks["gcs"].read_status.return_value = {
+        "ray_job_id": "raysubmit_attempt2",
+        "last_heartbeat_ts": None,
+        "rows_done": 0,
+        "rows_total": 2,
+        "terminal_state": None,
+    }
+    # 2 missing iids; attempt-2 rows land progressively.
+    rows_seq = [
+        {"db_a_2": [1], "db_a_3": [1]},
+        {"db_a_2": [1, 2], "db_a_3": [1]},
+        {"db_a_2": [1, 2], "db_a_3": [1, 2]},
+    ]
+    idx = {"n": 0}
+
+    def fake_list_attempts(_rid):
+        v = rows_seq[min(idx["n"], len(rows_seq) - 1)]
+        idx["n"] += 1
+        return v
+
+    mocks["gcs"].list_attempts.side_effect = fake_list_attempts
+    mocks["cluster"].head_is_alive.return_value = True
+    monkeypatch.setattr(driver.time, "time", lambda: now[0])
+    monkeypatch.setattr(driver.time, "sleep", lambda _s: None)
+
+    # Manifest carries ONLY the missing iids (resubmit's derived manifest).
+    retry_manifest = {
+        "run_id": RUN_ID,
+        "instance_ids": ["db_a_2", "db_a_3"],
+    }
+    result = driver.wait_until_done(
+        RUN_ID, retry_manifest, poll_interval_s=0.001, min_attempt=2,
+    )
+    assert result.terminal_state == "done"
+    # Both missing iids got an attempt-2 row after exactly 3 polls.
+    assert idx["n"] == 3, f"expected 3 polls, got {idx['n']}"
+
+
 def test_wait_until_done_min_attempt_ignores_prior_attempt_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -704,10 +752,10 @@ def test_resubmit_resets_heartbeat_before_submit_job(
     mocks["cluster"].submit_job.side_effect = lambda **_: (
         call_order.append("submit_job") or "raysubmit_attempt2"
     )
-    wait_calls: list[dict] = []
+    wait_calls: list[tuple[dict, dict]] = []
 
-    def fake_wait(_rid, _manifest, **kwargs):
-        wait_calls.append(kwargs)
+    def fake_wait(_rid, manifest, **kwargs):
+        wait_calls.append((manifest, kwargs))
         return None
 
     monkeypatch.setattr(driver, "wait_until_done", fake_wait)
@@ -731,8 +779,17 @@ def test_resubmit_resets_heartbeat_before_submit_job(
     )
     # Resubmit must pass min_attempt=next_attempt so wait_until_done doesn't
     # count prior-attempt rows toward this retry's completion.
-    assert wait_calls and wait_calls[-1].get("min_attempt") == 2, (
-        f"expected min_attempt=2 in wait_until_done kwargs, got {wait_calls}"
+    assert wait_calls, "expected wait_until_done to be called"
+    wait_manifest, wait_kwargs = wait_calls[-1]
+    assert wait_kwargs.get("min_attempt") == 2, (
+        f"expected min_attempt=2 in wait_until_done kwargs, got {wait_kwargs}"
+    )
+    # Resubmit must scope the wait manifest to `missing` IIDs — previously-
+    # succeeded IIDs won't get a next_attempt row, so leaving the full
+    # manifest would prevent the row-count completion fallback from firing.
+    assert wait_manifest["instance_ids"] == ["db_a_2", "db_a_3"], (
+        f"expected wait_until_done's manifest to carry only the missing "
+        f"iids, got {wait_manifest['instance_ids']}"
     )
 
 
