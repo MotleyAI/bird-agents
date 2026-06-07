@@ -67,6 +67,92 @@ def test_select_tools_rejects_a_interact_and_others():
             m._select_tools(bad)
 
 
+# ---------------------------------------------------------------------------
+# DEV-1534 Codex post-merge: create_model / edit_model PreToolUse hook
+# normalizes backing-query text-equality filters before SLayer persists
+# them on the model.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_normalize_write_filters_hook_rewrites_create_model_query():
+    """A `create_model` call whose backing `query` carries a string-equality
+    filter must have that filter wrapped in `lower(trim(col)) = '<lower>'`
+    before SLayer sees it — otherwise the persisted model has
+    case-sensitive backing filters that no later query-time
+    normalization can repair."""
+    from bird_interact_agents.agents.claude_sdk_otf.agent import (
+        _normalize_write_tool_filters_hook,
+    )
+
+    input_data = {
+        "tool_name": "mcp__slayer__create_model",
+        "tool_input": {
+            "name": "premium_orders",
+            "query": {
+                "source_model": "orders",
+                "filters": ["category == 'Gadgets'"],
+            },
+        },
+    }
+    out = await _normalize_write_tool_filters_hook(input_data, None, None)
+    updated = out["hookSpecificOutput"]["updatedInput"]
+    assert updated["query"]["filters"] == ["lower(trim(category)) == 'gadgets'"]
+    # Input dict must not be mutated (deep-copy contract).
+    assert input_data["tool_input"]["query"]["filters"] == [
+        "category == 'Gadgets'"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_normalize_write_filters_hook_rewrites_edit_model_source_queries():
+    """`edit_model.source_queries` is a list of stages each with its own
+    `filters` — every stage's filters must be normalized."""
+    from bird_interact_agents.agents.claude_sdk_otf.agent import (
+        _normalize_write_tool_filters_hook,
+    )
+
+    input_data = {
+        "tool_name": "mcp__slayer__edit_model",
+        "tool_input": {
+            "model_name": "orders",
+            "source_queries": [
+                {"source_model": "orders", "filters": ["status == 'OPEN'"]},
+                {"source_model": "products", "filters": ["category == 'Premium'"]},
+            ],
+        },
+    }
+    out = await _normalize_write_tool_filters_hook(input_data, None, None)
+    updated = out["hookSpecificOutput"]["updatedInput"]
+    assert updated["source_queries"][0]["filters"] == [
+        "lower(trim(status)) == 'open'"
+    ]
+    assert updated["source_queries"][1]["filters"] == [
+        "lower(trim(category)) == 'premium'"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_normalize_write_filters_hook_skips_non_write_tools():
+    """Tools other than create_model / edit_model must pass through
+    unchanged — the hook returns `{}` so the SDK falls through to the
+    next hook (or the default allow-and-forward)."""
+    from bird_interact_agents.agents.claude_sdk_otf.agent import (
+        _normalize_write_tool_filters_hook,
+    )
+
+    for unrelated in (
+        "mcp__slayer__inspect_model",
+        "mcp__bird-interact-tools__query",
+        "mcp__slayer__save_memory",
+        "",
+    ):
+        out = await _normalize_write_tool_filters_hook(
+            {"tool_name": unrelated, "tool_input": {"x": 1}}, None, None,
+        )
+        assert out == {}
+
+
 def test_slayer_tool_names_include_write_tools():
     """The OTF agent must be able to WRITE models, unlike the read-only
     claude_sdk slayer mode. After DEV-1534 Fix C, ``query`` and

@@ -677,11 +677,17 @@ async def test_run_task_registers_three_guards_plus_turn_budget(
     assert "PostToolUse" in hooks
 
     pre_matchers = hooks["PreToolUse"]
-    # Exactly one PreToolUse matcher, scoped to submit_query, with two hooks:
-    # [0] ask-user gate, [1] query-before-submit gate.
-    assert len(pre_matchers) == 1
-    assert pre_matchers[0].matcher == "mcp__bird-interact-tools__submit_query"
-    assert len(pre_matchers[0].hooks) == 2
+    # Two PreToolUse matchers now: [0] submit_query (ask + query gates),
+    # [1] create_model|edit_model (normalize-write-filters hook, Codex
+    # post-merge).
+    assert len(pre_matchers) == 2
+    pre_by_matcher = {pm.matcher: pm for pm in pre_matchers}
+    submit_pm = pre_by_matcher["mcp__bird-interact-tools__submit_query"]
+    assert len(submit_pm.hooks) == 2  # ask-user gate, then query-before-submit
+    write_pm = pre_by_matcher[
+        "mcp__slayer__create_model|mcp__slayer__edit_model"
+    ]
+    assert len(write_pm.hooks) == 1
 
     post_matchers = hooks["PostToolUse"]
     # Exactly four PostToolUse matchers: ask-counter (matcher == ask_user),

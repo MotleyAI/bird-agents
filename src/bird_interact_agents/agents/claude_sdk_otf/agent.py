@@ -70,6 +70,9 @@ from bird_interact_agents.eval.grade_in_place import (
 )
 from bird_interact_agents.eval.tolerant_grader import grade_submission, make_executor
 from bird_interact_agents.slayer_otf import resolve_otf_task_storage_dir
+from bird_interact_agents.slayer_pipeline.filter_normalization import (
+    normalize_tool_filters,
+)
 from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -169,6 +172,55 @@ SLAYER_MCP_TOOLS = [
 
 def _slayer_tool_names() -> list[str]:
     return [f"mcp__slayer__{t}" for t in SLAYER_MCP_TOOLS]
+
+
+# Full MCP tool names whose payloads carry backing-query filter strings
+# that we need to normalize (lower(trim(col)) wrap) before SLayer
+# persists them on a model. Without this hook, the agent's `create_model`
+# / `edit_model` calls baked raw text-equality filters into the stored
+# entity definition — and the DEV-1534 Fix C `query` / `query_nested`
+# wrappers can never repair filters hidden inside the model's own
+# backing SQL (Codex post-merge catch; the pydantic_ai_otf_encode
+# adapter already runs the same `normalize_tool_filters` call on every
+# write).
+_WRITE_TOOLS_NEEDING_NORMALIZATION = (
+    "mcp__slayer__create_model",
+    "mcp__slayer__edit_model",
+)
+_NORMALIZE_WRITE_FILTERS_MATCHER = "|".join(_WRITE_TOOLS_NEEDING_NORMALIZATION)
+
+
+async def _normalize_write_tool_filters_hook(input_data, tool_use_id, context):
+    """PreToolUse hook: rewrite ``create_model`` / ``edit_model`` payloads
+    so their backing-query ``filters`` strings are wrapped in
+    ``lower(trim(col)) = '<lower>'`` before SLayer persists them.
+
+    Returns the SDK's ``updatedInput`` directive on the
+    ``hookSpecificOutput`` envelope — the Claude Agent SDK applies it to
+    the tool invocation (see ``PreToolUseHookSpecificOutput`` in
+    ``claude_agent_sdk.types``). When normalization is a no-op (no
+    in-scope filters), the hook still returns the deep-copy
+    ``normalize_tool_filters`` produced — harmless and keeps the hook
+    side-effect-free with respect to the original input dict.
+    """
+    tool_name = input_data.get("tool_name") or ""
+    if tool_name not in _WRITE_TOOLS_NEEDING_NORMALIZATION:
+        return {}
+    # Strip the `mcp__slayer__` prefix so `normalize_tool_filters` sees
+    # the bare SLayer tool name it expects (`create_model` / `edit_model`).
+    bare = tool_name.split("__", 2)[-1]
+    tool_input = input_data.get("tool_input") or {}
+    if not isinstance(tool_input, dict):
+        return {}
+    updated = normalize_tool_filters(bare, tool_input)
+    if not isinstance(updated, dict):
+        return {}
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "updatedInput": updated,
+        }
+    }
 
 
 # Encode-then-query is turn-expensive (one turn per KB column created/tested),
@@ -479,6 +531,15 @@ class ClaudeSDKOtfAgent:
                         HookMatcher(
                             matcher="mcp__bird-interact-tools__submit_query",
                             hooks=[pre_query_gate],
+                        ),
+                        # Codex post-merge: normalize backing-query filters
+                        # baked into create_model / edit_model payloads so
+                        # the persisted model definition matches the
+                        # filter-normalization contract the query path
+                        # already enforces.
+                        HookMatcher(
+                            matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
+                            hooks=[_normalize_write_tool_filters_hook],
                         ),
                     ],
                     "PostToolUse": [
