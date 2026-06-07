@@ -47,6 +47,13 @@ from bird_interact_agents.eval.grade_in_place import (
 # ---------------------------------------------------------------------------
 
 
+def _default_ray_job_id() -> str:
+    """Read the Ray Jobs API submission id (`raysubmit_*`) from the runtime
+    env Ray sets inside the job. Falls back to `"unknown"` for local runs
+    (no Ray Jobs runtime, e.g. `--local-only` or direct invocation)."""
+    return os.environ.get("RAY_JOB_SUBMISSION_ID", "unknown")
+
+
 def default_gcs_client():
     return _gcs.default_gcs_client()
 
@@ -1599,7 +1606,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--run-id", required=True)
     p.add_argument("--attempt", required=True, type=int)
-    p.add_argument("--ray-job-id", default="unknown")
+    p.add_argument("--ray-job-id", default=_default_ray_job_id())
     p.add_argument("--framework", required=True)
     p.add_argument("--query-mode", required=True)
     p.add_argument("--mode", required=True)

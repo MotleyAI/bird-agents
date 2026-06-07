@@ -661,19 +661,26 @@ def submit(args) -> str:
             args, run_id, attempt=1,
             benchmark_data_prefix=benchmark_data_prefix,
         )
-        ray_job_id = cluster.submit_job(
-            head_address=head, args=job_args, env_vars=env_vars,
-            yaml_path=yaml_path,
-        )
-        submit_succeeded = True
+        # Write status BEFORE submit_job so the in-job HeartbeatWriter — which
+        # starts asynchronously inside the Ray job — cannot have its first real
+        # heartbeat clobbered by our None reset. ray_job_id is unknown at this
+        # point; HeartbeatWriter writes the real value when it ticks.
+        # last_heartbeat_ts stays None so wait_until_done's stall check skips
+        # until the in-job writer takes over (long postgres dataset loads must
+        # not trip HEARTBEAT_STALL_SECONDS).
         gcs.write_status(run_id, {
-            "ray_job_id": ray_job_id,
-            "last_heartbeat_ts": time.time(),
+            "ray_job_id": None,
+            "last_heartbeat_ts": None,
             "rows_done": 0,
             "rows_total": len(args.instance_ids),
             "terminal_state": None,
             "attempt": 1,
         })
+        cluster.submit_job(
+            head_address=head, args=job_args, env_vars=env_vars,
+            yaml_path=yaml_path,
+        )
+        submit_succeeded = True
         if not args.detach:
             wait_until_done(run_id, manifest)
             fetch(run_id)
@@ -835,20 +842,23 @@ def submit_annotator(args) -> str:
         job_args = _build_annotator_job_args(
             args, run_id, benchmark_data_prefix=benchmark_data_prefix,
         )
-        ray_job_id = cluster.submit_job(
-            head_address=head, args=job_args, env_vars=env_vars,
-            yaml_path=yaml_path,
-            ray_app_path=_ANNOTATOR_RAY_APP_PATH,
-        )
-        submit_succeeded = True
+        # Write status BEFORE submit_job (see note in `submit`): the in-job
+        # HeartbeatWriter races against this reset; writing first guarantees
+        # the real heartbeat is not clobbered.
         gcs.write_status(run_id, {
-            "ray_job_id": ray_job_id,
-            "last_heartbeat_ts": time.time(),
+            "ray_job_id": None,
+            "last_heartbeat_ts": None,
             "rows_done": 0,
             "rows_total": len(args.instance_ids),
             "terminal_state": None,
             "attempt": 1,
         })
+        cluster.submit_job(
+            head_address=head, args=job_args, env_vars=env_vars,
+            yaml_path=yaml_path,
+            ray_app_path=_ANNOTATOR_RAY_APP_PATH,
+        )
+        submit_succeeded = True
         if not args.detach:
             wait_until_done(run_id, manifest)
             fetch(run_id)
@@ -868,7 +878,8 @@ HEARTBEAT_STALL_SECONDS = 300.0
 
 def wait_until_done(run_id: str, manifest: dict, *,
                      poll_interval_s: float = 10.0,
-                     no_progress_deadline_s: float = 3600.0) -> WaitResult:
+                     no_progress_deadline_s: float = 3600.0,
+                     min_attempt: int = 1) -> WaitResult:
     total = len(manifest.get("instance_ids", []))
     # `no_progress_deadline_s` is a NO-PROGRESS deadline, not a wall-clock
     # cap: it resets every time a new row lands. A wedged job (workers never
@@ -876,6 +887,17 @@ def wait_until_done(run_id: str, manifest: dict, *,
     # `max_runtime_hours` can be many hours — keeps resetting it and runs to
     # completion. (The VM self-delete timer + the headless check below bound
     # the absolute runtime.)
+    #
+    # `min_attempt` filters the completion + progress checks to rows whose
+    # attempt number is >= min_attempt. Without this, resubmit() would return
+    # `done` immediately because the manifest's instance_ids all already have
+    # rows from the failed prior attempts. Defaults to 1 (counts everything),
+    # preserving the original submit/annotate semantics.
+    def _done_count(atts: dict[str, list[int]]) -> int:
+        if min_attempt <= 1:
+            return len(atts)
+        return sum(1 for ns in atts.values() if any(n >= min_attempt for n in ns))
+
     last_progress = -1
     last_progress_ts = time.time()
     while True:
@@ -884,11 +906,15 @@ def wait_until_done(run_id: str, manifest: dict, *,
         terminal = status.get("terminal_state")
         if terminal in ("done", "error"):
             return WaitResult(terminal_state=terminal)
-        if len(attempts) >= total and total > 0:
+        done_count = _done_count(attempts)
+        if done_count >= total and total > 0:
             return WaitResult(terminal_state="done")
-        # Progress = number of iids with at least one attempt row in GCS.
-        if len(attempts) > last_progress:
-            last_progress = len(attempts)
+        # Progress = number of iids with at least one row at or after the
+        # current attempt. Counting only current-attempt rows means the
+        # no-progress deadline stays meaningful on a resubmit (it'd be
+        # instantly maxed out if we counted prior-attempt rows here too).
+        if done_count > last_progress:
+            last_progress = done_count
             last_progress_ts = time.time()
         last = status.get("last_heartbeat_ts")
         if last is not None and (time.time() - float(last)) > HEARTBEAT_STALL_SECONDS:
@@ -1140,6 +1166,18 @@ def resubmit(run_id: str) -> None:
                 "resubmit: manifest has no 'framework' field (pre-DEV-1517); "
                 "defaulting to legacy API-key path"
             )
+        # Reset status BEFORE submit_job so the new attempt's in-job
+        # HeartbeatWriter cannot have its first real heartbeat clobbered by
+        # this reset. Mirrors submit/annotate. ray_job_id is unknown at this
+        # point; the in-job HeartbeatWriter writes the real value.
+        gcs.write_status(run_id, {
+            "ray_job_id": None,
+            "last_heartbeat_ts": None,
+            "rows_done": 0,
+            "rows_total": len(manifest.get("instance_ids", [])),
+            "terminal_state": None,
+            "attempt": next_attempt,
+        })
         if _framework == "annotator":
             env_vars = read_api_keys_from_local_env(
                 manifest["agent_model"], "",
@@ -1165,7 +1203,16 @@ def resubmit(run_id: str) -> None:
                 head_address=head, args=job_args, env_vars=env_vars,
                 yaml_path=yaml_path,
             )
-        wait_until_done(run_id, manifest)
+        # Pass a derived manifest scoped to `missing`: resubmit only
+        # dispatches the missing IIDs, so previously-succeeded IIDs will
+        # never get a `next_attempt` row. Comparing the per-attempt
+        # done-count against the FULL manifest length would prevent the
+        # row-count completion fallback from ever firing on a partial
+        # retry, leaving the run reliant on a single terminal-state write.
+        # min_attempt=next_attempt: don't count failed prior-attempt rows
+        # toward this retry's completion.
+        retry_manifest = {**manifest, "instance_ids": missing}
+        wait_until_done(run_id, retry_manifest, min_attempt=next_attempt)
         fetch(run_id)
     finally:
         h.teardown(reason="resubmit-finally")

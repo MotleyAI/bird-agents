@@ -185,6 +185,165 @@ def test_wait_until_done_detects_stall(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "resubmit" in result.hint.lower()
 
 
+def test_wait_until_done_partial_retry_completes_via_row_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: on a partial retry, only the `missing` IIDs are
+    dispatched, so previously-succeeded IIDs never receive a `next_attempt`
+    row. Resubmit must pass a manifest scoped to `missing` so the row-count
+    completion check (`done_count >= total`) can fire — otherwise the run
+    would hang on the terminal-state write only (no row-count fallback)."""
+    mocks = _patch_collaborators(monkeypatch)
+    now = [1_000_000.0]
+    mocks["gcs"].read_status.return_value = {
+        "ray_job_id": "raysubmit_attempt2",
+        "last_heartbeat_ts": None,
+        "rows_done": 0,
+        "rows_total": 2,
+        "terminal_state": None,
+    }
+    # 2 missing iids; attempt-2 rows land progressively.
+    rows_seq = [
+        {"db_a_2": [1], "db_a_3": [1]},
+        {"db_a_2": [1, 2], "db_a_3": [1]},
+        {"db_a_2": [1, 2], "db_a_3": [1, 2]},
+    ]
+    idx = {"n": 0}
+
+    def fake_list_attempts(_rid):
+        v = rows_seq[min(idx["n"], len(rows_seq) - 1)]
+        idx["n"] += 1
+        return v
+
+    mocks["gcs"].list_attempts.side_effect = fake_list_attempts
+    mocks["cluster"].head_is_alive.return_value = True
+    monkeypatch.setattr(driver.time, "time", lambda: now[0])
+    monkeypatch.setattr(driver.time, "sleep", lambda _s: None)
+
+    # Manifest carries ONLY the missing iids (resubmit's derived manifest).
+    retry_manifest = {
+        "run_id": RUN_ID,
+        "instance_ids": ["db_a_2", "db_a_3"],
+    }
+    result = driver.wait_until_done(
+        RUN_ID, retry_manifest, poll_interval_s=0.001, min_attempt=2,
+    )
+    assert result.terminal_state == "done"
+    # Both missing iids got an attempt-2 row after exactly 3 polls.
+    assert idx["n"] == 3, f"expected 3 polls, got {idx['n']}"
+
+
+def test_wait_until_done_min_attempt_ignores_prior_attempt_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: on a resubmit, every iid in the manifest already has a
+    row from the prior (failed) attempt, so the default `len(attempts) >=
+    total` check would return `done` immediately without waiting for the
+    new attempt. wait_until_done(..., min_attempt=N) must only count iids
+    that have at least one row with attempt >= N."""
+    mocks = _patch_collaborators(monkeypatch)
+    now = [1_000_000.0]
+    mocks["gcs"].read_status.return_value = {
+        "ray_job_id": "raysubmit_attempt2",
+        "last_heartbeat_ts": None,
+        "rows_done": 0,
+        "rows_total": 3,
+        "terminal_state": None,
+    }
+    # All 3 iids have a prior-attempt row; the new attempt 2 lands rows for
+    # b and c (one per poll) so the run reaches done — but never via the
+    # spurious "all iids already have rows" path.
+    rows_seq = [
+        {"db_a_1": [1], "db_a_2": [1], "db_a_3": [1]},
+        {"db_a_1": [1], "db_a_2": [1, 2], "db_a_3": [1]},
+        {"db_a_1": [1], "db_a_2": [1, 2], "db_a_3": [1, 2]},
+        {"db_a_1": [1, 2], "db_a_2": [1, 2], "db_a_3": [1, 2]},
+    ]
+    idx = {"n": 0}
+
+    def fake_list_attempts(_rid):
+        v = rows_seq[min(idx["n"], len(rows_seq) - 1)]
+        idx["n"] += 1
+        return v
+
+    mocks["gcs"].list_attempts.side_effect = fake_list_attempts
+    mocks["cluster"].head_is_alive.return_value = True
+    monkeypatch.setattr(driver.time, "time", lambda: now[0])
+    monkeypatch.setattr(driver.time, "sleep", lambda _s: None)
+
+    manifest = {
+        "run_id": RUN_ID,
+        "instance_ids": ["db_a_1", "db_a_2", "db_a_3"],
+    }
+    result = driver.wait_until_done(
+        RUN_ID, manifest, poll_interval_s=0.001, min_attempt=2,
+    )
+    assert result.terminal_state == "done"
+    assert idx["n"] >= 4, (
+        f"wait_until_done must wait until ALL 3 iids have an attempt-2 row "
+        f"(saw {idx['n']} polls; would have terminated at 1 if min_attempt "
+        f"was ignored)"
+    )
+
+
+def test_wait_until_done_skips_stall_when_heartbeat_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: before the in-job HeartbeatWriter has written its first
+    row, status.last_heartbeat_ts is None (intentional — see driver.submit/
+    annotate). The heartbeat-stall check must NOT fire in that window, even
+    after lots of wall time elapses. The no-progress deadline is still the
+    backstop. Originally bitten by livesqlbench-large (1.2 GB pg_dumps load
+    on workers) where the driver pre-stamped time.time() and stalled the
+    watcher at the 5-min threshold before any real heartbeat arrived."""
+    mocks = _patch_collaborators(monkeypatch)
+    now = [1_000_000.0]
+    # last_heartbeat_ts intentionally None (matches driver.submit/annotate).
+    mocks["gcs"].read_status.return_value = {
+        "ray_job_id": "raysubmit_abc",
+        "last_heartbeat_ts": None,
+        "rows_done": 0,
+        "rows_total": 5,
+        "terminal_state": None,
+    }
+    # One row lands between polls so the no-progress deadline keeps resetting
+    # (we want to prove the stall check is skipped, not the no-progress one).
+    rows = [
+        {},
+        {"db_a_1": [1]},
+        {"db_a_1": [1], "db_a_2": [1]},
+        {"db_a_1": [1], "db_a_2": [1], "db_a_3": [1]},
+        {"db_a_1": [1], "db_a_2": [1], "db_a_3": [1], "db_a_4": [1]},
+        {"db_a_1": [1], "db_a_2": [1], "db_a_3": [1], "db_a_4": [1], "db_a_5": [1]},
+    ]
+    idx = {"n": 0}
+
+    def fake_list_attempts(_rid):
+        v = rows[min(idx["n"], len(rows) - 1)]
+        idx["n"] += 1
+        return v
+
+    mocks["gcs"].list_attempts.side_effect = fake_list_attempts
+    mocks["cluster"].head_is_alive.return_value = True
+    # Advance clock far past HEARTBEAT_STALL_SECONDS (300s) on each poll —
+    # the only thing keeping this run alive is `last is None` skipping the
+    # stall check.
+    monkeypatch.setattr(driver.time, "time", lambda: now[0])
+
+    def fake_sleep(_s):
+        now[0] += 600.0  # 10 min per poll, > HEARTBEAT_STALL_SECONDS
+
+    monkeypatch.setattr(driver.time, "sleep", fake_sleep)
+
+    manifest = {
+        "run_id": RUN_ID,
+        "instance_ids": ["db_a_1", "db_a_2", "db_a_3", "db_a_4", "db_a_5"],
+    }
+    result = driver.wait_until_done(RUN_ID, manifest, poll_interval_s=0.001)
+    assert result.terminal_state == "done"
+    assert result.hint == ""
+
+
 def test_wait_until_done_no_progress_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
     """A fresh heartbeat with terminal_state=None forever AND zero rows (e.g.
     workers never autoscale, actor sits PENDING) must NOT poll until the VM
@@ -544,6 +703,94 @@ def test_build_manifest_propagates_all_knobs() -> None:
     assert ri.get("worker_sa")
     assert ri.get("project")
     assert ri.get("region")
+
+
+def test_resubmit_resets_heartbeat_before_submit_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: resubmit must clear last_heartbeat_ts *before* calling
+    cluster.submit_job (so the in-job HeartbeatWriter — which races against
+    this reset — cannot have its first real heartbeat clobbered). The
+    previous attempt's timestamp (especially after a heartbeat-stall) is
+    still in GCS; without this reset the new attempt's watcher reads that
+    stale value and falsely returns `stalled` again. ray_job_id is None in
+    this pre-submit write (the in-job HeartbeatWriter writes the real id)."""
+    mocks = _patch_collaborators(monkeypatch)
+    mocks["cluster"].render_from_manifest.return_value = Path("/tmp/x.yaml")
+    mocks["cluster"].head_address.return_value = "http://localhost:8265"
+    mocks["cluster"].submit_job.return_value = "raysubmit_attempt2"
+
+    mocks["gcs"].read_manifest.return_value = {
+        "run_id": RUN_ID,
+        "framework": "pydantic_ai",
+        "query_mode": "raw",
+        "mode": "c-interact",
+        "agent_model": "anthropic/claude-haiku-4-5-20251001",
+        "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
+        "instance_ids": ["db_a_1", "db_a_2", "db_a_3"],
+        "patience": 3,
+        "strict": False,
+        "use_audited_gold_sql": False,
+        "max_depth": 3,
+        "prompt_cache": True,
+        "render_inputs": {"workers": 1, "actors_per_worker": 2},
+    }
+    mocks["gcs"].list_attempts.return_value = {
+        "db_a_1": [1], "db_a_2": [1], "db_a_3": [1],
+    }
+    # One done, two missing → resubmit proceeds with 2 missing.
+    mocks["gcs"].read_row.side_effect = lambda rid, iid, n: (
+        {"error": None} if iid == "db_a_1" else {"error": "boom"}
+    )
+    # Record the call order so we can assert write_status happens before
+    # submit_job (closes the race against the in-job HeartbeatWriter).
+    call_order: list[str] = []
+    writes: list[tuple[str, dict]] = []
+    mocks["gcs"].write_status.side_effect = lambda rid, payload, **_: (
+        writes.append((rid, payload)) or call_order.append("write_status")
+    )
+    mocks["cluster"].submit_job.side_effect = lambda **_: (
+        call_order.append("submit_job") or "raysubmit_attempt2"
+    )
+    wait_calls: list[tuple[dict, dict]] = []
+
+    def fake_wait(_rid, manifest, **kwargs):
+        wait_calls.append((manifest, kwargs))
+        return None
+
+    monkeypatch.setattr(driver, "wait_until_done", fake_wait)
+    monkeypatch.setattr(driver, "fetch", lambda *a, **k: {})
+
+    driver.resubmit(RUN_ID)
+
+    reset = [p for _, p in writes if p.get("attempt") == 2]
+    assert reset, f"expected an attempt=2 status write, got {writes}"
+    payload = reset[-1]
+    assert payload["last_heartbeat_ts"] is None
+    assert payload["rows_done"] == 0
+    assert payload["rows_total"] == 3
+    assert payload["terminal_state"] is None
+    assert payload["ray_job_id"] is None  # in-job writer fills the real id
+    # The write_status reset must precede cluster.submit_job — otherwise the
+    # in-job HeartbeatWriter (which starts asynchronously inside the Ray job)
+    # can land its first real heartbeat before our reset overwrites it.
+    assert call_order.index("write_status") < call_order.index("submit_job"), (
+        f"write_status must precede submit_job; got {call_order}"
+    )
+    # Resubmit must pass min_attempt=next_attempt so wait_until_done doesn't
+    # count prior-attempt rows toward this retry's completion.
+    assert wait_calls, "expected wait_until_done to be called"
+    wait_manifest, wait_kwargs = wait_calls[-1]
+    assert wait_kwargs.get("min_attempt") == 2, (
+        f"expected min_attempt=2 in wait_until_done kwargs, got {wait_kwargs}"
+    )
+    # Resubmit must scope the wait manifest to `missing` IIDs — previously-
+    # succeeded IIDs won't get a next_attempt row, so leaving the full
+    # manifest would prevent the row-count completion fallback from firing.
+    assert wait_manifest["instance_ids"] == ["db_a_2", "db_a_3"], (
+        f"expected wait_until_done's manifest to carry only the missing "
+        f"iids, got {wait_manifest['instance_ids']}"
+    )
 
 
 def test_resubmit_passes_yaml_path_to_submit_job(
