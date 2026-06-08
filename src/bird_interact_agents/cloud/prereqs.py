@@ -244,14 +244,22 @@ def check_api_keys(
     *, agent_model: str, user_sim_model: str, query_mode: str = "raw",
     framework: str = "", no_subscription_auth: bool = False,
 ) -> None:
-    # DEV-1517: claude_sdk* + CLAUDE_CODE_OAUTH_TOKEN present → OAuth path.
-    # DEV-1530: no_subscription_auth=True forces the legacy API-key path.
-    if (
-        _is_claude_sdk_framework(framework)
-        and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
-        and not no_subscription_auth
-    ):
-        token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
+    # claude_sdk* + subscription auth opted-in → OAuth path. Missing or
+    # malformed token = hard failure (no silent fall-back to API key —
+    # see `driver.read_api_keys_from_local_env` for the analogous guard).
+    if _is_claude_sdk_framework(framework) and not no_subscription_auth:
+        token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+        if not token:
+            raise PrereqError(
+                "--subscription-auth was selected but CLAUDE_CODE_OAUTH_TOKEN "
+                "is not set in the submitter's env.",
+                remediation=(
+                    "source the env file that exports it "
+                    "(e.g. `set -a; source .env.ubuntu; set +a`), run "
+                    "`claude setup-token`, or pass `--no-subscription-auth` "
+                    "to use the ANTHROPIC_API_KEY path."
+                ),
+            )
         if not token.startswith("sk-ant-oat01-"):
             raise PrereqError(
                 "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai OAuth token "

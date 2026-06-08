@@ -154,16 +154,28 @@ def read_api_keys_from_local_env(
 ) -> dict[str, str]:
     import os
 
-    # DEV-1517: claude_sdk* + CLAUDE_CODE_OAUTH_TOKEN present → OAuth path.
-    # Ship the token and rename the user-sim Anthropic key so the SDK cannot
-    # see ANTHROPIC_API_KEY and is forced to use the OAuth token.
-    # DEV-1530: no_subscription_auth=True forces the legacy API-key path.
-    if (
-        prereqs._is_claude_sdk_framework(framework)
-        and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
-        and not no_subscription_auth
-    ):
-        token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
+    # claude_sdk* + subscription auth opted-in (no_subscription_auth=False)
+    # → OAuth path. Ship the token and rename the user-sim Anthropic key so
+    # the SDK cannot see ANTHROPIC_API_KEY and is forced to use the OAuth
+    # token.
+    # `--subscription-auth` is REQUIRED at the CLI (BooleanOptionalAction
+    # with no default); when the operator opts in but the token is absent
+    # or malformed, fail loudly here instead of silently falling through
+    # to the legacy API-key path (which burns API credits — the failure
+    # mode that bit DEV-1535).
+    if prereqs._is_claude_sdk_framework(framework) and not no_subscription_auth:
+        token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+        if not token:
+            raise PrereqError(
+                "--subscription-auth was selected but CLAUDE_CODE_OAUTH_TOKEN "
+                "is not set in the submitter's env.",
+                remediation=(
+                    "source the env file that exports it "
+                    "(e.g. `set -a; source .env.ubuntu; set +a`), run "
+                    "`claude setup-token`, or pass `--no-subscription-auth` "
+                    "to use the ANTHROPIC_API_KEY path."
+                ),
+            )
         if not token.startswith("sk-ant-oat01-"):
             raise PrereqError(
                 "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai OAuth token "

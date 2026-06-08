@@ -92,10 +92,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--slayer-storage-root", default="/data/slayer_models",
     )
     sp_submit.add_argument(
-        "--no-subscription-auth", action="store_true", default=False,
+        "--subscription-auth", action=argparse.BooleanOptionalAction,
+        required=True, dest="subscription_auth",
         help=(
-            "Force the legacy API-key auth path even when "
-            "CLAUDE_CODE_OAUTH_TOKEN is present in the environment."
+            "REQUIRED. `--subscription-auth` uses the Claude.ai OAuth "
+            "subscription (CLAUDE_CODE_OAUTH_TOKEN must be set in the "
+            "submitter's env, with the sk-ant-oat01- prefix); submit fails "
+            "if the token is absent or malformed. `--no-subscription-auth` "
+            "uses the legacy API-key path (ANTHROPIC_API_KEY). No default — "
+            "an explicit choice is required to prevent a silent fall-back "
+            "to the API-key path burning credits when the operator meant "
+            "to hit the subscription."
         ),
     )
 
@@ -121,10 +128,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_annotate.add_argument("--detach", action="store_true")
     sp_annotate.add_argument("--allow-dirty", action="store_true")
     sp_annotate.add_argument(
-        "--no-subscription-auth", action="store_true", default=False,
+        "--subscription-auth", action=argparse.BooleanOptionalAction,
+        required=True, dest="subscription_auth",
         help=(
-            "Force the legacy API-key auth path even when "
-            "CLAUDE_CODE_OAUTH_TOKEN is present in the environment."
+            "REQUIRED. Same shape as `submit`: `--subscription-auth` requires "
+            "a valid CLAUDE_CODE_OAUTH_TOKEN in the env, "
+            "`--no-subscription-auth` uses ANTHROPIC_API_KEY. No default."
         ),
     )
 
@@ -143,6 +152,34 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_build.add_argument("--force", action="store_true")
 
     ns = p.parse_args(argv)
+
+    # `--subscription-auth` / `--no-subscription-auth` is required on submit
+    # AND annotate (above). Mirror the bool into the legacy `no_subscription_auth`
+    # attribute that the driver/prereqs/manifest plumbing still reads — keeps the
+    # rename surface limited to the CLI surface. If `--subscription-auth` was
+    # chosen, validate the OAuth token at parse time so the operator sees the
+    # failure before the cluster comes up. (The driver re-validates as
+    # defence-in-depth; see `read_api_keys_from_local_env`.)
+    if ns.subcommand in ("submit", "annotate"):
+        import os
+        ns.no_subscription_auth = not ns.subscription_auth
+        if ns.subscription_auth:
+            token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+            if not token:
+                p.error(
+                    "--subscription-auth requires CLAUDE_CODE_OAUTH_TOKEN to "
+                    "be set in the submitter's env. Either source the env "
+                    "file that exports it (e.g. `set -a; source .env.ubuntu; "
+                    "set +a`), run `claude setup-token`, or pass "
+                    "`--no-subscription-auth` to use the ANTHROPIC_API_KEY "
+                    "path."
+                )
+            if not token.startswith("sk-ant-oat01-"):
+                p.error(
+                    "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai "
+                    "OAuth token (expected sk-ant-oat01- prefix). Re-run "
+                    "`claude setup-token`."
+                )
 
     if ns.subcommand == "annotate":
         if ns.detach and ns.allow_dirty:

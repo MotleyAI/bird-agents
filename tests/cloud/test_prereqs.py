@@ -565,10 +565,28 @@ def test_claude_sdk_oauth_slayer_still_requires_openai_key(
     assert "OPENAI_API_KEY" in str(exc.value)
 
 
-def test_claude_sdk_only_api_key_legacy_path(
+def test_claude_sdk_no_oauth_raises_when_subscription_auth_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """claude_sdk + no OAuth token + ANTHROPIC_API_KEY → legacy path, passes."""
+    """DEV-1535: claude_sdk with the default subscription auth path
+    (no_subscription_auth=False) but no OAuth token → PrereqError. The
+    silent-fall-through-to-legacy gap is gone; explicit opt-out
+    (no_subscription_auth=True) is required to use the API-key path."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    with pytest.raises(prereqs.PrereqError, match="CLAUDE_CODE_OAUTH_TOKEN"):
+        prereqs.check_api_keys(
+            agent_model="anthropic/claude-sonnet-4-5",
+            user_sim_model="anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+        )
+
+
+def test_claude_sdk_no_oauth_legacy_path_when_opted_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """claude_sdk + no_subscription_auth=True → legacy API-key path,
+    no OAuth token required."""
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
     # Must not raise.
@@ -576,6 +594,7 @@ def test_claude_sdk_only_api_key_legacy_path(
         agent_model="anthropic/claude-sonnet-4-5",
         user_sim_model="anthropic/claude-haiku-4-5-20251001",
         framework="claude_sdk",
+        no_subscription_auth=True,
     )
 
 

@@ -7,9 +7,31 @@ combinations are rejected.
 
 from __future__ import annotations
 
+import argparse
+
 import pytest
 
 from bird_interact_agents.cloud import cli  # noqa: E402
+
+
+def _parse(argv: list[str]) -> argparse.Namespace:
+    """`cli.parse_args` wrapper that auto-adds `--no-subscription-auth` for
+    `submit` / `annotate` argvs when neither explicit form is already present.
+
+    `--subscription-auth` / `--no-subscription-auth` is REQUIRED at the CLI
+    (DEV-1535: no default, to prevent silent fall-back to the API-key path).
+    The bulk of the parse-time tests below don't care which auth path was
+    chosen — they exercise other flags / validations — so the wrapper picks
+    the API-key path by default (no env dependency in CI). The dedicated
+    DEV-1535 tests further down toggle the flag deliberately.
+    """
+    has_auth = bool(argv) and any(
+        a in ("--subscription-auth", "--no-subscription-auth") for a in argv
+    )
+    needs_auth = bool(argv) and argv[0] in ("submit", "annotate")
+    if needs_auth and not has_auth:
+        argv = [*argv, "--no-subscription-auth"]
+    return cli.parse_args(argv)
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +58,7 @@ def _lsb_argv(extra: list[str]) -> list[str]:
 
 
 def test_livesqlbench_one_shot_accepted():
-    ns = cli.parse_args(
+    ns = _parse(
         _lsb_argv(["--mode", "one-shot"])
     )
     assert ns.dataset == "livesqlbench-base-lite-sqlite"
@@ -46,11 +68,11 @@ def test_livesqlbench_one_shot_accepted():
 def test_livesqlbench_rejects_unsupported_mode():
     # a-interact is not in livesqlbench's supported modes → gate rejects.
     with pytest.raises(SystemExit):
-        cli.parse_args(_lsb_argv(["--mode", "a-interact"]))
+        _parse(_lsb_argv(["--mode", "a-interact"]))
 
 
 def test_dataset_hyphen_alias_normalized_to_canonical():
-    ns = cli.parse_args(
+    ns = _parse(
         [
             "submit",
             "--dataset", "mini-interact",
@@ -69,7 +91,7 @@ def test_dataset_is_required():
     silently running mini-interact when --mode/--instance-ids are consistent
     with both benchmarks."""
     with pytest.raises(SystemExit):
-        cli.parse_args(
+        _parse(
             [
                 "submit",
                 "--framework", "claude_sdk", "--query-mode", "raw",
@@ -82,7 +104,7 @@ def test_dataset_is_required():
 
 @pytest.mark.parametrize("mode", ["a-interact", "oracle"])
 def test_mode_values_accepted(mode: str) -> None:
-    ns = cli.parse_args(
+    ns = _parse(
         [
             "submit",
             "--dataset", "mini-interact",
@@ -99,7 +121,7 @@ def test_mode_values_accepted(mode: str) -> None:
 
 def test_unknown_mode_rejected() -> None:
     with pytest.raises(SystemExit):
-        cli.parse_args(
+        _parse(
             [
                 "submit",
                 "--dataset", "mini-interact",
@@ -118,7 +140,7 @@ def test_unknown_mode_rejected() -> None:
 
 
 def test_pass_through_flags_parse() -> None:
-    ns = cli.parse_args(
+    ns = _parse(
         [
             "submit",
             "--dataset", "mini-interact",
@@ -158,7 +180,7 @@ def test_default_patience_is_500() -> None:
     """DEV-1478 follow-up: bird-interact-cloud default patience flipped
     from 3 → 500. Patience 3 was producing apparent OTF regressions
     that were actually just early-termination, not encoder failures."""
-    ns = cli.parse_args(
+    ns = _parse(
         [
             "submit",
             "--dataset", "mini-interact",
@@ -178,7 +200,7 @@ def test_default_use_audited_gold_sql_is_true() -> None:
     against the original un-audited gold is unsound — the un-audited
     rows include KB-described predicates the agent has no way to
     ground."""
-    ns = cli.parse_args(
+    ns = _parse(
         [
             "submit",
             "--dataset", "mini-interact",
@@ -198,7 +220,7 @@ def test_no_use_audited_gold_sql_opt_out() -> None:
     annotation guard is decoupled from `--use-audited-gold-sql` (see
     `test_require_annotation_decoupled_from_use_audited_gold_sql`), so
     the fixture id needs `--no-require-annotation` too."""
-    ns = cli.parse_args(
+    ns = _parse(
         [
             "submit",
             "--dataset", "mini-interact",
@@ -219,7 +241,7 @@ def test_require_annotation_default_on() -> None:
     the mini-interact data file and has no annotation, so the parser
     must reject."""
     with pytest.raises(SystemExit):
-        cli.parse_args(
+        _parse(
             [
                 "submit",
                 "--dataset", "mini-interact",
@@ -238,7 +260,7 @@ def test_require_annotation_decoupled_from_use_audited_gold_sql() -> None:
     judgment, masked-term anchors) regardless of whether the audited-gold
     overlay is applied."""
     with pytest.raises(SystemExit):
-        cli.parse_args(
+        _parse(
             [
                 "submit",
                 "--dataset", "mini-interact",
@@ -255,7 +277,7 @@ def test_require_annotation_decoupled_from_use_audited_gold_sql() -> None:
 def test_require_annotation_opt_out_accepts_unannotated_id() -> None:
     """`--no-require-annotation` is the bypass — accept any id for smoke
     runs without committing an annotation first."""
-    ns = cli.parse_args(
+    ns = _parse(
         [
             "submit",
             "--dataset", "mini-interact",
@@ -330,7 +352,7 @@ def test_require_annotation_default_on_for_livesqlbench(
     _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
 
     with pytest.raises(SystemExit):
-        cli.parse_args(_lsb_ann_argv())
+        _parse(_lsb_ann_argv())
 
 
 def test_require_annotation_can_be_disabled_for_livesqlbench(
@@ -341,7 +363,7 @@ def test_require_annotation_can_be_disabled_for_livesqlbench(
     _stub_empty_annotations_root(tmp_path, monkeypatch)
     _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
 
-    ns = cli.parse_args(_lsb_ann_argv(["--no-require-annotation"]))
+    ns = _parse(_lsb_ann_argv(["--no-require-annotation"]))
     assert ns.dataset == "livesqlbench-base-lite-sqlite"
     assert ns.require_annotation is False
     assert ns.use_audited_gold_sql is True  # default-on stays on
@@ -361,13 +383,13 @@ def test_require_annotation_passes_for_livesqlbench_when_file_present(
     monkeypatch.setattr(_paths, "annotations_root", lambda: annotations_root)
     _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
 
-    ns = cli.parse_args(_lsb_ann_argv())
+    ns = _parse(_lsb_ann_argv())
     assert ns.dataset == "livesqlbench-base-lite-sqlite"
     assert ns.instance_ids == ["museum_7"]
 
 
 def test_prompt_cache_default_on() -> None:
-    ns = cli.parse_args(
+    ns = _parse(
         [
             "submit",
             "--dataset", "mini-interact",
@@ -425,11 +447,11 @@ def test_slayer_pre_encoded_rejected() -> None:
     """pre-encoded + query-mode=slayer is always rejected — on-the-fly is
     the only valid setup for slayer mode."""
     with pytest.raises(SystemExit):
-        cli.parse_args(_slayer_argv(mode="a-interact"))
+        _parse(_slayer_argv(mode="a-interact"))
 
 
 def test_slayer_on_the_fly_recursive_accepted() -> None:
-    ns = cli.parse_args(_slayer_argv(
+    ns = _parse(_slayer_argv(
         framework="claude_sdk", mode="a-interact",
         slayer_setup="on-the-fly",
     ))
@@ -437,7 +459,7 @@ def test_slayer_on_the_fly_recursive_accepted() -> None:
 
 
 def test_slayer_on_the_fly_otf_encode_accepted() -> None:
-    ns = cli.parse_args(_slayer_argv(
+    ns = _parse(_slayer_argv(
         framework="claude_sdk", mode="a-interact",
         slayer_setup="on-the-fly",
     ))
@@ -446,7 +468,7 @@ def test_slayer_on_the_fly_otf_encode_accepted() -> None:
 
 
 def test_slayer_storage_root_override_parsed() -> None:
-    ns = cli.parse_args(_slayer_argv(
+    ns = _parse(_slayer_argv(
         slayer_setup="on-the-fly", mode="a-interact",
         slayer_storage_root="/data/custom_models",
     ))
@@ -456,7 +478,7 @@ def test_slayer_storage_root_override_parsed() -> None:
 def test_on_the_fly_accepted_any_framework() -> None:
     """on-the-fly + any supported framework + a-interact is accepted —
     framework-specific validation was removed in DEV-1525."""
-    ns = cli.parse_args(_slayer_argv(
+    ns = _parse(_slayer_argv(
         framework="claude_sdk", mode="a-interact", slayer_setup="on-the-fly",
     ))
     assert ns.slayer_setup == "on-the-fly"
@@ -466,7 +488,7 @@ def test_otf_encode_requires_on_the_fly() -> None:
     """pydantic_ai_otf_encode is on-the-fly-only; pre-encoded (default) must
     be rejected at submit."""
     with pytest.raises(SystemExit):
-        cli.parse_args(_slayer_argv(
+        _parse(_slayer_argv(
             framework="claude_sdk", mode="a-interact",
         ))
 
@@ -503,7 +525,7 @@ def _ainteract_argv(**over) -> list[str]:
 
 
 def test_cloud_ainteract_with_mini_interact_a_interact_on_the_fly_accepted():
-    ns = cli.parse_args(_ainteract_argv())
+    ns = _parse(_ainteract_argv())
     assert ns.framework == "claude_sdk"
     assert ns.dataset == "mini-interact"
     assert ns.mode == "a-interact"
@@ -512,13 +534,13 @@ def test_cloud_ainteract_with_mini_interact_a_interact_on_the_fly_accepted():
 
 def test_cloud_ainteract_with_pre_encoded_rejected():
     with pytest.raises(SystemExit):
-        cli.parse_args(_ainteract_argv(slayer_setup="pre-encoded"))
+        _parse(_ainteract_argv(slayer_setup="pre-encoded"))
 
 
 def test_cloud_ainteract_with_livesqlbench_rejected():
     """Dataset×framework gate: ainteract is bound to mini_interact."""
     with pytest.raises(SystemExit):
-        cli.parse_args(_ainteract_argv(
+        _parse(_ainteract_argv(
             dataset="livesqlbench-base-lite-sqlite",
         ))
 
@@ -526,7 +548,7 @@ def test_cloud_ainteract_with_livesqlbench_rejected():
 def test_cloud_ainteract_one_shot_livesqlbench_accepted():
     """one-shot + livesqlbench is accepted — framework-specific validation
     was removed in DEV-1525, and livesqlbench supports one-shot mode."""
-    ns = cli.parse_args(_ainteract_argv(
+    ns = _parse(_ainteract_argv(
         mode="one-shot", dataset="livesqlbench-base-lite-sqlite",
     ))
     assert ns.mode == "one-shot"
@@ -537,7 +559,7 @@ def test_cloud_claude_sdk_otf_with_mini_interact_oracle_rejected():
     pass `_validate_dataset_mode` (mini_interact supports oracle) — the new
     `_validate_framework_dataset_mode` is the only gate that rejects it."""
     with pytest.raises(SystemExit):
-        cli.parse_args([
+        _parse([
             "submit",
             "--framework", "claude_sdk_otf",
             "--query-mode", "slayer",
@@ -552,7 +574,7 @@ def test_cloud_claude_sdk_otf_with_mini_interact_oracle_rejected():
 def test_cloud_ainteract_with_livesqlbench_oracle_rejected():
     """Symmetric oracle case for the new flavor."""
     with pytest.raises(SystemExit):
-        cli.parse_args([
+        _parse([
             "submit",
             "--framework", "claude_sdk_otf_ainteract",
             "--query-mode", "slayer",
@@ -566,7 +588,7 @@ def test_cloud_ainteract_with_livesqlbench_oracle_rejected():
 
 def test_detach_and_allow_dirty_mutually_exclusive() -> None:
     with pytest.raises(SystemExit):
-        cli.parse_args(
+        _parse(
             [
                 "submit",
                 "--dataset", "mini-interact",
@@ -588,7 +610,7 @@ def test_detach_and_allow_dirty_mutually_exclusive() -> None:
 
 def test_empty_instance_ids_string_rejected() -> None:
     with pytest.raises(SystemExit):
-        cli.parse_args(
+        _parse(
             [
                 "submit",
                 "--dataset", "mini-interact",
@@ -605,7 +627,7 @@ def test_empty_instance_ids_file_rejected(tmp_path) -> None:
     empty = tmp_path / "empty.txt"
     empty.write_text("\n  \n")  # whitespace only
     with pytest.raises(SystemExit):
-        cli.parse_args(
+        _parse(
             [
                 "submit",
                 "--dataset", "mini-interact",
@@ -689,11 +711,11 @@ def test_subcommand_registered(sub: str) -> None:
     # All sub-commands at least parse to a known namespace. `fetch` / `kill`
     # / `resubmit` take a run-id positional; `list` / `build` are flagless.
     if sub == "list":
-        ns = cli.parse_args(["list"])
+        ns = _parse(["list"])
     elif sub == "build":
-        ns = cli.parse_args(["build"])
+        ns = _parse(["build"])
     elif sub == "submit":
-        ns = cli.parse_args(
+        ns = _parse(
             [
                 "submit",
                 "--dataset", "mini-interact",
@@ -706,12 +728,14 @@ def test_subcommand_registered(sub: str) -> None:
             ]
         )
     else:
-        ns = cli.parse_args([sub, "some-run-id"])
+        ns = _parse([sub, "some-run-id"])
     assert ns.subcommand == sub
 
 
 # ---------------------------------------------------------------------------
-# DEV-1530 — --no-subscription-auth flag on submit and annotate.
+# DEV-1535 — --subscription-auth is REQUIRED on submit + annotate; the silent
+# fall-back to the API-key path (the failure mode that burned credits and
+# turned 20 tasks into eval_failed mid-run) is gone.
 # ---------------------------------------------------------------------------
 
 
@@ -739,25 +763,60 @@ def _minimal_annotate_argv(extra: list[str] | None = None) -> list[str]:
     ]
 
 
-def test_no_subscription_auth_flag_submit() -> None:
-    """--no-subscription-auth on submit sets no_subscription_auth=True."""
+def test_subscription_auth_required_on_submit() -> None:
+    """Omitting both `--subscription-auth` and `--no-subscription-auth` on
+    submit is rejected at parse time — no default."""
+    with pytest.raises(SystemExit):
+        # Bypass the `_parse` wrapper that would auto-inject the flag.
+        cli.parse_args(_minimal_submit_argv())
+
+
+def test_subscription_auth_required_on_annotate() -> None:
+    """Same required-arg shape for annotate."""
+    with pytest.raises(SystemExit):
+        cli.parse_args(_minimal_annotate_argv())
+
+
+def test_no_subscription_auth_submit_sets_legacy_path() -> None:
+    """`--no-subscription-auth` on submit chooses the legacy API-key path."""
     ns = cli.parse_args(_minimal_submit_argv(["--no-subscription-auth"]))
+    assert ns.subscription_auth is False
     assert ns.no_subscription_auth is True
 
 
-def test_no_subscription_auth_default_false_submit() -> None:
-    """Omitting --no-subscription-auth on submit defaults to False."""
-    ns = cli.parse_args(_minimal_submit_argv())
+def test_subscription_auth_submit_with_valid_token(monkeypatch) -> None:
+    """`--subscription-auth` with a valid-prefix OAuth token in the env
+    parses to subscription_auth=True / no_subscription_auth=False."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-fake-token")
+    ns = cli.parse_args(_minimal_submit_argv(["--subscription-auth"]))
+    assert ns.subscription_auth is True
     assert ns.no_subscription_auth is False
 
 
-def test_no_subscription_auth_flag_annotate() -> None:
-    """--no-subscription-auth on annotate sets no_subscription_auth=True."""
+def test_subscription_auth_submit_without_token_rejected(monkeypatch) -> None:
+    """`--subscription-auth` without CLAUDE_CODE_OAUTH_TOKEN must fail at
+    parse — the exact silent-fall-back gap DEV-1535 closes."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    with pytest.raises(SystemExit):
+        cli.parse_args(_minimal_submit_argv(["--subscription-auth"]))
+
+
+def test_subscription_auth_submit_with_bad_prefix_rejected(monkeypatch) -> None:
+    """A malformed token (wrong prefix) is rejected too — caught at parse
+    time before the cluster warms up."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-api03-not-an-oat")
+    with pytest.raises(SystemExit):
+        cli.parse_args(_minimal_submit_argv(["--subscription-auth"]))
+
+
+def test_no_subscription_auth_annotate_sets_legacy_path() -> None:
     ns = cli.parse_args(_minimal_annotate_argv(["--no-subscription-auth"]))
+    assert ns.subscription_auth is False
     assert ns.no_subscription_auth is True
 
 
-def test_no_subscription_auth_default_false_annotate() -> None:
-    """Omitting --no-subscription-auth on annotate defaults to False."""
-    ns = cli.parse_args(_minimal_annotate_argv())
-    assert ns.no_subscription_auth is False
+def test_subscription_auth_annotate_without_token_rejected(monkeypatch) -> None:
+    """Annotate enforces the same token requirement as submit."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    with pytest.raises(SystemExit):
+        cli.parse_args(_minimal_annotate_argv(["--subscription-auth"]))
