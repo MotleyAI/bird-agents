@@ -48,14 +48,19 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=True,
     )
     sp_submit.add_argument(
-        "--require-audited-gold", action=argparse.BooleanOptionalAction,
+        "--require-annotation", action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            "When --use-audited-gold-sql is on, fail at submit time if any "
-            "passed instance_id lacks an audited-gold entry (audit_status "
-            "missing-row / missing-file). Default on — prevents silent "
-            "fall-back to the un-audited gold. Pass --no-require-audited-gold "
-            "to allow the fallback."
+            "Fail at submit time if any passed instance_id lacks a task "
+            "annotation file at "
+            "<annotations_root>/<benchmark>/<db>/<iid>.task.json. Default on "
+            "— the annotation is the authoritative source for grading "
+            "(gold_variants, evaluator_prompt, masked_terms, "
+            "original_gold_is_correct); without it the harness silently "
+            "loses access to alternate-reading grading, the LLM judge for "
+            "insufficient tasks, and the audited-gold overlay decision. "
+            "Pass --no-require-annotation for smoke tests on un-annotated "
+            "ids."
         ),
     )
     sp_submit.add_argument("--max-depth", type=int, default=3)
@@ -197,34 +202,30 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 "--instance-ids resolved to an empty list "
                 "(no ids parsed from `--instance-ids` or `--instance-ids-file`)"
             )
-        # DEV-1478 follow-up: when `use_audited_gold_sql` is on AND the
-        # default `require_audited_gold` guard is on, fail at submit if any
-        # passed instance_id has no audited-gold row. Default ON because
-        # silently falling back to the un-audited gold mid-cloud-run is a
-        # foot-gun: the cluster comes up, encodes (10+ min), and only THEN
-        # surfaces the missing-audit via a warning in the actor log. Fail
-        # before bringing up the cluster instead.
-        # DEV-1510: this guard now fires for BOTH benchmarks. The per-
-        # benchmark `audited_gold_layout` on the descriptor selects the
-        # on-disk shape (per_db / single_file); `missing_audited_gold_ids`
-        # dispatches on the kwarg so both benchmarks get the same
-        # silent-fallback protection.
-        if ns.use_audited_gold_sql and ns.require_audited_gold:
-            from bird_interact_agents.cloud._audited_gold_check import (
-                missing_audited_gold_ids,
+        # DEV-1515 follow-up: require every passed instance_id to have a
+        # task annotation file. The annotation is the authoritative source
+        # for grading (gold_variants, evaluator_prompt, masked_terms,
+        # original_gold_is_correct). Default ON because a missing annotation
+        # silently degrades grading mid-cloud-run: no alternate-reading
+        # match, no LLM judge for `insufficient` tasks, no audited-gold
+        # overlay decision. Fail at submit, before the 10+ min cluster
+        # warm-up. Decoupled from `--use-audited-gold-sql` because the
+        # annotation is needed for grading regardless of overlay use.
+        if ns.require_annotation:
+            from bird_interact_agents.cloud._annotation_check import (
+                missing_annotation_ids,
             )
-            missing = missing_audited_gold_ids(
+            missing = missing_annotation_ids(
                 ns.instance_ids,
                 benchmark=get_benchmark(ns.dataset),
             )
             if missing:
                 p.error(
-                    "the following instance_ids have no audited-gold entry "
-                    "(audit_status missing-row / missing-file): "
-                    f"{', '.join(missing)}. Either remove them, pass "
-                    "--no-require-audited-gold to allow the harness fallback "
-                    "to the original gold, or pass --no-use-audited-gold-sql "
-                    "to evaluate against the original gold for all tasks."
+                    "the following instance_ids have no task annotation "
+                    "(annotations/<benchmark>/<db>/<iid>.task.json absent): "
+                    f"{', '.join(missing)}. Either remove them, annotate "
+                    "them first (`bird-interact-cloud annotate`), or pass "
+                    "--no-require-annotation to bypass for smoke runs."
                 )
 
     return ns

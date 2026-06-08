@@ -18,11 +18,10 @@ from bird_interact_agents.cloud import cli  # noqa: E402
 
 
 def _lsb_argv(extra: list[str]) -> list[str]:
-    # DEV-1510: the audited-gold guard now fires for livesqlbench too;
-    # fake `alien_1` has no audit row in CI checkouts, so default-skip
-    # the guard here. The DEV-1510-specific tests (further down) test
-    # the guard's livesqlbench behaviour with `--no-require-audited-gold`
-    # toggled deliberately.
+    # The annotation guard fires for livesqlbench too; fake `alien_1`
+    # has no annotation in CI checkouts, so default-skip the guard
+    # here. The annotation-presence tests further down toggle
+    # `--no-require-annotation` deliberately.
     return [
         "submit",
         "--framework", "claude_sdk",
@@ -31,7 +30,7 @@ def _lsb_argv(extra: list[str]) -> list[str]:
         "--instance-ids", "alien_1",
         "--slayer-setup", "on-the-fly",
         "--dataset", "livesqlbench-base-lite-sqlite",
-        "--no-require-audited-gold",
+        "--no-require-annotation",
         *extra,
     ]
 
@@ -59,7 +58,7 @@ def test_dataset_hyphen_alias_normalized_to_canonical():
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1", "--mode", "a-interact",
             "--dataset", "mini-interact",  # hyphen alias
-            "--no-require-audited-gold",
+            "--no-require-annotation",
         ]
     )
     assert ns.dataset == "mini-interact"  # normalized to canonical
@@ -76,7 +75,7 @@ def test_dataset_is_required():
                 "--framework", "claude_sdk", "--query-mode", "raw",
                 "--agent-model", "anthropic/claude-sonnet-4-5",
                 "--instance-ids", "db_a_1", "--mode", "a-interact",
-                "--no-require-audited-gold",
+                "--no-require-annotation",
             ]
         )
 
@@ -92,7 +91,7 @@ def test_mode_values_accepted(mode: str) -> None:
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
             "--mode", mode,
-            "--no-require-audited-gold",
+            "--no-require-annotation",
         ]
     )
     assert ns.mode == mode
@@ -129,7 +128,7 @@ def test_pass_through_flags_parse() -> None:
             "--instance-ids", "db_a_1,db_a_2,db_a_3",
             "--mode", "a-interact",
             "--use-audited-gold-sql",
-            "--no-require-audited-gold",  # fake ids, skip the audit-gold guard
+            "--no-require-annotation",  # fake ids, skip the audit-gold guard
             "--max-depth", "5",
             "--no-prompt-cache",
             "--workers", "8",
@@ -142,7 +141,7 @@ def test_pass_through_flags_parse() -> None:
         ]
     )
     assert ns.use_audited_gold_sql is True
-    assert ns.require_audited_gold is False
+    assert ns.require_annotation is False
     assert ns.max_depth == 5
     assert ns.prompt_cache is False
     assert ns.workers == 8
@@ -168,7 +167,7 @@ def test_default_patience_is_500() -> None:
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
             "--mode", "a-interact",
-            "--no-require-audited-gold",
+            "--no-require-annotation",
         ]
     )
     assert ns.patience == 500
@@ -188,14 +187,17 @@ def test_default_use_audited_gold_sql_is_true() -> None:
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
             "--mode", "a-interact",
-            "--no-require-audited-gold",
+            "--no-require-annotation",
         ]
     )
     assert ns.use_audited_gold_sql is True
 
 
 def test_no_use_audited_gold_sql_opt_out() -> None:
-    """The BooleanOptionalAction emits a paired `--no-` form."""
+    """The BooleanOptionalAction emits a paired `--no-` form. The
+    annotation guard is decoupled from `--use-audited-gold-sql` (see
+    `test_require_annotation_decoupled_from_use_audited_gold_sql`), so
+    the fixture id needs `--no-require-annotation` too."""
     ns = cli.parse_args(
         [
             "submit",
@@ -206,15 +208,16 @@ def test_no_use_audited_gold_sql_opt_out() -> None:
             "--instance-ids", "db_a_1",
             "--mode", "a-interact",
             "--no-use-audited-gold-sql",
+            "--no-require-annotation",
         ]
     )
     assert ns.use_audited_gold_sql is False
 
 
-def test_require_audited_gold_default_on() -> None:
-    """When --use-audited-gold-sql is on (default), the parser also
-    requires every instance_id to have an audited-gold entry; the
-    `db_a_1` fixture id has no entry, so the parser must reject."""
+def test_require_annotation_default_on() -> None:
+    """The annotation guard is default-on. Fixture id `db_a_1` is not in
+    the mini-interact data file and has no annotation, so the parser
+    must reject."""
     with pytest.raises(SystemExit):
         cli.parse_args(
             [
@@ -229,9 +232,29 @@ def test_require_audited_gold_default_on() -> None:
         )
 
 
-def test_require_audited_gold_disabled_when_use_audited_gold_off() -> None:
-    """If the user opts out of audited gold entirely, the
-    require-audited-gold guard is moot — accept any id."""
+def test_require_annotation_decoupled_from_use_audited_gold_sql() -> None:
+    """`--no-use-audited-gold-sql` no longer disables the annotation guard.
+    Annotations are needed for grading (evaluator_prompt, novel-reading
+    judgment, masked-term anchors) regardless of whether the audited-gold
+    overlay is applied."""
+    with pytest.raises(SystemExit):
+        cli.parse_args(
+            [
+                "submit",
+                "--dataset", "mini-interact",
+                "--framework", "claude_sdk",
+                "--query-mode", "raw",
+                "--agent-model", "anthropic/claude-sonnet-4-5",
+                "--instance-ids", "db_a_1",
+                "--mode", "a-interact",
+                "--no-use-audited-gold-sql",
+            ]
+        )
+
+
+def test_require_annotation_opt_out_accepts_unannotated_id() -> None:
+    """`--no-require-annotation` is the bypass — accept any id for smoke
+    runs without committing an annotation first."""
     ns = cli.parse_args(
         [
             "submit",
@@ -242,38 +265,38 @@ def test_require_audited_gold_disabled_when_use_audited_gold_off() -> None:
             "--instance-ids", "db_a_1",
             "--mode", "a-interact",
             "--no-use-audited-gold-sql",
+            "--no-require-annotation",
         ]
     )
     assert ns.use_audited_gold_sql is False
+    assert ns.require_annotation is False
     assert ns.instance_ids == ["db_a_1"]
 
 
 # ---------------------------------------------------------------------------
-# DEV-1510: the `require_audited_gold` guard ALSO fires for livesqlbench now
-# that the benchmark has its own audited-gold sidecar
-# (`audited_gold/livesqlbench_audited.jsonl`). Pre-fix, cli.py skipped the
-# guard with `not get_benchmark(ns.dataset).gold_required` — the safety net
-# was disabled for the only gold_required benchmark, so a livesqlbench submit
-# could ship with NO audited rows and silently fall back to original gold.
+# The annotation guard fires for livesqlbench too (same code path as
+# mini-interact; the only delta is the benchmark argument and the
+# annotations sub-tree). Pre-DEV-1515 the equivalent audited-gold check
+# also flipped to per-benchmark dispatch in DEV-1510; the annotation
+# check inherits the same symmetry — these tests pin that contract.
 # ---------------------------------------------------------------------------
 
 
-def _lsb_audit_argv(extra: list[str] | None = None) -> list[str]:
-    """Like `_lsb_argv`, but with `museum_7` (the locked DEV-1510 audit
-    subject), `--mode one-shot`, and `--require-audited-gold` forced back ON
-    (overrides `_lsb_argv`'s default `--no-require-audited-gold`) so the argv
-    reaches the audited-gold guard."""
+def _lsb_ann_argv(extra: list[str] | None = None) -> list[str]:
+    """Like `_lsb_argv`, but with `museum_7`, `--mode one-shot`, and
+    `--require-annotation` forced back ON (overrides `_lsb_argv`'s default
+    `--no-require-annotation`) so the argv reaches the annotation guard."""
     return _lsb_argv([
         "--mode", "one-shot",
         "--instance-ids", "museum_7",
-        "--require-audited-gold",
+        "--require-annotation",
         *(extra or []),
     ])
 
 
 def _stub_lsb_dataset_file(tmp_path, monkeypatch, *, instance_id: str = "museum_7") -> None:
     """Point `paths.benchmark_data_file` at a tmp livesqlbench JSONL so the
-    audited-gold guard's instance_id → selected_database lookup resolves
+    annotation guard's instance_id → selected_database lookup resolves
     (without depending on the gitignored real data root)."""
     from bird_interact_agents import paths as _paths
 
@@ -288,67 +311,57 @@ def _stub_lsb_dataset_file(tmp_path, monkeypatch, *, instance_id: str = "museum_
     )
 
 
-def _stub_empty_audited_gold_root(tmp_path, monkeypatch) -> None:
-    """Point `paths.audited_gold_root` at an EMPTY tmp dir so the
-    livesqlbench guard sees `missing-file` (no `livesqlbench_audited.jsonl`)
-    rather than reading whatever the dev's main checkout contains."""
+def _stub_empty_annotations_root(tmp_path, monkeypatch) -> None:
+    """Point `paths.annotations_root` at an EMPTY tmp dir so the guard sees
+    `missing-file` rather than reading whatever the dev's checkout has."""
     from bird_interact_agents import paths as _paths
 
-    audited_root = tmp_path / "audited_gold"
-    audited_root.mkdir(exist_ok=True)
-    monkeypatch.setattr(_paths, "audited_gold_root", lambda: audited_root)
+    annotations_root = tmp_path / "annotations"
+    annotations_root.mkdir(exist_ok=True)
+    monkeypatch.setattr(_paths, "annotations_root", lambda: annotations_root)
 
 
-def test_require_audited_gold_default_on_for_livesqlbench(
+def test_require_annotation_default_on_for_livesqlbench(
     tmp_path, monkeypatch,
 ) -> None:
-    """DEV-1510: pre-fix, cli.py skipped this guard for any benchmark with
-    `gold_required=True` — i.e. livesqlbench. A submit with `museum_7`
-    and no audit row would silently fall back. Post-fix the guard fires
-    for livesqlbench too, so the submit must reject."""
-    _stub_empty_audited_gold_root(tmp_path, monkeypatch)
+    """Annotation guard fires for livesqlbench too. `museum_7` with no
+    annotation must reject."""
+    _stub_empty_annotations_root(tmp_path, monkeypatch)
     _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
 
     with pytest.raises(SystemExit):
-        cli.parse_args(_lsb_audit_argv())
+        cli.parse_args(_lsb_ann_argv())
 
 
-def test_require_audited_gold_can_be_disabled_for_livesqlbench(
+def test_require_annotation_can_be_disabled_for_livesqlbench(
     tmp_path, monkeypatch,
 ) -> None:
-    """Same opt-out shape as mini-interact: `--no-require-audited-gold`
-    lets the submit proceed without an audit row."""
-    _stub_empty_audited_gold_root(tmp_path, monkeypatch)
+    """Same opt-out shape as mini-interact: `--no-require-annotation`
+    lets the submit proceed without an annotation file."""
+    _stub_empty_annotations_root(tmp_path, monkeypatch)
     _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
 
-    ns = cli.parse_args(_lsb_audit_argv(["--no-require-audited-gold"]))
+    ns = cli.parse_args(_lsb_ann_argv(["--no-require-annotation"]))
     assert ns.dataset == "livesqlbench-base-lite-sqlite"
-    assert ns.require_audited_gold is False
+    assert ns.require_annotation is False
     assert ns.use_audited_gold_sql is True  # default-on stays on
 
 
-def test_require_audited_gold_passes_for_livesqlbench_when_row_present(
+def test_require_annotation_passes_for_livesqlbench_when_file_present(
     tmp_path, monkeypatch,
 ) -> None:
-    """The guard accepts a livesqlbench submit whose instance_ids ARE in
-    the audit file — proves the symmetry is bidirectional (not just
-    `always reject livesqlbench`).
-
-    Uses an `edited` row with `audited_sol_sql` for `museum_7` — matches
-    the locked DEV-1510 decision (museum_7 is `edited`, not `clean`)."""
+    """The guard accepts a livesqlbench submit whose instance_ids DO have
+    annotation files — proves the symmetry is bidirectional."""
     from bird_interact_agents import paths as _paths
 
-    audited_root = tmp_path / "audited_gold"
-    (audited_root / "livesqlbench-base-lite-sqlite").mkdir(parents=True)
-    (audited_root / "livesqlbench-base-lite-sqlite" / "livesqlbench-base-lite-sqlite_audited.jsonl").write_text(
-        '{"instance_id":"museum_7","selected_database":"museum",'
-        '"benchmark":"livesqlbench-base-lite-sqlite",'
-        '"audit_status":"edited","audited_sol_sql":["SELECT 1"]}\n'
-    )
-    monkeypatch.setattr(_paths, "audited_gold_root", lambda: audited_root)
+    annotations_root = tmp_path / "annotations"
+    ann_dir = annotations_root / "livesqlbench-base-lite-sqlite" / "museum"
+    ann_dir.mkdir(parents=True)
+    (ann_dir / "museum_7.task.json").write_text("{}")  # presence-only check
+    monkeypatch.setattr(_paths, "annotations_root", lambda: annotations_root)
     _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
 
-    ns = cli.parse_args(_lsb_audit_argv())
+    ns = cli.parse_args(_lsb_ann_argv())
     assert ns.dataset == "livesqlbench-base-lite-sqlite"
     assert ns.instance_ids == ["museum_7"]
 
@@ -363,7 +376,7 @@ def test_prompt_cache_default_on() -> None:
             "--agent-model", "anthropic/claude-sonnet-4-5",
             "--instance-ids", "db_a_1",
             "--mode", "a-interact",
-            "--no-require-audited-gold",
+            "--no-require-annotation",
         ]
     )
     assert ns.prompt_cache is True
@@ -404,7 +417,7 @@ def _slayer_argv(**over) -> list[str]:
     if "slayer_storage_root" in over:
         argv += ["--slayer-storage-root", over["slayer_storage_root"]]
     # fake instance ids in fixture argv — skip the audited-gold guard.
-    argv += ["--no-require-audited-gold"]
+    argv += ["--no-require-annotation"]
     return argv
 
 
@@ -484,7 +497,7 @@ def _ainteract_argv(**over) -> list[str]:
         "--mode", base["mode"],
         "--dataset", base["dataset"],
         "--slayer-setup", base["slayer_setup"],
-        "--no-require-audited-gold",
+        "--no-require-annotation",
     ]
     return argv
 
@@ -532,7 +545,7 @@ def test_cloud_claude_sdk_otf_with_mini_interact_oracle_rejected():
             "--instance-ids", "alien_1",
             "--mode", "oracle",
             "--dataset", "mini-interact",
-            "--no-require-audited-gold",
+            "--no-require-annotation",
         ])
 
 
@@ -547,7 +560,7 @@ def test_cloud_ainteract_with_livesqlbench_oracle_rejected():
             "--instance-ids", "alien_1",
             "--mode", "oracle",
             "--dataset", "livesqlbench-base-lite-sqlite",
-            "--no-require-audited-gold",
+            "--no-require-annotation",
         ])
 
 
@@ -689,7 +702,7 @@ def test_subcommand_registered(sub: str) -> None:
                 "--agent-model", "anthropic/claude-sonnet-4-5",
                 "--instance-ids", "db_a_1",
                 "--mode", "a-interact",
-                "--no-require-audited-gold",
+                "--no-require-annotation",
             ]
         )
     else:
@@ -711,7 +724,7 @@ def _minimal_submit_argv(extra: list[str] | None = None) -> list[str]:
         "--agent-model", "anthropic/claude-sonnet-4-5",
         "--instance-ids", "db_a_1",
         "--mode", "a-interact",
-        "--no-require-audited-gold",
+        "--no-require-annotation",
         *(extra or []),
     ]
 
