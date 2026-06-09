@@ -1301,7 +1301,7 @@ def test_tool_schema_one_shot_drops_ask_user_properties_and_required():
     assert "pattern" in o_req
 
 
-def test_tool_schema_one_shot_pattern_enum_matches(_ONE_SHOT_PATTERNS=_ONE_SHOT_PATTERNS):
+def test_tool_schema_one_shot_pattern_enum_matches():
     from bird_interact_agents.eval.autopsy import _AUTOPSY_TOOL_SCHEMA_ONE_SHOT
 
     pattern_enum = set(

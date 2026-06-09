@@ -88,7 +88,13 @@ def missing_annotation_ids(
             missing.append(iid)
             continue
         path = ann_root / bench.name / db / f"{iid}.task.json"
-        if not path.exists():
+        # `is_file()` rather than `exists()`: `exists()` returns True
+        # for directories too, so a malformed checkout where someone
+        # accidentally created a directory at the annotation path
+        # would silently pass the submit-time guard and then fail
+        # later when the harness tries to read the file. `is_file()`
+        # matches the docstring + CLI help's "file" contract.
+        if not path.is_file():
             missing.append(iid)
     return missing
 
