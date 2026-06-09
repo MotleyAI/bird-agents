@@ -833,6 +833,7 @@ _ONE_SHOT_PATTERNS = [
     "wrong_join_path",
     "output_schema_misread",
     "slayer_generation_artifact",
+    "slayer_overaggregation",
     "exhausted_budget_guessing",
     "other",
 ]
@@ -1300,7 +1301,7 @@ def test_tool_schema_one_shot_drops_ask_user_properties_and_required():
     assert "pattern" in o_req
 
 
-def test_tool_schema_one_shot_pattern_enum_is_six_subset():
+def test_tool_schema_one_shot_pattern_enum_matches(_ONE_SHOT_PATTERNS=_ONE_SHOT_PATTERNS):
     from bird_interact_agents.eval.autopsy import _AUTOPSY_TOOL_SCHEMA_ONE_SHOT
 
     pattern_enum = set(

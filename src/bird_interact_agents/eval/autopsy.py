@@ -230,6 +230,13 @@ CAST/schema change corrupted the final output
 structure
 - slayer_generation_artifact: SLayer emitted buggy SQL (integer division, \
 broken namespace) unrelated to encoding choices
+- slayer_overaggregation: SLayer wrapped the SELECT in a top-level GROUP BY \
+of every projected dimension with NO aggregate functions (or only trivial \
+MAX/MIN over the grouped key), silently deduplicating raw rows. Signature: \
+submitted_sql has GROUP BY but no real aggregates, the gold has no GROUP BY, \
+and predicted row count is at or below gold's. Remediation: agent should \
+have used mcp__slayer__query_nested (or disabled SLayer's default \
+dimension-dedup) when raw per-record rows were required
 - exhausted_budget_guessing: agent used all turns on exploratory attempts \
 without converging
 - other: doesn't fit the above (describe in other_details)"""
@@ -243,6 +250,13 @@ CAST/schema change corrupted the final output
 structure
 - slayer_generation_artifact: SLayer emitted buggy SQL (integer division, \
 broken namespace) unrelated to encoding choices
+- slayer_overaggregation: SLayer wrapped the SELECT in a top-level GROUP BY \
+of every projected dimension with NO aggregate functions (or only trivial \
+MAX/MIN over the grouped key), silently deduplicating raw rows. Signature: \
+submitted_sql has GROUP BY but no real aggregates, the gold has no GROUP BY, \
+and predicted row count is at or below gold's. Remediation: agent should \
+have used mcp__slayer__query_nested (or disabled SLayer's default \
+dimension-dedup) when raw per-record rows were required
 - exhausted_budget_guessing: agent used all turns on exploratory attempts \
 without converging
 - other: doesn't fit the above (describe in other_details)"""
@@ -284,14 +298,14 @@ def _build_prompt(
             "This task is a single-turn benchmark submission. The agent "
             "produced one final answer; there is no interactive turn "
             "exchange and no clarification mechanism. Choose the failure "
-            "pattern from the six listed below."
+            "pattern from the seven listed below."
         )
         pattern_definitions = _PATTERN_DEFINITIONS_ONE_SHOT
     else:
         context_intro = (
             "This task is an interactive benchmark submission with a "
             "user-sim component. Choose the failure pattern from the "
-            "nine listed below."
+            "ten listed below."
         )
         pattern_definitions = _PATTERN_DEFINITIONS_A_INTERACT
 
@@ -411,6 +425,7 @@ _AUTOPSY_TOOL_SCHEMA = {
                     "wrong_join_path",
                     "output_schema_misread",
                     "slayer_generation_artifact",
+                    "slayer_overaggregation",
                     "exhausted_budget_guessing",
                     "other",
                 ],
@@ -460,6 +475,7 @@ _AUTOPSY_TOOL_SCHEMA_ONE_SHOT = {
                     "wrong_join_path",
                     "output_schema_misread",
                     "slayer_generation_artifact",
+                    "slayer_overaggregation",
                     "exhausted_budget_guessing",
                     "other",
                 ],

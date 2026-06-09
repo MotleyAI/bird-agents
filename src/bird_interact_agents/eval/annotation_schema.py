@@ -715,19 +715,21 @@ AutopsyPattern = Literal[
     "wrong_join_path",
     "output_schema_misread",
     "slayer_generation_artifact",
+    "slayer_overaggregation",
     "exhausted_budget_guessing",
     "other",
 ]
 """LLM-produced failure taxonomy for genuine cascade misses on
 ``claude_sdk_otf*`` frameworks (DEV-1521).
 
-A-interact (claude_sdk_otf_ainteract) tasks use this full 9-pattern set."""
+A-interact (claude_sdk_otf_ainteract) tasks use this full 10-pattern set."""
 
 AutopsyPatternOneShot = Literal[
     "late_mutation_corrupted_result",
     "wrong_join_path",
     "output_schema_misread",
     "slayer_generation_artifact",
+    "slayer_overaggregation",
     "exhausted_budget_guessing",
     "other",
 ]
@@ -752,6 +754,15 @@ are unactionable on one-shot.
 * ``slayer_generation_artifact`` — SQL emitted by SLayer had a bug
   (integer division, broken namespace) not from the agent's encoding
   choices.
+* ``slayer_overaggregation`` — SLayer wrapped the submitted SQL in a
+  top-level ``GROUP BY`` over every projected dimension with no
+  aggregate functions, silently deduplicating raw rows the user asked
+  for. Signature: ``agent_has_group_by=True``,
+  ``agent_has_aggregate=False`` (or only trivial ``MAX``/``MIN`` over
+  the grouped key) while the gold has no ``GROUP BY``, and the
+  predicted row count is at or below the gold's. Remediation: agent
+  should call ``mcp__slayer__query_nested`` or disable SLayer's default
+  dimension deduplication when raw per-record rows are required.
 * ``exhausted_budget_guessing`` — agent consumed all turns on
   exploratory/repeated attempts without converging.
 * ``other`` — doesn't fit the above; details in ``AutopsyAnalysis.other_details``.
