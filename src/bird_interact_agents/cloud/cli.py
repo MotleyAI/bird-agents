@@ -41,7 +41,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "with both."
         ),
     )
-    sp_submit.add_argument("--patience", type=int, default=500)
+    sp_submit.add_argument("--patience", type=int, default=250)
     sp_submit.add_argument("--strict", action="store_true")
     sp_submit.add_argument(
         "--use-audited-gold-sql", action=argparse.BooleanOptionalAction,

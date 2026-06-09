@@ -5,6 +5,7 @@ import asyncio
 import datetime
 import json
 import logging
+import os
 import shutil
 import statistics
 import time
@@ -271,6 +272,27 @@ def make_runner(
     )
 
 
+_DEFAULT_PER_TASK_TIMEOUT_S = 900.0
+"""Per-task wall-clock cap (DEV-1535). 0 / negative = no cap.
+
+In a sweep of 76 mini-interact retry tasks every `correct` verdict
+landed at <= 891 s and every `valid_interpretation` at <= 659 s; 27/53
+`agent_miss` runs burned past 900 s thrashing. The 15-min cap kills
+the thrash early with a 0% false-negative rate on the correct/valid
+buckets. Override per-run via the BIRD_INTERACT_PER_TASK_TIMEOUT_S
+env var (set 0 to disable)."""
+
+
+def _per_task_timeout_s() -> float:
+    raw = os.environ.get("BIRD_INTERACT_PER_TASK_TIMEOUT_S")
+    if raw is None:
+        return _DEFAULT_PER_TASK_TIMEOUT_S
+    try:
+        return float(raw)
+    except ValueError:
+        return _DEFAULT_PER_TASK_TIMEOUT_S
+
+
 async def run_one_task_with_runner(
     runner,
     task_data: dict,
@@ -285,8 +307,22 @@ async def run_one_task_with_runner(
     construction — costly for the cloud actor on long runs (CR#14)."""
     instance_id = str(task_data.get("instance_id") or "")
     t_start = time.perf_counter()
+    timeout = _per_task_timeout_s()
     try:
-        r = await runner(task_data, data_dir, patience, user_sim_model)
+        coro = runner(task_data, data_dir, patience, user_sim_model)
+        if timeout > 0:
+            try:
+                r = await asyncio.wait_for(coro, timeout=timeout)
+            except asyncio.TimeoutError as te:
+                # asyncio.TimeoutError carries no message; raise a clearer
+                # one so the error row records what actually happened
+                # (DEV-1535 wall-clock cap).
+                raise TimeoutError(
+                    f"per-task wall-clock cap of {timeout:.0f}s exceeded "
+                    f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 to disable)"
+                ) from te
+        else:
+            r = await coro
         # A misbehaving custom runner could return None or some other
         # non-dict type. Treat that as a per-task failure rather than a
         # NameError outside the try/except down the chain.

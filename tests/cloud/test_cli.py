@@ -176,10 +176,14 @@ def test_pass_through_flags_parse() -> None:
     assert ns.instance_ids == ["db_a_1", "db_a_2", "db_a_3"]
 
 
-def test_default_patience_is_500() -> None:
-    """DEV-1478 follow-up: bird-interact-cloud default patience flipped
-    from 3 → 500. Patience 3 was producing apparent OTF regressions
-    that were actually just early-termination, not encoder failures."""
+def test_default_patience_is_250() -> None:
+    """DEV-1535: default patience dropped 500 → 250. The 500 was
+    historical paranoia from DEV-1478 (avoiding apparent OTF regressions
+    from early termination); a sweep of 76 mini-interact retries showed
+    the max trajectory among `correct` runs was 175 steps, so the 500
+    budget was never close to binding. The 250 ceiling still gives
+    correct/valid runs ~30%+ headroom while squeezing thrashing
+    agent_miss runs that were burning past 200 steps."""
     ns = _parse(
         [
             "submit",
@@ -192,7 +196,7 @@ def test_default_patience_is_500() -> None:
             "--no-require-annotation",
         ]
     )
-    assert ns.patience == 500
+    assert ns.patience == 250
 
 
 def test_default_use_audited_gold_sql_is_true() -> None:
