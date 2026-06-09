@@ -43,6 +43,7 @@ import copy
 import datetime as _dt
 import json
 import logging
+import os
 import traceback as _tb
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
@@ -71,6 +72,43 @@ if TYPE_CHECKING:
     from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
 
 logger = logging.getLogger(__name__)
+
+
+def _build_anthropic_client() -> "anthropic.AsyncAnthropic":
+    """Construct the Anthropic SDK client for the autopsy LLM call.
+
+    DEV-1535 follow-up: on cloud workers running under the OAuth
+    subscription path, ``ANTHROPIC_API_KEY`` is deliberately removed from
+    the actor env (see ``cloud.ray_app._apply_actor_env_local``) — the
+    agent uses the Claude.ai OAuth token instead. Before this helper the
+    autopsy stage did ``AsyncAnthropic()`` and the SDK then walked
+    ``ANTHROPIC_API_KEY`` → ``ANTHROPIC_AUTH_TOKEN``, found neither, and
+    raised ``TypeError("Could not resolve authentication method...")``,
+    crashing 18/28 autopsies in the last big mini-interact run. The
+    remaining 3 autopsies that ran on the legacy API-key path hit
+    ``BadRequestError: "Credit balance is too low"`` — same root cause
+    class.
+
+    Resolution order:
+      1. ``CLAUDE_CODE_OAUTH_TOKEN`` → Bearer auth (same path as the
+         agent, free under the user's subscription).
+      2. ``ANTHROPIC_API_KEY`` → x-api-key auth (legacy path; only used
+         when subscription auth was opted out at submit).
+      3. Neither → ``RuntimeError`` so ``run_autopsy``'s outer
+         ``except Exception`` records a meaningful FQN rather than the
+         SDK's cryptic ``TypeError``.
+    """
+    oauth = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+    if oauth:
+        return anthropic.AsyncAnthropic(auth_token=oauth, api_key=None)
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if api_key:
+        return anthropic.AsyncAnthropic(api_key=api_key)
+    raise RuntimeError(
+        "no Anthropic auth available for autopsy: set "
+        "CLAUDE_CODE_OAUTH_TOKEN (subscription) or ANTHROPIC_API_KEY"
+    )
+
 
 # Truncation suffix kept in sync with annotation_schema._cap_excerpt.
 _TRUNCATION_SUFFIX = "...[truncated]"
@@ -301,6 +339,7 @@ def _build_prompt(
             "pattern from the seven listed below."
         )
         pattern_definitions = _PATTERN_DEFINITIONS_ONE_SHOT
+        ask_fields_instructions = ""
     else:
         context_intro = (
             "This task is an interactive benchmark submission with a "
@@ -308,6 +347,31 @@ def _build_prompt(
             "ten listed below."
         )
         pattern_definitions = _PATTERN_DEFINITIONS_A_INTERACT
+        ask_fields_instructions = """
+## Required ask-related fields (a-interact ONLY)
+The `autopsy_output` tool's schema requires `key_asks`,
+`disclosed_resolutions`, and `undisclosed_resolutions` on every call.
+You MUST include all three — use `[]` when the category is empty rather
+than omitting the field (omission causes the call to be rejected by
+pydantic validation and the run loses its autopsy).
+
+* `key_asks` (array of `{trajectory_idx, summary}`): the 1-5 most
+  load-bearing moments where the agent called `ask_user` (or otherwise
+  asked the user-sim a clarifying question). Each item points at the
+  ask via its `trajectory_idx` and gives a one-line summary of what was
+  asked. If the agent never asked the user-sim, return `[]`.
+* `disclosed_resolutions` (array of strings): masked-term resolutions
+  that the user-sim ACTUALLY revealed in its responses (e.g. "marginal
+  donor = age_diff > 25", "ice time = org_isch_time + exp_time"). One
+  short string per resolution. If nothing was disclosed, return `[]`.
+* `undisclosed_resolutions` (array of strings): masked-term resolutions
+  that the user-sim DECLINED to give or never addressed (often phrased
+  by the sim as "out of scope" / "I don't know" / silently ignored).
+  If everything asked was answered, return `[]`.
+
+`n_asks` is an integer count of ask_user calls; default 0. Always
+sensible to fill (the trajectory has it explicit).
+"""
 
     return f"""\
 You are analyzing a failed data-analysis task. The task agent produced a \
@@ -345,7 +409,7 @@ value types, and formula choices.
 
 ## Failure pattern definitions
 {pattern_definitions}
-
+{ask_fields_instructions}
 Call the `autopsy_output` tool with your analysis.
 """
 
@@ -591,7 +655,7 @@ async def run_autopsy(
         schema_cls = (
             AutopsyLLMOutputOneShot if is_one_shot else AutopsyLLMOutput
         )
-        client = anthropic.AsyncAnthropic()
+        client = _build_anthropic_client()
         response = await client.messages.create(
             model=native_model_id(model),
             max_tokens=2048,
