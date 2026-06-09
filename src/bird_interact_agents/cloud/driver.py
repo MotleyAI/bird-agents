@@ -1182,7 +1182,27 @@ def resubmit(run_id: str) -> None:
         cluster.up(yaml_path)
         head = cluster.head_address(yaml_path)
         _framework = manifest.get("framework", "")
-        _no_subscription_auth = bool(manifest.get("no_subscription_auth", False))
+        # DEV-1535 r4 (Codex): legacy manifests (pre-DEV-1535) have NO
+        # `no_subscription_auth` field at all. Pre-DEV-1535 the cloud
+        # actor had a silent fall-back to the API-key path when the
+        # OAuth token was absent; DEV-1535 killed that fall-back for
+        # NEW submits (good — explicit-choice contract). For
+        # RESUBMIT of legacy manifests, however, defaulting the
+        # missing field to False (subscription-required) hard-fails
+        # resubmits of every pre-DEV-1535 cloud run unless
+        # CLAUDE_CODE_OAUTH_TOKEN is now in the env — a
+        # backward-compat regression. Default to True (legacy API-key
+        # path) when the field is absent so old runs stay
+        # resubmittable. New manifests carry the field explicitly so
+        # the strict-submit contract for the original submit is
+        # unaffected.
+        _no_subscription_auth = bool(manifest.get("no_subscription_auth", True))
+        if "no_subscription_auth" not in manifest:
+            logger.info(
+                "resubmit: manifest has no 'no_subscription_auth' field "
+                "(pre-DEV-1535); defaulting to legacy API-key path for "
+                "backward compatibility"
+            )
         if not _framework:
             logger.info(
                 "resubmit: manifest has no 'framework' field (pre-DEV-1517); "

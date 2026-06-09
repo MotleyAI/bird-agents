@@ -170,7 +170,7 @@ def test_submission_annotation_reads_latest_attempt_not_hardcoded(tmp_path):
         "instance_id": "alien_1",
         "trajectory": [],
         "duration_s": 1.0,
-        "usage": {"cost_usd_agent": 0.01, "cost_usd_user_sim": 0.0,
+        "usage": {"agent_cost_usd": 0.01, "user_sim_cost_usd": 0.0,
                   "n_agent_turns": 1, "n_ask_user_calls": 0},
         "predicted_row_count": 0,
     }

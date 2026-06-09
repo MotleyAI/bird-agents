@@ -65,18 +65,30 @@ def missing_annotation_ids(
     annotations_root: Optional[Path] = None,
     data_path: Optional[Path] = None,
 ) -> list[str]:
-    """Return the subset of ``instance_ids`` that lack a task annotation file.
+    """Return the subset of ``instance_ids`` whose task annotation is
+    missing OR unreadable.
 
     An id is reported missing when:
       - its ``selected_database`` is unknown to the benchmark's data
         file (the caller passed a typo / stale id), OR
       - the file at
         ``<annotations_root>/<benchmark>/<db>/<iid>.task.json`` does not
-        exist.
+        exist, OR
+      - the file is unparseable / fails schema validation
+        (DEV-1535 r4 Codex): a malformed annotation file would
+        otherwise pass the primary guard and then fail mid-cloud-run
+        when the harness calls ``read_task_annotation``, recreating
+        the exact delayed-failure mode the submit guard prevents.
+        Pre-fix the schema-validation check only fired inside the
+        layered audited-gold check, which was gated on
+        ``--use-audited-gold-sql`` — so malformed files passed under
+        ``--no-use-audited-gold-sql``.
 
     Returns the missing ids in input order; an empty list means every
-    id has an annotation.
+    id has a present, parseable annotation.
     """
+    from bird_interact_agents.eval.annotation_io import read_task_annotation
+
     bench = benchmark or get_benchmark("mini-interact")
     ann_root = annotations_root or paths.annotations_root()
     inst_to_db = _load_dataset_instance_db_map(data_path, benchmark=bench)
@@ -95,6 +107,13 @@ def missing_annotation_ids(
         # later when the harness tries to read the file. `is_file()`
         # matches the docstring + CLI help's "file" contract.
         if not path.is_file():
+            missing.append(iid)
+            continue
+        # Schema validation: a present but malformed file is just as
+        # bad as a missing one — same delayed-failure mode mid-cloud-run.
+        try:
+            read_task_annotation(path)
+        except Exception:  # noqa: BLE001
             missing.append(iid)
     return missing
 

@@ -19,10 +19,34 @@ def _write_dataset(data_path: Path, rows: list[dict]) -> None:
 def _write_annotation(
     ann_root: Path, benchmark: str, db: str, iid: str,
 ) -> Path:
+    """Write a minimal schema-valid TaskAnnotation.
+
+    DEV-1535 r4: the bare `{}` stub no longer passes the primary
+    guard (which now schema-validates), so tests that want
+    "annotation present + grader accepts" need a real annotation.
+    `original_gold_is_correct=True` keeps the test out of the
+    layered guard's audited-gold check too."""
+    from bird_interact_agents.eval.annotation_io import write_task_annotation
+    from bird_interact_agents.eval.annotation_schema import (
+        MetadataSufficiency, Provenance, TaskAnnotation,
+    )
+    ann = TaskAnnotation(
+        instance_id=iid, selected_database=db,
+        annotated_by="test", annotated_at="2026-06-09",
+        amb_user_query="q", external_knowledge=[], masked_terms=[],
+        metadata_sufficiency=MetadataSufficiency(
+            verdict="sufficient", rationale="r",
+            evidence_sources_consulted=[],
+        ),
+        original_gold_is_correct=True, gold_variants=[],
+        provenance=Provenance(
+            task_jsonl_path="x.jsonl", task_jsonl_instance_id=iid,
+        ),
+    )
     d = ann_root / benchmark / db
     d.mkdir(parents=True, exist_ok=True)
     fp = d / f"{iid}.task.json"
-    fp.write_text("{}")  # presence-only check; the loader is exercised elsewhere
+    write_task_annotation(ann, fp)
     return fp
 
 
@@ -216,6 +240,72 @@ def test_directory_at_annotation_path_is_treated_as_missing(tmp_path: Path) -> N
     # Create a DIRECTORY where the annotation file should be.
     dirpath = ann_root / "mini-interact" / "alien" / "alien_1.task.json"
     dirpath.mkdir(parents=True)
+
+    missing = missing_annotation_ids(
+        ["alien_1"],
+        benchmark=get_benchmark("mini-interact"),
+        annotations_root=ann_root,
+        data_path=data,
+    )
+    assert missing == ["alien_1"]
+
+
+def test_malformed_annotation_is_reported_by_primary_guard(
+    tmp_path: Path,
+) -> None:
+    """DEV-1535 r4 (Codex): the primary guard now schema-validates the
+    annotation file too, not just checks presence. Pre-fix the
+    validation only fired inside the layered audited-gold check
+    (gated on `--use-audited-gold-sql`), so a malformed file passed
+    submit under `--no-use-audited-gold-sql` and then failed later
+    when the harness called `read_task_annotation`."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._annotation_check import (
+        missing_annotation_ids,
+    )
+
+    data = tmp_path / "mini_interact.jsonl"
+    _write_dataset(data, [
+        {"instance_id": "alien_1", "selected_database": "alien"},
+    ])
+    ann_root = tmp_path / "annotations"
+    d = ann_root / "mini-interact" / "alien"
+    d.mkdir(parents=True)
+    # Garbage JSON — read_task_annotation raises.
+    (d / "alien_1.task.json").write_text("{not valid json")
+
+    missing = missing_annotation_ids(
+        ["alien_1"],
+        benchmark=get_benchmark("mini-interact"),
+        annotations_root=ann_root,
+        data_path=data,
+    )
+    assert missing == ["alien_1"]
+
+
+def test_schema_invalid_annotation_is_reported_by_primary_guard(
+    tmp_path: Path,
+) -> None:
+    """Same guard catches a parseable-but-schema-invalid annotation —
+    e.g. JSON that's missing required fields."""
+    import json as _json
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._annotation_check import (
+        missing_annotation_ids,
+    )
+
+    data = tmp_path / "mini_interact.jsonl"
+    _write_dataset(data, [
+        {"instance_id": "alien_1", "selected_database": "alien"},
+    ])
+    ann_root = tmp_path / "annotations"
+    d = ann_root / "mini-interact" / "alien"
+    d.mkdir(parents=True)
+    # JSON parses but Pydantic validation fails (missing `provenance`,
+    # `metadata_sufficiency`, etc).
+    (d / "alien_1.task.json").write_text(_json.dumps({
+        "instance_id": "alien_1", "selected_database": "alien",
+    }))
 
     missing = missing_annotation_ids(
         ["alien_1"],
