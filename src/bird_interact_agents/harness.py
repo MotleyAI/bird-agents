@@ -1121,6 +1121,38 @@ def finalize_result_row(
                     row["predicted_row_count"] = rc
         except (TypeError, ValueError):
             pass
+    # DEV-1535 follow-up: backfill `tool_call_stats` for claude_sdk
+    # adapters. The pydantic_ai* family computes this during the run
+    # (via `_run_capture._extract_tool_stats`); the claude_sdk family
+    # didn't until now. Reusing the same shape so downstream consumers
+    # (cascading reports, miss-pattern queries) don't fork. The walker
+    # returns None for non-claude_sdk trajectory shapes so the
+    # discriminator is shape-based, not adapter-name-based.
+    if row.get("tool_call_stats") is None:
+        from bird_interact_agents.agents._run_capture import (
+            extract_tool_stats_from_claude_sdk_trajectory,
+        )
+        stats = extract_tool_stats_from_claude_sdk_trajectory(
+            row.get("trajectory"),
+        )
+        if stats is not None:
+            row["tool_call_stats"] = stats
+    # DEV-1535 follow-up: capture the claude_sdk SDK's final
+    # ResultMessage metadata (num_turns / stop_reason / duration_ms /
+    # duration_api_ms). `stop_reason` is the canonical "why did the
+    # agent stop" signal (turn budget vs explicit stop vs error) that
+    # was previously dropped. Fold under `usage.sdk_*` rather than a
+    # new top-level dict so results.db's `usage_json` carries it for
+    # free.
+    if isinstance(row.get("usage"), dict):
+        from bird_interact_agents.agents._run_capture import (
+            extract_claude_sdk_result_metadata,
+        )
+        meta = extract_claude_sdk_result_metadata(row.get("trajectory"))
+        if meta is not None:
+            for k, v in meta.items():
+                # Don't clobber explicit adapter values; backfill only.
+                row["usage"].setdefault(k, v)
     return row
 
 

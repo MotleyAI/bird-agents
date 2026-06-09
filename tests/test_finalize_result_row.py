@@ -238,6 +238,136 @@ def test_predicted_row_count_no_op_when_field_missing():
     )
     assert row.get("predicted_row_count") is None
 
+
+# ---------------------------------------------------------------------------
+# DEV-1535 follow-up — tool_call_stats backfill for claude_sdk
+# trajectories + sdk_* metadata folded under `usage`.
+# ---------------------------------------------------------------------------
+
+
+def _claude_sdk_min_trajectory(num_turns: int = 3) -> list[dict]:
+    """Minimal claude_sdk-shaped trajectory: one tool_use + matching
+    tool_result + a final ResultMessage. Used by the backfill tests
+    below."""
+    return [
+        {
+            "type": "AssistantMessage",
+            "data": {"content": [{"type": "tool_use",
+                                   "name": "execute_sql", "id": "t1"}]},
+        },
+        {
+            "type": "UserMessage",
+            "data": {"content": [{"type": "tool_result",
+                                   "tool_use_id": "t1",
+                                   "is_error": False,
+                                   "content": [{"type": "text", "text": "ok"}]}]},
+        },
+        {
+            "type": "ResultMessage",
+            "data": {"num_turns": num_turns,
+                     "stop_reason": "end_turn",
+                     "duration_ms": 5000,
+                     "duration_api_ms": 4500},
+        },
+    ]
+
+
+def test_backfills_tool_call_stats_for_claude_sdk_trajectory():
+    """A claude_sdk-shaped trajectory triggers the walker — row gains
+    `tool_call_stats` matching the pydantic_ai shape."""
+    row = finalize_result_row(
+        _row(trajectory=_claude_sdk_min_trajectory(), usage={}),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["tool_call_stats"] is not None
+    assert row["tool_call_stats"]["total_calls"] == 1
+    assert row["tool_call_stats"]["total_errors"] == 0
+    assert row["tool_call_stats"]["per_tool"] == [
+        {"tool": "execute_sql", "n_calls": 1, "n_errors": 0},
+    ]
+
+
+def test_preserves_explicit_tool_call_stats():
+    """pydantic_ai-style adapters set tool_call_stats during the run —
+    the chokepoint backfill must NOT clobber that value."""
+    explicit = {"per_tool": [{"tool": "foo", "n_calls": 99, "n_errors": 0}],
+                "total_calls": 99, "total_errors": 0, "error_samples": []}
+    row = finalize_result_row(
+        _row(trajectory=_claude_sdk_min_trajectory(),
+             usage={},
+             tool_call_stats=explicit),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["tool_call_stats"] is explicit
+
+
+def test_no_tool_call_stats_for_non_claude_sdk_shape():
+    """A pydantic_ai trajectory doesn't match the discriminator — the
+    walker returns None and the row's tool_call_stats stays absent.
+    (pydantic_ai adapters populate it themselves.)"""
+    pydantic_ai_shaped = [{"kind": "response", "parts": []}]
+    row = finalize_result_row(
+        _row(trajectory=pydantic_ai_shaped, usage={}),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert "tool_call_stats" not in row or row.get("tool_call_stats") is None
+
+
+def test_folds_sdk_result_metadata_under_usage():
+    """The final ResultMessage's metadata lands as four `sdk_*` keys
+    under `usage` — namespaced rather than top-level so results.db's
+    `usage_json` carries them without further plumbing."""
+    row = finalize_result_row(
+        _row(trajectory=_claude_sdk_min_trajectory(num_turns=7), usage={}),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["usage"]["sdk_num_turns"] == 7
+    assert row["usage"]["sdk_stop_reason"] == "end_turn"
+    assert row["usage"]["sdk_duration_ms"] == 5000
+    assert row["usage"]["sdk_duration_api_ms"] == 4500
+
+
+def test_sdk_metadata_does_not_clobber_explicit_values():
+    """If an adapter has already populated one of the sdk_* keys (e.g.
+    for a hand-rolled multi-phase run), the chokepoint backfill respects
+    that. Backfill uses setdefault, not assignment."""
+    row = finalize_result_row(
+        _row(
+            trajectory=_claude_sdk_min_trajectory(num_turns=7),
+            usage={"sdk_stop_reason": "explicit_override"},
+        ),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["usage"]["sdk_stop_reason"] == "explicit_override"
+    # Other fields still backfilled.
+    assert row["usage"]["sdk_num_turns"] == 7
+
+
+def test_sdk_metadata_no_op_when_no_resultmessage():
+    """No ResultMessage in the trajectory → walker returns None → no
+    sdk_* keys added. Defensive against very-early agent crashes."""
+    trajectory = [
+        {"type": "AssistantMessage", "data": {"content": []}},
+        {"type": "UserMessage", "data": {"content": []}},
+    ]
+    row = finalize_result_row(
+        _row(trajectory=trajectory, usage={"prompt_tokens": 100}),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert "sdk_num_turns" not in row["usage"]
+    assert "sdk_stop_reason" not in row["usage"]
+
+
+def test_sdk_metadata_no_op_when_usage_is_not_a_dict():
+    """A non-dict `usage` (very-early error path) → backfill skipped,
+    no crash."""
+    row = finalize_result_row(
+        _row(trajectory=_claude_sdk_min_trajectory(), usage=None),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    # The dispatcher saw usage was not a dict; nothing was folded in.
+    assert row.get("usage") is None
+
     row2 = finalize_result_row(
         _row(trajectory=[]),
         deleted_kb_ids=[], slayer_storage_dir="/data/x",
