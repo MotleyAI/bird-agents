@@ -48,7 +48,7 @@ def _write_attempt_json(rows_dir: Path, instance_id: str, *, submitted_sql: str)
             {"role": "user_sim", "content": "answer-1"},
         ],
         "duration_s": 12.3,
-        "usage": {"cost_usd_agent": 0.42, "cost_usd_user_sim": 0.01,
+        "usage": {"agent_cost_usd": 0.42, "user_sim_cost_usd": 0.01,
                   "n_agent_turns": 3, "n_ask_user_calls": 1},
         "predicted_row_count": 5,
     }))

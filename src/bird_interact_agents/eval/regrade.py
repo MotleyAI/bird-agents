@@ -43,6 +43,7 @@ from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
 from bird_interact_agents.eval.grade_in_place import (
     decode_result_json,
+    extract_usage_costs,
     load_task_annotation_or_implicit,
     normalize_sol_sql,
 )
@@ -258,6 +259,12 @@ def regrade_run(
         original_gold_is_correct = getattr(
             task_annotation_for_orig, "original_gold_is_correct", None,
         )
+        # DEV-1535 r3 (Codex): use the shared extractor so the
+        # canonical TokenUsage key names (`agent_cost_usd` /
+        # `user_sim_cost_usd`) resolve. The previous inline
+        # `usage.get("cost_usd_agent")` was the same wrong-key bug
+        # the cloud/local grader-write paths just got fixed for.
+        _cost_agent, _cost_sim = extract_usage_costs(usage)
         ann = SubmissionAnnotation(
             instance_id=instance_id,
             selected_database=selected_database,
@@ -272,8 +279,8 @@ def regrade_run(
                 trajectory_path=str(attempt),
                 predicted_row_count=attempt_data.get("predicted_row_count"),
                 duration_s=attempt_data.get("duration_s"),
-                cost_usd_agent=usage.get("cost_usd_agent"),
-                cost_usd_user_sim=usage.get("cost_usd_user_sim"),
+                cost_usd_agent=_cost_agent,
+                cost_usd_user_sim=_cost_sim,
                 n_agent_turns=usage.get("n_agent_turns"),
                 n_ask_user_calls=usage.get("n_ask_user_calls"),
             ),

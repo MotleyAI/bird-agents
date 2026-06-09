@@ -99,6 +99,45 @@ def missing_annotation_ids(
     return missing
 
 
+def _build_audited_gold_presence_index(benchmark_name: str) -> set[str]:
+    """Read the consolidated audited-gold sidecar ONCE and return the set
+    of instance_ids it carries. DEV-1535 r3 (CodeRabbit): the prior
+    implementation called ``load_audited_gold_rows_for`` per-iid,
+    re-scanning the JSONL on every call — O(N_ids × file_size). For
+    a 76-iid retry batch that's 76 full passes over a multi-KB file.
+    Build the index once.
+
+    Returns an empty set if the benchmark has no consolidated layout,
+    the file is absent, or every row is unparseable — same graceful
+    semantics as ``load_audited_gold_rows_for``."""
+    from bird_interact_agents.benchmark import get_benchmark as _get_bench
+
+    try:
+        bench = _get_bench(benchmark_name)
+    except Exception:  # noqa: BLE001
+        return set()
+    if getattr(bench, "audited_gold_layout", None) != "single_file":
+        return set()
+    sidecar = paths.audited_gold_root() / bench.name / f"{bench.name}_audited.jsonl"
+    if not sidecar.is_file():
+        return set()
+    present: set[str] = set()
+    for line in sidecar.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(d, dict):
+            continue
+        iid = d.get("instance_id")
+        if isinstance(iid, str):
+            present.add(iid)
+    return present
+
+
 def annotations_requiring_audited_gold_without_rows(
     instance_ids: Iterable[str],
     *,
@@ -123,16 +162,26 @@ def annotations_requiring_audited_gold_without_rows(
     sidecar. Empty list means every annotation-requiring-variants id
     has matching audited-gold rows. IIDs without an annotation file
     are skipped (the primary guard handles those).
+
+    DEV-1535 r3 (Codex): a malformed annotation file (parse error /
+    schema validation failure) is REPORTED, not silently skipped. The
+    submit-time guard exists to prevent these problems from surfacing
+    mid-cloud-run; swallowing them recreates the exact delayed-failure
+    mode the guard prevents. Reported as missing so the operator sees
+    the broken annotation up-front.
+
+    DEV-1535 r3 (CodeRabbit): the audited-gold sidecar is read ONCE
+    into a presence set, not per-iid. The previous implementation
+    re-scanned the JSONL per id (O(N × file_size)).
     """
     from bird_interact_agents.eval.annotation_io import read_task_annotation
-    from bird_interact_agents.eval.grade_in_place import (
-        load_audited_gold_rows_for,
-    )
 
     bench = benchmark or get_benchmark("mini-interact")
     ann_root = annotations_root or paths.annotations_root()
     inst_to_db = _load_dataset_instance_db_map(None, benchmark=bench)
-
+    # Two-pass to avoid building the audited-gold presence index when
+    # no annotation actually requires it.
+    needs_audited: list[str] = []
     missing_audited: list[str] = []
     for iid in instance_ids:
         db = inst_to_db.get(iid)
@@ -143,19 +192,24 @@ def annotations_requiring_audited_gold_without_rows(
             continue  # primary guard catches this
         try:
             ann = read_task_annotation(ann_path)
-        except Exception:  # noqa: BLE001 — malformed annotation; skip
+        except Exception:  # noqa: BLE001
+            # Malformed annotation: REPORT (don't skip). The submit
+            # guard exists to surface these before the cluster comes
+            # up; silently skipping recreates the delayed-failure
+            # mode the guard prevents.
+            missing_audited.append(iid)
             continue
         # `original_gold_is_correct=True` (or None for back-compat)
         # means the original IS the gold; no audited row needed.
         if getattr(ann, "original_gold_is_correct", None) is not False:
             continue
-        # Annotation says original is wrong — need at least one
-        # audited row to grade against.
-        rows = load_audited_gold_rows_for(
-            benchmark=bench.name, instance_id=iid,
-        )
-        if not rows:
-            missing_audited.append(iid)
+        needs_audited.append(iid)
+
+    if needs_audited:
+        present = _build_audited_gold_presence_index(bench.name)
+        for iid in needs_audited:
+            if iid not in present:
+                missing_audited.append(iid)
     return missing_audited
 
 

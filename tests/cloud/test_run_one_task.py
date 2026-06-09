@@ -180,6 +180,58 @@ async def test_run_one_task_with_runner_handles_non_dict_return() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_one_task_caps_runaway_at_wall_clock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DEV-1535 r3 (Codex): the wall-clock cap originally landed only
+    in `run_one_task_with_runner` (the `cached_runner` path used for
+    raw query_mode). SLayer / non-raw runs fall through to
+    `run_one_task` — pre-fix that path ran uncapped, defeating the
+    cap on exactly the runs most likely to thrash. The cap now wraps
+    both entry points."""
+    import asyncio as _asyncio
+
+    monkeypatch.setenv("BIRD_INTERACT_PER_TASK_TIMEOUT_S", "0.2")
+
+    async def thrasher(td, data_dir, patience, user_sim_model):
+        await _asyncio.sleep(5.0)
+        return {"instance_id": td["instance_id"]}
+
+    # Replace _make_runner so we exercise the real run_one_task path.
+    monkeypatch.setattr(run_mod, "_make_runner", lambda **_kw: thrasher)
+    monkeypatch.setattr(run_mod, "_validate_slayer_setup", lambda **_kw: None)
+
+    row = await run_mod.run_one_task(
+        task_data={
+            "instance_id": "thrasher_slayer_1",
+            "selected_database": "db_a",
+            "sol_sql": ["SELECT 1"],
+        },
+        data_dir="/tmp",
+        framework="claude_sdk",
+        dataset="mini-interact",
+        query_mode="slayer",
+        mode="a-interact",
+        agent_model="anthropic/claude-opus-4-7",
+        user_sim_model="anthropic/claude-sonnet-4-6",
+        patience=3,
+        strict=False,
+        use_audited_gold_sql=False,
+        prompt_cache=True,
+        max_depth=3,
+        slayer_storage_root=None,
+        slayer_setup="on-the-fly",
+        reasoning_effort=None,
+    )
+    assert isinstance(row, dict)
+    assert row["instance_id"] == "thrasher_slayer_1"
+    assert row.get("error")
+    assert "timeout" in row["error"].lower()
+    assert row["phase1_passed"] is False
+    assert row["duration_s"] < 2.0
+
+
+@pytest.mark.asyncio
 async def test_run_one_task_with_runner_caps_runaway_at_wall_clock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

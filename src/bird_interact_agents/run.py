@@ -733,8 +733,27 @@ async def run_one_task(
     )
     instance_id = str(task_data.get("instance_id") or "")
     t_start = time.perf_counter()
+    timeout = _per_task_timeout_s()
     try:
-        r = await runner(task_data, data_dir, patience, user_sim_model)
+        coro = runner(task_data, data_dir, patience, user_sim_model)
+        if timeout > 0:
+            try:
+                r = await asyncio.wait_for(coro, timeout=timeout)
+            except asyncio.TimeoutError as te:
+                # Same explicit message as in run_one_task_with_runner —
+                # asyncio.TimeoutError has no message, so the per-task
+                # error row would record the empty string. DEV-1535 r3
+                # (Codex): the wall-clock cap was previously wrapped
+                # ONLY in run_one_task_with_runner (the `cached_runner`
+                # path), so SLayer / non-raw runs that fall through to
+                # this function ran uncapped — defeating the cap on
+                # exactly the runs most likely to thrash.
+                raise TimeoutError(
+                    f"per-task wall-clock cap of {timeout:.0f}s exceeded "
+                    f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 to disable)"
+                ) from te
+        else:
+            r = await coro
     except Exception as e:  # noqa: BLE001 — same catch-all as the old inline loop
         logger.error("Error on %s: %s", instance_id, e)
         r = finalize_result_row(

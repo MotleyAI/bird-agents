@@ -399,6 +399,126 @@ def test_layered_check_passes_when_audited_row_present(
     assert missing == []
 
 
+def test_layered_check_reports_malformed_annotation(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """DEV-1535 r3 (Codex): a malformed annotation file (parse error
+    or schema validation failure) is REPORTED, not silently skipped.
+    The submit guard exists to surface these before cluster startup;
+    swallowing them recreates the delayed-failure mode the guard
+    prevents."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._annotation_check import (
+        annotations_requiring_audited_gold_without_rows,
+    )
+    from bird_interact_agents import paths as _paths
+
+    monkeypatch.setattr(_paths, "benchmark_data_file",
+        lambda *a, **k: _write_mini_dataset(tmp_path, [
+            {"instance_id": "museum_7", "selected_database": "museum"},
+        ]),
+    )
+    ann_root = tmp_path / "annotations"
+    d = ann_root / "livesqlbench-base-lite-sqlite" / "museum"
+    d.mkdir(parents=True)
+    # Garbage JSON — pydantic will raise on read_task_annotation.
+    (d / "museum_7.task.json").write_text("{not valid json")
+
+    missing = annotations_requiring_audited_gold_without_rows(
+        ["museum_7"],
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
+        annotations_root=ann_root,
+    )
+    assert missing == ["museum_7"]
+
+
+def test_layered_check_reads_audited_gold_sidecar_once(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """DEV-1535 r3 (CodeRabbit perf): the audited-gold sidecar is read
+    ONCE into a presence set, not per-iid. Asserted via a spy on
+    `_build_audited_gold_presence_index` (the new single-pass helper)
+    — a 5-iid batch must call the sidecar reader exactly once."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud import _annotation_check as ann_mod
+    from bird_interact_agents import paths as _paths
+
+    iids = [f"museum_{i}" for i in range(1, 6)]
+    monkeypatch.setattr(_paths, "benchmark_data_file",
+        lambda *a, **k: _write_mini_dataset(tmp_path, [
+            {"instance_id": iid, "selected_database": "museum"}
+            for iid in iids
+        ]),
+    )
+    ann_root = tmp_path / "annotations"
+    for iid in iids:
+        _write_full_annotation(
+            ann_root, "livesqlbench-base-lite-sqlite", "museum", iid,
+            original_gold_is_correct=False, with_variant=True,
+        )
+    monkeypatch.setattr(_paths, "audited_gold_root",
+                        lambda: tmp_path / "audited_gold_empty")
+
+    call_count = {"n": 0}
+    original = ann_mod._build_audited_gold_presence_index
+    def spy(bench_name: str) -> set[str]:
+        call_count["n"] += 1
+        return original(bench_name)
+    monkeypatch.setattr(
+        ann_mod, "_build_audited_gold_presence_index", spy,
+    )
+
+    missing = ann_mod.annotations_requiring_audited_gold_without_rows(
+        iids,
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
+        annotations_root=ann_root,
+    )
+    assert missing == iids
+    assert call_count["n"] == 1, (
+        f"audited-gold sidecar read {call_count['n']} times; expected 1 "
+        f"(O(N_ids) regression)"
+    )
+
+
+def test_layered_check_skips_audited_index_when_no_iid_needs_it(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Tiny perf detail: when every annotation says
+    `original_gold_is_correct=True`, we never even build the
+    presence index. Asserted via the same spy as above — zero calls
+    expected."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud import _annotation_check as ann_mod
+    from bird_interact_agents import paths as _paths
+
+    monkeypatch.setattr(_paths, "benchmark_data_file",
+        lambda *a, **k: _write_mini_dataset(tmp_path, [
+            {"instance_id": "alien_1", "selected_database": "alien"},
+        ]),
+    )
+    ann_root = tmp_path / "annotations"
+    _write_full_annotation(
+        ann_root, "livesqlbench-base-lite-sqlite", "alien", "alien_1",
+        original_gold_is_correct=True,
+    )
+
+    call_count = {"n": 0}
+    def spy(bench_name: str) -> set[str]:
+        call_count["n"] += 1
+        return set()
+    monkeypatch.setattr(
+        ann_mod, "_build_audited_gold_presence_index", spy,
+    )
+
+    missing = ann_mod.annotations_requiring_audited_gold_without_rows(
+        ["alien_1"],
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
+        annotations_root=ann_root,
+    )
+    assert missing == []
+    assert call_count["n"] == 0
+
+
 def test_layered_check_skips_ids_without_annotation_file(
     tmp_path: Path, monkeypatch,
 ) -> None:

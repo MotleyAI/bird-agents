@@ -53,7 +53,10 @@ from bird_interact_agents.eval.annotation_schema import (
     UserSimInteraction,
     UserSimResponseSummary,
 )
-from bird_interact_agents.eval.grade_in_place import _auto_failure_class
+from bird_interact_agents.eval.grade_in_place import (
+    _auto_failure_class,
+    extract_usage_costs as _extract_usage_costs,
+)
 from bird_interact_agents.eval.regrade import _latest_attempt_file
 
 PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
@@ -293,6 +296,12 @@ def generate_submission_annotation(
             microsecond=0,
         ).isoformat()
 
+    # DEV-1535 r3 (Codex): use the shared extractor so the canonical
+    # TokenUsage key names (`agent_cost_usd` / `user_sim_cost_usd`)
+    # resolve. The previous inline `usage.get("cost_usd_agent")` was
+    # the same wrong-key bug we already fixed in `grade_in_place`,
+    # repeated here in the regenerate-annotations CLI.
+    _cost_agent, _cost_sim = _extract_usage_costs(usage)
     return SubmissionAnnotation(
         instance_id=instance_id,
         selected_database=selected_database,
@@ -307,8 +316,8 @@ def generate_submission_annotation(
             trajectory_path=str(attempt_path),
             predicted_row_count=attempt.get("predicted_row_count"),
             duration_s=attempt.get("duration_s"),
-            cost_usd_agent=usage.get("cost_usd_agent"),
-            cost_usd_user_sim=usage.get("cost_usd_user_sim"),
+            cost_usd_agent=_cost_agent,
+            cost_usd_user_sim=_cost_sim,
             n_agent_turns=usage.get("n_agent_turns"),
             n_ask_user_calls=usage.get("n_ask_user_calls"),
         ),

@@ -376,8 +376,14 @@ def test_require_annotation_can_be_disabled_for_livesqlbench(
 def test_require_annotation_passes_for_livesqlbench_when_file_present(
     tmp_path, monkeypatch,
 ) -> None:
-    """The guard accepts a livesqlbench submit whose instance_ids DO have
-    annotation files — proves the symmetry is bidirectional."""
+    """The guard accepts a livesqlbench submit whose instance_ids DO
+    have annotation files — proves the primary annotation-presence
+    guard is symmetric (rejects missing, accepts present).
+
+    DEV-1535 r3: passes `--no-use-audited-gold-sql` to isolate the
+    primary guard from the new layered annotation↔audited-gold sync
+    check (which would otherwise read the bare `{}` stub as a
+    malformed annotation and report it)."""
     from bird_interact_agents import paths as _paths
 
     annotations_root = tmp_path / "annotations"
@@ -387,7 +393,7 @@ def test_require_annotation_passes_for_livesqlbench_when_file_present(
     monkeypatch.setattr(_paths, "annotations_root", lambda: annotations_root)
     _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
 
-    ns = _parse(_lsb_ann_argv())
+    ns = _parse(_lsb_ann_argv(["--no-use-audited-gold-sql"]))
     assert ns.dataset == "livesqlbench-base-lite-sqlite"
     assert ns.instance_ids == ["museum_7"]
 
