@@ -17,6 +17,7 @@ from typing import Any as _Any
 from bird_interact_agents import paths
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
+from bird_interact_agents.eval.annotation_schema import SubmissionConfig
 from bird_interact_agents.eval.grade_in_place import (
     decode_result_json as _decode_result_json,
     extract_usage_costs,
@@ -900,6 +901,35 @@ async def run_evaluation(
         framework=framework,
         mode=mode,
         started_at=time.time(),
+        query_mode=query_mode,
+        slayer_setup=slayer_setup,
+        patience=patience,
+        max_depth=max_depth,
+        reasoning_effort=reasoning_effort,
+        dataset=dataset,
+        strict=strict,
+        use_audited_gold_sql=use_audited_gold_sql,
+        prompt_cache=prompt_cache,
+    )
+
+    # Per-task `SubmissionConfig` — duplicated into every annotation per
+    # DEV-1535 design choice (B3 = both run_metadata AND annotation). The
+    # config is identical across tasks in a single run, so one instance
+    # is shared.
+    submission_config = SubmissionConfig(
+        framework=framework,
+        mode=mode,
+        query_mode=query_mode,
+        agent_model=agent_model,
+        user_sim_model=user_sim_model,
+        slayer_setup=slayer_setup,
+        reasoning_effort=reasoning_effort,
+        patience=patience,
+        max_depth=max_depth,
+        dataset=dataset,
+        strict=strict,
+        use_audited_gold_sql=use_audited_gold_sql,
+        prompt_cache=prompt_cache,
     )
 
     def _persist(td: dict, r: dict, started_at: float) -> None:
@@ -1024,6 +1054,7 @@ async def run_evaluation(
             n_agent_turns=usage_blob.get("n_agent_turns"),
             n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
             predicted_row_count=r.get("predicted_row_count"),
+            config=submission_config,
         )
         if not submitted_sql or not selected_database:
             write_failed_submission_annotation(
@@ -1063,6 +1094,7 @@ async def run_evaluation(
                 n_agent_turns=usage_blob.get("n_agent_turns"),
                 n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
                 predicted_row_count=r.get("predicted_row_count"),
+                config=submission_config,
                 task_annotation=r.get("_task_annotation"),
                 autopsy_result=r.get("_autopsy"),
                 harness_passed=r.get("phase1_passed") is True,

@@ -481,6 +481,33 @@ class VariantMatch(BaseModel):
     informational: Optional[VariantInformational] = None
 
 
+class SubmissionConfig(BaseModel):
+    """Per-task snapshot of the agent configuration the submission was
+    generated under.
+
+    Recorded both here (so the annotation file is self-contained for
+    ad-hoc grep / scripts) AND in the `results.db::run_metadata` table
+    (so structured SQL joins don't need to parse cloud `run-id`
+    substrings to extract framework / mode / etc.). All fields are
+    Optional so older annotations and back-compat callers parse cleanly.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    framework: Optional[str] = None
+    mode: Optional[str] = None
+    query_mode: Optional[str] = None
+    agent_model: Optional[str] = None
+    user_sim_model: Optional[str] = None
+    slayer_setup: Optional[str] = None
+    reasoning_effort: Optional[str] = None
+    patience: Optional[int] = None
+    max_depth: Optional[int] = None
+    dataset: Optional[str] = None
+    strict: Optional[bool] = None
+    use_audited_gold_sql: Optional[bool] = None
+    prompt_cache: Optional[bool] = None
+
+
 class SubmissionMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -495,6 +522,10 @@ class SubmissionMetadata(BaseModel):
     cost_usd_user_sim: Optional[float] = None
     n_agent_turns: Optional[int] = None
     n_ask_user_calls: Optional[int] = None
+    config: Optional[SubmissionConfig] = None
+    """DEV-1535: per-task snapshot of the agent config the run was
+    invoked with. Optional for back-compat — older annotations load
+    with `config=None`."""
 
 
 MissPattern = Literal[

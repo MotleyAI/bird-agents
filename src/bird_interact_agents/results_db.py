@@ -93,6 +93,23 @@ CREATE TABLE IF NOT EXISTS run_metadata (
 )
 """
 
+# DEV-1535: extended config snapshot per run. Same additive-ALTER pattern
+# as `_DIAGNOSTIC_COLUMNS` so pre-existing result DBs from earlier code
+# revisions gain the new columns without breaking. All nullable for
+# back-compat — older `insert_run_metadata` callers (e.g. legacy tests
+# that only pass the original 5 kwargs) leave them as NULL.
+_RUN_METADATA_DIAGNOSTIC_COLUMNS: list[tuple[str, str]] = [
+    ("query_mode", "TEXT"),
+    ("slayer_setup", "TEXT"),
+    ("patience", "INTEGER"),
+    ("max_depth", "INTEGER"),
+    ("reasoning_effort", "TEXT"),
+    ("dataset", "TEXT"),
+    ("strict", "INTEGER"),
+    ("use_audited_gold_sql", "INTEGER"),
+    ("prompt_cache", "INTEGER"),
+]
+
 
 class TaskResultRow(BaseModel):
     """One row in `task_results`. Field order matches the DDL."""
@@ -148,6 +165,13 @@ def open_db(path: Path | str) -> sqlite3.Connection:
     for name, sql_type in _DIAGNOSTIC_COLUMNS:
         if name not in existing:
             conn.execute(f"ALTER TABLE task_results ADD COLUMN {name} {sql_type}")
+    # DEV-1535: additive ALTER for run_metadata's extended config snapshot.
+    existing_rm = {
+        row[1] for row in conn.execute("PRAGMA table_info(run_metadata)")
+    }
+    for name, sql_type in _RUN_METADATA_DIAGNOSTIC_COLUMNS:
+        if name not in existing_rm:
+            conn.execute(f"ALTER TABLE run_metadata ADD COLUMN {name} {sql_type}")
     conn.commit()
     return conn
 
@@ -194,16 +218,44 @@ def insert_run_metadata(
     framework: str,
     mode: str,
     started_at: float = 0.0,
+    # DEV-1535: extended config snapshot. All nullable + keyword-only with
+    # None defaults so back-compat callers (legacy tests, older invocations)
+    # work unchanged. New callers populate the full block.
+    query_mode: str | None = None,
+    slayer_setup: str | None = None,
+    patience: int | None = None,
+    max_depth: int | None = None,
+    reasoning_effort: str | None = None,
+    dataset: str | None = None,
+    strict: bool | None = None,
+    use_audited_gold_sql: bool | None = None,
+    prompt_cache: bool | None = None,
 ) -> None:
     """Record the per-run header so downstream tools (compare_results,
     failure-mode analysis) can correlate task rows with the model that
-    produced them."""
+    produced them.
+
+    DEV-1535: the extended config snapshot replaces the previous practice
+    of parsing the cloud `run-id` substring (`-slayer-` vs `-raw-`) to
+    guess the mode. Joins on `(run_id, framework, mode)` against
+    `task_results` now expose the full configuration block.
+    """
+    # SQLite has no native bool; coerce via int() so the column is
+    # readable as `WHERE strict = 1`.
+    def _b(x: bool | None) -> int | None:
+        return None if x is None else int(bool(x))
     conn.execute(
         """
         INSERT OR REPLACE INTO run_metadata
-        (run_id, framework, mode, agent_model, user_sim_model, started_at)
-        VALUES (?,?,?,?,?,?)
+        (run_id, framework, mode, agent_model, user_sim_model, started_at,
+         query_mode, slayer_setup, patience, max_depth, reasoning_effort,
+         dataset, strict, use_audited_gold_sql, prompt_cache)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
-        (run_id, framework, mode, agent_model, user_sim_model, started_at),
+        (
+            run_id, framework, mode, agent_model, user_sim_model, started_at,
+            query_mode, slayer_setup, patience, max_depth, reasoning_effort,
+            dataset, _b(strict), _b(use_audited_gold_sql), _b(prompt_cache),
+        ),
     )
     conn.commit()

@@ -135,6 +135,133 @@ def test_insert_run_metadata_records_run(tmp_path):
     )]
 
 
+# ---------------------------------------------------------------------------
+# DEV-1535 — extended run_metadata config snapshot.
+# ---------------------------------------------------------------------------
+
+
+def test_insert_run_metadata_records_extended_config(tmp_path):
+    """All nine new config columns round-trip cleanly + bool fields
+    are stored as ints (SQLite has no native bool)."""
+    from bird_interact_agents.results_db import (
+        insert_run_metadata, open_db,
+    )
+
+    conn = open_db(tmp_path / "results.db")
+    insert_run_metadata(
+        conn,
+        run_id="ext_cfg",
+        agent_model="anthropic/claude-opus-4-7",
+        user_sim_model="anthropic/claude-sonnet-4-6",
+        framework="claude_sdk",
+        mode="a-interact",
+        started_at=12345.0,
+        query_mode="slayer",
+        slayer_setup="on-the-fly",
+        patience=250,
+        max_depth=3,
+        reasoning_effort="high",
+        dataset="mini-interact",
+        strict=False,
+        use_audited_gold_sql=True,
+        prompt_cache=True,
+    )
+    row = conn.execute(
+        "SELECT query_mode, slayer_setup, patience, max_depth, "
+        "reasoning_effort, dataset, strict, use_audited_gold_sql, "
+        "prompt_cache FROM run_metadata WHERE run_id = 'ext_cfg'"
+    ).fetchone()
+    assert row == (
+        "slayer", "on-the-fly", 250, 3, "high", "mini-interact",
+        0, 1, 1,
+    )
+
+
+def test_insert_run_metadata_back_compat_old_signature(tmp_path):
+    """A legacy caller that only passes the original 5 kwargs (no
+    extended config) succeeds — new columns default to NULL."""
+    from bird_interact_agents.results_db import (
+        insert_run_metadata, open_db,
+    )
+
+    conn = open_db(tmp_path / "results.db")
+    insert_run_metadata(
+        conn,
+        run_id="legacy_call",
+        agent_model="x", user_sim_model="y",
+        framework="pydantic_ai", mode="oracle",
+    )
+    row = conn.execute(
+        "SELECT query_mode, slayer_setup, patience, reasoning_effort "
+        "FROM run_metadata WHERE run_id = 'legacy_call'"
+    ).fetchone()
+    assert row == (None, None, None, None)
+
+
+def test_open_db_adds_run_metadata_extended_columns_to_pre_existing_table(tmp_path):
+    """Additive ALTER for the extended config columns: a pre-existing
+    DB created before the DEV-1535 columns existed gains them on the
+    next open_db, without losing existing rows."""
+    import sqlite3
+    db_path = tmp_path / "results.db"
+    # Seed the DB with the OLD run_metadata schema (no extended columns).
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE run_metadata (
+            run_id TEXT NOT NULL,
+            framework TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            agent_model TEXT NOT NULL,
+            user_sim_model TEXT NOT NULL,
+            started_at REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY (run_id, framework, mode)
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO run_metadata VALUES (?,?,?,?,?,?)",
+        ("old_row", "pydantic_ai", "a-interact", "x", "y", 0),
+    )
+    conn.commit()
+    conn.close()
+
+    from bird_interact_agents.results_db import open_db
+    conn = open_db(db_path)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(run_metadata)")}
+    for new_col in (
+        "query_mode", "slayer_setup", "patience", "max_depth",
+        "reasoning_effort", "dataset", "strict", "use_audited_gold_sql",
+        "prompt_cache",
+    ):
+        assert new_col in cols, f"{new_col} not added to existing table"
+    # Old row survives (SELECT * round-trip).
+    old = conn.execute(
+        "SELECT run_id, agent_model, query_mode FROM run_metadata"
+        " WHERE run_id = 'old_row'"
+    ).fetchone()
+    assert old == ("old_row", "x", None)
+
+
+def test_bool_coercion_handles_none_explicitly(tmp_path):
+    """`strict=None` → NULL, NOT 0. Distinguishes 'never set' from
+    'explicitly False' so back-compat callers don't shift the meaning
+    of pre-existing config snapshots."""
+    from bird_interact_agents.results_db import (
+        insert_run_metadata, open_db,
+    )
+    conn = open_db(tmp_path / "results.db")
+    insert_run_metadata(
+        conn, run_id="none_strict", agent_model="x", user_sim_model="y",
+        framework="claude_sdk", mode="a-interact",
+        strict=None, prompt_cache=None,
+    )
+    row = conn.execute(
+        "SELECT strict, prompt_cache FROM run_metadata"
+    ).fetchone()
+    assert row == (None, None)
+
+
 def test_insert_task_result_persists_to_disk(tmp_path):
     """The DB write must survive a process restart (no in-memory only).
     Open a fresh connection and read back the row."""

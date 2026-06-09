@@ -25,6 +25,7 @@ from bird_interact_agents.eval.annotation_schema import (
     FailureClassification,
     PhaseVerdict,
     SubmissionAnnotation,
+    SubmissionConfig,
     SubmissionEvaluation,
     SubmissionMetadata,
     TaskAnnotation,
@@ -278,6 +279,7 @@ def _build_submission_annotation(
     n_ask_user_calls: Optional[int],
     submitted_sql: Optional[str] = None,
     user_sim_interaction: Optional[UserSimInteraction] = None,
+    config: Optional[SubmissionConfig] = None,
     epsilon: float = 1e-6,
 ) -> SubmissionAnnotation:
     """Map the in-memory CascadeVerdict → on-disk SubmissionAnnotation."""
@@ -329,6 +331,7 @@ def _build_submission_annotation(
             cost_usd_user_sim=cost_usd_user_sim,
             n_agent_turns=n_agent_turns,
             n_ask_user_calls=n_ask_user_calls,
+            config=config,
         ),
         evaluation=ev,
         failure_classification=FailureClassification(
@@ -417,6 +420,7 @@ def _write_harness_confirmed_annotation(
     submitted_sql: Optional[str] = None,
     predicted_result: Optional[List[Any]] = None,
     gold_result: Optional[List[Any]] = None,
+    config: Optional[SubmissionConfig] = None,
 ) -> Path:
     """Write an all-pass annotation without re-executing SQL.
 
@@ -459,6 +463,7 @@ def _write_harness_confirmed_annotation(
             cost_usd_user_sim=cost_usd_user_sim,
             n_agent_turns=n_agent_turns,
             n_ask_user_calls=n_ask_user_calls,
+            config=config,
         ),
         evaluation=SubmissionEvaluation(
             phase1_against_original_gold="pass",
@@ -519,6 +524,7 @@ def grade_and_write(
     n_ask_user_calls: Optional[int] = None,
     predicted_row_count: Optional[int] = None,
     user_sim_interaction: Optional[UserSimInteraction] = None,
+    config: Optional[SubmissionConfig] = None,
     llm_judge: Any = None,
     epsilon: float = 1e-6,
     autopsy_result: Optional["AutopsyResult"] = None,
@@ -586,6 +592,7 @@ def grade_and_write(
         n_ask_user_calls=n_ask_user_calls,
         submitted_sql=submitted_sql,
         user_sim_interaction=user_sim_interaction,
+        config=config,
         epsilon=epsilon,
     )
     if autopsy_result is not None:
@@ -623,6 +630,7 @@ def write_failed_submission_annotation(
     n_agent_turns: Optional[int] = None,
     n_ask_user_calls: Optional[int] = None,
     predicted_row_count: Optional[int] = None,
+    config: Optional[SubmissionConfig] = None,
 ) -> Path:
     """Write a 0-pass ``submission_annotation.json`` for a task that
     bypassed the grader (e.g. agent crashed before submit, no
@@ -662,6 +670,7 @@ def write_failed_submission_annotation(
             cost_usd_user_sim=cost_usd_user_sim,
             n_agent_turns=n_agent_turns,
             n_ask_user_calls=n_ask_user_calls,
+            config=config,
         ),
         evaluation=SubmissionEvaluation(
             phase1_against_original_gold="fail",
@@ -818,6 +827,7 @@ def grade_one_submission(
     n_ask_user_calls: Optional[int] = None,
     predicted_row_count: Optional[int] = None,
     user_sim_interaction: Optional[UserSimInteraction] = None,
+    config: Optional[SubmissionConfig] = None,
     task_annotation: Optional[TaskAnnotation] = None,
     autopsy_result: Optional["AutopsyResult"] = None,
     attempt: int = 1,
@@ -880,6 +890,7 @@ def grade_one_submission(
             submitted_sql=submitted_sql,
             predicted_result=predicted_result,
             gold_result=gold_result,
+            config=config,
         )
 
     audited_rows = load_audited_gold_rows_for(
@@ -906,5 +917,6 @@ def grade_one_submission(
         n_ask_user_calls=n_ask_user_calls,
         predicted_row_count=predicted_row_count,
         user_sim_interaction=user_sim_interaction,
+        config=config,
         autopsy_result=autopsy_result,
     )

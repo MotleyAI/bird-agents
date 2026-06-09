@@ -32,6 +32,7 @@ from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
 from bird_interact_agents.cloud import upload_back as _upload_back
+from bird_interact_agents.eval.annotation_schema import SubmissionConfig
 from bird_interact_agents.eval.grade_in_place import (
     decode_result_json as _decode_result_json,
     extract_usage_costs,
@@ -758,6 +759,26 @@ def _run_one_in_actor(
     _usage = row.get("usage")
     _agent_cost, _sim_cost = extract_usage_costs(_usage)
     _usage_dict = _usage if isinstance(_usage, dict) else {}
+    # DEV-1535: snapshot the per-run config from the manifest into every
+    # submission annotation, so post-hoc cost-by-mode / failure-mode
+    # analyses don't have to parse the cloud run-id substring to recover
+    # framework/mode/etc. Build once per task — the config is identical
+    # across the manifest but the annotation writer expects an instance.
+    _submission_config = SubmissionConfig(
+        framework=cfg.get("framework"),
+        mode=cfg.get("mode"),
+        query_mode=cfg.get("query_mode"),
+        agent_model=cfg.get("agent_model"),
+        user_sim_model=cfg.get("user_sim_model"),
+        slayer_setup=cfg.get("slayer_setup"),
+        reasoning_effort=cfg.get("reasoning_effort"),
+        patience=cfg.get("patience"),
+        max_depth=cfg.get("max_depth"),
+        dataset=cfg.get("dataset"),
+        strict=cfg.get("strict"),
+        use_audited_gold_sql=cfg.get("use_audited_gold_sql"),
+        prompt_cache=cfg.get("prompt_cache"),
+    )
     try:
         # Short-circuit BEFORE calling the real grader on a missing
         # submission. ``str(row.get("submitted_sql") or "")`` would
@@ -799,6 +820,7 @@ def _run_one_in_actor(
             n_agent_turns=_usage_dict.get("n_agent_turns"),
             n_ask_user_calls=_usage_dict.get("n_ask_user_calls"),
             predicted_row_count=None,
+            config=_submission_config,
             task_annotation=row.get("_task_annotation"),
             autopsy_result=row.get("_autopsy"),
             attempt=attempt,
@@ -831,6 +853,7 @@ def _run_one_in_actor(
                 cost_usd_user_sim=_sim_cost,
                 n_agent_turns=_usage_dict.get("n_agent_turns"),
                 n_ask_user_calls=_usage_dict.get("n_ask_user_calls"),
+                config=_submission_config,
             )
             _gcs.write_submission_annotation(
                 run_id, iid, json.loads(failed_path.read_text()),
