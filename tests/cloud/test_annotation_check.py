@@ -454,6 +454,205 @@ def test_layered_check_flags_annotation_wrong_gold_no_audited_row(
     assert missing == ["museum_7"]
 
 
+def test_layered_check_rejects_audited_row_missing_audited_sol_sql(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """DEV-1535 r5 (Codex): a sidecar row with `audit_status=edited`
+    but missing `audited_sol_sql` would have passed the pre-r5
+    instance_id-only index — the runtime overlay would then silently
+    fall back to the original gold mid-cloud-run. The hardened index
+    now validates `audited_sol_sql` non-empty for non-clean rows."""
+    import json as _json
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._annotation_check import (
+        annotations_requiring_audited_gold_without_rows,
+    )
+    from bird_interact_agents import paths as _paths
+
+    monkeypatch.setattr(_paths, "benchmark_data_file",
+        lambda *a, **k: _write_mini_dataset(tmp_path, [
+            {"instance_id": "museum_7", "selected_database": "museum"},
+        ]),
+    )
+    ann_root = tmp_path / "annotations"
+    _write_full_annotation(
+        ann_root, "livesqlbench-base-lite-sqlite", "museum", "museum_7",
+        original_gold_is_correct=False, with_variant=True,
+    )
+    # Sidecar HAS a row for museum_7 — but it's malformed (no
+    # `audited_sol_sql`). Pre-r5 the iid-only index would have
+    # accepted this.
+    audited_root = tmp_path / "audited_gold"
+    bench_dir = audited_root / "livesqlbench-base-lite-sqlite"
+    bench_dir.mkdir(parents=True)
+    (bench_dir / "livesqlbench-base-lite-sqlite_audited.jsonl").write_text(
+        _json.dumps({
+            "instance_id": "museum_7",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench-base-lite-sqlite",
+            "variants": [{
+                "variant_id": "primary", "primary": True,
+                "audit_status": "edited",
+                # NO audited_sol_sql — overlay would silently fall back.
+            }],
+        }) + "\n",
+    )
+    monkeypatch.setattr(_paths, "audited_gold_root", lambda: audited_root)
+
+    missing = annotations_requiring_audited_gold_without_rows(
+        ["museum_7"],
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
+        annotations_root=ann_root,
+    )
+    assert missing == ["museum_7"]
+
+
+def test_layered_check_rejects_audited_row_with_empty_audited_sol_sql(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Same validation: `audited_sol_sql=[]` also fails the index —
+    `bool([])` is False, so the overlay's `isinstance(audited, list)
+    and bool(audited)` rejects it too."""
+    import json as _json
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._annotation_check import (
+        annotations_requiring_audited_gold_without_rows,
+    )
+    from bird_interact_agents import paths as _paths
+
+    monkeypatch.setattr(_paths, "benchmark_data_file",
+        lambda *a, **k: _write_mini_dataset(tmp_path, [
+            {"instance_id": "museum_7", "selected_database": "museum"},
+        ]),
+    )
+    ann_root = tmp_path / "annotations"
+    _write_full_annotation(
+        ann_root, "livesqlbench-base-lite-sqlite", "museum", "museum_7",
+        original_gold_is_correct=False, with_variant=True,
+    )
+    audited_root = tmp_path / "audited_gold"
+    bench_dir = audited_root / "livesqlbench-base-lite-sqlite"
+    bench_dir.mkdir(parents=True)
+    (bench_dir / "livesqlbench-base-lite-sqlite_audited.jsonl").write_text(
+        _json.dumps({
+            "instance_id": "museum_7",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench-base-lite-sqlite",
+            "variants": [{
+                "variant_id": "primary", "primary": True,
+                "audit_status": "edited",
+                "audited_sol_sql": [],  # empty
+            }],
+        }) + "\n",
+    )
+    monkeypatch.setattr(_paths, "audited_gold_root", lambda: audited_root)
+
+    missing = annotations_requiring_audited_gold_without_rows(
+        ["museum_7"],
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
+        annotations_root=ann_root,
+    )
+    assert missing == ["museum_7"]
+
+
+def test_layered_check_rejects_cross_benchmark_collision_row(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """DB names overlap across benchmarks by design (alien, museum,
+    …). A row with the right `instance_id` but the wrong `benchmark`
+    tag must NOT count as present — applying that audit at runtime
+    would land the wrong gold."""
+    import json as _json
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._annotation_check import (
+        annotations_requiring_audited_gold_without_rows,
+    )
+    from bird_interact_agents import paths as _paths
+
+    monkeypatch.setattr(_paths, "benchmark_data_file",
+        lambda *a, **k: _write_mini_dataset(tmp_path, [
+            {"instance_id": "museum_7", "selected_database": "museum"},
+        ]),
+    )
+    ann_root = tmp_path / "annotations"
+    _write_full_annotation(
+        ann_root, "livesqlbench-base-lite-sqlite", "museum", "museum_7",
+        original_gold_is_correct=False, with_variant=True,
+    )
+    audited_root = tmp_path / "audited_gold"
+    bench_dir = audited_root / "livesqlbench-base-lite-sqlite"
+    bench_dir.mkdir(parents=True)
+    (bench_dir / "livesqlbench-base-lite-sqlite_audited.jsonl").write_text(
+        _json.dumps({
+            "instance_id": "museum_7",
+            "selected_database": "museum",
+            "benchmark": "mini-interact",  # WRONG benchmark
+            "variants": [{
+                "variant_id": "primary", "primary": True,
+                "audit_status": "edited",
+                "audited_sol_sql": ["SELECT 1"],
+            }],
+        }) + "\n",
+    )
+    monkeypatch.setattr(_paths, "audited_gold_root", lambda: audited_root)
+
+    missing = annotations_requiring_audited_gold_without_rows(
+        ["museum_7"],
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
+        annotations_root=ann_root,
+    )
+    assert missing == ["museum_7"]
+
+
+def test_layered_check_clean_row_passes_regardless_of_audited_sol_sql(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """`audit_status=clean` (or legacy `original`) means the original
+    IS the audited gold — the overlay deliberately leaves
+    `sol_sql` untouched. So a clean row needs no `audited_sol_sql`
+    (matches the runtime overlay's contract)."""
+    import json as _json
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._annotation_check import (
+        annotations_requiring_audited_gold_without_rows,
+    )
+    from bird_interact_agents import paths as _paths
+
+    monkeypatch.setattr(_paths, "benchmark_data_file",
+        lambda *a, **k: _write_mini_dataset(tmp_path, [
+            {"instance_id": "museum_7", "selected_database": "museum"},
+        ]),
+    )
+    ann_root = tmp_path / "annotations"
+    _write_full_annotation(
+        ann_root, "livesqlbench-base-lite-sqlite", "museum", "museum_7",
+        original_gold_is_correct=False, with_variant=True,
+    )
+    audited_root = tmp_path / "audited_gold"
+    bench_dir = audited_root / "livesqlbench-base-lite-sqlite"
+    bench_dir.mkdir(parents=True)
+    (bench_dir / "livesqlbench-base-lite-sqlite_audited.jsonl").write_text(
+        _json.dumps({
+            "instance_id": "museum_7",
+            "selected_database": "museum",
+            "benchmark": "livesqlbench-base-lite-sqlite",
+            "variants": [{
+                "variant_id": "primary", "primary": True,
+                "audit_status": "clean",
+                # No audited_sol_sql — clean rows don't need one.
+            }],
+        }) + "\n",
+    )
+    monkeypatch.setattr(_paths, "audited_gold_root", lambda: audited_root)
+
+    missing = annotations_requiring_audited_gold_without_rows(
+        ["museum_7"],
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
+        annotations_root=ann_root,
+    )
+    assert missing == []
+
+
 def test_layered_check_passes_when_audited_row_present(
     tmp_path: Path, monkeypatch,
 ) -> None:
@@ -551,9 +750,9 @@ def test_layered_check_reads_audited_gold_sidecar_once(
 
     call_count = {"n": 0}
     original = ann_mod._build_audited_gold_presence_index
-    def spy(bench_name: str) -> set[str]:
+    def spy(bench_name: str, **kw) -> set[str]:
         call_count["n"] += 1
-        return original(bench_name)
+        return original(bench_name, **kw)
     monkeypatch.setattr(
         ann_mod, "_build_audited_gold_presence_index", spy,
     )
@@ -593,7 +792,7 @@ def test_layered_check_skips_audited_index_when_no_iid_needs_it(
     )
 
     call_count = {"n": 0}
-    def spy(bench_name: str) -> set[str]:
+    def spy(bench_name: str, **kw) -> set[str]:
         call_count["n"] += 1
         return set()
     monkeypatch.setattr(

@@ -118,17 +118,40 @@ def missing_annotation_ids(
     return missing
 
 
-def _build_audited_gold_presence_index(benchmark_name: str) -> set[str]:
+def _build_audited_gold_presence_index(
+    benchmark_name: str,
+    instance_to_db: Optional[dict[str, str]] = None,
+) -> set[str]:
     """Read the consolidated audited-gold sidecar ONCE and return the set
-    of instance_ids it carries. DEV-1535 r3 (CodeRabbit): the prior
-    implementation called ``load_audited_gold_rows_for`` per-iid,
-    re-scanning the JSONL on every call — O(N_ids × file_size). For
-    a 76-iid retry batch that's 76 full passes over a multi-KB file.
-    Build the index once.
+    of instance_ids whose row passes the same validation
+    ``apply_audited_gold_overlay`` enforces at runtime.
 
-    Returns an empty set if the benchmark has no consolidated layout,
-    the file is absent, or every row is unparseable — same graceful
-    semantics as ``load_audited_gold_rows_for``."""
+    DEV-1535 r3 (CodeRabbit perf) — build the index once instead of
+    calling ``load_audited_gold_rows_for`` per-iid (O(N × file_size)
+    pre-fix).
+
+    DEV-1535 r5 (Codex) — validate every row against the SAME rules
+    the runtime overlay enforces (was the original
+    ``cloud._audited_gold_check`` module's job before this PR
+    replaced it):
+      - ``benchmark`` field, if present, must match the benchmark
+        we're checking (cross-benchmark id collision guard — DB
+        names overlap across benchmarks by design).
+      - ``selected_database``, if present, must match the dataset's
+        mapping for this id (same defence-in-depth — only applies
+        when the dataset map is supplied).
+      - ``audit_status`` of ``clean``/``original`` passes regardless of
+        ``audited_sol_sql`` (the original IS the audited gold; overlay
+        deliberately leaves ``sol_sql`` untouched).
+      - Any other status (``edited``/``unrecoverable``) requires a
+        non-empty ``audited_sol_sql`` list, otherwise the overlay
+        silently falls back to original gold mid-cloud-run. Pre-r5
+        a row with just ``{"instance_id": X}`` would have passed,
+        reopening the exact gap the layered guard exists to close.
+
+    Returns an empty set if the benchmark has no consolidated
+    layout, the file is absent, or every row is unparseable — same
+    graceful semantics as ``load_audited_gold_rows_for``."""
     from bird_interact_agents.benchmark import get_benchmark as _get_bench
 
     try:
@@ -140,6 +163,19 @@ def _build_audited_gold_presence_index(benchmark_name: str) -> set[str]:
     sidecar = paths.audited_gold_root() / bench.name / f"{bench.name}_audited.jsonl"
     if not sidecar.is_file():
         return set()
+
+    def _row_passes(audit_status: str | None,
+                    audited_sol_sql: object) -> bool:
+        if audit_status in ("clean", "original"):
+            return True
+        if audit_status in ("edited", "unrecoverable"):
+            return (
+                isinstance(audited_sol_sql, list)
+                and bool(audited_sol_sql)
+            )
+        # Unknown / missing status — be conservative; treat as not present.
+        return False
+
     present: set[str] = set()
     for line in sidecar.read_text().splitlines():
         line = line.strip()
@@ -152,8 +188,43 @@ def _build_audited_gold_presence_index(benchmark_name: str) -> set[str]:
         if not isinstance(d, dict):
             continue
         iid = d.get("instance_id")
-        if isinstance(iid, str):
-            present.add(iid)
+        if not isinstance(iid, str):
+            continue
+        row_bench = d.get("benchmark")
+        if isinstance(row_bench, str) and row_bench != bench.name:
+            continue  # cross-benchmark collision; skip
+        row_db = d.get("selected_database")
+        if instance_to_db is not None and isinstance(row_db, str):
+            expected_db = instance_to_db.get(iid)
+            if expected_db is not None and row_db != expected_db:
+                continue
+
+        # Grouped format: choose the primary variant; fall back to the
+        # first variant if no primary is marked. Treat the whole row as
+        # missing if no variant passes.
+        if "variants" in d:
+            variants = d.get("variants") or []
+            if not isinstance(variants, list) or not variants:
+                continue
+            primary = next(
+                (v for v in variants
+                 if isinstance(v, dict) and v.get("primary")),
+                variants[0] if isinstance(variants[0], dict) else None,
+            )
+            if not isinstance(primary, dict):
+                continue
+            status = primary.get("audit_status")
+            sol_sql = primary.get("audited_sol_sql")
+            if not _row_passes(status, sol_sql):
+                continue
+        else:
+            # Legacy flat-row format — validation applies to the row itself.
+            status = d.get("audit_status")
+            sol_sql = d.get("audited_sol_sql")
+            if not _row_passes(status, sol_sql):
+                continue
+
+        present.add(iid)
     return present
 
 
@@ -225,7 +296,11 @@ def annotations_requiring_audited_gold_without_rows(
         needs_audited.append(iid)
 
     if needs_audited:
-        present = _build_audited_gold_presence_index(bench.name)
+        # Pass the instance→db map so the index can enforce the
+        # benchmark+database cross-checks the runtime overlay also runs.
+        present = _build_audited_gold_presence_index(
+            bench.name, instance_to_db=inst_to_db,
+        )
         for iid in needs_audited:
             if iid not in present:
                 missing_audited.append(iid)

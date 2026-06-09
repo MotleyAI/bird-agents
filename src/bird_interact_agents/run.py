@@ -1141,8 +1141,27 @@ async def run_evaluation(
             logger.info("Task %d/%d: %s", i + 1, len(tasks), instance_id)
             started_at = time.time()
             t_start = time.perf_counter()
+            _timeout = _per_task_timeout_s()
             try:
-                r = await runner(td, data_dir, patience, user_sim_model)
+                _coro = runner(td, data_dir, patience, user_sim_model)
+                if _timeout > 0:
+                    # DEV-1535 r5 (Codex): the local `run_evaluation`
+                    # loop awaited `runner(...)` directly, so runaway
+                    # tasks ran uncapped. The cloud (`run_one_task` /
+                    # `run_one_task_with_runner`) entry points both
+                    # already wrap with `asyncio.wait_for`; mirror it
+                    # here so `BIRD_INTERACT_PER_TASK_TIMEOUT_S` binds
+                    # the local CLI path too.
+                    try:
+                        r = await asyncio.wait_for(_coro, timeout=_timeout)
+                    except asyncio.TimeoutError as te:
+                        raise TimeoutError(
+                            f"per-task wall-clock cap of {_timeout:.0f}s "
+                            f"exceeded (BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 "
+                            f"to disable)"
+                        ) from te
+                else:
+                    r = await _coro
             except Exception as e:
                 logger.error("Error on %s: %s", instance_id, e)
                 r = finalize_result_row(
