@@ -604,6 +604,103 @@ def test_layered_check_rejects_cross_benchmark_collision_row(
     assert missing == ["museum_7"]
 
 
+def test_layered_check_rejects_row_with_missing_benchmark_field(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """DEV-1535 r6 (Codex): a row with no `benchmark` field at all is
+    rejected. The runtime overlay treats missing `benchmark` as
+    missing-row (silent fallback to original gold), so the submit-time
+    index must mirror that contract."""
+    import json as _json
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._annotation_check import (
+        annotations_requiring_audited_gold_without_rows,
+    )
+    from bird_interact_agents import paths as _paths
+
+    monkeypatch.setattr(_paths, "benchmark_data_file",
+        lambda *a, **k: _write_mini_dataset(tmp_path, [
+            {"instance_id": "museum_7", "selected_database": "museum"},
+        ]),
+    )
+    ann_root = tmp_path / "annotations"
+    _write_full_annotation(
+        ann_root, "livesqlbench-base-lite-sqlite", "museum", "museum_7",
+        original_gold_is_correct=False, with_variant=True,
+    )
+    audited_root = tmp_path / "audited_gold"
+    bench_dir = audited_root / "livesqlbench-base-lite-sqlite"
+    bench_dir.mkdir(parents=True)
+    (bench_dir / "livesqlbench-base-lite-sqlite_audited.jsonl").write_text(
+        _json.dumps({
+            "instance_id": "museum_7",
+            "selected_database": "museum",
+            # NO `benchmark` field at all
+            "variants": [{
+                "variant_id": "primary", "primary": True,
+                "audit_status": "edited",
+                "audited_sol_sql": ["SELECT 1"],
+            }],
+        }) + "\n",
+    )
+    monkeypatch.setattr(_paths, "audited_gold_root", lambda: audited_root)
+
+    missing = annotations_requiring_audited_gold_without_rows(
+        ["museum_7"],
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
+        annotations_root=ann_root,
+    )
+    assert missing == ["museum_7"]
+
+
+def test_layered_check_rejects_row_with_missing_selected_database(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Same contract for `selected_database`: absent → rejected.
+    A row without a database discriminator could match by id alone
+    and apply the wrong audit if benchmarks shared the id space."""
+    import json as _json
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.cloud._annotation_check import (
+        annotations_requiring_audited_gold_without_rows,
+    )
+    from bird_interact_agents import paths as _paths
+
+    monkeypatch.setattr(_paths, "benchmark_data_file",
+        lambda *a, **k: _write_mini_dataset(tmp_path, [
+            {"instance_id": "museum_7", "selected_database": "museum"},
+        ]),
+    )
+    ann_root = tmp_path / "annotations"
+    _write_full_annotation(
+        ann_root, "livesqlbench-base-lite-sqlite", "museum", "museum_7",
+        original_gold_is_correct=False, with_variant=True,
+    )
+    audited_root = tmp_path / "audited_gold"
+    bench_dir = audited_root / "livesqlbench-base-lite-sqlite"
+    bench_dir.mkdir(parents=True)
+    (bench_dir / "livesqlbench-base-lite-sqlite_audited.jsonl").write_text(
+        _json.dumps({
+            "instance_id": "museum_7",
+            "benchmark": "livesqlbench-base-lite-sqlite",
+            # NO `selected_database`
+            "variants": [{
+                "variant_id": "primary", "primary": True,
+                "audit_status": "edited",
+                "audited_sol_sql": ["SELECT 1"],
+            }],
+        }) + "\n",
+    )
+    monkeypatch.setattr(_paths, "audited_gold_root", lambda: audited_root)
+
+    missing = annotations_requiring_audited_gold_without_rows(
+        ["museum_7"],
+        benchmark=get_benchmark("livesqlbench-base-lite-sqlite"),
+        annotations_root=ann_root,
+    )
+    assert missing == ["museum_7"]
+
+
 def test_layered_check_clean_row_passes_regardless_of_audited_sol_sql(
     tmp_path: Path, monkeypatch,
 ) -> None:

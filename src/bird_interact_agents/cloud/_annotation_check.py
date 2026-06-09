@@ -190,11 +190,21 @@ def _build_audited_gold_presence_index(
         iid = d.get("instance_id")
         if not isinstance(iid, str):
             continue
+        # DEV-1535 r6 (Codex): the cross-benchmark + cross-database
+        # checks must REQUIRE the fields to be present (and matching),
+        # not just "reject when present and wrong". The runtime overlay
+        # in `harness.apply_audited_gold_overlay` treats absent
+        # benchmark/selected_database as missing-row (silent fallback
+        # to original gold); the submit-time index must mirror that
+        # contract or the layered guard reopens the same silent-fallback
+        # gap it was added to close.
         row_bench = d.get("benchmark")
-        if isinstance(row_bench, str) and row_bench != bench.name:
-            continue  # cross-benchmark collision; skip
+        if not isinstance(row_bench, str) or row_bench != bench.name:
+            continue
         row_db = d.get("selected_database")
-        if instance_to_db is not None and isinstance(row_db, str):
+        if not isinstance(row_db, str) or not row_db:
+            continue
+        if instance_to_db is not None:
             expected_db = instance_to_db.get(iid)
             if expected_db is not None and row_db != expected_db:
                 continue
