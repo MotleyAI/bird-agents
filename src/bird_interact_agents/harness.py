@@ -1076,9 +1076,25 @@ def finalize_result_row(
     used a deletion variant (i.e. ``deleted_kb_ids`` is non-empty);
     otherwise it stays ``None`` so canonical-storage rows can be told
     apart from variant rows in the results JSON.
+
+    DEV-1535 fix: also backfills ``n_agent_turns`` from the trajectory
+    when the adapter hasn't set it explicitly. Pre-fix only the
+    pydantic_ai* adapters populated this field — every claude_sdk*
+    adapter left it ``None``, which collapsed downstream telemetry
+    (CascadingReport.n_agent_turns, post-hoc budget analyses, etc.) to
+    ``len(trajectory)`` proxies. Count = number of ``AssistantMessage``
+    items in the trajectory.
     """
     row["deleted_kb_ids"] = deleted_kb_ids
     row["variant_storage_path"] = slayer_storage_dir if deleted_kb_ids else None
+    if row.get("n_agent_turns") is None:
+        traj = row.get("trajectory")
+        if isinstance(traj, list):
+            row["n_agent_turns"] = sum(
+                1 for item in traj
+                if isinstance(item, dict)
+                and item.get("type") == "AssistantMessage"
+            )
     return row
 
 
