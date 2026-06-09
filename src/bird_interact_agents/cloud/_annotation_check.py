@@ -99,4 +99,67 @@ def missing_annotation_ids(
     return missing
 
 
-__all__ = ["missing_annotation_ids"]
+def annotations_requiring_audited_gold_without_rows(
+    instance_ids: Iterable[str],
+    *,
+    benchmark: Benchmark | None = None,
+    annotations_root: Optional[Path] = None,
+) -> list[str]:
+    """DEV-1535 r2 (Codex): layered guard on top of
+    ``missing_annotation_ids``.
+
+    When an annotation says ``original_gold_is_correct=False`` the
+    grader needs audited-gold variants to grade against — otherwise
+    ``load_audited_gold_rows_for`` returns an empty list and the
+    tolerant grader silently falls back to the (annotated-as-wrong)
+    original gold. Pre-DEV-1535 the old ``--require-audited-gold``
+    flag covered this; the replacement annotation guard (which was
+    the right move — annotations are the authoritative source) loses
+    this specific protection for the sync gap between annotation and
+    audited_gold.
+
+    Returns the subset of ``instance_ids`` whose annotation says the
+    original gold is wrong AND have no row in the audited-gold
+    sidecar. Empty list means every annotation-requiring-variants id
+    has matching audited-gold rows. IIDs without an annotation file
+    are skipped (the primary guard handles those).
+    """
+    from bird_interact_agents.eval.annotation_io import read_task_annotation
+    from bird_interact_agents.eval.grade_in_place import (
+        load_audited_gold_rows_for,
+    )
+
+    bench = benchmark or get_benchmark("mini-interact")
+    ann_root = annotations_root or paths.annotations_root()
+    inst_to_db = _load_dataset_instance_db_map(None, benchmark=bench)
+
+    missing_audited: list[str] = []
+    for iid in instance_ids:
+        db = inst_to_db.get(iid)
+        if db is None:
+            continue
+        ann_path = ann_root / bench.name / db / f"{iid}.task.json"
+        if not ann_path.is_file():
+            continue  # primary guard catches this
+        try:
+            ann = read_task_annotation(ann_path)
+        except Exception:  # noqa: BLE001 — malformed annotation; skip
+            continue
+        # `original_gold_is_correct=True` (or None for back-compat)
+        # means the original IS the gold; no audited row needed.
+        if getattr(ann, "original_gold_is_correct", None) is not False:
+            continue
+        # Annotation says original is wrong — need at least one
+        # audited row to grade against.
+        rows = load_audited_gold_rows_for(
+            benchmark=bench.name, instance_id=iid,
+        )
+        if not rows:
+            missing_audited.append(iid)
+    return missing_audited
+
+
+__all__ = [
+    "missing_annotation_ids",
+    "annotations_requiring_audited_gold_without_rows",
+]

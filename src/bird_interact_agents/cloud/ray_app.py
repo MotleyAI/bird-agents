@@ -819,7 +819,13 @@ def _run_one_in_actor(
             duration_s=row.get("duration_s"),
             n_agent_turns=_usage_dict.get("n_agent_turns"),
             n_ask_user_calls=_usage_dict.get("n_ask_user_calls"),
-            predicted_row_count=None,
+            # DEV-1535 r2 (Codex): `finalize_result_row` now backfills
+            # `predicted_row_count` from the snapshot dict, but the
+            # cloud writer was hardcoding `None` and ignoring it —
+            # leaving cloud-side annotations missing the row-count
+            # evidence the new `slayer_overaggregation` autopsy
+            # pattern needs. Forward whatever the row carries.
+            predicted_row_count=row.get("predicted_row_count"),
             config=_submission_config,
             task_annotation=row.get("_task_annotation"),
             autopsy_result=row.get("_autopsy"),

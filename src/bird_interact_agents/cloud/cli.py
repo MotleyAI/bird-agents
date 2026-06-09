@@ -250,6 +250,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         # annotation is needed for grading regardless of overlay use.
         if ns.require_annotation:
             from bird_interact_agents.cloud._annotation_check import (
+                annotations_requiring_audited_gold_without_rows,
                 missing_annotation_ids,
             )
             missing = missing_annotation_ids(
@@ -264,6 +265,33 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                     "them first (`bird-interact-cloud annotate`), or pass "
                     "--no-require-annotation to bypass for smoke runs."
                 )
+            # DEV-1535 r2 (Codex): layered guard for the annotation ↔
+            # audited_gold sync gap. When `--use-audited-gold-sql` is
+            # on and an annotation says `original_gold_is_correct=False`
+            # the grader needs audited-gold variants to grade against;
+            # without a corresponding sidecar row the tolerant grader
+            # silently falls back to the (annotated-as-wrong) original
+            # gold. The primary annotation guard above doesn't catch
+            # this — both files exist but they're out of sync. Same
+            # `--no-require-annotation` opt-out bypasses both.
+            if ns.use_audited_gold_sql:
+                missing_audited = annotations_requiring_audited_gold_without_rows(
+                    ns.instance_ids,
+                    benchmark=get_benchmark(ns.dataset),
+                )
+                if missing_audited:
+                    p.error(
+                        "the following instance_ids have an annotation "
+                        "marked `original_gold_is_correct=False` but no "
+                        "matching row in audited_gold/<benchmark>/<benchmark>"
+                        "_audited.jsonl — the tolerant grader would "
+                        "silently fall back to the (annotated-as-wrong) "
+                        f"original gold: {', '.join(missing_audited)}. "
+                        "Either backfill the audited_gold sidecar, pass "
+                        "--no-use-audited-gold-sql to evaluate against "
+                        "the original gold knowingly, or pass "
+                        "--no-require-annotation to bypass both guards."
+                    )
 
     return ns
 
