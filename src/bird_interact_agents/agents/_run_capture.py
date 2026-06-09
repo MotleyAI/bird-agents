@@ -131,10 +131,17 @@ def _count_turns(agent_run: Any) -> int | None:
 def _looks_like_claude_sdk_trajectory(trajectory: list[Any] | None) -> bool:
     """Discriminator used by the finalize_result_row dispatch — return
     True iff the trajectory shape matches the claude_sdk convention
-    (every item is a dict with a `type` string and a `data` value). A
-    pydantic_ai trajectory (which is a list of model-message dicts with
-    no `type` at the top level) returns False so the dispatcher doesn't
-    mis-route."""
+    (every item is a dict with a `type` string and a DICT `data` value).
+    A pydantic_ai trajectory (no `type` at the top level) returns False
+    so the dispatcher doesn't mis-route.
+
+    DEV-1535 r2 (Codex): also reject the claude_sdk_*_raw shape, which
+    serialises `data` as a 500-char string (`str(msg)[:500]`) rather
+    than a dataclass dict. The walker can't extract anything from
+    strings — accepting these trajectories would have returned an
+    empty stats dict, falsely indicating "0 tool calls / 0 errors"
+    instead of "not extractable".
+    """
     if not isinstance(trajectory, list) or not trajectory:
         return False
     for item in trajectory:
@@ -142,7 +149,7 @@ def _looks_like_claude_sdk_trajectory(trajectory: list[Any] | None) -> bool:
             return False
         if not isinstance(item.get("type"), str):
             return False
-        if "data" not in item:
+        if not isinstance(item.get("data"), dict):
             return False
     return True
 

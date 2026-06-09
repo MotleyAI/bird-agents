@@ -1087,6 +1087,18 @@ def finalize_result_row(
     """
     row["deleted_kb_ids"] = deleted_kb_ids
     row["variant_storage_path"] = slayer_storage_dir if deleted_kb_ids else None
+    # DEV-1535 r2 (CodeRabbit): the early-error paths in
+    # `claude_sdk_otf/agent.py:393-406` and the analogous spots in
+    # `claude_sdk_otf_raw/agent.py:163-176` build a row WITHOUT any
+    # `usage` field at all. Pre-fix the chokepoint backfills below
+    # short-circuited (`isinstance(_usage, dict)` was False) and the
+    # resulting annotation carried None for every usage-side telemetry
+    # field on the exact runs where that telemetry matters most.
+    # Initialise once at the top so every backfill below has a place
+    # to land.
+    if not isinstance(row.get("usage"), dict):
+        row["usage"] = {}
+    _usage = row["usage"]
     if row.get("n_agent_turns") is None:
         traj = row.get("trajectory")
         if isinstance(traj, list):
@@ -1095,14 +1107,23 @@ def finalize_result_row(
                 if isinstance(item, dict)
                 and item.get("type") == "AssistantMessage"
             )
+    # DEV-1535 r2 (Codex): the n_agent_turns backfill above sets only
+    # the top-level row key, but every annotation writer (run.py,
+    # cloud/ray_app.py) reads `usage_blob.get("n_agent_turns")`. Mirror
+    # the backfilled value into `usage` so the writers actually see it
+    # — without this mirror the per-adapter backfill is dead for
+    # claude_sdk runs (the very ones it was added for).
+    if (
+        row.get("n_agent_turns") is not None
+        and _usage.get("n_agent_turns") is None
+    ):
+        _usage["n_agent_turns"] = row["n_agent_turns"]
     # DEV-1535 follow-up: chokepoint backstop for `usage.n_ask_user_calls`.
     # Per-adapter edits ensure every claude_sdk_otf* flavor now sets this
     # field; pydantic_ai* adapters don't track ask_user but for those the
     # benchmark is one-shot (no user-sim), so a default of 0 is correct.
     # Defensive against future adapters that forget the convention.
-    _usage = row.get("usage")
-    if isinstance(_usage, dict) and "n_ask_user_calls" not in _usage:
-        _usage["n_ask_user_calls"] = 0
+    _usage.setdefault("n_ask_user_calls", 0)
     # DEV-1535 follow-up: backfill `predicted_row_count` from the
     # snapshot dict that `capture_result_snapshot` stores at
     # `predicted_result_json` (shape: `{"columns":[...], "row_count":N,
@@ -1143,16 +1164,17 @@ def finalize_result_row(
     # agent stop" signal (turn budget vs explicit stop vs error) that
     # was previously dropped. Fold under `usage.sdk_*` rather than a
     # new top-level dict so results.db's `usage_json` carries it for
-    # free.
-    if isinstance(row.get("usage"), dict):
-        from bird_interact_agents.agents._run_capture import (
-            extract_claude_sdk_result_metadata,
-        )
-        meta = extract_claude_sdk_result_metadata(row.get("trajectory"))
-        if meta is not None:
-            for k, v in meta.items():
-                # Don't clobber explicit adapter values; backfill only.
-                row["usage"].setdefault(k, v)
+    # free. `_usage` was hoisted at the top of the function so the
+    # early-error claude_sdk paths (no usage field on the row) still
+    # get backfilled here.
+    from bird_interact_agents.agents._run_capture import (
+        extract_claude_sdk_result_metadata,
+    )
+    meta = extract_claude_sdk_result_metadata(row.get("trajectory"))
+    if meta is not None:
+        for k, v in meta.items():
+            # Don't clobber explicit adapter values; backfill only.
+            _usage.setdefault(k, v)
     return row
 
 

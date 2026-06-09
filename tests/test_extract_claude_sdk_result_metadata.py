@@ -75,6 +75,19 @@ def test_returns_none_on_non_claude_sdk_shape():
     assert extract_claude_sdk_result_metadata(pydantic_ai_msgs) is None
 
 
+def test_returns_none_on_claude_sdk_raw_string_data_shape():
+    """DEV-1535 r2: the raw adapters serialize `data` as a string. The
+    tightened discriminator rejects these — without the fix, the walker
+    would have returned an SDK-metadata stub with all None fields
+    instead of None, which is harder to distinguish from a real
+    ResultMessage."""
+    raw_trajectory = [
+        {"type": "ResultMessage",
+         "data": "ResultMessage(subtype='success', duration_ms=1234)"},
+    ]
+    assert extract_claude_sdk_result_metadata(raw_trajectory) is None
+
+
 def test_handles_partial_result_message():
     """A ResultMessage missing some fields (older SDK versions, or
     error-path early termination) yields None on the missing fields —
@@ -105,18 +118,15 @@ def test_skips_non_dict_items():
     assert extract_claude_sdk_result_metadata(trajectory) is None
 
 
-def test_skips_resultmessage_with_non_dict_data():
-    """A ResultMessage whose `data` field is not a dict (corruption
-    edge case) is skipped during the reverse walk; the walker keeps
-    looking for an earlier valid ResultMessage."""
+def test_returns_none_when_any_item_has_non_dict_data():
+    """DEV-1535 r2 (Codex): the discriminator now requires EVERY item's
+    `data` to be a dict — a trajectory with even one non-dict-data
+    item is rejected wholesale, rather than skipping the bad one and
+    finding a good one. Trading a tiny bit of flexibility for a simple
+    "all or nothing" contract: a partial result from a corrupt
+    trajectory is more misleading than no result."""
     trajectory = [
         _result_msg(num_turns=2, stop_reason="end_turn"),
         {"type": "ResultMessage", "data": "garbage"},
     ]
-    meta = extract_claude_sdk_result_metadata(trajectory)
-    assert meta == {
-        "sdk_num_turns": 2,
-        "sdk_stop_reason": "end_turn",
-        "sdk_duration_ms": None,
-        "sdk_duration_api_ms": None,
-    }
+    assert extract_claude_sdk_result_metadata(trajectory) is None

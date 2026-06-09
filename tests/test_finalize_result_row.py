@@ -152,15 +152,33 @@ def test_preserves_explicit_n_ask_user_calls():
     assert row["usage"]["n_ask_user_calls"] == 5
 
 
-def test_n_ask_user_calls_no_op_when_usage_is_not_a_dict():
-    """Defensive: row carries a non-dict `usage` (very-early error path
-    may stuff a string). Don't crash; just leave it alone."""
+def test_initialises_usage_when_row_has_no_usage_field():
+    """DEV-1535 r2 (CodeRabbit): early-error claude_sdk paths build a
+    row with NO `usage` field at all (e.g.
+    `claude_sdk_otf/agent.py:393-406`). Pre-fix the backfills here
+    skipped silently and the annotation lost every usage-side
+    telemetry field. The chokepoint now initialises `usage = {}`
+    BEFORE applying backfills so those rows get the same defaults
+    everyone else does."""
+    row = finalize_result_row(
+        _row(trajectory=[]),  # NO usage field
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    # n_agent_turns mirrors in (computed as 0 from empty trajectory),
+    # n_ask_user_calls defaults to 0. No SDK metadata (no ResultMessage)
+    # and no tool_call_stats (empty trajectory fails the discriminator).
+    assert row["usage"] == {"n_agent_turns": 0, "n_ask_user_calls": 0}
+
+
+def test_replaces_non_dict_usage_with_initialised_dict():
+    """Defensive: a row whose `usage` was set to a non-dict (e.g. None
+    in a very-early error path) gets replaced with an initialised dict
+    so the chokepoint backfills always have a target."""
     row = finalize_result_row(
         _row(trajectory=[], usage=None),
         deleted_kb_ids=[], slayer_storage_dir="",
     )
-    # No new key was added to a non-dict usage; the row's usage is unchanged.
-    assert row.get("usage") is None
+    assert row["usage"] == {"n_agent_turns": 0, "n_ask_user_calls": 0}
 
 
 def test_backfills_predicted_row_count_from_snapshot_dict():
@@ -358,15 +376,66 @@ def test_sdk_metadata_no_op_when_no_resultmessage():
     assert "sdk_stop_reason" not in row["usage"]
 
 
-def test_sdk_metadata_no_op_when_usage_is_not_a_dict():
-    """A non-dict `usage` (very-early error path) → backfill skipped,
-    no crash."""
+def test_sdk_metadata_lands_even_when_starting_usage_was_not_a_dict():
+    """DEV-1535 r2 (CodeRabbit): with the chokepoint usage-init in
+    place, a row starting with `usage=None` still gets the SDK
+    metadata folded in — the fix makes the early-error claude_sdk
+    paths analyzable for the first time."""
     row = finalize_result_row(
-        _row(trajectory=_claude_sdk_min_trajectory(), usage=None),
+        _row(trajectory=_claude_sdk_min_trajectory(num_turns=4),
+             usage=None),
         deleted_kb_ids=[], slayer_storage_dir="",
     )
-    # The dispatcher saw usage was not a dict; nothing was folded in.
-    assert row.get("usage") is None
+    assert isinstance(row["usage"], dict)
+    assert row["usage"]["sdk_num_turns"] == 4
+    assert row["usage"]["sdk_stop_reason"] == "end_turn"
+    assert row["usage"]["n_ask_user_calls"] == 0  # also initialised
+
+
+# ---------------------------------------------------------------------------
+# DEV-1535 r2 (Codex) — `n_agent_turns` backfill must mirror into `usage`
+# too. All annotation writers read `usage_blob.get("n_agent_turns")`, so
+# the top-level row key was dead for the very runs the backfill exists
+# to fix.
+# ---------------------------------------------------------------------------
+
+
+def test_n_agent_turns_backfill_mirrors_into_usage():
+    """The trajectory-derived `n_agent_turns` count lands BOTH at the
+    top level (legacy compatibility) AND under `usage`, where the
+    cloud + local annotation writers read it from."""
+    trajectory = [
+        {"type": "AssistantMessage", "data": {}},
+        {"type": "AssistantMessage", "data": {}},
+        {"type": "AssistantMessage", "data": {}},
+    ]
+    row = finalize_result_row(
+        _row(trajectory=trajectory),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["n_agent_turns"] == 3
+    assert row["usage"]["n_agent_turns"] == 3
+
+
+def test_n_agent_turns_mirror_does_not_clobber_explicit_usage_value():
+    """If an adapter already set `usage["n_agent_turns"]` explicitly
+    (e.g. via the SDK's ResultMessage), the mirror must NOT overwrite
+    it. The top-level backfill computes from trajectory length; the
+    adapter value (which may differ slightly) wins."""
+    trajectory = [
+        {"type": "AssistantMessage", "data": {}},
+        {"type": "AssistantMessage", "data": {}},
+    ]
+    row = finalize_result_row(
+        _row(trajectory=trajectory, usage={"n_agent_turns": 99}),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    # Top-level backfill skipped because n_agent_turns is non-None
+    # in usage already? Actually it checks row["n_agent_turns"], which
+    # is None — so the trajectory-count IS computed and stored at
+    # row["n_agent_turns"]. The MIRROR is what's gated on the existing
+    # usage value.
+    assert row["usage"]["n_agent_turns"] == 99
 
     row2 = finalize_result_row(
         _row(trajectory=[]),

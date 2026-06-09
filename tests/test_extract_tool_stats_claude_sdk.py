@@ -115,6 +115,35 @@ def test_returns_none_on_non_claude_sdk_shape():
     assert extract_tool_stats_from_claude_sdk_trajectory(pydantic_ai_msgs) is None
 
 
+def test_returns_none_on_claude_sdk_raw_string_data_shape():
+    """DEV-1535 r2 (Codex): the `claude_sdk_otf*_raw` adapters
+    serialize each trajectory item as `{"type": ..., "data": str(msg)[:500]}`
+    — `data` is a STRING, not a dataclass dict. Pre-fix the discriminator
+    only checked `"data" in item` and accepted these; the walker then
+    skipped every non-dict `data` and falsely returned an empty stats
+    dict ('0 calls / 0 errors'). Tightened discriminator rejects the
+    raw shape — finalize_result_row leaves tool_call_stats absent
+    rather than fabricating a misleading-zero record."""
+    raw_trajectory = [
+        {"type": "AssistantMessage",
+         "data": "AssistantMessage(content=[...], parent_tool_use_id=None)"},
+        {"type": "ResultMessage",
+         "data": "ResultMessage(subtype='success', duration_ms=1234)"},
+    ]
+    assert extract_tool_stats_from_claude_sdk_trajectory(raw_trajectory) is None
+
+
+def test_returns_none_when_any_item_has_non_dict_data():
+    """Mixed shapes (one dict, one string) also fail the discriminator
+    — better to skip the whole walk than to report partial stats from
+    only the dict items."""
+    mixed = [
+        {"type": "AssistantMessage", "data": {"content": []}},
+        {"type": "ResultMessage", "data": "stringified"},
+    ]
+    assert extract_tool_stats_from_claude_sdk_trajectory(mixed) is None
+
+
 def test_caps_error_samples_at_10():
     """Many errors → error_samples list capped at 10 (mirrors
     `_TOOL_ERROR_SAMPLES_PER_TASK` in the pydantic_ai sibling)."""
