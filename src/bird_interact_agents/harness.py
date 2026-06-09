@@ -1095,6 +1095,32 @@ def finalize_result_row(
                 if isinstance(item, dict)
                 and item.get("type") == "AssistantMessage"
             )
+    # DEV-1535 follow-up: chokepoint backstop for `usage.n_ask_user_calls`.
+    # Per-adapter edits ensure every claude_sdk_otf* flavor now sets this
+    # field; pydantic_ai* adapters don't track ask_user but for those the
+    # benchmark is one-shot (no user-sim), so a default of 0 is correct.
+    # Defensive against future adapters that forget the convention.
+    _usage = row.get("usage")
+    if isinstance(_usage, dict) and "n_ask_user_calls" not in _usage:
+        _usage["n_ask_user_calls"] = 0
+    # DEV-1535 follow-up: backfill `predicted_row_count` from the
+    # snapshot dict that `capture_result_snapshot` stores at
+    # `predicted_result_json` (shape: `{"columns":[...], "row_count":N,
+    # "sample_rows":[...]}` per `agents/_submit.py:122`). Adapters that
+    # set `predicted_row_count` explicitly win.
+    if row.get("predicted_row_count") is None:
+        snapshot_raw = row.get("predicted_result_json")
+        try:
+            snapshot = (
+                json.loads(snapshot_raw)
+                if isinstance(snapshot_raw, str) else snapshot_raw
+            )
+            if isinstance(snapshot, dict):
+                rc = snapshot.get("row_count")
+                if isinstance(rc, int):
+                    row["predicted_row_count"] = rc
+        except (TypeError, ValueError):
+            pass
     return row
 
 

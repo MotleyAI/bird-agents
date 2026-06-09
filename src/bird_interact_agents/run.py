@@ -19,6 +19,7 @@ from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
 from bird_interact_agents.eval.grade_in_place import (
     decode_result_json as _decode_result_json,
+    extract_usage_costs,
     grade_one_submission,
     write_failed_submission_annotation,
 )
@@ -1009,6 +1010,7 @@ async def run_evaluation(
             r.get("database") or td.get("selected_database") or ""
         )
         usage_blob = r.get("usage") or {}
+        _agent_cost, _sim_cost = extract_usage_costs(usage_blob)
         common_failed_kwargs = dict(
             rows_dir=rows_dir,
             instance_id=instance_id_for_log,
@@ -1017,6 +1019,8 @@ async def run_evaluation(
             run_id=run_id,
             trajectory_path=f"rows/{instance_id_for_log}/attempt-1.json",
             duration_s=r.get("duration_s"),
+            cost_usd_agent=_agent_cost,
+            cost_usd_user_sim=_sim_cost,
             n_agent_turns=usage_blob.get("n_agent_turns"),
             n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
             predicted_row_count=r.get("predicted_row_count"),
@@ -1054,6 +1058,8 @@ async def run_evaluation(
                 benchmark=_benchmark_canonical,
                 db_path=per_task_db,
                 duration_s=r.get("duration_s"),
+                cost_usd_agent=_agent_cost,
+                cost_usd_user_sim=_sim_cost,
                 n_agent_turns=usage_blob.get("n_agent_turns"),
                 n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
                 predicted_row_count=r.get("predicted_row_count"),

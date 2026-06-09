@@ -113,6 +113,33 @@ def decode_result_json(payload: Any) -> Any:
     return payload
 
 
+def extract_usage_costs(
+    usage_blob: Any,
+) -> tuple[Optional[float], Optional[float]]:
+    """Extract ``(agent_cost_usd, user_sim_cost_usd)`` from a usage dict.
+
+    The canonical keys are those emitted by ``TokenUsage.model_dump()``
+    (``src/bird_interact_agents/usage.py:232-233``): ``agent_cost_usd``
+    and ``user_sim_cost_usd``. Pre-DEV-1535 the local writer never
+    extracted them at all, and the cloud writer
+    (``cloud.ray_app._grade_one_submission``) read them under the WRONG
+    keys (``cost_usd_agent``, ``cost_usd_user_sim``) — so every cloud
+    submission annotation written since DEV-1515 carried ``None`` costs.
+
+    Returns ``(None, None)`` for non-dict inputs OR when the keys are
+    absent (back-compat with old usage shapes). Single source of truth
+    so the wrong-key drift can't recur.
+    """
+    if not isinstance(usage_blob, dict):
+        return (None, None)
+    agent = usage_blob.get("agent_cost_usd")
+    sim = usage_blob.get("user_sim_cost_usd")
+    return (
+        agent if isinstance(agent, (int, float)) else None,
+        sim if isinstance(sim, (int, float)) else None,
+    )
+
+
 _AUTO_ANNOTATOR = "auto-inline-grader"
 
 

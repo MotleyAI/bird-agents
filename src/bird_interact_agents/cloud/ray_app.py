@@ -34,6 +34,7 @@ from bird_interact_agents.cloud import gcs as _gcs
 from bird_interact_agents.cloud import upload_back as _upload_back
 from bird_interact_agents.eval.grade_in_place import (
     decode_result_json as _decode_result_json,
+    extract_usage_costs,
     grade_and_write,
     grade_one_submission,
     load_audited_gold_rows_for as _load_audited_gold_rows_for,
@@ -747,6 +748,16 @@ def _run_one_in_actor(
     _row_selected_db = (
         row.get("database") or task_data.get("selected_database") or ""
     )
+    # DEV-1535: the inline-cost extraction below previously read
+    # `cost_usd_agent` / `cost_usd_user_sim` — the WRONG key names.
+    # `TokenUsage.model_dump()` (usage.py:232-233) emits
+    # `agent_cost_usd` / `user_sim_cost_usd`, so every cloud annotation
+    # written since DEV-1515 had None costs. Route through the shared
+    # `extract_usage_costs` helper. Hoisted out of the try block so the
+    # except branch can pass them through to the failed-annotation writer.
+    _usage = row.get("usage")
+    _agent_cost, _sim_cost = extract_usage_costs(_usage)
+    _usage_dict = _usage if isinstance(_usage, dict) else {}
     try:
         # Short-circuit BEFORE calling the real grader on a missing
         # submission. ``str(row.get("submitted_sql") or "")`` would
@@ -782,15 +793,11 @@ def _run_one_in_actor(
             run_id=run_id,
             benchmark=_grader_benchmark,
             db_path=grader_db_path,
-            cost_usd_agent=row.get("usage", {}).get("cost_usd_agent")
-                if isinstance(row.get("usage"), dict) else None,
-            cost_usd_user_sim=row.get("usage", {}).get("cost_usd_user_sim")
-                if isinstance(row.get("usage"), dict) else None,
+            cost_usd_agent=_agent_cost,
+            cost_usd_user_sim=_sim_cost,
             duration_s=row.get("duration_s"),
-            n_agent_turns=row.get("usage", {}).get("n_agent_turns")
-                if isinstance(row.get("usage"), dict) else None,
-            n_ask_user_calls=row.get("usage", {}).get("n_ask_user_calls")
-                if isinstance(row.get("usage"), dict) else None,
+            n_agent_turns=_usage_dict.get("n_agent_turns"),
+            n_ask_user_calls=_usage_dict.get("n_ask_user_calls"),
             predicted_row_count=None,
             task_annotation=row.get("_task_annotation"),
             autopsy_result=row.get("_autopsy"),
@@ -820,6 +827,10 @@ def _run_one_in_actor(
                     f"{type(grader_exc).__name__}: {grader_exc}"
                 )[:200],
                 duration_s=row.get("duration_s"),
+                cost_usd_agent=_agent_cost,
+                cost_usd_user_sim=_sim_cost,
+                n_agent_turns=_usage_dict.get("n_agent_turns"),
+                n_ask_user_calls=_usage_dict.get("n_ask_user_calls"),
             )
             _gcs.write_submission_annotation(
                 run_id, iid, json.loads(failed_path.read_text()),

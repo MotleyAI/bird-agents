@@ -123,3 +123,123 @@ def test_other_finalize_responsibilities_unchanged():
         deleted_kb_ids=[], slayer_storage_dir="/data/x",
     )
     assert row2["variant_storage_path"] is None
+
+
+# ---------------------------------------------------------------------------
+# DEV-1535 follow-up — usage.n_ask_user_calls chokepoint backstop +
+# predicted_row_count backfill from the captured result snapshot.
+# ---------------------------------------------------------------------------
+
+
+def test_backfills_n_ask_user_calls_to_zero_when_usage_dict_missing_field():
+    """Per-adapter edits cover the known callers; this is the defensive
+    backstop for future adapters that forget the convention. Field is
+    set to 0 (not None) so consumers can rely on its presence."""
+    row = finalize_result_row(
+        _row(trajectory=[], usage={"prompt_tokens": 100, "agent_cost_usd": 1.5}),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["usage"]["n_ask_user_calls"] == 0
+
+
+def test_preserves_explicit_n_ask_user_calls():
+    """Adapter pre-set value of 5 (e.g. claude_sdk_otf_ainteract's
+    `ctx_dict.asks_used`) survives the backstop."""
+    row = finalize_result_row(
+        _row(trajectory=[], usage={"prompt_tokens": 100, "n_ask_user_calls": 5}),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["usage"]["n_ask_user_calls"] == 5
+
+
+def test_n_ask_user_calls_no_op_when_usage_is_not_a_dict():
+    """Defensive: row carries a non-dict `usage` (very-early error path
+    may stuff a string). Don't crash; just leave it alone."""
+    row = finalize_result_row(
+        _row(trajectory=[], usage=None),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    # No new key was added to a non-dict usage; the row's usage is unchanged.
+    assert row.get("usage") is None
+
+
+def test_backfills_predicted_row_count_from_snapshot_dict():
+    """`capture_result_snapshot` writes a dict; finalize reads `row_count`."""
+    row = finalize_result_row(
+        _row(
+            trajectory=[],
+            predicted_result_json={
+                "columns": ["a", "b"], "row_count": 42,
+                "sample_rows": [[1, 2]],
+            },
+        ),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["predicted_row_count"] == 42
+
+
+def test_backfills_predicted_row_count_from_json_encoded_snapshot():
+    """The same snapshot can arrive JSON-encoded (the cloud actor stuffs
+    it through GCS as a string). Finalize transparently decodes."""
+    import json as _json
+    row = finalize_result_row(
+        _row(
+            trajectory=[],
+            predicted_result_json=_json.dumps({
+                "columns": ["a"], "row_count": 7, "sample_rows": [],
+            }),
+        ),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["predicted_row_count"] == 7
+
+
+def test_preserves_explicit_predicted_row_count():
+    """Adapter pre-set value must NOT be clobbered by the backfill."""
+    row = finalize_result_row(
+        _row(
+            trajectory=[],
+            predicted_row_count=99,
+            predicted_result_json={"row_count": 7},
+        ),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["predicted_row_count"] == 99
+
+
+def test_predicted_row_count_no_op_on_malformed_snapshot_json():
+    """Garbage in the snapshot slot stays as None — defensive against
+    early-error rows where the field is a fragment."""
+    row = finalize_result_row(
+        _row(trajectory=[], predicted_result_json="not valid json"),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row.get("predicted_row_count") is None
+
+
+def test_predicted_row_count_no_op_on_error_snapshot():
+    """`capture_result_snapshot` returns `{"error": "..."}` on runtime
+    failure (no `row_count` field) — stays None."""
+    row = finalize_result_row(
+        _row(
+            trajectory=[],
+            predicted_result_json={"error": "Connection failed"},
+        ),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row.get("predicted_row_count") is None
+
+
+def test_predicted_row_count_no_op_when_field_missing():
+    """No `predicted_result_json` key on the row → stays None."""
+    row = finalize_result_row(
+        _row(trajectory=[]),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row.get("predicted_row_count") is None
+
+    row2 = finalize_result_row(
+        _row(trajectory=[]),
+        deleted_kb_ids=[], slayer_storage_dir="/data/x",
+    )
+    assert row2["variant_storage_path"] is None
