@@ -142,13 +142,17 @@ async def load_documented_ids(
     db_prefix = f"{db}."
     for kb_id in kb_ids:
         question = f"KB {kb_id} — {knowledge.get(kb_id, '')}"
+        # DEV-1546: slayer 0.7.2 unified the three per-kind buckets
+        # (memories / example_queries / entities) into a single
+        # ``results`` list (RRF-fused, capped at ``max_results``).
+        # We over-fetch a little so memory hits aren't crowded out
+        # by interleaved entity hits, then filter to ``kind == "memory"``.
         response = await service.search(
             question=question,
-            max_memories=MAX_MEMORIES_PER_KB,
-            max_example_queries=0,
-            max_entities=0,
+            max_results=MAX_MEMORIES_PER_KB * 3,
         )
-        for hit in response.memories:
+        memory_hits = [h for h in response.results if h.kind == "memory"]
+        for hit in memory_hits[:MAX_MEMORIES_PER_KB]:
             head = _first_nonblank_line(hit.text)
             m = KB_MEMORY_HEAD_RE.match(head)
             if not m or int(m.group(1)) != kb_id:

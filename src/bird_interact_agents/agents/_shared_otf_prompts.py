@@ -118,19 +118,80 @@ FIRST — before adding logic, changing formulas, or asking the user:
 These swap the row tuple structure without changing what you computed —
 much cheaper than a new join or KB re-read."""
 
-# DEV-1534 Fix D — slayer-mode only (one-shot + a-interact). No format
-# params. The `normalize_filters` opt-out applies to `query`,
-# `query_nested`, AND `submit_query` — all served by our bird-interact-
-# tools wrappers in the OTF agents.
+# DEV-1546 — slayer-mode only (one-shot + a-interact). No format params.
+# Proactive guidance on the SLayer 0.7.2 `distinct_dimension_values`
+# field: the agent decides BEFORE writing the JSON whether the question
+# wants raw rows or distinct dimension tuples. Synthetic example uses
+# fabricated names (per project convention) but mirrors the structural
+# shape of real overaggregation misses — dim-only ask, optional LIMIT,
+# no measures.
+_DEDUP_VS_RAW_ROWS = """\
+DEDUP vs RAW ROWS. By default SLayer auto-DEDUPLICATES dimension-only
+queries: when `measures` is empty, it wraps every projected column in a
+top-level `GROUP BY`, collapsing rows that share the same dimension
+tuple. To emit raw per-record rows instead, set
+`distinct_dimension_values: false` inside the query JSON — flat
+`SELECT <dims/td> FROM ... WHERE ... ORDER BY ... LIMIT`, no top-level
+`GROUP BY`. The field lives INSIDE the SlayerQuery JSON (alongside
+`source_model`, `dimensions`, etc.), same shape for `query` /
+`query_nested` (per stage) / `submit_query`.
+
+Decide BEFORE writing the query:
+
+  * Use `distinct_dimension_values: false` when the question asks for a
+    PER-RECORD listing (e.g. "list each <X>'s <a> and <b>; if two
+    <X>s share the same <a>, <b>, return BOTH rows").
+  * Keep the default `true` when the question asks for the distinct
+    <a>, <b> COMBINATIONS (or for an aggregation grouped by them).
+  * If you need BOTH a per-record listing and a count, keep the
+    default and add `*:count` as a measure (or restructure as a
+    nested-DAG stage with `*:count`).
+
+Validation: `distinct_dimension_values: false` requires
+  * `measures` empty (the flag asks for raw rows, not aggregations),
+  * at least one of `dimensions` / `time_dimensions` non-empty
+    (something must be projected),
+  * no measure reference in `filters` / `order`.
+SLayer raises a `DistinctDimensionValuesError` otherwise.
+
+Synthetic example (fabricated names — your DB uses different
+identifiers):
+
+  Q: "List the first 10 (workshop_id, district) pairs in the workshops
+     table. If two workshops share the same (workshop_id, district),
+     return BOTH rows."
+
+  WRONG (default — silently dedups when two workshops share the
+  tuple):
+    {{"source_model": "workshops",
+     "dimensions": ["workshop_id", "district"],
+     "limit": 10}}
+
+  RIGHT (raw rows):
+    {{"source_model": "workshops",
+     "dimensions": ["workshop_id", "district"],
+     "limit": 10,
+     "distinct_dimension_values": false}}
+"""
+
+# DEV-1534 Fix D / DEV-1546 — slayer-mode only (one-shot + a-interact).
+# No format params. The `normalize_filters` opt-out applies to `query`,
+# `query_nested`, AND `submit_query`; the `distinct_dimension_values`
+# field lives INSIDE the JSON DSL (see _DEDUP_VS_RAW_ROWS above for
+# the proactive rule + synthetic example).
 _SLAYER_SQL_ARTIFACT_CHECK = """\
 SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query` /
 `query_nested` returns, inspect the rendered SQL for these patterns
 before submitting:
 
   1. GROUP BY on every projected column with NO aggregate functions —
-     silently deduplicates rows. Fix: add the table's primary-key column
-     as a dimension, or restructure as a nested-DAG stage with a
-     `*:count` measure.
+     SLayer's default dim-only auto-dedup. If the question asks for
+     raw per-record rows, fix by setting
+     `distinct_dimension_values: false` INSIDE the query JSON (see
+     the DEDUP vs RAW ROWS rule above). If you DO need a count
+     alongside the rows, keep the default and add `*:count` as a
+     measure — or restructure as a nested-DAG stage with a `*:count`
+     measure.
   2. `lower(trim(col)) = '<lowercase literal>'` on string equality
      filters — wrapped automatically by default. When the gold answer
      requires exact-case equality (proper-noun categories with
