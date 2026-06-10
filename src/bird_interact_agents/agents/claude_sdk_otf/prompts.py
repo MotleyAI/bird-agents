@@ -30,6 +30,7 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
     _SLAYER_SQL_ARTIFACT_CHECK,
+    _TABLE_SET_PROBE,
 )
 
 # Shared submission contract (single-stage or nested-DAG). Literal JSON
@@ -150,6 +151,8 @@ SLAYER_OTF_ONE_SHOT = (
         submit_tool="submit_query",
         clause_b="encoded KB",
     )
+    + "\n\n   "
+    + _TABLE_SET_PROBE.format(knowledge_label="KB")
     + "\n\n6. SUBMIT. Write the FINAL query so it REFERENCES the named columns /\n"
       "   measures you encoded — do NOT inline their SQL back into the query.\n"
       "   Project exactly the columns the question names, and only those.\n"

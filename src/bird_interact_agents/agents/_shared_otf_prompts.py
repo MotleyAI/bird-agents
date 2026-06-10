@@ -245,3 +245,61 @@ USER-SIM ANSWERS ARE CLARIFICATIONS, NOT GROUND TRUTH.
     and the task needs top-5), call `ask_user` again to flag the
     contradiction explicitly rather than submitting an impossible
     query."""
+
+
+# DEV-1545: targets `wrong_join_path` (autopsies: polar_4, museum_9,
+# cross_db_10). Shared across one-shot AND a-interact: the structural-
+# pivot half does not need a user-sim. Per Codex review #7, the wording
+# explicitly discourages "submit one variant per candidate path" — that
+# would worsen `exhausted_budget_guessing`. The agent enumerates
+# internally, narrows by evidence, asks ONE discriminating question if
+# evidence remains thin, and submits ONLY when one path is selected.
+_TABLE_SET_PROBE = """\
+ALTERNATIVE-JOIN-PATH PROBE.
+
+When SLayer's schema lookup reveals a foreign-key path through a table
+your current query does NOT use — or when grader diagnostics include
+`wrong_table_set` after a submission — the gold likely flows through a
+different host or bridge table than the one you picked. Do NOT brute-
+force-submit one variant per candidate path; that burns budget.
+Instead:
+
+  1. Enumerate the alternative paths INTERNALLY (read columns +
+     {knowledge_label} for each candidate bridge). Pick the most
+     evidence-supported one.
+  2. If two paths remain equally plausible, ask the user-sim ONE
+     discriminating question — name both paths and ask which provides
+     the canonical link. Do not ask vague "which table?" questions.
+  3. Submit ONLY after step 2 distinguishes them. If the user-sim
+     refuses to choose, fall back to the {knowledge_label}-grounded
+     candidate."""
+
+
+# DEV-1545: targets `never_asked_key_question` (autopsies: robot_9,
+# organ_transplant_16). A-interact only — the diagnostic action is a
+# user-sim question. Per Codex review #8, the trigger fires on the
+# FIRST zero-result mismatch (not the second) because by the second
+# attempt the agent has already burned budget; the failure mode is
+# failure-to-ask-early.
+_GRADER_ZERO_VS_ONE_DIAGNOSTIC = """\
+GRADER ZERO-VS-EXPECTED-ONE — ASK A STRUCTURAL QUESTION IMMEDIATELY.
+
+When the grader returns "ex_base 0 vs expected 1" (the gold expects a
+row your query is not producing) on a submission AND your query
+SHAPE was stable across recent encoding attempts, this is almost never
+a formula tweak — it is a structural mismatch. Do NOT iterate on
+threshold / sort / CAST permutations. Instead, immediately call
+`ask_user` with these two specific structural questions, in this order:
+
+  (a) "Is the criteria a FILTER on a pre-classified status column
+      (e.g. a `level_val='Marginal'` / `risk_level='High'` column that
+      already exists in the schema), or only a REASON label assigned
+      to rows the WHERE clause already selected?"
+  (b) "Is the rank / window function computed BEFORE the WHERE
+      filter is applied (over the full population), or AFTER (over
+      the filtered subset)?"
+
+If your task does not involve a ranking / window, skip (b). After
+the answer, encode the implied filter / pre-classified column /
+window scope and resubmit. The point is to flip a single structural
+bit, not to keep submitting near-identical queries."""
