@@ -417,8 +417,15 @@ async def _annotate_memories(
     availability) — keeping the DEV-1455 ``entities`` invariant exactly (no
     resolver mangling) while still populating ``embeddings.db`` as a side
     effect. A KB's concrete entity refs are added ONLY to its own memory
-    (Codex #6)."""
-    from slayer.embeddings.service import EmbeddingService
+    (Codex #6).
+
+    DEV-1546: slayer 0.7.2 removed ``slayer.embeddings.service`` (DEV-1514);
+    the per-memory embedding refresh now lives on
+    ``EmbeddingRetriever.upsert_memory`` in ``slayer.search.retrievers.embeddings``.
+    Same best-effort semantics — the retriever short-circuits to an empty
+    return when the embedding client isn't configured, so the hook stays
+    safe in CI / offline runs."""
+    from slayer.search.retrievers.embeddings import EmbeddingRetriever
 
     for result in setup_results:
         mem_id = f"{db}_kb_{result.kb_id}"
@@ -436,7 +443,7 @@ async def _annotate_memories(
             query=mem.query, id=mem_id,
         )
         try:
-            await EmbeddingService(storage=storage).refresh_memory(saved)
+            await EmbeddingRetriever(storage=storage).upsert_memory(saved)
         except Exception:  # noqa: BLE001 — embedding refresh is best-effort
             logger.debug("reference_build: embedding refresh skipped for %s", mem_id)
 

@@ -22,14 +22,16 @@ import pytest
 # Hashes were captured from the pre-refactoring source.
 # ---------------------------------------------------------------------------
 
-# Hashes re-baselined for the DEV-1545 prompt additions: the
-# `_TABLE_SET_PROBE` (one-shot + a-interact, targets `wrong_join_path`)
-# and `_GRADER_ZERO_VS_ONE_DIAGNOSTIC` (a-interact only, targets
-# `never_asked_key_question`) blocks land here. The snapshot's purpose
-# stays the same — catch ACCIDENTAL prompt drift on later refactors;
-# deliberate prompt changes re-baseline here.
-_ONE_SHOT_SHA256 = "d06bc2f830fa09923c827b67488b5e0612b6bc30ac83cfad1f05c3a8b51e1101"
-_AINTERACT_SHA256 = "094028f3c40673102202e684a12870953e1f8f552ec31bcfb35702be8390eedb"
+# Hashes re-baselined for the DEV-1545 + DEV-1546 merge: DEV-1545 added
+# `_TABLE_SET_PROBE` (one-shot + a-interact) and
+# `_GRADER_ZERO_VS_ONE_DIAGNOSTIC` (a-interact only); DEV-1546 added
+# `_DEDUP_VS_RAW_ROWS` (both flavours) and rewrote
+# `_SLAYER_SQL_ARTIFACT_CHECK` item-1 (primary fix is now
+# `distinct_dimension_values: false`). The snapshot's purpose stays the
+# same — catch ACCIDENTAL prompt drift on later refactors; deliberate
+# prompt changes re-baseline here.
+_ONE_SHOT_SHA256 = "b547d29d114235f5e34ecf22cd3ed8257798c982e7d07e22dbf3ccfb211eee8d"
+_AINTERACT_SHA256 = "f7373b97672e4ee2caf186cda9ec204197bc361eb1e25c968afbefd0fc8e95e7"
 
 
 def test_slayer_otf_one_shot_unchanged():

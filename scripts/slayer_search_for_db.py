@@ -14,10 +14,15 @@ SearchResponse shape but scoped to a single DB.
 Usage:
     python scripts/slayer_search_for_db.py --db households \\
         --question "weighted score combining domestic help and social assistance" \\
-        [--max-memories 5] [--max-example-queries 2] [--max-entities 5]
+        [--max-results 12]
 
 Prints the SearchResponse as JSON to stdout. Exits 0 on success, 1 if
 the per-DB storage directory does not exist or the search fails.
+
+DEV-1546: slayer 0.7.2 collapsed the previous per-kind caps
+(``--max-memories`` / ``--max-example-queries`` / ``--max-entities``)
+into a single ``--max-results`` cap on the RRF-fused
+``SearchResponse.results`` list.
 """
 
 from __future__ import annotations
@@ -41,10 +46,11 @@ async def _search(
     db: str,
     question: str,
     slayer_models_dir: Path,
-    max_memories: int,
-    max_example_queries: int,
-    max_entities: int,
+    max_results: int,
 ) -> dict:
+    """DEV-1546: slayer 0.7.2 collapsed the per-kind ``max_memories`` /
+    ``max_example_queries`` / ``max_entities`` caps into a single
+    ``max_results`` cap on the RRF-fused unified ``results`` list."""
     db_dir = slayer_models_dir / db
     if not db_dir.is_dir():
         raise FileNotFoundError(
@@ -55,9 +61,7 @@ async def _search(
     service = SearchService(storage=storage)
     response = await service.search(
         question=question,
-        max_memories=max_memories,
-        max_example_queries=max_example_queries,
-        max_entities=max_entities,
+        max_results=max_results,
     )
     return response.model_dump(mode="json")
 
@@ -82,9 +86,15 @@ def _build_parser() -> argparse.ArgumentParser:
             f"(default: {DEFAULT_SLAYER_MODELS_DIR})."
         ),
     )
-    p.add_argument("--max-memories", type=int, default=5)
-    p.add_argument("--max-example-queries", type=int, default=2)
-    p.add_argument("--max-entities", type=int, default=5)
+    p.add_argument(
+        "--max-results", type=int, default=12,
+        help=(
+            "DEV-1546: slayer 0.7.2 collapsed the previous per-kind caps "
+            "(max-memories / max-example-queries / max-entities) into a "
+            "single cap on the RRF-fused results list. Default 12 ≈ the "
+            "sum of the pre-1546 defaults (5 + 2 + 5)."
+        ),
+    )
     return p
 
 
@@ -96,9 +106,7 @@ def main() -> int:
                 db=args.db,
                 question=args.question,
                 slayer_models_dir=Path(args.slayer_models_dir).expanduser().resolve(),
-                max_memories=args.max_memories,
-                max_example_queries=args.max_example_queries,
-                max_entities=args.max_entities,
+                max_results=args.max_results,
             )
         )
     except FileNotFoundError as e:

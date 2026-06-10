@@ -48,7 +48,7 @@ def _write_attempt_json(rows_dir: Path, instance_id: str, *, submitted_sql: str)
             {"role": "user_sim", "content": "answer-1"},
         ],
         "duration_s": 12.3,
-        "usage": {"cost_usd_agent": 0.42, "cost_usd_user_sim": 0.01,
+        "usage": {"agent_cost_usd": 0.42, "user_sim_cost_usd": 0.01,
                   "n_agent_turns": 3, "n_ask_user_calls": 1},
         "predicted_row_count": 5,
     }))
@@ -170,7 +170,7 @@ def test_submission_annotation_reads_latest_attempt_not_hardcoded(tmp_path):
         "instance_id": "alien_1",
         "trajectory": [],
         "duration_s": 1.0,
-        "usage": {"cost_usd_agent": 0.01, "cost_usd_user_sim": 0.0,
+        "usage": {"agent_cost_usd": 0.01, "user_sim_cost_usd": 0.0,
                   "n_agent_turns": 1, "n_ask_user_calls": 0},
         "predicted_row_count": 0,
     }

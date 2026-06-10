@@ -376,14 +376,38 @@ def test_require_annotation_can_be_disabled_for_livesqlbench(
 def test_require_annotation_passes_for_livesqlbench_when_file_present(
     tmp_path, monkeypatch,
 ) -> None:
-    """The guard accepts a livesqlbench submit whose instance_ids DO have
-    annotation files — proves the symmetry is bidirectional."""
+    """The guard accepts a livesqlbench submit whose instance_ids DO
+    have annotation files — proves the primary annotation-presence
+    guard is symmetric (rejects missing, accepts present).
+
+    DEV-1535 r4: write a schema-valid annotation — the primary guard
+    now schema-validates too, so a bare `{}` stub would be reported
+    as malformed (correct! the prior version of this test was
+    exploiting the gap Codex flagged in r4)."""
     from bird_interact_agents import paths as _paths
+    from bird_interact_agents.eval.annotation_io import write_task_annotation
+    from bird_interact_agents.eval.annotation_schema import (
+        MetadataSufficiency, Provenance, TaskAnnotation,
+    )
 
     annotations_root = tmp_path / "annotations"
     ann_dir = annotations_root / "livesqlbench-base-lite-sqlite" / "museum"
     ann_dir.mkdir(parents=True)
-    (ann_dir / "museum_7.task.json").write_text("{}")  # presence-only check
+    ann = TaskAnnotation(
+        instance_id="museum_7", selected_database="museum",
+        annotated_by="test", annotated_at="2026-06-09",
+        amb_user_query="q", external_knowledge=[], masked_terms=[],
+        metadata_sufficiency=MetadataSufficiency(
+            verdict="sufficient", rationale="r",
+            evidence_sources_consulted=[],
+        ),
+        original_gold_is_correct=True, gold_variants=[],
+        provenance=Provenance(
+            task_jsonl_path="x.jsonl",
+            task_jsonl_instance_id="museum_7",
+        ),
+    )
+    write_task_annotation(ann, ann_dir / "museum_7.task.json")
     monkeypatch.setattr(_paths, "annotations_root", lambda: annotations_root)
     _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
 

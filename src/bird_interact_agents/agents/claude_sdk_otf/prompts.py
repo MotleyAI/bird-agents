@@ -26,6 +26,7 @@ from bird_interact_agents.agents._host_discovery_playbook import (
 from bird_interact_agents.agents._shared_otf_prompts import (
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
     _DECOMPOSE_DISCIPLINE,
+    _DEDUP_VS_RAW_ROWS,
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
     _SLAYER_SQL_ARTIFACT_CHECK,
@@ -69,12 +70,14 @@ to add columns and measures; `query` / `query_nested` to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `search` with `entities=[
-"<db>.<model>.<col>"]`, `max_memories=0`, `max_example_queries=0`. The
-returned `EntityHit.text` carries `Description:` and `Sample values:`
-inline. The truncated `Sample values:` line is your authoritative source
-of which literal forms actually occur in this column — case variants,
-whitespace forms, abbreviations, alternate phrasings of the same concept.
-Use it BEFORE writing any IN-set (see rule 3 below).
+"<db>.<model>.<col>"]`, `datasource="<db>"`, `max_results=10`. The
+returned `SearchHit(kind="entity").text` carries `Description:` and
+`Sample values:` inline (skim past any interleaved memory hits to
+the entity hits). The truncated `Sample values:` line is your
+authoritative source of which literal forms actually occur in this
+column — case variants, whitespace forms, abbreviations, alternate
+phrasings of the same concept. Use it BEFORE writing any IN-set
+(see rule 3 below).
 
 ENCODE-THEN-QUERY DISCIPLINE:"""
 
@@ -120,7 +123,15 @@ _ENCODE_CORE_TAIL = """\
      sampled values yourself.
 """
 
-_ENCODE_CORE = _ENCODE_CORE_HEAD + "\n\n" + _DECOMPOSE_DISCIPLINE + "\n\n" + _ENCODE_CORE_TAIL
+_ENCODE_CORE = (
+    _ENCODE_CORE_HEAD + "\n\n"
+    + _DECOMPOSE_DISCIPLINE + "\n\n"
+    # DEV-1546: dim-only auto-dedup vs raw-rows decision — taught BEFORE
+    # the encoding rules so the agent decides on `distinct_dimension_values`
+    # while writing the final query, not after seeing the artifact.
+    + _DEDUP_VS_RAW_ROWS + "\n"
+    + _ENCODE_CORE_TAIL
+)
 
 SLAYER_OTF_ONE_SHOT = (
     "You are a data analyst. You have a SLayer semantic-layer MCP server plus a\n"

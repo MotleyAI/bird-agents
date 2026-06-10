@@ -168,6 +168,19 @@ def collate(run_dir: Path, manifest: dict) -> dict[str, Any]:
             framework=manifest["framework"],
             mode=manifest["mode"],
             started_at=time.time(),
+            # DEV-1535: extended config snapshot. All optional with
+            # None defaults, so manifests missing any field load
+            # cleanly. Pulled from the same manifest entries the
+            # cloud actor uses to build the per-task SubmissionConfig.
+            query_mode=manifest.get("query_mode"),
+            slayer_setup=manifest.get("slayer_setup"),
+            patience=manifest.get("patience"),
+            max_depth=manifest.get("max_depth"),
+            reasoning_effort=manifest.get("reasoning_effort"),
+            dataset=manifest.get("dataset"),
+            strict=manifest.get("strict"),
+            use_audited_gold_sql=manifest.get("use_audited_gold_sql"),
+            prompt_cache=manifest.get("prompt_cache"),
         )
         for r in ordered_rows:
             insert_task_result(db, _row_to_task_result_row(manifest, r))

@@ -588,7 +588,19 @@ class ClaudeSDKOtfAgent:
                     "phase2_observation": result.get("phase2_observation"),
                     "trajectory": trajectory,
                     "error": str(e),
-                    "usage": accum.model_dump(),
+                    # DEV-1535 follow-up: surface asks_used as
+                    # n_ask_user_calls so the one-shot variant is
+                    # field-symmetric with the a-interact variant. For
+                    # one-shot SLAYER the value is always 0 (tool list
+                    # excludes ask_user), but writing 0 rather than
+                    # absent keeps the usage shape consistent across
+                    # all four claude_sdk_otf flavors.
+                    "usage": {
+                        **accum.model_dump(),
+                        "n_ask_user_calls": (ctx_dict or {}).get(
+                            "asks_used", 0,
+                        ),
+                    },
                     "phase1_observation_audited": result.get("phase1_observation_audited"),
                     "phase1_observation_original": result.get("phase1_observation_original"),
                 },
@@ -652,7 +664,12 @@ class ClaudeSDKOtfAgent:
                 "phase2_observation": result.get("phase2_observation"),
                 "trajectory": trajectory,
                 "error": None,
-                "usage": accum.model_dump(),
+                "usage": {
+                    **accum.model_dump(),
+                    "n_ask_user_calls": (ctx_dict or {}).get(
+                        "asks_used", 0,
+                    ),
+                },
                 "phase1_observation_audited": result.get("phase1_observation_audited"),
                 "phase1_observation_original": result.get("phase1_observation_original"),
                 "_autopsy": _autopsy_result,

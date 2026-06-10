@@ -17,8 +17,10 @@ from typing import Any as _Any
 from bird_interact_agents import paths
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
+from bird_interact_agents.eval.annotation_schema import SubmissionConfig
 from bird_interact_agents.eval.grade_in_place import (
     decode_result_json as _decode_result_json,
+    extract_usage_costs,
     grade_one_submission,
     write_failed_submission_annotation,
 )
@@ -763,8 +765,27 @@ async def run_one_task(
     )
     instance_id = str(task_data.get("instance_id") or "")
     t_start = time.perf_counter()
+    timeout = _per_task_timeout_s()
     try:
-        r = await runner(task_data, data_dir, patience, user_sim_model)
+        coro = runner(task_data, data_dir, patience, user_sim_model)
+        if timeout > 0:
+            try:
+                r = await asyncio.wait_for(coro, timeout=timeout)
+            except asyncio.TimeoutError as te:
+                # Same explicit message as in run_one_task_with_runner —
+                # asyncio.TimeoutError has no message, so the per-task
+                # error row would record the empty string. DEV-1535 r3
+                # (Codex): the wall-clock cap was previously wrapped
+                # ONLY in run_one_task_with_runner (the `cached_runner`
+                # path), so SLayer / non-raw runs that fall through to
+                # this function ran uncapped — defeating the cap on
+                # exactly the runs most likely to thrash.
+                raise TimeoutError(
+                    f"per-task wall-clock cap of {timeout:.0f}s exceeded "
+                    f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 to disable)"
+                ) from te
+        else:
+            r = await coro
     except Exception as e:  # noqa: BLE001 — same catch-all as the old inline loop
         logger.error("Error on %s: %s", instance_id, e)
         r = finalize_result_row(
@@ -933,6 +954,35 @@ async def run_evaluation(
         framework=framework,
         mode=mode,
         started_at=time.time(),
+        query_mode=query_mode,
+        slayer_setup=slayer_setup,
+        patience=patience,
+        max_depth=max_depth,
+        reasoning_effort=reasoning_effort,
+        dataset=dataset,
+        strict=strict,
+        use_audited_gold_sql=use_audited_gold_sql,
+        prompt_cache=prompt_cache,
+    )
+
+    # Per-task `SubmissionConfig` — duplicated into every annotation per
+    # DEV-1535 design choice (B3 = both run_metadata AND annotation). The
+    # config is identical across tasks in a single run, so one instance
+    # is shared.
+    submission_config = SubmissionConfig(
+        framework=framework,
+        mode=mode,
+        query_mode=query_mode,
+        agent_model=agent_model,
+        user_sim_model=user_sim_model,
+        slayer_setup=slayer_setup,
+        reasoning_effort=reasoning_effort,
+        patience=patience,
+        max_depth=max_depth,
+        dataset=dataset,
+        strict=strict,
+        use_audited_gold_sql=use_audited_gold_sql,
+        prompt_cache=prompt_cache,
     )
 
     def _persist(td: dict, r: dict, started_at: float) -> None:
@@ -1043,6 +1093,7 @@ async def run_evaluation(
             r.get("database") or td.get("selected_database") or ""
         )
         usage_blob = r.get("usage") or {}
+        _agent_cost, _sim_cost = extract_usage_costs(usage_blob)
         common_failed_kwargs = dict(
             rows_dir=rows_dir,
             instance_id=instance_id_for_log,
@@ -1051,9 +1102,12 @@ async def run_evaluation(
             run_id=run_id,
             trajectory_path=f"rows/{instance_id_for_log}/attempt-1.json",
             duration_s=r.get("duration_s"),
+            cost_usd_agent=_agent_cost,
+            cost_usd_user_sim=_sim_cost,
             n_agent_turns=usage_blob.get("n_agent_turns"),
             n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
             predicted_row_count=r.get("predicted_row_count"),
+            config=submission_config,
         )
         if not submitted_sql or not selected_database:
             write_failed_submission_annotation(
@@ -1088,9 +1142,12 @@ async def run_evaluation(
                 benchmark=_benchmark_canonical,
                 db_path=per_task_db,
                 duration_s=r.get("duration_s"),
+                cost_usd_agent=_agent_cost,
+                cost_usd_user_sim=_sim_cost,
                 n_agent_turns=usage_blob.get("n_agent_turns"),
                 n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
                 predicted_row_count=r.get("predicted_row_count"),
+                config=submission_config,
                 task_annotation=r.get("_task_annotation"),
                 autopsy_result=r.get("_autopsy"),
                 harness_passed=r.get("phase1_passed") is True,
@@ -1118,8 +1175,27 @@ async def run_evaluation(
             logger.info("Task %d/%d: %s", i + 1, len(tasks), instance_id)
             started_at = time.time()
             t_start = time.perf_counter()
+            _timeout = _per_task_timeout_s()
             try:
-                r = await runner(td, data_dir, patience, user_sim_model)
+                _coro = runner(td, data_dir, patience, user_sim_model)
+                if _timeout > 0:
+                    # DEV-1535 r5 (Codex): the local `run_evaluation`
+                    # loop awaited `runner(...)` directly, so runaway
+                    # tasks ran uncapped. The cloud (`run_one_task` /
+                    # `run_one_task_with_runner`) entry points both
+                    # already wrap with `asyncio.wait_for`; mirror it
+                    # here so `BIRD_INTERACT_PER_TASK_TIMEOUT_S` binds
+                    # the local CLI path too.
+                    try:
+                        r = await asyncio.wait_for(_coro, timeout=_timeout)
+                    except asyncio.TimeoutError as te:
+                        raise TimeoutError(
+                            f"per-task wall-clock cap of {_timeout:.0f}s "
+                            f"exceeded (BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 "
+                            f"to disable)"
+                        ) from te
+                else:
+                    r = await _coro
             except Exception as e:
                 logger.error("Error on %s: %s", instance_id, e)
                 r = finalize_result_row(

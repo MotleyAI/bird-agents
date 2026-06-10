@@ -20,10 +20,14 @@ Exit 0 only when every KB id for the DB is in **exactly one** of:
 An id appearing in neither set, or in both, fails the check.
 
 The documented-set check searches via ``SearchService`` (BM25 + tantivy
-+ optional dense embeddings) with ``max_memories=5`` per KB id; the
-per-DB corpus is expected to stay well under that ceiling. If a DB's
-memory corpus ever grows past a few hundred, bump ``MAX_MEMORIES_PER_KB``
-or fall back to reading ``slayer_models/<db>/memories.yaml`` directly.
++ optional dense embeddings) per KB id. DEV-1546: slayer 0.7.2 collapsed
+the per-kind caps into a single ``max_results`` on the RRF-fused unified
+``results`` list, so the call over-fetches (``max_results=MAX_MEMORIES_PER_KB
+* 3``) and then filters to ``kind == "memory"`` to keep ``MAX_MEMORIES_PER_KB``
+memory hits as the post-filter ceiling. The per-DB corpus is expected to
+stay well under that ceiling; if a DB's memory corpus ever grows past a few
+hundred, bump ``MAX_MEMORIES_PER_KB`` or fall back to reading
+``slayer_models/<db>/memories.yaml`` directly.
 """
 
 from __future__ import annotations
@@ -142,13 +146,17 @@ async def load_documented_ids(
     db_prefix = f"{db}."
     for kb_id in kb_ids:
         question = f"KB {kb_id} — {knowledge.get(kb_id, '')}"
+        # DEV-1546: slayer 0.7.2 unified the three per-kind buckets
+        # (memories / example_queries / entities) into a single
+        # ``results`` list (RRF-fused, capped at ``max_results``).
+        # We over-fetch a little so memory hits aren't crowded out
+        # by interleaved entity hits, then filter to ``kind == "memory"``.
         response = await service.search(
             question=question,
-            max_memories=MAX_MEMORIES_PER_KB,
-            max_example_queries=0,
-            max_entities=0,
+            max_results=MAX_MEMORIES_PER_KB * 3,
         )
-        for hit in response.memories:
+        memory_hits = [h for h in response.results if h.kind == "memory"]
+        for hit in memory_hits[:MAX_MEMORIES_PER_KB]:
             head = _first_nonblank_line(hit.text)
             m = KB_MEMORY_HEAD_RE.match(head)
             if not m or int(m.group(1)) != kb_id:

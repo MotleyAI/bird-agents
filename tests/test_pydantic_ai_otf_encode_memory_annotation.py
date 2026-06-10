@@ -151,7 +151,12 @@ async def test_annotation_fires_embedding_hook_when_available(tmp_path, monkeypa
     """When embeddings ARE available, re-saving the memory via the service
     must fire the embedding refresh hook (so `embeddings.db` populates as a
     side effect of the write — no explicit refresh pass). We spy on the
-    EmbeddingService so no real OpenAI call is made."""
+    embedding retriever so no real OpenAI call is made.
+
+    DEV-1546: slayer 0.7.2 removed ``slayer.embeddings.service``; the
+    per-memory refresh hook now lives on
+    ``slayer.search.retrievers.embeddings.EmbeddingRetriever.upsert_memory``.
+    """
     from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
         EncoderResult,
     )
@@ -159,18 +164,18 @@ async def test_annotation_fires_embedding_hook_when_available(tmp_path, monkeypa
         _annotate_memories,
     )
     from slayer.embeddings import client as emb_client
-    from slayer.embeddings import service as emb_service
+    from slayer.search.retrievers import embeddings as emb_retrievers
 
     monkeypatch.setattr(emb_client, "is_available", lambda: True)
 
     calls: list[str] = []
 
-    async def fake_refresh_memory(self, memory):
+    async def fake_upsert_memory(self, memory):
         calls.append(memory.id)
         return []
 
     monkeypatch.setattr(
-        emb_service.EmbeddingService, "refresh_memory", fake_refresh_memory,
+        emb_retrievers.EmbeddingRetriever, "upsert_memory", fake_upsert_memory,
     )
 
     rows = [_kb(31)]
