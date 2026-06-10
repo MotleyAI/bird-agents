@@ -222,18 +222,25 @@ to add columns and measures; `query` / `query_nested` to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `search` with `entities=[
-"<db>.<model>.<col>"]`, `max_results=1`, `compact=False`. The returned
-hit's `text` carries `Description:` and `Sample values:` inline. The
-truncated `Sample values:` line is your authoritative source of which
-literal forms actually occur in this column — case variants, whitespace
-forms, abbreviations, alternate phrasings of the same concept. Use it
-BEFORE writing any IN-set (see rule 3 below).
+"<db>.<model>.<col>"]`, `max_results=1`, `compact=False`,
+`cypher_filter='MATCH (n:Column) RETURN n.id AS id'`. The kind filter is
+load-bearing: without it, the unified `max_results` cap is RRF-fused
+across kinds and a memory tagged to that column can outrank the column
+itself, returning prose instead of the schema-author description. The
+returned hit's `text` carries `Description:` and `Sample values:` inline.
+The truncated `Sample values:` line is your authoritative source of
+which literal forms actually occur in this column — case variants,
+whitespace forms, abbreviations, alternate phrasings of the same
+concept. Use it BEFORE writing any IN-set (see rule 3 below).
 
 READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
 a memory id you've already identified — `search` with `entities=[
-"memory:<id>"]`, `max_results=1`, `compact=False`. By default `search`
+"memory:<id>"]`, `max_results=1`, `compact=False`,
+`cypher_filter='MATCH (n:Memory) RETURN n.id AS id'`. By default `search`
 is compact (one-line `description` summary per hit); `compact=False`
-returns the full `learning` body, and `max_results=1` keeps adjacent
-matches out of the response.
+returns the full `learning` body. The `:Memory` kind filter pins the
+result to the memory you asked for — without it, a parent memory whose
+entities cross-reference `memory:<id>` can occupy the single slot
+instead of the memory you want.
 
 ENCODE-THEN-QUERY DISCIPLINE:"""

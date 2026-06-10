@@ -43,8 +43,8 @@ import pytest
 #
 # The snapshot's purpose is unchanged: catch ACCIDENTAL prompt drift on
 # later refactors; deliberate prompt changes re-baseline here.
-_ONE_SHOT_SHA256 = "7a258a3e9f5b3b02e1d20beac1cc78aee5f44e22815485e132705674c56f6919"
-_AINTERACT_SHA256 = "3017a5efb01dd6db7acb12ab24a94c99ca022d797aacfaadebb473e50a884783"
+_ONE_SHOT_SHA256 = "1178084cbe083f343eefa7998f425dedb0df1740b5b93ecda010418a1ca85275"
+_AINTERACT_SHA256 = "e540fcb5abf6c4edbee3abe83b6592c3eddf1d941bc01e81289150d85d66faa9"
 
 
 def test_slayer_otf_one_shot_unchanged():

@@ -146,12 +146,17 @@ async def load_documented_ids(
         # SLayer 0.7.3 (DEV-1549) collapsed the per-kind `max_*` caps into a
         # single `max_results` and made compact-mode the default. We pass
         # `compact=False` so `hit.text` carries the full ``learning`` body
-        # the regex below parses, and filter the unified result list by
-        # ``kind == "memory"`` to drop entity / example-query hits.
+        # the regex below parses, and `cypher_filter='MATCH (n:Memory)
+        # RETURN n.id AS id'` so the unified cap is a memory-only cap (the
+        # filter is load-bearing: without it, the cap is RRF-fused across
+        # kinds and entity hits can crowd memories out, falsely reporting
+        # documented KBs as unaccounted). The `kind == "memory"` filter
+        # below is defence in depth.
         response = await service.search(
             question=question,
             max_results=MAX_MEMORIES_PER_KB,
             compact=False,
+            cypher_filter="MATCH (n:Memory) RETURN n.id AS id",
         )
         for hit in response.results:
             if hit.kind != "memory":

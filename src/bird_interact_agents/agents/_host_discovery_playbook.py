@@ -48,26 +48,31 @@ HOW TO READ COLUMN DESCRIPTIONS via SLayer MCP:
             entities=["<db>.<model>.<col>", ...],
             max_results=<len(entities)>,
             compact=False,
+            cypher_filter='MATCH (n:Column) RETURN n.id AS id',
             datasource="<db>",
         )
 
     Each named entity surfaces as a `SearchHit(id, kind, score, text,
-    description, ...)` where `kind` is one of `column` / `measure` /
-    `model` / `aggregation` / `datasource`. With `compact=False` the
-    `text` field carries a multi-line block — `Column: <ds>.<model>.<col>
-    / Type: <type> / Description: <intent text> / Sample values: ...`.
-    The default `compact=True` only fills `description` (one-line) and
-    leaves `text` empty.
+    description, ...)` with `kind == "column"` here. With `compact=False`
+    the `text` field carries a multi-line block — `Column:
+    <ds>.<model>.<col> / Type: <type> / Description: <intent text> /
+    Sample values: ...`. The default `compact=True` only fills
+    `description` (one-line) and leaves `text` empty. The
+    `cypher_filter='MATCH (n:Column) RETURN n.id AS id'` constraint is
+    load-bearing: without it, the unified `max_results` cap is RRF-fused
+    across kinds, so a memory tagged to the column can outrank the
+    column itself and consume the cap before all requested column hits
+    surface.
   * Whole-model bulk read (every column at once): `inspect_model(<model>,
     sections=["columns"], data_source="<db>")` — Column.name + .type +
     .description for every column. Use when scanning a model end-to-end.
   * Discover columns whose descriptions match a phrase:
     `search(question="<one-sentence paraphrase>", max_results=10,
-    datasource="<db>")`. The tantivy + dense-embedding channels rank
-    all column / model / measure descriptions plus any related memories
-    and return a unified `results` list; filter by `hit.kind` being one
-    of `column` / `measure` / `model` / `aggregation` for entity-only
-    hits.
+    datasource="<db>", cypher_filter='MATCH (n:Column:Measure:Aggregation:Model) RETURN n.id AS id')`.
+    The cypher filter pins the result list to entity hits (multi-label
+    is union semantics); the tantivy + dense-embedding channels then
+    rank all column / model / measure descriptions and return a unified
+    `results` list of entity hits.
 
 HOW TO FIND CANDIDATE HOSTS for a target table T (the table whose
 columns the KB references):
@@ -131,6 +136,7 @@ Description read (PRIMARY):
     entities=["demo.asset_inspections.sensor_read_ref",
               "demo.maintenance_log.sensor_read_ref"],
     max_results=2, compact=False, datasource="demo",
+    cypher_filter='MATCH (n:Column) RETURN n.id AS id',
   )
 returns `SearchHit.text` excerpts:
   * `asset_inspections.sensor_read_ref` — "Associates the inspection

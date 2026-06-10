@@ -348,6 +348,7 @@ async def test_search_service_recency_fallback_under_datasource_filter(
     response = await service.search(
         datasource=db,
         max_results=5,
+        cypher_filter="MATCH (n:Memory) RETURN n.id AS id",
     )
     memory_hits = [h for h in response.results if h.kind == "memory"]
     assert memory_hits, (
@@ -396,6 +397,7 @@ async def test_search_service_surfaces_kb_memory_under_datasource_filter(
     response = await service.search(
         question=query, datasource=db,
         max_results=10,
+        cypher_filter="MATCH (n:Memory) RETURN n.id AS id",
     )
 
     memory_hits = [h for h in response.results if h.kind == "memory"]
