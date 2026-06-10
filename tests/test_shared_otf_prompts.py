@@ -22,13 +22,20 @@ import pytest
 # Hashes were captured from the pre-refactoring source.
 # ---------------------------------------------------------------------------
 
-# Hashes re-baselined for the DEV-1550 A3 prompt addition: a new
-# "READ A KNOWN MEMORY'S FULL BODY" drill-in paragraph documenting the
-# compact-mode opt-out (`search(entities=["memory:<id>"], max_memories=1,
-# compact=False)`), inserted as a sibling between the existing column-
-# drill-in paragraph and the `ENCODE-THEN-QUERY DISCIPLINE:` header in
-# the shared `_SLAYER_TOOLS_BLOCK` (extracted from the previously
-# byte-identical `_AINTERACT_SLAYER_TOOLS` / `_ENCODE_CORE_HEAD`).
+# Hashes re-baselined for the DEV-1550 A3 prompt addition AND the
+# SLayer 0.7.3 API migration:
+#   * new "READ A KNOWN MEMORY'S FULL BODY" drill-in paragraph
+#     documenting the compact-mode opt-out
+#     (`search(entities=["memory:<id>"], max_results=1, compact=False)`),
+#     inserted as a sibling between the existing column-drill-in
+#     paragraph and the `ENCODE-THEN-QUERY DISCIPLINE:` header in the
+#     shared `_SLAYER_TOOLS_BLOCK` (extracted from the previously
+#     byte-identical `_AINTERACT_SLAYER_TOOLS` / `_ENCODE_CORE_HEAD`);
+#   * column-drill-in pattern in the same block migrated from the
+#     removed `max_memories=0, max_example_queries=0` kwargs to
+#     `max_results=1, compact=False`;
+#   * `_host_discovery_playbook.py` (embedded inside both prompts via
+#     `_HOST_DISCOVERY_PLAYBOOK`) migrated to the same 0.7.3 surface.
 #
 # Prior re-baseline notes (kept for context): DEV-1534 added the
 # column-names rule, SLayer artifact sanity-check, pivot-after-3-failures
@@ -36,8 +43,8 @@ import pytest
 #
 # The snapshot's purpose is unchanged: catch ACCIDENTAL prompt drift on
 # later refactors; deliberate prompt changes re-baseline here.
-_ONE_SHOT_SHA256 = "ad13b021eb63ea1525c73cafd09f4ca319a28492d2447437450397ba1087e2e4"
-_AINTERACT_SHA256 = "e1866f1d9f30d4081faf4650e07b67145bb0ef31e3f45321c5e4bc083413e26f"
+_ONE_SHOT_SHA256 = "7a258a3e9f5b3b02e1d20beac1cc78aee5f44e22815485e132705674c56f6919"
+_AINTERACT_SHA256 = "3017a5efb01dd6db7acb12ab24a94c99ca022d797aacfaadebb473e50a884783"
 
 
 def test_slayer_otf_one_shot_unchanged():

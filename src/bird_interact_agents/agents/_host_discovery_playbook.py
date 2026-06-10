@@ -46,25 +46,28 @@ HOW TO READ COLUMN DESCRIPTIONS via SLayer MCP:
 
         search(
             entities=["<db>.<model>.<col>", ...],
-            max_memories=0,
-            max_example_queries=0,
+            max_results=<len(entities)>,
+            compact=False,
             datasource="<db>",
         )
 
-    Returns each named entity in the `entities` bucket as
-    `EntityHit(id, kind, score, text)`. The `text` field carries a
-    multi-line block — `Column: <ds>.<model>.<col> / Type: <type> /
-    Description: <intent text> / ...`. Setting `max_memories=0` and
-    `max_example_queries=0` suppresses the referencing memories when
-    you only want the schema-author intent text.
+    Each named entity surfaces as a `SearchHit(id, kind, score, text,
+    description, ...)` where `kind` is one of `column` / `measure` /
+    `model` / `aggregation` / `datasource`. With `compact=False` the
+    `text` field carries a multi-line block — `Column: <ds>.<model>.<col>
+    / Type: <type> / Description: <intent text> / Sample values: ...`.
+    The default `compact=True` only fills `description` (one-line) and
+    leaves `text` empty.
   * Whole-model bulk read (every column at once): `inspect_model(<model>,
     sections=["columns"], data_source="<db>")` — Column.name + .type +
     .description for every column. Use when scanning a model end-to-end.
   * Discover columns whose descriptions match a phrase:
-    `search(question="<one-sentence paraphrase>", max_memories=0,
-    max_example_queries=0, max_entities=10, datasource="<db>")`. The
-    tantivy + dense-embedding channels rank all column / model /
-    measure descriptions and return entity hits with `text`.
+    `search(question="<one-sentence paraphrase>", max_results=10,
+    datasource="<db>")`. The tantivy + dense-embedding channels rank
+    all column / model / measure descriptions plus any related memories
+    and return a unified `results` list; filter by `hit.kind` being one
+    of `column` / `measure` / `model` / `aggregation` for entity-only
+    hits.
 
 HOW TO FIND CANDIDATE HOSTS for a target table T (the table whose
 columns the KB references):
@@ -127,9 +130,9 @@ Description read (PRIMARY):
   search(
     entities=["demo.asset_inspections.sensor_read_ref",
               "demo.maintenance_log.sensor_read_ref"],
-    max_memories=0, max_example_queries=0, datasource="demo",
+    max_results=2, compact=False, datasource="demo",
   )
-returns EntityHit.text excerpts:
+returns `SearchHit.text` excerpts:
   * `asset_inspections.sensor_read_ref` — "Associates the inspection
     with the relevant sensor reading."
   * `maintenance_log.sensor_read_ref` — "Associates maintenance data

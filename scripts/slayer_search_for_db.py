@@ -14,10 +14,15 @@ SearchResponse shape but scoped to a single DB.
 Usage:
     python scripts/slayer_search_for_db.py --db households \\
         --question "weighted score combining domestic help and social assistance" \\
-        [--max-memories 5] [--max-example-queries 2] [--max-entities 5]
+        [--max-results 10] [--compact / --no-compact]
 
 Prints the SearchResponse as JSON to stdout. Exits 0 on success, 1 if
 the per-DB storage directory does not exist or the search fails.
+
+SLayer 0.7.3 (DEV-1549) consolidated the previous per-kind caps
+(`max_memories` / `max_example_queries` / `max_entities`) into a single
+`max_results` cap plus a `compact` flag; the CLI flags here mirror that
+shape.
 """
 
 from __future__ import annotations
@@ -41,9 +46,8 @@ async def _search(
     db: str,
     question: str,
     slayer_models_dir: Path,
-    max_memories: int,
-    max_example_queries: int,
-    max_entities: int,
+    max_results: int,
+    compact: bool,
 ) -> dict:
     db_dir = slayer_models_dir / db
     if not db_dir.is_dir():
@@ -55,9 +59,8 @@ async def _search(
     service = SearchService(storage=storage)
     response = await service.search(
         question=question,
-        max_memories=max_memories,
-        max_example_queries=max_example_queries,
-        max_entities=max_entities,
+        max_results=max_results,
+        compact=compact,
     )
     return response.model_dump(mode="json")
 
@@ -82,9 +85,19 @@ def _build_parser() -> argparse.ArgumentParser:
             f"(default: {DEFAULT_SLAYER_MODELS_DIR})."
         ),
     )
-    p.add_argument("--max-memories", type=int, default=5)
-    p.add_argument("--max-example-queries", type=int, default=2)
-    p.add_argument("--max-entities", type=int, default=5)
+    p.add_argument(
+        "--max-results", type=int, default=10,
+        help="Maximum total number of hits returned (memories + entities, RRF-fused).",
+    )
+    compact_group = p.add_mutually_exclusive_group()
+    compact_group.add_argument(
+        "--compact", dest="compact", action="store_true", default=True,
+        help="Compact mode (default): one-line `description` per hit.",
+    )
+    compact_group.add_argument(
+        "--no-compact", dest="compact", action="store_false",
+        help="Return the full `text` body on every hit (verbose).",
+    )
     return p
 
 
@@ -96,9 +109,8 @@ def main() -> int:
                 db=args.db,
                 question=args.question,
                 slayer_models_dir=Path(args.slayer_models_dir).expanduser().resolve(),
-                max_memories=args.max_memories,
-                max_example_queries=args.max_example_queries,
-                max_entities=args.max_entities,
+                max_results=args.max_results,
+                compact=args.compact,
             )
         )
     except FileNotFoundError as e:

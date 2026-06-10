@@ -196,9 +196,14 @@ USER-SIM ANSWERS ARE CLARIFICATIONS, NOT GROUND TRUTH.
 # paragraph and the `ENCODE-THEN-QUERY DISCIPLINE:` header. The
 # memory-drill-in nudge documents the compact-mode opt-out introduced
 # by SLayer 0.7.3 (DEV-1549): `search` now defaults to `compact=True`
-# and renders one-line `Memory.description` summaries; agents need
-# `compact=False` (plus a tight `max_memories`) to get the full
+# and renders one-line `description` summaries; agents need
+# `compact=False` (plus a tight `max_results=1`) to get the full
 # `learning` body for a memory id they've already identified.
+#
+# SLayer 0.7.3 also collapsed the per-kind caps (`max_memories`,
+# `max_entities`, `max_example_queries`) into a single `max_results`,
+# so the column-drill-in pattern below also migrated to the new
+# kwargs at the same time.
 #
 # Format params: {db_name}
 _SLAYER_TOOLS_BLOCK = """\
@@ -217,18 +222,18 @@ to add columns and measures; `query` / `query_nested` to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `search` with `entities=[
-"<db>.<model>.<col>"]`, `max_memories=0`, `max_example_queries=0`. The
-returned `EntityHit.text` carries `Description:` and `Sample values:`
-inline. The truncated `Sample values:` line is your authoritative source
-of which literal forms actually occur in this column — case variants,
-whitespace forms, abbreviations, alternate phrasings of the same concept.
-Use it BEFORE writing any IN-set (see rule 3 below).
+"<db>.<model>.<col>"]`, `max_results=1`, `compact=False`. The returned
+hit's `text` carries `Description:` and `Sample values:` inline. The
+truncated `Sample values:` line is your authoritative source of which
+literal forms actually occur in this column — case variants, whitespace
+forms, abbreviations, alternate phrasings of the same concept. Use it
+BEFORE writing any IN-set (see rule 3 below).
 
 READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
 a memory id you've already identified — `search` with `entities=[
-"memory:<id>"]`, `max_memories=1`, `compact=False`. By default `search`
+"memory:<id>"]`, `max_results=1`, `compact=False`. By default `search`
 is compact (one-line `description` summary per hit); `compact=False`
-returns the full `learning` body, and `max_memories=1` keeps adjacent
+returns the full `learning` body, and `max_results=1` keeps adjacent
 matches out of the response.
 
 ENCODE-THEN-QUERY DISCIPLINE:"""
