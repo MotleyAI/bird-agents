@@ -46,25 +46,25 @@ HOW TO READ COLUMN DESCRIPTIONS via SLayer MCP:
 
         search(
             entities=["<db>.<model>.<col>", ...],
-            max_memories=0,
-            max_example_queries=0,
             datasource="<db>",
+            max_results=10,
         )
 
-    Returns each named entity in the `entities` bucket as
-    `EntityHit(id, kind, score, text)`. The `text` field carries a
-    multi-line block — `Column: <ds>.<model>.<col> / Type: <type> /
-    Description: <intent text> / ...`. Setting `max_memories=0` and
-    `max_example_queries=0` suppresses the referencing memories when
-    you only want the schema-author intent text.
+    Returns a unified ranked list of `SearchHit(kind, id, score, text,
+    matched_entities, query)`. The entity hits (`kind == "entity"`)
+    each carry a multi-line `text` block — `Column: <ds>.<model>.<col>
+    / Type: <type> / Description: <intent text> / Sample values: ...`.
+    Memory hits whose tagged entities overlap your inputs are
+    interleaved (Reciprocal Rank Fusion); skim past them to the entity
+    hits when you only want the schema-author intent text.
   * Whole-model bulk read (every column at once): `inspect_model(<model>,
     sections=["columns"], data_source="<db>")` — Column.name + .type +
     .description for every column. Use when scanning a model end-to-end.
   * Discover columns whose descriptions match a phrase:
-    `search(question="<one-sentence paraphrase>", max_memories=0,
-    max_example_queries=0, max_entities=10, datasource="<db>")`. The
-    tantivy + dense-embedding channels rank all column / model /
-    measure descriptions and return entity hits with `text`.
+    `search(question="<one-sentence paraphrase>", datasource="<db>",
+    max_results=10)`. The tantivy + dense-embedding channels rank all
+    column / model / measure descriptions and return entity hits with
+    `text`.
 
 HOW TO FIND CANDIDATE HOSTS for a target table T (the table whose
 columns the KB references):
@@ -127,9 +127,10 @@ Description read (PRIMARY):
   search(
     entities=["demo.asset_inspections.sensor_read_ref",
               "demo.maintenance_log.sensor_read_ref"],
-    max_memories=0, max_example_queries=0, datasource="demo",
+    datasource="demo", max_results=10,
   )
-returns EntityHit.text excerpts:
+returns SearchHit.text excerpts (filter the unified list to
+`kind == "entity"` for the schema-author intent text):
   * `asset_inspections.sensor_read_ref` — "Associates the inspection
     with the relevant sensor reading."
   * `maintenance_log.sensor_read_ref` — "Associates maintenance data

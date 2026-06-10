@@ -22,13 +22,14 @@ import pytest
 # Hashes were captured from the pre-refactoring source.
 # ---------------------------------------------------------------------------
 
-# Hashes re-baselined for the DEV-1534 Fix B/D/E/F prompt additions
-# (column-names rule, SLayer artifact sanity-check, pivot-after-3-failures
-# discipline, user-sim trust calibration). The snapshot's purpose is the
-# same — catch ACCIDENTAL prompt drift on later refactors; deliberate
-# prompt changes re-baseline here.
-_ONE_SHOT_SHA256 = "31eaa8f6de66dae75737efda1ed9e178691f5a46213b26c86f783ae011fe13b7"
-_AINTERACT_SHA256 = "bedaa11ea73f6ee4e6128dd90a2334d3127135b1defc355681449ff532b578ee"
+# Hashes re-baselined for the DEV-1546 `_DEDUP_VS_RAW_ROWS` insertion
+# + `_SLAYER_SQL_ARTIFACT_CHECK` item-1 rewrite (primary fix is now
+# `distinct_dimension_values: false` rather than PK-as-dim / nested-DAG
+# `*:count`). The snapshot's purpose is the same — catch ACCIDENTAL
+# prompt drift on later refactors; deliberate prompt changes
+# re-baseline here.
+_ONE_SHOT_SHA256 = "633dd612690a1399f831eac1cf06abc5bc8d21da6c96ffe2aed495048f4b1f79"
+_AINTERACT_SHA256 = "521d4d7f0c87c63d50cc8aa7429f65bbad4a36294f4be81e4050a9b3f05c0354"
 
 
 def test_slayer_otf_one_shot_unchanged():
