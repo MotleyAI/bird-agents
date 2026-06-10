@@ -215,21 +215,30 @@ Your response must follow the format "<s>[Fill-in-Your-Response]</s>"; for examp
 # singletons that retain our prior registration. Compare by identity
 # AND equality so re-import is a no-op but a foreign value crashes
 # loudly.
+#
+# Codex PR #42 review #2: explicit `if ... raise AssertionError(...)`
+# instead of `assert` — `assert` is stripped under `python -O` and
+# would silently disable the collision guard exactly when we most need
+# it (production-style runtimes).
 
 _existing_enc = USER_SIMULATOR_ENCODER.get("v3")
-assert _existing_enc is None or _existing_enc == _V3_ENCODER, (
-    "`USER_SIMULATOR_ENCODER['v3']` is set to a value that does NOT "
-    "match this module's _V3_ENCODER — upstream `batch_run_bird_interact` "
-    "likely ships its own 'v3' now. Rename ours (e.g. 'v3_motley') and "
-    "bump CLI choices in cloud/cli.py."
-)
+if _existing_enc is not None and _existing_enc != _V3_ENCODER:
+    raise AssertionError(
+        "`USER_SIMULATOR_ENCODER['v3']` is set to a value that does NOT "
+        "match this module's _V3_ENCODER — upstream "
+        "`batch_run_bird_interact` likely ships its own 'v3' now. "
+        "Rename ours (e.g. 'v3_motley') and bump CLI choices in "
+        "cloud/cli.py."
+    )
 _existing_dec = USER_SIMULATOR_DECODER.get("v3")
-assert _existing_dec is None or _existing_dec == _V3_DECODER, (
-    "`USER_SIMULATOR_DECODER['v3']` is set to a value that does NOT "
-    "match this module's _V3_DECODER — upstream `batch_run_bird_interact` "
-    "likely ships its own 'v3' now. Rename ours (e.g. 'v3_motley') and "
-    "bump CLI choices in cloud/cli.py."
-)
+if _existing_dec is not None and _existing_dec != _V3_DECODER:
+    raise AssertionError(
+        "`USER_SIMULATOR_DECODER['v3']` is set to a value that does NOT "
+        "match this module's _V3_DECODER — upstream "
+        "`batch_run_bird_interact` likely ships its own 'v3' now. "
+        "Rename ours (e.g. 'v3_motley') and bump CLI choices in "
+        "cloud/cli.py."
+    )
 
 USER_SIMULATOR_ENCODER["v3"] = _V3_ENCODER
 USER_SIMULATOR_DECODER["v3"] = _V3_DECODER

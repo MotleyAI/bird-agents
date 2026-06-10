@@ -246,3 +246,104 @@ def test_v3_import_crashes_loudly_on_upstream_collision(monkeypatch):
         for mod in list(sys.modules):
             if mod.startswith("bird_interact_agents"):
                 del sys.modules[mod]
+
+
+# ---------------------------------------------------------------------------
+# PR #42 Codex review #1: cloud-only install resilience.
+# ---------------------------------------------------------------------------
+
+
+def test_package_import_survives_missing_upstream(monkeypatch):
+    """`import bird_interact_agents` (the package) must NOT crash when
+    the optional upstream `mini-interact-agent` package is absent.
+
+    `mini-interact-agent` (which provides `src.envs.user_simulator.prompts`)
+    only ships with the `original` and `all` extras. A bare `cloud`
+    install — used by Ray workers etc. — does NOT pull it in. Before
+    Codex review #1 the unconditional side-effect import in
+    `__init__.py` would crash any `from bird_interact_agents import
+    paths` on such installs. The contract under the fix: bare package
+    import succeeds; v3 isn't registered (v2 still works because the
+    same call site already imports from the upstream); user-sim
+    invocations land a clearer error in `_submit.py`.
+
+    Test mechanics: simulate the missing upstream by inserting a
+    `src.envs.user_simulator.prompts` import that raises
+    ModuleNotFoundError, drop bird_interact_agents from sys.modules,
+    re-import, assert no exception."""
+    import builtins
+    import sys
+
+    real_import = builtins.__import__
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "src.envs.user_simulator.prompts" or name.startswith(
+            "src.envs.user_simulator"
+        ):
+            raise ModuleNotFoundError(
+                f"No module named {name!r} (simulated cloud-only install)"
+            )
+        return real_import(name, globals, locals, fromlist, level)
+
+    # Wipe bird_interact_agents so __init__.py re-runs.
+    for mod in list(sys.modules):
+        if mod.startswith("bird_interact_agents"):
+            del sys.modules[mod]
+    # Also wipe any cached `src.envs.user_simulator.prompts` so the
+    # fake importer is actually invoked.
+    for mod in list(sys.modules):
+        if mod.startswith("src.envs.user_simulator"):
+            del sys.modules[mod]
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    try:
+        importlib.import_module("bird_interact_agents")
+    finally:
+        monkeypatch.setattr(builtins, "__import__", real_import)
+        # Re-wipe so subsequent tests get a clean re-registration.
+        for mod in list(sys.modules):
+            if mod.startswith("bird_interact_agents"):
+                del sys.modules[mod]
+
+
+def test_v3_collision_guard_works_under_optimised_mode(monkeypatch):
+    """Codex review #2: `assert` is stripped under `python -O`, which
+    would silently disable the collision guard. The fix replaced both
+    `assert ... not in dict` checks with explicit `if cond: raise
+    AssertionError(...)`, which DOES fire in optimised mode.
+
+    Test mechanics: there's no portable way to flip `__debug__` mid-
+    process, so we directly exercise the guard by walking the import
+    path with the upstream dict pre-poisoned. The test passing under
+    the regular interpreter does NOT prove `-O` safety; the regression
+    we're guarding against (replacing `if/raise` with `assert`) is
+    structural. This test pins the structural shape — a future
+    refactor reintroducing `assert` would still pass this test under
+    `pytest`, but `grep -n 'assert.*USER_SIMULATOR' src/.../user_sim_prompts.py`
+    in CI would catch it. We rely on review + the comment in the
+    module for the `-O` invariant."""
+    import sys
+
+    for mod in list(sys.modules):
+        if mod.startswith("bird_interact_agents.user_sim_prompts"):
+            del sys.modules[mod]
+
+    from src.envs.user_simulator.prompts import (
+        USER_SIMULATOR_DECODER,
+        USER_SIMULATOR_ENCODER,
+    )
+
+    saved_enc = dict(USER_SIMULATOR_ENCODER)
+    saved_dec = dict(USER_SIMULATOR_DECODER)
+    try:
+        USER_SIMULATOR_ENCODER["v3"] = "poisoned-by-upstream encoder"
+        with pytest.raises(AssertionError):
+            importlib.import_module("bird_interact_agents.user_sim_prompts")
+    finally:
+        USER_SIMULATOR_ENCODER.clear()
+        USER_SIMULATOR_ENCODER.update(saved_enc)
+        USER_SIMULATOR_DECODER.clear()
+        USER_SIMULATOR_DECODER.update(saved_dec)
+        for mod in list(sys.modules):
+            if mod.startswith("bird_interact_agents"):
+                del sys.modules[mod]
