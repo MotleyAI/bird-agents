@@ -658,6 +658,35 @@ async def test_run_task_whitelists_ask_user_and_submit_query(monkeypatch, tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_run_task_passes_disallowed_slayer_tools_to_sdk(
+    monkeypatch, tmp_path,
+):
+    """DEV-1548: the a-interact OTF adapter must thread
+    `SLAYER_MCP_DISALLOWED_TOOL_NAMES` verbatim into the
+    `ClaudeAgentOptions.disallowed_tools=` field — same contract as the
+    sibling one-shot adapter (the constant lives in `claude_sdk_otf.agent`
+    and is imported explicitly here so the two adapters stay symmetric).
+    The unit contract is that the live `ClaudeAgentOptions` instance
+    reaching the SDK carries the canonical list; the cloud-smoke
+    acceptance criterion asserts the SDK actually applies it.
+    """
+    from bird_interact_agents.agents.claude_sdk_otf.agent import (
+        SLAYER_MCP_DISALLOWED_TOOL_NAMES,
+    )
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+
+    captured = _stub_env(monkeypatch, m, tmp_path / "store")
+    agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    assert (
+        captured["options"].disallowed_tools
+        == SLAYER_MCP_DISALLOWED_TOOL_NAMES
+    )
+
+
+@pytest.mark.asyncio
 async def test_run_task_registers_three_guards_plus_turn_budget(
     monkeypatch, tmp_path,
 ):

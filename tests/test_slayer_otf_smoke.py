@@ -345,6 +345,8 @@ async def test_search_service_recency_fallback_under_datasource_filter(
     storage = YAMLStorage(base_dir=str(scratch))
     service = SearchService(storage=storage)
 
+    # DEV-1546: slayer 0.7.2 collapsed per-kind caps into ``max_results``
+    # and the unified ``SearchResponse.results`` list; filter to memory hits.
     response = await service.search(
         datasource=db,
         max_results=5,
@@ -394,6 +396,8 @@ async def test_search_service_surfaces_kb_memory_under_datasource_filter(
     first = kb_rows[0]
     query = first["knowledge"]
 
+    # DEV-1546: slayer 0.7.2 unified the per-kind buckets into
+    # ``SearchResponse.results``; filter to memory hits.
     response = await service.search(
         question=query, datasource=db,
         max_results=10,

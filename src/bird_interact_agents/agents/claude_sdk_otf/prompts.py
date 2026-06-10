@@ -26,10 +26,12 @@ from bird_interact_agents.agents._host_discovery_playbook import (
 from bird_interact_agents.agents._shared_otf_prompts import (
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
     _DECOMPOSE_DISCIPLINE,
+    _DEDUP_VS_RAW_ROWS,
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
     _SLAYER_SQL_ARTIFACT_CHECK,
     _SLAYER_TOOLS_BLOCK as _ENCODE_CORE_HEAD,
+    _TABLE_SET_PROBE,
 )
 
 # Shared submission contract (single-stage or nested-DAG). Literal JSON
@@ -95,7 +97,15 @@ _ENCODE_CORE_TAIL = """\
      sampled values yourself.
 """
 
-_ENCODE_CORE = _ENCODE_CORE_HEAD + "\n\n" + _DECOMPOSE_DISCIPLINE + "\n\n" + _ENCODE_CORE_TAIL
+_ENCODE_CORE = (
+    _ENCODE_CORE_HEAD + "\n\n"
+    + _DECOMPOSE_DISCIPLINE + "\n\n"
+    # DEV-1546: dim-only auto-dedup vs raw-rows decision — taught BEFORE
+    # the encoding rules so the agent decides on `distinct_dimension_values`
+    # while writing the final query, not after seeing the artifact.
+    + _DEDUP_VS_RAW_ROWS + "\n"
+    + _ENCODE_CORE_TAIL
+)
 
 SLAYER_OTF_ONE_SHOT = (
     "You are a data analyst. You have a SLayer semantic-layer MCP server plus a\n"
@@ -115,6 +125,8 @@ SLAYER_OTF_ONE_SHOT = (
         submit_tool="submit_query",
         clause_b="encoded KB",
     )
+    + "\n\n   "
+    + _TABLE_SET_PROBE.format(knowledge_label="KB")
     + "\n\n6. SUBMIT. Write the FINAL query so it REFERENCES the named columns /\n"
       "   measures you encoded — do NOT inline their SQL back into the query.\n"
       "   Project exactly the columns the question names, and only those.\n"

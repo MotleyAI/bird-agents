@@ -423,11 +423,15 @@ async def _annotate_memories(
     ``storage.save_memory`` defaults that kwarg to ``None``; without it,
     re-saving here would silently drop the ``Memory.description`` field
     populated by ``kb_memory_encoder._build_one``, undoing the whole point of
-    the compact-mode upgrade. The hook switched from the removed
-    ``slayer.embeddings.service.EmbeddingService.refresh_memory`` (≤0.7.0) to
-    ``slayer.search.service.SearchService.upsert_memory`` (≥0.7.3) — the
-    latter is what ``MemoryService.save_memory`` fans through in the new
-    SLayer release.
+    the compact-mode upgrade.
+
+    Hook migration history: slayer 0.7.2 (DEV-1546 / upstream DEV-1514)
+    removed ``slayer.embeddings.service.EmbeddingService.refresh_memory``;
+    slayer 0.7.3 (DEV-1549) consolidated the per-memory upsert behind
+    ``slayer.search.service.SearchService.upsert_memory`` — the same hook
+    ``MemoryService.save_memory`` fans through internally. The hook
+    short-circuits when the embedding client isn't configured, so it
+    stays safe in CI / offline runs.
     """
     from slayer.search.service import SearchService
 

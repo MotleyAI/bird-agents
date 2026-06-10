@@ -14,15 +14,16 @@ SearchResponse shape but scoped to a single DB.
 Usage:
     python scripts/slayer_search_for_db.py --db households \\
         --question "weighted score combining domestic help and social assistance" \\
-        [--max-results 10] [--compact / --no-compact]
+        [--max-results 12] [--compact / --no-compact]
 
 Prints the SearchResponse as JSON to stdout. Exits 0 on success, 1 if
 the per-DB storage directory does not exist or the search fails.
 
-SLayer 0.7.3 (DEV-1549) consolidated the previous per-kind caps
-(`max_memories` / `max_example_queries` / `max_entities`) into a single
-`max_results` cap plus a `compact` flag; the CLI flags here mirror that
-shape.
+DEV-1546 / DEV-1549: SLayer 0.7.2 collapsed the previous per-kind caps
+(``--max-memories`` / ``--max-example-queries`` / ``--max-entities``)
+into a single ``--max-results`` cap on the RRF-fused
+``SearchResponse.results`` list. SLayer 0.7.3 added the ``compact``
+flag, surfaced here as ``--compact`` / ``--no-compact``.
 """
 
 from __future__ import annotations
@@ -49,6 +50,9 @@ async def _search(
     max_results: int,
     compact: bool,
 ) -> dict:
+    """DEV-1546: slayer 0.7.2 collapsed the per-kind ``max_memories`` /
+    ``max_example_queries`` / ``max_entities`` caps into a single
+    ``max_results`` cap on the RRF-fused unified ``results`` list."""
     db_dir = slayer_models_dir / db
     if not db_dir.is_dir():
         raise FileNotFoundError(
@@ -86,8 +90,13 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--max-results", type=int, default=10,
-        help="Maximum total number of hits returned (memories + entities, RRF-fused).",
+        "--max-results", type=int, default=12,
+        help=(
+            "DEV-1546: slayer 0.7.2 collapsed the previous per-kind caps "
+            "(max-memories / max-example-queries / max-entities) into a "
+            "single cap on the RRF-fused results list. Default 12 ≈ the "
+            "sum of the pre-1546 defaults (5 + 2 + 5)."
+        ),
     )
     compact_group = p.add_mutually_exclusive_group()
     compact_group.add_argument(

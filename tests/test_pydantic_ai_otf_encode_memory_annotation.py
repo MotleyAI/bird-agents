@@ -153,10 +153,11 @@ async def test_annotation_fires_embedding_hook_when_available(tmp_path, monkeypa
     side effect of the write — no explicit refresh pass). We spy on
     ``SearchService.upsert_memory`` so no real OpenAI call is made.
 
-    DEV-1550 moved this hook from the (now-removed)
+    DEV-1546 / DEV-1550 moved this hook from the (now-removed)
     ``slayer.embeddings.service.EmbeddingService.refresh_memory`` to
-    ``slayer.search.service.SearchService.upsert_memory`` to match the
-    SLayer 0.7.3 consolidation."""
+    ``slayer.search.service.SearchService.upsert_memory`` (the higher-
+    level fan-out hook that ``MemoryService.save_memory`` uses internally)
+    to match the SLayer 0.7.3 consolidation."""
     from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
         EncoderResult,
     )

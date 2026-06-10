@@ -420,56 +420,48 @@ async def submit_query(args: dict) -> dict:
     return _text(observation)
 
 
-# DEV-1534 Fix C: wrap SLayer's MCP `query` so the agent can opt out
-# of Mode-B filter normalization mid-flight via a separate
-# `normalize_filters` tool parameter. The 14 positional params mirror
-# SLayer's MCP `query` exactly; the 15th is our directive.
+# DEV-1534 Fix C + DEV-1546: wrap SLayer's MCP `query` so the agent
+# uses the SAME JSON DSL shape as `submit_query` / `query_nested`
+# (the field for dedup vs raw rows, `distinct_dimension_values`,
+# lives inside that JSON) and so it can opt out of Mode-B filter
+# normalization via a separate `normalize_filters` tool parameter.
 _QUERY_TOOL_DESC = (
-    "Run a SLayer query and return SLayer's formatted result. Same "
-    "shape as SLayer's MCP `query` tool — `source_model` (required), "
-    "`dimensions`, `measures`, `filters`, `time_dimensions`, `order`, "
-    "`limit`, `offset`, `whole_periods_only`, `show_sql`, `dry_run`, "
-    "`explain`, `format` (markdown/json/csv), `variables`. The 15th "
-    "parameter `normalize_filters` (default true) controls our text-"
-    "equality filter auto-normalization: when true, every `col == 'X'` "
-    "filter becomes `lower(trim(col)) == 'x'` (case/whitespace-tolerant); "
-    "when false, filters are forwarded verbatim (exact-case equality)."
+    "Run a single-stage SLayer query and return SLayer's formatted "
+    "result. `query_json` is a SlayerQuery JSON OBJECT — the same "
+    "shape `submit_query` accepts — with `source_model` (required), "
+    "and any of `dimensions`, `measures`, `filters`, `time_dimensions`, "
+    "`order`, `limit`, `offset`, `whole_periods_only`, `variables`, "
+    "`distinct_dimension_values`. Set `distinct_dimension_values: "
+    "false` inside the JSON to disable SLayer's default dim-only "
+    "auto-dedup `GROUP BY` (emits raw `SELECT <dims/td>` rows). "
+    "Tool-level options stay OUTSIDE the JSON as separate kwargs: "
+    "`show_sql`, `dry_run`, `explain`, `format` (markdown/json/csv), "
+    "and `normalize_filters` (default true) — when true, every "
+    "`col == 'X'` filter becomes `lower(trim(col)) == 'x'` "
+    "(case/whitespace-tolerant); when false, filters are forwarded "
+    "verbatim (exact-case equality). For a nested-DAG preview use "
+    "`query_nested` instead."
 )
 
 
 @tool(
     "query",
     _QUERY_TOOL_DESC,
-    # Explicit JSON Schema dict so only `source_model` is required. A flat
+    # Explicit JSON Schema dict so only `query_json` is required. A flat
     # `{key: type}` schema would make the SDK mark every key required (see
     # claude_agent_sdk._build_schema → `"required": list(properties.keys())`),
-    # which would break SLayer's MCP `query` semantics (only `source_model`
-    # is positional in the upstream signature).
+    # forcing every preview call to set show_sql/dry_run/explain/format.
     {
         "type": "object",
         "properties": {
-            # SLayer's `query` accepts `source_model: str | ModelExtension |
-            # SlayerModel` — i.e. a model name OR an inline object with
-            # `name` / `data_source` / `sql` / `columns`. The SLAYER_A_INTERACT
-            # prompt explicitly tells the agent to pass inline ModelExtension
-            # objects for ad-hoc derived-column filters (Codex round-3 catch).
-            "source_model": {"oneOf": [{"type": "string"}, {"type": "object"}]},
-            "measures": {"type": "array"},
-            "dimensions": {"type": "array"},
-            "filters": {"type": "array"},
-            "time_dimensions": {"type": "array"},
-            "order": {"type": "array"},
-            "limit": {"type": "integer"},
-            "offset": {"type": "integer"},
-            "whole_periods_only": {"type": "boolean", "default": False},
+            "query_json": {"type": "string"},
             "show_sql": {"type": "boolean", "default": False},
             "dry_run": {"type": "boolean", "default": False},
             "explain": {"type": "boolean", "default": False},
             "format": {"type": "string", "default": "markdown"},
-            "variables": {"type": "object"},
             "normalize_filters": {"type": "boolean", "default": True},
         },
-        "required": ["source_model"],
+        "required": ["query_json"],
     },
 )
 async def query(args: dict) -> dict:
@@ -481,23 +473,12 @@ async def query(args: dict) -> dict:
         storage = _ctx["_slayer_storage"]
     _query_mod.attach_storage(storage)
 
-    # `source_model` is required; everything else is optional with the
-    # SLayer MCP defaults.
     result = await _query_mod.query_impl(
-        source_model=args["source_model"],
-        measures=args.get("measures"),
-        dimensions=args.get("dimensions"),
-        filters=args.get("filters"),
-        time_dimensions=args.get("time_dimensions"),
-        order=args.get("order"),
-        limit=args.get("limit"),
-        offset=args.get("offset"),
-        whole_periods_only=bool(args.get("whole_periods_only", False)),
+        args["query_json"],
         show_sql=bool(args.get("show_sql", False)),
         dry_run=bool(args.get("dry_run", False)),
         explain=bool(args.get("explain", False)),
         format=args.get("format", "markdown"),
-        variables=args.get("variables"),
         normalize_filters=bool(args.get("normalize_filters", True)),
     )
     return _text(result if isinstance(result, str) else str(result))

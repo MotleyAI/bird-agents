@@ -29,11 +29,14 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _ASK_AGAIN_RULE,
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
     _DECOMPOSE_DISCIPLINE,
+    _DEDUP_VS_RAW_ROWS,
+    _GRADER_ZERO_VS_ONE_DIAGNOSTIC,
     _PIVOT_AFTER_REPEATED_FAILURES,
     _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
     _RULE_0_ASK_BEFORE,
     _SLAYER_SQL_ARTIFACT_CHECK,
     _SLAYER_TOOLS_BLOCK as _AINTERACT_SLAYER_TOOLS,
+    _TABLE_SET_PROBE,
     _USER_SIM_TRUST_CALIBRATION,
 )
 
@@ -118,11 +121,21 @@ SLAYER_OTF_AINTERACT = (
     + "\n\n"
     + _DECOMPOSE_DISCIPLINE
     + "\n\n"
+    # DEV-1546: dim-only auto-dedup vs raw-rows decision — taught BEFORE
+    # the per-KB encoding rules so the agent decides on
+    # `distinct_dimension_values` while writing the final query, not
+    # after seeing the artifact.
+    + _DEDUP_VS_RAW_ROWS
+    + "\n"
     + _AINTERACT_RULES_2_3
     + "\n\n"
     + _ASK_AGAIN_RULE.format(knowledge_source="a memory")
     + "\n\n   "
     + _USER_SIM_TRUST_CALIBRATION.format(knowledge_label="KB")
+    + "\n\n   "
+    + _TABLE_SET_PROBE.format(knowledge_label="KB")
+    + "\n\n   "
+    + _GRADER_ZERO_VS_ONE_DIAGNOSTIC.format(knowledge_label="KB")
     + "\n\n   "
     + _PIVOT_AFTER_REPEATED_FAILURES.format(
         artifact_inspect_step=(

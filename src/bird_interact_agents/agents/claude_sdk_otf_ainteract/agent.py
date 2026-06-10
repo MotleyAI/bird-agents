@@ -43,6 +43,7 @@ from bird_interact_agents.agents.claude_sdk.agent import (
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
     _NORMALIZE_WRITE_FILTERS_MATCHER,
+    SLAYER_MCP_DISALLOWED_TOOL_NAMES,
     _make_query_before_submit_guard,
     _make_turn_budget_hook,
     _normalize_write_tool_filters_hook,
@@ -378,6 +379,13 @@ class ClaudeSDKOtfAInteractAgent:
                 system_prompt=prompt,
                 mcp_servers=mcp_servers,
                 allowed_tools=tool_names,
+                # DEV-1548: same cacheable-prefix shrink as the sibling
+                # one-shot adapter. The constant lives in
+                # claude_sdk_otf.agent (imported above) so a single edit
+                # propagates to both adapters; the negative-assertion test
+                # in test_claude_sdk_otf_disallowed_slayer_tools.py pins
+                # the symmetry.
+                disallowed_tools=SLAYER_MCP_DISALLOWED_TOOL_NAMES,
                 tools=[],
                 setting_sources=[],
                 model=native_model_id(self.model),

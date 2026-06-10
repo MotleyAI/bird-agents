@@ -22,29 +22,29 @@ import pytest
 # Hashes were captured from the pre-refactoring source.
 # ---------------------------------------------------------------------------
 
-# Hashes re-baselined for the DEV-1550 A3 prompt addition AND the
-# SLayer 0.7.3 API migration:
-#   * new "READ A KNOWN MEMORY'S FULL BODY" drill-in paragraph
-#     documenting the compact-mode opt-out
-#     (`search(entities=["memory:<id>"], max_results=1, compact=False)`),
-#     inserted as a sibling between the existing column-drill-in
-#     paragraph and the `ENCODE-THEN-QUERY DISCIPLINE:` header in the
-#     shared `_SLAYER_TOOLS_BLOCK` (extracted from the previously
-#     byte-identical `_AINTERACT_SLAYER_TOOLS` / `_ENCODE_CORE_HEAD`);
-#   * column-drill-in pattern in the same block migrated from the
-#     removed `max_memories=0, max_example_queries=0` kwargs to
-#     `max_results=1, compact=False`;
-#   * `_host_discovery_playbook.py` (embedded inside both prompts via
-#     `_HOST_DISCOVERY_PLAYBOOK`) migrated to the same 0.7.3 surface.
+# Hashes re-baselined for the DEV-1545 + DEV-1546 + DEV-1550 merge:
+#   * DEV-1545 added `_TABLE_SET_PROBE` (one-shot + a-interact) and
+#     `_GRADER_ZERO_VS_ONE_DIAGNOSTIC` (a-interact only).
+#   * DEV-1546 added `_DEDUP_VS_RAW_ROWS` (both flavours), rewrote
+#     `_SLAYER_SQL_ARTIFACT_CHECK` item-1 (primary fix is now
+#     `distinct_dimension_values: false`), and migrated the per-kind
+#     search kwargs to `max_results` + the unified `results` list.
+#   * DEV-1550 added the new "READ A KNOWN MEMORY'S FULL BODY" drill-in
+#     paragraph documenting the compact-mode opt-out
+#     (`search(entities=["memory:<id>"], max_results=1, compact=False,
+#     cypher_filter='MATCH (n:Memory) RETURN n.id AS id')`), inserted as
+#     a sibling between the existing column-drill-in paragraph and the
+#     `ENCODE-THEN-QUERY DISCIPLINE:` header in the new shared
+#     `_SLAYER_TOOLS_BLOCK` (extracted from the previously byte-identical
+#     `_AINTERACT_SLAYER_TOOLS` / `_ENCODE_CORE_HEAD`). DEV-1550 also
+#     adds the `:Column` / `:Memory` cypher kind filter to all
+#     known-entity drill-in patterns in the prompts + the host-discovery
+#     playbook (`_HOST_DISCOVERY_PLAYBOOK`).
 #
-# Prior re-baseline notes (kept for context): DEV-1534 added the
-# column-names rule, SLayer artifact sanity-check, pivot-after-3-failures
-# discipline, and user-sim trust calibration.
-#
-# The snapshot's purpose is unchanged: catch ACCIDENTAL prompt drift on
-# later refactors; deliberate prompt changes re-baseline here.
-_ONE_SHOT_SHA256 = "1178084cbe083f343eefa7998f425dedb0df1740b5b93ecda010418a1ca85275"
-_AINTERACT_SHA256 = "e540fcb5abf6c4edbee3abe83b6592c3eddf1d941bc01e81289150d85d66faa9"
+# The snapshot's purpose stays the same: catch ACCIDENTAL prompt drift
+# on later refactors; deliberate prompt changes re-baseline here.
+_ONE_SHOT_SHA256 = "f508c77dfe189634cf9821c10310de933bde00586f5ebad08f814d272311a88c"
+_AINTERACT_SHA256 = "aa89d76e3b9e9e0f6585e9b9a1031fd7bf5c3b2f7882bf33e29934e9d6c6674a"
 
 
 def test_slayer_otf_one_shot_unchanged():
