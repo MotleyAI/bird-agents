@@ -812,12 +812,11 @@ def test_overlay_benchmark_kwarg_mini_interact_uses_single_file(tmp_path):
 # ---------------------------------------------------------------------------
 # Codex r9: multi-variant audited gold rows for the same instance_id
 # (one ``primary=True`` + N alternates) must NOT let an alternate
-# overwrite the primary row at index-build time. Pre-fix both index
-# helpers (``harness._load_single_file_audited_rows`` via the overlay
-# AND ``cloud._audited_gold_check._load_single_file_audit_index``)
-# wrote with latest-wins semantics. These two tests pin the new
-# primary-first contract — alternates listed AFTER the primary in the
-# file must lose the contest.
+# overwrite the primary row at index-build time. Pre-fix
+# ``harness._load_single_file_audited_rows`` (via the overlay) wrote with
+# latest-wins semantics. The two tests below pin the new primary-first
+# contract — alternates listed AFTER the primary in the file must lose
+# the contest.
 # ---------------------------------------------------------------------------
 
 
@@ -903,50 +902,8 @@ def test_overlay_single_file_prefers_primary_when_alternate_listed_first(
     )
 
 
-def test_cloud_audit_index_prefers_primary_over_alternate(tmp_path):
-    """``cloud._audited_gold_check._load_single_file_audit_index``
-    is the cloud-side guard against an audited gold layout drift —
-    same primary-first rule must hold there."""
-    from bird_interact_agents.benchmark import get_benchmark
-    from bird_interact_agents.cloud._audited_gold_check import (
-        _load_single_file_audit_index,
-    )
-
-    benchmark = get_benchmark("livesqlbench-base-lite-sqlite")
-    (tmp_path / benchmark.name).mkdir(parents=True, exist_ok=True)
-    audit_path = tmp_path / benchmark.name / f"{benchmark.name}_audited.jsonl"
-    audit_path.write_text(
-        json.dumps({
-            "instance_id": "museum_9",
-            "selected_database": "museum",
-            "benchmark": "livesqlbench-base-lite-sqlite",
-            "variant_id": "alt_a",
-            "primary": False,
-            "audit_status": "edited",
-            "audited_sol_sql": ["SELECT alt_reading FROM t"],
-        }) + "\n"
-        + json.dumps({
-            "instance_id": "museum_9",
-            "selected_database": "museum",
-            "benchmark": "livesqlbench-base-lite-sqlite",
-            "variant_id": "primary",
-            "primary": True,
-            # Deliberately different from the alt so we can tell which
-            # row landed in the index.
-            "audit_status": "clean",
-            "audited_sol_sql": [],
-        }) + "\n"
-    )
-
-    index = _load_single_file_audit_index(tmp_path, benchmark)
-    assert index is not None
-    status, has_audited_sql, _row_db, _row_bench = index["museum_9"]
-    # ``clean`` is the primary's status; ``edited`` is the alt's.
-    assert status == "clean", (
-        f"primary row's audit_status must survive against the alt's; "
-        f"got status={status!r} (alt's status was 'edited')"
-    )
-    assert has_audited_sql is False, (
-        "primary's empty audited_sol_sql must be the one indexed, "
-        "not the alt's non-empty list"
-    )
+# DEV-1515 follow-up: the cloud-side `_load_single_file_audit_index` was
+# removed together with `cloud._audited_gold_check` when the submit-time
+# guard flipped from audited-gold to annotation availability. The
+# harness-side overlay test above (`test_overlay_single_file_prefers_…`)
+# still pins the primary-first contract for the only remaining reader.

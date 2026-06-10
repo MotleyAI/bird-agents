@@ -259,7 +259,14 @@ class ClaudeSDKOtfRawAgent:
                     "phase2_observation": result.get("phase2_observation"),
                     "trajectory": trajectory,
                     "error": str(e),
-                    "usage": accum.model_dump(),
+                    # DEV-1535 follow-up: see claude_sdk_otf/agent.py
+                    # — symmetry with the a-interact variant.
+                    "usage": {
+                        **accum.model_dump(),
+                        "n_ask_user_calls": (ctx_dict or {}).get(
+                            "asks_used", 0,
+                        ),
+                    },
                     "phase1_observation_audited": result.get("phase1_observation_audited"),
                     "phase1_observation_original": result.get("phase1_observation_original"),
                 },
@@ -285,7 +292,12 @@ class ClaudeSDKOtfRawAgent:
                 "phase2_observation": result.get("phase2_observation"),
                 "trajectory": trajectory,
                 "error": None,
-                "usage": accum.model_dump(),
+                "usage": {
+                    **accum.model_dump(),
+                    "n_ask_user_calls": (ctx_dict or {}).get(
+                        "asks_used", 0,
+                    ),
+                },
                 "phase1_observation_audited": result.get("phase1_observation_audited"),
                 "phase1_observation_original": result.get("phase1_observation_original"),
             },

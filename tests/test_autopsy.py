@@ -833,6 +833,7 @@ _ONE_SHOT_PATTERNS = [
     "wrong_join_path",
     "output_schema_misread",
     "slayer_generation_artifact",
+    "slayer_overaggregation",
     "exhausted_budget_guessing",
     "other",
 ]
@@ -1300,7 +1301,7 @@ def test_tool_schema_one_shot_drops_ask_user_properties_and_required():
     assert "pattern" in o_req
 
 
-def test_tool_schema_one_shot_pattern_enum_is_six_subset():
+def test_tool_schema_one_shot_pattern_enum_matches():
     from bird_interact_agents.eval.autopsy import _AUTOPSY_TOOL_SCHEMA_ONE_SHOT
 
     pattern_enum = set(
@@ -2246,3 +2247,130 @@ def test_autopsy_error_traceback_excerpt_capped_at_construction():
     err = _make_autopsy_error(traceback_excerpt=long_tb)
     assert len(err.traceback_excerpt) <= 2000
     assert err.traceback_excerpt.endswith("...[truncated]")
+
+
+# ---------------------------------------------------------------------------
+# DEV-1535 follow-up — autopsy LLM client auth resolution.
+# ---------------------------------------------------------------------------
+
+
+def test_build_anthropic_client_prefers_oauth_token(monkeypatch):
+    """OAuth subscription path: when CLAUDE_CODE_OAUTH_TOKEN is set, the
+    SDK is constructed with `auth_token=...` so it sends `Authorization:
+    Bearer ...` rather than `x-api-key` (the only auth scheme claude.ai
+    OAuth tokens accept)."""
+    import anthropic
+    from unittest.mock import patch
+
+    from bird_interact_agents.eval.autopsy import _build_anthropic_client
+
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-fake")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-fake")
+    with patch.object(anthropic, "AsyncAnthropic") as mock_cls:
+        _build_anthropic_client()
+    mock_cls.assert_called_once_with(
+        auth_token="sk-ant-oat01-fake", api_key=None,
+    )
+
+
+def test_build_anthropic_client_falls_back_to_api_key(monkeypatch):
+    """Legacy path: no OAuth → AsyncAnthropic(api_key=...)."""
+    import anthropic
+    from unittest.mock import patch
+
+    from bird_interact_agents.eval.autopsy import _build_anthropic_client
+
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-fake")
+    with patch.object(anthropic, "AsyncAnthropic") as mock_cls:
+        _build_anthropic_client()
+    mock_cls.assert_called_once_with(api_key="sk-ant-api03-fake")
+
+
+def test_build_anthropic_client_raises_without_creds(monkeypatch):
+    """Neither env var set → RuntimeError. Caught by run_autopsy's outer
+    `except Exception` and recorded as kind='unknown' with a meaningful
+    FQN, instead of the SDK's cryptic TypeError that previously crashed
+    18/28 autopsies in production."""
+    from bird_interact_agents.eval.autopsy import _build_anthropic_client
+
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="CLAUDE_CODE_OAUTH_TOKEN"):
+        _build_anthropic_client()
+
+
+# ---------------------------------------------------------------------------
+# DEV-1535 follow-up — prompt aligns with tool schema's required fields
+# for a-interact, so the LLM can't omit `key_asks` /
+# `disclosed_resolutions` / `undisclosed_resolutions` and trigger a
+# pydantic ValidationError.
+# ---------------------------------------------------------------------------
+
+
+def test_a_interact_prompt_instructs_required_ask_fields():
+    """The a-interact prompt MUST explicitly mention the three required
+    ask-related fields. Pre-fix the prompt was silent on them; the
+    tool-schema marked them required; 7 autopsies died with
+    `AutopsyLLMOutput.key_asks Field required` because the LLM had no
+    instruction to emit them. This is the only prompt-content assertion
+    in this file: it pins a contract between the schema and the prompt,
+    NOT prose style."""
+    from bird_interact_agents.eval.annotation_schema import (
+        MetadataSufficiency, Provenance, TaskAnnotation,
+    )
+    from bird_interact_agents.eval.autopsy import _build_prompt
+
+    ann = TaskAnnotation(
+        instance_id="x_1", selected_database="x",
+        annotated_by="t", annotated_at="2026-06-08",
+        amb_user_query="q", external_knowledge=[], masked_terms=[],
+        metadata_sufficiency=MetadataSufficiency(
+            verdict="sufficient", rationale="r",
+            evidence_sources_consulted=[],
+        ),
+        original_gold_is_correct=True, gold_variants=[],
+        provenance=Provenance(
+            task_jsonl_path="x.jsonl", task_jsonl_instance_id="x_1",
+        ),
+    )
+    prompt = _build_prompt(
+        task_annotation=ann, trajectory=[], kb_text="",
+        miss_diagnostics=None, is_one_shot=False,
+    )
+    # All three required-fields names appear in the instructional block.
+    assert "key_asks" in prompt
+    assert "disclosed_resolutions" in prompt
+    assert "undisclosed_resolutions" in prompt
+
+
+def test_one_shot_prompt_omits_ask_fields_block():
+    """The one-shot variant drops the four ask_user-shaped fields from
+    both the schema and the prompt, so the instructional block must NOT
+    appear (Codex r1 #7 rationale: naming the dropped fields, even to say
+    'do not emit', still encourages the LLM to latch onto the noun)."""
+    from bird_interact_agents.eval.annotation_schema import (
+        MetadataSufficiency, Provenance, TaskAnnotation,
+    )
+    from bird_interact_agents.eval.autopsy import _build_prompt
+
+    ann = TaskAnnotation(
+        instance_id="x_1", selected_database="x",
+        annotated_by="t", annotated_at="2026-06-08",
+        amb_user_query="q", external_knowledge=[], masked_terms=[],
+        metadata_sufficiency=MetadataSufficiency(
+            verdict="sufficient", rationale="r",
+            evidence_sources_consulted=[],
+        ),
+        original_gold_is_correct=True, gold_variants=[],
+        provenance=Provenance(
+            task_jsonl_path="x.jsonl", task_jsonl_instance_id="x_1",
+        ),
+    )
+    prompt = _build_prompt(
+        task_annotation=ann, trajectory=[], kb_text="",
+        miss_diagnostics=None, is_one_shot=True,
+    )
+    assert "key_asks" not in prompt
+    assert "disclosed_resolutions" not in prompt
+    assert "undisclosed_resolutions" not in prompt

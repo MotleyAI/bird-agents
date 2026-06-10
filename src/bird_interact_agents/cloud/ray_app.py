@@ -32,8 +32,10 @@ from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
 from bird_interact_agents.cloud import upload_back as _upload_back
+from bird_interact_agents.eval.annotation_schema import SubmissionConfig
 from bird_interact_agents.eval.grade_in_place import (
     decode_result_json as _decode_result_json,
+    extract_usage_costs,
     grade_and_write,
     grade_one_submission,
     load_audited_gold_rows_for as _load_audited_gold_rows_for,
@@ -747,6 +749,36 @@ def _run_one_in_actor(
     _row_selected_db = (
         row.get("database") or task_data.get("selected_database") or ""
     )
+    # DEV-1535: the inline-cost extraction below previously read
+    # `cost_usd_agent` / `cost_usd_user_sim` — the WRONG key names.
+    # `TokenUsage.model_dump()` (usage.py:232-233) emits
+    # `agent_cost_usd` / `user_sim_cost_usd`, so every cloud annotation
+    # written since DEV-1515 had None costs. Route through the shared
+    # `extract_usage_costs` helper. Hoisted out of the try block so the
+    # except branch can pass them through to the failed-annotation writer.
+    _usage = row.get("usage")
+    _agent_cost, _sim_cost = extract_usage_costs(_usage)
+    _usage_dict = _usage if isinstance(_usage, dict) else {}
+    # DEV-1535: snapshot the per-run config from the manifest into every
+    # submission annotation, so post-hoc cost-by-mode / failure-mode
+    # analyses don't have to parse the cloud run-id substring to recover
+    # framework/mode/etc. Build once per task — the config is identical
+    # across the manifest but the annotation writer expects an instance.
+    _submission_config = SubmissionConfig(
+        framework=cfg.get("framework"),
+        mode=cfg.get("mode"),
+        query_mode=cfg.get("query_mode"),
+        agent_model=cfg.get("agent_model"),
+        user_sim_model=cfg.get("user_sim_model"),
+        slayer_setup=cfg.get("slayer_setup"),
+        reasoning_effort=cfg.get("reasoning_effort"),
+        patience=cfg.get("patience"),
+        max_depth=cfg.get("max_depth"),
+        dataset=cfg.get("dataset"),
+        strict=cfg.get("strict"),
+        use_audited_gold_sql=cfg.get("use_audited_gold_sql"),
+        prompt_cache=cfg.get("prompt_cache"),
+    )
     try:
         # Short-circuit BEFORE calling the real grader on a missing
         # submission. ``str(row.get("submitted_sql") or "")`` would
@@ -782,16 +814,19 @@ def _run_one_in_actor(
             run_id=run_id,
             benchmark=_grader_benchmark,
             db_path=grader_db_path,
-            cost_usd_agent=row.get("usage", {}).get("cost_usd_agent")
-                if isinstance(row.get("usage"), dict) else None,
-            cost_usd_user_sim=row.get("usage", {}).get("cost_usd_user_sim")
-                if isinstance(row.get("usage"), dict) else None,
+            cost_usd_agent=_agent_cost,
+            cost_usd_user_sim=_sim_cost,
             duration_s=row.get("duration_s"),
-            n_agent_turns=row.get("usage", {}).get("n_agent_turns")
-                if isinstance(row.get("usage"), dict) else None,
-            n_ask_user_calls=row.get("usage", {}).get("n_ask_user_calls")
-                if isinstance(row.get("usage"), dict) else None,
-            predicted_row_count=None,
+            n_agent_turns=_usage_dict.get("n_agent_turns"),
+            n_ask_user_calls=_usage_dict.get("n_ask_user_calls"),
+            # DEV-1535 r2 (Codex): `finalize_result_row` now backfills
+            # `predicted_row_count` from the snapshot dict, but the
+            # cloud writer was hardcoding `None` and ignoring it —
+            # leaving cloud-side annotations missing the row-count
+            # evidence the new `slayer_overaggregation` autopsy
+            # pattern needs. Forward whatever the row carries.
+            predicted_row_count=row.get("predicted_row_count"),
+            config=_submission_config,
             task_annotation=row.get("_task_annotation"),
             autopsy_result=row.get("_autopsy"),
             attempt=attempt,
@@ -820,6 +855,11 @@ def _run_one_in_actor(
                     f"{type(grader_exc).__name__}: {grader_exc}"
                 )[:200],
                 duration_s=row.get("duration_s"),
+                cost_usd_agent=_agent_cost,
+                cost_usd_user_sim=_sim_cost,
+                n_agent_turns=_usage_dict.get("n_agent_turns"),
+                n_ask_user_calls=_usage_dict.get("n_ask_user_calls"),
+                config=_submission_config,
             )
             _gcs.write_submission_annotation(
                 run_id, iid, json.loads(failed_path.read_text()),

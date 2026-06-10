@@ -27,8 +27,8 @@ import pytest
 # discipline, user-sim trust calibration). The snapshot's purpose is the
 # same — catch ACCIDENTAL prompt drift on later refactors; deliberate
 # prompt changes re-baseline here.
-_ONE_SHOT_SHA256 = "2edbd941d409883d16dfcc68740aef4e5d7ba9d778752d060e990ab8479ba2dc"
-_AINTERACT_SHA256 = "cda8eae5cdfe0825f8e8010e0045daaa26baf0b12d57dab0e12ade6849229bca"
+_ONE_SHOT_SHA256 = "31eaa8f6de66dae75737efda1ed9e178691f5a46213b26c86f783ae011fe13b7"
+_AINTERACT_SHA256 = "bedaa11ea73f6ee4e6128dd90a2334d3127135b1defc355681449ff532b578ee"
 
 
 def test_slayer_otf_one_shot_unchanged():

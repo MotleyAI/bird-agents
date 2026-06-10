@@ -1076,9 +1076,105 @@ def finalize_result_row(
     used a deletion variant (i.e. ``deleted_kb_ids`` is non-empty);
     otherwise it stays ``None`` so canonical-storage rows can be told
     apart from variant rows in the results JSON.
+
+    DEV-1535 fix: also backfills ``n_agent_turns`` from the trajectory
+    when the adapter hasn't set it explicitly. Pre-fix only the
+    pydantic_ai* adapters populated this field — every claude_sdk*
+    adapter left it ``None``, which collapsed downstream telemetry
+    (CascadingReport.n_agent_turns, post-hoc budget analyses, etc.) to
+    ``len(trajectory)`` proxies. Count = number of ``AssistantMessage``
+    items in the trajectory.
     """
     row["deleted_kb_ids"] = deleted_kb_ids
     row["variant_storage_path"] = slayer_storage_dir if deleted_kb_ids else None
+    # DEV-1535 r2 (CodeRabbit): the early-error paths in
+    # `claude_sdk_otf/agent.py:393-406` and the analogous spots in
+    # `claude_sdk_otf_raw/agent.py:163-176` build a row WITHOUT any
+    # `usage` field at all. Pre-fix the chokepoint backfills below
+    # short-circuited (`isinstance(_usage, dict)` was False) and the
+    # resulting annotation carried None for every usage-side telemetry
+    # field on the exact runs where that telemetry matters most.
+    # Initialise once at the top so every backfill below has a place
+    # to land.
+    if not isinstance(row.get("usage"), dict):
+        row["usage"] = {}
+    _usage = row["usage"]
+    if row.get("n_agent_turns") is None:
+        traj = row.get("trajectory")
+        if isinstance(traj, list):
+            row["n_agent_turns"] = sum(
+                1 for item in traj
+                if isinstance(item, dict)
+                and item.get("type") == "AssistantMessage"
+            )
+    # DEV-1535 r2 (Codex): the n_agent_turns backfill above sets only
+    # the top-level row key, but every annotation writer (run.py,
+    # cloud/ray_app.py) reads `usage_blob.get("n_agent_turns")`. Mirror
+    # the backfilled value into `usage` so the writers actually see it
+    # — without this mirror the per-adapter backfill is dead for
+    # claude_sdk runs (the very ones it was added for).
+    if (
+        row.get("n_agent_turns") is not None
+        and _usage.get("n_agent_turns") is None
+    ):
+        _usage["n_agent_turns"] = row["n_agent_turns"]
+    # DEV-1535 follow-up: chokepoint backstop for `usage.n_ask_user_calls`.
+    # Per-adapter edits ensure every claude_sdk_otf* flavor now sets this
+    # field; pydantic_ai* adapters don't track ask_user but for those the
+    # benchmark is one-shot (no user-sim), so a default of 0 is correct.
+    # Defensive against future adapters that forget the convention.
+    _usage.setdefault("n_ask_user_calls", 0)
+    # DEV-1535 follow-up: backfill `predicted_row_count` from the
+    # snapshot dict that `capture_result_snapshot` stores at
+    # `predicted_result_json` (shape: `{"columns":[...], "row_count":N,
+    # "sample_rows":[...]}` per `agents/_submit.py:122`). Adapters that
+    # set `predicted_row_count` explicitly win.
+    if row.get("predicted_row_count") is None:
+        snapshot_raw = row.get("predicted_result_json")
+        try:
+            snapshot = (
+                json.loads(snapshot_raw)
+                if isinstance(snapshot_raw, str) else snapshot_raw
+            )
+            if isinstance(snapshot, dict):
+                rc = snapshot.get("row_count")
+                if isinstance(rc, int):
+                    row["predicted_row_count"] = rc
+        except (TypeError, ValueError):
+            pass
+    # DEV-1535 follow-up: backfill `tool_call_stats` for claude_sdk
+    # adapters. The pydantic_ai* family computes this during the run
+    # (via `_run_capture._extract_tool_stats`); the claude_sdk family
+    # didn't until now. Reusing the same shape so downstream consumers
+    # (cascading reports, miss-pattern queries) don't fork. The walker
+    # returns None for non-claude_sdk trajectory shapes so the
+    # discriminator is shape-based, not adapter-name-based.
+    if row.get("tool_call_stats") is None:
+        from bird_interact_agents.agents._run_capture import (
+            extract_tool_stats_from_claude_sdk_trajectory,
+        )
+        stats = extract_tool_stats_from_claude_sdk_trajectory(
+            row.get("trajectory"),
+        )
+        if stats is not None:
+            row["tool_call_stats"] = stats
+    # DEV-1535 follow-up: capture the claude_sdk SDK's final
+    # ResultMessage metadata (num_turns / stop_reason / duration_ms /
+    # duration_api_ms). `stop_reason` is the canonical "why did the
+    # agent stop" signal (turn budget vs explicit stop vs error) that
+    # was previously dropped. Fold under `usage.sdk_*` rather than a
+    # new top-level dict so results.db's `usage_json` carries it for
+    # free. `_usage` was hoisted at the top of the function so the
+    # early-error claude_sdk paths (no usage field on the row) still
+    # get backfilled here.
+    from bird_interact_agents.agents._run_capture import (
+        extract_claude_sdk_result_metadata,
+    )
+    meta = extract_claude_sdk_result_metadata(row.get("trajectory"))
+    if meta is not None:
+        for k, v in meta.items():
+            # Don't clobber explicit adapter values; backfill only.
+            _usage.setdefault(k, v)
     return row
 
 

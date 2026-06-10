@@ -45,7 +45,11 @@ class FakeSubmitArgs:
     slayer_setup: str = "pre-encoded"
     slayer_storage_root: str = "/data/slayer_models"
     dataset: str = "mini-interact"
-    no_subscription_auth: bool = False
+    # DEV-1535: flip the fake's default to the legacy API-key path so the
+    # bulk of driver tests don't have to monkeypatch CLAUDE_CODE_OAUTH_TOKEN.
+    # The dedicated OAuth-path tests (test_read_api_keys_oauth_*) set the
+    # env explicitly and pass `no_subscription_auth=False` directly.
+    no_subscription_auth: bool = True
 
 
 def _patch_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict[str, MagicMock]:
@@ -61,6 +65,16 @@ def _patch_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict[str, MagicMock
         m = MagicMock(name=attr)
         mocks[attr] = m
         monkeypatch.setattr(f"bird_interact_agents.cloud.driver.{attr}", m)
+    # DEV-1535: the OAuth-required guard in `read_api_keys_from_local_env`
+    # branches on `prereqs._is_claude_sdk_framework(framework)`. With the
+    # generic MagicMock above that predicate returns a truthy Mock for
+    # ANY framework, so non-claude_sdk fixture manifests (pydantic_ai,
+    # annotator, ...) would incorrectly enter the OAuth branch. Wire the
+    # real predicate through so the framework check actually evaluates.
+    from bird_interact_agents.cloud import prereqs as _real_prereqs
+    mocks["prereqs"]._is_claude_sdk_framework.side_effect = (
+        _real_prereqs._is_claude_sdk_framework
+    )
     mocks["image"].image_tag.return_value = "deadbeef1234-cafebabe5678"
     mocks["image"].build_and_push.return_value = (
         "us-central1-docker.pkg.dev/motley-team-475011/x/runner:tag"
@@ -1191,14 +1205,38 @@ def test_read_api_keys_oauth_slayer_ships_openai_key(monkeypatch):
     assert "ANTHROPIC_API_KEY" not in keys
 
 
-def test_read_api_keys_claude_sdk_no_oauth_legacy_path(monkeypatch):
-    """claude_sdk + no OAuth token → legacy path; ANTHROPIC_API_KEY shipped."""
+def test_read_api_keys_claude_sdk_no_oauth_raises(monkeypatch):
+    """DEV-1535: claude_sdk + subscription auth opted-in (default
+    no_subscription_auth=False) but no token → PrereqError. Replaces the
+    pre-DEV-1535 silent-fallthrough-to-legacy behavior; the CLI now
+    requires an explicit auth choice, and the driver mirrors that
+    contract for callers (including resubmit) that don't go through the
+    CLI."""
+    from bird_interact_agents.cloud.prereqs import PrereqError
+
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    with pytest.raises(PrereqError, match="CLAUDE_CODE_OAUTH_TOKEN"):
+        driver.read_api_keys_from_local_env(
+            "anthropic/claude-sonnet-4-5",
+            "anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+        )
+
+
+def test_read_api_keys_claude_sdk_no_oauth_legacy_path_when_opted_out(
+    monkeypatch,
+):
+    """The opt-out form: no_subscription_auth=True takes the legacy
+    API-key path even without an OAuth token. Mirrors the post-DEV-1535
+    CLI shape where `--no-subscription-auth` is the explicit choice."""
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
     keys = driver.read_api_keys_from_local_env(
         "anthropic/claude-sonnet-4-5",
         "anthropic/claude-haiku-4-5-20251001",
         framework="claude_sdk",
+        no_subscription_auth=True,
     )
     assert keys["ANTHROPIC_API_KEY"] == _ANTHROPIC_KEY
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys

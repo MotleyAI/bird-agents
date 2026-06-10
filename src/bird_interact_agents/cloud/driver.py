@@ -29,7 +29,11 @@ from bird_interact_agents.eval import cascading_report as _cascading_report
 # tests that mock `driver.prereqs` still exercise the actual key selection
 # (CodeRabbit) — otherwise the mock returns an empty MagicMock-iterable and
 # key-selection silently no-ops in those tests.
-from bird_interact_agents.cloud.prereqs import PrereqError, _required_api_keys
+from bird_interact_agents.cloud.prereqs import (
+    PrereqError,
+    _is_claude_sdk_framework,
+    _required_api_keys,
+)
 # Imported by NAME so `_build_missing_otf_caches` can be exercised with a mock
 # (`monkeypatch.setattr(driver, "ensure_db_cache", ...)`) without a real build.
 from bird_interact_agents.slayer_otf.cache import ensure_db_cache
@@ -154,16 +158,34 @@ def read_api_keys_from_local_env(
 ) -> dict[str, str]:
     import os
 
-    # DEV-1517: claude_sdk* + CLAUDE_CODE_OAUTH_TOKEN present → OAuth path.
-    # Ship the token and rename the user-sim Anthropic key so the SDK cannot
-    # see ANTHROPIC_API_KEY and is forced to use the OAuth token.
-    # DEV-1530: no_subscription_auth=True forces the legacy API-key path.
-    if (
-        prereqs._is_claude_sdk_framework(framework)
-        and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
-        and not no_subscription_auth
-    ):
-        token = os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
+    # claude_sdk* + subscription auth opted-in (no_subscription_auth=False)
+    # → OAuth path. Ship the token and rename the user-sim Anthropic key so
+    # the SDK cannot see ANTHROPIC_API_KEY and is forced to use the OAuth
+    # token.
+    # `--subscription-auth` is REQUIRED at the CLI (BooleanOptionalAction
+    # with no default); when the operator opts in but the token is absent
+    # or malformed, fail loudly here instead of silently falling through
+    # to the legacy API-key path (which burns API credits — the failure
+    # mode that bit DEV-1535).
+    # CodeRabbit (DEV-1535 r2): the predicate is imported BY NAME at
+    # module top, rather than dereferenced via the `prereqs` module
+    # attribute. Some tests monkeypatch `driver.prereqs` to a generic
+    # MagicMock; with the attribute access, `prereqs._is_claude_sdk_framework`
+    # becomes a truthy mock and the OAuth path fires for every framework,
+    # masking real test failures. The direct-name import is mock-safe.
+    if _is_claude_sdk_framework(framework) and not no_subscription_auth:
+        token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+        if not token:
+            raise PrereqError(
+                "--subscription-auth was selected but CLAUDE_CODE_OAUTH_TOKEN "
+                "is not set in the submitter's env.",
+                remediation=(
+                    "source the env file that exports it "
+                    "(e.g. `set -a; source .env.ubuntu; set +a`), run "
+                    "`claude setup-token`, or pass `--no-subscription-auth` "
+                    "to use the ANTHROPIC_API_KEY path."
+                ),
+            )
         if not token.startswith("sk-ant-oat01-"):
             raise PrereqError(
                 "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai OAuth token "
@@ -1160,7 +1182,27 @@ def resubmit(run_id: str) -> None:
         cluster.up(yaml_path)
         head = cluster.head_address(yaml_path)
         _framework = manifest.get("framework", "")
-        _no_subscription_auth = bool(manifest.get("no_subscription_auth", False))
+        # DEV-1535 r4 (Codex): legacy manifests (pre-DEV-1535) have NO
+        # `no_subscription_auth` field at all. Pre-DEV-1535 the cloud
+        # actor had a silent fall-back to the API-key path when the
+        # OAuth token was absent; DEV-1535 killed that fall-back for
+        # NEW submits (good — explicit-choice contract). For
+        # RESUBMIT of legacy manifests, however, defaulting the
+        # missing field to False (subscription-required) hard-fails
+        # resubmits of every pre-DEV-1535 cloud run unless
+        # CLAUDE_CODE_OAUTH_TOKEN is now in the env — a
+        # backward-compat regression. Default to True (legacy API-key
+        # path) when the field is absent so old runs stay
+        # resubmittable. New manifests carry the field explicitly so
+        # the strict-submit contract for the original submit is
+        # unaffected.
+        _no_subscription_auth = bool(manifest.get("no_subscription_auth", True))
+        if "no_subscription_auth" not in manifest:
+            logger.info(
+                "resubmit: manifest has no 'no_subscription_auth' field "
+                "(pre-DEV-1535); defaulting to legacy API-key path for "
+                "backward compatibility"
+            )
         if not _framework:
             logger.info(
                 "resubmit: manifest has no 'framework' field (pre-DEV-1517); "

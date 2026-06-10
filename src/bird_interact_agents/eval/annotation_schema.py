@@ -481,6 +481,33 @@ class VariantMatch(BaseModel):
     informational: Optional[VariantInformational] = None
 
 
+class SubmissionConfig(BaseModel):
+    """Per-task snapshot of the agent configuration the submission was
+    generated under.
+
+    Recorded both here (so the annotation file is self-contained for
+    ad-hoc grep / scripts) AND in the `results.db::run_metadata` table
+    (so structured SQL joins don't need to parse cloud `run-id`
+    substrings to extract framework / mode / etc.). All fields are
+    Optional so older annotations and back-compat callers parse cleanly.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    framework: Optional[str] = None
+    mode: Optional[str] = None
+    query_mode: Optional[str] = None
+    agent_model: Optional[str] = None
+    user_sim_model: Optional[str] = None
+    slayer_setup: Optional[str] = None
+    reasoning_effort: Optional[str] = None
+    patience: Optional[int] = None
+    max_depth: Optional[int] = None
+    dataset: Optional[str] = None
+    strict: Optional[bool] = None
+    use_audited_gold_sql: Optional[bool] = None
+    prompt_cache: Optional[bool] = None
+
+
 class SubmissionMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -495,6 +522,10 @@ class SubmissionMetadata(BaseModel):
     cost_usd_user_sim: Optional[float] = None
     n_agent_turns: Optional[int] = None
     n_ask_user_calls: Optional[int] = None
+    config: Optional[SubmissionConfig] = None
+    """DEV-1535: per-task snapshot of the agent config the run was
+    invoked with. Optional for back-compat — older annotations load
+    with `config=None`."""
 
 
 MissPattern = Literal[
@@ -715,19 +746,21 @@ AutopsyPattern = Literal[
     "wrong_join_path",
     "output_schema_misread",
     "slayer_generation_artifact",
+    "slayer_overaggregation",
     "exhausted_budget_guessing",
     "other",
 ]
 """LLM-produced failure taxonomy for genuine cascade misses on
 ``claude_sdk_otf*`` frameworks (DEV-1521).
 
-A-interact (claude_sdk_otf_ainteract) tasks use this full 9-pattern set."""
+A-interact (claude_sdk_otf_ainteract) tasks use this full 10-pattern set."""
 
 AutopsyPatternOneShot = Literal[
     "late_mutation_corrupted_result",
     "wrong_join_path",
     "output_schema_misread",
     "slayer_generation_artifact",
+    "slayer_overaggregation",
     "exhausted_budget_guessing",
     "other",
 ]
@@ -752,6 +785,15 @@ are unactionable on one-shot.
 * ``slayer_generation_artifact`` — SQL emitted by SLayer had a bug
   (integer division, broken namespace) not from the agent's encoding
   choices.
+* ``slayer_overaggregation`` — SLayer wrapped the submitted SQL in a
+  top-level ``GROUP BY`` over every projected dimension with no
+  aggregate functions, silently deduplicating raw rows the user asked
+  for. Signature: ``agent_has_group_by=True``,
+  ``agent_has_aggregate=False`` (or only trivial ``MAX``/``MIN`` over
+  the grouped key) while the gold has no ``GROUP BY``, and the
+  predicted row count is at or below the gold's. Remediation: agent
+  should call ``mcp__slayer__query_nested`` or disable SLayer's default
+  dimension deduplication when raw per-record rows are required.
 * ``exhausted_budget_guessing`` — agent consumed all turns on
   exploratory/repeated attempts without converging.
 * ``other`` — doesn't fit the above; details in ``AutopsyAnalysis.other_details``.

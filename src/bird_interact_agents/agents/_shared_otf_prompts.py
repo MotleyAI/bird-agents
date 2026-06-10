@@ -89,11 +89,34 @@ _PRE_SUBMIT_MUTATION_CHECK_AINTERACT = """\
 
 # DEV-1534 Fix B — applies to all 4 OTF flavors (grader behaviour, not
 # mode-specific). No format params.
+# DEV-1535 Fix: added cheap-experiments-first guidance for opaque grader
+# failures (cheaper than adding logic — fixes the `output_schema_misread`
+# class of failures observed in production).
 _COLUMN_NAMES_DONT_AFFECT_GRADING = """\
 COLUMN HEADERS DO NOT AFFECT GRADING. The grader compares value tuples
 POSITIONALLY — column COUNT, positional ORDER, value TYPES, and VALUES
 matter; column NAMES do not. Do not waste turns renaming projection
-aliases to match the user's wording or any reference/gold labels."""
+aliases to match the user's wording or any reference/gold labels.
+
+RE-READ THE QUESTION FOR SHAPE CUES before submit. Explicit ordering
+language ("list X, then Y, then Z" or "show NAICS, percentage, count")
+pins the projection ORDER positionally. Bare-quoted IDs like "541511" or
+"00123" can be string OR numeric — try the literal form as it appears in
+the question first. References to flags / "is_X" / boolean predicates
+mean RAW BOOLEAN output unless the question says "as 0/1"; do NOT wrap
+in `CAST AS INTEGER` defensively.
+
+WHEN THE GRADER RETURNS AN OPAQUE FAILURE (e.g. "ex_base returned 0 but
+expected 1") AND YOUR VALUES LOOK RIGHT, try the cheap shape experiments
+FIRST — before adding logic, changing formulas, or asking the user:
+  * column-order permutations (the gold may order them differently from
+    your alphabetical / "as-they-appeared" sequence),
+  * bare-type variants (raw BOOLEAN vs CAST INT; string vs numeric for
+    ID-like columns; date vs ISO-string),
+  * column-count variants (drop a derived column that isn't named in the
+    question; add an obvious ID that the user implied but didn't list).
+These swap the row tuple structure without changing what you computed —
+much cheaper than a new join or KB re-read."""
 
 # DEV-1534 Fix D — slayer-mode only (one-shot + a-interact). No format
 # params. The `normalize_filters` opt-out applies to `query`,

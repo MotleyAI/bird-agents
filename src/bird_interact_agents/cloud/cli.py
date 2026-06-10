@@ -41,21 +41,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "with both."
         ),
     )
-    sp_submit.add_argument("--patience", type=int, default=500)
+    sp_submit.add_argument("--patience", type=int, default=250)
     sp_submit.add_argument("--strict", action="store_true")
     sp_submit.add_argument(
         "--use-audited-gold-sql", action=argparse.BooleanOptionalAction,
         default=True,
     )
     sp_submit.add_argument(
-        "--require-audited-gold", action=argparse.BooleanOptionalAction,
+        "--require-annotation", action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            "When --use-audited-gold-sql is on, fail at submit time if any "
-            "passed instance_id lacks an audited-gold entry (audit_status "
-            "missing-row / missing-file). Default on — prevents silent "
-            "fall-back to the un-audited gold. Pass --no-require-audited-gold "
-            "to allow the fallback."
+            "Fail at submit time if any passed instance_id lacks a task "
+            "annotation file at "
+            "<annotations_root>/<benchmark>/<db>/<iid>.task.json. Default on "
+            "— the annotation is the authoritative source for grading "
+            "(gold_variants, evaluator_prompt, masked_terms, "
+            "original_gold_is_correct); without it the harness silently "
+            "loses access to alternate-reading grading, the LLM judge for "
+            "insufficient tasks, and the audited-gold overlay decision. "
+            "Pass --no-require-annotation for smoke tests on un-annotated "
+            "ids."
         ),
     )
     sp_submit.add_argument("--max-depth", type=int, default=3)
@@ -87,10 +92,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--slayer-storage-root", default="/data/slayer_models",
     )
     sp_submit.add_argument(
-        "--no-subscription-auth", action="store_true", default=False,
+        "--subscription-auth", action=argparse.BooleanOptionalAction,
+        required=True, dest="subscription_auth",
         help=(
-            "Force the legacy API-key auth path even when "
-            "CLAUDE_CODE_OAUTH_TOKEN is present in the environment."
+            "REQUIRED. `--subscription-auth` uses the Claude.ai OAuth "
+            "subscription (CLAUDE_CODE_OAUTH_TOKEN must be set in the "
+            "submitter's env, with the sk-ant-oat01- prefix); submit fails "
+            "if the token is absent or malformed. `--no-subscription-auth` "
+            "uses the legacy API-key path (ANTHROPIC_API_KEY). No default — "
+            "an explicit choice is required to prevent a silent fall-back "
+            "to the API-key path burning credits when the operator meant "
+            "to hit the subscription."
         ),
     )
 
@@ -116,10 +128,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_annotate.add_argument("--detach", action="store_true")
     sp_annotate.add_argument("--allow-dirty", action="store_true")
     sp_annotate.add_argument(
-        "--no-subscription-auth", action="store_true", default=False,
+        "--subscription-auth", action=argparse.BooleanOptionalAction,
+        required=True, dest="subscription_auth",
         help=(
-            "Force the legacy API-key auth path even when "
-            "CLAUDE_CODE_OAUTH_TOKEN is present in the environment."
+            "REQUIRED. Same shape as `submit`: `--subscription-auth` requires "
+            "a valid CLAUDE_CODE_OAUTH_TOKEN in the env, "
+            "`--no-subscription-auth` uses ANTHROPIC_API_KEY. No default."
         ),
     )
 
@@ -138,6 +152,34 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_build.add_argument("--force", action="store_true")
 
     ns = p.parse_args(argv)
+
+    # `--subscription-auth` / `--no-subscription-auth` is required on submit
+    # AND annotate (above). Mirror the bool into the legacy `no_subscription_auth`
+    # attribute that the driver/prereqs/manifest plumbing still reads — keeps the
+    # rename surface limited to the CLI surface. If `--subscription-auth` was
+    # chosen, validate the OAuth token at parse time so the operator sees the
+    # failure before the cluster comes up. (The driver re-validates as
+    # defence-in-depth; see `read_api_keys_from_local_env`.)
+    if ns.subcommand in ("submit", "annotate"):
+        import os
+        ns.no_subscription_auth = not ns.subscription_auth
+        if ns.subscription_auth:
+            token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+            if not token:
+                p.error(
+                    "--subscription-auth requires CLAUDE_CODE_OAUTH_TOKEN to "
+                    "be set in the submitter's env. Either source the env "
+                    "file that exports it (e.g. `set -a; source .env.ubuntu; "
+                    "set +a`), run `claude setup-token`, or pass "
+                    "`--no-subscription-auth` to use the ANTHROPIC_API_KEY "
+                    "path."
+                )
+            if not token.startswith("sk-ant-oat01-"):
+                p.error(
+                    "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai "
+                    "OAuth token (expected sk-ant-oat01- prefix). Re-run "
+                    "`claude setup-token`."
+                )
 
     if ns.subcommand == "annotate":
         if ns.detach and ns.allow_dirty:
@@ -197,35 +239,59 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 "--instance-ids resolved to an empty list "
                 "(no ids parsed from `--instance-ids` or `--instance-ids-file`)"
             )
-        # DEV-1478 follow-up: when `use_audited_gold_sql` is on AND the
-        # default `require_audited_gold` guard is on, fail at submit if any
-        # passed instance_id has no audited-gold row. Default ON because
-        # silently falling back to the un-audited gold mid-cloud-run is a
-        # foot-gun: the cluster comes up, encodes (10+ min), and only THEN
-        # surfaces the missing-audit via a warning in the actor log. Fail
-        # before bringing up the cluster instead.
-        # DEV-1510: this guard now fires for BOTH benchmarks. The per-
-        # benchmark `audited_gold_layout` on the descriptor selects the
-        # on-disk shape (per_db / single_file); `missing_audited_gold_ids`
-        # dispatches on the kwarg so both benchmarks get the same
-        # silent-fallback protection.
-        if ns.use_audited_gold_sql and ns.require_audited_gold:
-            from bird_interact_agents.cloud._audited_gold_check import (
-                missing_audited_gold_ids,
+        # DEV-1515 follow-up: require every passed instance_id to have a
+        # task annotation file. The annotation is the authoritative source
+        # for grading (gold_variants, evaluator_prompt, masked_terms,
+        # original_gold_is_correct). Default ON because a missing annotation
+        # silently degrades grading mid-cloud-run: no alternate-reading
+        # match, no LLM judge for `insufficient` tasks, no audited-gold
+        # overlay decision. Fail at submit, before the 10+ min cluster
+        # warm-up. Decoupled from `--use-audited-gold-sql` because the
+        # annotation is needed for grading regardless of overlay use.
+        if ns.require_annotation:
+            from bird_interact_agents.cloud._annotation_check import (
+                annotations_requiring_audited_gold_without_rows,
+                missing_annotation_ids,
             )
-            missing = missing_audited_gold_ids(
+            missing = missing_annotation_ids(
                 ns.instance_ids,
                 benchmark=get_benchmark(ns.dataset),
             )
             if missing:
                 p.error(
-                    "the following instance_ids have no audited-gold entry "
-                    "(audit_status missing-row / missing-file): "
-                    f"{', '.join(missing)}. Either remove them, pass "
-                    "--no-require-audited-gold to allow the harness fallback "
-                    "to the original gold, or pass --no-use-audited-gold-sql "
-                    "to evaluate against the original gold for all tasks."
+                    "the following instance_ids have no task annotation "
+                    "(annotations/<benchmark>/<db>/<iid>.task.json absent): "
+                    f"{', '.join(missing)}. Either remove them, annotate "
+                    "them first (`bird-interact-cloud annotate`), or pass "
+                    "--no-require-annotation to bypass for smoke runs."
                 )
+            # DEV-1535 r2 (Codex): layered guard for the annotation ↔
+            # audited_gold sync gap. When `--use-audited-gold-sql` is
+            # on and an annotation says `original_gold_is_correct=False`
+            # the grader needs audited-gold variants to grade against;
+            # without a corresponding sidecar row the tolerant grader
+            # silently falls back to the (annotated-as-wrong) original
+            # gold. The primary annotation guard above doesn't catch
+            # this — both files exist but they're out of sync. Same
+            # `--no-require-annotation` opt-out bypasses both.
+            if ns.use_audited_gold_sql:
+                missing_audited = annotations_requiring_audited_gold_without_rows(
+                    ns.instance_ids,
+                    benchmark=get_benchmark(ns.dataset),
+                )
+                if missing_audited:
+                    p.error(
+                        "the following instance_ids have an annotation "
+                        "marked `original_gold_is_correct=False` but no "
+                        "matching row in audited_gold/<benchmark>/<benchmark>"
+                        "_audited.jsonl — the tolerant grader would "
+                        "silently fall back to the (annotated-as-wrong) "
+                        f"original gold: {', '.join(missing_audited)}. "
+                        "Either backfill the audited_gold sidecar, pass "
+                        "--no-use-audited-gold-sql to evaluate against "
+                        "the original gold knowingly, or pass "
+                        "--no-require-annotation to bypass both guards."
+                    )
 
     return ns
 
