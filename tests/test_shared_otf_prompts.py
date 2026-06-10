@@ -22,13 +22,22 @@ import pytest
 # Hashes were captured from the pre-refactoring source.
 # ---------------------------------------------------------------------------
 
-# Hashes re-baselined for the DEV-1534 Fix B/D/E/F prompt additions
-# (column-names rule, SLayer artifact sanity-check, pivot-after-3-failures
-# discipline, user-sim trust calibration). The snapshot's purpose is the
-# same — catch ACCIDENTAL prompt drift on later refactors; deliberate
-# prompt changes re-baseline here.
-_ONE_SHOT_SHA256 = "31eaa8f6de66dae75737efda1ed9e178691f5a46213b26c86f783ae011fe13b7"
-_AINTERACT_SHA256 = "bedaa11ea73f6ee4e6128dd90a2334d3127135b1defc355681449ff532b578ee"
+# Hashes re-baselined for the DEV-1550 A3 prompt addition: a new
+# "READ A KNOWN MEMORY'S FULL BODY" drill-in paragraph documenting the
+# compact-mode opt-out (`search(entities=["memory:<id>"], max_memories=1,
+# compact=False)`), inserted as a sibling between the existing column-
+# drill-in paragraph and the `ENCODE-THEN-QUERY DISCIPLINE:` header in
+# the shared `_SLAYER_TOOLS_BLOCK` (extracted from the previously
+# byte-identical `_AINTERACT_SLAYER_TOOLS` / `_ENCODE_CORE_HEAD`).
+#
+# Prior re-baseline notes (kept for context): DEV-1534 added the
+# column-names rule, SLayer artifact sanity-check, pivot-after-3-failures
+# discipline, and user-sim trust calibration.
+#
+# The snapshot's purpose is unchanged: catch ACCIDENTAL prompt drift on
+# later refactors; deliberate prompt changes re-baseline here.
+_ONE_SHOT_SHA256 = "ad13b021eb63ea1525c73cafd09f4ca319a28492d2447437450397ba1087e2e4"
+_AINTERACT_SHA256 = "e1866f1d9f30d4081faf4650e07b67145bb0ef31e3f45321c5e4bc083413e26f"
 
 
 def test_slayer_otf_one_shot_unchanged():
@@ -289,6 +298,32 @@ def test_pre_submit_ainteract_in_slayer_ainteract():
         submit_tool="submit_query", clause_c="encoded KB",
     )
     assert rendered in SLAYER_OTF_AINTERACT
+
+
+# ---------------------------------------------------------------------------
+# DEV-1550 A3: shared `_SLAYER_TOOLS_BLOCK` lives in `_shared_otf_prompts`
+# and appears verbatim in both slayer prompts.
+# ---------------------------------------------------------------------------
+
+
+def test_slayer_tools_block_in_slayer_one_shot():
+    """The extracted `_SLAYER_TOOLS_BLOCK` is the source of truth shared
+    between the ainteract and one-shot SLayer prompts. Mechanical
+    containment: not a prompt-content behaviour test (no anchor-phrase
+    grep) — consistent with `feedback_no_prompt_content_tests`."""
+    from bird_interact_agents.agents._shared_otf_prompts import _SLAYER_TOOLS_BLOCK
+    from bird_interact_agents.agents.claude_sdk_otf.prompts import SLAYER_OTF_ONE_SHOT
+
+    assert _SLAYER_TOOLS_BLOCK in SLAYER_OTF_ONE_SHOT
+
+
+def test_slayer_tools_block_in_slayer_ainteract():
+    from bird_interact_agents.agents._shared_otf_prompts import _SLAYER_TOOLS_BLOCK
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
+        SLAYER_OTF_AINTERACT,
+    )
+
+    assert _SLAYER_TOOLS_BLOCK in SLAYER_OTF_AINTERACT
 
 
 # ---------------------------------------------------------------------------

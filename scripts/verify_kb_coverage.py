@@ -142,13 +142,19 @@ async def load_documented_ids(
     db_prefix = f"{db}."
     for kb_id in kb_ids:
         question = f"KB {kb_id} — {knowledge.get(kb_id, '')}"
+        # SLayer 0.7.3 (DEV-1549) collapsed the per-kind `max_*` caps into a
+        # single `max_results` and made compact-mode the default. We pass
+        # `compact=False` so `hit.text` carries the full ``learning`` body
+        # the regex below parses, and filter the unified result list by
+        # ``kind == "memory"`` to drop entity / example-query hits.
         response = await service.search(
             question=question,
-            max_memories=MAX_MEMORIES_PER_KB,
-            max_example_queries=0,
-            max_entities=0,
+            max_results=MAX_MEMORIES_PER_KB,
+            compact=False,
         )
-        for hit in response.memories:
+        for hit in response.results:
+            if hit.kind != "memory":
+                continue
             head = _first_nonblank_line(hit.text)
             m = KB_MEMORY_HEAD_RE.match(head)
             if not m or int(m.group(1)) != kb_id:

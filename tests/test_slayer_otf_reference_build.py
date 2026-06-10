@@ -15,7 +15,8 @@ These tests:
   ``(storage, build_dir) -> run_one``) so no real LLM / MCP server is spun up.
 * disable embeddings (``is_available`` → False) by default so the
   annotation's service ``save_memory`` never calls OpenAI (no-real-APIs rule).
-  A dedicated test re-enables a *spy* EmbeddingService.
+  A dedicated test re-enables a *spy* ``SearchService.upsert_memory`` (SLayer
+  0.7.3+; the legacy ``EmbeddingService.refresh_memory`` path was removed).
 """
 
 from __future__ import annotations

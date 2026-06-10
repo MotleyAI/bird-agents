@@ -33,6 +33,7 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
     _RULE_0_ASK_BEFORE,
     _SLAYER_SQL_ARTIFACT_CHECK,
+    _SLAYER_TOOLS_BLOCK as _AINTERACT_SLAYER_TOOLS,
     _USER_SIM_TRUST_CALIBRATION,
 )
 
@@ -63,31 +64,6 @@ native `ask_user` and `submit_query` tools. Your job: answer the user's
 question by ENCODING the domain knowledge it needs into the SLayer model
 as named columns/measures, then writing a FINAL query that REFERENCES
 those named entities instead of inlining their SQL."""
-
-_AINTERACT_SLAYER_TOOLS = """\
-The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
-knowledge-base (KB) item, with ids like `{db_name}_kb_<n>` whose body
-starts `KB <n> —`. The base tables are already ingested as SLayer models,
-but NOTHING is encoded yet: you encode exactly what THIS question needs,
-on the fly.
-
-SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
-query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
-the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-`search` to find relevant memories and existing entities; `inspect_model`
-to see a model's columns / measures / joins; `create_model` / `edit_model`
-to add columns and measures; `query` / `query_nested` to test.
-
-READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — `search` with `entities=[
-"<db>.<model>.<col>"]`, `max_memories=0`, `max_example_queries=0`. The
-returned `EntityHit.text` carries `Description:` and `Sample values:`
-inline. The truncated `Sample values:` line is your authoritative source
-of which literal forms actually occur in this column — case variants,
-whitespace forms, abbreviations, alternate phrasings of the same concept.
-Use it BEFORE writing any IN-set (see rule 3 below).
-
-ENCODE-THEN-QUERY DISCIPLINE:"""
 
 _AINTERACT_RULES_2_3 = """\
 2. For each block, `search` for the relevant KB memory and any entity
