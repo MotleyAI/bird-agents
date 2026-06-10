@@ -174,6 +174,31 @@ def _slayer_tool_names() -> list[str]:
     return [f"mcp__slayer__{t}" for t in SLAYER_MCP_TOOLS]
 
 
+# DEV-1548: SLayer MCP tools the OTF agent never (or essentially never)
+# calls in steady-state slayer-mode runs but whose JSON Schemas would
+# otherwise sit in the per-turn cacheable prefix. Listed in
+# `ClaudeAgentOptions.disallowed_tools=` to remove them from the model's
+# context entirely (`allowed_tools=` only gates auto-execute permission,
+# not visibility). A 399-trajectory audit showed zero calls for the
+# first five names; `ingest_datasource_models` had one exploratory call
+# the OTF bootstrap path handles separately.
+#
+# `save_memory` is INTENTIONALLY NOT listed here. The audit shows zero
+# calls today, but the encoder retains the affordance on the allow-list
+# (see `SLAYER_MCP_TOOLS` above) — preserving headroom in case future
+# prompts re-engage it. Filed as a follow-up: if the next post-merge
+# trajectory sweep also shows 0 `save_memory` calls across a comparable
+# sample, open a sibling Linear issue to shave the residual.
+SLAYER_MCP_DISALLOWED_TOOL_NAMES: list[str] = [
+    "mcp__slayer__forget_memory",
+    "mcp__slayer__get_datasource_priority",
+    "mcp__slayer__set_datasource_priority",
+    "mcp__slayer__create_datasource",
+    "mcp__slayer__delete_datasource",
+    "mcp__slayer__ingest_datasource_models",
+]
+
+
 # Full MCP tool names whose payloads carry backing-query filter strings
 # that we need to normalize (lower(trim(col)) wrap) before SLayer
 # persists them on a model. Without this hook, the agent's `create_model`
@@ -505,6 +530,11 @@ class ClaudeSDKOtfAgent:
                 system_prompt=prompt,
                 mcp_servers=mcp_servers,
                 allowed_tools=tool_names,
+                # DEV-1548: hide the SLayer MCP tools the agent never calls
+                # from the model's per-turn cacheable prefix. allowed_tools
+                # only gates auto-execute permission; disallowed_tools is
+                # what removes the JSON Schema from the model's view.
+                disallowed_tools=SLAYER_MCP_DISALLOWED_TOOL_NAMES,
                 # Restrict to ONLY our MCP tools: drop every Claude Code
                 # built-in (Bash/Edit/Task/WebFetch/ToolSearch/...). Removing
                 # ToolSearch is load-bearing — with the built-ins gone the
