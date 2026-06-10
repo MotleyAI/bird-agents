@@ -620,6 +620,7 @@ async def _run_one_task_async(
     slayer_storage_root: str | None,
     slayer_setup: str = "pre-encoded",
     reasoning_effort: str | None = None,
+    user_sim_prompt_version: str | None = None,
     cached_runner: Any = None,
 ) -> dict:
     # Defer the import so monkeypatching `bird_interact_agents.run.run_one_task`
@@ -646,6 +647,7 @@ async def _run_one_task_async(
         prompt_cache=prompt_cache,
         max_depth=max_depth,
         reasoning_effort=reasoning_effort,
+        user_sim_prompt_version=user_sim_prompt_version,
         slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup,
     )
@@ -709,6 +711,7 @@ def _run_one_in_actor(
                         prompt_cache=cfg["prompt_cache"],
                         max_depth=cfg["max_depth"],
                         reasoning_effort=cfg.get("reasoning_effort"),
+                        user_sim_prompt_version=cfg.get("user_sim_prompt_version"),
                         data_dir=data_dir,
                         slayer_storage_root=cfg.get("slayer_storage_root"),
                         slayer_setup=cfg.get("slayer_setup", "pre-encoded"),
@@ -1016,6 +1019,7 @@ def _maybe_build_cached_runner(cfg: dict[str, Any]):
         prompt_cache=cfg["prompt_cache"],
         max_depth=cfg["max_depth"],
         reasoning_effort=cfg.get("reasoning_effort"),
+        user_sim_prompt_version=cfg.get("user_sim_prompt_version"),
         slayer_storage_root=None,
     )
 
@@ -1219,6 +1223,7 @@ def run_pool(
     prompt_cache: bool = True,
     max_depth: int = 3,
     reasoning_effort: str | None = None,
+    user_sim_prompt_version: str | None = None,
     slayer_setup: str = "pre-encoded",
     slayer_storage_root: str | None = None,
     ray_job_id: str = "local",
@@ -1252,6 +1257,7 @@ def run_pool(
         "prompt_cache": prompt_cache,
         "max_depth": max_depth,
         "reasoning_effort": reasoning_effort,
+        "user_sim_prompt_version": user_sim_prompt_version,
         "slayer_setup": slayer_setup,
         "slayer_storage_root": slayer_storage_root,
         # De-bake: carry the benchmark + its GCS dataset prefix so the actor
@@ -1630,6 +1636,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-depth", type=int, default=3)
     p.add_argument("--reasoning-effort", dest="reasoning_effort", default=None,
                    choices=("low", "medium", "high", "max"))
+    p.add_argument("--user-sim-prompt-version",
+                   dest="user_sim_prompt_version", default=None,
+                   choices=("v2", "v3"))
     p.add_argument("--num-actors", type=int, default=4)
     p.add_argument("--slayer-setup", default="pre-encoded",
                    choices=("pre-encoded", "on-the-fly"))
@@ -1684,6 +1693,7 @@ def main(argv: list[str] | None = None) -> int:
         prompt_cache=args.prompt_cache,
         max_depth=args.max_depth,
         reasoning_effort=args.reasoning_effort,
+        user_sim_prompt_version=args.user_sim_prompt_version,
         slayer_setup=args.slayer_setup,
         slayer_storage_root=args.slayer_storage_root,
         ray_job_id=args.ray_job_id,

@@ -29,10 +29,12 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _ASK_AGAIN_RULE,
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
     _DECOMPOSE_DISCIPLINE,
+    _GRADER_ZERO_VS_ONE_DIAGNOSTIC,
     _PIVOT_AFTER_REPEATED_FAILURES,
     _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
     _RULE_0_ASK_BEFORE,
     _SLAYER_SQL_ARTIFACT_CHECK,
+    _TABLE_SET_PROBE,
     _USER_SIM_TRUST_CALIBRATION,
 )
 
@@ -147,6 +149,10 @@ SLAYER_OTF_AINTERACT = (
     + _ASK_AGAIN_RULE.format(knowledge_source="a memory")
     + "\n\n   "
     + _USER_SIM_TRUST_CALIBRATION.format(knowledge_label="KB")
+    + "\n\n   "
+    + _TABLE_SET_PROBE.format(knowledge_label="KB")
+    + "\n\n   "
+    + _GRADER_ZERO_VS_ONE_DIAGNOSTIC.format(knowledge_label="KB")
     + "\n\n   "
     + _PIVOT_AFTER_REPEATED_FAILURES.format(
         artifact_inspect_step=(

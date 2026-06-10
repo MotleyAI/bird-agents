@@ -251,6 +251,7 @@ def make_runner(
     slayer_storage_root: str | None,
     slayer_setup: str = "pre-encoded",
     reasoning_effort: str | None = None,
+    user_sim_prompt_version: str | None = None,
 ):
     """Public alias for `_make_runner`. The cloud actor (and other
     throughput-sensitive callers) call this once at startup and reuse the
@@ -259,6 +260,11 @@ def make_runner(
     ``dataset`` drives the dispatch for the ``claude_sdk`` framework
     (selects the right OTF agent flavor based on benchmark.one_shot and
     query_mode).
+
+    ``user_sim_prompt_version`` (DEV-1545): None at the public API
+    layer; `_make_runner` normalises None → "v2" before threading into
+    each framework's `run_task` closure (so explicit-None does not
+    shadow the agent class's Python "v2" default).
     """
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
@@ -269,6 +275,7 @@ def make_runner(
         agent_model=agent_model, strict=strict, prompt_cache=prompt_cache,
         max_depth=max_depth, slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup, reasoning_effort=reasoning_effort,
+        user_sim_prompt_version=user_sim_prompt_version,
     )
 
 
@@ -388,6 +395,7 @@ def _make_runner(
     slayer_storage_root: str | None,
     slayer_setup: str = "pre-encoded",
     reasoning_effort: str | None = None,
+    user_sim_prompt_version: str | None = None,
 ):
     """Construct the per-task runner closure for the given config.
 
@@ -396,7 +404,18 @@ def _make_runner(
     closure — callers that want one-shot semantics should call this factory
     per task. Callers that need throughput (`run_evaluation`, in-cluster
     actor) call it once and reuse the closure.
+
+    DEV-1545: ``user_sim_prompt_version`` flows from the CLI through
+    ``cloud/cli.py`` → manifest → ``ray_app.run_pool`` → here. The CLI
+    flag defaults to None to keep manifest serialisation
+    unambiguous (None vs "v2"); we normalise None → "v2" exactly ONCE
+    here so all 11+ closures below thread the same string into their
+    agents' ``run_task``. Passing explicit None would shadow the agent
+    class's Python "v2" default (Python defaults only apply to omitted
+    args, not explicit-None) — leading to a KeyError on
+    ``USER_SIMULATOR_ENCODER[None]`` in the user-sim invocation site.
     """
+    _v = user_sim_prompt_version or "v2"
     if mode == "oracle":
         async def run_one(td: dict, data_dir: str, patience: int,
                           user_sim_model: str) -> dict:
@@ -448,6 +467,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "claude_sdk_otf":
@@ -472,6 +492,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "claude_sdk_otf_ainteract":
@@ -498,6 +519,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "claude_sdk_otf_raw":
@@ -520,6 +542,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "claude_sdk_otf_ainteract_raw":
@@ -544,6 +567,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "pydantic_ai":
@@ -563,6 +587,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "pydantic_ai_recursive":
@@ -589,6 +614,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "pydantic_ai_otf_encode":
@@ -615,6 +641,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "mcp_agent":
@@ -632,6 +659,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "agno":
@@ -649,6 +677,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "smolagents":
@@ -666,6 +695,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
             )
         return run_one
     raise ValueError(f"Unknown framework: {framework}")
@@ -689,6 +719,7 @@ async def run_one_task(
     slayer_storage_root: str | None,
     slayer_setup: str = "pre-encoded",
     reasoning_effort: str | None = None,
+    user_sim_prompt_version: str | None = None,
 ) -> dict:
     """Run a single per-task evaluation and return a `_persist`-consumable dict.
 
@@ -728,6 +759,7 @@ async def run_one_task(
         slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup,
         reasoning_effort=reasoning_effort,
+        user_sim_prompt_version=user_sim_prompt_version,
     )
     instance_id = str(task_data.get("instance_id") or "")
     t_start = time.perf_counter()
@@ -803,6 +835,7 @@ async def run_evaluation(
     otf_rebuild: bool = False,
     dataset: str = "mini-interact",
     reasoning_effort: str | None = None,
+    user_sim_prompt_version: str | None = None,
 ) -> dict:
     """Run full evaluation across all tasks."""
     _validate_dataset_mode(dataset=dataset, mode=mode)
@@ -878,6 +911,7 @@ async def run_evaluation(
         slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup,
         reasoning_effort=reasoning_effort,
+        user_sim_prompt_version=user_sim_prompt_version,
     )
 
     # Open the per-run results.db (lives next to eval.json) and write
@@ -1388,6 +1422,18 @@ def main() -> None:
             "uses the SDK default."
         ),
     )
+    # DEV-1545: same flag as cloud/cli.py; flows through _make_runner and
+    # is normalised to "v2" at the closure level before agent.run_task.
+    parser.add_argument(
+        "--user-sim-prompt-version",
+        dest="user_sim_prompt_version",
+        choices=["v2", "v3"],
+        default=None,
+        help=(
+            "User-sim prompt variant. v2 = upstream default. v3 = DEV-1545 "
+            "anti-fabrication variant. Unset = v2 at agent call time."
+        ),
+    )
     parser.add_argument(
         "--otf-rebuild",
         dest="otf_rebuild",
@@ -1519,6 +1565,7 @@ def main() -> None:
             otf_rebuild=args.otf_rebuild,
             dataset=args.dataset,
             reasoning_effort=args.reasoning_effort,
+            user_sim_prompt_version=args.user_sim_prompt_version,
         )
     )
 

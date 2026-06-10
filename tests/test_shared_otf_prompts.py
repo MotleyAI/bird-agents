@@ -22,13 +22,14 @@ import pytest
 # Hashes were captured from the pre-refactoring source.
 # ---------------------------------------------------------------------------
 
-# Hashes re-baselined for the DEV-1534 Fix B/D/E/F prompt additions
-# (column-names rule, SLayer artifact sanity-check, pivot-after-3-failures
-# discipline, user-sim trust calibration). The snapshot's purpose is the
-# same — catch ACCIDENTAL prompt drift on later refactors; deliberate
-# prompt changes re-baseline here.
-_ONE_SHOT_SHA256 = "31eaa8f6de66dae75737efda1ed9e178691f5a46213b26c86f783ae011fe13b7"
-_AINTERACT_SHA256 = "bedaa11ea73f6ee4e6128dd90a2334d3127135b1defc355681449ff532b578ee"
+# Hashes re-baselined for the DEV-1545 prompt additions: the
+# `_TABLE_SET_PROBE` (one-shot + a-interact, targets `wrong_join_path`)
+# and `_GRADER_ZERO_VS_ONE_DIAGNOSTIC` (a-interact only, targets
+# `never_asked_key_question`) blocks land here. The snapshot's purpose
+# stays the same — catch ACCIDENTAL prompt drift on later refactors;
+# deliberate prompt changes re-baseline here.
+_ONE_SHOT_SHA256 = "d06bc2f830fa09923c827b67488b5e0612b6bc30ac83cfad1f05c3a8b51e1101"
+_AINTERACT_SHA256 = "094028f3c40673102202e684a12870953e1f8f552ec31bcfb35702be8390eedb"
 
 
 def test_slayer_otf_one_shot_unchanged():
