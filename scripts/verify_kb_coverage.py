@@ -20,10 +20,14 @@ Exit 0 only when every KB id for the DB is in **exactly one** of:
 An id appearing in neither set, or in both, fails the check.
 
 The documented-set check searches via ``SearchService`` (BM25 + tantivy
-+ optional dense embeddings) with ``max_memories=5`` per KB id; the
-per-DB corpus is expected to stay well under that ceiling. If a DB's
-memory corpus ever grows past a few hundred, bump ``MAX_MEMORIES_PER_KB``
-or fall back to reading ``slayer_models/<db>/memories.yaml`` directly.
++ optional dense embeddings) per KB id. DEV-1546: slayer 0.7.2 collapsed
+the per-kind caps into a single ``max_results`` on the RRF-fused unified
+``results`` list, so the call over-fetches (``max_results=MAX_MEMORIES_PER_KB
+* 3``) and then filters to ``kind == "memory"`` to keep ``MAX_MEMORIES_PER_KB``
+memory hits as the post-filter ceiling. The per-DB corpus is expected to
+stay well under that ceiling; if a DB's memory corpus ever grows past a few
+hundred, bump ``MAX_MEMORIES_PER_KB`` or fall back to reading
+``slayer_models/<db>/memories.yaml`` directly.
 """
 
 from __future__ import annotations

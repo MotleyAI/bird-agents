@@ -14,10 +14,15 @@ SearchResponse shape but scoped to a single DB.
 Usage:
     python scripts/slayer_search_for_db.py --db households \\
         --question "weighted score combining domestic help and social assistance" \\
-        [--max-memories 5] [--max-example-queries 2] [--max-entities 5]
+        [--max-results 12]
 
 Prints the SearchResponse as JSON to stdout. Exits 0 on success, 1 if
 the per-DB storage directory does not exist or the search fails.
+
+DEV-1546: slayer 0.7.2 collapsed the previous per-kind caps
+(``--max-memories`` / ``--max-example-queries`` / ``--max-entities``)
+into a single ``--max-results`` cap on the RRF-fused
+``SearchResponse.results`` list.
 """
 
 from __future__ import annotations
