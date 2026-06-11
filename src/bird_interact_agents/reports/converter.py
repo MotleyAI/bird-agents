@@ -116,7 +116,14 @@ def build_submission_row(
     trajectory_final_sql = str(trajectory_obj.get("submitted_sql") or "")
 
     def _looks_like_json_dsl(s: str) -> bool:
-        return s.strip().startswith("{")
+        """SLayer's ``submit_query.query_json`` accepts either a single
+        SlayerQuery object (``{...}``) OR a nested-DAG array of stage
+        objects (``[...]`` — see claude_sdk/agent.py:374). Both must
+        route through the compiled-SQL extraction path; treating ``[``
+        as raw SQL would silently emit JSON DSL where SQL is expected
+        (Codex round 5 finding)."""
+        head = s.strip()
+        return head.startswith("{") or head.startswith("[")
 
     def _raw_input_sql(turn) -> str:
         for key in ("query", "query_json", "sql"):

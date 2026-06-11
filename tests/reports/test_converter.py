@@ -133,6 +133,50 @@ def test_phase_sql_slayer_mode_uses_trajectory_submitted_sql(fake_count_tokens):
     assert slayer_dsl in row.prompt_flow[0].action
 
 
+def test_phase_sql_slayer_nested_dag_array_uses_compiled_sql(fake_count_tokens):
+    """Codex round 5: SLayer ``submit_query.query_json`` accepts
+    nested-DAG ARRAYS as well as single objects. Arrays starting with
+    ``[`` must also route through the compiled-SQL extraction path."""
+    from tests.reports._fixtures import (
+        assistant_msg,
+        build_trajectory,
+        system_msg,
+        tool_result_msg,
+        tool_use_block,
+        user_text_msg,
+    )
+
+    compiled_sql = "SELECT a FROM (SELECT * FROM x) sub"
+    dag_array = (
+        '[{"name": "stage1", "source_model": "x", "dimensions": ["a"]}, '
+        '{"name": "root", "source_model": "stage1", "dimensions": ["a"]}]'
+    )
+    steps = [
+        system_msg(),
+        user_text_msg(text="Task."),
+        assistant_msg(
+            tool_use=tool_use_block(
+                tool_use_id="tu_1",
+                name="mcp__bird-interact-tools__submit_query",
+                inp={"query_json": dag_array},
+            ),
+        ),
+        tool_result_msg(
+            tool_use_id="tu_1",
+            content="Phase 1 SQL Correct! No Phase 2. Task finished.",
+        ),
+    ]
+    traj = build_trajectory(
+        instance_id="alien_dag",
+        trajectory_steps=steps,
+        submitted_sql=compiled_sql,
+    )
+    row = _convert(traj)
+    # MUST be the COMPILED SQL, not the JSON DAG array literal.
+    assert row.subtask_1_predicted_sql == [compiled_sql]
+    assert dag_array not in str(row.subtask_1_predicted_sql)
+
+
 def test_phase_sql_slayer_mode_two_phase_loses_phase1_sql(fake_count_tokens):
     """SLayer two-phase: only the FINAL submit's compiled SQL is
     persisted. Phase-1 SQL is unrecoverable — emit empty + warning."""

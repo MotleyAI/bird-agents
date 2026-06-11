@@ -204,6 +204,43 @@ def test_resolve_sources_missing_task_results_row_is_hard_error(stage):
     assert "alien_1" in str(exc_info.value)
 
 
+def test_resolve_sources_duplicate_task_results_rows_hard_error(stage):
+    """Codex round 5: task_results' composite key includes
+    framework/mode/query_mode, so a corrupted DB could carry multiple
+    rows per (run_id, instance_id). The current code would silently
+    pick whichever row SQLite returned last. Detect + abort."""
+    import sqlite3
+
+    _runs_root, results_root = stage(
+        benchmark="bird-interact-lite-exp",
+        run_id="r1",
+        instances=[
+            ("alien", "alien_1", trajectory_one_phase_pass(instance_id="alien_1")),
+        ],
+    )
+    db = results_root / "bird-interact-lite-exp" / "cloud" / "r1" / "results.db"
+    # Inject a duplicate row with a different mode — simulates a
+    # contaminated DB.
+    con = sqlite3.connect(db)
+    con.execute(
+        "INSERT INTO task_results (run_id, instance_id, mode, query_mode, "
+        "framework, database, phase1_passed, phase2_passed) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("r1", "alien_1", "one-shot", "raw", "claude_sdk", "alien", 0, 0),
+    )
+    con.commit()
+    con.close()
+
+    from bird_interact_agents.reports.sources import resolve_sources
+
+    with pytest.raises(ValueError) as exc_info:
+        resolve_sources(
+            selection=[("alien_1", "r1")],
+            benchmark="bird-interact-lite-exp",
+        )
+    assert "alien_1" in str(exc_info.value)
+
+
 def test_resolve_sources_missing_results_db_is_hard_error(stage, tmp_path):
     _runs_root, results_root = stage(
         benchmark="bird-interact-lite-exp",

@@ -64,7 +64,28 @@ def _read_results_db(results_db_path: Path, run_id: str) -> tuple[dict, dict[str
         task_rows = con.execute(
             "SELECT * FROM task_results WHERE run_id = ?", (run_id,)
         ).fetchall()
-        by_instance = {row["instance_id"]: dict(row) for row in task_rows}
+        # Codex round 5 finding: task_results' composite key includes
+        # framework/mode/query_mode, so in principle a single run_id
+        # could carry multiple rows per instance_id. The harness never
+        # writes such rows today, but a silent dict overwrite would
+        # pick whichever row SQLite returns last, potentially landing
+        # on the wrong mode + flipping adapter / a-Interact-gate
+        # decisions downstream. Raise instead.
+        by_instance: dict[str, dict] = {}
+        dupes: list[str] = []
+        for row in task_rows:
+            iid = row["instance_id"]
+            if iid in by_instance:
+                dupes.append(iid)
+            by_instance[iid] = dict(row)
+        if dupes:
+            raise ValueError(
+                f"{results_db_path}: task_results has multiple rows for "
+                f"run_id={run_id!r} on instance_id(s): "
+                f"{', '.join(sorted(set(dupes)))}. Each (run_id, instance_id) "
+                f"must be unique — a duplicate indicates a corrupt or "
+                f"mixed-mode run."
+            )
     finally:
         con.close()
     return meta, by_instance
