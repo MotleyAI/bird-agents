@@ -43,8 +43,17 @@ import pytest
             {"query": "SELECT * FROM t"},
             "execute(SELECT * FROM t)",
         ),
-        # ask_user (a top-level tool the claude_sdk_otf_* family exposes)
+        # ask_user — exposed both as a top-level tool AND under the
+        # mcp__bird-interact-tools__ prefix (the SLayer agent wires it
+        # through the bird-interact-tools MCP server). Both canonicalise
+        # to ``ask(<question>)`` so they pick up the Section VI fixed
+        # cost of 2.
         ("ask_user", {"question": "what is X?"}, "ask(what is X?)"),
+        (
+            "mcp__bird-interact-tools__ask_user",
+            {"question": "what is X?"},
+            "ask(what is X?)",
+        ),
         # Zero-arg helpers
         (
             "mcp__bird-interact-tools__get_schema",

@@ -19,9 +19,15 @@ from typing import Any
 
 
 # (Tool name, canonical name, has-args). Order: most-specific first.
+# The bird-interact-tools MCP server exposes `ask_user` AND
+# `submit_query` AND `execute_sql` under the `mcp__bird-interact-tools__`
+# prefix; the bare `ask_user` entry covers harnesses (e.g. the claude_sdk
+# top-level tool) that register the tool directly. Both must canonicalise
+# to the Section VI fixed-cost names.
 _KNOWN: list[tuple[str, str]] = [
     ("mcp__bird-interact-tools__submit_query", "submit"),
     ("mcp__bird-interact-tools__execute_sql", "execute"),
+    ("mcp__bird-interact-tools__ask_user", "ask"),
     ("ask_user", "ask"),
     ("mcp__bird-interact-tools__get_schema", "get_schema"),
     ("mcp__bird-interact-tools__get_all_column_meanings", "get_all_column_meanings"),
@@ -77,7 +83,7 @@ def canonicalize_action(tool_name: str, tool_input: dict[str, Any]) -> str:
         return f"submit({_sql_from_input(tool_input)})"
     if tool_name == "mcp__bird-interact-tools__execute_sql":
         return f"execute({_sql_from_input(tool_input)})"
-    if tool_name == "ask_user":
+    if tool_name in ("ask_user", "mcp__bird-interact-tools__ask_user"):
         question = tool_input.get("question", _compact(tool_input))
         return f"ask({question})"
 
@@ -99,6 +105,6 @@ def action_args_string(tool_name: str, tool_input: dict[str, Any]) -> str:
         return _sql_from_input(tool_input)
     if tool_name == "mcp__bird-interact-tools__execute_sql":
         return _sql_from_input(tool_input)
-    if tool_name == "ask_user":
+    if tool_name in ("ask_user", "mcp__bird-interact-tools__ask_user"):
         return str(tool_input.get("question", _compact(tool_input)))
     return _compact(tool_input)

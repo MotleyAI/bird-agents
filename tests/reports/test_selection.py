@@ -82,7 +82,7 @@ def test_selection_malformed_line_is_hard_error(tmp_path):
 
 
 def test_resolve_sources_finds_existing_trajectory(stage):
-    runs_root, results_root = stage(
+    _runs_root, _results_root = stage(
         benchmark="bird-interact-lite-exp",
         run_id="r1",
         instances=[
@@ -168,7 +168,7 @@ def test_resolve_sources_stub_only_trajectory_is_hard_error(stage):
 
 
 def test_resolve_sources_missing_results_db_is_hard_error(stage, tmp_path):
-    runs_root, results_root = stage(
+    _runs_root, results_root = stage(
         benchmark="bird-interact-lite-exp",
         run_id="r1",
         instances=[

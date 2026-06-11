@@ -1,10 +1,17 @@
 """Per-framework trajectory→Turn adapters.
 
-The ``claude_sdk_otf_*`` family (claude_sdk_otf / _raw / _ainteract /
-_ainteract_raw) shares the Claude Agent SDK message schema, so one
-adapter covers all four. Other frameworks (pydantic_ai*, smolagents,
-agno, mcp_agent) are out of scope for DEV-1553 and will register their
-own adapters when needed.
+The SLayer-mode ``claude_sdk_otf`` / ``claude_sdk_otf_ainteract`` agents
+persist Anthropic SDK messages as nested dicts (``data`` is a dict with
+``content``, ``model``, …) and share one walker.
+
+The ``_raw`` variants (``claude_sdk_otf_raw`` /
+``claude_sdk_otf_ainteract_raw``) persist trajectory entries' ``data``
+field as Python-repr STRINGS instead — the dict-based walker cannot read
+them. Until a string-repr parser lands they raise
+``UnknownFrameworkError`` here so the failure surfaces at the CLI's
+source-resolution step rather than mid-walk with a confusing
+``AttributeError``. Other frameworks (pydantic_ai*, smolagents, agno,
+mcp_agent) are out of scope for DEV-1553.
 """
 
 from __future__ import annotations
@@ -19,9 +26,7 @@ from bird_interact_agents.reports.adapters.claude_sdk_otf import (
 
 _REGISTRY: dict[str, Callable[[list[dict]], Iterable[Turn]]] = {
     "claude_sdk_otf": _claude_sdk_otf_walk,
-    "claude_sdk_otf_raw": _claude_sdk_otf_walk,
     "claude_sdk_otf_ainteract": _claude_sdk_otf_walk,
-    "claude_sdk_otf_ainteract_raw": _claude_sdk_otf_walk,
 }
 
 

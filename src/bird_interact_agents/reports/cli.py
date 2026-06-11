@@ -64,7 +64,10 @@ def _read_patience_for_instance(
         pat = obj["submission"].get("patience")
     if pat is None:
         return (None, "default")
-    return (int(pat), f"runs:{p.name}")
+    try:
+        return (int(pat), f"runs:{p.name}")
+    except (ValueError, TypeError):
+        return (None, "default")
 
 
 def add_subparser(subparsers: argparse._SubParsersAction) -> None:

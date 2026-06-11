@@ -24,6 +24,38 @@ from tests.reports._fixtures import (
 # ---------------------------------------------------------------------------
 
 
+def test_read_patience_returns_default_on_non_numeric_value(tmp_path: Path):
+    """CodeRabbit #1: ``int(pat)`` must not crash on a non-numeric
+    patience field — it falls back to ``(None, "default")`` consistent
+    with the function's existing JSON / file-IO defensiveness."""
+    from bird_interact_agents.reports.cli import _read_patience_for_instance
+
+    inst_dir = tmp_path / "inst"
+    inst_dir.mkdir()
+    (inst_dir / "r1.json").write_text(json.dumps({"patience": "not-a-number"}))
+    assert _read_patience_for_instance(inst_dir, "r1") == (None, "default")
+
+
+def test_read_patience_returns_default_on_malformed_json(tmp_path: Path):
+    from bird_interact_agents.reports.cli import _read_patience_for_instance
+
+    inst_dir = tmp_path / "inst"
+    inst_dir.mkdir()
+    (inst_dir / "r1.json").write_text("not-json{{{")
+    assert _read_patience_for_instance(inst_dir, "r1") == (None, "default")
+
+
+def test_read_patience_reads_numeric_value(tmp_path: Path):
+    from bird_interact_agents.reports.cli import _read_patience_for_instance
+
+    inst_dir = tmp_path / "inst"
+    inst_dir.mkdir()
+    (inst_dir / "r1.json").write_text(json.dumps({"patience": 7}))
+    patience, source = _read_patience_for_instance(inst_dir, "r1")
+    assert patience == 7
+    assert source == "runs:r1.json"
+
+
 def test_submission_requires_run_id_or_selection():
     from bird_interact_agents.cloud.cli import main
 

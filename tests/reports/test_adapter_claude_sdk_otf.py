@@ -227,17 +227,13 @@ def test_walk_response_raw_preserves_thinking_and_tool_use():
 # ---------------------------------------------------------------------------
 
 
-def test_adapter_registry_covers_claude_sdk_otf_family():
+def test_adapter_registry_covers_slayer_mode_claude_sdk_otf_family():
+    """Slayer-mode ``claude_sdk_otf`` / ``claude_sdk_otf_ainteract``
+    share the dict-shape SDK trajectory and one walker."""
     from bird_interact_agents.reports.adapters import get_adapter
 
-    family = (
-        "claude_sdk_otf",
-        "claude_sdk_otf_raw",
-        "claude_sdk_otf_ainteract",
-        "claude_sdk_otf_ainteract_raw",
-    )
+    family = ("claude_sdk_otf", "claude_sdk_otf_ainteract")
     adapters = [get_adapter(f) for f in family]
-    # All four resolve to the SAME walk function (one shared adapter).
     assert all(a is adapters[0] for a in adapters)
 
 
@@ -248,3 +244,18 @@ def test_adapter_registry_unknown_framework_errors():
 
     with pytest.raises((KeyError, ValueError)):
         get_adapter("pydantic_ai")
+
+
+def test_adapter_registry_rejects_raw_variants():
+    """Raw-mode ``_raw`` agents persist trajectory `data` as a Python
+    repr STRING, not a dict — the SLayer walker would crash. Until a
+    string-repr parser lands the lookup must error clearly so the
+    failure surfaces at source-resolution time (not mid-walk with a
+    confusing AttributeError)."""
+    import pytest
+
+    from bird_interact_agents.reports.adapters import get_adapter
+
+    for fw in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
+        with pytest.raises((KeyError, ValueError)):
+            get_adapter(fw)
