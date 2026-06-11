@@ -472,87 +472,68 @@ def _map_output(
     )
 
 
-# JSON schema for the autopsy_output tool (derived from AutopsyLLMOutput).
-_AUTOPSY_TOOL_SCHEMA = {
-    "name": "autopsy_output",
-    "description": "Report the root-cause analysis of the agent failure.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "pattern": {
-                "type": "string",
-                "enum": [
-                    "never_asked_key_question",
-                    "asked_but_ignored_answer",
-                    "user_sim_misleading",
-                    "late_mutation_corrupted_result",
-                    "wrong_join_path",
-                    "output_schema_misread",
-                    "slayer_generation_artifact",
-                    "slayer_overaggregation",
-                    "exhausted_budget_guessing",
-                    "other",
-                ],
-            },
-            "other_details": {"type": ["string", "null"]},
-            "narrative": {"type": "string"},
-            "remediation": {"type": "string"},
-            "decision_point_trajectory_index": {"type": ["integer", "null"]},
-            "decision_point_description": {"type": ["string", "null"]},
-            "n_asks": {"type": "integer", "default": 0},
-            "key_asks": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "trajectory_idx": {"type": "integer"},
-                        "summary": {"type": "string"},
-                    },
-                    "required": ["trajectory_idx", "summary"],
-                },
-            },
-            "disclosed_resolutions": {"type": "array", "items": {"type": "string"}},
-            "undisclosed_resolutions": {"type": "array", "items": {"type": "string"}},
-        },
-        "required": [
-            "pattern", "narrative", "remediation",
-            "key_asks", "disclosed_resolutions", "undisclosed_resolutions",
-        ],
-    },
-}
+def _inline_refs(schema: dict) -> dict:
+    """Resolve and inline ``$ref``/``$defs`` in a JSON Schema.
+
+    Pydantic's ``model_json_schema()`` emits ``$ref``s for nested models.
+    Anthropic's tool ``input_schema`` accepts standard JSON Schema, but
+    inlining keeps the schema flat — fewer moving parts, easier to read
+    in error logs, and no chance of a future SDK version stumbling on a
+    discovery step."""
+    defs = schema.pop("$defs", {})
+
+    def resolve(node: object) -> object:
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                key = ref.split("/")[-1]
+                return resolve(defs[key])
+            return {k: resolve(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [resolve(x) for x in node]
+        return node
+
+    return resolve(schema)  # type: ignore[return-value]
 
 
-# DEV-1541: one-shot tool schema. Drops four ask_user-shaped properties
-# (n_asks, key_asks, disclosed_resolutions, undisclosed_resolutions) and
-# three of those from `required` (n_asks was never required). Pattern
-# enum is the six-value subset.
-_AUTOPSY_TOOL_SCHEMA_ONE_SHOT = {
-    "name": "autopsy_output",
-    "description": "Report the root-cause analysis of the agent failure.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "pattern": {
-                "type": "string",
-                "enum": [
-                    "late_mutation_corrupted_result",
-                    "wrong_join_path",
-                    "output_schema_misread",
-                    "slayer_generation_artifact",
-                    "slayer_overaggregation",
-                    "exhausted_budget_guessing",
-                    "other",
-                ],
-            },
-            "other_details": {"type": ["string", "null"]},
-            "narrative": {"type": "string"},
-            "remediation": {"type": "string"},
-            "decision_point_trajectory_index": {"type": ["integer", "null"]},
-            "decision_point_description": {"type": ["string", "null"]},
-        },
-        "required": ["pattern", "narrative", "remediation"],
-    },
-}
+def _pydantic_to_tool_schema(
+    model_cls: type[BaseModel],
+    *,
+    name: str,
+    description: str,
+) -> dict:
+    """Generate an Anthropic tool descriptor from a Pydantic model.
+
+    Hand-mirroring drifts: a new field or pattern-enum value on the
+    Pydantic model silently diverges from the hand-written tool schema;
+    the LLM returns output the (looser) tool schema accepts but Pydantic
+    rejects, and the autopsy lands as ``validation_error`` (the failure
+    that motivated this helper). Generating from the model keeps a single
+    source of truth."""
+    return {
+        "name": name,
+        "description": description,
+        "input_schema": _inline_refs(model_cls.model_json_schema()),
+    }
+
+
+_AUTOPSY_TOOL_SCHEMA = _pydantic_to_tool_schema(
+    AutopsyLLMOutput,
+    name="autopsy_output",
+    description="Report the root-cause analysis of the agent failure.",
+)
+
+
+# DEV-1541: one-shot variant drops the four ``ask_user``-shaped fields
+# (``n_asks``, ``key_asks``, ``disclosed_resolutions``,
+# ``undisclosed_resolutions``) and restricts ``pattern`` to the six
+# one-shot-valid values. Both the field set and the enum live on
+# ``AutopsyLLMOutputOneShot`` — the tool schema follows automatically.
+_AUTOPSY_TOOL_SCHEMA_ONE_SHOT = _pydantic_to_tool_schema(
+    AutopsyLLMOutputOneShot,
+    name="autopsy_output",
+    description="Report the root-cause analysis of the agent failure.",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -636,6 +617,9 @@ async def run_autopsy(
     # never completed.
     kb_text = ""
     prompt = ""
+    tool_schema: dict = {}
+    schema_cls: type[BaseModel] = AutopsyLLMOutput
+    client: Optional["anthropic.AsyncAnthropic"] = None
     try:
         kb_text = _read_kb_text(
             slayer_storage_dir,
@@ -656,49 +640,9 @@ async def run_autopsy(
             AutopsyLLMOutputOneShot if is_one_shot else AutopsyLLMOutput
         )
         client = _build_anthropic_client()
-        response = await client.messages.create(
-            model=native_model_id(model),
-            max_tokens=2048,
-            tools=[tool_schema],
-            tool_choice={"type": "tool", "name": "autopsy_output"},
-            messages=[{"role": "user", "content": prompt}],
-        )
-    except anthropic.BadRequestError as exc:
-        kind = "context_overflow" if _looks_like_context_overflow(exc) else "api_error"
-        logger.error(
-            "[autopsy] BadRequestError on %s (kind=%s): %s",
-            task_annotation.instance_id, kind, exc,
-            exc_info=True,
-        )
-        return _autopsy_error_result(
-            kind=kind, exc=exc, prompt=prompt, kb_text=kb_text,
-            trajectory=trajectory, model=model,
-        )
-    except anthropic.APIConnectionError as exc:
-        # Codex r1 #5: must be ordered BEFORE APIError, since
-        # APIConnectionError is a sibling (not subclass) of APIStatusError
-        # in the anthropic SDK; APITimeoutError is a subclass of
-        # APIConnectionError and resolves here too.
-        logger.error(
-            "[autopsy] APIConnectionError on %s: %s",
-            task_annotation.instance_id, exc, exc_info=True,
-        )
-        return _autopsy_error_result(
-            kind="network_error", exc=exc, prompt=prompt, kb_text=kb_text,
-            trajectory=trajectory, model=model,
-        )
-    except anthropic.APIError as exc:
-        logger.error(
-            "[autopsy] APIError on %s: %s",
-            task_annotation.instance_id, exc, exc_info=True,
-        )
-        return _autopsy_error_result(
-            kind="api_error", exc=exc, prompt=prompt, kb_text=kb_text,
-            trajectory=trajectory, model=model,
-        )
     except Exception as exc:  # noqa: BLE001
         logger.error(
-            "[autopsy] unexpected error on %s",
+            "[autopsy] prep failed on %s",
             task_annotation.instance_id, exc_info=True,
         )
         return _autopsy_error_result(
@@ -706,48 +650,154 @@ async def run_autopsy(
             trajectory=trajectory, model=model,
         )
 
-    try:
-        tool_use = next(
-            b for b in response.content if getattr(b, "type", None) == "tool_use"
-        )
-    except StopIteration as exc:
-        logger.error(
-            "[autopsy] no tool_use block in response on %s",
-            task_annotation.instance_id, exc_info=True,
-        )
-        return _autopsy_error_result(
-            kind="missing_tool_use", exc=exc, prompt=prompt, kb_text=kb_text,
-            trajectory=trajectory, model=model,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "[autopsy] iterating response.content failed on %s",
-            task_annotation.instance_id, exc_info=True,
-        )
-        return _autopsy_error_result(
-            kind="unknown", exc=exc, prompt=prompt, kb_text=kb_text,
-            trajectory=trajectory, model=model,
-        )
+    assert client is not None  # the prep try/except returned otherwise.
 
-    try:
-        llm_output = schema_cls.model_validate(tool_use.input)
-        return _map_output(llm_output, is_one_shot=is_one_shot)
-    except pydantic.ValidationError as exc:
-        logger.error(
-            "[autopsy] LLM output failed schema validation on %s: %s",
-            task_annotation.instance_id, exc,
-            exc_info=True,
-        )
-        return _autopsy_error_result(
-            kind="validation_error", exc=exc, prompt=prompt, kb_text=kb_text,
-            trajectory=trajectory, model=model,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "[autopsy] mapping LLM output failed on %s",
-            task_annotation.instance_id, exc_info=True,
-        )
-        return _autopsy_error_result(
-            kind="unknown", exc=exc, prompt=prompt, kb_text=kb_text,
-            trajectory=trajectory, model=model,
-        )
+    # One LLM call + one corrective retry on Pydantic validation failure.
+    # The retry sends the validation error back via a ``tool_result`` block
+    # with ``is_error=True`` so the model sees exactly which fields it
+    # dropped. Anthropic's ``required`` enforcement on tool input is
+    # best-effort; with long prompts the model occasionally omits a
+    # leading field (this was the ``archeology_10`` regression — 353k
+    # chars, ``pattern`` missing). Other failure kinds (API errors,
+    # missing ``tool_use`` block, BadRequest) do NOT retry — they are
+    # not model self-correctable.
+    messages: list = [{"role": "user", "content": prompt}]
+    last_validation_exc: Optional[pydantic.ValidationError] = None
+    for attempt in range(2):
+        try:
+            response = await client.messages.create(
+                model=native_model_id(model),
+                max_tokens=2048,
+                tools=[tool_schema],
+                tool_choice={"type": "tool", "name": "autopsy_output"},
+                messages=messages,
+            )
+        except anthropic.BadRequestError as exc:
+            kind = "context_overflow" if _looks_like_context_overflow(exc) else "api_error"
+            logger.error(
+                "[autopsy] BadRequestError on %s (kind=%s): %s",
+                task_annotation.instance_id, kind, exc,
+                exc_info=True,
+            )
+            return _autopsy_error_result(
+                kind=kind, exc=exc, prompt=prompt, kb_text=kb_text,
+                trajectory=trajectory, model=model,
+            )
+        except anthropic.APIConnectionError as exc:
+            # Codex r1 #5: must be ordered BEFORE APIError, since
+            # APIConnectionError is a sibling (not subclass) of
+            # APIStatusError in the anthropic SDK; APITimeoutError is a
+            # subclass of APIConnectionError and resolves here too.
+            logger.error(
+                "[autopsy] APIConnectionError on %s: %s",
+                task_annotation.instance_id, exc, exc_info=True,
+            )
+            return _autopsy_error_result(
+                kind="network_error", exc=exc, prompt=prompt, kb_text=kb_text,
+                trajectory=trajectory, model=model,
+            )
+        except anthropic.APIError as exc:
+            logger.error(
+                "[autopsy] APIError on %s: %s",
+                task_annotation.instance_id, exc, exc_info=True,
+            )
+            return _autopsy_error_result(
+                kind="api_error", exc=exc, prompt=prompt, kb_text=kb_text,
+                trajectory=trajectory, model=model,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "[autopsy] unexpected error on %s",
+                task_annotation.instance_id, exc_info=True,
+            )
+            return _autopsy_error_result(
+                kind="unknown", exc=exc, prompt=prompt, kb_text=kb_text,
+                trajectory=trajectory, model=model,
+            )
+
+        try:
+            tool_use = next(
+                b for b in response.content if getattr(b, "type", None) == "tool_use"
+            )
+        except StopIteration as exc:
+            logger.error(
+                "[autopsy] no tool_use block in response on %s",
+                task_annotation.instance_id, exc_info=True,
+            )
+            return _autopsy_error_result(
+                kind="missing_tool_use", exc=exc, prompt=prompt, kb_text=kb_text,
+                trajectory=trajectory, model=model,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "[autopsy] iterating response.content failed on %s",
+                task_annotation.instance_id, exc_info=True,
+            )
+            return _autopsy_error_result(
+                kind="unknown", exc=exc, prompt=prompt, kb_text=kb_text,
+                trajectory=trajectory, model=model,
+            )
+
+        try:
+            llm_output = schema_cls.model_validate(tool_use.input)
+            return _map_output(llm_output, is_one_shot=is_one_shot)
+        except pydantic.ValidationError as exc:
+            last_validation_exc = exc
+            logger.warning(
+                "[autopsy] LLM output failed schema validation on %s "
+                "(attempt %d/2): %s",
+                task_annotation.instance_id, attempt + 1, exc,
+            )
+            if attempt == 0:
+                # Append the model's failed tool_use turn, then a user
+                # turn carrying the validation error as a tool_result.
+                # ``is_error=True`` signals the model that the previous
+                # call was rejected — Anthropic's tool-use docs recommend
+                # exactly this shape for corrective retries.
+                messages.append({"role": "assistant", "content": response.content})
+                messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": tool_use.id,
+                        "content": (
+                            "Your previous autopsy_output failed Pydantic "
+                            "schema validation:\n\n"
+                            f"{exc}\n\n"
+                            "Return a corrected autopsy_output that "
+                            "satisfies the schema. Every field listed in "
+                            "the tool's `required` array MUST be present."
+                        ),
+                        "is_error": True,
+                    }],
+                })
+                continue
+            logger.error(
+                "[autopsy] LLM output failed schema validation on %s "
+                "after retry: %s",
+                task_annotation.instance_id, exc,
+                exc_info=True,
+            )
+            return _autopsy_error_result(
+                kind="validation_error", exc=exc, prompt=prompt, kb_text=kb_text,
+                trajectory=trajectory, model=model,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "[autopsy] mapping LLM output failed on %s",
+                task_annotation.instance_id, exc_info=True,
+            )
+            return _autopsy_error_result(
+                kind="unknown", exc=exc, prompt=prompt, kb_text=kb_text,
+                trajectory=trajectory, model=model,
+            )
+
+    # Unreachable in practice (the loop returns on every branch), but
+    # falls through here if the retry-loop bound is ever raised without
+    # re-checking the validation-error return path.
+    assert last_validation_exc is not None
+    return _autopsy_error_result(
+        kind="validation_error", exc=last_validation_exc,
+        prompt=prompt, kb_text=kb_text,
+        trajectory=trajectory, model=model,
+    )
