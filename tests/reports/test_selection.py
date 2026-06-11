@@ -170,6 +170,40 @@ def test_resolve_sources_stub_only_trajectory_is_hard_error(stage):
     assert "db_a_0" in str(exc_info.value)
 
 
+def test_resolve_sources_missing_task_results_row_is_hard_error(stage):
+    """Codex round 3 finding: a trajectory.json + results.db that exist
+    but lack the selected instance_id in task_results must NOT silently
+    produce an InstanceSource with empty mode (which would bypass the
+    a-Interact gate). Refuse here."""
+    import sqlite3
+
+    _runs_root, results_root = stage(
+        benchmark="bird-interact-lite-exp",
+        run_id="r1",
+        instances=[
+            ("alien", "alien_1", trajectory_one_phase_pass(instance_id="alien_1")),
+        ],
+    )
+    # Drop the task_results row but keep the trajectory + run_metadata.
+    db = results_root / "bird-interact-lite-exp" / "cloud" / "r1" / "results.db"
+    con = sqlite3.connect(db)
+    con.execute("DELETE FROM task_results WHERE instance_id = ?", ("alien_1",))
+    con.commit()
+    con.close()
+
+    from bird_interact_agents.reports.sources import (
+        MissingTaskResultsError,
+        resolve_sources,
+    )
+
+    with pytest.raises(MissingTaskResultsError) as exc_info:
+        resolve_sources(
+            selection=[("alien_1", "r1")],
+            benchmark="bird-interact-lite-exp",
+        )
+    assert "alien_1" in str(exc_info.value)
+
+
 def test_resolve_sources_missing_results_db_is_hard_error(stage, tmp_path):
     _runs_root, results_root = stage(
         benchmark="bird-interact-lite-exp",

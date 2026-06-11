@@ -27,6 +27,10 @@ class StubTrajectoryError(ValueError):
     pass
 
 
+class MissingTaskResultsError(ValueError):
+    pass
+
+
 @dataclass
 class InstanceSource:
     instance_id: str
@@ -105,6 +109,7 @@ def resolve_sources(
     sources: dict[str, InstanceSource] = {}
     missing_traj: list[tuple[str, str, Path]] = []
     stub_traj: list[tuple[str, str, Path]] = []
+    missing_task: list[tuple[str, str]] = []
 
     for run_id, inst_ids in by_run.items():
         results_db_path = (
@@ -142,7 +147,13 @@ def resolve_sources(
                 stub_traj.append((inst_id, run_id, traj_path))
                 continue
 
-            task_row = task_rows_by_inst.get(inst_id, {})
+            task_row = task_rows_by_inst.get(inst_id)
+            if not task_row:
+                # No row in results.db for this instance — Codex round 3
+                # finding: empty task_row makes mode='' which silently
+                # bypasses the a-Interact gate. Refuse here.
+                missing_task.append((inst_id, run_id))
+                continue
             sources[inst_id] = InstanceSource(
                 instance_id=inst_id,
                 run_id=run_id,
@@ -175,5 +186,16 @@ def resolve_sources(
         raise StubTrajectoryError(
             f"stub-only trajectory.json (no `trajectory` array) for "
             f"{len(stub_traj)} entries — cannot reconstruct prompt_flow:\n{lines}"
+        )
+    if missing_task:
+        lines = "\n".join(
+            f"  - instance_id={iid} run_id={rid}"
+            for iid, rid in missing_task
+        )
+        raise MissingTaskResultsError(
+            f"results.db has no task_results row for {len(missing_task)} "
+            f"selection entries — the run never recorded these instances, "
+            f"so mode / query_mode / final SQL / phase results are all "
+            f"unknown:\n{lines}"
         )
     return sources

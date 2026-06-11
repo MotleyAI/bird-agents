@@ -573,6 +573,73 @@ def test_submission_check_leakage_flag_writes_manifest_counts(
     assert gold in leaky_row["prompt_flow"][0]["prompt"]
 
 
+def test_submission_uses_run_level_manifest_patience(
+    tmp_path: Path, monkeypatch
+):
+    """Codex round 3 finding: real cloud runs store ``patience`` in
+    ``<results>/<benchmark>/cloud/<run-id>/manifest.json``, NOT in the
+    per-instance submission-annotation sidecar. The CLI must read the
+    run-level manifest before falling back to the ``--patience`` CLI
+    default."""
+    from bird_interact_agents import paths
+    from bird_interact_agents.cloud.cli import main
+
+    runs_root, results_root = stage_run(
+        tmp_path,
+        benchmark="bird-interact-lite-exp",
+        run_id="run-xyz",
+        instances=[
+            ("alien", "alien_1", trajectory_one_phase_pass(instance_id="alien_1")),
+        ],
+    )
+    # Write the run-level cloud manifest with patience=500 (mirrors how
+    # the cloud driver writes it). The CLI's --patience flag stays at
+    # default 3; the run-level manifest must win.
+    run_mf_path = (
+        results_root / "bird-interact-lite-exp" / "cloud" / "run-xyz" / "manifest.json"
+    )
+    run_mf_path.write_text(json.dumps({"patience": 500}))
+
+    monkeypatch.setattr(paths, "runs_root", lambda: runs_root)
+    monkeypatch.setattr(paths, "results_root", lambda: results_root)
+    monkeypatch.setattr(paths, "reports_root", lambda: tmp_path / "reports")
+    _stub_split(monkeypatch, {"alien_1"})
+    _stub_fake_tokenizer(monkeypatch)
+    monkeypatch.setattr(
+        "bird_interact_agents.reports.budget.lookup_task_data",
+        lambda benchmark, instance_id: {
+            "user_query_ambiguity": {},
+            "knowledge_ambiguity": [],
+        },
+    )
+
+    rc = main(
+        [
+            "submission",
+            "--team-name",
+            "Motley",
+            "--method-name",
+            "SLayer-Agent",
+            "--benchmark",
+            "bird-interact-lite-exp",
+            "--run-id",
+            "run-xyz",
+        ]
+    )
+    assert rc == 0
+
+    out_root = tmp_path / "reports" / "bird-interact-lite-exp" / "a-Interact"
+    [sub_dir] = list(out_root.iterdir())
+    mf = json.loads((sub_dir / "manifest.json").read_text())
+    [pat_entry] = mf["patience_resolution"]
+    assert pat_entry["patience"] == 500
+    assert "manifest.json" in pat_entry["source"]
+    # And the submission row's first step has remaining_budget =
+    # max(0, total_budget - submit_cost) where total = 6 + 0 + 2*500 = 1006.
+    row = json.loads((sub_dir / "submission.jsonl").read_text().splitlines()[0])
+    assert row["prompt_flow"][0]["remaining_budget"] == 1003.0
+
+
 def test_submission_aborts_on_non_a_interact_run(
     tmp_path: Path, monkeypatch
 ):

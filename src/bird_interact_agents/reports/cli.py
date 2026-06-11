@@ -23,7 +23,12 @@ from bird_interact_agents.reports.output import (
     write_submission,
 )
 from bird_interact_agents.reports.selection import load_selection
-from bird_interact_agents.reports.sources import resolve_sources
+from bird_interact_agents.reports.sources import (
+    MissingTaskResultsError,
+    MissingTrajectoryError,
+    StubTrajectoryError,
+    resolve_sources,
+)
 
 
 _SUPPORTED_BENCHMARKS = ("bird-interact-lite-exp", "bird-interact-full", "mini-interact")
@@ -49,7 +54,10 @@ def _read_patience_for_instance(
     instance_dir: Path, run_id: str
 ) -> tuple[int | None, str]:
     """Look for a ``patience`` field in the per-instance submission-
-    annotation sidecar. Returns (patience, source)."""
+    annotation sidecar. Returns (patience, source). Most cloud runs DO
+    NOT carry patience here — it's a run-level setting, see
+    ``_read_patience_for_run``. Kept for forward-compat with any harness
+    that stamps patience per-instance."""
     p = instance_dir / f"{run_id}.json"
     if not p.is_file():
         return (None, "default")
@@ -57,8 +65,6 @@ def _read_patience_for_instance(
         obj = json.loads(p.read_text())
     except (json.JSONDecodeError, OSError):
         return (None, "default")
-    # The harness writes patience inside `submission` for some agents;
-    # fall through to `None` if the field is absent.
     pat = obj.get("patience")
     if pat is None and isinstance(obj.get("submission"), dict):
         pat = obj["submission"].get("patience")
@@ -68,6 +74,38 @@ def _read_patience_for_instance(
         return (int(pat), f"runs:{p.name}")
     except (ValueError, TypeError):
         return (None, "default")
+
+
+def _read_patience_for_run(
+    *, benchmark: str, run_id: str
+) -> tuple[int | None, str]:
+    """Look up the run-level cloud manifest's ``patience`` field.
+
+    The cloud `bird-interact-cloud submit` driver writes its rendered
+    cluster config (including ``--patience`` from the CLI) to
+    ``<results>/<benchmark>/cloud/<run-id>/manifest.json`` (with a
+    legacy path under ``<results>/cloud/<run-id>/manifest.json`` for
+    pre-DEV-1462 runs). Both are tried in order; the first match wins.
+    """
+    candidates = [
+        paths.results_root() / benchmark / "cloud" / run_id / "manifest.json",
+        paths.results_root() / "cloud" / run_id / "manifest.json",
+    ]
+    for p in candidates:
+        if not p.is_file():
+            continue
+        try:
+            obj = json.loads(p.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        pat = obj.get("patience")
+        if pat is None:
+            continue
+        try:
+            return (int(pat), f"results:{p.relative_to(paths.results_root())}")
+        except (ValueError, TypeError):
+            continue
+    return (None, "default")
 
 
 def add_subparser(subparsers: argparse._SubParsersAction) -> None:
@@ -154,8 +192,18 @@ def run_submission(args: argparse.Namespace) -> int:
 
     tag = args.report_tag or default_tag
 
-    # ---- Resolve sources (errors out on missing/stub trajectories)
-    sources = resolve_sources(selection=selection, benchmark=benchmark)
+    # ---- Resolve sources (errors out on missing/stub trajectories
+    # and on selection entries lacking a task_results row)
+    try:
+        sources = resolve_sources(selection=selection, benchmark=benchmark)
+    except (
+        MissingTrajectoryError,
+        StubTrajectoryError,
+        MissingTaskResultsError,
+        FileNotFoundError,
+    ) as e:
+        sys.stderr.write(f"error: {e}\n")
+        raise SystemExit(2) from e
 
     # ---- Setting gate: a-Interact only (per DEV-1553 spec). The mode
     # comes from the source run's task_results row; any non-a-interact
@@ -196,18 +244,33 @@ def run_submission(args: argparse.Namespace) -> int:
     warnings_by_instance: list[dict] = []
     leakage_entries: list[dict] = []
 
+    # Patience resolution is per-instance but most cloud runs only stamp
+    # patience at the RUN level. Cache the run-level lookup so we don't
+    # re-read the manifest per instance.
+    run_level_patience: dict[str, tuple[int | None, str]] = {}
+
     for inst_id, src in sources.items():
         instance_dir = src.trajectory_path.parent
-        per_inst_patience, source_label = _read_patience_for_instance(
+        per_inst_patience, per_inst_source = _read_patience_for_instance(
             instance_dir, src.run_id
         )
-        patience = per_inst_patience if per_inst_patience is not None else args.patience
+        if per_inst_patience is None:
+            if src.run_id not in run_level_patience:
+                run_level_patience[src.run_id] = _read_patience_for_run(
+                    benchmark=benchmark, run_id=src.run_id
+                )
+            run_pat, run_source = run_level_patience[src.run_id]
+        else:
+            run_pat, run_source = (None, "default")
+
+        if per_inst_patience is not None:
+            patience, source_label = per_inst_patience, per_inst_source
+        elif run_pat is not None:
+            patience, source_label = run_pat, run_source
+        else:
+            patience, source_label = args.patience, "default"
         patience_resolution.append(
-            {
-                "instance_id": inst_id,
-                "patience": patience,
-                "source": source_label if per_inst_patience is not None else "default",
-            }
+            {"instance_id": inst_id, "patience": patience, "source": source_label}
         )
 
         task_data = _budget.lookup_task_data(benchmark, inst_id)
