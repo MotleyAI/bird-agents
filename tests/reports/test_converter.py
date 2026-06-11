@@ -89,6 +89,105 @@ def test_phase_sql_no_submits_both_empty(fake_count_tokens):
     assert row.subtask_2_predicted_sql == []
 
 
+def test_phase_sql_slayer_mode_uses_trajectory_submitted_sql(fake_count_tokens):
+    """Codex round 4: SLayer-mode submits carry JSON DSL in `query_json`,
+    NOT compiled SQL. The leaderboard needs the SQL. For the LAST submit
+    we extract `trajectory.submitted_sql` (the server's compiled SQL)."""
+    from tests.reports._fixtures import (
+        assistant_msg,
+        build_trajectory,
+        system_msg,
+        tool_result_msg,
+        tool_use_block,
+        user_text_msg,
+    )
+
+    compiled_sql = "SELECT cto_final.trans_method FROM cto_final"
+    slayer_dsl = '{"source_model": "cto_final", "dimensions": ["trans_method"]}'
+    steps = [
+        system_msg(),
+        user_text_msg(text="Task."),
+        assistant_msg(
+            tool_use=tool_use_block(
+                tool_use_id="tu_1",
+                name="mcp__bird-interact-tools__submit_query",
+                inp={"query_json": slayer_dsl},
+            ),
+        ),
+        tool_result_msg(
+            tool_use_id="tu_1",
+            content="Phase 1 SQL Correct! (Reward: 1 points). No Phase 2. Task finished.",
+        ),
+    ]
+    traj = build_trajectory(
+        instance_id="alien_5",
+        trajectory_steps=steps,
+        submitted_sql=compiled_sql,
+        submission_status="passed_phase1",
+    )
+    row = _convert(traj)
+    # subtask_1_predicted_sql carries the COMPILED SQL, not the DSL.
+    assert row.subtask_1_predicted_sql == [compiled_sql]
+    # The `action` field still records what the agent literally called
+    # (the JSON DSL is the audit trail of the call).
+    assert slayer_dsl in row.prompt_flow[0].action
+
+
+def test_phase_sql_slayer_mode_two_phase_loses_phase1_sql(fake_count_tokens):
+    """SLayer two-phase: only the FINAL submit's compiled SQL is
+    persisted. Phase-1 SQL is unrecoverable — emit empty + warning."""
+    from tests.reports._fixtures import (
+        assistant_msg,
+        build_trajectory,
+        system_msg,
+        tool_result_msg,
+        tool_use_block,
+        user_text_msg,
+    )
+
+    phase1_dsl = '{"source_model": "x", "dimensions": ["a"]}'
+    phase2_dsl = '{"source_model": "x", "dimensions": ["a", "b"]}'
+    phase2_compiled = "SELECT a, b FROM x"
+    steps = [
+        system_msg(),
+        user_text_msg(text="Task."),
+        assistant_msg(
+            tool_use=tool_use_block(
+                tool_use_id="tu_p1",
+                name="mcp__bird-interact-tools__submit_query",
+                inp={"query_json": phase1_dsl},
+            ),
+        ),
+        tool_result_msg(
+            tool_use_id="tu_p1",
+            content="Phase 1 SQL Correct! (Reward: 1 points). Moving to Phase 2.",
+        ),
+        user_text_msg(text="Follow-up."),
+        assistant_msg(
+            tool_use=tool_use_block(
+                tool_use_id="tu_p2",
+                name="mcp__bird-interact-tools__submit_query",
+                inp={"query_json": phase2_dsl},
+            ),
+        ),
+        tool_result_msg(
+            tool_use_id="tu_p2",
+            content="Phase 2 SQL Correct! Task finished.",
+        ),
+    ]
+    traj = build_trajectory(
+        instance_id="alien_6",
+        trajectory_steps=steps,
+        submitted_sql=phase2_compiled,
+        phase1_passed=True,
+        phase2_passed=True,
+    )
+    row, warnings = _convert_with_warnings(traj)
+    assert row.subtask_1_predicted_sql == [""]
+    assert row.subtask_2_predicted_sql == [phase2_compiled]
+    assert any("phase-1 SQL is not recoverable" in w for w in warnings), warnings
+
+
 # ---------------------------------------------------------------------------
 # prompt_flow shape
 # ---------------------------------------------------------------------------

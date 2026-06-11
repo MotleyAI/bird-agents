@@ -99,24 +99,69 @@ def build_submission_row(
     ]
     submit_observations = [turns[i].observation for i in submit_idxs]
     phase_result: SplitResult = split_phases(submit_observations)
-    # Reconstruct full per-turn phase labels: None outside the submit
-    # subset. ``last_phase1_sql`` / ``last_phase2_sql`` track the final
-    # SQL per phase.
+    extra_warnings: list[str] = []
+
+    # The compiled SQL the leaderboard grades comes from one of two
+    # places depending on query_mode:
+    # * ``raw``: the agent literally passed SQL in ``query`` /
+    #   ``query_json``; ``submit(<sql>)`` already has it. We pull from
+    #   ``turn.tool_input`` directly so we don't depend on the
+    #   canonical-string slice (which keeps any wrapping the
+    #   canonicalizer added).
+    # * ``slayer``: the agent passed a SlayerQuery JSON DSL; the SERVER
+    #   compiled it to SQL but only the LAST submit's compiled SQL is
+    #   persisted (as ``trajectory.submitted_sql``). Earlier-phase
+    #   compiled SQL is LOST — we emit an empty list AND a manifest
+    #   warning so the operator knows about the gap.
+    trajectory_final_sql = str(trajectory_obj.get("submitted_sql") or "")
+
+    def _looks_like_json_dsl(s: str) -> bool:
+        return s.strip().startswith("{")
+
+    def _raw_input_sql(turn) -> str:
+        for key in ("query", "query_json", "sql"):
+            if key in turn.tool_input:
+                return str(turn.tool_input[key])
+        return ""
+
     last_phase1_sql = ""
     last_phase2_sql = ""
     have_phase1 = False
     have_phase2 = False
+    last_submit_idx = submit_idxs[-1] if submit_idxs else None
+
     for k, idx in enumerate(submit_idxs):
         label = phase_result.labels[k] if k < len(phase_result.labels) else None
-        # Extract SQL from the canonical action string ``submit(<sql>)``.
-        canonical = canonical_actions[idx]
-        sql = canonical[len("submit(") : -1]
+        turn = turns[idx]
+        raw_input = _raw_input_sql(turn)
+        if _looks_like_json_dsl(raw_input):
+            # SLayer DSL: compiled SQL only available for the LAST
+            # overall submit (the trajectory's `submitted_sql`).
+            if idx == last_submit_idx and trajectory_final_sql:
+                sql = trajectory_final_sql
+            else:
+                sql = ""  # earlier-phase compiled SQL not recoverable
+        else:
+            sql = raw_input
+
         if label == "phase2":
             last_phase2_sql = sql
             have_phase2 = True
         else:
             last_phase1_sql = sql
             have_phase1 = True
+
+    # Manifest warning when an earlier phase's compiled SQL was lost
+    # because the agent ran in SLayer mode and only the FINAL submit's
+    # SQL is persisted (Codex round 4 finding).
+    if have_phase1 and have_phase2 and not last_phase1_sql:
+        extra_warnings.append(
+            "SLayer-mode phase-1 SQL is not recoverable from the trajectory: "
+            "only the final submit's compiled SQL is stored as "
+            "`submitted_sql`; phase-1 was overwritten when phase-2 ran. "
+            "Emitting empty subtask_1_predicted_sql; review trajectory manually "
+            "or re-run with query_mode=raw to capture per-submit SQL."
+        )
 
     subtask_1_predicted_sql = [last_phase1_sql] if have_phase1 else []
     subtask_2_predicted_sql = [last_phase2_sql] if have_phase2 else []
@@ -147,7 +192,7 @@ def build_submission_row(
         subtask_2_predicted_sql=subtask_2_predicted_sql,
         prompt_flow=entries,
     )
-    return row, list(phase_result.warnings)
+    return row, list(phase_result.warnings) + extra_warnings
 
 
 def cross_check_results_db_sql(
