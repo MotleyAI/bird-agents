@@ -87,6 +87,64 @@ _ = _phase4_dates
 
 logger = logging.getLogger(__name__)
 
+
+# DEV-1550 follow-up: bump when the embedding-text pre-processing
+# pipeline (truncation budget, model dispatch, tokenisation strategy)
+# changes. Hashed into `_impl_fingerprint_of` so already-built caches
+# invalidate automatically on bump — no manual `rm -rf _cache_fp.txt`
+# required. (Codex round-1 finding #9.)
+_EMBEDDING_BUILDER_VERSION = 2
+
+# Token budget for OpenAI `text-embedding-3-*` / `text-embedding-ada-002`
+# (8192 cap, 7800 leaves ~400 token margin). Char-cap fallback used when
+# tiktoken is unavailable (~3-4 chars/token English worst case).
+_EMBEDDING_MAX_TOKENS = 7800
+_EMBEDDING_FALLBACK_MAX_CHARS = 28_000
+
+
+def _truncate_for_embedding(
+    text: str, *, model_name: str, max_tokens: int = _EMBEDDING_MAX_TOKENS,
+) -> str:
+    """Truncate ``text`` to ``max_tokens`` tokens using the embedding
+    model's encoding, returning the original string object unchanged
+    when already under budget (identity, not a fresh copy).
+
+    Fails closed on tiktoken unavailability: returns a char-cap
+    truncation (``_EMBEDDING_FALLBACK_MAX_CHARS``) instead of crashing
+    the cache builder. The dense embedding for over-long memories
+    degrades gracefully; tantivy (channel 2) still indexes them.
+    """
+    try:
+        import tiktoken  # local import: ImportError on absence is recoverable.
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[slayer_otf] tiktoken unavailable (%s); falling back to "
+            "char-cap truncation at %d chars",
+            exc, _EMBEDDING_FALLBACK_MAX_CHARS,
+        )
+        if len(text) <= _EMBEDDING_FALLBACK_MAX_CHARS:
+            return text
+        return text[:_EMBEDDING_FALLBACK_MAX_CHARS]
+    bare = model_name.split("/")[-1] if model_name else ""
+    try:
+        try:
+            enc = tiktoken.encoding_for_model(bare)
+        except KeyError:
+            enc = tiktoken.get_encoding("cl100k_base")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[slayer_otf] tiktoken encoder load failed (%s); falling "
+            "back to char-cap truncation at %d chars",
+            exc, _EMBEDDING_FALLBACK_MAX_CHARS,
+        )
+        if len(text) <= _EMBEDDING_FALLBACK_MAX_CHARS:
+            return text
+        return text[:_EMBEDDING_FALLBACK_MAX_CHARS]
+    tokens = enc.encode(text)
+    if len(tokens) <= max_tokens:
+        return text
+    return enc.decode(tokens[:max_tokens])
+
 # Completeness marker for a per-DB cache dir. Present ⇒ complete; written
 # LAST in the build tmp dir. Content = the build-time fingerprint (provenance).
 _CACHE_MARKER = "_cache_fp.txt"
@@ -247,6 +305,7 @@ def _impl_fingerprint_of(benchmark: object = None) -> str:
     h = hashlib.sha256()
     h.update(f"slayer={_slayer_version()}\n".encode())
     h.update(f"embed={_active_embedding_model_or_none()}\n".encode())
+    h.update(f"embed_builder={_EMBEDDING_BUILDER_VERSION}\n".encode())
     if getattr(benchmark, "db_backend", "sqlite") == "postgres":
         pg_host = os.environ.get("BIRD_PG_HOST", "localhost")
         pg_port = os.environ.get("BIRD_PG_PORT", "5432")
@@ -538,9 +597,27 @@ async def _materialise_cache_memories(
     # Memory.model_validate is cheap; the encoder's round-trip test
     # already proves all dicts are valid.
     memories = [Memory.model_validate(d) for d in mems]
-    texts = [
+    # DEV-1550 follow-up: pre-truncate to the embedding model's token
+    # budget before the API call. Without this, a single over-long
+    # memory turns the WHOLE batch into `[None] * N` (litellm raises
+    # 400 on the offending input, embed_batch's broad except logs +
+    # returns all-None), wiping every memory's embedding row and
+    # collapsing the on-disk OTF cache into a tantivy-only setup.
+    raw_texts = [
         render_memory_text_for_embedding(memory=m) for m in memories
     ]
+    texts: list[str] = []
+    for memory, raw in zip(memories, raw_texts, strict=True):
+        capped = _truncate_for_embedding(raw, model_name=model_name)
+        if capped is not raw:
+            logger.warning(
+                "[slayer_otf] truncated embedding text for memory %s "
+                "in db=%s from %d chars to %d chars "
+                "(model=%s cap=%d tokens)",
+                memory.id, db, len(raw), len(capped),
+                model_name, _EMBEDDING_MAX_TOKENS,
+            )
+        texts.append(capped)
     vectors = await embed_batch(texts, model=model_name)
     rows: list[Embedding] = []
     # strict=True so an embed_batch length mismatch raises instead of

@@ -1,0 +1,325 @@
+"""Shim around BIRD-Interact's upstream graders so cascade tier N1 lines
+up with the harness our reported numbers compare to.
+
+Tier N1 ("phase1_against_original_gold") used to be a bag-equality on
+``repr(cell)`` over the in-process pred / gold row sets. Upstream's
+``test_case_default`` actually does more:
+
+* strips comments / ``DISTINCT`` / ``ROUND`` from BOTH SQLs;
+* runs ``preprocess_results`` (2-dp Decimal/float rounding, date
+  normalisation, dict/list canonicalisation);
+* compares ``set(...) == set(...)``, i.e. dedup.
+
+For mini-interact (SQLite) the upstream lives at
+``BIRD-Interact/mini_interact/knowledge_based/mini_interact_conv/
+evaluation/test_utils.py``; for the livesqlbench family (Postgres + the
+sqlite-shimmed lite variant) at
+``livesqlbench/evaluation/src/test_utils.py``. Both expose the same
+``ex_base`` / ``remove_*`` API — the only delta is the driver. Roots are
+overridable via ``$BIRD_BIRD_INTERACT_ROOT`` / ``$BIRD_LIVESQLBENCH_ROOT``.
+
+Deliberate deviation from upstream: when BOTH preprocessed result lists
+come out empty, the shim returns ``True`` (matches our legacy
+``_set_equal([], [])`` behaviour). Upstream returns ``0`` in that
+branch; the deviation keeps zero-row gold/pred matches as passes the way
+the existing cascade analysis was scored.
+
+For the Postgres livesqlbench variants the caller is responsible for
+passing a fresh psycopg2 connection; the shim issues
+``conn.rollback()`` in ``try/finally`` so mutation-bearing prediction
+SQL cannot leak into the next grade on the same conn.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import logging
+import os
+import re
+import sys
+from pathlib import Path
+from types import ModuleType
+from typing import Optional, Sequence
+
+logger = logging.getLogger(__name__)
+
+
+class ExBaseUnavailableError(Exception):
+    """The upstream grader could not be loaded or the benchmark is not
+    in the ex_base-backed N1 supported set. Callers (the N1 dispatch in
+    ``tolerant_grader``) catch this and fall back to the legacy
+    ``_set_equal`` path so a missing upstream tree never crashes
+    grading."""
+
+
+# ---------------------------------------------------------------------------
+# is_mutation_sql — regex on SQL keywords that imply DB state change.
+# ---------------------------------------------------------------------------
+
+_MUTATION_KEYWORDS = (
+    "INSERT", "UPDATE", "DELETE", "CREATE", "DROP",
+    "ALTER", "TRUNCATE", "REPLACE",
+)
+
+# Match a mutation keyword AT statement start: either after ``;``
+# (with optional whitespace) or at the very beginning of the SQL.
+# Keeps ``SELECT REPLACE(...)`` (function call inside a SELECT) from
+# being misclassified as a mutation while still catching real
+# ``INSERT INTO`` / ``UPDATE`` / multi-statement ``...; DELETE ...``.
+_MUTATION_AT_STMT_START_RE = re.compile(
+    r"(?:^|;)\s*(?:" + "|".join(_MUTATION_KEYWORDS) + r")(?![A-Za-z0-9_])",
+    re.IGNORECASE,
+)
+
+
+def is_mutation_sql(sql: str) -> bool:
+    """Return True iff ``sql`` carries an SQL mutation keyword as the
+    LEADING token of any statement (statements split on ``;``). A
+    SELECT calling ``REPLACE(...)`` as a function is NOT a mutation —
+    only ``REPLACE INTO`` (statement-leading) is.
+    """
+    if not sql:
+        return False
+    return bool(_MUTATION_AT_STMT_START_RE.search(sql))
+
+
+# ---------------------------------------------------------------------------
+# Lazy upstream module loaders
+# ---------------------------------------------------------------------------
+
+_DEFAULT_BIRD_INTERACT_ROOT = "/home/james/Dropbox/SLayer/BIRD-Interact"
+_DEFAULT_LIVESQLBENCH_ROOT = "/home/james/Dropbox/SLayer/livesqlbench"
+
+_MINI_INTERACT_REL = (
+    "mini_interact/knowledge_based/mini_interact_conv/evaluation/test_utils.py"
+)
+_LIVESQLBENCH_REL = "evaluation/src/test_utils.py"
+
+
+def _load_module_from_file(
+    name: str, path: Path, *, sys_path_addition: Optional[Path] = None,
+) -> ModuleType:
+    """Load a Python file as a module by path. Optionally prepend
+    ``sys_path_addition`` so the module can import its sibling
+    ``db_utils.py`` (upstream files use ``from db_utils import ...``)."""
+    if not path.is_file():
+        raise FileNotFoundError(f"upstream module not found at {path}")
+    if sys_path_addition is not None and str(sys_path_addition) not in sys.path:
+        sys.path.insert(0, str(sys_path_addition))
+    spec = importlib.util.spec_from_file_location(name, str(path))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not build module spec for {path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _load_mini_interact_module() -> ModuleType:
+    """Load the mini-interact upstream comparator module on demand."""
+    root = Path(os.environ.get(
+        "BIRD_BIRD_INTERACT_ROOT", _DEFAULT_BIRD_INTERACT_ROOT,
+    ))
+    target = root / _MINI_INTERACT_REL
+    return _load_module_from_file(
+        "_bird_interact_mini_interact_test_utils",
+        target,
+        sys_path_addition=target.parent,
+    )
+
+
+def _load_livesqlbench_module() -> ModuleType:
+    """Load the livesqlbench upstream comparator module on demand."""
+    root = Path(os.environ.get(
+        "BIRD_LIVESQLBENCH_ROOT", _DEFAULT_LIVESQLBENCH_ROOT,
+    ))
+    target = root / _LIVESQLBENCH_REL
+    return _load_module_from_file(
+        "_bird_interact_livesqlbench_test_utils",
+        target,
+        sys_path_addition=target.parent,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Benchmark dispatch
+# ---------------------------------------------------------------------------
+
+_MINI_INTERACT_BENCHMARKS = frozenset({"mini-interact"})
+_LIVESQLBENCH_BENCHMARKS = frozenset({
+    # The lite-sqlite variant uses upstream livesqlbench's comparator —
+    # same algorithm, different driver. (We grade against our own local
+    # SQLite copies, but the comparator code is in the livesqlbench tree.)
+    "livesqlbench-base-lite-sqlite",
+    "livesqlbench-base-lite",
+    "livesqlbench-base-full",
+    "livesqlbench-large",
+})
+
+
+def _benchmark_loader(benchmark: str):
+    if benchmark in _MINI_INTERACT_BENCHMARKS:
+        return _load_mini_interact_module, "sqlite"
+    if benchmark in _LIVESQLBENCH_BENCHMARKS:
+        return _load_livesqlbench_module, (
+            "sqlite" if benchmark.endswith("-sqlite") else "postgres"
+        )
+    raise ExBaseUnavailableError(
+        f"benchmark {benchmark!r} is not in the ex_base-backed N1 supported "
+        f"set; caller must fall back to legacy _set_equal"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public surface
+# ---------------------------------------------------------------------------
+
+
+def compare_pred_vs_gold_ex_base(
+    *,
+    benchmark: str,
+    pred_sqls: Sequence[str],
+    sol_sqls: Sequence[str],
+    db_name: str,
+    conn,
+    conditions: Optional[dict] = None,
+) -> bool:
+    """Grade predicted SQL against gold via the upstream BIRD-Interact
+    ``test_case_default`` pipeline.
+
+    On any upstream-load failure (missing tree, ImportError,
+    FileNotFoundError, ...) we re-raise as :class:`ExBaseUnavailableError`
+    so the caller can fall back to legacy ``_set_equal``.
+
+    For livesqlbench Postgres conns we ``conn.rollback()`` in
+    ``try/finally`` to keep pred mutations from leaking into the next
+    grade on the same connection.
+    """
+    try:
+        loader, driver = _benchmark_loader(benchmark)
+    except ExBaseUnavailableError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise ExBaseUnavailableError(
+            f"benchmark dispatch failed for {benchmark!r}: {exc}"
+        ) from exc
+
+    try:
+        upstream = loader()
+    except ExBaseUnavailableError:
+        raise
+    except (ImportError, FileNotFoundError) as exc:
+        raise ExBaseUnavailableError(
+            f"upstream comparator unavailable for {benchmark!r}: {exc}"
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise ExBaseUnavailableError(
+            f"loading upstream comparator for {benchmark!r} raised: {exc}"
+        ) from exc
+
+    # Apply upstream cleanup (matches `test_case_default`, NOT raw
+    # `ex_base` — `ex_base` itself does not strip).
+    cleaned_pred = upstream.remove_round(
+        upstream.remove_distinct(
+            upstream.remove_comments(list(pred_sqls))
+        )
+    )
+    cleaned_sol = upstream.remove_round(
+        upstream.remove_distinct(
+            upstream.remove_comments(list(sol_sqls))
+        )
+    )
+
+    needs_rollback = (
+        benchmark in _LIVESQLBENCH_BENCHMARKS and driver == "postgres"
+    )
+    # Upstream's SQLite `perform_query_on_sqlite_databases` runs
+    # `PRAGMA synchronous = OFF` / `journal_mode = WAL` on the conn,
+    # which SQLite rejects when a transaction is open ("Safety level
+    # may not be changed inside a transaction"). Pre-commit any pending
+    # tx so the upstream PRAGMAs land cleanly. No-op for psycopg2 since
+    # the rollback in the finally block reclaims state either way.
+    if driver == "sqlite":
+        try:
+            conn.commit()
+        except Exception:  # noqa: BLE001
+            # Conn may not support .commit() (e.g. some custom DB-API
+            # impl); pressing on is fine, the upstream call will surface
+            # the original failure if any.
+            pass
+    try:
+        try:
+            result = upstream.ex_base(
+                cleaned_pred, cleaned_sol, db_name, conn, conditions,
+            )
+        except Exception:
+            # Re-raise after the finally block runs rollback for
+            # Postgres conns. For SQLite the conn is fresh per task so
+            # there's nothing to roll back.
+            raise
+    finally:
+        if needs_rollback:
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[upstream_ex_base] conn.rollback() failed after "
+                    "compare_pred_vs_gold_ex_base — next caller may see "
+                    "leaked state",
+                    exc_info=True,
+                )
+
+    # Codex round-1 finding #3: legacy deviation from upstream — both
+    # empty preprocessed results = pass.
+    if result == 0 and _both_results_empty(
+        upstream, cleaned_pred, cleaned_sol, db_name, conn,
+    ):
+        return True
+    return bool(result == 1)
+
+
+def _both_results_empty(
+    upstream: ModuleType,
+    pred_sqls: Sequence[str],
+    sol_sqls: Sequence[str],
+    db_name: str,
+    conn,
+) -> bool:
+    """Best-effort check that BOTH sides produced an empty preprocessed
+    result list (the only case where we deviate from upstream).
+
+    ``ex_base`` returns ``0`` for any non-match. We need to disambiguate
+    "both empty → kept as pass" from "real mismatch → fail". Re-run the
+    two pred/gold queries through upstream's execute + preprocess_results
+    and check explicitly.
+    """
+    try:
+        execute_queries = upstream.execute_queries
+        preprocess_results = upstream.preprocess_results
+    except AttributeError:
+        return False
+    try:
+        # The mini-interact and livesqlbench `execute_queries` signatures
+        # accept ``(sqls, db, conn, ...)``; mini-interact has the SQLite
+        # variant ``(sqls, db_path, conn)`` while livesqlbench has
+        # ``(sqls, db_name, conn, None, "")``. Probe both shapes.
+        try:
+            pred_rows, p_err, p_to = execute_queries(
+                pred_sqls, db_name, conn, None, "",
+            )
+        except TypeError:
+            pred_rows, p_err, p_to = execute_queries(pred_sqls, db_name, conn)
+        try:
+            gold_rows, g_err, g_to = execute_queries(
+                sol_sqls, db_name, conn, None, "",
+            )
+        except TypeError:
+            gold_rows, g_err, g_to = execute_queries(sol_sqls, db_name, conn)
+    except Exception:  # noqa: BLE001
+        return False
+    if any([p_err, p_to, g_err, g_to]):
+        return False
+    return (
+        not preprocess_results(pred_rows or [])
+        and not preprocess_results(gold_rows or [])
+    )

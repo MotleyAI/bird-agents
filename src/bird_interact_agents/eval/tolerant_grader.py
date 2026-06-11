@@ -205,6 +205,86 @@ def _set_equal(pred: Sequence[Sequence], gold: Sequence[Sequence]) -> bool:
     )
 
 
+# ---------------------------------------------------------------------------
+# N1 dispatch: upstream `ex_base` for mini-interact + livesqlbench;
+# legacy `_set_equal` everywhere else / on shim failure.
+# ---------------------------------------------------------------------------
+
+# Re-imported into the module namespace (rather than imported lazily inside
+# `_compute_n1`) so tests can monkeypatch
+# `tolerant_grader.compare_pred_vs_gold_ex_base` directly.
+try:
+    from bird_interact_agents.eval.upstream_ex_base import (
+        ExBaseUnavailableError,
+        compare_pred_vs_gold_ex_base,
+        is_mutation_sql,  # noqa: F401  (re-export for callers)
+    )
+except Exception:  # noqa: BLE001  (defensive — module-load failure)
+    class ExBaseUnavailableError(Exception):  # type: ignore[no-redef]
+        pass
+
+    def compare_pred_vs_gold_ex_base(**_kw):  # type: ignore[no-redef]
+        raise ExBaseUnavailableError("upstream_ex_base shim unavailable")
+
+
+_EX_BASE_N1_BENCHMARKS = frozenset({
+    "mini-interact",
+    "livesqlbench-base-lite-sqlite",
+    "livesqlbench-base-lite",
+    "livesqlbench-base-full",
+    "livesqlbench-large",
+})
+
+
+def _compute_n1(
+    *,
+    benchmark: Any,
+    pred_sqls: List[str],
+    sol_sqls: List[str],
+    db_path: Path,
+    conn: Any,
+    pred_rows: Sequence[Sequence],
+    orig_rows: Sequence[Sequence],
+) -> bool:
+    """Compute N1 via upstream ``ex_base`` for supported benchmarks; on
+    any failure (unsupported benchmark, missing upstream tree, missing
+    SQL strings) fall back to the legacy multiset row comparison."""
+    benchmark_name = getattr(benchmark, "name", None) or str(benchmark or "")
+    if (
+        benchmark_name not in _EX_BASE_N1_BENCHMARKS
+        or not pred_sqls
+        or not sol_sqls
+    ):
+        return _set_equal(pred_rows, orig_rows)
+    # If we have no path to a real DB and no caller-supplied conn, the
+    # upstream ``ex_base`` cannot execute. Stay on the legacy path so
+    # stubbed-executor callers (tests, scripted regrades on synthetic
+    # rows) keep producing a verdict.
+    if conn is None:
+        try:
+            if not db_path or not Path(db_path).is_file():
+                return _set_equal(pred_rows, orig_rows)
+        except Exception:  # noqa: BLE001
+            return _set_equal(pred_rows, orig_rows)
+    try:
+        return compare_pred_vs_gold_ex_base(
+            benchmark=benchmark_name,
+            pred_sqls=pred_sqls,
+            sol_sqls=sol_sqls,
+            db_name=str(db_path),
+            conn=conn,
+            conditions=None,
+        )
+    except ExBaseUnavailableError:
+        return _set_equal(pred_rows, orig_rows)
+    except Exception:  # noqa: BLE001  (defensive — never crash grading)
+        logger.exception(
+            "[N1 dispatch] compare_pred_vs_gold_ex_base raised; "
+            "falling back to legacy _set_equal"
+        )
+        return _set_equal(pred_rows, orig_rows)
+
+
 def _canonical_repr(row: Sequence) -> str:
     """Stable string repr for a row so heterogeneous tuples sort."""
     return "|".join(repr(c) for c in row)
@@ -922,7 +1002,15 @@ def grade_submission(
     if not original_sol_sql or not original_sql_executed_ok:
         n1 = False
     else:
-        n1 = _set_equal(pred_rows, orig_rows)
+        n1 = _compute_n1(
+            benchmark=benchmark,
+            pred_sqls=[submitted_sql] if submitted_sql else [],
+            sol_sqls=list(original_sol_sql),
+            db_path=db_path,
+            conn=conn,
+            pred_rows=pred_rows,
+            orig_rows=orig_rows,
+        )
 
     # 3) N2/N3 — audited primary / any variant strict.
     primary = next(
