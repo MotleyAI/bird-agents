@@ -30,6 +30,7 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
     _SLAYER_SQL_ARTIFACT_CHECK,
+    _SLAYER_TOOLS_BLOCK as _ENCODE_CORE_HEAD,
     _TABLE_SET_PROBE,
 )
 
@@ -53,33 +54,6 @@ You MUST call `submit_query` to finish — a prose answer is not a
 submission. If a `filters` predicate needs a computed value, encode it as
 a named column first and filter on the name; raw SQL expressions are
 rejected in `filters`."""
-
-_ENCODE_CORE_HEAD = """\
-The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
-knowledge-base (KB) item, with ids like `{db_name}_kb_<n>` whose body
-starts `KB <n> —`. The base tables are already ingested as SLayer models,
-but NOTHING is encoded yet: you encode exactly what THIS question needs,
-on the fly.
-
-SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
-query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
-the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-`search` to find relevant memories and existing entities; `inspect_model`
-to see a model's columns / measures / joins; `create_model` / `edit_model`
-to add columns and measures; `query` / `query_nested` to test.
-
-READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — `search` with `entities=[
-"<db>.<model>.<col>"]`, `datasource="<db>"`, `max_results=10`. The
-returned `SearchHit(kind="entity").text` carries `Description:` and
-`Sample values:` inline (skim past any interleaved memory hits to
-the entity hits). The truncated `Sample values:` line is your
-authoritative source of which literal forms actually occur in this
-column — case variants, whitespace forms, abbreviations, alternate
-phrasings of the same concept. Use it BEFORE writing any IN-set
-(see rule 3 below).
-
-ENCODE-THEN-QUERY DISCIPLINE:"""
 
 _ENCODE_CORE_TAIL = """\
 2. For each block, `search` for the relevant KB memory and any entity

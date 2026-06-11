@@ -20,12 +20,19 @@ Exit 0 only when every KB id for the DB is in **exactly one** of:
 An id appearing in neither set, or in both, fails the check.
 
 The documented-set check searches via ``SearchService`` (BM25 + tantivy
-+ optional dense embeddings) per KB id. DEV-1546: slayer 0.7.2 collapsed
-the per-kind caps into a single ``max_results`` on the RRF-fused unified
-``results`` list, so the call over-fetches (``max_results=MAX_MEMORIES_PER_KB
-* 3``) and then filters to ``kind == "memory"`` to keep ``MAX_MEMORIES_PER_KB``
-memory hits as the post-filter ceiling. The per-DB corpus is expected to
-stay well under that ceiling; if a DB's memory corpus ever grows past a few
++ optional dense embeddings) per KB id. DEV-1546 (slayer 0.7.2)
+collapsed the per-kind caps into a single ``max_results`` on the
+RRF-fused unified ``results`` list; DEV-1549 (slayer 0.7.3) added the
+``compact`` flag and the ``cypher_filter`` kind-pin. We use
+``cypher_filter='MATCH (n:Memory) RETURN n.id AS id'`` so the unified
+``max_results=MAX_MEMORIES_PER_KB`` cap is genuinely a per-kb memory
+cap (without the filter, entity hits ranked higher than memories crowd
+real memories out and the verifier falsely reports documented KBs as
+unaccounted), and ``compact=False`` so ``hit.text`` carries the full
+``learning`` body the ``KB_MEMORY_HEAD_RE`` regex parses (compact mode
+returns the empty string in ``text`` and surfaces only the one-line
+``description``). The per-DB corpus is expected to stay well under
+``MAX_MEMORIES_PER_KB``; if a DB's memory corpus ever grows past a few
 hundred, bump ``MAX_MEMORIES_PER_KB`` or fall back to reading
 ``slayer_models/<db>/memories.yaml`` directly.
 """
@@ -146,17 +153,24 @@ async def load_documented_ids(
     db_prefix = f"{db}."
     for kb_id in kb_ids:
         question = f"KB {kb_id} — {knowledge.get(kb_id, '')}"
-        # DEV-1546: slayer 0.7.2 unified the three per-kind buckets
-        # (memories / example_queries / entities) into a single
-        # ``results`` list (RRF-fused, capped at ``max_results``).
-        # We over-fetch a little so memory hits aren't crowded out
-        # by interleaved entity hits, then filter to ``kind == "memory"``.
+        # SLayer 0.7.3 (DEV-1549) collapsed the per-kind `max_*` caps into a
+        # single `max_results` and made compact-mode the default. We pass
+        # `compact=False` so `hit.text` carries the full ``learning`` body
+        # the regex below parses, and `cypher_filter='MATCH (n:Memory)
+        # RETURN n.id AS id'` so the unified cap is a memory-only cap (the
+        # filter is load-bearing: without it, the cap is RRF-fused across
+        # kinds and entity hits can crowd memories out, falsely reporting
+        # documented KBs as unaccounted). The `kind == "memory"` filter
+        # below is defence in depth.
         response = await service.search(
             question=question,
-            max_results=MAX_MEMORIES_PER_KB * 3,
+            max_results=MAX_MEMORIES_PER_KB,
+            compact=False,
+            cypher_filter="MATCH (n:Memory) RETURN n.id AS id",
         )
-        memory_hits = [h for h in response.results if h.kind == "memory"]
-        for hit in memory_hits[:MAX_MEMORIES_PER_KB]:
+        for hit in response.results:
+            if hit.kind != "memory":
+                continue
             head = _first_nonblank_line(hit.text)
             m = KB_MEMORY_HEAD_RE.match(head)
             if not m or int(m.group(1)) != kb_id:

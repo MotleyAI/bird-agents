@@ -148,15 +148,16 @@ async def test_created_at_preserved_across_annotation(tmp_path):
 
 
 async def test_annotation_fires_embedding_hook_when_available(tmp_path, monkeypatch):
-    """When embeddings ARE available, re-saving the memory via the service
-    must fire the embedding refresh hook (so `embeddings.db` populates as a
-    side effect of the write — no explicit refresh pass). We spy on the
-    embedding retriever so no real OpenAI call is made.
+    """When embeddings ARE available, re-saving the memory must fan through
+    SLayer's write-side upsert hook (so ``embeddings.db`` populates as a
+    side effect of the write — no explicit refresh pass). We spy on
+    ``SearchService.upsert_memory`` so no real OpenAI call is made.
 
-    DEV-1546: slayer 0.7.2 removed ``slayer.embeddings.service``; the
-    per-memory refresh hook now lives on
-    ``slayer.search.retrievers.embeddings.EmbeddingRetriever.upsert_memory``.
-    """
+    DEV-1546 / DEV-1550 moved this hook from the (now-removed)
+    ``slayer.embeddings.service.EmbeddingService.refresh_memory`` to
+    ``slayer.search.service.SearchService.upsert_memory`` (the higher-
+    level fan-out hook that ``MemoryService.save_memory`` uses internally)
+    to match the SLayer 0.7.3 consolidation."""
     from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
         EncoderResult,
     )
@@ -164,7 +165,7 @@ async def test_annotation_fires_embedding_hook_when_available(tmp_path, monkeypa
         _annotate_memories,
     )
     from slayer.embeddings import client as emb_client
-    from slayer.search.retrievers import embeddings as emb_retrievers
+    from slayer.search.service import SearchService
 
     monkeypatch.setattr(emb_client, "is_available", lambda: True)
 
@@ -175,7 +176,7 @@ async def test_annotation_fires_embedding_hook_when_available(tmp_path, monkeypa
         return []
 
     monkeypatch.setattr(
-        emb_retrievers.EmbeddingRetriever, "upsert_memory", fake_upsert_memory,
+        SearchService, "upsert_memory", fake_upsert_memory,
     )
 
     rows = [_kb(31)]
@@ -186,7 +187,7 @@ async def test_annotation_fires_embedding_hook_when_available(tmp_path, monkeypa
                                      notes="amb", clarifying_questions=["q"])],
         kb_rows=rows,
     )
-    assert f"{DB}_kb_31" in calls, "annotation must go through the embedding hook"
+    assert f"{DB}_kb_31" in calls, "annotation must go through the upsert hook"
 
 
 async def test_concrete_entity_ref_only_on_its_own_memory(tmp_path):
@@ -220,3 +221,41 @@ async def test_concrete_entity_ref_only_on_its_own_memory(tmp_path):
     other = await storage.get_memory(f"{DB}_kb_22")
     assert ref in own.entities
     assert ref not in other.entities, "ref must not leak onto a sibling memory"
+
+
+async def test_annotate_memories_preserves_description(tmp_path):
+    """DEV-1550 A2.2 regression gate: ``_annotate_memories`` re-saves the
+    memory through ``storage.save_memory(...)`` whose ``description`` kwarg
+    defaults to ``None``. If the re-save doesn't explicitly forward
+    ``mem.description``, the field A2.1 just populated gets clobbered and
+    the compact renderer falls back to first-paragraph-of-``learning`` on
+    every annotated memory — defeating the whole point of the upgrade.
+    """
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+        EncoderResult,
+    )
+    from bird_interact_agents.slayer_otf.reference_build import (
+        _annotate_memories,
+    )
+
+    probe = "probe-marker-description-summary"
+    rows = [_kb(41, knowledge="K", description=probe)]
+    storage = await _seed(tmp_path, rows)
+
+    before = await storage.get_memory(f"{DB}_kb_41")
+    assert before.description == probe, (
+        "precondition: A2.1 plumbing must already populate description"
+    )
+
+    await _annotate_memories(
+        storage=storage, db=DB,
+        setup_results=[EncoderResult(kb_id=41, status="deferred", entities=[],
+                                     notes="x", clarifying_questions=["q"])],
+        kb_rows=rows,
+    )
+
+    after = await storage.get_memory(f"{DB}_kb_41")
+    assert after.description == probe, (
+        "_annotate_memories must forward description=mem.description to "
+        "storage.save_memory; otherwise the compact-mode summary is lost."
+    )

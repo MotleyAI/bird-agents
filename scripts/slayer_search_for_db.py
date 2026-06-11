@@ -14,15 +14,16 @@ SearchResponse shape but scoped to a single DB.
 Usage:
     python scripts/slayer_search_for_db.py --db households \\
         --question "weighted score combining domestic help and social assistance" \\
-        [--max-results 12]
+        [--max-results 12] [--compact / --no-compact]
 
 Prints the SearchResponse as JSON to stdout. Exits 0 on success, 1 if
 the per-DB storage directory does not exist or the search fails.
 
-DEV-1546: slayer 0.7.2 collapsed the previous per-kind caps
+DEV-1546 / DEV-1549: SLayer 0.7.2 collapsed the previous per-kind caps
 (``--max-memories`` / ``--max-example-queries`` / ``--max-entities``)
 into a single ``--max-results`` cap on the RRF-fused
-``SearchResponse.results`` list.
+``SearchResponse.results`` list. SLayer 0.7.3 added the ``compact``
+flag, surfaced here as ``--compact`` / ``--no-compact``.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ async def _search(
     question: str,
     slayer_models_dir: Path,
     max_results: int,
+    compact: bool,
 ) -> dict:
     """DEV-1546: slayer 0.7.2 collapsed the per-kind ``max_memories`` /
     ``max_example_queries`` / ``max_entities`` caps into a single
@@ -62,6 +64,7 @@ async def _search(
     response = await service.search(
         question=question,
         max_results=max_results,
+        compact=compact,
     )
     return response.model_dump(mode="json")
 
@@ -95,6 +98,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "sum of the pre-1546 defaults (5 + 2 + 5)."
         ),
     )
+    compact_group = p.add_mutually_exclusive_group()
+    compact_group.add_argument(
+        "--compact", dest="compact", action="store_true", default=True,
+        help="Compact mode (default): one-line `description` per hit.",
+    )
+    compact_group.add_argument(
+        "--no-compact", dest="compact", action="store_false",
+        help="Return the full `text` body on every hit (verbose).",
+    )
     return p
 
 
@@ -107,6 +119,7 @@ def main() -> int:
                 question=args.question,
                 slayer_models_dir=Path(args.slayer_models_dir).expanduser().resolve(),
                 max_results=args.max_results,
+                compact=args.compact,
             )
         )
     except FileNotFoundError as e:

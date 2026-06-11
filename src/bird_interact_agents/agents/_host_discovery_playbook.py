@@ -46,25 +46,35 @@ HOW TO READ COLUMN DESCRIPTIONS via SLayer MCP:
 
         search(
             entities=["<db>.<model>.<col>", ...],
+            max_results=<len(entities)>,
+            compact=False,
+            cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id',
             datasource="<db>",
-            max_results=10,
         )
 
-    Returns a unified ranked list of `SearchHit(kind, id, score, text,
-    matched_entities, query)`. The entity hits (`kind == "entity"`)
-    each carry a multi-line `text` block — `Column: <ds>.<model>.<col>
-    / Type: <type> / Description: <intent text> / Sample values: ...`.
-    Memory hits whose tagged entities overlap your inputs are
-    interleaved (Reciprocal Rank Fusion); skim past them to the entity
-    hits when you only want the schema-author intent text.
+    Each named entity surfaces as a `SearchHit(id, kind, score, text,
+    description, ...)` with `kind == "column"` here. With `compact=False`
+    the `text` field carries a multi-line block — `Column:
+    <ds>.<model>.<col> / Type: <type> / Description: <intent text> /
+    Sample values: ...`. The default `compact=True` only fills
+    `description` (one-line) and leaves `text` empty. The
+    `cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'` constraint
+    is load-bearing: without it, the unified `max_results` cap is
+    RRF-fused across kinds, so a memory tagged to the column can outrank
+    the column itself and consume the cap before all requested column
+    hits surface. Use the `ModelColumn` label (not `Column`) because
+    `Column` is a reserved keyword in LadybugDB ≥0.15 — `ModelColumn`
+    works on both the naive fallback and the graph-backed advanced path.
   * Whole-model bulk read (every column at once): `inspect_model(<model>,
     sections=["columns"], data_source="<db>")` — Column.name + .type +
     .description for every column. Use when scanning a model end-to-end.
   * Discover columns whose descriptions match a phrase:
-    `search(question="<one-sentence paraphrase>", datasource="<db>",
-    max_results=10)`. The tantivy + dense-embedding channels rank all
-    column / model / measure descriptions and return entity hits with
-    `text`.
+    `search(question="<one-sentence paraphrase>", max_results=10,
+    datasource="<db>", cypher_filter='MATCH (n:ModelColumn:Measure:Aggregation:Model) RETURN n.id AS id')`.
+    The cypher filter pins the result list to entity hits (multi-label
+    is union semantics); the tantivy + dense-embedding channels then
+    rank all column / model / measure descriptions and return a unified
+    `results` list of entity hits.
 
 HOW TO FIND CANDIDATE HOSTS for a target table T (the table whose
 columns the KB references):
@@ -103,9 +113,13 @@ DECISION ORDER:
   every step and silently multiply rows even when structurally valid.
 
   TIE-BREAKER 2 (KB body re-read). If still tied, re-read the KB body
-  via `search(question="<KB definition>", datasource="<db>")` — KB
-  definitions occasionally include parenthetical hints ("per entity",
-  "per inspection") that pin the grain.
+  via `search(question="<KB definition>", datasource="<db>",
+  max_results=3, compact=False,
+  cypher_filter='MATCH (n:Memory) RETURN n.id AS id')` — KB definitions
+  occasionally include parenthetical hints ("per entity", "per
+  inspection") that pin the grain. The `compact=False` + `:Memory`
+  filter is required: compact-mode hits carry only the one-line
+  `description`, not the full `learning` body.
 
   LAST RESORT (deterministic). If still ambiguous, pick the candidate
   whose model name sorts FIRST lexicographically and record the choice
@@ -127,10 +141,10 @@ Description read (PRIMARY):
   search(
     entities=["demo.asset_inspections.sensor_read_ref",
               "demo.maintenance_log.sensor_read_ref"],
-    datasource="demo", max_results=10,
+    max_results=2, compact=False, datasource="demo",
+    cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id',
   )
-returns SearchHit.text excerpts (filter the unified list to
-`kind == "entity"` for the schema-author intent text):
+returns `SearchHit.text` excerpts:
   * `asset_inspections.sensor_read_ref` — "Associates the inspection
     with the relevant sensor reading."
   * `maintenance_log.sensor_read_ref` — "Associates maintenance data

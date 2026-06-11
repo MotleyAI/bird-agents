@@ -22,16 +22,29 @@ import pytest
 # Hashes were captured from the pre-refactoring source.
 # ---------------------------------------------------------------------------
 
-# Hashes re-baselined for the DEV-1545 + DEV-1546 merge: DEV-1545 added
-# `_TABLE_SET_PROBE` (one-shot + a-interact) and
-# `_GRADER_ZERO_VS_ONE_DIAGNOSTIC` (a-interact only); DEV-1546 added
-# `_DEDUP_VS_RAW_ROWS` (both flavours) and rewrote
-# `_SLAYER_SQL_ARTIFACT_CHECK` item-1 (primary fix is now
-# `distinct_dimension_values: false`). The snapshot's purpose stays the
-# same — catch ACCIDENTAL prompt drift on later refactors; deliberate
-# prompt changes re-baseline here.
-_ONE_SHOT_SHA256 = "b547d29d114235f5e34ecf22cd3ed8257798c982e7d07e22dbf3ccfb211eee8d"
-_AINTERACT_SHA256 = "f7373b97672e4ee2caf186cda9ec204197bc361eb1e25c968afbefd0fc8e95e7"
+# Hashes re-baselined for the DEV-1545 + DEV-1546 + DEV-1550 merge:
+#   * DEV-1545 added `_TABLE_SET_PROBE` (one-shot + a-interact) and
+#     `_GRADER_ZERO_VS_ONE_DIAGNOSTIC` (a-interact only).
+#   * DEV-1546 added `_DEDUP_VS_RAW_ROWS` (both flavours), rewrote
+#     `_SLAYER_SQL_ARTIFACT_CHECK` item-1 (primary fix is now
+#     `distinct_dimension_values: false`), and migrated the per-kind
+#     search kwargs to `max_results` + the unified `results` list.
+#   * DEV-1550 added the new "READ A KNOWN MEMORY'S FULL BODY" drill-in
+#     paragraph documenting the compact-mode opt-out
+#     (`search(entities=["memory:<id>"], max_results=1, compact=False,
+#     cypher_filter='MATCH (n:Memory) RETURN n.id AS id')`), inserted as
+#     a sibling between the existing column-drill-in paragraph and the
+#     `ENCODE-THEN-QUERY DISCIPLINE:` header in the new shared
+#     `_SLAYER_TOOLS_BLOCK` (extracted from the previously byte-identical
+#     `_AINTERACT_SLAYER_TOOLS` / `_ENCODE_CORE_HEAD`). DEV-1550 also
+#     adds the `:Column` / `:Memory` cypher kind filter to all
+#     known-entity drill-in patterns in the prompts + the host-discovery
+#     playbook (`_HOST_DISCOVERY_PLAYBOOK`).
+#
+# The snapshot's purpose stays the same: catch ACCIDENTAL prompt drift
+# on later refactors; deliberate prompt changes re-baseline here.
+_ONE_SHOT_SHA256 = "2ef7a1fc6abacc9a8e8efc52701a74ddc6559793be2fad52421c1c50bbe7d6ef"
+_AINTERACT_SHA256 = "b35e3e5454bb37b2028515c917100d12d5d35ce3e0fed82abbabf6c5970a8708"
 
 
 def test_slayer_otf_one_shot_unchanged():
@@ -292,6 +305,32 @@ def test_pre_submit_ainteract_in_slayer_ainteract():
         submit_tool="submit_query", clause_c="encoded KB",
     )
     assert rendered in SLAYER_OTF_AINTERACT
+
+
+# ---------------------------------------------------------------------------
+# DEV-1550 A3: shared `_SLAYER_TOOLS_BLOCK` lives in `_shared_otf_prompts`
+# and appears verbatim in both slayer prompts.
+# ---------------------------------------------------------------------------
+
+
+def test_slayer_tools_block_in_slayer_one_shot():
+    """The extracted `_SLAYER_TOOLS_BLOCK` is the source of truth shared
+    between the ainteract and one-shot SLayer prompts. Mechanical
+    containment: not a prompt-content behaviour test (no anchor-phrase
+    grep) — consistent with `feedback_no_prompt_content_tests`."""
+    from bird_interact_agents.agents._shared_otf_prompts import _SLAYER_TOOLS_BLOCK
+    from bird_interact_agents.agents.claude_sdk_otf.prompts import SLAYER_OTF_ONE_SHOT
+
+    assert _SLAYER_TOOLS_BLOCK in SLAYER_OTF_ONE_SHOT
+
+
+def test_slayer_tools_block_in_slayer_ainteract():
+    from bird_interact_agents.agents._shared_otf_prompts import _SLAYER_TOOLS_BLOCK
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
+        SLAYER_OTF_AINTERACT,
+    )
+
+    assert _SLAYER_TOOLS_BLOCK in SLAYER_OTF_AINTERACT
 
 
 # ---------------------------------------------------------------------------

@@ -126,6 +126,7 @@ def _build_one(
         "version": 1,
         "id": f"{db}_kb_{kb_id}",
         "learning": learning,
+        "description": row.get("description", ""),
         "entities": entities,
         "query": None,
         "created_at": EPOCH,

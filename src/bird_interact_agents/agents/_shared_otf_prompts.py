@@ -6,10 +6,12 @@ aligned wherever SLayer is not involved.
 
 Constraint: after the SLayer prompt files are refactored to import from
 here, the rendered values of SLAYER_OTF_ONE_SHOT and SLAYER_OTF_AINTERACT
-must remain byte-for-byte identical. SHA-256 snapshot tests in
-tests/test_shared_otf_prompts.py enforce this.
+must remain byte-for-byte identical except for deliberate prompt-content
+changes that bump the SHA-256 snapshot constants in
+tests/test_shared_otf_prompts.py.
 
 Format param conventions:
+  {db_name}           — datasource id, surfaced inside the SLayer-tools block
   {sources_desc}      — phrase describing the knowledge sources available
   {action_label}      — upper-case verb for Rule 0 heading ("ENCODE"/"SUBMIT")
   {action_context}    — Rule 0 first sentence opener
@@ -303,3 +305,65 @@ If your task does not involve a ranking / window, skip (b). After
 the answer, encode the implied filter / pre-classified column /
 window scope and resubmit. The point is to flip a single structural
 bit, not to keep submitting near-identical queries."""
+
+
+# DEV-1550 A3: shared "SLAYER TOOLS" block — extracted byte-for-byte
+# from the previously-duplicated `_AINTERACT_SLAYER_TOOLS` /
+# `_ENCODE_CORE_HEAD` (verified identical at extraction time), with
+# the new "READ A KNOWN MEMORY'S FULL BODY" drill-in paragraph
+# inserted as a sibling between the existing column-drill-in
+# paragraph and the `ENCODE-THEN-QUERY DISCIPLINE:` header. The
+# memory-drill-in nudge documents the compact-mode opt-out introduced
+# by SLayer 0.7.3 (DEV-1549): `search` now defaults to `compact=True`
+# and renders one-line `description` summaries; agents need
+# `compact=False` (plus a tight `max_results=1`) to get the full
+# `learning` body for a memory id they've already identified.
+#
+# SLayer 0.7.3 also collapsed the per-kind caps (`max_memories`,
+# `max_entities`, `max_example_queries`) into a single `max_results`,
+# so the column-drill-in pattern below also migrated to the new
+# kwargs at the same time.
+#
+# Format params: {db_name}
+_SLAYER_TOOLS_BLOCK = """\
+The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
+knowledge-base (KB) item, with ids like `{db_name}_kb_<n>` whose body
+starts `KB <n> —`. The base tables are already ingested as SLayer models,
+but NOTHING is encoded yet: you encode exactly what THIS question needs,
+on the fly.
+
+SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
+query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
+the `source_model` / `dimensions` / `measures` / `filters` schema. Use
+`search` to find relevant memories and existing entities; `inspect_model`
+to see a model's columns / measures / joins; `create_model` / `edit_model`
+to add columns and measures; `query` / `query_nested` to test.
+
+READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
+filter, projection, or join key — `search` with `entities=[
+"<db>.<model>.<col>"]`, `max_results=1`, `compact=False`,
+`cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'`. The kind
+filter is load-bearing: without it, the unified `max_results` cap is
+RRF-fused across kinds and a memory tagged to that column can outrank
+the column itself, returning prose instead of the schema-author
+description. Use the `ModelColumn` label (not `Column`) because
+`Column` is a reserved keyword in LadybugDB ≥0.15 and only matches on
+the naive fallback path; `ModelColumn` works on both naive and graph-
+backed installs. The returned hit's `text` carries `Description:` and
+`Sample values:` inline.
+The truncated `Sample values:` line is your authoritative source of
+which literal forms actually occur in this column — case variants,
+whitespace forms, abbreviations, alternate phrasings of the same
+concept. Use it BEFORE writing any IN-set (see rule 3 below).
+
+READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
+a memory id you've already identified — `search` with `entities=[
+"memory:<id>"]`, `max_results=1`, `compact=False`,
+`cypher_filter='MATCH (n:Memory) RETURN n.id AS id'`. By default `search`
+is compact (one-line `description` summary per hit); `compact=False`
+returns the full `learning` body. The `:Memory` kind filter pins the
+result to the memory you asked for — without it, a parent memory whose
+entities cross-reference `memory:<id>` can occupy the single slot
+instead of the memory you want.
+
+ENCODE-THEN-QUERY DISCIPLINE:"""

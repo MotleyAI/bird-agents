@@ -528,9 +528,10 @@ async def _materialise_cache_memories(
 
     if not _embeddings_available():
         # Channel disabled (no extra installed, or no API key for the
-        # active embedding model). Matches EmbeddingService's own
-        # write-side semantics — silently skip, search still works via
-        # tantivy.
+        # active embedding model). Matches SLayer's write-side semantics
+        # (SearchService.upsert_memory short-circuits the embedding
+        # retriever when the client is unavailable) — silently skip,
+        # search still works via tantivy.
         return
 
     model_name = _embedding_current_model()

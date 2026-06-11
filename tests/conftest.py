@@ -248,8 +248,9 @@ def _disable_real_embeddings(monkeypatch):
     keeping the suite offline and deterministic (the no-real-APIs rule).
 
     Tests that specifically exercise the embedding hook re-enable it locally
-    (monkeypatch ``is_available`` True) AND stub ``EmbeddingService`` so they
-    still never hit the wire.
+    (monkeypatch ``is_available`` True) AND stub ``SearchService.upsert_memory``
+    (SLayer 0.7.3+; the legacy ``EmbeddingService.refresh_memory`` path was
+    removed) so they still never hit the wire.
     """
     try:
         from slayer.embeddings import client as _emb_client
