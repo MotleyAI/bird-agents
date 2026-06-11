@@ -342,11 +342,15 @@ to add columns and measures; `query` / `query_nested` to test.
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `search` with `entities=[
 "<db>.<model>.<col>"]`, `max_results=1`, `compact=False`,
-`cypher_filter='MATCH (n:Column) RETURN n.id AS id'`. The kind filter is
-load-bearing: without it, the unified `max_results` cap is RRF-fused
-across kinds and a memory tagged to that column can outrank the column
-itself, returning prose instead of the schema-author description. The
-returned hit's `text` carries `Description:` and `Sample values:` inline.
+`cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'`. The kind
+filter is load-bearing: without it, the unified `max_results` cap is
+RRF-fused across kinds and a memory tagged to that column can outrank
+the column itself, returning prose instead of the schema-author
+description. Use the `ModelColumn` label (not `Column`) because
+`Column` is a reserved keyword in LadybugDB ≥0.15 and only matches on
+the naive fallback path; `ModelColumn` works on both naive and graph-
+backed installs. The returned hit's `text` carries `Description:` and
+`Sample values:` inline.
 The truncated `Sample values:` line is your authoritative source of
 which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same
