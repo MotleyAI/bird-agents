@@ -157,6 +157,24 @@ def run_submission(args: argparse.Namespace) -> int:
     # ---- Resolve sources (errors out on missing/stub trajectories)
     sources = resolve_sources(selection=selection, benchmark=benchmark)
 
+    # ---- Setting gate: a-Interact only (per DEV-1553 spec). The mode
+    # comes from the source run's task_results row; any non-a-interact
+    # row indicates the operator pointed the converter at a c-interact /
+    # one-shot / oracle run by mistake. Listing every offender is more
+    # useful than a single error.
+    wrong_mode = sorted(
+        f"{iid}({src.mode!r})"
+        for iid, src in sources.items()
+        if src.mode and src.mode != "a-interact"
+    )
+    if wrong_mode:
+        sys.stderr.write(
+            "error: a-Interact submission report requires "
+            f"mode='a-interact' on every selected instance; got "
+            f"{', '.join(wrong_mode)}\n"
+        )
+        raise SystemExit(2)
+
     # ---- Coverage check ------------------------------------------
     try:
         _coverage.assert_coverage_ok(
@@ -193,7 +211,7 @@ def run_submission(args: argparse.Namespace) -> int:
         )
 
         task_data = _budget.lookup_task_data(benchmark, inst_id)
-        row = build_submission_row(
+        row, converter_warnings = build_submission_row(
             trajectory_obj=src.trajectory_obj,
             framework=src.framework,
             agent_model=src.agent_model,
@@ -201,6 +219,7 @@ def run_submission(args: argparse.Namespace) -> int:
             task_data=task_data,
             patience=patience,
             include_thinking=args.include_thinking,
+            query_mode=src.query_mode or "slayer",
         )
         rows.append(row)
 
@@ -219,9 +238,10 @@ def run_submission(args: argparse.Namespace) -> int:
             }
         )
 
-        # Cross-check warning vs results.db.submitted_sql (last submit only).
+        # Cross-check warning vs results.db.submitted_sql (last submit only)
+        # PLUS converter warnings (phase-split: missing/inconsistent markers).
         db_sql = src.task_results_row.get("submitted_sql") or ""
-        warns = cross_check_results_db_sql(
+        warns = list(converter_warnings) + cross_check_results_db_sql(
             row=row, results_db_submitted_sql=db_sql
         )
         if warns:

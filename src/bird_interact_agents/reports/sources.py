@@ -39,6 +39,10 @@ class InstanceSource:
     user_sim_model: str
     trajectory_obj: dict
     task_results_row: dict
+    # Per-row (framework can also be in run_metadata but query_mode + mode
+    # are per-task; we use the task_results values as authoritative).
+    mode: str
+    query_mode: str
 
 
 def _read_results_db(results_db_path: Path, run_id: str) -> tuple[dict, dict[str, dict]]:
@@ -138,6 +142,7 @@ def resolve_sources(
                 stub_traj.append((inst_id, run_id, traj_path))
                 continue
 
+            task_row = task_rows_by_inst.get(inst_id, {})
             sources[inst_id] = InstanceSource(
                 instance_id=inst_id,
                 run_id=run_id,
@@ -148,7 +153,9 @@ def resolve_sources(
                 agent_model=str(meta.get("agent_model") or ""),
                 user_sim_model=str(meta.get("user_sim_model") or ""),
                 trajectory_obj=traj_obj,
-                task_results_row=task_rows_by_inst.get(inst_id, {}),
+                task_results_row=task_row,
+                mode=str(task_row.get("mode") or meta.get("mode") or ""),
+                query_mode=str(task_row.get("query_mode") or ""),
             )
 
     if missing_traj:

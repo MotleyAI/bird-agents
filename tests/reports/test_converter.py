@@ -21,11 +21,25 @@ from tests.reports._fixtures import (
 
 
 def _convert(traj_obj, *, task_data=None, patience=3, include_thinking=True):
+    """Test helper — discards the warnings list (a few tests below assert
+    on it explicitly via ``_convert_with_warnings``)."""
+    row, _ = _convert_with_warnings(
+        traj_obj,
+        task_data=task_data,
+        patience=patience,
+        include_thinking=include_thinking,
+    )
+    return row
+
+
+def _convert_with_warnings(
+    traj_obj, *, task_data=None, patience=3, include_thinking=True
+):
     from bird_interact_agents.reports.converter import build_submission_row
 
     return build_submission_row(
         trajectory_obj=traj_obj,
-        framework="claude_sdk_otf",
+        framework="claude_sdk",
         agent_model="anthropic/claude-opus-4-7",
         user_sim_model="anthropic/claude-sonnet-4-6",
         task_data=task_data or {"user_query_ambiguity": {}, "knowledge_ambiguity": []},
@@ -173,9 +187,9 @@ def test_include_thinking_default_is_true(fake_count_tokens):
     # No include_thinking kwarg — must default to True per spec.
     from bird_interact_agents.reports.converter import build_submission_row
 
-    row = build_submission_row(
+    row, _warnings = build_submission_row(
         trajectory_obj=_traj_with_thinking(),
-        framework="claude_sdk_otf",
+        framework="claude_sdk",
         agent_model="anthropic/claude-opus-4-7",
         user_sim_model="anthropic/claude-sonnet-4-6",
         task_data={"user_query_ambiguity": {}, "knowledge_ambiguity": []},

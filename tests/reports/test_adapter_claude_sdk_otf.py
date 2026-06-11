@@ -227,13 +227,26 @@ def test_walk_response_raw_preserves_thinking_and_tool_use():
 # ---------------------------------------------------------------------------
 
 
-def test_adapter_registry_covers_slayer_mode_claude_sdk_otf_family():
-    """Slayer-mode ``claude_sdk_otf`` / ``claude_sdk_otf_ainteract``
-    share the dict-shape SDK trajectory and one walker."""
+def test_adapter_registry_accepts_real_cloud_metadata():
+    """Real cloud runs persist ``framework='claude_sdk'`` (the CLI flag),
+    not the internal class name. The adapter must resolve that combo."""
     from bird_interact_agents.reports.adapters import get_adapter
 
-    family = ("claude_sdk_otf", "claude_sdk_otf_ainteract")
-    adapters = [get_adapter(f) for f in family]
+    walker = get_adapter("claude_sdk", query_mode="slayer")
+    assert callable(walker)
+
+
+def test_adapter_registry_covers_slayer_mode_internal_names():
+    """Forward-compat: internal agent names also resolve (in case a future
+    run_metadata schema promotes them to persisted fields)."""
+    from bird_interact_agents.reports.adapters import get_adapter
+
+    family = (
+        "claude_sdk",
+        "claude_sdk_otf",
+        "claude_sdk_otf_ainteract",
+    )
+    adapters = [get_adapter(f, query_mode="slayer") for f in family]
     assert all(a is adapters[0] for a in adapters)
 
 
@@ -243,11 +256,11 @@ def test_adapter_registry_unknown_framework_errors():
     from bird_interact_agents.reports.adapters import get_adapter
 
     with pytest.raises((KeyError, ValueError)):
-        get_adapter("pydantic_ai")
+        get_adapter("pydantic_ai", query_mode="slayer")
 
 
-def test_adapter_registry_rejects_raw_variants():
-    """Raw-mode ``_raw`` agents persist trajectory `data` as a Python
+def test_adapter_registry_rejects_raw_query_mode():
+    """``query_mode='raw'`` runs persist trajectory `data` as a Python
     repr STRING, not a dict — the SLayer walker would crash. Until a
     string-repr parser lands the lookup must error clearly so the
     failure surfaces at source-resolution time (not mid-walk with a
@@ -256,6 +269,5 @@ def test_adapter_registry_rejects_raw_variants():
 
     from bird_interact_agents.reports.adapters import get_adapter
 
-    for fw in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
-        with pytest.raises((KeyError, ValueError)):
-            get_adapter(fw)
+    with pytest.raises((KeyError, ValueError)):
+        get_adapter("claude_sdk", query_mode="raw")

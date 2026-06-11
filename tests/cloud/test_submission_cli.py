@@ -573,6 +573,137 @@ def test_submission_check_leakage_flag_writes_manifest_counts(
     assert gold in leaky_row["prompt_flow"][0]["prompt"]
 
 
+def test_submission_aborts_on_non_a_interact_run(
+    tmp_path: Path, monkeypatch
+):
+    """Per the DEV-1553 spec, the submission generator is a-Interact-only.
+    A run staged with mode='one-shot' must abort with SystemExit and a
+    clear stderr listing the offenders."""
+    from bird_interact_agents import paths
+    from bird_interact_agents.cloud.cli import main
+
+    runs_root, results_root = stage_run(
+        tmp_path,
+        benchmark="bird-interact-lite-exp",
+        run_id="run-xyz",
+        mode="one-shot",  # <-- not a-interact
+        instances=[
+            ("alien", "alien_1", trajectory_one_phase_pass(instance_id="alien_1")),
+        ],
+    )
+    monkeypatch.setattr(paths, "runs_root", lambda: runs_root)
+    monkeypatch.setattr(paths, "results_root", lambda: results_root)
+    monkeypatch.setattr(paths, "reports_root", lambda: tmp_path / "reports")
+    _stub_split(monkeypatch, {"alien_1"})
+    _stub_fake_tokenizer(monkeypatch)
+    monkeypatch.setattr(
+        "bird_interact_agents.reports.budget.lookup_task_data",
+        lambda benchmark, instance_id: {
+            "user_query_ambiguity": {},
+            "knowledge_ambiguity": [],
+        },
+    )
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "submission",
+                "--team-name",
+                "Motley",
+                "--method-name",
+                "SLayer-Agent",
+                "--benchmark",
+                "bird-interact-lite-exp",
+                "--run-id",
+                "run-xyz",
+            ]
+        )
+
+
+def test_submission_surfaces_phase_split_warnings_in_manifest(
+    tmp_path: Path, monkeypatch
+):
+    """split_phases() returns warnings on missing/inconsistent markers.
+    Those warnings MUST land in manifest.warnings_by_instance so the
+    operator sees them — Codex finding round 2."""
+    from bird_interact_agents import paths
+    from bird_interact_agents.cloud.cli import main
+    from tests.reports._fixtures import (
+        assistant_msg,
+        build_trajectory,
+        system_msg,
+        tool_result_msg,
+        tool_use_block,
+        user_text_msg,
+    )
+
+    # Trajectory with a submit whose observation has NO phase marker —
+    # split_phases falls back to phase-1 and emits "no phase markers"
+    # warning.
+    steps = [
+        system_msg(),
+        user_text_msg(text="Task."),
+        assistant_msg(
+            tool_use=tool_use_block(
+                tool_use_id="tu_1",
+                name="mcp__bird-interact-tools__submit_query",
+                inp={"query_json": "SELECT 1"},
+            ),
+        ),
+        tool_result_msg(
+            tool_use_id="tu_1",
+            content="unrelated observation text without any marker",
+        ),
+    ]
+    traj = build_trajectory(
+        instance_id="alien_1", trajectory_steps=steps, submitted_sql="SELECT 1"
+    )
+
+    runs_root, results_root = stage_run(
+        tmp_path,
+        benchmark="bird-interact-lite-exp",
+        run_id="run-xyz",
+        instances=[("alien", "alien_1", traj)],
+    )
+    monkeypatch.setattr(paths, "runs_root", lambda: runs_root)
+    monkeypatch.setattr(paths, "results_root", lambda: results_root)
+    monkeypatch.setattr(paths, "reports_root", lambda: tmp_path / "reports")
+    _stub_split(monkeypatch, {"alien_1"})
+    _stub_fake_tokenizer(monkeypatch)
+    monkeypatch.setattr(
+        "bird_interact_agents.reports.budget.lookup_task_data",
+        lambda benchmark, instance_id: {
+            "user_query_ambiguity": {},
+            "knowledge_ambiguity": [],
+        },
+    )
+
+    rc = main(
+        [
+            "submission",
+            "--team-name",
+            "Motley",
+            "--method-name",
+            "SLayer-Agent",
+            "--benchmark",
+            "bird-interact-lite-exp",
+            "--run-id",
+            "run-xyz",
+        ]
+    )
+    assert rc == 0
+
+    out_root = tmp_path / "reports" / "bird-interact-lite-exp" / "a-Interact"
+    [sub_dir] = list(out_root.iterdir())
+    mf = json.loads((sub_dir / "manifest.json").read_text())
+    flat = [
+        w
+        for entry in mf["warnings_by_instance"]
+        for w in entry["warnings"]
+    ]
+    assert any("phase markers" in w.lower() for w in flat), flat
+
+
 def test_submission_patience_flag_changes_total_budget(
     tmp_path: Path, monkeypatch
 ):

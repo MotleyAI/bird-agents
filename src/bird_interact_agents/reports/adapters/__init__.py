@@ -1,17 +1,25 @@
 """Per-framework trajectory→Turn adapters.
 
-The SLayer-mode ``claude_sdk_otf`` / ``claude_sdk_otf_ainteract`` agents
-persist Anthropic SDK messages as nested dicts (``data`` is a dict with
-``content``, ``model``, …) and share one walker.
+Real cloud runs persist ``framework="claude_sdk"`` in ``results.db.
+run_metadata`` (that's the CLI flag of ``bird-interact-cloud submit``);
+the SLayer-vs-raw / one-shot-vs-a-interact distinction lives in the
+``query_mode`` and ``mode`` columns. The submission report is supported
+only on the ``(framework="claude_sdk", query_mode="slayer")`` combo:
 
-The ``_raw`` variants (``claude_sdk_otf_raw`` /
-``claude_sdk_otf_ainteract_raw``) persist trajectory entries' ``data``
-field as Python-repr STRINGS instead — the dict-based walker cannot read
-them. Until a string-repr parser lands they raise
-``UnknownFrameworkError`` here so the failure surfaces at the CLI's
-source-resolution step rather than mid-walk with a confusing
-``AttributeError``. Other frameworks (pydantic_ai*, smolagents, agno,
-mcp_agent) are out of scope for DEV-1553.
+* ``query_mode="slayer"``: Anthropic SDK messages are persisted as
+  nested dicts (``data`` is a dict with ``content``, ``model``, …) and
+  the shared dict-walker handles them.
+* ``query_mode="raw"``: trajectory entries' ``data`` field is a
+  Python-repr STRING; needs a separate string-repr parser that isn't
+  written yet.
+
+We also accept ``framework="claude_sdk_otf"`` /
+``"claude_sdk_otf_ainteract"`` for forward-compatibility with any future
+run-metadata schema that promotes the internal agent name to a
+persisted field — both share the same dict walker.
+
+Other frameworks (pydantic_ai*, smolagents, agno, mcp_agent) are out of
+scope for DEV-1553.
 """
 
 from __future__ import annotations
@@ -24,9 +32,12 @@ from bird_interact_agents.reports.adapters.claude_sdk_otf import (
 )
 
 
-_REGISTRY: dict[str, Callable[[list[dict]], Iterable[Turn]]] = {
-    "claude_sdk_otf": _claude_sdk_otf_walk,
-    "claude_sdk_otf_ainteract": _claude_sdk_otf_walk,
+# Keyed by (framework, query_mode). All entries point at the dict-walker;
+# the only thing that varies is which combinations we accept.
+_REGISTRY: dict[tuple[str, str], Callable[[list[dict]], Iterable[Turn]]] = {
+    ("claude_sdk", "slayer"): _claude_sdk_otf_walk,
+    ("claude_sdk_otf", "slayer"): _claude_sdk_otf_walk,
+    ("claude_sdk_otf_ainteract", "slayer"): _claude_sdk_otf_walk,
 }
 
 
@@ -34,14 +45,22 @@ class UnknownFrameworkError(ValueError):
     pass
 
 
-def get_adapter(framework: str) -> Callable[[list[dict]], Iterable[Turn]]:
-    """Resolve the framework name to its trajectory walker."""
+def get_adapter(
+    framework: str, *, query_mode: str = "slayer"
+) -> Callable[[list[dict]], Iterable[Turn]]:
+    """Resolve ``(framework, query_mode)`` to its trajectory walker.
+
+    Raises ``UnknownFrameworkError`` for any unsupported combo — the
+    error message spells out the supported list so the failure surfaces
+    with actionable guidance, not a mid-walk AttributeError.
+    """
     try:
-        return _REGISTRY[framework]
+        return _REGISTRY[(framework, query_mode)]
     except KeyError:
         raise UnknownFrameworkError(
-            f"no submission-report adapter registered for framework "
-            f"{framework!r}; supported: {sorted(_REGISTRY)}"
+            f"no submission-report adapter registered for "
+            f"(framework={framework!r}, query_mode={query_mode!r}); "
+            f"supported: {sorted(_REGISTRY)}"
         )
 
 

@@ -299,7 +299,7 @@ def stage_run(
     *,
     benchmark: str,
     run_id: str,
-    framework: str = "claude_sdk_otf",
+    framework: str = "claude_sdk",
     mode: str = "a-interact",
     query_mode: str = "slayer",
     agent_model: str = "anthropic/claude-opus-4-7",

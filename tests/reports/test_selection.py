@@ -99,9 +99,12 @@ def test_resolve_sources_finds_existing_trajectory(stage):
     assert src.trajectory_path.exists()
     assert src.results_db_path.exists()
     assert src.database == "alien"
-    assert src.framework == "claude_sdk_otf"
+    # Real cloud runs persist `framework="claude_sdk"` (the CLI flag).
+    assert src.framework == "claude_sdk"
     assert src.agent_model == "anthropic/claude-opus-4-7"
     assert src.user_sim_model == "anthropic/claude-sonnet-4-6"
+    assert src.mode == "a-interact"
+    assert src.query_mode == "slayer"
 
 
 def test_resolve_sources_missing_trajectory_lists_every_missing(stage, tmp_path):

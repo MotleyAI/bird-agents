@@ -55,8 +55,12 @@ def build_submission_row(
     task_data: dict,
     patience: int,
     include_thinking: bool = True,
-) -> SubmissionRow:
-    walk = get_adapter(framework)
+    query_mode: str = "slayer",
+) -> tuple[SubmissionRow, list[str]]:
+    """Build the SubmissionRow PLUS the list of converter warnings
+    (phase-split warnings, etc.) that the CLI surfaces in
+    ``manifest.warnings_by_instance``."""
+    walk = get_adapter(framework, query_mode=query_mode)
     steps = trajectory_obj.get("trajectory") or []
     turns = list(walk(steps))
 
@@ -137,12 +141,13 @@ def build_submission_row(
             )
         )
 
-    return SubmissionRow(
+    row = SubmissionRow(
         instance_id=str(trajectory_obj.get("instance_id") or ""),
         subtask_1_predicted_sql=subtask_1_predicted_sql,
         subtask_2_predicted_sql=subtask_2_predicted_sql,
         prompt_flow=entries,
     )
+    return row, list(phase_result.warnings)
 
 
 def cross_check_results_db_sql(
