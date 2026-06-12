@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 
 from claude_agent_sdk import (
+    AgentDefinition,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     HookMatcher,
@@ -34,9 +35,27 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     get_schema,
     submit_sql,
 )
+from bird_interact_agents.agents.claude_sdk.context_budget import (
+    context_window_for,
+    make_context_budget_hook,
+    update_context_tokens,
+)
+from bird_interact_agents.agents.claude_sdk.partition import (
+    DISCOVERY_AGENT_NAME,
+    DISCOVERY_MAX_TURNS,
+    MAIN_WORKFLOW_NOTE,
+    build_discovery_prompt,
+    make_partition_deny_hook,
+)
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
     _make_turn_budget_hook,
+)
+from bird_interact_agents.agents.claude_sdk_otf_raw.agent import (
+    DISCOVERY_TOOLS as _ONE_SHOT_RAW_DISCOVERY_TOOLS,
+)
+from bird_interact_agents.agents.claude_sdk_otf_raw.agent import (
+    MAIN_TOOLS as _ONE_SHOT_RAW_MAIN_TOOLS,
 )
 from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.prompts import (
     RAW_OTF_AINTERACT,
@@ -63,6 +82,11 @@ _SUBMIT_SQL_TOOL = "mcp__bird-interact-tools__submit_sql"
 
 # How often (in total tool calls without ask_user) the nag fires.
 _NAG_EVERY = 10
+
+# DEV-1555: a-interact raw partition = the one-shot raw partition +
+# ask_user in BOTH contexts.
+DISCOVERY_TOOLS = [*_ONE_SHOT_RAW_DISCOVERY_TOOLS, _ASK_USER_TOOL]
+MAIN_TOOLS = [*_ONE_SHOT_RAW_MAIN_TOOLS, _ASK_USER_TOOL]
 
 # All 7 BIRD raw-exploration tools + ask_user + raw submission tool.
 _AINTERACT_RAW_TOOLS = [
@@ -276,16 +300,31 @@ class ClaudeSDKOtfAInteractRawAgent:
             server = create_sdk_mcp_server(
                 name="bird-interact-tools", version="1.0.0", tools=tools,
             )
-            tool_names = [f"mcp__bird-interact-tools__{t.name}" for t in tools]
 
             pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
 
+            # DEV-1555: discovery/main split (see claude_sdk_otf.agent).
+            discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
+            context_state: dict = {}
+
             options = ClaudeAgentOptions(
-                system_prompt=prompt,
+                system_prompt=prompt + MAIN_WORKFLOW_NOTE,
                 mcp_servers={"bird-interact-tools": server},
-                allowed_tools=tool_names,
-                tools=[],
+                allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
+                tools=["Task"],
                 setting_sources=[],
+                agents={
+                    DISCOVERY_AGENT_NAME: AgentDefinition(
+                        description=(
+                            "Schema/data introspection and user clarification "
+                            "for the current task; returns a structured "
+                            "handoff report."
+                        ),
+                        prompt=build_discovery_prompt(with_ask_user=True),
+                        tools=list(DISCOVERY_TOOLS),
+                        maxTurns=DISCOVERY_MAX_TURNS,
+                    ),
+                },
                 model=native_model_id(self.model),
                 effort=self.reasoning_effort,
                 max_turns=_MAX_TURNS,
@@ -294,6 +333,10 @@ class ClaudeSDKOtfAInteractRawAgent:
                         HookMatcher(
                             matcher=_SUBMIT_SQL_TOOL,
                             hooks=[pre_submit_gate],
+                        ),
+                        HookMatcher(
+                            matcher="|".join(discovery_only),
+                            hooks=[make_partition_deny_hook(discovery_only)],
                         ),
                     ],
                     "PostToolUse": [
@@ -307,6 +350,14 @@ class ClaudeSDKOtfAInteractRawAgent:
                                 _MAX_TURNS, submit_tool="submit_sql",
                             )],
                         ),
+                        HookMatcher(
+                            hooks=[
+                                make_context_budget_hook(
+                                    context_state,
+                                    context_window_for(self.model),
+                                )
+                            ]
+                        ),
                     ],
                 },
             )
@@ -318,6 +369,7 @@ class ClaudeSDKOtfAInteractRawAgent:
                         {"type": str(type(msg).__name__), "data": str(msg)[:500]}
                     )
                     accumulate_assistant_usage(accum, msg, self.model)
+                    update_context_tokens(context_state, msg)
         except Exception as e:
             logger.error(
                 "claude_sdk_otf_ainteract_raw error on %s: %s",

@@ -495,12 +495,14 @@ async def test_run_task_registers_three_guards_plus_turn_budget(monkeypatch, tmp
     assert "PostToolUse" in hooks
 
     pre_matchers = hooks["PreToolUse"]
-    assert len(pre_matchers) == 1
+    # [0] submit_sql gate, [1] discovery-only partition deny (DEV-1555).
+    assert len(pre_matchers) == 2
     # Gate must be scoped to submit_sql, not submit_query.
     assert pre_matchers[0].matcher == "mcp__bird-interact-tools__submit_sql"
 
     post_matchers = hooks["PostToolUse"]
-    assert len(post_matchers) == 3
+    # ask-counter, nag, turn-budget, context-budget (DEV-1555).
+    assert len(post_matchers) == 4
     matchers = {pm.matcher for pm in post_matchers}
     assert "mcp__bird-interact-tools__ask_user" in matchers
     assert None in matchers
@@ -517,7 +519,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
         dict(_TASK), str(tmp_path), 20.0, "raw", eval_mode="a-interact",
     )
     opts = captured["options"]
-    assert opts.tools == []
+    assert opts.tools == ["Task"]  # DEV-1555: only built-in re-enabled
     assert opts.setting_sources == []
     assert opts.max_turns == 2 * MAX_MODEL_TURNS
 

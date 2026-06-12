@@ -373,7 +373,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
         dict(_TASK), str(tmp_path), 20.0, "raw", eval_mode="one-shot",
     )
     opts = captured["options"]
-    assert opts.tools == []
+    assert opts.tools == ["Task"]  # DEV-1555: only built-in re-enabled
     assert opts.setting_sources == []
     assert opts.max_turns == 2 * MAX_MODEL_TURNS
     assert "PostToolUse" in (opts.hooks or {})

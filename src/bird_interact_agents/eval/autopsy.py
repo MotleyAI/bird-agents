@@ -43,6 +43,7 @@ import copy
 import datetime as _dt
 import json
 import logging
+import math
 import os
 import traceback as _tb
 from pathlib import Path
@@ -52,6 +53,10 @@ import anthropic
 import pydantic
 import yaml
 from pydantic import BaseModel
+
+from bird_interact_agents.agents.claude_sdk.context_budget import (
+    context_window_for,
+)
 
 from bird_interact_agents.eval.annotation_schema import (
     AutopsyAnalysis,
@@ -151,7 +156,14 @@ def _strip_thinking_inplace(obj: object) -> None:
 
 
 def _compress_trajectory_for_autopsy(trajectory: list[dict]) -> list[dict]:
-    """Return a copy of trajectory with ThinkingBlock.thinking content stripped.
+    """Return a copy of trajectory with ThinkingBlock.thinking content stripped
+    and the ``tool_use_result`` SDK echo replaced by a size marker.
+
+    The SDK dump stores every tool result TWICE: the ``content`` block the
+    model actually saw plus a (typically larger) ``tool_use_result`` echo.
+    The echo carries no information the model acted on, yet roughly doubles
+    the serialized trajectory — stripping it is the cheapest autopsy-prompt
+    halving available (DEV-1555).
 
     Items whose ``data`` value is a dict (new structured format from
     ``dataclasses.asdict``) are deep-copied and compressed. Items whose
@@ -164,10 +176,117 @@ def _compress_trajectory_for_autopsy(trajectory: list[dict]) -> list[dict]:
         if isinstance(data, dict):
             data = copy.deepcopy(data)
             _strip_thinking_inplace(data)
+            echo = data.get("tool_use_result")
+            if echo is not None and not (
+                isinstance(echo, str) and echo.startswith("[tool_use_result:")
+            ):
+                data["tool_use_result"] = (
+                    f"[tool_use_result: {len(json.dumps(echo))} chars]"
+                )
             result.append({**item, "data": data})
         else:
             result.append(item)
     return result
+
+
+# ---------------------------------------------------------------------------
+# DEV-1555: trajectory squeeze so the autopsy prompt fits the model window
+# ---------------------------------------------------------------------------
+
+# chars-per-token divisor for dense JSON trajectories (measured ~3-3.5 on
+# real sessions; 3.5 with the 0.75 window fraction leaves headroom).
+_CHARS_PER_TOKEN = 3.5
+
+# Reserved for the autopsy completion + tool schema on top of the prompt.
+_OUTPUT_RESERVE_TOKENS = 4096
+
+# Window fraction usable by the prompt.
+_WINDOW_FRACTION = 0.75
+
+
+def _estimate_tokens(text: str) -> int:
+    return math.ceil(len(text) / _CHARS_PER_TOKEN)
+
+
+def _elide_tool_result_blocks(item: dict) -> int:
+    """Replace tool-result block bodies in one trajectory item with size
+    markers. Returns the number of serialized chars saved. Assistant text
+    and tool inputs are never touched (they lack the ``tool_use_id`` key)."""
+    data = item.get("data")
+    if not isinstance(data, dict):
+        return 0
+    content = data.get("content")
+    if not isinstance(content, list):
+        return 0
+    saved = 0
+    for block in content:
+        if not isinstance(block, dict) or "tool_use_id" not in block:
+            continue
+        body = block.get("content")
+        if body is None or (
+            isinstance(body, str) and body.startswith("[tool result elided:")
+        ):
+            continue
+        serialized = json.dumps(body)
+        marker = f"[tool result elided: {len(serialized)} chars]"
+        block["content"] = marker
+        saved += len(serialized) - len(json.dumps(marker))
+    return saved
+
+
+def fit_trajectory_for_autopsy(
+    trajectory: list[dict],
+    *,
+    budget_tokens: int,
+    keep_last: int = 20,
+    keep_head: int = 5,
+) -> list[dict]:
+    """Deterministically shrink a (compressed) trajectory under a token budget.
+
+    Phase A elides tool-result block bodies oldest-first, never touching the
+    last ``keep_last`` items. If that is not enough, phase B drops whole
+    middle items behind a single ``ElidedItems`` marker, preserving the first
+    ``keep_head`` and last ``keep_last`` items. Pure function: the input is
+    never mutated and equal inputs yield equal outputs.
+    """
+    items = copy.deepcopy(trajectory)
+    chars = len(json.dumps(items))
+    if _estimate_tokens(json.dumps(trajectory)) <= budget_tokens:
+        return items
+
+    budget_chars = int(budget_tokens * _CHARS_PER_TOKEN)
+
+    # Phase A: elide tool-result bodies oldest-first, tail protected.
+    for idx in range(max(0, len(items) - keep_last)):
+        if chars <= budget_chars:
+            break
+        chars -= _elide_tool_result_blocks(items[idx])
+
+    if chars <= budget_chars:
+        return items
+
+    # Phase B: drop middle items behind one marker.
+    marker = {"type": "ElidedItems", "data": "[elided 0 trajectory items]"}
+    dropped = 0
+    while True:
+        chars = len(json.dumps(items))
+        if chars <= budget_chars:
+            break
+        droppable = [
+            i
+            for i in range(keep_head, len(items) - keep_last)
+            if items[i] is not marker
+        ]
+        if not droppable:
+            break
+        mid = droppable[len(droppable) // 2]
+        if dropped == 0:
+            items[mid] = marker
+        else:
+            del items[mid]
+        dropped += 1
+        marker["data"] = f"[elided {dropped} trajectory items]"
+    return items
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +426,7 @@ def _build_prompt(
     kb_text: str,
     miss_diagnostics: Optional[MissDiagnostics],
     is_one_shot: bool,
+    precompressed: bool = False,
 ) -> str:
     masked_terms = [
         f"  - {mt.term} ({mt.type})"
@@ -321,7 +441,9 @@ def _build_prompt(
         if miss_diagnostics is not None
         else "null"
     )
-    compressed = _compress_trajectory_for_autopsy(trajectory)
+    compressed = (
+        trajectory if precompressed else _compress_trajectory_for_autopsy(trajectory)
+    )
     traj_json = json.dumps(
         [{"index": i, **item} for i, item in enumerate(compressed)],
         indent=None,
@@ -642,13 +764,38 @@ async def run_autopsy(
             task_annotation.selected_database,
             task_annotation.external_knowledge,
         )
+        compressed = _compress_trajectory_for_autopsy(trajectory)
         prompt = _build_prompt(
             task_annotation=task_annotation,
-            trajectory=trajectory,
+            trajectory=compressed,
             kb_text=kb_text,
             miss_diagnostics=miss_diagnostics,
             is_one_shot=is_one_shot,
+            precompressed=True,
         )
+        # DEV-1555: fit the prompt inside the autopsy model's context
+        # window. The squeeze only ever shrinks the trajectory portion;
+        # 64 tokens of slack absorb ceil-rounding in the estimates.
+        budget = (
+            int(context_window_for(model) * _WINDOW_FRACTION)
+            - _OUTPUT_RESERVE_TOKENS
+        )
+        if _estimate_tokens(prompt) > budget:
+            overhead = _estimate_tokens(prompt) - _estimate_tokens(
+                json.dumps(compressed)
+            )
+            fitted = fit_trajectory_for_autopsy(
+                compressed,
+                budget_tokens=max(budget - overhead - 64, 1),
+            )
+            prompt = _build_prompt(
+                task_annotation=task_annotation,
+                trajectory=fitted,
+                kb_text=kb_text,
+                miss_diagnostics=miss_diagnostics,
+                is_one_shot=is_one_shot,
+                precompressed=True,
+            )
         tool_schema = (
             _AUTOPSY_TOOL_SCHEMA_ONE_SHOT if is_one_shot else _AUTOPSY_TOOL_SCHEMA
         )

@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 
 from claude_agent_sdk import (
+    AgentDefinition,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     HookMatcher,
@@ -31,6 +32,18 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     get_knowledge_definition,
     get_schema,
     submit_sql,
+)
+from bird_interact_agents.agents.claude_sdk.context_budget import (
+    context_window_for,
+    make_context_budget_hook,
+    update_context_tokens,
+)
+from bird_interact_agents.agents.claude_sdk.partition import (
+    DISCOVERY_AGENT_NAME,
+    DISCOVERY_MAX_TURNS,
+    MAIN_WORKFLOW_NOTE,
+    build_discovery_prompt,
+    make_partition_deny_hook,
 )
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
@@ -82,6 +95,28 @@ def _select_tools(eval_mode: str) -> list:
             f"got {eval_mode!r}"
         )
     return list(_RAW_TOOLS)
+
+
+# DEV-1555: discovery/main tool partition (raw flavor). Discovery owns
+# schema/column/KB introspection plus execute_sql for data profiling; the
+# main loop keeps execute_sql (candidate verification) and submit_sql.
+_RAW_PREFIX = "mcp__bird-interact-tools__"
+
+DISCOVERY_TOOLS = [
+    f"{_RAW_PREFIX}get_schema",
+    f"{_RAW_PREFIX}get_all_column_meanings",
+    f"{_RAW_PREFIX}get_column_meaning",
+    f"{_RAW_PREFIX}get_all_external_knowledge_names",
+    f"{_RAW_PREFIX}get_knowledge_definition",
+    f"{_RAW_PREFIX}get_all_knowledge_definitions",
+    f"{_RAW_PREFIX}execute_sql",
+]
+
+MAIN_TOOLS = [
+    "Task",
+    f"{_RAW_PREFIX}execute_sql",
+    f"{_RAW_PREFIX}submit_sql",
+]
 
 
 def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
@@ -207,23 +242,51 @@ class ClaudeSDKOtfRawAgent:
             server = create_sdk_mcp_server(
                 name="bird-interact-tools", version="1.0.0", tools=tools,
             )
-            tool_names = [f"mcp__bird-interact-tools__{t.name}" for t in tools]
+
+            # DEV-1555: discovery/main split (see claude_sdk_otf.agent).
+            discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
+            context_state: dict = {}
 
             options = ClaudeAgentOptions(
-                system_prompt=prompt,
+                system_prompt=prompt + MAIN_WORKFLOW_NOTE,
                 mcp_servers={"bird-interact-tools": server},
-                allowed_tools=tool_names,
-                tools=[],
+                allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
+                tools=["Task"],
                 setting_sources=[],
+                agents={
+                    DISCOVERY_AGENT_NAME: AgentDefinition(
+                        description=(
+                            "Schema/data introspection for the current task; "
+                            "returns a structured handoff report."
+                        ),
+                        prompt=build_discovery_prompt(with_ask_user=False),
+                        tools=list(DISCOVERY_TOOLS),
+                        maxTurns=DISCOVERY_MAX_TURNS,
+                    ),
+                },
                 model=native_model_id(self.model),
                 effort=self.reasoning_effort,
                 max_turns=_MAX_TURNS,
                 hooks={
+                    "PreToolUse": [
+                        HookMatcher(
+                            matcher="|".join(discovery_only),
+                            hooks=[make_partition_deny_hook(discovery_only)],
+                        ),
+                    ],
                     "PostToolUse": [
                         HookMatcher(
                             hooks=[_make_turn_budget_hook(
                                 _MAX_TURNS, submit_tool="submit_sql",
                             )],
+                        ),
+                        HookMatcher(
+                            hooks=[
+                                make_context_budget_hook(
+                                    context_state,
+                                    context_window_for(self.model),
+                                )
+                            ]
                         ),
                     ],
                 },
@@ -236,6 +299,7 @@ class ClaudeSDKOtfRawAgent:
                         {"type": str(type(msg).__name__), "data": str(msg)[:500]}
                     )
                     accumulate_assistant_usage(accum, msg, self.model)
+                    update_context_tokens(context_state, msg)
         except Exception as e:
             logger.error(
                 "claude_sdk_otf_raw error on %s: %s",

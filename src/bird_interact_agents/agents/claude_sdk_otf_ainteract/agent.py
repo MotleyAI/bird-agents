@@ -23,6 +23,7 @@ import logging
 from pathlib import Path
 
 from claude_agent_sdk import (
+    AgentDefinition,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     HookMatcher,
@@ -40,6 +41,18 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     query_nested,
     submit_query,
 )
+from bird_interact_agents.agents.claude_sdk.context_budget import (
+    context_window_for,
+    make_context_budget_hook,
+    update_context_tokens,
+)
+from bird_interact_agents.agents.claude_sdk.partition import (
+    DISCOVERY_AGENT_NAME,
+    DISCOVERY_MAX_TURNS,
+    MAIN_WORKFLOW_NOTE,
+    build_discovery_prompt,
+    make_partition_deny_hook,
+)
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
     _NORMALIZE_WRITE_FILTERS_MATCHER,
@@ -47,6 +60,12 @@ from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _make_turn_budget_hook,
     _normalize_write_tool_filters_hook,
     _slayer_tool_names,
+)
+from bird_interact_agents.agents.claude_sdk_otf.agent import (
+    DISCOVERY_TOOLS as _ONE_SHOT_DISCOVERY_TOOLS,
+)
+from bird_interact_agents.agents.claude_sdk_otf.agent import (
+    MAIN_TOOLS as _ONE_SHOT_MAIN_TOOLS,
 )
 from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
     SLAYER_OTF_AINTERACT,
@@ -178,6 +197,13 @@ def _select_tools(eval_mode: str) -> list:
             f"got {eval_mode!r}"
         )
     return [*_KNOWLEDGE_TOOLS, ask_user, submit_query]
+
+
+# DEV-1555: a-interact partition = the one-shot partition + ask_user in
+# BOTH contexts (discovery does the bulk of clarification; the main loop
+# can still ask directly when submit feedback reveals an ambiguity).
+DISCOVERY_TOOLS = [*_ONE_SHOT_DISCOVERY_TOOLS, _ASK_USER_TOOL]
+MAIN_TOOLS = [*_ONE_SHOT_MAIN_TOOLS, _ASK_USER_TOOL]
 
 
 def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
@@ -354,7 +380,6 @@ class ClaudeSDKOtfAInteractAgent:
             server = create_sdk_mcp_server(
                 name="bird-interact-tools", version="1.0.0", tools=tools,
             )
-            tool_names = [f"mcp__bird-interact-tools__{t.name}" for t in tools]
 
             mcp_servers: dict = {
                 "bird-interact-tools": server,
@@ -368,18 +393,33 @@ class ClaudeSDKOtfAInteractAgent:
                     slayer_storage_dir, ingest_on_startup=False,
                 ),
             }
-            tool_names.extend(_slayer_tool_names())
 
             # Per-task hook factories — never share state across tasks.
             pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
             pre_query_gate, post_tool_tracker = _make_query_before_submit_guard()
 
+            # DEV-1555: discovery/main split (see claude_sdk_otf.agent).
+            discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
+            context_state: dict = {}
+
             options = ClaudeAgentOptions(
-                system_prompt=prompt,
+                system_prompt=prompt + MAIN_WORKFLOW_NOTE,
                 mcp_servers=mcp_servers,
-                allowed_tools=tool_names,
-                tools=[],
+                allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
+                tools=["Task"],
                 setting_sources=[],
+                agents={
+                    DISCOVERY_AGENT_NAME: AgentDefinition(
+                        description=(
+                            "Schema/data introspection and user clarification "
+                            "for the current task; returns a structured "
+                            "handoff report."
+                        ),
+                        prompt=build_discovery_prompt(with_ask_user=True),
+                        tools=list(DISCOVERY_TOOLS),
+                        maxTurns=DISCOVERY_MAX_TURNS,
+                    ),
+                },
                 model=native_model_id(self.model),
                 effort=self.reasoning_effort,
                 max_turns=_MAX_TURNS,
@@ -389,6 +429,10 @@ class ClaudeSDKOtfAInteractAgent:
                             matcher="mcp__bird-interact-tools__submit_query",
                             # ask_user gate runs first; query gate runs second.
                             hooks=[pre_submit_gate, pre_query_gate],
+                        ),
+                        HookMatcher(
+                            matcher="|".join(discovery_only),
+                            hooks=[make_partition_deny_hook(discovery_only)],
                         ),
                         # Codex post-merge: normalize backing-query filters
                         # baked into create_model / edit_model payloads so
@@ -407,6 +451,14 @@ class ClaudeSDKOtfAInteractAgent:
                         ),
                         HookMatcher(hooks=[post_nag]),
                         HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
+                        HookMatcher(
+                            hooks=[
+                                make_context_budget_hook(
+                                    context_state,
+                                    context_window_for(self.model),
+                                )
+                            ]
+                        ),
                         # Must be last so it captures the true last-completed
                         # tool name after all other PostToolUse hooks have run.
                         HookMatcher(hooks=[post_tool_tracker]),
@@ -424,6 +476,7 @@ class ClaudeSDKOtfAInteractAgent:
                         _data = str(msg)
                     trajectory.append({"type": str(type(msg).__name__), "data": _data})
                     accumulate_assistant_usage(accum, msg, self.model)
+                    update_context_tokens(context_state, msg)
         except Exception as e:
             logger.error(
                 "claude_sdk_otf_ainteract error on %s: %s",

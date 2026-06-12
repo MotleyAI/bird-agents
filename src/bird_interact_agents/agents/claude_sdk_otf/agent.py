@@ -26,6 +26,7 @@ import logging
 from pathlib import Path
 
 from claude_agent_sdk import (
+    AgentDefinition,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     HookMatcher,
@@ -44,6 +45,18 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     query,
     query_nested,
     submit_query,
+)
+from bird_interact_agents.agents.claude_sdk.context_budget import (
+    context_window_for,
+    make_context_budget_hook,
+    update_context_tokens,
+)
+from bird_interact_agents.agents.claude_sdk.partition import (
+    DISCOVERY_AGENT_NAME,
+    DISCOVERY_MAX_TURNS,
+    MAIN_WORKFLOW_NOTE,
+    build_discovery_prompt,
+    make_partition_deny_hook,
 )
 from bird_interact_agents.agents.claude_sdk_otf.prompts import (
     SLAYER_OTF_ONE_SHOT,
@@ -295,6 +308,39 @@ def _select_tools(eval_mode: str) -> list:
     return [*_KNOWLEDGE_TOOLS, submit_query]
 
 
+# DEV-1555: discovery/main tool partition. The discovery subagent owns the
+# big-output introspection tools; the main loop owns encode/query/submit.
+# KB lookups live in BOTH so exact formulas never pass through a lossy
+# handoff summary before encoding. Enforcement is `partition_deny` on the
+# main loop (a global disallow would block the subagent too).
+_KB_NATIVE_TOOL_NAMES = [
+    "mcp__bird-interact-tools__get_all_external_knowledge_names",
+    "mcp__bird-interact-tools__get_knowledge_definition",
+    "mcp__bird-interact-tools__get_all_knowledge_definitions",
+]
+
+DISCOVERY_TOOLS = [
+    "mcp__slayer__search",
+    "mcp__slayer__models_summary",
+    "mcp__slayer__inspect_model",
+    "mcp__slayer__list_datasources",
+    *_KB_NATIVE_TOOL_NAMES,
+]
+
+MAIN_TOOLS = [
+    "Task",
+    "mcp__slayer__help",
+    "mcp__slayer__create_model",
+    "mcp__slayer__edit_model",
+    "mcp__slayer__validate_models",
+    "mcp__slayer__save_memory",
+    *_KB_NATIVE_TOOL_NAMES,
+    "mcp__bird-interact-tools__query",
+    "mcp__bird-interact-tools__query_nested",
+    "mcp__bird-interact-tools__submit_query",
+]
+
+
 def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
     if eval_mode != "one-shot":
         raise ValueError(
@@ -487,7 +533,6 @@ class ClaudeSDKOtfAgent:
             server = create_sdk_mcp_server(
                 name="bird-interact-tools", version="1.0.0", tools=tools,
             )
-            tool_names = [f"mcp__bird-interact-tools__{t.name}" for t in tools]
 
             mcp_servers: dict = {
                 "bird-interact-tools": server,
@@ -495,42 +540,66 @@ class ClaudeSDKOtfAgent:
                     slayer_storage_dir, ingest_on_startup=False,
                 ),
             }
-            tool_names.extend(_slayer_tool_names())
 
             # Per-task hook factories — must be created here (not on the
             # agent constructor) to avoid cross-task state bleed.
             pre_query_gate, post_tool_tracker = _make_query_before_submit_guard()
 
+            # DEV-1555: discovery/main split. Both partitions stay in
+            # allowed_tools (a global disallow would block the subagent
+            # too); the main-loop side is enforced by `partition_deny`.
+            discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
+            context_state: dict = {}
+
             options = ClaudeAgentOptions(
-                system_prompt=prompt,
+                system_prompt=prompt + MAIN_WORKFLOW_NOTE,
                 mcp_servers=mcp_servers,
-                allowed_tools=tool_names,
-                # Restrict to ONLY our MCP tools: drop every Claude Code
-                # built-in (Bash/Edit/Task/WebFetch/ToolSearch/...). Removing
-                # ToolSearch is load-bearing — with the built-ins gone the
-                # ~15 MCP tools are exposed directly instead of being deferred
-                # behind ToolSearch (which previously wasted ~5 turns/run while
-                # the agent re-discovered its own tools). setting_sources=[]
-                # also keeps the run reproducible (no user/project settings,
-                # no CLAUDE.md bleed-through).
-                tools=[],
+                allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
+                # Re-enable ONLY the Task built-in (for the discovery
+                # subagent); every other Claude Code built-in stays dropped
+                # (Bash/Edit/WebFetch/ToolSearch/...). Removing ToolSearch
+                # is load-bearing — with the built-ins gone the ~15 MCP
+                # tools are exposed directly instead of being deferred
+                # behind ToolSearch (which previously wasted ~5 turns/run
+                # while the agent re-discovered its own tools).
+                # setting_sources=[] also keeps the run reproducible (no
+                # user/project settings, no CLAUDE.md bleed-through).
+                tools=["Task"],
                 setting_sources=[],
+                agents={
+                    DISCOVERY_AGENT_NAME: AgentDefinition(
+                        description=(
+                            "Schema/data introspection and user clarification "
+                            "for the current task; returns a structured "
+                            "handoff report."
+                        ),
+                        prompt=build_discovery_prompt(with_ask_user=False),
+                        tools=list(DISCOVERY_TOOLS),
+                        maxTurns=DISCOVERY_MAX_TURNS,
+                    ),
+                },
                 # Pin the requested Anthropic model (bare id, no provider
                 # prefix) so --agent-model actually takes effect instead of
                 # the claude CLI's configured default.
                 model=native_model_id(self.model),
                 # Reasoning-effort level (None => SDK default).
                 effort=self.reasoning_effort,
-                # Native turn cap (2x the base). Unlike a manual break on the
-                # receive stream, max_turns lets the FINAL turn's tool (e.g.
-                # submit_query) execute before the run stops — the off-by-one
-                # that previously dropped a last-turn submission.
+                # Native turn cap (2x the base), MAIN loop only — the
+                # discovery subagent has its own maxTurns. Unlike a manual
+                # break on the receive stream, max_turns lets the FINAL
+                # turn's tool (e.g. submit_query) execute before the run
+                # stops — the off-by-one that previously dropped a
+                # last-turn submission.
                 max_turns=_MAX_TURNS,
                 hooks={
                     "PreToolUse": [
                         HookMatcher(
                             matcher="mcp__bird-interact-tools__submit_query",
                             hooks=[pre_query_gate],
+                        ),
+                        HookMatcher(
+                            matcher="|".join(discovery_only),
+                            hooks=[make_partition_deny_hook(discovery_only)],
                         ),
                         # Codex post-merge: normalize backing-query filters
                         # baked into create_model / edit_model payloads so
@@ -544,6 +613,14 @@ class ClaudeSDKOtfAgent:
                     ],
                     "PostToolUse": [
                         HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
+                        HookMatcher(
+                            hooks=[
+                                make_context_budget_hook(
+                                    context_state,
+                                    context_window_for(self.model),
+                                )
+                            ]
+                        ),
                         # Must be last so it captures the true last-completed
                         # tool name after all other PostToolUse hooks have run.
                         HookMatcher(hooks=[post_tool_tracker]),
@@ -561,6 +638,7 @@ class ClaudeSDKOtfAgent:
                         _data = str(msg)
                     trajectory.append({"type": str(type(msg).__name__), "data": _data})
                     accumulate_assistant_usage(accum, msg, self.model)
+                    update_context_tokens(context_state, msg)
         except Exception as e:
             logger.error(
                 "claude_sdk_otf error on %s: %s",

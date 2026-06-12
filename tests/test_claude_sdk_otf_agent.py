@@ -545,8 +545,9 @@ async def test_run_task_does_not_whitelist_ask_user(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
-    """No Claude Code built-ins / ToolSearch (so MCP tools aren't deferred);
-    isolated settings; native max_turns at 2x the base; turn-budget hook."""
+    """Only the Task built-in (DEV-1555 discovery subagent) — no Bash/Edit/
+    ToolSearch (so MCP tools aren't deferred); isolated settings; native
+    max_turns at 2x the base; turn-budget hook."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as m
     from bird_interact_agents.harness import MAX_MODEL_TURNS
 
@@ -556,7 +557,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
         dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
     opts = captured["options"]
-    assert opts.tools == []
+    assert opts.tools == ["Task"]
     assert opts.setting_sources == []
     assert opts.max_turns == 2 * MAX_MODEL_TURNS == m._MAX_TURNS
     assert "PostToolUse" in (opts.hooks or {})
