@@ -71,6 +71,27 @@ _MUTATION_AT_STMT_START_RE = re.compile(
     re.IGNORECASE,
 )
 
+# CTE-prefixed mutations: ``WITH x AS (...) DELETE FROM t WHERE ...``
+# (SQLite + Postgres both accept this). The statement-start regex above
+# only sees ``WITH``, so we also scan for a verb-target pair anywhere in
+# the cleaned SQL. The verb-target shape is tight enough that ordinary
+# SELECT clauses don't trip it (``SELECT INSERT_NUM FROM t`` doesn't
+# contain ``INSERT INTO``). (Codex round 5.)
+_MUTATION_VERB_TARGET_RE = re.compile(
+    r"\b(?:"
+    r"INSERT\s+INTO|"
+    r"REPLACE\s+INTO|"
+    r"UPDATE\s+[A-Za-z_][\w.]*\s+SET|"
+    r"DELETE\s+FROM|"
+    r"CREATE\s+(?:TEMP\s+|TEMPORARY\s+|OR\s+REPLACE\s+)?"
+    r"(?:TABLE|VIEW|INDEX|TRIGGER|SCHEMA|DATABASE)|"
+    r"DROP\s+(?:TABLE|VIEW|INDEX|TRIGGER|SCHEMA|DATABASE)|"
+    r"ALTER\s+(?:TABLE|VIEW|INDEX|SCHEMA)|"
+    r"TRUNCATE(?:\s+TABLE)?\s+[A-Za-z_]"
+    r")\b",
+    re.IGNORECASE,
+)
+
 # SQL comment forms upstream's `remove_comments` strips before exec:
 # ``-- ... <EOL>`` (single-line) and ``/* ... */`` (multi-line, non-greedy
 # across newlines). Strip both before the mutation regex match so a
@@ -88,20 +109,32 @@ def _strip_sql_comments(sql: str) -> str:
 
 
 def is_mutation_sql(sql: str) -> bool:
-    """Return True iff ``sql`` carries an SQL mutation keyword as the
-    LEADING token of any statement (statements split on ``;``). A
-    SELECT calling ``REPLACE(...)`` as a function is NOT a mutation —
-    only ``REPLACE INTO`` (statement-leading) is.
+    """Return True iff ``sql`` carries an SQL mutation.
+
+    Detects two shapes:
+
+    1. ``MUTATION_KEYWORD`` as the LEADING token of any statement
+       (statements split on ``;``). A SELECT calling ``REPLACE(...)``
+       as a function is NOT a mutation — only ``REPLACE INTO``
+       (statement-leading) is.
+    2. A verb-target pair (``DELETE FROM``, ``INSERT INTO``,
+       ``UPDATE <ident> SET``, ``CREATE TABLE/VIEW/...``, etc.) anywhere
+       in the cleaned SQL — catches CTE-prefixed mutations like
+       ``WITH x AS (...) DELETE FROM t WHERE id IN (SELECT id FROM x)``
+       that the statement-start regex misses because ``WITH`` itself
+       isn't a mutation keyword (Codex round 5).
 
     Comments (``-- ...`` / ``/* ... */``) are stripped before matching
     so ``-- explanation\\nINSERT INTO ...`` is still recognised as a
     mutation. Mirrors upstream's ``remove_comments`` cleanup so the
-    dispatcher and the exec path agree on what counts as "statement
-    start" (Codex round 3).
+    dispatcher and the exec path agree on what counts as a mutation.
     """
     if not sql:
         return False
-    return bool(_MUTATION_AT_STMT_START_RE.search(_strip_sql_comments(sql)))
+    cleaned = _strip_sql_comments(sql)
+    if _MUTATION_AT_STMT_START_RE.search(cleaned):
+        return True
+    return bool(_MUTATION_VERB_TARGET_RE.search(cleaned))
 
 
 # ---------------------------------------------------------------------------

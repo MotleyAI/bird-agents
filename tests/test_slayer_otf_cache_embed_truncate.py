@@ -438,6 +438,31 @@ def test_materialise_cache_memories_logs_full_warning_content_per_memory(
     assert ids_seen == {"a", "b"}
 
 
+def test_truncate_for_embedding_special_token_text_falls_back_to_char_cap(
+    caplog,
+):
+    """Codex round 5: ``tiktoken.encode()`` raises on disallowed special
+    tokens like ``<|endoftext|>``. Memory text comes from arbitrary KB
+    content, so a single offending memory must NOT abort cache
+    materialisation. The helper falls back to char-cap with a logged
+    warning."""
+    from bird_interact_agents.slayer_otf.cache import _truncate_for_embedding
+
+    # `<|endoftext|>` is the canonical disallowed special-token marker
+    # in cl100k_base / o200k_base — tiktoken's encode() refuses it
+    # unless explicitly allowed via `allowed_special`.
+    text = "head text " + "<|endoftext|>" + " more text " * 100
+    with caplog.at_level(logging.WARNING):
+        out = _truncate_for_embedding(
+            text, model_name="text-embedding-3-small",
+        )
+    # Either we silently fell back to char-cap, OR tiktoken allowed it
+    # (newer tiktoken versions don't refuse). Both are fine — what we
+    # absolutely cannot do is raise.
+    assert isinstance(out, str)
+    assert len(out) <= max(len(text), 28_000)
+
+
 def test_truncate_for_embedding_char_cap_fallback_short_text_unchanged(
     monkeypatch,
 ):

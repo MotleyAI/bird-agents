@@ -64,6 +64,35 @@ def test_is_mutation_sql_positive(sql: str):
 
 
 @pytest.mark.parametrize("sql", [
+    # Round 5 (Codex): CTE-prefixed mutations. SQLite + Postgres both
+    # accept these — the mutation verb sits AFTER a `WITH ... AS (...)`
+    # block, so the statement-start regex alone misses them and the
+    # dispatcher would have routed straight to upstream's writeable
+    # exec path, committing the mutation against the per-task DB.
+    "WITH x AS (SELECT id FROM t WHERE v > 0) DELETE FROM t WHERE id IN (SELECT id FROM x)",
+    "with cte as (select 1 as v) insert into t (v) select v from cte",
+    "WITH a AS (SELECT 1 AS x), b AS (SELECT 2 AS y) UPDATE t SET val = (SELECT x FROM a) WHERE val = (SELECT y FROM b)",
+    "WITH temp_data AS (SELECT * FROM src) CREATE TABLE dest AS SELECT * FROM temp_data",
+])
+def test_is_mutation_sql_detects_cte_prefixed_mutations(sql: str):
+    from bird_interact_agents.eval.upstream_ex_base import is_mutation_sql
+
+    assert is_mutation_sql(sql) is True
+
+
+@pytest.mark.parametrize("sql", [
+    # Negative: a SELECT with a `WITH` clause but a SELECT body. The
+    # verb-target regex must NOT match this.
+    "WITH x AS (SELECT 1 AS v) SELECT * FROM x",
+    "WITH a AS (SELECT id, val FROM t) SELECT id, val FROM a WHERE val > 0",
+])
+def test_is_mutation_sql_negative_for_cte_select(sql: str):
+    from bird_interact_agents.eval.upstream_ex_base import is_mutation_sql
+
+    assert is_mutation_sql(sql) is False
+
+
+@pytest.mark.parametrize("sql", [
     # Round 3 (Codex): commented mutations must still be detected. Upstream's
     # remove_comments runs before exec, so a commented mutation would
     # otherwise sneak past the dispatcher and commit through ex_base.

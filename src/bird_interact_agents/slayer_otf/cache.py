@@ -140,10 +140,34 @@ def _truncate_for_embedding(
         if len(text) <= _EMBEDDING_FALLBACK_MAX_CHARS:
             return text
         return text[:_EMBEDDING_FALLBACK_MAX_CHARS]
-    tokens = enc.encode(text)
+    try:
+        tokens = enc.encode(text)
+    except Exception as exc:  # noqa: BLE001
+        # tiktoken's encode() raises ValueError on disallowed special
+        # tokens like `<|endoftext|>`; memory text can carry arbitrary
+        # DB/user content (Codex round 5). Fall back to char-cap rather
+        # than aborting cache materialisation.
+        logger.warning(
+            "[slayer_otf] tiktoken encode failed (%s); falling back "
+            "to char-cap truncation at %d chars",
+            exc, _EMBEDDING_FALLBACK_MAX_CHARS,
+        )
+        if len(text) <= _EMBEDDING_FALLBACK_MAX_CHARS:
+            return text
+        return text[:_EMBEDDING_FALLBACK_MAX_CHARS]
     if len(tokens) <= max_tokens:
         return text
-    return enc.decode(tokens[:max_tokens])
+    try:
+        return enc.decode(tokens[:max_tokens])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[slayer_otf] tiktoken decode failed (%s); falling back "
+            "to char-cap truncation at %d chars",
+            exc, _EMBEDDING_FALLBACK_MAX_CHARS,
+        )
+        if len(text) <= _EMBEDDING_FALLBACK_MAX_CHARS:
+            return text
+        return text[:_EMBEDDING_FALLBACK_MAX_CHARS]
 
 # Completeness marker for a per-DB cache dir. Present ⇒ complete; written
 # LAST in the build tmp dir. Content = the build-time fingerprint (provenance).
