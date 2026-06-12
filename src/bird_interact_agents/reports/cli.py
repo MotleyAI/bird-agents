@@ -22,7 +22,10 @@ from bird_interact_agents.reports.output import (
     ManifestPlan,
     write_submission,
 )
-from bird_interact_agents.reports.selection import load_selection
+from bird_interact_agents.reports.selection import (
+    DuplicateInstanceError,
+    load_selection,
+)
 from bird_interact_agents.reports.sources import (
     DuplicateTaskResultsError,
     MissingTaskResultsError,
@@ -154,7 +157,20 @@ def run_submission(args: argparse.Namespace) -> int:
 
     # ---- Selection ------------------------------------------------
     if args.selection:
-        selection = load_selection(args.selection)
+        # Codex round 8: parse errors from load_selection (duplicate
+        # instance_id, malformed JSON, missing field, OSError) must
+        # produce the same SystemExit(2) path as downstream resolve /
+        # coverage failures — not an uncaught traceback.
+        try:
+            selection = load_selection(args.selection)
+        except (
+            DuplicateInstanceError,
+            KeyError,
+            json.JSONDecodeError,
+            OSError,
+        ) as e:
+            sys.stderr.write(f"error: {e}\n")
+            raise SystemExit(2) from e
         selection_mode = "selection-file"
         source_run_ids = sorted({rid for _, rid in selection})
         default_tag = _selection_tag(selection)
@@ -192,6 +208,20 @@ def run_submission(args: argparse.Namespace) -> int:
         default_tag = args.run_id
 
     tag = args.report_tag or default_tag
+
+    # Codex round 8: refuse a zero-instance submission. An empty
+    # selection file, or a `--run-id` whose task_results has no rows,
+    # would otherwise (with --allow-partial) produce a valid-looking
+    # but empty submission.jsonl + manifest.n_instances=0. That's never
+    # a useful artifact; abort before resolve_sources to give the
+    # operator a clear error.
+    if not selection:
+        sys.stderr.write(
+            "error: selection resolved to zero instances — nothing to "
+            "submit. Check `--selection <file>` is non-empty, or that "
+            "the `--run-id` you passed actually wrote task_results rows.\n"
+        )
+        raise SystemExit(2)
 
     # ---- Resolve sources (errors out on missing/stub trajectories
     # and on selection entries lacking a task_results row)
