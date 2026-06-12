@@ -133,6 +133,44 @@ def test_phase_sql_slayer_mode_uses_trajectory_submitted_sql(fake_count_tokens):
     assert slayer_dsl in row.prompt_flow[0].action
 
 
+def test_converter_uses_trusted_instance_id_when_supplied(fake_count_tokens):
+    """Codex round 9: the converter accepts a trusted ``instance_id``
+    from the caller (CLI source resolution) and emits it instead of
+    blindly trusting the trajectory payload."""
+    traj = trajectory_one_phase_pass(instance_id="stamped_in_trajectory")
+    from bird_interact_agents.reports.converter import build_submission_row
+
+    row, warnings = build_submission_row(
+        trajectory_obj=traj,
+        framework="claude_sdk",
+        agent_model="anthropic/claude-opus-4-7",
+        user_sim_model="anthropic/claude-sonnet-4-6",
+        task_data={"user_query_ambiguity": {}, "knowledge_ambiguity": []},
+        patience=3,
+        instance_id="trusted_from_results_db",
+    )
+    assert row.instance_id == "trusted_from_results_db"
+    # Mismatch surfaces as a warning so the operator sees the gap.
+    assert any("mismatches" in w.lower() for w in warnings), warnings
+
+
+def test_converter_no_warning_when_trajectory_id_matches(fake_count_tokens):
+    traj = trajectory_one_phase_pass(instance_id="alien_1")
+    from bird_interact_agents.reports.converter import build_submission_row
+
+    row, warnings = build_submission_row(
+        trajectory_obj=traj,
+        framework="claude_sdk",
+        agent_model="anthropic/claude-opus-4-7",
+        user_sim_model="anthropic/claude-sonnet-4-6",
+        task_data={"user_query_ambiguity": {}, "knowledge_ambiguity": []},
+        patience=3,
+        instance_id="alien_1",
+    )
+    assert row.instance_id == "alien_1"
+    assert not any("mismatches" in w.lower() for w in warnings)
+
+
 def test_phase_sql_slayer_nested_dag_array_uses_compiled_sql(fake_count_tokens):
     """Codex round 5: SLayer ``submit_query.query_json`` accepts
     nested-DAG ARRAYS as well as single objects. Arrays starting with

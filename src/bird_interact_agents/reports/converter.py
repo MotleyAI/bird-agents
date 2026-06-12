@@ -56,10 +56,19 @@ def build_submission_row(
     patience: int,
     include_thinking: bool = True,
     query_mode: str = "slayer",
+    instance_id: str | None = None,
 ) -> tuple[SubmissionRow, list[str]]:
     """Build the SubmissionRow PLUS the list of converter warnings
     (phase-split warnings, etc.) that the CLI surfaces in
-    ``manifest.warnings_by_instance``."""
+    ``manifest.warnings_by_instance``.
+
+    Codex round 9: when ``instance_id`` is supplied it is the authoritative
+    id (from the selection / results.db row); the trajectory's stamped id is
+    validated against it. A mismatch indicates a stale / mis-copied
+    trajectory file and adds a manifest warning. When ``instance_id`` is
+    None the trajectory's stamped id is used as a fallback (kept for
+    legacy callers / unit tests that don't pre-thread the trusted id).
+    """
     walk = get_adapter(framework, query_mode=query_mode)
     steps = trajectory_obj.get("trajectory") or []
     turns = list(walk(steps))
@@ -193,8 +202,21 @@ def build_submission_row(
             )
         )
 
+    payload_instance_id = str(trajectory_obj.get("instance_id") or "")
+    if instance_id is not None:
+        effective_instance_id = instance_id
+        if payload_instance_id and payload_instance_id != instance_id:
+            extra_warnings.append(
+                f"trajectory.instance_id={payload_instance_id!r} mismatches "
+                f"the source-resolved instance_id={instance_id!r}; using the "
+                "source-resolved id. Check for a stale or mis-copied "
+                "trajectory file."
+            )
+    else:
+        effective_instance_id = payload_instance_id
+
     row = SubmissionRow(
-        instance_id=str(trajectory_obj.get("instance_id") or ""),
+        instance_id=effective_instance_id,
         subtask_1_predicted_sql=subtask_1_predicted_sql,
         subtask_2_predicted_sql=subtask_2_predicted_sql,
         prompt_flow=entries,

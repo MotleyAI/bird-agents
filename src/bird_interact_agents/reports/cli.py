@@ -338,6 +338,7 @@ def run_submission(args: argparse.Namespace) -> int:
             patience=patience,
             include_thinking=args.include_thinking,
             query_mode=src.query_mode or "slayer",
+            instance_id=inst_id,
         )
         rows.append(row)
 
