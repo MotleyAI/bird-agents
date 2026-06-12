@@ -274,3 +274,83 @@ def test_n1_dispatch_skips_mutation_bearing_gold_sql(tmp_path: Path):
             benchmark=get_benchmark("mini-interact"),
         )
     ex_base_call.assert_not_called()
+
+
+def test_grade_and_write_forwards_conditions_to_grade_submission(
+    tmp_path: Path,
+):
+    """Round 2 (Codex): `grade_and_write` must accept `conditions` and
+    forward it to `grade_submission`. Without this, the production
+    write_submission_skeleton path drops `task_data['conditions']`
+    before it reaches the ex_base N1 path."""
+    from bird_interact_agents.eval import grade_in_place as gip
+
+    rows_dir = tmp_path / "rows"
+    rows_dir.mkdir()
+    sentinel = {"order": True}
+
+    seen: list[dict | None] = []
+
+    def fake_grade(**kwargs):
+        seen.append(kwargs.get("conditions"))
+        # Return a minimal CascadeVerdict-shaped object the caller can use.
+        from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
+        return CascadeVerdict(
+            n1_original_gold=True, n2_audited_primary=True,
+            n3_any_audited_variant=True, n4_tie_order=True,
+            n5_llm_judge=False, n6_numeric_epsilon=True,
+            n7_trailing_whitespace=True, n8_column_order=True,
+            n9_case_fold=True, matched_variant_id=None,
+            novel_reading_judgment=None,
+        )
+
+    with patch.object(gip, "grade_submission", side_effect=fake_grade):
+        gip.grade_and_write(
+            rows_dir=rows_dir, instance_id="iid_x", benchmark="mini-interact",
+            run_id="rid", task_annotation=_make_task_annotation(),
+            audited_gold_rows=[], original_sol_sql=["SELECT 1"],
+            submitted_sql="SELECT 1", db_path=Path("/dev/null"),
+            executor=lambda *a, **kw: ([(1,)], ["c"]),  # noqa: ARG005
+            trajectory_path="rows/iid_x/attempt-1.json",
+            conditions=sentinel,
+        )
+    assert seen == [sentinel]
+
+
+def test_grade_one_submission_forwards_task_data_conditions(
+    tmp_path: Path,
+):
+    """Round 2 (Codex): `grade_one_submission` must read
+    `task_data['conditions']` and pass it through `grade_and_write` so
+    ordered tasks are graded with positional semantics."""
+    from bird_interact_agents.eval import grade_in_place as gip
+
+    rows_dir = tmp_path / "rows"
+    rows_dir.mkdir()
+    sentinel = {"order": True}
+
+    seen_kwargs: list[dict] = []
+
+    def fake_grade_and_write(**kwargs):
+        seen_kwargs.append(kwargs)
+        return rows_dir / "out.json"
+
+    task_data = {
+        "instance_id": "iid_x",
+        "selected_database": "alien",
+        "sol_sql": ["SELECT 1"],
+        "amb_user_query": "q",
+        "conditions": sentinel,
+    }
+    with patch.object(gip, "grade_and_write", side_effect=fake_grade_and_write):
+        gip.grade_one_submission(
+            task_data=task_data,
+            submitted_sql="SELECT 1",
+            rows_dir=rows_dir,
+            run_id="rid",
+            benchmark="mini-interact",
+            db_path=Path("/dev/null"),
+            task_annotation=_make_task_annotation(),
+        )
+    assert len(seen_kwargs) == 1
+    assert seen_kwargs[0].get("conditions") is sentinel

@@ -254,6 +254,10 @@ def _process_one(
             submitted_sql=submitted_sql,
             db_path=db_path,
             benchmark=benchmark_obj,
+            # DEV-1550 round-2 (Codex): we loaded `conditions` above; pass
+            # it through so ordered-comparison tasks regrade with
+            # positional semantics, matching upstream.
+            conditions=conditions,
         )
     except Exception:  # noqa: BLE001
         logger.exception(

@@ -123,8 +123,18 @@ def _load_module_from_file(
     """
     if not path.is_file():
         raise FileNotFoundError(f"upstream module not found at {path}")
-    if sys_path_addition is not None and str(sys_path_addition) not in sys.path:
-        sys.path.insert(0, str(sys_path_addition))
+    if sys_path_addition is not None:
+        # ALWAYS re-front the per-load directory, even if it's already
+        # somewhere in sys.path. Otherwise the second tree we load
+        # leaves its own dir at the front, and a subsequent reload of
+        # the first tree still walks sys.path in [new_first_dir, ...,
+        # mini_dir, ...] order — the bare `from db_utils import ...`
+        # would then bind to the WRONG tree's sibling because the
+        # sys.path search hits the second tree first. (Codex round 2.)
+        path_str = str(sys_path_addition)
+        while path_str in sys.path:
+            sys.path.remove(path_str)
+        sys.path.insert(0, path_str)
     spec = importlib.util.spec_from_file_location(name, str(path))
     if spec is None or spec.loader is None:
         raise ImportError(f"could not build module spec for {path}")

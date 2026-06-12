@@ -504,6 +504,54 @@ def test_regrade_script_falls_back_to_jsonl_when_annotation_missing(
     assert "regraded" in output.lower()
 
 
+def test_regrade_script_forwards_task_conditions_to_grade_submission(
+    fake_benchmark_root: Path, fake_runs_root: Path,
+    fake_annotations_root: Path,
+):
+    """Round 2 (Codex): the backfill loaded `conditions` from the task
+    annotation but threw them away before calling `grade_submission`.
+    Now the conditions kwarg MUST reach `_compute_n1` so ordered tasks
+    regrade with positional semantics. Verify by patching `grade_submission`
+    in the script's module and capturing kwargs."""
+    iid = "alien_cond"
+    db = "alien"
+    p = _seed_result_json(
+        fake_runs_root, fake_annotations_root,
+        db=db, iid=iid,
+        run_id="20260612t1200-claudes-slayer-cond01",
+        submitted_sql="SELECT val FROM t",
+        sol_sql=["SELECT val FROM t"],
+        n1_original_gold=False,
+        failure_primary="agent_miss",
+    )
+    # Stamp `conditions={"order": True}` onto the task annotation file.
+    ann_path = (
+        fake_annotations_root / "mini-interact" / db / f"{iid}.task.json"
+    )
+    ann_payload = json.loads(ann_path.read_text())
+    ann_payload["conditions"] = {"order": True}
+    ann_path.write_text(json.dumps(ann_payload, indent=2))
+
+    # Import-as-module so we can patch grade_submission for the script's
+    # own _process_one path.
+    import importlib
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    mod = importlib.import_module("regrade_n1_ex_base")
+    seen_conditions: list = []
+    real_grade = mod.grade_submission
+
+    def spy(**kwargs):
+        seen_conditions.append(kwargs.get("conditions"))
+        return real_grade(**kwargs)
+
+    from unittest.mock import patch as _patch
+    with _patch.object(mod, "grade_submission", side_effect=spy):
+        mod.regrade(dry_run=False)
+
+    assert seen_conditions and seen_conditions[0] == {"order": True}
+
+
 def test_regrade_script_skips_when_sqlite_db_missing(
     fake_runs_root: Path, fake_annotations_root: Path, tmp_path: Path,
     monkeypatch,

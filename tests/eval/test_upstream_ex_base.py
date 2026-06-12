@@ -625,6 +625,62 @@ def test_load_module_from_file_isolates_db_utils_between_upstream_trees(
         sys.modules.pop("test_utils_b", None)
 
 
+def test_load_module_from_file_reloading_first_tree_still_finds_own_db_utils(
+    tmp_path: Path,
+):
+    """Codex round 2: ``sys.path.insert(0, ...)`` was conditional on
+    absence — so after loading tree_a then tree_b, ``sys.path`` looked
+    like ``[tree_b_dir, tree_a_dir, ...]``. A subsequent reload of
+    tree_a would re-execute its ``test_utils.py`` but the bare
+    ``from db_utils import ...`` would walk ``sys.path`` in order and
+    pick tree_b's sibling first. Regression: each load must re-front
+    its own dir."""
+    import sys
+    from bird_interact_agents.eval import upstream_ex_base as mod
+
+    tree_a = tmp_path / "tree_a"
+    tree_a.mkdir()
+    (tree_a / "db_utils.py").write_text("ORIGIN = 'tree_a'\n")
+    (tree_a / "test_utils.py").write_text(
+        "from db_utils import ORIGIN\nWHICH = ORIGIN\n"
+    )
+
+    tree_b = tmp_path / "tree_b"
+    tree_b.mkdir()
+    (tree_b / "db_utils.py").write_text("ORIGIN = 'tree_b'\n")
+    (tree_b / "test_utils.py").write_text(
+        "from db_utils import ORIGIN\nWHICH = ORIGIN\n"
+    )
+
+    prior_modules = {
+        k: sys.modules.get(k) for k in ("db_utils",)
+    }
+    prior_path = list(sys.path)
+    try:
+        mod._load_module_from_file(
+            "tu_a_first", tree_a / "test_utils.py", sys_path_addition=tree_a,
+        )
+        mod._load_module_from_file(
+            "tu_b_after", tree_b / "test_utils.py", sys_path_addition=tree_b,
+        )
+        # Now reload tree_a; without the re-front, this picks tree_b's
+        # db_utils because tree_b's dir is at position 0 of sys.path.
+        a_again = mod._load_module_from_file(
+            "tu_a_reload", tree_a / "test_utils.py",
+            sys_path_addition=tree_a,
+        )
+        assert a_again.WHICH == "tree_a"
+    finally:
+        for k, v in prior_modules.items():
+            if v is not None:
+                sys.modules[k] = v
+            else:
+                sys.modules.pop(k, None)
+        for k in ("tu_a_first", "tu_b_after", "tu_a_reload"):
+            sys.modules.pop(k, None)
+        sys.path[:] = prior_path
+
+
 def test_load_module_from_file_restores_prior_db_utils_after_load(tmp_path: Path):
     """The cache-isolation snapshot restores whatever ``db_utils`` was
     in ``sys.modules`` BEFORE the load, so a third-party caller with
