@@ -640,6 +640,127 @@ def test_submission_uses_run_level_manifest_patience(
     assert row["prompt_flow"][0]["remaining_budget"] == 1003.0
 
 
+def test_submission_aborts_on_empty_mode_value(
+    tmp_path: Path, monkeypatch
+):
+    """Codex round 6: a task_results row whose `mode` column is empty
+    or null must NOT silently pass the a-Interact gate."""
+    import sqlite3
+
+    from bird_interact_agents import paths
+    from bird_interact_agents.cloud.cli import main
+
+    runs_root, results_root = stage_run(
+        tmp_path,
+        benchmark="bird-interact-lite-exp",
+        run_id="run-xyz",
+        instances=[
+            ("alien", "alien_1", trajectory_one_phase_pass(instance_id="alien_1")),
+        ],
+    )
+    # Blank-out the mode column on the staged row to simulate a
+    # malformed results.db.
+    db = results_root / "bird-interact-lite-exp" / "cloud" / "run-xyz" / "results.db"
+    con = sqlite3.connect(db)
+    con.execute(
+        "UPDATE task_results SET mode = '' WHERE instance_id = ?",
+        ("alien_1",),
+    )
+    con.execute(
+        "UPDATE run_metadata SET mode = '' WHERE run_id = ?", ("run-xyz",)
+    )
+    con.commit()
+    con.close()
+
+    monkeypatch.setattr(paths, "runs_root", lambda: runs_root)
+    monkeypatch.setattr(paths, "results_root", lambda: results_root)
+    monkeypatch.setattr(paths, "reports_root", lambda: tmp_path / "reports")
+    _stub_split(monkeypatch, {"alien_1"})
+    _stub_fake_tokenizer(monkeypatch)
+    monkeypatch.setattr(
+        "bird_interact_agents.reports.budget.lookup_task_data",
+        lambda benchmark, instance_id: {
+            "user_query_ambiguity": {},
+            "knowledge_ambiguity": [],
+        },
+    )
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "submission",
+                "--team-name",
+                "Motley",
+                "--method-name",
+                "SLayer-Agent",
+                "--benchmark",
+                "bird-interact-lite-exp",
+                "--run-id",
+                "run-xyz",
+            ]
+        )
+
+
+def test_submission_cli_handles_duplicate_task_results_cleanly(
+    tmp_path: Path, monkeypatch
+):
+    """Codex round 6: the `DuplicateTaskResultsError` raised by
+    `_read_results_db` must be translated into a clean SystemExit(2),
+    not bubble up as an uncaught traceback."""
+    import sqlite3
+
+    from bird_interact_agents import paths
+    from bird_interact_agents.cloud.cli import main
+
+    runs_root, results_root = stage_run(
+        tmp_path,
+        benchmark="bird-interact-lite-exp",
+        run_id="run-xyz",
+        instances=[
+            ("alien", "alien_1", trajectory_one_phase_pass(instance_id="alien_1")),
+        ],
+    )
+    # Inject a duplicate row.
+    db = results_root / "bird-interact-lite-exp" / "cloud" / "run-xyz" / "results.db"
+    con = sqlite3.connect(db)
+    con.execute(
+        "INSERT INTO task_results (run_id, instance_id, mode, query_mode, "
+        "framework, database, phase1_passed, phase2_passed) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("run-xyz", "alien_1", "one-shot", "raw", "claude_sdk", "alien", 0, 0),
+    )
+    con.commit()
+    con.close()
+
+    monkeypatch.setattr(paths, "runs_root", lambda: runs_root)
+    monkeypatch.setattr(paths, "results_root", lambda: results_root)
+    monkeypatch.setattr(paths, "reports_root", lambda: tmp_path / "reports")
+    _stub_split(monkeypatch, {"alien_1"})
+    _stub_fake_tokenizer(monkeypatch)
+    monkeypatch.setattr(
+        "bird_interact_agents.reports.budget.lookup_task_data",
+        lambda benchmark, instance_id: {
+            "user_query_ambiguity": {},
+            "knowledge_ambiguity": [],
+        },
+    )
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "submission",
+                "--team-name",
+                "Motley",
+                "--method-name",
+                "SLayer-Agent",
+                "--benchmark",
+                "bird-interact-lite-exp",
+                "--run-id",
+                "run-xyz",
+            ]
+        )
+
+
 def test_submission_aborts_on_non_a_interact_run(
     tmp_path: Path, monkeypatch
 ):

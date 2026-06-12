@@ -31,6 +31,10 @@ class MissingTaskResultsError(ValueError):
     pass
 
 
+class DuplicateTaskResultsError(ValueError):
+    pass
+
+
 @dataclass
 class InstanceSource:
     instance_id: str
@@ -79,7 +83,7 @@ def _read_results_db(results_db_path: Path, run_id: str) -> tuple[dict, dict[str
                 dupes.append(iid)
             by_instance[iid] = dict(row)
         if dupes:
-            raise ValueError(
+            raise DuplicateTaskResultsError(
                 f"{results_db_path}: task_results has multiple rows for "
                 f"run_id={run_id!r} on instance_id(s): "
                 f"{', '.join(sorted(set(dupes)))}. Each (run_id, instance_id) "

@@ -24,6 +24,7 @@ from bird_interact_agents.reports.output import (
 )
 from bird_interact_agents.reports.selection import load_selection
 from bird_interact_agents.reports.sources import (
+    DuplicateTaskResultsError,
     MissingTaskResultsError,
     MissingTrajectoryError,
     StubTrajectoryError,
@@ -200,6 +201,7 @@ def run_submission(args: argparse.Namespace) -> int:
         MissingTrajectoryError,
         StubTrajectoryError,
         MissingTaskResultsError,
+        DuplicateTaskResultsError,
         FileNotFoundError,
     ) as e:
         sys.stderr.write(f"error: {e}\n")
@@ -208,12 +210,14 @@ def run_submission(args: argparse.Namespace) -> int:
     # ---- Setting gate: a-Interact only (per DEV-1553 spec). The mode
     # comes from the source run's task_results row; any non-a-interact
     # row indicates the operator pointed the converter at a c-interact /
-    # one-shot / oracle run by mistake. Listing every offender is more
-    # useful than a single error.
+    # one-shot / oracle run by mistake. Codex round 6: an EMPTY mode
+    # also counts as invalid (defense-in-depth; round 3's
+    # MissingTaskResultsError catches the obvious case, but a row whose
+    # `mode` column is null/empty would otherwise sneak past).
     wrong_mode = sorted(
         f"{iid}({src.mode!r})"
         for iid, src in sources.items()
-        if src.mode and src.mode != "a-interact"
+        if src.mode != "a-interact"
     )
     if wrong_mode:
         sys.stderr.write(
