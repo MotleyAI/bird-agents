@@ -640,6 +640,119 @@ def test_submission_uses_run_level_manifest_patience(
     assert row["prompt_flow"][0]["remaining_budget"] == 1003.0
 
 
+def test_submission_aborts_on_raw_query_mode(
+    tmp_path: Path, monkeypatch
+):
+    """Codex round 7: a row whose mode='a-interact' (so the mode gate
+    passes) but query_mode='raw' must hit the dedicated query-mode gate
+    with a clean SystemExit(2), NOT crash with `UnknownFrameworkError`
+    inside the converter."""
+    import sqlite3
+
+    from bird_interact_agents import paths
+    from bird_interact_agents.cloud.cli import main
+
+    runs_root, results_root = stage_run(
+        tmp_path,
+        benchmark="bird-interact-lite-exp",
+        run_id="run-xyz",
+        instances=[
+            ("alien", "alien_1", trajectory_one_phase_pass(instance_id="alien_1")),
+        ],
+    )
+    db = results_root / "bird-interact-lite-exp" / "cloud" / "run-xyz" / "results.db"
+    con = sqlite3.connect(db)
+    con.execute(
+        "UPDATE task_results SET query_mode = 'raw' WHERE instance_id = ?",
+        ("alien_1",),
+    )
+    con.commit()
+    con.close()
+
+    monkeypatch.setattr(paths, "runs_root", lambda: runs_root)
+    monkeypatch.setattr(paths, "results_root", lambda: results_root)
+    monkeypatch.setattr(paths, "reports_root", lambda: tmp_path / "reports")
+    _stub_split(monkeypatch, {"alien_1"})
+    _stub_fake_tokenizer(monkeypatch)
+    monkeypatch.setattr(
+        "bird_interact_agents.reports.budget.lookup_task_data",
+        lambda benchmark, instance_id: {
+            "user_query_ambiguity": {},
+            "knowledge_ambiguity": [],
+        },
+    )
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "submission",
+                "--team-name",
+                "Motley",
+                "--method-name",
+                "SLayer-Agent",
+                "--benchmark",
+                "bird-interact-lite-exp",
+                "--run-id",
+                "run-xyz",
+            ]
+        )
+
+
+def test_submission_aborts_on_empty_query_mode(
+    tmp_path: Path, monkeypatch
+):
+    """Empty query_mode must NOT be silently treated as 'slayer'."""
+    import sqlite3
+
+    from bird_interact_agents import paths
+    from bird_interact_agents.cloud.cli import main
+
+    runs_root, results_root = stage_run(
+        tmp_path,
+        benchmark="bird-interact-lite-exp",
+        run_id="run-xyz",
+        instances=[
+            ("alien", "alien_1", trajectory_one_phase_pass(instance_id="alien_1")),
+        ],
+    )
+    db = results_root / "bird-interact-lite-exp" / "cloud" / "run-xyz" / "results.db"
+    con = sqlite3.connect(db)
+    con.execute(
+        "UPDATE task_results SET query_mode = '' WHERE instance_id = ?",
+        ("alien_1",),
+    )
+    con.commit()
+    con.close()
+
+    monkeypatch.setattr(paths, "runs_root", lambda: runs_root)
+    monkeypatch.setattr(paths, "results_root", lambda: results_root)
+    monkeypatch.setattr(paths, "reports_root", lambda: tmp_path / "reports")
+    _stub_split(monkeypatch, {"alien_1"})
+    _stub_fake_tokenizer(monkeypatch)
+    monkeypatch.setattr(
+        "bird_interact_agents.reports.budget.lookup_task_data",
+        lambda benchmark, instance_id: {
+            "user_query_ambiguity": {},
+            "knowledge_ambiguity": [],
+        },
+    )
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "submission",
+                "--team-name",
+                "Motley",
+                "--method-name",
+                "SLayer-Agent",
+                "--benchmark",
+                "bird-interact-lite-exp",
+                "--run-id",
+                "run-xyz",
+            ]
+        )
+
+
 def test_submission_aborts_on_empty_mode_value(
     tmp_path: Path, monkeypatch
 ):

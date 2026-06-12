@@ -121,29 +121,51 @@ def walk_trajectory(steps: list[dict[str, Any]]) -> Iterable[Turn]:
         elif t == "AssistantMessage":
             model = data.get("model") or last_model
             last_model = model or last_model
+            # Codex round 7: an assistant message can carry MULTIPLE
+            # tool_use blocks. Collect everything first, then emit one
+            # Turn per tool_use sharing the same prompt + thinking +
+            # text context (the model produced them all from the same
+            # message). Resetting state mid-message would leave the 2nd+
+            # tool calls with an empty prompt and missing thinking/text.
+            msg_thinking_chunks: list[str] = []
+            msg_text_chunks: list[str] = []
+            tool_uses_in_msg: list[dict] = []
             for c in data.get("content") or []:
                 if not isinstance(c, dict):
                     continue
-                if "thinking" in c and not _is_tool_use(c):
-                    pending_thinking += str(c.get("thinking") or "")
-                    continue
                 if _is_tool_use(c):
-                    tu_id = str(c.get("id", ""))
-                    observation = tool_result_by_id.get(tu_id, "")
-                    yield Turn(
-                        model=last_model,
-                        prompt="".join(prompt_buf).rstrip(),
-                        response_raw=_render_response(
-                            pending_thinking, pending_text, c
-                        ),
-                        tool_name=str(c.get("name", "")),
-                        tool_input=dict(c.get("input") or {}),
-                        tool_use_id=tu_id,
-                        observation=observation,
-                    )
-                    prompt_buf = []
-                    pending_thinking = ""
-                    pending_text = ""
+                    tool_uses_in_msg.append(c)
+                elif "thinking" in c:
+                    msg_thinking_chunks.append(str(c.get("thinking") or ""))
                 elif "text" in c:
-                    pending_text += str(c.get("text") or "")
+                    msg_text_chunks.append(str(c.get("text") or ""))
+
+            if not tool_uses_in_msg:
+                # Pure-text / thinking-only message — fold into the next
+                # tool-using turn (no Turn emitted now).
+                pending_thinking += "".join(msg_thinking_chunks)
+                pending_text += "".join(msg_text_chunks)
+                continue
+
+            full_thinking = pending_thinking + "".join(msg_thinking_chunks)
+            full_text = pending_text + "".join(msg_text_chunks)
+            shared_prompt = "".join(prompt_buf).rstrip()
+
+            for c in tool_uses_in_msg:
+                tu_id = str(c.get("id", ""))
+                observation = tool_result_by_id.get(tu_id, "")
+                yield Turn(
+                    model=last_model,
+                    prompt=shared_prompt,
+                    response_raw=_render_response(full_thinking, full_text, c),
+                    tool_name=str(c.get("name", "")),
+                    tool_input=dict(c.get("input") or {}),
+                    tool_use_id=tu_id,
+                    observation=observation,
+                )
+            # Reset context AFTER the whole message (not after each
+            # tool_use within it).
+            prompt_buf = []
+            pending_thinking = ""
+            pending_text = ""
         # SystemMessage / ResultMessage / other → skip silently.

@@ -199,6 +199,62 @@ def test_walk_turn_prompt_concatenates_intervening_user_inputs():
 # ---------------------------------------------------------------------------
 
 
+def test_walk_multiple_tool_uses_in_one_message_share_prompt_and_context():
+    """Codex round 7: a single AssistantMessage can carry multiple
+    ``tool_use`` blocks. Every emitted Turn must share the SAME prompt
+    + thinking + text context (the model produced them all together);
+    resetting state after the first tool_use would leave subsequent
+    Turns with an empty prompt and missing context."""
+    steps = [
+        system_msg(),
+        user_text_msg(text="Initial task statement."),
+        # One assistant message, three content items:
+        # [thinking, tool_use A, tool_use B].
+        {
+            "type": "AssistantMessage",
+            "data": {
+                "content": [
+                    {"thinking": "reasoning across both tools", "signature": "sig"},
+                    tool_use_block(
+                        tool_use_id="tu_A",
+                        name="mcp__bird-interact-tools__get_schema",
+                        inp={},
+                    ),
+                    tool_use_block(
+                        tool_use_id="tu_B",
+                        name="mcp__bird-interact-tools__get_all_column_meanings",
+                        inp={},
+                    ),
+                ],
+                "model": "claude-opus-4-7",
+                "parent_tool_use_id": None,
+                "error": None,
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+                "message_id": "msg_dual",
+                "stop_reason": "tool_use",
+                "session_id": "sess_dual",
+            },
+        },
+        tool_result_msg(tool_use_id="tu_A", content="schema text"),
+        tool_result_msg(tool_use_id="tu_B", content="column meanings text"),
+    ]
+    turns = _walk(steps)
+    assert len(turns) == 2
+    # BOTH turns carry the same prompt (the initial task statement).
+    assert turns[0].prompt == "Initial task statement."
+    assert turns[1].prompt == "Initial task statement."
+    # BOTH turns carry the thinking content (rendered into response_raw
+    # — structural envelope check, not content assertion).
+    assert "thinking" in turns[0].response_raw
+    assert "thinking" in turns[1].response_raw
+    # Each turn gets the correct observation.
+    assert "schema" in turns[0].observation
+    assert "column meanings" in turns[1].observation
+    # Different tool names + ids.
+    assert turns[0].tool_use_id == "tu_A"
+    assert turns[1].tool_use_id == "tu_B"
+
+
 def test_walk_response_raw_preserves_thinking_and_tool_use():
     steps = [
         system_msg(),

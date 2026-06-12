@@ -227,6 +227,27 @@ def run_submission(args: argparse.Namespace) -> int:
         )
         raise SystemExit(2)
 
+    # Codex round 7: same defensive gate on query_mode. Adapter registry
+    # only accepts ("claude_sdk", "slayer"); without the explicit gate
+    # here, an empty `query_mode` silently defaults to "slayer" at the
+    # converter call site, and a truthy unsupported value like "raw"
+    # would crash inside `build_submission_row` with an uncaught
+    # `UnknownFrameworkError` traceback. List every offender.
+    wrong_qm = sorted(
+        f"{iid}({src.query_mode!r})"
+        for iid, src in sources.items()
+        if src.query_mode != "slayer"
+    )
+    if wrong_qm:
+        sys.stderr.write(
+            "error: a-Interact submission report requires "
+            f"query_mode='slayer' on every selected instance "
+            f"(raw-mode trajectories persist `data` as Python-repr "
+            f"strings and need a separate parser); got "
+            f"{', '.join(wrong_qm)}\n"
+        )
+        raise SystemExit(2)
+
     # ---- Coverage check ------------------------------------------
     try:
         _coverage.assert_coverage_ok(
