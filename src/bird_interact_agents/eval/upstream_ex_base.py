@@ -298,6 +298,45 @@ def compare_pred_vs_gold_ex_base(
     needs_rollback = (
         benchmark in _LIVESQLBENCH_BENCHMARKS and driver == "postgres"
     )
+    # Codex round 4 #1: when the caller passes ``conn=None``, upstream's
+    # ``execute_queries`` opens a connection per call (sqlite3.connect /
+    # pool.getconn) but never closes it — every N1 comparison leaks at
+    # least one conn. Open one ourselves and close it in the finally.
+    # This makes BOTH preprocessed-result executions reuse the same
+    # conn AND the rollback/close path own the lifecycle.
+    owned_conn = None
+    if conn is None:
+        try:
+            if driver == "sqlite":
+                import sqlite3 as _sqlite3
+                conn = _sqlite3.connect(db_name, timeout=30)
+                owned_conn = conn
+            elif driver == "postgres":
+                # Local import to avoid a hard dep on bird_interact_agents'
+                # postgres helper when only mini-interact is in use.
+                from bird_interact_agents.db_connection import (
+                    _open_psycopg2_connection,
+                )
+                import os as _os
+                host = _os.environ.get("BIRD_PG_HOST", "localhost")
+                port = int(_os.environ.get("BIRD_PG_PORT", "5432"))
+                user = _os.environ.get("BIRD_PG_USER", "bird_interact")
+                password = _os.environ.get("BIRD_PG_PASSWORD", "bird_interact")
+                stmt_timeout = int(
+                    _os.environ.get("BIRD_PG_STATEMENT_TIMEOUT", "30000")
+                )
+                # `db_name` is the DB short name; upstream livesqlbench's
+                # `perform_query_on_postgresql_databases` will issue
+                # queries through this raw psycopg2 conn.
+                conn = _open_psycopg2_connection(
+                    db_name, host, port, user, password, stmt_timeout,
+                )
+                owned_conn = conn
+        except Exception as exc:  # noqa: BLE001
+            raise ExBaseUnavailableError(
+                f"could not open conn for {benchmark!r} on {db_name!r}: {exc}"
+            ) from exc
+
     # Upstream's SQLite `perform_query_on_sqlite_databases` runs
     # `PRAGMA synchronous = OFF` / `journal_mode = WAL` on the conn,
     # which SQLite rejects when a transaction is open ("Safety level
@@ -314,33 +353,46 @@ def compare_pred_vs_gold_ex_base(
             pass
     try:
         try:
-            result = upstream.ex_base(
-                cleaned_pred, cleaned_sol, db_name, conn, conditions,
-            )
-        except Exception:
-            # Re-raise after the finally block runs rollback for
-            # Postgres conns. For SQLite the conn is fresh per task so
-            # there's nothing to roll back.
-            raise
-    finally:
-        if needs_rollback:
             try:
-                conn.rollback()
+                result = upstream.ex_base(
+                    cleaned_pred, cleaned_sol, db_name, conn, conditions,
+                )
+            except Exception:
+                # Re-raise after the rollback finally below; the outer
+                # try/finally closes ``owned_conn`` either way.
+                raise
+        finally:
+            if needs_rollback:
+                try:
+                    conn.rollback()
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "[upstream_ex_base] conn.rollback() failed after "
+                        "compare_pred_vs_gold_ex_base — next caller may "
+                        "see leaked state",
+                        exc_info=True,
+                    )
+
+        # Codex round-1 finding #3: legacy deviation from upstream —
+        # both empty preprocessed results = pass.
+        if result == 0 and _both_results_empty(
+            upstream, cleaned_pred, cleaned_sol, db_name, conn,
+        ):
+            return True
+        return bool(result == 1)
+    finally:
+        # Codex round 4 #1: close any conn we opened ourselves. The
+        # outer finally fires on both the success and exception paths,
+        # AFTER ``_both_results_empty`` reuses the same conn (which is
+        # why the empty-check runs inside the same try block).
+        if owned_conn is not None:
+            try:
+                owned_conn.close()
             except Exception:  # noqa: BLE001
                 logger.warning(
-                    "[upstream_ex_base] conn.rollback() failed after "
-                    "compare_pred_vs_gold_ex_base — next caller may see "
-                    "leaked state",
+                    "[upstream_ex_base] owned-conn close failed",
                     exc_info=True,
                 )
-
-    # Codex round-1 finding #3: legacy deviation from upstream — both
-    # empty preprocessed results = pass.
-    if result == 0 and _both_results_empty(
-        upstream, cleaned_pred, cleaned_sol, db_name, conn,
-    ):
-        return True
-    return bool(result == 1)
 
 
 def _both_results_empty(

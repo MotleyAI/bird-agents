@@ -519,6 +519,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     submitted_sql=submitted_sql,
                     db_path=_db_path,
                     conn=None,
+                    conditions=_row.get("conditions"),
                 )
 
             dest = write_submission_skeleton(

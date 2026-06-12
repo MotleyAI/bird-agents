@@ -393,6 +393,141 @@ def test_compare_pred_vs_gold_ex_base_pg_rolls_back_on_return(monkeypatch):
     conn.rollback.assert_called_once()
 
 
+def test_compare_pred_vs_gold_ex_base_closes_owned_sqlite_conn_on_success(
+    tmp_path: Path, monkeypatch,
+):
+    """Codex round 4 #1: when the caller passes ``conn=None`` the shim
+    opens a SQLite conn itself and MUST close it on the success path,
+    otherwise every N1 comparison leaks a file descriptor."""
+    import sqlite3
+    from bird_interact_agents.eval import upstream_ex_base as mod
+
+    # Build a real on-disk SQLite DB so the upstream PRAGMAs (which
+    # need a real file) don't fail.
+    db_path = tmp_path / "alien.sqlite"
+    seed = sqlite3.connect(str(db_path))
+    seed.execute("CREATE TABLE t (val INT)")
+    seed.execute("INSERT INTO t (val) VALUES (1)")
+    seed.commit()
+    seed.close()
+
+    # Spy on sqlite3.connect to count the owned-conn open/close.
+    real_connect = sqlite3.connect
+    opened: list = []
+
+    class _SpyConn:
+        def __init__(self, inner):
+            self._inner = inner
+            self.closed = False
+            opened.append(self)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        def close(self):
+            self.closed = True
+            self._inner.close()
+
+    def spy_connect(*args, **kwargs):
+        return _SpyConn(real_connect(*args, **kwargs))
+
+    monkeypatch.setattr(sqlite3, "connect", spy_connect)
+
+    mod.compare_pred_vs_gold_ex_base(
+        benchmark="mini-interact",
+        pred_sqls=["SELECT val FROM t"], sol_sqls=["SELECT val FROM t"],
+        db_name=str(db_path), conn=None,
+        conditions=None,
+    )
+    assert opened, "shim did not open a SQLite conn even though conn=None"
+    # Every owned conn we opened was closed.
+    assert all(c.closed for c in opened), (
+        "shim leaked a SQLite conn after the comparison"
+    )
+
+
+def test_compare_pred_vs_gold_ex_base_closes_owned_sqlite_conn_on_exception(
+    tmp_path: Path, monkeypatch,
+):
+    """Even when upstream `ex_base` raises, the owned conn we opened
+    must close so a flaky upstream call can't exhaust FDs."""
+    import sqlite3
+    from bird_interact_agents.eval import upstream_ex_base as mod
+
+    db_path = tmp_path / "alien.sqlite"
+    seed = sqlite3.connect(str(db_path))
+    seed.execute("CREATE TABLE t (val INT)")
+    seed.commit()
+    seed.close()
+
+    real_connect = sqlite3.connect
+    opened: list = []
+
+    class _SpyConn:
+        def __init__(self, inner):
+            self._inner = inner
+            self.closed = False
+            opened.append(self)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        def close(self):
+            self.closed = True
+            self._inner.close()
+
+    def spy_connect(*args, **kwargs):
+        return _SpyConn(real_connect(*args, **kwargs))
+
+    monkeypatch.setattr(sqlite3, "connect", spy_connect)
+
+    # Force upstream `ex_base` to raise.
+    fake_mini = MagicMock()
+    fake_mini.ex_base = lambda *a, **kw: (_ for _ in ()).throw(
+        RuntimeError("simulated upstream blow-up")
+    )
+    fake_mini.remove_comments = lambda x: x
+    fake_mini.remove_distinct = lambda x: x
+    fake_mini.remove_round = lambda x: x
+    monkeypatch.setattr(mod, "_load_mini_interact_module", lambda: fake_mini)
+
+    with pytest.raises(RuntimeError):
+        mod.compare_pred_vs_gold_ex_base(
+            benchmark="mini-interact",
+            pred_sqls=["SELECT 1"], sol_sqls=["SELECT 1"],
+            db_name=str(db_path), conn=None,
+            conditions=None,
+        )
+    assert opened
+    assert all(c.closed for c in opened), (
+        "shim leaked a SQLite conn after upstream raised"
+    )
+
+
+def test_compare_pred_vs_gold_ex_base_does_not_close_caller_supplied_conn(
+    monkeypatch,
+):
+    """When the caller PROVIDES a conn (the cloud SQLite inline path),
+    the shim must NOT close it — that's the caller's responsibility."""
+    from bird_interact_agents.eval import upstream_ex_base as mod
+
+    fake_mini = MagicMock()
+    fake_mini.ex_base = lambda *a, **kw: 1
+    fake_mini.remove_comments = lambda x: x
+    fake_mini.remove_distinct = lambda x: x
+    fake_mini.remove_round = lambda x: x
+    monkeypatch.setattr(mod, "_load_mini_interact_module", lambda: fake_mini)
+
+    caller_conn = MagicMock()
+    mod.compare_pred_vs_gold_ex_base(
+        benchmark="mini-interact",
+        pred_sqls=["SELECT 1"], sol_sqls=["SELECT 1"],
+        db_name="x.sqlite", conn=caller_conn,
+        conditions=None,
+    )
+    caller_conn.close.assert_not_called()
+
+
 def test_compare_pred_vs_gold_ex_base_pg_rolls_back_on_exception(monkeypatch):
     """The rollback fires even when ex_base raises so a bad conn doesn't
     poison the next caller."""

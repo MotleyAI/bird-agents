@@ -662,6 +662,7 @@ class ClaudeSDKOtfAgent:
                     benchmark=benchmark,
                     executor=make_executor(benchmark),
                     user_sim_n_asks=None,
+                    conditions=task_data.get("conditions"),
                 )
                 if _ann_from_disk and _is_genuine_miss(_cascade):
                     _autopsy_result = await run_autopsy(

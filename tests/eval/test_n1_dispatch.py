@@ -355,6 +355,30 @@ def test_grade_and_write_forwards_conditions_to_grade_submission(
     assert seen == [sentinel]
 
 
+def test_remaining_grade_submission_callers_read_conditions_from_task_dict():
+    """Round 4 (Codex): every direct grade_submission caller must pull
+    ``conditions`` from its task-source dict (either ``task_data`` or
+    ``task_row``, depending on call site) and forward it. This is a
+    grep-style regression so a future caller is more likely to follow
+    the same idiom."""
+    repo_src = Path(__file__).resolve().parents[2] / "src"
+    sites = [
+        repo_src / "bird_interact_agents/agents/claude_sdk_otf/agent.py",
+        repo_src / "bird_interact_agents/agents/claude_sdk_otf_ainteract/agent.py",
+        repo_src / "bird_interact_agents/eval/annotate.py",
+        repo_src / "bird_interact_agents/eval/regrade.py",
+    ]
+    for path in sites:
+        text = path.read_text()
+        assert "grade_submission(" in text, f"{path} no longer calls grade_submission"
+        # Each call passes conditions= sourced from a task-row dict.
+        assert (
+            "conditions=task_data.get(\"conditions\")" in text
+            or "conditions=task_row.get(\"conditions\")" in text
+            or "conditions=_row.get(\"conditions\")" in text
+        ), f"{path} no longer forwards task[.row].get('conditions') to grade_submission"
+
+
 def test_grade_one_submission_forwards_task_data_conditions(
     tmp_path: Path,
 ):
