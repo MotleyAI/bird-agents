@@ -533,23 +533,44 @@ def test_regrade_script_forwards_task_conditions_to_grade_submission(
     ann_path.write_text(json.dumps(ann_payload, indent=2))
 
     # Import-as-module so we can patch grade_submission for the script's
-    # own _process_one path.
+    # own _process_one path. Wrap the sys.path mutation + module import
+    # in try/finally so subsequent tests don't see polluted state, and
+    # reload-if-cached so a previously-imported module doesn't bind to
+    # a stale `grade_submission` reference (CodeRabbit round 3).
     import importlib
     import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-    mod = importlib.import_module("regrade_n1_ex_base")
-    seen_conditions: list = []
-    real_grade = mod.grade_submission
+    scripts_path = str(Path(__file__).resolve().parents[2] / "scripts")
+    prior_path = list(sys.path)
+    prior_mod = sys.modules.get("regrade_n1_ex_base")
+    if scripts_path in sys.path:
+        sys.path.remove(scripts_path)
+    sys.path.insert(0, scripts_path)
+    try:
+        if "regrade_n1_ex_base" in sys.modules:
+            mod = importlib.reload(sys.modules["regrade_n1_ex_base"])
+        else:
+            mod = importlib.import_module("regrade_n1_ex_base")
+        seen_conditions: list = []
+        real_grade = mod.grade_submission
 
-    def spy(**kwargs):
-        seen_conditions.append(kwargs.get("conditions"))
-        return real_grade(**kwargs)
+        def spy(**kwargs):
+            seen_conditions.append(kwargs.get("conditions"))
+            return real_grade(**kwargs)
 
-    from unittest.mock import patch as _patch
-    with _patch.object(mod, "grade_submission", side_effect=spy):
-        mod.regrade(dry_run=False)
+        from unittest.mock import patch as _patch
+        with _patch.object(mod, "grade_submission", side_effect=spy):
+            mod.regrade(dry_run=False)
 
-    assert seen_conditions and seen_conditions[0] == {"order": True}
+        assert seen_conditions, "grade_submission was never called"
+        assert seen_conditions[0] == {"order": True}, (
+            f"Expected conditions={{'order': True}}, got {seen_conditions[0]}"
+        )
+    finally:
+        sys.path[:] = prior_path
+        if prior_mod is None:
+            sys.modules.pop("regrade_n1_ex_base", None)
+        else:
+            sys.modules["regrade_n1_ex_base"] = prior_mod
 
 
 def test_regrade_script_skips_when_sqlite_db_missing(

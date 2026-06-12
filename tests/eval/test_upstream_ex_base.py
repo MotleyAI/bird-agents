@@ -64,6 +64,21 @@ def test_is_mutation_sql_positive(sql: str):
 
 
 @pytest.mark.parametrize("sql", [
+    # Round 3 (Codex): commented mutations must still be detected. Upstream's
+    # remove_comments runs before exec, so a commented mutation would
+    # otherwise sneak past the dispatcher and commit through ex_base.
+    "-- explanation\nINSERT INTO t VALUES (1)",
+    "/* multi\nline */ UPDATE t SET x=1",
+    "  -- leading\n   DELETE FROM t WHERE id=1",
+    "/* a */ /* b */ CREATE TABLE u (x INT)",
+])
+def test_is_mutation_sql_strips_comments_before_match(sql: str):
+    from bird_interact_agents.eval.upstream_ex_base import is_mutation_sql
+
+    assert is_mutation_sql(sql) is True
+
+
+@pytest.mark.parametrize("sql", [
     "SELECT 1",
     "SELECT * FROM t WHERE val > 0",
     "WITH x AS (SELECT 1) SELECT * FROM x",

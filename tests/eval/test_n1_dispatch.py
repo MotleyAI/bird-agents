@@ -180,6 +180,41 @@ def test_n1_dispatch_forwards_conditions_to_ex_base(tmp_path: Path):
     assert kwargs["conditions"] is sentinel
 
 
+def test_n1_dispatch_skips_file_existence_guard_for_postgres(tmp_path: Path):
+    """Round 3 (Codex): cloud actors pass `db_path = Path(<db_name>)` (a
+    bare DB-name carrier, not a filesystem path) and `conn=None` for
+    Postgres livesqlbench. The dispatcher's file-existence guard MUST
+    NOT fire — upstream's `perform_query_on_postgresql_databases` auto-
+    opens from a connection pool when conn is None. Without this
+    carve-out every Postgres livesqlbench task fell back to legacy
+    `_set_equal` in production despite being listed as ex_base-backed."""
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.eval import tolerant_grader as tg
+
+    pg_benchmark = get_benchmark("livesqlbench-base-lite")
+    task = _make_task_annotation()
+    # db_path is a DB-NAME path, not a filesystem path — purposely NOT
+    # creating a file at this location.
+    db_path = Path("alien")
+    assert not db_path.is_file()
+
+    with patch.object(
+        tg, "compare_pred_vs_gold_ex_base", return_value=True,
+    ) as ex_base_call:
+        tg.grade_submission(
+            task_annotation=task,
+            audited_gold_rows=[],
+            original_sol_sql=["SELECT 1"],
+            submitted_sql="SELECT 1",
+            db_path=db_path,
+            conn=None,  # ← the production shape; pool auto-opens
+            benchmark=pg_benchmark,
+            executor=lambda sql, *, db_path, conn: ([(1,)], ["c"]),  # noqa: ARG005
+        )
+    # The dispatcher reached ex_base; production parity restored.
+    assert ex_base_call.called
+
+
 def test_n1_dispatch_uses_db_stem_for_postgres_benchmarks(tmp_path: Path):
     """Postgres-backed livesqlbench variants need `db_name = db_path.stem`
     (the DB short name), not `str(db_path)`. Upstream
@@ -202,7 +237,10 @@ def test_n1_dispatch_uses_db_stem_for_postgres_benchmarks(tmp_path: Path):
         return True
 
     db_path = tmp_path / "alien.sqlite"  # value of `db_path.stem == "alien"`
-    db_path.write_bytes(b"")  # presence required by the conn-fallback guard
+    # File creation is defensive only — `conn=MagicMock()` is truthy so
+    # the conn-is-None / file-existence branch in `_compute_n1` is
+    # skipped entirely. (CodeRabbit round 3.)
+    db_path.write_bytes(b"")
     task = _make_task_annotation()
     with patch.object(tg, "compare_pred_vs_gold_ex_base", side_effect=_record):
         # Pass a sqlite3 conn so we don't fall through to the conn=None

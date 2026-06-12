@@ -287,7 +287,19 @@ def _compute_n1(
     # upstream ``ex_base`` cannot execute. Stay on the legacy path so
     # stubbed-executor callers (tests, scripted regrades on synthetic
     # rows) keep producing a verdict.
-    if conn is None:
+    #
+    # Only check ``db_path.is_file()`` for SQLite-backed benchmarks.
+    # Postgres callers (cloud actor, livesqlbench non-sqlite variants)
+    # pass ``db_path = Path(<db_name>)`` — a DB-name carrier, NOT a
+    # filesystem path — and ``conn=None``; upstream livesqlbench's
+    # ``perform_query_on_postgresql_databases`` auto-opens from a
+    # connection pool when conn is None, so the dispatcher does not need
+    # to gate on file existence there. Without this carve-out, every
+    # Postgres livesqlbench task silently fell back to legacy
+    # ``_set_equal`` despite being listed in
+    # ``_EX_BASE_N1_BENCHMARKS`` (Codex round 3).
+    is_postgres = getattr(benchmark, "db_backend", "sqlite") == "postgres"
+    if conn is None and not is_postgres:
         try:
             if not db_path or not Path(db_path).is_file():
                 return _set_equal(pred_rows, orig_rows)

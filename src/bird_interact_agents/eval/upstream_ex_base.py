@@ -71,16 +71,37 @@ _MUTATION_AT_STMT_START_RE = re.compile(
     re.IGNORECASE,
 )
 
+# SQL comment forms upstream's `remove_comments` strips before exec:
+# ``-- ... <EOL>`` (single-line) and ``/* ... */`` (multi-line, non-greedy
+# across newlines). Strip both before the mutation regex match so a
+# commented mutation (``-- explanation\nINSERT INTO ...``) is still
+# caught (Codex round 3). Upstream's exec path also drops the comments,
+# so without this strip the dispatcher would think the SQL is read-only
+# but upstream's cleaned-up SQL would still execute the mutation.
+_SQL_LINE_COMMENT_RE = re.compile(r"--[^\n]*")
+_SQL_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def _strip_sql_comments(sql: str) -> str:
+    no_block = _SQL_BLOCK_COMMENT_RE.sub("", sql)
+    return _SQL_LINE_COMMENT_RE.sub("", no_block)
+
 
 def is_mutation_sql(sql: str) -> bool:
     """Return True iff ``sql`` carries an SQL mutation keyword as the
     LEADING token of any statement (statements split on ``;``). A
     SELECT calling ``REPLACE(...)`` as a function is NOT a mutation —
     only ``REPLACE INTO`` (statement-leading) is.
+
+    Comments (``-- ...`` / ``/* ... */``) are stripped before matching
+    so ``-- explanation\\nINSERT INTO ...`` is still recognised as a
+    mutation. Mirrors upstream's ``remove_comments`` cleanup so the
+    dispatcher and the exec path agree on what counts as "statement
+    start" (Codex round 3).
     """
     if not sql:
         return False
-    return bool(_MUTATION_AT_STMT_START_RE.search(sql))
+    return bool(_MUTATION_AT_STMT_START_RE.search(_strip_sql_comments(sql)))
 
 
 # ---------------------------------------------------------------------------
