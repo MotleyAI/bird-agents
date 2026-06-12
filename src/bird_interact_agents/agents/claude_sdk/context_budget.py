@@ -16,6 +16,8 @@ Stage 2 wires the open-weight provider registry into
 
 from __future__ import annotations
 
+from bird_interact_agents.provider_registry import get_provider
+
 _DEFAULT_WINDOW = 200_000
 _ANTHROPIC_WINDOW = 1_000_000
 
@@ -27,6 +29,12 @@ def context_window_for(model: str) -> int:
     """Context window (tokens) for a LiteLLM-style ``provider/model`` string."""
     if model.split("/", 1)[0] == "anthropic":
         return _ANTHROPIC_WINDOW
+    spec = get_provider(model)
+    if spec is not None:
+        _, _, native_id = model.partition("/")
+        return spec.model_context_windows.get(
+            native_id, spec.default_context_window,
+        )
     return _DEFAULT_WINDOW
 
 

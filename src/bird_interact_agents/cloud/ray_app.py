@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
-from bird_interact_agents import paths
+from bird_interact_agents import paths, provider_registry
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
@@ -1132,6 +1132,19 @@ def _assert_actor_oauth_invariant(cfg: dict[str, Any]) -> None:
     """
     if not cfg.get("framework", "").startswith("claude_sdk"):
         return
+    # DEV-1555 Stage 2: on a registry open-weight run the agent talks to
+    # the provider's ANTHROPIC_BASE_URL endpoint — a surviving OAuth token
+    # would make the Claude CLI silently route to Anthropic instead.
+    if provider_registry.get_provider(cfg.get("agent_model") or "") is not None:
+        if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+            raise RuntimeError(
+                "CLAUDE_CODE_OAUTH_TOKEN is set on a worker running the "
+                f"open-weight agent model {cfg.get('agent_model')!r}. The "
+                "Claude Agent SDK would silently authenticate against "
+                "Anthropic instead of the provider endpoint. The driver "
+                "must not ship Anthropic credentials on open-weight runs."
+            )
+        return
     if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
         if os.environ.get("ANTHROPIC_API_KEY"):
             raise RuntimeError(
@@ -1162,6 +1175,22 @@ def _apply_actor_env_local(actor_env_vars: dict[str, str]) -> None:
     os.environ.update(actor_env_vars)
     if "CLAUDE_CODE_OAUTH_TOKEN" in actor_env_vars:
         os.environ.pop("ANTHROPIC_API_KEY", None)
+        return
+    # DEV-1555 Stage 2: open-weight runs ship a registry provider key and
+    # no OAuth token. Strip ALL ambient Anthropic credentials so the Claude
+    # Agent SDK cannot auto-discover them and bypass the provider's
+    # ANTHROPIC_BASE_URL endpoint.
+    shipped = set(actor_env_vars)
+    registry_auth_envs = {
+        spec.auth_env for spec in provider_registry.REGISTRY.values()
+    }
+    if shipped & registry_auth_envs:
+        for var in (
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "CLAUDE_CODE_OAUTH_TOKEN",
+        ):
+            os.environ.pop(var, None)
 
 
 def _with_actor_env(actor_cls: Any, actor_env_vars: dict[str, str] | None) -> Any:

@@ -1,0 +1,86 @@
+"""DEV-1555 Stage 2: CLI auth-flag conditionality for open-weight models.
+
+`--subscription-auth` is Anthropic-only: for registry agent models on
+`submit` it must be rejected with a clear error; omitted (or explicit
+`--no-subscription-auth`) resolves to the API-key-style path with
+`no_subscription_auth=True`. Anthropic submits keep the existing
+explicit-choice requirement. `annotate` is untouched.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from bird_interact_agents.cloud import cli
+
+_KIMI = "moonshot/kimi-k2.7-code"
+
+
+def _submit_argv(model: str, extra: list[str] | None = None) -> list[str]:
+    return [
+        "submit",
+        "--framework", "claude_sdk",
+        "--query-mode", "slayer",
+        "--mode", "one-shot",
+        "--agent-model", model,
+        "--instance-ids", "alien_1",
+        "--slayer-setup", "on-the-fly",
+        "--dataset", "livesqlbench-base-lite-sqlite",
+        "--no-require-annotation",
+        *(extra or []),
+    ]
+
+
+def test_moonshot_submit_without_auth_flag_parses(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    ns = cli.parse_args(_submit_argv(_KIMI))
+    assert ns.no_subscription_auth is True
+
+
+def test_moonshot_submit_explicit_no_subscription_auth_parses():
+    ns = cli.parse_args(_submit_argv(_KIMI, ["--no-subscription-auth"]))
+    assert ns.no_subscription_auth is True
+
+
+def test_moonshot_submit_with_subscription_auth_rejected(monkeypatch, capsys):
+    # Even with a valid-looking token present, subscription auth is
+    # Anthropic-only — the registry-provider error must fire first.
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-x")
+    with pytest.raises(SystemExit):
+        cli.parse_args(_submit_argv(_KIMI, ["--subscription-auth"]))
+    err = capsys.readouterr().err
+    assert "Anthropic-only" in err
+    assert "MOONSHOT_API_KEY" in err
+
+
+def test_anthropic_submit_still_requires_explicit_choice():
+    with pytest.raises(SystemExit):
+        cli.parse_args(_submit_argv("anthropic/claude-sonnet-4-6"))
+
+
+def test_anthropic_submit_no_subscription_auth_still_parses():
+    ns = cli.parse_args(
+        _submit_argv("anthropic/claude-sonnet-4-6", ["--no-subscription-auth"])
+    )
+    assert ns.no_subscription_auth is True
+
+
+def test_unknown_provider_model_rejected(capsys):
+    with pytest.raises(SystemExit):
+        cli.parse_args(
+            _submit_argv("cerebras/zai-glm-4.7", ["--no-subscription-auth"])
+        )
+    err = capsys.readouterr().err
+    assert "moonshot" in err  # error lists known providers
+
+
+def test_annotate_auth_flag_still_required():
+    with pytest.raises(SystemExit):
+        cli.parse_args(
+            [
+                "annotate",
+                "--benchmark", "livesqlbench-base-lite-sqlite",
+                "--agent-model", "anthropic/claude-sonnet-4-6",
+                "--instance-ids", "alien_1",
+            ]
+        )

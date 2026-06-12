@@ -62,7 +62,12 @@ from bird_interact_agents.agents.claude_sdk_otf.prompts import (
     SLAYER_OTF_ONE_SHOT,
 )
 from bird_interact_agents.benchmark import get_benchmark
-from bird_interact_agents.model_string import is_anthropic, native_model_id
+from bird_interact_agents.model_string import native_model_id
+from bird_interact_agents.provider_registry import (
+    get_provider,
+    is_supported_agent_model,
+    sdk_session_env,
+)
 from bird_interact_agents.harness import (
     MAX_MODEL_TURNS,
     SampleStatus,
@@ -429,9 +434,10 @@ class ClaudeSDKOtfAgent:
         instance_id = task_data["instance_id"]
         db_name = task_data["selected_database"]
 
-        if not is_anthropic(self.model):
+        if not is_supported_agent_model(self.model):
             msg = (
-                f"claude_sdk_otf requires an Anthropic model; got {self.model!r}. "
+                f"claude_sdk_otf requires an Anthropic or registry open-weight "
+                f"model; got {self.model!r}. "
                 "Skipped — use --framework pydantic_ai_otf_encode for "
                 "non-Anthropic models."
             )
@@ -551,7 +557,16 @@ class ClaudeSDKOtfAgent:
             discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
             context_state: dict = {}
 
+            # DEV-1555 Stage 2: registry open-weight backends get a
+            # per-run session env (ANTHROPIC_BASE_URL + auth token);
+            # anthropic models keep the SDK defaults untouched.
+            _session_env_kwargs = (
+                {"env": sdk_session_env(self.model)}
+                if get_provider(self.model) is not None else {}
+            )
+
             options = ClaudeAgentOptions(
+                **_session_env_kwargs,
                 system_prompt=prompt + MAIN_WORKFLOW_NOTE,
                 mcp_servers=mcp_servers,
                 allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),

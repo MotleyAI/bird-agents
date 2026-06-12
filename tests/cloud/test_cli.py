@@ -146,7 +146,9 @@ def test_pass_through_flags_parse() -> None:
             "--dataset", "mini-interact",
             "--framework", "claude_sdk",
             "--query-mode", "raw",  # slayer is guarded for cloud (see below)
-            "--agent-model", "cerebras/zai-glm-4.7",
+            # DEV-1555: --agent-model is now validated against
+            # anthropic + the open-weight registry at parse time.
+            "--agent-model", "moonshot/kimi-k2.7-code",
             "--instance-ids", "db_a_1,db_a_2,db_a_3",
             "--mode", "a-interact",
             "--use-audited-gold-sql",

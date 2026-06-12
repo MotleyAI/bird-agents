@@ -45,6 +45,7 @@ import json
 import logging
 import math
 import os
+import re
 import traceback as _tb
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
@@ -56,6 +57,11 @@ from pydantic import BaseModel
 
 from bird_interact_agents.agents.claude_sdk.context_budget import (
     context_window_for,
+)
+from bird_interact_agents.provider_registry import (
+    get_provider,
+    provider_api_key,
+    resolve_base_url,
 )
 
 from bird_interact_agents.eval.annotation_schema import (
@@ -79,7 +85,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _build_anthropic_client() -> "anthropic.AsyncAnthropic":
+def _build_anthropic_client(model: str = "") -> "anthropic.AsyncAnthropic":
     """Construct the Anthropic SDK client for the autopsy LLM call.
 
     DEV-1535 follow-up: on cloud workers running under the OAuth
@@ -102,7 +108,18 @@ def _build_anthropic_client() -> "anthropic.AsyncAnthropic":
       3. Neither → ``RuntimeError`` so ``run_autopsy``'s outer
          ``except Exception`` records a meaningful FQN rather than the
          SDK's cryptic ``TypeError``.
+
+    DEV-1555 Stage 2: registry open-weight models (e.g.
+    ``moonshot/kimi-k2.7-code``) route to the provider's
+    Anthropic-compatible endpoint instead — ambient Anthropic credentials
+    are deliberately ignored for those.
     """
+    spec = get_provider(model)
+    if spec is not None and spec.api_format == "anthropic":
+        return anthropic.AsyncAnthropic(
+            base_url=resolve_base_url(spec),
+            api_key=provider_api_key(spec),
+        )
     oauth = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
     if oauth:
         return anthropic.AsyncAnthropic(auth_token=oauth, api_key=None)
@@ -332,6 +349,45 @@ class AutopsyLLMOutputOneShot(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_FENCED_JSON_RE = re.compile(r"```json\s*(.*?)```", re.DOTALL)
+
+
+def _extract_json_candidate(text: str) -> Optional[dict]:
+    """Deterministic JSON extraction for the no-tool_use fallback (DEV-1555).
+
+    Preference order: the first fenced ```json block that parses to a
+    dict, else the first balanced ``{...}`` region that parses to a dict.
+    Returns None when no candidate parses — the caller maps that to
+    ``missing_tool_use`` (schema validation happens exactly once,
+    downstream)."""
+    for m in _FENCED_JSON_RE.finditer(text):
+        try:
+            obj = json.loads(m.group(1))
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            return obj
+    depth = 0
+    start: Optional[int] = None
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                try:
+                    obj = json.loads(text[start : i + 1])
+                except ValueError:
+                    start = None
+                    continue
+                if isinstance(obj, dict):
+                    return obj
+                start = None
+    return None
+
 
 def _is_genuine_miss(cascade: "CascadeVerdict") -> bool:
     """Return True iff ALL cascade tiers failed.
@@ -802,7 +858,7 @@ async def run_autopsy(
         schema_cls = (
             AutopsyLLMOutputOneShot if is_one_shot else AutopsyLLMOutput
         )
-        client = _build_anthropic_client()
+        client = _build_anthropic_client(model)
         response = await client.messages.create(
             model=native_model_id(model),
             max_tokens=2048,
@@ -857,15 +913,29 @@ async def run_autopsy(
         tool_use = next(
             b for b in response.content if getattr(b, "type", None) == "tool_use"
         )
+        payload: object = tool_use.input
     except StopIteration as exc:
-        logger.error(
-            "[autopsy] no tool_use block in response on %s",
-            task_annotation.instance_id, exc_info=True,
+        # DEV-1555 Stage 2: third-party Anthropic-compatible endpoints may
+        # not honor forced tool_choice — fall back to extracting JSON from
+        # the text blocks before declaring the autopsy lost.
+        text = "\n".join(
+            t
+            for b in response.content
+            if getattr(b, "type", None) == "text"
+            and isinstance(t := getattr(b, "text", None), str)
         )
-        return _autopsy_error_result(
-            kind="missing_tool_use", exc=exc, prompt=prompt, kb_text=kb_text,
-            trajectory=trajectory, model=model,
-        )
+        candidate = _extract_json_candidate(text)
+        if candidate is None:
+            logger.error(
+                "[autopsy] no tool_use block and no parseable JSON in "
+                "response on %s",
+                task_annotation.instance_id, exc_info=True,
+            )
+            return _autopsy_error_result(
+                kind="missing_tool_use", exc=exc, prompt=prompt,
+                kb_text=kb_text, trajectory=trajectory, model=model,
+            )
+        payload = candidate
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "[autopsy] iterating response.content failed on %s",
@@ -877,7 +947,7 @@ async def run_autopsy(
         )
 
     try:
-        llm_output = schema_cls.model_validate(tool_use.input)
+        llm_output = schema_cls.model_validate(payload)
         return _map_output(llm_output, is_one_shot=is_one_shot)
     except pydantic.ValidationError as exc:
         logger.error(

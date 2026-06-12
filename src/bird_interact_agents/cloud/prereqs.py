@@ -10,6 +10,7 @@ import subprocess
 import sys
 from typing import Any
 
+from bird_interact_agents import provider_registry
 from bird_interact_agents.cloud import config, gcs
 
 
@@ -225,6 +226,11 @@ def check_adc() -> None:
 
 
 def _required_api_keys(model: str) -> tuple[str, ...]:
+    # DEV-1555: registry open-weight providers (moonshot, ...) declare
+    # their own auth env var — the registry is the single source.
+    registry_keys = provider_registry.required_env_for(model)
+    if registry_keys:
+        return registry_keys
     if model.startswith("anthropic/"):
         return ("ANTHROPIC_API_KEY",)
     if model.startswith("cerebras/"):

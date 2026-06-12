@@ -6,6 +6,7 @@ import argparse
 import sys
 from typing import Sequence
 
+from bird_interact_agents import provider_registry
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.cloud import driver
 
@@ -93,16 +94,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     sp_submit.add_argument(
         "--subscription-auth", action=argparse.BooleanOptionalAction,
-        required=True, dest="subscription_auth",
+        default=None, dest="subscription_auth",
         help=(
-            "REQUIRED. `--subscription-auth` uses the Claude.ai OAuth "
-            "subscription (CLAUDE_CODE_OAUTH_TOKEN must be set in the "
-            "submitter's env, with the sk-ant-oat01- prefix); submit fails "
-            "if the token is absent or malformed. `--no-subscription-auth` "
-            "uses the legacy API-key path (ANTHROPIC_API_KEY). No default — "
-            "an explicit choice is required to prevent a silent fall-back "
-            "to the API-key path burning credits when the operator meant "
-            "to hit the subscription."
+            "REQUIRED for Anthropic agent models. `--subscription-auth` "
+            "uses the Claude.ai OAuth subscription (CLAUDE_CODE_OAUTH_TOKEN "
+            "must be set in the submitter's env, with the sk-ant-oat01- "
+            "prefix); submit fails if the token is absent or malformed. "
+            "`--no-subscription-auth` uses the legacy API-key path "
+            "(ANTHROPIC_API_KEY). No default for Anthropic models — an "
+            "explicit choice is required to prevent a silent fall-back to "
+            "the API-key path burning credits when the operator meant to "
+            "hit the subscription. DEV-1555: subscription auth is "
+            "Anthropic-only — registry open-weight models (moonshot/...) "
+            "must omit the flag (their provider key env var is used "
+            "instead)."
         ),
     )
 
@@ -162,6 +167,35 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     # defence-in-depth; see `read_api_keys_from_local_env`.)
     if ns.subcommand in ("submit", "annotate"):
         import os
+
+        # DEV-1555 Stage 2 (submit only — annotate stays Anthropic-only with
+        # the argparse-level required flag): validate the agent-model
+        # provider against the open-weight registry and make the
+        # subscription-auth choice conditional on it.
+        if ns.subcommand == "submit":
+            if not provider_registry.is_supported_agent_model(ns.agent_model):
+                known = ", ".join(["anthropic", *sorted(provider_registry.REGISTRY)])
+                p.error(
+                    f"--agent-model {ns.agent_model!r} is not a supported "
+                    f"claude_sdk backend (known providers: {known})."
+                )
+            _spec = provider_registry.get_provider(ns.agent_model)
+            if _spec is not None:
+                if ns.subscription_auth:
+                    p.error(
+                        f"--subscription-auth is Anthropic-only; {_spec.key} "
+                        f"models authenticate via {_spec.auth_env}. Omit the "
+                        "flag or pass --no-subscription-auth."
+                    )
+                ns.subscription_auth = False
+            elif ns.subscription_auth is None:
+                p.error(
+                    "an explicit --subscription-auth / --no-subscription-auth "
+                    "choice is REQUIRED for Anthropic agent models (no "
+                    "default, to prevent a silent fall-back to the API-key "
+                    "path burning credits)."
+                )
+
         ns.no_subscription_auth = not ns.subscription_auth
         if ns.subscription_auth:
             token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")

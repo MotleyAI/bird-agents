@@ -20,6 +20,8 @@ from typing import Any, Awaitable, Callable
 import litellm
 from pydantic import BaseModel, Field
 
+from bird_interact_agents import provider_registry
+
 logger = logging.getLogger(__name__)
 
 # Indirection seams so tests can monkey-patch without touching litellm.
@@ -46,6 +48,25 @@ def _maybe_inject_anthropic_key(model: str, kwargs: dict) -> None:
     dedicated = os.environ.get(_LITELLM_ANTHROPIC_KEY_ENV)
     if dedicated:
         kwargs["api_key"] = dedicated
+
+
+def _maybe_inject_registry_kwargs(model: str, kwargs: dict) -> str:
+    """Route registry open-weight models (DEV-1555) through litellm's
+    OpenAI-compatible driver.
+
+    Returns the model string to hand litellm — rewritten to
+    ``openai/<native_id>`` with ``api_base``/``api_key`` injected for
+    registry providers, unchanged otherwise. Caller-passed kwargs are
+    never clobbered. Also registers the providers' official prices with
+    litellm so cost rows stay accurate.
+    """
+    litellm_model, extra = provider_registry.litellm_route(model)
+    if litellm_model == model:
+        return model
+    provider_registry.ensure_litellm_pricing()
+    for k, v in extra.items():
+        kwargs.setdefault(k, v)
+    return litellm_model
 
 
 # ---------------------------------------------------------------------------
@@ -328,8 +349,9 @@ async def acompletion_tracked(
     errors don't surface as hard failures during concurrent benchmark runs.
     """
     _maybe_inject_anthropic_key(model, kwargs)
+    litellm_model = _maybe_inject_registry_kwargs(model, kwargs)
     response = await _retry_litellm(
-        lambda: _acompletion(model=model, **kwargs),
+        lambda: _acompletion(model=litellm_model, **kwargs),
     )
     usage_obj = getattr(response, "usage", None)
     if usage_obj is not None:
