@@ -288,12 +288,19 @@ def _process_one(
         "decision_point": before.decision_point,
     })
 
+    # Every task we successfully re-graded counts as processed,
+    # whether or not the result flipped — the report line's
+    # processed counter then matches the size of the work-list minus
+    # the skip / error buckets. Without this, idempotent re-runs
+    # report processed=0 even though every JSON was loaded, graded,
+    # and compared. (CodeRabbit round 2.)
+    report.processed += 1
+
     flipped = _evaluation_diffs(before, after)
     if not flipped:
         report.regraded_unchanged += 1
         return
 
-    report.processed += 1
     if dry_run:
         report.would_flip += 1
         n1_before = before.evaluation.phase1_against_original_gold

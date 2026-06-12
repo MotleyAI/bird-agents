@@ -574,6 +574,88 @@ def test_compare_pred_vs_gold_ex_base_loader_filenotfound_raises_unavailable(
         )
 
 
+def test_load_module_from_file_isolates_db_utils_between_upstream_trees(
+    tmp_path: Path,
+):
+    """Both upstream trees define their own ``db_utils.py``. Without
+    cache isolation in ``_load_module_from_file``, Python reuses the
+    first tree's ``sys.modules['db_utils']`` for the second tree's
+    bare ``from db_utils import ...`` — leaking mini-interact's sqlite3
+    helpers into livesqlbench's psycopg2 module (or vice versa).
+    Regression test (CodeRabbit round 2): build two minimal trees with
+    distinct ``db_utils`` marker constants, load each, and assert
+    the bound helpers are tree-specific."""
+    import sys
+    from bird_interact_agents.eval import upstream_ex_base as mod
+
+    tree_a = tmp_path / "tree_a"
+    tree_a.mkdir()
+    (tree_a / "db_utils.py").write_text("ORIGIN = 'tree_a'\n")
+    (tree_a / "test_utils.py").write_text(
+        "from db_utils import ORIGIN\nWHICH = 'a:' + ORIGIN\n"
+    )
+
+    tree_b = tmp_path / "tree_b"
+    tree_b.mkdir()
+    (tree_b / "db_utils.py").write_text("ORIGIN = 'tree_b'\n")
+    (tree_b / "test_utils.py").write_text(
+        "from db_utils import ORIGIN\nWHICH = 'b:' + ORIGIN\n"
+    )
+
+    # Pre-pollute the cache to simulate a prior load.
+    prior = sys.modules.pop("db_utils", None)
+    try:
+        a = mod._load_module_from_file(
+            "test_utils_a", tree_a / "test_utils.py",
+            sys_path_addition=tree_a,
+        )
+        b = mod._load_module_from_file(
+            "test_utils_b", tree_b / "test_utils.py",
+            sys_path_addition=tree_b,
+        )
+        # Each module bound the correct sibling at exec time.
+        assert a.WHICH == "a:tree_a"
+        assert b.WHICH == "b:tree_b"
+    finally:
+        if prior is not None:
+            sys.modules["db_utils"] = prior
+        else:
+            sys.modules.pop("db_utils", None)
+        sys.modules.pop("test_utils_a", None)
+        sys.modules.pop("test_utils_b", None)
+
+
+def test_load_module_from_file_restores_prior_db_utils_after_load(tmp_path: Path):
+    """The cache-isolation snapshot restores whatever ``db_utils`` was
+    in ``sys.modules`` BEFORE the load, so a third-party caller with
+    its own ``db_utils`` import doesn't get clobbered."""
+    import sys
+    import types
+    from bird_interact_agents.eval import upstream_ex_base as mod
+
+    sentinel = types.ModuleType("db_utils")
+    sentinel.ORIGIN = "caller_sentinel"  # type: ignore[attr-defined]
+    sys.modules["db_utils"] = sentinel
+
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "db_utils.py").write_text("ORIGIN = 'tree_internal'\n")
+    (tree / "test_utils.py").write_text(
+        "from db_utils import ORIGIN\nWHICH = ORIGIN\n"
+    )
+    try:
+        m = mod._load_module_from_file(
+            "test_utils_iso", tree / "test_utils.py",
+            sys_path_addition=tree,
+        )
+        assert m.WHICH == "tree_internal"
+        # Post-load: the caller's sentinel is restored.
+        assert sys.modules["db_utils"] is sentinel
+    finally:
+        sys.modules.pop("db_utils", None)
+        sys.modules.pop("test_utils_iso", None)
+
+
 @pytest.mark.parametrize("benchmark", [
     "livesqlbench-base-lite-sqlite",
     "livesqlbench-base-lite",

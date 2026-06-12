@@ -96,12 +96,31 @@ _MINI_INTERACT_REL = (
 _LIVESQLBENCH_REL = "evaluation/src/test_utils.py"
 
 
+# Sibling-helper module names the upstream files import via the bare
+# (un-namespaced) name. Each upstream tree ships its own ``db_utils`` —
+# mini-interact's wraps sqlite3, livesqlbench's wraps psycopg2 — so a
+# shared ``sys.modules["db_utils"]`` cached from the first load would
+# leak the wrong DB driver into whichever tree is loaded second.
+_UPSTREAM_SIBLING_MODULES = ("db_utils",)
+
+
 def _load_module_from_file(
     name: str, path: Path, *, sys_path_addition: Optional[Path] = None,
 ) -> ModuleType:
     """Load a Python file as a module by path. Optionally prepend
     ``sys_path_addition`` so the module can import its sibling
-    ``db_utils.py`` (upstream files use ``from db_utils import ...``)."""
+    ``db_utils.py`` (upstream files use ``from db_utils import ...``).
+
+    Both upstream trees define ``db_utils`` with the same bare name —
+    once Python caches the first tree's ``db_utils`` in ``sys.modules``,
+    subsequent loads reuse it instead of re-importing from the second
+    tree's path. We snapshot + temporarily evict the sibling cache
+    entries during ``exec_module`` so each load re-resolves them
+    relative to ``sys_path_addition``, then restore the snapshot. The
+    upstream module itself keeps its own bound references to the right
+    helpers in its module globals after exec — the cache restore only
+    affects future bare imports.
+    """
     if not path.is_file():
         raise FileNotFoundError(f"upstream module not found at {path}")
     if sys_path_addition is not None and str(sys_path_addition) not in sys.path:
@@ -111,7 +130,22 @@ def _load_module_from_file(
         raise ImportError(f"could not build module spec for {path}")
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
-    spec.loader.exec_module(mod)
+    # Snapshot + evict the sibling cache so the upcoming exec re-imports
+    # them from the right tree (resolved via ``sys_path_addition`` we
+    # just prepended). Restore unconditionally on the way out, so a
+    # later loader against the OTHER tree starts from a clean cache too.
+    sibling_snapshot: dict[str, Optional[ModuleType]] = {}
+    for sibling in _UPSTREAM_SIBLING_MODULES:
+        sibling_snapshot[sibling] = sys.modules.get(sibling)
+        sys.modules.pop(sibling, None)
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        for sibling, prior in sibling_snapshot.items():
+            if prior is not None:
+                sys.modules[sibling] = prior
+            else:
+                sys.modules.pop(sibling, None)
     return mod
 
 

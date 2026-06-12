@@ -226,6 +226,12 @@ except Exception:  # noqa: BLE001  (defensive — module-load failure)
     def compare_pred_vs_gold_ex_base(**_kw):  # type: ignore[no-redef]
         raise ExBaseUnavailableError("upstream_ex_base shim unavailable")
 
+    def is_mutation_sql(_sql: str) -> bool:  # type: ignore[no-redef]
+        # When the shim isn't importable we can't even check; treat as
+        # non-mutation so grading degrades to the legacy comparison
+        # via the ExBaseUnavailableError path below.
+        return False
+
 
 _EX_BASE_N1_BENCHMARKS = frozenset({
     "mini-interact",
@@ -245,16 +251,37 @@ def _compute_n1(
     conn: Any,
     pred_rows: Sequence[Sequence],
     orig_rows: Sequence[Sequence],
+    conditions: Optional[dict] = None,
 ) -> bool:
     """Compute N1 via upstream ``ex_base`` for supported benchmarks; on
     any failure (unsupported benchmark, missing upstream tree, missing
-    SQL strings) fall back to the legacy multiset row comparison."""
+    SQL strings, mutation-bearing SQL) fall back to the legacy multiset
+    row comparison on the already-fetched ``pred_rows`` / ``orig_rows``.
+
+    ``conditions`` forwards through to upstream's ``ex_base`` so
+    order-sensitive tasks (``conditions={"order": True}``) are graded
+    positionally instead of with set-dedup semantics (Codex / CodeRabbit
+    round 2). Defaults to ``None`` (set-dedup), matching upstream when
+    the task source row carries no override.
+    """
     benchmark_name = getattr(benchmark, "name", None) or str(benchmark or "")
     if (
         benchmark_name not in _EX_BASE_N1_BENCHMARKS
         or not pred_sqls
         or not sol_sqls
     ):
+        return _set_equal(pred_rows, orig_rows)
+    # Mutation-bearing SQL would commit through the upstream's writeable
+    # SQLite open path AND any caller-supplied conn (the upstream
+    # ``execute_queries`` runs pred first, then gold, on the same conn).
+    # The cascade's own primary executor already gave us pre-mutation
+    # rows; stay on the legacy comparison to keep grading honest and to
+    # avoid persisting state into the benchmark DB. (Codex round-2
+    # finding on cloud inline grader; the backfill script has its own
+    # belt-and-braces skip.)
+    if any(is_mutation_sql(s) for s in pred_sqls):
+        return _set_equal(pred_rows, orig_rows)
+    if any(is_mutation_sql(s) for s in sol_sqls):
         return _set_equal(pred_rows, orig_rows)
     # If we have no path to a real DB and no caller-supplied conn, the
     # upstream ``ex_base`` cannot execute. Stay on the legacy path so
@@ -266,14 +293,24 @@ def _compute_n1(
                 return _set_equal(pred_rows, orig_rows)
         except Exception:  # noqa: BLE001
             return _set_equal(pred_rows, orig_rows)
+    # Postgres-backed benchmarks (livesqlbench non-sqlite, bird-interact
+    # full/lite-exp) get a DB stem; SQLite-backed benchmarks get the
+    # full path. Upstream livesqlbench ``perform_query_on_postgresql_
+    # databases`` switches connections via the DB NAME, not via a
+    # filesystem path — passing ``str(db_path)`` there silently routes
+    # to the wrong DB (CodeRabbit round 2).
+    if getattr(benchmark, "db_backend", "sqlite") == "postgres":
+        db_name = db_path.stem
+    else:
+        db_name = str(db_path)
     try:
         return compare_pred_vs_gold_ex_base(
             benchmark=benchmark_name,
             pred_sqls=pred_sqls,
             sol_sqls=sol_sqls,
-            db_name=str(db_path),
+            db_name=db_name,
             conn=conn,
-            conditions=None,
+            conditions=conditions,
         )
     except ExBaseUnavailableError:
         return _set_equal(pred_rows, orig_rows)
@@ -904,6 +941,7 @@ def grade_submission(
     llm_judge: Optional[Any] = None,
     epsilon: float = 1e-6,
     user_sim_n_asks: Optional[int] = None,
+    conditions: Optional[dict] = None,
 ) -> CascadeVerdict:
     """Compute the 8-row cascade for a single submission.
 
@@ -1010,6 +1048,7 @@ def grade_submission(
             conn=conn,
             pred_rows=pred_rows,
             orig_rows=orig_rows,
+            conditions=conditions,
         )
 
     # 3) N2/N3 — audited primary / any variant strict.

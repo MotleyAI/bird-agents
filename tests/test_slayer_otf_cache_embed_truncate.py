@@ -417,6 +417,8 @@ def test_materialise_cache_memories_logs_full_warning_content_per_memory(
     records = [r for r in caplog.records
                if "truncated embedding text" in r.message.lower()]
     assert len(records) == 2  # exactly per-truncation, not per-batch
+    import re
+
     ids_seen = set()
     for r in records:
         msg = r.message
@@ -425,9 +427,13 @@ def test_materialise_cache_memories_logs_full_warning_content_per_memory(
         assert "text-embedding-3-small" in msg
         # char counts (original + capped)
         assert "chars" in msg.lower()
-        if "a" in msg:
+        # Word-boundary match — substring `"a" in msg` would trip on
+        # "alien_db" and the `text-embedding-3-small` slug, masking a
+        # regression where the memory id is missing from the log.
+        # (CodeRabbit round 2.)
+        if re.search(r"\bmemory a\b", msg):
             ids_seen.add("a")
-        if "b" in msg:
+        if re.search(r"\bmemory b\b", msg):
             ids_seen.add("b")
     assert ids_seen == {"a", "b"}
 

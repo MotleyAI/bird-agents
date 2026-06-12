@@ -228,7 +228,12 @@ def test_regrade_script_idempotent(
     fake_annotations_root: Path,
 ):
     """Running the script twice produces 0 additional flips and the JSON
-    is byte-equal across the second run."""
+    is byte-equal across the second run.
+
+    The processed counter MUST advance on the idempotent run too — every
+    task we successfully grade is "processed", flip or not — otherwise
+    the operator can't tell apart "idempotent / nothing to do" from
+    "nothing was reached because of skip/error". (CodeRabbit round 2.)"""
     p = _seed_result_json(
         fake_runs_root, fake_annotations_root,
         db="alien", iid="alien_1",
@@ -245,8 +250,12 @@ def test_regrade_script_idempotent(
     assert proc2.returncode == 0, proc2.stderr
     second = p.read_text()
     assert first == second
-    # Second-run report names 0 flips.
-    assert "regraded_flipped=0" in (proc2.stdout + proc2.stderr)
+    output2 = proc2.stdout + proc2.stderr
+    # Second-run report names 0 flips, but DID process the task and
+    # counted it as an unchanged regrade.
+    assert "regraded_flipped=0" in output2
+    assert "processed=1" in output2
+    assert "regraded_unchanged=1" in output2
 
 
 def test_regrade_script_skips_state_sensitive_mutation_pred(

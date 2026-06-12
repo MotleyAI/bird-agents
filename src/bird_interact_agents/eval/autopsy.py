@@ -487,6 +487,11 @@ def _inline_refs(schema: dict) -> dict:
             ref = node.get("$ref")
             if isinstance(ref, str) and ref.startswith("#/$defs/"):
                 key = ref.split("/")[-1]
+                if key not in defs:
+                    raise ValueError(
+                        f"Unresolved $ref: {ref}; "
+                        f"$defs keys = {sorted(defs)}"
+                    )
                 return resolve(defs[key])
             return {k: resolve(v) for k, v in node.items()}
         if isinstance(node, list):
