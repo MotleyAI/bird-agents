@@ -13,6 +13,7 @@ Format params: ``budget``, ``db_name``, ``user_query``.
 """
 
 from bird_interact_agents.agents._shared_otf_prompts import (
+    _AFTER_REJECTED_DISCIPLINE,
     _ASK_AGAIN_RULE,
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
     _DECOMPOSE_DISCIPLINE,
@@ -106,6 +107,8 @@ RAW_OTF_AINTERACT = (
         ),
         extra_hypothesis_axes="",
     )
+    + "\n\n   "
+    + _AFTER_REJECTED_DISCIPLINE
     + "\n\n5. TEST the final query with `execute_sql`; sanity-check the result\n"
       "   shape, row count, and values.\n\n"
     + _PRE_SUBMIT_MUTATION_CHECK_AINTERACT.format(
