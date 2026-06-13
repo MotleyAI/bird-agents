@@ -38,6 +38,7 @@ from claude_agent_sdk import (
 # is sound.
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
+    SdkUsageTracker,
     accumulate_assistant_usage,
     get_all_external_knowledge_names,
     get_all_knowledge_definitions,
@@ -66,6 +67,7 @@ from bird_interact_agents.model_string import native_model_id
 from bird_interact_agents.provider_registry import (
     get_provider,
     is_supported_agent_model,
+    requires_thinking,
     sdk_session_env,
 )
 from bird_interact_agents.harness import (
@@ -492,6 +494,7 @@ class ClaudeSDKOtfAgent:
         deleted_kb_ids: list[int] = []
         slayer_storage_dir = ""
         accum = TokenUsage()
+        usage_tracker = SdkUsageTracker(accum, self.model)
         trajectory: list[dict] = []
         # Local handle to the per-task context dict. We read from THIS
         # local on the exception path instead of `_ctx_var.get()` — a
@@ -560,10 +563,15 @@ class ClaudeSDKOtfAgent:
             # DEV-1555 Stage 2: registry open-weight backends get a
             # per-run session env (ANTHROPIC_BASE_URL + auth token);
             # anthropic models keep the SDK defaults untouched.
-            _session_env_kwargs = (
-                {"env": sdk_session_env(self.model)}
-                if get_provider(self.model) is not None else {}
-            )
+            _session_env_kwargs: dict = {}
+            if get_provider(self.model) is not None:
+                _session_env_kwargs["env"] = sdk_session_env(self.model)
+                if requires_thinking(self.model):
+                    # Probed live: e.g. kimi-k2.7-code rejects requests
+                    # without thinking enabled.
+                    _session_env_kwargs["thinking"] = {
+                        "type": "enabled", "budget_tokens": 8192,
+                    }
 
             options = ClaudeAgentOptions(
                 **_session_env_kwargs,
@@ -652,9 +660,11 @@ class ClaudeSDKOtfAgent:
                     except Exception:  # noqa: BLE001
                         _data = str(msg)
                     trajectory.append({"type": str(type(msg).__name__), "data": _data})
-                    accumulate_assistant_usage(accum, msg, self.model)
+                    usage_tracker.observe(msg)
                     update_context_tokens(context_state, msg)
+            usage_tracker.finalize()
         except Exception as e:
+            usage_tracker.finalize()
             logger.error(
                 "claude_sdk_otf error on %s: %s",
                 instance_id, e, exc_info=True,

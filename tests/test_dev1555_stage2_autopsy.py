@@ -141,6 +141,68 @@ async def test_fallback_no_parseable_candidate_is_missing_tool_use(monkeypatch):
     assert result.error.kind == "missing_tool_use"
 
 
+@pytest.mark.asyncio
+async def test_requires_thinking_model_gets_thinking_and_auto_tool_choice(
+    monkeypatch, tmp_path,
+):
+    """Probed live (2026-06-12): kimi-k2.7-code requires thinking enabled,
+    and forced tool_choice is incompatible with thinking — the autopsy
+    request must switch to thinking + tool_choice=auto (the text-JSON
+    fallback covers responses that skip the tool)."""
+    from bird_interact_agents.eval.autopsy import run_autopsy
+
+    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
+    tool = MagicMock()
+    tool.type = "tool_use"
+    tool.name = "autopsy_output"
+    tool.input = dict(_VALID_ONE_SHOT_PAYLOAD)
+    client = _mock_client([tool])
+
+    with patch("anthropic.AsyncAnthropic", return_value=client):
+        result = await run_autopsy(
+            task_annotation=_minimal_task_annotation(),
+            trajectory=[{"type": "T", "data": "x"}],
+            slayer_storage_dir=str(tmp_path),
+            miss_diagnostics=None,
+            model=_KIMI,
+            is_one_shot=True,
+        )
+
+    assert result.error is None
+    kwargs = client.messages.create.call_args.kwargs
+    assert kwargs["model"] == "kimi-k2.7-code"
+    assert kwargs["thinking"]["type"] == "enabled"
+    assert kwargs["tool_choice"] == {"type": "auto"}
+    assert kwargs["max_tokens"] > kwargs["thinking"]["budget_tokens"]
+
+
+@pytest.mark.asyncio
+async def test_anthropic_autopsy_request_shape_unchanged(monkeypatch, tmp_path):
+    tool = MagicMock()
+    tool.type = "tool_use"
+    tool.name = "autopsy_output"
+    tool.input = dict(_VALID_ONE_SHOT_PAYLOAD)
+    client = _mock_client([tool])
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    from bird_interact_agents.eval.autopsy import run_autopsy
+
+    with patch("anthropic.AsyncAnthropic", return_value=client):
+        await run_autopsy(
+            task_annotation=_minimal_task_annotation(),
+            trajectory=[{"type": "T", "data": "x"}],
+            slayer_storage_dir=str(tmp_path),
+            miss_diagnostics=None,
+            model="anthropic/claude-sonnet-4-5",
+            is_one_shot=True,
+        )
+    kwargs = client.messages.create.call_args.kwargs
+    assert "thinking" not in kwargs
+    assert kwargs["tool_choice"] == {"type": "tool", "name": "autopsy_output"}
+    assert kwargs["max_tokens"] == 2048
+
+
 # ---------------------------------------------------------------------------
 # Registry-aware client construction
 # ---------------------------------------------------------------------------

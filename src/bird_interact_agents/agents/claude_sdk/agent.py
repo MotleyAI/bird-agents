@@ -124,13 +124,20 @@ def _usage_value(usage: object, key: str) -> int:
 
 
 def accumulate_assistant_usage(accum: TokenUsage, msg: object, model: str) -> None:
-    """Fold one streamed message's token usage into `accum` (scope=agent).
+    """Legacy per-AssistantMessage accumulator (DEV-1555 follow-up: prefer
+    :class:`SdkUsageTracker`).
 
-    Only `AssistantMessage`s carry per-turn usage; the cumulative
-    `ResultMessage.usage` is intentionally skipped so totals aren't
-    double-counted. Shared by the `claude_sdk` and `claude_sdk_otf`
-    adapters so SDK-backed agents report cost consistently with the
-    litellm-tracked frameworks.
+    The SDK splits one assistant TURN into multiple ``AssistantMessage``
+    events (one per content block: thinking, text, tool_use, …), each
+    carrying the SAME per-turn ``usage`` dict — naïve summing both
+    double-counts cache tokens and under-counts ``output_tokens`` (which
+    only fills in on the final block, while prior blocks of the same turn
+    report 0). The cumulative authoritative usage lives in the single
+    terminal ``ResultMessage`` of the stream.
+
+    Kept for backward compatibility / tests; new agent loops should
+    instantiate one :class:`SdkUsageTracker` per task and call
+    ``observe()`` in the receive loop, ``finalize()`` on stream end.
     """
     if type(msg).__name__ != "AssistantMessage":
         return
@@ -145,6 +152,110 @@ def accumulate_assistant_usage(accum: TokenUsage, msg: object, model: str) -> No
         cache_read=_usage_value(usage, "cache_read_input_tokens"),
         cache_write=_usage_value(usage, "cache_creation_input_tokens"),
     )
+
+
+# DEV-1555 (post-stage-2 diagnosis): the per-AssistantMessage accumulator
+# both double-counts cache reads (every block of a turn carries the same
+# usage dict) and under-counts ``output_tokens`` (which fills in only on
+# the last block while we summed every block at the same per-turn total).
+# Empirical: Opus alien_1 cache_read 2.21M reported vs 1.39M actual;
+# output 3.6K vs 17.6K actual. Kimi alien_1 cache_read 0 vs 3.66M actual
+# (Moonshot's per-turn AssistantMessage.usage is all-zero; only the
+# terminal ResultMessage reports the cumulative).
+
+
+_USAGE_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+)
+
+
+class SdkUsageTracker:
+    """Per-task usage tracker for the claude-agent-sdk stream.
+
+    The SDK emits one terminal ``ResultMessage`` whose ``usage`` is the
+    cumulative session total — that is the source of truth. While the
+    stream is running we also track per-turn ``AssistantMessage.usage``
+    (deduplicated by ``message_id`` or usage-dict identity) as a fallback
+    estimate for crash paths.
+
+    Usage:
+        tracker = SdkUsageTracker(accum, self.model)
+        async for msg in client.receive_response():
+            tracker.observe(msg)
+            ...
+        tracker.finalize()   # idempotent; also called by observe() on
+                              # ResultMessage so the success path is a
+                              # no-op here.
+    """
+
+    def __init__(self, accum: TokenUsage, model: str):
+        self._accum = accum
+        self._model = model
+        self._turns: dict = {}
+        self._turn_order: list = []
+        self._result_usage = None
+        self._committed = False
+
+    def observe(self, msg: object) -> None:
+        name = type(msg).__name__
+        if name == "AssistantMessage":
+            usage = getattr(msg, "usage", None)
+            if usage is None:
+                return
+            # The live SDK shares ONE usage dict instance across every
+            # content block of a turn — id(usage) is a stable per-turn
+            # key. Prefer message_id when the SDK supplies it (older
+            # mock paths set it; live 0.1.69 does not on AssistantMessage).
+            tid = getattr(msg, "message_id", None)
+            if tid is None:
+                tid = id(usage)
+            if tid in self._turns:
+                return
+            self._turns[tid] = usage
+            self._turn_order.append(tid)
+        elif name == "ResultMessage":
+            self._result_usage = getattr(msg, "usage", None)
+            # Terminal stream message: commit immediately so the receive
+            # loop's normal exit doesn't need a separate finalize() call.
+            self.finalize()
+
+    def finalize(self) -> None:
+        if self._committed:
+            return
+        self._committed = True
+        n_turns = len(self._turn_order)
+        if self._result_usage is not None:
+            self._commit(self._result_usage, n_calls=max(1, n_turns))
+            return
+        if not self._turn_order:
+            return
+        agg = {k: 0 for k in _USAGE_FIELDS}
+        for tid in self._turn_order:
+            u = self._turns[tid]
+            for k in _USAGE_FIELDS:
+                agg[k] += _usage_value(u, k)
+        self._commit(agg, n_calls=n_turns)
+        self._accum.partial = True
+
+    def _commit(self, usage, *, n_calls: int) -> None:
+        self._accum.add_call(
+            scope="agent",
+            model=self._model,
+            prompt=_usage_value(usage, "input_tokens"),
+            completion=_usage_value(usage, "output_tokens"),
+            cache_read=_usage_value(usage, "cache_read_input_tokens"),
+            cache_write=_usage_value(usage, "cache_creation_input_tokens"),
+        )
+        # ``add_call`` set n_calls=1 — bump to the actual turn count so
+        # callers can compare against the legacy per-AssistantMessage
+        # counts and against breakdown rows for non-SDK frameworks.
+        if n_calls > 1:
+            row = self._accum._row_for(scope="agent", model=self._model)
+            row.n_calls += n_calls - 1
+            self._accum.n_calls += n_calls - 1
 
 
 def _gate(action_name: str, status: SampleStatus) -> str | None:

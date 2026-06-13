@@ -47,6 +47,12 @@ class ProviderSpec(BaseModel):
     # Official pricing per native model id; registered with litellm so
     # cost reports are accurate instead of the $0 unpriced fallback.
     model_pricing: dict[str, ModelPricing] = {}
+    # Native model ids that REJECT /v1/messages requests without
+    # thinking={"type": "enabled", ...} (probed live; kimi-k2.7-code does).
+    # Drives the SDK session thinking config and the autopsy request shape
+    # (forced tool_choice is incompatible with thinking — autopsy switches
+    # to tool_choice=auto + the text-JSON fallback).
+    models_requiring_thinking: list[str] = []
 
 
 # kimi-k2.7-code numbers from the official pricing page (2026-06):
@@ -68,6 +74,7 @@ REGISTRY: dict[str, ProviderSpec] = {
         default_context_window=262_144,
         openai_base_url="https://api.moonshot.ai/v1",
         model_pricing={"kimi-k2.7-code": _KIMI_K27_CODE_PRICING},
+        models_requiring_thinking=["kimi-k2.7-code"],
     ),
 }
 
@@ -95,6 +102,14 @@ def is_supported_agent_model(model: str) -> bool:
 def required_env_for(model: str) -> tuple[str, ...]:
     spec = get_provider(model)
     return (spec.auth_env,) if spec else ()
+
+
+def requires_thinking(model: str) -> bool:
+    spec = get_provider(model)
+    if spec is None:
+        return False
+    _, native_id = _split(model)
+    return native_id in spec.models_requiring_thinking
 
 
 def resolve_base_url(spec: ProviderSpec) -> str:

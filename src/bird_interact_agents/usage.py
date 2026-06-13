@@ -199,6 +199,33 @@ def _safe_cost(
     *, model: str, prompt_tokens: int, completion_tokens: int,
     cache_read_input_tokens: int = 0, cache_creation_input_tokens: int = 0,
 ) -> tuple[float, float]:
+    # DEV-1555: registry open-weight models are priced IN-HOUSE from the
+    # registry's official prices. litellm's openai-provider math assumes
+    # prompt_tokens INCLUDES cached tokens (OpenAI convention) while our
+    # callers pass Anthropic-convention numbers (input excludes cache), so
+    # it swallows the non-cached input whenever cache_read is present —
+    # and it prices cache_creation at $0. Moonshot's model is hit/miss:
+    # cache writes ARE misses, billed at the full input rate.
+    spec = provider_registry.get_provider(model)
+    if spec is not None:
+        _, _, _native = model.partition("/")
+        pricing = spec.model_pricing.get(_native)
+        if pricing is not None:
+            read_rate = (
+                pricing.cache_read_input_token_cost
+                if pricing.cache_read_input_token_cost is not None
+                else pricing.input_cost_per_token
+            )
+            prompt_cost = (
+                (prompt_tokens + cache_creation_input_tokens)
+                * pricing.input_cost_per_token
+                + cache_read_input_tokens * read_rate
+            )
+            return prompt_cost, completion_tokens * pricing.output_cost_per_token
+    # Registry models WITHOUT a pricing entry still need litellm to see a
+    # registration so cost_per_token degrades to the NotFoundError path
+    # instead of a bare Exception. Idempotent, no-op after the first call.
+    provider_registry.ensure_litellm_pricing()
     try:
         return _cost_per_token(
             model=model,

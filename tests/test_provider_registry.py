@@ -129,3 +129,14 @@ def test_required_env_for():
     assert pr.required_env_for(_KIMI) == ("MOONSHOT_API_KEY",)
     assert pr.required_env_for("anthropic/claude-sonnet-4-6") == ()
     assert pr.required_env_for("unknownprov/x") == ()
+
+
+def test_requires_thinking():
+    """Probed live (2026-06-12): kimi-k2.7-code rejects any /v1/messages
+    request without thinking={"type":"enabled",...} — the flag drives the
+    SDK session options and the autopsy request shape."""
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    assert pr.requires_thinking(_KIMI) is True
+    assert pr.requires_thinking("moonshot/kimi-k2.6") is False
+    assert pr.requires_thinking("anthropic/claude-sonnet-4-6") is False
+    assert pr.requires_thinking("unknownprov/x") is False

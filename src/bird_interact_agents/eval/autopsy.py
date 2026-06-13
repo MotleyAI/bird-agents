@@ -61,6 +61,7 @@ from bird_interact_agents.agents.claude_sdk.context_budget import (
 from bird_interact_agents.provider_registry import (
     get_provider,
     provider_api_key,
+    requires_thinking,
     resolve_base_url,
 )
 
@@ -859,13 +860,24 @@ async def run_autopsy(
             AutopsyLLMOutputOneShot if is_one_shot else AutopsyLLMOutput
         )
         client = _build_anthropic_client(model)
-        response = await client.messages.create(
-            model=native_model_id(model),
-            max_tokens=2048,
-            tools=[tool_schema],
-            tool_choice={"type": "tool", "name": "autopsy_output"},
-            messages=[{"role": "user", "content": prompt}],
-        )
+        create_kwargs: dict = {
+            "model": native_model_id(model),
+            "max_tokens": 2048,
+            "tools": [tool_schema],
+            "tool_choice": {"type": "tool", "name": "autopsy_output"},
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if requires_thinking(model):
+            # Probed live (kimi-k2.7-code): the model rejects requests
+            # without thinking enabled, AND forced tool_choice is
+            # incompatible with thinking — switch to auto and lean on the
+            # text-JSON fallback when the model answers without the tool.
+            create_kwargs["thinking"] = {
+                "type": "enabled", "budget_tokens": 1024,
+            }
+            create_kwargs["tool_choice"] = {"type": "auto"}
+            create_kwargs["max_tokens"] = 4096
+        response = await client.messages.create(**create_kwargs)
     except anthropic.BadRequestError as exc:
         kind = "context_overflow" if _looks_like_context_overflow(exc) else "api_error"
         logger.error(

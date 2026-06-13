@@ -64,6 +64,38 @@ async def test_caller_passed_api_key_not_clobbered(monkeypatch):
     assert recorded["api_key"] == "explicit-key"
 
 
+def test_agent_side_cost_rows_priced_for_registry_models():
+    """Local-smoke regression (2026-06-12): the AGENT-side cost path
+    (accumulate_assistant_usage -> add_call -> litellm.cost_per_token)
+    crashed with litellm's bare 'This model isn't mapped yet' Exception
+    because pricing registration only ran on the user-sim route. add_call
+    must price registry models without any prior setup call."""
+    accum = TokenUsage()
+    accum.add_call(
+        scope="agent", model=_KIMI, prompt=1_000_000, completion=1_000_000,
+    )
+    assert accum.cost_usd == pytest.approx(0.95 + 4.00, rel=1e-6)
+
+
+def test_registry_cache_pricing_anthropic_convention():
+    """Cache pricing must use Anthropic-convention inputs (prompt EXCLUDES
+    cached tokens — that's what accumulate_assistant_usage passes) and
+    Moonshot's hit/miss model: cache WRITES are cache misses billed at the
+    full input rate ($0.95/M); reads at $0.19/M. litellm's openai-provider
+    math gets both wrong (swallows non-cached input when cache_read is
+    present; prices cache_creation at $0), so registry models are priced
+    in-house."""
+    accum = TokenUsage()
+    accum.add_call(
+        scope="agent", model=_KIMI,
+        prompt=100_000,          # non-cached input -> 0.095
+        completion=10_000,       # output -> 0.040
+        cache_read=1_000_000,    # hits -> 0.19
+        cache_write=500_000,     # misses (creation) -> 0.475
+    )
+    assert accum.cost_usd == pytest.approx(0.095 + 0.04 + 0.19 + 0.475, rel=1e-6)
+
+
 @pytest.mark.asyncio
 async def test_anthropic_user_sim_path_unchanged(monkeypatch):
     recorded: dict = {}

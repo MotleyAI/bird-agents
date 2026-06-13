@@ -86,6 +86,9 @@ async def test_moonshot_model_gets_session_env_and_native_id(
     # Anthropic credentials must never enter the session env.
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
     assert "ANTHROPIC_API_KEY" not in env
+    # kimi-k2.7-code rejects requests without thinking enabled (probed
+    # live 2026-06-12) — the session must pin it on.
+    assert options.thinking == {"type": "enabled", "budget_tokens": 8192}
 
 
 @pytest.mark.asyncio
@@ -103,6 +106,7 @@ async def test_anthropic_model_options_env_unchanged(
         eval_mode=eval_mode, model="anthropic/claude-sonnet-4-5",
     )
     assert captured["options"].env == ClaudeAgentOptions().env
+    assert captured["options"].thinking == ClaudeAgentOptions().thinking
 
 
 @pytest.mark.asyncio
