@@ -26,6 +26,7 @@ from bird_interact_agents.agents._host_discovery_playbook import (
     HOST_DISCOVERY_PLAYBOOK as _HOST_DISCOVERY_PLAYBOOK,
 )
 from bird_interact_agents.agents._shared_otf_prompts import (
+    _AFTER_REJECTED_DISCIPLINE,
     _ASK_AGAIN_RULE,
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
     _DECOMPOSE_DISCIPLINE,
@@ -156,9 +157,11 @@ SLAYER_OTF_AINTERACT = (
         ),
         extra_hypothesis_axes=(
             ", or `normalize_filters=false` on the offending `query` /\n"
-            "     `query_nested` / `submit_query` call"
+            "     `submit_query` call"
         ),
     )
+    + "\n\n   "
+    + _AFTER_REJECTED_DISCIPLINE
     + "\n\n5. TEST candidate columns and the final query with `query` /\n"
       "   `query_nested`; sanity-check the generated SQL.\n\n"
       "   "

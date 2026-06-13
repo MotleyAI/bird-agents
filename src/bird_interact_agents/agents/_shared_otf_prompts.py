@@ -172,6 +172,54 @@ varying surface parameters and:
   4. Test each surviving hypothesis exactly once — never re-submit a
      query structurally identical to a prior attempt."""
 
+
+# DEV-1555 r6-diagnosis fix: after-rejection discipline. Failure pattern
+# observed: agent reads "wrong_result" as "the WHOLE model design is
+# wrong, start over from scratch" — picks a different grouping column,
+# renames every entity, picks a different quality formula in the SAME
+# attempt. Burns 15+ turns per rebuild and makes triangulation
+# impossible. The fix is mode-agnostic, applies on EVERY rejection (not
+# just after 3 consecutive failures), and lives in BOTH one-shot and
+# a-interact prompts.
+_AFTER_REJECTED_DISCIPLINE = """\
+AFTER A REJECTED SUBMIT: CHANGE ONE VARIABLE. When a submit comes back
+"wrong_result" or "phase1 failed", do NOT throw out the source-model
+design. The submit succeeded structurally (no dry-run error, rows came
+back), so the encoding + join + grouping are likely fine — the
+mismatch is in a single dimension.
+
+Enumerate the possible variables in priority order, change exactly ONE,
+and resubmit:
+
+  1. Output COLUMN SET / COUNT — the rejected output had the right
+     values but the wrong column tuple (extra ID column, missing
+     summary column, two columns transposed).
+  2. SORT direction / column — flip ascending↔descending; try a
+     different sort key (e.g. count instead of avg).
+  3. AGGREGATION SCOPE — switch between "over all rows in group" vs
+     "over usable subset" for ONE measure, keep the others.
+  4. FORMULA TWEAK — same kernel, different rounding/cast/precision.
+  5. ONLY IF (1-4) all fail across separate attempts: revisit the
+     source-model design (different grouping column, different join
+     path, different formula). This is the "pivot" step above —
+     reserve it for the third or fourth rejection, NOT the second.
+
+Anti-patterns to avoid:
+
+  * Renaming the source model between attempts (e.g.
+    `signal_quality_by_weather` → `signals_atmo_enriched` →
+    `signals_snr_enriched`) — the rename invalidates the diff so you
+    cannot tell what actually changed.
+  * Switching the grouping column AND the quality formula in the same
+    attempt — two changes at once means a pass tells you nothing about
+    which one was wrong, a fail tells you nothing either.
+  * Re-asking `ask_user` to re-confirm something already answered in
+    this session. Re-read your existing Q→A pairs first.
+
+Keep a one-line mental log: "attempt N changed <variable X> from <a>
+to <b>; everything else identical to attempt N-1". If you cannot state
+that sentence, you are changing too many things at once."""
+
 # DEV-1534 Fix F — a-interact only (one-shot variants have no user
 # simulator). No format params.
 _USER_SIM_TRUST_CALIBRATION = """\

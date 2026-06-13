@@ -29,7 +29,7 @@ import pytest
 # ACCIDENTAL prompt drift on later refactors; deliberate prompt changes
 # re-baseline here.
 _ONE_SHOT_SHA256 = "0b3e1cf9af0944607ab28601a2afbcb40e2ea5526080b1fb5c7139dcc6b9a55f"
-_AINTERACT_SHA256 = "b5b84b6dfa87195eb769c3f0e4123f1a3b0d436ac99536b9a38a943215e906ea"
+_AINTERACT_SHA256 = "43515ac242d4f821185807d30ce75af1644c079367c95a166f0991153594dd3d"
 
 
 def test_slayer_otf_one_shot_unchanged():
