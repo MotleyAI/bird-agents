@@ -64,7 +64,7 @@ query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 `search` to find relevant memories and existing entities; `inspect_model`
 to see a model's columns / measures / joins; `create_model` / `edit_model`
-to add columns and measures; `query` / `query_nested` to test.
+to add columns and measures; `query` (single object OR list of stage objects for nested DAG) to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `search` with `entities=[

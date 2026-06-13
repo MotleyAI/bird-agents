@@ -122,10 +122,15 @@ much cheaper than a new join or KB re-read."""
 # params. The `normalize_filters` opt-out applies to `query`,
 # `query_nested`, AND `submit_query` — all served by our bird-interact-
 # tools wrappers in the OTF agents.
+# DEV-1555 (post-r5 diagnosis): the agent's query tool is
+# `mcp__bird-interact-tools__query` (the wrapper). It accepts a single
+# SlayerQuery JSON OR a JSON ARRAY of stage objects for nested DAGs;
+# `query_nested` is NOT a separate name in this harness. The raw
+# `mcp__slayer__query` is reserved for the discovery subagent (denied
+# to the main loop) — do not reach for it.
 _SLAYER_SQL_ARTIFACT_CHECK = """\
-SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query` /
-`query_nested` returns, inspect the rendered SQL for these patterns
-before submitting:
+SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query`
+returns, inspect the rendered SQL for these patterns before submitting:
 
   1. GROUP BY on every projected column with NO aggregate functions —
      silently deduplicates rows. Fix: add the table's primary-key column
@@ -135,8 +140,8 @@ before submitting:
      filters — wrapped automatically by default. When the gold answer
      requires exact-case equality (proper-noun categories with
      known-fixed casing), pass `normalize_filters=false` as a SEPARATE
-     parameter on the offending `query` / `query_nested` / `submit_query`
-     call (the flag lives OUTSIDE the JSON DSL).
+     parameter on the offending `query` / `submit_query` call (the flag
+     lives OUTSIDE the JSON DSL).
   3. Broken operator precedence on WHERE arithmetic:
      `expr1*w1 + expr2*w2 > threshold` without outer parens — the
      comparator binds only to the last additive term. Fix: push the

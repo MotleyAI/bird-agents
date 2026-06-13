@@ -83,8 +83,11 @@ Produce a handoff report with EXACTLY these sections:
    its definition quoted VERBATIM (formulas must not be paraphrased).
 5. USER CLARIFICATIONS — every question you asked and the answer, quoted
    verbatim as Q→A pairs.
-6. OPEN AMBIGUITIES — anything you could not resolve, with the candidate
-   interpretations.
+6. OPEN AMBIGUITIES — anything you could not resolve. This section MUST
+   be empty in the common case; only put something here if the user-sim
+   explicitly declined to answer a clarifying question. Do NOT defer
+   resolvable ambiguities to the main agent — see the resolution
+   checklist below.
 
 Be exhaustive in coverage but terse in prose: the report replaces raw tool
 output in the main agent's context, so include facts, not narration.
@@ -92,9 +95,36 @@ output in the main agent's context, so include facts, not narration.
 
 _DISCOVERY_PROMPT_ASK_USER = """
 The user simulator holds masked ground truth that is unrecoverable from
-the KB alone. Identify the most load-bearing ambiguities in the request
-and resolve them with ask_user BEFORE writing the report; record each
-exchange verbatim in section 5.
+the KB alone. You MUST resolve every load-bearing ambiguity with
+ask_user BEFORE writing the report — anything left in "Open ambiguities"
+is a failure of this subagent, not the main agent's problem to clean up.
+
+Resolution checklist — ask explicitly about each of these when the
+request leaves them open (one ask_user can bundle several as a numbered
+list; the user-sim answers point-by-point):
+
+* GROUPING / SCOPING — which column defines the bucket? (e.g.
+  "atmospheric condition" could map to several columns.)
+* METRIC IDENTITY — when the request names a quantity ("signal
+  quality", "score", "X factor"), which exact column or formula is it?
+  If a KB item names a formula, quote it verbatim and confirm "is THIS
+  the formula?".
+* AGGREGATION SCOPE — for each aggregate (avg/median/sum/count): is it
+  computed over ALL rows in the group, or only over a filtered subset
+  (e.g. usable / non-null / passing a threshold)?
+* SORT ORDER — which column orders the output rows? Direction
+  (ascending / descending)?
+* TIE-BREAKING — secondary sort, deterministic order for equal keys.
+* NULL HANDLING — drop, treat as zero, treat as a bucket, propagate.
+* UNITS / ROUNDING — explicit units when the column allows ambiguity
+  (seconds vs minutes; °C vs °F); rounding rules for displayed numbers.
+* FILTER LITERALS — when the request references a labeled value
+  ("High Income", "Severe"), quote the user's label back and confirm
+  the exact stored literal it maps to.
+
+Record each Q and verbatim A in section 5. If the user-sim refuses or
+returns no answer, record the refusal verbatim and put the unresolved
+choice in section 6 with the two or three candidate interpretations.
 """
 
 
@@ -116,4 +146,21 @@ its handoff report; work from that report. If you later need more
 introspection or another user clarification you cannot ask yourself,
 spawn '{DISCOVERY_AGENT_NAME}' again with a focused follow-up request
 rather than guessing.
+
+## Verify-before-submit checklist (mandatory)
+
+Before EVERY submit, run the exact query you intend to submit through
+the query tool and verify, against the user-sim if uncertain:
+
+* SORT ORDER — column AND direction match what the user wants. When the
+  request says "rank/top/bottom/most/least", confirm the direction; when
+  it's silent, ask once. Never assume.
+* AGGREGATION SCOPE — each aggregate is computed over the right subset
+  (all rows in the group vs filtered subset). A discrepancy here is the
+  most common silent miss.
+* NULL HANDLING — every aggregate's behavior on NULLs matches the
+  request.
+* COLUMN COUNT and POSITIONAL ORDER — match the request's stated
+  output shape (column NAMES are not graded; counts and positions are).
+* ROW COUNT — non-zero and plausible given the data you saw.
 """

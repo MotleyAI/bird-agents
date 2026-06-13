@@ -22,13 +22,14 @@ import pytest
 # Hashes were captured from the pre-refactoring source.
 # ---------------------------------------------------------------------------
 
-# Hashes re-baselined for the DEV-1534 Fix B/D/E/F prompt additions
-# (column-names rule, SLayer artifact sanity-check, pivot-after-3-failures
-# discipline, user-sim trust calibration). The snapshot's purpose is the
-# same — catch ACCIDENTAL prompt drift on later refactors; deliberate
-# prompt changes re-baseline here.
-_ONE_SHOT_SHA256 = "31eaa8f6de66dae75737efda1ed9e178691f5a46213b26c86f783ae011fe13b7"
-_AINTERACT_SHA256 = "bedaa11ea73f6ee4e6128dd90a2334d3127135b1defc355681449ff532b578ee"
+# Hashes re-baselined for the DEV-1555 Stage-1 prompt fixes (drop
+# `query_nested` from agent vocabulary, document single-tool
+# list-of-stages shape, note the partition-deny redirect for
+# `mcp__slayer__query`). The snapshot's purpose is the same — catch
+# ACCIDENTAL prompt drift on later refactors; deliberate prompt changes
+# re-baseline here.
+_ONE_SHOT_SHA256 = "0b3e1cf9af0944607ab28601a2afbcb40e2ea5526080b1fb5c7139dcc6b9a55f"
+_AINTERACT_SHA256 = "b5b84b6dfa87195eb769c3f0e4123f1a3b0d436ac99536b9a38a943215e906ea"
 
 
 def test_slayer_otf_one_shot_unchanged():
