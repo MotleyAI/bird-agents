@@ -282,6 +282,36 @@ Movement vs hand-audited: +`households_3, _7` (improvements);
 −`households_17` (lone regression). Movement vs pre-S1-S5 baseline:
 +`households_2, _7`, zero new regressions.
 
+## Cascade stats per `(benchmark, agent_model, mode)` — use the script
+
+For "how is Opus doing on mini-interact in raw vs slayer right now?", the
+canonical tool is `scripts/cascade_for_combo.py`. It walks
+`runs/<benchmark>/<db>/<iid>/`, joins each annotation against its cloud
+manifest (`results/<benchmark>/cloud/<run_id>/manifest.json`, with a GCS
+fallback that caches locally), filters to the requested `--mode` (raw or
+slayer) and `--agent-model` substring (`opus` matches
+`anthropic/claude-opus-4-7`), then picks the **latest non-`eval_failed`**
+run per task — chronologically-latest can be a stale regrade whose grader
+infrastructure choked, which would override a genuine earlier verdict.
+
+It prints BOTH the cumulative N1..N9 table (with `Δ vs prev` per tier; N1
+is the headline original-gold pass rate) AND the mutually-exclusive
+partition L1..L11 (each task → exactly one tier). `--json` emits the
+machine-readable payload.
+
+```bash
+env -u SSH_AUTH_SOCK uv run python scripts/cascade_for_combo.py \
+  --benchmark mini-interact --mode slayer --agent-model opus
+env -u SSH_AUTH_SOCK uv run python scripts/cascade_for_combo.py \
+  --benchmark mini-interact --mode raw    --agent-model opus
+```
+
+Reach for this script, not ad-hoc `rglob` + cascade computation. The
+"pick latest non-eval_failed" rule is non-obvious and the existing
+`aggregate_cascading_latest` in `cascading_report.py` does NOT apply
+either of these two filters. Contract is pinned by
+`tests/scripts/test_cascade_for_combo.py`.
+
 ## Debugging the cloud runner: pull live state, don't guess
 
 When a `bird-interact-cloud` run fails on GCE, **do not iterate by editing

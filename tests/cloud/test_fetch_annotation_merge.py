@@ -113,19 +113,24 @@ def test_merge_writes_annotation_to_main_checkout(tmp_path, monkeypatch):
 
 
 def test_merge_no_overwrite_if_present(tmp_path, monkeypatch):
-    from bird_interact_agents import paths as _paths
     from bird_interact_agents.cloud.post_run_merge import (
         merge_submission_annotations,
     )
 
-    main_checkout = tmp_path / "checkout"
-    dest_dir = main_checkout / "annotations" / "mini-interact" / "alien"
-    dest_dir.mkdir(parents=True)
-    fake_ann_root = main_checkout / "annotations"
-    monkeypatch.setattr(_paths, "annotations_root", lambda: fake_ann_root)
+    # Sandbox runs/ root via BIRD_RUNS_ROOT so the merge writes under tmp_path
+    # rather than the real checkout. Without this the test relies on whatever
+    # is currently in runs/mini-interact/alien/alien_1/r1.json — leftover from
+    # prior tests in the session.
+    runs_root = tmp_path / "runs"
+    monkeypatch.setenv("BIRD_RUNS_ROOT", str(runs_root))
+
+    dest = (
+        runs_root / "mini-interact" / "alien" / "alien_1" / "r1.json"
+    )
+    dest.parent.mkdir(parents=True)
     pre = _valid_submission_annotation_dict("alien_1")
     pre["annotated_by"] = "human-pre-existing"
-    (dest_dir / "alien_1.submission.r1.json").write_text(json.dumps(pre))
+    dest.write_text(json.dumps(pre))
 
     downloaded = tmp_path / "downloaded"
     rows = downloaded / "rows" / "alien_1"
@@ -142,9 +147,7 @@ def test_merge_no_overwrite_if_present(tmp_path, monkeypatch):
     assert report.merged == 0
     assert report.skipped_existing == 1
 
-    surviving = json.loads(
-        (dest_dir / "alien_1.submission.r1.json").read_text()
-    )
+    surviving = json.loads(dest.read_text())
     assert surviving["annotated_by"] == "human-pre-existing"
 
 
