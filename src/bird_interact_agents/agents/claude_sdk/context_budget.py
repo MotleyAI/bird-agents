@@ -16,7 +16,31 @@ Stage 2 wires the open-weight provider registry into
 
 from __future__ import annotations
 
+import os
+import time
+
 from bird_interact_agents.provider_registry import get_provider
+
+# Shared with ``run.py``'s outer ``asyncio.wait_for`` safety net; the
+# agent's hook reads the same env var so the soft warnings + hard deny
+# fire BEFORE the outer cap kicks in.
+_PER_TASK_TIMEOUT_ENV = "BIRD_INTERACT_PER_TASK_TIMEOUT_S"
+_DEFAULT_AGENT_BUDGET_S = 900.0
+
+
+def per_task_timeout_s() -> float:
+    """Per-task agent wall-clock budget (seconds).
+
+    Reads ``BIRD_INTERACT_PER_TASK_TIMEOUT_S`` (shared with the outer
+    ``asyncio.wait_for`` cap in ``run.py``). 0 / negative disables the
+    agent-level enforcement (and the outer cap, which mirrors)."""
+    raw = os.environ.get(_PER_TASK_TIMEOUT_ENV)
+    if raw is None:
+        return _DEFAULT_AGENT_BUDGET_S
+    try:
+        return float(raw)
+    except ValueError:
+        return _DEFAULT_AGENT_BUDGET_S
 
 _DEFAULT_WINDOW = 200_000
 _ANTHROPIC_WINDOW = 1_000_000
@@ -103,3 +127,130 @@ def make_context_budget_hook(state: dict, window: int):
         return {}
 
     return context_budget_warning
+
+
+# ---------------------------------------------------------------------------
+# DEV-1555 follow-up: wall-clock budget enforced AT THE AGENT LEVEL.
+#
+# Per-task wall-clock cap was previously enforced from OUTSIDE the SDK via
+# ``asyncio.wait_for`` in ``run.py``. When it fired the agent's in-memory
+# trajectory was lost (last seen on Kimi r7 → traj=0, cost=0, no usage).
+# Same shape as ``make_context_budget_hook`` but the clock is wall-time:
+# warn at 80% / 90%, then DENY non-submit tools at 100% so the agent is
+# forced to call submit_query / submit_sql next. The outer
+# ``asyncio.wait_for`` stays as a runaway safety net at budget + grace.
+# ---------------------------------------------------------------------------
+
+# Full MCP tool names that the deny hook allows past the wall-clock
+# deadline. Any name CONTAINING one of these substrings is allowed (the
+# agents register the submit tools under
+# ``mcp__bird-interact-tools__submit_query`` /
+# ``mcp__bird-interact-tools__submit_sql``).
+_SUBMIT_TOOL_NAMES = ("submit_query", "submit_sql")
+
+
+def update_wall_clock_start(state: dict) -> None:
+    """Stamp ``time.monotonic()`` onto ``state["wall_clock_start"]``.
+
+    Call once per task right before entering the SDK receive loop. Last
+    write wins (mirrors ``update_context_tokens`` 'latest, not max'
+    semantics)."""
+    state["wall_clock_start"] = time.monotonic()
+
+
+def make_wall_clock_budget_hook(
+    state: dict,
+    *,
+    budget_s: float | None,
+    submit_tool: str,
+) -> tuple:
+    """Build (PostToolUse warning, PreToolUse deny) for a wall-clock budget.
+
+    The warning hook fires once at 80% and once at 90% of ``budget_s`` —
+    same one-shot pattern as ``make_context_budget_hook``. The deny hook
+    refuses every PreToolUse for a non-submit tool past 100% of
+    ``budget_s``, forcing the agent to call ``{submit_tool}`` next so the
+    trajectory + best-candidate query are preserved.
+
+    ``budget_s`` of ``None``, ``0``, or negative disables BOTH hooks (they
+    become no-ops). Preserves the existing
+    ``BIRD_INTERACT_PER_TASK_TIMEOUT_S=0`` UX.
+
+    ``submit_tool`` is the bare tool name (``"submit_query"`` for slayer
+    flavors, ``"submit_sql"`` for raw flavors). The deny check matches by
+    substring against the called tool name so the bird-interact-tools MCP
+    prefix is handled transparently.
+    """
+    disabled = budget_s is None or budget_s <= 0
+    fired = {"warn": False, "final": False}
+    warn_at = (budget_s or 0) * _WARN_FRACTION
+    final_at = (budget_s or 0) * _FINAL_FRACTION
+
+    def _elapsed() -> float | None:
+        start = state.get("wall_clock_start")
+        if start is None:
+            return None
+        return time.monotonic() - start
+
+    async def wall_clock_budget_warning(input_data, tool_use_id, context):
+        if disabled:
+            return {}
+        elapsed = _elapsed()
+        if elapsed is None:
+            return {}
+        if elapsed > final_at and not fired["final"]:
+            fired["final"] = True
+            fired["warn"] = True
+            remaining = max(0.0, budget_s - elapsed)
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": (
+                        f"[WALL-CLOCK BUDGET] FINAL WARNING: {elapsed:.0f}s "
+                        f"of the {budget_s:.0f}s budget used (>90%). "
+                        f"{remaining:.0f}s left before non-submit tools are "
+                        f"denied — call {submit_tool} NOW with your best "
+                        "candidate."
+                    ),
+                }
+            }
+        if elapsed > warn_at and not fired["warn"]:
+            fired["warn"] = True
+            remaining = max(0.0, budget_s - elapsed)
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": (
+                        f"[WALL-CLOCK BUDGET] {elapsed:.0f}s of the "
+                        f"{budget_s:.0f}s budget used (>80%). "
+                        f"{remaining:.0f}s remain before forced submit; if "
+                        f"you have a candidate answer, call {submit_tool} "
+                        "now."
+                    ),
+                }
+            }
+        return {}
+
+    async def wall_clock_budget_deny(input_data, tool_use_id, context):
+        if disabled:
+            return {}
+        elapsed = _elapsed()
+        if elapsed is None or elapsed < budget_s:
+            return {}
+        tool_name = input_data.get("tool_name") or ""
+        if any(s in tool_name for s in _SUBMIT_TOOL_NAMES):
+            return {}
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": (
+                    f"Wall-clock budget exhausted ({elapsed:.0f}s / "
+                    f"{budget_s:.0f}s). Submit your best candidate "
+                    f"immediately via {submit_tool} — further tool calls "
+                    "will be denied until you do."
+                ),
+            }
+        }
+
+    return wall_clock_budget_warning, wall_clock_budget_deny

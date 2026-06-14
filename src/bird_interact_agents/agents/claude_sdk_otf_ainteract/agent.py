@@ -45,7 +45,10 @@ from bird_interact_agents.agents.claude_sdk.agent import (
 from bird_interact_agents.agents.claude_sdk.context_budget import (
     context_window_for,
     make_context_budget_hook,
+    make_wall_clock_budget_hook,
+    per_task_timeout_s,
     update_context_tokens,
+    update_wall_clock_start,
 )
 from bird_interact_agents.agents.claude_sdk.partition import (
     DISCOVERY_AGENT_NAME,
@@ -410,6 +413,15 @@ class ClaudeSDKOtfAInteractAgent:
             # DEV-1555: discovery/main split (see claude_sdk_otf.agent).
             discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
             context_state: dict = {}
+            update_wall_clock_start(context_state)
+            (
+                wall_clock_warning,
+                wall_clock_deny,
+            ) = make_wall_clock_budget_hook(
+                context_state,
+                budget_s=per_task_timeout_s(),
+                submit_tool="submit_query",
+            )
 
             # DEV-1555 Stage 2: registry open-weight backends get a
             # per-run session env (ANTHROPIC_BASE_URL + auth token);
@@ -466,6 +478,7 @@ class ClaudeSDKOtfAInteractAgent:
                             matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
                             hooks=[_normalize_write_tool_filters_hook],
                         ),
+                        HookMatcher(hooks=[wall_clock_deny]),
                     ],
                     "PostToolUse": [
                         HookMatcher(
@@ -482,6 +495,7 @@ class ClaudeSDKOtfAInteractAgent:
                                 )
                             ]
                         ),
+                        HookMatcher(hooks=[wall_clock_warning]),
                         # Must be last so it captures the true last-completed
                         # tool name after all other PostToolUse hooks have run.
                         HookMatcher(hooks=[post_tool_tracker]),

@@ -677,11 +677,12 @@ async def test_run_task_registers_three_guards_plus_turn_budget(
     assert "PostToolUse" in hooks
 
     pre_matchers = hooks["PreToolUse"]
-    # Three PreToolUse matchers now: [0] submit_query (ask + query gates),
+    # Four PreToolUse matchers now: [0] submit_query (ask + query gates),
     # [1] discovery-only tools (partition deny, DEV-1555),
     # [2] create_model|edit_model (normalize-write-filters hook, Codex
-    # post-merge).
-    assert len(pre_matchers) == 3
+    # post-merge), [3] wall-clock budget deny (matcher None — fires on
+    # every tool, only denies past-budget non-submits; DEV-1555 follow-up).
+    assert len(pre_matchers) == 4
     pre_by_matcher = {pm.matcher: pm for pm in pre_matchers}
     submit_pm = pre_by_matcher["mcp__bird-interact-tools__submit_query"]
     assert len(submit_pm.hooks) == 2  # ask-user gate, then query-before-submit
@@ -691,9 +692,10 @@ async def test_run_task_registers_three_guards_plus_turn_budget(
     assert len(write_pm.hooks) == 1
 
     post_matchers = hooks["PostToolUse"]
-    # Exactly five PostToolUse matchers: ask-counter (matcher == ask_user),
-    # nag, turn-budget, context-budget (DEV-1555), tracker (all matcher None).
-    assert len(post_matchers) == 5
+    # Exactly six PostToolUse matchers: ask-counter (matcher == ask_user),
+    # nag, turn-budget, context-budget (DEV-1555), wall-clock-warning
+    # (DEV-1555 follow-up), tracker (all matcher None except ask-counter).
+    assert len(post_matchers) == 6
     matchers = {pm.matcher for pm in post_matchers}
     assert "mcp__bird-interact-tools__ask_user" in matchers
     assert None in matchers
@@ -720,12 +722,13 @@ async def test_run_task_registered_hooks_behave_correctly(monkeypatch, tmp_path)
     pre_query_gate = hooks["PreToolUse"][0].hooks[1]
     post_by_matcher = {pm.matcher: pm.hooks[0] for pm in hooks["PostToolUse"]}
     counter = post_by_matcher["mcp__bird-interact-tools__ask_user"]
-    # The four matcher=None PostToolUse hooks: nag, turn-budget,
-    # context-budget (DEV-1555), tracker.
+    # The five matcher=None PostToolUse hooks: nag, turn-budget,
+    # context-budget (DEV-1555), wall-clock-warning (DEV-1555 follow-up),
+    # tracker.
     matcher_none_hooks = [
         pm.hooks[0] for pm in hooks["PostToolUse"] if pm.matcher is None
     ]
-    assert len(matcher_none_hooks) == 4  # nag + turn-budget + context + tracker
+    assert len(matcher_none_hooks) == 5  # nag + turn-budget + context + wall-clock + tracker
     # Tracker is the last registered None-matcher hook.
     tracker = matcher_none_hooks[-1]
 

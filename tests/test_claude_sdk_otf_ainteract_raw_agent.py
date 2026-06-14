@@ -495,14 +495,16 @@ async def test_run_task_registers_three_guards_plus_turn_budget(monkeypatch, tmp
     assert "PostToolUse" in hooks
 
     pre_matchers = hooks["PreToolUse"]
-    # [0] submit_sql gate, [1] discovery-only partition deny (DEV-1555).
-    assert len(pre_matchers) == 2
+    # [0] submit_sql gate, [1] discovery-only partition deny (DEV-1555),
+    # [2] wall-clock budget deny (DEV-1555 follow-up).
+    assert len(pre_matchers) == 3
     # Gate must be scoped to submit_sql, not submit_query.
     assert pre_matchers[0].matcher == "mcp__bird-interact-tools__submit_sql"
 
     post_matchers = hooks["PostToolUse"]
-    # ask-counter, nag, turn-budget, context-budget (DEV-1555).
-    assert len(post_matchers) == 4
+    # ask-counter, nag, turn-budget, context-budget (DEV-1555),
+    # wall-clock-warning (DEV-1555 follow-up).
+    assert len(post_matchers) == 5
     matchers = {pm.matcher for pm in post_matchers}
     assert "mcp__bird-interact-tools__ask_user" in matchers
     assert None in matchers

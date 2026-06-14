@@ -284,15 +284,49 @@ the thrash early with a 0% false-negative rate on the correct/valid
 buckets. Override per-run via the BIRD_INTERACT_PER_TASK_TIMEOUT_S
 env var (set 0 to disable)."""
 
+# DEV-1555 follow-up: the SDK agents now enforce the same budget
+# AGENT-SIDE via wall-clock hooks (warn at 80%/90%, deny non-submit
+# tools at 100%). The agent-side enforcement preserves the trajectory
+# because submit happens inside the SDK session; an outer
+# asyncio.wait_for at the raw budget would kill the receive loop
+# mid-stream and lose the trajectory (last seen on Kimi r7). We keep
+# asyncio.wait_for as a RUNAWAY SAFETY NET at budget + grace so a
+# model that ignores the deny still terminates eventually.
+_DEFAULT_RUNAWAY_GRACE_S = 120.0
+
+
+def _runaway_grace_s() -> float:
+    """Override for ``_DEFAULT_RUNAWAY_GRACE_S`` via
+    ``BIRD_INTERACT_RUNAWAY_GRACE_S``. Tests for the runaway path set
+    this to 0 so they can exercise the outer cap in seconds."""
+    raw = os.environ.get("BIRD_INTERACT_RUNAWAY_GRACE_S")
+    if raw is None:
+        return _DEFAULT_RUNAWAY_GRACE_S
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return _DEFAULT_RUNAWAY_GRACE_S
+
 
 def _per_task_timeout_s() -> float:
+    """Outer ``asyncio.wait_for`` cap = agent budget + runaway grace.
+
+    The raw env-var budget IS the agent's soft target (see
+    ``context_budget.per_task_timeout_s``); this function returns the
+    HARD ceiling at which the outer wait_for will rip the task — used
+    as the last-resort safety net for a model that ignores the
+    agent-side deny."""
     raw = os.environ.get("BIRD_INTERACT_PER_TASK_TIMEOUT_S")
+    grace = _runaway_grace_s()
     if raw is None:
-        return _DEFAULT_PER_TASK_TIMEOUT_S
+        return _DEFAULT_PER_TASK_TIMEOUT_S + grace
     try:
-        return float(raw)
+        agent_budget = float(raw)
     except ValueError:
-        return _DEFAULT_PER_TASK_TIMEOUT_S
+        return _DEFAULT_PER_TASK_TIMEOUT_S + grace
+    if agent_budget <= 0:
+        return agent_budget  # 0 / negative still disables both caps
+    return agent_budget + grace
 
 
 async def run_one_task_with_runner(
@@ -320,7 +354,8 @@ async def run_one_task_with_runner(
                 # one so the error row records what actually happened
                 # (DEV-1535 wall-clock cap).
                 raise TimeoutError(
-                    f"per-task wall-clock cap of {timeout:.0f}s exceeded "
+                    f"per-task runaway-grace ceiling of {timeout:.0f}s exceeded — the "
+                    f"agent ignored the wall-clock budget hook's deny "
                     f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 to disable)"
                 ) from te
         else:
@@ -749,7 +784,8 @@ async def run_one_task(
                 # this function ran uncapped — defeating the cap on
                 # exactly the runs most likely to thrash.
                 raise TimeoutError(
-                    f"per-task wall-clock cap of {timeout:.0f}s exceeded "
+                    f"per-task runaway-grace ceiling of {timeout:.0f}s exceeded — the "
+                    f"agent ignored the wall-clock budget hook's deny "
                     f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 to disable)"
                 ) from te
         else:
@@ -1156,8 +1192,10 @@ async def run_evaluation(
                         r = await asyncio.wait_for(_coro, timeout=_timeout)
                     except asyncio.TimeoutError as te:
                         raise TimeoutError(
-                            f"per-task wall-clock cap of {_timeout:.0f}s "
-                            f"exceeded (BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 "
+                            f"per-task runaway-grace ceiling of {_timeout:.0f}s "
+                            f"exceeded — the agent ignored the "
+                            f"wall-clock budget hook's deny "
+                            f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 "
                             f"to disable)"
                         ) from te
                 else:

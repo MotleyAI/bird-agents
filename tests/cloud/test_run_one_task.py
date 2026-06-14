@@ -192,6 +192,10 @@ async def test_run_one_task_caps_runaway_at_wall_clock(
     import asyncio as _asyncio
 
     monkeypatch.setenv("BIRD_INTERACT_PER_TASK_TIMEOUT_S", "0.2")
+    # DEV-1555 follow-up: outer wait_for cap = agent budget + runaway
+    # grace. Zero the grace in tests so the outer cap fires inside the
+    # test sleep window.
+    monkeypatch.setenv("BIRD_INTERACT_RUNAWAY_GRACE_S", "0")
 
     async def thrasher(td, data_dir, patience, user_sim_model):
         await _asyncio.sleep(5.0)
@@ -241,6 +245,10 @@ async def test_run_one_task_with_runner_caps_runaway_at_wall_clock(
     import asyncio as _asyncio
 
     monkeypatch.setenv("BIRD_INTERACT_PER_TASK_TIMEOUT_S", "0.2")
+    # DEV-1555 follow-up: outer wait_for cap = agent budget + runaway
+    # grace. Zero the grace in tests so the outer cap fires inside the
+    # test sleep window.
+    monkeypatch.setenv("BIRD_INTERACT_RUNAWAY_GRACE_S", "0")
 
     async def thrasher(td, data_dir, patience, user_sim_model):
         await _asyncio.sleep(5.0)  # well past the 0.2 s cap
