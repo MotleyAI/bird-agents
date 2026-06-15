@@ -154,5 +154,10 @@ async def test_sdk_client_enter_success_emits_done_not_error_slayer(
         eval_mode="a-interact",
     )
     msgs = _timing_msgs(caplog_otf)
-    assert any("sdk_client_enter.done" in m_ for m_ in msgs), msgs
+    done_msgs = [m_ for m_ in msgs if "sdk_client_enter.done" in m_]
+    assert done_msgs, msgs
+    # Docstring contract: success emits `.done` WITH `elapsed_s` — the
+    # whole point of the timer is the attribution payload, not just the
+    # marker. Pin it.
+    assert any("elapsed_s=" in m_ for m_ in done_msgs), msgs
     assert not any("sdk_client_enter.error" in m_ for m_ in msgs), msgs
