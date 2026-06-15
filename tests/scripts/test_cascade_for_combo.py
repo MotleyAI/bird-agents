@@ -247,6 +247,39 @@ def test_no_manifest_with_no_gcs_skips_run(isolated_tree):
     assert counters["skipped_no_manifest"] == 1
 
 
+def test_main_does_not_require_gcs_when_local_cache_is_complete(
+    isolated_tree, monkeypatch, capsys,
+):
+    """``main()`` must not construct a GCS client when every needed
+    manifest is already on disk — the canonical local-reporting invocation
+    has to work on machines without ADC."""
+    runs, results = isolated_tree
+    _write_annotation(
+        runs_root=runs, db="alien", iid="alien_1",
+        run_id="20260601t1000-claudes-slayer-aaaaaa",
+        annotated_at="2026-06-01T10:00:00+00:00", n1=True, n2=True,
+    )
+    _write_manifest(
+        results_root=results,
+        run_id="20260601t1000-claudes-slayer-aaaaaa",
+        query_mode="slayer", agent_model="anthropic/claude-opus-4-7",
+    )
+
+    def _no_adc(*_a, **_kw):
+        raise RuntimeError("ADC not available")
+
+    monkeypatch.setattr(cascade_for_combo.gcs, "default_gcs_client", _no_adc)
+
+    rc = cascade_for_combo.main([
+        "--benchmark", _BENCHMARK,
+        "--mode", "slayer", "--agent-model", "opus", "--json",
+    ])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["n_tasks"] == 1
+    assert payload["cumulative_n_counts"]["n1"] == 1
+
+
 def test_aggregate_partitions_correctly(isolated_tree):
     """End-to-end: two n1-pass + one n2-only + one fail should produce
     n1=2, n2=3, partition L1=2, L3=1, L11=1."""

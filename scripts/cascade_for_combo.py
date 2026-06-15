@@ -322,13 +322,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s",
     )
 
-    gcs_client = None if args.no_gcs else gcs.default_gcs_client()
+    # GCS client is constructed lazily on the first cache miss inside
+    # ``gcs.read_manifest`` — eagerly constructing here would force every
+    # caller to have ADC even when the local cache is complete and no GCS
+    # fallback is actually needed.
     chosen, counters = collect_latest_per_task(
         benchmark=args.benchmark,
         mode=args.mode,
         agent_model=args.agent_model,
         allow_gcs=not args.no_gcs,
-        gcs_client=gcs_client,
     )
     agg = aggregate(chosen)
 
