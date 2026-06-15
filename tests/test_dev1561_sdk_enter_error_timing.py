@@ -144,7 +144,7 @@ async def test_sdk_client_enter_success_emits_done_not_error_slayer(
     """
     from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
 
-    captured = ainteract_t._stub_env(monkeypatch, m, tmp_path / "store")
+    ainteract_t._stub_env(monkeypatch, m, tmp_path / "store")
     # The default ainteract_t._stub_env installs a fake ClaudeSDKClient whose
     # __aenter__ returns self — that's the happy path. No further patching.
 
@@ -159,5 +159,32 @@ async def test_sdk_client_enter_success_emits_done_not_error_slayer(
     # Docstring contract: success emits `.done` WITH `elapsed_s` — the
     # whole point of the timer is the attribution payload, not just the
     # marker. Pin it.
+    assert any("elapsed_s=" in m_ for m_ in done_msgs), msgs
+    assert not any("sdk_client_enter.error" in m_ for m_ in msgs), msgs
+
+
+@pytest.mark.asyncio
+async def test_sdk_client_enter_success_emits_done_not_error_raw(
+    monkeypatch, tmp_path, caplog_otf,
+):
+    """Raw-variant positive control. The raw a-interact agent has its own
+    copy of the AsyncExitStack + otf_timer wrap; it can regress independently
+    from the slayer variant (different test file, different `_stub_env`).
+    Pin the same `.done` + `elapsed_s` contract on the raw path.
+    """
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import (
+        agent as m,
+    )
+
+    ainteract_raw_t._stub_env(monkeypatch, m, tmp_path / "store")
+
+    agent = m.ClaudeSDKOtfAInteractRawAgent(model="anthropic/claude-sonnet-4-5")
+    await agent.run_task(
+        dict(ainteract_raw_t._TASK), str(tmp_path), 20.0, "raw",
+        eval_mode="a-interact",
+    )
+    msgs = _timing_msgs(caplog_otf)
+    done_msgs = [m_ for m_ in msgs if "sdk_client_enter.done" in m_]
+    assert done_msgs, msgs
     assert any("elapsed_s=" in m_ for m_ in done_msgs), msgs
     assert not any("sdk_client_enter.error" in m_ for m_ in msgs), msgs
