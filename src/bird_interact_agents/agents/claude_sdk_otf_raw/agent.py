@@ -49,6 +49,9 @@ from bird_interact_agents.agents.claude_sdk.partition import (
     build_discovery_prompt,
     make_partition_deny_hook,
 )
+from bird_interact_agents.agents.claude_sdk.sdk_env import (
+    disable_cli_telemetry_env,
+)
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
     _TURN_BUDGET_WARN_WITHIN,
@@ -271,9 +274,13 @@ class ClaudeSDKOtfRawAgent:
             # DEV-1555 Stage 2: registry open-weight backends get a
             # per-run session env (ANTHROPIC_BASE_URL + auth token);
             # anthropic models keep the SDK defaults untouched.
-            _session_env_kwargs: dict = {}
+            # DEV-1561: always layer in the disable-CLI-telemetry vars so
+            # the bundled `claude` Node binary doesn't burn 5-10 min on
+            # outbound telemetry / error-reporting / auto-updater calls
+            # during the initialize handshake.
+            _session_env_kwargs: dict = {"env": disable_cli_telemetry_env()}
             if get_provider(self.model) is not None:
-                _session_env_kwargs["env"] = sdk_session_env(self.model)
+                _session_env_kwargs["env"].update(sdk_session_env(self.model))
                 if requires_thinking(self.model):
                     # Probed live: e.g. kimi-k2.7-code rejects requests
                     # without thinking enabled.

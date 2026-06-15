@@ -12,7 +12,9 @@ built by ``_make_ask_user_guards``.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import time
 
 from claude_agent_sdk import (
     AgentDefinition,
@@ -51,6 +53,9 @@ from bird_interact_agents.agents.claude_sdk.partition import (
     build_discovery_prompt,
     make_partition_deny_hook,
 )
+from bird_interact_agents.agents.claude_sdk.sdk_env import (
+    disable_cli_telemetry_env,
+)
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
     _make_turn_budget_hook,
@@ -79,6 +84,7 @@ from bird_interact_agents.harness import (
     load_db_data_if_needed,
     materialize_task_db,
 )
+from bird_interact_agents.slayer_otf.timing import log_otf_event, otf_timer
 from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -289,8 +295,16 @@ class ClaudeSDKOtfAInteractRawAgent:
         trajectory: list[dict] = []
         ctx_dict: dict | None = None
         try:
-            load_db_data_if_needed(db_name, data_path_base)
-            materialize_task_db(task_data, data_path_base)
+            log_otf_event("run_task.start", instance_id=instance_id, db=db_name)
+            with otf_timer(
+                "run_task.load_db_data", instance_id=instance_id, db=db_name,
+            ):
+                load_db_data_if_needed(db_name, data_path_base)
+            with otf_timer(
+                "run_task.materialize_task_db",
+                instance_id=instance_id, db=db_name,
+            ):
+                materialize_task_db(task_data, data_path_base)
 
             ctx_dict = {
                 "status": status,
@@ -309,9 +323,12 @@ class ClaudeSDKOtfAInteractRawAgent:
             tools = _select_tools(eval_mode)
             prompt = _build_prompt(eval_mode, task_data, budget)
 
-            server = create_sdk_mcp_server(
-                name="bird-interact-tools", version="1.0.0", tools=tools,
-            )
+            with otf_timer(
+                "run_task.create_sdk_mcp_server", instance_id=instance_id,
+            ):
+                server = create_sdk_mcp_server(
+                    name="bird-interact-tools", version="1.0.0", tools=tools,
+                )
 
             pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
 
@@ -331,9 +348,13 @@ class ClaudeSDKOtfAInteractRawAgent:
             # DEV-1555 Stage 2: registry open-weight backends get a
             # per-run session env (ANTHROPIC_BASE_URL + auth token);
             # anthropic models keep the SDK defaults untouched.
-            _session_env_kwargs: dict = {}
+            # DEV-1561: always layer in the disable-CLI-telemetry vars so
+            # the bundled `claude` Node binary doesn't burn 5-10 min on
+            # outbound telemetry / error-reporting / auto-updater calls
+            # during the initialize handshake.
+            _session_env_kwargs: dict = {"env": disable_cli_telemetry_env()}
             if get_provider(self.model) is not None:
-                _session_env_kwargs["env"] = sdk_session_env(self.model)
+                _session_env_kwargs["env"].update(sdk_session_env(self.model))
                 if requires_thinking(self.model):
                     # Probed live: e.g. kimi-k2.7-code rejects requests
                     # without thinking enabled.
@@ -399,12 +420,55 @@ class ClaudeSDKOtfAInteractRawAgent:
                 },
             )
 
+            log_otf_event(
+                "run_task.sdk_client_enter.start", instance_id=instance_id,
+            )
+            _enter_t = time.monotonic()
             async with ClaudeSDKClient(options=options) as client:
-                await client.query(task_data["amb_user_query"])
+                log_otf_event(
+                    "run_task.sdk_client_enter.done",
+                    instance_id=instance_id,
+                    elapsed_s=f"{time.monotonic() - _enter_t:.3f}",
+                )
+                with otf_timer(
+                    "run_task.sdk_first_query", instance_id=instance_id,
+                ):
+                    await client.query(task_data["amb_user_query"])
+                first_msg_t = time.monotonic()
+                msg_count = 0
+                prev_msg_t = first_msg_t
                 async for msg in client.receive_response():
-                    trajectory.append(
-                        {"type": str(type(msg).__name__), "data": str(msg)[:500]}
-                    )
+                    msg_count += 1
+                    now = time.monotonic()
+                    msg_type = type(msg).__name__
+                    if msg_count == 1:
+                        log_otf_event(
+                            "run_task.sdk_first_message",
+                            instance_id=instance_id,
+                            msg_type=msg_type,
+                            elapsed_s=f"{now - first_msg_t:.3f}",
+                        )
+                    else:
+                        log_otf_event(
+                            "run_task.sdk_message",
+                            instance_id=instance_id,
+                            seq=msg_count,
+                            msg_type=msg_type,
+                            gap_s=f"{now - prev_msg_t:.3f}",
+                        )
+                    prev_msg_t = now
+                    # DEV-1561: capture the full dataclass payload so
+                    # subagent (discovery) intermediate AssistantMessage /
+                    # TaskProgressMessage entries land in the trajectory
+                    # with structured content, not a 500-char truncation
+                    # of the dataclass __repr__. Matches the non-raw
+                    # ainteract agent's trajectory shape and re-enables
+                    # the `_run_capture` tool-stats walker for raw runs.
+                    try:
+                        _data: object = dataclasses.asdict(msg)
+                    except Exception:  # noqa: BLE001
+                        _data = str(msg)
+                    trajectory.append({"type": msg_type, "data": _data})
                     usage_tracker.observe(msg)
                     update_context_tokens(context_state, msg)
             usage_tracker.finalize()
