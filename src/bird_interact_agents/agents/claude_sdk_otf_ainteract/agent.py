@@ -18,6 +18,7 @@ for Rule 0 (ask before encode) plus the shared encode-then-query rules.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
 import time
@@ -525,16 +526,19 @@ class ClaudeSDKOtfAInteractAgent:
             )
 
             # Auth env-var invariant validated at actor bootstrap; see ray_app._assert_actor_oauth_invariant.
-            log_otf_event(
-                "run_task.sdk_client_enter.start", instance_id=instance_id,
-            )
-            _enter_t = time.monotonic()
-            async with ClaudeSDKClient(options=options) as client:
-                log_otf_event(
-                    "run_task.sdk_client_enter.done",
-                    instance_id=instance_id,
-                    elapsed_s=f"{time.monotonic() - _enter_t:.3f}",
-                )
+            # DEV-1561: wrap ``__aenter__`` in ``otf_timer`` via ``AsyncExitStack``
+            # so a failed initialize handshake (the bug this channel was built
+            # to attribute) still emits ``.error elapsed_s=… exc=<type>`` — the
+            # prior raw ``time.monotonic()`` + ``async with`` pattern logged
+            # ``.start`` and then nothing on enter-time failure, losing the
+            # attribution for the exact failure mode being diagnosed.
+            async with contextlib.AsyncExitStack() as stack:
+                with otf_timer(
+                    "run_task.sdk_client_enter", instance_id=instance_id,
+                ):
+                    client = await stack.enter_async_context(
+                        ClaudeSDKClient(options=options)
+                    )
                 with otf_timer(
                     "run_task.sdk_first_query", instance_id=instance_id,
                 ):
