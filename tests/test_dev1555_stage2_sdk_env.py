@@ -18,6 +18,10 @@ import importlib
 import pytest
 from claude_agent_sdk import ClaudeAgentOptions
 
+from bird_interact_agents.agents.claude_sdk.sdk_env import (
+    disable_cli_telemetry_env,
+)
+
 from tests import test_claude_sdk_otf_agent as otf_t
 from tests import test_claude_sdk_otf_ainteract_agent as ainteract_t
 from tests import test_claude_sdk_otf_ainteract_raw_agent as ainteract_raw_t
@@ -86,6 +90,10 @@ async def test_moonshot_model_gets_session_env_and_native_id(
     # Anthropic credentials must never enter the session env.
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
     assert "ANTHROPIC_API_KEY" not in env
+    # DEV-1561: the disable-telemetry overlay sits underneath the
+    # registry-session auth env. Both must reach the CLI subprocess.
+    for k, v in disable_cli_telemetry_env().items():
+        assert env.get(k) == v, (k, env.get(k))
     # kimi-k2.7-code rejects requests without thinking enabled (probed
     # live 2026-06-12) — the session must pin it on.
     assert options.thinking == {"type": "enabled", "budget_tokens": 8192}
@@ -95,17 +103,20 @@ async def test_moonshot_model_gets_session_env_and_native_id(
 @pytest.mark.parametrize(
     "sibling,module_name,agent_cls_name,query_mode,eval_mode", _CASES,
 )
-async def test_anthropic_model_options_env_unchanged(
+async def test_anthropic_model_options_env_is_disable_telemetry(
     monkeypatch, tmp_path, sibling, module_name, agent_cls_name,
     query_mode, eval_mode,
 ):
-    """Byte-identical pin: anthropic runs pass the SDK default env."""
+    """DEV-1561 byte-equal pin: anthropic runs pass ONLY the disable-CLI-
+    telemetry overlay — no registry session env, no Anthropic credentials
+    leaked into the SDK subprocess env.
+    """
     captured, _row = await _run_and_capture(
         monkeypatch, tmp_path, sibling=sibling, module_name=module_name,
         agent_cls_name=agent_cls_name, query_mode=query_mode,
         eval_mode=eval_mode, model="anthropic/claude-sonnet-4-5",
     )
-    assert captured["options"].env == ClaudeAgentOptions().env
+    assert captured["options"].env == disable_cli_telemetry_env()
     assert captured["options"].thinking == ClaudeAgentOptions().thinking
 
 

@@ -73,6 +73,7 @@ from slayer.storage.yaml_storage import YAMLStorage
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
+from bird_interact_agents.slayer_otf.timing import log_otf_event, otf_timer
 from bird_interact_agents.slayer_pipeline.orchestrator import (
     _phase1_ingest,
     _phase2_overlay,
@@ -327,12 +328,16 @@ async def ensure_db_cache(
     # fingerprint. The IMPL half IS recomputed; mismatch falls through to
     # rebuild.
     if not force and marker.is_file() and _impl_ok():
+        log_otf_event("ensure_db_cache.hit", db=db, path="fast")
         return _load_cache_entry(target)
 
+    log_otf_event("ensure_db_cache.lock_wait", db=db, force=force)
     async with _get_lock(db):
+        log_otf_event("ensure_db_cache.lock_acquired", db=db)
         # Double-check under the lock — a peer coroutine may have built it
         # while we waited.
         if not force and marker.is_file() and _impl_ok():
+            log_otf_event("ensure_db_cache.hit", db=db, path="lock_double_check")
             return _load_cache_entry(target)
 
         effective_root: Path = data_root or mini_interact_root  # type: ignore[assignment]
@@ -371,13 +376,14 @@ async def ensure_db_cache(
         cache_root.mkdir(parents=True, exist_ok=True)
         tmp_dir = Path(tempfile.mkdtemp(prefix=f".{db}.tmp-", dir=str(cache_root)))
         try:
-            await _build_async(
-                build_dir=tmp_dir, db=db,
-                sqlite_path=sqlite_path,
-                meanings_path=meanings_path,
-                kb_rows=kb_rows,
-                benchmark=benchmark,
-            )
+            with otf_timer("ensure_db_cache.build", db=db):
+                await _build_async(
+                    build_dir=tmp_dir, db=db,
+                    sqlite_path=sqlite_path,
+                    meanings_path=meanings_path,
+                    kb_rows=kb_rows,
+                    benchmark=benchmark,
+                )
             # DEV-1508: persist the impl-fp half BEFORE the completeness
             # marker so a successful reuse (marker present) is guaranteed
             # to find a usable ``_impl_fp.txt`` to validate. The marker is
@@ -458,25 +464,29 @@ async def _build_async(
         # command-line args (visible via ps) or persist in datasources YAML.
         # Passed separately as PGPASSWORD env var instead.
         db_url = f"postgresql://{user}@{host}:{port}/{db}"
-        await asyncio.to_thread(
-            _phase1_ingest, db, build_dir, db_url=db_url, pg_password=password
-        )
+        with otf_timer("ensure_db_cache.phase1_ingest", db=db, backend="postgres"):
+            await asyncio.to_thread(
+                _phase1_ingest, db, build_dir, db_url=db_url, pg_password=password
+            )
     else:
         if sqlite_path is None:
             raise ValueError("_build_async: sqlite_path is required for non-postgres benchmarks")
-        await asyncio.to_thread(_phase1_ingest, db, build_dir, sqlite_path=sqlite_path)
+        with otf_timer("ensure_db_cache.phase1_ingest", db=db, backend="sqlite"):
+            await asyncio.to_thread(_phase1_ingest, db, build_dir, sqlite_path=sqlite_path)
 
     storage = YAMLStorage(base_dir=str(build_dir))
-    _touched, p2_warns = await _phase2_overlay(storage, db, meanings_path)
+    with otf_timer("ensure_db_cache.phase2_overlay", db=db):
+        _touched, p2_warns = await _phase2_overlay(storage, db, meanings_path)
     if p2_warns:
         logger.info(
             "[slayer_otf] phase2 produced %d warnings for db=%s",
             len(p2_warns), db,
         )
-    _added, jsonb_typing, drift = await _phase3_jsonb(
-        storage, db, meanings_path=meanings_path, sqlite_path=sqlite_path,
-        benchmark=benchmark,
-    )
+    with otf_timer("ensure_db_cache.phase3_jsonb", db=db):
+        _added, jsonb_typing, drift = await _phase3_jsonb(
+            storage, db, meanings_path=meanings_path, sqlite_path=sqlite_path,
+            benchmark=benchmark,
+        )
     if jsonb_typing or drift:
         logger.info(
             "[slayer_otf] phase3 produced %d typing warnings, %d drift "
@@ -490,9 +500,10 @@ async def _build_async(
     # cache. Per-task prepare copies these verbatim (no deletions) or
     # overwrites memories.yaml + prunes the embedding rows for the
     # deleted memory ids (with deletions).
-    await _materialise_cache_memories(
-        db=db, build_dir=build_dir, kb_rows=kb_rows,
-    )
+    with otf_timer("ensure_db_cache.materialise_memories", db=db, kb_rows=len(kb_rows)):
+        await _materialise_cache_memories(
+            db=db, build_dir=build_dir, kb_rows=kb_rows,
+        )
 
 
 async def _materialise_cache_memories(

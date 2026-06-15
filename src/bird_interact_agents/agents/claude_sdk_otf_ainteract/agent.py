@@ -18,8 +18,10 @@ for Rule 0 (ask before encode) plus the shared encode-then-query rules.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
+import time
 from pathlib import Path
 
 from claude_agent_sdk import (
@@ -56,6 +58,9 @@ from bird_interact_agents.agents.claude_sdk.partition import (
     MAIN_WORKFLOW_NOTE,
     build_discovery_prompt,
     make_partition_deny_hook,
+)
+from bird_interact_agents.agents.claude_sdk.sdk_env import (
+    disable_cli_telemetry_env,
 )
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
@@ -101,6 +106,7 @@ from bird_interact_agents.eval.grade_in_place import (
 )
 from bird_interact_agents.eval.tolerant_grader import grade_submission, make_executor
 from bird_interact_agents.slayer_otf import resolve_otf_task_storage_dir
+from bird_interact_agents.slayer_otf.timing import log_otf_event, otf_timer
 from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -358,8 +364,16 @@ class ClaudeSDKOtfAInteractAgent:
         # failure (before _ctx_var.set, below) hits the except.
         ctx_dict: dict | None = None
         try:
-            load_db_data_if_needed(db_name, data_path_base)
-            materialize_task_db(task_data, data_path_base)
+            log_otf_event("run_task.start", instance_id=instance_id, db=db_name)
+            with otf_timer(
+                "run_task.load_db_data", instance_id=instance_id, db=db_name,
+            ):
+                load_db_data_if_needed(db_name, data_path_base)
+            with otf_timer(
+                "run_task.materialize_task_db",
+                instance_id=instance_id, db=db_name,
+            ):
+                materialize_task_db(task_data, data_path_base)
             slayer_storage_dir, deleted_kb_ids = await resolve_otf_task_storage_dir(
                 db_name=db_name,
                 task_data=task_data,
@@ -389,9 +403,12 @@ class ClaudeSDKOtfAInteractAgent:
             tools = _select_tools(eval_mode)
             prompt = _build_prompt(eval_mode, task_data, budget)
 
-            server = create_sdk_mcp_server(
-                name="bird-interact-tools", version="1.0.0", tools=tools,
-            )
+            with otf_timer(
+                "run_task.create_sdk_mcp_server", instance_id=instance_id,
+            ):
+                server = create_sdk_mcp_server(
+                    name="bird-interact-tools", version="1.0.0", tools=tools,
+                )
 
             mcp_servers: dict = {
                 "bird-interact-tools": server,
@@ -426,9 +443,14 @@ class ClaudeSDKOtfAInteractAgent:
             # DEV-1555 Stage 2: registry open-weight backends get a
             # per-run session env (ANTHROPIC_BASE_URL + auth token);
             # anthropic models keep the SDK defaults untouched.
-            _session_env_kwargs: dict = {}
+            # DEV-1561: always layer in the disable-CLI-telemetry vars so
+            # the bundled `claude` Node binary doesn't burn 5-10 min on
+            # outbound telemetry / error-reporting / auto-updater calls
+            # during the initialize handshake. Provider-specific auth env
+            # is merged on top so the registry path keeps its overrides.
+            _session_env_kwargs: dict = {"env": disable_cli_telemetry_env()}
             if get_provider(self.model) is not None:
-                _session_env_kwargs["env"] = sdk_session_env(self.model)
+                _session_env_kwargs["env"].update(sdk_session_env(self.model))
                 if requires_thinking(self.model):
                     # Probed live: e.g. kimi-k2.7-code rejects requests
                     # without thinking enabled.
@@ -504,14 +526,51 @@ class ClaudeSDKOtfAInteractAgent:
             )
 
             # Auth env-var invariant validated at actor bootstrap; see ray_app._assert_actor_oauth_invariant.
-            async with ClaudeSDKClient(options=options) as client:
-                await client.query(task_data["amb_user_query"])
+            # DEV-1561: wrap ``__aenter__`` in ``otf_timer`` via ``AsyncExitStack``
+            # so a failed initialize handshake (the bug this channel was built
+            # to attribute) still emits ``.error elapsed_s=… exc=<type>`` — the
+            # prior raw ``time.monotonic()`` + ``async with`` pattern logged
+            # ``.start`` and then nothing on enter-time failure, losing the
+            # attribution for the exact failure mode being diagnosed.
+            async with contextlib.AsyncExitStack() as stack:
+                with otf_timer(
+                    "run_task.sdk_client_enter", instance_id=instance_id,
+                ):
+                    client = await stack.enter_async_context(
+                        ClaudeSDKClient(options=options)
+                    )
+                with otf_timer(
+                    "run_task.sdk_first_query", instance_id=instance_id,
+                ):
+                    await client.query(task_data["amb_user_query"])
+                first_msg_t = time.monotonic()
+                msg_count = 0
+                prev_msg_t = first_msg_t
                 async for msg in client.receive_response():
+                    msg_count += 1
+                    now = time.monotonic()
+                    msg_type = type(msg).__name__
+                    if msg_count == 1:
+                        log_otf_event(
+                            "run_task.sdk_first_message",
+                            instance_id=instance_id,
+                            msg_type=msg_type,
+                            elapsed_s=f"{now - first_msg_t:.3f}",
+                        )
+                    else:
+                        log_otf_event(
+                            "run_task.sdk_message",
+                            instance_id=instance_id,
+                            seq=msg_count,
+                            msg_type=msg_type,
+                            gap_s=f"{now - prev_msg_t:.3f}",
+                        )
+                    prev_msg_t = now
                     try:
                         _data: object = dataclasses.asdict(msg)
                     except Exception:  # noqa: BLE001
                         _data = str(msg)
-                    trajectory.append({"type": str(type(msg).__name__), "data": _data})
+                    trajectory.append({"type": msg_type, "data": _data})
                     usage_tracker.observe(msg)
                     update_context_tokens(context_state, msg)
             usage_tracker.finalize()
