@@ -97,6 +97,20 @@ def model_matches(manifest_model: Optional[str], requested: str) -> bool:
     return requested.lower() in manifest_model.lower()
 
 
+def _effective_verdict(data: dict) -> str:
+    """Mirror ``SubmissionAnnotation._migrate_invalid_verdict`` for raw-JSON
+    reads: legacy ``verdict="invalid"`` rows with
+    ``failure_classification.primary="other"`` are infra failures and must
+    be classified as ``"eval_failed"`` so they don't sneak past the
+    "skip eval_failed" filter."""
+    ev = data.get("evaluation") or {}
+    fc = data.get("failure_classification") or {}
+    raw = ev.get("verdict") or ""
+    if raw == "invalid" and fc.get("primary") == "other":
+        return "eval_failed"
+    return raw
+
+
 def collect_latest_per_task(
     *,
     benchmark: str,
@@ -118,6 +132,7 @@ def collect_latest_per_task(
         "matched_model": 0,
         "skipped_no_manifest": 0,
         "stale_eval_failed_overridden": 0,
+        "skipped_eval_failed_only": 0,
     }
     if not runs_root.exists():
         return [], counters
@@ -157,7 +172,7 @@ def collect_latest_per_task(
         except json.JSONDecodeError as exc:
             logger.warning("unreadable annotation %s: %s", path, exc)
             continue
-        verdict = (data.get("evaluation") or {}).get("verdict") or ""
+        verdict = _effective_verdict(data)
         annotated_at = data.get("annotated_at") or ""
         candidates.setdefault((db, iid), []).append(
             (annotated_at, path, verdict),
@@ -167,9 +182,12 @@ def collect_latest_per_task(
     for recs in candidates.values():
         recs.sort()
         real = [r for r in recs if r[2] != "eval_failed"]
-        if real and recs[-1][2] == "eval_failed":
+        if not real:
+            counters["skipped_eval_failed_only"] += 1
+            continue
+        if recs[-1][2] == "eval_failed":
             counters["stale_eval_failed_overridden"] += 1
-        chosen.append((real or recs)[-1][1])
+        chosen.append(real[-1][1])
     return chosen, counters
 
 
@@ -279,7 +297,8 @@ def render(
         f"matched_mode={counters['matched_mode']}  "
         f"matched_model={counters['matched_model']}  "
         f"skipped_no_manifest={counters['skipped_no_manifest']}  "
-        f"stale_eval_failed_overridden={counters['stale_eval_failed_overridden']}"
+        f"stale_eval_failed_overridden={counters['stale_eval_failed_overridden']}  "
+        f"skipped_eval_failed_only={counters['skipped_eval_failed_only']}"
     )
     return "\n".join(lines)
 

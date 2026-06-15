@@ -227,6 +227,89 @@ def test_eval_failed_latest_falls_back_to_prior_real_verdict(isolated_tree):
     assert counters["stale_eval_failed_overridden"] == 1
 
 
+def test_eval_failed_only_task_is_omitted_from_aggregate(isolated_tree):
+    """If every run for a task is ``eval_failed`` (no genuine verdict ever
+    came through), the task is omitted from ``chosen`` so it doesn't get
+    silently miscounted as an L11 hard fail in the cascade aggregate."""
+    runs, results = isolated_tree
+    iid = "alien_1"
+    _write_annotation(
+        runs_root=runs, db="alien", iid=iid,
+        run_id="20260601t1000-claudes-slayer-aaaaaa",
+        annotated_at="2026-06-01T10:00:00+00:00",
+        n1=False, verdict="eval_failed",
+    )
+    _write_manifest(
+        results_root=results,
+        run_id="20260601t1000-claudes-slayer-aaaaaa",
+        query_mode="slayer", agent_model="anthropic/claude-opus-4-7",
+    )
+    _write_annotation(
+        runs_root=runs, db="alien", iid=iid,
+        run_id="20260602t1000-claudes-slayer-bbbbbb",
+        annotated_at="2026-06-02T10:00:00+00:00",
+        n1=False, verdict="eval_failed",
+    )
+    _write_manifest(
+        results_root=results,
+        run_id="20260602t1000-claudes-slayer-bbbbbb",
+        query_mode="slayer", agent_model="anthropic/claude-opus-4-7",
+    )
+
+    chosen, counters = cascade_for_combo.collect_latest_per_task(
+        benchmark=_BENCHMARK,
+        mode="slayer", agent_model="opus", allow_gcs=False,
+    )
+    assert chosen == []
+    assert counters["skipped_eval_failed_only"] == 1
+    assert counters["stale_eval_failed_overridden"] == 0
+
+
+def test_legacy_invalid_plus_other_is_treated_as_eval_failed(isolated_tree):
+    """Annotations from before the ``invalid`` → ``eval_failed`` migration
+    (``verdict="invalid"`` + ``failure_classification.primary="other"``)
+    must be classified as infra failures, mirroring
+    ``SubmissionAnnotation._migrate_invalid_verdict``."""
+    runs, results = isolated_tree
+    iid = "alien_1"
+    # earlier real verdict
+    _write_annotation(
+        runs_root=runs, db="alien", iid=iid,
+        run_id="20260601t1000-claudes-slayer-aaaaaa",
+        annotated_at="2026-06-01T10:00:00+00:00",
+        n1=True, verdict="correct",
+    )
+    _write_manifest(
+        results_root=results,
+        run_id="20260601t1000-claudes-slayer-aaaaaa",
+        query_mode="slayer", agent_model="anthropic/claude-opus-4-7",
+    )
+    # later LEGACY infra failure (verdict=invalid + primary=other) — must
+    # be treated as eval_failed, NOT pick over the earlier correct verdict
+    later = _write_annotation(
+        runs_root=runs, db="alien", iid=iid,
+        run_id="20260612t1000-claudes-slayer-bbbbbb",
+        annotated_at="2026-06-12T10:00:00+00:00",
+        n1=False, verdict="invalid",
+    )
+    raw = json.loads(later.read_text())
+    raw["failure_classification"]["primary"] = "other"
+    later.write_text(json.dumps(raw))
+    _write_manifest(
+        results_root=results,
+        run_id="20260612t1000-claudes-slayer-bbbbbb",
+        query_mode="slayer", agent_model="anthropic/claude-opus-4-7",
+    )
+
+    chosen, counters = cascade_for_combo.collect_latest_per_task(
+        benchmark=_BENCHMARK,
+        mode="slayer", agent_model="opus", allow_gcs=False,
+    )
+    assert len(chosen) == 1
+    assert "20260601t1000" in chosen[0].name
+    assert counters["stale_eval_failed_overridden"] == 1
+
+
 def test_no_manifest_with_no_gcs_skips_run(isolated_tree):
     """When the local manifest is missing AND ``allow_gcs=False``, the run
     is skipped and the counter records it."""
