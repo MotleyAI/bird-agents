@@ -573,22 +573,25 @@ async def submit_query(args: dict) -> dict:
     return _text(observation)
 
 
-# DEV-1534 Fix C: wrap SLayer's MCP `query` so the agent can opt out
-# of Mode-B filter normalization mid-flight via a separate
-# `normalize_filters` tool parameter. The 14 positional params mirror
-# SLayer's MCP `query` exactly; the 15th is our directive.
+# DEV-1534 Fix C + DEV-1546: wrap SLayer's MCP `query` so the agent
+# uses the SAME JSON DSL shape as `submit_query` / `query_nested`
+# (the field for dedup vs raw rows, `distinct_dimension_values`,
+# lives inside that JSON) and so it can opt out of Mode-B filter
+# normalization via a separate `normalize_filters` tool parameter.
 _QUERY_TOOL_DESC = (
-    "Run a SLayer query and return SLayer's formatted result. Same "
-    "shape as SLayer's MCP `query` tool — `source_model` (required for "
-    "single-stage), `dimensions`, `measures`, `filters`, `time_dimensions`, "
-    "`order`, `limit`, `offset`, `whole_periods_only`, `show_sql`, `dry_run`, "
-    "`explain`, `format` (markdown/json/csv), `variables`. For a nested "
-    "DAG, pass a `queries` array of stage objects (last is the DAG root; "
-    "non-final stages need a `name`; later stages reference earlier ones "
-    "via `source_model: \"<sibling name>\"`) — `source_model` is omitted "
-    "when `queries` is set. The 16th parameter `normalize_filters` "
-    "(default true) controls our text-equality filter auto-normalization: "
-    "when true, every `col == 'X'` filter becomes "
+    "Run a SLayer query and return SLayer's formatted result. Pass "
+    "EITHER a single-stage form (`source_model` + the usual projection "
+    "fields: `dimensions`, `measures`, `filters`, `time_dimensions`, "
+    "`order`, `limit`, `offset`, `whole_periods_only`, `variables`, "
+    "`distinct_dimension_values`) OR a nested-DAG form (`queries`: a "
+    "list of stage objects; last is the DAG root; non-final stages need "
+    "a `name`; later stages reference earlier ones via "
+    "`source_model: \"<sibling name>\"`). Set "
+    "`distinct_dimension_values: false` on a single-stage call to "
+    "disable SLayer's default dim-only auto-dedup `GROUP BY`. Tool-level "
+    "options live outside the SlayerQuery: `show_sql`, `dry_run`, "
+    "`explain`, `format` (markdown/json/csv), and `normalize_filters` "
+    "(default true) — when true, every `col == 'X'` filter becomes "
     "`lower(trim(col)) == 'x'` (case/whitespace-tolerant); when false, "
     "filters are forwarded verbatim (exact-case equality)."
 )
@@ -597,25 +600,18 @@ _QUERY_TOOL_DESC = (
 @tool(
     "query",
     _QUERY_TOOL_DESC,
-    # CR r1 / O1: the v1 prompt advertises ``query`` as accepting EITHER
-    # a single SlayerQuery object OR a list of stage objects (nested DAG)
-    # — same as SLayer-side, which exposes both shapes through this
-    # wrapper. The schema must mirror that or the SDK rejects valid
-    # nested-DAG calls before reaching the implementation.
-    #
-    # ``required`` stays empty: the runtime gates on
-    # `source_model XOR queries` (see the handler) instead of via schema —
-    # a JSON Schema ``oneOf`` over the whole object is supported by
-    # claude_agent_sdk but adds noise; one server-side check is clearer.
+    # DEV-1555 CR r1 / O1: the wrapper accepts EITHER a single
+    # SlayerQuery (set `source_model` + projection fields) OR a
+    # nested-DAG list (set `queries`). ``required`` stays empty;
+    # the runtime gates on `source_model XOR queries` so the
+    # error message is specific. Mirrors `submit_query`'s shape so
+    # the agent uses one form across query / submit_query.
     {
         "type": "object",
         "properties": {
-            # SLayer's `query` accepts `source_model: str | ModelExtension |
-            # SlayerModel` — i.e. a model name OR an inline object with
-            # `name` / `data_source` / `sql` / `columns`. The SLAYER_A_INTERACT
-            # prompt explicitly tells the agent to pass inline ModelExtension
-            # objects for ad-hoc derived-column filters (Codex round-3 catch).
-            "source_model": {"oneOf": [{"type": "string"}, {"type": "object"}]},
+            "source_model": {
+                "oneOf": [{"type": "string"}, {"type": "object"}],
+            },
             "measures": {"type": "array"},
             "dimensions": {"type": "array"},
             "filters": {"type": "array"},
@@ -624,15 +620,18 @@ _QUERY_TOOL_DESC = (
             "limit": {"type": "integer"},
             "offset": {"type": "integer"},
             "whole_periods_only": {"type": "boolean", "default": False},
+            "variables": {"type": "object"},
+            # DEV-1546 (origin/main): inside-SlayerQuery field that
+            # disables the default dim-only auto-dedup `GROUP BY`.
+            "distinct_dimension_values": {"type": "boolean"},
             "show_sql": {"type": "boolean", "default": False},
             "dry_run": {"type": "boolean", "default": False},
             "explain": {"type": "boolean", "default": False},
             "format": {"type": "string", "default": "markdown"},
-            "variables": {"type": "object"},
             "normalize_filters": {"type": "boolean", "default": True},
-            # Nested-DAG: when set, the wrapper routes to query_nested_impl
-            # and `source_model` plus the single-stage projection kwargs
-            # are ignored.
+            # Nested-DAG: when set, the wrapper routes to
+            # `query_nested_impl` and `source_model` + the
+            # single-stage projection kwargs must be unset.
             "queries": {"type": "array"},
         },
         "required": [],
@@ -647,10 +646,13 @@ async def query(args: dict) -> dict:
         storage = _ctx["_slayer_storage"]
     _query_mod.attach_storage(storage)
 
-    # Nested-DAG form: when `queries` is supplied, route to query_nested.
-    # Mutual exclusion with `source_model` is enforced here (rather than
-    # in the schema) so a future caller passing both gets a clear error
-    # instead of a silent precedence rule.
+    import json as _json
+
+    # Nested-DAG form: when `queries` is supplied, route to
+    # `query_nested_impl`. Mutual exclusion with `source_model` is
+    # enforced here (rather than in the schema) so a future caller
+    # passing both gets a clear error instead of a silent precedence
+    # rule.
     if args.get("queries") is not None:
         if args.get("source_model") is not None:
             return _text(
@@ -668,28 +670,32 @@ async def query(args: dict) -> dict:
         )
         return _text(result if isinstance(result, str) else str(result))
 
-    # Single-stage form: `source_model` is required; everything else is
-    # optional with the SLayer MCP defaults.
+    # Single-stage form: `source_model` is required; build the
+    # SlayerQuery JSON from the structured args and hand it to
+    # DEV-1546's `query_impl(query_json: str, …)`.
     if args.get("source_model") is None:
         return _text(
             "query: `source_model` is required for single-stage queries "
             "(or pass `queries` for a nested DAG)."
         )
+    single: dict = {"source_model": args["source_model"]}
+    for k in (
+        "measures", "dimensions", "filters", "time_dimensions",
+        "order", "limit", "offset", "variables",
+        "distinct_dimension_values",
+    ):
+        v = args.get(k)
+        if v is not None:
+            single[k] = v
+    if args.get("whole_periods_only"):
+        single["whole_periods_only"] = True
+
     result = await _query_mod.query_impl(
-        source_model=args["source_model"],
-        measures=args.get("measures"),
-        dimensions=args.get("dimensions"),
-        filters=args.get("filters"),
-        time_dimensions=args.get("time_dimensions"),
-        order=args.get("order"),
-        limit=args.get("limit"),
-        offset=args.get("offset"),
-        whole_periods_only=bool(args.get("whole_periods_only", False)),
+        _json.dumps(single),
         show_sql=bool(args.get("show_sql", False)),
         dry_run=bool(args.get("dry_run", False)),
         explain=bool(args.get("explain", False)),
         format=args.get("format", "markdown"),
-        variables=args.get("variables"),
         normalize_filters=bool(args.get("normalize_filters", True)),
     )
     return _text(result if isinstance(result, str) else str(result))

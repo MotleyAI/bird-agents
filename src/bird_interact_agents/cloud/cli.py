@@ -90,6 +90,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
              "claude_sdk_otf_ainteract (ClaudeAgentOptions.effort). Ignored "
              "by other frameworks; unset = SDK default.",
     )
+    # DEV-1545: user-sim prompt version. v2 is the upstream default
+    # ("natural USER role-play" framing); v3 is the locally-defined
+    # anti-fabrication variant registered by
+    # `bird_interact_agents.user_sim_prompts`. Default None at the CLI
+    # layer so manifest serialisation can distinguish "not set at submit
+    # time" from "explicitly v2"; `run.py` normalises None → "v2" at
+    # the closure level before agent.run_task is called (explicit-None
+    # would shadow the agent class's Python "v2" default).
+    sp_submit.add_argument(
+        "--user-sim-prompt-version", dest="user_sim_prompt_version",
+        default=None, choices=("v2", "v3"),
+        help="User-sim prompt variant. v2 = upstream default. v3 = "
+             "DEV-1545 anti-fabrication variant (anti-invention + "
+             "evidence check + naturalness reframe). Unset = v2 at "
+             "agent call time.",
+    )
     sp_submit.add_argument(
         "--prompt-cache", dest="prompt_cache", action="store_true", default=True
     )
@@ -425,16 +441,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         from bird_interact_agents.cloud import image
 
         repo_root = driver.submitter_repo_root()
+        bird_interact_eval, livesqlbench_eval = (
+            image.default_grader_eval_roots()
+        )
         tag = image.image_tag(
             repo_root,
             paths.audited_gold_root(),
             allow_dirty=False,
             annotations_root=paths.annotations_root(),
+            bird_interact_evaluation_root=bird_interact_eval,
+            livesqlbench_evaluation_root=livesqlbench_eval,
         )
         uri = image.build_and_push(
             tag, repo_root,
             audited_gold_root=paths.audited_gold_root(),
             annotations_root=paths.annotations_root(),
+            bird_interact_evaluation_root=bird_interact_eval,
+            livesqlbench_evaluation_root=livesqlbench_eval,
             force=ns.force,
         )
         print(uri)

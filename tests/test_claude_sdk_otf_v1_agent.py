@@ -562,6 +562,33 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
     assert "PostToolUse" in (opts.hooks or {})
 
 
+@pytest.mark.asyncio
+async def test_run_task_passes_disallowed_slayer_tools_to_sdk(
+    monkeypatch, tmp_path,
+):
+    """DEV-1548: the one-shot OTF adapter must thread
+    `SLAYER_MCP_DISALLOWED_TOOL_NAMES` verbatim into the
+    `ClaudeAgentOptions.disallowed_tools=` field — `allowed_tools=` only
+    gates auto-execute permission; `disallowed_tools=` is what removes
+    the JSON Schema from the model's per-turn cacheable prefix. The unit
+    contract is that the live `ClaudeAgentOptions` instance reaching the
+    SDK carries the canonical list; the cloud-smoke acceptance criterion
+    asserts the SDK actually applies it (no disallowed names in
+    `SystemMessage.data.tools`).
+    """
+    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+
+    captured = _stub_env(monkeypatch, m, tmp_path / "store")
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert (
+        captured["options"].disallowed_tools
+        == m.SLAYER_MCP_DISALLOWED_TOOL_NAMES
+    )
+
+
 def test_accumulate_assistant_usage_dict_shaped_and_skips_result(monkeypatch):
     """Regression: the live SDK delivers `msg.usage` as a DICT. The shared
     helper must read it (not via getattr→0) AND skip the cumulative

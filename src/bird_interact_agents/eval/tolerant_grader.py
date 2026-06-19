@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional, Protocol, Sequence, Tuple
@@ -37,6 +38,18 @@ from bird_interact_agents.eval.annotation_schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Per-process dedup for the `ExBaseUnavailableError` warning emitted from
+# the N1 dispatch catch site. The error fires once per grading instance
+# (10s–100s per run); without dedup the log fills with identical lines.
+# Keyed on the rendered message text so distinct failure shapes (missing
+# tree vs partial markers vs stale override) each surface exactly once.
+# The lock protects the check-then-add sequence against any future
+# concurrent caller — today's grading paths are process-parallel (Ray
+# actors), but the cost of pre-empting a threadpool refactor is one
+# lock acquire per ex_base failure, which is negligible. (Codex round 10.)
+_EX_BASE_UNAVAILABLE_SEEN: set[str] = set()
+_EX_BASE_UNAVAILABLE_SEEN_LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +216,154 @@ def _set_equal(pred: Sequence[Sequence], gold: Sequence[Sequence]) -> bool:
     return sorted(map(_canonical_repr, pred)) == sorted(
         map(_canonical_repr, gold)
     )
+
+
+# ---------------------------------------------------------------------------
+# N1 dispatch: upstream `ex_base` for mini-interact + livesqlbench;
+# legacy `_set_equal` everywhere else / on shim failure.
+# ---------------------------------------------------------------------------
+
+# Re-imported into the module namespace (rather than imported lazily inside
+# `_compute_n1`) so tests can monkeypatch
+# `tolerant_grader.compare_pred_vs_gold_ex_base` directly.
+try:
+    from bird_interact_agents.eval.upstream_ex_base import (
+        ExBaseUnavailableError,
+        compare_pred_vs_gold_ex_base,
+        is_mutation_sql,  # noqa: F401  (re-export for callers)
+    )
+except Exception:  # noqa: BLE001  (defensive — module-load failure)
+    class ExBaseUnavailableError(Exception):  # type: ignore[no-redef]
+        pass
+
+    def compare_pred_vs_gold_ex_base(**_kw):  # type: ignore[no-redef]
+        raise ExBaseUnavailableError("upstream_ex_base shim unavailable")
+
+    def is_mutation_sql(_sql: str) -> bool:  # type: ignore[no-redef]
+        # When the shim isn't importable we can't even check; treat as
+        # non-mutation so grading degrades to the legacy comparison
+        # via the ExBaseUnavailableError path below.
+        return False
+
+
+_EX_BASE_N1_BENCHMARKS = frozenset({
+    "mini-interact",
+    "livesqlbench-base-lite-sqlite",
+    "livesqlbench-base-lite",
+    "livesqlbench-base-full",
+    "livesqlbench-large",
+})
+
+
+def _compute_n1(
+    *,
+    benchmark: Any,
+    pred_sqls: List[str],
+    sol_sqls: List[str],
+    db_path: Path,
+    conn: Any,
+    pred_rows: Sequence[Sequence],
+    orig_rows: Sequence[Sequence],
+    conditions: Optional[dict] = None,
+) -> bool:
+    """Compute N1 via upstream ``ex_base`` for supported benchmarks; on
+    any failure (unsupported benchmark, missing upstream tree, missing
+    SQL strings, mutation-bearing SQL) fall back to the legacy multiset
+    row comparison on the already-fetched ``pred_rows`` / ``orig_rows``.
+
+    ``conditions`` forwards through to upstream's ``ex_base`` so
+    order-sensitive tasks (``conditions={"order": True}``) are graded
+    positionally instead of with set-dedup semantics (Codex / CodeRabbit
+    round 2). Defaults to ``None`` (set-dedup), matching upstream when
+    the task source row carries no override.
+    """
+    benchmark_name = getattr(benchmark, "name", None) or str(benchmark or "")
+    if (
+        benchmark_name not in _EX_BASE_N1_BENCHMARKS
+        or not pred_sqls
+        or not sol_sqls
+    ):
+        return _set_equal(pred_rows, orig_rows)
+    # Mutation-bearing SQL would commit through the upstream's writeable
+    # SQLite open path AND any caller-supplied conn (the upstream
+    # ``execute_queries`` runs pred first, then gold, on the same conn).
+    # The cascade's own primary executor already gave us pre-mutation
+    # rows; stay on the legacy comparison to keep grading honest and to
+    # avoid persisting state into the benchmark DB. (Codex round-2
+    # finding on cloud inline grader; the backfill script has its own
+    # belt-and-braces skip.)
+    if any(is_mutation_sql(s) for s in pred_sqls):
+        return _set_equal(pred_rows, orig_rows)
+    if any(is_mutation_sql(s) for s in sol_sqls):
+        return _set_equal(pred_rows, orig_rows)
+    # If we have no path to a real DB and no caller-supplied conn, the
+    # upstream ``ex_base`` cannot execute. Stay on the legacy path so
+    # stubbed-executor callers (tests, scripted regrades on synthetic
+    # rows) keep producing a verdict.
+    #
+    # Only check ``db_path.is_file()`` for SQLite-backed benchmarks.
+    # Postgres callers (cloud actor, livesqlbench non-sqlite variants)
+    # pass ``db_path = Path(<db_name>)`` — a DB-name carrier, NOT a
+    # filesystem path — and ``conn=None``; upstream livesqlbench's
+    # ``perform_query_on_postgresql_databases`` auto-opens from a
+    # connection pool when conn is None, so the dispatcher does not need
+    # to gate on file existence there. Without this carve-out, every
+    # Postgres livesqlbench task silently fell back to legacy
+    # ``_set_equal`` despite being listed in
+    # ``_EX_BASE_N1_BENCHMARKS`` (Codex round 3).
+    is_postgres = getattr(benchmark, "db_backend", "sqlite") == "postgres"
+    if conn is None and not is_postgres:
+        try:
+            if not db_path or not Path(db_path).is_file():
+                return _set_equal(pred_rows, orig_rows)
+        except Exception:  # noqa: BLE001
+            return _set_equal(pred_rows, orig_rows)
+    # Postgres-backed benchmarks (livesqlbench non-sqlite, bird-interact
+    # full/lite-exp) get a DB stem; SQLite-backed benchmarks get the
+    # full path. Upstream livesqlbench ``perform_query_on_postgresql_
+    # databases`` switches connections via the DB NAME, not via a
+    # filesystem path — passing ``str(db_path)`` there silently routes
+    # to the wrong DB (CodeRabbit round 2).
+    if getattr(benchmark, "db_backend", "sqlite") == "postgres":
+        db_name = db_path.stem
+    else:
+        db_name = str(db_path)
+    try:
+        return compare_pred_vs_gold_ex_base(
+            benchmark=benchmark_name,
+            pred_sqls=pred_sqls,
+            sol_sqls=sol_sqls,
+            db_name=db_name,
+            conn=conn,
+            conditions=conditions,
+        )
+    except ExBaseUnavailableError as exc:
+        # Codex round 9: the round-8 resolver raises detailed
+        # actionable errors when no upstream candidate validates, but
+        # this catch site was silently downgrading to legacy
+        # `_set_equal` — so the operator never saw why N1 wasn't
+        # engaging. Emit ONE warning per unique error message
+        # (per-process dedup) so the actionable detail surfaces in
+        # logs without filling them with N1 dispatch retries.
+        msg = str(exc)
+        with _EX_BASE_UNAVAILABLE_SEEN_LOCK:
+            should_log = msg not in _EX_BASE_UNAVAILABLE_SEEN
+            if should_log:
+                _EX_BASE_UNAVAILABLE_SEEN.add(msg)
+        if should_log:
+            logger.warning(
+                "[N1 dispatch] cascade tier N1 is downgrading to legacy "
+                "_set_equal because the upstream ex_base grader is "
+                "unavailable. Remediate to engage strict N1 grading:\n%s",
+                msg,
+            )
+        return _set_equal(pred_rows, orig_rows)
+    except Exception:  # noqa: BLE001  (defensive — never crash grading)
+        logger.exception(
+            "[N1 dispatch] compare_pred_vs_gold_ex_base raised; "
+            "falling back to legacy _set_equal"
+        )
+        return _set_equal(pred_rows, orig_rows)
 
 
 def _canonical_repr(row: Sequence) -> str:
@@ -824,6 +985,7 @@ def grade_submission(
     llm_judge: Optional[Any] = None,
     epsilon: float = 1e-6,
     user_sim_n_asks: Optional[int] = None,
+    conditions: Optional[dict] = None,
 ) -> CascadeVerdict:
     """Compute the 8-row cascade for a single submission.
 
@@ -922,7 +1084,16 @@ def grade_submission(
     if not original_sol_sql or not original_sql_executed_ok:
         n1 = False
     else:
-        n1 = _set_equal(pred_rows, orig_rows)
+        n1 = _compute_n1(
+            benchmark=benchmark,
+            pred_sqls=[submitted_sql] if submitted_sql else [],
+            sol_sqls=list(original_sol_sql),
+            db_path=db_path,
+            conn=conn,
+            pred_rows=pred_rows,
+            orig_rows=orig_rows,
+            conditions=conditions,
+        )
 
     # 3) N2/N3 — audited primary / any variant strict.
     primary = next(

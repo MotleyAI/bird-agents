@@ -413,12 +413,27 @@ async def _annotate_memories(
     """Re-save each KB's memory with its setup-encode status appended.
 
     Writes via ``storage.save_memory(id=…)`` (preserves the ``<db>_kb_<n>`` id
-    and ``created_at``) then fires the embedding refresh hook directly (gated on
-    availability) — keeping the DEV-1455 ``entities`` invariant exactly (no
-    resolver mangling) while still populating ``embeddings.db`` as a side
-    effect. A KB's concrete entity refs are added ONLY to its own memory
-    (Codex #6)."""
-    from slayer.embeddings.service import EmbeddingService
+    and ``created_at``) then fires the SearchService upsert hook directly
+    (gated on embedding availability) — keeping the DEV-1455 ``entities``
+    invariant exactly (no resolver mangling) while still populating
+    ``embeddings.db`` as a side effect. A KB's concrete entity refs are added
+    ONLY to its own memory (Codex #6).
+
+    DEV-1550: ``description=mem.description`` is forwarded explicitly because
+    ``storage.save_memory`` defaults that kwarg to ``None``; without it,
+    re-saving here would silently drop the ``Memory.description`` field
+    populated by ``kb_memory_encoder._build_one``, undoing the whole point of
+    the compact-mode upgrade.
+
+    Hook migration history: slayer 0.7.2 (DEV-1546 / upstream DEV-1514)
+    removed ``slayer.embeddings.service.EmbeddingService.refresh_memory``;
+    slayer 0.7.3 (DEV-1549) consolidated the per-memory upsert behind
+    ``slayer.search.service.SearchService.upsert_memory`` — the same hook
+    ``MemoryService.save_memory`` fans through internally. The hook
+    short-circuits when the embedding client isn't configured, so it
+    stays safe in CI / offline runs.
+    """
+    from slayer.search.service import SearchService
 
     for result in setup_results:
         mem_id = f"{db}_kb_{result.kb_id}"
@@ -434,9 +449,10 @@ async def _annotate_memories(
         saved = await storage.save_memory(
             learning=new_learning, entities=new_entities,
             query=mem.query, id=mem_id,
+            description=mem.description,
         )
         try:
-            await EmbeddingService(storage=storage).refresh_memory(saved)
+            await SearchService(storage=storage).upsert_memory(saved)
         except Exception:  # noqa: BLE001 — embedding refresh is best-effort
             logger.debug("reference_build: embedding refresh skipped for %s", mem_id)
 

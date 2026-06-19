@@ -88,6 +88,23 @@ _ = _phase4_dates
 
 logger = logging.getLogger(__name__)
 
+
+# DEV-1550 / DEV-1557: bump when the embedding-text pipeline changes
+# semantically. Hashed into `_impl_fingerprint_of` so already-built
+# caches invalidate automatically on bump — no manual `rm -rf
+# _cache_fp.txt` required.
+#
+# version=1: initial.
+# version=2: bird-agents pre-truncated rendered memory text via a
+#            local tiktoken helper before `embed_batch` (workaround for
+#            slayer ≤ 0.7.3 all-batch failure on one over-cap input).
+# version=3: delegated per-text truncation to SLayer 0.7.4+ per DEV-1557.
+#            Bird-agents passes rendered text verbatim; slayer truncates
+#            per-text via `truncate_text_for_model` (cap - 256 margin)
+#            with per-input retry fallback.
+_EMBEDDING_BUILDER_VERSION = 3
+
+
 # Completeness marker for a per-DB cache dir. Present ⇒ complete; written
 # LAST in the build tmp dir. Content = the build-time fingerprint (provenance).
 _CACHE_MARKER = "_cache_fp.txt"
@@ -248,6 +265,7 @@ def _impl_fingerprint_of(benchmark: object = None) -> str:
     h = hashlib.sha256()
     h.update(f"slayer={_slayer_version()}\n".encode())
     h.update(f"embed={_active_embedding_model_or_none()}\n".encode())
+    h.update(f"embed_builder={_EMBEDDING_BUILDER_VERSION}\n".encode())
     if getattr(benchmark, "db_backend", "sqlite") == "postgres":
         pg_host = os.environ.get("BIRD_PG_HOST", "localhost")
         pg_port = os.environ.get("BIRD_PG_PORT", "5432")
@@ -539,18 +557,35 @@ async def _materialise_cache_memories(
 
     if not _embeddings_available():
         # Channel disabled (no extra installed, or no API key for the
-        # active embedding model). Matches EmbeddingService's own
-        # write-side semantics — silently skip, search still works via
-        # tantivy.
+        # active embedding model). Matches SLayer's write-side semantics
+        # (SearchService.upsert_memory short-circuits the embedding
+        # retriever when the client is unavailable) — silently skip,
+        # search still works via tantivy.
         return
 
     model_name = _embedding_current_model()
     # Memory.model_validate is cheap; the encoder's round-trip test
     # already proves all dicts are valid.
     memories = [Memory.model_validate(d) for d in mems]
-    texts = [
-        render_memory_text_for_embedding(memory=m) for m in memories
-    ]
+    # DEV-1557 / Stage 2: hand the rendered memory text to slayer
+    # verbatim. SLayer 0.7.4+ `embed_batch` token-truncates per text via
+    # `truncate_text_for_model` (cap - 256 margin) and falls back to
+    # per-input retry if the batch still raises. Bird-agents used to
+    # pre-truncate here as a workaround for the all-batch failure on
+    # ≤ 0.7.3; that workaround is deleted (single source of truth =
+    # slayer).
+    texts = [render_memory_text_for_embedding(memory=m) for m in memories]
+    # Per-memory observability: SLayer's truncation log carries only a
+    # sha256 prefix (it can't see our memory id / db). Emit an INFO
+    # mapping line so operators can correlate slayer's hashed warnings
+    # back to the offending memory.
+    for memory, text in zip(memories, texts, strict=True):
+        _digest = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+        logger.info(
+            "[slayer_otf] embedding input for memory %s in db=%s "
+            "chars=%d sha256=%s",
+            memory.id, db, len(text), _digest[:16],
+        )
     vectors = await embed_batch(texts, model=model_name)
     rows: list[Embedding] = []
     # strict=True so an embed_batch length mismatch raises instead of

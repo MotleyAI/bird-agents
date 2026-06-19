@@ -574,6 +574,410 @@ def test_build_and_push_wires_audited_gold_and_not_dataset(
     )
 
 
+# ---------------------------------------------------------------------------
+# DEV-1550: upstream BIRD-Interact + livesqlbench grader subtrees are baked
+# into the image so cascade tier N1 dispatch can load test_utils + db_utils
+# in the cloud actor. Without this the cascade silently downgrades to
+# legacy ``_set_equal`` (the loader's FileNotFoundError is downgraded to
+# ``ExBaseUnavailableError`` and caught upstream).
+# ---------------------------------------------------------------------------
+
+
+def test_data_hash_changes_on_upstream_bird_interact_grader_edit(
+    fake_repo_root: Path, tmp_path: Path,
+) -> None:
+    """An edit to the upstream BIRD-Interact ``test_utils.py`` MUST flip
+    the data-layer hash — otherwise the cached image keeps the old
+    grader code and the user has to ``--force`` a rebuild to pick up
+    upstream fixes."""
+    eval_root = tmp_path / "bird-interact-eval"
+    eval_root.mkdir()
+    (eval_root / "test_utils.py").write_text("def ex_base(*a, **k): return 1\n")
+    (eval_root / "db_utils.py").write_text("def open_conn(*a, **k): ...\n")
+
+    h1 = image.data_hash(
+        fake_repo_root, fake_repo_root / "audited_gold",
+        bird_interact_evaluation_root=eval_root,
+    )
+    (eval_root / "test_utils.py").write_text(
+        "def ex_base(*a, **k): return 2  # bumped\n"
+    )
+    h2 = image.data_hash(
+        fake_repo_root, fake_repo_root / "audited_gold",
+        bird_interact_evaluation_root=eval_root,
+    )
+    assert h1 != h2, (
+        "Upstream BIRD-Interact grader edit didn't move data_hash — the "
+        "cached image would keep stale grader code and silently miss the "
+        "upstream fix."
+    )
+
+
+def test_data_hash_changes_on_upstream_livesqlbench_grader_edit(
+    fake_repo_root: Path, tmp_path: Path,
+) -> None:
+    """Same posture as the BIRD-Interact tree, for the livesqlbench family."""
+    eval_root = tmp_path / "livesqlbench-eval"
+    eval_root.mkdir()
+    (eval_root / "test_utils.py").write_text("def ex_base(*a, **k): return 1\n")
+
+    h1 = image.data_hash(
+        fake_repo_root, fake_repo_root / "audited_gold",
+        livesqlbench_evaluation_root=eval_root,
+    )
+    (eval_root / "test_utils.py").write_text(
+        "def ex_base(*a, **k): return 2  # bumped\n"
+    )
+    h2 = image.data_hash(
+        fake_repo_root, fake_repo_root / "audited_gold",
+        livesqlbench_evaluation_root=eval_root,
+    )
+    assert h1 != h2
+
+
+def test_data_hash_ignores_pycache_under_upstream_grader(
+    fake_repo_root: Path, tmp_path: Path,
+) -> None:
+    """``__pycache__/`` under the upstream grader tree is non-deterministic —
+    Python recreates it on import. If data_hash counted it, every local
+    test run that imported the upstream module would churn the cached
+    image tag and force a rebuild."""
+    eval_root = tmp_path / "bird-interact-eval"
+    eval_root.mkdir()
+    (eval_root / "test_utils.py").write_text("def ex_base(*a, **k): return 1\n")
+
+    h_baseline = image.data_hash(
+        fake_repo_root, fake_repo_root / "audited_gold",
+        bird_interact_evaluation_root=eval_root,
+    )
+    # Simulate Python's bytecode cache landing under the grader tree.
+    pycache = eval_root / "__pycache__"
+    pycache.mkdir()
+    (pycache / "test_utils.cpython-311.pyc").write_bytes(b"\x42" * 256)
+
+    h_with_pycache = image.data_hash(
+        fake_repo_root, fake_repo_root / "audited_gold",
+        bird_interact_evaluation_root=eval_root,
+    )
+    assert h_baseline == h_with_pycache, (
+        "__pycache__/ entries leaked into data_hash — that makes the "
+        "image tag depend on Python bytecode generation, which is not "
+        "stable across local runs."
+    )
+
+
+def test_build_and_push_wires_upstream_grader_build_contexts(
+    fake_repo_root: Path, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``build_and_push`` MUST emit ``--build-context
+    bird-interact-evaluation=<path>`` AND
+    ``--build-context livesqlbench-evaluation=<path>``. Without these the
+    Dockerfile's ``COPY --from=...`` calls would fail at build time, OR
+    silently bake an empty grader tree if BuildKit tolerated missing
+    contexts."""
+    import subprocess as _sp
+
+    captured: list[list[str]] = []
+
+    def fake_run(argv, *_a, **_kw):
+        captured.append(list(argv))
+        rc = 1 if argv[:3] == ["docker", "manifest", "inspect"] else 0
+        return _sp.CompletedProcess(argv, rc, stdout="", stderr="")
+
+    monkeypatch.setattr(_sp, "run", fake_run)
+    from bird_interact_agents.cloud import config as _config
+    monkeypatch.setattr(
+        _config, "image_uri_prefix", lambda: "registry.example/x/runner",
+    )
+
+    audited_root = tmp_path / "main-checkout" / "audited_gold"
+    audited_root.mkdir(parents=True)
+    bird_interact_eval = tmp_path / "main-checkout" / "bird-interact-eval"
+    bird_interact_eval.mkdir(parents=True)
+    livesqlbench_eval = tmp_path / "main-checkout" / "livesqlbench-eval"
+    livesqlbench_eval.mkdir(parents=True)
+    # `_ensure_upstream_grader_tree_present` (round 6 + 7 prereq guard)
+    # requires BOTH `test_utils.py` AND `db_utils.py` markers under each
+    # eval root before reaching the docker invocation — otherwise
+    # build_and_push raises `UpstreamGraderUnavailableError` and the
+    # docker-build wiring this test inspects is never emitted. Plain
+    # setup, no behaviour change.
+    for d in (bird_interact_eval, livesqlbench_eval):
+        (d / "test_utils.py").write_text("")
+        (d / "db_utils.py").write_text("")
+
+    image.build_and_push(
+        "deadbeef-cafebabe",
+        fake_repo_root,
+        audited_gold_root=audited_root,
+        bird_interact_evaluation_root=bird_interact_eval,
+        livesqlbench_evaluation_root=livesqlbench_eval,
+        force=False,
+    )
+
+    build_argv = next(a for a in captured if a[:2] == ["docker", "build"])
+    pairs: dict[str, str] = {}
+    for i, tok in enumerate(build_argv):
+        if tok == "--build-context" and i + 1 < len(build_argv):
+            k, _, v = build_argv[i + 1].partition("=")
+            pairs[k] = v
+    assert pairs.get("bird-interact-evaluation") == str(bird_interact_eval), (
+        f"bird-interact-evaluation build-context not wired; saw {pairs}"
+    )
+    assert pairs.get("livesqlbench-evaluation") == str(livesqlbench_eval), (
+        f"livesqlbench-evaluation build-context not wired; saw {pairs}"
+    )
+
+
+def test_dockerfile_cloud_bakes_upstream_graders() -> None:
+    """The PRODUCTION Dockerfile.cloud must have ``COPY --from=`` lines
+    that consume the two BuildKit contexts ``build_and_push`` emits AND
+    land them under the in-image bake dir the
+    ``upstream_ex_base._CLOUD_*_ROOT`` constants point at. A regression
+    on either side means the cascade tier N1 silently falls back to
+    legacy ``_set_equal`` in the cloud."""
+    import re as _re
+
+    repo_root = Path(__file__).resolve().parents[2]
+    df = (repo_root / "Dockerfile.cloud").read_text()
+    non_comment_body = "\n".join(
+        ln for ln in df.splitlines() if not ln.lstrip().startswith("#")
+    )
+    # Collapse Dockerfile line continuations so COPY commands written
+    # across multiple lines (the trailing-backslash form) match a single
+    # regex.
+    flat_body = _re.sub(r"\\\s*\n\s*", " ", non_comment_body)
+
+    bird_interact_pat = _re.compile(
+        r"COPY\s+--from=bird-interact-evaluation\s+\.\s+\S*"
+        r"/app/upstream_graders/bird-interact/mini_interact/knowledge_based/"
+        r"mini_interact_conv/evaluation/?",
+    )
+    livesqlbench_pat = _re.compile(
+        r"COPY\s+--from=livesqlbench-evaluation\s+\.\s+\S*"
+        r"/app/upstream_graders/livesqlbench/evaluation/src/?",
+    )
+    assert bird_interact_pat.search(flat_body), (
+        "Dockerfile.cloud is missing the bird-interact-evaluation COPY line "
+        "or the destination does not land under the in-image bake path."
+    )
+    assert livesqlbench_pat.search(flat_body), (
+        "Dockerfile.cloud is missing the livesqlbench-evaluation COPY line "
+        "or the destination does not land under the in-image bake path."
+    )
+
+
+# ---------------------------------------------------------------------------
+# DEV-1550 round 6 (Codex): pre-flight checks. A missing upstream-grader tree
+# must trip an actionable `UpstreamGraderUnavailableError` BEFORE we shell
+# out to `docker build` (where BuildKit's unresolved-context error is
+# opaque and points nowhere). Symlink-to-pycache must not bypass the
+# `__pycache__` parts filter in `_iter_upstream_grader_files`.
+# ---------------------------------------------------------------------------
+
+
+def _stub_subprocess_run_capturing(captured: list[list[str]]):
+    """Build a `subprocess.run` stand-in that records each invocation
+    and makes `docker manifest inspect` return non-zero so build_and_push
+    proceeds to the build step (where the prereq guard runs)."""
+    import subprocess as _sp
+
+    def fake_run(argv, *_a, **_kw):
+        captured.append(list(argv))
+        rc = 1 if argv[:3] == ["docker", "manifest", "inspect"] else 0
+        return _sp.CompletedProcess(argv, rc, stdout="", stderr="")
+
+    return _sp, fake_run
+
+
+def test_build_and_push_raises_when_bird_interact_grader_dir_missing(
+    fake_repo_root: Path, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing upstream BIRD-Interact grader tree must trip
+    `UpstreamGraderUnavailableError` BEFORE the docker shell-out, with a
+    message naming both the path and the env-var remediation."""
+    captured: list[list[str]] = []
+    _sp, fake_run = _stub_subprocess_run_capturing(captured)
+    monkeypatch.setattr(_sp, "run", fake_run)
+    from bird_interact_agents.cloud import config as _config
+    monkeypatch.setattr(
+        _config, "image_uri_prefix", lambda: "registry.example/x/runner",
+    )
+
+    audited_root = tmp_path / "main-checkout" / "audited_gold"
+    audited_root.mkdir(parents=True)
+    # bird_interact_eval is intentionally absent; livesqlbench is present
+    # so the test pins which tree triggered the failure.
+    livesqlbench_eval = tmp_path / "main-checkout" / "livesqlbench-eval"
+    livesqlbench_eval.mkdir(parents=True)
+    (livesqlbench_eval / "test_utils.py").write_text("")
+    (livesqlbench_eval / "db_utils.py").write_text("")
+    bird_interact_eval = tmp_path / "main-checkout" / "nonexistent-bird-interact"
+
+    with pytest.raises(
+        image.UpstreamGraderUnavailableError,
+    ) as excinfo:
+        image.build_and_push(
+            "deadbeef-cafebabe",
+            fake_repo_root,
+            audited_gold_root=audited_root,
+            bird_interact_evaluation_root=bird_interact_eval,
+            livesqlbench_evaluation_root=livesqlbench_eval,
+            force=False,
+        )
+    msg = str(excinfo.value)
+    assert "BIRD-Interact" in msg
+    assert str(bird_interact_eval) in msg
+    assert "BIRD_BIRD_INTERACT_ROOT" in msg, (
+        "error message must name the env-var remediation"
+    )
+    # MUST not have reached the docker build invocation.
+    assert not any(a[:2] == ["docker", "build"] for a in captured), (
+        "prereq guard fired AFTER docker build — the whole point is to "
+        "fail fast before that subprocess. Saw: " + repr(captured)
+    )
+
+
+def test_build_and_push_raises_when_grader_dir_lacks_required_markers(
+    fake_repo_root: Path, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An existing-but-empty eval dir is just as bad as missing — it
+    would silently bake a degraded grader. The guard must catch that
+    case too (not just the dir-missing one)."""
+    captured: list[list[str]] = []
+    _sp, fake_run = _stub_subprocess_run_capturing(captured)
+    monkeypatch.setattr(_sp, "run", fake_run)
+    from bird_interact_agents.cloud import config as _config
+    monkeypatch.setattr(
+        _config, "image_uri_prefix", lambda: "registry.example/x/runner",
+    )
+
+    audited_root = tmp_path / "main-checkout" / "audited_gold"
+    audited_root.mkdir(parents=True)
+    bird_interact_eval = tmp_path / "main-checkout" / "bird-interact-eval"
+    bird_interact_eval.mkdir(parents=True)
+    (bird_interact_eval / "test_utils.py").write_text("")
+    (bird_interact_eval / "db_utils.py").write_text("")
+    livesqlbench_eval = tmp_path / "main-checkout" / "livesqlbench-eval"
+    livesqlbench_eval.mkdir(parents=True)  # NO marker files at all
+
+    with pytest.raises(image.UpstreamGraderUnavailableError) as excinfo:
+        image.build_and_push(
+            "deadbeef-cafebabe",
+            fake_repo_root,
+            audited_gold_root=audited_root,
+            bird_interact_evaluation_root=bird_interact_eval,
+            livesqlbench_evaluation_root=livesqlbench_eval,
+            force=False,
+        )
+    msg = str(excinfo.value)
+    assert "livesqlbench" in msg
+    assert "test_utils.py" in msg
+    assert "BIRD_LIVESQLBENCH_ROOT" in msg
+
+
+def test_build_and_push_raises_when_grader_dir_lacks_db_utils(
+    fake_repo_root: Path, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex round 7: a partial upstream tree with `test_utils.py` but
+    NO `db_utils.py` would pass the round-6 guard (which only checked
+    test_utils.py), bake a degraded image, and silently downgrade N1
+    when the loader's `from db_utils import ...` raises in the cloud
+    actor. The round-7 tightening must catch this BEFORE docker build."""
+    captured: list[list[str]] = []
+    _sp, fake_run = _stub_subprocess_run_capturing(captured)
+    monkeypatch.setattr(_sp, "run", fake_run)
+    from bird_interact_agents.cloud import config as _config
+    monkeypatch.setattr(
+        _config, "image_uri_prefix", lambda: "registry.example/x/runner",
+    )
+
+    audited_root = tmp_path / "main-checkout" / "audited_gold"
+    audited_root.mkdir(parents=True)
+    bird_interact_eval = tmp_path / "main-checkout" / "bird-interact-eval"
+    bird_interact_eval.mkdir(parents=True)
+    # Has test_utils.py but NOT db_utils.py — the round-6 guard would
+    # have wrongly accepted this.
+    (bird_interact_eval / "test_utils.py").write_text("")
+    livesqlbench_eval = tmp_path / "main-checkout" / "livesqlbench-eval"
+    livesqlbench_eval.mkdir(parents=True)
+    (livesqlbench_eval / "test_utils.py").write_text("")
+    (livesqlbench_eval / "db_utils.py").write_text("")
+
+    with pytest.raises(image.UpstreamGraderUnavailableError) as excinfo:
+        image.build_and_push(
+            "deadbeef-cafebabe",
+            fake_repo_root,
+            audited_gold_root=audited_root,
+            bird_interact_evaluation_root=bird_interact_eval,
+            livesqlbench_evaluation_root=livesqlbench_eval,
+            force=False,
+        )
+    msg = str(excinfo.value)
+    assert "BIRD-Interact" in msg
+    assert "db_utils.py" in msg
+    assert "BIRD_BIRD_INTERACT_ROOT" in msg
+    assert not any(a[:2] == ["docker", "build"] for a in captured), (
+        "guard fired AFTER docker build — must fail-fast before that"
+    )
+
+
+def test_iter_upstream_grader_files_skips_py_symlinks(tmp_path: Path) -> None:
+    """A `.py` symlink whose target is under `__pycache__/` must be
+    skipped — otherwise the hash leaks non-deterministic bytecode bytes."""
+    root = tmp_path / "grader"
+    root.mkdir()
+    real = root / "test_utils.py"
+    real.write_text("def ex_base(*a, **k): return 1\n")
+    pyc_dir = root / "__pycache__"
+    pyc_dir.mkdir()
+    pyc_target = pyc_dir / "evil.cpython-311.pyc"
+    pyc_target.write_bytes(b"\xff" * 64)
+    link = root / "evil.py"
+    link.symlink_to(pyc_target)
+
+    files = list(image._iter_upstream_grader_files(root))
+    assert real in files
+    assert link not in files, (
+        "Symlink whose target is under __pycache__ leaked into the "
+        "hash set — _iter_upstream_grader_files must skip symlinks."
+    )
+
+
+def test_data_hash_ignores_py_symlink_to_pycache(
+    fake_repo_root: Path, tmp_path: Path,
+) -> None:
+    """Same posture at the data_hash level: adding a `.py` symlink
+    whose target is under `__pycache__/` must NOT move the hash."""
+    eval_root = tmp_path / "bird-interact-eval"
+    eval_root.mkdir()
+    (eval_root / "test_utils.py").write_text("def ex_base(*a, **k): return 1\n")
+
+    h_baseline = image.data_hash(
+        fake_repo_root, fake_repo_root / "audited_gold",
+        bird_interact_evaluation_root=eval_root,
+    )
+
+    pyc_dir = eval_root / "__pycache__"
+    pyc_dir.mkdir()
+    pyc = pyc_dir / "test_utils.cpython-311.pyc"
+    pyc.write_bytes(b"\x99" * 128)
+    (eval_root / "evil.py").symlink_to(pyc)
+
+    h_with_symlink = image.data_hash(
+        fake_repo_root, fake_repo_root / "audited_gold",
+        bird_interact_evaluation_root=eval_root,
+    )
+    assert h_baseline == h_with_symlink, (
+        "Symlink-into-pycache leaked into data_hash — the image tag now "
+        "depends on bytecode bytes, breaking cache stability."
+    )
+
+
 def test_dirty_input_paths_no_longer_includes_audited_gold(
     fake_repo_root: Path, make_git,
 ) -> None:

@@ -6,10 +6,12 @@ aligned wherever SLayer is not involved.
 
 Constraint: after the SLayer prompt files are refactored to import from
 here, the rendered values of SLAYER_OTF_ONE_SHOT and SLAYER_OTF_AINTERACT
-must remain byte-for-byte identical. SHA-256 snapshot tests in
-tests/test_shared_otf_prompts.py enforce this.
+must remain byte-for-byte identical except for deliberate prompt-content
+changes that bump the SHA-256 snapshot constants in
+tests/test_shared_otf_prompts.py.
 
 Format param conventions:
+  {db_name}           — datasource id, surfaced inside the SLayer-tools block
   {sources_desc}      — phrase describing the knowledge sources available
   {action_label}      — upper-case verb for Rule 0 heading ("ENCODE"/"SUBMIT")
   {action_context}    — Rule 0 first sentence opener
@@ -118,30 +120,84 @@ FIRST — before adding logic, changing formulas, or asking the user:
 These swap the row tuple structure without changing what you computed —
 much cheaper than a new join or KB re-read."""
 
-# DEV-1534 Fix D — slayer-mode only (one-shot + a-interact). No format
-# params. The `normalize_filters` opt-out applies to `query`,
-# `query_nested`, AND `submit_query` — all served by our bird-interact-
-# tools wrappers in the OTF agents.
-# DEV-1555 (post-r5 diagnosis): the agent's query tool is
-# `mcp__bird-interact-tools__query` (the wrapper). It accepts a single
-# SlayerQuery JSON OR a JSON ARRAY of stage objects for nested DAGs;
-# `query_nested` is NOT a separate name in this harness. The raw
-# `mcp__slayer__query` is reserved for the discovery subagent (denied
-# to the main loop) — do not reach for it.
+# DEV-1546 — slayer-mode only (one-shot + a-interact). No format params.
+# Proactive guidance on the SLayer 0.7.2 `distinct_dimension_values`
+# field: the agent decides BEFORE writing the JSON whether the question
+# wants raw rows or distinct dimension tuples. Synthetic example uses
+# fabricated names (per project convention) but mirrors the structural
+# shape of real overaggregation misses — dim-only ask, optional LIMIT,
+# no measures.
+_DEDUP_VS_RAW_ROWS = """\
+DEDUP vs RAW ROWS. By default SLayer auto-DEDUPLICATES dimension-only
+queries: when `measures` is empty, it wraps every projected column in a
+top-level `GROUP BY`, collapsing rows that share the same dimension
+tuple. To emit raw per-record rows instead, set
+`distinct_dimension_values: false` inside the query JSON — flat
+`SELECT <dims/td> FROM ... WHERE ... ORDER BY ... LIMIT`, no top-level
+`GROUP BY`. The field lives INSIDE the SlayerQuery JSON (alongside
+`source_model`, `dimensions`, etc.), same shape for `query` / `submit_query`.
+
+Decide BEFORE writing the query:
+
+  * Use `distinct_dimension_values: false` when the question asks for a
+    PER-RECORD listing (e.g. "list each <X>'s <a> and <b>; if two
+    <X>s share the same <a>, <b>, return BOTH rows").
+  * Keep the default `true` when the question asks for the distinct
+    <a>, <b> COMBINATIONS (or for an aggregation grouped by them).
+  * If you need BOTH a per-record listing and a count, keep the
+    default and add `*:count` as a measure (or restructure as a
+    nested-DAG stage with `*:count`).
+
+Validation: `distinct_dimension_values: false` requires
+  * `measures` empty (the flag asks for raw rows, not aggregations),
+  * at least one of `dimensions` / `time_dimensions` non-empty
+    (something must be projected),
+  * no measure reference in `filters` / `order`.
+SLayer raises a `DistinctDimensionValuesError` otherwise.
+
+Synthetic example (fabricated names — your DB uses different
+identifiers):
+
+  Q: "List the first 10 (workshop_id, district) pairs in the workshops
+     table. If two workshops share the same (workshop_id, district),
+     return BOTH rows."
+
+  WRONG (default — silently dedups when two workshops share the
+  tuple):
+    {{"source_model": "workshops",
+     "dimensions": ["workshop_id", "district"],
+     "limit": 10}}
+
+  RIGHT (raw rows):
+    {{"source_model": "workshops",
+     "dimensions": ["workshop_id", "district"],
+     "limit": 10,
+     "distinct_dimension_values": false}}
+"""
+
+# DEV-1534 Fix D / DEV-1546 — slayer-mode only (one-shot + a-interact).
+# No format params. The `normalize_filters` opt-out applies to `query`,
+# AND `submit_query`; the `distinct_dimension_values`
+# field lives INSIDE the JSON DSL (see _DEDUP_VS_RAW_ROWS above for
+# the proactive rule + synthetic example).
 _SLAYER_SQL_ARTIFACT_CHECK = """\
-SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query`
-returns, inspect the rendered SQL for these patterns before submitting:
+SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query` returns, inspect the rendered SQL for these patterns
+before submitting:
 
   1. GROUP BY on every projected column with NO aggregate functions —
-     silently deduplicates rows. Fix: add the table's primary-key column
-     as a dimension, or restructure as a nested-DAG stage with a
-     `*:count` measure.
+     SLayer's default dim-only auto-dedup. If the question asks for
+     raw per-record rows, fix by setting
+     `distinct_dimension_values: false` INSIDE the query JSON (see
+     the DEDUP vs RAW ROWS rule above). If you DO need a count
+     alongside the rows, keep the default and add `*:count` as a
+     measure — or restructure as a nested-DAG stage with a `*:count`
+     measure.
   2. `lower(trim(col)) = '<lowercase literal>'` on string equality
      filters — wrapped automatically by default. When the gold answer
      requires exact-case equality (proper-noun categories with
      known-fixed casing), pass `normalize_filters=false` as a SEPARATE
-     parameter on the offending `query` / `submit_query` call (the flag
-     lives OUTSIDE the JSON DSL).
+     parameter on the offending `query` / `submit_query`
+     call (the flag lives OUTSIDE the JSON DSL).
   3. Broken operator precedence on WHERE arithmetic:
      `expr1*w1 + expr2*w2 > threshold` without outer parens — the
      comparator binds only to the last additive term. Fix: push the
@@ -220,6 +276,7 @@ Keep a one-line mental log: "attempt N changed <variable X> from <a>
 to <b>; everything else identical to attempt N-1". If you cannot state
 that sentence, you are changing too many things at once."""
 
+
 # DEV-1534 Fix F — a-interact only (one-shot variants have no user
 # simulator). No format params.
 _USER_SIM_TRUST_CALIBRATION = """\
@@ -237,6 +294,126 @@ USER-SIM ANSWERS ARE CLARIFICATIONS, NOT GROUND TRUTH.
     and the task needs top-5), call `ask_user` again to flag the
     contradiction explicitly rather than submitting an impossible
     query."""
+
+
+# DEV-1545: targets `wrong_join_path` (autopsies: polar_4, museum_9,
+# cross_db_10). Shared across one-shot AND a-interact: the structural-
+# pivot half does not need a user-sim. Per Codex review #7, the wording
+# explicitly discourages "submit one variant per candidate path" — that
+# would worsen `exhausted_budget_guessing`. The agent enumerates
+# internally, narrows by evidence, asks ONE discriminating question if
+# evidence remains thin, and submits ONLY when one path is selected.
+_TABLE_SET_PROBE = """\
+ALTERNATIVE-JOIN-PATH PROBE.
+
+When SLayer's schema lookup reveals a foreign-key path through a table
+your current query does NOT use — or when grader diagnostics include
+`wrong_table_set` after a submission — the gold likely flows through a
+different host or bridge table than the one you picked. Do NOT brute-
+force-submit one variant per candidate path; that burns budget.
+Instead:
+
+  1. Enumerate the alternative paths INTERNALLY (read columns +
+     {knowledge_label} for each candidate bridge). Pick the most
+     evidence-supported one.
+  2. If two paths remain equally plausible, ask the user-sim ONE
+     discriminating question — name both paths and ask which provides
+     the canonical link. Do not ask vague "which table?" questions.
+  3. Submit ONLY after step 2 distinguishes them. If the user-sim
+     refuses to choose, fall back to the {knowledge_label}-grounded
+     candidate."""
+
+
+# DEV-1545: targets `never_asked_key_question` (autopsies: robot_9,
+# organ_transplant_16). A-interact only — the diagnostic action is a
+# user-sim question. Per Codex review #8, the trigger fires on the
+# FIRST zero-result mismatch (not the second) because by the second
+# attempt the agent has already burned budget; the failure mode is
+# failure-to-ask-early.
+_GRADER_ZERO_VS_ONE_DIAGNOSTIC = """\
+GRADER ZERO-VS-EXPECTED-ONE — ASK A STRUCTURAL QUESTION IMMEDIATELY.
+
+When the grader returns "ex_base 0 vs expected 1" (the gold expects a
+row your query is not producing) on a submission AND your query
+SHAPE was stable across recent encoding attempts, this is almost never
+a formula tweak — it is a structural mismatch. Do NOT iterate on
+threshold / sort / CAST permutations. Instead, immediately call
+`ask_user` with these two specific structural questions, in this order:
+
+  (a) "Is the criteria a FILTER on a pre-classified status column
+      (e.g. a `level_val='Marginal'` / `risk_level='High'` column that
+      already exists in the schema), or only a REASON label assigned
+      to rows the WHERE clause already selected?"
+  (b) "Is the rank / window function computed BEFORE the WHERE
+      filter is applied (over the full population), or AFTER (over
+      the filtered subset)?"
+
+If your task does not involve a ranking / window, skip (b). After
+the answer, encode the implied filter / pre-classified column /
+window scope and resubmit. The point is to flip a single structural
+bit, not to keep submitting near-identical queries."""
+
+
+# DEV-1550 A3: shared "SLAYER TOOLS" block — extracted byte-for-byte
+# from the previously-duplicated `_AINTERACT_SLAYER_TOOLS` /
+# `_ENCODE_CORE_HEAD` (verified identical at extraction time), with
+# the new "READ A KNOWN MEMORY'S FULL BODY" drill-in paragraph
+# inserted as a sibling between the existing column-drill-in
+# paragraph and the `ENCODE-THEN-QUERY DISCIPLINE:` header. The
+# memory-drill-in nudge documents the compact-mode opt-out introduced
+# by SLayer 0.7.3 (DEV-1549): `search` now defaults to `compact=True`
+# and renders one-line `description` summaries; agents need
+# `compact=False` (plus a tight `max_results=1`) to get the full
+# `learning` body for a memory id they've already identified.
+#
+# SLayer 0.7.3 also collapsed the per-kind caps (`max_memories`,
+# `max_entities`, `max_example_queries`) into a single `max_results`,
+# so the column-drill-in pattern below also migrated to the new
+# kwargs at the same time.
+#
+# Format params: {db_name}
+_SLAYER_TOOLS_BLOCK = """\
+The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
+knowledge-base (KB) item, with ids like `{db_name}_kb_<n>` whose body
+starts `KB <n> —`. The base tables are already ingested as SLayer models,
+but NOTHING is encoded yet: you encode exactly what THIS question needs,
+on the fly.
+
+SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
+query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
+the `source_model` / `dimensions` / `measures` / `filters` schema. Use
+`search` to find relevant memories and existing entities; `inspect_model`
+to see a model's columns / measures / joins; `create_model` / `edit_model`
+to add columns and measures; `query` to test.
+
+READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
+filter, projection, or join key — `search` with `entities=[
+"<db>.<model>.<col>"]`, `max_results=1`, `compact=False`,
+`cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'`. The kind
+filter is load-bearing: without it, the unified `max_results` cap is
+RRF-fused across kinds and a memory tagged to that column can outrank
+the column itself, returning prose instead of the schema-author
+description. Use the `ModelColumn` label (not `Column`) because
+`Column` is a reserved keyword in LadybugDB ≥0.15 and only matches on
+the naive fallback path; `ModelColumn` works on both naive and graph-
+backed installs. The returned hit's `text` carries `Description:` and
+`Sample values:` inline.
+The truncated `Sample values:` line is your authoritative source of
+which literal forms actually occur in this column — case variants,
+whitespace forms, abbreviations, alternate phrasings of the same
+concept. Use it BEFORE writing any IN-set (see rule 3 below).
+
+READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
+a memory id you've already identified — `search` with `entities=[
+"memory:<id>"]`, `max_results=1`, `compact=False`,
+`cypher_filter='MATCH (n:Memory) RETURN n.id AS id'`. By default `search`
+is compact (one-line `description` summary per hit); `compact=False`
+returns the full `learning` body. The `:Memory` kind filter pins the
+result to the memory you asked for — without it, a parent memory whose
+entities cross-reference `memory:<id>` can occupy the single slot
+instead of the memory you want.
+
+ENCODE-THEN-QUERY DISCIPLINE:"""
 
 
 # ---------------------------------------------------------------------------

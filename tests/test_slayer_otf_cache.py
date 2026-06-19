@@ -816,3 +816,286 @@ async def test_reuse_does_not_call_full_fingerprint_of_after_split(
         DB, cache_root=cache_root, mini_interact_root=fake_mini_interact_root,
     )
     assert entry.cache_dir == cache_root / DB
+
+
+# ---------------------------------------------------------------------------
+# DEV-1557 / Stage-2: cache builder delegates embedding-text truncation to
+# SLayer 0.7.4+. Migrated from the deleted test_slayer_otf_cache_embed_truncate
+# file with a delegation-style test replacing the per-helper unit tests.
+# ---------------------------------------------------------------------------
+
+
+def test_embedding_builder_version_in_cache_fingerprint(monkeypatch):
+    """Bumping ``_EMBEDDING_BUILDER_VERSION`` MUST change
+    ``_impl_fingerprint_of(...)`` so already-built caches invalidate
+    automatically when the embedding-text pipeline changes (e.g. we
+    delegated truncation to SLayer in version 3; a future change to the
+    pipeline lifts to version 4 and the bump alone forces a rebuild).
+    Migrated from test_slayer_otf_cache_embed_truncate.py before that
+    file was deleted."""
+    fp_before = otf_cache._impl_fingerprint_of(None)
+    monkeypatch.setattr(otf_cache, "_EMBEDDING_BUILDER_VERSION", 999)
+    fp_after = otf_cache._impl_fingerprint_of(None)
+    assert fp_before != fp_after
+
+
+def test_embedding_builder_version_is_3_after_stage_2_delegation():
+    """Codex /spec review (f): assert the literal version value so a
+    partial implementation that bumps everything else but forgets the
+    constant gets caught. The migration contract is encoded here."""
+    assert otf_cache._EMBEDDING_BUILDER_VERSION == 3
+
+
+def test_bird_side_truncation_helpers_were_deleted():
+    """Codex /spec review (a) / (f): direct absence assertions on the
+    symbols the Stage-2 migration deleted. No finite-input
+    "passes-through-50k-chars" test can prove "no truncation ever";
+    only the absence of the helper API gives us that guarantee."""
+    assert not hasattr(otf_cache, "_truncate_for_embedding"), (
+        "_truncate_for_embedding must be deleted — SLayer 0.7.4+ is the "
+        "single source of truth for per-text token truncation"
+    )
+    assert not hasattr(otf_cache, "_EMBEDDING_MAX_TOKENS"), (
+        "_EMBEDDING_MAX_TOKENS must be deleted with the helper"
+    )
+    assert not hasattr(otf_cache, "_EMBEDDING_FALLBACK_MAX_CHARS"), (
+        "_EMBEDDING_FALLBACK_MAX_CHARS must be deleted with the helper"
+    )
+
+
+def test_materialise_cache_memories_passes_raw_text_to_embed_batch(
+    monkeypatch, tmp_path: Path,
+):
+    """DEV-1557 / Stage-2: bird-agents no longer pre-truncates the
+    rendered memory text before ``embed_batch``. SLayer 0.7.4's own
+    ``embed_batch`` handles per-text token truncation + per-input retry.
+
+    Verify by: monkeypatching ``embed_batch`` to capture inputs;
+    forcing one of the rendered memories to be 50k chars long (way
+    over any plausible cap); asserting the EXACT raw text is what
+    ``embed_batch`` receives. If a future refactor reintroduces
+    bird-side truncation, this test fails immediately with a
+    length mismatch.
+
+    Replaces the prior per-helper unit tests, which were tightly
+    coupled to the deleted ``_truncate_for_embedding`` and would
+    otherwise drift into testing SLayer's private helpers."""
+    from unittest.mock import MagicMock
+
+    seen_inputs: list[str] = []
+
+    async def stub_embed_batch(texts, *, model=None):
+        seen_inputs.extend(texts)
+        return [[0.1] * 8 for _ in texts]
+
+    monkeypatch.setattr(otf_cache, "embed_batch", stub_embed_batch)
+    monkeypatch.setattr(otf_cache, "_embeddings_available", lambda: True)
+    monkeypatch.setattr(
+        otf_cache, "_embedding_current_model",
+        lambda: "openai/text-embedding-3-small",
+    )
+
+    long_raw = "x " * 25_000  # ~50k chars; well above any prior bird-side cap
+    short_raw = "short text"
+
+    def fake_render(*, memory):
+        return long_raw if memory.id == "long" else short_raw
+
+    monkeypatch.setattr(otf_cache, "render_memory_text_for_embedding", fake_render)
+
+    long_mem = MagicMock(); long_mem.id = "long"
+    short_mem = MagicMock(); short_mem.id = "short"
+    monkeypatch.setattr(
+        otf_cache, "encode_kb_as_memories",
+        lambda *a, **kw: [{"id": "long"}, {"id": "short"}],
+    )
+    monkeypatch.setattr(
+        otf_cache.Memory, "model_validate",
+        lambda d: long_mem if d.get("id") == "long" else short_mem,
+    )
+
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    asyncio.run(otf_cache._materialise_cache_memories(
+        db="alien", build_dir=build_dir, kb_rows=[{"id": 1}, {"id": 2}],
+    ))
+
+    # Both texts arrived at embed_batch.
+    assert len(seen_inputs) == 2
+    # The long memory's text arrives VERBATIM — no bird-side truncation.
+    # If somebody reintroduces a `_truncate_for_embedding` step, the
+    # length comparison fails immediately.
+    assert long_raw in seen_inputs, (
+        "long memory text was not passed through to embed_batch verbatim — "
+        "did somebody re-add bird-side truncation? Slayer 0.7.4+ is the "
+        "single source of truth for per-text token truncation."
+    )
+    assert short_raw in seen_inputs
+
+
+def test_materialise_cache_memories_logs_per_memory_observability(
+    monkeypatch, tmp_path: Path, caplog,
+):
+    """DEV-1557 / Stage-2: keep per-memory observability after deleting
+    the truncation helper. SLayer 0.7.4 logs truncation events with a
+    sha256_prefix but doesn't know our memory id / db; emit an INFO log
+    near the embed_batch call mapping ``memory.id``, ``db``,
+    ``len(text)``, and a sha256 prefix so the two log streams can be
+    correlated."""
+    import logging
+    from unittest.mock import MagicMock
+
+    async def stub_embed_batch(texts, *, model=None):
+        return [[0.1] * 8 for _ in texts]
+
+    monkeypatch.setattr(otf_cache, "embed_batch", stub_embed_batch)
+    monkeypatch.setattr(otf_cache, "_embeddings_available", lambda: True)
+    monkeypatch.setattr(
+        otf_cache, "_embedding_current_model",
+        lambda: "openai/text-embedding-3-small",
+    )
+    monkeypatch.setattr(
+        otf_cache, "render_memory_text_for_embedding",
+        lambda *, memory: f"text for {memory.id}",
+    )
+
+    mem_a = MagicMock(); mem_a.id = "alpha"
+    mem_b = MagicMock(); mem_b.id = "beta"
+    monkeypatch.setattr(
+        otf_cache, "encode_kb_as_memories",
+        lambda *a, **kw: [{"id": "alpha"}, {"id": "beta"}],
+    )
+    monkeypatch.setattr(
+        otf_cache.Memory, "model_validate",
+        lambda d: mem_a if d["id"] == "alpha" else mem_b,
+    )
+
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    with caplog.at_level(logging.INFO, logger="bird_interact_agents.slayer_otf.cache"):
+        asyncio.run(otf_cache._materialise_cache_memories(
+            db="alien_db", build_dir=build_dir,
+            kb_rows=[{"id": 1}, {"id": 2}],
+        ))
+
+    import hashlib
+
+    records = [r for r in caplog.records
+               if "[slayer_otf]" in r.message
+               and "embedding" in r.message.lower()
+               and ("alpha" in r.message or "beta" in r.message)]
+    assert len(records) == 2, (
+        "expected one INFO log per memory mapping memory.id + db + chars + sha256 prefix; "
+        f"got {len(records)} matching records"
+    )
+    # Codex /spec review (b): assert level explicitly. ``caplog.at_level(INFO)``
+    # still captures warnings, so without this a regression to a
+    # warning-shaped log would slip through.
+    for r in records:
+        assert r.levelno == logging.INFO, (
+            f"per-memory observability log must be INFO, got level={r.levelname}"
+        )
+    # Compute the digest WE expect (from the rendered text) and verify
+    # the logged sha256 prefix is at least 8 hex chars of that digest —
+    # ties the log line to the right text without coupling to
+    # slayer's private formatting.
+    expected_digests = {
+        "alpha": hashlib.sha256(b"text for alpha").hexdigest(),
+        "beta": hashlib.sha256(b"text for beta").hexdigest(),
+    }
+    for r in records:
+        if "alpha" in r.message:
+            mid = "alpha"
+        elif "beta" in r.message:
+            mid = "beta"
+        else:
+            continue
+        assert "alien_db" in r.message, f"db not carried: {r.message}"
+        assert "chars=" in r.message or "len=" in r.message, (
+            f"length not carried: {r.message}"
+        )
+        # Look for a non-trivial prefix of the expected digest in the
+        # message — at least 8 hex chars proves we hashed THIS text.
+        digest = expected_digests[mid]
+        # Try a few common prefix lengths; the impl picks the budget.
+        assert any(digest[:k] in r.message for k in (8, 12, 16, 24, 32)), (
+            f"expected a sha256 prefix of {digest!r} in {r.message!r}"
+        )
+
+
+def test_materialise_cache_memories_partial_batch_persists_good_skips_failed(
+    monkeypatch, tmp_path: Path, caplog,
+):
+    """Codex /spec review (d): bird-side resilience contract — when
+    `embed_batch` returns `[vec, None]` (good + failed), the cache
+    builder must persist the good embedding row and skip / warn for the
+    failed one. This stays independent of SLayer's internal retry
+    mechanics (we don't assert on BadRequestError flows); we just
+    contract on the per-input None we receive."""
+    import logging
+    from unittest.mock import MagicMock
+
+    persisted: list = []
+
+    async def stub_embed_batch(texts, *, model=None):
+        # First memory got a vector; second came back None (slayer
+        # exhausted its per-input retry or the input was unrecoverable).
+        return [[0.1] * 8, None]
+
+    async def stub_save_embeddings(self, rows):
+        # YAMLStorage.save_embeddings is an async method on the storage
+        # object (self + rows); just record what bird tries to persist.
+        persisted.extend(rows)
+
+    monkeypatch.setattr(otf_cache, "embed_batch", stub_embed_batch)
+    monkeypatch.setattr(otf_cache, "_embeddings_available", lambda: True)
+    monkeypatch.setattr(
+        otf_cache, "_embedding_current_model", lambda: "openai/test-model",
+    )
+    monkeypatch.setattr(
+        otf_cache, "render_memory_text_for_embedding",
+        lambda *, memory: f"text for {memory.id}",
+    )
+
+    mem_good = MagicMock(); mem_good.id = "good_mem"
+    mem_bad = MagicMock(); mem_bad.id = "bad_mem"
+    monkeypatch.setattr(
+        otf_cache, "encode_kb_as_memories",
+        lambda *a, **kw: [{"id": "good_mem"}, {"id": "bad_mem"}],
+    )
+    monkeypatch.setattr(
+        otf_cache.Memory, "model_validate",
+        lambda d: mem_good if d["id"] == "good_mem" else mem_bad,
+    )
+
+    # Patch YAMLStorage.save_embeddings to capture, NOT write to disk.
+    monkeypatch.setattr(
+        otf_cache.YAMLStorage, "save_embeddings",
+        stub_save_embeddings,
+        raising=False,
+    )
+
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    with caplog.at_level(logging.WARNING,
+                        logger="bird_interact_agents.slayer_otf.cache"):
+        asyncio.run(otf_cache._materialise_cache_memories(
+            db="alien", build_dir=build_dir, kb_rows=[{"id": 1}, {"id": 2}],
+        ))
+
+    # Exactly one row persisted — the good one.
+    assert len(persisted) == 1, (
+        f"expected one persisted embedding (the good memory); "
+        f"got {len(persisted)}"
+    )
+    persisted_id = persisted[0].canonical_id
+    assert "good_mem" in persisted_id, (
+        f"expected `good_mem` in canonical_id, got {persisted_id!r}"
+    )
+    # The failed memory's id surfaces in a warning.
+    fail_warns = [r for r in caplog.records
+                  if r.levelno >= logging.WARNING and "bad_mem" in r.message]
+    assert fail_warns, (
+        "expected a WARNING naming the failed memory id so the operator "
+        "can find which memory slayer couldn't embed"
+    )

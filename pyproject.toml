@@ -33,7 +33,7 @@ pydantic-ai = [
 smolagents = ["smolagents>=1.0"]
 agno = ["agno>=2.0"]
 mcp-agent = ["mcp-agent>=0.0.16"]
-slayer = ["motley-slayer[embedding-search]>=0.7.0"]
+slayer = ["motley-slayer[embedding-search]>=0.7.4"]
 # `original` brings in the upstream BIRD-Interact mini_interact_agent harness
 # so we can call its main.py directly via `uv run python -m batch_run_bird_interact.main`.
 original = ["mini-interact-agent"]
@@ -51,7 +51,7 @@ all = [
     "smolagents>=1.0",
     "agno>=2.0",
     "mcp-agent>=0.0.16",
-    "motley-slayer[embedding-search]>=0.7.0",
+    "motley-slayer[embedding-search]>=0.7.4",
     "mini-interact-agent",
     "ray[default]>=2.30",
     "google-cloud-storage>=2.18",
@@ -63,6 +63,16 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "openai",   # used by SAR-audit tests' OpenAI-not-instantiated guard
+]
+# Notebook tooling for the analysis notebooks under `notebooks/` (e.g.
+# query_syntax_rejections.ipynb). Kept out of `all` so cloud/runtime installs
+# stay lean — only needed to (re)run the human-readable analysis notebooks.
+analysis = [
+    "matplotlib>=3.8",
+    "pandas>=2.0",
+    "jupyter>=1.0",
+    "nbformat>=5.9",
+    "nbconvert>=7.0",
 ]
 
 # Upstream `mini-interact-agent` harness, installed from the MotleyAI fork

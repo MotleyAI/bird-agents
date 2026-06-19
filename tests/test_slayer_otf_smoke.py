@@ -345,12 +345,16 @@ async def test_search_service_recency_fallback_under_datasource_filter(
     storage = YAMLStorage(base_dir=str(scratch))
     service = SearchService(storage=storage)
 
+    # DEV-1546: slayer 0.7.2 collapsed per-kind caps into ``max_results``
+    # and the unified ``SearchResponse.results`` list; filter to memory hits.
     response = await service.search(
         datasource=db,
-        max_memories=5, max_example_queries=0, max_entities=0,
+        max_results=5,
+        cypher_filter="MATCH (n:Memory) RETURN n.id AS id",
     )
-    assert response.memories, (
-        f"datasource-scoped recency fallback returned 0 memories — the "
+    memory_hits = [h for h in response.results if h.kind == "memory"]
+    assert memory_hits, (
+        f"datasource-scoped recency fallback returned 0 memory hits — the "
         f"bare {db!r} entity is missing from one or more memories, OR the "
         f"datasource filter is rejecting them. Either way, the agent will "
         f"never see KB content under this mode."
@@ -392,20 +396,24 @@ async def test_search_service_surfaces_kb_memory_under_datasource_filter(
     first = kb_rows[0]
     query = first["knowledge"]
 
+    # DEV-1546: slayer 0.7.2 unified the per-kind buckets into
+    # ``SearchResponse.results``; filter to memory hits.
     response = await service.search(
         question=query, datasource=db,
-        max_memories=10, max_example_queries=0, max_entities=0,
+        max_results=10,
+        cypher_filter="MATCH (n:Memory) RETURN n.id AS id",
     )
 
-    assert response.memories, (
-        f"SearchService returned 0 memories under datasource={db!r} for "
+    memory_hits = [h for h in response.results if h.kind == "memory"]
+    assert memory_hits, (
+        f"SearchService returned 0 memory hits under datasource={db!r} for "
         f"question={query!r}; this is the Codex-flagged datasource-filter "
         f"regression — every KB memory needs the bare {db!r} as its first "
         f"entity to be eligible."
     )
     # And the first KB row's own memory is among the hits.
     expected_id = f"{db}_kb_{first['id']}"
-    hit_ids = {m.id for m in response.memories}
+    hit_ids = {h.id for h in memory_hits}
     assert expected_id in hit_ids, (
         f"expected memory {expected_id!r} in search hits; got {hit_ids!r}"
     )

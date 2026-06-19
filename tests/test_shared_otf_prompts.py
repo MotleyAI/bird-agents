@@ -32,8 +32,12 @@ import pytest
 # `query` tool accepts object OR list of stages; legacy `query_nested`
 # and `query_json` single-string parameter are gone from both v0 and
 # v1 prompts.
-_ONE_SHOT_SHA256 = "3bcb356039343af39cf9d8b5deee13b01ba2d263f3d0ad64bde58fdc2ba22e7e"
-_AINTERACT_SHA256 = "e50f080168a18d8a0102b9b5a2b927d80a4c50899e72c3494b8ec3cf8b169b1f"
+# Re-baselined once more after the origin/main merge layered in
+# DEV-1545 (_TABLE_SET_PROBE), DEV-1546 (_DEDUP_VS_RAW_ROWS), and
+# DEV-1550 (ModelColumn label + memory drill-in paragraph in
+# _SLAYER_TOOLS_BLOCK).
+_ONE_SHOT_SHA256 = "e671aea393338079d2a3d9e6f790bfb194953928069d405183d5cf60c023a647"
+_AINTERACT_SHA256 = "a3fd695c391ba09ce352e677802dacb378cc7ae33e648f747c21f6565aa1c799"
 
 
 def test_slayer_otf_one_shot_unchanged():

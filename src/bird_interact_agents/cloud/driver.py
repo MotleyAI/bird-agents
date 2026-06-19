@@ -316,6 +316,12 @@ def build_manifest(
         "max_depth": args.max_depth,
         "prompt_cache": bool(args.prompt_cache),
         "reasoning_effort": getattr(args, "reasoning_effort", None),
+        # DEV-1545: snake_case key per existing convention; None when
+        # the CLI flag was unset at submit (resubmit / replay logic
+        # checks truthiness to decide whether to re-emit the flag).
+        "user_sim_prompt_version": getattr(
+            args, "user_sim_prompt_version", None
+        ),
         "slayer_setup": getattr(args, "slayer_setup", "pre-encoded"),
         "slayer_storage_root": getattr(
             args, "slayer_storage_root", "/data/slayer_models"
@@ -689,16 +695,21 @@ def submit(args) -> str:
     slayer_dbs: list[str] = []
     if args.query_mode == "slayer":
         slayer_dbs = _check_slayer_setup_present(args)
+    bird_interact_eval, livesqlbench_eval = image.default_grader_eval_roots()
     tag = image.image_tag(
         repo_root,
         paths.audited_gold_root(),
         allow_dirty=args.allow_dirty,
         annotations_root=paths.annotations_root(),
+        bird_interact_evaluation_root=bird_interact_eval,
+        livesqlbench_evaluation_root=livesqlbench_eval,
     )
     image_uri = image.build_and_push(
         tag, repo_root,
         audited_gold_root=paths.audited_gold_root(),
         annotations_root=paths.annotations_root(),
+        bird_interact_evaluation_root=bird_interact_eval,
+        livesqlbench_evaluation_root=livesqlbench_eval,
         force=False,
     )
     # De-bake: upload the benchmark dataset ONCE to its content-hashed GCS
@@ -798,6 +809,14 @@ def _build_job_args(
         job_args.append("--no-prompt-cache")
     if getattr(args, "reasoning_effort", None):
         job_args += ["--reasoning-effort", args.reasoning_effort]
+    # DEV-1545: conditional emission — never emit
+    # `--user-sim-prompt-version None`, which the receiving argparse
+    # would accept as the string "None" and silently shadow the v2
+    # default.
+    if getattr(args, "user_sim_prompt_version", None):
+        job_args += [
+            "--user-sim-prompt-version", args.user_sim_prompt_version,
+        ]
     job_args += [
         "--slayer-setup", getattr(args, "slayer_setup", "pre-encoded"),
         "--slayer-storage-root",
@@ -876,16 +895,21 @@ def submit_annotator(args) -> str:
     )
     prereqs.check(_prereq_args)
     repo_root = submitter_repo_root()
+    bird_interact_eval, livesqlbench_eval = image.default_grader_eval_roots()
     tag = image.image_tag(
         repo_root,
         paths.audited_gold_root(),
         allow_dirty=args.allow_dirty,
         annotations_root=paths.annotations_root(),
+        bird_interact_evaluation_root=bird_interact_eval,
+        livesqlbench_evaluation_root=livesqlbench_eval,
     )
     image_uri = image.build_and_push(
         tag, repo_root,
         audited_gold_root=paths.audited_gold_root(),
         annotations_root=paths.annotations_root(),
+        bird_interact_evaluation_root=bird_interact_eval,
+        livesqlbench_evaluation_root=livesqlbench_eval,
         force=False,
     )
     _check_gold_present(get_benchmark(args.benchmark).name)
@@ -1351,6 +1375,14 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         job_args.append("--no-prompt-cache")
     if manifest.get("reasoning_effort"):
         job_args += ["--reasoning-effort", manifest["reasoning_effort"]]
+    # DEV-1545: old manifests (pre-DEV-1545) lack the key. `.get`
+    # returns None → falsy → flag omitted, so old manifests resubmit
+    # under the v2 default the agent class already carries.
+    if manifest.get("user_sim_prompt_version"):
+        job_args += [
+            "--user-sim-prompt-version",
+            manifest["user_sim_prompt_version"],
+        ]
     job_args += [
         "--slayer-setup", manifest.get("slayer_setup", "pre-encoded"),
         "--slayer-storage-root",

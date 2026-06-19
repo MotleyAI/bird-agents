@@ -65,12 +65,20 @@ def test_query_tool_schema_has_both_source_model_and_queries():
 async def test_query_single_stage_routes_to_query_impl(
     ctx_with_slayer_storage, monkeypatch,
 ):
-    """Caller passes ``source_model`` → wrapper calls ``query_impl``."""
+    """Caller passes ``source_model`` → wrapper builds a SlayerQuery
+    JSON object from the structured args and calls
+    ``_query.query_impl(query_json=<str>, …)`` (the post-DEV-1546
+    signature).
+    """
+    import json as _json
+
     agent_mod = ctx_with_slayer_storage
 
     captured: dict = {}
 
-    async def fake_query_impl(**kwargs):
+    async def fake_query_impl(query_json, **kwargs):
+        captured["query_json"] = query_json
+        captured["parsed"] = _json.loads(query_json)
         captured.update(kwargs)
         return "single-stage result"
 
@@ -91,9 +99,10 @@ async def test_query_single_stage_routes_to_query_impl(
     })
 
     assert "unexpected_nested" not in captured
-    assert captured["source_model"] == "orders"
-    assert captured["dimensions"] == ["status"]
-    assert captured["measures"] == ["amount:sum"]
+    parsed = captured["parsed"]
+    assert parsed["source_model"] == "orders"
+    assert parsed["dimensions"] == ["status"]
+    assert parsed["measures"] == ["amount:sum"]
     assert "single-stage result" in str(result)
 
 

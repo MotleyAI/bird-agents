@@ -467,6 +467,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             executor=_executor,
             benchmark=_bench,
             user_sim_n_asks=_user_sim_n_asks,
+            conditions=task_row.get("conditions"),
         )
 
     report = regrade_run(

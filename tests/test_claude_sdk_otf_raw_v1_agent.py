@@ -326,6 +326,29 @@ async def test_run_task_does_not_whitelist_slayer_tools(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_task_does_not_disallow_slayer_tools(monkeypatch, tmp_path):
+    """DEV-1548 plan: the raw adapter is OUT OF SCOPE — it exposes no
+    SLayer tools, so threading `disallowed_tools=` here would be a
+    confusing no-op carrying false-positive maintenance signal.
+    Asserts the raw adapter's `ClaudeAgentOptions` is left empty on the
+    `disallowed_tools` field (SDK default = empty list)."""
+    from bird_interact_agents.agents.claude_sdk_otf_raw import agent as m
+
+    captured = _stub_env(monkeypatch, m, tmp_path / "store")
+    agent = m.ClaudeSDKOtfRawAgent(model="anthropic/claude-sonnet-4-5")
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "raw", eval_mode="one-shot",
+    )
+    assert captured["options"].disallowed_tools == [], (
+        "raw adapter exposes no SLayer tools; the DEV-1548 plan explicitly "
+        "leaves disallowed_tools= empty (SDK default). A maintainer who "
+        "needs to disallow built-ins should add a SEPARATE constant rather "
+        "than reusing SLAYER_MCP_DISALLOWED_TOOL_NAMES from the slayer-aware "
+        "adapters."
+    )
+
+
+@pytest.mark.asyncio
 async def test_run_task_whitelists_submit_sql_not_submit_query(monkeypatch, tmp_path):
     from bird_interact_agents.agents.claude_sdk_otf_raw_v1 import agent as m
 

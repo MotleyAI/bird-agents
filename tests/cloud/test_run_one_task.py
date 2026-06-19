@@ -275,6 +275,16 @@ async def test_run_one_task_with_runner_caps_runaway_at_wall_clock(
     assert row["duration_s"] < 2.0
 
 
+def test_per_task_timeout_default_is_uncapped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The default is no cap. Originally 900 s; flipped after rate-limited
+    cloud runs showed throttled LLM back-offs were pushing legitimate
+    retries past the cap and converting them into permanent eval_failed."""
+    monkeypatch.delenv("BIRD_INTERACT_PER_TASK_TIMEOUT_S", raising=False)
+    assert run_mod._per_task_timeout_s() <= 0.0
+
+
 @pytest.mark.asyncio
 async def test_run_one_task_with_runner_zero_timeout_disables_cap(
     monkeypatch: pytest.MonkeyPatch,

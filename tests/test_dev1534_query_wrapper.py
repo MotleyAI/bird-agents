@@ -29,8 +29,6 @@ SDK MCP server — that:
 """
 from __future__ import annotations
 
-import inspect
-
 import pytest
 
 
@@ -45,62 +43,11 @@ def test_query_wrapper_module_exists():
     from bird_interact_agents.agents import _query  # noqa: F401
 
 
-def test_query_wrapper_signature_mirrors_slayer_plus_normalize_filters():
-    """The wrapper's signature MUST be the EXACT 14 SLayer MCP query
-    parameters in order PLUS `normalize_filters: bool = True` as the
-    15th (last). Extra params, missing params, wrong order, or wrong
-    defaults all fail this test. This pins the contract: the agent's
-    mid-flight tool call should be byte-compatible with
-    `mcp__slayer__query` except for the new flag.
-
-    SLayer's MCP `query` parameters (verified against slayer 0.7+):
-      source_model, measures, dimensions, filters, time_dimensions,
-      order, limit, offset, whole_periods_only, show_sql, dry_run,
-      explain, format, variables.
-    """
-    from bird_interact_agents.agents._query import query_impl
-
-    sig = inspect.signature(query_impl)
-    expected_order = [
-        "source_model",
-        "measures",
-        "dimensions",
-        "filters",
-        "time_dimensions",
-        "order",
-        "limit",
-        "offset",
-        "whole_periods_only",
-        "show_sql",
-        "dry_run",
-        "explain",
-        "format",
-        "variables",
-        "normalize_filters",
-    ]
-    assert list(sig.parameters) == expected_order, (
-        f"wrapper signature order mismatch:\n"
-        f"  expected: {expected_order}\n"
-        f"  got:      {list(sig.parameters)}"
-    )
-    # Defaults must match the SLayer MCP query contract.
-    defaults = {n: p.default for n, p in sig.parameters.items()}
-    assert defaults["measures"] is None
-    assert defaults["dimensions"] is None
-    assert defaults["filters"] is None
-    assert defaults["time_dimensions"] is None
-    assert defaults["order"] is None
-    assert defaults["limit"] is None
-    assert defaults["offset"] is None
-    assert defaults["whole_periods_only"] is False
-    assert defaults["show_sql"] is False
-    assert defaults["dry_run"] is False
-    assert defaults["explain"] is False
-    assert defaults["format"] == "markdown"
-    assert defaults["variables"] is None
-    assert defaults["normalize_filters"] is True
-    # source_model has no default (required positional).
-    assert sig.parameters["source_model"].default is inspect.Parameter.empty
+# DEV-1546: the 15-kwarg signature pin (one kwarg per SlayerQuery field
+# + normalize_filters) was replaced by a single ``query_json`` arg in
+# DEV-1546 — the wrapper now mirrors ``submit_slayer_query``'s shape so
+# the agent uses one JSON DSL form everywhere. The new signature pin
+# lives in ``tests/test_dev1546_distinct_dim_values.py``.
 
 
 # ---------------------------------------------------------------------------
@@ -110,8 +57,10 @@ def test_query_wrapper_signature_mirrors_slayer_plus_normalize_filters():
 
 @pytest.mark.asyncio
 async def test_query_wrapper_default_normalizes_filters(monkeypatch):
-    """Default (or explicit True): filters are normalized before
-    forwarding to SLayer's MCP `query` function."""
+    """Default (or explicit True): filters inside the JSON DSL are
+    normalized before forwarding to SLayer's MCP `query` function."""
+    import json
+
     from bird_interact_agents.agents import _query
 
     forwarded = {}
@@ -122,8 +71,10 @@ async def test_query_wrapper_default_normalizes_filters(monkeypatch):
     monkeypatch.setattr(_query, "_get_slayer_query_fn", lambda: fake_slayer_query)
 
     result = await _query.query_impl(
-        source_model="widgets",
-        filters=["category == 'Gadgets'"],
+        json.dumps({
+            "source_model": "widgets",
+            "filters": ["category == 'Gadgets'"],
+        }),
     )
     assert forwarded["filters"] == ["lower(trim(category)) == 'gadgets'"]
     assert result == "<formatted result>"
@@ -133,6 +84,8 @@ async def test_query_wrapper_default_normalizes_filters(monkeypatch):
 async def test_query_wrapper_normalize_filters_false_passes_verbatim(monkeypatch):
     """`normalize_filters=False`: the filters list passed to SLayer's
     `query.fn` is the agent's ORIGINAL filters (no lower/trim wrap)."""
+    import json
+
     from bird_interact_agents.agents import _query
 
     forwarded = {}
@@ -143,8 +96,10 @@ async def test_query_wrapper_normalize_filters_false_passes_verbatim(monkeypatch
     monkeypatch.setattr(_query, "_get_slayer_query_fn", lambda: fake_slayer_query)
 
     await _query.query_impl(
-        source_model="widgets",
-        filters=["category == 'Gadgets'"],
+        json.dumps({
+            "source_model": "widgets",
+            "filters": ["category == 'Gadgets'"],
+        }),
         normalize_filters=False,
     )
     assert forwarded["filters"] == ["category == 'Gadgets'"]
@@ -155,6 +110,8 @@ async def test_query_wrapper_does_not_forward_normalize_filters(monkeypatch):
     """`normalize_filters` is OUR directive — it MUST NOT appear in
     the kwargs forwarded to SLayer's MCP `query` function (which knows
     nothing about it)."""
+    import json
+
     from bird_interact_agents.agents import _query
 
     forwarded_kwarg_keys = []
@@ -165,8 +122,10 @@ async def test_query_wrapper_does_not_forward_normalize_filters(monkeypatch):
     monkeypatch.setattr(_query, "_get_slayer_query_fn", lambda: fake_slayer_query)
 
     await _query.query_impl(
-        source_model="widgets",
-        filters=["category == 'X'"],
+        json.dumps({
+            "source_model": "widgets",
+            "filters": ["category == 'X'"],
+        }),
         normalize_filters=False,
     )
     assert "normalize_filters" not in forwarded_kwarg_keys
@@ -174,10 +133,13 @@ async def test_query_wrapper_does_not_forward_normalize_filters(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_query_wrapper_forwards_all_slayer_params(monkeypatch):
-    """All SLayer MCP `query` parameters are forwarded verbatim. We
-    don't re-implement dry_run / explain / show_sql / format /
-    friendly-DB-error handling — SLayer's own `query` function does
-    that and we forward its output."""
+    """All SLayer MCP `query` parameters in the JSON DSL plus the
+    tool-level kwargs (show_sql/dry_run/explain/format) are forwarded
+    verbatim. We don't re-implement dry_run / explain / show_sql /
+    format / friendly-DB-error handling — SLayer's own `query` function
+    does that and we forward its output."""
+    import json
+
     from bird_interact_agents.agents import _query
 
     forwarded = {}
@@ -188,20 +150,24 @@ async def test_query_wrapper_forwards_all_slayer_params(monkeypatch):
     monkeypatch.setattr(_query, "_get_slayer_query_fn", lambda: fake_slayer_query)
 
     await _query.query_impl(
-        source_model="widgets",
-        dimensions=["category"],
-        measures=[{"name": "amount", "agg": "sum"}],
-        filters=["region == 'EU'"],
-        time_dimensions=[{"dimension": "created_at", "granularity": "month"}],
-        order=[{"dimension": "category", "direction": "asc"}],
-        limit=10,
-        offset=5,
-        whole_periods_only=True,
+        json.dumps({
+            "source_model": "widgets",
+            "dimensions": ["category"],
+            "measures": [{"name": "amount", "agg": "sum"}],
+            "filters": ["region == 'EU'"],
+            "time_dimensions": [
+                {"dimension": "created_at", "granularity": "month"},
+            ],
+            "order": [{"dimension": "category", "direction": "asc"}],
+            "limit": 10,
+            "offset": 5,
+            "whole_periods_only": True,
+            "variables": {"k": "v"},
+        }),
         show_sql=True,
         dry_run=True,
         explain=True,
         format="json",
-        variables={"k": "v"},
         normalize_filters=False,
     )
     assert forwarded["source_model"] == "widgets"
@@ -228,6 +194,8 @@ async def test_query_wrapper_returns_slayer_output_verbatim(monkeypatch):
     `query` function returns (markdown/json/csv/SQL/explain/error) is
     the wrapper's return value, byte-for-byte. A wrapper that prepends/
     appends/reformats output must fail this exact-match assertion."""
+    import json
+
     from bird_interact_agents.agents import _query
 
     fixture = "## arbitrary slayer-shaped markdown\n| col | val |\n|---|---|\n| a | 1 |"
@@ -237,14 +205,16 @@ async def test_query_wrapper_returns_slayer_output_verbatim(monkeypatch):
 
     monkeypatch.setattr(_query, "_get_slayer_query_fn", lambda: fake_slayer_query)
 
-    result = await _query.query_impl(source_model="w")
+    result = await _query.query_impl(json.dumps({"source_model": "w"}))
     assert result == fixture
 
 
 @pytest.mark.asyncio
 async def test_query_wrapper_filters_none_default_safe(monkeypatch):
-    """`filters` is Optional[List[str]] — None must not blow up the
-    normalizer."""
+    """`filters` is Optional[List[str]] — None (or omitted from the
+    JSON) must not blow up the normalizer."""
+    import json
+
     from bird_interact_agents.agents import _query
 
     forwarded = {}
@@ -254,7 +224,7 @@ async def test_query_wrapper_filters_none_default_safe(monkeypatch):
 
     monkeypatch.setattr(_query, "_get_slayer_query_fn", lambda: fake_slayer_query)
 
-    await _query.query_impl(source_model="w")
+    await _query.query_impl(json.dumps({"source_model": "w"}))
     assert forwarded.get("filters") is None
 
 
@@ -567,14 +537,17 @@ def test_otf_slayer_pre_submit_gate_accepts_unified_query_wrapper():
 # ---------------------------------------------------------------------------
 
 
-def test_query_wrapper_tool_schema_only_requires_source_model():
-    """Post-PR-review (CodeRabbit/Codex): the SDK tool's INPUT SCHEMA must
-    be an explicit JSON Schema dict declaring ONLY `source_model` as
-    required. A flat `{key: type}` schema would make `claude_agent_sdk`
-    convert it to `required: list(properties.keys())` (see
-    `_build_schema`), forcing every caller to supply every parameter and
-    breaking SLayer MCP `query`'s actual contract (only `source_model` is
-    positional in the upstream signature)."""
+def test_query_wrapper_tool_schema_accepts_unified_shape():
+    """DEV-1555 (CR r1 / O1) unification: the v1 ``query`` wrapper
+    accepts BOTH a single SlayerQuery (set ``source_model`` + projection
+    fields) AND a nested-DAG list (set ``queries``). The schema's
+    ``required`` is empty; the wrapper enforces ``source_model XOR
+    queries`` at runtime so the error message is more useful than a
+    JSON-Schema validation failure.
+
+    This supersedes the pre-unification pin "only ``query_json``
+    required" that lived here briefly (DEV-1546 follow-up).
+    """
     from bird_interact_agents.agents.claude_sdk import agent as agent_mod
 
     tool = agent_mod.query
@@ -589,23 +562,15 @@ def test_query_wrapper_tool_schema_only_requires_source_model():
         f"{schema!r}"
     )
     required = schema.get("required", [])
-    # DEV-1555 (CR r1 / O1): the v1 ``query`` wrapper now accepts BOTH a
-    # single SlayerQuery object AND a list of stage objects (the
-    # nested-DAG shape the v1 prompt advertises and SLayer-side
-    # exposes). The schema's ``required`` is empty; the wrapper's
-    # handler enforces ``source_model XOR queries`` at runtime so the
-    # error message is more useful than a JSON-Schema validation
-    # failure. The single-stage `source_model` and nested-DAG
-    # `queries` keys must both appear in `properties`.
     assert required == [], (
         f"query wrapper must accept EITHER source_model OR queries — "
         f"`required` must be empty; got: {required!r}"
     )
-    # Every other SLayer param + `normalize_filters` must still be in
-    # properties so the agent knows they exist.
+    # Every SLayer projection param + `queries` array + `normalize_filters`
+    # must be in properties so the agent knows the surface.
     props = schema["properties"]
     for name in (
-        "source_model", "measures", "dimensions", "filters",
+        "source_model", "queries", "measures", "dimensions", "filters",
         "time_dimensions", "order", "limit", "offset",
         "whole_periods_only", "show_sql", "dry_run", "explain",
         "format", "variables", "normalize_filters",
@@ -614,10 +579,11 @@ def test_query_wrapper_tool_schema_only_requires_source_model():
     # Booleans declared as `boolean`, not anything else.
     assert props["normalize_filters"]["type"] == "boolean"
     assert props["normalize_filters"].get("default") is True
+    assert props["queries"].get("type") == "array"
     # `source_model` must accept BOTH a model-name string AND an inline
     # ModelExtension object (SLayer's MCP query signature is
     # `str | ModelExtension | SlayerModel`; SLAYER_A_INTERACT explicitly
-    # documents the inline-object form). Codex round-3 catch.
+    # documents the inline-object form).
     sm = props["source_model"]
     one_of = sm.get("oneOf")
     assert isinstance(one_of, list) and len(one_of) >= 2, (
@@ -676,7 +642,9 @@ async def test_query_wrapper_does_not_decrement_budget(monkeypatch):
     status = agent_mod._ctx_var.get()["status"]
     start = status.remaining_budget
 
-    await agent_mod.query.handler({"source_model": "w"})
+    import json as _json
+
+    await agent_mod.query.handler({"query_json": _json.dumps({"source_model": "w"})})
 
     assert status.remaining_budget == start, (
         f"query wrapper should be free; budget moved "
