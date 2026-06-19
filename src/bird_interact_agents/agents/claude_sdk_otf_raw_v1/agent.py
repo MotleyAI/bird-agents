@@ -1,13 +1,12 @@
-"""Claude Agent SDK raw-SQL OTF agent (mini-interact / a-interact flavor).
+"""Claude Agent SDK raw-SQL OTF agent (livesqlbench / one-shot flavor).
 
-A counterpart to ``claude_sdk_otf_ainteract`` that uses no SLayer at all —
-the agent issues raw SQL via the bird-interact tool suite and submits via
-``submit_sql``. Bound to ``--dataset mini_interact --mode a-interact
---query-mode raw``.
+A counterpart to ``claude_sdk_otf`` that uses no SLayer at all — the agent
+issues raw SQL via the bird-interact tool suite and submits via ``submit_sql``.
+Bound to ``--dataset livesqlbench --mode one-shot --query-mode raw``.
 
-Adds the same hard ``ask_user``-before-``submit_sql`` discipline as the
-slayer ainteract variant: Rule 0 plus per-task PreToolUse/PostToolUse guards
-built by ``_make_ask_user_guards``.
+Prompt structure mirrors ``claude_sdk_otf`` through shared ``_shared_otf_prompts``
+constants; the exploration + test + mutation-check discipline is the same, but
+operates on raw SQL instead of a SLayer model store.
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ from __future__ import annotations
 import logging
 
 from claude_agent_sdk import (
+    AgentDefinition,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     HookMatcher,
@@ -24,7 +24,7 @@ from claude_agent_sdk import (
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
     SdkUsageTracker,
-    ask_user,
+    accumulate_assistant_usage,
     execute_sql,
     get_all_column_meanings,
     get_all_external_knowledge_names,
@@ -34,18 +34,40 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     get_schema,
     submit_sql,
 )
-from bird_interact_agents.agents.claude_sdk_otf.agent import (
+from bird_interact_agents.agents.claude_sdk.context_budget import (
+    context_window_for,
+    make_context_budget_hook,
+    make_wall_clock_budget_hook,
+    per_task_timeout_s,
+    update_context_tokens,
+    update_wall_clock_start,
+)
+from bird_interact_agents.agents.claude_sdk.partition import (
+    DISCOVERY_AGENT_NAME,
+    DISCOVERY_MAX_TURNS,
+    MAIN_WORKFLOW_NOTE,
+    build_discovery_prompt,
+    make_partition_deny_hook,
+)
+from bird_interact_agents.agents.claude_sdk.sdk_env import (
+    disable_cli_telemetry_env,
+)
+from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
     _MAX_TURNS,
-    _make_turn_budget_hook,
+    _TURN_BUDGET_WARN_WITHIN,
+    _make_turn_budget_hook as _make_turn_budget_hook_base,
 )
-from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.prompts import (
-    RAW_OTF_AINTERACT,
-)
+from bird_interact_agents.agents.claude_sdk_otf_raw_v1.prompts import RAW_OTF_ONE_SHOT
 from bird_interact_agents.benchmark import get_benchmark
-from bird_interact_agents.model_string import is_anthropic, native_model_id
+from bird_interact_agents.model_string import native_model_id
+from bird_interact_agents.provider_registry import (
+    get_provider,
+    is_supported_agent_model,
+    requires_thinking,
+    sdk_session_env,
+)
 from bird_interact_agents.harness import (
     SampleStatus,
-    _ambiguity_count,
     finalize_result_row,
     load_db_data_if_needed,
     materialize_task_db,
@@ -54,18 +76,20 @@ from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
 
-# Full MCP tool name of the native ask_user tool — used as the PostToolUse
-# counter's matcher and the nag hook's race-skip predicate.
-_ASK_USER_TOOL = "mcp__bird-interact-tools__ask_user"
 
-# Full MCP tool name of the raw submission tool — gated by the PreToolUse hook.
-_SUBMIT_SQL_TOOL = "mcp__bird-interact-tools__submit_sql"
+def _make_turn_budget_hook(
+    max_turns: int,
+    warn_within: int = _TURN_BUDGET_WARN_WITHIN,
+    submit_tool: str = "submit_sql",
+):
+    """Thin wrapper around the shared hook; defaults ``submit_tool`` to
+    ``submit_sql`` (raw agents never have ``submit_query``).
+    """
+    return _make_turn_budget_hook_base(max_turns, warn_within, submit_tool)
 
-# How often (in total tool calls without ask_user) the nag fires.
-_NAG_EVERY = 10
 
-# All 7 BIRD raw-exploration tools + ask_user + raw submission tool.
-_AINTERACT_RAW_TOOLS = [
+# All 7 BIRD raw-exploration tools + the raw submission tool.
+_RAW_TOOLS = [
     execute_sql,
     get_schema,
     get_all_column_meanings,
@@ -73,101 +97,61 @@ _AINTERACT_RAW_TOOLS = [
     get_all_external_knowledge_names,
     get_knowledge_definition,
     get_all_knowledge_definitions,
-    ask_user,
     submit_sql,
 ]
 
 
-def _make_ask_user_guards():
-    """Build per-task hook callables that enforce ask-user-before-submit_sql.
-
-    Returns ``(pre_submit_gate, post_ask_counter, post_nag)`` sharing a
-    single per-task ``state`` closure. The factory MUST be invoked inside
-    ``run_task`` (per task), NOT stored on the agent — a single agent
-    instance is reused across concurrent tasks via ``make_runner``, and
-    cross-task counter bleed would let one task's submit pass through
-    another task's denial gate.
-
-    The gate is scoped to ``submit_sql`` only; ``submit_query`` (if ever
-    called) is not denied.
-    """
-    state = {"ask_count": 0, "tool_calls": 0}
-
-    async def pre_submit_gate(input_data, tool_use_id, context):
-        if input_data.get("tool_name") != _SUBMIT_SQL_TOOL:
-            return {}
-        if state["ask_count"] == 0:
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": (
-                        "You have not called ask_user. The user-sim has the "
-                        "masked-KB ground truth that is unrecoverable from "
-                        "knowledge definitions alone. Identify your single "
-                        "most-uncertain operationalisation choice (threshold / "
-                        "value list / aggregation / sort / unit / rounding) "
-                        "and call ask_user on it before submitting."
-                    ),
-                }
-            }
-        return {}
-
-    async def post_ask_counter(input_data, tool_use_id, context):
-        state["ask_count"] += 1
-        return {}
-
-    async def post_nag(input_data, tool_use_id, context):
-        if input_data.get("tool_name") == _ASK_USER_TOOL:
-            return {}
-        state["tool_calls"] += 1
-        if state["ask_count"] == 0 and state["tool_calls"] % _NAG_EVERY == 0:
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": "PostToolUse",
-                    "additionalContext": (
-                        f"[BENCHMARK NOTE] You have made {state['tool_calls']} "
-                        "tool calls without consulting the user-sim. The "
-                        "user-sim has the masked-KB ground truth — clarify "
-                        "your single most uncertain operationalisation choice "
-                        "before continuing."
-                    ),
-                }
-            }
-        return {}
-
-    return pre_submit_gate, post_ask_counter, post_nag
-
-
 def _select_tools(eval_mode: str) -> list:
-    if eval_mode != "a-interact":
+    if eval_mode != "one-shot":
         raise ValueError(
-            "claude_sdk_otf_ainteract_raw supports only eval_mode='a-interact'; "
+            "claude_sdk_otf_raw supports only eval_mode='one-shot'; "
             f"got {eval_mode!r}"
         )
-    return list(_AINTERACT_RAW_TOOLS)
+    return list(_RAW_TOOLS)
+
+
+# DEV-1555: discovery/main tool partition (raw flavor). Discovery owns
+# schema/column/KB introspection plus execute_sql for data profiling; the
+# main loop keeps execute_sql (candidate verification) and submit_sql.
+_RAW_PREFIX = "mcp__bird-interact-tools__"
+
+DISCOVERY_TOOLS = [
+    f"{_RAW_PREFIX}get_schema",
+    f"{_RAW_PREFIX}get_all_column_meanings",
+    f"{_RAW_PREFIX}get_column_meaning",
+    f"{_RAW_PREFIX}get_all_external_knowledge_names",
+    f"{_RAW_PREFIX}get_knowledge_definition",
+    f"{_RAW_PREFIX}get_all_knowledge_definitions",
+    f"{_RAW_PREFIX}execute_sql",
+]
+
+MAIN_TOOLS = [
+    "Task",
+    f"{_RAW_PREFIX}execute_sql",
+    f"{_RAW_PREFIX}submit_sql",
+]
 
 
 def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
-    if eval_mode != "a-interact":
+    if eval_mode != "one-shot":
         raise ValueError(
-            "claude_sdk_otf_ainteract_raw supports only eval_mode='a-interact'; "
+            "claude_sdk_otf_raw supports only eval_mode='one-shot'; "
             f"got {eval_mode!r}"
         )
-    return RAW_OTF_AINTERACT.format(
+    return RAW_OTF_ONE_SHOT.format(
         budget=budget,
         db_name=task_data["selected_database"],
         user_query=task_data["amb_user_query"],
     )
 
 
-class ClaudeSDKOtfAInteractRawAgent:
-    """SystemAgent: Claude SDK raw-SQL OTF agent with enforced ask-user discipline.
+class ClaudeSDKOtfRawAgent:
+    """SystemAgent: Claude SDK raw-SQL OTF agent.
 
     Anthropic-only (the SDK is locked to Anthropic). Bound to
-    ``--dataset mini_interact --mode a-interact --query-mode raw``. No SLayer
-    MCP server. Mismatched dataset, eval_mode, or query_mode is rejected at
-    the agent boundary.
+    ``--dataset livesqlbench --mode one-shot --query-mode raw``. No SLayer
+    MCP server, no slayer_setup requirement. Mismatched dataset, eval_mode,
+    or query_mode is rejected at the agent boundary.
     """
 
     _EFFORT_CHOICES = ("low", "medium", "high", "max")
@@ -191,37 +175,37 @@ class ClaudeSDKOtfAInteractRawAgent:
         data_path_base: str,
         budget: float,
         query_mode: str,
-        eval_mode: str = "a-interact",
+        eval_mode: str = "one-shot",
         user_sim_model: str = "anthropic/claude-haiku-4-5-20251001",
         user_sim_prompt_version: str = "v2",
     ) -> dict:
         if query_mode != "raw":
             raise ValueError(
-                "claude_sdk_otf_ainteract_raw supports only --query-mode raw; "
+                "claude_sdk_otf_raw supports only --query-mode raw; "
                 f"got {query_mode!r}"
             )
-        if eval_mode != "a-interact":
+        if eval_mode != "one-shot":
             raise ValueError(
-                "claude_sdk_otf_ainteract_raw supports only --mode a-interact; "
+                "claude_sdk_otf_raw supports only --mode one-shot; "
                 f"got {eval_mode!r}"
             )
 
         dataset = task_data.get("dataset")
         if not dataset:
             raise ValueError("task_data missing required 'dataset' field")
-        if get_benchmark(dataset).one_shot:
+        if not get_benchmark(dataset).one_shot:
             raise ValueError(
-                "claude_sdk_otf_ainteract_raw requires an a-interact benchmark; "
+                "claude_sdk_otf_raw requires a one-shot benchmark; "
                 f"got dataset={dataset!r}"
             )
 
         instance_id = task_data["instance_id"]
         db_name = task_data["selected_database"]
 
-        if not is_anthropic(self.model):
+        if not is_supported_agent_model(self.model):
             msg = (
-                f"claude_sdk_otf_ainteract_raw requires an Anthropic model; "
-                f"got {self.model!r}. "
+                f"claude_sdk_otf_raw requires an Anthropic or registry open-weight "
+                f"model; got {self.model!r}. "
                 "Skipped — use --framework pydantic_ai for non-Anthropic models."
             )
             logger.warning("[%s] %s", instance_id, msg)
@@ -247,8 +231,6 @@ class ClaudeSDKOtfAInteractRawAgent:
             total_budget=budget,
         )
 
-        max_asks = _ambiguity_count(task_data) + 3
-
         accum = TokenUsage()
         usage_tracker = SdkUsageTracker(accum, self.model)
         trajectory: list[dict] = []
@@ -265,8 +247,6 @@ class ClaudeSDKOtfAInteractRawAgent:
                 "result": None,
                 "eval_mode": eval_mode,
                 "query_mode": query_mode,
-                "max_asks": max_asks,
-                "asks_used": 0,
                 "usage": accum,
             }
             _ctx_var.set(ctx_dict)
@@ -277,37 +257,81 @@ class ClaudeSDKOtfAInteractRawAgent:
             server = create_sdk_mcp_server(
                 name="bird-interact-tools", version="1.0.0", tools=tools,
             )
-            tool_names = [f"mcp__bird-interact-tools__{t.name}" for t in tools]
 
-            pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
+            # DEV-1555: discovery/main split (see claude_sdk_otf.agent).
+            discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
+            context_state: dict = {}
+            update_wall_clock_start(context_state)
+            (
+                wall_clock_warning,
+                wall_clock_deny,
+            ) = make_wall_clock_budget_hook(
+                context_state,
+                budget_s=per_task_timeout_s(),
+                submit_tool="submit_sql",
+            )
+
+            # DEV-1555 Stage 2: registry open-weight backends get a
+            # per-run session env (ANTHROPIC_BASE_URL + auth token);
+            # anthropic models keep the SDK defaults untouched.
+            # DEV-1561: always layer in the disable-CLI-telemetry vars so
+            # the bundled `claude` Node binary doesn't burn 5-10 min on
+            # outbound telemetry / error-reporting / auto-updater calls
+            # during the initialize handshake.
+            _session_env_kwargs: dict = {"env": disable_cli_telemetry_env()}
+            if get_provider(self.model) is not None:
+                _session_env_kwargs["env"].update(sdk_session_env(self.model))
+                if requires_thinking(self.model):
+                    # Probed live: e.g. kimi-k2.7-code rejects requests
+                    # without thinking enabled.
+                    _session_env_kwargs["thinking"] = {
+                        "type": "enabled", "budget_tokens": 8192,
+                    }
 
             options = ClaudeAgentOptions(
-                system_prompt=prompt,
+                **_session_env_kwargs,
+                system_prompt=prompt + MAIN_WORKFLOW_NOTE,
                 mcp_servers={"bird-interact-tools": server},
-                allowed_tools=tool_names,
-                tools=[],
+                allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
+                tools=["Task"],
                 setting_sources=[],
+                agents={
+                    DISCOVERY_AGENT_NAME: AgentDefinition(
+                        description=(
+                            "Schema/data introspection for the current task; "
+                            "returns a structured handoff report."
+                        ),
+                        prompt=build_discovery_prompt(with_ask_user=False),
+                        tools=list(DISCOVERY_TOOLS),
+                        maxTurns=DISCOVERY_MAX_TURNS,
+                    ),
+                },
                 model=native_model_id(self.model),
                 effort=self.reasoning_effort,
                 max_turns=_MAX_TURNS,
                 hooks={
                     "PreToolUse": [
                         HookMatcher(
-                            matcher=_SUBMIT_SQL_TOOL,
-                            hooks=[pre_submit_gate],
+                            matcher="|".join(discovery_only),
+                            hooks=[make_partition_deny_hook(discovery_only)],
                         ),
+                        HookMatcher(hooks=[wall_clock_deny]),
                     ],
                     "PostToolUse": [
-                        HookMatcher(
-                            matcher=_ASK_USER_TOOL,
-                            hooks=[post_ask_counter],
-                        ),
-                        HookMatcher(hooks=[post_nag]),
                         HookMatcher(
                             hooks=[_make_turn_budget_hook(
                                 _MAX_TURNS, submit_tool="submit_sql",
                             )],
                         ),
+                        HookMatcher(
+                            hooks=[
+                                make_context_budget_hook(
+                                    context_state,
+                                    context_window_for(self.model),
+                                )
+                            ]
+                        ),
+                        HookMatcher(hooks=[wall_clock_warning]),
                     ],
                 },
             )
@@ -319,11 +343,12 @@ class ClaudeSDKOtfAInteractRawAgent:
                         {"type": str(type(msg).__name__), "data": str(msg)[:500]}
                     )
                     usage_tracker.observe(msg)
+                    update_context_tokens(context_state, msg)
             usage_tracker.finalize()
         except Exception as e:
             usage_tracker.finalize()
             logger.error(
-                "claude_sdk_otf_ainteract_raw error on %s: %s",
+                "claude_sdk_otf_raw error on %s: %s",
                 instance_id, e, exc_info=True,
             )
             result = (ctx_dict or {}).get("result") or {}
@@ -344,9 +369,13 @@ class ClaudeSDKOtfAInteractRawAgent:
                     "phase2_observation": result.get("phase2_observation"),
                     "trajectory": trajectory,
                     "error": str(e),
+                    # DEV-1535 follow-up: see claude_sdk_otf/agent.py
+                    # — symmetry with the a-interact variant.
                     "usage": {
                         **accum.model_dump(),
-                        "n_ask_user_calls": (ctx_dict or {}).get("asks_used", 0),
+                        "n_ask_user_calls": (ctx_dict or {}).get(
+                            "asks_used", 0,
+                        ),
                     },
                     "phase1_observation_audited": result.get("phase1_observation_audited"),
                     "phase1_observation_original": result.get("phase1_observation_original"),
@@ -375,7 +404,9 @@ class ClaudeSDKOtfAInteractRawAgent:
                 "error": None,
                 "usage": {
                     **accum.model_dump(),
-                    "n_ask_user_calls": ctx_dict.get("asks_used", 0),
+                    "n_ask_user_calls": (ctx_dict or {}).get(
+                        "asks_used", 0,
+                    ),
                 },
                 "phase1_observation_audited": result.get("phase1_observation_audited"),
                 "phase1_observation_original": result.get("phase1_observation_original"),

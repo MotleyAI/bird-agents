@@ -260,8 +260,8 @@ def test_context_hook_callback_name_is_pinned():
 @pytest.mark.parametrize(
     "module_name,submit_tool",
     [
-        ("claude_sdk_otf_ainteract", "mcp__bird-interact-tools__submit_query"),
-        ("claude_sdk_otf_ainteract_raw", "mcp__bird-interact-tools__submit_sql"),
+        ("claude_sdk_otf_ainteract_v1", "mcp__bird-interact-tools__submit_query"),
+        ("claude_sdk_otf_ainteract_raw_v1", "mcp__bird-interact-tools__submit_sql"),
     ],
 )
 async def test_ask_gate_satisfied_by_subagent_originated_ask(

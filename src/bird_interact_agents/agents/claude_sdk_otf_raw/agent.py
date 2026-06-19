@@ -14,7 +14,6 @@ from __future__ import annotations
 import logging
 
 from claude_agent_sdk import (
-    AgentDefinition,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     HookMatcher,
@@ -24,7 +23,6 @@ from claude_agent_sdk import (
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
     SdkUsageTracker,
-    accumulate_assistant_usage,
     execute_sql,
     get_all_column_meanings,
     get_all_external_knowledge_names,
@@ -34,24 +32,6 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     get_schema,
     submit_sql,
 )
-from bird_interact_agents.agents.claude_sdk.context_budget import (
-    context_window_for,
-    make_context_budget_hook,
-    make_wall_clock_budget_hook,
-    per_task_timeout_s,
-    update_context_tokens,
-    update_wall_clock_start,
-)
-from bird_interact_agents.agents.claude_sdk.partition import (
-    DISCOVERY_AGENT_NAME,
-    DISCOVERY_MAX_TURNS,
-    MAIN_WORKFLOW_NOTE,
-    build_discovery_prompt,
-    make_partition_deny_hook,
-)
-from bird_interact_agents.agents.claude_sdk.sdk_env import (
-    disable_cli_telemetry_env,
-)
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
     _TURN_BUDGET_WARN_WITHIN,
@@ -59,13 +39,7 @@ from bird_interact_agents.agents.claude_sdk_otf.agent import (
 )
 from bird_interact_agents.agents.claude_sdk_otf_raw.prompts import RAW_OTF_ONE_SHOT
 from bird_interact_agents.benchmark import get_benchmark
-from bird_interact_agents.model_string import native_model_id
-from bird_interact_agents.provider_registry import (
-    get_provider,
-    is_supported_agent_model,
-    requires_thinking,
-    sdk_session_env,
-)
+from bird_interact_agents.model_string import is_anthropic, native_model_id
 from bird_interact_agents.harness import (
     SampleStatus,
     finalize_result_row,
@@ -108,28 +82,6 @@ def _select_tools(eval_mode: str) -> list:
             f"got {eval_mode!r}"
         )
     return list(_RAW_TOOLS)
-
-
-# DEV-1555: discovery/main tool partition (raw flavor). Discovery owns
-# schema/column/KB introspection plus execute_sql for data profiling; the
-# main loop keeps execute_sql (candidate verification) and submit_sql.
-_RAW_PREFIX = "mcp__bird-interact-tools__"
-
-DISCOVERY_TOOLS = [
-    f"{_RAW_PREFIX}get_schema",
-    f"{_RAW_PREFIX}get_all_column_meanings",
-    f"{_RAW_PREFIX}get_column_meaning",
-    f"{_RAW_PREFIX}get_all_external_knowledge_names",
-    f"{_RAW_PREFIX}get_knowledge_definition",
-    f"{_RAW_PREFIX}get_all_knowledge_definitions",
-    f"{_RAW_PREFIX}execute_sql",
-]
-
-MAIN_TOOLS = [
-    "Task",
-    f"{_RAW_PREFIX}execute_sql",
-    f"{_RAW_PREFIX}submit_sql",
-]
 
 
 def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
@@ -202,10 +154,9 @@ class ClaudeSDKOtfRawAgent:
         instance_id = task_data["instance_id"]
         db_name = task_data["selected_database"]
 
-        if not is_supported_agent_model(self.model):
+        if not is_anthropic(self.model):
             msg = (
-                f"claude_sdk_otf_raw requires an Anthropic or registry open-weight "
-                f"model; got {self.model!r}. "
+                f"claude_sdk_otf_raw requires an Anthropic model; got {self.model!r}. "
                 "Skipped — use --framework pydantic_ai for non-Anthropic models."
             )
             logger.warning("[%s] %s", instance_id, msg)
@@ -257,81 +208,24 @@ class ClaudeSDKOtfRawAgent:
             server = create_sdk_mcp_server(
                 name="bird-interact-tools", version="1.0.0", tools=tools,
             )
-
-            # DEV-1555: discovery/main split (see claude_sdk_otf.agent).
-            discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
-            context_state: dict = {}
-            update_wall_clock_start(context_state)
-            (
-                wall_clock_warning,
-                wall_clock_deny,
-            ) = make_wall_clock_budget_hook(
-                context_state,
-                budget_s=per_task_timeout_s(),
-                submit_tool="submit_sql",
-            )
-
-            # DEV-1555 Stage 2: registry open-weight backends get a
-            # per-run session env (ANTHROPIC_BASE_URL + auth token);
-            # anthropic models keep the SDK defaults untouched.
-            # DEV-1561: always layer in the disable-CLI-telemetry vars so
-            # the bundled `claude` Node binary doesn't burn 5-10 min on
-            # outbound telemetry / error-reporting / auto-updater calls
-            # during the initialize handshake.
-            _session_env_kwargs: dict = {"env": disable_cli_telemetry_env()}
-            if get_provider(self.model) is not None:
-                _session_env_kwargs["env"].update(sdk_session_env(self.model))
-                if requires_thinking(self.model):
-                    # Probed live: e.g. kimi-k2.7-code rejects requests
-                    # without thinking enabled.
-                    _session_env_kwargs["thinking"] = {
-                        "type": "enabled", "budget_tokens": 8192,
-                    }
+            tool_names = [f"mcp__bird-interact-tools__{t.name}" for t in tools]
 
             options = ClaudeAgentOptions(
-                **_session_env_kwargs,
-                system_prompt=prompt + MAIN_WORKFLOW_NOTE,
+                system_prompt=prompt,
                 mcp_servers={"bird-interact-tools": server},
-                allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
-                tools=["Task"],
+                allowed_tools=tool_names,
+                tools=[],
                 setting_sources=[],
-                agents={
-                    DISCOVERY_AGENT_NAME: AgentDefinition(
-                        description=(
-                            "Schema/data introspection for the current task; "
-                            "returns a structured handoff report."
-                        ),
-                        prompt=build_discovery_prompt(with_ask_user=False),
-                        tools=list(DISCOVERY_TOOLS),
-                        maxTurns=DISCOVERY_MAX_TURNS,
-                    ),
-                },
                 model=native_model_id(self.model),
                 effort=self.reasoning_effort,
                 max_turns=_MAX_TURNS,
                 hooks={
-                    "PreToolUse": [
-                        HookMatcher(
-                            matcher="|".join(discovery_only),
-                            hooks=[make_partition_deny_hook(discovery_only)],
-                        ),
-                        HookMatcher(hooks=[wall_clock_deny]),
-                    ],
                     "PostToolUse": [
                         HookMatcher(
                             hooks=[_make_turn_budget_hook(
                                 _MAX_TURNS, submit_tool="submit_sql",
                             )],
                         ),
-                        HookMatcher(
-                            hooks=[
-                                make_context_budget_hook(
-                                    context_state,
-                                    context_window_for(self.model),
-                                )
-                            ]
-                        ),
-                        HookMatcher(hooks=[wall_clock_warning]),
                     ],
                 },
             )
@@ -343,7 +237,6 @@ class ClaudeSDKOtfRawAgent:
                         {"type": str(type(msg).__name__), "data": str(msg)[:500]}
                     )
                     usage_tracker.observe(msg)
-                    update_context_tokens(context_state, msg)
             usage_tracker.finalize()
         except Exception as e:
             usage_tracker.finalize()

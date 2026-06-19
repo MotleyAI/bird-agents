@@ -406,7 +406,11 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
     lazily on first task.
     """
     fw = args.framework
-    if fw in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
+    # DEV-1555 v0/v1: raw flavours of either version use no SLayer uploads.
+    if fw in (
+        "claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw",
+        "claude_sdk_otf_raw_v1", "claude_sdk_otf_ainteract_raw_v1",
+    ):
         return []
     setup = args.slayer_setup
     benchmark = _submit_benchmark(args)

@@ -30,10 +30,10 @@ from bird_interact_agents.agents.claude_sdk.sdk_env import (
     disable_cli_telemetry_env,
 )
 
-from tests import test_claude_sdk_otf_agent as otf_t
-from tests import test_claude_sdk_otf_ainteract_agent as ainteract_t
-from tests import test_claude_sdk_otf_ainteract_raw_agent as ainteract_raw_t
-from tests import test_claude_sdk_otf_raw_agent as raw_t
+from tests import test_claude_sdk_otf_v1_agent as otf_t
+from tests import test_claude_sdk_otf_ainteract_v1_agent as ainteract_t
+from tests import test_claude_sdk_otf_ainteract_raw_v1_agent as ainteract_raw_t
+from tests import test_claude_sdk_otf_raw_v1_agent as raw_t
 
 
 _EXPECTED_KEYS = {
@@ -71,20 +71,20 @@ def test_disable_cli_telemetry_env_returns_fresh_copy():
 
 _CASES = [
     pytest.param(
-        otf_t, "claude_sdk_otf", "ClaudeSDKOtfAgent", "slayer", "one-shot",
+        otf_t, "claude_sdk_otf_v1", "ClaudeSDKOtfAgent", "slayer", "one-shot",
         id="otf",
     ),
     pytest.param(
-        ainteract_t, "claude_sdk_otf_ainteract", "ClaudeSDKOtfAInteractAgent",
+        ainteract_t, "claude_sdk_otf_ainteract_v1", "ClaudeSDKOtfAInteractAgent",
         "slayer", "a-interact",
         id="ainteract",
     ),
     pytest.param(
-        raw_t, "claude_sdk_otf_raw", "ClaudeSDKOtfRawAgent", "raw", "one-shot",
+        raw_t, "claude_sdk_otf_raw_v1", "ClaudeSDKOtfRawAgent", "raw", "one-shot",
         id="raw",
     ),
     pytest.param(
-        ainteract_raw_t, "claude_sdk_otf_ainteract_raw",
+        ainteract_raw_t, "claude_sdk_otf_ainteract_raw_v1",
         "ClaudeSDKOtfAInteractRawAgent", "raw", "a-interact",
         id="ainteract_raw",
     ),

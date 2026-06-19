@@ -124,7 +124,8 @@ def _validate_framework_mode(
     benchmark (or ``oracle`` with a one-shot benchmark) would pass the
     dataset-mode gate but fail deep inside the agent at task runtime.
     """
-    if framework != "claude_sdk":
+    # DEV-1555 v0/v1: validate both aggregator tokens.
+    if framework not in ("claude_sdk", "claude_sdk_v1"):
         return
     if mode == "oracle":
         return  # oracle bypasses the agent entirely (run_oracle_task)
@@ -132,7 +133,7 @@ def _validate_framework_mode(
     supported = ("one-shot",) if b.one_shot else ("a-interact",)
     if mode not in supported:
         raise ValueError(
-            f"--framework claude_sdk with {b.name!r} only supports "
+            f"--framework {framework} with {b.name!r} only supports "
             f"--mode {' / '.join(supported)}; got {mode!r}. "
             f"The modes {set(b.supported_modes) - set(supported)} listed in "
             f"the benchmark spec are not yet wired to a claude_sdk agent variant."
@@ -157,7 +158,8 @@ def _maybe_force_wipe_otf(
     """
     if not otf_rebuild:
         return
-    if framework != "claude_sdk":
+    # DEV-1555 v0/v1: both aggregator tokens dispatch to on-the-fly agents.
+    if framework not in ("claude_sdk", "claude_sdk_v1"):
         return
     from bird_interact_agents.slayer_otf.reference_build import (
         purge_caches,
@@ -578,6 +580,157 @@ def _make_runner(
                           user_sim_model: str) -> dict:
             budget = calculate_budget(td, patience, mode=mode)
             return await agent_csoar.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            )
+        return run_one
+    # ---------- v1 = this branch's shape, opt-in via `_v1` tokens ----------
+    if framework == "claude_sdk_v1":
+        b = get_benchmark(dataset)
+        if strict:
+            logger.warning(
+                "[claude_sdk_v1] --strict is a no-op for Anthropic models; ignored."
+            )
+        if b.one_shot and query_mode == "slayer":
+            from bird_interact_agents.agents.claude_sdk_otf_v1 import (
+                ClaudeSDKOtfAgent,
+            )
+            _agent_v1: object = ClaudeSDKOtfAgent(
+                slayer_storage_root=slayer_storage_root,
+                model=agent_model,
+                slayer_setup=slayer_setup,
+                reasoning_effort=reasoning_effort,
+            )
+        elif not b.one_shot and query_mode == "slayer":
+            from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import (
+                ClaudeSDKOtfAInteractAgent,
+            )
+            _agent_v1 = ClaudeSDKOtfAInteractAgent(
+                slayer_storage_root=slayer_storage_root,
+                model=agent_model,
+                slayer_setup=slayer_setup,
+                reasoning_effort=reasoning_effort,
+            )
+        elif b.one_shot and query_mode == "raw":
+            from bird_interact_agents.agents.claude_sdk_otf_raw_v1 import (
+                ClaudeSDKOtfRawAgent,
+            )
+            _agent_v1 = ClaudeSDKOtfRawAgent(
+                model=agent_model,
+                reasoning_effort=reasoning_effort,
+            )
+        else:  # not one_shot, raw
+            from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import (
+                ClaudeSDKOtfAInteractRawAgent,
+            )
+            _agent_v1 = ClaudeSDKOtfAInteractRawAgent(
+                model=agent_model,
+                reasoning_effort=reasoning_effort,
+            )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await _agent_v1.run_task(  # type: ignore[attr-defined]
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_v1":
+        from bird_interact_agents.agents.claude_sdk_otf_v1 import ClaudeSDKOtfAgent
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_v1] --strict is a no-op for Anthropic models; "
+                "ignored."
+            )
+        agent_cso_v1 = ClaudeSDKOtfAgent(
+            slayer_storage_root=slayer_storage_root,
+            model=agent_model,
+            slayer_setup=slayer_setup,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_cso_v1.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_ainteract_v1":
+        from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import (
+            ClaudeSDKOtfAInteractAgent,
+        )
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_ainteract_v1] --strict is a no-op for "
+                "Anthropic models; ignored."
+            )
+        agent_csoa_v1 = ClaudeSDKOtfAInteractAgent(
+            slayer_storage_root=slayer_storage_root,
+            model=agent_model,
+            slayer_setup=slayer_setup,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csoa_v1.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_raw_v1":
+        from bird_interact_agents.agents.claude_sdk_otf_raw_v1 import (
+            ClaudeSDKOtfRawAgent,
+        )
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_raw_v1] --strict is a no-op for Anthropic "
+                "models; ignored."
+            )
+        agent_csor_v1 = ClaudeSDKOtfRawAgent(
+            model=agent_model,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csor_v1.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_ainteract_raw_v1":
+        from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import (
+            ClaudeSDKOtfAInteractRawAgent,
+        )
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_ainteract_raw_v1] --strict is a no-op for "
+                "Anthropic models; ignored."
+            )
+        agent_csoar_v1 = ClaudeSDKOtfAInteractRawAgent(
+            model=agent_model,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csoar_v1.run_task(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
@@ -1339,7 +1492,27 @@ def main() -> None:
     )
     parser.add_argument(
         "--framework",
-        choices=["claude_sdk"],
+        choices=[
+            # v0 = origin/main shape (default; unsuffixed tokens).
+            "claude_sdk",
+            "claude_sdk_otf",
+            "claude_sdk_otf_raw",
+            "claude_sdk_otf_ainteract",
+            "claude_sdk_otf_ainteract_raw",
+            # v1 = this branch's shape, opt-in via `_v1` suffix.
+            "claude_sdk_v1",
+            "claude_sdk_otf_v1",
+            "claude_sdk_otf_raw_v1",
+            "claude_sdk_otf_ainteract_v1",
+            "claude_sdk_otf_ainteract_raw_v1",
+            # non-SDK frameworks unchanged.
+            "pydantic_ai",
+            "pydantic_ai_recursive",
+            "pydantic_ai_otf_encode",
+            "mcp_agent",
+            "agno",
+            "smolagents",
+        ],
         required=True,
         help="Agent framework to use",
     )

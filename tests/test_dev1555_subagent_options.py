@@ -25,10 +25,10 @@ from __future__ import annotations
 
 import pytest
 
-from tests import test_claude_sdk_otf_agent as otf_t
-from tests import test_claude_sdk_otf_ainteract_agent as ainteract_t
-from tests import test_claude_sdk_otf_ainteract_raw_agent as ainteract_raw_t
-from tests import test_claude_sdk_otf_raw_agent as raw_t
+from tests import test_claude_sdk_otf_v1_agent as otf_t
+from tests import test_claude_sdk_otf_ainteract_v1_agent as ainteract_t
+from tests import test_claude_sdk_otf_ainteract_raw_v1_agent as ainteract_raw_t
+from tests import test_claude_sdk_otf_raw_v1_agent as raw_t
 
 
 _ASK = "mcp__bird-interact-tools__ask_user"
@@ -82,7 +82,7 @@ def _agent_module(name):
 # ---------------------------------------------------------------------------
 
 def test_otf_partition_constants():
-    m = _agent_module("claude_sdk_otf")
+    m = _agent_module("claude_sdk_otf_v1")
     assert set(m.DISCOVERY_TOOLS) == _SLAYER_DISCOVERY_MCP | _KB_NATIVES
     assert set(m.MAIN_TOOLS) == (
         {"Task"} | _SLAYER_MAIN_MCP | _KB_NATIVES | _SLAYER_MAIN_NATIVES
@@ -90,7 +90,7 @@ def test_otf_partition_constants():
 
 
 def test_ainteract_partition_constants():
-    m = _agent_module("claude_sdk_otf_ainteract")
+    m = _agent_module("claude_sdk_otf_ainteract_v1")
     assert set(m.DISCOVERY_TOOLS) == _SLAYER_DISCOVERY_MCP | _KB_NATIVES | {_ASK}
     assert set(m.MAIN_TOOLS) == (
         {"Task", _ASK} | _SLAYER_MAIN_MCP | _KB_NATIVES | _SLAYER_MAIN_NATIVES
@@ -98,13 +98,13 @@ def test_ainteract_partition_constants():
 
 
 def test_raw_partition_constants():
-    m = _agent_module("claude_sdk_otf_raw")
+    m = _agent_module("claude_sdk_otf_raw_v1")
     assert set(m.DISCOVERY_TOOLS) == _RAW_DISCOVERY
     assert set(m.MAIN_TOOLS) == _RAW_MAIN
 
 
 def test_ainteract_raw_partition_constants():
-    m = _agent_module("claude_sdk_otf_ainteract_raw")
+    m = _agent_module("claude_sdk_otf_ainteract_raw_v1")
     assert set(m.DISCOVERY_TOOLS) == _RAW_DISCOVERY | {_ASK}
     assert set(m.MAIN_TOOLS) == _RAW_MAIN | {_ASK}
 
@@ -112,10 +112,10 @@ def test_ainteract_raw_partition_constants():
 @pytest.mark.parametrize(
     "name",
     [
-        "claude_sdk_otf",
-        "claude_sdk_otf_ainteract",
-        "claude_sdk_otf_raw",
-        "claude_sdk_otf_ainteract_raw",
+        "claude_sdk_otf_v1",
+        "claude_sdk_otf_ainteract_v1",
+        "claude_sdk_otf_raw_v1",
+        "claude_sdk_otf_ainteract_raw_v1",
     ],
 )
 def test_task_never_leaks_into_discovery(name):
@@ -144,20 +144,20 @@ async def _run_and_capture(monkeypatch, tmp_path, *, sibling, module_name,
 
 _CASES = [
     pytest.param(
-        otf_t, "claude_sdk_otf", "ClaudeSDKOtfAgent", "slayer", "one-shot",
+        otf_t, "claude_sdk_otf_v1", "ClaudeSDKOtfAgent", "slayer", "one-shot",
         id="otf",
     ),
     pytest.param(
-        ainteract_t, "claude_sdk_otf_ainteract", "ClaudeSDKOtfAInteractAgent",
+        ainteract_t, "claude_sdk_otf_ainteract_v1", "ClaudeSDKOtfAInteractAgent",
         "slayer", "a-interact",
         id="ainteract",
     ),
     pytest.param(
-        raw_t, "claude_sdk_otf_raw", "ClaudeSDKOtfRawAgent", "raw", "one-shot",
+        raw_t, "claude_sdk_otf_raw_v1", "ClaudeSDKOtfRawAgent", "raw", "one-shot",
         id="raw",
     ),
     pytest.param(
-        ainteract_raw_t, "claude_sdk_otf_ainteract_raw",
+        ainteract_raw_t, "claude_sdk_otf_ainteract_raw_v1",
         "ClaudeSDKOtfAInteractRawAgent", "raw", "a-interact",
         id="ainteract_raw",
     ),

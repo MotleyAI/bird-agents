@@ -23,7 +23,30 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sub = p.add_subparsers(dest="subcommand", required=True)
 
     sp_submit = sub.add_parser("submit")
-    sp_submit.add_argument("--framework", required=True, choices=["claude_sdk"])
+    sp_submit.add_argument(
+        "--framework", required=True,
+        choices=[
+            # v0 = origin/main shape (default; unsuffixed tokens).
+            "claude_sdk",
+            "claude_sdk_otf",
+            "claude_sdk_otf_raw",
+            "claude_sdk_otf_ainteract",
+            "claude_sdk_otf_ainteract_raw",
+            # v1 = this branch's shape, opt-in via `_v1` suffix.
+            "claude_sdk_v1",
+            "claude_sdk_otf_v1",
+            "claude_sdk_otf_raw_v1",
+            "claude_sdk_otf_ainteract_v1",
+            "claude_sdk_otf_ainteract_raw_v1",
+            # non-SDK frameworks unchanged.
+            "pydantic_ai",
+            "pydantic_ai_recursive",
+            "pydantic_ai_otf_encode",
+            "mcp_agent",
+            "agno",
+            "smolagents",
+        ],
+    )
     sp_submit.add_argument("--query-mode", required=True, choices=("raw", "slayer"))
     sp_submit.add_argument("--agent-model", required=True)
     sp_submit.add_argument(

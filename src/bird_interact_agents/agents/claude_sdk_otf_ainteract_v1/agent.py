@@ -18,11 +18,14 @@ for Rule 0 (ask before encode) plus the shared encode-then-query rules.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
+import time
 from pathlib import Path
 
 from claude_agent_sdk import (
+    AgentDefinition,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     HookMatcher,
@@ -32,28 +35,58 @@ from claude_agent_sdk import (
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
     SdkUsageTracker,
+    accumulate_assistant_usage,
     ask_user,
     get_all_external_knowledge_names,
     get_all_knowledge_definitions,
     get_knowledge_definition,
+    query,
     query_nested,
     submit_query,
 )
-from bird_interact_agents.agents.claude_sdk._query_v0 import query
-from bird_interact_agents.agents.claude_sdk_otf.agent import (
+from bird_interact_agents.agents.claude_sdk.context_budget import (
+    context_window_for,
+    make_context_budget_hook,
+    make_wall_clock_budget_hook,
+    per_task_timeout_s,
+    update_context_tokens,
+    update_wall_clock_start,
+)
+from bird_interact_agents.agents.claude_sdk.partition import (
+    DISCOVERY_AGENT_NAME,
+    DISCOVERY_MAX_TURNS,
+    MAIN_WORKFLOW_NOTE,
+    build_discovery_prompt,
+    make_partition_deny_hook,
+)
+from bird_interact_agents.agents.claude_sdk.sdk_env import (
+    disable_cli_telemetry_env,
+)
+from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
     _MAX_TURNS,
     _NORMALIZE_WRITE_FILTERS_MATCHER,
-    SLAYER_MCP_DISALLOWED_TOOL_NAMES,
     _make_query_before_submit_guard,
     _make_turn_budget_hook,
     _normalize_write_tool_filters_hook,
     _slayer_tool_names,
 )
-from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
+from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
+    DISCOVERY_TOOLS as _ONE_SHOT_DISCOVERY_TOOLS,
+)
+from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
+    MAIN_TOOLS as _ONE_SHOT_MAIN_TOOLS,
+)
+from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.prompts import (
     SLAYER_OTF_AINTERACT,
 )
 from bird_interact_agents.benchmark import get_benchmark
-from bird_interact_agents.model_string import is_anthropic, native_model_id
+from bird_interact_agents.model_string import native_model_id
+from bird_interact_agents.provider_registry import (
+    get_provider,
+    is_supported_agent_model,
+    requires_thinking,
+    sdk_session_env,
+)
 from bird_interact_agents.harness import (
     SampleStatus,
     _ambiguity_count,
@@ -73,6 +106,7 @@ from bird_interact_agents.eval.grade_in_place import (
 )
 from bird_interact_agents.eval.tolerant_grader import grade_submission, make_executor
 from bird_interact_agents.slayer_otf import resolve_otf_task_storage_dir
+from bird_interact_agents.slayer_otf.timing import log_otf_event, otf_timer
 from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -181,6 +215,13 @@ def _select_tools(eval_mode: str) -> list:
     return [*_KNOWLEDGE_TOOLS, ask_user, submit_query]
 
 
+# DEV-1555: a-interact partition = the one-shot partition + ask_user in
+# BOTH contexts (discovery does the bulk of clarification; the main loop
+# can still ask directly when submit feedback reveals an ambiguity).
+DISCOVERY_TOOLS = [*_ONE_SHOT_DISCOVERY_TOOLS, _ASK_USER_TOOL]
+MAIN_TOOLS = [*_ONE_SHOT_MAIN_TOOLS, _ASK_USER_TOOL]
+
+
 def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
     if eval_mode != "a-interact":
         raise ValueError(
@@ -266,9 +307,10 @@ class ClaudeSDKOtfAInteractAgent:
         instance_id = task_data["instance_id"]
         db_name = task_data["selected_database"]
 
-        if not is_anthropic(self.model):
+        if not is_supported_agent_model(self.model):
             msg = (
-                f"claude_sdk_otf_ainteract requires an Anthropic model; "
+                f"claude_sdk_otf_ainteract requires an Anthropic or registry "
+                f"open-weight model; "
                 f"got {self.model!r}. Skipped — use --framework "
                 "pydantic_ai_otf_encode for non-Anthropic models."
             )
@@ -322,8 +364,16 @@ class ClaudeSDKOtfAInteractAgent:
         # failure (before _ctx_var.set, below) hits the except.
         ctx_dict: dict | None = None
         try:
-            load_db_data_if_needed(db_name, data_path_base)
-            materialize_task_db(task_data, data_path_base)
+            log_otf_event("run_task.start", instance_id=instance_id, db=db_name)
+            with otf_timer(
+                "run_task.load_db_data", instance_id=instance_id, db=db_name,
+            ):
+                load_db_data_if_needed(db_name, data_path_base)
+            with otf_timer(
+                "run_task.materialize_task_db",
+                instance_id=instance_id, db=db_name,
+            ):
+                materialize_task_db(task_data, data_path_base)
             slayer_storage_dir, deleted_kb_ids = await resolve_otf_task_storage_dir(
                 db_name=db_name,
                 task_data=task_data,
@@ -353,10 +403,12 @@ class ClaudeSDKOtfAInteractAgent:
             tools = _select_tools(eval_mode)
             prompt = _build_prompt(eval_mode, task_data, budget)
 
-            server = create_sdk_mcp_server(
-                name="bird-interact-tools", version="1.0.0", tools=tools,
-            )
-            tool_names = [f"mcp__bird-interact-tools__{t.name}" for t in tools]
+            with otf_timer(
+                "run_task.create_sdk_mcp_server", instance_id=instance_id,
+            ):
+                server = create_sdk_mcp_server(
+                    name="bird-interact-tools", version="1.0.0", tools=tools,
+                )
 
             mcp_servers: dict = {
                 "bird-interact-tools": server,
@@ -370,25 +422,61 @@ class ClaudeSDKOtfAInteractAgent:
                     slayer_storage_dir, ingest_on_startup=False,
                 ),
             }
-            tool_names.extend(_slayer_tool_names())
 
             # Per-task hook factories — never share state across tasks.
             pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
             pre_query_gate, post_tool_tracker = _make_query_before_submit_guard()
 
+            # DEV-1555: discovery/main split (see claude_sdk_otf.agent).
+            discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
+            context_state: dict = {}
+            update_wall_clock_start(context_state)
+            (
+                wall_clock_warning,
+                wall_clock_deny,
+            ) = make_wall_clock_budget_hook(
+                context_state,
+                budget_s=per_task_timeout_s(),
+                submit_tool="submit_query",
+            )
+
+            # DEV-1555 Stage 2: registry open-weight backends get a
+            # per-run session env (ANTHROPIC_BASE_URL + auth token);
+            # anthropic models keep the SDK defaults untouched.
+            # DEV-1561: always layer in the disable-CLI-telemetry vars so
+            # the bundled `claude` Node binary doesn't burn 5-10 min on
+            # outbound telemetry / error-reporting / auto-updater calls
+            # during the initialize handshake. Provider-specific auth env
+            # is merged on top so the registry path keeps its overrides.
+            _session_env_kwargs: dict = {"env": disable_cli_telemetry_env()}
+            if get_provider(self.model) is not None:
+                _session_env_kwargs["env"].update(sdk_session_env(self.model))
+                if requires_thinking(self.model):
+                    # Probed live: e.g. kimi-k2.7-code rejects requests
+                    # without thinking enabled.
+                    _session_env_kwargs["thinking"] = {
+                        "type": "enabled", "budget_tokens": 8192,
+                    }
+
             options = ClaudeAgentOptions(
-                system_prompt=prompt,
+                **_session_env_kwargs,
+                system_prompt=prompt + MAIN_WORKFLOW_NOTE,
                 mcp_servers=mcp_servers,
-                allowed_tools=tool_names,
-                # DEV-1548: same cacheable-prefix shrink as the sibling
-                # one-shot adapter. The constant lives in
-                # claude_sdk_otf.agent (imported above) so a single edit
-                # propagates to both adapters; the negative-assertion test
-                # in test_claude_sdk_otf_disallowed_slayer_tools.py pins
-                # the symmetry.
-                disallowed_tools=SLAYER_MCP_DISALLOWED_TOOL_NAMES,
-                tools=[],
+                allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
+                tools=["Task"],
                 setting_sources=[],
+                agents={
+                    DISCOVERY_AGENT_NAME: AgentDefinition(
+                        description=(
+                            "Schema/data introspection and user clarification "
+                            "for the current task; returns a structured "
+                            "handoff report."
+                        ),
+                        prompt=build_discovery_prompt(with_ask_user=True),
+                        tools=list(DISCOVERY_TOOLS),
+                        maxTurns=DISCOVERY_MAX_TURNS,
+                    ),
+                },
                 model=native_model_id(self.model),
                 effort=self.reasoning_effort,
                 max_turns=_MAX_TURNS,
@@ -399,6 +487,10 @@ class ClaudeSDKOtfAInteractAgent:
                             # ask_user gate runs first; query gate runs second.
                             hooks=[pre_submit_gate, pre_query_gate],
                         ),
+                        HookMatcher(
+                            matcher="|".join(discovery_only),
+                            hooks=[make_partition_deny_hook(discovery_only)],
+                        ),
                         # Codex post-merge: normalize backing-query filters
                         # baked into create_model / edit_model payloads so
                         # the persisted model definition matches the
@@ -408,6 +500,7 @@ class ClaudeSDKOtfAInteractAgent:
                             matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
                             hooks=[_normalize_write_tool_filters_hook],
                         ),
+                        HookMatcher(hooks=[wall_clock_deny]),
                     ],
                     "PostToolUse": [
                         HookMatcher(
@@ -416,6 +509,15 @@ class ClaudeSDKOtfAInteractAgent:
                         ),
                         HookMatcher(hooks=[post_nag]),
                         HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
+                        HookMatcher(
+                            hooks=[
+                                make_context_budget_hook(
+                                    context_state,
+                                    context_window_for(self.model),
+                                )
+                            ]
+                        ),
+                        HookMatcher(hooks=[wall_clock_warning]),
                         # Must be last so it captures the true last-completed
                         # tool name after all other PostToolUse hooks have run.
                         HookMatcher(hooks=[post_tool_tracker]),
@@ -424,15 +526,53 @@ class ClaudeSDKOtfAInteractAgent:
             )
 
             # Auth env-var invariant validated at actor bootstrap; see ray_app._assert_actor_oauth_invariant.
-            async with ClaudeSDKClient(options=options) as client:
-                await client.query(task_data["amb_user_query"])
+            # DEV-1561: wrap ``__aenter__`` in ``otf_timer`` via ``AsyncExitStack``
+            # so a failed initialize handshake (the bug this channel was built
+            # to attribute) still emits ``.error elapsed_s=… exc=<type>`` — the
+            # prior raw ``time.monotonic()`` + ``async with`` pattern logged
+            # ``.start`` and then nothing on enter-time failure, losing the
+            # attribution for the exact failure mode being diagnosed.
+            async with contextlib.AsyncExitStack() as stack:
+                with otf_timer(
+                    "run_task.sdk_client_enter", instance_id=instance_id,
+                ):
+                    client = await stack.enter_async_context(
+                        ClaudeSDKClient(options=options)
+                    )
+                with otf_timer(
+                    "run_task.sdk_first_query", instance_id=instance_id,
+                ):
+                    await client.query(task_data["amb_user_query"])
+                first_msg_t = time.monotonic()
+                msg_count = 0
+                prev_msg_t = first_msg_t
                 async for msg in client.receive_response():
+                    msg_count += 1
+                    now = time.monotonic()
+                    msg_type = type(msg).__name__
+                    if msg_count == 1:
+                        log_otf_event(
+                            "run_task.sdk_first_message",
+                            instance_id=instance_id,
+                            msg_type=msg_type,
+                            elapsed_s=f"{now - first_msg_t:.3f}",
+                        )
+                    else:
+                        log_otf_event(
+                            "run_task.sdk_message",
+                            instance_id=instance_id,
+                            seq=msg_count,
+                            msg_type=msg_type,
+                            gap_s=f"{now - prev_msg_t:.3f}",
+                        )
+                    prev_msg_t = now
                     try:
                         _data: object = dataclasses.asdict(msg)
                     except Exception:  # noqa: BLE001
                         _data = str(msg)
-                    trajectory.append({"type": str(type(msg).__name__), "data": _data})
+                    trajectory.append({"type": msg_type, "data": _data})
                     usage_tracker.observe(msg)
+                    update_context_tokens(context_state, msg)
             usage_tracker.finalize()
         except Exception as e:
             usage_tracker.finalize()

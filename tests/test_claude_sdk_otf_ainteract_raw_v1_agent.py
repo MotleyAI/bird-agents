@@ -19,7 +19,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def test_init_accepts_default():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.agent import (
         ClaudeSDKOtfAInteractRawAgent,
     )
 
@@ -28,7 +28,7 @@ def test_init_accepts_default():
 
 
 def test_init_rejects_bad_reasoning_effort():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.agent import (
         ClaudeSDKOtfAInteractRawAgent,
     )
 
@@ -47,7 +47,7 @@ def _tool_names(tools):
 def test_select_tools_a_interact_returns_nine_native_tools():
     """7 BIRD_INTERACT_TOOLS + submit_sql + ask_user = 9 native tools.
     No SLayer tools."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     names = _tool_names(m._select_tools("a-interact"))
     assert names == {
@@ -66,7 +66,7 @@ def test_select_tools_a_interact_returns_nine_native_tools():
 
 
 def test_select_tools_rejects_unknown_eval_mode():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     for bad in ("one-shot", "c-interact", "oracle"):
         with pytest.raises(ValueError):
@@ -75,7 +75,7 @@ def test_select_tools_rejects_unknown_eval_mode():
 
 def test_no_slayer_tool_names_function():
     """Raw agent must NOT have a _slayer_tool_names function."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     assert not hasattr(m, "_slayer_tool_names")
 
@@ -85,7 +85,7 @@ def test_no_slayer_tool_names_function():
 # ---------------------------------------------------------------------------
 
 def test_build_prompt_is_ainteract_variant():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     td = {"amb_user_query": "how many widgets?", "selected_database": "shop"}
     prompt = m._build_prompt("a-interact", td, budget=20.0)
@@ -98,7 +98,7 @@ def test_build_prompt_is_ainteract_variant():
 
 
 def test_build_prompt_rejects_unknown_eval_mode():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     td = {"amb_user_query": "?", "selected_database": "shop"}
     for bad in ("one-shot", "c-interact", "oracle"):
@@ -108,7 +108,7 @@ def test_build_prompt_rejects_unknown_eval_mode():
 
 def test_prompt_rule_zero_precedes_ask_user_before_sql():
     """Rule 0 (ask_user before SQL) must appear BEFORE the SQL-writing workflow."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import prompts as p
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import prompts as p
 
     text = p.RAW_OTF_AINTERACT
     ask_offset = text.lower().find("ask_user")
@@ -123,7 +123,7 @@ def test_prompt_rule_zero_precedes_ask_user_before_sql():
 
 
 def test_prompt_has_submit_gate_warning():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import prompts as p
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import prompts as p
 
     text = p.RAW_OTF_AINTERACT.lower()
     assert "submit" in text
@@ -131,7 +131,7 @@ def test_prompt_has_submit_gate_warning():
 
 
 def test_prompt_absent_slayer_vocab():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import prompts as p
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import prompts as p
 
     text = p.RAW_OTF_AINTERACT
     for term in ("submit_query", "create_model", "edit_model", "[kb=", "mcp__slayer__"):
@@ -141,7 +141,7 @@ def test_prompt_absent_slayer_vocab():
 
 
 def test_prompts_use_synthetic_examples_only():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import prompts as p
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import prompts as p
 
     banned = [
         "households", "tenure_type", "income_bracket", "dwelling_class",
@@ -159,7 +159,7 @@ def test_prompts_use_synthetic_examples_only():
 
 @pytest.mark.asyncio
 async def test_pre_submit_gate_denies_when_ask_count_zero():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     pre_gate, _counter, _nag = m._make_ask_user_guards()
     out = await pre_gate(
@@ -182,7 +182,7 @@ async def test_pre_submit_gate_denies_when_ask_count_zero():
 async def test_pre_submit_gate_does_not_deny_submit_query():
     """The gate is scoped to submit_sql only — submit_query (if ever called)
     must not be denied (it's not the raw submission tool)."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     pre_gate, _counter, _nag = m._make_ask_user_guards()
     out = await pre_gate(
@@ -194,7 +194,7 @@ async def test_pre_submit_gate_does_not_deny_submit_query():
 
 @pytest.mark.asyncio
 async def test_pre_submit_gate_allows_when_ask_count_positive():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     pre_gate, counter, _nag = m._make_ask_user_guards()
     await counter(
@@ -212,7 +212,7 @@ async def test_pre_submit_gate_allows_when_ask_count_positive():
 
 @pytest.mark.asyncio
 async def test_post_nag_quiet_in_first_nine_calls():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     _gate, _counter, nag = m._make_ask_user_guards()
     for _ in range(9):
@@ -222,7 +222,7 @@ async def test_post_nag_quiet_in_first_nine_calls():
 
 @pytest.mark.asyncio
 async def test_post_nag_fires_at_ten():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     _gate, _counter, nag = m._make_ask_user_guards()
     for _ in range(9):
@@ -239,7 +239,7 @@ async def test_post_nag_fires_at_ten():
 
 @pytest.mark.asyncio
 async def test_post_nag_silent_after_ask_user():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     _gate, counter, nag = m._make_ask_user_guards()
     await counter({"tool_name": "mcp__bird-interact-tools__ask_user"}, None, None)
@@ -252,7 +252,7 @@ async def test_post_nag_silent_after_ask_user():
 
 @pytest.mark.asyncio
 async def test_state_isolation_across_factories():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     gate_a, counter_a, nag_a = m._make_ask_user_guards()
     gate_b, counter_b, nag_b = m._make_ask_user_guards()
@@ -286,7 +286,7 @@ _TASK = {
 
 @pytest.mark.asyncio
 async def test_run_task_rejects_slayer_query_mode():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.agent import (
         ClaudeSDKOtfAInteractRawAgent,
     )
 
@@ -299,7 +299,7 @@ async def test_run_task_rejects_slayer_query_mode():
 
 @pytest.mark.asyncio
 async def test_run_task_rejects_unsupported_eval_modes():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.agent import (
         ClaudeSDKOtfAInteractRawAgent,
     )
 
@@ -313,7 +313,7 @@ async def test_run_task_rejects_unsupported_eval_modes():
 
 @pytest.mark.asyncio
 async def test_run_task_rejects_livesqlbench_dataset():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.agent import (
         ClaudeSDKOtfAInteractRawAgent,
     )
 
@@ -326,7 +326,7 @@ async def test_run_task_rejects_livesqlbench_dataset():
 @pytest.mark.asyncio
 async def test_run_task_accepts_mini_interact_alias():
     """Agent-level dataset gate accepts the mini-interact alias."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.agent import (
         ClaudeSDKOtfAInteractRawAgent,
     )
 
@@ -339,7 +339,7 @@ async def test_run_task_accepts_mini_interact_alias():
 
 @pytest.mark.asyncio
 async def test_run_task_non_anthropic_model_skips():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.agent import (
         ClaudeSDKOtfAInteractRawAgent,
     )
 
@@ -441,7 +441,7 @@ def _stub_env(
 @pytest.mark.asyncio
 async def test_run_task_does_not_call_slayer_mcp(monkeypatch, tmp_path):
     """Raw ainteract agent has no SLayer MCP server."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     assert not hasattr(m, "slayer_mcp_stdio_config"), (
         "raw ainteract agent must not import slayer_mcp_stdio_config"
@@ -453,7 +453,7 @@ async def test_run_task_does_not_call_slayer_mcp(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_does_not_whitelist_slayer_tools(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractRawAgent(model="anthropic/claude-sonnet-4-5")
@@ -466,7 +466,7 @@ async def test_run_task_does_not_whitelist_slayer_tools(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_whitelists_ask_user_and_submit_sql(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractRawAgent(model="anthropic/claude-sonnet-4-5")
@@ -483,7 +483,7 @@ async def test_run_task_whitelists_ask_user_and_submit_sql(monkeypatch, tmp_path
 async def test_run_task_registers_three_guards_plus_turn_budget(monkeypatch, tmp_path):
     """PreToolUse gate scoped to submit_sql; PostToolUse: ask-counter,
     nag, turn-budget."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractRawAgent(model="anthropic/claude-sonnet-4-5")
@@ -512,7 +512,7 @@ async def test_run_task_registers_three_guards_plus_turn_budget(monkeypatch, tmp
 
 @pytest.mark.asyncio
 async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
     from bird_interact_agents.harness import MAX_MODEL_TURNS
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
@@ -530,7 +530,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
 async def test_run_task_invokes_factory_per_call(monkeypatch, tmp_path):
     """Hook-state factory must be invoked inside run_task (per task),
     not on the agent constructor."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     call_count = [0]
     real_factory = m._make_ask_user_guards
@@ -564,7 +564,7 @@ async def test_run_task_invokes_factory_per_call(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_pins_requested_model(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractRawAgent(model="anthropic/claude-opus-4-7")
@@ -576,7 +576,7 @@ async def test_run_task_pins_requested_model(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_passes_reasoning_effort(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractRawAgent(
@@ -590,7 +590,7 @@ async def test_run_task_passes_reasoning_effort(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_default_effort_is_none(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractRawAgent(model="anthropic/claude-sonnet-4-5")
@@ -602,7 +602,7 @@ async def test_run_task_default_effort_is_none(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_captures_usage(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
     from bird_interact_agents import usage as usage_mod
 
     msgs = [_FakeAssistant(100, 20), _FakeAssistant(150, 30, cache=5)]
@@ -623,7 +623,7 @@ async def test_run_task_captures_usage(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_writes_n_ask_user_calls_zero(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     _stub_env(
         monkeypatch, m, tmp_path / "store",
@@ -639,7 +639,7 @@ async def test_run_task_writes_n_ask_user_calls_zero(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_writes_n_ask_user_calls_nonzero(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     _stub_env(
         monkeypatch, m, tmp_path / "store",
@@ -655,7 +655,7 @@ async def test_run_task_writes_n_ask_user_calls_nonzero(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_exception_path_writes_n_ask_user_calls(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     _stub_env(
         monkeypatch, m, tmp_path / "store",
@@ -695,7 +695,7 @@ def _full_prefill(**overrides):
 async def test_run_task_propagates_diagnostic_fields_on_happy_path(
     monkeypatch, tmp_path,
 ):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     _stub_env(
         monkeypatch, m, tmp_path / "store",
@@ -721,7 +721,7 @@ async def test_run_task_propagates_diagnostic_fields_on_happy_path(
 async def test_run_task_propagation_defaults_to_none_when_never_submitted(
     monkeypatch, tmp_path,
 ):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     _stub_env(
         monkeypatch, m, tmp_path / "store",
@@ -741,7 +741,7 @@ async def test_run_task_propagation_defaults_to_none_when_never_submitted(
 async def test_run_task_exception_path_propagates_partial_result(
     monkeypatch, tmp_path,
 ):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     prefill = _full_prefill(
         phase2_passed=True, total_reward=0.75, phase2_observation="p2 ok",
@@ -768,7 +768,7 @@ async def test_run_task_exception_path_propagates_partial_result(
 async def test_run_task_exception_before_ctx_set_yields_empty_diagnostics(
     monkeypatch, tmp_path,
 ):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     _stub_env(monkeypatch, m, tmp_path / "store")
 
@@ -789,7 +789,7 @@ async def test_run_task_exception_before_ctx_set_yields_empty_diagnostics(
 async def test_run_task_exception_path_isolated_from_stale_context(
     monkeypatch, tmp_path,
 ):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
     _stub_env(monkeypatch, m, tmp_path / "store")
     m._ctx_var.set({

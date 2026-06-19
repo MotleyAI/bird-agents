@@ -22,25 +22,33 @@ from bird_interact_agents.run import _validate_slayer_setup
 # ---------------------------------------------------------------------------
 
 
-def test_main_framework_choices_only_claude_sdk():
-    """The local CLI must only accept 'claude_sdk' as a framework.
-    We verify by inspecting the actual choices in run.py's main() source."""
+def test_main_framework_choices_include_v0_and_v1_aggregator():
+    """DEV-1555: --framework choices include both the v0 and v1 aggregators
+    plus all four per-variant tokens on each side, and the existing non-SDK
+    frameworks. (Prior contract was "claude_sdk only"; this PR widens the
+    list as part of the v0/v1 split.)
+    """
     import inspect
 
     src = inspect.getsource(run_mod.main)
-    # The choices list must contain "claude_sdk" and nothing else from the old set
-    old_frameworks = {
-        "claude_sdk_otf", "claude_sdk_otf_ainteract",
-        "claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw",
-        "pydantic_ai", "pydantic_ai_recursive", "pydantic_ai_otf_encode",
-    }
-    for old in old_frameworks:
-        assert f'"{old}"' not in src and f"'{old}'" not in src, (
-            f"run.main() still references old framework name {old!r} in choices"
-        )
-    assert '"claude_sdk"' in src or "'claude_sdk'" in src, (
-        "run.main() must have 'claude_sdk' in its --framework choices"
+    expected = (
+        # v0 aggregator + per-variant tokens.
+        "claude_sdk",
+        "claude_sdk_otf",
+        "claude_sdk_otf_raw",
+        "claude_sdk_otf_ainteract",
+        "claude_sdk_otf_ainteract_raw",
+        # v1 aggregator + per-variant tokens.
+        "claude_sdk_v1",
+        "claude_sdk_otf_v1",
+        "claude_sdk_otf_raw_v1",
+        "claude_sdk_otf_ainteract_v1",
+        "claude_sdk_otf_ainteract_raw_v1",
     )
+    for tok in expected:
+        assert f'"{tok}"' in src, (
+            f"run.main() --framework choices is missing {tok!r}"
+        )
 
 
 def test_framework_is_required_no_default():

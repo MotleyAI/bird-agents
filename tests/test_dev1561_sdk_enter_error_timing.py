@@ -17,8 +17,8 @@ import logging
 
 import pytest
 
-from tests import test_claude_sdk_otf_ainteract_agent as ainteract_t
-from tests import test_claude_sdk_otf_ainteract_raw_agent as ainteract_raw_t
+from tests import test_claude_sdk_otf_ainteract_v1_agent as ainteract_t
+from tests import test_claude_sdk_otf_ainteract_raw_v1_agent as ainteract_raw_t
 
 
 _TIMING_LOGGER_NAME = "bird_interact_agents.otf_timing"
@@ -76,7 +76,7 @@ async def test_sdk_client_enter_failure_emits_error_event_slayer(
 ):
     """Slayer ainteract: enter-time failure must surface as
     ``sdk_client_enter.error elapsed_s=… exc=_EnterBoom``."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     captured = ainteract_t._stub_env(monkeypatch, m, tmp_path / "store")
     monkeypatch.setattr(m, "ClaudeSDKClient", _make_enter_failing_client(captured))
@@ -108,7 +108,7 @@ async def test_sdk_client_enter_failure_emits_error_event_raw(
     monkeypatch, tmp_path, caplog_otf,
 ):
     """Raw ainteract: same contract on the no-SLayer variant."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import (
         agent as m,
     )
 
@@ -142,7 +142,7 @@ async def test_sdk_client_enter_success_emits_done_not_error_slayer(
     ``.done`` (with ``elapsed_s``) and NO ``.error``. Pins the AsyncExitStack
     + otf_timer wrapping doesn't accidentally swallow the success case.
     """
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     ainteract_t._stub_env(monkeypatch, m, tmp_path / "store")
     # The default ainteract_t._stub_env installs a fake ClaudeSDKClient whose
@@ -172,7 +172,7 @@ async def test_sdk_client_enter_success_emits_done_not_error_raw(
     from the slayer variant (different test file, different `_stub_env`).
     Pin the same `.done` + `elapsed_s` contract on the raw path.
     """
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import (
         agent as m,
     )
 

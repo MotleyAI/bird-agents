@@ -27,7 +27,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def test_init_rejects_non_on_the_fly():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.agent import (
         ClaudeSDKOtfAInteractAgent,
     )
 
@@ -36,7 +36,7 @@ def test_init_rejects_non_on_the_fly():
 
 
 def test_init_accepts_on_the_fly_default():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.agent import (
         ClaudeSDKOtfAInteractAgent,
     )
 
@@ -45,7 +45,7 @@ def test_init_accepts_on_the_fly_default():
 
 
 def test_init_rejects_bad_reasoning_effort():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.agent import (
         ClaudeSDKOtfAInteractAgent,
     )
 
@@ -65,7 +65,7 @@ def test_select_tools_a_interact_returns_seven_native_tools():
     """3 knowledge tools + the DEV-1534 Fix C query/query_nested wrappers
     + submit_query + ask_user = 7 native; 9 slayer subprocess (after
     query/query_nested move off the subprocess allowlist) = 16."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     names = _tool_names(m._select_tools("a-interact"))
     assert names == {
@@ -81,7 +81,7 @@ def test_select_tools_a_interact_returns_seven_native_tools():
 
 
 def test_select_tools_rejects_unknown_eval_mode():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     for bad in ("one-shot", "c-interact", "oracle"):
         with pytest.raises(ValueError):
@@ -93,7 +93,7 @@ def test_slayer_tool_names_include_write_tools():
     After DEV-1534 Fix C, ``query`` and ``query_nested`` move off the
     SLayer subprocess allowlist onto our bird-interact-tools wrappers,
     leaving 9 SLayer subprocess tools."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     names = set(m._slayer_tool_names())
     for t in (
@@ -125,7 +125,7 @@ def test_slayer_tool_names_include_write_tools():
 # ---------------------------------------------------------------------------
 
 def test_build_prompt_is_ainteract_variant():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     td = {"amb_user_query": "how many widgets?", "selected_database": "shop"}
     prompt = m._build_prompt("a-interact", td, budget=20.0)
@@ -136,7 +136,7 @@ def test_build_prompt_is_ainteract_variant():
 
 
 def test_build_prompt_rejects_unknown_eval_mode():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     td = {"amb_user_query": "?", "selected_database": "shop"}
     for bad in ("one-shot", "c-interact", "oracle"):
@@ -148,7 +148,7 @@ def test_prompt_rule_zero_precedes_encoding():
     """Rule 0 (the ask_user-before-encoding instruction) must appear BEFORE the
     encoding workflow language so it's read first. Asserted on substring offset
     rather than an exact index — the contract is ordering, not position."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import prompts as p
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import prompts as p
 
     text = p.SLAYER_OTF_AINTERACT
     ask_offset = text.lower().find("ask_user")
@@ -166,7 +166,7 @@ def test_prompt_has_submit_gate_warning():
     """The prompt must warn that the submit gate refuses until ask_user is
     called — sets reader expectations so the agent doesn't view the deny as a
     bug."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import prompts as p
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import prompts as p
 
     text = p.SLAYER_OTF_AINTERACT.lower()
     assert "submit" in text
@@ -177,7 +177,7 @@ def test_prompt_has_submit_gate_warning():
 def test_prompts_use_synthetic_examples_only():
     """Guards `feedback_prompts_synthetic_examples_only`: no real eval-set
     DB / table / column / value names may appear in the prompt."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import prompts as p
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import prompts as p
 
     banned = [
         "households", "tenure_type", "income_bracket", "dwelling_class",
@@ -195,7 +195,7 @@ def test_prompts_use_synthetic_examples_only():
 
 @pytest.mark.asyncio
 async def test_pre_submit_gate_denies_when_ask_count_zero():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     pre_gate, _counter, _nag = m._make_ask_user_guards()
     out = await pre_gate(
@@ -218,7 +218,7 @@ async def test_pre_submit_gate_denies_when_ask_count_zero():
 
 @pytest.mark.asyncio
 async def test_pre_submit_gate_allows_when_ask_count_positive():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     pre_gate, counter, _nag = m._make_ask_user_guards()
     # Simulate one ask_user PostToolUse.
@@ -237,7 +237,7 @@ async def test_pre_submit_gate_allows_when_ask_count_positive():
 
 @pytest.mark.asyncio
 async def test_post_nag_quiet_in_first_nine_calls():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _gate, _counter, nag = m._make_ask_user_guards()
     for _ in range(9):
@@ -247,7 +247,7 @@ async def test_post_nag_quiet_in_first_nine_calls():
 
 @pytest.mark.asyncio
 async def test_post_nag_fires_at_ten_with_count():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _gate, _counter, nag = m._make_ask_user_guards()
     for _ in range(9):
@@ -266,7 +266,7 @@ async def test_post_nag_fires_at_ten_with_count():
 
 @pytest.mark.asyncio
 async def test_post_nag_fires_at_twenty():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _gate, _counter, nag = m._make_ask_user_guards()
     for i in range(20):
@@ -281,7 +281,7 @@ async def test_post_nag_fires_at_twenty():
 
 @pytest.mark.asyncio
 async def test_post_nag_silent_after_ask_user():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _gate, counter, nag = m._make_ask_user_guards()
     # First tool call IS ask_user — increment counter, fire nag for the same
@@ -306,7 +306,7 @@ async def test_post_nag_silent_when_tenth_call_is_ask_user():
     nag BEFORE the counter increments, the nag would emit a false positive
     nag mentioning the ask the user just made. Skip nag when the current tool
     is ask_user."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _gate, _counter, nag = m._make_ask_user_guards()
     for _ in range(9):
@@ -327,7 +327,7 @@ async def test_state_isolation_across_factories():
     """Build two independent guard sets and interleave calls; counters stay
     independent. This regression protects against a future refactor that
     stores hook state on the agent instance instead of in a per-task closure."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     gate_a, counter_a, nag_a = m._make_ask_user_guards()
     gate_b, counter_b, nag_b = m._make_ask_user_guards()
@@ -365,7 +365,7 @@ _TASK = {
 
 @pytest.mark.asyncio
 async def test_run_task_rejects_raw_query_mode():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.agent import (
         ClaudeSDKOtfAInteractAgent,
     )
 
@@ -378,7 +378,7 @@ async def test_run_task_rejects_raw_query_mode():
 
 @pytest.mark.asyncio
 async def test_run_task_rejects_unsupported_eval_modes():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.agent import (
         ClaudeSDKOtfAInteractAgent,
     )
 
@@ -397,7 +397,7 @@ async def test_run_task_accepts_mini_interact_alias():
     validator's canonicalization behavior. Without this, a programmatic
     `run_one_task` call that passes the alias would pass the validator
     but be silently turned into a failed result row at the agent layer."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.agent import (
         ClaudeSDKOtfAInteractAgent,
     )
 
@@ -417,7 +417,7 @@ async def test_run_task_rejects_livesqlbench_dataset():
     """ainteract is bound to mini_interact at the agent layer too —
     a programmatic caller (e.g. `make_runner`, which has no dataset arg)
     cannot bypass the CLI gate by passing task_data with the wrong dataset."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.agent import (
         ClaudeSDKOtfAInteractAgent,
     )
 
@@ -429,7 +429,7 @@ async def test_run_task_rejects_livesqlbench_dataset():
 
 @pytest.mark.asyncio
 async def test_run_task_non_anthropic_model_skips():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.agent import (
         ClaudeSDKOtfAInteractAgent,
     )
 
@@ -462,7 +462,7 @@ def _make_fake_client(
     prefill_asks: int = 0,
 ):
     """Build a fake `ClaudeSDKClient`. See the equivalent helper in
-    test_claude_sdk_otf_agent.py for the prefill semantics.
+    test_claude_sdk_otf_v1_agent.py for the prefill semantics.
 
     ``prefill_asks`` simulates the ``ask_user`` tool having been called
     ``N`` times during the message loop — pokes ``asks_used`` into the
@@ -592,7 +592,7 @@ async def test_run_task_uses_cache_resolver_with_mini_interact_benchmark(
 ):
     """ainteract resolves per-task storage from the deterministic cache scoped
     to mini_interact, never the livesqlbench root."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     # The committed-models resolver must not even be imported.
     assert not hasattr(m, "resolve_task_storage_dir")
@@ -609,7 +609,7 @@ async def test_run_task_uses_cache_resolver_with_mini_interact_benchmark(
 async def test_run_task_attaches_slayer_write_tools(monkeypatch, tmp_path):
     """The ClaudeAgentOptions handed to the SDK must whitelist the slayer
     write tools so the agent can encode."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
@@ -631,7 +631,7 @@ async def test_run_task_passes_ingest_on_startup_false_to_slayer_mcp(
     startup-timeout knob, so the slayer MCP must boot WITHOUT
     --ingest-on-startup or the agent silently loses every mcp__slayer__*
     tool to a stuck-pending handshake."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
@@ -645,7 +645,7 @@ async def test_run_task_passes_ingest_on_startup_false_to_slayer_mcp(
 async def test_run_task_whitelists_ask_user_and_submit_query(monkeypatch, tmp_path):
     """Both native tools that drive the ask-then-submit discipline must be on
     the allow-list."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
@@ -665,7 +665,7 @@ async def test_run_task_registers_three_guards_plus_turn_budget(
     two guards — the ask-user gate and the query-before-submit gate;
     PostToolUse carries the ask-counter, the nag, the turn-budget hook, AND
     the all-tools tracker for the query-before-submit gate."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
@@ -709,7 +709,7 @@ async def test_run_task_registered_hooks_behave_correctly(monkeypatch, tmp_path)
     (c) the nag fires on the 10th non-ask call when ask_count == 0,
     (d) the query-before-submit gate denies when last tool was not query,
     (e) the tracker + gate together allow after a query call."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
@@ -792,7 +792,7 @@ async def test_run_task_invokes_factory_per_call(monkeypatch, tmp_path):
     (per task), not on the agent constructor. Running the SAME agent
     instance through run_task twice must produce two independent guard
     states (regression for the per-task closure contract)."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     call_count = [0]
     real_factory = m._make_ask_user_guards
@@ -843,7 +843,7 @@ async def test_run_task_accepts_explicit_mini_interact_dataset(
     """Codex LOW#2: explicit positive case — task with an explicit
     ``dataset='mini_interact'`` marker is accepted at the agent layer
     (loader-stamped marker, not just defaulted)."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
@@ -859,7 +859,7 @@ async def test_run_task_accepts_explicit_mini_interact_dataset(
 async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
     """No Claude Code built-ins / ToolSearch; isolated settings; native
     max_turns at 2x the base."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
     from bird_interact_agents.harness import MAX_MODEL_TURNS
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
@@ -876,7 +876,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_run_task_pins_requested_model(monkeypatch, tmp_path):
     """--agent-model must reach the SDK as the bare native model id."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-opus-4-7")
@@ -888,7 +888,7 @@ async def test_run_task_pins_requested_model(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_passes_reasoning_effort(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractAgent(
@@ -902,7 +902,7 @@ async def test_run_task_passes_reasoning_effort(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_default_effort_is_none(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
@@ -914,7 +914,7 @@ async def test_run_task_default_effort_is_none(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_captures_usage(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
     from bird_interact_agents import usage as usage_mod
 
     msgs = [_FakeAssistant(100, 20), _FakeAssistant(150, 30, cache=5)]
@@ -954,7 +954,7 @@ def test_import_does_not_pull_pydantic_ai_adapter_packages(
 # ---------------------------------------------------------------------------
 # DEV-1511: diagnostic-field propagation from `_ctx["result"]` to the
 # finalized row, mirrored for the post-DEV-1507 ainteract flavor. Same
-# shape as `test_claude_sdk_otf_agent.py`'s DEV-1511 block.
+# shape as `test_claude_sdk_otf_v1_agent.py`'s DEV-1511 block.
 # ---------------------------------------------------------------------------
 
 
@@ -978,7 +978,7 @@ def _full_prefill(**overrides):
 async def test_run_task_propagates_diagnostic_fields_on_happy_path(
     monkeypatch, tmp_path,
 ):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _stub_env(
         monkeypatch, m, tmp_path / "store",
@@ -1003,7 +1003,7 @@ async def test_run_task_propagates_diagnostic_fields_on_happy_path(
 
 @pytest.mark.asyncio
 async def test_run_task_propagates_phase2_observation(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _stub_env(
         monkeypatch, m, tmp_path / "store",
@@ -1031,7 +1031,7 @@ async def test_run_task_propagation_defaults_to_none_when_never_submitted(
     """Adapter contract: row carries None (not the misleading
     "never_submitted" sentinel) when no submit happened. The sentinel
     lives only in run.py's downstream setdefault, not in this row."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _stub_env(
         monkeypatch, m, tmp_path / "store",
@@ -1052,7 +1052,7 @@ async def test_run_task_propagation_defaults_to_none_when_never_submitted(
 async def test_run_task_exception_path_propagates_partial_result(
     monkeypatch, tmp_path,
 ):
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     prefill = _full_prefill(
         phase2_passed=True, total_reward=0.75,
@@ -1093,7 +1093,7 @@ async def test_run_task_exception_before_ctx_set_yields_empty_diagnostics(
     """Early-setup exception (`load_db_data_if_needed` raises before
     `_ctx_var.set(...)`) must not crash with LookupError, and must return
     None for the diagnostic fields — not a stale dict from a prior task."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _stub_env(monkeypatch, m, tmp_path / "store")
 
@@ -1122,7 +1122,7 @@ async def test_run_task_exception_path_isolated_from_stale_context(
     """Stale-context isolation (Codex blocker): a prior task's ContextVar
     must not leak into this row when an early-setup failure hits the
     exception path before `_ctx_var.set(...)` runs."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _stub_env(monkeypatch, m, tmp_path / "store")
     m._ctx_var.set({
@@ -1165,7 +1165,7 @@ async def test_run_task_exception_path_isolated_from_stale_context(
 async def test_run_task_writes_n_ask_user_calls_zero(monkeypatch, tmp_path):
     """Happy path with no ``ask_user`` calls — usage carries
     ``n_ask_user_calls == 0`` (NOT missing)."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _stub_env(
         monkeypatch, m, tmp_path / "store",
@@ -1183,7 +1183,7 @@ async def test_run_task_writes_n_ask_user_calls_zero(monkeypatch, tmp_path):
 async def test_run_task_writes_n_ask_user_calls_nonzero(monkeypatch, tmp_path):
     """Happy path with 3 simulated ``ask_user`` calls — usage carries
     ``n_ask_user_calls == 3``."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _stub_env(
         monkeypatch, m, tmp_path / "store",
@@ -1204,7 +1204,7 @@ async def test_run_task_exception_path_writes_n_ask_user_calls(
     """Error path also propagates the ``asks_used`` count — the agent
     asked twice before the failure, so usage carries
     ``n_ask_user_calls == 2`` on the resulting row."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     _stub_env(
         monkeypatch, m, tmp_path / "store",

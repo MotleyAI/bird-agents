@@ -15,7 +15,7 @@ import dataclasses
 
 import pytest
 
-from tests import test_claude_sdk_otf_ainteract_raw_agent as raw_t
+from tests import test_claude_sdk_otf_ainteract_raw_v1_agent as raw_t
 
 
 @dataclasses.dataclass
@@ -55,7 +55,7 @@ async def test_raw_ainteract_trajectory_entries_carry_dict_data(
     """Trajectory entries for both top-level AssistantMessage AND
     subagent TaskProgressMessage land as ``data`` dicts, not strings.
     A non-dict ``data`` defeats the tool-stats walker downstream."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import (
         agent as m,
     )
 
@@ -109,7 +109,7 @@ async def test_raw_ainteract_trajectory_handles_non_dataclass_message(
     trajectory entry — fall back to ``str(msg)`` rather than crashing
     the receive loop. Belt-and-suspenders for SDK message classes that
     aren't dataclasses (e.g., SystemMessage variants)."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import (
         agent as m,
     )
 

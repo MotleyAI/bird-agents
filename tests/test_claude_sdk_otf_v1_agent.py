@@ -3,7 +3,7 @@
 After DEV-1507 the framework is **livesqlbench / one-shot only**. The
 mini-interact / a-interact behavior lives in the sibling
 `claude_sdk_otf_ainteract` flavor (see
-`tests/test_claude_sdk_otf_ainteract_agent.py`).
+`tests/test_claude_sdk_otf_ainteract_v1_agent.py`).
 """
 
 from __future__ import annotations
@@ -18,14 +18,14 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def test_init_rejects_non_on_the_fly():
-    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
+    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import ClaudeSDKOtfAgent
 
     with pytest.raises(ValueError):
         ClaudeSDKOtfAgent(slayer_setup="pre-encoded")
 
 
 def test_init_accepts_on_the_fly_default():
-    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
+    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import ClaudeSDKOtfAgent
 
     agent = ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
     assert agent.slayer_setup == "on-the-fly"
@@ -44,7 +44,7 @@ def test_select_tools_one_shot_returns_six_native_tools():
     + submit_query = 6 native; no ask_user. Total tool count (with 9
     slayer subprocess tools after Fix C moves query/query_nested out
     of the subprocess allowlist) is 15."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     names = _tool_names(m._select_tools("one-shot"))
     assert names == {
@@ -60,7 +60,7 @@ def test_select_tools_one_shot_returns_six_native_tools():
 
 def test_select_tools_rejects_a_interact_and_others():
     """After DEV-1507 the narrowed flavor is one-shot only."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     for bad in ("a-interact", "c-interact", "oracle"):
         with pytest.raises(ValueError):
@@ -81,7 +81,7 @@ async def test_normalize_write_filters_hook_rewrites_create_model_query():
     before SLayer sees it — otherwise the persisted model has
     case-sensitive backing filters that no later query-time
     normalization can repair."""
-    from bird_interact_agents.agents.claude_sdk_otf.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
         _normalize_write_tool_filters_hook,
     )
 
@@ -108,7 +108,7 @@ async def test_normalize_write_filters_hook_rewrites_create_model_query():
 async def test_normalize_write_filters_hook_rewrites_edit_model_source_queries():
     """`edit_model.source_queries` is a list of stages each with its own
     `filters` — every stage's filters must be normalized."""
-    from bird_interact_agents.agents.claude_sdk_otf.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
         _normalize_write_tool_filters_hook,
     )
 
@@ -137,7 +137,7 @@ async def test_normalize_write_filters_hook_skips_non_write_tools():
     """Tools other than create_model / edit_model must pass through
     unchanged — the hook returns `{}` so the SDK falls through to the
     next hook (or the default allow-and-forward)."""
-    from bird_interact_agents.agents.claude_sdk_otf.agent import (
+    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
         _normalize_write_tool_filters_hook,
     )
 
@@ -158,7 +158,7 @@ def test_slayer_tool_names_include_write_tools():
     claude_sdk slayer mode. After DEV-1534 Fix C, ``query`` and
     ``query_nested`` are served by our bird-interact-tools wrappers
     (NOT the SLayer subprocess), leaving 9 SLayer subprocess tools."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     names = set(m._slayer_tool_names())
     for t in (
@@ -188,8 +188,8 @@ def test_slayer_tool_names_include_write_tools():
 def test_build_prompt_uses_one_shot_template():
     """After DEV-1507 the narrowed agent has only the one-shot template;
     a-interact lives in the ainteract flavor's prompts module."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
-    from bird_interact_agents.agents.claude_sdk_otf import prompts as p
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import prompts as p
 
     td = {"amb_user_query": "how many widgets?", "selected_database": "shop"}
     out = m._build_prompt("one-shot", td, budget=20.0)
@@ -204,7 +204,7 @@ def test_build_prompt_uses_one_shot_template():
 
 
 def test_build_prompt_rejects_non_one_shot():
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     td = {"amb_user_query": "?", "selected_database": "shop"}
     for bad in ("a-interact", "c-interact", "oracle"):
@@ -213,7 +213,7 @@ def test_build_prompt_rejects_non_one_shot():
 
 
 def test_prompts_encode_in_sequence_and_no_inlining():
-    from bird_interact_agents.agents.claude_sdk_otf import prompts as p
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import prompts as p
 
     text = p.SLAYER_OTF_ONE_SHOT
     low = text.lower()
@@ -233,7 +233,7 @@ def test_prompts_encode_in_sequence_and_no_inlining():
 def test_prompts_use_synthetic_examples_only():
     """Guards `feedback_prompts_synthetic_examples_only`: no real eval-set
     DB / table / column / value names may appear in the prompt."""
-    from bird_interact_agents.agents.claude_sdk_otf import prompts as p
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import prompts as p
 
     banned = [
         "households", "tenure_type", "income_bracket", "dwelling_class",
@@ -260,7 +260,7 @@ _TASK = {
 
 @pytest.mark.asyncio
 async def test_run_task_rejects_raw_query_mode():
-    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
+    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import ClaudeSDKOtfAgent
 
     agent = ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
     with pytest.raises(ValueError):
@@ -271,7 +271,7 @@ async def test_run_task_rejects_raw_query_mode():
 async def test_run_task_rejects_unsupported_eval_modes():
     """After DEV-1507 the narrowed agent rejects every non-one-shot mode at
     the agent boundary (defense in depth on top of CLI gates)."""
-    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
+    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import ClaudeSDKOtfAgent
 
     agent = ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
     for bad in ("a-interact", "c-interact", "oracle"):
@@ -288,7 +288,7 @@ async def test_run_task_accepts_livesqlbench_alias():
     The narrowed flavor is livesqlbench-only; canonicalization happens
     via `get_benchmark(dataset).name` so any future alias would be honored
     consistently with the validator."""
-    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
+    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import ClaudeSDKOtfAgent
 
     agent = ClaudeSDKOtfAgent(model="openai/gpt-4o")
     td = dict(_TASK, dataset="livesqlbench-base-lite-sqlite")  # canonical
@@ -305,7 +305,7 @@ async def test_run_task_rejects_mini_interact_dataset():
     """claude_sdk_otf is bound to livesqlbench at the agent layer — a
     programmatic caller (`make_runner` has no dataset arg) cannot bypass
     the CLI gate by passing task_data with the wrong dataset."""
-    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
+    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import ClaudeSDKOtfAgent
 
     agent = ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
     td = dict(_TASK, dataset="mini-interact")
@@ -315,7 +315,7 @@ async def test_run_task_rejects_mini_interact_dataset():
 
 @pytest.mark.asyncio
 async def test_run_task_non_anthropic_model_skips():
-    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
+    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import ClaudeSDKOtfAgent
 
     agent = ClaudeSDKOtfAgent(model="openai/gpt-4o")
     row = await agent.run_task(
@@ -477,7 +477,7 @@ def _stub_env(
 async def test_run_task_uses_cache_resolver_not_committed(monkeypatch, tmp_path):
     """OTF agent must resolve per-task storage from the deterministic cache
     (`resolve_otf_task_storage_dir`), NOT the committed-models path."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     # The committed-models resolver must not even be imported into the module.
     assert not hasattr(m, "resolve_task_storage_dir")
@@ -496,7 +496,7 @@ async def test_run_task_uses_cache_resolver_not_committed(monkeypatch, tmp_path)
 async def test_run_task_attaches_slayer_write_tools(monkeypatch, tmp_path):
     """The ClaudeAgentOptions handed to the SDK must whitelist the slayer
     write tools so the agent can encode."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
@@ -517,7 +517,7 @@ async def test_run_task_passes_ingest_on_startup_false_to_slayer_mcp(
     the Claude Agent SDK has no startup-timeout knob, so a slow re-ingest
     leaves slayer status='pending' for the whole session and the agent
     silently loses every mcp__slayer__* tool."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
@@ -531,7 +531,7 @@ async def test_run_task_passes_ingest_on_startup_false_to_slayer_mcp(
 async def test_run_task_does_not_whitelist_ask_user(monkeypatch, tmp_path):
     """Narrowed flavor: ask_user must NOT be on the allow-list (livesqlbench
     has no user simulator)."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
@@ -548,7 +548,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
     """Only the Task built-in (DEV-1555 discovery subagent) — no Bash/Edit/
     ToolSearch (so MCP tools aren't deferred); isolated settings; native
     max_turns at 2x the base; turn-budget hook."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
     from bird_interact_agents.harness import MAX_MODEL_TURNS
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
@@ -612,7 +612,7 @@ def test_accumulate_assistant_usage_dict_shaped_and_skips_result(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_turn_budget_hook_warns_near_cap():
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     hook = m._make_turn_budget_hook(max_turns=5, warn_within=3)
     assert await hook({}, None, None) == {}        # call 1 -> 4 left
@@ -626,7 +626,7 @@ async def test_turn_budget_hook_warns_near_cap():
 async def test_run_task_pins_requested_model(monkeypatch, tmp_path):
     """--agent-model must reach the SDK as the bare native model id, not be
     silently replaced by the claude CLI default (Codex finding)."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-opus-4-7")
@@ -638,7 +638,7 @@ async def test_run_task_pins_requested_model(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_passes_reasoning_effort(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(
@@ -652,7 +652,7 @@ async def test_run_task_passes_reasoning_effort(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_default_effort_is_none(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
@@ -663,7 +663,7 @@ async def test_run_task_default_effort_is_none(monkeypatch, tmp_path):
 
 
 def test_init_rejects_bad_reasoning_effort():
-    from bird_interact_agents.agents.claude_sdk_otf.agent import ClaudeSDKOtfAgent
+    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import ClaudeSDKOtfAgent
 
     with pytest.raises(ValueError):
         ClaudeSDKOtfAgent(reasoning_effort="turbo")
@@ -673,7 +673,7 @@ def test_init_rejects_bad_reasoning_effort():
 async def test_run_task_one_shot_livesqlbench(monkeypatch, tmp_path):
     """LiveSQLBench one-shot: storage resolved with benchmark='livesqlbench',
     materialize_task_db called (per-task DB copy)."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
     agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
@@ -687,7 +687,7 @@ async def test_run_task_one_shot_livesqlbench(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_captures_usage(monkeypatch, tmp_path):
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
     from bird_interact_agents import usage as usage_mod
 
     msgs = [_FakeAssistant(100, 20), _FakeAssistant(150, 30, cache=5)]
@@ -763,7 +763,7 @@ async def test_run_task_propagates_diagnostic_fields_on_happy_path(
     """The 5 fields (`submission_status`, `predicted_result_json`,
     `gold_result_json`, `phase1_observation`, `phase2_observation`) must
     appear on the returned row when the submit helper populated them."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     prefill = _full_prefill()
     _stub_env(
@@ -796,7 +796,7 @@ async def test_run_task_propagates_phase2_observation(monkeypatch, tmp_path):
     """`phase2_observation` is set by `_diagnostic_payload` when the submit
     runs in phase 2 (symmetric with `phase1_observation`). Same root-cause
     drop; must propagate too."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     prefill = {
         "submission_status": "wrong_result",
@@ -828,7 +828,7 @@ async def test_run_task_propagation_defaults_to_none_when_never_submitted(
     adapter's returned row must carry `None` (not a misleading sentinel) for
     the 5 diagnostic fields. The `"never_submitted"` sentinel lives only in
     `run.py`'s downstream `setdefault`, not in this adapter's row."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     _stub_env(
         monkeypatch, m, tmp_path / "store",
@@ -856,7 +856,7 @@ async def test_run_task_exception_path_propagates_partial_result(
     `submission_status=None`. Mirrors the happy-path field set INCLUDING
     pre-existing pass-throughs (`phase2_passed`, `total_reward`, the dual-
     eval columns) — a rewrite must not silently drop any of them."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     prefill = _full_prefill(
         submission_status="submitted_ok", phase1_passed=True,
@@ -902,7 +902,7 @@ async def test_run_task_exception_before_ctx_set_yields_empty_diagnostics(
     `materialize_task_db`, `resolve_otf_task_storage_dir`) raises BEFORE
     `_ctx_var.set(...)` runs, the exception finalize block must not crash
     with LookupError — and must return None for the diagnostic fields."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     _stub_env(monkeypatch, m, tmp_path / "store")
     # Override load_db_data_if_needed to raise early.
@@ -937,7 +937,7 @@ async def test_run_task_exception_path_isolated_from_stale_context(
     This test verifies that contract by pre-setting `_ctx_var` to a stale
     fake, then forcing an early-setup failure, and asserting the row
     diagnostics are NOT the stale ones."""
-    from bird_interact_agents.agents.claude_sdk_otf import agent as m
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     _stub_env(monkeypatch, m, tmp_path / "store")
     # Simulate a stale per-context contextvar from a prior task.

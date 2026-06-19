@@ -43,12 +43,12 @@ def _framework_choices_from_parser():
 
 
 def test_framework_choice_accepts_claude_sdk():
-    assert "claude_sdk" in _framework_choices_from_parser()
+    assert "claude_sdk_v1" in _framework_choices_from_parser()
 
 
 def test_existing_framework_choices_preserved():
     choices = _framework_choices_from_parser()
-    assert {"claude_sdk"}.issubset(choices)
+    assert {"claude_sdk_v1"}.issubset(choices)
 
 
 @pytest.mark.asyncio
@@ -66,7 +66,7 @@ async def test_run_evaluation_branches_to_otf_agent(monkeypatch, tmp_path):
             raise _Sentinel("stop")
 
     monkeypatch.setattr(
-        "bird_interact_agents.agents.claude_sdk_otf.ClaudeSDKOtfAgent",
+        "bird_interact_agents.agents.claude_sdk_otf_v1.ClaudeSDKOtfAgent",
         _FakeAgent, raising=False,
     )
     monkeypatch.setattr(run_mod, "load_benchmark_tasks", lambda *a, **kw: [])
@@ -80,7 +80,7 @@ async def test_run_evaluation_branches_to_otf_agent(monkeypatch, tmp_path):
             data_path=str(data_file), data_dir=str(tmp_path),
             output_path=str(tmp_path / "eval.json"),
             mode="one-shot", query_mode="slayer",
-            framework="claude_sdk_otf", slayer_setup="on-the-fly",
+            framework="claude_sdk_otf_v1", slayer_setup="on-the-fly",
             reasoning_effort="high",
             dataset="livesqlbench-base-lite-sqlite",
         )
@@ -95,12 +95,12 @@ def test_validate_slayer_setup_requires_on_the_fly():
     # pre-encoded must be rejected for claude_sdk_otf
     with pytest.raises(ValueError):
         run_mod._validate_slayer_setup(
-            slayer_setup="pre-encoded", framework="claude_sdk_otf",
+            slayer_setup="pre-encoded", framework="claude_sdk_otf_v1",
             query_mode="slayer", mode="one-shot",
         )
     # on-the-fly + slayer + one-shot must pass for the narrowed flavor.
     run_mod._validate_slayer_setup(
-        slayer_setup="on-the-fly", framework="claude_sdk_otf",
+        slayer_setup="on-the-fly", framework="claude_sdk_otf_v1",
         query_mode="slayer", mode="one-shot",
     )
 
@@ -119,7 +119,7 @@ def test_maybe_force_wipe_otf_purges_cache_for_claude_sdk_otf(monkeypatch):
         rb, "purge_references", lambda root, dbs: set(),
     )
     run_mod._maybe_force_wipe_otf(
-        otf_rebuild=True, framework="claude_sdk",
+        otf_rebuild=True, framework="claude_sdk_v1",
         dbs=["museum"], benchmark="livesqlbench-base-lite-sqlite",
     )
     assert purged.get("cache") == {"museum"}
@@ -132,7 +132,7 @@ def test_cli_rejects_claude_sdk_otf_with_pre_encoded(monkeypatch, tmp_path):
     data_file.write_text("")
     argv = [
         "prog",
-        "--framework", "claude_sdk",
+        "--framework", "claude_sdk_v1",
         "--slayer-setup", "pre-encoded",
         "--query-mode", "slayer",
         "--mode", "one-shot",
@@ -152,7 +152,7 @@ def test_cli_rejects_claude_sdk_otf_with_pre_encoded(monkeypatch, tmp_path):
 def test_cloud_artifact_name_is_cache_only():
     from bird_interact_agents.cloud import gcs
 
-    assert gcs.slayer_artifact_name("on-the-fly", "claude_sdk_otf") == "slayer_otf_cache"
+    assert gcs.slayer_artifact_name("on-the-fly", "claude_sdk_otf_v1") == "slayer_otf_cache"
 
 
 def test_cloud_actor_downloads_cache_only():
@@ -161,7 +161,7 @@ def test_cloud_actor_downloads_cache_only():
     from bird_interact_agents.cloud import ray_app
 
     cfg = {
-        "framework": "claude_sdk_otf",
+        "framework": "claude_sdk_otf_v1",
         "slayer_setup": "on-the-fly",
         "dataset": "livesqlbench-base-lite-sqlite",
     }
@@ -176,7 +176,7 @@ def test_cloud_driver_uploads_cache_only():
     from bird_interact_agents.cloud import driver
 
     args = SimpleNamespace(
-        slayer_setup="on-the-fly", framework="claude_sdk_otf",
+        slayer_setup="on-the-fly", framework="claude_sdk_otf_v1",
         dataset="livesqlbench-base-lite-sqlite",
     )
     names = {name for (_path, name, _req) in driver._slayer_uploads_for(args)}
@@ -191,7 +191,7 @@ def test_cloud_resubmit_preserves_reasoning_effort():
     from bird_interact_agents.cloud import driver
 
     manifest = {
-        "framework": "claude_sdk_otf",
+        "framework": "claude_sdk_otf_v1",
         "query_mode": "slayer",
         "mode": "one-shot",
         "agent_model": "anthropic/claude-opus-4-7",
