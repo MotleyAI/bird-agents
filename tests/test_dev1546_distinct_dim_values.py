@@ -8,27 +8,30 @@ tool). Setting ``False`` on a dimension-only query disables the auto-dedup
 
 This file pins the wiring on OUR side of slayer:
 
-* ``query_impl``'s public surface collapses to a single ``query_json``
-  positional arg + tool-level kwargs (mirrors ``submit_slayer_query``).
-  Inside the JSON DSL the agent puts ``distinct_dimension_values: false``;
-  the wrapper unpacks it through an explicit field allowlist to slayer's
-  MCP ``query`` function.
-* Sharp errors for invalid JSON, missing ``source_model``, nested-DAG
-  list shape passed to the single-stage preview tool, and any unknown
-  top-level key.
-* ``query_nested_impl`` already forwards stage dicts verbatim — the new
-  field rides through with no change. Pinned here as a regression net.
-* ``submit_slayer_query`` already forwards the JSON DSL through
+* ``query_impl`` accepts ``query_json: str`` as a positional arg plus
+  tool-level kwargs — the wrapper unpacks the JSON DSL through an
+  explicit field allowlist to slayer's MCP ``query`` function. Sharp
+  errors for invalid JSON, missing ``source_model``, nested-DAG list
+  shape, and unknown top-level keys.
+* DEV-1555 CR r1 (unification): the @tool wrapper for the ``query`` MCP
+  tool no longer takes a single ``query_json`` string at the SDK layer
+  — it accepts the SAME structured shape as ``submit_query`` (single-
+  stage via ``source_model`` + projection fields OR nested-DAG via
+  ``queries``), builds the SlayerQuery JSON internally, and forwards
+  it to DEV-1546's ``query_impl(query_json: str, …)``. The
+  ``distinct_dimension_values`` field rides through as a named
+  property on the schema instead of a JSON-string field. See
+  ``test_claude_sdk_query_tool_schema_uses_structured_shape_after_unification``.
+* ``query_nested_impl`` forwards stage dicts verbatim — the new field
+  rides through with no change. Pinned here as a regression net.
+* ``submit_slayer_query`` forwards the JSON DSL through
   ``normalize_query_payload`` → ``_compile_sql``. Pinned that the new
   field survives that round-trip and that slayer's 0.7.2 rejection
   rules surface as observation errors.
-* The claude-sdk ``@tool("query", ...)`` registration's input JSON
-  Schema is collapsed to require ``query_json`` only.
-* ``SLAYER_OTF_ONE_SHOT`` / ``SLAYER_OTF_AINTERACT`` still accept
-  exactly ``{budget}``, ``{db_name}``, ``{user_query}`` via
-  ``str.format`` after the new ``_DEDUP_VS_RAW_ROWS`` constant is
-  composed in, AND the constant is structurally present in both
-  prompts.
+* ``SLAYER_OTF_ONE_SHOT_V0`` (the V0 snapshot — see
+  ``_shared_otf_prompts.py``) inlines the full ``_DEDUP_VS_RAW_ROWS``
+  body byte-for-byte and is rendered by the v0 agents; the V1
+  prompts teach the same guidance in a shorter inlined form.
 
 Per the project convention (``feedback_no_prompt_content_tests``), no
 substring / anchor-phrase assertions on prompt copy — mechanical

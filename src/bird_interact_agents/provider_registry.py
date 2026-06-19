@@ -133,11 +133,23 @@ def sdk_session_env(model: str) -> dict[str, str]:
     the third-party Anthropic-compatible endpoints document Bearer auth,
     and keeping the API-key name out of the session env removes any
     ambiguity with ambient Anthropic credentials.
+
+    Codex r2: the Claude SDK subprocess inherits the parent process's
+    environment by default — an ambient ``ANTHROPIC_API_KEY`` or
+    ``CLAUDE_CODE_OAUTH_TOKEN`` in the developer's shell would survive
+    and the SDK would silently authenticate against Anthropic instead
+    of the provider's ``ANTHROPIC_BASE_URL`` endpoint. Cloud actors get
+    the ``_assert_actor_oauth_invariant`` guard; local SDK runs do not.
+    Emit empty-string overrides for both env vars so the subprocess
+    sees them as unset — anything truthy here loses to our explicit
+    provider key on ``ANTHROPIC_AUTH_TOKEN``.
     """
     spec = get_provider(model)
     if spec is None:
         raise ValueError(f"{model!r} is not a registry open-weight model")
     return {
+        "ANTHROPIC_API_KEY": "",
+        "CLAUDE_CODE_OAUTH_TOKEN": "",
         "ANTHROPIC_BASE_URL": resolve_base_url(spec),
         "ANTHROPIC_AUTH_TOKEN": provider_api_key(spec),
     }

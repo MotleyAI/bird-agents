@@ -86,14 +86,41 @@ def test_resolve_base_url_default_and_override(monkeypatch):
 
 
 def test_sdk_session_env_exact_keys(monkeypatch):
+    """Codex r2: the env dict neutralises ambient Anthropic API-key /
+    OAuth-token vars by setting them to empty strings, then sets the
+    provider's Bearer token via ANTHROPIC_AUTH_TOKEN."""
     from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
     monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
     monkeypatch.delenv("BIRD_MOONSHOT_ANTHROPIC_BASE_URL", raising=False)
     env = pr.sdk_session_env(_KIMI)
     assert env == {
+        "ANTHROPIC_API_KEY": "",
+        "CLAUDE_CODE_OAUTH_TOKEN": "",
         "ANTHROPIC_BASE_URL": "https://api.moonshot.ai/anthropic",
         "ANTHROPIC_AUTH_TOKEN": "ms-key-1",
     }
+
+
+def test_sdk_session_env_neutralises_ambient_anthropic_creds(monkeypatch):
+    """Codex r2: an ambient ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN
+    in the developer's shell would otherwise survive into the SDK
+    subprocess (it inherits the parent env by default) and the SDK
+    would silently authenticate against Anthropic instead of the
+    provider's ANTHROPIC_BASE_URL endpoint. The session env emits
+    empty-string overrides so neither variable carries through."""
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-ambient")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-ambient")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "leaked-bearer")
+    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
+
+    env = pr.sdk_session_env(_KIMI)
+    assert env["ANTHROPIC_API_KEY"] == ""
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == ""
+    # The provider's Bearer wins for ANTHROPIC_AUTH_TOKEN even though an
+    # ambient value was set — dict ordering puts our override last.
+    assert env["ANTHROPIC_AUTH_TOKEN"] == "ms-key-1"
 
 
 def test_sdk_session_env_respects_base_url_override(monkeypatch):

@@ -26,7 +26,14 @@ from bird_interact_agents.provider_registry import get_provider
 # agent's hook reads the same env var so the soft warnings + hard deny
 # fire BEFORE the outer cap kicks in.
 _PER_TASK_TIMEOUT_ENV = "BIRD_INTERACT_PER_TASK_TIMEOUT_S"
-_DEFAULT_AGENT_BUDGET_S = 900.0
+# Codex r2: default to 0 (no cap) so the agent-side wall-clock hook
+# stays consistent with ``run.py._DEFAULT_PER_TASK_TIMEOUT_S = 0.0``.
+# Rate-limited cloud runs with throttled LLM back-offs were pushing
+# legitimate retries past the prior 15-min default and converting
+# them into permanent eval_failed; the outer wait_for was flipped to
+# uncapped — the agent-side budget must mirror that or the deny hook
+# starts blocking non-submit tools after 15 min anyway.
+_DEFAULT_AGENT_BUDGET_S = 0.0
 
 
 def per_task_timeout_s() -> float:
@@ -34,7 +41,8 @@ def per_task_timeout_s() -> float:
 
     Reads ``BIRD_INTERACT_PER_TASK_TIMEOUT_S`` (shared with the outer
     ``asyncio.wait_for`` cap in ``run.py``). 0 / negative disables the
-    agent-level enforcement (and the outer cap, which mirrors)."""
+    agent-level enforcement (and the outer cap, which mirrors); the
+    DEFAULT is now 0 (no cap), matching the outer default."""
     raw = os.environ.get(_PER_TASK_TIMEOUT_ENV)
     if raw is None:
         return _DEFAULT_AGENT_BUDGET_S

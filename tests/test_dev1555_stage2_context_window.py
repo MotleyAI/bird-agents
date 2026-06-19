@@ -114,6 +114,21 @@ def test_update_context_tokens_ignores_other_message_types():
     assert state["context_tokens"] == 7
 
 
+def test_per_task_timeout_default_is_uncapped(monkeypatch):
+    """Codex r2: when ``BIRD_INTERACT_PER_TASK_TIMEOUT_S`` is unset the
+    agent-side cap defaults to 0 (no cap), matching ``run.py``'s outer
+    ``_DEFAULT_PER_TASK_TIMEOUT_S = 0.0``. Otherwise the wall-clock
+    deny hook would start blocking non-submit tools after 15 minutes
+    even when the operator left the env var unset — the exact failure
+    mode origin/main flipped the outer cap to avoid."""
+    from bird_interact_agents.agents.claude_sdk.context_budget import (
+        per_task_timeout_s,
+    )
+
+    monkeypatch.delenv("BIRD_INTERACT_PER_TASK_TIMEOUT_S", raising=False)
+    assert per_task_timeout_s() <= 0.0
+
+
 def test_per_task_timeout_falls_back_on_nan(monkeypatch):
     from bird_interact_agents.agents.claude_sdk.context_budget import (
         per_task_timeout_s,

@@ -87,9 +87,14 @@ async def test_moonshot_model_gets_session_env_and_native_id(
     env = options.env
     assert env["ANTHROPIC_BASE_URL"] == "https://api.moonshot.ai/anthropic"
     assert env["ANTHROPIC_AUTH_TOKEN"] == "ms-key-1"
-    # Anthropic credentials must never enter the session env.
-    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
-    assert "ANTHROPIC_API_KEY" not in env
+    # Codex r2: the session env explicitly NEUTRALISES ambient Anthropic
+    # API-key / OAuth-token vars by setting them to empty strings.
+    # (Empty-string overrides ARE present in the dict so they reach the
+    # SDK subprocess via runtime_env and shadow any ambient value the
+    # parent process inherits — the prior "must not be in env" contract
+    # was actually unsafe because absence let the parent env leak through.)
+    assert env["ANTHROPIC_API_KEY"] == ""
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == ""
     # DEV-1561: the disable-telemetry overlay sits underneath the
     # registry-session auth env. Both must reach the CLI subprocess.
     for k, v in disable_cli_telemetry_env().items():
