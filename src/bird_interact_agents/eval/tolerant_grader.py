@@ -38,6 +38,13 @@ from bird_interact_agents.eval.annotation_schema import (
 
 logger = logging.getLogger(__name__)
 
+# Per-process dedup for the `ExBaseUnavailableError` warning emitted from
+# the N1 dispatch catch site. The error fires once per grading instance
+# (10s–100s per run); without dedup the log fills with identical lines.
+# Keyed on the rendered message text so distinct failure shapes (missing
+# tree vs partial markers vs stale override) each surface exactly once.
+_EX_BASE_UNAVAILABLE_SEEN: set[str] = set()
+
 
 # ---------------------------------------------------------------------------
 # ORDER BY parser
@@ -324,7 +331,23 @@ def _compute_n1(
             conn=conn,
             conditions=conditions,
         )
-    except ExBaseUnavailableError:
+    except ExBaseUnavailableError as exc:
+        # Codex round 9: the round-8 resolver raises detailed
+        # actionable errors when no upstream candidate validates, but
+        # this catch site was silently downgrading to legacy
+        # `_set_equal` — so the operator never saw why N1 wasn't
+        # engaging. Emit ONE warning per unique error message
+        # (per-process dedup) so the actionable detail surfaces in
+        # logs without filling them with N1 dispatch retries.
+        msg = str(exc)
+        if msg not in _EX_BASE_UNAVAILABLE_SEEN:
+            _EX_BASE_UNAVAILABLE_SEEN.add(msg)
+            logger.warning(
+                "[N1 dispatch] cascade tier N1 is downgrading to legacy "
+                "_set_equal because the upstream ex_base grader is "
+                "unavailable. Remediate to engage strict N1 grading:\n%s",
+                msg,
+            )
         return _set_equal(pred_rows, orig_rows)
     except Exception:  # noqa: BLE001  (defensive — never crash grading)
         logger.exception(

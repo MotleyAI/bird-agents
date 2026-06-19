@@ -143,6 +143,74 @@ def test_n1_fallback_when_ex_base_unavailable_returns_legacy_verdict(
     assert verdict.n1_original_gold is True
 
 
+def test_n1_fallback_warns_on_first_ex_base_unavailable_then_dedups(
+    tmp_path: Path, caplog,
+):
+    """Codex round 9: the N1 dispatch catch site WAS silently swallowing
+    the round-8 resolver's actionable error — so the operator never saw
+    why N1 was downgrading. The fix logs a warning with the exception
+    message on first occurrence, dedups identical subsequent messages
+    so per-instance retries don't fill the log."""
+    import logging
+
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.eval import tolerant_grader as tg
+    from bird_interact_agents.eval.upstream_ex_base import ExBaseUnavailableError
+
+    db_path = tmp_path / "x.sqlite"
+    _make_db_with_value(db_path, "t", "v", 1)
+    task = _make_task_annotation()
+
+    # Clear the per-process dedup set so this test's warning fires
+    # regardless of prior tests in the same session.
+    tg._EX_BASE_UNAVAILABLE_SEEN.clear()
+    detailed_msg = (
+        "No usable upstream BIRD-Interact grader tree. Tried:\n"
+        "  - in-image bake path (/app/upstream_graders/bird-interact): "
+        "missing ['test_utils.py', 'db_utils.py']"
+    )
+
+    caplog.set_level(logging.WARNING, logger=tg.logger.name)
+
+    with patch.object(
+        tg, "compare_pred_vs_gold_ex_base",
+        side_effect=ExBaseUnavailableError(detailed_msg),
+    ):
+        # First call: warning fires.
+        tg.grade_submission(
+            task_annotation=task,
+            audited_gold_rows=[],
+            original_sol_sql=["SELECT v FROM t"],
+            submitted_sql="SELECT v FROM t",
+            db_path=db_path,
+            benchmark=get_benchmark("mini-interact"),
+        )
+        # Second call with identical message: NO additional warning.
+        tg.grade_submission(
+            task_annotation=task,
+            audited_gold_rows=[],
+            original_sol_sql=["SELECT v FROM t"],
+            submitted_sql="SELECT v FROM t",
+            db_path=db_path,
+            benchmark=get_benchmark("mini-interact"),
+        )
+
+    matching = [
+        rec for rec in caplog.records
+        if rec.levelno == logging.WARNING
+        and "cascade tier N1 is downgrading" in rec.getMessage()
+    ]
+    assert len(matching) == 1, (
+        f"Expected exactly one warning across two identical errors "
+        f"(per-process dedup); got {len(matching)}: "
+        f"{[r.getMessage() for r in matching]}"
+    )
+    assert detailed_msg in matching[0].getMessage(), (
+        "Warning must include the actionable error detail so the operator "
+        "can see WHY N1 downgraded — that's the whole point of the fix."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Round-2 review fold-in (CodeRabbit + Codex): conditions forwarding,
 # Postgres db_name shape, and the cloud inline-grader mutation-safety guard.
