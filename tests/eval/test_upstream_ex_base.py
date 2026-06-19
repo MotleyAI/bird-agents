@@ -1166,6 +1166,78 @@ def test_resolve_upstream_root_falls_through_on_partial_sibling(
     )
 
 
+def test_load_module_from_file_is_thread_safe_under_concurrent_loads(
+    tmp_path: Path,
+):
+    """Codex round 11: ``_load_module_from_file`` mutates process-global
+    ``sys.path`` + ``sys.modules`` and runs ``exec_module``; two
+    threads loading DIFFERENT upstream trees can interleave the
+    re-front / evict / exec steps, and one tree's grader binds the
+    other tree's ``db_utils``. Without the module-load lock this test
+    flaps (or wedges) — with the lock, each thread sees its own
+    consistent sibling."""
+    import sys
+    import threading
+    from bird_interact_agents.eval import upstream_ex_base as mod
+
+    n_threads = 8
+    iterations_per_thread = 6
+
+    tree_a = tmp_path / "tree_a"
+    tree_a.mkdir()
+    (tree_a / "db_utils.py").write_text("ORIGIN = 'tree_a'\n")
+    (tree_a / "test_utils.py").write_text(
+        "from db_utils import ORIGIN\nWHICH = ORIGIN\n"
+    )
+
+    tree_b = tmp_path / "tree_b"
+    tree_b.mkdir()
+    (tree_b / "db_utils.py").write_text("ORIGIN = 'tree_b'\n")
+    (tree_b / "test_utils.py").write_text(
+        "from db_utils import ORIGIN\nWHICH = ORIGIN\n"
+    )
+
+    barrier = threading.Barrier(n_threads)
+    mismatches: list[tuple[str, str]] = []
+    mismatches_lock = threading.Lock()
+
+    def worker(which_tree: str):
+        tree = tree_a if which_tree == "a" else tree_b
+        expected = "tree_a" if which_tree == "a" else "tree_b"
+        unique_id = threading.get_ident()
+        barrier.wait()
+        for i in range(iterations_per_thread):
+            name = f"test_utils_{which_tree}_{unique_id}_{i}"
+            loaded = mod._load_module_from_file(
+                name, tree / "test_utils.py", sys_path_addition=tree,
+            )
+            if loaded.WHICH != expected:
+                with mismatches_lock:
+                    mismatches.append((expected, loaded.WHICH))
+            sys.modules.pop(name, None)
+
+    threads = [
+        threading.Thread(target=worker, args=(("a" if i % 2 == 0 else "b"),))
+        for i in range(n_threads)
+    ]
+    prior = sys.modules.pop("db_utils", None)
+    try:
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        if prior is not None:
+            sys.modules["db_utils"] = prior
+        else:
+            sys.modules.pop("db_utils", None)
+
+    assert not mismatches, (
+        f"Cross-tree binding leaked under concurrent loads: {mismatches[:5]} "
+        f"(showing first 5 of {len(mismatches)})."
+    )
+
+
 def test_resolve_upstream_root_raises_actionable_message_when_no_candidate_valid(
     monkeypatch, tmp_path: Path,
 ):

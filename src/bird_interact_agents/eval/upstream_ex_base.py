@@ -49,6 +49,7 @@ import logging
 import os
 import re
 import sys
+import threading
 from pathlib import Path
 from types import ModuleType
 from typing import Optional, Sequence
@@ -285,6 +286,17 @@ def _resolve_upstream_root(
 # leak the wrong DB driver into whichever tree is loaded second.
 _UPSTREAM_SIBLING_MODULES = ("db_utils",)
 
+# Module-load serialisation lock (Codex round 11). ``_load_module_from_file``
+# mutates process-global ``sys.path`` + ``sys.modules`` and runs
+# ``exec_module``; two concurrent loads of DIFFERENT upstream trees can
+# interleave (re-fronting sys.path, evicting db_utils, exec_module) and
+# bind one tree's grader to the other tree's ``db_utils`` — silently
+# wrong cascade results. Today's grading paths are process-parallel
+# (Ray actors), but pre-empting a threadpool refactor here is cheap and
+# the cost (one lock per N1 invocation, contention only on cold loads)
+# is negligible against the SQL exec already happening downstream.
+_UPSTREAM_LOAD_LOCK = threading.Lock()
+
 
 def _load_module_from_file(
     name: str, path: Path, *, sys_path_addition: Optional[Path] = None,
@@ -305,40 +317,49 @@ def _load_module_from_file(
     """
     if not path.is_file():
         raise FileNotFoundError(f"upstream module not found at {path}")
-    if sys_path_addition is not None:
-        # ALWAYS re-front the per-load directory, even if it's already
-        # somewhere in sys.path. Otherwise the second tree we load
-        # leaves its own dir at the front, and a subsequent reload of
-        # the first tree still walks sys.path in [new_first_dir, ...,
-        # mini_dir, ...] order — the bare `from db_utils import ...`
-        # would then bind to the WRONG tree's sibling because the
-        # sys.path search hits the second tree first. (Codex round 2.)
-        path_str = str(sys_path_addition)
-        while path_str in sys.path:
-            sys.path.remove(path_str)
-        sys.path.insert(0, path_str)
-    spec = importlib.util.spec_from_file_location(name, str(path))
-    if spec is None or spec.loader is None:
-        raise ImportError(f"could not build module spec for {path}")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    # Snapshot + evict the sibling cache so the upcoming exec re-imports
-    # them from the right tree (resolved via ``sys_path_addition`` we
-    # just prepended). Restore unconditionally on the way out, so a
-    # later loader against the OTHER tree starts from a clean cache too.
-    sibling_snapshot: dict[str, Optional[ModuleType]] = {}
-    for sibling in _UPSTREAM_SIBLING_MODULES:
-        sibling_snapshot[sibling] = sys.modules.get(sibling)
-        sys.modules.pop(sibling, None)
-    try:
-        spec.loader.exec_module(mod)
-    finally:
-        for sibling, prior in sibling_snapshot.items():
-            if prior is not None:
-                sys.modules[sibling] = prior
-            else:
-                sys.modules.pop(sibling, None)
-    return mod
+    # Codex round 11: serialise the entire sys.path / sys.modules
+    # mutation + exec_module against any concurrent loader. Two
+    # threads loading DIFFERENT upstream trees would otherwise
+    # interleave the re-fronting / eviction / exec steps, and one
+    # tree's grader could bind the other tree's `db_utils`. The lock
+    # scope MUST cover from the sys.path mutation through to the
+    # snapshot restore — anything narrower leaks the race window.
+    with _UPSTREAM_LOAD_LOCK:
+        if sys_path_addition is not None:
+            # ALWAYS re-front the per-load directory, even if it's already
+            # somewhere in sys.path. Otherwise the second tree we load
+            # leaves its own dir at the front, and a subsequent reload of
+            # the first tree still walks sys.path in [new_first_dir, ...,
+            # mini_dir, ...] order — the bare `from db_utils import ...`
+            # would then bind to the WRONG tree's sibling because the
+            # sys.path search hits the second tree first. (Codex round 2.)
+            path_str = str(sys_path_addition)
+            while path_str in sys.path:
+                sys.path.remove(path_str)
+            sys.path.insert(0, path_str)
+        spec = importlib.util.spec_from_file_location(name, str(path))
+        if spec is None or spec.loader is None:
+            raise ImportError(f"could not build module spec for {path}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        # Snapshot + evict the sibling cache so the upcoming exec
+        # re-imports them from the right tree (resolved via
+        # ``sys_path_addition`` we just prepended). Restore
+        # unconditionally on the way out, so a later loader against
+        # the OTHER tree starts from a clean cache too.
+        sibling_snapshot: dict[str, Optional[ModuleType]] = {}
+        for sibling in _UPSTREAM_SIBLING_MODULES:
+            sibling_snapshot[sibling] = sys.modules.get(sibling)
+            sys.modules.pop(sibling, None)
+        try:
+            spec.loader.exec_module(mod)
+        finally:
+            for sibling, prior in sibling_snapshot.items():
+                if prior is not None:
+                    sys.modules[sibling] = prior
+                else:
+                    sys.modules.pop(sibling, None)
+        return mod
 
 
 def _load_mini_interact_module() -> ModuleType:
