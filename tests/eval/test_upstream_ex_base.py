@@ -1166,6 +1166,49 @@ def test_resolve_upstream_root_falls_through_on_partial_sibling(
     )
 
 
+def test_load_module_from_file_rolls_back_state_on_exec_module_failure(
+    tmp_path: Path,
+):
+    """Codex round 12: an exception during ``exec_module`` MUST leave
+    ``sys.path`` and ``sys.modules[name]`` exactly as they were before
+    the load — otherwise a partially initialised upstream module
+    lingers under that name, and the prepended sys.path entry leaks
+    into unrelated callers."""
+    import sys
+    from bird_interact_agents.eval import upstream_ex_base as mod
+
+    # Tree that fails mid-exec_module. `raise RuntimeError(...)` at top
+    # level fires when `exec_module` runs the module body. db_utils is
+    # present so the import chain reaches the failing line.
+    tree = tmp_path / "tree_failing"
+    tree.mkdir()
+    (tree / "db_utils.py").write_text("ORIGIN = 'fail-tree'\n")
+    (tree / "test_utils.py").write_text(
+        "from db_utils import ORIGIN\n"
+        "raise RuntimeError('synthetic exec failure')\n"
+    )
+
+    name = "test_utils_failure_rollback"
+    # Snapshot the world before the (failing) load.
+    sys_path_before = list(sys.path)
+    name_before = sys.modules.get(name)
+
+    with pytest.raises(RuntimeError, match="synthetic exec failure"):
+        mod._load_module_from_file(
+            name, tree / "test_utils.py", sys_path_addition=tree,
+        )
+
+    assert sys.path == sys_path_before, (
+        "sys.path was not restored after exec_module failure — the "
+        "prepended sys_path_addition leaked into the process."
+    )
+    assert sys.modules.get(name) == name_before, (
+        "sys.modules[name] still points at the partially initialised "
+        "upstream module after exec_module failure. An unrelated "
+        "importer using this name would see the broken stub."
+    )
+
+
 def test_load_module_from_file_is_thread_safe_under_concurrent_loads(
     tmp_path: Path,
 ):
