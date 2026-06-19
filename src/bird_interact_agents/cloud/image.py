@@ -19,6 +19,18 @@ class DirtyWorktreeError(RuntimeError):
     the worktree has uncommitted changes touching image-input paths."""
 
 
+class UpstreamGraderUnavailableError(RuntimeError):
+    """Raised by ``build_and_push`` when an upstream grader tree the
+    Dockerfile expects to bake via BuildKit ``--build-context`` is
+    missing on the host. Surfacing this at submit time (instead of
+    letting ``docker build`` fail with an opaque BuildKit error) gives
+    the user an actionable remediation: clone the upstream tree next to
+    the main checkout, or set the corresponding env var. Without it the
+    cascade-tier-N1 dispatch in the cloud actor silently degrades to
+    legacy ``_set_equal`` — the exact regression this PR was meant to
+    eliminate. (Codex round 6.)"""
+
+
 # Paths whose contents bind into the docker image's CODE layers.
 _CODE_RELATIVE_PATHS: tuple[str, ...] = (
     "src",
@@ -43,12 +55,22 @@ def _iter_upstream_grader_files(root: Path) -> Iterable[Path]:
     force needless rebuilds) and only keeps Python source (the loader
     only reads ``.py`` — ``.sh`` / ``.ipynb`` siblings don't influence
     the grader's behaviour).
+
+    Symlinks are skipped on purpose: a stray ``foo.py`` symlink whose
+    target is under ``__pycache__/`` (or a path outside the grader root
+    entirely) would otherwise bypass both the ``__pycache__`` parts
+    filter (the symlink's own ``parts`` don't contain it) and the
+    in-tree assumption (``read_bytes()`` follows the link). Hashing
+    out-of-context bytes would make the image tag depend on whatever
+    the symlink resolves to. (Codex round 6.)
     """
     if not root.exists():
         return iter(())
     return (
         p for p in sorted(root.rglob("*.py"))
-        if p.is_file() and "__pycache__" not in p.parts
+        if p.is_file()
+        and not p.is_symlink()
+        and "__pycache__" not in p.parts
     )
 
 
@@ -338,6 +360,34 @@ def _dirty_image_input_paths(repo_root: Path) -> set[str]:
     return dirty
 
 
+def _ensure_upstream_grader_tree_present(
+    eval_root: Path, *, env_var: str, tree_label: str,
+) -> None:
+    """Raise :class:`UpstreamGraderUnavailableError` when the upstream
+    grader tree at ``eval_root`` is missing or doesn't contain the
+    required ``test_utils.py`` marker.
+
+    Without this check, ``docker build --build-context <name>=<path>``
+    fails downstream with an opaque BuildKit error. Catching it up
+    front lets us point the user at the env-var override + the expected
+    sibling-of-checkout layout.
+    """
+    marker = eval_root / "test_utils.py"
+    if marker.is_file():
+        return
+    if not eval_root.is_dir():
+        problem = f"directory not found"
+    else:
+        problem = f"directory exists but is missing required 'test_utils.py'"
+    raise UpstreamGraderUnavailableError(
+        f"Upstream {tree_label} grader tree {problem}: {eval_root}. "
+        f"Either clone the upstream {tree_label} repo next to the "
+        f"bird-agents main checkout, or set ${env_var} to the upstream "
+        f"repo root. Without it, the cloud actor's cascade-tier-N1 "
+        f"dispatch silently falls back to legacy `_set_equal`."
+    )
+
+
 def default_grader_eval_roots() -> tuple[Path, Path]:
     """Host-side eval-dir paths the cloud build bakes into the image.
 
@@ -418,6 +468,21 @@ def build_and_push(
         livesqlbench_evaluation_root = (
             paths.livesqlbench_upstream_root() / "evaluation" / "src"
         )
+    # Fail-fast prereq check (Codex round 6): a missing upstream-grader
+    # tree would otherwise blow up `docker build` with an opaque BuildKit
+    # error about an unresolved `--build-context`. Surface an actionable
+    # message naming the env-var remediation so the user can clone the
+    # tree or repoint the var instead of decoding BuildKit's output.
+    _ensure_upstream_grader_tree_present(
+        bird_interact_evaluation_root,
+        env_var="BIRD_BIRD_INTERACT_ROOT",
+        tree_label="BIRD-Interact",
+    )
+    _ensure_upstream_grader_tree_present(
+        livesqlbench_evaluation_root,
+        env_var="BIRD_LIVESQLBENCH_ROOT",
+        tree_label="livesqlbench",
+    )
     uri = f"{image_uri_prefix}:{tag}"
     if not force:
         probe = subprocess.run(
