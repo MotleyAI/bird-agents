@@ -380,16 +380,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         from bird_interact_agents.cloud import image
 
         repo_root = driver.submitter_repo_root()
+        bird_interact_eval, livesqlbench_eval = (
+            image.default_grader_eval_roots()
+        )
         tag = image.image_tag(
             repo_root,
             paths.audited_gold_root(),
             allow_dirty=False,
             annotations_root=paths.annotations_root(),
+            bird_interact_evaluation_root=bird_interact_eval,
+            livesqlbench_evaluation_root=livesqlbench_eval,
         )
         uri = image.build_and_push(
             tag, repo_root,
             audited_gold_root=paths.audited_gold_root(),
             annotations_root=paths.annotations_root(),
+            bird_interact_evaluation_root=bird_interact_eval,
+            livesqlbench_evaluation_root=livesqlbench_eval,
             force=ns.force,
         )
         print(uri)

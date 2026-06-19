@@ -281,15 +281,18 @@ def make_runner(
     )
 
 
-_DEFAULT_PER_TASK_TIMEOUT_S = 900.0
-"""Per-task wall-clock cap (DEV-1535). 0 / negative = no cap.
+_DEFAULT_PER_TASK_TIMEOUT_S = 0.0
+"""Per-task wall-clock cap. 0 / negative = no cap (the default).
 
-In a sweep of 76 mini-interact retry tasks every `correct` verdict
-landed at <= 891 s and every `valid_interpretation` at <= 659 s; 27/53
-`agent_miss` runs burned past 900 s thrashing. The 15-min cap kills
-the thrash early with a 0% false-negative rate on the correct/valid
-buckets. Override per-run via the BIRD_INTERACT_PER_TASK_TIMEOUT_S
-env var (set 0 to disable)."""
+Originally landed under DEV-1535 at 900 s after a 76-task sweep showed
+every `correct` verdict at <= 891 s and every `valid_interpretation`
+at <= 659 s, so a 15-min cap killed `agent_miss` thrash with a 0%
+false-negative rate on the correct/valid buckets. The cap was removed
+as a default after rate-limited cloud runs revealed that LLM-side
+back-offs (subscription throttles, provider 429s) routinely push
+otherwise-correct tasks past the cap, turning recoverable retries into
+permanent `eval_failed`s. Re-enable for a specific run via the
+BIRD_INTERACT_PER_TASK_TIMEOUT_S env var (set to the desired seconds)."""
 
 
 def _per_task_timeout_s() -> float:

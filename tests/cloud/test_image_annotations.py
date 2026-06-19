@@ -127,12 +127,25 @@ def test_build_and_push_passes_annotations_build_context(monkeypatch, fake_repo_
 
     annotations_root = _make_annotations_dir(fake_repo_root)
     audited_gold_root = fake_repo_root / "audited_gold"
+    # DEV-1550 round 7: pass explicit upstream grader eval roots so this
+    # test is hermetic and doesn't depend on the dev/CI machine having
+    # sibling `BIRD-Interact` / `livesqlbench` checkouts. Each root must
+    # carry the markers `_ensure_upstream_grader_tree_present` requires.
+    bird_interact_eval = fake_repo_root / "_bird_interact_eval"
+    bird_interact_eval.mkdir()
+    livesqlbench_eval = fake_repo_root / "_livesqlbench_eval"
+    livesqlbench_eval.mkdir()
+    for d in (bird_interact_eval, livesqlbench_eval):
+        (d / "test_utils.py").write_text("")
+        (d / "db_utils.py").write_text("")
 
     image.build_and_push(
         "test-tag",
         fake_repo_root,
         audited_gold_root=audited_gold_root,
         annotations_root=annotations_root,
+        bird_interact_evaluation_root=bird_interact_eval,
+        livesqlbench_evaluation_root=livesqlbench_eval,
         force=True,
     )
     # The actual build invocation is the call containing "docker build" —

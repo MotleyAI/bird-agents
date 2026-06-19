@@ -191,6 +191,47 @@ def sar_audited_gold_root() -> Path:
     return main_checkout_root() / "sar_audited_gold"
 
 
+def bird_interact_upstream_root() -> Path:
+    """Upstream BIRD-Interact tree root — host-side sibling of the main
+    checkout. Used by ``eval.upstream_ex_base`` to load the mini-interact
+    ``test_utils.py`` + ``db_utils.py`` grader, and by
+    ``cloud.image.build_and_push`` to wire a BuildKit ``--build-context``
+    that bakes that grader into the cloud image.
+
+    Distinct from :func:`benchmark_data_root` — this is the upstream
+    *source* tree (graders + KB schemas + ingest helpers), not the
+    benchmark *data dir*. Name is deliberately spelled ``_upstream_``
+    to avoid collision with the removed ``benchmark_data_root`` shim.
+
+    Honours ``BIRD_BIRD_INTERACT_ROOT`` override (same env-var the loader
+    reads, so a single setting flips both the host loader path and the
+    in-image bake source).
+    """
+    override = os.environ.get("BIRD_BIRD_INTERACT_ROOT")
+    if override:
+        return Path(override).expanduser()
+    return main_checkout_root().parent / "BIRD-Interact"
+
+
+def livesqlbench_upstream_root() -> Path:
+    """Upstream livesqlbench tree root — host-side sibling of the main
+    checkout. Same posture as :func:`bird_interact_upstream_root`: feeds
+    the livesqlbench-family ex_base loader on the host AND the cloud
+    build's BuildKit ``--build-context``.
+
+    Distinct from :func:`benchmark_data_root` — this is the upstream
+    *source* tree, not a benchmark data dir. Name is spelled
+    ``_upstream_`` to avoid collision with the removed shim of the same
+    base name.
+
+    Honours ``BIRD_LIVESQLBENCH_ROOT`` override.
+    """
+    override = os.environ.get("BIRD_LIVESQLBENCH_ROOT")
+    if override:
+        return Path(override).expanduser()
+    return main_checkout_root().parent / "livesqlbench"
+
+
 def slayer_models_root() -> Path:
     """Per-DB SLayer model YAML — committed, must live in the main checkout.
 

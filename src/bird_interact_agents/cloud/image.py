@@ -19,6 +19,18 @@ class DirtyWorktreeError(RuntimeError):
     the worktree has uncommitted changes touching image-input paths."""
 
 
+class UpstreamGraderUnavailableError(RuntimeError):
+    """Raised by ``build_and_push`` when an upstream grader tree the
+    Dockerfile expects to bake via BuildKit ``--build-context`` is
+    missing on the host. Surfacing this at submit time (instead of
+    letting ``docker build`` fail with an opaque BuildKit error) gives
+    the user an actionable remediation: clone the upstream tree next to
+    the main checkout, or set the corresponding env var. Without it the
+    cascade-tier-N1 dispatch in the cloud actor silently degrades to
+    legacy ``_set_equal`` — the exact regression this PR was meant to
+    eliminate. (Codex round 6.)"""
+
+
 # Paths whose contents bind into the docker image's CODE layers.
 _CODE_RELATIVE_PATHS: tuple[str, ...] = (
     "src",
@@ -33,6 +45,33 @@ def _iter_files_under(root: Path) -> Iterable[Path]:
     if root.is_file():
         return iter([root])
     return (p for p in sorted(root.rglob("*")) if p.is_file())
+
+
+def _iter_upstream_grader_files(root: Path) -> Iterable[Path]:
+    """Iterate hashable source files under an upstream-grader tree.
+
+    Filters out ``__pycache__/`` (rebuilt non-deterministically by any
+    local import, which would otherwise churn the data-layer hash and
+    force needless rebuilds) and only keeps Python source (the loader
+    only reads ``.py`` — ``.sh`` / ``.ipynb`` siblings don't influence
+    the grader's behaviour).
+
+    Symlinks are skipped on purpose: a stray ``foo.py`` symlink whose
+    target is under ``__pycache__/`` (or a path outside the grader root
+    entirely) would otherwise bypass both the ``__pycache__`` parts
+    filter (the symlink's own ``parts`` don't contain it) and the
+    in-tree assumption (``read_bytes()`` follows the link). Hashing
+    out-of-context bytes would make the image tag depend on whatever
+    the symlink resolves to. (Codex round 6.)
+    """
+    if not root.exists():
+        return iter(())
+    return (
+        p for p in sorted(root.rglob("*.py"))
+        if p.is_file()
+        and not p.is_symlink()
+        and "__pycache__" not in p.parts
+    )
 
 
 def _hash_files(files: Iterable[Path], *, base: Path) -> str:
@@ -88,6 +127,8 @@ def data_hash(
     audited_gold_root: Path,
     *,
     annotations_root: Path | None = None,
+    bird_interact_evaluation_root: Path | None = None,
+    livesqlbench_evaluation_root: Path | None = None,
 ) -> str:
     """Content-based hash over the inputs that compose the DATA layers
     of `Dockerfile.cloud`: ``audited_gold/`` and the Dockerfile's DATA
@@ -117,7 +158,16 @@ def data_hash(
 
     DEV-1515: ``annotations_root`` is optional; pass ``paths.annotations_root()``
     to include annotations content. Defaults to ``None`` (no annotations hashed)
-    so test callers that don't supply it remain hermetic."""
+    so test callers that don't supply it remain hermetic.
+
+    DEV-1550: ``bird_interact_evaluation_root`` /
+    ``livesqlbench_evaluation_root`` are the upstream grader ``evaluation/``
+    subdirs that ``Dockerfile.cloud`` bakes via ``COPY --from=`` so the
+    cascade tier N1 dispatch can load ``test_utils.py`` + ``db_utils.py``
+    in the cloud actor. Hashed under stable on-image keys so the digest
+    is independent of where the host files live (the build context is
+    relocatable). Default ``None`` keeps hermetic tests hermetic; the
+    runtime driver populates both via ``image.build_and_push``."""
     h = hashlib.sha256()
 
     # audited_gold (main-checkout-anchored, gitignored). Keyed under
@@ -141,6 +191,26 @@ def data_hash(
             rel = f.relative_to(annotations_root)
             h.update(b"repo/")
             h.update(f"annotations/{rel.as_posix()}".encode())
+            h.update(b"\x00")
+            h.update(f.read_bytes())
+            h.update(b"\x00")
+
+    # DEV-1550: upstream grader subtrees. Keys mirror the in-image bake
+    # paths under ``upstream_graders/{bird-interact,livesqlbench}/`` so
+    # the digest stays the same whether the host root is the developer's
+    # checkout sibling or a CI mount. ``_iter_upstream_grader_files``
+    # filters ``__pycache__`` so a stale .pyc on the host doesn't churn
+    # the hash.
+    for grader_root, hash_key_prefix in (
+        (bird_interact_evaluation_root, "upstream_graders/bird-interact/"),
+        (livesqlbench_evaluation_root, "upstream_graders/livesqlbench/"),
+    ):
+        if grader_root is None or not grader_root.exists():
+            continue
+        for f in _iter_upstream_grader_files(grader_root):
+            rel = f.relative_to(grader_root)
+            h.update(b"repo/")
+            h.update((hash_key_prefix + rel.as_posix()).encode())
             h.update(b"\x00")
             h.update(f.read_bytes())
             h.update(b"\x00")
@@ -202,14 +272,24 @@ def image_tag(
     *,
     allow_dirty: bool,
     annotations_root: Path | None = None,
+    bird_interact_evaluation_root: Path | None = None,
+    livesqlbench_evaluation_root: Path | None = None,
 ) -> str:
     """`<data_hash[:12]>-<code_hash[:12]>` (+ `-dirty` when `allow_dirty=True`
     and the worktree is dirty).
 
     See :func:`data_hash` for why ``audited_gold_root`` is a separate input
     (worktree-safety). ``annotations_root`` is the DEV-1515 sibling input —
-    same rationale."""
-    dh = data_hash(repo_root, audited_gold_root, annotations_root=annotations_root)
+    same rationale. ``bird_interact_evaluation_root`` /
+    ``livesqlbench_evaluation_root`` (DEV-1550) point at the upstream
+    grader ``evaluation/`` subdirs Dockerfile.cloud bakes into the image."""
+    dh = data_hash(
+        repo_root,
+        audited_gold_root,
+        annotations_root=annotations_root,
+        bird_interact_evaluation_root=bird_interact_evaluation_root,
+        livesqlbench_evaluation_root=livesqlbench_evaluation_root,
+    )
     ch = code_hash(repo_root, allow_dirty=allow_dirty)
     tag = f"{dh[:12]}-{ch[:12]}"
     if allow_dirty and _dirty_image_input_paths(repo_root):
@@ -280,6 +360,78 @@ def _dirty_image_input_paths(repo_root: Path) -> set[str]:
     return dirty
 
 
+def _ensure_upstream_grader_tree_present(
+    eval_root: Path, *, env_var: str, tree_label: str,
+) -> None:
+    """Raise :class:`UpstreamGraderUnavailableError` when the upstream
+    grader tree at ``eval_root`` is missing OR is missing any marker
+    listed in
+    :data:`bird_interact_agents.eval.upstream_ex_base.REQUIRED_UPSTREAM_GRADER_MARKERS`.
+
+    Without this check, ``docker build --build-context <name>=<path>``
+    fails downstream with an opaque BuildKit error, OR (Codex round 7)
+    a partial / shallow upstream copy with only ``test_utils.py`` bakes
+    a degraded image that imports successfully through ``test_utils``
+    but later raises on ``from db_utils import ...`` at first cascade
+    tier-N1 call, downgrading to legacy ``_set_equal``. Catching it up
+    front lets us point the user at the env-var override + the expected
+    sibling-of-checkout layout.
+
+    The required marker list lives next to the loader
+    (:mod:`bird_interact_agents.eval.upstream_ex_base`) so build-time
+    and runtime checks share a single source of truth.
+    """
+    from bird_interact_agents.eval.upstream_ex_base import (
+        REQUIRED_UPSTREAM_GRADER_MARKERS,
+    )
+
+    if not eval_root.is_dir():
+        raise UpstreamGraderUnavailableError(
+            f"Upstream {tree_label} grader tree directory not found: "
+            f"{eval_root}. Either clone the upstream {tree_label} repo "
+            f"next to the bird-agents main checkout, or set ${env_var} "
+            f"to the upstream repo root. Without it, the cloud actor's "
+            f"cascade-tier-N1 dispatch silently falls back to legacy "
+            f"`_set_equal`."
+        )
+    missing = [
+        m for m in REQUIRED_UPSTREAM_GRADER_MARKERS
+        if not (eval_root / m).is_file()
+    ]
+    if missing:
+        raise UpstreamGraderUnavailableError(
+            f"Upstream {tree_label} grader tree at {eval_root} is "
+            f"missing required marker(s): {missing}. The cloud actor "
+            f"loads these at cascade-tier-N1 call time; without them "
+            f"the import silently fails and N1 falls back to legacy "
+            f"`_set_equal`. Re-clone the upstream {tree_label} repo "
+            f"next to the bird-agents main checkout (or set ${env_var} "
+            f"to a complete checkout)."
+        )
+
+
+def default_grader_eval_roots() -> tuple[Path, Path]:
+    """Host-side eval-dir paths the cloud build bakes into the image.
+
+    Returns ``(bird_interact_evaluation_root, livesqlbench_evaluation_root)``.
+    Centralised so the driver / CLI callsites pass the same paths to
+    :func:`image_tag` (data-layer hash) AND :func:`build_and_push`
+    (BuildKit ``--build-context``) — drift between the two would mean
+    rebuilding under a stale tag.
+    """
+    from bird_interact_agents import paths
+
+    bird_interact_eval = (
+        paths.bird_interact_upstream_root()
+        / "mini_interact" / "knowledge_based"
+        / "mini_interact_conv" / "evaluation"
+    )
+    livesqlbench_eval = (
+        paths.livesqlbench_upstream_root() / "evaluation" / "src"
+    )
+    return bird_interact_eval, livesqlbench_eval
+
+
 def build_and_push(
     tag: str,
     repo_root: Path,
@@ -287,6 +439,8 @@ def build_and_push(
     image_uri_prefix: str | None = None,
     audited_gold_root: Path | None = None,
     annotations_root: Path | None = None,
+    bird_interact_evaluation_root: Path | None = None,
+    livesqlbench_evaluation_root: Path | None = None,
     force: bool = False,
 ) -> str:
     """Build (if needed) and push the image, returning the full URI.
@@ -318,6 +472,39 @@ def build_and_push(
         audited_gold_root = paths.audited_gold_root()
     if annotations_root is None:
         annotations_root = paths.annotations_root()
+    # DEV-1550: upstream BIRD-Interact + livesqlbench grader subtrees.
+    # The build contexts point at the host evaluation/ subdirs that
+    # `Dockerfile.cloud`'s `COPY --from=bird-interact-evaluation` /
+    # `COPY --from=livesqlbench-evaluation` lines bake into the image.
+    # `_MINI_INTERACT_REL` / `_LIVESQLBENCH_REL` in `upstream_ex_base`
+    # are anchored under the eval grader root, so the dirs we point at
+    # here must be the deeper `evaluation/` subdirs, not the upstream
+    # repo roots.
+    if bird_interact_evaluation_root is None:
+        bird_interact_evaluation_root = (
+            paths.bird_interact_upstream_root()
+            / "mini_interact" / "knowledge_based"
+            / "mini_interact_conv" / "evaluation"
+        )
+    if livesqlbench_evaluation_root is None:
+        livesqlbench_evaluation_root = (
+            paths.livesqlbench_upstream_root() / "evaluation" / "src"
+        )
+    # Fail-fast prereq check (Codex round 6): a missing upstream-grader
+    # tree would otherwise blow up `docker build` with an opaque BuildKit
+    # error about an unresolved `--build-context`. Surface an actionable
+    # message naming the env-var remediation so the user can clone the
+    # tree or repoint the var instead of decoding BuildKit's output.
+    _ensure_upstream_grader_tree_present(
+        bird_interact_evaluation_root,
+        env_var="BIRD_BIRD_INTERACT_ROOT",
+        tree_label="BIRD-Interact",
+    )
+    _ensure_upstream_grader_tree_present(
+        livesqlbench_evaluation_root,
+        env_var="BIRD_LIVESQLBENCH_ROOT",
+        tree_label="livesqlbench",
+    )
     uri = f"{image_uri_prefix}:{tag}"
     if not force:
         probe = subprocess.run(
@@ -332,6 +519,10 @@ def build_and_push(
             "docker", "build",
             "--build-context", f"audited-gold={audited_gold_root}",
             "--build-context", f"annotations={annotations_root}",
+            "--build-context",
+            f"bird-interact-evaluation={bird_interact_evaluation_root}",
+            "--build-context",
+            f"livesqlbench-evaluation={livesqlbench_evaluation_root}",
             "-t", uri,
             "-f", "Dockerfile.cloud",
             ".",

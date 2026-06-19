@@ -528,6 +528,7 @@ def grade_and_write(
     llm_judge: Any = None,
     epsilon: float = 1e-6,
     autopsy_result: Optional["AutopsyResult"] = None,
+    conditions: Optional[dict] = None,
 ) -> Path:
     """Run the tolerant grader and write the SubmissionAnnotation to
     ``<rows_dir>/<instance_id>/submission_annotation.json``.
@@ -577,6 +578,7 @@ def grade_and_write(
         llm_judge=llm_judge,
         epsilon=epsilon,
         user_sim_n_asks=_user_sim_n_asks,
+        conditions=conditions,
     )
     ann = _build_submission_annotation(
         task_annotation=task_annotation,
@@ -919,4 +921,8 @@ def grade_one_submission(
         user_sim_interaction=user_sim_interaction,
         config=config,
         autopsy_result=autopsy_result,
+        # DEV-1550 round-2 (Codex): order-sensitive tasks carry
+        # `conditions={"order": True}`. Without this forward, the new
+        # ex_base N1 path would silently grade them as set-dedup.
+        conditions=task_data.get("conditions"),
     )

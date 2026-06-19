@@ -496,8 +496,8 @@ requires-dist = [
     { name = "mcp-agent", marker = "extra == 'mcp-agent'", specifier = ">=0.0.16" },
     { name = "mini-interact-agent", marker = "extra == 'all'", git = "https://github.com/MotleyAI/BIRD-Interact.git?subdirectory=mini_interact%2Fknowledge_based%2Fmini_interact_agent&rev=6b897950780d123c8e8057d15f7d3f1b92819962" },
     { name = "mini-interact-agent", marker = "extra == 'original'", git = "https://github.com/MotleyAI/BIRD-Interact.git?subdirectory=mini_interact%2Fknowledge_based%2Fmini_interact_agent&rev=6b897950780d123c8e8057d15f7d3f1b92819962" },
-    { name = "motley-slayer", extras = ["embedding-search"], marker = "extra == 'all'", specifier = ">=0.7.3" },
-    { name = "motley-slayer", extras = ["embedding-search"], marker = "extra == 'slayer'", specifier = ">=0.7.3" },
+    { name = "motley-slayer", extras = ["embedding-search"], marker = "extra == 'all'", specifier = ">=0.7.4" },
+    { name = "motley-slayer", extras = ["embedding-search"], marker = "extra == 'slayer'", specifier = ">=0.7.4" },
     { name = "nbconvert", marker = "extra == 'analysis'", specifier = ">=7.0" },
     { name = "nbformat", marker = "extra == 'analysis'", specifier = ">=5.9" },
     { name = "openai", marker = "extra == 'dev'" },
@@ -3224,7 +3224,7 @@ wheels = [
 
 [[package]]
 name = "motley-slayer"
-version = "0.7.3"
+version = "0.7.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "duckdb" },
@@ -3241,9 +3241,9 @@ dependencies = [
     { name = "tantivy" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d5/df/72f4f0281daba5a6e56f385584f1687d5c43b1df464c0bebd641ec29479e/motley_slayer-0.7.3.tar.gz", hash = "sha256:1d18e6ec7c577b43f4b948df5c7e25044ad01e2acb201dfb847c1a9dcc61669e", size = 476858, upload-time = "2026-06-10T16:11:06.093Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/f6/39aa9adfa3971cdc01783c87c4838ffdd2e3647b1e89e43a2bef2d201f30/motley_slayer-0.7.5.tar.gz", hash = "sha256:61c177a3e1ffb209dc9c2d2444194072506c4d4a844312983bff23576c237e93", size = 515891, upload-time = "2026-06-17T19:30:30.513Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1d/01/0d4a44f3429716aa6fa0e00216327633240a713a00e71c1770116f27cb54/motley_slayer-0.7.3-py3-none-any.whl", hash = "sha256:aff712df50d8c7bb7fe23450c4a300c6adcf4445b599ce1abb6024d44290167b", size = 542651, upload-time = "2026-06-10T16:11:04.046Z" },
+    { url = "https://files.pythonhosted.org/packages/39/2f/43141c7d8ca2276f4fb4ebfd575a66144739c7a67e7660d195e0e18c2ad8/motley_slayer-0.7.5-py3-none-any.whl", hash = "sha256:e41afbc74c42f7bb60ad2c3018b15f8c5aefe286ee47317350d120b07f57d1cd", size = 584029, upload-time = "2026-06-17T19:30:29.077Z" },
 ]
 
 [package.optional-dependencies]

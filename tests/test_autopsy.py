@@ -1370,6 +1370,158 @@ async def test_run_autopsy_one_shot_validates_and_returns_one_shot_analysis(tmp_
 
 
 @pytest.mark.asyncio
+async def test_run_autopsy_retries_once_on_validation_error_and_recovers(tmp_path):
+    """Pydantic validation failures get one corrective retry. First call
+    returns an output missing the required ``pattern`` field (the
+    archeology_10 production failure); the harness sends back a
+    ``tool_result`` carrying the validation error with ``is_error=True``
+    and the model returns a valid second attempt. The autopsy lands as
+    a successful analysis, NOT ``validation_error``."""
+    from bird_interact_agents.eval.annotation_schema import (
+        AutopsyAnalysisOneShot,
+        AutopsyResult,
+    )
+    from bird_interact_agents.eval.autopsy import run_autopsy
+
+    task_ann = _minimal_task_annotation()
+    bad_input = {
+        # ``pattern`` deliberately omitted — the archeology_10 failure shape.
+        "other_details": None,
+        "narrative": "Some narrative.",
+        "remediation": "Some remediation.",
+        "decision_point_trajectory_index": None,
+        "decision_point_description": None,
+    }
+    good_input = {
+        "pattern": "wrong_join_path",
+        "other_details": None,
+        "narrative": "Agent used the wrong join path.",
+        "remediation": "Fix host discovery.",
+        "decision_point_trajectory_index": 4,
+        "decision_point_description": "Wrong join chosen at step 4.",
+    }
+    bad_response = _stub_tool_use(bad_input)
+    # Give the bad response a tool_use id so the retry can echo it.
+    bad_response.content[0].id = "tu_bad_1"
+    good_response = _stub_tool_use(good_input)
+    good_response.content[0].id = "tu_good_1"
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=[bad_response, good_response]
+    )
+
+    with patch("anthropic.AsyncAnthropic", return_value=mock_client):
+        result = await run_autopsy(
+            task_annotation=task_ann,
+            trajectory=[],
+            slayer_storage_dir=str(tmp_path),
+            miss_diagnostics=None,
+            model="anthropic/claude-sonnet-4-5",
+            is_one_shot=True,
+        )
+
+    assert isinstance(result, AutopsyResult)
+    assert result.error is None
+    assert isinstance(result.analysis, AutopsyAnalysisOneShot)
+    assert result.analysis.pattern == "wrong_join_path"
+    # Exactly two LLM calls: the failed attempt plus the corrective retry.
+    assert mock_client.messages.create.await_count == 2
+    # The retry call carried the prior assistant turn + a tool_result with
+    # is_error=True so the model knew its previous output was rejected.
+    retry_messages = mock_client.messages.create.await_args_list[1].kwargs["messages"]
+    assert len(retry_messages) == 3  # user prompt + assistant + tool_result
+    tool_result_msg = retry_messages[-1]
+    assert tool_result_msg["role"] == "user"
+    tr_block = tool_result_msg["content"][0]
+    assert tr_block["type"] == "tool_result"
+    assert tr_block["tool_use_id"] == "tu_bad_1"
+    assert tr_block["is_error"] is True
+    assert "pattern" in tr_block["content"]  # the failing field is named
+
+
+@pytest.mark.asyncio
+async def test_run_autopsy_validation_error_persists_after_two_failed_attempts(tmp_path):
+    """If both the first attempt AND the corrective retry fail validation,
+    the autopsy surfaces a ``validation_error`` carrying the LAST
+    exception. Guard against the bug where the loop silently returns the
+    first attempt's error instead of the retry's."""
+    from bird_interact_agents.eval.annotation_schema import AutopsyResult
+    from bird_interact_agents.eval.autopsy import run_autopsy
+
+    task_ann = _minimal_task_annotation()
+    bad_input_1 = {  # missing pattern
+        "narrative": "n1", "remediation": "r1",
+    }
+    bad_input_2 = {  # still missing pattern, plus extra invalid value
+        "narrative": "n2", "remediation": "r2",
+    }
+    r1 = _stub_tool_use(bad_input_1); r1.content[0].id = "tu_1"
+    r2 = _stub_tool_use(bad_input_2); r2.content[0].id = "tu_2"
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(side_effect=[r1, r2])
+
+    with patch("anthropic.AsyncAnthropic", return_value=mock_client):
+        result = await run_autopsy(
+            task_annotation=task_ann,
+            trajectory=[],
+            slayer_storage_dir=str(tmp_path),
+            miss_diagnostics=None,
+            model="anthropic/claude-sonnet-4-5",
+            is_one_shot=True,
+        )
+
+    assert isinstance(result, AutopsyResult)
+    assert result.analysis is None
+    assert result.error is not None
+    assert result.error.kind == "validation_error"
+    assert mock_client.messages.create.await_count == 2
+
+
+def test_autopsy_tool_schema_generated_from_pydantic_model():
+    """Tool schema is generated from the Pydantic model, not hand-mirrored.
+    A new pattern enum value or required field added to AutopsyLLMOutput
+    must show up in the tool schema automatically."""
+    from bird_interact_agents.eval.autopsy import (
+        AutopsyLLMOutput,
+        AutopsyLLMOutputOneShot,
+        _AUTOPSY_TOOL_SCHEMA,
+        _AUTOPSY_TOOL_SCHEMA_ONE_SHOT,
+    )
+
+    # Every field that's required on the Pydantic model appears in the
+    # tool schema's ``required`` array.
+    for model_cls, schema in [
+        (AutopsyLLMOutput, _AUTOPSY_TOOL_SCHEMA),
+        (AutopsyLLMOutputOneShot, _AUTOPSY_TOOL_SCHEMA_ONE_SHOT),
+    ]:
+        pydantic_required = {
+            name for name, field in model_cls.model_fields.items()
+            if field.is_required()
+        }
+        schema_required = set(schema["input_schema"]["required"])
+        assert pydantic_required == schema_required, (
+            f"{model_cls.__name__}: pydantic={pydantic_required} "
+            f"schema={schema_required}"
+        )
+
+    # The pattern enum on the tool schema matches the Pydantic Literal.
+    a_pattern_enum = set(
+        _AUTOPSY_TOOL_SCHEMA["input_schema"]["properties"]["pattern"]["enum"]
+    )
+    o_pattern_enum = set(
+        _AUTOPSY_TOOL_SCHEMA_ONE_SHOT["input_schema"]["properties"]["pattern"]["enum"]
+    )
+    # One-shot is a strict subset of A-interact patterns.
+    assert o_pattern_enum.issubset(a_pattern_enum)
+    # Nested ``key_asks`` schema is inlined (no $ref/$defs left over).
+    a_schema_str = json.dumps(_AUTOPSY_TOOL_SCHEMA["input_schema"])
+    assert "$ref" not in a_schema_str
+    assert "$defs" not in a_schema_str
+
+
+@pytest.mark.asyncio
 async def test_run_autopsy_validation_error_to_autopsy_error_repro_robot_10(tmp_path):
     """Robot_10 repro: stub the actual LLM payload shape that broke
     autopsy.py:384 — `key_asks: []`, no resolutions arrays — and run
