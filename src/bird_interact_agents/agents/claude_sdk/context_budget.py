@@ -84,6 +84,60 @@ def _usage_value(usage: object, key: str) -> int:
     return val or 0
 
 
+_CHARS_PER_TOKEN = 4.0
+"""Rough Anthropic-tokenizer ratio (≈3.5-4 chars/token in English). Used
+as the mid-stream estimator for backends whose per-turn AssistantMessage
+usage is unreliable (Moonshot/Kimi)."""
+
+
+def _estimate_message_chars(msg: object) -> int:
+    """Best-effort character count of a streamed message's content blocks.
+
+    Walks the SDK's content list and sums the lengths of every
+    ``text`` / ``thinking`` block plus the JSON-stringified
+    ``input`` of every ``tool_use`` block and the ``content`` of every
+    ``tool_result`` block. Misses some fixed-cost overhead per block
+    but mirrors what the LLM actually pays for in the input context.
+    """
+    import json as _json
+
+    content = getattr(msg, "content", None)
+    if content is None:
+        return 0
+    total = 0
+    blocks = content if isinstance(content, list) else [content]
+    for b in blocks:
+        if isinstance(b, dict):
+            t = b.get("type")
+            if t in ("text", "thinking"):
+                total += len(b.get("text") or b.get("thinking") or "")
+            elif t == "tool_use":
+                inp = b.get("input")
+                if inp is not None:
+                    total += len(_json.dumps(inp))
+            elif t == "tool_result":
+                c = b.get("content")
+                if isinstance(c, str):
+                    total += len(c)
+                elif isinstance(c, list):
+                    for sub in c:
+                        if isinstance(sub, dict):
+                            total += len(sub.get("text") or "")
+        else:
+            # Dataclass-style: extract any text-like attribute.
+            for attr in ("text", "thinking"):
+                val = getattr(b, attr, None)
+                if isinstance(val, str):
+                    total += len(val)
+            inp = getattr(b, "input", None)
+            if inp is not None:
+                total += len(_json.dumps(inp))
+            tr = getattr(b, "content", None)
+            if isinstance(tr, str):
+                total += len(tr)
+    return total
+
+
 def update_context_tokens(state: dict, msg: object) -> None:
     """Record the LATEST call's context size from a streamed message.
 
@@ -95,26 +149,41 @@ def update_context_tokens(state: dict, msg: object) -> None:
     correctly, but Moonshot/Kimi reports all-zero on each
     ``AssistantMessage`` and only fills cumulative usage on the
     terminal ``ResultMessage`` (documented at
-    ``claude_sdk/agent.py:SdkUsageTracker``). Reading both keeps the
-    80%/90% context warnings firing for the open-weight model that
-    DEV-1555 stage 2 ships against.
+    ``claude_sdk/agent.py:SdkUsageTracker``).
+
+    Codex r3: ``ResultMessage`` is the SESSION-terminal message — by
+    the time it arrives, the agent has finished and no further
+    PostToolUse hooks fire. Reading only ResultMessage means the 80%/
+    90% warnings would never fire for Moonshot/Kimi mid-stream, which
+    defeats the whole point of the budget hook for the open-weight
+    target. When AssistantMessage reports zero usage, fall back to a
+    char-based estimate (rough Anthropic-tokenizer ratio) so the
+    warnings fire at approximately the right turn count.
     """
     msg_type = type(msg).__name__
     if msg_type not in ("AssistantMessage", "ResultMessage"):
         return
     usage = getattr(msg, "usage", None)
-    if usage is None:
+    tokens = 0
+    if usage is not None:
+        tokens = (
+            _usage_value(usage, "input_tokens")
+            + _usage_value(usage, "cache_read_input_tokens")
+            + _usage_value(usage, "cache_creation_input_tokens")
+        )
+    if tokens > 0:
+        # Real usage available — authoritative.
+        state["context_tokens"] = tokens
         return
-    tokens = (
-        _usage_value(usage, "input_tokens")
-        + _usage_value(usage, "cache_read_input_tokens")
-        + _usage_value(usage, "cache_creation_input_tokens")
-    )
-    if tokens <= 0:
-        # AssistantMessage zero-usage (Moonshot) — let the terminal
-        # ResultMessage be the authoritative update for this turn.
-        return
-    state["context_tokens"] = tokens
+    # AssistantMessage zero-usage path: keep a running char-based
+    # estimate (cumulative across the session) so the PostToolUse hook
+    # has something to compare against.
+    if msg_type == "AssistantMessage":
+        chars = _estimate_message_chars(msg)
+        if chars > 0:
+            running = state.get("context_chars_estimate", 0) + chars
+            state["context_chars_estimate"] = running
+            state["context_tokens"] = int(running / _CHARS_PER_TOKEN)
 
 
 def make_context_budget_hook(state: dict, window: int):

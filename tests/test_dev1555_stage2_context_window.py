@@ -77,15 +77,14 @@ def test_update_context_tokens_reads_assistant_message_usage():
 
 def test_update_context_tokens_reads_result_message_when_assistant_was_zero():
     """Moonshot/Kimi reports zero per-turn AssistantMessage.usage; only the
-    terminal ResultMessage carries the real cumulative numbers. Without
-    reading ResultMessage, ``context_tokens`` stays at 0 and the 80%/90%
-    warnings never fire for the open-weight target."""
+    terminal ResultMessage carries the real cumulative numbers."""
     from bird_interact_agents.agents.claude_sdk.context_budget import (
         update_context_tokens,
     )
 
     state: dict = {}
-    # Stream: zero-valued AssistantMessage then ResultMessage with cumulative.
+    # Stream: zero-valued AssistantMessage (no content blocks → falls back
+    # path also no-ops) then ResultMessage with cumulative.
     update_context_tokens(state, _make_msg(_FakeAssistantMessage, {
         "input_tokens": 0, "cache_read_input_tokens": 0,
         "cache_creation_input_tokens": 0,
@@ -96,6 +95,75 @@ def test_update_context_tokens_reads_result_message_when_assistant_was_zero():
         "cache_creation_input_tokens": 12_345,
     }))
     assert state["context_tokens"] == 162_345
+
+
+def test_update_context_tokens_estimates_mid_stream_when_assistant_usage_zero():
+    """Codex r3 regression: ResultMessage is SESSION-terminal — by the
+    time it arrives, the agent has finished and no further PostToolUse
+    hooks fire. If we only read ResultMessage on the zero-usage path,
+    the 80%/90% mid-stream warnings never fire for Moonshot/Kimi (the
+    open-weight target). Fall back to a char-based estimate of the
+    streamed AssistantMessage content so the running ``context_tokens``
+    grows mid-stream and the warnings fire at approximately the right
+    turn count."""
+    from bird_interact_agents.agents.claude_sdk.context_budget import (
+        update_context_tokens,
+    )
+
+    state: dict = {}
+
+    def _msg_with_content(content):
+        m = _FakeAssistantMessage()
+        m.usage = {
+            "input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        }
+        m.content = content
+        return m
+
+    # First turn: a text block + a tool-use block. Char count should
+    # produce a non-zero token estimate.
+    update_context_tokens(state, _msg_with_content([
+        {"type": "text", "text": "x" * 4000},
+        {"type": "tool_use", "input": {"k": "v" * 1000}},
+    ]))
+    first = state.get("context_tokens", 0)
+    assert first > 0, "char-based estimate should produce non-zero tokens"
+
+    # Second turn: more content. Estimate grows cumulatively.
+    update_context_tokens(state, _msg_with_content([
+        {"type": "text", "text": "y" * 8000},
+    ]))
+    second = state.get("context_tokens", 0)
+    assert second > first
+
+
+def test_update_context_tokens_real_usage_beats_estimate():
+    """When the model later starts reporting real usage, the
+    authoritative number wins over the running estimate."""
+    from bird_interact_agents.agents.claude_sdk.context_budget import (
+        update_context_tokens,
+    )
+
+    state: dict = {}
+
+    m = _FakeAssistantMessage()
+    m.usage = {
+        "input_tokens": 0, "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+    }
+    m.content = [{"type": "text", "text": "x" * 4000}]
+    update_context_tokens(state, m)
+    estimated = state["context_tokens"]
+    assert estimated > 0
+
+    # Real-usage AssistantMessage: overwrite to the reported value.
+    update_context_tokens(state, _make_msg(_FakeAssistantMessage, {
+        "input_tokens": 50_000, "cache_read_input_tokens": 100,
+        "cache_creation_input_tokens": 0,
+    }))
+    assert state["context_tokens"] == 50_100
 
 
 def test_update_context_tokens_ignores_other_message_types():

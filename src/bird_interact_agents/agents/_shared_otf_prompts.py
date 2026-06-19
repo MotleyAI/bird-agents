@@ -664,11 +664,10 @@ form (set `queries` to a list of stage objects). The shape is:
     {{"source_model": "orders", "dimensions": ["status"],
     "measures": ["amount:sum"]}}.
   * Nested DAG — when one stage's MEASURE becomes the next stage's
-    DIMENSION, a JSON ARRAY of stage objects (the same nested-DAG shape `submit_query` accepts via the `queries`
-    field). The last element is the DAG root; every non-final element
-    needs a `name`; later stages reference earlier ones via
-    `source_model: "<sibling name>"`. Do NOT wrap the array in
-    {{"queries": ...}} — that shape is rejected.
+    DIMENSION, a JSON ARRAY of stage objects. The last element is the DAG root;
+    every non-final element needs a `name`; later stages reference
+    earlier ones via `source_model: "<sibling name>"`. Pass this
+    list as the `queries` argument on `submit_query`.
 
 You MUST call `submit_query` to finish — a prose answer is not a
 submission. If a `filters` predicate needs a computed value, encode it as
@@ -1126,11 +1125,10 @@ form (set `queries` to a list of stage objects). The shape is:
     {{"source_model": "orders", "dimensions": ["status"],
     "measures": ["amount:sum"]}}.
   * Nested DAG — when one stage's MEASURE becomes the next stage's
-    DIMENSION, a JSON ARRAY of stage objects (the same nested-DAG shape `submit_query` accepts via the `queries`
-    field). The last element is the DAG root; every non-final element
-    needs a `name`; later stages reference earlier ones via
-    `source_model: "<sibling name>"`. Do NOT wrap the array in
-    {{"queries": ...}} — that shape is rejected.
+    DIMENSION, a JSON ARRAY of stage objects. The last element is the DAG root;
+    every non-final element needs a `name`; later stages reference
+    earlier ones via `source_model: "<sibling name>"`. Pass this
+    list as the `queries` argument on `submit_query`.
 
 You MUST call `submit_query` to finish — a prose answer is not a
 submission. If a `filters` predicate needs a computed value, encode it as
