@@ -360,24 +360,13 @@ def _dirty_image_input_paths(repo_root: Path) -> set[str]:
     return dirty
 
 
-# All marker files the upstream loader actually depends on. The runtime
-# `_load_module_from_file` executes `test_utils.py`, which `from db_utils
-# import ...` resolves through `sys_path_addition=eval_root`; if
-# `db_utils.py` is missing the import would explode at first cascade-tier-N1
-# call inside the cloud actor (Codex round 7). The annotation grader uses
-# the same evaluation/ dir, so the check is shared.
-_REQUIRED_UPSTREAM_GRADER_MARKERS: tuple[str, ...] = (
-    "test_utils.py",
-    "db_utils.py",
-)
-
-
 def _ensure_upstream_grader_tree_present(
     eval_root: Path, *, env_var: str, tree_label: str,
 ) -> None:
     """Raise :class:`UpstreamGraderUnavailableError` when the upstream
-    grader tree at ``eval_root`` is missing OR is missing any of
-    :data:`_REQUIRED_UPSTREAM_GRADER_MARKERS`.
+    grader tree at ``eval_root`` is missing OR is missing any marker
+    listed in
+    :data:`bird_interact_agents.eval.upstream_ex_base.REQUIRED_UPSTREAM_GRADER_MARKERS`.
 
     Without this check, ``docker build --build-context <name>=<path>``
     fails downstream with an opaque BuildKit error, OR (Codex round 7)
@@ -387,7 +376,15 @@ def _ensure_upstream_grader_tree_present(
     tier-N1 call, downgrading to legacy ``_set_equal``. Catching it up
     front lets us point the user at the env-var override + the expected
     sibling-of-checkout layout.
+
+    The required marker list lives next to the loader
+    (:mod:`bird_interact_agents.eval.upstream_ex_base`) so build-time
+    and runtime checks share a single source of truth.
     """
+    from bird_interact_agents.eval.upstream_ex_base import (
+        REQUIRED_UPSTREAM_GRADER_MARKERS,
+    )
+
     if not eval_root.is_dir():
         raise UpstreamGraderUnavailableError(
             f"Upstream {tree_label} grader tree directory not found: "
@@ -398,7 +395,7 @@ def _ensure_upstream_grader_tree_present(
             f"`_set_equal`."
         )
     missing = [
-        m for m in _REQUIRED_UPSTREAM_GRADER_MARKERS
+        m for m in REQUIRED_UPSTREAM_GRADER_MARKERS
         if not (eval_root / m).is_file()
     ]
     if missing:

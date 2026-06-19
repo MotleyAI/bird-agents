@@ -168,6 +168,35 @@ _MINI_INTERACT_REL = (
 )
 _LIVESQLBENCH_REL = "evaluation/src/test_utils.py"
 
+# Marker files the upstream loader actually depends on at runtime.
+# ``_load_module_from_file`` executes ``test_utils.py``, which does a
+# bare ``from db_utils import ...`` — resolved through
+# ``sys_path_addition=<eval_dir>``. If ``db_utils.py`` is missing the
+# import explodes at first cascade-tier-N1 call. Both build-time guard
+# (``image._ensure_upstream_grader_tree_present``) and runtime resolver
+# (``_resolve_upstream_root``) consult this list, so neither path can
+# silently accept a partial upstream tree (Codex rounds 7 + 8).
+REQUIRED_UPSTREAM_GRADER_MARKERS: tuple[str, ...] = (
+    "test_utils.py",
+    "db_utils.py",
+)
+
+
+def _candidate_has_complete_grader(root: Path, marker_rel: str) -> bool:
+    """Return True iff every entry in
+    :data:`REQUIRED_UPSTREAM_GRADER_MARKERS` is present under the eval
+    dir that ``marker_rel`` resolves to (the upstream loader's
+    `sys_path_addition`). Mirrors the build-time guard in
+    ``cloud.image`` — every branch of :func:`_resolve_upstream_root`
+    that returns a candidate root must validate against this so the
+    runtime resolver never silently accepts a degraded tree (Codex
+    round 8)."""
+    eval_dir = (root / marker_rel).parent
+    return all(
+        (eval_dir / m).is_file()
+        for m in REQUIRED_UPSTREAM_GRADER_MARKERS
+    )
+
 
 def _resolve_upstream_root(
     env_var: str,
@@ -178,31 +207,74 @@ def _resolve_upstream_root(
 ) -> Path:
     """Resolve the host root for one upstream tree.
 
-    Order: env override → in-image bake path (cloud actor) → sibling of
-    main checkout (local dev convention). The sibling-discovery branch
-    imports :mod:`bird_interact_agents.paths` lazily so a missing
-    upstream tree doesn't bring the package's path machinery into modules
-    that don't need it.
+    Order tried: env override → in-image bake path (cloud actor) →
+    sibling of main checkout (local dev convention). Every candidate is
+    validated against :data:`REQUIRED_UPSTREAM_GRADER_MARKERS` at the
+    eval dir derived from ``marker_rel`` — the first complete tree
+    wins. If no candidate carries the full marker set we raise
+    :class:`ExBaseUnavailableError` with the per-candidate failure list
+    so the operator can see exactly which tree was incomplete and how
+    to remediate (rather than silently degrading cascade tier N1 to
+    legacy ``_set_equal``).
 
-    ``marker_rel`` is the path (relative to the root) of the marker file
-    the upstream loader actually imports — used to validate the cloud
-    bake. A partial bake that leaves the cloud root dir present but
-    drops the deeper grader file would otherwise short-circuit the
-    sibling fallback and silently downgrade cascade tier N1 to legacy
-    ``_set_equal`` (Codex round 7). Verifying the marker at the rel
-    path is the cheapest way to detect an incomplete bake — if the
-    marker isn't there, fall through to the sibling discovery.
+    Validating every candidate — not just the cloud bake — is the
+    Codex round 8 tightening: a stale ``$BIRD_*_ROOT`` override or an
+    incomplete sibling checkout previously masked a valid baked tree
+    and downgraded silently.
+
+    The sibling-discovery import of :mod:`bird_interact_agents.paths`
+    is lazy so the package's path machinery doesn't leak into modules
+    that don't need it.
     """
+    # Each candidate is a (label, lazy thunk → Path). Lazy thunks let us
+    # skip the import of :mod:`bird_interact_agents.paths` (and its
+    # main-checkout discovery side effects) when an earlier candidate
+    # already wins — important because tests monkeypatch those helpers
+    # to raise, and they should only fire when the resolver actually
+    # consults that branch.
+    candidates: list[tuple[str, "callable[[], Path]"]] = []
+
     override = os.environ.get(env_var)
     if override:
-        return Path(override).expanduser()
-    if (cloud_path / marker_rel).is_file():
-        return cloud_path
-    from bird_interact_agents import paths
-    return (
-        paths.bird_interact_upstream_root()
-        if sibling_name == "BIRD-Interact"
-        else paths.livesqlbench_upstream_root()
+        override_path = Path(override).expanduser()
+        candidates.append(
+            (f"${env_var} override", lambda p=override_path: p),
+        )
+
+    candidates.append((
+        f"in-image bake path ({cloud_path})", lambda: cloud_path,
+    ))
+
+    def _sibling() -> Path:
+        from bird_interact_agents import paths
+        return (
+            paths.bird_interact_upstream_root()
+            if sibling_name == "BIRD-Interact"
+            else paths.livesqlbench_upstream_root()
+        )
+
+    candidates.append(("sibling-of-checkout", _sibling))
+
+    failures: list[str] = []
+    for label, getter in candidates:
+        root = getter()
+        eval_dir = (root / marker_rel).parent
+        missing = [
+            m for m in REQUIRED_UPSTREAM_GRADER_MARKERS
+            if not (eval_dir / m).is_file()
+        ]
+        if not missing:
+            return root
+        failures.append(f"{label} ({root}): missing {missing} under {eval_dir}")
+
+    raise ExBaseUnavailableError(
+        f"No usable upstream {sibling_name} grader tree. Tried:\n"
+        + "\n".join(f"  - {f}" for f in failures)
+        + f"\nClone the upstream {sibling_name} repo next to the "
+        f"bird-agents main checkout (or set ${env_var} to a complete "
+        f"checkout). Without a complete tree, cascade tier N1 falls "
+        f"back to legacy `_set_equal` — the exact silent-degrade case "
+        f"this PR was meant to eliminate."
     )
 
 

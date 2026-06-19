@@ -954,21 +954,40 @@ def test_cloud_grader_root_constants_are_under_in_image_bake_dir():
     assert not str(_CLOUD_LIVESQLBENCH_ROOT).startswith("/home/")
 
 
+_MARKER_REL_BIRD_INTERACT = (
+    "mini_interact/knowledge_based/mini_interact_conv/evaluation/test_utils.py"
+)
+_MARKER_REL_LIVESQLBENCH = "evaluation/src/test_utils.py"
+
+
+def _populate_grader_markers(root: Path, marker_rel: str) -> None:
+    """Drop a `test_utils.py` + `db_utils.py` pair under the eval dir
+    derived from `marker_rel`, so the round-8 resolver accepts `root`."""
+    from bird_interact_agents.eval.upstream_ex_base import (
+        REQUIRED_UPSTREAM_GRADER_MARKERS,
+    )
+
+    eval_dir = (root / marker_rel).parent
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    for marker in REQUIRED_UPSTREAM_GRADER_MARKERS:
+        (eval_dir / marker).write_text("")
+
+
 def test_resolve_upstream_root_prefers_env_var(monkeypatch, tmp_path: Path):
     """Env override wins over both the in-image bake path and the
     sibling-of-main-checkout discovery — local devs must be able to point
-    the loader at an arbitrary checkout."""
+    the loader at an arbitrary checkout. Round 8: override is also
+    validated, so it must contain the full marker set to be accepted."""
     from bird_interact_agents.eval.upstream_ex_base import (
         _CLOUD_BIRD_INTERACT_ROOT, _resolve_upstream_root,
     )
 
     override = tmp_path / "my-bird-interact-fork"
-    override.mkdir()
+    _populate_grader_markers(override, _MARKER_REL_BIRD_INTERACT)
     monkeypatch.setenv("BIRD_BIRD_INTERACT_ROOT", str(override))
     resolved = _resolve_upstream_root(
         "BIRD_BIRD_INTERACT_ROOT", _CLOUD_BIRD_INTERACT_ROOT, "BIRD-Interact",
-        marker_rel="mini_interact/knowledge_based/mini_interact_conv/"
-                   "evaluation/test_utils.py",
+        marker_rel=_MARKER_REL_BIRD_INTERACT,
     )
     assert resolved == override
 
@@ -983,7 +1002,7 @@ def test_resolve_upstream_root_falls_back_to_sibling_of_main_checkout(
 
     monkeypatch.delenv("BIRD_BIRD_INTERACT_ROOT", raising=False)
     sentinel = tmp_path / "sibling-bird-interact"
-    sentinel.mkdir()
+    _populate_grader_markers(sentinel, _MARKER_REL_BIRD_INTERACT)
 
     import bird_interact_agents.paths as paths_mod
     monkeypatch.setattr(paths_mod, "bird_interact_upstream_root", lambda: sentinel)
@@ -993,8 +1012,7 @@ def test_resolve_upstream_root_falls_back_to_sibling_of_main_checkout(
     nonexistent_cloud = tmp_path / "no-such-cloud-bake"
     resolved = _resolve_upstream_root(
         "BIRD_BIRD_INTERACT_ROOT", nonexistent_cloud, "BIRD-Interact",
-        marker_rel="mini_interact/knowledge_based/mini_interact_conv/"
-                   "evaluation/test_utils.py",
+        marker_rel=_MARKER_REL_BIRD_INTERACT,
     )
     assert resolved == sentinel
 
@@ -1012,9 +1030,7 @@ def test_resolve_upstream_root_prefers_cloud_bake_when_marker_present(
 
     monkeypatch.delenv("BIRD_LIVESQLBENCH_ROOT", raising=False)
     cloud_bake = tmp_path / "app-upstream-graders-livesqlbench"
-    marker_rel = "evaluation/src/test_utils.py"
-    (cloud_bake / "evaluation" / "src").mkdir(parents=True)
-    (cloud_bake / marker_rel).write_text("def ex_base(*a, **k): return 1\n")
+    _populate_grader_markers(cloud_bake, _MARKER_REL_LIVESQLBENCH)
 
     # If the resolver ignored the present cloud bake and consulted
     # `paths.livesqlbench_upstream_root` instead, this raise-on-call
@@ -1027,7 +1043,7 @@ def test_resolve_upstream_root_prefers_cloud_bake_when_marker_present(
     monkeypatch.setattr(paths_mod, "livesqlbench_upstream_root", _explode)
     resolved = _resolve_upstream_root(
         "BIRD_LIVESQLBENCH_ROOT", cloud_bake, "livesqlbench",
-        marker_rel=marker_rel,
+        marker_rel=_MARKER_REL_LIVESQLBENCH,
     )
     assert resolved == cloud_bake
 
@@ -1048,7 +1064,7 @@ def test_resolve_upstream_root_falls_through_on_partial_cloud_bake(
     cloud_root_present.mkdir()  # dir exists but marker is absent
 
     sibling = tmp_path / "sibling-bird-interact-full-bake"
-    sibling.mkdir()
+    _populate_grader_markers(sibling, _MARKER_REL_BIRD_INTERACT)
 
     import bird_interact_agents.paths as paths_mod
     monkeypatch.setattr(
@@ -1057,11 +1073,123 @@ def test_resolve_upstream_root_falls_through_on_partial_cloud_bake(
 
     resolved = _resolve_upstream_root(
         "BIRD_BIRD_INTERACT_ROOT", cloud_root_present, "BIRD-Interact",
-        marker_rel="mini_interact/knowledge_based/mini_interact_conv/"
-                   "evaluation/test_utils.py",
+        marker_rel=_MARKER_REL_BIRD_INTERACT,
     )
     assert resolved == sibling, (
         "Partial cloud bake (dir present, marker missing) short-circuited "
         "the sibling fallback — that's the silent-degrade case the round-7 "
         "tightening exists to prevent."
     )
+
+
+# ---------------------------------------------------------------------------
+# DEV-1550 round 8: every candidate branch (env override, cloud bake,
+# sibling discovery) must validate against the COMPLETE marker set.
+# Previously the env-override branch returned unconditionally and the
+# sibling branch was unvalidated — both routes silently downgraded N1
+# when the named tree was incomplete.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_upstream_root_falls_through_on_partial_env_override(
+    monkeypatch, tmp_path: Path,
+):
+    """Env override is honoured if it's COMPLETE; an incomplete override
+    must fall through to the cloud / sibling rather than silently win.
+    Otherwise a stale `$BIRD_BIRD_INTERACT_ROOT` pointing at a partial
+    fork masks a fully-baked cloud tree and N1 silently degrades."""
+    from bird_interact_agents.eval.upstream_ex_base import _resolve_upstream_root
+
+    partial_override = tmp_path / "stale-bird-interact-fork"
+    # Only test_utils.py — no db_utils.py. Round-7 build-time guard
+    # rejected this; round-8 resolver must too.
+    eval_dir = partial_override / Path(_MARKER_REL_BIRD_INTERACT).parent
+    eval_dir.mkdir(parents=True)
+    (eval_dir / "test_utils.py").write_text("")
+    monkeypatch.setenv("BIRD_BIRD_INTERACT_ROOT", str(partial_override))
+
+    sibling = tmp_path / "sibling-complete"
+    _populate_grader_markers(sibling, _MARKER_REL_BIRD_INTERACT)
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(
+        paths_mod, "bird_interact_upstream_root", lambda: sibling,
+    )
+
+    nonexistent_cloud = tmp_path / "no-such-cloud-bake"
+    resolved = _resolve_upstream_root(
+        "BIRD_BIRD_INTERACT_ROOT", nonexistent_cloud, "BIRD-Interact",
+        marker_rel=_MARKER_REL_BIRD_INTERACT,
+    )
+    assert resolved == sibling, (
+        "Incomplete env override masked the complete sibling tree — "
+        "round-8 resolver must validate every branch's marker set."
+    )
+
+
+def test_resolve_upstream_root_falls_through_on_partial_sibling(
+    monkeypatch, tmp_path: Path,
+):
+    """An incomplete sibling-of-checkout tree must not silently win
+    either — code paths that don't go through ``build_and_push`` (local
+    regrade, dev shell, etc.) would otherwise import the upstream
+    successfully via test_utils.py but crash on db_utils.py and N1
+    silently downgrades."""
+    from bird_interact_agents.eval.upstream_ex_base import _resolve_upstream_root
+
+    monkeypatch.delenv("BIRD_LIVESQLBENCH_ROOT", raising=False)
+    nonexistent_cloud = tmp_path / "no-such-cloud-bake"
+
+    partial_sibling = tmp_path / "sibling-partial"
+    eval_dir = partial_sibling / Path(_MARKER_REL_LIVESQLBENCH).parent
+    eval_dir.mkdir(parents=True)
+    (eval_dir / "test_utils.py").write_text("")  # MISSING db_utils.py
+
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(
+        paths_mod, "livesqlbench_upstream_root", lambda: partial_sibling,
+    )
+
+    with pytest.raises(
+        __import__(
+            "bird_interact_agents.eval.upstream_ex_base", fromlist=["x"],
+        ).ExBaseUnavailableError,
+    ) as excinfo:
+        _resolve_upstream_root(
+            "BIRD_LIVESQLBENCH_ROOT", nonexistent_cloud, "livesqlbench",
+            marker_rel=_MARKER_REL_LIVESQLBENCH,
+        )
+    msg = str(excinfo.value)
+    assert "db_utils.py" in msg
+    assert "livesqlbench" in msg
+    assert "BIRD_LIVESQLBENCH_ROOT" in msg, (
+        "Failure message must name the env-var remediation."
+    )
+
+
+def test_resolve_upstream_root_raises_actionable_message_when_no_candidate_valid(
+    monkeypatch, tmp_path: Path,
+):
+    """If env, cloud, and sibling all fail validation, the resolver
+    raises ExBaseUnavailableError naming every candidate's failure mode
+    so the operator can fix the right tree."""
+    from bird_interact_agents.eval import upstream_ex_base as mod
+
+    monkeypatch.delenv("BIRD_BIRD_INTERACT_ROOT", raising=False)
+    nonexistent_cloud = tmp_path / "no-cloud"
+    nonexistent_sibling = tmp_path / "no-sibling"
+
+    monkeypatch.setattr(
+        __import__("bird_interact_agents.paths", fromlist=["x"]),
+        "bird_interact_upstream_root", lambda: nonexistent_sibling,
+    )
+
+    with pytest.raises(mod.ExBaseUnavailableError) as excinfo:
+        mod._resolve_upstream_root(
+            "BIRD_BIRD_INTERACT_ROOT", nonexistent_cloud, "BIRD-Interact",
+            marker_rel=_MARKER_REL_BIRD_INTERACT,
+        )
+    msg = str(excinfo.value)
+    assert "in-image bake" in msg
+    assert "sibling-of-checkout" in msg
+    assert "BIRD_BIRD_INTERACT_ROOT" in msg
+    assert "BIRD-Interact" in msg
