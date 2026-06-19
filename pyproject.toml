@@ -64,6 +64,16 @@ dev = [
     "pytest-asyncio",
     "openai",   # used by SAR-audit tests' OpenAI-not-instantiated guard
 ]
+# Notebook tooling for the analysis notebooks under `notebooks/` (e.g.
+# query_syntax_rejections.ipynb). Kept out of `all` so cloud/runtime installs
+# stay lean — only needed to (re)run the human-readable analysis notebooks.
+analysis = [
+    "matplotlib>=3.8",
+    "pandas>=2.0",
+    "jupyter>=1.0",
+    "nbformat>=5.9",
+    "nbconvert>=7.0",
+]
 
 # Upstream `mini-interact-agent` harness, installed from the MotleyAI fork
 # (pinned to a sha so installs are reproducible). Only resolved when the
