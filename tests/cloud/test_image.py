@@ -697,13 +697,15 @@ def test_build_and_push_wires_upstream_grader_build_contexts(
     bird_interact_eval.mkdir(parents=True)
     livesqlbench_eval = tmp_path / "main-checkout" / "livesqlbench-eval"
     livesqlbench_eval.mkdir(parents=True)
-    # `_ensure_upstream_grader_tree_present` (round 6 prereq guard)
-    # requires a `test_utils.py` marker under each eval root before
-    # reaching the docker invocation — otherwise build_and_push raises
-    # `UpstreamGraderUnavailableError` and the docker-build wiring this
-    # test inspects is never emitted. Plain setup, no behaviour change.
-    (bird_interact_eval / "test_utils.py").write_text("")
-    (livesqlbench_eval / "test_utils.py").write_text("")
+    # `_ensure_upstream_grader_tree_present` (round 6 + 7 prereq guard)
+    # requires BOTH `test_utils.py` AND `db_utils.py` markers under each
+    # eval root before reaching the docker invocation — otherwise
+    # build_and_push raises `UpstreamGraderUnavailableError` and the
+    # docker-build wiring this test inspects is never emitted. Plain
+    # setup, no behaviour change.
+    for d in (bird_interact_eval, livesqlbench_eval):
+        (d / "test_utils.py").write_text("")
+        (d / "db_utils.py").write_text("")
 
     image.build_and_push(
         "deadbeef-cafebabe",
@@ -811,6 +813,7 @@ def test_build_and_push_raises_when_bird_interact_grader_dir_missing(
     livesqlbench_eval = tmp_path / "main-checkout" / "livesqlbench-eval"
     livesqlbench_eval.mkdir(parents=True)
     (livesqlbench_eval / "test_utils.py").write_text("")
+    (livesqlbench_eval / "db_utils.py").write_text("")
     bird_interact_eval = tmp_path / "main-checkout" / "nonexistent-bird-interact"
 
     with pytest.raises(
@@ -837,13 +840,13 @@ def test_build_and_push_raises_when_bird_interact_grader_dir_missing(
     )
 
 
-def test_build_and_push_raises_when_grader_dir_lacks_test_utils(
+def test_build_and_push_raises_when_grader_dir_lacks_required_markers(
     fake_repo_root: Path, tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An existing-but-empty eval dir is just as bad — it would silently
-    bake an empty grader and downgrade the cascade. The guard must catch
-    that case too (not just the dir-missing one)."""
+    """An existing-but-empty eval dir is just as bad as missing — it
+    would silently bake a degraded grader. The guard must catch that
+    case too (not just the dir-missing one)."""
     captured: list[list[str]] = []
     _sp, fake_run = _stub_subprocess_run_capturing(captured)
     monkeypatch.setattr(_sp, "run", fake_run)
@@ -857,8 +860,9 @@ def test_build_and_push_raises_when_grader_dir_lacks_test_utils(
     bird_interact_eval = tmp_path / "main-checkout" / "bird-interact-eval"
     bird_interact_eval.mkdir(parents=True)
     (bird_interact_eval / "test_utils.py").write_text("")
+    (bird_interact_eval / "db_utils.py").write_text("")
     livesqlbench_eval = tmp_path / "main-checkout" / "livesqlbench-eval"
-    livesqlbench_eval.mkdir(parents=True)  # NO test_utils.py marker
+    livesqlbench_eval.mkdir(parents=True)  # NO marker files at all
 
     with pytest.raises(image.UpstreamGraderUnavailableError) as excinfo:
         image.build_and_push(
@@ -873,6 +877,53 @@ def test_build_and_push_raises_when_grader_dir_lacks_test_utils(
     assert "livesqlbench" in msg
     assert "test_utils.py" in msg
     assert "BIRD_LIVESQLBENCH_ROOT" in msg
+
+
+def test_build_and_push_raises_when_grader_dir_lacks_db_utils(
+    fake_repo_root: Path, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex round 7: a partial upstream tree with `test_utils.py` but
+    NO `db_utils.py` would pass the round-6 guard (which only checked
+    test_utils.py), bake a degraded image, and silently downgrade N1
+    when the loader's `from db_utils import ...` raises in the cloud
+    actor. The round-7 tightening must catch this BEFORE docker build."""
+    captured: list[list[str]] = []
+    _sp, fake_run = _stub_subprocess_run_capturing(captured)
+    monkeypatch.setattr(_sp, "run", fake_run)
+    from bird_interact_agents.cloud import config as _config
+    monkeypatch.setattr(
+        _config, "image_uri_prefix", lambda: "registry.example/x/runner",
+    )
+
+    audited_root = tmp_path / "main-checkout" / "audited_gold"
+    audited_root.mkdir(parents=True)
+    bird_interact_eval = tmp_path / "main-checkout" / "bird-interact-eval"
+    bird_interact_eval.mkdir(parents=True)
+    # Has test_utils.py but NOT db_utils.py — the round-6 guard would
+    # have wrongly accepted this.
+    (bird_interact_eval / "test_utils.py").write_text("")
+    livesqlbench_eval = tmp_path / "main-checkout" / "livesqlbench-eval"
+    livesqlbench_eval.mkdir(parents=True)
+    (livesqlbench_eval / "test_utils.py").write_text("")
+    (livesqlbench_eval / "db_utils.py").write_text("")
+
+    with pytest.raises(image.UpstreamGraderUnavailableError) as excinfo:
+        image.build_and_push(
+            "deadbeef-cafebabe",
+            fake_repo_root,
+            audited_gold_root=audited_root,
+            bird_interact_evaluation_root=bird_interact_eval,
+            livesqlbench_evaluation_root=livesqlbench_eval,
+            force=False,
+        )
+    msg = str(excinfo.value)
+    assert "BIRD-Interact" in msg
+    assert "db_utils.py" in msg
+    assert "BIRD_BIRD_INTERACT_ROOT" in msg
+    assert not any(a[:2] == ["docker", "build"] for a in captured), (
+        "guard fired AFTER docker build — must fail-fast before that"
+    )
 
 
 def test_iter_upstream_grader_files_skips_py_symlinks(tmp_path: Path) -> None:

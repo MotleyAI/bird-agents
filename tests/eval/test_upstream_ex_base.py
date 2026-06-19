@@ -967,6 +967,8 @@ def test_resolve_upstream_root_prefers_env_var(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("BIRD_BIRD_INTERACT_ROOT", str(override))
     resolved = _resolve_upstream_root(
         "BIRD_BIRD_INTERACT_ROOT", _CLOUD_BIRD_INTERACT_ROOT, "BIRD-Interact",
+        marker_rel="mini_interact/knowledge_based/mini_interact_conv/"
+                   "evaluation/test_utils.py",
     )
     assert resolved == override
 
@@ -991,21 +993,28 @@ def test_resolve_upstream_root_falls_back_to_sibling_of_main_checkout(
     nonexistent_cloud = tmp_path / "no-such-cloud-bake"
     resolved = _resolve_upstream_root(
         "BIRD_BIRD_INTERACT_ROOT", nonexistent_cloud, "BIRD-Interact",
+        marker_rel="mini_interact/knowledge_based/mini_interact_conv/"
+                   "evaluation/test_utils.py",
     )
     assert resolved == sentinel
 
 
-def test_resolve_upstream_root_prefers_cloud_bake_when_dir_present(
+def test_resolve_upstream_root_prefers_cloud_bake_when_marker_present(
     monkeypatch, tmp_path: Path,
 ):
     """Inside the cloud actor (where ``/app/upstream_graders/...`` is baked
     by ``Dockerfile.cloud``), the resolver picks the in-image path over the
-    sibling discovery."""
+    sibling discovery — but only when the deeper ``test_utils.py`` marker
+    is actually present (Codex round 7: a partial bake that leaves the
+    cloud root dir alone but drops the inner file must fall through to
+    the sibling, not silently downgrade)."""
     from bird_interact_agents.eval.upstream_ex_base import _resolve_upstream_root
 
     monkeypatch.delenv("BIRD_LIVESQLBENCH_ROOT", raising=False)
     cloud_bake = tmp_path / "app-upstream-graders-livesqlbench"
-    cloud_bake.mkdir()
+    marker_rel = "evaluation/src/test_utils.py"
+    (cloud_bake / "evaluation" / "src").mkdir(parents=True)
+    (cloud_bake / marker_rel).write_text("def ex_base(*a, **k): return 1\n")
 
     # If the resolver ignored the present cloud bake and consulted
     # `paths.livesqlbench_upstream_root` instead, this raise-on-call
@@ -1018,5 +1027,41 @@ def test_resolve_upstream_root_prefers_cloud_bake_when_dir_present(
     monkeypatch.setattr(paths_mod, "livesqlbench_upstream_root", _explode)
     resolved = _resolve_upstream_root(
         "BIRD_LIVESQLBENCH_ROOT", cloud_bake, "livesqlbench",
+        marker_rel=marker_rel,
     )
     assert resolved == cloud_bake
+
+
+def test_resolve_upstream_root_falls_through_on_partial_cloud_bake(
+    monkeypatch, tmp_path: Path,
+):
+    """Codex round 7: a partial bake that leaves the cloud root directory
+    present BUT drops the deeper ``test_utils.py`` marker must NOT
+    short-circuit the sibling discovery — otherwise the loader silently
+    raises FileNotFoundError downstream and N1 falls back to legacy
+    ``_set_equal`` without any operator-visible signal."""
+    from bird_interact_agents.eval.upstream_ex_base import _resolve_upstream_root
+
+    monkeypatch.delenv("BIRD_BIRD_INTERACT_ROOT", raising=False)
+
+    cloud_root_present = tmp_path / "app-upstream-graders-bird-interact"
+    cloud_root_present.mkdir()  # dir exists but marker is absent
+
+    sibling = tmp_path / "sibling-bird-interact-full-bake"
+    sibling.mkdir()
+
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(
+        paths_mod, "bird_interact_upstream_root", lambda: sibling,
+    )
+
+    resolved = _resolve_upstream_root(
+        "BIRD_BIRD_INTERACT_ROOT", cloud_root_present, "BIRD-Interact",
+        marker_rel="mini_interact/knowledge_based/mini_interact_conv/"
+                   "evaluation/test_utils.py",
+    )
+    assert resolved == sibling, (
+        "Partial cloud bake (dir present, marker missing) short-circuited "
+        "the sibling fallback — that's the silent-degrade case the round-7 "
+        "tightening exists to prevent."
+    )

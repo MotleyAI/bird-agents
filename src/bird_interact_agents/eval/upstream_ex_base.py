@@ -170,7 +170,11 @@ _LIVESQLBENCH_REL = "evaluation/src/test_utils.py"
 
 
 def _resolve_upstream_root(
-    env_var: str, cloud_path: Path, sibling_name: str,
+    env_var: str,
+    cloud_path: Path,
+    sibling_name: str,
+    *,
+    marker_rel: str,
 ) -> Path:
     """Resolve the host root for one upstream tree.
 
@@ -179,11 +183,20 @@ def _resolve_upstream_root(
     imports :mod:`bird_interact_agents.paths` lazily so a missing
     upstream tree doesn't bring the package's path machinery into modules
     that don't need it.
+
+    ``marker_rel`` is the path (relative to the root) of the marker file
+    the upstream loader actually imports — used to validate the cloud
+    bake. A partial bake that leaves the cloud root dir present but
+    drops the deeper grader file would otherwise short-circuit the
+    sibling fallback and silently downgrade cascade tier N1 to legacy
+    ``_set_equal`` (Codex round 7). Verifying the marker at the rel
+    path is the cheapest way to detect an incomplete bake — if the
+    marker isn't there, fall through to the sibling discovery.
     """
     override = os.environ.get(env_var)
     if override:
         return Path(override).expanduser()
-    if cloud_path.is_dir():
+    if (cloud_path / marker_rel).is_file():
         return cloud_path
     from bird_interact_agents import paths
     return (
@@ -260,6 +273,7 @@ def _load_mini_interact_module() -> ModuleType:
     """Load the mini-interact upstream comparator module on demand."""
     root = _resolve_upstream_root(
         "BIRD_BIRD_INTERACT_ROOT", _CLOUD_BIRD_INTERACT_ROOT, "BIRD-Interact",
+        marker_rel=_MINI_INTERACT_REL,
     )
     target = root / _MINI_INTERACT_REL
     return _load_module_from_file(
@@ -273,6 +287,7 @@ def _load_livesqlbench_module() -> ModuleType:
     """Load the livesqlbench upstream comparator module on demand."""
     root = _resolve_upstream_root(
         "BIRD_LIVESQLBENCH_ROOT", _CLOUD_LIVESQLBENCH_ROOT, "livesqlbench",
+        marker_rel=_LIVESQLBENCH_REL,
     )
     target = root / _LIVESQLBENCH_REL
     return _load_module_from_file(

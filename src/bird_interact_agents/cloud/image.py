@@ -360,32 +360,57 @@ def _dirty_image_input_paths(repo_root: Path) -> set[str]:
     return dirty
 
 
+# All marker files the upstream loader actually depends on. The runtime
+# `_load_module_from_file` executes `test_utils.py`, which `from db_utils
+# import ...` resolves through `sys_path_addition=eval_root`; if
+# `db_utils.py` is missing the import would explode at first cascade-tier-N1
+# call inside the cloud actor (Codex round 7). The annotation grader uses
+# the same evaluation/ dir, so the check is shared.
+_REQUIRED_UPSTREAM_GRADER_MARKERS: tuple[str, ...] = (
+    "test_utils.py",
+    "db_utils.py",
+)
+
+
 def _ensure_upstream_grader_tree_present(
     eval_root: Path, *, env_var: str, tree_label: str,
 ) -> None:
     """Raise :class:`UpstreamGraderUnavailableError` when the upstream
-    grader tree at ``eval_root`` is missing or doesn't contain the
-    required ``test_utils.py`` marker.
+    grader tree at ``eval_root`` is missing OR is missing any of
+    :data:`_REQUIRED_UPSTREAM_GRADER_MARKERS`.
 
     Without this check, ``docker build --build-context <name>=<path>``
-    fails downstream with an opaque BuildKit error. Catching it up
+    fails downstream with an opaque BuildKit error, OR (Codex round 7)
+    a partial / shallow upstream copy with only ``test_utils.py`` bakes
+    a degraded image that imports successfully through ``test_utils``
+    but later raises on ``from db_utils import ...`` at first cascade
+    tier-N1 call, downgrading to legacy ``_set_equal``. Catching it up
     front lets us point the user at the env-var override + the expected
     sibling-of-checkout layout.
     """
-    marker = eval_root / "test_utils.py"
-    if marker.is_file():
-        return
     if not eval_root.is_dir():
-        problem = f"directory not found"
-    else:
-        problem = f"directory exists but is missing required 'test_utils.py'"
-    raise UpstreamGraderUnavailableError(
-        f"Upstream {tree_label} grader tree {problem}: {eval_root}. "
-        f"Either clone the upstream {tree_label} repo next to the "
-        f"bird-agents main checkout, or set ${env_var} to the upstream "
-        f"repo root. Without it, the cloud actor's cascade-tier-N1 "
-        f"dispatch silently falls back to legacy `_set_equal`."
-    )
+        raise UpstreamGraderUnavailableError(
+            f"Upstream {tree_label} grader tree directory not found: "
+            f"{eval_root}. Either clone the upstream {tree_label} repo "
+            f"next to the bird-agents main checkout, or set ${env_var} "
+            f"to the upstream repo root. Without it, the cloud actor's "
+            f"cascade-tier-N1 dispatch silently falls back to legacy "
+            f"`_set_equal`."
+        )
+    missing = [
+        m for m in _REQUIRED_UPSTREAM_GRADER_MARKERS
+        if not (eval_root / m).is_file()
+    ]
+    if missing:
+        raise UpstreamGraderUnavailableError(
+            f"Upstream {tree_label} grader tree at {eval_root} is "
+            f"missing required marker(s): {missing}. The cloud actor "
+            f"loads these at cascade-tier-N1 call time; without them "
+            f"the import silently fails and N1 falls back to legacy "
+            f"`_set_equal`. Re-clone the upstream {tree_label} repo "
+            f"next to the bird-agents main checkout (or set ${env_var} "
+            f"to a complete checkout)."
+        )
 
 
 def default_grader_eval_roots() -> tuple[Path, Path]:
