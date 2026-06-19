@@ -143,20 +143,29 @@ def sdk_session_env(model: str) -> dict[str, str]:
     }
 
 
-def litellm_route(model: str) -> tuple[str, dict[str, str]]:
+def litellm_route(
+    model: str, *, caller_api_key: str | None = None,
+) -> tuple[str, dict[str, str]]:
     """(litellm_model, extra_kwargs) for the user-sim path.
 
     Registry providers route through litellm's generic OpenAI-compatible
     driver (``openai/<native_id>`` + ``api_base``) — robust regardless of
     whether litellm ships a dedicated provider for them.
+
+    CR r1: ``caller_api_key`` takes precedence over the env-var lookup.
+    Without it, a caller threading an explicit ``api_key=`` through
+    ``acompletion_tracked`` still hit ``provider_api_key(spec)`` first
+    and could raise on an unset env var — even though the explicit key
+    would have been preserved by ``kwargs.setdefault`` downstream.
     """
     spec = get_provider(model)
     if spec is None or not spec.openai_base_url:
         return model, {}
     _, native_id = _split(model)
+    api_key = caller_api_key if caller_api_key else provider_api_key(spec)
     return (
         f"openai/{native_id}",
-        {"api_base": spec.openai_base_url, "api_key": provider_api_key(spec)},
+        {"api_base": spec.openai_base_url, "api_key": api_key},
     )
 
 

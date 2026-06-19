@@ -274,8 +274,15 @@ def fit_trajectory_for_autopsy(
 
     budget_chars = int(budget_tokens * _CHARS_PER_TOKEN)
 
+    # CR r1: shrink the protected tail when the trajectory is shorter than
+    # ``keep_head + keep_last``, so both phases still have something to
+    # work on under a tight budget. Without this, both phases no-op when
+    # ``len(items) <= keep_last`` and ``fit_trajectory_for_autopsy``
+    # silently returns the oversized input.
+    protected_tail = min(keep_last, max(len(items) - keep_head, 0))
+
     # Phase A: elide tool-result bodies oldest-first, tail protected.
-    for idx in range(max(0, len(items) - keep_last)):
+    for idx in range(max(0, len(items) - protected_tail)):
         if chars <= budget_chars:
             break
         chars -= _elide_tool_result_blocks(items[idx])
@@ -292,7 +299,7 @@ def fit_trajectory_for_autopsy(
             break
         droppable = [
             i
-            for i in range(keep_head, len(items) - keep_last)
+            for i in range(keep_head, len(items) - protected_tail)
             if items[i] is not marker
         ]
         if not droppable:
@@ -853,6 +860,20 @@ async def run_autopsy(
                 is_one_shot=is_one_shot,
                 precompressed=True,
             )
+            # CR r1: post-squeeze size check. Without this, a pathological
+            # trajectory whose head/tail alone exceeds the budget would
+            # silently hit the API with an oversized prompt and fail at
+            # request time (400 / context_length_exceeded). Surface the
+            # failure here with a diagnostic message so the caller can
+            # downgrade gracefully.
+            if _estimate_tokens(prompt) > budget:
+                raise RuntimeError(
+                    "autopsy prompt still exceeds the model's context "
+                    f"budget after trajectory squeeze "
+                    f"(estimated {_estimate_tokens(prompt)} tokens > "
+                    f"{budget} budget; keep_head/keep_last contents likely "
+                    "exceed budget alone)."
+                )
         tool_schema = (
             _AUTOPSY_TOOL_SCHEMA_ONE_SHOT if is_one_shot else _AUTOPSY_TOOL_SCHEMA
         )

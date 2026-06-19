@@ -28,8 +28,12 @@ import pytest
 # `mcp__slayer__query`). The snapshot's purpose is the same — catch
 # ACCIDENTAL prompt drift on later refactors; deliberate prompt changes
 # re-baseline here.
-_ONE_SHOT_SHA256 = "0b3e1cf9af0944607ab28601a2afbcb40e2ea5526080b1fb5c7139dcc6b9a55f"
-_AINTERACT_SHA256 = "43515ac242d4f821185807d30ce75af1644c079367c95a166f0991153594dd3d"
+# Re-baselined again for the DEV-1555 CR r1 / O1 unification: single
+# `query` tool accepts object OR list of stages; legacy `query_nested`
+# and `query_json` single-string parameter are gone from both v0 and
+# v1 prompts.
+_ONE_SHOT_SHA256 = "3bcb356039343af39cf9d8b5deee13b01ba2d263f3d0ad64bde58fdc2ba22e7e"
+_AINTERACT_SHA256 = "e50f080168a18d8a0102b9b5a2b927d80a4c50899e72c3494b8ec3cf8b169b1f"
 
 
 def test_slayer_otf_one_shot_unchanged():

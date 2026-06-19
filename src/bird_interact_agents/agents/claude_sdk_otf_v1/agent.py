@@ -44,7 +44,6 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     get_all_knowledge_definitions,
     get_knowledge_definition,
     query,
-    query_nested,
     submit_query,
 )
 from bird_interact_agents.agents.claude_sdk.context_budget import (
@@ -114,7 +113,6 @@ logger = logging.getLogger(__name__)
 SLAYER_QUERY_TOOLS: frozenset[str] = frozenset(
     {
         "mcp__bird-interact-tools__query",
-        "mcp__bird-interact-tools__query_nested",
     }
 )
 
@@ -307,7 +305,6 @@ _KNOWLEDGE_TOOLS = [
     get_knowledge_definition,
     get_all_knowledge_definitions,
     query,
-    query_nested,
 ]
 
 
@@ -349,7 +346,6 @@ MAIN_TOOLS = [
     "mcp__slayer__save_memory",
     *_KB_NATIVE_TOOL_NAMES,
     "mcp__bird-interact-tools__query",
-    "mcp__bird-interact-tools__query_nested",
     "mcp__bird-interact-tools__submit_query",
 ]
 

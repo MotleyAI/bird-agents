@@ -51,8 +51,10 @@ _SLAYER_MAIN_MCP = {
     "mcp__slayer__save_memory",
 }
 _SLAYER_MAIN_NATIVES = {
+    # DEV-1555 CR r1 unification: `query_nested` is gone; the unified
+    # `query` tool accepts a single SlayerQuery object OR a list of
+    # stage objects.
     "mcp__bird-interact-tools__query",
-    "mcp__bird-interact-tools__query_nested",
     "mcp__bird-interact-tools__submit_query",
 }
 _RAW_DISCOVERY = {

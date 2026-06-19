@@ -482,50 +482,92 @@ def _slayer_client():
 @tool(
     "submit_query",
     (
-        "Submit your final SLayer query for evaluation. `query_json` is a "
-        "JSON string whose top-level value is either a single SlayerQuery "
-        'object (e.g. {"source_model": "orders", "measures": '
-        '["amount:sum"]}) or a nested-DAG array of stage objects (same '
-        "shape `query_nested` accepts; last element is the DAG root). "
-        "The chosen query is translated to SQL deterministically and "
-        "tested against the ground truth. "
-        "`normalize_filters` (default true) controls whether text-equality "
-        "filter predicates are auto-wrapped in lower(trim(...)) with the "
-        "literal lowercased. Pass `normalize_filters=false` when the gold "
-        "answer requires exact-case equality (rare; the default is "
-        "semantically correct for most NL questions that carry no casing "
-        "info)."
+        "Submit your final SLayer query for evaluation. Pass EITHER a "
+        "single-stage form (`source_model` + projection fields: "
+        "`dimensions`, `measures`, `filters`, `time_dimensions`, `order`, "
+        "`limit`, `offset`, `whole_periods_only`, `variables`, "
+        "`distinct_dimension_values`) OR a nested-DAG form (`queries`: a "
+        "list of stage objects; last element is the DAG root; non-final "
+        "stages need a `name`; later stages reference earlier ones via "
+        "`source_model: \"<sibling name>\"`). The chosen query is "
+        "translated to SQL deterministically and tested against the "
+        "ground truth. `normalize_filters` (default true) controls "
+        "whether text-equality filter predicates are auto-wrapped in "
+        "lower(trim(...)) with the literal lowercased. Pass "
+        "`normalize_filters=false` when the gold answer requires "
+        "exact-case equality (rare; the default is semantically correct "
+        "for most NL questions that carry no casing info)."
     ),
-    # Explicit JSON Schema dict so only `query_json` is required. A flat
-    # `{key: type}` schema would make the SDK mark every key as required
-    # (see claude_agent_sdk._build_schema → `"required": list(properties.keys())`),
-    # which would force every caller to supply `normalize_filters` despite
-    # the handler defaulting it to True.
+    # CR r1 / O1 follow-up: same unified shape as `query` — caller picks
+    # single-stage by populating `source_model`, or nested-DAG by
+    # populating `queries`. Mutual exclusion is enforced at the handler
+    # level so error messages stay specific.
     {
         "type": "object",
         "properties": {
-            "query_json": {"type": "string"},
+            "source_model": {
+                "oneOf": [{"type": "string"}, {"type": "object"}],
+            },
+            "measures": {"type": "array"},
+            "dimensions": {"type": "array"},
+            "filters": {"type": "array"},
+            "time_dimensions": {"type": "array"},
+            "order": {"type": "array"},
+            "limit": {"type": "integer"},
+            "offset": {"type": "integer"},
+            "whole_periods_only": {"type": "boolean", "default": False},
+            "variables": {"type": "object"},
+            "distinct_dimension_values": {"type": "boolean"},
+            "queries": {"type": "array"},
             "normalize_filters": {"type": "boolean", "default": True},
         },
-        "required": ["query_json"],
+        "required": [],
     },
 )
 async def submit_query(args: dict) -> dict:
     state = _state_view()
-    # DEV-1534 Fix C: `normalize_filters` is a SEPARATE tool parameter,
-    # not a JSON-payload field. Default True preserves the deterministic
-    # case/whitespace tolerance that's semantically correct for most NL
-    # questions; `normalize_filters=false` is the escape hatch for the
-    # exact-case-equality failure mode surfaced in the 298-instance
-    # mini-interact analysis.
+    # Build the JSON payload from the structured args. `submit_slayer_query`
+    # takes a JSON string (the original CodeRabbit contract); we generate
+    # it here from the same structured shape as `query`.
+    payload: dict | list
+    if args.get("queries") is not None:
+        if args.get("source_model") is not None:
+            return _text(
+                "submit_query: pass either `source_model` (single-stage) "
+                "or `queries` (nested DAG), not both."
+            )
+        payload = args["queries"]
+    else:
+        if args.get("source_model") is None:
+            return _text(
+                "submit_query: `source_model` is required for "
+                "single-stage queries (or pass `queries` for a "
+                "nested DAG)."
+            )
+        # Single-stage: project the structured args into a SlayerQuery dict.
+        # Omit None / falsey values so the downstream JSON matches what the
+        # old `query_json` callers wrote by hand.
+        single: dict = {"source_model": args["source_model"]}
+        for k in (
+            "measures", "dimensions", "filters", "time_dimensions",
+            "order", "limit", "offset", "variables",
+            "distinct_dimension_values",
+        ):
+            v = args.get(k)
+            if v is not None:
+                single[k] = v
+        if args.get("whole_periods_only"):
+            single["whole_periods_only"] = True
+        payload = single
+
+    import json as _json
+    payload_str = _json.dumps(payload)
     normalize_filters = bool(args.get("normalize_filters", True))
     observation = submit_slayer_query(
-        state, args["query_json"], lambda _s: _slayer_client(),
+        state, payload_str, lambda _s: _slayer_client(),
         normalize_filters=normalize_filters,
     )
     if state.result is None:
-        # Helper already charged + appended the budget note for the
-        # bad-JSON / failed-sql_sync paths; just propagate.
         return _text(observation)
     _ctx["result"] = {**state.result, "observation": observation}
     return _text(observation)
@@ -537,25 +579,34 @@ async def submit_query(args: dict) -> dict:
 # SLayer's MCP `query` exactly; the 15th is our directive.
 _QUERY_TOOL_DESC = (
     "Run a SLayer query and return SLayer's formatted result. Same "
-    "shape as SLayer's MCP `query` tool — `source_model` (required), "
-    "`dimensions`, `measures`, `filters`, `time_dimensions`, `order`, "
-    "`limit`, `offset`, `whole_periods_only`, `show_sql`, `dry_run`, "
-    "`explain`, `format` (markdown/json/csv), `variables`. The 15th "
-    "parameter `normalize_filters` (default true) controls our text-"
-    "equality filter auto-normalization: when true, every `col == 'X'` "
-    "filter becomes `lower(trim(col)) == 'x'` (case/whitespace-tolerant); "
-    "when false, filters are forwarded verbatim (exact-case equality)."
+    "shape as SLayer's MCP `query` tool — `source_model` (required for "
+    "single-stage), `dimensions`, `measures`, `filters`, `time_dimensions`, "
+    "`order`, `limit`, `offset`, `whole_periods_only`, `show_sql`, `dry_run`, "
+    "`explain`, `format` (markdown/json/csv), `variables`. For a nested "
+    "DAG, pass a `queries` array of stage objects (last is the DAG root; "
+    "non-final stages need a `name`; later stages reference earlier ones "
+    "via `source_model: \"<sibling name>\"`) — `source_model` is omitted "
+    "when `queries` is set. The 16th parameter `normalize_filters` "
+    "(default true) controls our text-equality filter auto-normalization: "
+    "when true, every `col == 'X'` filter becomes "
+    "`lower(trim(col)) == 'x'` (case/whitespace-tolerant); when false, "
+    "filters are forwarded verbatim (exact-case equality)."
 )
 
 
 @tool(
     "query",
     _QUERY_TOOL_DESC,
-    # Explicit JSON Schema dict so only `source_model` is required. A flat
-    # `{key: type}` schema would make the SDK mark every key required (see
-    # claude_agent_sdk._build_schema → `"required": list(properties.keys())`),
-    # which would break SLayer's MCP `query` semantics (only `source_model`
-    # is positional in the upstream signature).
+    # CR r1 / O1: the v1 prompt advertises ``query`` as accepting EITHER
+    # a single SlayerQuery object OR a list of stage objects (nested DAG)
+    # — same as SLayer-side, which exposes both shapes through this
+    # wrapper. The schema must mirror that or the SDK rejects valid
+    # nested-DAG calls before reaching the implementation.
+    #
+    # ``required`` stays empty: the runtime gates on
+    # `source_model XOR queries` (see the handler) instead of via schema —
+    # a JSON Schema ``oneOf`` over the whole object is supported by
+    # claude_agent_sdk but adds noise; one server-side check is clearer.
     {
         "type": "object",
         "properties": {
@@ -579,8 +630,12 @@ _QUERY_TOOL_DESC = (
             "format": {"type": "string", "default": "markdown"},
             "variables": {"type": "object"},
             "normalize_filters": {"type": "boolean", "default": True},
+            # Nested-DAG: when set, the wrapper routes to query_nested_impl
+            # and `source_model` plus the single-stage projection kwargs
+            # are ignored.
+            "queries": {"type": "array"},
         },
-        "required": ["source_model"],
+        "required": [],
     },
 )
 async def query(args: dict) -> dict:
@@ -592,8 +647,34 @@ async def query(args: dict) -> dict:
         storage = _ctx["_slayer_storage"]
     _query_mod.attach_storage(storage)
 
-    # `source_model` is required; everything else is optional with the
-    # SLayer MCP defaults.
+    # Nested-DAG form: when `queries` is supplied, route to query_nested.
+    # Mutual exclusion with `source_model` is enforced here (rather than
+    # in the schema) so a future caller passing both gets a clear error
+    # instead of a silent precedence rule.
+    if args.get("queries") is not None:
+        if args.get("source_model") is not None:
+            return _text(
+                "query: pass either `source_model` (single-stage) or "
+                "`queries` (nested DAG), not both."
+            )
+        result = await _query_mod.query_nested_impl(
+            queries=args["queries"],
+            variables=args.get("variables"),
+            show_sql=bool(args.get("show_sql", False)),
+            dry_run=bool(args.get("dry_run", False)),
+            explain=bool(args.get("explain", False)),
+            format=args.get("format", "markdown"),
+            normalize_filters=bool(args.get("normalize_filters", True)),
+        )
+        return _text(result if isinstance(result, str) else str(result))
+
+    # Single-stage form: `source_model` is required; everything else is
+    # optional with the SLayer MCP defaults.
+    if args.get("source_model") is None:
+        return _text(
+            "query: `source_model` is required for single-stage queries "
+            "(or pass `queries` for a nested DAG)."
+        )
     result = await _query_mod.query_impl(
         source_model=args["source_model"],
         measures=args.get("measures"),

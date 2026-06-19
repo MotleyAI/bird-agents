@@ -319,40 +319,42 @@ def test_v0_finalize_inside_except_or_finally(pkg: str):
 
 
 @pytest.mark.parametrize("pkg", _V0_AGENT_PACKAGES)
-def test_v0_query_imported_from_query_v0_module(pkg: str):
-    """v0 agent imports ``query`` from ``claude_sdk._query_v0``.
+def test_v0_query_imported_from_shared_claude_sdk_agent(pkg: str):
+    """v0 SLAYER agents import the unified ``query`` from
+    ``claude_sdk.agent`` (same tool as v1; accepts single object OR
+    list of stage objects for nested DAG). The previous v0-specific
+    ``_query_v0`` shape (``query_json`` JSON-string parameter) is gone.
 
-    Variants of the slayer flavour need the v0 query tool; the raw flavour
-    doesn't use query at all (raw agents talk to the DB directly through
-    SLAYER-free tools). For raw, the test simply asserts the agent does NOT
-    import the v1 ``query`` symbol from claude_sdk.agent.
+    Raw flavours don't use ``query`` at all.
     """
     src = _agent_source(pkg)
-    imports_v0 = bool(
-        re.search(
-            r"from\s+bird_interact_agents\.agents\.claude_sdk\._query_v0\s+import\b[^)]*\bquery\b",
-            src,
-            re.DOTALL,
-        )
-    )
-    imports_v1 = bool(
+    is_raw_flavour = "raw" in pkg
+    imports_shared = bool(
         re.search(
             r"from\s+bird_interact_agents\.agents\.claude_sdk\.agent\s+import\b[^)]*\bquery\b(?!_)",
             src,
             re.DOTALL,
         )
     )
-    is_raw_flavour = "raw" in pkg
+    imports_query_v0 = bool(
+        re.search(
+            r"from\s+bird_interact_agents\.agents\.claude_sdk\._query_v0\b",
+            src,
+            re.DOTALL,
+        )
+    )
+    assert not imports_query_v0, (
+        f"{pkg}/agent.py must not import from the obsolete _query_v0 module."
+    )
     if is_raw_flavour:
-        assert not imports_v1, (
-            f"{pkg}/agent.py (raw flavour) must NOT import the v1 `query` "
-            "from claude_sdk.agent; raw agents don't use SLayer tools."
+        assert not imports_shared, (
+            f"{pkg}/agent.py (raw flavour) doesn't use SLayer tools; "
+            "should not import `query` from claude_sdk.agent."
         )
     else:
-        assert imports_v0 and not imports_v1, (
-            f"{pkg}/agent.py (slayer flavour) must import `query` from "
-            "claude_sdk._query_v0 and NOT from claude_sdk.agent. "
-            f"(v0 import: {imports_v0}, v1 import: {imports_v1})"
+        assert imports_shared, (
+            f"{pkg}/agent.py (SLayer flavour) must import the unified "
+            "`query` from claude_sdk.agent."
         )
 
 

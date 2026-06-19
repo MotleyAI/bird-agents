@@ -274,7 +274,7 @@ query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 `search` to find relevant memories and existing entities; `inspect_model`
 to see a model's columns / measures / joins; `create_model` / `edit_model`
-to add columns and measures; `query` / `query_nested` to test.
+to add columns and measures; `query` to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `search` with `entities=[
@@ -318,8 +318,7 @@ tuple. To emit raw per-record rows instead, set
 `distinct_dimension_values: false` inside the query JSON — flat
 `SELECT <dims/td> FROM ... WHERE ... ORDER BY ... LIMIT`, no top-level
 `GROUP BY`. The field lives INSIDE the SlayerQuery JSON (alongside
-`source_model`, `dimensions`, etc.), same shape for `query` /
-`query_nested` (per stage) / `submit_query`.
+`source_model`, `dimensions`, etc.), same shape for `query` / `submit_query`.
 
 Decide BEFORE writing the query:
 
@@ -398,11 +397,9 @@ identifiers):
      no user-sim to confirm this for you in one-shot mode — read the
      sampled values yourself.
 
-4. TEST candidate columns and the final query with `query` /
-   `query_nested`; sanity-check the generated SQL.
+4. TEST candidate columns and the final query with `query`; sanity-check the generated SQL.
 
-   SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query` /
-`query_nested` returns, inspect the rendered SQL for these patterns
+   SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query` returns, inspect the rendered SQL for these patterns
 before submitting:
 
   1. GROUP BY on every projected column with NO aggregate functions —
@@ -417,7 +414,7 @@ before submitting:
      filters — wrapped automatically by default. When the gold answer
      requires exact-case equality (proper-noun categories with
      known-fixed casing), pass `normalize_filters=false` as a SEPARATE
-     parameter on the offending `query` / `query_nested` / `submit_query`
+     parameter on the offending `query` / `submit_query`
      call (the flag lives OUTSIDE the JSON DSL).
   3. Broken operator precedence on WHERE arithmetic:
      `expr1*w1 + expr2*w2 > threshold` without outer parens — the
@@ -482,15 +479,16 @@ FIRST — before adding logic, changing formulas, or asking the user:
 These swap the row tuple structure without changing what you computed —
 much cheaper than a new join or KB re-read.
 
-   Call `submit_query` with your final SLayer query JSON. `query_json` is one
-of two top-level shapes:
+   Call `submit_query` with your final SLayer query — either a single-
+stage form (set `source_model` + projection fields) or a nested-DAG
+form (set `queries` to a list of stage objects). The shape is:
 
   * Single-stage — a JSON object validating as a SlayerQuery, e.g.
     {{"source_model": "orders", "dimensions": ["status"],
     "measures": ["amount:sum"]}}.
   * Nested DAG — when one stage's MEASURE becomes the next stage's
-    DIMENSION, a JSON ARRAY of stage objects (the shape `query_nested`
-    accepts). The last element is the DAG root; every non-final element
+    DIMENSION, a JSON ARRAY of stage objects (the same nested-DAG shape `submit_query` accepts via the `queries`
+    field). The last element is the DAG root; every non-final element
     needs a `name`; later stages reference earlier ones via
     `source_model: "<sibling name>"`. Do NOT wrap the array in
     {{"queries": ...}} — that shape is rejected.
@@ -676,7 +674,7 @@ query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 `search` to find relevant memories and existing entities; `inspect_model`
 to see a model's columns / measures / joins; `create_model` / `edit_model`
-to add columns and measures; `query` / `query_nested` to test.
+to add columns and measures; `query` to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `search` with `entities=[
@@ -720,8 +718,7 @@ tuple. To emit raw per-record rows instead, set
 `distinct_dimension_values: false` inside the query JSON — flat
 `SELECT <dims/td> FROM ... WHERE ... ORDER BY ... LIMIT`, no top-level
 `GROUP BY`. The field lives INSIDE the SlayerQuery JSON (alongside
-`source_model`, `dimensions`, etc.), same shape for `query` /
-`query_nested` (per stage) / `submit_query`.
+`source_model`, `dimensions`, etc.), same shape for `query` / `submit_query`.
 
 Decide BEFORE writing the query:
 
@@ -868,19 +865,16 @@ varying surface parameters and:
      precedence; see the artifact-check rule below).
   2. Enumerate ≤4 structurally different hypotheses not yet tested:
      different row grain, formula kernel, join path, or output column
-     count/type, or `normalize_filters=false` on the offending `query` /
-     `query_nested` / `submit_query` call.
+     count/type, or `normalize_filters=false` on the offending `query` / `submit_query` call.
   3. Call `ask_user` ONCE with those hypotheses as concrete options to
      get directional guidance (cheaper than many resubmissions of
      near-identical queries).
   4. Test each surviving hypothesis exactly once — never re-submit a
      query structurally identical to a prior attempt.
 
-5. TEST candidate columns and the final query with `query` /
-   `query_nested`; sanity-check the generated SQL.
+5. TEST candidate columns and the final query with `query`; sanity-check the generated SQL.
 
-   SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query` /
-`query_nested` returns, inspect the rendered SQL for these patterns
+   SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query` returns, inspect the rendered SQL for these patterns
 before submitting:
 
   1. GROUP BY on every projected column with NO aggregate functions —
@@ -895,7 +889,7 @@ before submitting:
      filters — wrapped automatically by default. When the gold answer
      requires exact-case equality (proper-noun categories with
      known-fixed casing), pass `normalize_filters=false` as a SEPARATE
-     parameter on the offending `query` / `query_nested` / `submit_query`
+     parameter on the offending `query` / `submit_query`
      call (the flag lives OUTSIDE the JSON DSL).
   3. Broken operator precedence on WHERE arithmetic:
      `expr1*w1 + expr2*w2 > threshold` without outer parens — the
@@ -947,15 +941,16 @@ FIRST — before adding logic, changing formulas, or asking the user:
 These swap the row tuple structure without changing what you computed —
 much cheaper than a new join or KB re-read.
 
-   Call `submit_query` with your final SLayer query JSON. `query_json` is one
-of two top-level shapes:
+   Call `submit_query` with your final SLayer query — either a single-
+stage form (set `source_model` + projection fields) or a nested-DAG
+form (set `queries` to a list of stage objects). The shape is:
 
   * Single-stage — a JSON object validating as a SlayerQuery, e.g.
     {{"source_model": "orders", "dimensions": ["status"],
     "measures": ["amount:sum"]}}.
   * Nested DAG — when one stage's MEASURE becomes the next stage's
-    DIMENSION, a JSON ARRAY of stage objects (the shape `query_nested`
-    accepts). The last element is the DAG root; every non-final element
+    DIMENSION, a JSON ARRAY of stage objects (the same nested-DAG shape `submit_query` accepts via the `queries`
+    field). The last element is the DAG root; every non-final element
     needs a `name`; later stages reference earlier ones via
     `source_model: "<sibling name>"`. Do NOT wrap the array in
     {{"queries": ...}} — that shape is rejected.

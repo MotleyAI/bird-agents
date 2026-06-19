@@ -124,6 +124,30 @@ def test_litellm_route_moonshot(monkeypatch):
     }
 
 
+def test_litellm_route_prefers_caller_api_key(monkeypatch):
+    """CR r1: a caller-supplied ``api_key`` short-circuits the env-var
+    lookup. Without this, threading ``api_key=`` through usage.py still
+    hit ``provider_api_key(spec)`` (which raises on a missing env var)
+    before ``kwargs.setdefault`` could preserve the caller's value."""
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+
+    monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
+    litellm_model, kwargs = pr.litellm_route(
+        _KIMI, caller_api_key="explicit-key",
+    )
+    assert litellm_model == "openai/kimi-k2.7-code"
+    assert kwargs["api_key"] == "explicit-key"
+
+
+def test_litellm_route_falls_back_to_env_when_caller_unset(monkeypatch):
+    """Belt: ``caller_api_key=None`` keeps the existing env-var path."""
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+
+    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-env")
+    _, kwargs = pr.litellm_route(_KIMI, caller_api_key=None)
+    assert kwargs["api_key"] == "ms-key-env"
+
+
 def test_required_env_for():
     from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
     assert pr.required_env_for(_KIMI) == ("MOONSHOT_API_KEY",)

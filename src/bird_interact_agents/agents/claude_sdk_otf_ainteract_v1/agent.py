@@ -41,7 +41,6 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     get_all_knowledge_definitions,
     get_knowledge_definition,
     query,
-    query_nested,
     submit_query,
 )
 from bird_interact_agents.agents.claude_sdk.context_budget import (
@@ -201,7 +200,6 @@ _KNOWLEDGE_TOOLS = [
     get_knowledge_definition,
     get_all_knowledge_definitions,
     query,
-    query_nested,
 ]
 
 

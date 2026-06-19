@@ -25,19 +25,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_submit = sub.add_parser("submit")
     sp_submit.add_argument(
         "--framework", required=True,
+        # DEV-1555 v0/v1: only the two aggregator tokens are user-facing.
+        # The per-variant tokens (`claude_sdk_otf{,_v1}` / `*_raw{,_v1}` /
+        # `*_ainteract{,_v1}`) are inferred by `_make_runner` from
+        # (benchmark.one_shot × query_mode). `claude_sdk` → origin/main
+        # shape; `claude_sdk_v1` → this branch's shape.
         choices=[
-            # v0 = origin/main shape (default; unsuffixed tokens).
             "claude_sdk",
-            "claude_sdk_otf",
-            "claude_sdk_otf_raw",
-            "claude_sdk_otf_ainteract",
-            "claude_sdk_otf_ainteract_raw",
-            # v1 = this branch's shape, opt-in via `_v1` suffix.
             "claude_sdk_v1",
-            "claude_sdk_otf_v1",
-            "claude_sdk_otf_raw_v1",
-            "claude_sdk_otf_ainteract_v1",
-            "claude_sdk_otf_ainteract_raw_v1",
             # non-SDK frameworks unchanged.
             "pydantic_ai",
             "pydantic_ai_recursive",
@@ -129,8 +124,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "the API-key path burning credits when the operator meant to "
             "hit the subscription. DEV-1555: subscription auth is "
             "Anthropic-only — registry open-weight models (moonshot/...) "
-            "must omit the flag (their provider key env var is used "
-            "instead)."
+            "must not use `--subscription-auth`; omit the flag or pass "
+            "`--no-subscription-auth` so the provider key env var is "
+            "used instead."
         ),
     )
 
@@ -195,7 +191,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         # the argparse-level required flag): validate the agent-model
         # provider against the open-weight registry and make the
         # subscription-auth choice conditional on it.
-        if ns.subcommand == "submit":
+        #
+        # Codex r1: scope to claude_sdk* frameworks only — pydantic_ai,
+        # agno, smolagents etc. legitimately use non-Anthropic agent
+        # models (e.g. `openai/gpt-4o`) that `is_supported_agent_model`
+        # would otherwise reject before dispatch.
+        if (
+            ns.subcommand == "submit"
+            and ns.framework.startswith("claude_sdk")
+        ):
             if not provider_registry.is_supported_agent_model(ns.agent_model):
                 known = ", ".join(["anthropic", *sorted(provider_registry.REGISTRY)])
                 p.error(

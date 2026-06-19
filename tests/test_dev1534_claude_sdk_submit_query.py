@@ -1,14 +1,17 @@
-"""DEV-1534 Fix C: claude_sdk `submit_query` tool exposes
-`normalize_filters: bool = True` as a SEPARATE tool parameter alongside
-`query_json`.
+"""DEV-1534 Fix C / DEV-1555 CR r1 unification: claude_sdk
+`submit_query` exposes the SAME structured shape as `query` — single-
+stage via `source_model` + projection fields, or nested-DAG via
+`queries`. `normalize_filters` is a separate boolean knob, not embedded
+in the payload.
 
-The opt-out flag rides as a separate kwarg, NOT inside the JSON
-payload. The flag is forwarded to `submit_slayer_query` which forwards
-to `normalize_query_payload(parsed, normalize=normalize_filters)`.
+The agent no longer passes a `query_json` JSON STRING; the wrapper
+builds the JSON internally from the structured args and forwards it to
+`submit_slayer_query`. The opt-out flag is still forwarded to
+`normalize_query_payload(parsed, normalize=normalize_filters)`.
 
-The trajectory's `submitted_query` MUST be the agent's ORIGINAL
-`query_json` string, byte-for-byte; the kwarg lives outside the JSON
-so it never contaminates the recorded DSL.
+`submitted_query` in the trajectory is whatever the wrapper handed
+to `submit_slayer_query` (the JSON string it built); `normalize_filters`
+never appears inside that JSON.
 """
 from __future__ import annotations
 
@@ -63,8 +66,10 @@ async def test_submit_query_default_normalizes(monkeypatch):
         return "SELECT 1"
 
     agent_mod._ctx_var.get()["_slayer_client"] = SimpleNamespace(sql_sync=fake_sql_sync)
-    qjson = '{"source_model": "w", "filters": ["category == \\"Gadgets\\""]}'
-    await agent_mod.submit_query.handler({"query_json": qjson})
+    await agent_mod.submit_query.handler({
+        "source_model": "w",
+        "filters": ["category == \"Gadgets\""],
+    })
 
     assert received["payload"]["filters"] == ["lower(trim(category)) == 'gadgets'"]
 
@@ -89,13 +94,13 @@ async def test_submit_query_normalize_filters_false_passthrough(monkeypatch):
         return "SELECT 1"
 
     agent_mod._ctx_var.get()["_slayer_client"] = SimpleNamespace(sql_sync=fake_sql_sync)
-    qjson = '{"source_model": "w", "filters": ["category == \\"Gadgets\\""]}'
-    await agent_mod.submit_query.handler(
-        {"query_json": qjson, "normalize_filters": False}
-    )
+    await agent_mod.submit_query.handler({
+        "source_model": "w",
+        "filters": ['category == "Gadgets"'],
+        "normalize_filters": False,
+    })
 
-    # Opt-out path: filter literal inside the JSON used double-quotes;
-    # after json.loads + deep-copy passthrough, they're preserved.
+    # Opt-out path: filter literal preserves the verbatim string.
     assert received["payload"]["filters"] == ['category == "Gadgets"']
 
 
@@ -117,20 +122,22 @@ async def test_submit_query_normalize_filters_true_explicit(monkeypatch):
         return "SELECT 1"
 
     agent_mod._ctx_var.get()["_slayer_client"] = SimpleNamespace(sql_sync=fake_sql_sync)
-    qjson = '{"source_model": "w", "filters": ["category == \\"Gadgets\\""]}'
-    await agent_mod.submit_query.handler(
-        {"query_json": qjson, "normalize_filters": True}
-    )
+    await agent_mod.submit_query.handler({
+        "source_model": "w",
+        "filters": ["category == \"Gadgets\""],
+        "normalize_filters": True,
+    })
 
     assert received["payload"]["filters"] == ["lower(trim(category)) == 'gadgets'"]
 
 
 @pytest.mark.asyncio
-async def test_submit_query_records_unmodified_query_json(monkeypatch):
-    """`submitted_query` trajectory entry == original `query_json`,
-    NEVER carrying the `normalize_filters` flag (it lives outside the
-    JSON)."""
+async def test_submit_query_records_built_payload(monkeypatch):
+    """`submitted_query` trajectory entry == the JSON the wrapper built
+    from the agent's structured args (the wrapper serialises here, not
+    the agent). The flag never appears inside that JSON."""
     from bird_interact_agents.agents import _submit
+    import json as _json
 
     agent_mod = _seed_ctx(monkeypatch)
     monkeypatch.setattr(
@@ -142,26 +149,30 @@ async def test_submit_query_records_unmodified_query_json(monkeypatch):
     agent_mod._ctx_var.get()["_slayer_client"] = SimpleNamespace(
         sql_sync=lambda p: "SELECT 1",
     )
-    qjson = '{"source_model": "w", "filters": ["category == \\"Gadgets\\""]}'
-    await agent_mod.submit_query.handler(
-        {"query_json": qjson, "normalize_filters": False}
-    )
+    await agent_mod.submit_query.handler({
+        "source_model": "w",
+        "filters": ["category == \"Gadgets\""],
+        "normalize_filters": False,
+    })
     rec = agent_mod._ctx_var.get().get("result")
     assert rec is not None
-    assert rec["submitted_query"] == qjson
-    # And: budget charged exactly once (normalize_filters does not
-    # change pre-eval cost semantics).
+    # The wrapper built {"source_model": "w", "filters": [...]} — the
+    # `normalize_filters` knob lives OUTSIDE this JSON.
+    parsed = _json.loads(rec["submitted_query"])
+    assert parsed["source_model"] == "w"
+    assert parsed["filters"] == ["category == \"Gadgets\""]
+    assert "normalize_filters" not in parsed
+    # Budget charged exactly once.
     status = agent_mod._ctx_var.get()["status"]
-    # remaining = total - submit_query cost
     assert status.remaining_budget == 20.0 - ACTION_COSTS["submit_query"]
 
 
-def test_submit_query_tool_schema_advertises_normalize_filters_as_bool():
-    """The Claude SDK `@tool` decorator's INPUT SCHEMA must declare
-    `normalize_filters` as a separate parameter (NOT just mentioned in
-    a description blurb). Plan: separate tool parameter alongside
-    `query_json`. A description-only mention would mean the SDK doesn't
-    introspect it as a real argument, defeating the purpose."""
+def test_submit_query_tool_schema_advertises_structured_args():
+    """DEV-1555 CR r1 unification: `submit_query` exposes the SAME
+    structured shape as `query` — `source_model` plus projection
+    fields OR `queries` array. `normalize_filters` is a separate
+    boolean knob. The schema's ``required`` is empty (the handler
+    gates on source_model XOR queries at runtime)."""
     from bird_interact_agents.agents.claude_sdk import agent as agent_mod
 
     tool = agent_mod.submit_query
@@ -176,15 +187,10 @@ def test_submit_query_tool_schema_advertises_normalize_filters_as_bool():
         f"(checked inputSchema/input_schema/schema/args_schema); cannot "
         f"verify the `normalize_filters` parameter. Tool object: {tool!r}"
     )
-    # Post-PR-review (CodeRabbit/Codex): the schema MUST be an explicit
-    # JSON Schema dict declaring only `query_json` as required. A flat
-    # `{key: type}` schema would make the SDK convert it to
-    # `required: list(properties.keys())` (see claude_agent_sdk
-    # `_build_schema`), forcing every caller to supply `normalize_filters`
-    # despite the handler defaulting it to True.
     if isinstance(schema, dict) and "properties" in schema:
         props = schema["properties"]
-        assert "query_json" in props
+        assert "source_model" in props
+        assert "queries" in props
         assert "normalize_filters" in props
         nf = props["normalize_filters"]
         nf_type = nf.get("type") if isinstance(nf, dict) else None
@@ -192,14 +198,18 @@ def test_submit_query_tool_schema_advertises_normalize_filters_as_bool():
             f"normalize_filters must be declared as boolean in input schema; "
             f"got {nf!r}"
         )
-        qj = props["query_json"]
-        qj_type = qj.get("type") if isinstance(qj, dict) else None
-        assert qj_type == "string"
+        # `queries` must be an array (nested-DAG list of stage objects).
+        qs = props["queries"]
+        qs_type = qs.get("type") if isinstance(qs, dict) else None
+        assert qs_type == "array"
+        # Legacy `query_json` single-string parameter is gone.
+        assert "query_json" not in props
         required = schema.get("required", [])
-        assert required == ["query_json"], (
-            f"submit_query schema must mark ONLY `query_json` as required "
-            f"(the SDK marks every key required for flat-dict schemas, so "
-            f"the explicit list is load-bearing). got: {required!r}"
+        assert required == [], (
+            f"submit_query schema must have empty `required` so EITHER "
+            "source_model OR queries can be supplied; the SDK marks "
+            "every key required for flat-dict schemas, so the explicit "
+            f"empty list is load-bearing. got: {required!r}"
         )
     else:
         pytest.fail(

@@ -60,7 +60,12 @@ def _maybe_inject_registry_kwargs(model: str, kwargs: dict) -> str:
     never clobbered. Also registers the providers' official prices with
     litellm so cost rows stay accurate.
     """
-    litellm_model, extra = provider_registry.litellm_route(model)
+    # CR r1: thread caller-passed ``api_key`` into the route lookup so
+    # ``provider_api_key(spec)`` (which raises on an unset provider env
+    # var) is only called as fallback.
+    litellm_model, extra = provider_registry.litellm_route(
+        model, caller_api_key=kwargs.get("api_key"),
+    )
     if litellm_model == model:
         return model
     provider_registry.ensure_litellm_pricing()

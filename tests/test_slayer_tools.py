@@ -53,12 +53,11 @@ async def test_submit_query_tool_with_valid_slayer_query(tmp_path):
 
     # Trivial valid SLayer query — exercises sql_sync + execute_submit_action.
     # Likely won't match the gold answer but should not error during translate.
-    query = json.dumps({
+    result = await agent_mod.submit_query.handler({
         "source_model": "observatories",
         "dimensions": ["observstation"],
         "limit": 1,
     })
-    result = await agent_mod.submit_query.handler({"query_json": query})
     text = result["content"][0]["text"]
     assert "Generated SQL:" in text
     assert "SELECT" in text
@@ -89,35 +88,34 @@ async def test_submit_query_tool_with_invalid_json(tmp_path):
         "result": None,
     })
 
-    result = await agent_mod.submit_query.handler({"query_json": "not json"})
+    # DEV-1555 CR r1 unification: passing neither `source_model` nor
+    # `queries` is the "invalid call" case — the wrapper rejects it
+    # with a clear error before any JSON parsing happens.
+    result = await agent_mod.submit_query.handler({})
     text = result["content"][0]["text"]
-    assert "Invalid JSON" in text or "submission aborted" in text
+    assert "source_model" in text or "queries" in text
 
 
-def test_otf_slayer_one_shot_tool_list_includes_dev1534_wrappers():
-    """DEV-1534 Fix C migration target for the (now-deleted) SLAYER_A_TOOLS
-    assertion: the production OTF slayer one-shot agent must register
-    `query` AND `query_nested` on bird-interact-tools (not allowlist
-    SLayer's subprocess `query`/`query_nested`) so the agent can pass
-    `normalize_filters=false` mid-flight."""
+def test_otf_slayer_one_shot_tool_list_includes_unified_query_wrapper():
+    """DEV-1555 CR r1 unification: only `query` is registered (no
+    `query_nested`); it accepts object OR list of stages. The slayer
+    subprocess allowlist still must NOT carry the raw `query` (served
+    by our wrapper so `normalize_filters=false` is reachable mid-flight)."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as otf_mod
 
     knowledge_names = {t.name for t in otf_mod._KNOWLEDGE_TOOLS}
     assert "query" in knowledge_names
-    assert "query_nested" in knowledge_names
-    # The slayer subprocess allowlist must NOT carry query/query_nested
-    # (they're served by our wrappers now).
+    assert "query_nested" not in knowledge_names
     assert "query" not in otf_mod.SLAYER_MCP_TOOLS
     assert "query_nested" not in otf_mod.SLAYER_MCP_TOOLS
 
 
-def test_otf_slayer_ainteract_tool_list_includes_dev1534_wrappers():
-    """DEV-1534 Fix C migration target for the (now-deleted) SLAYER_C_TOOLS
-    assertion: same contract for the OTF slayer a-interact agent."""
+def test_otf_slayer_ainteract_tool_list_includes_unified_query_wrapper():
+    """Same contract for the OTF slayer a-interact agent."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract import (
         agent as otf_mod,
     )
 
     knowledge_names = {t.name for t in otf_mod._KNOWLEDGE_TOOLS}
     assert "query" in knowledge_names
-    assert "query_nested" in knowledge_names
+    assert "query_nested" not in knowledge_names

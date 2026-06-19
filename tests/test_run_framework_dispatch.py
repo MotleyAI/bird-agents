@@ -22,32 +22,50 @@ from bird_interact_agents.run import _validate_slayer_setup
 # ---------------------------------------------------------------------------
 
 
-def test_main_framework_choices_include_v0_and_v1_aggregator():
-    """DEV-1555: --framework choices include both the v0 and v1 aggregators
-    plus all four per-variant tokens on each side, and the existing non-SDK
-    frameworks. (Prior contract was "claude_sdk only"; this PR widens the
-    list as part of the v0/v1 split.)
+def test_main_framework_choices_expose_only_aggregator_tokens():
+    """DEV-1555 (CR r1): the CLI exposes only the two aggregator tokens —
+    `claude_sdk` and `claude_sdk_v1`. Per-variant tokens (`claude_sdk_otf*`)
+    remain reachable through `_make_runner` for programmatic / test
+    callers, but the CLI infers the variant from
+    (benchmark.one_shot × query_mode).
     """
     import inspect
 
     src = inspect.getsource(run_mod.main)
-    expected = (
-        # v0 aggregator + per-variant tokens.
-        "claude_sdk",
+    must_expose = ("claude_sdk", "claude_sdk_v1")
+    must_hide = (
         "claude_sdk_otf",
         "claude_sdk_otf_raw",
         "claude_sdk_otf_ainteract",
         "claude_sdk_otf_ainteract_raw",
-        # v1 aggregator + per-variant tokens.
-        "claude_sdk_v1",
         "claude_sdk_otf_v1",
         "claude_sdk_otf_raw_v1",
         "claude_sdk_otf_ainteract_v1",
         "claude_sdk_otf_ainteract_raw_v1",
     )
-    for tok in expected:
-        assert f'"{tok}"' in src, (
+
+    # Extract the `choices=[...]` literal so we test what argparse sees,
+    # not arbitrary uses of the token strings elsewhere in main().
+    import ast
+    import re
+
+    m = re.search(
+        r'add_argument\(\s*"--framework".*?choices\s*=\s*(\[[^\]]+\])',
+        src,
+        re.DOTALL,
+    )
+    assert m is not None
+    choices = set(ast.literal_eval(m.group(1)))
+
+    for tok in must_expose:
+        assert tok in choices, (
             f"run.main() --framework choices is missing {tok!r}"
+        )
+    for tok in must_hide:
+        assert tok not in choices, (
+            f"run.main() --framework choices must not include the "
+            f"per-variant token {tok!r} (CLI exposes only the two "
+            f"aggregator tokens)."
         )
 
 

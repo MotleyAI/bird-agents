@@ -16,6 +16,7 @@ Stage 2 wires the open-weight provider registry into
 
 from __future__ import annotations
 
+import math
 import os
 import time
 
@@ -38,9 +39,15 @@ def per_task_timeout_s() -> float:
     if raw is None:
         return _DEFAULT_AGENT_BUDGET_S
     try:
-        return float(raw)
-    except ValueError:
+        value = float(raw)
+    except (TypeError, ValueError):
         return _DEFAULT_AGENT_BUDGET_S
+    # `float("nan")` / `float("inf")` parse cleanly; nan breaks
+    # `elapsed < budget_s` comparisons (always False, deny never fires)
+    # and inf disables the cap entirely. Fall back to the default.
+    if not math.isfinite(value):
+        return _DEFAULT_AGENT_BUDGET_S
+    return value
 
 _DEFAULT_WINDOW = 200_000
 _ANTHROPIC_WINDOW = 1_000_000
@@ -74,17 +81,32 @@ def update_context_tokens(state: dict, msg: object) -> None:
 
     Latest, not max: compaction can legitimately shrink the context, and
     the warning should reflect where the session is now.
+
+    Codex r1 / DEV-1555: also extract from ``ResultMessage.usage``.
+    Anthropic backends populate per-turn ``AssistantMessage.usage``
+    correctly, but Moonshot/Kimi reports all-zero on each
+    ``AssistantMessage`` and only fills cumulative usage on the
+    terminal ``ResultMessage`` (documented at
+    ``claude_sdk/agent.py:SdkUsageTracker``). Reading both keeps the
+    80%/90% context warnings firing for the open-weight model that
+    DEV-1555 stage 2 ships against.
     """
-    if type(msg).__name__ != "AssistantMessage":
+    msg_type = type(msg).__name__
+    if msg_type not in ("AssistantMessage", "ResultMessage"):
         return
     usage = getattr(msg, "usage", None)
     if usage is None:
         return
-    state["context_tokens"] = (
+    tokens = (
         _usage_value(usage, "input_tokens")
         + _usage_value(usage, "cache_read_input_tokens")
         + _usage_value(usage, "cache_creation_input_tokens")
     )
+    if tokens <= 0:
+        # AssistantMessage zero-usage (Moonshot) — let the terminal
+        # ResultMessage be the authoritative update for this turn.
+        return
+    state["context_tokens"] = tokens
 
 
 def make_context_budget_hook(state: dict, window: int):
@@ -238,7 +260,13 @@ def make_wall_clock_budget_hook(
         if elapsed is None or elapsed < budget_s:
             return {}
         tool_name = input_data.get("tool_name") or ""
-        if any(s in tool_name for s in _SUBMIT_TOOL_NAMES):
+        # Codex r1: match the LEAF tool name (after the final `__`
+        # separator), not any substring. `s in tool_name` would let any
+        # tool whose name CONTAINS `submit_query` / `submit_sql` (e.g.
+        # an unrelated third-party MCP server's `do_submit_query_thing`)
+        # bypass the deny gate.
+        tool_leaf = tool_name.rsplit("__", 1)[-1]
+        if tool_leaf == submit_tool or tool_leaf in _SUBMIT_TOOL_NAMES:
             return {}
         return {
             "hookSpecificOutput": {

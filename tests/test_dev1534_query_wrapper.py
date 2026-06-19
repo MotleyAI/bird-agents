@@ -530,18 +530,14 @@ def test_otf_one_shot_slayer_allowlist_excludes_subprocess_query():
 
 
 def test_query_wrapper_in_otf_slayer_one_shot_tool_list():
-    """The new wrapper is included in the OTF slayer one-shot agent's
-    in-process tool list so it's registered on bird-interact-tools (and
-    NOT on the subprocess slayer MCP allowlist)."""
+    """DEV-1555 CR r1 unification: the OTF slayer one-shot agent's
+    in-process tool list includes the unified `query` wrapper (no
+    `query_nested`); `query` accepts object OR list of stages."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as otf_mod
 
     names = {getattr(t, "name", None) for t in otf_mod._KNOWLEDGE_TOOLS}
-    assert "query" in names, (
-        "the `query` wrapper must be in _KNOWLEDGE_TOOLS so it's registered "
-        "on bird-interact-tools (visible to the OTF one-shot agent as "
-        "mcp__bird-interact-tools__query)."
-    )
-    assert "query_nested" in names
+    assert "query" in names
+    assert "query_nested" not in names
 
 
 def test_query_wrapper_in_otf_slayer_ainteract_tool_list():
@@ -552,19 +548,17 @@ def test_query_wrapper_in_otf_slayer_ainteract_tool_list():
 
     names = {getattr(t, "name", None) for t in otf_mod._KNOWLEDGE_TOOLS}
     assert "query" in names
-    assert "query_nested" in names
+    assert "query_nested" not in names
 
 
-def test_otf_slayer_pre_submit_gate_accepts_wrapper_tool_names():
-    """DEV-1534 Fix C: the OTF pre-submit verification gate
-    (`SLAYER_QUERY_TOOLS`) must list the bird-interact-tools wrapper
-    names — not the SLayer subprocess names — so a `query` /
-    `query_nested` call from the agent satisfies the gate."""
+def test_otf_slayer_pre_submit_gate_accepts_unified_query_wrapper():
+    """DEV-1555 CR r1: the pre-submit verification gate's allow-set
+    contains the unified ``query`` wrapper name only — ``query_nested``
+    is gone (the same `query` tool now handles both shapes)."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as otf_mod
 
     assert otf_mod.SLAYER_QUERY_TOOLS == frozenset({
         "mcp__bird-interact-tools__query",
-        "mcp__bird-interact-tools__query_nested",
     })
 
 
@@ -595,9 +589,17 @@ def test_query_wrapper_tool_schema_only_requires_source_model():
         f"{schema!r}"
     )
     required = schema.get("required", [])
-    assert required == ["source_model"], (
-        f"query wrapper must mark ONLY `source_model` as required (matches "
-        f"SLayer MCP query's positional contract); got: {required!r}"
+    # DEV-1555 (CR r1 / O1): the v1 ``query`` wrapper now accepts BOTH a
+    # single SlayerQuery object AND a list of stage objects (the
+    # nested-DAG shape the v1 prompt advertises and SLayer-side
+    # exposes). The schema's ``required`` is empty; the wrapper's
+    # handler enforces ``source_model XOR queries`` at runtime so the
+    # error message is more useful than a JSON-Schema validation
+    # failure. The single-stage `source_model` and nested-DAG
+    # `queries` keys must both appear in `properties`.
+    assert required == [], (
+        f"query wrapper must accept EITHER source_model OR queries — "
+        f"`required` must be empty; got: {required!r}"
     )
     # Every other SLayer param + `normalize_filters` must still be in
     # properties so the agent knows they exist.

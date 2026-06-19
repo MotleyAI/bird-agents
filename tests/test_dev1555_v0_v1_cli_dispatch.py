@@ -41,7 +41,15 @@ _V1_VARIANT_TOKENS = (
 
 _AGGREGATOR_TOKENS = ("claude_sdk", "claude_sdk_v1")
 
-_ALL_TOKENS = _V0_VARIANT_TOKENS + _V1_VARIANT_TOKENS + _AGGREGATOR_TOKENS
+# DEV-1555 v0/v1: only the two aggregator tokens are exposed at the CLI.
+# The per-variant tokens remain accepted by `_make_runner` for
+# programmatic / test callers (see `test_per_variant_dispatch` below).
+_CLI_USER_FACING_TOKENS = _AGGREGATOR_TOKENS
+
+# Programmatic surface — `_make_runner` accepts every variant directly.
+_ALL_DISPATCH_TOKENS = (
+    _V0_VARIANT_TOKENS + _V1_VARIANT_TOKENS + _AGGREGATOR_TOKENS
+)
 
 
 # ---------------------------------------------------------------------------
@@ -49,32 +57,32 @@ _ALL_TOKENS = _V0_VARIANT_TOKENS + _V1_VARIANT_TOKENS + _AGGREGATOR_TOKENS
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("token", _ALL_TOKENS)
+@pytest.mark.parametrize("token", _CLI_USER_FACING_TOKENS)
 def test_run_cli_accepts_framework_token(token: str):
     """``run.main`` --framework choices include this token."""
     # Build a parser by introspecting the same choices the code uses.
     # We hit `_validate_framework_mode`'s underlying argparse via a
     # source-level introspection — the cleanest probe without invoking
     # the full main(): the choices list must include the token.
-    import bird_interact_agents.run as run_module
-
-    # Find the line `choices=[...]` for the --framework arg, eval it.
+    import ast
     import inspect
-
-    src = inspect.getsource(run_module)
-    # Locate the --framework block and extract its `choices=[...]`
-    # list literal.
     import re
 
+    import bird_interact_agents.run as run_module
+
+    src = inspect.getsource(run_module)
     m = re.search(
-        r'add_argument\(\s*"--framework"[^)]*?choices\s*=\s*(\[[^\]]+\])',
+        r'add_argument\(\s*"--framework".*?choices\s*=\s*(\[[^\]]+\])',
         src,
         re.DOTALL,
     )
     assert m is not None, (
         "run.main --framework argparse block not found or choices= missing."
     )
-    choices = eval(m.group(1))
+    # `ast.literal_eval` over `eval` — the matched substring is from a
+    # trusted source file, but the safer parser is appropriate (and
+    # ast-grep / Ruff S307 both flag the latter).
+    choices = ast.literal_eval(m.group(1))
     assert token in choices, (
         f"--framework choices in run.main is missing '{token}'. "
         f"Current choices: {choices}"
@@ -101,7 +109,7 @@ def _cloud_submit_argv_for(framework: str) -> list[str]:
     ]
 
 
-@pytest.mark.parametrize("token", _ALL_TOKENS)
+@pytest.mark.parametrize("token", _CLI_USER_FACING_TOKENS)
 def test_cloud_cli_accepts_framework_token(token: str):
     """``cloud.cli.parse_args(['submit', '--framework', token, …])`` accepts every token."""
     from bird_interact_agents.cloud import cli as cli_mod
@@ -110,6 +118,52 @@ def test_cloud_cli_accepts_framework_token(token: str):
     assert ns.framework == token, (
         f"cloud.cli parse_args returned framework={ns.framework!r}, "
         f"expected {token!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# (1c) Per-variant tokens are NOT user-facing on the CLI. They remain
+# accepted by `_make_runner` (see `test_per_variant_dispatch` below) but
+# the CLI surface is intentionally limited to the two aggregator tokens
+# so users pick the version, not the variant — the variant is inferred
+# from (benchmark.one_shot × query_mode).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("token", _V0_VARIANT_TOKENS + _V1_VARIANT_TOKENS)
+def test_cli_rejects_per_variant_framework_token(token: str):
+    """Per-variant tokens (`claude_sdk_otf*`) are rejected by both CLIs.
+
+    Catches the regression where someone re-adds the per-variant tokens
+    to the user-facing choices. The internal `_make_runner` dispatch
+    paths stay reachable via the aggregator routing.
+    """
+    import bird_interact_agents.run as run_mod
+    from bird_interact_agents.cloud import cli as cli_mod
+
+    # cloud.cli.parse_args → SystemExit when --framework is invalid.
+    with pytest.raises(SystemExit):
+        cli_mod.parse_args(_cloud_submit_argv_for(token))
+
+    # run.main is harder to exercise (it consumes sys.argv); inspect the
+    # choices list directly via the parser introspection used elsewhere
+    # in this file.
+    import inspect
+    import re
+
+    src = inspect.getsource(run_mod)
+    m = re.search(
+        r'add_argument\(\s*"--framework".*?choices\s*=\s*(\[[^\]]+\])',
+        src,
+        re.DOTALL,
+    )
+    assert m is not None
+    import ast
+
+    choices = ast.literal_eval(m.group(1))
+    assert token not in choices, (
+        f"run.main --framework choices must not include per-variant "
+        f"token {token!r} (got {choices!r})."
     )
 
 

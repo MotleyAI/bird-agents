@@ -192,6 +192,51 @@ def test_fit_does_not_elide_inside_protected_tail():
     assert out[-20:] == traj[-20:]
 
 
+def test_fit_engages_phase_a_on_short_trajectory():
+    """CR r1 regression: when ``len(traj) <= keep_last`` the previous
+    Phase A range was ``range(max(0, len - keep_last)) == range(0)`` —
+    no elision ever happened, ``fit_trajectory_for_autopsy`` returned
+    the oversized input unchanged, and the API request blew up.
+
+    The ``protected_tail = min(keep_last, max(len - keep_head, 0))``
+    clamp makes Phase A's range non-empty so the head's tool_result
+    bodies get elided. Phase B still doesn't engage on very short
+    trajectories (its range stays empty), and the caller's
+    post-squeeze size check raises if the result is still oversized
+    — see ``test_run_autopsy_raises_when_squeeze_cannot_fit`` below.
+
+    Assert that the squeeze produced a SMALLER trajectory than the
+    input (some elision happened), even if it didn't fully meet the
+    aggressive 50% budget.
+    """
+    traj = _ctraj(8)  # 16 items — strictly less than keep_last=20
+    original_size = _size_tokens(traj)
+    budget = int(original_size * 0.50)
+    out = _fit(traj, budget)
+    out_size = _size_tokens(out)
+    assert out_size < original_size, (
+        f"squeeze was a no-op: {out_size} == {original_size}; the "
+        "protected_tail clamp should at minimum let Phase A elide "
+        "head tool-result bodies."
+    )
+    # Head items themselves are still present in order (Phase A only
+    # touches their tool_result body content, not the items as a whole).
+    assert [it["type"] for it in out[:5]] == [it["type"] for it in traj[:5]]
+
+
+def test_fit_engages_on_trajectory_equal_to_keep_last():
+    """``len(traj) == keep_last`` — the exact boundary. Phase A would
+    have been a no-op under the original ``range(max(0, len - keep_last))``
+    formula (range(0)). With the protected_tail clamp Phase A reaches
+    ``len - protected_tail = keep_head`` items."""
+    traj = _ctraj(10)  # 20 items — equal to keep_last=20
+    original_size = _size_tokens(traj)
+    budget = int(original_size * 0.85)
+    out = _fit(traj, budget)
+    # Some elision happened.
+    assert _size_tokens(out) < original_size
+
+
 def test_fit_leaves_legacy_string_items_untouched():
     traj = [_legacy_string_item(0), *_ctraj(30)]
     budget = int(_size_tokens(traj) * 0.5)

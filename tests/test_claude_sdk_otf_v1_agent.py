@@ -39,11 +39,10 @@ def _tool_names(tools):
     return {t.name for t in tools}
 
 
-def test_select_tools_one_shot_returns_six_native_tools():
-    """3 knowledge tools + the DEV-1534 Fix C query/query_nested wrappers
-    + submit_query = 6 native; no ask_user. Total tool count (with 9
-    slayer subprocess tools after Fix C moves query/query_nested out
-    of the subprocess allowlist) is 15."""
+def test_select_tools_one_shot_returns_five_native_tools():
+    """DEV-1555 CR r1 unification: query_nested is gone; the single
+    `query` tool accepts object OR list of stages. 3 knowledge tools
+    + `query` + `submit_query` = 5 native; no ask_user."""
     from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     names = _tool_names(m._select_tools("one-shot"))
@@ -52,10 +51,10 @@ def test_select_tools_one_shot_returns_six_native_tools():
         "get_knowledge_definition",
         "get_all_knowledge_definitions",
         "query",
-        "query_nested",
         "submit_query",
     }
     assert "ask_user" not in names
+    assert "query_nested" not in names
 
 
 def test_select_tools_rejects_a_interact_and_others():

@@ -11,6 +11,7 @@ operates on raw SQL instead of a SLayer model store.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 
 from claude_agent_sdk import (
@@ -339,8 +340,17 @@ class ClaudeSDKOtfRawAgent:
             async with ClaudeSDKClient(options=options) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
+                    # CR r1 (PR #49 follow-up): structured trajectory via
+                    # ``dataclasses.asdict`` instead of ``str(msg)[:500]`` —
+                    # matches the three sibling v1 agents and preserves the
+                    # nested SDK message fields (content blocks, usage,
+                    # tool_use_result) that ``str()`` flattens to a repr.
+                    try:
+                        _data: object = dataclasses.asdict(msg)
+                    except Exception:  # noqa: BLE001
+                        _data = str(msg)
                     trajectory.append(
-                        {"type": str(type(msg).__name__), "data": str(msg)[:500]}
+                        {"type": str(type(msg).__name__), "data": _data}
                     )
                     usage_tracker.observe(msg)
                     update_context_tokens(context_state, msg)

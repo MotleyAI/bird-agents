@@ -66,3 +66,33 @@ def test_invariant_unchanged_for_anthropic_oauth_run(monkeypatch):
         "agent_model": "anthropic/claude-sonnet-4-6",
     }
     ray_app._assert_actor_oauth_invariant(cfg)  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# CR r1: the registry-run invariant must reject ANY ambient Anthropic
+# credential, not only CLAUDE_CODE_OAUTH_TOKEN. The Claude Agent SDK
+# auto-picks ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN with the same
+# silent-fall-back-to-Anthropic effect.
+# ---------------------------------------------------------------------------
+
+
+def test_invariant_raises_when_anthropic_api_key_survives_on_registry_run(
+    monkeypatch,
+):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-leaked")
+    cfg = {"framework": "claude_sdk", "agent_model": _KIMI}
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+        ray_app._assert_actor_oauth_invariant(cfg)
+
+
+def test_invariant_raises_when_anthropic_auth_token_survives_on_registry_run(
+    monkeypatch,
+):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "leaked-token")
+    cfg = {"framework": "claude_sdk", "agent_model": _KIMI}
+    with pytest.raises(RuntimeError, match="ANTHROPIC_AUTH_TOKEN"):
+        ray_app._assert_actor_oauth_invariant(cfg)

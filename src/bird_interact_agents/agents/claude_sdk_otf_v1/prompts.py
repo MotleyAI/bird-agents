@@ -34,18 +34,18 @@ from bird_interact_agents.agents._shared_otf_prompts import (
 # Shared submission contract (single-stage or nested-DAG). Literal JSON
 # braces are doubled because the prompt is consumed via ``str.format``.
 _SUBMIT_CONTRACT = """\
-Call `submit_query` with your final SLayer query JSON. `query_json` is one
-of two top-level shapes:
+Call `submit_query` with your final SLayer query as structured arguments.
+Two top-level shapes (same as `query`):
 
-  * Single-stage — a JSON object validating as a SlayerQuery, e.g.
-    {{"source_model": "orders", "dimensions": ["status"],
-    "measures": ["amount:sum"]}}.
+  * Single-stage — set `source_model` plus the usual projection
+    fields, e.g. `source_model: "orders"`,
+    `dimensions: ["status"]`, `measures: ["amount:sum"]`.
   * Nested DAG — when one stage's MEASURE becomes the next stage's
-    DIMENSION, a JSON ARRAY of stage objects (the shape `query_nested`
-    accepts). The last element is the DAG root; every non-final element
-    needs a `name`; later stages reference earlier ones via
-    `source_model: "<sibling name>"`. Do NOT wrap the array in
-    {{"queries": ...}} — that shape is rejected.
+    DIMENSION, set `queries` to a list of stage objects. The last
+    element is the DAG root; every non-final element needs a `name`;
+    later stages reference earlier ones via
+    `source_model: "<sibling name>"`. Omit `source_model` at the top
+    level when passing `queries`.
 
 You MUST call `submit_query` to finish — a prose answer is not a
 submission. If a `filters` predicate needs a computed value, encode it as
@@ -130,8 +130,9 @@ SLAYER_OTF_ONE_SHOT = (
     + _NO_USER_TO_CONSULT.format(sources_desc="the memories and column\ndescriptions")
     + "\n\n"
     + _ENCODE_CORE
-    + "\n4. TEST candidate columns and the final query with `query` /\n"
-      "   `query_nested`; sanity-check the generated SQL.\n\n"
+    + "\n4. TEST candidate columns and the final query with `query` "
+      "(single object or nested-DAG `queries` list); sanity-check the "
+      "generated SQL.\n\n"
       "   "
     + _SLAYER_SQL_ARTIFACT_CHECK
     + "\n\n"

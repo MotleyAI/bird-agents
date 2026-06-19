@@ -1137,17 +1137,25 @@ def _assert_actor_oauth_invariant(cfg: dict[str, Any]) -> None:
     if not cfg.get("framework", "").startswith("claude_sdk"):
         return
     # DEV-1555 Stage 2: on a registry open-weight run the agent talks to
-    # the provider's ANTHROPIC_BASE_URL endpoint — a surviving OAuth token
-    # would make the Claude CLI silently route to Anthropic instead.
+    # the provider's ANTHROPIC_BASE_URL endpoint — ANY surviving Anthropic
+    # credential (OAuth token, API key, auth token) would make the Claude
+    # CLI silently route to Anthropic instead. CR r1: reject the API-key
+    # and auth-token cases too, not only the OAuth token.
     if provider_registry.get_provider(cfg.get("agent_model") or "") is not None:
-        if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
-            raise RuntimeError(
-                "CLAUDE_CODE_OAUTH_TOKEN is set on a worker running the "
-                f"open-weight agent model {cfg.get('agent_model')!r}. The "
-                "Claude Agent SDK would silently authenticate against "
-                "Anthropic instead of the provider endpoint. The driver "
-                "must not ship Anthropic credentials on open-weight runs."
-            )
+        for env_var in (
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+        ):
+            if os.environ.get(env_var):
+                raise RuntimeError(
+                    f"{env_var} is set on a worker running the "
+                    f"open-weight agent model {cfg.get('agent_model')!r}. "
+                    "The Claude Agent SDK would silently authenticate "
+                    "against Anthropic instead of the provider endpoint. "
+                    "The driver must not ship Anthropic credentials on "
+                    "open-weight runs."
+                )
         return
     if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
         if os.environ.get("ANTHROPIC_API_KEY"):

@@ -61,10 +61,10 @@ def _tool_names(tools):
     return {t.name for t in tools}
 
 
-def test_select_tools_a_interact_returns_seven_native_tools():
-    """3 knowledge tools + the DEV-1534 Fix C query/query_nested wrappers
-    + submit_query + ask_user = 7 native; 9 slayer subprocess (after
-    query/query_nested move off the subprocess allowlist) = 16."""
+def test_select_tools_a_interact_returns_six_native_tools():
+    """DEV-1555 CR r1 unification: query_nested is gone; the single
+    `query` tool accepts object OR list of stages. 3 knowledge tools
+    + `query` + `submit_query` + `ask_user` = 6 native."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     names = _tool_names(m._select_tools("a-interact"))
@@ -73,11 +73,11 @@ def test_select_tools_a_interact_returns_seven_native_tools():
         "get_knowledge_definition",
         "get_all_knowledge_definitions",
         "query",
-        "query_nested",
         "submit_query",
         "ask_user",
     }
-    assert len(m._select_tools("a-interact")) == 7
+    assert "query_nested" not in names
+    assert len(m._select_tools("a-interact")) == 6
 
 
 def test_select_tools_rejects_unknown_eval_mode():

@@ -1492,19 +1492,15 @@ def main() -> None:
     )
     parser.add_argument(
         "--framework",
+        # DEV-1555 v0/v1: only the two aggregator tokens are user-facing.
+        # The per-variant tokens (`claude_sdk_otf{,_v1}` / `*_raw{,_v1}` /
+        # `*_ainteract{,_v1}`) remain accepted by `_make_runner` for
+        # programmatic / test callers, but the CLI infers the variant
+        # from (benchmark.one_shot × query_mode) — `claude_sdk` →
+        # origin/main shape; `claude_sdk_v1` → this branch's shape.
         choices=[
-            # v0 = origin/main shape (default; unsuffixed tokens).
             "claude_sdk",
-            "claude_sdk_otf",
-            "claude_sdk_otf_raw",
-            "claude_sdk_otf_ainteract",
-            "claude_sdk_otf_ainteract_raw",
-            # v1 = this branch's shape, opt-in via `_v1` suffix.
             "claude_sdk_v1",
-            "claude_sdk_otf_v1",
-            "claude_sdk_otf_raw_v1",
-            "claude_sdk_otf_ainteract_v1",
-            "claude_sdk_otf_ainteract_raw_v1",
             # non-SDK frameworks unchanged.
             "pydantic_ai",
             "pydantic_ai_recursive",

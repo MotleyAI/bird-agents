@@ -682,14 +682,16 @@ async def test_claude_sdk_submit_query_routes_nested_through_helper(monkeypatch)
         "result": None,
     })
 
-    payload = json.dumps([
+    queries = [
         {"name": "stage1", "source_model": "encounters"},
         {"source_model": "stage1", "measures": ["crisisint:sum"]},
-    ])
-    result = await agent_mod.submit_query.handler({"query_json": payload})
+    ]
+    # DEV-1555 CR r1 unification: pass nested-DAG via the structured
+    # `queries` arg (wrapper builds the JSON internally).
+    result = await agent_mod.submit_query.handler({"queries": queries})
 
-    # The wrapper unpacked args["query_json"] and submit_slayer_query
-    # parsed it as a list — confirmed by what the fake client got.
+    # The wrapper built a JSON array from `queries` and forwarded it
+    # to submit_slayer_query, which parsed it as a list.
     assert isinstance(seen.get("query"), list)
     assert len(seen["query"]) == 2
     text = result["content"][0]["text"]
