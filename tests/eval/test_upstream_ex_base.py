@@ -927,3 +927,96 @@ def test_compare_pred_vs_gold_ex_base_dispatches_for_all_livesqlbench_variants(
     # The SQLite LSB variant uses upstream livesqlbench's grader (same
     # algorithm, sqlite3 driver) — dispatched to LSB module.
     assert seen == ["lsb"]
+
+
+# ---------------------------------------------------------------------------
+# DEV-1550: upstream-tree root resolution. The cloud actor MUST be able to
+# load the upstream grader modules; the prior author-private absolute paths
+# (`/home/james/...`) meant the loaders silently `FileNotFoundError`d on every
+# other machine, and the N1 dispatch downgraded to legacy `_set_equal` without
+# anyone noticing.
+# ---------------------------------------------------------------------------
+
+
+def test_cloud_grader_root_constants_are_under_in_image_bake_dir():
+    """The in-image bake paths must point under ``/app/upstream_graders/``
+    (matched 1:1 by ``Dockerfile.cloud``'s ``COPY --from=...`` lines) —
+    otherwise the dispatch silently falls back to legacy ``_set_equal`` in
+    the cloud actor."""
+    from bird_interact_agents.eval.upstream_ex_base import (
+        _CLOUD_BIRD_INTERACT_ROOT, _CLOUD_LIVESQLBENCH_ROOT,
+    )
+
+    assert str(_CLOUD_BIRD_INTERACT_ROOT).startswith("/app/upstream_graders/")
+    assert str(_CLOUD_LIVESQLBENCH_ROOT).startswith("/app/upstream_graders/")
+    # No author-private hardcoded paths anywhere in the defaults.
+    assert not str(_CLOUD_BIRD_INTERACT_ROOT).startswith("/home/")
+    assert not str(_CLOUD_LIVESQLBENCH_ROOT).startswith("/home/")
+
+
+def test_resolve_upstream_root_prefers_env_var(monkeypatch, tmp_path: Path):
+    """Env override wins over both the in-image bake path and the
+    sibling-of-main-checkout discovery — local devs must be able to point
+    the loader at an arbitrary checkout."""
+    from bird_interact_agents.eval.upstream_ex_base import (
+        _CLOUD_BIRD_INTERACT_ROOT, _resolve_upstream_root,
+    )
+
+    override = tmp_path / "my-bird-interact-fork"
+    override.mkdir()
+    monkeypatch.setenv("BIRD_BIRD_INTERACT_ROOT", str(override))
+    resolved = _resolve_upstream_root(
+        "BIRD_BIRD_INTERACT_ROOT", _CLOUD_BIRD_INTERACT_ROOT, "BIRD-Interact",
+    )
+    assert resolved == override
+
+
+def test_resolve_upstream_root_falls_back_to_sibling_of_main_checkout(
+    monkeypatch, tmp_path: Path,
+):
+    """With no env override and no in-image bake dir, the resolver returns
+    the sibling-of-main-checkout path produced by
+    ``paths.bird_interact_upstream_root`` (the common local-dev layout)."""
+    from bird_interact_agents.eval.upstream_ex_base import _resolve_upstream_root
+
+    monkeypatch.delenv("BIRD_BIRD_INTERACT_ROOT", raising=False)
+    sentinel = tmp_path / "sibling-bird-interact"
+    sentinel.mkdir()
+
+    import bird_interact_agents.paths as paths_mod
+    monkeypatch.setattr(paths_mod, "bird_interact_upstream_root", lambda: sentinel)
+
+    # Point the cloud path at a directory that does NOT exist, so the
+    # resolver falls through to the sibling branch.
+    nonexistent_cloud = tmp_path / "no-such-cloud-bake"
+    resolved = _resolve_upstream_root(
+        "BIRD_BIRD_INTERACT_ROOT", nonexistent_cloud, "BIRD-Interact",
+    )
+    assert resolved == sentinel
+
+
+def test_resolve_upstream_root_prefers_cloud_bake_when_dir_present(
+    monkeypatch, tmp_path: Path,
+):
+    """Inside the cloud actor (where ``/app/upstream_graders/...`` is baked
+    by ``Dockerfile.cloud``), the resolver picks the in-image path over the
+    sibling discovery."""
+    from bird_interact_agents.eval.upstream_ex_base import _resolve_upstream_root
+
+    monkeypatch.delenv("BIRD_LIVESQLBENCH_ROOT", raising=False)
+    cloud_bake = tmp_path / "app-upstream-graders-livesqlbench"
+    cloud_bake.mkdir()
+
+    # If the resolver ignored the present cloud bake and consulted
+    # `paths.livesqlbench_upstream_root` instead, this raise-on-call
+    # would trip.
+    import bird_interact_agents.paths as paths_mod
+
+    def _explode():
+        raise AssertionError("sibling discovery used while cloud bake present")
+
+    monkeypatch.setattr(paths_mod, "livesqlbench_upstream_root", _explode)
+    resolved = _resolve_upstream_root(
+        "BIRD_LIVESQLBENCH_ROOT", cloud_bake, "livesqlbench",
+    )
+    assert resolved == cloud_bake

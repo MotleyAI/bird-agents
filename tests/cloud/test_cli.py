@@ -701,7 +701,7 @@ def test_build_subcommand_passes_audited_gold_root_to_image_tag(
     push_calls: list[tuple] = []
 
     def fake_image_tag(repo_root, audited_gold_root, *, allow_dirty,
-                       annotations_root=None):
+                       annotations_root=None, **_kw):
         tag_calls.append((repo_root, audited_gold_root, allow_dirty,
                           annotations_root))
         return "deadbeef-cafebabe"

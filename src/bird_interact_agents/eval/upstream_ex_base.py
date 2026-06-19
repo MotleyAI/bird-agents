@@ -15,8 +15,20 @@ For mini-interact (SQLite) the upstream lives at
 evaluation/test_utils.py``; for the livesqlbench family (Postgres + the
 sqlite-shimmed lite variant) at
 ``livesqlbench/evaluation/src/test_utils.py``. Both expose the same
-``ex_base`` / ``remove_*`` API — the only delta is the driver. Roots are
-overridable via ``$BIRD_BIRD_INTERACT_ROOT`` / ``$BIRD_LIVESQLBENCH_ROOT``.
+``ex_base`` / ``remove_*`` API — the only delta is the driver.
+
+Root resolution (per-tree, in order):
+
+1. ``$BIRD_BIRD_INTERACT_ROOT`` / ``$BIRD_LIVESQLBENCH_ROOT`` env var if set.
+2. The in-image bake path under ``/app/upstream_graders/{bird-interact,
+   livesqlbench}/`` (populated by ``Dockerfile.cloud`` via BuildKit
+   ``--build-context``) — wins inside the cloud actor.
+3. Sibling of the main checkout via ``paths.bird_interact_root()`` /
+   ``paths.livesqlbench_root()`` — common local-dev layout.
+
+NEVER bake author-private absolute paths into the defaults: if the cloud
+image silently fell back to legacy ``_set_equal`` because the upstream
+tree was unreachable, the N1 cascade tier would report fake numbers.
 
 Deliberate deviation from upstream: when BOTH preprocessed result lists
 come out empty, the shim returns ``True`` (matches our legacy
@@ -141,13 +153,44 @@ def is_mutation_sql(sql: str) -> bool:
 # Lazy upstream module loaders
 # ---------------------------------------------------------------------------
 
-_DEFAULT_BIRD_INTERACT_ROOT = "/home/james/Dropbox/SLayer/BIRD-Interact"
-_DEFAULT_LIVESQLBENCH_ROOT = "/home/james/Dropbox/SLayer/livesqlbench"
+# In-image bake locations: Dockerfile.cloud's `COPY --from=` lines
+# (matched 1:1 by `cloud.image.build_and_push`'s BuildKit
+# `--build-context` flags) populate these dirs at image build time. The
+# host-tree directory structure is preserved (so `_MINI_INTERACT_REL` and
+# `_LIVESQLBENCH_REL` resolve identically on cloud and on the developer
+# laptop). Tests pin these against author-private paths via
+# `tests/eval/test_upstream_ex_base.py::test_default_roots_*`.
+_CLOUD_BIRD_INTERACT_ROOT = Path("/app/upstream_graders/bird-interact")
+_CLOUD_LIVESQLBENCH_ROOT = Path("/app/upstream_graders/livesqlbench")
 
 _MINI_INTERACT_REL = (
     "mini_interact/knowledge_based/mini_interact_conv/evaluation/test_utils.py"
 )
 _LIVESQLBENCH_REL = "evaluation/src/test_utils.py"
+
+
+def _resolve_upstream_root(
+    env_var: str, cloud_path: Path, sibling_name: str,
+) -> Path:
+    """Resolve the host root for one upstream tree.
+
+    Order: env override → in-image bake path (cloud actor) → sibling of
+    main checkout (local dev convention). The sibling-discovery branch
+    imports :mod:`bird_interact_agents.paths` lazily so a missing
+    upstream tree doesn't bring the package's path machinery into modules
+    that don't need it.
+    """
+    override = os.environ.get(env_var)
+    if override:
+        return Path(override).expanduser()
+    if cloud_path.is_dir():
+        return cloud_path
+    from bird_interact_agents import paths
+    return (
+        paths.bird_interact_upstream_root()
+        if sibling_name == "BIRD-Interact"
+        else paths.livesqlbench_upstream_root()
+    )
 
 
 # Sibling-helper module names the upstream files import via the bare
@@ -215,9 +258,9 @@ def _load_module_from_file(
 
 def _load_mini_interact_module() -> ModuleType:
     """Load the mini-interact upstream comparator module on demand."""
-    root = Path(os.environ.get(
-        "BIRD_BIRD_INTERACT_ROOT", _DEFAULT_BIRD_INTERACT_ROOT,
-    ))
+    root = _resolve_upstream_root(
+        "BIRD_BIRD_INTERACT_ROOT", _CLOUD_BIRD_INTERACT_ROOT, "BIRD-Interact",
+    )
     target = root / _MINI_INTERACT_REL
     return _load_module_from_file(
         "_bird_interact_mini_interact_test_utils",
@@ -228,9 +271,9 @@ def _load_mini_interact_module() -> ModuleType:
 
 def _load_livesqlbench_module() -> ModuleType:
     """Load the livesqlbench upstream comparator module on demand."""
-    root = Path(os.environ.get(
-        "BIRD_LIVESQLBENCH_ROOT", _DEFAULT_LIVESQLBENCH_ROOT,
-    ))
+    root = _resolve_upstream_root(
+        "BIRD_LIVESQLBENCH_ROOT", _CLOUD_LIVESQLBENCH_ROOT, "livesqlbench",
+    )
     target = root / _LIVESQLBENCH_REL
     return _load_module_from_file(
         "_bird_interact_livesqlbench_test_utils",

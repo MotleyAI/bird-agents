@@ -35,6 +35,23 @@ def _iter_files_under(root: Path) -> Iterable[Path]:
     return (p for p in sorted(root.rglob("*")) if p.is_file())
 
 
+def _iter_upstream_grader_files(root: Path) -> Iterable[Path]:
+    """Iterate hashable source files under an upstream-grader tree.
+
+    Filters out ``__pycache__/`` (rebuilt non-deterministically by any
+    local import, which would otherwise churn the data-layer hash and
+    force needless rebuilds) and only keeps Python source (the loader
+    only reads ``.py`` — ``.sh`` / ``.ipynb`` siblings don't influence
+    the grader's behaviour).
+    """
+    if not root.exists():
+        return iter(())
+    return (
+        p for p in sorted(root.rglob("*.py"))
+        if p.is_file() and "__pycache__" not in p.parts
+    )
+
+
 def _hash_files(files: Iterable[Path], *, base: Path) -> str:
     """SHA-256 over (relative_path, bytes) for each file, in sorted order."""
     h = hashlib.sha256()
@@ -88,6 +105,8 @@ def data_hash(
     audited_gold_root: Path,
     *,
     annotations_root: Path | None = None,
+    bird_interact_evaluation_root: Path | None = None,
+    livesqlbench_evaluation_root: Path | None = None,
 ) -> str:
     """Content-based hash over the inputs that compose the DATA layers
     of `Dockerfile.cloud`: ``audited_gold/`` and the Dockerfile's DATA
@@ -117,7 +136,16 @@ def data_hash(
 
     DEV-1515: ``annotations_root`` is optional; pass ``paths.annotations_root()``
     to include annotations content. Defaults to ``None`` (no annotations hashed)
-    so test callers that don't supply it remain hermetic."""
+    so test callers that don't supply it remain hermetic.
+
+    DEV-1550: ``bird_interact_evaluation_root`` /
+    ``livesqlbench_evaluation_root`` are the upstream grader ``evaluation/``
+    subdirs that ``Dockerfile.cloud`` bakes via ``COPY --from=`` so the
+    cascade tier N1 dispatch can load ``test_utils.py`` + ``db_utils.py``
+    in the cloud actor. Hashed under stable on-image keys so the digest
+    is independent of where the host files live (the build context is
+    relocatable). Default ``None`` keeps hermetic tests hermetic; the
+    runtime driver populates both via ``image.build_and_push``."""
     h = hashlib.sha256()
 
     # audited_gold (main-checkout-anchored, gitignored). Keyed under
@@ -141,6 +169,26 @@ def data_hash(
             rel = f.relative_to(annotations_root)
             h.update(b"repo/")
             h.update(f"annotations/{rel.as_posix()}".encode())
+            h.update(b"\x00")
+            h.update(f.read_bytes())
+            h.update(b"\x00")
+
+    # DEV-1550: upstream grader subtrees. Keys mirror the in-image bake
+    # paths under ``upstream_graders/{bird-interact,livesqlbench}/`` so
+    # the digest stays the same whether the host root is the developer's
+    # checkout sibling or a CI mount. ``_iter_upstream_grader_files``
+    # filters ``__pycache__`` so a stale .pyc on the host doesn't churn
+    # the hash.
+    for grader_root, hash_key_prefix in (
+        (bird_interact_evaluation_root, "upstream_graders/bird-interact/"),
+        (livesqlbench_evaluation_root, "upstream_graders/livesqlbench/"),
+    ):
+        if grader_root is None or not grader_root.exists():
+            continue
+        for f in _iter_upstream_grader_files(grader_root):
+            rel = f.relative_to(grader_root)
+            h.update(b"repo/")
+            h.update((hash_key_prefix + rel.as_posix()).encode())
             h.update(b"\x00")
             h.update(f.read_bytes())
             h.update(b"\x00")
@@ -202,14 +250,24 @@ def image_tag(
     *,
     allow_dirty: bool,
     annotations_root: Path | None = None,
+    bird_interact_evaluation_root: Path | None = None,
+    livesqlbench_evaluation_root: Path | None = None,
 ) -> str:
     """`<data_hash[:12]>-<code_hash[:12]>` (+ `-dirty` when `allow_dirty=True`
     and the worktree is dirty).
 
     See :func:`data_hash` for why ``audited_gold_root`` is a separate input
     (worktree-safety). ``annotations_root`` is the DEV-1515 sibling input —
-    same rationale."""
-    dh = data_hash(repo_root, audited_gold_root, annotations_root=annotations_root)
+    same rationale. ``bird_interact_evaluation_root`` /
+    ``livesqlbench_evaluation_root`` (DEV-1550) point at the upstream
+    grader ``evaluation/`` subdirs Dockerfile.cloud bakes into the image."""
+    dh = data_hash(
+        repo_root,
+        audited_gold_root,
+        annotations_root=annotations_root,
+        bird_interact_evaluation_root=bird_interact_evaluation_root,
+        livesqlbench_evaluation_root=livesqlbench_evaluation_root,
+    )
     ch = code_hash(repo_root, allow_dirty=allow_dirty)
     tag = f"{dh[:12]}-{ch[:12]}"
     if allow_dirty and _dirty_image_input_paths(repo_root):
@@ -280,6 +338,28 @@ def _dirty_image_input_paths(repo_root: Path) -> set[str]:
     return dirty
 
 
+def default_grader_eval_roots() -> tuple[Path, Path]:
+    """Host-side eval-dir paths the cloud build bakes into the image.
+
+    Returns ``(bird_interact_evaluation_root, livesqlbench_evaluation_root)``.
+    Centralised so the driver / CLI callsites pass the same paths to
+    :func:`image_tag` (data-layer hash) AND :func:`build_and_push`
+    (BuildKit ``--build-context``) — drift between the two would mean
+    rebuilding under a stale tag.
+    """
+    from bird_interact_agents import paths
+
+    bird_interact_eval = (
+        paths.bird_interact_upstream_root()
+        / "mini_interact" / "knowledge_based"
+        / "mini_interact_conv" / "evaluation"
+    )
+    livesqlbench_eval = (
+        paths.livesqlbench_upstream_root() / "evaluation" / "src"
+    )
+    return bird_interact_eval, livesqlbench_eval
+
+
 def build_and_push(
     tag: str,
     repo_root: Path,
@@ -287,6 +367,8 @@ def build_and_push(
     image_uri_prefix: str | None = None,
     audited_gold_root: Path | None = None,
     annotations_root: Path | None = None,
+    bird_interact_evaluation_root: Path | None = None,
+    livesqlbench_evaluation_root: Path | None = None,
     force: bool = False,
 ) -> str:
     """Build (if needed) and push the image, returning the full URI.
@@ -318,6 +400,24 @@ def build_and_push(
         audited_gold_root = paths.audited_gold_root()
     if annotations_root is None:
         annotations_root = paths.annotations_root()
+    # DEV-1550: upstream BIRD-Interact + livesqlbench grader subtrees.
+    # The build contexts point at the host evaluation/ subdirs that
+    # `Dockerfile.cloud`'s `COPY --from=bird-interact-evaluation` /
+    # `COPY --from=livesqlbench-evaluation` lines bake into the image.
+    # `_MINI_INTERACT_REL` / `_LIVESQLBENCH_REL` in `upstream_ex_base`
+    # are anchored under the eval grader root, so the dirs we point at
+    # here must be the deeper `evaluation/` subdirs, not the upstream
+    # repo roots.
+    if bird_interact_evaluation_root is None:
+        bird_interact_evaluation_root = (
+            paths.bird_interact_upstream_root()
+            / "mini_interact" / "knowledge_based"
+            / "mini_interact_conv" / "evaluation"
+        )
+    if livesqlbench_evaluation_root is None:
+        livesqlbench_evaluation_root = (
+            paths.livesqlbench_upstream_root() / "evaluation" / "src"
+        )
     uri = f"{image_uri_prefix}:{tag}"
     if not force:
         probe = subprocess.run(
@@ -332,6 +432,10 @@ def build_and_push(
             "docker", "build",
             "--build-context", f"audited-gold={audited_gold_root}",
             "--build-context", f"annotations={annotations_root}",
+            "--build-context",
+            f"bird-interact-evaluation={bird_interact_evaluation_root}",
+            "--build-context",
+            f"livesqlbench-evaluation={livesqlbench_evaluation_root}",
             "-t", uri,
             "-f", "Dockerfile.cloud",
             ".",

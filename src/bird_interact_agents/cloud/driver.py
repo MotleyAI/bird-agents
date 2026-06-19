@@ -646,16 +646,21 @@ def submit(args) -> str:
     slayer_dbs: list[str] = []
     if args.query_mode == "slayer":
         slayer_dbs = _check_slayer_setup_present(args)
+    bird_interact_eval, livesqlbench_eval = image.default_grader_eval_roots()
     tag = image.image_tag(
         repo_root,
         paths.audited_gold_root(),
         allow_dirty=args.allow_dirty,
         annotations_root=paths.annotations_root(),
+        bird_interact_evaluation_root=bird_interact_eval,
+        livesqlbench_evaluation_root=livesqlbench_eval,
     )
     image_uri = image.build_and_push(
         tag, repo_root,
         audited_gold_root=paths.audited_gold_root(),
         annotations_root=paths.annotations_root(),
+        bird_interact_evaluation_root=bird_interact_eval,
+        livesqlbench_evaluation_root=livesqlbench_eval,
         force=False,
     )
     # De-bake: upload the benchmark dataset ONCE to its content-hashed GCS
@@ -841,16 +846,21 @@ def submit_annotator(args) -> str:
     )
     prereqs.check(_prereq_args)
     repo_root = submitter_repo_root()
+    bird_interact_eval, livesqlbench_eval = image.default_grader_eval_roots()
     tag = image.image_tag(
         repo_root,
         paths.audited_gold_root(),
         allow_dirty=args.allow_dirty,
         annotations_root=paths.annotations_root(),
+        bird_interact_evaluation_root=bird_interact_eval,
+        livesqlbench_evaluation_root=livesqlbench_eval,
     )
     image_uri = image.build_and_push(
         tag, repo_root,
         audited_gold_root=paths.audited_gold_root(),
         annotations_root=paths.annotations_root(),
+        bird_interact_evaluation_root=bird_interact_eval,
+        livesqlbench_evaluation_root=livesqlbench_eval,
         force=False,
     )
     _check_gold_present(get_benchmark(args.benchmark).name)

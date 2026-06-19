@@ -90,5 +90,23 @@ COPY --from=audited-gold . /app/bird-interact-agents/audited_gold/
 # inside the worker (via git's `--git-common-dir`).
 COPY --from=annotations . /app/bird-interact-agents/annotations/
 
+# DEV-1550: bake the upstream BIRD-Interact and livesqlbench grader
+# subtrees so `eval.upstream_ex_base` can load `test_utils.py` +
+# `db_utils.py` in the cloud actor. Without this the cascade-tier-N1
+# dispatch silently falls back to legacy `_set_equal` (the loader's
+# `FileNotFoundError` is caught upstream and downgraded), so the PR's
+# N1=ex_base promise never engages in production.
+#
+# Build contexts (`bird-interact-evaluation`, `livesqlbench-evaluation`)
+# are wired by `cloud.image.build_and_push` and point at the evaluation
+# subdirs of `paths.bird_interact_root()` / `paths.livesqlbench_root()`.
+# The deeper rel paths preserved here match the host-tree layout so
+# `_MINI_INTERACT_REL` / `_LIVESQLBENCH_REL` in `upstream_ex_base` resolve
+# identically on cloud and on the developer laptop.
+COPY --from=bird-interact-evaluation . \
+    /app/upstream_graders/bird-interact/mini_interact/knowledge_based/mini_interact_conv/evaluation/
+COPY --from=livesqlbench-evaluation . \
+    /app/upstream_graders/livesqlbench/evaluation/src/
+
 ENV BIRD_RESULTS_ROOT=/tmp/results \
     BIRD_INTERACT_AGENTS_CLOUD=1

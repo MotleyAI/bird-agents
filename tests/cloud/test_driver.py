@@ -79,6 +79,14 @@ def _patch_collaborators(monkeypatch: pytest.MonkeyPatch) -> dict[str, MagicMock
     mocks["image"].build_and_push.return_value = (
         "us-central1-docker.pkg.dev/motley-team-475011/x/runner:tag"
     )
+    # DEV-1550: driver.submit unpacks `image.default_grader_eval_roots()`
+    # into two paths before calling image_tag + build_and_push. The
+    # generic MagicMock above returns a Mock (not iterable), so the
+    # unpack would fail with ValueError. Stub a concrete 2-tuple.
+    mocks["image"].default_grader_eval_roots.return_value = (
+        Path("/tmp/bird-interact-eval-stub"),
+        Path("/tmp/livesqlbench-eval-stub"),
+    )
     # De-bake: submit uploads the dataset to a content-hashed GCS prefix and
     # threads it through the manifest/job-args. Mocked so submit tests don't
     # hash the real dataset dir or hit GCS.
