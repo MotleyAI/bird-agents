@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional, Protocol, Sequence, Tuple
@@ -43,7 +44,12 @@ logger = logging.getLogger(__name__)
 # (10s–100s per run); without dedup the log fills with identical lines.
 # Keyed on the rendered message text so distinct failure shapes (missing
 # tree vs partial markers vs stale override) each surface exactly once.
+# The lock protects the check-then-add sequence against any future
+# concurrent caller — today's grading paths are process-parallel (Ray
+# actors), but the cost of pre-empting a threadpool refactor is one
+# lock acquire per ex_base failure, which is negligible. (Codex round 10.)
 _EX_BASE_UNAVAILABLE_SEEN: set[str] = set()
+_EX_BASE_UNAVAILABLE_SEEN_LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -340,8 +346,11 @@ def _compute_n1(
         # (per-process dedup) so the actionable detail surfaces in
         # logs without filling them with N1 dispatch retries.
         msg = str(exc)
-        if msg not in _EX_BASE_UNAVAILABLE_SEEN:
-            _EX_BASE_UNAVAILABLE_SEEN.add(msg)
+        with _EX_BASE_UNAVAILABLE_SEEN_LOCK:
+            should_log = msg not in _EX_BASE_UNAVAILABLE_SEEN
+            if should_log:
+                _EX_BASE_UNAVAILABLE_SEEN.add(msg)
+        if should_log:
             logger.warning(
                 "[N1 dispatch] cascade tier N1 is downgrading to legacy "
                 "_set_equal because the upstream ex_base grader is "

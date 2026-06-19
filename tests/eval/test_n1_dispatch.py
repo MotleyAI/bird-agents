@@ -211,6 +211,69 @@ def test_n1_fallback_warns_on_first_ex_base_unavailable_then_dedups(
     )
 
 
+def test_n1_fallback_dedup_is_thread_safe_under_concurrent_callers(
+    tmp_path: Path, caplog,
+):
+    """Codex round 10: the check-then-add against
+    `_EX_BASE_UNAVAILABLE_SEEN` must be lock-protected so two threads
+    racing the SAME unseen message don't both log. Cloud actors are
+    process-parallel today, but pre-empting a threadpool refactor
+    costs essentially nothing — and a duplicated warning would
+    violate the once-per-process contract this test pins."""
+    import logging
+    import threading
+
+    from bird_interact_agents.benchmark import get_benchmark
+    from bird_interact_agents.eval import tolerant_grader as tg
+    from bird_interact_agents.eval.upstream_ex_base import ExBaseUnavailableError
+
+    db_path = tmp_path / "x.sqlite"
+    _make_db_with_value(db_path, "t", "v", 1)
+    task = _make_task_annotation()
+
+    tg._EX_BASE_UNAVAILABLE_SEEN.clear()
+    caplog.set_level(logging.WARNING, logger=tg.logger.name)
+    detailed_msg = "race-window-marker: upstream tree unreachable"
+
+    barrier = threading.Barrier(8)
+
+    def run_once():
+        # All 8 threads converge before calling so the check-then-add
+        # is the hottest point of contention. Without the lock the
+        # race window is wide enough for multiple threads to see
+        # `msg not in set` and all log.
+        barrier.wait()
+        with patch.object(
+            tg, "compare_pred_vs_gold_ex_base",
+            side_effect=ExBaseUnavailableError(detailed_msg),
+        ):
+            tg.grade_submission(
+                task_annotation=task,
+                audited_gold_rows=[],
+                original_sol_sql=["SELECT v FROM t"],
+                submitted_sql="SELECT v FROM t",
+                db_path=db_path,
+                benchmark=get_benchmark("mini-interact"),
+            )
+
+    threads = [threading.Thread(target=run_once) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    matching = [
+        rec for rec in caplog.records
+        if rec.levelno == logging.WARNING
+        and detailed_msg in rec.getMessage()
+    ]
+    assert len(matching) == 1, (
+        f"check-then-add race fired: expected exactly one warning "
+        f"across 8 concurrent threads with the same error, got "
+        f"{len(matching)}. Lock missing or wrongly scoped."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Round-2 review fold-in (CodeRabbit + Codex): conditions forwarding,
 # Postgres db_name shape, and the cloud inline-grader mutation-safety guard.
