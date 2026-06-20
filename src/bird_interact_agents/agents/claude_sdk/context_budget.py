@@ -161,7 +161,13 @@ def update_context_tokens(state: dict, msg: object) -> None:
     warnings fire at approximately the right turn count.
     """
     msg_type = type(msg).__name__
-    if msg_type not in ("AssistantMessage", "ResultMessage"):
+    # AssistantMessage + ResultMessage carry the LLM-reported usage.
+    # UserMessage in the SDK trajectory carries the agent's tool
+    # results — Codex r4: those are the dominant context consumers
+    # (schema dumps, query rows). Counting only AssistantMessage
+    # under-estimates the running context by a wide margin for
+    # providers whose per-turn usage is unreliable (Moonshot/Kimi).
+    if msg_type not in ("AssistantMessage", "ResultMessage", "UserMessage"):
         return
     usage = getattr(msg, "usage", None)
     tokens = 0
@@ -175,10 +181,11 @@ def update_context_tokens(state: dict, msg: object) -> None:
         # Real usage available — authoritative.
         state["context_tokens"] = tokens
         return
-    # AssistantMessage zero-usage path: keep a running char-based
-    # estimate (cumulative across the session) so the PostToolUse hook
-    # has something to compare against.
-    if msg_type == "AssistantMessage":
+    # Zero-usage path (AssistantMessage on Moonshot/Kimi, or
+    # UserMessage which has no usage attached at all): grow the
+    # running char-based estimate so the PostToolUse hook has
+    # something to compare against mid-stream.
+    if msg_type in ("AssistantMessage", "UserMessage"):
         chars = _estimate_message_chars(msg)
         if chars > 0:
             running = state.get("context_chars_estimate", 0) + chars

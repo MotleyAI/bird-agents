@@ -170,19 +170,21 @@ def test_update_context_tokens_attr_style_usage():
     assert state["context_tokens"] == 100
 
 
-def test_update_context_tokens_ignores_non_assistant_non_result_messages():
-    """Codex r1 follow-up: ``update_context_tokens`` now ALSO reads
-    ``ResultMessage.usage`` so Moonshot/Kimi's terminal-only cumulative
-    usage drives the context warnings. Other message types
-    (UserMessage, SystemMessage, …) are still ignored."""
+def test_update_context_tokens_ignores_unknown_message_types():
+    """Codex r4: ``update_context_tokens`` now reads ``UserMessage``
+    (tool_result content) and ``ResultMessage`` (cumulative usage) on
+    top of ``AssistantMessage``. Other message types (e.g. SDK
+    ``SystemMessage``) are still ignored.
+    """
     from bird_interact_agents.agents.claude_sdk.context_budget import (
         update_context_tokens,
     )
 
     class _Other:
         usage = {"input_tokens": 1}
+        content = None
 
-    _Other.__name__ = "UserMessage"
+    _Other.__name__ = "SystemMessage"
 
     state: dict = {}
     update_context_tokens(state, _Other())

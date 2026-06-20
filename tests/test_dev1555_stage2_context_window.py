@@ -139,6 +139,31 @@ def test_update_context_tokens_estimates_mid_stream_when_assistant_usage_zero():
     assert second > first
 
 
+def test_update_context_tokens_counts_user_message_tool_results():
+    """Codex r4 regression: SDK ``UserMessage`` content carries tool
+    results — typically the dominant context consumer (schema dumps,
+    query rows). The char-based estimator must count those or the
+    running estimate stays far below reality for Moonshot/Kimi until
+    the session-terminal ``ResultMessage`` (when warning hooks can no
+    longer fire)."""
+    from bird_interact_agents.agents.claude_sdk.context_budget import (
+        update_context_tokens,
+    )
+
+    class _FakeUserMessage:
+        pass
+
+    _FakeUserMessage.__name__ = "UserMessage"
+
+    state: dict = {}
+    msg = _FakeUserMessage()
+    msg.content = [
+        {"type": "tool_result", "content": "row " * 5000},
+    ]
+    update_context_tokens(state, msg)
+    assert state.get("context_tokens", 0) > 0
+
+
 def test_update_context_tokens_real_usage_beats_estimate():
     """When the model later starts reporting real usage, the
     authoritative number wins over the running estimate."""
@@ -166,7 +191,9 @@ def test_update_context_tokens_real_usage_beats_estimate():
     assert state["context_tokens"] == 50_100
 
 
-def test_update_context_tokens_ignores_other_message_types():
+def test_update_context_tokens_ignores_unknown_message_types():
+    """Codex r4: ``UserMessage`` is now consumed (tool_result content);
+    other message types like ``SystemMessage`` are still ignored."""
     from bird_interact_agents.agents.claude_sdk.context_budget import (
         update_context_tokens,
     )
@@ -174,7 +201,7 @@ def test_update_context_tokens_ignores_other_message_types():
     class _Other:
         pass
 
-    _Other.__name__ = "UserMessage"
+    _Other.__name__ = "SystemMessage"
     msg = _Other()
     msg.usage = {"input_tokens": 9999}
     state: dict = {"context_tokens": 7}

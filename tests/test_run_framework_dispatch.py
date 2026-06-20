@@ -144,6 +144,27 @@ def _make_runner_kwargs(*, dataset, query_mode, mode="a-interact",
     )
 
 
+def test_make_runner_claude_sdk_rejects_registry_models():
+    """Codex r4: ``--framework claude_sdk`` is the v0 aggregator and v0
+    agents reject non-Anthropic models via ``is_anthropic()``,
+    silently returning skipped rows. The dispatcher must fail fast
+    with a pointer at ``claude_sdk_v1`` so a Moonshot user doesn't
+    burn a cloud bring-up on a run that would 100% skip."""
+    with pytest.raises(ValueError, match="claude_sdk_v1"):
+        run_mod.make_runner(
+            framework="claude_sdk",
+            dataset="mini-interact",
+            query_mode="slayer",
+            mode="a-interact",
+            agent_model="moonshot/kimi-k2.7-code",
+            strict=False,
+            prompt_cache=False,
+            max_depth=3,
+            slayer_storage_root=None,
+            slayer_setup="on-the-fly",
+        )
+
+
 def test_make_runner_dispatches_ainteract_slayer(monkeypatch):
     """mini-interact + slayer → ClaudeSDKOtfAInteractAgent."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract import (
