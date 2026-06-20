@@ -144,6 +144,50 @@ def _make_runner_kwargs(*, dataset, query_mode, mode="a-interact",
     )
 
 
+@pytest.mark.asyncio
+async def test_make_runner_claude_sdk_v1_threads_user_sim_prompt_version(monkeypatch):
+    """Codex r6 regression: the v1 dispatch branches must thread
+    ``user_sim_prompt_version=_v`` into ``run_task`` so
+    ``--user-sim-prompt-version v3`` actually reaches the v1 agent.
+    Without this, the v1 agents fall back to each constructor's
+    default ``"v2"`` and benchmark comparisons silently use the wrong
+    sim prompt.
+    """
+    captured = {}
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            pass
+
+        async def run_task(self, *args, **kwargs):
+            captured.update(kwargs)
+            return {}
+
+    monkeypatch.setattr(
+        "bird_interact_agents.agents.claude_sdk_otf_ainteract_v1"
+        ".ClaudeSDKOtfAInteractAgent",
+        FakeAgent,
+        raising=False,
+    )
+    runner = run_mod.make_runner(
+        framework="claude_sdk_v1",
+        dataset="mini-interact",
+        query_mode="slayer",
+        mode="a-interact",
+        agent_model="anthropic/claude-haiku-4-5-20251001",
+        strict=False,
+        prompt_cache=False,
+        max_depth=3,
+        slayer_storage_root=None,
+        slayer_setup="on-the-fly",
+        user_sim_prompt_version="v3",
+    )
+    await runner({"instance_id": "x", "selected_database": "alien",
+                  "amb_user_query": "?", "knowledge_ambiguity": []},
+                 "/tmp/x", 3, "anthropic/claude-haiku-4-5-20251001")
+    assert captured.get("user_sim_prompt_version") == "v3"
+
+
 def test_make_runner_claude_sdk_rejects_registry_models():
     """Codex r4: ``--framework claude_sdk`` is the v0 aggregator and v0
     agents reject non-Anthropic models via ``is_anthropic()``,

@@ -679,6 +679,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+            user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "claude_sdk_otf_v1":
@@ -703,6 +704,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+            user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "claude_sdk_otf_ainteract_v1":
@@ -729,6 +731,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+            user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "claude_sdk_otf_raw_v1":
@@ -753,6 +756,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+            user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "claude_sdk_otf_ainteract_raw_v1":
@@ -777,6 +781,7 @@ def _make_runner(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
+            user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "pydantic_ai":
