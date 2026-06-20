@@ -55,6 +55,7 @@ from bird_interact_agents.agents.claude_sdk.partition import (
     DISCOVERY_AGENT_NAME,
     DISCOVERY_MAX_TURNS,
     MAIN_WORKFLOW_NOTE,
+    build_main_workflow_note,
     build_discovery_prompt,
     make_partition_deny_hook,
 )
@@ -458,7 +459,7 @@ class ClaudeSDKOtfAInteractAgent:
 
             options = ClaudeAgentOptions(
                 **_session_env_kwargs,
-                system_prompt=prompt + MAIN_WORKFLOW_NOTE,
+                system_prompt=prompt + build_main_workflow_note(query_mode='slayer'),
                 mcp_servers=mcp_servers,
                 allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
                 tools=["Task"],

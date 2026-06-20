@@ -135,7 +135,28 @@ def build_discovery_prompt(*, with_ask_user: bool) -> str:
     return _DISCOVERY_PROMPT_COMMON
 
 
-MAIN_WORKFLOW_NOTE = f"""
+_VERIFY_TOOL_BY_MODE = {
+    "slayer": ("query", "submit_query"),
+    "raw": ("execute_sql", "submit_sql"),
+}
+
+
+def build_main_workflow_note(*, query_mode: str) -> str:
+    """Compose the main-agent workflow note.
+
+    Codex r5: the verify-before-submit step must reference the tool
+    the agent's tool surface actually exposes — ``query`` for slayer
+    mode, ``execute_sql`` for raw mode. The shared discovery-subagent
+    block stays identical across modes.
+    """
+    try:
+        verify_tool, submit_tool = _VERIFY_TOOL_BY_MODE[query_mode]
+    except KeyError as exc:
+        raise ValueError(
+            f"build_main_workflow_note: unknown query_mode {query_mode!r}; "
+            f"expected one of {sorted(_VERIFY_TOOL_BY_MODE)}"
+        ) from exc
+    return f"""
 
 ## Subagent workflow (mandatory)
 
@@ -149,8 +170,9 @@ rather than guessing.
 
 ## Verify-before-submit checklist (mandatory)
 
-Before EVERY submit, run the exact query you intend to submit through
-the query tool and verify, against the user-sim if uncertain:
+Before EVERY {submit_tool}, run the exact query you intend to submit
+through the `{verify_tool}` tool and verify, against the user-sim if
+uncertain:
 
 * SORT ORDER — column AND direction match what the user wants. When the
   request says "rank/top/bottom/most/least", confirm the direction; when
@@ -164,3 +186,8 @@ the query tool and verify, against the user-sim if uncertain:
   output shape (column NAMES are not graded; counts and positions are).
 * ROW COUNT — non-zero and plausible given the data you saw.
 """
+
+
+# Back-compat for callers that still import the legacy constant —
+# defaults to the slayer-mode wording (mirrors prior content).
+MAIN_WORKFLOW_NOTE = build_main_workflow_note(query_mode="slayer")

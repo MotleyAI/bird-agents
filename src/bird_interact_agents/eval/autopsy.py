@@ -117,9 +117,23 @@ def _build_anthropic_client(model: str = "") -> "anthropic.AsyncAnthropic":
     """
     spec = get_provider(model)
     if spec is not None and spec.api_format == "anthropic":
+        # Codex r5: registry Anthropic-compatible endpoints (Moonshot's
+        # `/anthropic` base) expect Bearer auth, not the legacy
+        # `x-api-key` header. The Anthropic SDK routes `api_key=` to
+        # `x-api-key` and `auth_token=` to the Bearer header. The main
+        # SDK agent already uses ANTHROPIC_AUTH_TOKEN for the same
+        # reason via `sdk_session_env`; autopsy must match or the
+        # request 401s.
+        # Pass api_key="" (NOT None) so the Anthropic SDK does NOT
+        # silently fall back to the ambient ANTHROPIC_API_KEY env var
+        # — otherwise a developer running the autopsy locally with
+        # ambient Anthropic creds would have both x-api-key and Bearer
+        # headers in the request and the provider endpoint could
+        # prefer the wrong one.
         return anthropic.AsyncAnthropic(
             base_url=resolve_base_url(spec),
-            api_key=provider_api_key(spec),
+            auth_token=provider_api_key(spec),
+            api_key="",
         )
     oauth = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
     if oauth:

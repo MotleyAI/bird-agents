@@ -218,7 +218,13 @@ def test_build_client_moonshot_uses_registry(monkeypatch):
 
     client = _build_anthropic_client(_KIMI)
     assert str(client.base_url).rstrip("/") == "https://api.moonshot.ai/anthropic"
-    assert client.api_key == "ms-key-1"
+    # Codex r5: registry Anthropic-compatible endpoints expect Bearer
+    # auth (auth_token → Authorization: Bearer) not the legacy
+    # x-api-key path. The provider key rides on auth_token now.
+    assert client.auth_token == "ms-key-1"
+    # Empty-string (NOT None) so the SDK doesn't fall back to ambient
+    # ANTHROPIC_API_KEY — the request must carry ONLY Bearer auth.
+    assert client.api_key == ""
 
 
 def test_build_client_moonshot_missing_key_raises(monkeypatch):
