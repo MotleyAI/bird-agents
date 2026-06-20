@@ -43,7 +43,9 @@ import copy
 import datetime as _dt
 import json
 import logging
+import math
 import os
+import re
 import traceback as _tb
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
@@ -52,6 +54,16 @@ import anthropic
 import pydantic
 import yaml
 from pydantic import BaseModel
+
+from bird_interact_agents.agents.claude_sdk.context_budget import (
+    context_window_for,
+)
+from bird_interact_agents.provider_registry import (
+    get_provider,
+    provider_api_key,
+    requires_thinking,
+    resolve_base_url,
+)
 
 from bird_interact_agents.eval.annotation_schema import (
     AutopsyAnalysis,
@@ -74,7 +86,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _build_anthropic_client() -> "anthropic.AsyncAnthropic":
+def _build_anthropic_client(model: str = "") -> "anthropic.AsyncAnthropic":
     """Construct the Anthropic SDK client for the autopsy LLM call.
 
     DEV-1535 follow-up: on cloud workers running under the OAuth
@@ -97,7 +109,32 @@ def _build_anthropic_client() -> "anthropic.AsyncAnthropic":
       3. Neither → ``RuntimeError`` so ``run_autopsy``'s outer
          ``except Exception`` records a meaningful FQN rather than the
          SDK's cryptic ``TypeError``.
+
+    DEV-1555 Stage 2: registry open-weight models (e.g.
+    ``moonshot/kimi-k2.7-code``) route to the provider's
+    Anthropic-compatible endpoint instead — ambient Anthropic credentials
+    are deliberately ignored for those.
     """
+    spec = get_provider(model)
+    if spec is not None and spec.api_format == "anthropic":
+        # Codex r5: registry Anthropic-compatible endpoints (Moonshot's
+        # `/anthropic` base) expect Bearer auth, not the legacy
+        # `x-api-key` header. The Anthropic SDK routes `api_key=` to
+        # `x-api-key` and `auth_token=` to the Bearer header. The main
+        # SDK agent already uses ANTHROPIC_AUTH_TOKEN for the same
+        # reason via `sdk_session_env`; autopsy must match or the
+        # request 401s.
+        # Pass api_key="" (NOT None) so the Anthropic SDK does NOT
+        # silently fall back to the ambient ANTHROPIC_API_KEY env var
+        # — otherwise a developer running the autopsy locally with
+        # ambient Anthropic creds would have both x-api-key and Bearer
+        # headers in the request and the provider endpoint could
+        # prefer the wrong one.
+        return anthropic.AsyncAnthropic(
+            base_url=resolve_base_url(spec),
+            auth_token=provider_api_key(spec),
+            api_key="",
+        )
     oauth = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
     if oauth:
         return anthropic.AsyncAnthropic(auth_token=oauth, api_key=None)
@@ -151,7 +188,14 @@ def _strip_thinking_inplace(obj: object) -> None:
 
 
 def _compress_trajectory_for_autopsy(trajectory: list[dict]) -> list[dict]:
-    """Return a copy of trajectory with ThinkingBlock.thinking content stripped.
+    """Return a copy of trajectory with ThinkingBlock.thinking content stripped
+    and the ``tool_use_result`` SDK echo replaced by a size marker.
+
+    The SDK dump stores every tool result TWICE: the ``content`` block the
+    model actually saw plus a (typically larger) ``tool_use_result`` echo.
+    The echo carries no information the model acted on, yet roughly doubles
+    the serialized trajectory — stripping it is the cheapest autopsy-prompt
+    halving available (DEV-1555).
 
     Items whose ``data`` value is a dict (new structured format from
     ``dataclasses.asdict``) are deep-copied and compressed. Items whose
@@ -164,10 +208,124 @@ def _compress_trajectory_for_autopsy(trajectory: list[dict]) -> list[dict]:
         if isinstance(data, dict):
             data = copy.deepcopy(data)
             _strip_thinking_inplace(data)
+            echo = data.get("tool_use_result")
+            if echo is not None and not (
+                isinstance(echo, str) and echo.startswith("[tool_use_result:")
+            ):
+                data["tool_use_result"] = (
+                    f"[tool_use_result: {len(json.dumps(echo))} chars]"
+                )
             result.append({**item, "data": data})
         else:
             result.append(item)
     return result
+
+
+# ---------------------------------------------------------------------------
+# DEV-1555: trajectory squeeze so the autopsy prompt fits the model window
+# ---------------------------------------------------------------------------
+
+# chars-per-token divisor for dense JSON trajectories (measured ~3-3.5 on
+# real sessions; 3.5 with the 0.75 window fraction leaves headroom).
+_CHARS_PER_TOKEN = 3.5
+
+# Reserved for the autopsy completion + tool schema on top of the prompt.
+_OUTPUT_RESERVE_TOKENS = 4096
+
+# Window fraction usable by the prompt.
+_WINDOW_FRACTION = 0.75
+
+
+def _estimate_tokens(text: str) -> int:
+    return math.ceil(len(text) / _CHARS_PER_TOKEN)
+
+
+def _elide_tool_result_blocks(item: dict) -> int:
+    """Replace tool-result block bodies in one trajectory item with size
+    markers. Returns the number of serialized chars saved. Assistant text
+    and tool inputs are never touched (they lack the ``tool_use_id`` key)."""
+    data = item.get("data")
+    if not isinstance(data, dict):
+        return 0
+    content = data.get("content")
+    if not isinstance(content, list):
+        return 0
+    saved = 0
+    for block in content:
+        if not isinstance(block, dict) or "tool_use_id" not in block:
+            continue
+        body = block.get("content")
+        if body is None or (
+            isinstance(body, str) and body.startswith("[tool result elided:")
+        ):
+            continue
+        serialized = json.dumps(body)
+        marker = f"[tool result elided: {len(serialized)} chars]"
+        block["content"] = marker
+        saved += len(serialized) - len(json.dumps(marker))
+    return saved
+
+
+def fit_trajectory_for_autopsy(
+    trajectory: list[dict],
+    *,
+    budget_tokens: int,
+    keep_last: int = 20,
+    keep_head: int = 5,
+) -> list[dict]:
+    """Deterministically shrink a (compressed) trajectory under a token budget.
+
+    Phase A elides tool-result block bodies oldest-first, never touching the
+    last ``keep_last`` items. If that is not enough, phase B drops whole
+    middle items behind a single ``ElidedItems`` marker, preserving the first
+    ``keep_head`` and last ``keep_last`` items. Pure function: the input is
+    never mutated and equal inputs yield equal outputs.
+    """
+    items = copy.deepcopy(trajectory)
+    chars = len(json.dumps(items))
+    if _estimate_tokens(json.dumps(trajectory)) <= budget_tokens:
+        return items
+
+    budget_chars = int(budget_tokens * _CHARS_PER_TOKEN)
+
+    # CR r1: shrink the protected tail when the trajectory is shorter than
+    # ``keep_head + keep_last``, so both phases still have something to
+    # work on under a tight budget. Without this, both phases no-op when
+    # ``len(items) <= keep_last`` and ``fit_trajectory_for_autopsy``
+    # silently returns the oversized input.
+    protected_tail = min(keep_last, max(len(items) - keep_head, 0))
+
+    # Phase A: elide tool-result bodies oldest-first, tail protected.
+    for idx in range(max(0, len(items) - protected_tail)):
+        if chars <= budget_chars:
+            break
+        chars -= _elide_tool_result_blocks(items[idx])
+
+    if chars <= budget_chars:
+        return items
+
+    # Phase B: drop middle items behind one marker.
+    marker = {"type": "ElidedItems", "data": "[elided 0 trajectory items]"}
+    dropped = 0
+    while True:
+        chars = len(json.dumps(items))
+        if chars <= budget_chars:
+            break
+        droppable = [
+            i
+            for i in range(keep_head, len(items) - protected_tail)
+            if items[i] is not marker
+        ]
+        if not droppable:
+            break
+        mid = droppable[len(droppable) // 2]
+        if dropped == 0:
+            items[mid] = marker
+        else:
+            del items[mid]
+        dropped += 1
+        marker["data"] = f"[elided {dropped} trajectory items]"
+    return items
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +371,45 @@ class AutopsyLLMOutputOneShot(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_FENCED_JSON_RE = re.compile(r"```json\s*(.*?)```", re.DOTALL)
+
+
+def _extract_json_candidate(text: str) -> Optional[dict]:
+    """Deterministic JSON extraction for the no-tool_use fallback (DEV-1555).
+
+    Preference order: the first fenced ```json block that parses to a
+    dict, else the first balanced ``{...}`` region that parses to a dict.
+    Returns None when no candidate parses — the caller maps that to
+    ``missing_tool_use`` (schema validation happens exactly once,
+    downstream)."""
+    for m in _FENCED_JSON_RE.finditer(text):
+        try:
+            obj = json.loads(m.group(1))
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            return obj
+    depth = 0
+    start: Optional[int] = None
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                try:
+                    obj = json.loads(text[start : i + 1])
+                except ValueError:
+                    start = None
+                    continue
+                if isinstance(obj, dict):
+                    return obj
+                start = None
+    return None
+
 
 def _is_genuine_miss(cascade: "CascadeVerdict") -> bool:
     """Return True iff ALL cascade tiers failed.
@@ -307,6 +504,7 @@ def _build_prompt(
     kb_text: str,
     miss_diagnostics: Optional[MissDiagnostics],
     is_one_shot: bool,
+    precompressed: bool = False,
 ) -> str:
     masked_terms = [
         f"  - {mt.term} ({mt.type})"
@@ -321,7 +519,9 @@ def _build_prompt(
         if miss_diagnostics is not None
         else "null"
     )
-    compressed = _compress_trajectory_for_autopsy(trajectory)
+    compressed = (
+        trajectory if precompressed else _compress_trajectory_for_autopsy(trajectory)
+    )
     traj_json = json.dumps(
         [{"index": i, **item} for i, item in enumerate(compressed)],
         indent=None,
@@ -631,20 +831,59 @@ async def run_autopsy(
             task_annotation.selected_database,
             task_annotation.external_knowledge,
         )
+        compressed = _compress_trajectory_for_autopsy(trajectory)
         prompt = _build_prompt(
             task_annotation=task_annotation,
-            trajectory=trajectory,
+            trajectory=compressed,
             kb_text=kb_text,
             miss_diagnostics=miss_diagnostics,
             is_one_shot=is_one_shot,
+            precompressed=True,
         )
+        # DEV-1555: fit the prompt inside the autopsy model's context
+        # window. The squeeze only ever shrinks the trajectory portion;
+        # 64 tokens of slack absorb ceil-rounding in the estimates.
+        budget = (
+            int(context_window_for(model) * _WINDOW_FRACTION)
+            - _OUTPUT_RESERVE_TOKENS
+        )
+        if _estimate_tokens(prompt) > budget:
+            overhead = _estimate_tokens(prompt) - _estimate_tokens(
+                json.dumps(compressed)
+            )
+            fitted = fit_trajectory_for_autopsy(
+                compressed,
+                budget_tokens=max(budget - overhead - 64, 1),
+            )
+            prompt = _build_prompt(
+                task_annotation=task_annotation,
+                trajectory=fitted,
+                kb_text=kb_text,
+                miss_diagnostics=miss_diagnostics,
+                is_one_shot=is_one_shot,
+                precompressed=True,
+            )
+            # CR r1: post-squeeze size check. Without this, a pathological
+            # trajectory whose head/tail alone exceeds the budget would
+            # silently hit the API with an oversized prompt and fail at
+            # request time (400 / context_length_exceeded). Surface the
+            # failure here with a diagnostic message so the caller can
+            # downgrade gracefully.
+            if _estimate_tokens(prompt) > budget:
+                raise RuntimeError(
+                    "autopsy prompt still exceeds the model's context "
+                    f"budget after trajectory squeeze "
+                    f"(estimated {_estimate_tokens(prompt)} tokens > "
+                    f"{budget} budget; keep_head/keep_last contents likely "
+                    "exceed budget alone)."
+                )
         tool_schema = (
             _AUTOPSY_TOOL_SCHEMA_ONE_SHOT if is_one_shot else _AUTOPSY_TOOL_SCHEMA
         )
         schema_cls = (
             AutopsyLLMOutputOneShot if is_one_shot else AutopsyLLMOutput
         )
-        client = _build_anthropic_client()
+        client = _build_anthropic_client(model)
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "[autopsy] prep failed on %s",
@@ -657,26 +896,36 @@ async def run_autopsy(
 
     assert client is not None  # the prep try/except returned otherwise.
 
-    # One LLM call + one corrective retry on Pydantic validation failure.
-    # The retry sends the validation error back via a ``tool_result`` block
-    # with ``is_error=True`` so the model sees exactly which fields it
-    # dropped. Anthropic's ``required`` enforcement on tool input is
-    # best-effort; with long prompts the model occasionally omits a
-    # leading field (this was the ``archeology_10`` regression — 353k
-    # chars, ``pattern`` missing). Other failure kinds (API errors,
-    # missing ``tool_use`` block, BadRequest) do NOT retry — they are
-    # not model self-correctable.
+    # One LLM call + one corrective retry on Pydantic validation failure
+    # (origin/main, DEV-1545 follow-up: archeology_10 regression — the
+    # model occasionally drops a leading field on long prompts; the retry
+    # ships the validation error back as a ``tool_result`` so the model
+    # sees what to fix). DEV-1555 Stage 2 layers on a model-aware client
+    # + thinking/auto tool_choice path for Moonshot/Kimi, and a JSON-
+    # text fallback when third-party Anthropic-compatible endpoints don't
+    # honor forced tool_choice.
     messages: list = [{"role": "user", "content": prompt}]
     last_validation_exc: Optional[pydantic.ValidationError] = None
     for attempt in range(2):
+        create_kwargs: dict = {
+            "model": native_model_id(model),
+            "max_tokens": 2048,
+            "tools": [tool_schema],
+            "tool_choice": {"type": "tool", "name": "autopsy_output"},
+            "messages": messages,
+        }
+        if requires_thinking(model):
+            # Probed live (kimi-k2.7-code): rejects requests without
+            # thinking enabled, AND forced tool_choice is incompatible
+            # with thinking — switch to auto and lean on the JSON-text
+            # fallback when the model answers without the tool.
+            create_kwargs["thinking"] = {
+                "type": "enabled", "budget_tokens": 1024,
+            }
+            create_kwargs["tool_choice"] = {"type": "auto"}
+            create_kwargs["max_tokens"] = 4096
         try:
-            response = await client.messages.create(
-                model=native_model_id(model),
-                max_tokens=2048,
-                tools=[tool_schema],
-                tool_choice={"type": "tool", "name": "autopsy_output"},
-                messages=messages,
-            )
+            response = await client.messages.create(**create_kwargs)
         except anthropic.BadRequestError as exc:
             kind = "context_overflow" if _looks_like_context_overflow(exc) else "api_error"
             logger.error(
@@ -720,19 +969,36 @@ async def run_autopsy(
                 trajectory=trajectory, model=model,
             )
 
+        # Extract the payload — prefer the tool_use block, fall back to
+        # JSON inside text blocks (DEV-1555 Stage 2: third-party
+        # Anthropic-compatible endpoints may not honor forced
+        # tool_choice).
+        tool_use = None
+        payload: object
         try:
             tool_use = next(
                 b for b in response.content if getattr(b, "type", None) == "tool_use"
             )
+            payload = tool_use.input
         except StopIteration as exc:
-            logger.error(
-                "[autopsy] no tool_use block in response on %s",
-                task_annotation.instance_id, exc_info=True,
+            text = "\n".join(
+                t
+                for b in response.content
+                if getattr(b, "type", None) == "text"
+                and isinstance(t := getattr(b, "text", None), str)
             )
-            return _autopsy_error_result(
-                kind="missing_tool_use", exc=exc, prompt=prompt, kb_text=kb_text,
-                trajectory=trajectory, model=model,
-            )
+            candidate = _extract_json_candidate(text)
+            if candidate is None:
+                logger.error(
+                    "[autopsy] no tool_use block and no parseable JSON in "
+                    "response on %s",
+                    task_annotation.instance_id, exc_info=True,
+                )
+                return _autopsy_error_result(
+                    kind="missing_tool_use", exc=exc, prompt=prompt,
+                    kb_text=kb_text, trajectory=trajectory, model=model,
+                )
+            payload = candidate
         except Exception as exc:  # noqa: BLE001
             logger.error(
                 "[autopsy] iterating response.content failed on %s",
@@ -744,7 +1010,7 @@ async def run_autopsy(
             )
 
         try:
-            llm_output = schema_cls.model_validate(tool_use.input)
+            llm_output = schema_cls.model_validate(payload)
             return _map_output(llm_output, is_one_shot=is_one_shot)
         except pydantic.ValidationError as exc:
             last_validation_exc = exc
@@ -753,12 +1019,13 @@ async def run_autopsy(
                 "(attempt %d/2): %s",
                 task_annotation.instance_id, attempt + 1, exc,
             )
-            if attempt == 0:
-                # Append the model's failed tool_use turn, then a user
-                # turn carrying the validation error as a tool_result.
-                # ``is_error=True`` signals the model that the previous
-                # call was rejected — Anthropic's tool-use docs recommend
-                # exactly this shape for corrective retries.
+            if attempt == 0 and tool_use is not None:
+                # Corrective retry — only applicable when the model
+                # used the tool (we have a `tool_use_id` to bind the
+                # validation error to). JSON-text-fallback path has no
+                # tool_use_id, so a retry there doesn't have a clean
+                # tool_result shape — skip retry and surface the
+                # validation error.
                 messages.append({"role": "assistant", "content": response.content})
                 messages.append({
                     "role": "user",
@@ -779,7 +1046,7 @@ async def run_autopsy(
                 continue
             logger.error(
                 "[autopsy] LLM output failed schema validation on %s "
-                "after retry: %s",
+                "(no further retries): %s",
                 task_annotation.instance_id, exc,
                 exc_info=True,
             )

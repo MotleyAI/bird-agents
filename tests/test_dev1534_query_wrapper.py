@@ -500,18 +500,14 @@ def test_otf_one_shot_slayer_allowlist_excludes_subprocess_query():
 
 
 def test_query_wrapper_in_otf_slayer_one_shot_tool_list():
-    """The new wrapper is included in the OTF slayer one-shot agent's
-    in-process tool list so it's registered on bird-interact-tools (and
-    NOT on the subprocess slayer MCP allowlist)."""
+    """DEV-1555 CR r1 unification: the OTF slayer one-shot agent's
+    in-process tool list includes the unified `query` wrapper (no
+    `query_nested`); `query` accepts object OR list of stages."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as otf_mod
 
     names = {getattr(t, "name", None) for t in otf_mod._KNOWLEDGE_TOOLS}
-    assert "query" in names, (
-        "the `query` wrapper must be in _KNOWLEDGE_TOOLS so it's registered "
-        "on bird-interact-tools (visible to the OTF one-shot agent as "
-        "mcp__bird-interact-tools__query)."
-    )
-    assert "query_nested" in names
+    assert "query" in names
+    assert "query_nested" not in names
 
 
 def test_query_wrapper_in_otf_slayer_ainteract_tool_list():
@@ -522,19 +518,17 @@ def test_query_wrapper_in_otf_slayer_ainteract_tool_list():
 
     names = {getattr(t, "name", None) for t in otf_mod._KNOWLEDGE_TOOLS}
     assert "query" in names
-    assert "query_nested" in names
+    assert "query_nested" not in names
 
 
-def test_otf_slayer_pre_submit_gate_accepts_wrapper_tool_names():
-    """DEV-1534 Fix C: the OTF pre-submit verification gate
-    (`SLAYER_QUERY_TOOLS`) must list the bird-interact-tools wrapper
-    names — not the SLayer subprocess names — so a `query` /
-    `query_nested` call from the agent satisfies the gate."""
+def test_otf_slayer_pre_submit_gate_accepts_unified_query_wrapper():
+    """DEV-1555 CR r1: the pre-submit verification gate's allow-set
+    contains the unified ``query`` wrapper name only — ``query_nested``
+    is gone (the same `query` tool now handles both shapes)."""
     from bird_interact_agents.agents.claude_sdk_otf import agent as otf_mod
 
     assert otf_mod.SLAYER_QUERY_TOOLS == frozenset({
         "mcp__bird-interact-tools__query",
-        "mcp__bird-interact-tools__query_nested",
     })
 
 
@@ -543,10 +537,63 @@ def test_otf_slayer_pre_submit_gate_accepts_wrapper_tool_names():
 # ---------------------------------------------------------------------------
 
 
-# DEV-1546: the schema pin migrated to
-# ``tests/test_dev1546_distinct_dim_values.py`` along with the
-# wrapper's single-``query_json`` redesign. The new schema requires
-# exactly ``query_json`` and exposes the tool-level kwargs only.
+def test_query_wrapper_tool_schema_accepts_unified_shape():
+    """DEV-1555 (CR r1 / O1) unification: the v1 ``query`` wrapper
+    accepts BOTH a single SlayerQuery (set ``source_model`` + projection
+    fields) AND a nested-DAG list (set ``queries``). The schema's
+    ``required`` is empty; the wrapper enforces ``source_model XOR
+    queries`` at runtime so the error message is more useful than a
+    JSON-Schema validation failure.
+
+    This supersedes the pre-unification pin "only ``query_json``
+    required" that lived here briefly (DEV-1546 follow-up).
+    """
+    from bird_interact_agents.agents.claude_sdk import agent as agent_mod
+
+    tool = agent_mod.query
+    schema = None
+    for attr in ("inputSchema", "input_schema", "schema", "args_schema"):
+        s = getattr(tool, attr, None)
+        if s is not None:
+            schema = s
+            break
+    assert schema is not None and isinstance(schema, dict) and "properties" in schema, (
+        f"query wrapper must expose an explicit JSON Schema dict; got "
+        f"{schema!r}"
+    )
+    required = schema.get("required", [])
+    assert required == [], (
+        f"query wrapper must accept EITHER source_model OR queries — "
+        f"`required` must be empty; got: {required!r}"
+    )
+    # Every SLayer projection param + `queries` array + `normalize_filters`
+    # must be in properties so the agent knows the surface.
+    props = schema["properties"]
+    for name in (
+        "source_model", "queries", "measures", "dimensions", "filters",
+        "time_dimensions", "order", "limit", "offset",
+        "whole_periods_only", "show_sql", "dry_run", "explain",
+        "format", "variables", "normalize_filters",
+    ):
+        assert name in props, f"property {name!r} missing from query wrapper schema"
+    # Booleans declared as `boolean`, not anything else.
+    assert props["normalize_filters"]["type"] == "boolean"
+    assert props["normalize_filters"].get("default") is True
+    assert props["queries"].get("type") == "array"
+    # `source_model` must accept BOTH a model-name string AND an inline
+    # ModelExtension object (SLayer's MCP query signature is
+    # `str | ModelExtension | SlayerModel`; SLAYER_A_INTERACT explicitly
+    # documents the inline-object form).
+    sm = props["source_model"]
+    one_of = sm.get("oneOf")
+    assert isinstance(one_of, list) and len(one_of) >= 2, (
+        f"source_model must use oneOf to permit str | object; got {sm!r}"
+    )
+    type_keys = {entry.get("type") for entry in one_of if isinstance(entry, dict)}
+    assert {"string", "object"}.issubset(type_keys), (
+        f"source_model schema must permit both `string` and `object`; "
+        f"types seen: {type_keys}"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -22,25 +22,51 @@ from bird_interact_agents.run import _validate_slayer_setup
 # ---------------------------------------------------------------------------
 
 
-def test_main_framework_choices_only_claude_sdk():
-    """The local CLI must only accept 'claude_sdk' as a framework.
-    We verify by inspecting the actual choices in run.py's main() source."""
+def test_main_framework_choices_expose_only_aggregator_tokens():
+    """DEV-1555 (CR r1): the CLI exposes only the two aggregator tokens —
+    `claude_sdk` and `claude_sdk_v1`. Per-variant tokens (`claude_sdk_otf*`)
+    remain reachable through `_make_runner` for programmatic / test
+    callers, but the CLI infers the variant from
+    (benchmark.one_shot × query_mode).
+    """
     import inspect
 
     src = inspect.getsource(run_mod.main)
-    # The choices list must contain "claude_sdk" and nothing else from the old set
-    old_frameworks = {
-        "claude_sdk_otf", "claude_sdk_otf_ainteract",
-        "claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw",
-        "pydantic_ai", "pydantic_ai_recursive", "pydantic_ai_otf_encode",
-    }
-    for old in old_frameworks:
-        assert f'"{old}"' not in src and f"'{old}'" not in src, (
-            f"run.main() still references old framework name {old!r} in choices"
-        )
-    assert '"claude_sdk"' in src or "'claude_sdk'" in src, (
-        "run.main() must have 'claude_sdk' in its --framework choices"
+    must_expose = ("claude_sdk", "claude_sdk_v1")
+    must_hide = (
+        "claude_sdk_otf",
+        "claude_sdk_otf_raw",
+        "claude_sdk_otf_ainteract",
+        "claude_sdk_otf_ainteract_raw",
+        "claude_sdk_otf_v1",
+        "claude_sdk_otf_raw_v1",
+        "claude_sdk_otf_ainteract_v1",
+        "claude_sdk_otf_ainteract_raw_v1",
     )
+
+    # Extract the `choices=[...]` literal so we test what argparse sees,
+    # not arbitrary uses of the token strings elsewhere in main().
+    import ast
+    import re
+
+    m = re.search(
+        r'add_argument\(\s*"--framework".*?choices\s*=\s*(\[[^\]]+\])',
+        src,
+        re.DOTALL,
+    )
+    assert m is not None
+    choices = set(ast.literal_eval(m.group(1)))
+
+    for tok in must_expose:
+        assert tok in choices, (
+            f"run.main() --framework choices is missing {tok!r}"
+        )
+    for tok in must_hide:
+        assert tok not in choices, (
+            f"run.main() --framework choices must not include the "
+            f"per-variant token {tok!r} (CLI exposes only the two "
+            f"aggregator tokens)."
+        )
 
 
 def test_framework_is_required_no_default():
@@ -116,6 +142,71 @@ def _make_runner_kwargs(*, dataset, query_mode, mode="a-interact",
         slayer_storage_root=None,
         slayer_setup=slayer_setup,
     )
+
+
+@pytest.mark.asyncio
+async def test_make_runner_claude_sdk_v1_threads_user_sim_prompt_version(monkeypatch):
+    """Codex r6 regression: the v1 dispatch branches must thread
+    ``user_sim_prompt_version=_v`` into ``run_task`` so
+    ``--user-sim-prompt-version v3`` actually reaches the v1 agent.
+    Without this, the v1 agents fall back to each constructor's
+    default ``"v2"`` and benchmark comparisons silently use the wrong
+    sim prompt.
+    """
+    captured = {}
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            pass
+
+        async def run_task(self, *args, **kwargs):
+            captured.update(kwargs)
+            return {}
+
+    monkeypatch.setattr(
+        "bird_interact_agents.agents.claude_sdk_otf_ainteract_v1"
+        ".ClaudeSDKOtfAInteractAgent",
+        FakeAgent,
+        raising=False,
+    )
+    runner = run_mod.make_runner(
+        framework="claude_sdk_v1",
+        dataset="mini-interact",
+        query_mode="slayer",
+        mode="a-interact",
+        agent_model="anthropic/claude-haiku-4-5-20251001",
+        strict=False,
+        prompt_cache=False,
+        max_depth=3,
+        slayer_storage_root=None,
+        slayer_setup="on-the-fly",
+        user_sim_prompt_version="v3",
+    )
+    await runner({"instance_id": "x", "selected_database": "alien",
+                  "amb_user_query": "?", "knowledge_ambiguity": []},
+                 "/tmp/x", 3, "anthropic/claude-haiku-4-5-20251001")
+    assert captured.get("user_sim_prompt_version") == "v3"
+
+
+def test_make_runner_claude_sdk_rejects_registry_models():
+    """Codex r4: ``--framework claude_sdk`` is the v0 aggregator and v0
+    agents reject non-Anthropic models via ``is_anthropic()``,
+    silently returning skipped rows. The dispatcher must fail fast
+    with a pointer at ``claude_sdk_v1`` so a Moonshot user doesn't
+    burn a cloud bring-up on a run that would 100% skip."""
+    with pytest.raises(ValueError, match="claude_sdk_v1"):
+        run_mod.make_runner(
+            framework="claude_sdk",
+            dataset="mini-interact",
+            query_mode="slayer",
+            mode="a-interact",
+            agent_model="moonshot/kimi-k2.7-code",
+            strict=False,
+            prompt_cache=False,
+            max_depth=3,
+            slayer_storage_root=None,
+            slayer_setup="on-the-fly",
+        )
 
 
 def test_make_runner_dispatches_ainteract_slayer(monkeypatch):

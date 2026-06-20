@@ -46,12 +46,12 @@ def _framework_choices_from_parser():
 
 
 def test_framework_choice_accepts_claude_sdk():
-    assert "claude_sdk" in _framework_choices_from_parser()
+    assert "claude_sdk_v1" in _framework_choices_from_parser()
 
 
 def test_existing_framework_choices_preserved():
     choices = _framework_choices_from_parser()
-    assert {"claude_sdk"}.issubset(choices)
+    assert {"claude_sdk_v1"}.issubset(choices)
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ async def test_run_evaluation_branches_to_ainteract_agent(monkeypatch, tmp_path)
             raise _Sentinel("stop")
 
     monkeypatch.setattr(
-        "bird_interact_agents.agents.claude_sdk_otf_ainteract."
+        "bird_interact_agents.agents.claude_sdk_otf_ainteract_v1."
         "ClaudeSDKOtfAInteractAgent",
         _FakeAgent, raising=False,
     )
@@ -86,7 +86,7 @@ async def test_run_evaluation_branches_to_ainteract_agent(monkeypatch, tmp_path)
             data_path=str(data_file), data_dir=str(tmp_path),
             output_path=str(tmp_path / "eval.json"),
             mode="a-interact", query_mode="slayer",
-            framework="claude_sdk_otf_ainteract", slayer_setup="on-the-fly",
+            framework="claude_sdk_otf_ainteract_v1", slayer_setup="on-the-fly",
             reasoning_effort="high",
             dataset="mini-interact",
         )
@@ -104,12 +104,12 @@ def test_validate_slayer_setup_requires_on_the_fly_for_ainteract():
     # pre-encoded rejected for the new flavor.
     with pytest.raises(ValueError):
         run_mod._validate_slayer_setup(
-            slayer_setup="pre-encoded", framework="claude_sdk_otf_ainteract",
+            slayer_setup="pre-encoded", framework="claude_sdk_otf_ainteract_v1",
             query_mode="slayer", mode="a-interact",
         )
     # on-the-fly + slayer + a-interact accepted.
     run_mod._validate_slayer_setup(
-        slayer_setup="on-the-fly", framework="claude_sdk_otf_ainteract",
+        slayer_setup="on-the-fly", framework="claude_sdk_otf_ainteract_v1",
         query_mode="slayer", mode="a-interact",
     )
 
@@ -129,7 +129,7 @@ def test_maybe_force_wipe_otf_purges_cache_for_ainteract(monkeypatch):
     )
     monkeypatch.setattr(rb, "purge_references", lambda root, dbs: set())
     run_mod._maybe_force_wipe_otf(
-        otf_rebuild=True, framework="claude_sdk",
+        otf_rebuild=True, framework="claude_sdk_v1",
         dbs=["shop"], benchmark="mini-interact",
     )
     assert purged.get("cache") == {"shop"}
@@ -160,7 +160,7 @@ def test_maybe_force_wipe_otf_passes_benchmark_kwarg_for_ainteract(monkeypatch):
     monkeypatch.setattr(rb, "purge_references", lambda root, dbs: set())
 
     run_mod._maybe_force_wipe_otf(
-        otf_rebuild=True, framework="claude_sdk",
+        otf_rebuild=True, framework="claude_sdk_v1",
         dbs=["shop"], benchmark="mini-interact",
     )
     assert captured["cache_kwargs"] == {"benchmark": "mini-interact"}
@@ -193,7 +193,7 @@ def test_cli_rejects_slayer_with_pre_encoded(monkeypatch, tmp_path, capsys):
     from bird_interact_agents import run as run_mod
 
     argv = _argv(
-        "claude_sdk", "a-interact", "mini-interact",
+        "claude_sdk_v1", "a-interact", "mini-interact",
         "pre-encoded", tmp_path=tmp_path,
     )
     monkeypatch.setattr(sys, "argv", argv)
@@ -211,7 +211,7 @@ def test_cli_rejects_a_interact_with_livesqlbench(monkeypatch, tmp_path, capsys)
     gold = tmp_path / "gold.jsonl"
     gold.write_text("")
     argv = _argv(
-        "claude_sdk", "a-interact", "livesqlbench-base-lite-sqlite",
+        "claude_sdk_v1", "a-interact", "livesqlbench-base-lite-sqlite",
         "on-the-fly", tmp_path=tmp_path, gold_file=gold,
     )
     monkeypatch.setattr(sys, "argv", argv)
@@ -227,7 +227,7 @@ def test_cli_rejects_one_shot_with_mini_interact(monkeypatch, tmp_path, capsys):
     from bird_interact_agents import run as run_mod
 
     argv = _argv(
-        "claude_sdk", "one-shot", "mini-interact",
+        "claude_sdk_v1", "one-shot", "mini-interact",
         "on-the-fly", tmp_path=tmp_path,
     )
     monkeypatch.setattr(sys, "argv", argv)
@@ -245,7 +245,7 @@ def test_cloud_artifact_name_is_cache_only_for_ainteract():
     from bird_interact_agents.cloud import gcs
 
     assert gcs.slayer_artifact_name(
-        "on-the-fly", "claude_sdk_otf_ainteract",
+        "on-the-fly", "claude_sdk_otf_ainteract_v1",
     ) == "slayer_otf_cache"
 
 
@@ -253,7 +253,7 @@ def test_cloud_actor_downloads_cache_only_for_ainteract():
     from bird_interact_agents.cloud import ray_app
 
     cfg = {
-        "framework": "claude_sdk_otf_ainteract",
+        "framework": "claude_sdk_otf_ainteract_v1",
         "slayer_setup": "on-the-fly",
         "dataset": "mini-interact",
     }
@@ -266,7 +266,7 @@ def test_cloud_driver_uploads_cache_only_for_ainteract():
     from bird_interact_agents.cloud import driver
 
     args = SimpleNamespace(
-        slayer_setup="on-the-fly", framework="claude_sdk_otf_ainteract",
+        slayer_setup="on-the-fly", framework="claude_sdk_otf_ainteract_v1",
         dataset="mini-interact",
     )
     names = {name for (_path, name, _req) in driver._slayer_uploads_for(args)}
@@ -287,7 +287,7 @@ def test_cloud_driver_uploads_pass_mini_interact_benchmark(monkeypatch):
 
     monkeypatch.setattr(paths_mod, "slayer_otf_cache_root", _fake_cache_root)
     args = SimpleNamespace(
-        slayer_setup="on-the-fly", framework="claude_sdk_otf_ainteract",
+        slayer_setup="on-the-fly", framework="claude_sdk_otf_ainteract_v1",
         dataset="mini-interact",
     )
     driver._slayer_uploads_for(args)
@@ -309,7 +309,7 @@ def test_cloud_actor_artifacts_pass_mini_interact_benchmark(monkeypatch):
 
     monkeypatch.setattr(paths_mod, "slayer_otf_cache_root", _fake_cache_root)
     cfg = {
-        "framework": "claude_sdk_otf_ainteract",
+        "framework": "claude_sdk_otf_ainteract_v1",
         "slayer_setup": "on-the-fly",
         "dataset": "mini-interact",
     }
@@ -323,7 +323,7 @@ def test_cloud_resubmit_preserves_reasoning_effort_for_ainteract():
     from bird_interact_agents.cloud import driver
 
     manifest = {
-        "framework": "claude_sdk_otf_ainteract",
+        "framework": "claude_sdk_otf_ainteract_v1",
         "query_mode": "slayer",
         "mode": "a-interact",
         "agent_model": "anthropic/claude-opus-4-7",
@@ -346,4 +346,4 @@ def test_cloud_resubmit_preserves_reasoning_effort_for_ainteract():
     # And the resubmit emits the framework string verbatim.
     assert "--framework" in job_args
     i = job_args.index("--framework")
-    assert job_args[i + 1] == "claude_sdk_otf_ainteract"
+    assert job_args[i + 1] == "claude_sdk_otf_ainteract_v1"

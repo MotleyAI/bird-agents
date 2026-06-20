@@ -14,7 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-from bird_interact_agents import paths
+from bird_interact_agents import paths, provider_registry
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data, cluster, config, gcs, image, prereqs
 from bird_interact_agents.cloud import collation as _collation
@@ -225,6 +225,51 @@ def read_api_keys_from_local_env(
         _maybe_forward_pg_vars(result, dataset)
         return result
 
+    # DEV-1555 Stage 2: claude_sdk framework + registry open-weight agent
+    # model (e.g. moonshot/kimi-k2.7-code). Ship the provider key and
+    # NEVER raw Anthropic credentials — the Claude Agent SDK auto-discovers
+    # ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN and would silently route
+    # the agent to Anthropic instead of the configured ANTHROPIC_BASE_URL
+    # backend. An anthropic user-sim key travels under the renamed
+    # BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY, same as the OAuth path.
+    _agent_spec = provider_registry.get_provider(agent_model)
+    if _is_claude_sdk_framework(framework) and _agent_spec is not None:
+        result = {}
+        missing_local = []
+        result[_agent_spec.auth_env] = os.environ.get(_agent_spec.auth_env, "")
+        if not result[_agent_spec.auth_env]:
+            missing_local.append(_agent_spec.auth_env)
+        if user_sim_model.startswith("anthropic/"):
+            val = os.environ.get("ANTHROPIC_API_KEY", "")
+            result["BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"] = val
+            if not val:
+                missing_local.append("ANTHROPIC_API_KEY")
+        else:
+            for k in _required_api_keys(user_sim_model):
+                if k == "ANTHROPIC_API_KEY":
+                    continue
+                result[k] = os.environ.get(k, "")
+                if not result[k]:
+                    missing_local.append(k)
+        if query_mode == "slayer":
+            result["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY", "")
+            if not result["OPENAI_API_KEY"] and "OPENAI_API_KEY" not in missing_local:
+                missing_local.append("OPENAI_API_KEY")
+        # Forward an operator base-url override so workers hit the same
+        # endpoint the submitter validated against.
+        override = os.environ.get(_agent_spec.base_url_env, "")
+        if override:
+            result[_agent_spec.base_url_env] = override
+        if missing_local:
+            missing_local_sorted = sorted(missing_local)
+            cmds = "\n".join(f"export {k}=<your-key>" for k in missing_local_sorted)
+            raise PrereqError(
+                f"missing API key env vars for job submission: {missing_local_sorted}",
+                remediation=cmds,
+            )
+        _maybe_forward_pg_vars(result, dataset)
+        return result
+
     needed: set[str] = set()
     for model in (agent_model, user_sim_model):
         needed.update(_required_api_keys(model))
@@ -367,7 +412,11 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
     lazily on first task.
     """
     fw = args.framework
-    if fw in ("claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw"):
+    # DEV-1555 v0/v1: raw flavours of either version use no SLayer uploads.
+    if fw in (
+        "claude_sdk_otf_raw", "claude_sdk_otf_ainteract_raw",
+        "claude_sdk_otf_raw_v1", "claude_sdk_otf_ainteract_raw_v1",
+    ):
         return []
     setup = args.slayer_setup
     benchmark = _submit_benchmark(args)

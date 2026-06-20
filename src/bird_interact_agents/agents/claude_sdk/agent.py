@@ -124,13 +124,20 @@ def _usage_value(usage: object, key: str) -> int:
 
 
 def accumulate_assistant_usage(accum: TokenUsage, msg: object, model: str) -> None:
-    """Fold one streamed message's token usage into `accum` (scope=agent).
+    """Legacy per-AssistantMessage accumulator (DEV-1555 follow-up: prefer
+    :class:`SdkUsageTracker`).
 
-    Only `AssistantMessage`s carry per-turn usage; the cumulative
-    `ResultMessage.usage` is intentionally skipped so totals aren't
-    double-counted. Shared by the `claude_sdk` and `claude_sdk_otf`
-    adapters so SDK-backed agents report cost consistently with the
-    litellm-tracked frameworks.
+    The SDK splits one assistant TURN into multiple ``AssistantMessage``
+    events (one per content block: thinking, text, tool_use, …), each
+    carrying the SAME per-turn ``usage`` dict — naïve summing both
+    double-counts cache tokens and under-counts ``output_tokens`` (which
+    only fills in on the final block, while prior blocks of the same turn
+    report 0). The cumulative authoritative usage lives in the single
+    terminal ``ResultMessage`` of the stream.
+
+    Kept for backward compatibility / tests; new agent loops should
+    instantiate one :class:`SdkUsageTracker` per task and call
+    ``observe()`` in the receive loop, ``finalize()`` on stream end.
     """
     if type(msg).__name__ != "AssistantMessage":
         return
@@ -145,6 +152,110 @@ def accumulate_assistant_usage(accum: TokenUsage, msg: object, model: str) -> No
         cache_read=_usage_value(usage, "cache_read_input_tokens"),
         cache_write=_usage_value(usage, "cache_creation_input_tokens"),
     )
+
+
+# DEV-1555 (post-stage-2 diagnosis): the per-AssistantMessage accumulator
+# both double-counts cache reads (every block of a turn carries the same
+# usage dict) and under-counts ``output_tokens`` (which fills in only on
+# the last block while we summed every block at the same per-turn total).
+# Empirical: Opus alien_1 cache_read 2.21M reported vs 1.39M actual;
+# output 3.6K vs 17.6K actual. Kimi alien_1 cache_read 0 vs 3.66M actual
+# (Moonshot's per-turn AssistantMessage.usage is all-zero; only the
+# terminal ResultMessage reports the cumulative).
+
+
+_USAGE_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+)
+
+
+class SdkUsageTracker:
+    """Per-task usage tracker for the claude-agent-sdk stream.
+
+    The SDK emits one terminal ``ResultMessage`` whose ``usage`` is the
+    cumulative session total — that is the source of truth. While the
+    stream is running we also track per-turn ``AssistantMessage.usage``
+    (deduplicated by ``message_id`` or usage-dict identity) as a fallback
+    estimate for crash paths.
+
+    Usage:
+        tracker = SdkUsageTracker(accum, self.model)
+        async for msg in client.receive_response():
+            tracker.observe(msg)
+            ...
+        tracker.finalize()   # idempotent; also called by observe() on
+                              # ResultMessage so the success path is a
+                              # no-op here.
+    """
+
+    def __init__(self, accum: TokenUsage, model: str):
+        self._accum = accum
+        self._model = model
+        self._turns: dict = {}
+        self._turn_order: list = []
+        self._result_usage = None
+        self._committed = False
+
+    def observe(self, msg: object) -> None:
+        name = type(msg).__name__
+        if name == "AssistantMessage":
+            usage = getattr(msg, "usage", None)
+            if usage is None:
+                return
+            # The live SDK shares ONE usage dict instance across every
+            # content block of a turn — id(usage) is a stable per-turn
+            # key. Prefer message_id when the SDK supplies it (older
+            # mock paths set it; live 0.1.69 does not on AssistantMessage).
+            tid = getattr(msg, "message_id", None)
+            if tid is None:
+                tid = id(usage)
+            if tid in self._turns:
+                return
+            self._turns[tid] = usage
+            self._turn_order.append(tid)
+        elif name == "ResultMessage":
+            self._result_usage = getattr(msg, "usage", None)
+            # Terminal stream message: commit immediately so the receive
+            # loop's normal exit doesn't need a separate finalize() call.
+            self.finalize()
+
+    def finalize(self) -> None:
+        if self._committed:
+            return
+        self._committed = True
+        n_turns = len(self._turn_order)
+        if self._result_usage is not None:
+            self._commit(self._result_usage, n_calls=max(1, n_turns))
+            return
+        if not self._turn_order:
+            return
+        agg = {k: 0 for k in _USAGE_FIELDS}
+        for tid in self._turn_order:
+            u = self._turns[tid]
+            for k in _USAGE_FIELDS:
+                agg[k] += _usage_value(u, k)
+        self._commit(agg, n_calls=n_turns)
+        self._accum.partial = True
+
+    def _commit(self, usage, *, n_calls: int) -> None:
+        self._accum.add_call(
+            scope="agent",
+            model=self._model,
+            prompt=_usage_value(usage, "input_tokens"),
+            completion=_usage_value(usage, "output_tokens"),
+            cache_read=_usage_value(usage, "cache_read_input_tokens"),
+            cache_write=_usage_value(usage, "cache_creation_input_tokens"),
+        )
+        # ``add_call`` set n_calls=1 — bump to the actual turn count so
+        # callers can compare against the legacy per-AssistantMessage
+        # counts and against breakdown rows for non-SDK frameworks.
+        if n_calls > 1:
+            row = self._accum._row_for(scope="agent", model=self._model)
+            row.n_calls += n_calls - 1
+            self._accum.n_calls += n_calls - 1
 
 
 def _gate(action_name: str, status: SampleStatus) -> str | None:
@@ -371,50 +482,92 @@ def _slayer_client():
 @tool(
     "submit_query",
     (
-        "Submit your final SLayer query for evaluation. `query_json` is a "
-        "JSON string whose top-level value is either a single SlayerQuery "
-        'object (e.g. {"source_model": "orders", "measures": '
-        '["amount:sum"]}) or a nested-DAG array of stage objects (same '
-        "shape `query_nested` accepts; last element is the DAG root). "
-        "The chosen query is translated to SQL deterministically and "
-        "tested against the ground truth. "
-        "`normalize_filters` (default true) controls whether text-equality "
-        "filter predicates are auto-wrapped in lower(trim(...)) with the "
-        "literal lowercased. Pass `normalize_filters=false` when the gold "
-        "answer requires exact-case equality (rare; the default is "
-        "semantically correct for most NL questions that carry no casing "
-        "info)."
+        "Submit your final SLayer query for evaluation. Pass EITHER a "
+        "single-stage form (`source_model` + projection fields: "
+        "`dimensions`, `measures`, `filters`, `time_dimensions`, `order`, "
+        "`limit`, `offset`, `whole_periods_only`, `variables`, "
+        "`distinct_dimension_values`) OR a nested-DAG form (`queries`: a "
+        "list of stage objects; last element is the DAG root; non-final "
+        "stages need a `name`; later stages reference earlier ones via "
+        "`source_model: \"<sibling name>\"`). The chosen query is "
+        "translated to SQL deterministically and tested against the "
+        "ground truth. `normalize_filters` (default true) controls "
+        "whether text-equality filter predicates are auto-wrapped in "
+        "lower(trim(...)) with the literal lowercased. Pass "
+        "`normalize_filters=false` when the gold answer requires "
+        "exact-case equality (rare; the default is semantically correct "
+        "for most NL questions that carry no casing info)."
     ),
-    # Explicit JSON Schema dict so only `query_json` is required. A flat
-    # `{key: type}` schema would make the SDK mark every key as required
-    # (see claude_agent_sdk._build_schema → `"required": list(properties.keys())`),
-    # which would force every caller to supply `normalize_filters` despite
-    # the handler defaulting it to True.
+    # CR r1 / O1 follow-up: same unified shape as `query` — caller picks
+    # single-stage by populating `source_model`, or nested-DAG by
+    # populating `queries`. Mutual exclusion is enforced at the handler
+    # level so error messages stay specific.
     {
         "type": "object",
         "properties": {
-            "query_json": {"type": "string"},
+            "source_model": {
+                "oneOf": [{"type": "string"}, {"type": "object"}],
+            },
+            "measures": {"type": "array"},
+            "dimensions": {"type": "array"},
+            "filters": {"type": "array"},
+            "time_dimensions": {"type": "array"},
+            "order": {"type": "array"},
+            "limit": {"type": "integer"},
+            "offset": {"type": "integer"},
+            "whole_periods_only": {"type": "boolean", "default": False},
+            "variables": {"type": "object"},
+            "distinct_dimension_values": {"type": "boolean"},
+            "queries": {"type": "array"},
             "normalize_filters": {"type": "boolean", "default": True},
         },
-        "required": ["query_json"],
+        "required": [],
     },
 )
 async def submit_query(args: dict) -> dict:
     state = _state_view()
-    # DEV-1534 Fix C: `normalize_filters` is a SEPARATE tool parameter,
-    # not a JSON-payload field. Default True preserves the deterministic
-    # case/whitespace tolerance that's semantically correct for most NL
-    # questions; `normalize_filters=false` is the escape hatch for the
-    # exact-case-equality failure mode surfaced in the 298-instance
-    # mini-interact analysis.
+    # Build the JSON payload from the structured args. `submit_slayer_query`
+    # takes a JSON string (the original CodeRabbit contract); we generate
+    # it here from the same structured shape as `query`.
+    payload: dict | list
+    if args.get("queries") is not None:
+        if args.get("source_model") is not None:
+            return _text(
+                "submit_query: pass either `source_model` (single-stage) "
+                "or `queries` (nested DAG), not both."
+            )
+        payload = args["queries"]
+    else:
+        if args.get("source_model") is None:
+            return _text(
+                "submit_query: `source_model` is required for "
+                "single-stage queries (or pass `queries` for a "
+                "nested DAG)."
+            )
+        # Single-stage: project the structured args into a SlayerQuery dict.
+        # Omit None / falsey values so the downstream JSON matches what the
+        # old `query_json` callers wrote by hand.
+        single: dict = {"source_model": args["source_model"]}
+        for k in (
+            "measures", "dimensions", "filters", "time_dimensions",
+            "order", "limit", "offset", "variables",
+            "distinct_dimension_values",
+        ):
+            v = args.get(k)
+            if v is not None:
+                single[k] = v
+        if args.get("whole_periods_only"):
+            single["whole_periods_only"] = True
+        payload = single
+
+    import json as _json
+    payload_str = _json.dumps(payload)
     normalize_filters = bool(args.get("normalize_filters", True))
     observation = submit_slayer_query(
-        state, args["query_json"], lambda _s: _slayer_client(),
+        state, payload_str, lambda _s: _slayer_client(),
         normalize_filters=normalize_filters,
     )
     if state.result is None:
-        # Helper already charged + appended the budget note for the
-        # bad-JSON / failed-sql_sync paths; just propagate.
         return _text(observation)
     _ctx["result"] = {**state.result, "observation": observation}
     return _text(observation)
@@ -426,42 +579,62 @@ async def submit_query(args: dict) -> dict:
 # lives inside that JSON) and so it can opt out of Mode-B filter
 # normalization via a separate `normalize_filters` tool parameter.
 _QUERY_TOOL_DESC = (
-    "Run a single-stage SLayer query and return SLayer's formatted "
-    "result. `query_json` is a SlayerQuery JSON OBJECT — the same "
-    "shape `submit_query` accepts — with `source_model` (required), "
-    "and any of `dimensions`, `measures`, `filters`, `time_dimensions`, "
+    "Run a SLayer query and return SLayer's formatted result. Pass "
+    "EITHER a single-stage form (`source_model` + the usual projection "
+    "fields: `dimensions`, `measures`, `filters`, `time_dimensions`, "
     "`order`, `limit`, `offset`, `whole_periods_only`, `variables`, "
-    "`distinct_dimension_values`. Set `distinct_dimension_values: "
-    "false` inside the JSON to disable SLayer's default dim-only "
-    "auto-dedup `GROUP BY` (emits raw `SELECT <dims/td>` rows). "
-    "Tool-level options stay OUTSIDE the JSON as separate kwargs: "
-    "`show_sql`, `dry_run`, `explain`, `format` (markdown/json/csv), "
-    "and `normalize_filters` (default true) — when true, every "
-    "`col == 'X'` filter becomes `lower(trim(col)) == 'x'` "
-    "(case/whitespace-tolerant); when false, filters are forwarded "
-    "verbatim (exact-case equality). For a nested-DAG preview use "
-    "`query_nested` instead."
+    "`distinct_dimension_values`) OR a nested-DAG form (`queries`: a "
+    "list of stage objects; last is the DAG root; non-final stages need "
+    "a `name`; later stages reference earlier ones via "
+    "`source_model: \"<sibling name>\"`). Set "
+    "`distinct_dimension_values: false` on a single-stage call to "
+    "disable SLayer's default dim-only auto-dedup `GROUP BY`. Tool-level "
+    "options live outside the SlayerQuery: `show_sql`, `dry_run`, "
+    "`explain`, `format` (markdown/json/csv), and `normalize_filters` "
+    "(default true) — when true, every `col == 'X'` filter becomes "
+    "`lower(trim(col)) == 'x'` (case/whitespace-tolerant); when false, "
+    "filters are forwarded verbatim (exact-case equality)."
 )
 
 
 @tool(
     "query",
     _QUERY_TOOL_DESC,
-    # Explicit JSON Schema dict so only `query_json` is required. A flat
-    # `{key: type}` schema would make the SDK mark every key required (see
-    # claude_agent_sdk._build_schema → `"required": list(properties.keys())`),
-    # forcing every preview call to set show_sql/dry_run/explain/format.
+    # DEV-1555 CR r1 / O1: the wrapper accepts EITHER a single
+    # SlayerQuery (set `source_model` + projection fields) OR a
+    # nested-DAG list (set `queries`). ``required`` stays empty;
+    # the runtime gates on `source_model XOR queries` so the
+    # error message is specific. Mirrors `submit_query`'s shape so
+    # the agent uses one form across query / submit_query.
     {
         "type": "object",
         "properties": {
-            "query_json": {"type": "string"},
+            "source_model": {
+                "oneOf": [{"type": "string"}, {"type": "object"}],
+            },
+            "measures": {"type": "array"},
+            "dimensions": {"type": "array"},
+            "filters": {"type": "array"},
+            "time_dimensions": {"type": "array"},
+            "order": {"type": "array"},
+            "limit": {"type": "integer"},
+            "offset": {"type": "integer"},
+            "whole_periods_only": {"type": "boolean", "default": False},
+            "variables": {"type": "object"},
+            # DEV-1546 (origin/main): inside-SlayerQuery field that
+            # disables the default dim-only auto-dedup `GROUP BY`.
+            "distinct_dimension_values": {"type": "boolean"},
             "show_sql": {"type": "boolean", "default": False},
             "dry_run": {"type": "boolean", "default": False},
             "explain": {"type": "boolean", "default": False},
             "format": {"type": "string", "default": "markdown"},
             "normalize_filters": {"type": "boolean", "default": True},
+            # Nested-DAG: when set, the wrapper routes to
+            # `query_nested_impl` and `source_model` + the
+            # single-stage projection kwargs must be unset.
+            "queries": {"type": "array"},
         },
-        "required": ["query_json"],
+        "required": [],
     },
 )
 async def query(args: dict) -> dict:
@@ -473,8 +646,52 @@ async def query(args: dict) -> dict:
         storage = _ctx["_slayer_storage"]
     _query_mod.attach_storage(storage)
 
+    import json as _json
+
+    # Nested-DAG form: when `queries` is supplied, route to
+    # `query_nested_impl`. Mutual exclusion with `source_model` is
+    # enforced here (rather than in the schema) so a future caller
+    # passing both gets a clear error instead of a silent precedence
+    # rule.
+    if args.get("queries") is not None:
+        if args.get("source_model") is not None:
+            return _text(
+                "query: pass either `source_model` (single-stage) or "
+                "`queries` (nested DAG), not both."
+            )
+        result = await _query_mod.query_nested_impl(
+            queries=args["queries"],
+            variables=args.get("variables"),
+            show_sql=bool(args.get("show_sql", False)),
+            dry_run=bool(args.get("dry_run", False)),
+            explain=bool(args.get("explain", False)),
+            format=args.get("format", "markdown"),
+            normalize_filters=bool(args.get("normalize_filters", True)),
+        )
+        return _text(result if isinstance(result, str) else str(result))
+
+    # Single-stage form: `source_model` is required; build the
+    # SlayerQuery JSON from the structured args and hand it to
+    # DEV-1546's `query_impl(query_json: str, …)`.
+    if args.get("source_model") is None:
+        return _text(
+            "query: `source_model` is required for single-stage queries "
+            "(or pass `queries` for a nested DAG)."
+        )
+    single: dict = {"source_model": args["source_model"]}
+    for k in (
+        "measures", "dimensions", "filters", "time_dimensions",
+        "order", "limit", "offset", "variables",
+        "distinct_dimension_values",
+    ):
+        v = args.get(k)
+        if v is not None:
+            single[k] = v
+    if args.get("whole_periods_only"):
+        single["whole_periods_only"] = True
+
     result = await _query_mod.query_impl(
-        args["query_json"],
+        _json.dumps(single),
         show_sql=bool(args.get("show_sql", False)),
         dry_run=bool(args.get("dry_run", False)),
         explain=bool(args.get("explain", False)),

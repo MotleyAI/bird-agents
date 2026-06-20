@@ -8,27 +8,30 @@ tool). Setting ``False`` on a dimension-only query disables the auto-dedup
 
 This file pins the wiring on OUR side of slayer:
 
-* ``query_impl``'s public surface collapses to a single ``query_json``
-  positional arg + tool-level kwargs (mirrors ``submit_slayer_query``).
-  Inside the JSON DSL the agent puts ``distinct_dimension_values: false``;
-  the wrapper unpacks it through an explicit field allowlist to slayer's
-  MCP ``query`` function.
-* Sharp errors for invalid JSON, missing ``source_model``, nested-DAG
-  list shape passed to the single-stage preview tool, and any unknown
-  top-level key.
-* ``query_nested_impl`` already forwards stage dicts verbatim — the new
-  field rides through with no change. Pinned here as a regression net.
-* ``submit_slayer_query`` already forwards the JSON DSL through
+* ``query_impl`` accepts ``query_json: str`` as a positional arg plus
+  tool-level kwargs — the wrapper unpacks the JSON DSL through an
+  explicit field allowlist to slayer's MCP ``query`` function. Sharp
+  errors for invalid JSON, missing ``source_model``, nested-DAG list
+  shape, and unknown top-level keys.
+* DEV-1555 CR r1 (unification): the @tool wrapper for the ``query`` MCP
+  tool no longer takes a single ``query_json`` string at the SDK layer
+  — it accepts the SAME structured shape as ``submit_query`` (single-
+  stage via ``source_model`` + projection fields OR nested-DAG via
+  ``queries``), builds the SlayerQuery JSON internally, and forwards
+  it to DEV-1546's ``query_impl(query_json: str, …)``. The
+  ``distinct_dimension_values`` field rides through as a named
+  property on the schema instead of a JSON-string field. See
+  ``test_claude_sdk_query_tool_schema_uses_structured_shape_after_unification``.
+* ``query_nested_impl`` forwards stage dicts verbatim — the new field
+  rides through with no change. Pinned here as a regression net.
+* ``submit_slayer_query`` forwards the JSON DSL through
   ``normalize_query_payload`` → ``_compile_sql``. Pinned that the new
   field survives that round-trip and that slayer's 0.7.2 rejection
   rules surface as observation errors.
-* The claude-sdk ``@tool("query", ...)`` registration's input JSON
-  Schema is collapsed to require ``query_json`` only.
-* ``SLAYER_OTF_ONE_SHOT`` / ``SLAYER_OTF_AINTERACT`` still accept
-  exactly ``{budget}``, ``{db_name}``, ``{user_query}`` via
-  ``str.format`` after the new ``_DEDUP_VS_RAW_ROWS`` constant is
-  composed in, AND the constant is structurally present in both
-  prompts.
+* ``SLAYER_OTF_ONE_SHOT_V0`` (the V0 snapshot — see
+  ``_shared_otf_prompts.py``) inlines the full ``_DEDUP_VS_RAW_ROWS``
+  body byte-for-byte and is rendered by the v0 agents; the V1
+  prompts teach the same guidance in a shorter inlined form.
 
 Per the project convention (``feedback_no_prompt_content_tests``), no
 substring / anchor-phrase assertions on prompt copy — mechanical
@@ -643,27 +646,28 @@ def _extract_tool_schema(tool_obj: Any) -> dict:
     )
 
 
-def test_claude_sdk_query_tool_schema_collapsed_to_query_json():
-    """The slayer ``query`` tool's JSON schema has exactly the new
-    properties (``query_json`` plus tool opts) and requires only
-    ``query_json``."""
+def test_claude_sdk_query_tool_schema_uses_structured_shape_after_unification():
+    """DEV-1555 CR r1 / O1 unification: the single ``query_json`` string
+    parameter is gone; the slayer ``query`` tool now exposes the same
+    structured shape as ``submit_query`` (single-stage via
+    ``source_model`` + projection fields OR nested-DAG via ``queries``).
+    The wrapper builds the JSON string internally and forwards it to
+    DEV-1546's ``query_impl(query_json: str, …)``.
+
+    The full per-property pin lives in
+    ``tests/test_dev1534_query_wrapper.py::test_query_wrapper_tool_schema_accepts_unified_shape``;
+    here we just lock the change from the original DEV-1546 schema."""
     from bird_interact_agents.agents.claude_sdk import agent as agent_mod
 
     schema = _extract_tool_schema(agent_mod.query)
     assert isinstance(schema, dict) and "properties" in schema
     props = schema["properties"]
-    assert set(props.keys()) == {
-        "query_json",
-        "show_sql",
-        "dry_run",
-        "explain",
-        "format",
-        "normalize_filters",
-    }, f"unexpected properties: {set(props.keys())!r}"
-    assert schema.get("required") == ["query_json"]
-    assert props["query_json"]["type"] == "string"
-    assert props["normalize_filters"]["type"] == "boolean"
-    assert props["normalize_filters"].get("default") is True
+    # The unified surface adds the structured-form keys; `query_json` is gone.
+    assert "query_json" not in props
+    assert "source_model" in props
+    assert "queries" in props
+    # `required` is empty — the handler gates on source_model XOR queries.
+    assert schema.get("required") == []
 
 
 # ---------------------------------------------------------------------------
@@ -678,23 +682,28 @@ def test_dedup_vs_raw_rows_constant_exists_and_nonempty():
     assert isinstance(_DEDUP_VS_RAW_ROWS, str) and _DEDUP_VS_RAW_ROWS.strip()
 
 
-def test_dedup_vs_raw_rows_present_in_slayer_one_shot():
-    """Structural composition pin (NOT a content-anchor assertion):
-    the shared constant must appear in the assembled prompt so future
-    edits to ``SLAYER_OTF_ONE_SHOT`` can't silently drop the section."""
-    from bird_interact_agents.agents._shared_otf_prompts import _DEDUP_VS_RAW_ROWS
-    from bird_interact_agents.agents.claude_sdk_otf.prompts import SLAYER_OTF_ONE_SHOT
-
-    assert _DEDUP_VS_RAW_ROWS in SLAYER_OTF_ONE_SHOT
-
-
-def test_dedup_vs_raw_rows_present_in_slayer_ainteract():
-    from bird_interact_agents.agents._shared_otf_prompts import _DEDUP_VS_RAW_ROWS
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
-        SLAYER_OTF_AINTERACT,
+def test_dedup_vs_raw_rows_present_in_slayer_v0_one_shot():
+    """Structural composition pin: the live ``_DEDUP_VS_RAW_ROWS``
+    appears in the V0 snapshot byte-for-byte (V0 is the
+    origin/main-shape prompt the v0 agents render). The V1 prompts
+    teach the same guidance in a shorter inlined form rather than
+    composing the constant; that contract is covered by
+    ``test_dev1555_v0_v1_shared_prompts``."""
+    from bird_interact_agents.agents._shared_otf_prompts import (
+        _DEDUP_VS_RAW_ROWS,
+        SLAYER_OTF_ONE_SHOT_V0,
     )
 
-    assert _DEDUP_VS_RAW_ROWS in SLAYER_OTF_AINTERACT
+    assert _DEDUP_VS_RAW_ROWS in SLAYER_OTF_ONE_SHOT_V0
+
+
+def test_dedup_vs_raw_rows_present_in_slayer_v0_ainteract():
+    from bird_interact_agents.agents._shared_otf_prompts import (
+        _DEDUP_VS_RAW_ROWS,
+        SLAYER_OTF_AINTERACT_V0,
+    )
+
+    assert _DEDUP_VS_RAW_ROWS in SLAYER_OTF_AINTERACT_V0
 
 
 def test_slayer_otf_prompts_format_placeholders_unchanged():

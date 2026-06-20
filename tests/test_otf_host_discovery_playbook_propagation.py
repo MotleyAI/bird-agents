@@ -98,8 +98,14 @@ def test_otf_prompts_modules_import_the_same_object():
     """Every OTF prompts module re-exports the canonical playbook as a
     private alias `_HOST_DISCOVERY_PLAYBOOK`. They MUST be the same
     object — drift is impossible by construction."""
-    from bird_interact_agents.agents.claude_sdk_otf import prompts as cs_otf
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import (
+    # DEV-1555: import-identity is meaningful only for the v1 prompts
+    # path. The v0 prompts re-export a FROZEN origin/main snapshot from
+    # ``_shared_otf_prompts`` — they no longer import the live playbook
+    # constant, so `is`-equality is N/A there. (The v0 byte-identity
+    # contract is the SHA snapshot in
+    # tests/test_dev1555_v0_v1_shared_prompts.py instead.)
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import prompts as cs_otf
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import (
         prompts as cs_otf_ainteract,
     )
     from bird_interact_agents.agents.pydantic_ai_otf_encode import (
@@ -121,16 +127,25 @@ def test_otf_prompts_modules_import_the_same_object():
 
 
 def test_claude_sdk_otf_one_shot_includes_playbook():
-    from bird_interact_agents.agents.claude_sdk_otf import prompts
+    """DEV-1555: v1 prompts assemble live ``HOST_DISCOVERY_PLAYBOOK``.
+
+    The v0 one-shot template is a frozen origin/main snapshot — its
+    embedded playbook is the origin/main version, not the live
+    constant; that contract is pinned by the V0 SHA snapshot test, not
+    by this membership check.
+    """
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import prompts
 
     rendered = prompts.SLAYER_OTF_ONE_SHOT.format(**_claude_sdk_otf_args())
     assert HOST_DISCOVERY_PLAYBOOK in rendered
 
 
 def test_claude_sdk_otf_ainteract_includes_playbook():
-    """The mini-interact (a-interact) claude_sdk OTF flavor — same OTF
-    encoder role as claude_sdk_otf but with the ask_user discipline."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract import prompts
+    """DEV-1555: v1 a-interact prompts assemble live ``HOST_DISCOVERY_PLAYBOOK``.
+
+    (See note on the one-shot variant for why v0 is excluded.)
+    """
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import prompts
 
     rendered = prompts.SLAYER_OTF_AINTERACT.format(**_claude_sdk_otf_args())
     assert HOST_DISCOVERY_PLAYBOOK in rendered

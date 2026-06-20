@@ -37,6 +37,7 @@ from bird_interact_agents.slayer_otf.cache import CacheEntry, ensure_db_cache
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
+from bird_interact_agents.slayer_otf.timing import log_otf_event, otf_timer
 from bird_interact_agents.slayer_pipeline.portable_connection import (
     reanchor_connection_string,
 )
@@ -94,20 +95,36 @@ async def resolve_otf_task_storage_dir(
     # path into a 4-slash absolute URL, so a relative ``--db-path`` would
     # otherwise root at ``/<rel>/...`` and ingest the wrong file.
     mini_interact_root = Path(data_path_base).resolve()
-    cache_entry = await ensure_db_cache(
-        db_name,
-        cache_root=_paths.slayer_otf_cache_root(benchmark=benchmark),
-        mini_interact_root=mini_interact_root,
-        benchmark=_get_benchmark(benchmark) if benchmark else None,
-    )
-    scratch = await prepare_task_storage(
-        db=db_name,
-        deleted_kb_ids=set(deleted),
-        cache_entry=cache_entry,
-        work_dir=_otf_work_dir(instance_id),
-        mini_interact_root=mini_interact_root,
-        db_root=mini_interact_root,
-    )
+    with otf_timer(
+        "resolve_otf_task_storage_dir",
+        instance_id=instance_id, db=db_name,
+        deleted_kb_ids=len(deleted),
+    ):
+        with otf_timer(
+            "ensure_db_cache", instance_id=instance_id, db=db_name,
+        ):
+            cache_entry = await ensure_db_cache(
+                db_name,
+                cache_root=_paths.slayer_otf_cache_root(benchmark=benchmark),
+                mini_interact_root=mini_interact_root,
+                benchmark=_get_benchmark(benchmark) if benchmark else None,
+            )
+        work_dir = _otf_work_dir(instance_id)
+        log_otf_event(
+            "otf_work_dir.resolved",
+            instance_id=instance_id, work_dir=str(work_dir),
+        )
+        with otf_timer(
+            "prepare_task_storage", instance_id=instance_id, db=db_name,
+        ):
+            scratch = await prepare_task_storage(
+                db=db_name,
+                deleted_kb_ids=set(deleted),
+                cache_entry=cache_entry,
+                work_dir=work_dir,
+                mini_interact_root=mini_interact_root,
+                db_root=mini_interact_root,
+            )
     return str(scratch), deleted
 
 
@@ -150,24 +167,31 @@ async def prepare_task_storage(
     # this <db>/ subdir is ours to own — wipe it if a previous run
     # left it behind.
     if scratch.exists():
-        shutil.rmtree(scratch)
-    shutil.copytree(cache_entry.cache_dir, scratch)
+        with otf_timer("prepare_task_storage.rmtree_existing", db=db):
+            shutil.rmtree(scratch)
+    with otf_timer("prepare_task_storage.copytree", db=db):
+        shutil.copytree(cache_entry.cache_dir, scratch)
 
-    await _rewrite_datasource_connection_string(
-        db=db, scratch=scratch, mini_interact_root=mini_interact_root,
-        db_root=db_root,
-    )
+    with otf_timer("prepare_task_storage.rewrite_conn_string", db=db):
+        await _rewrite_datasource_connection_string(
+            db=db, scratch=scratch, mini_interact_root=mini_interact_root,
+            db_root=db_root,
+        )
     if deleted_kb_ids:
         # Re-encode + drop the matching embedding rows in lockstep so
         # SLayer's search corpus stays free of dangling memory:<id>
         # tokens (entities) and stale embedding rows.
-        _write_memories_yaml(
-            db=db, scratch=scratch,
-            kb_rows=cache_entry.kb_rows, deleted_kb_ids=deleted_kb_ids,
-        )
-        _prune_deleted_memory_embeddings(
-            db=db, scratch=scratch, deleted_kb_ids=deleted_kb_ids,
-        )
+        with otf_timer(
+            "prepare_task_storage.kb_mask",
+            db=db, deleted_kb_ids=len(deleted_kb_ids),
+        ):
+            _write_memories_yaml(
+                db=db, scratch=scratch,
+                kb_rows=cache_entry.kb_rows, deleted_kb_ids=deleted_kb_ids,
+            )
+            _prune_deleted_memory_embeddings(
+                db=db, scratch=scratch, deleted_kb_ids=deleted_kb_ids,
+            )
     # else: the cache's pre-built memories.yaml + embeddings.db are
     # already correct for the no-deletion case.
     return scratch

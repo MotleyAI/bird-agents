@@ -124,7 +124,8 @@ def _validate_framework_mode(
     benchmark (or ``oracle`` with a one-shot benchmark) would pass the
     dataset-mode gate but fail deep inside the agent at task runtime.
     """
-    if framework != "claude_sdk":
+    # DEV-1555 v0/v1: validate both aggregator tokens.
+    if framework not in ("claude_sdk", "claude_sdk_v1"):
         return
     if mode == "oracle":
         return  # oracle bypasses the agent entirely (run_oracle_task)
@@ -132,7 +133,7 @@ def _validate_framework_mode(
     supported = ("one-shot",) if b.one_shot else ("a-interact",)
     if mode not in supported:
         raise ValueError(
-            f"--framework claude_sdk with {b.name!r} only supports "
+            f"--framework {framework} with {b.name!r} only supports "
             f"--mode {' / '.join(supported)}; got {mode!r}. "
             f"The modes {set(b.supported_modes) - set(supported)} listed in "
             f"the benchmark spec are not yet wired to a claude_sdk agent variant."
@@ -157,7 +158,8 @@ def _maybe_force_wipe_otf(
     """
     if not otf_rebuild:
         return
-    if framework != "claude_sdk":
+    # DEV-1555 v0/v1: both aggregator tokens dispatch to on-the-fly agents.
+    if framework not in ("claude_sdk", "claude_sdk_v1"):
         return
     from bird_interact_agents.slayer_otf.reference_build import (
         purge_caches,
@@ -294,15 +296,51 @@ otherwise-correct tasks past the cap, turning recoverable retries into
 permanent `eval_failed`s. Re-enable for a specific run via the
 BIRD_INTERACT_PER_TASK_TIMEOUT_S env var (set to the desired seconds)."""
 
+# DEV-1555 follow-up: the SDK agents now enforce the same budget
+# AGENT-SIDE via wall-clock hooks (warn at 80%/90%, deny non-submit
+# tools at 100%). The agent-side enforcement preserves the trajectory
+# because submit happens inside the SDK session; an outer
+# asyncio.wait_for at the raw budget would kill the receive loop
+# mid-stream and lose the trajectory (last seen on Kimi r7). We keep
+# asyncio.wait_for as a RUNAWAY SAFETY NET at budget + grace so a
+# model that ignores the deny still terminates eventually.
+_DEFAULT_RUNAWAY_GRACE_S = 120.0
+
+
+def _runaway_grace_s() -> float:
+    """Override for ``_DEFAULT_RUNAWAY_GRACE_S`` via
+    ``BIRD_INTERACT_RUNAWAY_GRACE_S``. Tests for the runaway path set
+    this to 0 so they can exercise the outer cap in seconds."""
+    raw = os.environ.get("BIRD_INTERACT_RUNAWAY_GRACE_S")
+    if raw is None:
+        return _DEFAULT_RUNAWAY_GRACE_S
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return _DEFAULT_RUNAWAY_GRACE_S
+
 
 def _per_task_timeout_s() -> float:
+    """Outer ``asyncio.wait_for`` cap = agent budget + runaway grace.
+
+    The raw env-var budget IS the agent's soft target (see
+    ``context_budget.per_task_timeout_s``); this function returns the
+    HARD ceiling at which the outer wait_for will rip the task — used
+    as the last-resort safety net for a model that ignores the
+    agent-side deny."""
     raw = os.environ.get("BIRD_INTERACT_PER_TASK_TIMEOUT_S")
+    grace = _runaway_grace_s()
+    # Default is "no cap" (0.0). Only add the runaway grace when the
+    # operator explicitly opted in to a positive cap.
     if raw is None:
         return _DEFAULT_PER_TASK_TIMEOUT_S
     try:
-        return float(raw)
+        agent_budget = float(raw)
     except ValueError:
         return _DEFAULT_PER_TASK_TIMEOUT_S
+    if agent_budget <= 0:
+        return agent_budget  # 0 / negative still disables both caps
+    return agent_budget + grace
 
 
 async def run_one_task_with_runner(
@@ -330,7 +368,8 @@ async def run_one_task_with_runner(
                 # one so the error row records what actually happened
                 # (DEV-1535 wall-clock cap).
                 raise TimeoutError(
-                    f"per-task wall-clock cap of {timeout:.0f}s exceeded "
+                    f"per-task runaway-grace ceiling of {timeout:.0f}s exceeded — the "
+                    f"agent ignored the wall-clock budget hook's deny "
                     f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 to disable)"
                 ) from te
         else:
@@ -431,6 +470,20 @@ def _make_runner(
         if strict:
             logger.warning(
                 "[claude_sdk] --strict is a no-op for Anthropic models; ignored."
+            )
+        # Codex r4: the v0 aggregator routes to origin/main-shape agents
+        # that reject non-Anthropic models via `is_anthropic()` and
+        # silently return skipped rows. Fail fast with a clear pointer
+        # at `claude_sdk_v1` so a Moonshot user doesn't burn a cloud
+        # run on skipped tasks.
+        from bird_interact_agents.provider_registry import get_provider
+        if get_provider(agent_model) is not None:
+            raise ValueError(
+                f"--framework claude_sdk only supports Anthropic agent "
+                f"models; got {agent_model!r}. Use --framework "
+                f"claude_sdk_v1 to run open-weight registry models "
+                f"(moonshot/, etc.) — the v1 agents carry the "
+                f"provider-aware session env + thinking config."
             )
         if b.one_shot and query_mode == "slayer":
             from bird_interact_agents.agents.claude_sdk_otf import ClaudeSDKOtfAgent
@@ -573,6 +626,162 @@ def _make_runner(
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
                 user_sim_prompt_version=_v,
+            )
+        return run_one
+    # ---------- v1 = this branch's shape, opt-in via `_v1` tokens ----------
+    if framework == "claude_sdk_v1":
+        b = get_benchmark(dataset)
+        if strict:
+            logger.warning(
+                "[claude_sdk_v1] --strict is a no-op for Anthropic models; ignored."
+            )
+        if b.one_shot and query_mode == "slayer":
+            from bird_interact_agents.agents.claude_sdk_otf_v1 import (
+                ClaudeSDKOtfAgent,
+            )
+            _agent_v1: object = ClaudeSDKOtfAgent(
+                slayer_storage_root=slayer_storage_root,
+                model=agent_model,
+                slayer_setup=slayer_setup,
+                reasoning_effort=reasoning_effort,
+            )
+        elif not b.one_shot and query_mode == "slayer":
+            from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import (
+                ClaudeSDKOtfAInteractAgent,
+            )
+            _agent_v1 = ClaudeSDKOtfAInteractAgent(
+                slayer_storage_root=slayer_storage_root,
+                model=agent_model,
+                slayer_setup=slayer_setup,
+                reasoning_effort=reasoning_effort,
+            )
+        elif b.one_shot and query_mode == "raw":
+            from bird_interact_agents.agents.claude_sdk_otf_raw_v1 import (
+                ClaudeSDKOtfRawAgent,
+            )
+            _agent_v1 = ClaudeSDKOtfRawAgent(
+                model=agent_model,
+                reasoning_effort=reasoning_effort,
+            )
+        else:  # not one_shot, raw
+            from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import (
+                ClaudeSDKOtfAInteractRawAgent,
+            )
+            _agent_v1 = ClaudeSDKOtfAInteractRawAgent(
+                model=agent_model,
+                reasoning_effort=reasoning_effort,
+            )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await _agent_v1.run_task(  # type: ignore[attr-defined]
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            user_sim_prompt_version=_v,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_v1":
+        from bird_interact_agents.agents.claude_sdk_otf_v1 import ClaudeSDKOtfAgent
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_v1] --strict is a no-op for Anthropic models; "
+                "ignored."
+            )
+        agent_cso_v1 = ClaudeSDKOtfAgent(
+            slayer_storage_root=slayer_storage_root,
+            model=agent_model,
+            slayer_setup=slayer_setup,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_cso_v1.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            user_sim_prompt_version=_v,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_ainteract_v1":
+        from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import (
+            ClaudeSDKOtfAInteractAgent,
+        )
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_ainteract_v1] --strict is a no-op for "
+                "Anthropic models; ignored."
+            )
+        agent_csoa_v1 = ClaudeSDKOtfAInteractAgent(
+            slayer_storage_root=slayer_storage_root,
+            model=agent_model,
+            slayer_setup=slayer_setup,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csoa_v1.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            user_sim_prompt_version=_v,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_raw_v1":
+        from bird_interact_agents.agents.claude_sdk_otf_raw_v1 import (
+            ClaudeSDKOtfRawAgent,
+        )
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_raw_v1] --strict is a no-op for Anthropic "
+                "models; ignored."
+            )
+        agent_csor_v1 = ClaudeSDKOtfRawAgent(
+            model=agent_model,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csor_v1.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            user_sim_prompt_version=_v,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_ainteract_raw_v1":
+        from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import (
+            ClaudeSDKOtfAInteractRawAgent,
+        )
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_ainteract_raw_v1] --strict is a no-op for "
+                "Anthropic models; ignored."
+            )
+        agent_csoar_v1 = ClaudeSDKOtfAInteractRawAgent(
+            model=agent_model,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csoar_v1.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+            user_sim_prompt_version=_v,
             )
         return run_one
     if framework == "pydantic_ai":
@@ -784,7 +993,8 @@ async def run_one_task(
                 # this function ran uncapped — defeating the cap on
                 # exactly the runs most likely to thrash.
                 raise TimeoutError(
-                    f"per-task wall-clock cap of {timeout:.0f}s exceeded "
+                    f"per-task runaway-grace ceiling of {timeout:.0f}s exceeded — the "
+                    f"agent ignored the wall-clock budget hook's deny "
                     f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 to disable)"
                 ) from te
         else:
@@ -1193,8 +1403,10 @@ async def run_evaluation(
                         r = await asyncio.wait_for(_coro, timeout=_timeout)
                     except asyncio.TimeoutError as te:
                         raise TimeoutError(
-                            f"per-task wall-clock cap of {_timeout:.0f}s "
-                            f"exceeded (BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 "
+                            f"per-task runaway-grace ceiling of {_timeout:.0f}s "
+                            f"exceeded — the agent ignored the "
+                            f"wall-clock budget hook's deny "
+                            f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 "
                             f"to disable)"
                         ) from te
                 else:
@@ -1338,7 +1550,23 @@ def main() -> None:
     )
     parser.add_argument(
         "--framework",
-        choices=["claude_sdk"],
+        # DEV-1555 v0/v1: only the two aggregator tokens are user-facing.
+        # The per-variant tokens (`claude_sdk_otf{,_v1}` / `*_raw{,_v1}` /
+        # `*_ainteract{,_v1}`) remain accepted by `_make_runner` for
+        # programmatic / test callers, but the CLI infers the variant
+        # from (benchmark.one_shot × query_mode) — `claude_sdk` →
+        # origin/main shape; `claude_sdk_v1` → this branch's shape.
+        choices=[
+            "claude_sdk",
+            "claude_sdk_v1",
+            # non-SDK frameworks unchanged.
+            "pydantic_ai",
+            "pydantic_ai_recursive",
+            "pydantic_ai_otf_encode",
+            "mcp_agent",
+            "agno",
+            "smolagents",
+        ],
         required=True,
         help="Agent framework to use",
     )

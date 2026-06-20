@@ -20,6 +20,8 @@ from typing import Any, Awaitable, Callable
 import litellm
 from pydantic import BaseModel, Field
 
+from bird_interact_agents import provider_registry
+
 logger = logging.getLogger(__name__)
 
 # Indirection seams so tests can monkey-patch without touching litellm.
@@ -46,6 +48,30 @@ def _maybe_inject_anthropic_key(model: str, kwargs: dict) -> None:
     dedicated = os.environ.get(_LITELLM_ANTHROPIC_KEY_ENV)
     if dedicated:
         kwargs["api_key"] = dedicated
+
+
+def _maybe_inject_registry_kwargs(model: str, kwargs: dict) -> str:
+    """Route registry open-weight models (DEV-1555) through litellm's
+    OpenAI-compatible driver.
+
+    Returns the model string to hand litellm — rewritten to
+    ``openai/<native_id>`` with ``api_base``/``api_key`` injected for
+    registry providers, unchanged otherwise. Caller-passed kwargs are
+    never clobbered. Also registers the providers' official prices with
+    litellm so cost rows stay accurate.
+    """
+    # CR r1: thread caller-passed ``api_key`` into the route lookup so
+    # ``provider_api_key(spec)`` (which raises on an unset provider env
+    # var) is only called as fallback.
+    litellm_model, extra = provider_registry.litellm_route(
+        model, caller_api_key=kwargs.get("api_key"),
+    )
+    if litellm_model == model:
+        return model
+    provider_registry.ensure_litellm_pricing()
+    for k, v in extra.items():
+        kwargs.setdefault(k, v)
+    return litellm_model
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +204,33 @@ def _safe_cost(
     *, model: str, prompt_tokens: int, completion_tokens: int,
     cache_read_input_tokens: int = 0, cache_creation_input_tokens: int = 0,
 ) -> tuple[float, float]:
+    # DEV-1555: registry open-weight models are priced IN-HOUSE from the
+    # registry's official prices. litellm's openai-provider math assumes
+    # prompt_tokens INCLUDES cached tokens (OpenAI convention) while our
+    # callers pass Anthropic-convention numbers (input excludes cache), so
+    # it swallows the non-cached input whenever cache_read is present —
+    # and it prices cache_creation at $0. Moonshot's model is hit/miss:
+    # cache writes ARE misses, billed at the full input rate.
+    spec = provider_registry.get_provider(model)
+    if spec is not None:
+        _, _, _native = model.partition("/")
+        pricing = spec.model_pricing.get(_native)
+        if pricing is not None:
+            read_rate = (
+                pricing.cache_read_input_token_cost
+                if pricing.cache_read_input_token_cost is not None
+                else pricing.input_cost_per_token
+            )
+            prompt_cost = (
+                (prompt_tokens + cache_creation_input_tokens)
+                * pricing.input_cost_per_token
+                + cache_read_input_tokens * read_rate
+            )
+            return prompt_cost, completion_tokens * pricing.output_cost_per_token
+    # Registry models WITHOUT a pricing entry still need litellm to see a
+    # registration so cost_per_token degrades to the NotFoundError path
+    # instead of a bare Exception. Idempotent, no-op after the first call.
+    provider_registry.ensure_litellm_pricing()
     try:
         return _cost_per_token(
             model=model,
@@ -328,8 +381,9 @@ async def acompletion_tracked(
     errors don't surface as hard failures during concurrent benchmark runs.
     """
     _maybe_inject_anthropic_key(model, kwargs)
+    litellm_model = _maybe_inject_registry_kwargs(model, kwargs)
     response = await _retry_litellm(
-        lambda: _acompletion(model=model, **kwargs),
+        lambda: _acompletion(model=litellm_model, **kwargs),
     )
     usage_obj = getattr(response, "usage", None)
     if usage_obj is not None:

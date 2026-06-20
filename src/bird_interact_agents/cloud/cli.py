@@ -6,6 +6,7 @@ import argparse
 import sys
 from typing import Sequence
 
+from bird_interact_agents import provider_registry
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.cloud import driver
 
@@ -22,7 +23,25 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sub = p.add_subparsers(dest="subcommand", required=True)
 
     sp_submit = sub.add_parser("submit")
-    sp_submit.add_argument("--framework", required=True, choices=["claude_sdk"])
+    sp_submit.add_argument(
+        "--framework", required=True,
+        # DEV-1555 v0/v1: only the two aggregator tokens are user-facing.
+        # The per-variant tokens (`claude_sdk_otf{,_v1}` / `*_raw{,_v1}` /
+        # `*_ainteract{,_v1}`) are inferred by `_make_runner` from
+        # (benchmark.one_shot × query_mode). `claude_sdk` → origin/main
+        # shape; `claude_sdk_v1` → this branch's shape.
+        choices=[
+            "claude_sdk",
+            "claude_sdk_v1",
+            # non-SDK frameworks unchanged.
+            "pydantic_ai",
+            "pydantic_ai_recursive",
+            "pydantic_ai_otf_encode",
+            "mcp_agent",
+            "agno",
+            "smolagents",
+        ],
+    )
     sp_submit.add_argument("--query-mode", required=True, choices=("raw", "slayer"))
     sp_submit.add_argument("--agent-model", required=True)
     sp_submit.add_argument(
@@ -109,16 +128,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     sp_submit.add_argument(
         "--subscription-auth", action=argparse.BooleanOptionalAction,
-        required=True, dest="subscription_auth",
+        default=None, dest="subscription_auth",
         help=(
-            "REQUIRED. `--subscription-auth` uses the Claude.ai OAuth "
-            "subscription (CLAUDE_CODE_OAUTH_TOKEN must be set in the "
-            "submitter's env, with the sk-ant-oat01- prefix); submit fails "
-            "if the token is absent or malformed. `--no-subscription-auth` "
-            "uses the legacy API-key path (ANTHROPIC_API_KEY). No default — "
-            "an explicit choice is required to prevent a silent fall-back "
-            "to the API-key path burning credits when the operator meant "
-            "to hit the subscription."
+            "REQUIRED for Anthropic agent models. `--subscription-auth` "
+            "uses the Claude.ai OAuth subscription (CLAUDE_CODE_OAUTH_TOKEN "
+            "must be set in the submitter's env, with the sk-ant-oat01- "
+            "prefix); submit fails if the token is absent or malformed. "
+            "`--no-subscription-auth` uses the legacy API-key path "
+            "(ANTHROPIC_API_KEY). No default for Anthropic models — an "
+            "explicit choice is required to prevent a silent fall-back to "
+            "the API-key path burning credits when the operator meant to "
+            "hit the subscription. DEV-1555: subscription auth is "
+            "Anthropic-only — registry open-weight models (moonshot/...) "
+            "must not use `--subscription-auth`; omit the flag or pass "
+            "`--no-subscription-auth` so the provider key env var is "
+            "used instead."
         ),
     )
 
@@ -178,6 +202,58 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     # defence-in-depth; see `read_api_keys_from_local_env`.)
     if ns.subcommand in ("submit", "annotate"):
         import os
+
+        # DEV-1555 Stage 2 (submit only — annotate stays Anthropic-only with
+        # the argparse-level required flag): validate the agent-model
+        # provider against the open-weight registry and make the
+        # subscription-auth choice conditional on it.
+        #
+        # Codex r1: scope to claude_sdk* frameworks only — pydantic_ai,
+        # agno, smolagents etc. legitimately use non-Anthropic agent
+        # models (e.g. `openai/gpt-4o`) that `is_supported_agent_model`
+        # would otherwise reject before dispatch.
+        if (
+            ns.subcommand == "submit"
+            and ns.framework.startswith("claude_sdk")
+        ):
+            if not provider_registry.is_supported_agent_model(ns.agent_model):
+                known = ", ".join(["anthropic", *sorted(provider_registry.REGISTRY)])
+                p.error(
+                    f"--agent-model {ns.agent_model!r} is not a supported "
+                    f"claude_sdk backend (known providers: {known})."
+                )
+            _spec = provider_registry.get_provider(ns.agent_model)
+            if _spec is not None:
+                # Codex r7: the v0 ``claude_sdk`` aggregator routes to
+                # origin/main-shape agents that reject non-Anthropic
+                # models via ``is_anthropic()``. The runner already
+                # raises (round 4), but by the time the runner runs
+                # the cloud cluster has been built + brought up.
+                # Reject at parse time so the operator gets the
+                # pointer at ``claude_sdk_v1`` before any spend.
+                if ns.framework == "claude_sdk":
+                    p.error(
+                        f"--framework claude_sdk only supports Anthropic "
+                        f"agent models; {ns.agent_model!r} is a "
+                        f"{_spec.key} registry model. Use --framework "
+                        f"claude_sdk_v1 (the v1 agents carry the "
+                        f"provider-aware session env + thinking config)."
+                    )
+                if ns.subscription_auth:
+                    p.error(
+                        f"--subscription-auth is Anthropic-only; {_spec.key} "
+                        f"models authenticate via {_spec.auth_env}. Omit the "
+                        "flag or pass --no-subscription-auth."
+                    )
+                ns.subscription_auth = False
+            elif ns.subscription_auth is None:
+                p.error(
+                    "an explicit --subscription-auth / --no-subscription-auth "
+                    "choice is REQUIRED for Anthropic agent models (no "
+                    "default, to prevent a silent fall-back to the API-key "
+                    "path burning credits)."
+                )
+
         ns.no_subscription_auth = not ns.subscription_auth
         if ns.subscription_auth:
             token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")

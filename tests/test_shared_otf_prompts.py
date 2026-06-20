@@ -22,34 +22,27 @@ import pytest
 # Hashes were captured from the pre-refactoring source.
 # ---------------------------------------------------------------------------
 
-# Hashes re-baselined for the DEV-1545 + DEV-1546 + DEV-1550 merge:
-#   * DEV-1545 added `_TABLE_SET_PROBE` (one-shot + a-interact) and
-#     `_GRADER_ZERO_VS_ONE_DIAGNOSTIC` (a-interact only).
-#   * DEV-1546 added `_DEDUP_VS_RAW_ROWS` (both flavours), rewrote
-#     `_SLAYER_SQL_ARTIFACT_CHECK` item-1 (primary fix is now
-#     `distinct_dimension_values: false`), and migrated the per-kind
-#     search kwargs to `max_results` + the unified `results` list.
-#   * DEV-1550 added the new "READ A KNOWN MEMORY'S FULL BODY" drill-in
-#     paragraph documenting the compact-mode opt-out
-#     (`search(entities=["memory:<id>"], max_results=1, compact=False,
-#     cypher_filter='MATCH (n:Memory) RETURN n.id AS id')`), inserted as
-#     a sibling between the existing column-drill-in paragraph and the
-#     `ENCODE-THEN-QUERY DISCIPLINE:` header in the new shared
-#     `_SLAYER_TOOLS_BLOCK` (extracted from the previously byte-identical
-#     `_AINTERACT_SLAYER_TOOLS` / `_ENCODE_CORE_HEAD`). DEV-1550 also
-#     adds the `:Column` / `:Memory` cypher kind filter to all
-#     known-entity drill-in patterns in the prompts + the host-discovery
-#     playbook (`_HOST_DISCOVERY_PLAYBOOK`).
-#
-# The snapshot's purpose stays the same: catch ACCIDENTAL prompt drift
-# on later refactors; deliberate prompt changes re-baseline here.
-_ONE_SHOT_SHA256 = "2ef7a1fc6abacc9a8e8efc52701a74ddc6559793be2fad52421c1c50bbe7d6ef"
-_AINTERACT_SHA256 = "b35e3e5454bb37b2028515c917100d12d5d35ce3e0fed82abbabf6c5970a8708"
+# Hashes re-baselined for the DEV-1555 Stage-1 prompt fixes (drop
+# `query_nested` from agent vocabulary, document single-tool
+# list-of-stages shape, note the partition-deny redirect for
+# `mcp__slayer__query`). The snapshot's purpose is the same — catch
+# ACCIDENTAL prompt drift on later refactors; deliberate prompt changes
+# re-baseline here.
+# Re-baselined again for the DEV-1555 CR r1 / O1 unification: single
+# `query` tool accepts object OR list of stages; legacy `query_nested`
+# and `query_json` single-string parameter are gone from both v0 and
+# v1 prompts.
+# Re-baselined once more after the origin/main merge layered in
+# DEV-1545 (_TABLE_SET_PROBE), DEV-1546 (_DEDUP_VS_RAW_ROWS), and
+# DEV-1550 (ModelColumn label + memory drill-in paragraph in
+# _SLAYER_TOOLS_BLOCK).
+_ONE_SHOT_SHA256 = "e671aea393338079d2a3d9e6f790bfb194953928069d405183d5cf60c023a647"
+_AINTERACT_SHA256 = "a3fd695c391ba09ce352e677802dacb378cc7ae33e648f747c21f6565aa1c799"
 
 
 def test_slayer_otf_one_shot_unchanged():
     """Byte-for-byte contract against the re-baselined snapshot."""
-    from bird_interact_agents.agents.claude_sdk_otf.prompts import SLAYER_OTF_ONE_SHOT
+    from bird_interact_agents.agents.claude_sdk_otf_v1.prompts import SLAYER_OTF_ONE_SHOT
 
     digest = hashlib.sha256(SLAYER_OTF_ONE_SHOT.encode()).hexdigest()
     assert digest == _ONE_SHOT_SHA256, (
@@ -61,7 +54,7 @@ def test_slayer_otf_one_shot_unchanged():
 
 def test_slayer_otf_ainteract_unchanged():
     """Byte-for-byte contract against the re-baselined snapshot."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.prompts import (
         SLAYER_OTF_AINTERACT,
     )
 
@@ -233,14 +226,14 @@ def test_pre_submit_check_ainteract_renders_for_raw():
 
 def test_decompose_discipline_in_slayer_one_shot():
     from bird_interact_agents.agents._shared_otf_prompts import _DECOMPOSE_DISCIPLINE
-    from bird_interact_agents.agents.claude_sdk_otf.prompts import SLAYER_OTF_ONE_SHOT
+    from bird_interact_agents.agents.claude_sdk_otf_v1.prompts import SLAYER_OTF_ONE_SHOT
 
     assert _DECOMPOSE_DISCIPLINE in SLAYER_OTF_ONE_SHOT
 
 
 def test_decompose_discipline_in_slayer_ainteract():
     from bird_interact_agents.agents._shared_otf_prompts import _DECOMPOSE_DISCIPLINE
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.prompts import (
         SLAYER_OTF_AINTERACT,
     )
 
@@ -249,7 +242,7 @@ def test_decompose_discipline_in_slayer_ainteract():
 
 def test_no_user_to_consult_in_slayer_one_shot():
     from bird_interact_agents.agents._shared_otf_prompts import _NO_USER_TO_CONSULT
-    from bird_interact_agents.agents.claude_sdk_otf.prompts import SLAYER_OTF_ONE_SHOT
+    from bird_interact_agents.agents.claude_sdk_otf_v1.prompts import SLAYER_OTF_ONE_SHOT
 
     rendered = _NO_USER_TO_CONSULT.format(
         sources_desc="the memories and column\ndescriptions"
@@ -259,7 +252,7 @@ def test_no_user_to_consult_in_slayer_one_shot():
 
 def test_rule0_rendered_in_slayer_ainteract():
     from bird_interact_agents.agents._shared_otf_prompts import _RULE_0_ASK_BEFORE
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.prompts import (
         SLAYER_OTF_AINTERACT,
     )
 
@@ -273,7 +266,7 @@ def test_rule0_rendered_in_slayer_ainteract():
 
 def test_ask_again_in_slayer_ainteract():
     from bird_interact_agents.agents._shared_otf_prompts import _ASK_AGAIN_RULE
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.prompts import (
         SLAYER_OTF_AINTERACT,
     )
 
@@ -285,7 +278,7 @@ def test_pre_submit_one_shot_in_slayer_one_shot():
     from bird_interact_agents.agents._shared_otf_prompts import (
         _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
     )
-    from bird_interact_agents.agents.claude_sdk_otf.prompts import SLAYER_OTF_ONE_SHOT
+    from bird_interact_agents.agents.claude_sdk_otf_v1.prompts import SLAYER_OTF_ONE_SHOT
 
     rendered = _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT.format(
         submit_tool="submit_query", clause_b="encoded KB",
@@ -297,7 +290,7 @@ def test_pre_submit_ainteract_in_slayer_ainteract():
     from bird_interact_agents.agents._shared_otf_prompts import (
         _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
     )
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.prompts import (
         SLAYER_OTF_AINTERACT,
     )
 
@@ -308,39 +301,13 @@ def test_pre_submit_ainteract_in_slayer_ainteract():
 
 
 # ---------------------------------------------------------------------------
-# DEV-1550 A3: shared `_SLAYER_TOOLS_BLOCK` lives in `_shared_otf_prompts`
-# and appears verbatim in both slayer prompts.
-# ---------------------------------------------------------------------------
-
-
-def test_slayer_tools_block_in_slayer_one_shot():
-    """The extracted `_SLAYER_TOOLS_BLOCK` is the source of truth shared
-    between the ainteract and one-shot SLayer prompts. Mechanical
-    containment: not a prompt-content behaviour test (no anchor-phrase
-    grep) — consistent with `feedback_no_prompt_content_tests`."""
-    from bird_interact_agents.agents._shared_otf_prompts import _SLAYER_TOOLS_BLOCK
-    from bird_interact_agents.agents.claude_sdk_otf.prompts import SLAYER_OTF_ONE_SHOT
-
-    assert _SLAYER_TOOLS_BLOCK in SLAYER_OTF_ONE_SHOT
-
-
-def test_slayer_tools_block_in_slayer_ainteract():
-    from bird_interact_agents.agents._shared_otf_prompts import _SLAYER_TOOLS_BLOCK
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
-        SLAYER_OTF_AINTERACT,
-    )
-
-    assert _SLAYER_TOOLS_BLOCK in SLAYER_OTF_AINTERACT
-
-
-# ---------------------------------------------------------------------------
 # Shared constants appear verbatim in raw prompts (requires implementation).
 # These tests FAIL until the raw agent modules are created.
 # ---------------------------------------------------------------------------
 
 def test_decompose_discipline_in_raw_one_shot():
     from bird_interact_agents.agents._shared_otf_prompts import _DECOMPOSE_DISCIPLINE
-    from bird_interact_agents.agents.claude_sdk_otf_raw.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_raw_v1.prompts import (
         RAW_OTF_ONE_SHOT,
     )
 
@@ -349,7 +316,7 @@ def test_decompose_discipline_in_raw_one_shot():
 
 def test_decompose_discipline_in_raw_ainteract():
     from bird_interact_agents.agents._shared_otf_prompts import _DECOMPOSE_DISCIPLINE
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.prompts import (
         RAW_OTF_AINTERACT,
     )
 
@@ -360,7 +327,7 @@ def test_pre_submit_one_shot_in_raw_one_shot():
     from bird_interact_agents.agents._shared_otf_prompts import (
         _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
     )
-    from bird_interact_agents.agents.claude_sdk_otf_raw.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_raw_v1.prompts import (
         RAW_OTF_ONE_SHOT,
     )
 
@@ -374,7 +341,7 @@ def test_pre_submit_ainteract_in_raw_ainteract():
     from bird_interact_agents.agents._shared_otf_prompts import (
         _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
     )
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.prompts import (
         RAW_OTF_AINTERACT,
     )
 
@@ -386,7 +353,7 @@ def test_pre_submit_ainteract_in_raw_ainteract():
 
 def test_no_user_to_consult_in_raw_one_shot():
     from bird_interact_agents.agents._shared_otf_prompts import _NO_USER_TO_CONSULT
-    from bird_interact_agents.agents.claude_sdk_otf_raw.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_raw_v1.prompts import (
         RAW_OTF_ONE_SHOT,
     )
 
@@ -396,7 +363,7 @@ def test_no_user_to_consult_in_raw_one_shot():
 
 def test_rule0_rendered_in_raw_ainteract():
     from bird_interact_agents.agents._shared_otf_prompts import _RULE_0_ASK_BEFORE
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.prompts import (
         RAW_OTF_AINTERACT,
     )
 
@@ -410,7 +377,7 @@ def test_rule0_rendered_in_raw_ainteract():
 
 def test_ask_again_in_raw_ainteract():
     from bird_interact_agents.agents._shared_otf_prompts import _ASK_AGAIN_RULE
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.prompts import (
         RAW_OTF_AINTERACT,
     )
 
@@ -436,7 +403,7 @@ _SLAYER_VOCAB = [
 
 
 def test_raw_one_shot_prompt_absent_slayer_vocab():
-    from bird_interact_agents.agents.claude_sdk_otf_raw.prompts import RAW_OTF_ONE_SHOT
+    from bird_interact_agents.agents.claude_sdk_otf_raw_v1.prompts import RAW_OTF_ONE_SHOT
 
     # Render with placeholder values (budget/db_name/user_query not SLayer-related).
     rendered = RAW_OTF_ONE_SHOT.format(
@@ -449,7 +416,7 @@ def test_raw_one_shot_prompt_absent_slayer_vocab():
 
 
 def test_raw_ainteract_prompt_absent_slayer_vocab():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.prompts import (
         RAW_OTF_AINTERACT,
     )
 
@@ -463,13 +430,13 @@ def test_raw_ainteract_prompt_absent_slayer_vocab():
 
 
 def test_raw_one_shot_prompt_mentions_submit_sql():
-    from bird_interact_agents.agents.claude_sdk_otf_raw.prompts import RAW_OTF_ONE_SHOT
+    from bird_interact_agents.agents.claude_sdk_otf_raw_v1.prompts import RAW_OTF_ONE_SHOT
 
     assert "submit_sql" in RAW_OTF_ONE_SHOT
 
 
 def test_raw_ainteract_prompt_mentions_submit_sql_and_ask_user():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.prompts import (
         RAW_OTF_AINTERACT,
     )
 
@@ -480,8 +447,8 @@ def test_raw_ainteract_prompt_mentions_submit_sql_and_ask_user():
 def test_raw_prompts_use_synthetic_examples_only():
     """Guards feedback_prompts_synthetic_examples_only: no real eval-set
     DB / table / column / value names may appear in either raw prompt."""
-    from bird_interact_agents.agents.claude_sdk_otf_raw.prompts import RAW_OTF_ONE_SHOT
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.prompts import (
+    from bird_interact_agents.agents.claude_sdk_otf_raw_v1.prompts import RAW_OTF_ONE_SHOT
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.prompts import (
         RAW_OTF_AINTERACT,
     )
 

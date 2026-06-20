@@ -48,6 +48,9 @@ from bird_interact_agents.harness import (
 )
 from bird_interact_agents.model_string import is_anthropic, native_model_id
 from bird_interact_agents.agents.annotator.prompts import build_system_prompt
+from bird_interact_agents.agents.claude_sdk.sdk_env import (
+    disable_cli_telemetry_env,
+)
 
 _BY_NAME = {t.name: t for t in BIRD_INTERACT_TOOLS}
 logger = logging.getLogger(__name__)
@@ -621,6 +624,10 @@ async def run_task(
     cap = max_turns or MAX_MODEL_TURNS
 
     options = ClaudeAgentOptions(
+        # DEV-1561: disable outbound telemetry / error-reporting /
+        # auto-updater channels so the bundled `claude` CLI doesn't burn
+        # minutes on side-channel network calls during initialize.
+        env=disable_cli_telemetry_env(),
         system_prompt=system_prompt,
         mcp_servers={"bird-annotator-tools": server},
         allowed_tools=tool_names_prefixed,

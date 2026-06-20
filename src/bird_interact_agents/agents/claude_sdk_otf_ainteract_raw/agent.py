@@ -13,6 +13,7 @@ built by ``_make_ask_user_guards``.
 from __future__ import annotations
 
 import logging
+import contextlib
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
@@ -23,7 +24,7 @@ from claude_agent_sdk import (
 
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
-    accumulate_assistant_usage,
+    SdkUsageTracker,
     ask_user,
     execute_sql,
     get_all_column_meanings,
@@ -34,6 +35,10 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     get_schema,
     submit_sql,
 )
+from bird_interact_agents.agents.claude_sdk.sdk_env import (
+    disable_cli_telemetry_env,
+)
+from bird_interact_agents.slayer_otf.timing import otf_timer
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
     _make_turn_budget_hook,
@@ -250,6 +255,7 @@ class ClaudeSDKOtfAInteractRawAgent:
         max_asks = _ambiguity_count(task_data) + 3
 
         accum = TokenUsage()
+        usage_tracker = SdkUsageTracker(accum, self.model)
         trajectory: list[dict] = []
         ctx_dict: dict | None = None
         try:
@@ -280,7 +286,14 @@ class ClaudeSDKOtfAInteractRawAgent:
 
             pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
 
+            # DEV-1561 (PR #49 backport): disable the bundled CLI's
+            # telemetry / error-reporting / auto-updater calls so the
+            # initialize handshake doesn't burn 5-10 min in outbound
+            # traffic. Pure env layering — no behaviour change for the agent.
+            _session_env_kwargs: dict = {"env": disable_cli_telemetry_env()}
+
             options = ClaudeAgentOptions(
+                **_session_env_kwargs,
                 system_prompt=prompt,
                 mcp_servers={"bird-interact-tools": server},
                 allowed_tools=tool_names,
@@ -311,14 +324,26 @@ class ClaudeSDKOtfAInteractRawAgent:
                 },
             )
 
-            async with ClaudeSDKClient(options=options) as client:
+            # DEV-1561 (PR #49 backport): wrap `__aenter__` in `otf_timer`
+            # via `AsyncExitStack` so a failed initialize handshake (the
+            # bug this channel was built to attribute) still emits
+            # `.error elapsed_s=… exc=<type>` on enter-time failure.
+            async with contextlib.AsyncExitStack() as stack:
+                with otf_timer(
+                    "run_task.sdk_client_enter", instance_id=instance_id,
+                ):
+                    client = await stack.enter_async_context(
+                        ClaudeSDKClient(options=options)
+                    )
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
                     trajectory.append(
                         {"type": str(type(msg).__name__), "data": str(msg)[:500]}
                     )
-                    accumulate_assistant_usage(accum, msg, self.model)
+                    usage_tracker.observe(msg)
+            usage_tracker.finalize()
         except Exception as e:
+            usage_tracker.finalize()
             logger.error(
                 "claude_sdk_otf_ainteract_raw error on %s: %s",
                 instance_id, e, exc_info=True,

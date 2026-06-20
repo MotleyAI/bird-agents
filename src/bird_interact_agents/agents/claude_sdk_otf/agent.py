@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import contextlib
 from pathlib import Path
 
 from claude_agent_sdk import (
@@ -37,14 +38,17 @@ from claude_agent_sdk import (
 # is sound.
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
-    accumulate_assistant_usage,
+    SdkUsageTracker,
     get_all_external_knowledge_names,
     get_all_knowledge_definitions,
     get_knowledge_definition,
     query,
-    query_nested,
     submit_query,
 )
+from bird_interact_agents.agents.claude_sdk.sdk_env import (
+    disable_cli_telemetry_env,
+)
+from bird_interact_agents.slayer_otf.timing import otf_timer
 from bird_interact_agents.agents.claude_sdk_otf.prompts import (
     SLAYER_OTF_ONE_SHOT,
 )
@@ -88,7 +92,6 @@ logger = logging.getLogger(__name__)
 SLAYER_QUERY_TOOLS: frozenset[str] = frozenset(
     {
         "mcp__bird-interact-tools__query",
-        "mcp__bird-interact-tools__query_nested",
     }
 )
 
@@ -306,7 +309,6 @@ _KNOWLEDGE_TOOLS = [
     get_knowledge_definition,
     get_all_knowledge_definitions,
     query,
-    query_nested,
 ]
 
 
@@ -465,6 +467,7 @@ class ClaudeSDKOtfAgent:
         deleted_kb_ids: list[int] = []
         slayer_storage_dir = ""
         accum = TokenUsage()
+        usage_tracker = SdkUsageTracker(accum, self.model)
         trajectory: list[dict] = []
         # Local handle to the per-task context dict. We read from THIS
         # local on the exception path instead of `_ctx_var.get()` — a
@@ -526,7 +529,14 @@ class ClaudeSDKOtfAgent:
             # agent constructor) to avoid cross-task state bleed.
             pre_query_gate, post_tool_tracker = _make_query_before_submit_guard()
 
+            # DEV-1561 (PR #49 backport): disable the bundled CLI's
+            # telemetry / error-reporting / auto-updater calls so the
+            # initialize handshake doesn't burn 5-10 min in outbound
+            # traffic. Pure env layering — no behaviour change for the agent.
+            _session_env_kwargs: dict = {"env": disable_cli_telemetry_env()}
+
             options = ClaudeAgentOptions(
+                **_session_env_kwargs,
                 system_prompt=prompt,
                 mcp_servers=mcp_servers,
                 allowed_tools=tool_names,
@@ -582,7 +592,17 @@ class ClaudeSDKOtfAgent:
             )
 
             # Auth env-var invariant validated at actor bootstrap; see ray_app._assert_actor_oauth_invariant.
-            async with ClaudeSDKClient(options=options) as client:
+            # DEV-1561 (PR #49 backport): wrap `__aenter__` in `otf_timer`
+            # via `AsyncExitStack` so a failed initialize handshake (the
+            # bug this channel was built to attribute) still emits
+            # `.error elapsed_s=… exc=<type>` on enter-time failure.
+            async with contextlib.AsyncExitStack() as stack:
+                with otf_timer(
+                    "run_task.sdk_client_enter", instance_id=instance_id,
+                ):
+                    client = await stack.enter_async_context(
+                        ClaudeSDKClient(options=options)
+                    )
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
                     try:
@@ -590,8 +610,10 @@ class ClaudeSDKOtfAgent:
                     except Exception:  # noqa: BLE001
                         _data = str(msg)
                     trajectory.append({"type": str(type(msg).__name__), "data": _data})
-                    accumulate_assistant_usage(accum, msg, self.model)
+                    usage_tracker.observe(msg)
+            usage_tracker.finalize()
         except Exception as e:
+            usage_tracker.finalize()
             logger.error(
                 "claude_sdk_otf error on %s: %s",
                 instance_id, e, exc_info=True,

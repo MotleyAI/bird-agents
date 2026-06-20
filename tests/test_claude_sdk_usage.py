@@ -3,7 +3,7 @@
 DEV-1534 deleted the pre-OTF ``ClaudeSDKAgent`` orchestrator. The OTF
 agents own their own ``run_task`` loops; their AssistantMessage-usage
 capture + ``_ctx['result']`` propagation contract is regression-tested
-in ``test_claude_sdk_otf_agent.py`` / ``test_claude_sdk_otf_ainteract_agent.py``
+in ``test_claude_sdk_otf_v1_agent.py`` / ``test_claude_sdk_otf_ainteract_v1_agent.py``
 (see the DEV-1511 propagation blocks there). This file now keeps only
 the shared user-simulator usage test, which exercises the ``_ask_user_impl``
 shim in ``claude_sdk/agent.py`` (still alive — every OTF agent reuses

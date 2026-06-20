@@ -154,7 +154,7 @@ async def test_submit_query_charges_budget_exactly_once(monkeypatch):
     status = agent_mod._ctx_var.get()["status"]
     start = status.remaining_budget
 
-    result = await agent_mod.submit_query.handler({"query_json": '{"models": ["m"]}'})
+    result = await agent_mod.submit_query.handler({"source_model": "m"})
 
     assert status.remaining_budget == start - ACTION_COSTS["submit_query"]
     text = result["content"][0]["text"]
@@ -162,25 +162,21 @@ async def test_submit_query_charges_budget_exactly_once(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_submit_query_bad_json_propagates_helper_message(monkeypatch):
+async def test_submit_query_missing_required_fields_rejected(monkeypatch):
+    """DEV-1555 CR r1 unification: passing neither `source_model` nor
+    `queries` is the equivalent of the old `bad JSON` case — the
+    wrapper rejects it with a clear error before charging the budget
+    and before any helper runs."""
     agent_mod = _seed_ctx(monkeypatch)
     status = agent_mod._ctx_var.get()["status"]
     start = status.remaining_budget
 
-    result = await agent_mod.submit_query.handler({"query_json": "{not json"})
+    result = await agent_mod.submit_query.handler({})
 
     text = result["content"][0]["text"]
-    assert "Invalid JSON" in text
-    assert text.count("Remaining budget:") == 1
-    # Failure paths now record diagnostic state on `state.result` (the
-    # JSON-error is needed in results.db for offline failure-mode
-    # analysis). Lock the classifier verdict + that the task didn't pass.
-    rec = agent_mod._ctx_var.get().get("result")
-    assert rec is not None
-    assert rec.get("submission_status") == "json_error"
-    assert rec.get("phase1_passed") is False
-    # Per DEV-1432: deterministic pre-eval failures (JSON parse) are
-    # FREE — `execute_submit_action` never ran, so budget is untouched.
+    assert "source_model" in text or "queries" in text
+    # Budget UNTOUCHED — the wrapper short-circuits before
+    # `submit_slayer_query` runs.
     assert status.remaining_budget == start
 
 

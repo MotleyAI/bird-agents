@@ -40,12 +40,12 @@ def _framework_choices_from_parser():
 
 
 def test_framework_choice_accepts_claude_sdk():
-    assert "claude_sdk" in _framework_choices_from_parser()
+    assert "claude_sdk_v1" in _framework_choices_from_parser()
 
 
 def test_existing_framework_choices_preserved():
     choices = _framework_choices_from_parser()
-    assert {"claude_sdk"}.issubset(choices)
+    assert {"claude_sdk_v1"}.issubset(choices)
 
 
 # ---------------------------------------------------------------------------
@@ -59,12 +59,12 @@ def test_validate_slayer_setup_skips_for_raw_one_shot():
 
     # pre-encoded + raw framework: must NOT raise (raw agents ignore slayer_setup)
     run_mod._validate_slayer_setup(
-        slayer_setup="pre-encoded", framework="claude_sdk_otf_raw",
+        slayer_setup="pre-encoded", framework="claude_sdk_otf_raw_v1",
         query_mode="raw", mode="one-shot",
     )
     # on-the-fly + raw framework: must also not raise
     run_mod._validate_slayer_setup(
-        slayer_setup="on-the-fly", framework="claude_sdk_otf_raw",
+        slayer_setup="on-the-fly", framework="claude_sdk_otf_raw_v1",
         query_mode="raw", mode="one-shot",
     )
 
@@ -73,11 +73,11 @@ def test_validate_slayer_setup_skips_for_raw_ainteract():
     from bird_interact_agents import run as run_mod
 
     run_mod._validate_slayer_setup(
-        slayer_setup="pre-encoded", framework="claude_sdk_otf_ainteract_raw",
+        slayer_setup="pre-encoded", framework="claude_sdk_otf_ainteract_raw_v1",
         query_mode="raw", mode="a-interact",
     )
     run_mod._validate_slayer_setup(
-        slayer_setup="on-the-fly", framework="claude_sdk_otf_ainteract_raw",
+        slayer_setup="on-the-fly", framework="claude_sdk_otf_ainteract_raw_v1",
         query_mode="raw", mode="a-interact",
     )
 
@@ -88,7 +88,7 @@ def test_validate_slayer_setup_still_requires_on_the_fly_for_slayer_otf():
 
     with pytest.raises(ValueError):
         run_mod._validate_slayer_setup(
-            slayer_setup="pre-encoded", framework="claude_sdk_otf",
+            slayer_setup="pre-encoded", framework="claude_sdk_otf_v1",
             query_mode="slayer", mode="one-shot",
         )
 
@@ -112,7 +112,7 @@ async def test_run_evaluation_branches_to_raw_otf_agent(monkeypatch, tmp_path):
             raise _Sentinel("stop")
 
     monkeypatch.setattr(
-        "bird_interact_agents.agents.claude_sdk_otf_raw.ClaudeSDKOtfRawAgent",
+        "bird_interact_agents.agents.claude_sdk_otf_raw_v1.ClaudeSDKOtfRawAgent",
         _FakeAgent, raising=False,
     )
     monkeypatch.setattr(run_mod, "load_benchmark_tasks", lambda *a, **kw: [])
@@ -126,7 +126,7 @@ async def test_run_evaluation_branches_to_raw_otf_agent(monkeypatch, tmp_path):
             data_path=str(data_file), data_dir=str(tmp_path),
             output_path=str(tmp_path / "eval.json"),
             mode="one-shot", query_mode="raw",
-            framework="claude_sdk_otf_raw", slayer_setup="pre-encoded",
+            framework="claude_sdk_otf_raw_v1", slayer_setup="pre-encoded",
             reasoning_effort=None,
             dataset="livesqlbench-base-lite-sqlite",
         )
@@ -148,7 +148,7 @@ async def test_run_evaluation_branches_to_raw_ainteract_agent(monkeypatch, tmp_p
             raise _Sentinel("stop")
 
     monkeypatch.setattr(
-        "bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.ClaudeSDKOtfAInteractRawAgent",
+        "bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.ClaudeSDKOtfAInteractRawAgent",
         _FakeAgent, raising=False,
     )
     monkeypatch.setattr(run_mod, "load_benchmark_tasks", lambda *a, **kw: [])
@@ -160,7 +160,7 @@ async def test_run_evaluation_branches_to_raw_ainteract_agent(monkeypatch, tmp_p
             data_path=str(data_file), data_dir=str(tmp_path),
             output_path=str(tmp_path / "eval.json"),
             mode="a-interact", query_mode="raw",
-            framework="claude_sdk_otf_ainteract_raw", slayer_setup="pre-encoded",
+            framework="claude_sdk_otf_ainteract_raw_v1", slayer_setup="pre-encoded",
             reasoning_effort=None,
             dataset="mini-interact",
         )
@@ -176,7 +176,7 @@ def test_cloud_actor_has_no_slayer_artifacts_for_raw_otf():
     from bird_interact_agents.cloud import ray_app
 
     cfg = {
-        "framework": "claude_sdk_otf_raw",
+        "framework": "claude_sdk_otf_raw_v1",
         "slayer_setup": "pre-encoded",
         "dataset": "livesqlbench-base-lite-sqlite",
     }
@@ -190,7 +190,7 @@ def test_cloud_actor_has_no_slayer_artifacts_for_raw_ainteract():
     from bird_interact_agents.cloud import ray_app
 
     cfg = {
-        "framework": "claude_sdk_otf_ainteract_raw",
+        "framework": "claude_sdk_otf_ainteract_raw_v1",
         "slayer_setup": "pre-encoded",
         "dataset": "mini-interact",
     }
@@ -205,7 +205,7 @@ def test_cloud_driver_has_no_slayer_uploads_for_raw_otf():
     from bird_interact_agents.cloud import driver
 
     args = SimpleNamespace(
-        slayer_setup="pre-encoded", framework="claude_sdk_otf_raw",
+        slayer_setup="pre-encoded", framework="claude_sdk_otf_raw_v1",
         dataset="livesqlbench-base-lite-sqlite",
     )
     uploads = list(driver._slayer_uploads_for(args))
@@ -219,7 +219,7 @@ def test_cloud_driver_has_no_slayer_uploads_for_raw_ainteract():
     from bird_interact_agents.cloud import driver
 
     args = SimpleNamespace(
-        slayer_setup="pre-encoded", framework="claude_sdk_otf_ainteract_raw",
+        slayer_setup="pre-encoded", framework="claude_sdk_otf_ainteract_raw_v1",
         dataset="mini-interact",
     )
     uploads = list(driver._slayer_uploads_for(args))
@@ -233,7 +233,7 @@ def test_cloud_slayer_artifacts_unchanged_for_slayer_otf():
     from bird_interact_agents.cloud import ray_app
 
     cfg = {
-        "framework": "claude_sdk_otf",
+        "framework": "claude_sdk_otf_v1",
         "slayer_setup": "on-the-fly",
         "dataset": "livesqlbench-base-lite-sqlite",
     }
