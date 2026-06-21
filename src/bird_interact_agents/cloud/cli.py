@@ -139,7 +139,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "explicit choice is required to prevent a silent fall-back to "
             "the API-key path burning credits when the operator meant to "
             "hit the subscription. DEV-1555: subscription auth is "
-            "Anthropic-only — registry open-weight models (moonshot/...) "
+            "Anthropic-only — registry open-weight models (moonshot/, zai/, ...) "
             "must not use `--subscription-auth`; omit the flag or pass "
             "`--no-subscription-auth` so the provider key env var is "
             "used instead."

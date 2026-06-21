@@ -482,7 +482,7 @@ def _make_runner(
                 f"--framework claude_sdk only supports Anthropic agent "
                 f"models; got {agent_model!r}. Use --framework "
                 f"claude_sdk_v1 to run open-weight registry models "
-                f"(moonshot/, etc.) — the v1 agents carry the "
+                f"(moonshot/, zai/, etc.) — the v1 agents carry the "
                 f"provider-aware session env + thinking config."
             )
         if b.one_shot and query_mode == "slayer":

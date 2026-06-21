@@ -86,6 +86,87 @@ def test_base_url_override_forwarded_when_set(monkeypatch):
     )
 
 
+# ---------------------------------------------------------------------------
+# DEV-1580: z.ai (GLM) shipping mirrors Moonshot. Critically, a zai run with
+# ONLY ZAI_API_KEY set (MOONSHOT_API_KEY absent) must ship just ZAI_API_KEY —
+# the driver ships the agent's own provider key, never every registry key.
+# ---------------------------------------------------------------------------
+
+_GLM = "zai/glm-5.2"
+
+
+def test_required_api_keys_knows_zai():
+    assert prereqs._required_api_keys(_GLM) == ("ZAI_API_KEY",)
+
+
+def _clear_creds_zai(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-anth")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "ambient-auth-token")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-ambient")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.setenv("ZAI_API_KEY", "zai-key-1")
+    # The OTHER registry provider's key is deliberately ABSENT.
+    monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
+
+
+def test_zai_run_ships_only_provider_keys(monkeypatch):
+    _clear_creds_zai(monkeypatch)
+    result = driver.read_api_keys_from_local_env(
+        _GLM, _GLM,
+        query_mode="slayer", framework="claude_sdk",
+        no_subscription_auth=True, dataset="mini-interact",
+    )
+    assert result["ZAI_API_KEY"] == "zai-key-1"
+    assert result["OPENAI_API_KEY"] == "openai-key"  # slayer embeddings
+    # A zai run must NOT demand or ship the unrelated Moonshot key.
+    assert "MOONSHOT_API_KEY" not in result
+    assert "ANTHROPIC_API_KEY" not in result
+    assert "ANTHROPIC_AUTH_TOKEN" not in result
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in result
+    assert "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY" not in result
+
+
+def test_zai_mixed_anthropic_user_sim_ships_renamed_key(monkeypatch):
+    _clear_creds_zai(monkeypatch)
+    result = driver.read_api_keys_from_local_env(
+        _GLM, "anthropic/claude-haiku-4-5-20251001",
+        query_mode="slayer", framework="claude_sdk",
+        no_subscription_auth=True, dataset="mini-interact",
+    )
+    assert result["ZAI_API_KEY"] == "zai-key-1"
+    assert "ANTHROPIC_API_KEY" not in result
+    assert "ANTHROPIC_AUTH_TOKEN" not in result
+    assert result["BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"] == "ambient-anth"
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in result
+
+
+def test_zai_missing_provider_key_fails_fast(monkeypatch):
+    _clear_creds_zai(monkeypatch)
+    monkeypatch.delenv("ZAI_API_KEY", raising=False)
+    with pytest.raises(prereqs.PrereqError, match="ZAI_API_KEY"):
+        driver.read_api_keys_from_local_env(
+            _GLM, _GLM,
+            query_mode="slayer", framework="claude_sdk",
+            no_subscription_auth=True, dataset="mini-interact",
+        )
+
+
+def test_zai_base_url_override_forwarded_when_set(monkeypatch):
+    _clear_creds_zai(monkeypatch)
+    monkeypatch.setenv(
+        "BIRD_ZAI_ANTHROPIC_BASE_URL", "https://other.example/anthropic",
+    )
+    result = driver.read_api_keys_from_local_env(
+        _GLM, _GLM,
+        query_mode="slayer", framework="claude_sdk",
+        no_subscription_auth=True, dataset="mini-interact",
+    )
+    assert (
+        result["BIRD_ZAI_ANTHROPIC_BASE_URL"]
+        == "https://other.example/anthropic"
+    )
+
+
 def test_oauth_branch_unchanged(monkeypatch):
     """Anthropic subscription runs keep the existing OAuth shipping."""
     _clear_creds(monkeypatch)

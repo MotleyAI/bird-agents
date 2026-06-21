@@ -22,6 +22,17 @@ def test_moonshot_window_from_registry():
     assert context_window_for("moonshot/kimi-k2.7-code") == 262_144
 
 
+def test_zai_windows_from_registry():
+    """DEV-1580: glm-5.2 carries z.ai's 1M window via a per-model override;
+    every other GLM id (and any unknown zai id) falls back to the 200K
+    provider default."""
+    assert context_window_for("zai/glm-5.2") == 1_000_000
+    assert context_window_for("zai/glm-5.1") == 200_000
+    assert context_window_for("zai/glm-4.7") == 200_000
+    assert context_window_for("zai/glm-4.6") == 200_000
+    assert context_window_for("zai/some-future-glm") == 200_000
+
+
 def test_per_model_override_beats_provider_default(monkeypatch):
     from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
 
