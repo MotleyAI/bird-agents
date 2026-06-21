@@ -96,6 +96,95 @@ def test_registry_cache_pricing_anthropic_convention():
     assert accum.cost_usd == pytest.approx(0.095 + 0.04 + 0.19 + 0.475, rel=1e-6)
 
 
+# ---------------------------------------------------------------------------
+# DEV-1580: z.ai (GLM) gets the same user-sim litellm route + in-house
+# agent-side pricing as Moonshot.
+# ---------------------------------------------------------------------------
+
+_ZAI = "zai/glm-5.2"
+
+
+@pytest.mark.asyncio
+async def test_zai_user_sim_routed_via_openai_compat(monkeypatch):
+    recorded: dict = {}
+    _install_recorder(monkeypatch, recorded)
+    monkeypatch.setenv("ZAI_API_KEY", "zai-key-1")
+
+    accum = TokenUsage()
+    await acompletion_tracked(
+        accum, scope="user_sim", model=_ZAI,
+        messages=[{"role": "user", "content": "hi"}],
+    )
+    assert recorded["model"] == "openai/glm-5.2"
+    assert recorded["api_base"] == "https://api.z.ai/api/paas/v4"
+    assert recorded["api_key"] == "zai-key-1"
+    rows = accum.model_dump()["breakdown"]
+    assert rows and rows[0]["model"] == _ZAI
+
+
+def test_zai_agent_side_cost_rows_priced():
+    """GLM-5.2 agent-side cost: input $1.40/M + output $4.40/M, priced
+    in-house from the registry (no prior setup call needed)."""
+    accum = TokenUsage()
+    accum.add_call(
+        scope="agent", model=_ZAI, prompt=1_000_000, completion=1_000_000,
+    )
+    assert accum.cost_usd == pytest.approx(1.40 + 4.40, rel=1e-6)
+
+
+def test_zai_cache_pricing_honours_cache_hit_rate():
+    """GLM-5.2 cache-hit reads bill at $0.26/M (not the $1.40/M input
+    rate); cache writes are billed at the full input rate, same in-house
+    convention as Moonshot."""
+    accum = TokenUsage()
+    accum.add_call(
+        scope="agent", model=_ZAI,
+        prompt=100_000,          # non-cached input -> 0.14
+        completion=10_000,       # output -> 0.044
+        cache_read=1_000_000,    # hits @ 0.26/M -> 0.26
+        cache_write=500_000,     # writes @ 1.40/M input rate -> 0.70
+    )
+    assert accum.cost_usd == pytest.approx(
+        0.14 + 0.044 + 0.26 + 0.70, rel=1e-6,
+    )
+
+
+def test_zai_glm46_cache_read_falls_back_to_input_rate():
+    """Codex r2: glm-4.6 has NO cache_read_input_token_cost, so cache-read
+    tokens bill at the full input rate ($0.60/M) — exercises the
+    `cache_read_rate or input_rate` fallback branch in _safe_cost."""
+    accum = TokenUsage()
+    accum.add_call(
+        scope="agent", model="zai/glm-4.6",
+        prompt=0, completion=0,
+        cache_read=1_000_000,    # no cache-hit price -> input rate 0.60/M
+        cache_write=0,
+    )
+    assert accum.cost_usd == pytest.approx(0.60, rel=1e-6)
+
+
+def test_zai_unknown_model_runs_but_reports_zero_cost(monkeypatch):
+    """Documented contract: ANY zai/<id> is a supported agent model and
+    routes through the OpenAI-compatible litellm path, but an id without a
+    registry pricing entry reports $0 (litellm's NotFoundError -> warn-once,
+    cost 0) rather than crashing."""
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+
+    assert pr.is_supported_agent_model("zai/some-future-glm")
+    assert pr.required_env_for("zai/some-future-glm") == ("ZAI_API_KEY",)
+    monkeypatch.setenv("ZAI_API_KEY", "zai-key-1")
+    litellm_model, kwargs = pr.litellm_route("zai/some-future-glm")
+    assert litellm_model == "openai/some-future-glm"
+    assert kwargs["api_base"] == "https://api.z.ai/api/paas/v4"
+
+    accum = TokenUsage()
+    accum.add_call(
+        scope="agent", model="zai/some-future-glm",
+        prompt=1_000_000, completion=1_000_000,
+    )
+    assert accum.cost_usd == pytest.approx(0.0)
+
+
 @pytest.mark.asyncio
 async def test_anthropic_user_sim_path_unchanged(monkeypatch):
     recorded: dict = {}

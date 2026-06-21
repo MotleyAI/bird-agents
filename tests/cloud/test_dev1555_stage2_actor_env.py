@@ -33,6 +33,41 @@ def test_open_weight_actor_env_strips_anthropic_creds(monkeypatch):
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in os.environ
 
 
+def test_zai_open_weight_actor_env_strips_anthropic_creds(monkeypatch):
+    """DEV-1580: a shipped ZAI_API_KEY must trigger the same ambient
+    Anthropic-credential strip as MOONSHOT_API_KEY — otherwise the Claude
+    Agent SDK would auto-discover ambient creds and route the GLM agent to
+    Anthropic instead of z.ai's ANTHROPIC_BASE_URL endpoint."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-anth")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "ambient-token")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-ambient")
+
+    ray_app._apply_actor_env_local(
+        {"ZAI_API_KEY": "zai-key-1", "OPENAI_API_KEY": "openai-key"}
+    )
+    assert os.environ.get("ZAI_API_KEY") == "zai-key-1"
+    assert "ANTHROPIC_API_KEY" not in os.environ
+    assert "ANTHROPIC_AUTH_TOKEN" not in os.environ
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in os.environ
+
+
+def test_invariant_quiet_on_clean_zai_run(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ZAI_API_KEY", "zai-key-1")
+    cfg = {"framework": "claude_sdk", "agent_model": "zai/glm-5.2"}
+    ray_app._assert_actor_oauth_invariant(cfg)  # must not raise
+
+
+def test_invariant_raises_when_oauth_survives_on_zai_run(monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-x")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    cfg = {"framework": "claude_sdk", "agent_model": "zai/glm-5.2"}
+    with pytest.raises(RuntimeError):
+        ray_app._assert_actor_oauth_invariant(cfg)
+
+
 def test_oauth_actor_env_behavior_unchanged(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-anth")
     ray_app._apply_actor_env_local(

@@ -227,9 +227,10 @@ def _safe_cost(
                 + cache_read_input_tokens * read_rate
             )
             return prompt_cost, completion_tokens * pricing.output_cost_per_token
-    # Registry models WITHOUT a pricing entry still need litellm to see a
-    # registration so cost_per_token degrades to the NotFoundError path
-    # instead of a bare Exception. Idempotent, no-op after the first call.
+    # Registry models WITHOUT a pricing entry (e.g. a not-yet-priced
+    # zai/glm-5.3 or moonshot/<future-id>) still flow through litellm here.
+    # Register the known prices first (idempotent, no-op after the first
+    # call) so priced ids resolve normally.
     provider_registry.ensure_litellm_pricing()
     try:
         return _cost_per_token(
@@ -239,11 +240,20 @@ def _safe_cost(
             cache_read_input_tokens=cache_read_input_tokens,
             cache_creation_input_tokens=cache_creation_input_tokens,
         )
-    except litellm.exceptions.NotFoundError as e:
-        # Only swallow the "no price entry for this model" case — that's
-        # the expected, recoverable failure (warn once, record $0). Any
-        # other exception type points at an integration bug we don't
-        # want to silently mask.
+    except Exception as e:
+        # litellm signals "no price entry for this model" two ways: a typed
+        # NotFoundError, OR a bare Exception whose message contains
+        # "isn't mapped yet" (raised for an unmapped model under a provider
+        # litellm otherwise recognizes — which includes every registry
+        # provider, e.g. zai/moonshot). Both are the expected, recoverable
+        # case: warn once, record $0 so an unpriced model can still RUN
+        # ("any zai/<id> runs" contract). Re-raise anything else — it points
+        # at an integration bug we don't want to silently mask.
+        if not (
+            isinstance(e, litellm.exceptions.NotFoundError)
+            or "isn't mapped yet" in str(e)
+        ):
+            raise
         if model not in _warned_unpriced:
             _warned_unpriced.add(model)
             logger.warning(
