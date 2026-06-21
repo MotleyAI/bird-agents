@@ -101,6 +101,7 @@ def test_required_api_keys_knows_zai():
 
 def _clear_creds_zai(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-anth")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "ambient-auth-token")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-ambient")
     monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
     monkeypatch.setenv("ZAI_API_KEY", "zai-key-1")
@@ -120,6 +121,7 @@ def test_zai_run_ships_only_provider_keys(monkeypatch):
     # A zai run must NOT demand or ship the unrelated Moonshot key.
     assert "MOONSHOT_API_KEY" not in result
     assert "ANTHROPIC_API_KEY" not in result
+    assert "ANTHROPIC_AUTH_TOKEN" not in result
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in result
     assert "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY" not in result
 
@@ -133,6 +135,7 @@ def test_zai_mixed_anthropic_user_sim_ships_renamed_key(monkeypatch):
     )
     assert result["ZAI_API_KEY"] == "zai-key-1"
     assert "ANTHROPIC_API_KEY" not in result
+    assert "ANTHROPIC_AUTH_TOKEN" not in result
     assert result["BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY"] == "ambient-anth"
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in result
 
