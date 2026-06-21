@@ -165,6 +165,9 @@ def hermetic_claude_config_dir() -> tuple[str, Path]:
                 "hasCompletedOnboarding": True,
                 "bypassPermissionsModeAccepted": True,
                 "hasTrustDialogAccepted": True,
+                # Explicit empty map (not missing-key reliance): the hermetic
+                # contract is "this config declares ZERO MCP servers".
+                "mcpServers": {},
             }
         )
     )
@@ -184,6 +187,11 @@ def build_hermetic_session_env(
     """
     env = disable_cli_telemetry_env()
     env["CLAUDE_CONFIG_DIR"] = config_dir_val
+    # Neutralise an ambient subscription/OAuth token so the SDK subprocess is
+    # forced onto ANTHROPIC_API_KEY (subscription auth is dead — see
+    # `assert_api_key_auth`). For registry models the provider layer below
+    # re-asserts this (and sets the provider's own bearer token).
+    env["CLAUDE_CODE_OAUTH_TOKEN"] = ""
     if provider_aware and get_provider(model) is not None:
         env.update(sdk_session_env(model))
     return env

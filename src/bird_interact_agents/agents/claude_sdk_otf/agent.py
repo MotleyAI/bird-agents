@@ -337,8 +337,8 @@ def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
 class ClaudeSDKOtfAgent:
     """SystemAgent: Claude SDK agent with on-the-fly KB encoding.
 
-    Anthropic-only (the SDK is locked to Anthropic); a non-Anthropic model
-    short-circuits with a skip-shaped row. slayer-query-mode only;
+    Supports Anthropic and registry open-weight models (DEV-1579); an
+    unsupported model short-circuits with a skip-shaped row. slayer-query-mode only;
     ``slayer_setup`` must be ``on-the-fly``. After DEV-1507 this flavor is
     bound to **livesqlbench / one-shot**; mismatched dataset or eval_mode
     is rejected at the agent boundary.

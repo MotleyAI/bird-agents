@@ -165,9 +165,9 @@ def test_annotator_routes_through_hermetic_session_anthropic_only():
         "annotator agent must import hermetic_claude_sdk_session"
     )
 
-    tree = ast.parse(
-        Path("src/bird_interact_agents/agents/annotator/agent.py").read_text()
-    )
+    # Resolve the source from the module file so the test is independent of
+    # the working directory (CodeRabbit r1).
+    tree = ast.parse(Path(ann.__file__).read_text(encoding="utf-8"))
     found = False
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):

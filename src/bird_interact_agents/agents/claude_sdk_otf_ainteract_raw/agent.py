@@ -168,7 +168,8 @@ def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
 class ClaudeSDKOtfAInteractRawAgent:
     """SystemAgent: Claude SDK raw-SQL OTF agent with enforced ask-user discipline.
 
-    Anthropic-only (the SDK is locked to Anthropic). Bound to
+    Supports Anthropic and registry open-weight models (DEV-1579); an
+    unsupported model short-circuits with a skip-shaped row. Bound to
     ``--dataset mini_interact --mode a-interact --query-mode raw``. No SLayer
     MCP server. Mismatched dataset, eval_mode, or query_mode is rejected at
     the agent boundary.
@@ -230,7 +231,7 @@ class ClaudeSDKOtfAInteractRawAgent:
             msg = (
                 f"claude_sdk_otf_ainteract_raw requires an Anthropic or registry "
                 f"open-weight model; got {self.model!r}. Skipped — use "
-                "--framework pydantic_ai_otf_encode for non-supported models."
+                "--framework pydantic_ai for non-supported models."
             )
             logger.warning("[%s] %s", instance_id, msg)
             return finalize_result_row(

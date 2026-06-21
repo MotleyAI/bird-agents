@@ -362,6 +362,46 @@ launch, and don't touch tracked image-input files until it returns.
   operation"); run cloud submits with `env -u SSH_AUTH_SOCK` so ssh reads
   the pinned key file directly.
 
+## Codex MCP sandbox fails with `bwrap: setting up uid map: Permission denied`
+
+Symptom: every `mcp__codex__codex` shell command dies before executing with
+`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` and/or
+`bwrap: setting up uid map: Permission denied`; `unshare -Ur true` fails the
+same way. Codex's sandbox is bubblewrap, which needs an **unprivileged user
+namespace**.
+
+Root cause (a regression from an OS upgrade — "it used to work"): Ubuntu
+23.10/24.04 ship `kernel.apparmor_restrict_unprivileged_userns=1`, and there
+is no AppArmor profile granting `/usr/bin/bwrap` the `userns` capability, so
+bwrap runs unconfined and is blocked from creating the namespace.
+
+Do NOT "fix" this by calling Codex with `sandbox: danger-full-access`
+(disables Codex's sandbox entirely) and do NOT globally set
+`kernel.apparmor_restrict_unprivileged_userns=0` (drops the hardening for
+everything). The least-invasive fix is a per-binary AppArmor profile that
+whitelists bwrap (needs sudo — run on the host):
+
+```bash
+sudo tee /etc/apparmor.d/bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+# verify (prints ok):
+bwrap --dev-bind / / --unshare-net echo ok
+```
+
+After this, `mcp__codex__codex` works with the normal `read-only` /
+`workspace-write` sandbox again — no `danger-full-access` needed. Diagnosis:
+check `cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns` (1 =
+restricted) and `unshare -Ur true` (must succeed once the profile is loaded).
+Ref: https://www.jdhodges.com/blog/codex-sandbox-ubuntu-24-04-fix/
+
 ## Every `claude_sdk*` agent MUST route through `hermetic_claude_sdk_session` (DEV-1579)
 
 The Claude Agent SDK launches a bundled `claude` Node CLI. By default it

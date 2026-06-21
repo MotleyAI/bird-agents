@@ -50,9 +50,9 @@ def test_config_dir_writes_claude_json_with_no_mcp_servers():
         cj = path / ".claude.json"
         assert cj.is_file()
         data = json.loads(cj.read_text())
-        # The whole point: no mcpServers key => the CLI loads ZERO servers
-        # beyond options.mcp_servers.
-        assert "mcpServers" not in data
+        # The whole point: an explicit EMPTY mcpServers map => the CLI loads
+        # ZERO servers beyond options.mcp_servers (not missing-key reliance).
+        assert data["mcpServers"] == {}
         # Belt-and-suspenders onboarding/trust flags so the non-interactive
         # CLI never blocks on a first-run prompt.
         assert data.get("hasCompletedOnboarding") is True
@@ -141,6 +141,9 @@ def test_session_env_anthropic_has_config_dir_and_telemetry_no_registry():
     env = sdk_env.build_hermetic_session_env(_ANTHROPIC, "/tmp/cfgX")
     assert env["CLAUDE_CONFIG_DIR"] == "/tmp/cfgX"
     assert _TELEMETRY_KEYS <= set(env)
+    # Ambient subscription/OAuth token is masked so the SDK is forced onto
+    # ANTHROPIC_API_KEY (subscription auth is dead).
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == ""
     # No registry layering for an Anthropic model.
     assert "ANTHROPIC_BASE_URL" not in env
     assert "ANTHROPIC_AUTH_TOKEN" not in env

@@ -200,7 +200,8 @@ class ClaudeSDKOtfAInteractAgent:
     """SystemAgent: Claude SDK agent with on-the-fly KB encoding + enforced
     ask-user discipline.
 
-    Anthropic-only (the SDK is locked to Anthropic). Bound to
+    Supports Anthropic and registry open-weight models (DEV-1579); an
+    unsupported model short-circuits with a skip-shaped row. Bound to
     ``--dataset mini_interact --mode a-interact``; mismatched dataset or
     eval_mode is rejected at the agent boundary.
     """

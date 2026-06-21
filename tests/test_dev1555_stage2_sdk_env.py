@@ -122,13 +122,17 @@ async def test_anthropic_model_options_env_is_disable_telemetry(
         eval_mode=eval_mode, model="anthropic/claude-sonnet-4-5",
     )
     env = captured["options"].env
-    # DEV-1579: for an Anthropic model the hermetic session adds exactly one
-    # key (CLAUDE_CONFIG_DIR) on top of the telemetry-disable overlay — and
-    # NOTHING else (no ANTHROPIC_BASE_URL / *_AUTH_TOKEN / API_KEY / OAuth).
-    assert set(env) == set(disable_cli_telemetry_env()) | {"CLAUDE_CONFIG_DIR"}
+    # DEV-1579: for an Anthropic model the hermetic session adds exactly two
+    # keys on top of the telemetry-disable overlay — CLAUDE_CONFIG_DIR plus a
+    # masked (empty) CLAUDE_CODE_OAUTH_TOKEN — and NOTHING else (no
+    # ANTHROPIC_BASE_URL / *_AUTH_TOKEN, no real Anthropic credential leaked).
+    assert set(env) == set(disable_cli_telemetry_env()) | {
+        "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN",
+    }
     for k, v in disable_cli_telemetry_env().items():
         assert env[k] == v
     assert env["CLAUDE_CONFIG_DIR"]
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == ""
     assert captured["options"].thinking == ClaudeAgentOptions().thinking
 
 
