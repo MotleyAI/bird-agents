@@ -82,7 +82,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "motley-slayer[embedding-search]",
+        "motley-slayer[advanced-search]",
         "slayer",
         "mcp"
       ]
