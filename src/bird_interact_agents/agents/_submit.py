@@ -22,6 +22,7 @@ from typing import Any, Callable
 
 from pydantic import ValidationError
 
+from bird_interact_agents.agents._query import _strip_tool_level_keys
 from bird_interact_agents.agents._tool_specs import ToolSpec, render_action
 from bird_interact_agents.benchmark import get_benchmark as _get_benchmark
 from bird_interact_agents.db_connection import make_db_connection
@@ -735,6 +736,15 @@ def submit_slayer_query(
         _record(sql=None, observation=msg, reward=0.0,
                 p1=False, p2=False, finished=False, json_failed=True)
         return msg + _budget_note(state)
+
+    # DEV-1577: drop tool-level passthrough kwargs the agent misplaced
+    # INSIDE the JSON (`show_sql` / `dry_run` / `explain` / `format` /
+    # `normalize_filters`). They have no meaning for a submission (which
+    # always evaluates), and SlayerQuery's `extra="forbid"` would otherwise
+    # reject the whole submission as a translation failure. Genuinely
+    # unknown SlayerQuery fields are left in place so SlayerQuery still
+    # rejects them.
+    parsed = _strip_tool_level_keys(parsed)
 
     # DEV-1478: deterministically normalize text-equality FILTER predicates
     # (wrap the column in lower(trim(...)), lowercase the literal) so a NL

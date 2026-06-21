@@ -70,6 +70,54 @@ _QUERY_JSON_ALLOWLIST: frozenset[str] = frozenset({
     "distinct_dimension_values",
 })
 
+# DEV-1577: tool-level passthrough kwargs the agent sometimes misplaces
+# INSIDE ``query_json`` (e.g. ``{"source_model": ..., "show_sql": true}``)
+# instead of as separate wrapper kwargs. Rather than rejecting the whole
+# call over a misplacement SlayerQuery itself doesn't care about, we lift
+# these out of the JSON into their wrapper kwargs (``query_impl``) or strip
+# them before SlayerQuery validation (``submit_slayer_query``). Genuinely
+# unknown SlayerQuery fields and unsupported MCP-query fields still raise.
+_TOOL_LEVEL_JSON_KEYS: frozenset[str] = frozenset({
+    "show_sql",
+    "dry_run",
+    "explain",
+    "format",
+    "normalize_filters",
+})
+
+
+def _lift_tool_level_keys(parsed: dict) -> dict:
+    """Pop any misplaced tool-level passthrough keys out of ``parsed`` and
+    return ``{key: value}`` for the ones that were present.
+
+    Mutates ``parsed`` in place. DEV-1577: keeps a ``query`` call from being
+    rejected when the agent nested ``show_sql`` / ``dry_run`` / ``explain`` /
+    ``format`` / ``normalize_filters`` inside ``query_json`` instead of
+    passing them as wrapper kwargs.
+    """
+    return {k: parsed.pop(k) for k in list(parsed) if k in _TOOL_LEVEL_JSON_KEYS}
+
+
+def _strip_tool_level_keys(parsed: Any) -> Any:
+    """Drop misplaced tool-level passthrough keys from a parsed submit
+    payload so ``SlayerQuery``'s ``extra="forbid"`` doesn't reject the whole
+    submission over a misplacement.
+
+    Handles both shapes ``submit_query`` accepts: a single-stage dict and a
+    nested-DAG list of stage dicts (each stage stripped independently).
+    Mutates in place and returns ``parsed``. Genuinely unknown SlayerQuery
+    fields are left untouched so SlayerQuery still rejects them.
+    """
+    if isinstance(parsed, dict):
+        for k in _TOOL_LEVEL_JSON_KEYS:
+            parsed.pop(k, None)
+    elif isinstance(parsed, list):
+        for stage in parsed:
+            if isinstance(stage, dict):
+                for k in _TOOL_LEVEL_JSON_KEYS:
+                    stage.pop(k, None)
+    return parsed
+
 # Task-local storage handle. ``attach_storage`` is called by the agent
 # at task startup; the FastMCP-extracted ``query``.fn is cached lazily
 # in ``_cached_slayer_query_fn`` (kept as a top-level for direct test
@@ -163,9 +211,17 @@ async def query_impl(
     * Missing ``source_model`` → ``ValueError``.
     * Top-level key outside ``_QUERY_JSON_ALLOWLIST`` (unsupported
       SlayerQuery field like ``main_time_dimension`` / ``name`` /
-      ``version``, or a tool-level kwarg leaking into the JSON) →
-      ``ValueError`` naming the key and pointing at the supported
-      alternatives.
+      ``version``) → ``ValueError`` naming the key and pointing at the
+      supported alternatives.
+
+    DEV-1577: a tool-level passthrough kwarg misplaced INSIDE
+    ``query_json`` (``show_sql`` / ``dry_run`` / ``explain`` / ``format``
+    / ``normalize_filters``) is NO LONGER rejected — it is lifted out into
+    the corresponding wrapper kwarg (the JSON-nested value wins over the
+    kwarg default) so the agent doesn't burn a retry on a misplacement
+    SlayerQuery would coerce around anyway. String ``measures`` /
+    ``dimensions`` shorthands (``["count"]`` → ``[{"formula": "count"}]``)
+    ride through to SlayerQuery's own coercion unchanged.
 
     ``normalize_filters`` is OUR directive and is NOT forwarded to
     SLayer.
@@ -197,6 +253,16 @@ async def query_impl(
             "Every SlayerQuery names a model — see `models_summary`."
         )
 
+    # DEV-1577: tolerate tool-level passthrough kwargs the agent misplaced
+    # INSIDE the JSON — lift them out into their wrapper kwargs (JSON-nested
+    # value wins over the kwarg default) instead of rejecting the whole call.
+    lifted = _lift_tool_level_keys(parsed)
+    show_sql = lifted.get("show_sql", show_sql)
+    dry_run = lifted.get("dry_run", dry_run)
+    explain = lifted.get("explain", explain)
+    format = lifted.get("format", format)  # noqa: A001 — matches slayer's `query` signature
+    normalize_filters = lifted.get("normalize_filters", normalize_filters)
+
     unknown = set(parsed) - _QUERY_JSON_ALLOWLIST
     if unknown:
         sorted_unknown = sorted(unknown)
@@ -206,8 +272,9 @@ async def query_impl(
             f"{sorted_unknown!r}. The `query` preview tool accepts only "
             f"these SlayerQuery fields: {supported}. Tool-level options "
             "(`show_sql`, `dry_run`, `explain`, `format`, "
-            "`normalize_filters`) are separate wrapper kwargs, NOT JSON "
-            "fields. For SlayerQuery fields outside this set (e.g. "
+            "`normalize_filters`) are separate wrapper kwargs — if you "
+            "place them inside the JSON they are lifted out automatically. "
+            "For SlayerQuery fields outside this set (e.g. "
             "`main_time_dimension`, `name`, `version`) use "
             "`query_nested` or `submit_query`."
         )

@@ -299,21 +299,20 @@ async def test_query_impl_rejects_missing_source_model(monkeypatch):
     ("main_time_dimension", "created_at"),
     ("name", "my_query"),
     ("version", 3),
-    # Tool-level kwargs leaking INTO the JSON instead of staying as
-    # separate top-level wrapper kwargs:
-    ("show_sql", True),
+    # NOTE (DEV-1577): tool-level kwargs misplaced inside the JSON
+    # (`show_sql`/`dry_run`/`explain`/`format`/`normalize_filters`) are
+    # NO LONGER rejected — they're lifted out into their wrapper kwargs.
+    # See test_query_impl_lifts_misplaced_tool_level_keys.
 ])
 @pytest.mark.asyncio
 async def test_query_impl_rejects_unknown_top_level_field(
     monkeypatch, offending_field, value,
 ):
     """Codex round-1: blindly forwarding ``parsed`` to slayer's MCP
-    ``query`` would TypeError on (a) ``SlayerQuery`` fields the MCP
-    tool doesn't accept as kwargs (``main_time_dimension``, ``name``,
-    ``version``) and (b) tool-level kwargs accidentally placed inside
-    the JSON (``show_sql``/``dry_run``/``explain``/``format``/
-    ``normalize_filters``). The wrapper raises a sharp error naming
-    the offending key and the supported-field allowlist instead.
+    ``query`` would TypeError on ``SlayerQuery`` fields the MCP tool
+    doesn't accept as kwargs (``main_time_dimension``, ``name``,
+    ``version``). The wrapper raises a sharp error naming the offending
+    key and the supported-field allowlist instead.
 
     The allowlist is intentionally narrow — every key the agent puts
     in ``query_json`` must be a SlayerQuery DSL field that slayer's MCP
