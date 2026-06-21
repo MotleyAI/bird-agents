@@ -260,13 +260,16 @@ async def test_parity_raises_on_extra_server():
 
 
 @pytest.mark.asyncio
-async def test_parity_raises_on_missing_server():
+async def test_parity_allows_missing_inprocess_server():
+    """In-process SDK servers (create_sdk_mcp_server, e.g. bird-interact-tools)
+    do NOT appear in get_mcp_status — only stdio/external servers do. A loaded
+    set that is a strict SUBSET of expected is therefore normal and must NOT
+    raise (verified live: the local smoke loaded only `slayer`, not the
+    in-process `bird-interact-tools`)."""
     client = _StatusClient([("slayer", "connected")])
-    with pytest.raises(sdk_env.HermeticEnvError) as ei:
-        await sdk_env.assert_hermetic_mcp_servers(
-            client, {"slayer", "bird-interact-tools"},
-        )
-    assert "bird-interact-tools" in str(ei.value)
+    await sdk_env.assert_hermetic_mcp_servers(
+        client, {"slayer", "bird-interact-tools"},
+    )  # no raise — bird-interact-tools is in-process, invisible to get_mcp_status
 
 
 @pytest.mark.asyncio

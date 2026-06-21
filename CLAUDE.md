@@ -434,10 +434,16 @@ or `ClaudeSDKClient(...)` directly. The helper owns, in one place:
    Anthropic-only agent (the annotator) so a stray registry model can't
    silently gain registry behaviour.
 4. **MCP parity assertion** (`assert_hermetic_mcp_servers`): after
-   `__aenter__`, before the first tool call, asserts the loaded MCP server
-   NAME set == the explicit `mcp_servers` keys (contamination check, not a
-   readiness check). A leak raises `HermeticEnvError`, failing the task
-   loudly — so every future contamination source self-detects.
+   `__aenter__`, before the first tool call, asserts the loaded MCP servers
+   contain NO server beyond the explicit `mcp_servers` keys
+   (`loaded - expected == ∅`, a contamination check — not exact equality and
+   not readiness). NB: `get_mcp_status` reports stdio/external servers but
+   NOT in-process `create_sdk_mcp_server` servers (e.g. `bird-interact-tools`),
+   so a loaded set that is a strict subset of expected is normal — only an
+   EXTRA server means the host's `~/.claude.json` leaked in. A leak raises
+   `HermeticEnvError`, failing the task loudly. (Verified live: the
+   `zai/glm-5.2` local smoke loaded only `slayer`, `extra=[]` — isolation
+   confirmed.)
 5. **Config-dir cleanup** on exit (success or any failure).
 
 Usage: pass `self.model`, the explicit `mcp_servers` dict, and a

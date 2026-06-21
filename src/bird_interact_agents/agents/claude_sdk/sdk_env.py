@@ -221,29 +221,33 @@ def hermetic_session_option_kwargs(
 
 
 async def assert_hermetic_mcp_servers(client, expected: Iterable[str]) -> None:
-    """Runtime parity assertion: the SDK loaded exactly the servers we passed.
+    """Runtime contamination assertion: the SDK loaded NO server we didn't pass.
 
-    Compares the loaded MCP server NAME set against ``expected`` (the keys of
-    the explicit ``mcp_servers`` dict). This is a contamination check, NOT a
-    readiness check — a present-but-``failed`` server still satisfies it (its
-    name is present); a server that should not be there (or one of ours gone
-    missing) raises :class:`HermeticEnvError`. The failed/pending statuses are
-    surfaced in the message so a name mismatch is not opaque.
+    Asserts only the no-EXTRA direction (``loaded - expected == ∅``), NOT exact
+    equality. ``get_mcp_status`` reports stdio/external MCP servers (e.g. the
+    ``slayer`` stdio server, or a leaked ``~/.claude.json`` connector) but does
+    NOT report in-process SDK servers created via ``create_sdk_mcp_server``
+    (e.g. ``bird-interact-tools``) — those are wired straight into the model's
+    tool surface without an MCP connection. So a loaded set that is a strict
+    SUBSET of ``expected`` is normal; only an EXTRA, unexpected server means the
+    host's config leaked in. This is a contamination check, not a readiness
+    check — a present-but-``failed`` expected server still passes. Statuses are
+    surfaced in the message so a leak is not opaque.
     """
     expected_set = set(expected)
     status = await client.get_mcp_status()
     servers = status.get("mcpServers", []) if status else []
     loaded = {s["name"] for s in servers}
-    if loaded != expected_set:
+    extra = loaded - expected_set
+    if extra:
         detail = ", ".join(
             f"{s['name']}={s.get('status', '?')}" for s in servers
         )
         raise HermeticEnvError(
             "SDK subprocess loaded unexpected MCP servers: "
-            f"extra={sorted(loaded - expected_set)}, "
-            f"missing={sorted(expected_set - loaded)} "
-            f"(loaded: {detail}). CLAUDE_CONFIG_DIR isolation likely broken — "
-            "the host's claude.ai connectors may have leaked in."
+            f"extra={sorted(extra)} (loaded: {detail}). CLAUDE_CONFIG_DIR "
+            "isolation likely broken — the host's claude.ai connectors may "
+            "have leaked in."
         )
 
 

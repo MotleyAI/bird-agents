@@ -87,16 +87,20 @@ async def test_hermetic_session_ignores_host_claude_json(monkeypatch, tmp_path):
     ) as client:
         status = await client.get_mcp_status()  # BEFORE any query()
         loaded = {s["name"] for s in status.get("mcpServers", [])}
-        # get_mcp_status lists a server by NAME even when its command failed to
-        # start (status='failed', with an 'error'). So if the CLI had read the
-        # ambient ~/.claude.json, "leaky-connector" would appear here REGARDLESS
-        # of /bin/false failing to launch. Its absence proves the redirect kept
-        # the ambient config out entirely.
+        # get_mcp_status reports stdio/external MCP servers (and lists a server
+        # by NAME even when its command failed to start, status='failed'). It
+        # does NOT report in-process SDK servers like our "smoke-tools" (wired
+        # straight into the tool surface). So the contract is "NO server beyond
+        # what we passed" — `loaded` must contain nothing outside {smoke-tools}
+        # (in practice it's empty, since smoke-tools is in-process). If the CLI
+        # had read the ambient ~/.claude.json, "leaky-connector" would appear
+        # here regardless of /bin/false failing to launch; its absence proves
+        # the redirect kept the ambient config out.
         assert "leaky-connector" not in loaded, (
             f"host ~/.claude.json leaked into the SDK subprocess: {loaded}"
         )
-        assert loaded == {"smoke-tools"}, (
-            f"unexpected MCP server set: {loaded}"
+        assert loaded - {"smoke-tools"} == set(), (
+            f"unexpected (leaked) MCP server(s): {loaded - {'smoke-tools'}}"
         )
         # The hermetic CLAUDE_CONFIG_DIR seed pre-accepts onboarding/trust, so
         # the non-interactive CLI started without blocking (we got here).
