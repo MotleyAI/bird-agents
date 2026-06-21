@@ -1059,8 +1059,8 @@ def _resolve_slayer_command() -> str:
     if on_path:
         return on_path
     raise RuntimeError(
-        "slayer CLI not found. Install with `uv pip install 'motley-slayer[embedding-search]'` "
-        "or `uv pip install -e '../slayer[embedding-search]'` and try again."
+        "slayer CLI not found. Install with `uv pip install 'motley-slayer[advanced-search]'` "
+        "or `uv pip install -e '../slayer[advanced-search]'` and try again."
     )
 
 

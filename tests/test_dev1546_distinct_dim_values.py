@@ -617,7 +617,7 @@ def test_motley_slayer_floor_is_at_least_0_7_2():
     text = (root / "pyproject.toml").read_text()
     # Both extras must use a >= floor at least 0.7.2 (allow patch bumps).
     floors = re.findall(
-        r'"motley-slayer\[embedding-search\]>=([0-9.]+)"', text,
+        r'"motley-slayer\[advanced-search\]>=([0-9.]+)"', text,
     )
     assert floors, "no motley-slayer floor found in pyproject.toml"
     for raw in floors:
