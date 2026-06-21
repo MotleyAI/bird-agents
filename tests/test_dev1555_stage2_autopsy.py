@@ -235,6 +235,70 @@ def test_build_client_moonshot_missing_key_raises(monkeypatch):
         _build_anthropic_client(_KIMI)
 
 
+# ---------------------------------------------------------------------------
+# DEV-1580: z.ai (GLM) autopsy. Mirrors the Moonshot client construction, but
+# because no GLM model requires thinking the request keeps the DEFAULT forced
+# tool_choice + no thinking block — a path Moonshot (always-thinking) never
+# exercises.
+# ---------------------------------------------------------------------------
+
+_GLM = "zai/glm-5.2"
+
+
+def test_build_client_zai_uses_registry(monkeypatch):
+    from bird_interact_agents.eval.autopsy import _build_anthropic_client
+
+    monkeypatch.setenv("ZAI_API_KEY", "zai-key-1")
+    monkeypatch.delenv("BIRD_ZAI_ANTHROPIC_BASE_URL", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "should-not-be-used")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-x")
+
+    client = _build_anthropic_client(_GLM)
+    assert str(client.base_url).rstrip("/") == "https://api.z.ai/api/anthropic"
+    assert client.auth_token == "zai-key-1"
+    assert client.api_key == ""
+
+
+def test_build_client_zai_missing_key_raises(monkeypatch):
+    from bird_interact_agents.eval.autopsy import _build_anthropic_client
+
+    monkeypatch.delenv("ZAI_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="ZAI_API_KEY"):
+        _build_anthropic_client(_GLM)
+
+
+@pytest.mark.asyncio
+async def test_zai_autopsy_request_shape_no_thinking(monkeypatch, tmp_path):
+    """GLM does not require thinking: the autopsy request for a registry
+    provider with models_requiring_thinking=[] keeps forced tool_choice and
+    omits the thinking block (and the 2048 max_tokens default)."""
+    from bird_interact_agents.eval.autopsy import run_autopsy
+
+    monkeypatch.setenv("ZAI_API_KEY", "zai-key-1")
+    tool = MagicMock()
+    tool.type = "tool_use"
+    tool.name = "autopsy_output"
+    tool.input = dict(_VALID_ONE_SHOT_PAYLOAD)
+    client = _mock_client([tool])
+
+    with patch("anthropic.AsyncAnthropic", return_value=client):
+        result = await run_autopsy(
+            task_annotation=_minimal_task_annotation(),
+            trajectory=[{"type": "T", "data": "x"}],
+            slayer_storage_dir=str(tmp_path),
+            miss_diagnostics=None,
+            model=_GLM,
+            is_one_shot=True,
+        )
+
+    assert result.error is None
+    kwargs = client.messages.create.call_args.kwargs
+    assert kwargs["model"] == "glm-5.2"
+    assert "thinking" not in kwargs
+    assert kwargs["tool_choice"] == {"type": "tool", "name": "autopsy_output"}
+    assert kwargs["max_tokens"] == 2048
+
+
 def test_build_client_anthropic_resolution_unchanged(monkeypatch):
     from bird_interact_agents.eval.autopsy import _build_anthropic_client
 

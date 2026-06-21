@@ -9,9 +9,11 @@ one entry here, not a code change per site.
 
 First provider: Moonshot (Kimi K2.7 Code) via its Anthropic-compatible
 endpoint — the Claude Agent SDK connects directly through
-``ANTHROPIC_BASE_URL``; no translation proxy. Providers whose only API is
-OpenAI-format (``api_format="openai"``, e.g. Doubleword) will additionally
-need the deferred LiteLLM sidecar before they can serve the SDK agents.
+``ANTHROPIC_BASE_URL``; no translation proxy. Second (DEV-1580): z.ai
+(Zhipu GLM) via the same Anthropic-compatible shape; unlike Kimi, no GLM
+model requires ``thinking``. Providers whose only API is OpenAI-format
+(``api_format="openai"``, e.g. Doubleword) will additionally need the
+deferred LiteLLM sidecar before they can serve the SDK agents.
 """
 
 from __future__ import annotations
@@ -64,6 +66,33 @@ _KIMI_K27_CODE_PRICING = ModelPricing(
     cache_read_input_token_cost=0.19e-6,
 )
 
+# z.ai GLM pricing (z.ai pricing docs, 2026-06), USD per token. GLM-5.1 and
+# GLM-5.2 share the same published row but get DISTINCT instances so a future
+# edit to one cannot silently mutate the other (pydantic models are mutable).
+# GLM-5.x: input $1.40/M, cache-hit $0.26/M, output $4.40/M.
+_GLM52_PRICING = ModelPricing(
+    input_cost_per_token=1.40e-6,
+    output_cost_per_token=4.40e-6,
+    cache_read_input_token_cost=0.26e-6,
+)
+_GLM51_PRICING = ModelPricing(
+    input_cost_per_token=1.40e-6,
+    output_cost_per_token=4.40e-6,
+    cache_read_input_token_cost=0.26e-6,
+)
+# GLM-4.7: input $0.60/M, cache-hit $0.11/M, output $2.20/M.
+_GLM47_PRICING = ModelPricing(
+    input_cost_per_token=0.60e-6,
+    output_cost_per_token=2.20e-6,
+    cache_read_input_token_cost=0.11e-6,
+)
+# GLM-4.6: input $0.60/M, output $2.20/M (no separate cache-hit price — cache
+# reads fall back to the input rate in usage._safe_cost).
+_GLM46_PRICING = ModelPricing(
+    input_cost_per_token=0.60e-6,
+    output_cost_per_token=2.20e-6,
+)
+
 REGISTRY: dict[str, ProviderSpec] = {
     "moonshot": ProviderSpec(
         key="moonshot",
@@ -75,6 +104,29 @@ REGISTRY: dict[str, ProviderSpec] = {
         openai_base_url="https://api.moonshot.ai/v1",
         model_pricing={"kimi-k2.7-code": _KIMI_K27_CODE_PRICING},
         models_requiring_thinking=["kimi-k2.7-code"],
+    ),
+    # DEV-1580: z.ai (Zhipu GLM). Anthropic-compatible endpoint + an
+    # OpenAI-compatible endpoint for the user-sim route, same shape as
+    # Moonshot. GLM-5.2 ships a 1M-token window (z.ai model card); the rest
+    # use the 200K default (GLM-4.7/4.6 firm windows vary across sources —
+    # default to 200K rather than bake in a suspect value). Unlike
+    # kimi-k2.7-code, NO GLM model requires thinking on /v1/messages, so
+    # models_requiring_thinking stays at its [] default.
+    "zai": ProviderSpec(
+        key="zai",
+        base_url="https://api.z.ai/api/anthropic",
+        base_url_env="BIRD_ZAI_ANTHROPIC_BASE_URL",
+        api_format="anthropic",
+        auth_env="ZAI_API_KEY",
+        default_context_window=200_000,
+        model_context_windows={"glm-5.2": 1_000_000},
+        openai_base_url="https://api.z.ai/api/paas/v4",
+        model_pricing={
+            "glm-5.2": _GLM52_PRICING,
+            "glm-5.1": _GLM51_PRICING,
+            "glm-4.7": _GLM47_PRICING,
+            "glm-4.6": _GLM46_PRICING,
+        },
     ),
 }
 

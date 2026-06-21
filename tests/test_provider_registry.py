@@ -191,3 +191,157 @@ def test_requires_thinking():
     assert pr.requires_thinking("moonshot/kimi-k2.6") is False
     assert pr.requires_thinking("anthropic/claude-sonnet-4-6") is False
     assert pr.requires_thinking("unknownprov/x") is False
+
+
+# ---------------------------------------------------------------------------
+# DEV-1580: z.ai (Zhipu GLM) as the SECOND registry provider. Mirrors every
+# Moonshot contract above. The GLM family is reachable via z.ai's
+# Anthropic-compatible endpoint (https://api.z.ai/api/anthropic) with
+# ZAI_API_KEY; unlike kimi-k2.7-code, NO GLM model requires `thinking`.
+# ---------------------------------------------------------------------------
+
+_GLM = "zai/glm-5.2"
+
+# (model id, input $/M, cache-hit $/M or None, output $/M) per z.ai pricing
+# docs (2026-06). GLM-5.x share a row; GLM-4.7/4.6 are the cheaper tier.
+_ZAI_PRICED = [
+    ("glm-5.2", 1.40, 0.26, 4.40),
+    ("glm-5.1", 1.40, 0.26, 4.40),
+    ("glm-4.7", 0.60, 0.11, 2.20),
+    ("glm-4.6", 0.60, None, 2.20),
+]
+
+
+def test_zai_entry_fields():
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    spec = pr.get_provider(_GLM)
+    assert spec is not None
+    assert spec.key == "zai"
+    assert spec.api_format == "anthropic"
+    assert spec.auth_env == "ZAI_API_KEY"
+    assert spec.base_url_env == "BIRD_ZAI_ANTHROPIC_BASE_URL"
+    assert spec.base_url == "https://api.z.ai/api/anthropic"
+    assert spec.openai_base_url == "https://api.z.ai/api/paas/v4"
+    # GLM models default to 200K; only glm-5.2 overrides up to its 1M window.
+    assert spec.default_context_window == 200_000
+    assert spec.model_context_windows == {"glm-5.2": 1_000_000}
+
+
+def test_zai_litellm_pricing_registered():
+    """Official z.ai prices (per 1M tokens). Registered under BOTH the
+    canonical `zai/...` string (agent-side cost rows) and the rewritten
+    `openai/...` string (user-sim litellm route) so neither path falls
+    back to the $0 unpriced warning."""
+    import litellm
+
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+
+    pr.ensure_litellm_pricing()
+    for native_id, in_price, _cache, out_price in _ZAI_PRICED:
+        for key in (f"zai/{native_id}", f"openai/{native_id}"):
+            prompt_cost, completion_cost = litellm.cost_per_token(
+                model=key, prompt_tokens=1_000_000, completion_tokens=1_000_000,
+            )
+            assert prompt_cost == pytest.approx(in_price, rel=1e-6)
+            assert completion_cost == pytest.approx(out_price, rel=1e-6)
+
+
+def test_zai_pricing_uses_distinct_instances():
+    """Codex r1: glm-5.1 / glm-5.2 carry identical prices but MUST be
+    distinct ModelPricing objects — a shared instance would let a future
+    edit to one silently mutate the other (pydantic models are mutable)."""
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    pricing = pr.get_provider(_GLM).model_pricing
+    assert pricing["glm-5.1"] is not pricing["glm-5.2"]
+    assert pricing["glm-5.1"] == pricing["glm-5.2"]  # same values, different obj
+
+
+def test_zai_is_supported_agent_model():
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    assert pr.is_supported_agent_model(_GLM)
+    assert pr.is_supported_agent_model("zai/glm-4.7")
+
+
+def test_zai_resolve_base_url_default_and_override(monkeypatch):
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    spec = pr.get_provider(_GLM)
+    monkeypatch.delenv("BIRD_ZAI_ANTHROPIC_BASE_URL", raising=False)
+    assert pr.resolve_base_url(spec) == "https://api.z.ai/api/anthropic"
+    monkeypatch.setenv(
+        "BIRD_ZAI_ANTHROPIC_BASE_URL", "https://other.example/anthropic",
+    )
+    assert pr.resolve_base_url(spec) == "https://other.example/anthropic"
+
+
+def test_zai_sdk_session_env_exact_keys(monkeypatch):
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    monkeypatch.setenv("ZAI_API_KEY", "zai-key-1")
+    monkeypatch.delenv("BIRD_ZAI_ANTHROPIC_BASE_URL", raising=False)
+    env = pr.sdk_session_env(_GLM)
+    assert env == {
+        "ANTHROPIC_API_KEY": "",
+        "CLAUDE_CODE_OAUTH_TOKEN": "",
+        "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic",
+        "ANTHROPIC_AUTH_TOKEN": "zai-key-1",
+    }
+
+
+def test_zai_sdk_session_env_neutralises_ambient_anthropic_creds(monkeypatch):
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-ambient")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-ambient")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "leaked-bearer")
+    monkeypatch.setenv("ZAI_API_KEY", "zai-key-1")
+    env = pr.sdk_session_env(_GLM)
+    assert env["ANTHROPIC_API_KEY"] == ""
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == ""
+    assert env["ANTHROPIC_AUTH_TOKEN"] == "zai-key-1"
+
+
+def test_zai_sdk_session_env_respects_base_url_override(monkeypatch):
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    monkeypatch.setenv("ZAI_API_KEY", "zai-key-1")
+    monkeypatch.setenv(
+        "BIRD_ZAI_ANTHROPIC_BASE_URL", "https://other.example/anthropic",
+    )
+    env = pr.sdk_session_env(_GLM)
+    assert env["ANTHROPIC_BASE_URL"] == "https://other.example/anthropic"
+
+
+def test_zai_sdk_session_env_missing_key_raises(monkeypatch):
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    monkeypatch.delenv("ZAI_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="ZAI_API_KEY"):
+        pr.sdk_session_env(_GLM)
+
+
+def test_zai_litellm_route(monkeypatch):
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    monkeypatch.setenv("ZAI_API_KEY", "zai-key-1")
+    litellm_model, kwargs = pr.litellm_route(_GLM)
+    assert litellm_model == "openai/glm-5.2"
+    assert kwargs == {
+        "api_base": "https://api.z.ai/api/paas/v4",
+        "api_key": "zai-key-1",
+    }
+
+
+def test_zai_litellm_route_prefers_caller_api_key(monkeypatch):
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    monkeypatch.delenv("ZAI_API_KEY", raising=False)
+    _, kwargs = pr.litellm_route(_GLM, caller_api_key="explicit-key")
+    assert kwargs["api_key"] == "explicit-key"
+
+
+def test_zai_required_env_for():
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    assert pr.required_env_for(_GLM) == ("ZAI_API_KEY",)
+    assert pr.required_env_for("zai/glm-4.6") == ("ZAI_API_KEY",)
+
+
+def test_zai_requires_thinking_is_false_for_all_glm():
+    """Unlike kimi-k2.7-code, no GLM model requires thinking on the
+    Anthropic /v1/messages endpoint — z.ai treats it as opt-in."""
+    from bird_interact_agents import provider_registry as pr  # noqa: PLC0415
+    for native_id, *_ in _ZAI_PRICED:
+        assert pr.requires_thinking(f"zai/{native_id}") is False

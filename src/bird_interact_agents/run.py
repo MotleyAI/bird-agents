@@ -473,8 +473,9 @@ def _make_runner(
             )
         # DEV-1579: the v0 claude_sdk agents now carry the provider-aware
         # hermetic session env (registry base-url + auth + thinking) via
-        # `hermetic_claude_sdk_session`, so registry open-weight models run
-        # on v0 too — no Anthropic-only rejection here anymore.
+        # `hermetic_claude_sdk_session`, so registry open-weight models
+        # (moonshot/, zai/, …) run on v0 too — no Anthropic-only rejection
+        # here anymore.
         if b.one_shot and query_mode == "slayer":
             from bird_interact_agents.agents.claude_sdk_otf import ClaudeSDKOtfAgent
             _agent: object = ClaudeSDKOtfAgent(
