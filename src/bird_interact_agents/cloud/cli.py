@@ -224,21 +224,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 )
             _spec = provider_registry.get_provider(ns.agent_model)
             if _spec is not None:
-                # Codex r7: the v0 ``claude_sdk`` aggregator routes to
-                # origin/main-shape agents that reject non-Anthropic
-                # models via ``is_anthropic()``. The runner already
-                # raises (round 4), but by the time the runner runs
-                # the cloud cluster has been built + brought up.
-                # Reject at parse time so the operator gets the
-                # pointer at ``claude_sdk_v1`` before any spend.
-                if ns.framework == "claude_sdk":
-                    p.error(
-                        f"--framework claude_sdk only supports Anthropic "
-                        f"agent models; {ns.agent_model!r} is a "
-                        f"{_spec.key} registry model. Use --framework "
-                        f"claude_sdk_v1 (the v1 agents carry the "
-                        f"provider-aware session env + thinking config)."
-                    )
+                # DEV-1579: the v0 ``claude_sdk`` aggregator now carries the
+                # provider-aware hermetic session env, so registry open-weight
+                # models run on v0 too — no parse-time rejection anymore.
                 if ns.subscription_auth:
                     p.error(
                         f"--subscription-auth is Anthropic-only; {_spec.key} "

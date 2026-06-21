@@ -28,7 +28,6 @@ from pathlib import Path
 from claude_agent_sdk import (
     AgentDefinition,
     ClaudeAgentOptions,
-    ClaudeSDKClient,
     HookMatcher,
     create_sdk_mcp_server,
 )
@@ -63,7 +62,7 @@ from bird_interact_agents.agents.claude_sdk.partition import (
     make_partition_deny_hook,
 )
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
-    disable_cli_telemetry_env,
+    hermetic_claude_sdk_session,
 )
 from bird_interact_agents.agents.claude_sdk_otf_v1.prompts import (
     SLAYER_OTF_ONE_SHOT,
@@ -71,10 +70,7 @@ from bird_interact_agents.agents.claude_sdk_otf_v1.prompts import (
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.model_string import native_model_id
 from bird_interact_agents.provider_registry import (
-    get_provider,
     is_supported_agent_model,
-    requires_thinking,
-    sdk_session_env,
 )
 from bird_interact_agents.harness import (
     MAX_MODEL_TURNS,
@@ -572,105 +568,98 @@ class ClaudeSDKOtfAgent:
                 submit_tool="submit_query",
             )
 
-            # DEV-1555 Stage 2: registry open-weight backends get a
-            # per-run session env (ANTHROPIC_BASE_URL + auth token);
-            # anthropic models keep the SDK defaults untouched.
-            # DEV-1561: always layer in the disable-CLI-telemetry vars so
-            # the bundled `claude` Node binary doesn't burn 5-10 min on
-            # outbound telemetry / error-reporting / auto-updater calls
-            # during the initialize handshake.
-            _session_env_kwargs: dict = {"env": disable_cli_telemetry_env()}
-            if get_provider(self.model) is not None:
-                _session_env_kwargs["env"].update(sdk_session_env(self.model))
-                if requires_thinking(self.model):
-                    # Probed live: e.g. kimi-k2.7-code rejects requests
-                    # without thinking enabled.
-                    _session_env_kwargs["thinking"] = {
-                        "type": "enabled", "budget_tokens": 8192,
-                    }
+            # DEV-1579: build the agent's options from the policy-owned env
+            # kwargs (telemetry-disable + hermetic CLAUDE_CONFIG_DIR + any
+            # registry session env / thinking). The agent only supplies its
+            # own tool surface / hooks.
+            def _build_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+                return ClaudeAgentOptions(
+                    **_opt_kwargs,
+                    system_prompt=prompt + build_main_workflow_note(query_mode='slayer'),
+                    mcp_servers=mcp_servers,
+                    allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
+                    # Re-enable ONLY the Task built-in (for the discovery
+                    # subagent); every other Claude Code built-in stays dropped
+                    # (Bash/Edit/WebFetch/ToolSearch/...). Removing ToolSearch
+                    # is load-bearing — with the built-ins gone the ~15 MCP
+                    # tools are exposed directly instead of being deferred
+                    # behind ToolSearch (which previously wasted ~5 turns/run
+                    # while the agent re-discovered its own tools).
+                    # setting_sources=[] also keeps the run reproducible (no
+                    # user/project settings, no CLAUDE.md bleed-through).
+                    tools=["Task"],
+                    setting_sources=[],
+                    agents={
+                        DISCOVERY_AGENT_NAME: AgentDefinition(
+                            description=(
+                                "Schema/data introspection and user clarification "
+                                "for the current task; returns a structured "
+                                "handoff report."
+                            ),
+                            prompt=build_discovery_prompt(with_ask_user=False),
+                            tools=list(DISCOVERY_TOOLS),
+                            maxTurns=DISCOVERY_MAX_TURNS,
+                        ),
+                    },
+                    # Pin the requested Anthropic model (bare id, no provider
+                    # prefix) so --agent-model actually takes effect instead of
+                    # the claude CLI's configured default.
+                    model=native_model_id(self.model),
+                    # Reasoning-effort level (None => SDK default).
+                    effort=self.reasoning_effort,
+                    # Native turn cap (2x the base), MAIN loop only — the
+                    # discovery subagent has its own maxTurns. Unlike a manual
+                    # break on the receive stream, max_turns lets the FINAL
+                    # turn's tool (e.g. submit_query) execute before the run
+                    # stops — the off-by-one that previously dropped a
+                    # last-turn submission.
+                    max_turns=_MAX_TURNS,
+                    hooks={
+                        "PreToolUse": [
+                            HookMatcher(
+                                matcher="mcp__bird-interact-tools__submit_query",
+                                hooks=[pre_query_gate],
+                            ),
+                            HookMatcher(
+                                matcher="|".join(discovery_only),
+                                hooks=[make_partition_deny_hook(discovery_only)],
+                            ),
+                            # Codex post-merge: normalize backing-query filters
+                            # baked into create_model / edit_model payloads so
+                            # the persisted model definition matches the
+                            # filter-normalization contract the query path
+                            # already enforces.
+                            HookMatcher(
+                                matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
+                                hooks=[_normalize_write_tool_filters_hook],
+                            ),
+                            HookMatcher(hooks=[wall_clock_deny]),
+                        ],
+                        "PostToolUse": [
+                            HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
+                            HookMatcher(
+                                hooks=[
+                                    make_context_budget_hook(
+                                        context_state,
+                                        context_window_for(self.model),
+                                    )
+                                ]
+                            ),
+                            HookMatcher(hooks=[wall_clock_warning]),
+                            # Must be last so it captures the true last-completed
+                            # tool name after all other PostToolUse hooks have run.
+                            HookMatcher(hooks=[post_tool_tracker]),
+                        ],
+                    },
+                )
 
-            options = ClaudeAgentOptions(
-                **_session_env_kwargs,
-                system_prompt=prompt + build_main_workflow_note(query_mode='slayer'),
+            # DEV-1579: the hermetic session owns CLAUDE_CONFIG_DIR isolation,
+            # API-key auth enforcement, the MCP parity assertion, and cleanup.
+            async with hermetic_claude_sdk_session(
+                self.model,
                 mcp_servers=mcp_servers,
-                allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
-                # Re-enable ONLY the Task built-in (for the discovery
-                # subagent); every other Claude Code built-in stays dropped
-                # (Bash/Edit/WebFetch/ToolSearch/...). Removing ToolSearch
-                # is load-bearing — with the built-ins gone the ~15 MCP
-                # tools are exposed directly instead of being deferred
-                # behind ToolSearch (which previously wasted ~5 turns/run
-                # while the agent re-discovered its own tools).
-                # setting_sources=[] also keeps the run reproducible (no
-                # user/project settings, no CLAUDE.md bleed-through).
-                tools=["Task"],
-                setting_sources=[],
-                agents={
-                    DISCOVERY_AGENT_NAME: AgentDefinition(
-                        description=(
-                            "Schema/data introspection and user clarification "
-                            "for the current task; returns a structured "
-                            "handoff report."
-                        ),
-                        prompt=build_discovery_prompt(with_ask_user=False),
-                        tools=list(DISCOVERY_TOOLS),
-                        maxTurns=DISCOVERY_MAX_TURNS,
-                    ),
-                },
-                # Pin the requested Anthropic model (bare id, no provider
-                # prefix) so --agent-model actually takes effect instead of
-                # the claude CLI's configured default.
-                model=native_model_id(self.model),
-                # Reasoning-effort level (None => SDK default).
-                effort=self.reasoning_effort,
-                # Native turn cap (2x the base), MAIN loop only — the
-                # discovery subagent has its own maxTurns. Unlike a manual
-                # break on the receive stream, max_turns lets the FINAL
-                # turn's tool (e.g. submit_query) execute before the run
-                # stops — the off-by-one that previously dropped a
-                # last-turn submission.
-                max_turns=_MAX_TURNS,
-                hooks={
-                    "PreToolUse": [
-                        HookMatcher(
-                            matcher="mcp__bird-interact-tools__submit_query",
-                            hooks=[pre_query_gate],
-                        ),
-                        HookMatcher(
-                            matcher="|".join(discovery_only),
-                            hooks=[make_partition_deny_hook(discovery_only)],
-                        ),
-                        # Codex post-merge: normalize backing-query filters
-                        # baked into create_model / edit_model payloads so
-                        # the persisted model definition matches the
-                        # filter-normalization contract the query path
-                        # already enforces.
-                        HookMatcher(
-                            matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
-                            hooks=[_normalize_write_tool_filters_hook],
-                        ),
-                        HookMatcher(hooks=[wall_clock_deny]),
-                    ],
-                    "PostToolUse": [
-                        HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
-                        HookMatcher(
-                            hooks=[
-                                make_context_budget_hook(
-                                    context_state,
-                                    context_window_for(self.model),
-                                )
-                            ]
-                        ),
-                        HookMatcher(hooks=[wall_clock_warning]),
-                        # Must be last so it captures the true last-completed
-                        # tool name after all other PostToolUse hooks have run.
-                        HookMatcher(hooks=[post_tool_tracker]),
-                    ],
-                },
-            )
-
-            # Auth env-var invariant validated at actor bootstrap; see ray_app._assert_actor_oauth_invariant.
-            async with ClaudeSDKClient(options=options) as client:
+                build_options=_build_options,
+            ) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
                     try:

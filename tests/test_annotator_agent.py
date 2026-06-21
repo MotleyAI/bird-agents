@@ -117,6 +117,12 @@ def _make_fake_sdk(monkeypatch, ann_agent, *, submit_calls=None, n_turns: int = 
         async def __aexit__(self, *a):
             pass
 
+        async def get_mcp_status(self):
+            names = list((self._options.mcp_servers or {}).keys())
+            return {"mcpServers": [
+                {"name": n, "status": "connected"} for n in names
+            ]}
+
         async def query(self, *a, **kw):
             pass
 
@@ -138,7 +144,9 @@ def _make_fake_sdk(monkeypatch, ann_agent, *, submit_calls=None, n_turns: int = 
                 if ann_agent._ctx.get("_submission_done"):
                     break
 
-    monkeypatch.setattr(ann_agent, "ClaudeSDKClient", FakeClient)
+    from bird_interact_agents.agents.claude_sdk import sdk_env as _sdk_env
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-stub")
+    monkeypatch.setattr(_sdk_env, "ClaudeSDKClient", FakeClient)
     monkeypatch.setattr(ann_agent, "create_sdk_mcp_server", lambda **kw: SimpleNamespace())
     monkeypatch.setattr(ann_agent, "load_db_data_if_needed", lambda *a, **kw: None)
     monkeypatch.setattr(ann_agent, "materialize_task_db", lambda *a, **kw: None)
@@ -307,10 +315,18 @@ async def test_mini_interact_includes_get_ambiguity_resolutions(monkeypatch):
 
     class CapturingClient:
         def __init__(self, options):
+            self._options = options
             allowed_tools_seen.append(list(options.allowed_tools or []))
 
         async def __aenter__(self): return self
         async def __aexit__(self, *a): pass
+
+        async def get_mcp_status(self):
+            names = list((self._options.mcp_servers or {}).keys())
+            return {"mcpServers": [
+                {"name": n, "status": "connected"} for n in names
+            ]}
+
         async def query(self, *a, **kw): pass
 
         async def receive_response(self):
@@ -318,7 +334,9 @@ async def test_mini_interact_includes_get_ambiguity_resolutions(monkeypatch):
             return
             yield  # make it an async generator
 
-    monkeypatch.setattr(ann_agent, "ClaudeSDKClient", CapturingClient)
+    from bird_interact_agents.agents.claude_sdk import sdk_env as _sdk_env
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-stub")
+    monkeypatch.setattr(_sdk_env, "ClaudeSDKClient", CapturingClient)
     monkeypatch.setattr(ann_agent, "create_sdk_mcp_server", lambda **kw: SimpleNamespace())
     monkeypatch.setattr(ann_agent, "load_db_data_if_needed", lambda *a, **kw: None)
     monkeypatch.setattr(ann_agent, "materialize_task_db", lambda *a, **kw: None)
@@ -343,10 +361,18 @@ async def test_livesqlbench_excludes_get_ambiguity_resolutions(monkeypatch):
 
     class CapturingClient:
         def __init__(self, options):
+            self._options = options
             allowed_tools_seen.append(list(options.allowed_tools or []))
 
         async def __aenter__(self): return self
         async def __aexit__(self, *a): pass
+
+        async def get_mcp_status(self):
+            names = list((self._options.mcp_servers or {}).keys())
+            return {"mcpServers": [
+                {"name": n, "status": "connected"} for n in names
+            ]}
+
         async def query(self, *a, **kw): pass
 
         async def receive_response(self):
@@ -354,7 +380,9 @@ async def test_livesqlbench_excludes_get_ambiguity_resolutions(monkeypatch):
             return
             yield
 
-    monkeypatch.setattr(ann_agent, "ClaudeSDKClient", CapturingClient)
+    from bird_interact_agents.agents.claude_sdk import sdk_env as _sdk_env
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-stub")
+    monkeypatch.setattr(_sdk_env, "ClaudeSDKClient", CapturingClient)
     monkeypatch.setattr(ann_agent, "create_sdk_mcp_server", lambda **kw: SimpleNamespace())
     monkeypatch.setattr(ann_agent, "load_db_data_if_needed", lambda *a, **kw: None)
     monkeypatch.setattr(ann_agent, "materialize_task_db", lambda *a, **kw: None)
@@ -799,7 +827,8 @@ async def test_non_anthropic_model_returns_error_without_sdk_call(monkeypatch):
             return
             yield
 
-    monkeypatch.setattr(ann_agent, "ClaudeSDKClient", NeverCalledClient)
+    from bird_interact_agents.agents.claude_sdk import sdk_env as _sdk_env
+    monkeypatch.setattr(_sdk_env, "ClaudeSDKClient", NeverCalledClient)
     monkeypatch.setattr(ann_agent, "load_db_data_if_needed", lambda *a, **kw: None)
     monkeypatch.setattr(ann_agent, "materialize_task_db", lambda *a, **kw: None)
 

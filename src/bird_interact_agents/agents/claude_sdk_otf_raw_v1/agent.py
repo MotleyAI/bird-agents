@@ -17,7 +17,6 @@ import logging
 from claude_agent_sdk import (
     AgentDefinition,
     ClaudeAgentOptions,
-    ClaudeSDKClient,
     HookMatcher,
     create_sdk_mcp_server,
 )
@@ -52,7 +51,7 @@ from bird_interact_agents.agents.claude_sdk.partition import (
     make_partition_deny_hook,
 )
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
-    disable_cli_telemetry_env,
+    hermetic_claude_sdk_session,
 )
 from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
     _MAX_TURNS,
@@ -63,10 +62,7 @@ from bird_interact_agents.agents.claude_sdk_otf_raw_v1.prompts import RAW_OTF_ON
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.model_string import native_model_id
 from bird_interact_agents.provider_registry import (
-    get_provider,
     is_supported_agent_model,
-    requires_thinking,
-    sdk_session_env,
 )
 from bird_interact_agents.harness import (
     SampleStatus,
@@ -260,6 +256,8 @@ class ClaudeSDKOtfRawAgent:
                 name="bird-interact-tools", version="1.0.0", tools=tools,
             )
 
+            mcp_servers: dict = {"bird-interact-tools": server}
+
             # DEV-1555: discovery/main split (see claude_sdk_otf.agent).
             discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
             context_state: dict = {}
@@ -273,72 +271,66 @@ class ClaudeSDKOtfRawAgent:
                 submit_tool="submit_sql",
             )
 
-            # DEV-1555 Stage 2: registry open-weight backends get a
-            # per-run session env (ANTHROPIC_BASE_URL + auth token);
-            # anthropic models keep the SDK defaults untouched.
-            # DEV-1561: always layer in the disable-CLI-telemetry vars so
-            # the bundled `claude` Node binary doesn't burn 5-10 min on
-            # outbound telemetry / error-reporting / auto-updater calls
-            # during the initialize handshake.
-            _session_env_kwargs: dict = {"env": disable_cli_telemetry_env()}
-            if get_provider(self.model) is not None:
-                _session_env_kwargs["env"].update(sdk_session_env(self.model))
-                if requires_thinking(self.model):
-                    # Probed live: e.g. kimi-k2.7-code rejects requests
-                    # without thinking enabled.
-                    _session_env_kwargs["thinking"] = {
-                        "type": "enabled", "budget_tokens": 8192,
-                    }
+            # DEV-1579: build the agent's options from the policy-owned env
+            # kwargs (telemetry-disable + hermetic CLAUDE_CONFIG_DIR + any
+            # registry session env / thinking). The agent only supplies its
+            # own tool surface / hooks.
+            def _build_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+                return ClaudeAgentOptions(
+                    **_opt_kwargs,
+                    system_prompt=prompt + build_main_workflow_note(query_mode='raw'),
+                    mcp_servers=mcp_servers,
+                    allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
+                    tools=["Task"],
+                    setting_sources=[],
+                    agents={
+                        DISCOVERY_AGENT_NAME: AgentDefinition(
+                            description=(
+                                "Schema/data introspection for the current task; "
+                                "returns a structured handoff report."
+                            ),
+                            prompt=build_discovery_prompt(with_ask_user=False),
+                            tools=list(DISCOVERY_TOOLS),
+                            maxTurns=DISCOVERY_MAX_TURNS,
+                        ),
+                    },
+                    model=native_model_id(self.model),
+                    effort=self.reasoning_effort,
+                    max_turns=_MAX_TURNS,
+                    hooks={
+                        "PreToolUse": [
+                            HookMatcher(
+                                matcher="|".join(discovery_only),
+                                hooks=[make_partition_deny_hook(discovery_only)],
+                            ),
+                            HookMatcher(hooks=[wall_clock_deny]),
+                        ],
+                        "PostToolUse": [
+                            HookMatcher(
+                                hooks=[_make_turn_budget_hook(
+                                    _MAX_TURNS, submit_tool="submit_sql",
+                                )],
+                            ),
+                            HookMatcher(
+                                hooks=[
+                                    make_context_budget_hook(
+                                        context_state,
+                                        context_window_for(self.model),
+                                    )
+                                ]
+                            ),
+                            HookMatcher(hooks=[wall_clock_warning]),
+                        ],
+                    },
+                )
 
-            options = ClaudeAgentOptions(
-                **_session_env_kwargs,
-                system_prompt=prompt + build_main_workflow_note(query_mode='raw'),
-                mcp_servers={"bird-interact-tools": server},
-                allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
-                tools=["Task"],
-                setting_sources=[],
-                agents={
-                    DISCOVERY_AGENT_NAME: AgentDefinition(
-                        description=(
-                            "Schema/data introspection for the current task; "
-                            "returns a structured handoff report."
-                        ),
-                        prompt=build_discovery_prompt(with_ask_user=False),
-                        tools=list(DISCOVERY_TOOLS),
-                        maxTurns=DISCOVERY_MAX_TURNS,
-                    ),
-                },
-                model=native_model_id(self.model),
-                effort=self.reasoning_effort,
-                max_turns=_MAX_TURNS,
-                hooks={
-                    "PreToolUse": [
-                        HookMatcher(
-                            matcher="|".join(discovery_only),
-                            hooks=[make_partition_deny_hook(discovery_only)],
-                        ),
-                        HookMatcher(hooks=[wall_clock_deny]),
-                    ],
-                    "PostToolUse": [
-                        HookMatcher(
-                            hooks=[_make_turn_budget_hook(
-                                _MAX_TURNS, submit_tool="submit_sql",
-                            )],
-                        ),
-                        HookMatcher(
-                            hooks=[
-                                make_context_budget_hook(
-                                    context_state,
-                                    context_window_for(self.model),
-                                )
-                            ]
-                        ),
-                        HookMatcher(hooks=[wall_clock_warning]),
-                    ],
-                },
-            )
-
-            async with ClaudeSDKClient(options=options) as client:
+            # DEV-1579: the hermetic session owns CLAUDE_CONFIG_DIR isolation,
+            # API-key auth enforcement, the MCP parity assertion, and cleanup.
+            async with hermetic_claude_sdk_session(
+                self.model,
+                mcp_servers=mcp_servers,
+                build_options=_build_options,
+            ) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
                     # CR r1 (PR #49 follow-up): structured trajectory via

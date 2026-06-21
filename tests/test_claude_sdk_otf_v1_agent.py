@@ -372,6 +372,15 @@ def _make_fake_client(
         async def __aexit__(self, *a):
             return None
 
+        async def get_mcp_status(self):
+            # DEV-1579: the hermetic session asserts loaded MCP servers ==
+            # the explicit mcp_servers dict. Echo the configured names so the
+            # parity check passes for a clean run.
+            names = list((captured["options"].mcp_servers or {}).keys())
+            return {"mcpServers": [
+                {"name": n, "status": "connected"} for n in names
+            ]}
+
         async def query(self, *a, **kw):
             return None
 
@@ -429,8 +438,15 @@ def _stub_env(
         return str(storage_dir), list(deleted)
 
     monkeypatch.setattr(m, "resolve_otf_task_storage_dir", fake_resolve)
+    # DEV-1579: the agent no longer constructs ClaudeSDKClient directly — the
+    # shared hermetic session (sdk_env.hermetic_claude_sdk_session) does, via
+    # the module-level sdk_env.ClaudeSDKClient. Patch THERE. Also seed an API
+    # key so the session's assert_api_key_auth passes for Anthropic models
+    # (registry models are exempt).
+    from bird_interact_agents.agents.claude_sdk import sdk_env as _sdk_env
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-stub")
     monkeypatch.setattr(
-        m, "ClaudeSDKClient",
+        _sdk_env, "ClaudeSDKClient",
         _make_fake_client(
             captured, messages,
             m_module=m,

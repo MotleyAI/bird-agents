@@ -112,16 +112,23 @@ async def test_anthropic_model_options_env_is_disable_telemetry(
     monkeypatch, tmp_path, sibling, module_name, agent_cls_name,
     query_mode, eval_mode,
 ):
-    """DEV-1561 byte-equal pin: anthropic runs pass ONLY the disable-CLI-
-    telemetry overlay — no registry session env, no Anthropic credentials
-    leaked into the SDK subprocess env.
+    """DEV-1561/DEV-1579 pin: anthropic runs pass ONLY the disable-CLI-
+    telemetry overlay PLUS the hermetic CLAUDE_CONFIG_DIR — no registry
+    session env, no Anthropic credentials leaked into the SDK subprocess env.
     """
     captured, _row = await _run_and_capture(
         monkeypatch, tmp_path, sibling=sibling, module_name=module_name,
         agent_cls_name=agent_cls_name, query_mode=query_mode,
         eval_mode=eval_mode, model="anthropic/claude-sonnet-4-5",
     )
-    assert captured["options"].env == disable_cli_telemetry_env()
+    env = captured["options"].env
+    # DEV-1579: for an Anthropic model the hermetic session adds exactly one
+    # key (CLAUDE_CONFIG_DIR) on top of the telemetry-disable overlay — and
+    # NOTHING else (no ANTHROPIC_BASE_URL / *_AUTH_TOKEN / API_KEY / OAuth).
+    assert set(env) == set(disable_cli_telemetry_env()) | {"CLAUDE_CONFIG_DIR"}
+    for k, v in disable_cli_telemetry_env().items():
+        assert env[k] == v
+    assert env["CLAUDE_CONFIG_DIR"]
     assert captured["options"].thinking == ClaudeAgentOptions().thinking
 
 

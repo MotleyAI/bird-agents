@@ -111,6 +111,9 @@ async def test_anthropic_options_env_contains_disable_telemetry(
     env = captured["options"].env or {}
     for k, v in disable_cli_telemetry_env().items():
         assert env.get(k) == v, (module_name, k, env.get(k))
+    # DEV-1579: the hermetic session also pins CLAUDE_CONFIG_DIR to a fresh
+    # empty dir so the host's ~/.claude.json connectors never leak in.
+    assert env.get("CLAUDE_CONFIG_DIR"), (module_name, "CLAUDE_CONFIG_DIR")
 
 
 @pytest.mark.asyncio
@@ -140,24 +143,26 @@ async def test_registry_options_env_layers_disable_telemetry_under_session(
     # Telemetry knobs preserved underneath.
     for k, v in disable_cli_telemetry_env().items():
         assert env.get(k) == v, (module_name, k, env.get(k))
+    # DEV-1579: CLAUDE_CONFIG_DIR isolation survives the registry layering.
+    assert env.get("CLAUDE_CONFIG_DIR"), (module_name, "CLAUDE_CONFIG_DIR")
 
 
-def test_annotator_options_env_contains_disable_telemetry():
-    """The annotator agent uses the same SDK transport and would hang the
-    same way on the initialize handshake. Pin it via the same overlay.
+def test_annotator_routes_through_hermetic_session_anthropic_only():
+    """DEV-1579: the annotator must route its SDK session through the shared
+    ``hermetic_claude_sdk_session`` helper (which owns the telemetry-disable
+    env + CLAUDE_CONFIG_DIR isolation + API-key auth + MCP parity), and must
+    pass ``provider_aware=False`` since the annotator is Anthropic-only.
 
-    AST-inspect the annotator source: find the ``ClaudeAgentOptions(...)``
-    call and assert its ``env`` keyword routes through the shared helper.
-    Lower-overhead than driving the full annotation pipeline (which
-    needs a gold sidecar + benchmark config); robust against whitespace
-    / multi-line formatting choices.
+    AST-inspect the annotator source: lower-overhead than driving the full
+    annotation pipeline (which needs a gold sidecar + benchmark config), and
+    robust against whitespace / multi-line formatting choices.
     """
     import ast
     from pathlib import Path
 
     ann = importlib.import_module("bird_interact_agents.agents.annotator.agent")
-    assert "disable_cli_telemetry_env" in ann.__dict__, (
-        "annotator agent must import disable_cli_telemetry_env"
+    assert "hermetic_claude_sdk_session" in ann.__dict__, (
+        "annotator agent must import hermetic_claude_sdk_session"
     )
 
     tree = ast.parse(
@@ -168,20 +173,24 @@ def test_annotator_options_env_contains_disable_telemetry():
         if not isinstance(node, ast.Call):
             continue
         func = node.func
-        if not (isinstance(func, ast.Name) and func.id == "ClaudeAgentOptions"):
+        if not (
+            isinstance(func, ast.Name)
+            and func.id == "hermetic_claude_sdk_session"
+        ):
             continue
-        env_kw = next((k for k in node.keywords if k.arg == "env"), None)
-        assert env_kw is not None, (
-            "ClaudeAgentOptions in annotator must carry an explicit env="
+        pa = next(
+            (k for k in node.keywords if k.arg == "provider_aware"), None,
         )
-        # The env value must be a call to disable_cli_telemetry_env(),
-        # not an os.environ mutation or an ad-hoc literal.
-        v = env_kw.value
+        assert pa is not None, (
+            "annotator's hermetic_claude_sdk_session call must pass "
+            "provider_aware=… explicitly"
+        )
+        # The annotator is Anthropic-only — registry layering must be off.
         assert (
-            isinstance(v, ast.Call)
-            and isinstance(v.func, ast.Name)
-            and v.func.id == "disable_cli_telemetry_env"
-        ), f"unexpected env kwarg shape: {ast.dump(v)}"
+            isinstance(pa.value, ast.Constant) and pa.value.value is False
+        ), f"annotator must pass provider_aware=False, got {ast.dump(pa.value)}"
         found = True
         break
-    assert found, "no ClaudeAgentOptions call found in annotator agent source"
+    assert found, (
+        "no hermetic_claude_sdk_session(...) call found in annotator source"
+    )
