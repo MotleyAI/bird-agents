@@ -49,9 +49,8 @@ bird-interact --dataset mini-interact --framework claude_sdk --query-mode raw --
   --db-path /path/to/mini-interact/ \
   --limit 10 --concurrency 3
 
-# Run with SLayer mode (requires SLayer models to be ingested)
+# Run with SLayer mode (KB encoded on the fly — the default for slayer mode)
 bird-interact --dataset mini-interact --framework claude_sdk --query-mode slayer --mode a-interact \
-  --slayer-setup on-the-fly \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/
 ```
@@ -66,8 +65,10 @@ named columns/measures (in dependency order, referencing earlier entities
 through declared joins) and then build the final query off those named
 entities instead of inlining everything. Unlike `pydantic_ai_otf_encode`
 there are no forced stages or recursion, and there is no save-time
-validator yet (tracked in DEV-1506). Both are **slayer-query-mode only**
-and **always** `--slayer-setup on-the-fly`.
+validator yet (tracked in DEV-1506). Both are **slayer-query-mode only**.
+On-the-fly encoding is the **default** for slayer mode; pass
+`--pre-encoded-models` to consume an already-encoded datasource read-only
+instead (see [Pre-encoded mode](#pre-encoded-mode-read-only-dev-1586)).
 
 DEV-1507 split this framework along the benchmark boundary because a
 single prompt that had to decide "ask user vs don't ask" based on mode
@@ -90,7 +91,7 @@ need. For LiveSQLBench one-shot, pass `--dataset livesqlbench-base-lite-sqlite
 
 ```bash
 bird-interact --framework claude_sdk --query-mode slayer \
-  --slayer-setup on-the-fly --dataset livesqlbench-base-lite-sqlite --mode one-shot \
+  --dataset livesqlbench-base-lite-sqlite --mode one-shot \
   --agent-model anthropic/claude-opus-4-7 \
   --reasoning-effort high \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
@@ -103,7 +104,7 @@ present, else built locally first; no reference build or upload-back).
 
 ```bash
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
-  --framework claude_sdk --query-mode slayer --slayer-setup on-the-fly \
+  --framework claude_sdk --query-mode slayer \
   --mode one-shot --dataset livesqlbench-base-lite-sqlite \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
@@ -148,7 +149,7 @@ first ask. Recommended `--reasoning-effort high`.
 
 ```bash
 bird-interact --framework claude_sdk --query-mode slayer \
-  --slayer-setup on-the-fly --dataset mini-interact --mode a-interact \
+  --dataset mini-interact --mode a-interact \
   --agent-model anthropic/claude-opus-4-7 \
   --reasoning-effort high \
   --data /path/to/mini_interact.jsonl \
@@ -161,7 +162,7 @@ both audited and original gold under these defaults):
 ```bash
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --framework claude_sdk --query-mode slayer \
-  --slayer-setup on-the-fly --dataset mini-interact --mode a-interact \
+  --dataset mini-interact --mode a-interact \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
   --reasoning-effort high \
@@ -178,6 +179,70 @@ for the same per-task wallclock and identical cluster cost.
 > **⚠️ mini-interact is SQLite-backed and fine on `e2-standard-4` × 4 actors.
 > For postgres-backed a-interact (`bird-interact-lite-exp`, `bird-interact-full`)
 > use `e2-standard-8` × 1 actor per the sizing rule above.**
+
+### Pre-encoded mode (read-only, DEV-1586)
+
+The same four SLayer `claude_sdk` agents (one-shot + a-interact, ×v0/v1) can
+run against a datasource where the KB is **already encoded** as named
+columns/measures, instead of encoding on the fly. Add
+**`--pre-encoded-models {otf,custom}`** to any slayer `claude_sdk` /
+`claude_sdk_v1` run:
+
+* `otf` — the encoding-agent output at
+  `slayer_models_otf/<benchmark>/<db>/` (what `pydantic_ai_otf_encode`
+  produces / merges back). **This is the default source you want.**
+* `custom` — the hand-curated committed models at `slayer_models/<db>/`.
+
+In this mode the agent gets **introspection-only** SLayer tools (no
+`create_model` / `edit_model` / `save_memory` / `validate_models`): it
+discovers the pre-built entities (`models_summary` / `inspect_model` /
+`search`) and queries off them. Per-task storage is a HARD-8 variant of the
+chosen reference (deleted-KB ablations applied by `meta.kb_id`), exactly as
+the committed-reference `pydantic_ai` consumer does.
+
+```bash
+# Local — one-shot livesqlbench against the OTF-encoded reference
+bird-interact --framework claude_sdk --query-mode slayer \
+  --dataset livesqlbench-base-lite-sqlite --mode one-shot \
+  --pre-encoded-models otf \
+  --agent-model anthropic/claude-opus-4-7 --reasoning-effort high \
+  --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
+  --db-path ../livesqlbench-base-lite-sqlite/
+
+# Cloud — a-interact mini-interact against the hand-curated models
+env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
+  --framework claude_sdk --query-mode slayer \
+  --dataset mini-interact --mode a-interact \
+  --pre-encoded-models custom \
+  --agent-model anthropic/claude-opus-4-7 \
+  --user-sim-model anthropic/claude-sonnet-4-6 --reasoning-effort high \
+  --instance-ids households_16 \
+  --workers 1 --actors-per-worker 1 \
+  --worker-type e2-standard-4 --max-runtime-hours 2 --detach
+```
+
+Notes:
+
+* **Retired flag.** `--pre-encoded-models` replaces the old
+  `--slayer-setup` flag. `slayer_setup` is now derived internally
+  (`pre-encoded` when the flag is set, else `on-the-fly`) and kept only for
+  cloud artifact routing; you never pass it.
+* **The reference must exist.** The read-only agent never encodes — if the
+  reference (or its `embeddings.db`) is missing it fails clear. Build all of
+  a benchmark's `otf` references in one go with:
+
+  ```bash
+  uv run python scripts/build_otf_references.py <benchmark> \
+    --agent-model anthropic/claude-opus-4-7 [--only db1,db2] [--force]
+  ```
+
+  (For postgres benchmarks, start the user-space postgres first with
+  `scripts/build_local_otf_cache.sh <benchmark>`.) The `custom` source
+  requires the committed `slayer_models/<db>/` to already carry a built
+  `embeddings.db`.
+* **Cloud.** The worker downloads `slayer_models_otf` (otf) or
+  `slayer_models` (custom) for the run's DBs; a missing required reference
+  fails the submit before the cluster spins up. No upload-back (read-only).
 
 ## Annotator Agent (DEV-1518)
 
@@ -475,14 +540,15 @@ Submits the gold SQL directly and scores it — no LLM. Expected
 
 ```bash
 uv run bird-interact --dataset livesqlbench-base-lite-sqlite --mode one-shot --query-mode slayer \
-  --framework claude_sdk --slayer-setup on-the-fly \
+  --framework claude_sdk \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
 ```
 
 `--mode one-shot` is gated to `--dataset livesqlbench-base-lite-sqlite` (and conversely
 `--dataset livesqlbench-base-lite-sqlite` accepts `--mode {one-shot, oracle}` only).
-`--slayer-setup on-the-fly` is required for one-shot.
+Slayer mode encodes KB on the fly by default; add `--pre-encoded-models {otf,custom}`
+to run against an already-encoded reference instead.
 
 ### Per-benchmark artifact roots
 
