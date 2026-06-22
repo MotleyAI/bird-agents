@@ -50,7 +50,6 @@ def _lsb_argv(extra: list[str]) -> list[str]:
         "--query-mode", "slayer",
         "--agent-model", "anthropic/claude-haiku-4-5-20251001",
         "--instance-ids", "alien_1",
-        "--slayer-setup", "on-the-fly",
         "--dataset", "livesqlbench-base-lite-sqlite",
         "--no-require-annotation",
         *extra,
@@ -467,8 +466,8 @@ def _slayer_argv(**over) -> list[str]:
         "--instance-ids", base["instance_ids"],
         "--mode", base["mode"],
     ]
-    if "slayer_setup" in over:
-        argv += ["--slayer-setup", over["slayer_setup"]]
+    if "pre_encoded_source" in over and over["pre_encoded_source"] is not None:
+        argv += ["--pre-encoded-models", over["pre_encoded_source"]]
     if "slayer_storage_root" in over:
         argv += ["--slayer-storage-root", over["slayer_storage_root"]]
     # fake instance ids in fixture argv — skip the audited-gold guard.
@@ -476,53 +475,51 @@ def _slayer_argv(**over) -> list[str]:
     return argv
 
 
-def test_slayer_pre_encoded_rejected() -> None:
-    """pre-encoded + query-mode=slayer is always rejected — on-the-fly is
-    the only valid setup for slayer mode."""
-    with pytest.raises(SystemExit):
-        _parse(_slayer_argv(mode="a-interact"))
-
-
-def test_slayer_on_the_fly_recursive_accepted() -> None:
-    ns = _parse(_slayer_argv(
-        framework="claude_sdk", mode="a-interact",
-        slayer_setup="on-the-fly",
-    ))
+def test_slayer_default_is_on_the_fly() -> None:
+    """DEV-1586: --pre-encoded-models omitted ⇒ slayer_setup derived as
+    on-the-fly (the new default); no --slayer-setup flag needed."""
+    ns = _parse(_slayer_argv(framework="claude_sdk", mode="a-interact"))
+    assert ns.pre_encoded_source is None
     assert ns.slayer_setup == "on-the-fly"
 
 
-def test_slayer_on_the_fly_otf_encode_accepted() -> None:
+def test_slayer_pre_encoded_otf_accepted_and_derived() -> None:
+    """--pre-encoded-models otf ⇒ pre-encoded routing; slayer_setup derived."""
     ns = _parse(_slayer_argv(
-        framework="claude_sdk", mode="a-interact",
-        slayer_setup="on-the-fly",
+        framework="claude_sdk", mode="a-interact", pre_encoded_source="otf",
     ))
-    assert ns.framework == "claude_sdk"
-    assert ns.slayer_setup == "on-the-fly"
+    assert ns.pre_encoded_source == "otf"
+    assert ns.slayer_setup == "pre-encoded"
+
+
+def test_slayer_pre_encoded_custom_accepted_and_derived() -> None:
+    ns = _parse(_slayer_argv(
+        framework="claude_sdk", mode="a-interact", pre_encoded_source="custom",
+    ))
+    assert ns.pre_encoded_source == "custom"
+    assert ns.slayer_setup == "pre-encoded"
 
 
 def test_slayer_storage_root_override_parsed() -> None:
     ns = _parse(_slayer_argv(
-        slayer_setup="on-the-fly", mode="a-interact",
-        slayer_storage_root="/data/custom_models",
+        mode="a-interact", slayer_storage_root="/data/custom_models",
     ))
     assert ns.slayer_storage_root == "/data/custom_models"
 
 
-def test_on_the_fly_accepted_any_framework() -> None:
-    """on-the-fly + any supported framework + a-interact is accepted —
-    framework-specific validation was removed in DEV-1525."""
-    ns = _parse(_slayer_argv(
-        framework="claude_sdk", mode="a-interact", slayer_setup="on-the-fly",
-    ))
-    assert ns.slayer_setup == "on-the-fly"
+def test_slayer_setup_flag_retired() -> None:
+    """--slayer-setup is retired from the user-facing submit parser."""
+    with pytest.raises(SystemExit):
+        _parse(_slayer_argv(mode="a-interact") + ["--slayer-setup", "on-the-fly"])
 
 
-def test_otf_encode_requires_on_the_fly() -> None:
-    """pydantic_ai_otf_encode is on-the-fly-only; pre-encoded (default) must
-    be rejected at submit."""
+def test_pre_encoded_rejected_for_otf_encode_framework() -> None:
+    """--pre-encoded-models is for the claude_sdk consumers only; routing it
+    to the encoder must be rejected at submit."""
     with pytest.raises(SystemExit):
         _parse(_slayer_argv(
-            framework="claude_sdk", mode="a-interact",
+            framework="pydantic_ai_otf_encode", mode="a-interact",
+            pre_encoded_source="otf",
         ))
 
 
@@ -540,7 +537,6 @@ def _ainteract_argv(**over) -> list[str]:
         "instance_ids": "shop_1",
         "mode": "a-interact",
         "dataset": "mini-interact",
-        "slayer_setup": "on-the-fly",
     }
     base.update(over)
     argv = [
@@ -551,9 +547,10 @@ def _ainteract_argv(**over) -> list[str]:
         "--instance-ids", base["instance_ids"],
         "--mode", base["mode"],
         "--dataset", base["dataset"],
-        "--slayer-setup", base["slayer_setup"],
         "--no-require-annotation",
     ]
+    if base.get("pre_encoded_source"):
+        argv += ["--pre-encoded-models", base["pre_encoded_source"]]
     return argv
 
 
@@ -565,9 +562,11 @@ def test_cloud_ainteract_with_mini_interact_a_interact_on_the_fly_accepted():
     assert ns.slayer_setup == "on-the-fly"
 
 
-def test_cloud_ainteract_with_pre_encoded_rejected():
-    with pytest.raises(SystemExit):
-        _parse(_ainteract_argv(slayer_setup="pre-encoded"))
+def test_cloud_ainteract_with_pre_encoded_accepted():
+    """DEV-1586: pre-encoded a-interact is now accepted (was rejected)."""
+    ns = _parse(_ainteract_argv(pre_encoded_source="otf"))
+    assert ns.pre_encoded_source == "otf"
+    assert ns.slayer_setup == "pre-encoded"
 
 
 def test_cloud_ainteract_with_livesqlbench_rejected():

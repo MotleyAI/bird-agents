@@ -73,7 +73,6 @@ def test_one_shot_in_mode_choices(monkeypatch, tmp_path):
         "--mode", "one-shot",
         "--framework", "claude_sdk",
         "--query-mode", "slayer",
-        "--slayer-setup", "on-the-fly",
     ]
     kwargs = _drive_main(monkeypatch, argv)
     assert kwargs.get("mode") == "one-shot"
@@ -130,7 +129,6 @@ def test_one_shot_requires_livesqlbench_dataset(monkeypatch, tmp_path, capsys):
         "--mode", "one-shot",
         "--framework", "claude_sdk",
         "--query-mode", "slayer",
-        "--slayer-setup", "on-the-fly",
     ]
     captured: dict = {}
 
@@ -182,20 +180,20 @@ def test_livesqlbench_oracle_is_accepted(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_one_shot_requires_on_the_fly(monkeypatch, tmp_path, capsys):
+def test_one_shot_pre_encoded_accepted(monkeypatch, tmp_path):
+    """DEV-1586: one-shot livesqlbench with --pre-encoded-models otf is now
+    accepted (the former on-the-fly-only constraint is gone); slayer_setup
+    derives to pre-encoded."""
     argv = _argv_base(tmp_path) + [
         "--dataset", "livesqlbench-base-lite-sqlite",
         "--mode", "one-shot",
         "--framework", "claude_sdk",
         "--query-mode", "slayer",
-        "--slayer-setup", "pre-encoded",
+        "--pre-encoded-models", "otf",
     ]
-    with pytest.raises((SystemExit, ValueError)) as exc_info:
-        monkeypatch.setattr(sys, "argv", argv)
-        run_module.main()
-    _assert_failed_validation(
-        capsys, exc_info.value, must_contain=["on-the-fly"],
-    )
+    kwargs = _drive_main(monkeypatch, argv)
+    assert kwargs.get("slayer_setup") == "pre-encoded"
+    assert kwargs.get("pre_encoded_source") == "otf"
 
 
 def test_one_shot_requires_slayer_query_mode(monkeypatch, tmp_path, capsys):
@@ -231,7 +229,6 @@ def test_one_shot_accepts_claude_sdk_framework(
         "--mode", "one-shot",
         "--framework", "claude_sdk",
         "--query-mode", "slayer",
-        "--slayer-setup", "on-the-fly",
     ]
     kwargs = _drive_main(monkeypatch, argv)
     assert kwargs.get("framework") == "claude_sdk"

@@ -174,6 +174,7 @@ def collate(run_dir: Path, manifest: dict) -> dict[str, Any]:
             # cloud actor uses to build the per-task SubmissionConfig.
             query_mode=manifest.get("query_mode"),
             slayer_setup=manifest.get("slayer_setup"),
+            pre_encoded_source=manifest.get("pre_encoded_source"),
             patience=manifest.get("patience"),
             max_depth=manifest.get("max_depth"),
             reasoning_effort=manifest.get("reasoning_effort"),

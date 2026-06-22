@@ -74,22 +74,74 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# DEV-1586: frameworks whose agents implement the read-only pre-encoded mode
+# (the SLayer claude_sdk consumers — aggregators + the four direct OTF slayer
+# flavors). Raw flavors never reach the slayer branch of the validator.
+_PRE_ENCODED_FRAMEWORKS = frozenset({
+    "claude_sdk",
+    "claude_sdk_v1",
+    "claude_sdk_otf",
+    "claude_sdk_otf_ainteract",
+    "claude_sdk_otf_v1",
+    "claude_sdk_otf_ainteract_v1",
+})
+
+
 def _validate_slayer_setup(
     *, slayer_setup: str, framework: str, query_mode: str, mode: str,
+    pre_encoded_source: str | None = None,
 ) -> None:
-    """Reject invalid ``slayer_setup`` / ``query_mode`` combinations.
+    """Reject inconsistent ``slayer_setup`` / ``pre_encoded_source`` combos.
 
-    ``raw`` query_mode has no SLayer dependency — ``slayer_setup`` is ignored.
-    ``slayer`` query_mode requires ``on-the-fly``; any other value raises.
+    DEV-1586: ``slayer_setup`` is no longer user-set — it is DERIVED from the
+    user-facing ``--pre-encoded-models`` flag (``"pre-encoded"`` when a source
+    is set, else ``"on-the-fly"``). This guard just enforces that the derived
+    value is internally consistent with the source, so a hand-built manifest
+    or a stale resubmit can't carry a contradictory pair.
+
+    ``raw`` query_mode has no SLayer dependency, but a stray
+    ``--pre-encoded-models`` there is still nonsensical and rejected (the
+    flag is slayer-only). ``slayer_setup`` itself is ignored for raw.
     """
+    from bird_interact_agents.agents._pre_encoded import (
+        derive_slayer_setup,
+        validate_pre_encoded_source,
+    )
+
+    # Always validate the source vocabulary + framework gate, BEFORE the
+    # raw early-return (Codex DEV-1586 r2 #2 — otherwise `--query-mode raw
+    # --framework pydantic_ai --pre-encoded-models otf` slips through).
+    validate_pre_encoded_source(pre_encoded_source)
+    if pre_encoded_source is not None:
+        # The flag only controls the SLayer datasource source, so it is
+        # meaningless in raw mode.
+        if query_mode != "slayer":
+            raise ValueError(
+                "--pre-encoded-models is only valid with --query-mode slayer; "
+                f"got --query-mode {query_mode!r}."
+            )
+        # pre-encoded mode is implemented only by the read-only SLayer
+        # claude_sdk consumers. Routing it to the encoder
+        # (pydantic_ai_otf_encode) or the recursive/plain pydantic agents
+        # would mis-route cloud artifacts and silently ignore the flag.
+        if framework not in _PRE_ENCODED_FRAMEWORKS:
+            raise ValueError(
+                f"--pre-encoded-models is only supported for the SLayer "
+                f"claude_sdk frameworks {sorted(_PRE_ENCODED_FRAMEWORKS)}; got "
+                f"--framework {framework!r}. Omit --pre-encoded-models to "
+                "encode on the fly."
+            )
+
     if query_mode == "raw":
         return
-    if slayer_setup == "on-the-fly":
-        return
-    raise ValueError(
-        "--slayer-setup on-the-fly is required with --query-mode slayer; "
-        f"got --slayer-setup {slayer_setup!r}"
-    )
+    expected = derive_slayer_setup(pre_encoded_source)
+    if slayer_setup != expected:
+        raise ValueError(
+            f"--query-mode slayer with pre_encoded_source="
+            f"{pre_encoded_source!r} requires slayer_setup={expected!r}; "
+            f"got {slayer_setup!r}. (slayer_setup is derived from "
+            "--pre-encoded-models; do not set it directly.)"
+        )
 
 
 def _validate_dataset_mode(dataset: str, mode: str) -> None:
@@ -143,6 +195,7 @@ def _validate_framework_mode(
 def _maybe_force_wipe_otf(
     *, otf_rebuild: bool, framework: str, dbs,
     benchmark: str,
+    pre_encoded_source: str | None = None,
 ) -> None:
     """``--otf-rebuild`` force-wipe: drop BOTH on-the-fly layers (the phase-1-3
     cache AND the KB-encoded reference) for ``dbs``, for either on-the-fly
@@ -155,8 +208,17 @@ def _maybe_force_wipe_otf(
     DEV-1462: ``benchmark`` (REQUIRED, explicit) selects the per-benchmark
     scoped roots so a LiveSQLBench ``--otf-rebuild`` never wipes the
     mini-interact cache (and vice versa).
+
+    DEV-1586: NO-OP in pre-encoded mode. The on-the-fly cache/reference are
+    not owned by a pre-encoded run — and for ``--pre-encoded-models otf`` the
+    reference IS the thing the read-only agent consumes, so wiping it here
+    would delete the input and the agent could never rebuild it. (For
+    ``custom`` it would needlessly purge unrelated OTF references for the
+    selected DBs.)
     """
     if not otf_rebuild:
+        return
+    if pre_encoded_source is not None:
         return
     # DEV-1555 v0/v1: both aggregator tokens dispatch to on-the-fly agents.
     if framework not in ("claude_sdk", "claude_sdk_v1"):
@@ -253,9 +315,10 @@ def make_runner(
     prompt_cache: bool,
     max_depth: int,
     slayer_storage_root: str | None,
-    slayer_setup: str = "pre-encoded",
+    slayer_setup: str | None = None,
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
+    pre_encoded_source: str | None = None,
 ):
     """Public alias for `_make_runner`. The cloud actor (and other
     throughput-sensitive callers) call this once at startup and reuse the
@@ -270,9 +333,17 @@ def make_runner(
     each framework's `run_task` closure (so explicit-None does not
     shadow the agent class's Python "v2" default).
     """
+    # DEV-1586: slayer_setup is a pure function of the pre-encoded source.
+    # Omitted (None) ⇒ derive (on-the-fly when no source). An explicit value
+    # (the cloud actor passes the manifest's derived value) is honored and
+    # consistency-checked below.
+    from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
+    if slayer_setup is None:
+        slayer_setup = derive_slayer_setup(pre_encoded_source)
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
+        pre_encoded_source=pre_encoded_source,
     )
     return _make_runner(
         framework=framework, dataset=dataset, query_mode=query_mode, mode=mode,
@@ -280,6 +351,7 @@ def make_runner(
         max_depth=max_depth, slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup, reasoning_effort=reasoning_effort,
         user_sim_prompt_version=user_sim_prompt_version,
+        pre_encoded_source=pre_encoded_source,
     )
 
 
@@ -437,9 +509,10 @@ def _make_runner(
     prompt_cache: bool,
     max_depth: int,
     slayer_storage_root: str | None,
-    slayer_setup: str = "pre-encoded",
+    slayer_setup: str | None = None,
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
+    pre_encoded_source: str | None = None,
 ):
     """Construct the per-task runner closure for the given config.
 
@@ -460,6 +533,12 @@ def _make_runner(
     ``USER_SIMULATOR_ENCODER[None]`` in the user-sim invocation site.
     """
     _v = user_sim_prompt_version or "v2"
+    # DEV-1586: derive slayer_setup from the pre-encoded source when omitted
+    # (None), so direct callers get the same "omitted ⇒ on-the-fly" default
+    # as the CLIs / make_runner.
+    if slayer_setup is None:
+        from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
+        slayer_setup = derive_slayer_setup(pre_encoded_source)
     if mode == "oracle":
         async def run_one(td: dict, data_dir: str, patience: int,
                           user_sim_model: str) -> dict:
@@ -482,6 +561,7 @@ def _make_runner(
                 slayer_storage_root=slayer_storage_root,
                 model=agent_model,
                 slayer_setup=slayer_setup,
+                pre_encoded_source=pre_encoded_source,
                 reasoning_effort=reasoning_effort,
             )
         elif not b.one_shot and query_mode == "slayer":
@@ -492,6 +572,7 @@ def _make_runner(
                 slayer_storage_root=slayer_storage_root,
                 model=agent_model,
                 slayer_setup=slayer_setup,
+                pre_encoded_source=pre_encoded_source,
                 reasoning_effort=reasoning_effort,
             )
         elif b.one_shot and query_mode == "raw":
@@ -531,6 +612,7 @@ def _make_runner(
             slayer_storage_root=slayer_storage_root,
             model=agent_model,
             slayer_setup=slayer_setup,
+            pre_encoded_source=pre_encoded_source,
             reasoning_effort=reasoning_effort,
         )
 
@@ -558,6 +640,7 @@ def _make_runner(
             slayer_storage_root=slayer_storage_root,
             model=agent_model,
             slayer_setup=slayer_setup,
+            pre_encoded_source=pre_encoded_source,
             reasoning_effort=reasoning_effort,
         )
 
@@ -634,6 +717,7 @@ def _make_runner(
                 slayer_storage_root=slayer_storage_root,
                 model=agent_model,
                 slayer_setup=slayer_setup,
+                pre_encoded_source=pre_encoded_source,
                 reasoning_effort=reasoning_effort,
             )
         elif not b.one_shot and query_mode == "slayer":
@@ -644,6 +728,7 @@ def _make_runner(
                 slayer_storage_root=slayer_storage_root,
                 model=agent_model,
                 slayer_setup=slayer_setup,
+                pre_encoded_source=pre_encoded_source,
                 reasoning_effort=reasoning_effort,
             )
         elif b.one_shot and query_mode == "raw":
@@ -685,6 +770,7 @@ def _make_runner(
             slayer_storage_root=slayer_storage_root,
             model=agent_model,
             slayer_setup=slayer_setup,
+            pre_encoded_source=pre_encoded_source,
             reasoning_effort=reasoning_effort,
         )
 
@@ -712,6 +798,7 @@ def _make_runner(
             slayer_storage_root=slayer_storage_root,
             model=agent_model,
             slayer_setup=slayer_setup,
+            pre_encoded_source=pre_encoded_source,
             reasoning_effort=reasoning_effort,
         )
 
@@ -922,9 +1009,10 @@ async def run_one_task(
     prompt_cache: bool,
     max_depth: int,
     slayer_storage_root: str | None,
-    slayer_setup: str = "pre-encoded",
+    slayer_setup: str | None = None,
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
+    pre_encoded_source: str | None = None,
 ) -> dict:
     """Run a single per-task evaluation and return a `_persist`-consumable dict.
 
@@ -948,9 +1036,13 @@ async def run_one_task(
     one-shot run on un-marked task data (Codex #1 — programmatic-bypass
     close, complementary to ``_validate_dataset_mode`` on the CLI side).
     """
+    from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
+    if slayer_setup is None:
+        slayer_setup = derive_slayer_setup(pre_encoded_source)
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
+        pre_encoded_source=pre_encoded_source,
     )
     runner = _make_runner(
         framework=framework,
@@ -965,6 +1057,7 @@ async def run_one_task(
         slayer_setup=slayer_setup,
         reasoning_effort=reasoning_effort,
         user_sim_prompt_version=user_sim_prompt_version,
+        pre_encoded_source=pre_encoded_source,
     )
     instance_id = str(task_data.get("instance_id") or "")
     t_start = time.perf_counter()
@@ -1056,18 +1149,23 @@ async def run_evaluation(
     use_audited_gold_sql: bool = False,
     prompt_cache: bool = True,
     max_depth: int = 3,
-    slayer_setup: str = "pre-encoded",
+    slayer_setup: str | None = None,
     otf_rebuild: bool = False,
     dataset: str = "mini-interact",
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
+    pre_encoded_source: str | None = None,
 ) -> dict:
     """Run full evaluation across all tasks."""
+    from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
+    if slayer_setup is None:
+        slayer_setup = derive_slayer_setup(pre_encoded_source)
     _validate_dataset_mode(dataset=dataset, mode=mode)
     _validate_framework_mode(framework=framework, dataset=dataset, mode=mode)
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
+        pre_encoded_source=pre_encoded_source,
     )
     b = get_benchmark(dataset)
 
@@ -1100,6 +1198,7 @@ async def run_evaluation(
         framework=framework,
         dbs={t.get("selected_database") for t in tasks if t.get("selected_database")},
         benchmark=benchmark_for_paths,
+        pre_encoded_source=pre_encoded_source,
     )
 
     # DEV-1510: the audited-gold overlay now fires for ALL benchmarks. The
@@ -1137,6 +1236,7 @@ async def run_evaluation(
         slayer_setup=slayer_setup,
         reasoning_effort=reasoning_effort,
         user_sim_prompt_version=user_sim_prompt_version,
+        pre_encoded_source=pre_encoded_source,
     )
 
     # Open the per-run results.db (lives next to eval.json) and write
@@ -1160,6 +1260,7 @@ async def run_evaluation(
         started_at=time.time(),
         query_mode=query_mode,
         slayer_setup=slayer_setup,
+        pre_encoded_source=pre_encoded_source,
         patience=patience,
         max_depth=max_depth,
         reasoning_effort=reasoning_effort,
@@ -1180,6 +1281,7 @@ async def run_evaluation(
         agent_model=agent_model,
         user_sim_model=user_sim_model,
         slayer_setup=slayer_setup,
+        pre_encoded_source=pre_encoded_source,
         reasoning_effort=reasoning_effort,
         patience=patience,
         max_depth=max_depth,
@@ -1753,24 +1855,25 @@ def main() -> None:
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
-        "--slayer-setup",
-        choices=["pre-encoded", "on-the-fly"],
-        default="pre-encoded",
+        "--pre-encoded-models",
+        dest="pre_encoded_source",
+        choices=["otf", "custom"],
+        default=None,
         help=(
-            "How SLayer storage is provisioned for each task. "
-            "'pre-encoded' (default) uses the committed slayer_models/ "
-            "as today. 'on-the-fly' (DEV-1455) ingests the relevant DB "
-            "into SLayer at task setup time and encodes each KB item "
-            "as a SLayer memory, preserving cross-references as "
-            "memory:<id> entity tokens. Valid with --query-mode slayer "
-            "and --framework pydantic_ai_recursive, pydantic_ai_otf_encode, "
-            "claude_sdk_otf, or claude_sdk_otf_ainteract, under --mode "
-            "a-interact or one-shot. (pydantic_ai_otf_encode, "
-            "claude_sdk_otf, and claude_sdk_otf_ainteract REQUIRE "
-            "on-the-fly.)"
+            "DEV-1586: run the SLayer agents against an ALREADY-encoded "
+            "datasource (read-only; no model-mutation tools). "
+            "'otf' = the encoding-agent output at "
+            "slayer_models_otf/<benchmark>/<db>; 'custom' = the hand-curated "
+            "slayer_models/<db>. When omitted (default), the SLayer agents "
+            "encode KB items ON THE FLY. This flag REPLACES the retired "
+            "--slayer-setup flag: the internal slayer_setup value is derived "
+            "from it ('pre-encoded' when set, else 'on-the-fly')."
         ),
     )
     args = parser.parse_args()
+    # DEV-1586: derive the internal slayer_setup from the user-facing flag.
+    from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
+    args.slayer_setup = derive_slayer_setup(args.pre_encoded_source)
 
     # Resolve --db-path to an absolute path ONCE at the CLI boundary. Every
     # downstream consumer (orchestrator ingest, on-the-fly cache/reference,
@@ -1808,6 +1911,7 @@ def main() -> None:
             framework=args.framework,
             query_mode=args.query_mode,
             mode=args.mode,
+            pre_encoded_source=args.pre_encoded_source,
         )
     except ValueError as e:
         parser.error(str(e))
@@ -1864,6 +1968,7 @@ def main() -> None:
             dataset=args.dataset,
             reasoning_effort=args.reasoning_effort,
             user_sim_prompt_version=args.user_sim_prompt_version,
+            pre_encoded_source=args.pre_encoded_source,
         )
     )
 

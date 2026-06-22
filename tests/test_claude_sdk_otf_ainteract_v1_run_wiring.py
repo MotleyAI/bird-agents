@@ -98,16 +98,21 @@ async def test_run_evaluation_branches_to_ainteract_agent(monkeypatch, tmp_path)
 # Slayer-setup validator
 # ---------------------------------------------------------------------------
 
-def test_validate_slayer_setup_requires_on_the_fly_for_ainteract():
+def test_validate_slayer_setup_pre_encoded_consistency_for_ainteract():
     from bird_interact_agents import run as run_mod
 
-    # pre-encoded rejected for the new flavor.
+    # pre-encoded WITHOUT a source is an inconsistent derived pair → reject.
     with pytest.raises(ValueError):
         run_mod._validate_slayer_setup(
             slayer_setup="pre-encoded", framework="claude_sdk_otf_ainteract_v1",
-            query_mode="slayer", mode="a-interact",
+            query_mode="slayer", mode="a-interact", pre_encoded_source=None,
         )
-    # on-the-fly + slayer + a-interact accepted.
+    # pre-encoded WITH a source is accepted (DEV-1586).
+    run_mod._validate_slayer_setup(
+        slayer_setup="pre-encoded", framework="claude_sdk_otf_ainteract_v1",
+        query_mode="slayer", mode="a-interact", pre_encoded_source="custom",
+    )
+    # on-the-fly + slayer + a-interact still accepted.
     run_mod._validate_slayer_setup(
         slayer_setup="on-the-fly", framework="claude_sdk_otf_ainteract_v1",
         query_mode="slayer", mode="a-interact",
@@ -171,37 +176,46 @@ def test_maybe_force_wipe_otf_passes_benchmark_kwarg_for_ainteract(monkeypatch):
 # CLI rejection paths
 # ---------------------------------------------------------------------------
 
-def _argv(framework, mode, dataset, slayer_setup, *, tmp_path, gold_file=None):
+def _argv(framework, mode, dataset, *, tmp_path, gold_file=None,
+          pre_encoded_source=None):
     data_file = tmp_path / "x.jsonl"
     data_file.write_text("")
     argv = [
         "prog",
         "--framework", framework,
-        "--slayer-setup", slayer_setup,
         "--query-mode", "slayer",
         "--mode", mode,
         "--dataset", dataset,
         "--data", str(data_file),
         "--db-path", str(tmp_path),
     ]
+    if pre_encoded_source:
+        argv += ["--pre-encoded-models", pre_encoded_source]
     if gold_file:
         argv += ["--gold-file", str(gold_file)]
     return argv
 
 
-def test_cli_rejects_slayer_with_pre_encoded(monkeypatch, tmp_path, capsys):
+def test_cli_accepts_a_interact_with_pre_encoded(monkeypatch, tmp_path):
+    """DEV-1586: a-interact + --pre-encoded-models custom is accepted; the
+    derived slayer_setup is pre-encoded."""
     from bird_interact_agents import run as run_mod
 
     argv = _argv(
         "claude_sdk_v1", "a-interact", "mini-interact",
-        "pre-encoded", tmp_path=tmp_path,
-    )
+        tmp_path=tmp_path, pre_encoded_source="custom",
+    ) + ["--output", str(tmp_path / "eval.json")]
     monkeypatch.setattr(sys, "argv", argv)
-    with pytest.raises(SystemExit):
-        run_mod.main()
-    err = capsys.readouterr().err
-    # The slayer-setup validator must fire.
-    assert "on-the-fly" in err or "slayer-setup" in err
+    called = {}
+
+    async def fake_run(**kw):
+        called.update(kw)
+        return {}
+
+    monkeypatch.setattr(run_mod, "run_evaluation", fake_run)
+    run_mod.main()
+    assert called["slayer_setup"] == "pre-encoded"
+    assert called["pre_encoded_source"] == "custom"
 
 
 def test_cli_rejects_a_interact_with_livesqlbench(monkeypatch, tmp_path, capsys):
@@ -212,7 +226,7 @@ def test_cli_rejects_a_interact_with_livesqlbench(monkeypatch, tmp_path, capsys)
     gold.write_text("")
     argv = _argv(
         "claude_sdk_v1", "a-interact", "livesqlbench-base-lite-sqlite",
-        "on-the-fly", tmp_path=tmp_path, gold_file=gold,
+        tmp_path=tmp_path, gold_file=gold,
     )
     monkeypatch.setattr(sys, "argv", argv)
     with pytest.raises(SystemExit):
@@ -228,7 +242,7 @@ def test_cli_rejects_one_shot_with_mini_interact(monkeypatch, tmp_path, capsys):
 
     argv = _argv(
         "claude_sdk_v1", "one-shot", "mini-interact",
-        "on-the-fly", tmp_path=tmp_path,
+        tmp_path=tmp_path,
     )
     monkeypatch.setattr(sys, "argv", argv)
     with pytest.raises(SystemExit):

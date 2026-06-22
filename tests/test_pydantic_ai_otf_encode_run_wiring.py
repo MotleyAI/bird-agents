@@ -97,36 +97,32 @@ async def test_run_evaluation_branches_to_new_agent(monkeypatch, tmp_path):
     assert constructed[0].get("slayer_setup") == "on-the-fly"
 
 
-def test_cli_rejects_pydantic_ai_otf_encode_with_pre_encoded(monkeypatch):
-    """The CLI's setup-mode guard rejects `pydantic_ai_otf_encode +
-    pre-encoded`. Codex finding 6 / spec section 5 — the new framework
-    must require on-the-fly."""
+def test_cli_rejects_pre_encoded_for_otf_encode_framework(monkeypatch):
+    """DEV-1586: --pre-encoded-models is for the claude_sdk consumers only;
+    passing it with pydantic_ai_otf_encode (the encoder) is rejected."""
     from bird_interact_agents import run as run_mod
     import sys
 
     argv = [
         "prog",
         "--dataset", "mini-interact",
-        "--framework", "claude_sdk",
-        "--slayer-setup", "pre-encoded",
+        "--framework", "pydantic_ai_otf_encode",
+        "--pre-encoded-models", "otf",
         "--query-mode", "slayer",
         "--mode", "a-interact",
         "--data", "/tmp/x.jsonl",
         "--db-path", "/tmp",
     ]
     monkeypatch.setattr(sys, "argv", argv)
-
-    # parser.error raises SystemExit(2). The CLI message must mention
-    # the requirement.
     with pytest.raises(SystemExit):
         run_mod.main()
 
 
-def test_cli_accepts_pydantic_ai_otf_encode_with_on_the_fly(
+def test_cli_defaults_to_on_the_fly(
     monkeypatch, tmp_path,
 ):
-    """Parser accepts the combo; we monkeypatch run_evaluation to a
-    noop so we just exercise argument parsing + branch selection."""
+    """Parser accepts slayer mode with no --pre-encoded-models; slayer_setup
+    derives to on-the-fly. We monkeypatch run_evaluation to a noop."""
     from bird_interact_agents import run as run_mod
     import sys
 
@@ -134,7 +130,6 @@ def test_cli_accepts_pydantic_ai_otf_encode_with_on_the_fly(
         "prog",
         "--dataset", "mini-interact",
         "--framework", "claude_sdk",
-        "--slayer-setup", "on-the-fly",
         "--query-mode", "slayer",
         "--mode", "a-interact",
         "--data", "/tmp/x.jsonl",
@@ -152,3 +147,4 @@ def test_cli_accepts_pydantic_ai_otf_encode_with_on_the_fly(
     run_mod.main()
     assert called["framework"] == "claude_sdk"
     assert called["slayer_setup"] == "on-the-fly"
+    assert called["pre_encoded_source"] is None
