@@ -428,6 +428,50 @@ def test_driver_job_args_omit_pre_encoded_when_on_the_fly():
     assert "--pre-encoded-models" not in job_args
 
 
+def test_has_nonempty_embeddings(tmp_path):
+    from bird_interact_agents.cloud import driver
+
+    d = tmp_path / "db"
+    d.mkdir()
+    assert not driver._has_nonempty_embeddings(d)  # absent
+    (d / "embeddings.db").write_bytes(b"")
+    assert not driver._has_nonempty_embeddings(d)  # empty
+    (d / "embeddings.db").write_bytes(b"x")
+    assert driver._has_nonempty_embeddings(d)  # non-empty
+
+
+def test_submit_preflight_requires_embeddings_for_pre_encoded(monkeypatch, tmp_path):
+    """Codex r2: a pre-encoded submit whose reference has the marker but no
+    embeddings.db must fail at submit (before the cluster), mirroring the
+    runtime ingest_on_startup=False guard."""
+    from types import SimpleNamespace
+    from bird_interact_agents.cloud import driver
+
+    root = tmp_path / "otf"
+    db_dir = root / "alien"
+    db_dir.mkdir(parents=True)
+    (db_dir / "_reference_fp.txt").write_text("fp\n")  # marker present, no embeddings
+
+    args = SimpleNamespace(
+        framework="claude_sdk", slayer_setup="pre-encoded",
+        pre_encoded_source="otf", dataset="mini-interact",
+        instance_ids=("alien_1",),
+    )
+    monkeypatch.setattr(
+        driver, "_slayer_uploads_for",
+        lambda a: [(root, "slayer_models_otf", True)],
+    )
+    monkeypatch.setattr(driver, "_dbs_for_instances", lambda ids, b: ["alien"])
+    monkeypatch.setattr(driver, "_submit_benchmark", lambda a: "mini-interact")
+
+    with pytest.raises(FileNotFoundError):
+        driver._check_slayer_setup_present(args)
+
+    # With a non-empty embeddings.db the preflight passes.
+    (db_dir / "embeddings.db").write_bytes(b"\x00sqlite-ish")
+    assert driver._check_slayer_setup_present(args) == ["alien"]
+
+
 def test_resubmit_back_compat_legacy_pre_encoded_defaults_custom():
     """A pre-DEV-1586 manifest with slayer_setup=pre-encoded and no
     pre_encoded_source resubmits as 'custom' (the legacy meaning)."""

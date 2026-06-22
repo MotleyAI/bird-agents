@@ -472,6 +472,13 @@ def _check_gold_present(benchmark_name: str) -> None:
         )
 
 
+def _has_nonempty_embeddings(db_dir: Path) -> bool:
+    """True iff ``<db_dir>/embeddings.db`` exists and is non-empty. DEV-1586:
+    the submit-side pre-encoded preflight mirror of the runtime guard."""
+    emb = db_dir / "embeddings.db"
+    return emb.is_file() and emb.stat().st_size > 0
+
+
 def _artifact_present(root: Path, db: str, artifact: str) -> bool:
     """Presence semantics per artifact: ``slayer_models`` = a NON-EMPTY
     committed dir (no marker); OTF layers = their completeness marker file is
@@ -523,10 +530,32 @@ def _check_slayer_setup_present(args) -> list[str]:
     benchmark = _submit_benchmark(args)
     dbs = _dbs_for_instances(args.instance_ids, benchmark)
     uploads = _slayer_uploads_for(args)
+    # DEV-1586: the claude_sdk pre-encoded agents start SLayer with
+    # ingest_on_startup=False, so a present reference is unusable without a
+    # built embeddings.db. Mirror the runtime guard
+    # (agents/_pre_encoded._assert_reference_present) at submit so a doomed
+    # pre-encoded run fails BEFORE the cluster spins up (Codex review). Gate on
+    # `pre_encoded_source` (set ONLY for the claude_sdk consumers) — the legacy
+    # pydantic committed-reference path ingests on startup and needs no
+    # pre-built embeddings.
+    pre_encoded = getattr(args, "pre_encoded_source", None) is not None
     for root, artifact, required in uploads:
         if not required:
             continue
         missing = [db for db in dbs if not _artifact_present(root, db, artifact)]
+        if pre_encoded:
+            no_emb = [
+                db for db in dbs
+                if db not in missing and not _has_nonempty_embeddings(root / db)
+            ]
+            if no_emb:
+                raise FileNotFoundError(
+                    f"cloud slayer: pre-encoded reference for {no_emb} under "
+                    f"{root} has no usable embeddings.db (the pre-encoded "
+                    f"agents run with ingest_on_startup=False). Build the "
+                    f"embeddings before submitting "
+                    f"(scripts/build_otf_references.py for the otf source)."
+                )
         if not missing:
             continue
         if artifact == "slayer_otf_cache":
