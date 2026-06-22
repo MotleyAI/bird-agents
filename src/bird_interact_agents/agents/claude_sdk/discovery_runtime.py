@@ -61,29 +61,30 @@ async def run_main_with_discovery(
     flows into the SAME ``accum`` — main via ``usage_tracker`` in the loop
     below; each discovery ask via its own fresh tracker inside the channel.
 
-    ``enter_cm_factory`` is threaded to the FIRST hermetic session's
-    ``enter_cm_factory`` (the discovery client — the first ``claude`` CLI
-    subprocess spawned, where the DEV-1561 initialize-handshake hang surfaces
-    first), preserving the ``otf_timer``-around-``__aenter__`` instrumentation.
-    ``on_main_message(msg, seq)`` (1-based seq) is invoked per main message
-    before usage accounting, for per-message logging.
+    ``enter_cm_factory`` is threaded to BOTH hermetic sessions'
+    ``enter_cm_factory`` so the DEV-1561 ``otf_timer``-around-``__aenter__``
+    instrumentation covers EACH ``claude`` CLI subprocess spawn (discovery is
+    entered first, where an initialize-handshake hang surfaces first; main is
+    entered second). Each enter emits its own ``run_task.sdk_client_enter``
+    span. ``on_main_message(msg, seq)`` (1-based seq) is invoked per main
+    message before usage accounting, for per-message logging.
 
     Mutates ``trajectory`` (appends one structured entry per main message) and
     ``accum`` (usage). Does not finalize ``usage_tracker`` — the caller does, so
     the crash path can finalize once.
     """
+    enter_kwargs: dict = {}
+    if enter_cm_factory is not None:
+        enter_kwargs["enter_cm_factory"] = enter_cm_factory
     async with contextlib.AsyncExitStack() as stack:
         # Discovery FIRST → closes LAST (LIFO unwind). It is also the first
-        # CLI subprocess spawned, so DEV-1561's enter-timing wraps it.
-        discovery_kwargs: dict = {}
-        if enter_cm_factory is not None:
-            discovery_kwargs["enter_cm_factory"] = enter_cm_factory
+        # CLI subprocess spawned, so its enter-timing fires first.
         discovery_client = await stack.enter_async_context(
             hermetic_claude_sdk_session(
                 model,
                 mcp_servers=discovery_mcp_servers,
                 build_options=build_discovery_options,
-                **discovery_kwargs,
+                **enter_kwargs,
             )
         )
         channel = DiscoveryChannel(
@@ -103,6 +104,7 @@ async def run_main_with_discovery(
                     model,
                     mcp_servers=main_mcp_servers,
                     build_options=build_main_options,
+                    **enter_kwargs,
                 )
             )
 
