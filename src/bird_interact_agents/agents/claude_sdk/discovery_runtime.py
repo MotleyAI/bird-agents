@@ -92,26 +92,32 @@ async def run_main_with_discovery(
             model=model,
             max_calls=max_discovery_calls,
         )
+        # Publish the warm channel for the in-process ask_discovery native, and
+        # restore the prior value on exit so a closed channel never lingers in a
+        # reused context (CodeRabbit PR #56).
+        prev_discovery = _ctx.get("_discovery")
         _ctx["_discovery"] = channel
-
-        main_client = await stack.enter_async_context(
-            hermetic_claude_sdk_session(
-                model,
-                mcp_servers=main_mcp_servers,
-                build_options=build_main_options,
+        try:
+            main_client = await stack.enter_async_context(
+                hermetic_claude_sdk_session(
+                    model,
+                    mcp_servers=main_mcp_servers,
+                    build_options=build_main_options,
+                )
             )
-        )
 
-        await main_client.query(initial_query)
-        seq = 0
-        async for msg in main_client.receive_response():
-            seq += 1
-            if on_main_message is not None:
-                on_main_message(msg, seq)
-            try:
-                _data: object = dataclasses.asdict(msg)
-            except Exception:  # noqa: BLE001
-                _data = str(msg)
-            trajectory.append({"type": str(type(msg).__name__), "data": _data})
-            usage_tracker.observe(msg)
-            update_context_tokens(context_state, msg)
+            await main_client.query(initial_query)
+            seq = 0
+            async for msg in main_client.receive_response():
+                seq += 1
+                if on_main_message is not None:
+                    on_main_message(msg, seq)
+                try:
+                    _data: object = dataclasses.asdict(msg)
+                except Exception:  # noqa: BLE001
+                    _data = str(msg)
+                trajectory.append({"type": str(type(msg).__name__), "data": _data})
+                usage_tracker.observe(msg)
+                update_context_tokens(context_state, msg)
+        finally:
+            _ctx["_discovery"] = prev_discovery

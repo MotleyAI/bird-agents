@@ -364,6 +364,18 @@ class ClaudeSDKOtfAInteractRawAgent:
                     model=native_model_id(self.model),
                     effort=self.reasoning_effort,
                     max_turns=DISCOVERY_MAX_TURNS,
+                    # Discovery's ask_user must increment the SAME shared counter
+                    # the main submit_sql gate reads (post_ask_counter closure
+                    # shared with _build_main_options), else a discovery-side ask
+                    # leaves the main gate closed (Codex PR #56).
+                    hooks={
+                        "PostToolUse": [
+                            HookMatcher(
+                                matcher=_ASK_USER_TOOL,
+                                hooks=[post_ask_counter],
+                            ),
+                        ],
+                    },
                 )
 
             # DEV-1561: per-message timing log + otf_timer around the main

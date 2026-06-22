@@ -47,6 +47,13 @@ DISCOVERY_CALL_CAP_MESSAGE = (
 #: Default per-task cap on ``ask_discovery`` calls.
 DEFAULT_MAX_DISCOVERY_CALLS = 10
 
+#: Default per-ask wall-clock backstop (seconds). The single-flight lock is held
+#: for the whole query/drain cycle, so a stalled discovery stream would block
+#: every later ``ask`` indefinitely. This generous cap converts an indefinite
+#: hang into a usable sentinel without cutting off a legitimately-long first
+#: introspection sweep (CodeRabbit PR #56).
+DEFAULT_DISCOVERY_ASK_TIMEOUT_S = 600.0
+
 
 def _default_is_result(msg: Any) -> bool:
     return type(msg).__name__ == "ResultMessage"
@@ -81,6 +88,7 @@ class DiscoveryChannel:
         max_calls: int = DEFAULT_MAX_DISCOVERY_CALLS,
         tracker_factory: Callable[[Any, str], Any] | None = None,
         is_result: Callable[[Any], bool] | None = None,
+        timeout_s: float | None = DEFAULT_DISCOVERY_ASK_TIMEOUT_S,
     ) -> None:
         self._client = client
         self._usage_accum = usage_accum
@@ -88,6 +96,7 @@ class DiscoveryChannel:
         self._max_calls = max_calls
         self._tracker_factory = tracker_factory or _default_tracker_factory
         self._is_result = is_result or _default_is_result
+        self._timeout_s = timeout_s
         self._lock = asyncio.Lock()
         self._calls = 0
         self._closed = False
@@ -107,7 +116,9 @@ class DiscoveryChannel:
             tracker = self._tracker_factory(self._usage_accum, self._model)
             parts: list[str] = []
             agen = None
-            try:
+
+            async def _drive() -> None:
+                nonlocal agen
                 await self._client.query(question)
                 agen = self._client.receive_response()
                 async for msg in agen:
@@ -115,6 +126,20 @@ class DiscoveryChannel:
                     parts.append(_extract_text(msg))
                     if self._is_result(msg):
                         break
+
+            try:
+                if self._timeout_s is not None:
+                    await asyncio.wait_for(_drive(), timeout=self._timeout_s)
+                else:
+                    await _drive()
+            except (asyncio.TimeoutError, TimeoutError):
+                # Backstop against a stalled stream holding the single-flight
+                # lock forever. wait_for cancels _drive; the finally below
+                # closes the half-open stream.
+                logger.warning(
+                    "ask_discovery timed out after %ss", self._timeout_s,
+                )
+                return f"[discovery timeout: no response within {self._timeout_s}s]"
             except Exception as exc:  # noqa: BLE001 - never raise into main
                 logger.warning("ask_discovery stream failed: %s", exc)
                 return f"[discovery error: {exc}]"

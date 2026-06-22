@@ -38,8 +38,14 @@ def test_note_substitutes_mode_tool_names(query_mode, verify_tool, submit_tool):
     # supplied-value substitution: the mode's own tool names appear.
     assert verify_tool in note
     assert submit_tool in note
-    # ...and the OTHER mode's finalization tool does NOT (no cross-mode bleed).
-    other_submit = "execute_sql" if query_mode == "slayer" else "submit_query"
+    # ...and the OTHER mode's FINALIZATION tool does NOT bleed in. (CodeRabbit
+    # PR #56: the slayer branch previously checked ``execute_sql`` — the other
+    # mode's *verify* tool — not its finalization tool ``submit_sql``.) We do
+    # NOT also assert the other mode's verify tool is absent: the raw verify
+    # tool is ``query``, which appears as a common English word in the note's
+    # prose ("run the exact query you intend to submit"), so that check would
+    # be a guaranteed false positive.
+    other_submit = "submit_sql" if query_mode == "slayer" else "submit_query"
     assert other_submit not in note
 
 
