@@ -554,6 +554,14 @@ class ClaudeSDKOtfAgent:
                     # Per-answer turn cap; the per-task number of ask_discovery
                     # rounds is bounded by the DiscoveryChannel call cap.
                     max_turns=DISCOVERY_MAX_TURNS,
+                    # Discovery work counts against the SAME per-task wall-clock
+                    # budget as main (shared context_state); without these the
+                    # introspection client could run outside the guardrails
+                    # while main is blocked inside ask_discovery (Codex PR #56).
+                    hooks={
+                        "PreToolUse": [HookMatcher(hooks=[wall_clock_deny])],
+                        "PostToolUse": [HookMatcher(hooks=[wall_clock_warning])],
+                    },
                 )
 
             await run_main_with_discovery(

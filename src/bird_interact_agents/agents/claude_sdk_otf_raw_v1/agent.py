@@ -292,6 +292,14 @@ class ClaudeSDKOtfRawAgent:
                     model=native_model_id(self.model),
                     effort=self.reasoning_effort,
                     max_turns=DISCOVERY_MAX_TURNS,
+                    # Discovery work counts against the SAME per-task wall-clock
+                    # budget as main (shared context_state) — else it could run
+                    # outside the guardrails while main is blocked inside
+                    # ask_discovery (Codex PR #56).
+                    hooks={
+                        "PreToolUse": [HookMatcher(hooks=[wall_clock_deny])],
+                        "PostToolUse": [HookMatcher(hooks=[wall_clock_warning])],
+                    },
                 )
 
             await run_main_with_discovery(

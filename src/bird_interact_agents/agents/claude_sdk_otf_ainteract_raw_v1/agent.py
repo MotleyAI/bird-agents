@@ -367,13 +367,16 @@ class ClaudeSDKOtfAInteractRawAgent:
                     # Discovery's ask_user must increment the SAME shared counter
                     # the main submit_sql gate reads (post_ask_counter closure
                     # shared with _build_main_options), else a discovery-side ask
-                    # leaves the main gate closed (Codex PR #56).
+                    # leaves the main gate closed. Discovery also shares main's
+                    # per-task wall-clock guardrails (Codex PR #56).
                     hooks={
+                        "PreToolUse": [HookMatcher(hooks=[wall_clock_deny])],
                         "PostToolUse": [
                             HookMatcher(
                                 matcher=_ASK_USER_TOOL,
                                 hooks=[post_ask_counter],
                             ),
+                            HookMatcher(hooks=[wall_clock_warning]),
                         ],
                     },
                 )
