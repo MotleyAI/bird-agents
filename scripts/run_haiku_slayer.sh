@@ -196,7 +196,6 @@ uv run bird-interact \
   --dataset mini-interact \
   --framework claude_sdk \
   --query-mode slayer \
-  --slayer-setup on-the-fly \
   --mode a-interact \
   --agent-model "$AGENT_MODEL" \
   --user-sim-model "$USER_SIM_MODEL" \

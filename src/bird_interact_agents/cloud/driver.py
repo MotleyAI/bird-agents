@@ -323,6 +323,9 @@ def build_manifest(
             args, "user_sim_prompt_version", None
         ),
         "slayer_setup": getattr(args, "slayer_setup", "pre-encoded"),
+        # DEV-1586: which pre-encoded reference feeds a pre-encoded run
+        # (otf=encoding-agent output, custom=hand-curated; None on-the-fly).
+        "pre_encoded_source": getattr(args, "pre_encoded_source", None),
         "slayer_storage_root": getattr(
             args, "slayer_storage_root", "/data/slayer_models"
         ),
@@ -421,6 +424,16 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
     setup = args.slayer_setup
     benchmark = _submit_benchmark(args)
     if setup == "pre-encoded":
+        # DEV-1586: source selects which encoded reference is uploaded.
+        # 'otf' = the benchmark-scoped encoding-agent output (marker
+        # _reference_fp.txt); 'custom' (default / legacy) = the committed
+        # hand-curated slayer_models dir.
+        source = getattr(args, "pre_encoded_source", None) or "custom"
+        if source == "otf":
+            return [
+                (paths.slayer_models_otf_root(benchmark=benchmark),
+                 "slayer_models_otf", True),
+            ]
         return [(submitter_repo_root() / "slayer_models", "slayer_models", True)]
     if fw == "pydantic_ai_otf_encode":
         return [
@@ -457,6 +470,13 @@ def _check_gold_present(benchmark_name: str) -> None:
             f"files — auto-discovery is ambiguous: "
             f"{[f.name for f in jsonls]}. Remove the stale copies."
         )
+
+
+def _has_nonempty_embeddings(db_dir: Path) -> bool:
+    """True iff ``<db_dir>/embeddings.db`` exists and is non-empty. DEV-1586:
+    the submit-side pre-encoded preflight mirror of the runtime guard."""
+    emb = db_dir / "embeddings.db"
+    return emb.is_file() and emb.stat().st_size > 0
 
 
 def _artifact_present(root: Path, db: str, artifact: str) -> bool:
@@ -510,10 +530,32 @@ def _check_slayer_setup_present(args) -> list[str]:
     benchmark = _submit_benchmark(args)
     dbs = _dbs_for_instances(args.instance_ids, benchmark)
     uploads = _slayer_uploads_for(args)
+    # DEV-1586: the claude_sdk pre-encoded agents start SLayer with
+    # ingest_on_startup=False, so a present reference is unusable without a
+    # built embeddings.db. Mirror the runtime guard
+    # (agents/_pre_encoded._assert_reference_present) at submit so a doomed
+    # pre-encoded run fails BEFORE the cluster spins up (Codex review). Gate on
+    # `pre_encoded_source` (set ONLY for the claude_sdk consumers) — the legacy
+    # pydantic committed-reference path ingests on startup and needs no
+    # pre-built embeddings.
+    pre_encoded = getattr(args, "pre_encoded_source", None) is not None
     for root, artifact, required in uploads:
         if not required:
             continue
         missing = [db for db in dbs if not _artifact_present(root, db, artifact)]
+        if pre_encoded:
+            no_emb = [
+                db for db in dbs
+                if db not in missing and not _has_nonempty_embeddings(root / db)
+            ]
+            if no_emb:
+                raise FileNotFoundError(
+                    f"cloud slayer: pre-encoded reference for {no_emb} under "
+                    f"{root} has no usable embeddings.db (the pre-encoded "
+                    f"agents run with ingest_on_startup=False). Build the "
+                    f"embeddings before submitting "
+                    f"(scripts/build_otf_references.py for the otf source)."
+                )
         if not missing:
             continue
         if artifact == "slayer_otf_cache":
@@ -822,6 +864,11 @@ def _build_job_args(
         "--slayer-storage-root",
         getattr(args, "slayer_storage_root", "/data/slayer_models"),
     ]
+    # DEV-1586: forward the pre-encoded source so the in-cluster worker
+    # routes to the read-only flavor. Conditional — never emit
+    # `--pre-encoded-models None` (argparse would reject the choice).
+    if getattr(args, "pre_encoded_source", None):
+        job_args += ["--pre-encoded-models", args.pre_encoded_source]
     return job_args
 
 
@@ -1388,6 +1435,14 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         "--slayer-storage-root",
         manifest.get("slayer_storage_root", "/data/slayer_models"),
     ]
+    # DEV-1586: forward the pre-encoded source. Back-compat: a pre-DEV-1586
+    # manifest with slayer_setup="pre-encoded" but no source meant the
+    # committed slayer_models reference → "custom".
+    pre_src = manifest.get("pre_encoded_source")
+    if not pre_src and manifest.get("slayer_setup") == "pre-encoded":
+        pre_src = "custom"
+    if pre_src:
+        job_args += ["--pre-encoded-models", pre_src]
     return job_args
 
 

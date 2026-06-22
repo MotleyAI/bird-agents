@@ -50,6 +50,15 @@ from bird_interact_agents.slayer_otf.timing import otf_timer
 from bird_interact_agents.agents.claude_sdk_otf.prompts import (
     SLAYER_OTF_ONE_SHOT,
 )
+from bird_interact_agents.agents._pre_encoded import (
+    resolve_pre_encoded_storage_dir,
+    strip_write_slayer_tools,
+    validate_pre_encoded_source,
+    WRITE_SLAYER_TOOL_NAMES,
+)
+from bird_interact_agents.agents._pre_encoded_prompts import (
+    SLAYER_PRE_ENCODED_ONE_SHOT,
+)
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.provider_registry import is_supported_agent_model
 from bird_interact_agents.model_string import native_model_id
@@ -321,7 +330,10 @@ def _select_tools(eval_mode: str) -> list:
     return [*_KNOWLEDGE_TOOLS, submit_query]
 
 
-def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
+def _build_prompt(
+    eval_mode: str, task_data: dict, budget: float,
+    pre_encoded_source: str | None = None,
+) -> str:
     if eval_mode != "one-shot":
         raise ValueError(
             "claude_sdk_otf supports only eval_mode='one-shot'; "
@@ -329,7 +341,11 @@ def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
         )
     user_query = task_data["amb_user_query"]
     db_name = task_data["selected_database"]
-    return SLAYER_OTF_ONE_SHOT.format(
+    template = (
+        SLAYER_PRE_ENCODED_ONE_SHOT if pre_encoded_source
+        else SLAYER_OTF_ONE_SHOT
+    )
+    return template.format(
         budget=budget, db_name=db_name, user_query=user_query,
     )
 
@@ -353,11 +369,22 @@ class ClaudeSDKOtfAgent:
         model: str = "anthropic/claude-sonnet-4-5",
         slayer_setup: str = "on-the-fly",
         reasoning_effort: str | None = None,
+        pre_encoded_source: str | None = None,
     ) -> None:
-        if slayer_setup != "on-the-fly":
+        # DEV-1586: `pre_encoded_source` (None | "otf" | "custom") selects the
+        # read-only pre-encoded mode. `slayer_setup` is derived upstream
+        # ("pre-encoded" when a source is set, else "on-the-fly"); enforce the
+        # two consistent shapes and reject contradictions.
+        validate_pre_encoded_source(pre_encoded_source)
+        if pre_encoded_source is None and slayer_setup != "on-the-fly":
             raise ValueError(
-                "claude_sdk_otf requires slayer_setup='on-the-fly'; "
-                f"got {slayer_setup!r}"
+                "claude_sdk_otf requires slayer_setup='on-the-fly' when no "
+                f"pre_encoded_source is set; got {slayer_setup!r}"
+            )
+        if pre_encoded_source is not None and slayer_setup != "pre-encoded":
+            raise ValueError(
+                "claude_sdk_otf with a pre_encoded_source requires "
+                f"slayer_setup='pre-encoded'; got {slayer_setup!r}"
             )
         if reasoning_effort is not None and reasoning_effort not in self._EFFORT_CHOICES:
             raise ValueError(
@@ -368,6 +395,7 @@ class ClaudeSDKOtfAgent:
         self.model = model
         self.slayer_setup = slayer_setup
         self.reasoning_effort = reasoning_effort
+        self.pre_encoded_source = pre_encoded_source
 
     async def run_task(
         self,
@@ -483,15 +511,26 @@ class ClaudeSDKOtfAgent:
             # LiveSQLBench one-shot: per-task isolated working sqlite (no-op
             # for mini-interact).
             materialize_task_db(task_data, data_path_base)
-            # Cache-only per-task storage: deterministic OTF cache copied to
-            # a scratch dir with this task's deleted KBs masked. The agent
-            # encodes into THIS dir at task time.
-            slayer_storage_dir, deleted_kb_ids = await resolve_otf_task_storage_dir(
-                db_name=db_name,
-                task_data=task_data,
-                data_path_base=data_path_base,
-                benchmark=benchmark.name,
-            )
+            # DEV-1586: pre-encoded mode copies an ALREADY-encoded reference
+            # (otf=encoding-agent output, custom=hand-curated slayer_models)
+            # into a per-task scratch dir with this task's deleted KBs masked,
+            # and the agent only introspects it. On-the-fly mode (default)
+            # copies the deterministic OTF cache and the agent encodes into it.
+            if self.pre_encoded_source:
+                slayer_storage_dir, deleted_kb_ids = await resolve_pre_encoded_storage_dir(
+                    db_name=db_name,
+                    task_data=task_data,
+                    data_path_base=data_path_base,
+                    benchmark=benchmark.name,
+                    source=self.pre_encoded_source,
+                )
+            else:
+                slayer_storage_dir, deleted_kb_ids = await resolve_otf_task_storage_dir(
+                    db_name=db_name,
+                    task_data=task_data,
+                    data_path_base=data_path_base,
+                    benchmark=benchmark.name,
+                )
 
             max_asks = _ambiguity_count(task_data) + 3  # +patience(3); matches ADK
 
@@ -513,7 +552,9 @@ class ClaudeSDKOtfAgent:
             _ctx_var.set(ctx_dict)
 
             tools = _select_tools(eval_mode)
-            prompt = _build_prompt(eval_mode, task_data, budget)
+            prompt = _build_prompt(
+                eval_mode, task_data, budget, self.pre_encoded_source,
+            )
 
             server = create_sdk_mcp_server(
                 name="bird-interact-tools", version="1.0.0", tools=tools,
@@ -526,11 +567,40 @@ class ClaudeSDKOtfAgent:
                     slayer_storage_dir, ingest_on_startup=False,
                 ),
             }
-            tool_names.extend(_slayer_tool_names())
+            # DEV-1586: pre-encoded mode drops the SLayer WRITE tools (the
+            # agent introspects only). On-the-fly keeps the full whitelist.
+            slayer_tools = (
+                strip_write_slayer_tools(SLAYER_MCP_TOOLS)
+                if self.pre_encoded_source else SLAYER_MCP_TOOLS
+            )
+            tool_names.extend(f"mcp__slayer__{t}" for t in slayer_tools)
+            # Also HIDE the write tools' schemas from the model's cacheable
+            # prefix (allowed_tools only gates auto-execute; disallowed_tools
+            # removes visibility — see DEV-1548).
+            disallowed_tool_names = list(SLAYER_MCP_DISALLOWED_TOOL_NAMES)
+            if self.pre_encoded_source:
+                disallowed_tool_names.extend(sorted(WRITE_SLAYER_TOOL_NAMES))
 
             # Per-task hook factories — must be created here (not on the
             # agent constructor) to avoid cross-task state bleed.
             pre_query_gate, post_tool_tracker = _make_query_before_submit_guard()
+
+            # DEV-1586: the create_model/edit_model filter-normalization hook
+            # is moot in pre-encoded mode (no write tools). Build the
+            # PreToolUse matcher list conditionally.
+            pre_tool_use_matchers = [
+                HookMatcher(
+                    matcher="mcp__bird-interact-tools__submit_query",
+                    hooks=[pre_query_gate],
+                ),
+            ]
+            if not self.pre_encoded_source:
+                pre_tool_use_matchers.append(
+                    HookMatcher(
+                        matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
+                        hooks=[_normalize_write_tool_filters_hook],
+                    )
+                )
 
             # DEV-1579: build the agent's options from the policy-owned env
             # kwargs (telemetry-disable + hermetic CLAUDE_CONFIG_DIR + any
@@ -546,7 +616,7 @@ class ClaudeSDKOtfAgent:
                     # from the model's per-turn cacheable prefix. allowed_tools
                     # only gates auto-execute permission; disallowed_tools is
                     # what removes the JSON Schema from the model's view.
-                    disallowed_tools=SLAYER_MCP_DISALLOWED_TOOL_NAMES,
+                    disallowed_tools=disallowed_tool_names,
                     # Restrict to ONLY our MCP tools: drop every Claude Code
                     # built-in (Bash/Edit/Task/WebFetch/ToolSearch/...). Removing
                     # ToolSearch is load-bearing — with the built-ins gone the
@@ -569,21 +639,7 @@ class ClaudeSDKOtfAgent:
                     # that previously dropped a last-turn submission.
                     max_turns=_MAX_TURNS,
                     hooks={
-                        "PreToolUse": [
-                            HookMatcher(
-                                matcher="mcp__bird-interact-tools__submit_query",
-                                hooks=[pre_query_gate],
-                            ),
-                            # Codex post-merge: normalize backing-query filters
-                            # baked into create_model / edit_model payloads so
-                            # the persisted model definition matches the
-                            # filter-normalization contract the query path
-                            # already enforces.
-                            HookMatcher(
-                                matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
-                                hooks=[_normalize_write_tool_filters_hook],
-                            ),
-                        ],
+                        "PreToolUse": pre_tool_use_matchers,
                         "PostToolUse": [
                             HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
                             # Must be last so it captures the true last-completed

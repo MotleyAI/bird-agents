@@ -120,8 +120,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_submit.add_argument("--detach", action="store_true")
     sp_submit.add_argument("--allow-dirty", action="store_true")
     sp_submit.add_argument(
-        "--slayer-setup", choices=("pre-encoded", "on-the-fly"),
-        default="pre-encoded",
+        "--pre-encoded-models", dest="pre_encoded_source",
+        choices=("otf", "custom"), default=None,
+        help=(
+            "DEV-1586: run the SLayer agents against an ALREADY-encoded "
+            "datasource (read-only). 'otf' = encoding-agent output "
+            "(slayer_models_otf/<benchmark>/<db>); 'custom' = hand-curated "
+            "slayer_models/<db>. Omitted (default) = encode KB on the fly. "
+            "Replaces the retired --slayer-setup flag (slayer_setup is "
+            "derived from this)."
+        ),
     )
     sp_submit.add_argument(
         "--slayer-storage-root", default="/data/slayer_models",
@@ -293,6 +301,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             _validate_framework_mode,
             _validate_slayer_setup,
         )
+        from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
+        # DEV-1586: slayer_setup is derived from the user-facing
+        # --pre-encoded-models flag (retired --slayer-setup); it is still
+        # carried in the manifest because cloud artifact routing / merge
+        # gating consume it.
+        ns.slayer_setup = derive_slayer_setup(ns.pre_encoded_source)
         try:
             # Same dataset⟺mode gates the local CLI uses — one source
             # of truth, so an unsupported cloud combo fails fast at submit.
@@ -303,6 +317,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             _validate_slayer_setup(
                 slayer_setup=ns.slayer_setup, framework=ns.framework,
                 query_mode=ns.query_mode, mode=ns.mode,
+                pre_encoded_source=ns.pre_encoded_source,
             )
         except ValueError as e:
             p.error(str(e))

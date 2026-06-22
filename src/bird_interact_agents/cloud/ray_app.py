@@ -292,7 +292,14 @@ def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
         return []
     setup = cfg.get("slayer_setup")
     if setup == "pre-encoded":
-        artifacts = [("slayer_models", True)]
+        # DEV-1586: source selects which encoded reference to download.
+        # 'otf' = benchmark-scoped encoding-agent output; 'custom' (default /
+        # legacy pre-DEV-1586 manifest) = committed slayer_models.
+        source = cfg.get("pre_encoded_source") or "custom"
+        if source == "otf":
+            artifacts = [("slayer_models_otf", True)]
+        else:
+            artifacts = [("slayer_models", True)]
     elif fw == "pydantic_ai_otf_encode":
         artifacts = [
             ("slayer_otf_cache", True),
@@ -627,6 +634,7 @@ async def _run_one_task_async(
     slayer_setup: str = "pre-encoded",
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
+    pre_encoded_source: str | None = None,
     cached_runner: Any = None,
 ) -> dict:
     # Defer the import so monkeypatching `bird_interact_agents.run.run_one_task`
@@ -656,6 +664,7 @@ async def _run_one_task_async(
         user_sim_prompt_version=user_sim_prompt_version,
         slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup,
+        pre_encoded_source=pre_encoded_source,
     )
 
 
@@ -721,6 +730,7 @@ def _run_one_in_actor(
                         data_dir=data_dir,
                         slayer_storage_root=cfg.get("slayer_storage_root"),
                         slayer_setup=cfg.get("slayer_setup", "pre-encoded"),
+                        pre_encoded_source=cfg.get("pre_encoded_source"),
                         cached_runner=cached_runner,
                     )
                 )
@@ -778,6 +788,7 @@ def _run_one_in_actor(
         agent_model=cfg.get("agent_model"),
         user_sim_model=cfg.get("user_sim_model"),
         slayer_setup=cfg.get("slayer_setup"),
+        pre_encoded_source=cfg.get("pre_encoded_source"),
         reasoning_effort=cfg.get("reasoning_effort"),
         patience=cfg.get("patience"),
         max_depth=cfg.get("max_depth"),
@@ -1306,6 +1317,7 @@ def run_pool(
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
     slayer_setup: str = "pre-encoded",
+    pre_encoded_source: str | None = None,
     slayer_storage_root: str | None = None,
     ray_job_id: str = "local",
     gcs_client=None,
@@ -1340,6 +1352,7 @@ def run_pool(
         "reasoning_effort": reasoning_effort,
         "user_sim_prompt_version": user_sim_prompt_version,
         "slayer_setup": slayer_setup,
+        "pre_encoded_source": pre_encoded_source,
         "slayer_storage_root": slayer_storage_root,
         # De-bake: carry the benchmark + its GCS dataset prefix so the actor
         # can resolve the OTF roots and download the dataset per node.
@@ -1723,6 +1736,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--num-actors", type=int, default=4)
     p.add_argument("--slayer-setup", default="pre-encoded",
                    choices=("pre-encoded", "on-the-fly"))
+    # DEV-1586: internal worker arg (driver-fed). The user-facing flag lives
+    # on `bird-interact-cloud submit`; the driver derives --slayer-setup and
+    # forwards --pre-encoded-models so the worker routes to the read-only
+    # flavor and downloads the right reference.
+    p.add_argument("--pre-encoded-models", dest="pre_encoded_source",
+                   default=None, choices=("otf", "custom"))
     p.add_argument("--slayer-storage-root", default="/data/slayer_models")
     p.add_argument("--instance-ids", required=True,
                    help="comma-separated list")
@@ -1776,6 +1795,7 @@ def main(argv: list[str] | None = None) -> int:
         reasoning_effort=args.reasoning_effort,
         user_sim_prompt_version=args.user_sim_prompt_version,
         slayer_setup=args.slayer_setup,
+        pre_encoded_source=args.pre_encoded_source,
         slayer_storage_root=args.slayer_storage_root,
         ray_job_id=args.ray_job_id,
         actor_env_vars=actor_env_vars,

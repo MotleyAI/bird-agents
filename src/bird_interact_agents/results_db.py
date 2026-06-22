@@ -101,6 +101,9 @@ CREATE TABLE IF NOT EXISTS run_metadata (
 _RUN_METADATA_DIAGNOSTIC_COLUMNS: list[tuple[str, str]] = [
     ("query_mode", "TEXT"),
     ("slayer_setup", "TEXT"),
+    # DEV-1586: which pre-encoded reference fed a pre-encoded run
+    # (otf=encoding-agent output, custom=hand-curated; NULL on-the-fly).
+    ("pre_encoded_source", "TEXT"),
     ("patience", "INTEGER"),
     ("max_depth", "INTEGER"),
     ("reasoning_effort", "TEXT"),
@@ -223,6 +226,7 @@ def insert_run_metadata(
     # work unchanged. New callers populate the full block.
     query_mode: str | None = None,
     slayer_setup: str | None = None,
+    pre_encoded_source: str | None = None,
     patience: int | None = None,
     max_depth: int | None = None,
     reasoning_effort: str | None = None,
@@ -248,14 +252,15 @@ def insert_run_metadata(
         """
         INSERT OR REPLACE INTO run_metadata
         (run_id, framework, mode, agent_model, user_sim_model, started_at,
-         query_mode, slayer_setup, patience, max_depth, reasoning_effort,
-         dataset, strict, use_audited_gold_sql, prompt_cache)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         query_mode, slayer_setup, pre_encoded_source, patience, max_depth,
+         reasoning_effort, dataset, strict, use_audited_gold_sql, prompt_cache)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             run_id, framework, mode, agent_model, user_sim_model, started_at,
-            query_mode, slayer_setup, patience, max_depth, reasoning_effort,
-            dataset, _b(strict), _b(use_audited_gold_sql), _b(prompt_cache),
+            query_mode, slayer_setup, pre_encoded_source, patience, max_depth,
+            reasoning_effort, dataset, _b(strict), _b(use_audited_gold_sql),
+            _b(prompt_cache),
         ),
     )
     conn.commit()
