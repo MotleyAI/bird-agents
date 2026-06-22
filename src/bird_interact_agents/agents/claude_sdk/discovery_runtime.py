@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
+import time
 from typing import Callable
 
 from bird_interact_agents.agents.claude_sdk.agent import _ctx
@@ -49,7 +50,8 @@ async def run_main_with_discovery(
     trajectory: list,
     max_discovery_calls: int = DEFAULT_MAX_DISCOVERY_CALLS,
     enter_cm_factory: Callable[[], object] | None = None,
-    on_main_message: Callable[[object, int], None] | None = None,
+    query_cm_factory: Callable[[], object] | None = None,
+    on_main_message: Callable[[object, int, float], None] | None = None,
 ) -> None:
     """Run one task across a warm discovery client and the main client.
 
@@ -67,7 +69,11 @@ async def run_main_with_discovery(
     entered first, where an initialize-handshake hang surfaces first; main is
     entered second). Each enter emits its own ``run_task.sdk_client_enter``
     span. ``on_main_message(msg, seq)`` (1-based seq) is invoked per main
-    message before usage accounting, for per-message logging.
+    message before usage accounting, for per-message logging; its third arg is
+    the ``time.monotonic()`` reading captured immediately AFTER the initial
+    ``query`` returned, so callers can compute first-response latency
+    (``now - that``) instead of a hard-coded zero. ``query_cm_factory`` wraps the
+    initial ``query`` call (DEV-1561 ``run_task.sdk_first_query`` span).
 
     Mutates ``trajectory`` (appends one structured entry per main message) and
     ``accum`` (usage). Does not finalize ``usage_tracker`` — the caller does, so
@@ -108,12 +114,18 @@ async def run_main_with_discovery(
                 )
             )
 
-            await main_client.query(initial_query)
+            query_cm = (
+                query_cm_factory() if query_cm_factory is not None
+                else contextlib.nullcontext()
+            )
+            with query_cm:
+                await main_client.query(initial_query)
+            t_after_query = time.monotonic()
             seq = 0
             async for msg in main_client.receive_response():
                 seq += 1
                 if on_main_message is not None:
-                    on_main_message(msg, seq)
+                    on_main_message(msg, seq, t_after_query)
                 try:
                     _data: object = dataclasses.asdict(msg)
                 except Exception:  # noqa: BLE001

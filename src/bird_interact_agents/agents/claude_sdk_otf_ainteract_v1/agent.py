@@ -509,19 +509,20 @@ class ClaudeSDKOtfAInteractAgent:
                 )
 
             # DEV-1561: per-message timing log + otf_timer around the main
-            # client's __aenter__ (preserved through run_main_with_discovery).
-            _msg_timing = {"first_t": None, "prev_t": None}
+            # client's __aenter__ and first query (preserved through
+            # run_main_with_discovery). The first-message elapsed is measured
+            # from immediately after the query returned (passed as the 3rd arg).
+            _msg_timing = {"prev_t": None}
 
-            def _on_main_message(msg, seq):
+            def _on_main_message(msg, seq, t_after_query):
                 now = time.monotonic()
                 msg_type = type(msg).__name__
                 if seq == 1:
-                    _msg_timing["first_t"] = now
                     log_otf_event(
                         "run_task.sdk_first_message",
                         instance_id=instance_id,
                         msg_type=msg_type,
-                        elapsed_s="0.000",
+                        elapsed_s=f"{now - t_after_query:.3f}",
                     )
                 else:
                     log_otf_event(
@@ -546,6 +547,9 @@ class ClaudeSDKOtfAInteractAgent:
                 trajectory=trajectory,
                 enter_cm_factory=lambda: otf_timer(
                     "run_task.sdk_client_enter", instance_id=instance_id,
+                ),
+                query_cm_factory=lambda: otf_timer(
+                    "run_task.sdk_first_query", instance_id=instance_id,
                 ),
                 on_main_message=_on_main_message,
             )
