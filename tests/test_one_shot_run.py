@@ -22,6 +22,16 @@ from types import SimpleNamespace
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _isolate_cwd(monkeypatch, tmp_path_factory):
+    """Several tests here stub the per-task SLayer storage dir to "" (see the
+    ``_no_storage`` helpers below). A SLayer embedding store then defaults its
+    ``embeddings.db`` to the CWD. Run every test from a throwaway dir so that
+    artifact lands there (auto-cleaned) instead of polluting the repo root."""
+    monkeypatch.chdir(tmp_path_factory.mktemp("cwd"))
+
+
 # ---------------------------------------------------------------------------
 # Shared mock factories — identical pattern across both packages.
 # ---------------------------------------------------------------------------

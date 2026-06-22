@@ -32,7 +32,6 @@ def _submit_argv(
         "--mode", "one-shot",
         "--agent-model", model,
         "--instance-ids", "alien_1",
-        "--slayer-setup", "on-the-fly",
         "--dataset", "livesqlbench-base-lite-sqlite",
         "--no-require-annotation",
         *(extra or []),

@@ -323,6 +323,9 @@ def build_manifest(
             args, "user_sim_prompt_version", None
         ),
         "slayer_setup": getattr(args, "slayer_setup", "pre-encoded"),
+        # DEV-1586: which pre-encoded reference feeds a pre-encoded run
+        # (otf=encoding-agent output, custom=hand-curated; None on-the-fly).
+        "pre_encoded_source": getattr(args, "pre_encoded_source", None),
         "slayer_storage_root": getattr(
             args, "slayer_storage_root", "/data/slayer_models"
         ),
@@ -421,6 +424,16 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
     setup = args.slayer_setup
     benchmark = _submit_benchmark(args)
     if setup == "pre-encoded":
+        # DEV-1586: source selects which encoded reference is uploaded.
+        # 'otf' = the benchmark-scoped encoding-agent output (marker
+        # _reference_fp.txt); 'custom' (default / legacy) = the committed
+        # hand-curated slayer_models dir.
+        source = getattr(args, "pre_encoded_source", None) or "custom"
+        if source == "otf":
+            return [
+                (paths.slayer_models_otf_root(benchmark=benchmark),
+                 "slayer_models_otf", True),
+            ]
         return [(submitter_repo_root() / "slayer_models", "slayer_models", True)]
     if fw == "pydantic_ai_otf_encode":
         return [
@@ -822,6 +835,11 @@ def _build_job_args(
         "--slayer-storage-root",
         getattr(args, "slayer_storage_root", "/data/slayer_models"),
     ]
+    # DEV-1586: forward the pre-encoded source so the in-cluster worker
+    # routes to the read-only flavor. Conditional — never emit
+    # `--pre-encoded-models None` (argparse would reject the choice).
+    if getattr(args, "pre_encoded_source", None):
+        job_args += ["--pre-encoded-models", args.pre_encoded_source]
     return job_args
 
 
@@ -1388,6 +1406,14 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         "--slayer-storage-root",
         manifest.get("slayer_storage_root", "/data/slayer_models"),
     ]
+    # DEV-1586: forward the pre-encoded source. Back-compat: a pre-DEV-1586
+    # manifest with slayer_setup="pre-encoded" but no source meant the
+    # committed slayer_models reference → "custom".
+    pre_src = manifest.get("pre_encoded_source")
+    if not pre_src and manifest.get("slayer_setup") == "pre-encoded":
+        pre_src = "custom"
+    if pre_src:
+        job_args += ["--pre-encoded-models", pre_src]
     return job_args
 
 

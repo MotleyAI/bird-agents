@@ -499,6 +499,8 @@ class SubmissionConfig(BaseModel):
     agent_model: Optional[str] = None
     user_sim_model: Optional[str] = None
     slayer_setup: Optional[str] = None
+    # DEV-1586: pre-encoded source (otf|custom) when slayer_setup="pre-encoded".
+    pre_encoded_source: Optional[str] = None
     reasoning_effort: Optional[str] = None
     patience: Optional[int] = None
     max_depth: Optional[int] = None
