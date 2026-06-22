@@ -195,6 +195,7 @@ def _validate_framework_mode(
 def _maybe_force_wipe_otf(
     *, otf_rebuild: bool, framework: str, dbs,
     benchmark: str,
+    pre_encoded_source: str | None = None,
 ) -> None:
     """``--otf-rebuild`` force-wipe: drop BOTH on-the-fly layers (the phase-1-3
     cache AND the KB-encoded reference) for ``dbs``, for either on-the-fly
@@ -207,8 +208,17 @@ def _maybe_force_wipe_otf(
     DEV-1462: ``benchmark`` (REQUIRED, explicit) selects the per-benchmark
     scoped roots so a LiveSQLBench ``--otf-rebuild`` never wipes the
     mini-interact cache (and vice versa).
+
+    DEV-1586: NO-OP in pre-encoded mode. The on-the-fly cache/reference are
+    not owned by a pre-encoded run — and for ``--pre-encoded-models otf`` the
+    reference IS the thing the read-only agent consumes, so wiping it here
+    would delete the input and the agent could never rebuild it. (For
+    ``custom`` it would needlessly purge unrelated OTF references for the
+    selected DBs.)
     """
     if not otf_rebuild:
+        return
+    if pre_encoded_source is not None:
         return
     # DEV-1555 v0/v1: both aggregator tokens dispatch to on-the-fly agents.
     if framework not in ("claude_sdk", "claude_sdk_v1"):
@@ -1188,6 +1198,7 @@ async def run_evaluation(
         framework=framework,
         dbs={t.get("selected_database") for t in tasks if t.get("selected_database")},
         benchmark=benchmark_for_paths,
+        pre_encoded_source=pre_encoded_source,
     )
 
     # DEV-1510: the audited-gold overlay now fires for ALL benchmarks. The

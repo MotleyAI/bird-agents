@@ -311,6 +311,35 @@ def test_make_runner_omitted_both_derives_on_the_fly():
     )
 
 
+def test_otf_rebuild_noops_in_pre_encoded_mode(monkeypatch):
+    """Codex r3: --otf-rebuild must NOT wipe the OTF cache/reference for a
+    pre-encoded run — for otf source that reference IS the read-only agent's
+    input, and the agent can't rebuild it."""
+    from bird_interact_agents import run as run_mod
+    from bird_interact_agents.slayer_otf import reference_build as rb
+
+    purged = {"cache": False, "ref": False}
+    monkeypatch.setattr(
+        rb, "purge_caches",
+        lambda root, dbs: purged.__setitem__("cache", True) or set(),
+    )
+    monkeypatch.setattr(
+        rb, "purge_references",
+        lambda root, dbs: purged.__setitem__("ref", True) or set(),
+    )
+    run_mod._maybe_force_wipe_otf(
+        otf_rebuild=True, framework="claude_sdk", dbs=["alien"],
+        benchmark="mini-interact", pre_encoded_source="otf",
+    )
+    assert purged == {"cache": False, "ref": False}
+    # On-the-fly (no source) still wipes.
+    run_mod._maybe_force_wipe_otf(
+        otf_rebuild=True, framework="claude_sdk", dbs=["alien"],
+        benchmark="mini-interact", pre_encoded_source=None,
+    )
+    assert purged == {"cache": True, "ref": True}
+
+
 def test_validate_rejects_pre_encoded_in_raw_mode():
     """Codex r2 #2: --pre-encoded-models is slayer-only; raw must reject it
     (the framework gate is no longer bypassed by the raw early-return)."""
