@@ -126,9 +126,20 @@ def strip_write_slayer_tools(bare_names: Iterable[str]) -> list[str]:
 
 
 def strip_write_tool_names(prefixed_names: Iterable[str]) -> list[str]:
-    """Drop the mutating SLayer tools from a list of ``mcp__slayer__``-prefixed
-    tool names (the ``MAIN_TOOLS`` / ``allowed_tools`` form), order-preserving."""
-    return [n for n in prefixed_names if n not in WRITE_SLAYER_TOOL_NAMES]
+    """Drop the mutating SLayer tools from a list of MCP-prefixed tool names
+    (the ``allowed_tools`` / partition-constant form), order-preserving.
+
+    DEV-1581 R2 moved the SLayer tools off the ``slayer`` stdio server and onto
+    the in-process ``bird-interact-tools`` server, so the names are now
+    ``mcp__bird-interact-tools__create_model`` rather than
+    ``mcp__slayer__create_model``. We therefore strip by the BARE tool suffix
+    (server-prefix-agnostic) so both forms — and any future server name — are
+    handled by the same predicate.
+    """
+    def _bare(name: str) -> str:
+        return name.split("__")[-1] if name.startswith("mcp__") else name
+
+    return [n for n in prefixed_names if _bare(n) not in WRITE_SLAYER_TOOLS]
 
 
 def _assert_reference_present(source: str, db_dir: Path) -> None:

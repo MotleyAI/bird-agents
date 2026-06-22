@@ -43,33 +43,24 @@ def _tool_names(tools):
     return {t.name for t in tools}
 
 
-def test_select_tools_one_shot_returns_eight_native_tools():
-    """All 7 raw BIRD_INTERACT_TOOLS + submit_sql = 8 native tools.
-    No ask_user, no SLayer tools."""
+def _bare(names):
+    return {n.split("__")[-1] for n in names}
+
+
+def test_raw_partition_introspection_on_discovery_only():
+    """DEV-1581 R2: the raw introspection-exclusive tools (get_schema,
+    get_all_column_meanings) live on the DISCOVERY client, NOT main. MAIN keeps
+    execute_sql, submit_sql, a single get_column_meaning lookup, the KB
+    natives, and ask_discovery. No ask_user / submit_query in one-shot."""
     from bird_interact_agents.agents.claude_sdk_otf_raw_v1 import agent as m
 
-    names = _tool_names(m._select_tools("one-shot"))
-    assert names == {
-        "execute_sql",
-        "get_schema",
-        "get_all_column_meanings",
-        "get_column_meaning",
-        "get_all_external_knowledge_names",
-        "get_knowledge_definition",
-        "get_all_knowledge_definitions",
-        "submit_sql",
-    }
-    assert "ask_user" not in names
-    assert "submit_query" not in names
-    assert len(names) == 8
-
-
-def test_select_tools_rejects_non_one_shot():
-    from bird_interact_agents.agents.claude_sdk_otf_raw_v1 import agent as m
-
-    for bad in ("a-interact", "c-interact", "oracle"):
-        with pytest.raises(ValueError):
-            m._select_tools(bad)
+    main = _bare(m.MAIN_NATIVE_TOOL_NAMES)
+    disc = _bare(m.DISCOVERY_NATIVE_TOOL_NAMES)
+    assert {"get_schema", "get_all_column_meanings"} <= disc
+    assert not ({"get_schema", "get_all_column_meanings"} & main)
+    assert {"execute_sql", "submit_sql", "get_column_meaning",
+            "ask_discovery"} <= main
+    assert "ask_user" not in main and "submit_query" not in main
 
 
 def test_no_slayer_tool_names_function():
@@ -283,7 +274,16 @@ def _stub_env(
         captured["materialize_calls"] += 1
 
     monkeypatch.setattr(m, "materialize_task_db", _fake_materialize)
-    monkeypatch.setattr(m, "create_sdk_mcp_server", lambda **kw: SimpleNamespace())
+    # DEV-1581 R2: v1 builds in-process servers via build_bird_interact_server
+    # (no slayer process). raising=False keeps this tolerant of either API.
+    monkeypatch.setattr(
+        m, "create_sdk_mcp_server", lambda **kw: SimpleNamespace(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        m, "build_bird_interact_server", lambda *a, **kw: SimpleNamespace(),
+        raising=False,
+    )
     from bird_interact_agents.agents.claude_sdk import sdk_env as _sdk_env
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-stub")
     monkeypatch.setattr(
@@ -372,8 +372,11 @@ async def test_run_task_whitelists_submit_sql_not_submit_query(monkeypatch, tmp_
 
 
 @pytest.mark.asyncio
-async def test_run_task_whitelists_all_raw_tools(monkeypatch, tmp_path):
-    """All 7 BIRD_INTERACT_TOOLS + submit_sql must appear on the allow-list."""
+async def test_run_task_whitelists_main_partition_tools(monkeypatch, tmp_path):
+    """DEV-1581 R2: MAIN's allow-list is its half of the partition — verify
+    + submit + single-column lookup + KB + ask_discovery. The
+    introspection-exclusive tools (get_schema, get_all_column_meanings) are
+    DISCOVERY-only and must NOT be on main's allow-list."""
     from bird_interact_agents.agents.claude_sdk_otf_raw_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
@@ -383,12 +386,16 @@ async def test_run_task_whitelists_all_raw_tools(monkeypatch, tmp_path):
     )
     allowed = set(captured["options"].allowed_tools)
     for tool_name in (
-        "execute_sql", "get_schema", "get_all_column_meanings", "get_column_meaning",
+        "execute_sql", "get_column_meaning", "submit_sql", "ask_discovery",
         "get_all_external_knowledge_names", "get_knowledge_definition",
-        "get_all_knowledge_definitions", "submit_sql",
+        "get_all_knowledge_definitions",
     ):
         assert f"mcp__bird-interact-tools__{tool_name}" in allowed, (
-            f"raw agent must whitelist {tool_name}"
+            f"raw main must whitelist {tool_name}"
+        )
+    for introspection in ("get_schema", "get_all_column_meanings"):
+        assert f"mcp__bird-interact-tools__{introspection}" not in allowed, (
+            f"{introspection} is discovery-only; must not be on main"
         )
 
 
@@ -404,7 +411,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
         dict(_TASK), str(tmp_path), 20.0, "raw", eval_mode="one-shot",
     )
     opts = captured["options"]
-    assert opts.tools == ["Task"]  # DEV-1555: only built-in re-enabled
+    assert opts.tools == []  # DEV-1581 R2: no built-ins (ask_discovery native)
     assert opts.setting_sources == []
     assert opts.max_turns == 2 * MAX_MODEL_TURNS
     assert "PostToolUse" in (opts.hooks or {})

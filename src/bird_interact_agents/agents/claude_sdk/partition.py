@@ -1,75 +1,48 @@
-"""DEV-1555 Stage 1: discovery/main subagent partition helpers.
+"""DEV-1555 Stage 1 / DEV-1581 R2: discovery/main partition helpers.
 
-The four ``claude_sdk_otf*`` agents split each task into a ``discovery``
-subagent (introspection + user clarification, its own context window) and
-the main loop (encode / query / submit on a slim context). The split keeps
-peak context inside open-weight model windows (~260K): the dominant context
-consumers are introspection tool outputs, which now stay in the subagent's
-context and reach the main loop only as a handoff report.
+The four ``claude_sdk_otf*`` agents split each task between a long-lived
+*discovery* assistant (introspection + user clarification, its own context
+window) and the main loop (encode / query / submit on a slim context). The
+split keeps peak context inside open-weight model windows (~260K): the
+dominant context consumers are introspection tool outputs, which now stay in
+the discovery context and reach the main loop only through ``ask_discovery``
+answers.
 
-Enforcement model (verified against the Claude Code permission docs):
+R2 enforcement model (verified against the SDK semantics):
 
-* ``ClaudeAgentOptions.disallowed_tools`` is GLOBAL — it blocks a tool
-  inside subagents too, so it cannot express "main loop may not, subagent
-  may". Both partitions therefore stay in ``allowed_tools``.
-* ``AgentDefinition.tools`` restricts what the subagent sees.
-* The main-loop block is the ``partition_deny`` PreToolUse hook below:
-  hook inputs carry ``agent_id`` only when the call originates inside a
-  subagent, so a missing ``agent_id`` means "main loop" and the call is
-  denied with a redirect to the discovery subagent.
-* ``ClaudeAgentOptions.max_turns`` caps only the MAIN loop; the discovery
-  subagent gets its own ``maxTurns`` (``DISCOVERY_MAX_TURNS``). The
-  combined soft turn budget is still tracked by the turn-budget warning
-  hook, which fires for subagent calls as well.
+* The two halves are SEPARATE persistent ``ClaudeSDKClient`` sessions, so the
+  main client's per-turn tool schema NEVER contains the introspection tools —
+  the partition is a HARD boundary (no shared schema, no ``disallowed_tools``
+  global, no per-call deny hook). Main reaches discovery ONLY through the
+  in-process ``ask_discovery`` tool, which forwards to the warm discovery
+  client and returns its text.
+* The discovery client is warm: its context accumulates across ``ask_discovery``
+  calls, so follow-ups are cheap (no cold re-introspection — the root cause of
+  the DEV-1581 v1 turn blow-up). Its own ``max_turns`` is ``DISCOVERY_MAX_TURNS``
+  per ask; the per-task number of asks is capped by the ``DiscoveryChannel``.
 """
 
 from __future__ import annotations
 
 from bird_interact_agents.harness import MAX_MODEL_TURNS
 
-DISCOVERY_AGENT_NAME = "discovery"
-
-# Hard cap for one discovery invocation. The main loop keeps the existing
-# 2x cap (`_MAX_TURNS`); a single introspection sweep needs far less.
+# Hard cap for ONE discovery answer (one ``ask_discovery`` round). The main
+# loop keeps the existing 2x cap (`_MAX_TURNS`); a single focused introspection
+# sweep needs far less.
 DISCOVERY_MAX_TURNS = MAX_MODEL_TURNS
 
 
-def make_partition_deny_hook(discovery_only_tools):
-    """Build the PreToolUse hook enforcing the main-loop side of the split.
-
-    ``discovery_only_tools`` is the set of full tool names available ONLY
-    inside the discovery subagent. Calls without ``agent_id`` in the hook
-    input originate in the main loop and are denied with a redirect.
-    """
-    blocked = frozenset(discovery_only_tools)
-
-    async def partition_deny(input_data, tool_use_id, context):
-        if input_data.get("agent_id"):
-            return {}
-        tool_name = input_data.get("tool_name") or ""
-        if tool_name not in blocked:
-            return {}
-        return {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "deny",
-                "permissionDecisionReason": (
-                    f"{tool_name} is reserved for the '{DISCOVERY_AGENT_NAME}' "
-                    "subagent. Delegate introspection to it via the Task tool "
-                    f"(subagent_type='{DISCOVERY_AGENT_NAME}') and work from "
-                    "its handoff report instead of calling this tool directly."
-                ),
-            }
-        }
-
-    return partition_deny
-
-
 _DISCOVERY_PROMPT_COMMON = """\
-You are the discovery subagent for a data-analysis task. Your ONLY job is
-to gather everything the main agent needs to answer the user's question,
-then hand it back as a single structured report. You cannot submit answers
-and you must not try to solve the task yourself.
+You are the discovery assistant for a data-analysis task. Your ONLY job is
+to gather everything the main agent needs to answer the user's question and
+report it back. You cannot submit answers and you must not try to solve the
+task yourself. You are long-lived: the main agent will ask you a series of
+focused questions and your context carries over between them, so build on
+what you already found instead of re-introspecting from scratch.
+
+For the FIRST, broad request, produce a structured report; for narrow
+follow-ups, answer just what was asked. When you do report broadly, use
+these sections:
 
 Produce a handoff report with EXACTLY these sections:
 
@@ -158,15 +131,25 @@ def build_main_workflow_note(*, query_mode: str) -> str:
         ) from exc
     return f"""
 
-## Subagent workflow (mandatory)
+## Discovery workflow (mandatory)
 
-Schema/data introspection tools are NOT available to you directly — they
-live in the '{DISCOVERY_AGENT_NAME}' subagent. Start by delegating to it
-via the Task tool (subagent_type='{DISCOVERY_AGENT_NAME}') and wait for
-its handoff report; work from that report. If you later need more
-introspection or another user clarification you cannot ask yourself,
-spawn '{DISCOVERY_AGENT_NAME}' again with a focused follow-up request
-rather than guessing.
+Schema/data introspection tools (model/table schemas, sample values, join
+paths, knowledge-base definitions) are NOT on your tool surface — you
+physically cannot call them. A long-lived 'discovery' assistant holds them.
+Reach it ONLY through the `ask_discovery` tool: ask a focused question and it
+returns its findings. Start by asking discovery for everything you need to
+answer the user's question, then work from its answer.
+
+Discovery is WARM — it remembers your earlier questions, so follow-ups are
+cheap. But before asking, check whether discovery ALREADY told you the
+answer in a previous reply; do not re-ask for facts you already have.
+
+After a FAILED `{submit_tool}` (any non-pass status), do NOT go back to
+`ask_discovery` to re-introspect the schema — the new evidence is in the
+grader's miss diagnostics and in your candidate query's output, not in the
+schema. Re-run the candidate through `{verify_tool}`, pivot your
+operationalisation, or ask the user. `ask_discovery` is for schema/KB gaps
+you discover while reading discovery's answers, not for grader misses.
 
 ## Verify-before-submit checklist (mandatory)
 

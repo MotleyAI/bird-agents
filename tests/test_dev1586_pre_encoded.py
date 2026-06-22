@@ -128,14 +128,19 @@ def test_v1_main_tools_drop_write_tools(module):
     import importlib
 
     mod = importlib.import_module(module)
-    filtered = pe.strip_write_tool_names(mod.MAIN_TOOLS)
-    assert set(filtered) & pe.WRITE_SLAYER_TOOL_NAMES == set()
-    # Task (subagent spawner) + query + submit survive.
-    assert "Task" in filtered
+    # DEV-1581 R2: pre-encoded mode strips the in-process SLayer WRITE natives
+    # from MAIN_NATIVE_TOOL_NAMES (now ``mcp__bird-interact-tools__*``). The
+    # strip helper is server-prefix-agnostic (matches by bare suffix).
+    filtered = pe.strip_write_tool_names(mod.MAIN_NATIVE_TOOL_NAMES)
+    write_bare = pe.WRITE_SLAYER_TOOLS
+    assert {n.split("__")[-1] for n in filtered} & write_bare == set()
+    # query + submit + ask_discovery survive.
     assert "mcp__bird-interact-tools__query" in filtered
     assert "mcp__bird-interact-tools__submit_query" in filtered
-    # DISCOVERY_TOOLS were always read-only.
-    assert set(mod.DISCOVERY_TOOLS) & pe.WRITE_SLAYER_TOOL_NAMES == set()
+    assert "mcp__bird-interact-tools__ask_discovery" in filtered
+    # The discovery client was always read-only.
+    disc_bare = {n.split("__")[-1] for n in mod.DISCOVERY_NATIVE_TOOL_NAMES}
+    assert disc_bare & write_bare == set()
 
 
 # ---------------------------------------------------------------------------
