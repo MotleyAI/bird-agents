@@ -471,20 +471,11 @@ def _make_runner(
             logger.warning(
                 "[claude_sdk] --strict is a no-op for Anthropic models; ignored."
             )
-        # Codex r4: the v0 aggregator routes to origin/main-shape agents
-        # that reject non-Anthropic models via `is_anthropic()` and
-        # silently return skipped rows. Fail fast with a clear pointer
-        # at `claude_sdk_v1` so a Moonshot user doesn't burn a cloud
-        # run on skipped tasks.
-        from bird_interact_agents.provider_registry import get_provider
-        if get_provider(agent_model) is not None:
-            raise ValueError(
-                f"--framework claude_sdk only supports Anthropic agent "
-                f"models; got {agent_model!r}. Use --framework "
-                f"claude_sdk_v1 to run open-weight registry models "
-                f"(moonshot/, zai/, etc.) — the v1 agents carry the "
-                f"provider-aware session env + thinking config."
-            )
+        # DEV-1579: the v0 claude_sdk agents now carry the provider-aware
+        # hermetic session env (registry base-url + auth + thinking) via
+        # `hermetic_claude_sdk_session`, so registry open-weight models
+        # (moonshot/, zai/, …) run on v0 too — no Anthropic-only rejection
+        # here anymore.
         if b.one_shot and query_mode == "slayer":
             from bird_interact_agents.agents.claude_sdk_otf import ClaudeSDKOtfAgent
             _agent: object = ClaudeSDKOtfAgent(

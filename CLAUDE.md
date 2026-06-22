@@ -361,3 +361,104 @@ launch, and don't touch tracked image-input files until it returns.
 - The ssh-agent on this machine has been seen wedged ("agent refused
   operation"); run cloud submits with `env -u SSH_AUTH_SOCK` so ssh reads
   the pinned key file directly.
+
+## Codex MCP sandbox fails with `bwrap: setting up uid map: Permission denied`
+
+Symptom: every `mcp__codex__codex` shell command dies before executing with
+`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` and/or
+`bwrap: setting up uid map: Permission denied`; `unshare -Ur true` fails the
+same way. Codex's sandbox is bubblewrap, which needs an **unprivileged user
+namespace**.
+
+Root cause (a regression from an OS upgrade — "it used to work"): Ubuntu
+23.10/24.04 ship `kernel.apparmor_restrict_unprivileged_userns=1`, and there
+is no AppArmor profile granting `/usr/bin/bwrap` the `userns` capability, so
+bwrap runs unconfined and is blocked from creating the namespace.
+
+Do NOT "fix" this by calling Codex with `sandbox: danger-full-access`
+(disables Codex's sandbox entirely) and do NOT globally set
+`kernel.apparmor_restrict_unprivileged_userns=0` (drops the hardening for
+everything). The least-invasive fix is a per-binary AppArmor profile that
+whitelists bwrap (needs sudo — run on the host):
+
+```bash
+sudo tee /etc/apparmor.d/bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+# verify (prints ok):
+bwrap --dev-bind / / --unshare-net echo ok
+```
+
+After this, `mcp__codex__codex` works with the normal `read-only` /
+`workspace-write` sandbox again — no `danger-full-access` needed. Diagnosis:
+check `cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns` (1 =
+restricted) and `unshare -Ur true` (must succeed once the profile is loaded).
+Ref: https://www.jdhodges.com/blog/codex-sandbox-ubuntu-24-04-fix/
+
+## Every `claude_sdk*` agent MUST route through `hermetic_claude_sdk_session` (DEV-1579)
+
+The Claude Agent SDK launches a bundled `claude` Node CLI. By default it
+reads `~/.claude.json` and loads every claude.ai-synced MCP connector
+(Linear, Notion, Figma, …) into the model's per-turn tool schema — so a
+**local** `bird-interact` run sees a different tool surface than **cloud**
+(which has no `~/.claude.json`): 11 servers / 151 tools vs 2 / 20, ~4×
+cost, different verdicts. `setting_sources=[]` + `allowed_tools=` do NOT
+stop this; only an empty `CLAUDE_CONFIG_DIR` does.
+
+The single choke point is
+`agents/claude_sdk/sdk_env.py::hermetic_claude_sdk_session(...)`. Every SDK
+call site (the 8 OTF agents + the annotator) uses it, and **any new
+`claude_sdk*` agent MUST too** — do NOT hand-build `ClaudeAgentOptions.env`
+or `ClaudeSDKClient(...)` directly. The helper owns, in one place:
+
+1. **API-key auth** (`assert_api_key_auth`): claude_sdk agents authenticate
+   via `ANTHROPIC_API_KEY` (Anthropic) or their registry provider token.
+   Claude.ai subscription / OAuth auth was disabled for the Agent SDK on
+   2026-06-15 — a lone `CLAUDE_CODE_OAUTH_TOKEN` hard-fails. (Follow-ups:
+   DEV-1582 retires the `--subscription-auth` machinery; DEV-1583 renames
+   the registry Bearer var.)
+2. **Hermetic `CLAUDE_CONFIG_DIR`**: a fresh empty temp dir whose
+   `.claude.json` declares no `mcpServers` (so only the explicit
+   `mcp_servers` load) and pre-accepts onboarding/trust so the
+   non-interactive CLI never blocks. No `.credentials.json` is copied —
+   auth flows from the env, never from the dead subscription credential.
+3. **Provider session env + thinking** for registry open-weight models
+   (`provider_aware=True`, the default). Pass `provider_aware=False` for an
+   Anthropic-only agent (the annotator) so a stray registry model can't
+   silently gain registry behaviour.
+4. **MCP parity assertion** (`assert_hermetic_mcp_servers`): after
+   `__aenter__`, before the first tool call, asserts the loaded MCP servers
+   contain NO server beyond the explicit `mcp_servers` keys
+   (`loaded - expected == ∅`, a contamination check — not exact equality and
+   not readiness). NB: `get_mcp_status` reports stdio/external servers but
+   NOT in-process `create_sdk_mcp_server` servers (e.g. `bird-interact-tools`),
+   so a loaded set that is a strict subset of expected is normal — only an
+   EXTRA server means the host's `~/.claude.json` leaked in. A leak raises
+   `HermeticEnvError`, failing the task loudly. (Verified live: the
+   `zai/glm-5.2` local smoke loaded only `slayer`, `extra=[]` — isolation
+   confirmed.)
+5. **Config-dir cleanup** on exit (success or any failure).
+
+Usage: pass `self.model`, the explicit `mcp_servers` dict, and a
+`build_options(opt_kwargs)` closure that returns the agent's own
+`ClaudeAgentOptions(**opt_kwargs, …its unique tools/hooks/agents…)` —
+`opt_kwargs` carries the policy-owned `env` (+ `thinking`). Preserve a
+DEV-1561 `otf_timer`-around-`__aenter__` by passing
+`enter_cm_factory=lambda: otf_timer(...)`.
+
+Because the registry layer is a no-op for Anthropic models, this is inert
+for existing cloud Anthropic runs (same servers, same auth). The contract
+is pinned by `tests/test_sdk_subprocess_hermetic.py` (helper units),
+`tests/test_dev1579_v0_provider_support.py` (v0 registry support +
+graceful skip), the per-agent `CLAUDE_CONFIG_DIR` assertions in
+`tests/test_dev1561_disable_cli_telemetry.py` /
+`tests/test_dev1555_stage2_sdk_env.py`, and the real-CLI isolation smoke
+`tests/test_dev1579_hermetic_integration.py` (`@pytest.mark.integration`,
+needs `ANTHROPIC_API_KEY`).

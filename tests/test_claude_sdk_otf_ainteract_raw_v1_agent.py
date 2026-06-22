@@ -382,6 +382,12 @@ def _make_fake_client(
         async def __aexit__(self, *a):
             return None
 
+        async def get_mcp_status(self):
+            names = list((captured["options"].mcp_servers or {}).keys())
+            return {"mcpServers": [
+                {"name": n, "status": "connected"} for n in names
+            ]}
+
         async def query(self, *a, **kw):
             return None
 
@@ -420,8 +426,10 @@ def _stub_env(
 
     monkeypatch.setattr(m, "materialize_task_db", _fake_materialize)
     monkeypatch.setattr(m, "create_sdk_mcp_server", lambda **kw: SimpleNamespace())
+    from bird_interact_agents.agents.claude_sdk import sdk_env as _sdk_env
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-stub")
     monkeypatch.setattr(
-        m, "ClaudeSDKClient",
+        _sdk_env, "ClaudeSDKClient",
         _make_fake_client(
             captured, messages,
             m_module=m,

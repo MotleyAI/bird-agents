@@ -78,8 +78,12 @@ async def test_sdk_client_enter_failure_emits_error_event_slayer(
     ``sdk_client_enter.error elapsed_s=… exc=_EnterBoom``."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
+    from bird_interact_agents.agents.claude_sdk import sdk_env as _sdk_env
     captured = ainteract_t._stub_env(monkeypatch, m, tmp_path / "store")
-    monkeypatch.setattr(m, "ClaudeSDKClient", _make_enter_failing_client(captured))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-stub")
+    monkeypatch.setattr(
+        _sdk_env, "ClaudeSDKClient", _make_enter_failing_client(captured),
+    )
 
     agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
     # run_task catches the exception and finalises a row with error=...;
@@ -112,8 +116,12 @@ async def test_sdk_client_enter_failure_emits_error_event_raw(
         agent as m,
     )
 
+    from bird_interact_agents.agents.claude_sdk import sdk_env as _sdk_env
     captured = ainteract_raw_t._stub_env(monkeypatch, m, tmp_path / "store")
-    monkeypatch.setattr(m, "ClaudeSDKClient", _make_enter_failing_client(captured))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-stub")
+    monkeypatch.setattr(
+        _sdk_env, "ClaudeSDKClient", _make_enter_failing_client(captured),
+    )
 
     agent = m.ClaudeSDKOtfAInteractRawAgent(model="anthropic/claude-sonnet-4-5")
     row = await agent.run_task(

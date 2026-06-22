@@ -22,10 +22,9 @@ def _submit_argv(
     *,
     framework: str = "claude_sdk_v1",
 ) -> list[str]:
-    # Codex r7: registry models go through ``claude_sdk_v1`` (the v1
-    # aggregator wires the provider-aware session env). The v0
-    # ``claude_sdk`` aggregator rejects registry models at parse time;
-    # the dedicated reject test below covers that path.
+    # Registry models default to ``claude_sdk_v1`` here, but DEV-1579 also
+    # wired the provider-aware hermetic session into the v0 ``claude_sdk``
+    # aggregator — the dedicated parse test below covers that path.
     return [
         "submit",
         "--framework", framework,
@@ -62,18 +61,14 @@ def test_moonshot_submit_with_subscription_auth_rejected(monkeypatch, capsys):
     assert "MOONSHOT_API_KEY" in err
 
 
-def test_moonshot_submit_with_v0_claude_sdk_rejected(monkeypatch, capsys):
-    """Codex r7: the v0 ``claude_sdk`` aggregator only supports
-    Anthropic models. The cloud CLI now rejects ``--framework
-    claude_sdk + moonshot/...`` at parse time so a misconfigured
-    submit doesn't burn a full cluster bring-up before failing inside
-    the Ray job."""
+def test_moonshot_submit_with_v0_claude_sdk_parses(monkeypatch):
+    """DEV-1579: the v0 ``claude_sdk`` aggregator now carries the
+    provider-aware hermetic session env, so ``--framework claude_sdk +
+    moonshot/...`` parses at the CLI (no more parse-time rejection) and
+    resolves to the API-key path (``no_subscription_auth=True``)."""
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
-    with pytest.raises(SystemExit):
-        cli.parse_args(_submit_argv(_KIMI, framework="claude_sdk"))
-    err = capsys.readouterr().err
-    assert "claude_sdk_v1" in err
-    assert "Anthropic" in err
+    ns = cli.parse_args(_submit_argv(_KIMI, framework="claude_sdk"))
+    assert ns.no_subscription_auth is True
 
 
 def test_anthropic_submit_still_requires_explicit_choice():

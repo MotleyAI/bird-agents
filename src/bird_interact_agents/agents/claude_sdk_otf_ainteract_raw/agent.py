@@ -13,11 +13,9 @@ built by ``_make_ask_user_guards``.
 from __future__ import annotations
 
 import logging
-import contextlib
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
-    ClaudeSDKClient,
     HookMatcher,
     create_sdk_mcp_server,
 )
@@ -36,7 +34,7 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     submit_sql,
 )
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
-    disable_cli_telemetry_env,
+    hermetic_claude_sdk_session,
 )
 from bird_interact_agents.slayer_otf.timing import otf_timer
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
@@ -47,7 +45,8 @@ from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.prompts import (
     RAW_OTF_AINTERACT,
 )
 from bird_interact_agents.benchmark import get_benchmark
-from bird_interact_agents.model_string import is_anthropic, native_model_id
+from bird_interact_agents.provider_registry import is_supported_agent_model
+from bird_interact_agents.model_string import native_model_id
 from bird_interact_agents.harness import (
     SampleStatus,
     _ambiguity_count,
@@ -169,7 +168,8 @@ def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
 class ClaudeSDKOtfAInteractRawAgent:
     """SystemAgent: Claude SDK raw-SQL OTF agent with enforced ask-user discipline.
 
-    Anthropic-only (the SDK is locked to Anthropic). Bound to
+    Supports Anthropic and registry open-weight models (DEV-1579); an
+    unsupported model short-circuits with a skip-shaped row. Bound to
     ``--dataset mini_interact --mode a-interact --query-mode raw``. No SLayer
     MCP server. Mismatched dataset, eval_mode, or query_mode is rejected at
     the agent boundary.
@@ -223,11 +223,15 @@ class ClaudeSDKOtfAInteractRawAgent:
         instance_id = task_data["instance_id"]
         db_name = task_data["selected_database"]
 
-        if not is_anthropic(self.model):
+        # DEV-1579: this agent now runs Anthropic AND registry open-weight
+        # models (the hermetic session layers the provider base-url/auth). A
+        # genuinely-unsupported provider (not Anthropic, not in the registry)
+        # still gets a graceful skip row.
+        if not is_supported_agent_model(self.model):
             msg = (
-                f"claude_sdk_otf_ainteract_raw requires an Anthropic model; "
-                f"got {self.model!r}. "
-                "Skipped — use --framework pydantic_ai for non-Anthropic models."
+                f"claude_sdk_otf_ainteract_raw requires an Anthropic or registry "
+                f"open-weight model; got {self.model!r}. Skipped — use "
+                "--framework pydantic_ai for non-supported models."
             )
             logger.warning("[%s] %s", instance_id, msg)
             return finalize_result_row(
@@ -284,57 +288,59 @@ class ClaudeSDKOtfAInteractRawAgent:
             )
             tool_names = [f"mcp__bird-interact-tools__{t.name}" for t in tools]
 
+            mcp_servers: dict = {"bird-interact-tools": server}
+
             pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
 
-            # DEV-1561 (PR #49 backport): disable the bundled CLI's
-            # telemetry / error-reporting / auto-updater calls so the
-            # initialize handshake doesn't burn 5-10 min in outbound
-            # traffic. Pure env layering — no behaviour change for the agent.
-            _session_env_kwargs: dict = {"env": disable_cli_telemetry_env()}
+            # DEV-1579: build the agent's options from the policy-owned env
+            # kwargs (telemetry-disable + hermetic CLAUDE_CONFIG_DIR + any
+            # registry session env / thinking). The agent only supplies its
+            # own tool surface / hooks.
+            def _build_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+                return ClaudeAgentOptions(
+                    **_opt_kwargs,
+                    system_prompt=prompt,
+                    mcp_servers=mcp_servers,
+                    allowed_tools=tool_names,
+                    tools=[],
+                    setting_sources=[],
+                    model=native_model_id(self.model),
+                    effort=self.reasoning_effort,
+                    max_turns=_MAX_TURNS,
+                    hooks={
+                        "PreToolUse": [
+                            HookMatcher(
+                                matcher=_SUBMIT_SQL_TOOL,
+                                hooks=[pre_submit_gate],
+                            ),
+                        ],
+                        "PostToolUse": [
+                            HookMatcher(
+                                matcher=_ASK_USER_TOOL,
+                                hooks=[post_ask_counter],
+                            ),
+                            HookMatcher(hooks=[post_nag]),
+                            HookMatcher(
+                                hooks=[_make_turn_budget_hook(
+                                    _MAX_TURNS, submit_tool="submit_sql",
+                                )],
+                            ),
+                        ],
+                    },
+                )
 
-            options = ClaudeAgentOptions(
-                **_session_env_kwargs,
-                system_prompt=prompt,
-                mcp_servers={"bird-interact-tools": server},
-                allowed_tools=tool_names,
-                tools=[],
-                setting_sources=[],
-                model=native_model_id(self.model),
-                effort=self.reasoning_effort,
-                max_turns=_MAX_TURNS,
-                hooks={
-                    "PreToolUse": [
-                        HookMatcher(
-                            matcher=_SUBMIT_SQL_TOOL,
-                            hooks=[pre_submit_gate],
-                        ),
-                    ],
-                    "PostToolUse": [
-                        HookMatcher(
-                            matcher=_ASK_USER_TOOL,
-                            hooks=[post_ask_counter],
-                        ),
-                        HookMatcher(hooks=[post_nag]),
-                        HookMatcher(
-                            hooks=[_make_turn_budget_hook(
-                                _MAX_TURNS, submit_tool="submit_sql",
-                            )],
-                        ),
-                    ],
-                },
-            )
-
-            # DEV-1561 (PR #49 backport): wrap `__aenter__` in `otf_timer`
-            # via `AsyncExitStack` so a failed initialize handshake (the
-            # bug this channel was built to attribute) still emits
-            # `.error elapsed_s=… exc=<type>` on enter-time failure.
-            async with contextlib.AsyncExitStack() as stack:
-                with otf_timer(
+            # DEV-1579: the hermetic session owns CLAUDE_CONFIG_DIR isolation,
+            # API-key auth enforcement, the MCP parity assertion, and cleanup.
+            # DEV-1561: wrap `__aenter__` in `otf_timer` (via enter_cm_factory)
+            # so a failed initialize handshake still emits `.error elapsed_s=…`.
+            async with hermetic_claude_sdk_session(
+                self.model,
+                mcp_servers=mcp_servers,
+                build_options=_build_options,
+                enter_cm_factory=lambda: otf_timer(
                     "run_task.sdk_client_enter", instance_id=instance_id,
-                ):
-                    client = await stack.enter_async_context(
-                        ClaudeSDKClient(options=options)
-                    )
+                ),
+            ) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
                     trajectory.append(

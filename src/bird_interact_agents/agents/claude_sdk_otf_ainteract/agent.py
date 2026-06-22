@@ -20,12 +20,10 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import contextlib
 from pathlib import Path
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
-    ClaudeSDKClient,
     HookMatcher,
     create_sdk_mcp_server,
 )
@@ -41,7 +39,7 @@ from bird_interact_agents.agents.claude_sdk.agent import (
     submit_query,
 )
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
-    disable_cli_telemetry_env,
+    hermetic_claude_sdk_session,
 )
 from bird_interact_agents.slayer_otf.timing import otf_timer
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
@@ -57,7 +55,8 @@ from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
     SLAYER_OTF_AINTERACT,
 )
 from bird_interact_agents.benchmark import get_benchmark
-from bird_interact_agents.model_string import is_anthropic, native_model_id
+from bird_interact_agents.provider_registry import is_supported_agent_model
+from bird_interact_agents.model_string import native_model_id
 from bird_interact_agents.harness import (
     SampleStatus,
     _ambiguity_count,
@@ -201,7 +200,8 @@ class ClaudeSDKOtfAInteractAgent:
     """SystemAgent: Claude SDK agent with on-the-fly KB encoding + enforced
     ask-user discipline.
 
-    Anthropic-only (the SDK is locked to Anthropic). Bound to
+    Supports Anthropic and registry open-weight models (DEV-1579); an
+    unsupported model short-circuits with a skip-shaped row. Bound to
     ``--dataset mini_interact --mode a-interact``; mismatched dataset or
     eval_mode is rejected at the agent boundary.
     """
@@ -269,11 +269,15 @@ class ClaudeSDKOtfAInteractAgent:
         instance_id = task_data["instance_id"]
         db_name = task_data["selected_database"]
 
-        if not is_anthropic(self.model):
+        # DEV-1579: this agent now runs Anthropic AND registry open-weight
+        # models (the hermetic session layers the provider base-url/auth). A
+        # genuinely-unsupported provider (not Anthropic, not in the registry)
+        # still gets a graceful skip row.
+        if not is_supported_agent_model(self.model):
             msg = (
-                f"claude_sdk_otf_ainteract requires an Anthropic model; "
-                f"got {self.model!r}. Skipped — use --framework "
-                "pydantic_ai_otf_encode for non-Anthropic models."
+                f"claude_sdk_otf_ainteract requires an Anthropic or registry "
+                f"open-weight model; got {self.model!r}. Skipped — use "
+                "--framework pydantic_ai_otf_encode for non-supported models."
             )
             logger.warning("[%s] %s", instance_id, msg)
             return finalize_result_row(
@@ -379,72 +383,71 @@ class ClaudeSDKOtfAInteractAgent:
             pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
             pre_query_gate, post_tool_tracker = _make_query_before_submit_guard()
 
-            # DEV-1561 (PR #49 backport): disable the bundled CLI's
-            # telemetry / error-reporting / auto-updater calls so the
-            # initialize handshake doesn't burn 5-10 min in outbound
-            # traffic. Pure env layering — no behaviour change for the agent.
-            _session_env_kwargs: dict = {"env": disable_cli_telemetry_env()}
+            # DEV-1579: build the agent's options from the policy-owned env
+            # kwargs (telemetry-disable + hermetic CLAUDE_CONFIG_DIR + any
+            # registry session env / thinking). The agent only supplies its
+            # own tool surface / hooks.
+            def _build_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+                return ClaudeAgentOptions(
+                    **_opt_kwargs,
+                    system_prompt=prompt,
+                    mcp_servers=mcp_servers,
+                    allowed_tools=tool_names,
+                    # DEV-1548: same cacheable-prefix shrink as the sibling
+                    # one-shot adapter. The constant lives in
+                    # claude_sdk_otf.agent (imported above) so a single edit
+                    # propagates to both adapters; the negative-assertion test
+                    # in test_claude_sdk_otf_disallowed_slayer_tools.py pins
+                    # the symmetry.
+                    disallowed_tools=SLAYER_MCP_DISALLOWED_TOOL_NAMES,
+                    tools=[],
+                    setting_sources=[],
+                    model=native_model_id(self.model),
+                    effort=self.reasoning_effort,
+                    max_turns=_MAX_TURNS,
+                    hooks={
+                        "PreToolUse": [
+                            HookMatcher(
+                                matcher="mcp__bird-interact-tools__submit_query",
+                                # ask_user gate runs first; query gate runs second.
+                                hooks=[pre_submit_gate, pre_query_gate],
+                            ),
+                            # Codex post-merge: normalize backing-query filters
+                            # baked into create_model / edit_model payloads so
+                            # the persisted model definition matches the
+                            # filter-normalization contract the query path
+                            # already enforces.
+                            HookMatcher(
+                                matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
+                                hooks=[_normalize_write_tool_filters_hook],
+                            ),
+                        ],
+                        "PostToolUse": [
+                            HookMatcher(
+                                matcher=_ASK_USER_TOOL,
+                                hooks=[post_ask_counter],
+                            ),
+                            HookMatcher(hooks=[post_nag]),
+                            HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
+                            # Must be last so it captures the true last-completed
+                            # tool name after all other PostToolUse hooks have run.
+                            HookMatcher(hooks=[post_tool_tracker]),
+                        ],
+                    },
+                )
 
-            options = ClaudeAgentOptions(
-                **_session_env_kwargs,
-                system_prompt=prompt,
+            # DEV-1579: the hermetic session owns CLAUDE_CONFIG_DIR isolation,
+            # API-key auth enforcement, the MCP parity assertion, and cleanup.
+            # DEV-1561: wrap `__aenter__` in `otf_timer` (via enter_cm_factory)
+            # so a failed initialize handshake still emits `.error elapsed_s=…`.
+            async with hermetic_claude_sdk_session(
+                self.model,
                 mcp_servers=mcp_servers,
-                allowed_tools=tool_names,
-                # DEV-1548: same cacheable-prefix shrink as the sibling
-                # one-shot adapter. The constant lives in
-                # claude_sdk_otf.agent (imported above) so a single edit
-                # propagates to both adapters; the negative-assertion test
-                # in test_claude_sdk_otf_disallowed_slayer_tools.py pins
-                # the symmetry.
-                disallowed_tools=SLAYER_MCP_DISALLOWED_TOOL_NAMES,
-                tools=[],
-                setting_sources=[],
-                model=native_model_id(self.model),
-                effort=self.reasoning_effort,
-                max_turns=_MAX_TURNS,
-                hooks={
-                    "PreToolUse": [
-                        HookMatcher(
-                            matcher="mcp__bird-interact-tools__submit_query",
-                            # ask_user gate runs first; query gate runs second.
-                            hooks=[pre_submit_gate, pre_query_gate],
-                        ),
-                        # Codex post-merge: normalize backing-query filters
-                        # baked into create_model / edit_model payloads so
-                        # the persisted model definition matches the
-                        # filter-normalization contract the query path
-                        # already enforces.
-                        HookMatcher(
-                            matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
-                            hooks=[_normalize_write_tool_filters_hook],
-                        ),
-                    ],
-                    "PostToolUse": [
-                        HookMatcher(
-                            matcher=_ASK_USER_TOOL,
-                            hooks=[post_ask_counter],
-                        ),
-                        HookMatcher(hooks=[post_nag]),
-                        HookMatcher(hooks=[_make_turn_budget_hook(_MAX_TURNS)]),
-                        # Must be last so it captures the true last-completed
-                        # tool name after all other PostToolUse hooks have run.
-                        HookMatcher(hooks=[post_tool_tracker]),
-                    ],
-                },
-            )
-
-            # Auth env-var invariant validated at actor bootstrap; see ray_app._assert_actor_oauth_invariant.
-            # DEV-1561 (PR #49 backport): wrap `__aenter__` in `otf_timer`
-            # via `AsyncExitStack` so a failed initialize handshake (the
-            # bug this channel was built to attribute) still emits
-            # `.error elapsed_s=… exc=<type>` on enter-time failure.
-            async with contextlib.AsyncExitStack() as stack:
-                with otf_timer(
+                build_options=_build_options,
+                enter_cm_factory=lambda: otf_timer(
                     "run_task.sdk_client_enter", instance_id=instance_id,
-                ):
-                    client = await stack.enter_async_context(
-                        ClaudeSDKClient(options=options)
-                    )
+                ),
+            ) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
                     try:

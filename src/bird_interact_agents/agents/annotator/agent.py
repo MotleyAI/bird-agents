@@ -23,7 +23,6 @@ from pydantic import BaseModel, ValidationError
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
-    ClaudeSDKClient,
     create_sdk_mcp_server,
     tool,
 )
@@ -49,7 +48,7 @@ from bird_interact_agents.harness import (
 from bird_interact_agents.model_string import is_anthropic, native_model_id
 from bird_interact_agents.agents.annotator.prompts import build_system_prompt
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
-    disable_cli_telemetry_env,
+    hermetic_claude_sdk_session,
 )
 
 _BY_NAME = {t.name: t for t in BIRD_INTERACT_TOOLS}
@@ -620,27 +619,35 @@ async def run_task(
         name="bird-annotator-tools", version="1.0.0", tools=all_sdk_tools
     )
 
+    mcp_servers = {"bird-annotator-tools": server}
+
     system_prompt = build_system_prompt(task_data=task_data, benchmark=benchmark)
     cap = max_turns or MAX_MODEL_TURNS
 
-    options = ClaudeAgentOptions(
-        # DEV-1561: disable outbound telemetry / error-reporting /
-        # auto-updater channels so the bundled `claude` CLI doesn't burn
-        # minutes on side-channel network calls during initialize.
-        env=disable_cli_telemetry_env(),
-        system_prompt=system_prompt,
-        mcp_servers={"bird-annotator-tools": server},
-        allowed_tools=tool_names_prefixed,
-        tools=[],
-        setting_sources=[],
-        effort=effort,
-        max_turns=cap,
-        model=native_model_id(model),
-    )
+    # DEV-1579: build the agent's options from the policy-owned env kwargs
+    # (telemetry-disable + hermetic CLAUDE_CONFIG_DIR). The annotator is
+    # Anthropic-only, so the session is provider_aware=False.
+    def _build_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+        return ClaudeAgentOptions(
+            **_opt_kwargs,
+            system_prompt=system_prompt,
+            mcp_servers=mcp_servers,
+            allowed_tools=tool_names_prefixed,
+            tools=[],
+            setting_sources=[],
+            effort=effort,
+            max_turns=cap,
+            model=native_model_id(model),
+        )
 
     turns = 0
     try:
-        async with ClaudeSDKClient(options=options) as client:
+        async with hermetic_claude_sdk_session(
+            model,
+            mcp_servers=mcp_servers,
+            build_options=_build_options,
+            provider_aware=False,
+        ) as client:
             await client.query(task_data["amb_user_query"])
             async for msg in client.receive_response():
                 if ctx_dict.get("_submission_done"):
