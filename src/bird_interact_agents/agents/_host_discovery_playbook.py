@@ -14,9 +14,19 @@ underspecifies the join graph. Used by:
 
 The text has no ``str.format`` placeholders so it can be concatenated
 into any prompt body without breaking the call site's ``.format(...)``.
+
+DEV-1591: the broad-search compact discipline (``_COMPACT_SEARCH_DISCIPLINE``)
+is imported from ``_shared_otf_prompts`` and embedded inline so the rule
+lives in exactly one place. The constant is param-free and brace-free, so
+the no-``.format()``-placeholder contract still holds.
 """
 
-HOST_DISCOVERY_PLAYBOOK = """\
+from bird_interact_agents.agents._shared_otf_prompts import (
+    _COMPACT_SEARCH_DISCIPLINE,
+)
+
+HOST_DISCOVERY_PLAYBOOK = (
+    """\
 HOST DISCOVERY (when picking a root model [`source_model`] for a query or
 a host for an encoded entity, AND the KB body does not pin the host
 unambiguously — i.e. the KB names columns/fields that exist on more than
@@ -70,11 +80,17 @@ HOW TO READ COLUMN DESCRIPTIONS via SLayer MCP:
     .description for every column. Use when scanning a model end-to-end.
   * Discover columns whose descriptions match a phrase:
     `search(question="<one-sentence paraphrase>", max_results=10,
+    compact=True,
     datasource="<db>", cypher_filter='MATCH (n:ModelColumn:Measure:Aggregation:Model) RETURN n.id AS id')`.
     The cypher filter pins the result list to entity hits (multi-label
     is union semantics); the tantivy + dense-embedding channels then
     rank all column / model / measure descriptions and return a unified
-    `results` list of entity hits.
+    `results` list of entity hits. This is a BROAD search — keep
+    `compact=True` (see COMPACT-MODE SEARCH DISCIPLINE below).
+
+"""
+    + _COMPACT_SEARCH_DISCIPLINE
+    + """
 
 HOW TO FIND CANDIDATE HOSTS for a target table T (the table whose
 columns the KB references):
@@ -156,3 +172,4 @@ description signal alone — tie-breakers are unnecessary. If both
 descriptions had been equally on-intent, the 1-hop tiebreaker would
 have picked `asset_inspections` anyway.
 """
+)

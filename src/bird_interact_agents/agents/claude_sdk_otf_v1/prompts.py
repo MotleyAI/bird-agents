@@ -25,6 +25,7 @@ from bird_interact_agents.agents._host_discovery_playbook import (
 )
 from bird_interact_agents.agents._shared_otf_prompts import (
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
+    _COMPACT_SEARCH_DISCIPLINE,
     _DECOMPOSE_DISCIPLINE,
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
@@ -52,7 +53,8 @@ submission. If a `filters` predicate needs a computed value, encode it as
 a named column first and filter on the name; raw SQL expressions are
 rejected in `filters`."""
 
-_ENCODE_CORE_HEAD = """\
+_ENCODE_CORE_HEAD = (
+    """\
 The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
 knowledge-base (KB) item, with ids like `{db_name}_kb_<n>` whose body
 starts `KB <n> —`. The base tables are already ingested as SLayer models,
@@ -66,6 +68,10 @@ the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 to see a model's columns / measures / joins; `create_model` / `edit_model`
 to add columns and measures; `query` (single object OR list of stage objects for nested DAG) to test.
 
+"""
+    + _COMPACT_SEARCH_DISCIPLINE
+    + """
+
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `search` with `entities=[
 "<db>.<model>.<col>"]`, `max_memories=0`, `max_example_queries=0`. The
@@ -76,6 +82,7 @@ whitespace forms, abbreviations, alternate phrasings of the same concept.
 Use it BEFORE writing any IN-set (see rule 3 below).
 
 ENCODE-THEN-QUERY DISCIPLINE:"""
+)
 
 _ENCODE_CORE_TAIL = """\
 2. For each block, `search` for the relevant KB memory and any entity

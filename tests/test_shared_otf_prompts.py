@@ -5,9 +5,12 @@ Covers three concerns:
    are byte-for-byte unchanged after the refactoring that imports constants
    from _shared_otf_prompts.
 2. That the shared constants render correctly with their format params.
-3. That the shared constants appear verbatim in both slayer and raw OTF
-   prompts (after implementation), and that raw prompts are free of
-   SLayer-specific vocabulary.
+3. That the mode-agnostic shared constants appear verbatim in both slayer
+   and raw OTF prompts (after implementation), and that raw prompts are
+   free of SLayer-specific vocabulary. (The DEV-1591
+   ``_COMPACT_SEARCH_DISCIPLINE`` constant is SLayer-only — it talks about
+   the SLayer ``search`` tool's ``compact`` / ``cypher_filter`` args — so
+   it lands only in the slayer prompts, never the raw ones.)
 """
 
 from __future__ import annotations
@@ -36,8 +39,13 @@ import pytest
 # DEV-1545 (_TABLE_SET_PROBE), DEV-1546 (_DEDUP_VS_RAW_ROWS), and
 # DEV-1550 (ModelColumn label + memory drill-in paragraph in
 # _SLAYER_TOOLS_BLOCK).
-_ONE_SHOT_SHA256 = "e671aea393338079d2a3d9e6f790bfb194953928069d405183d5cf60c023a647"
-_AINTERACT_SHA256 = "a3fd695c391ba09ce352e677802dacb378cc7ae33e648f747c21f6565aa1c799"
+# Re-baselined again for DEV-1591: the broad-search compact discipline
+# (`_COMPACT_SEARCH_DISCIPLINE`) is embedded into the v1 head blocks
+# (_ENCODE_CORE_HEAD / _AINTERACT_SLAYER_TOOLS) AND into the shared
+# HOST_DISCOVERY_PLAYBOOK these prompts append, so each v1 SLAYER prompt
+# now carries the rule twice.
+_ONE_SHOT_SHA256 = "49d83ce25c6284dbf0a5b8e2ae20089ad05ac8f1c07c0b96276e6c9501552521"
+_AINTERACT_SHA256 = "9c0a572914ecad40712ca7bd261ce58850ba5a43167da58fd54bf541dbd020c8"
 
 
 def test_slayer_otf_one_shot_unchanged():
@@ -86,6 +94,7 @@ def test_shared_constants_all_nonempty():
         _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
         _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
         _COLUMN_NAMES_DONT_AFFECT_GRADING,
+        _COMPACT_SEARCH_DISCIPLINE,
         _SLAYER_SQL_ARTIFACT_CHECK,
         _PIVOT_AFTER_REPEATED_FAILURES,
         _USER_SIM_TRUST_CALIBRATION,
@@ -99,6 +108,7 @@ def test_shared_constants_all_nonempty():
         ("_PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT", _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT),
         ("_PRE_SUBMIT_MUTATION_CHECK_AINTERACT", _PRE_SUBMIT_MUTATION_CHECK_AINTERACT),
         ("_COLUMN_NAMES_DONT_AFFECT_GRADING", _COLUMN_NAMES_DONT_AFFECT_GRADING),
+        ("_COMPACT_SEARCH_DISCIPLINE", _COMPACT_SEARCH_DISCIPLINE),
         ("_SLAYER_SQL_ARTIFACT_CHECK", _SLAYER_SQL_ARTIFACT_CHECK),
         ("_PIVOT_AFTER_REPEATED_FAILURES", _PIVOT_AFTER_REPEATED_FAILURES),
         ("_USER_SIM_TRUST_CALIBRATION", _USER_SIM_TRUST_CALIBRATION),

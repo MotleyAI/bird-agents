@@ -99,11 +99,12 @@ def test_otf_prompts_modules_import_the_same_object():
     private alias `_HOST_DISCOVERY_PLAYBOOK`. They MUST be the same
     object — drift is impossible by construction."""
     # DEV-1555: import-identity is meaningful only for the v1 prompts
-    # path. The v0 prompts re-export a FROZEN origin/main snapshot from
-    # ``_shared_otf_prompts`` — they no longer import the live playbook
-    # constant, so `is`-equality is N/A there. (The v0 byte-identity
-    # contract is the SHA snapshot in
-    # tests/test_dev1555_v0_v1_shared_prompts.py instead.)
+    # path. The v0 prompts re-export a static snapshot from
+    # ``_shared_otf_prompts`` that embeds its OWN inline copy of the
+    # playbook text — they do not import the live playbook constant, so
+    # `is`-equality is N/A there. (DEV-1591 deliberately patched the v0
+    # SLAYER snapshots; the surviving v0 contracts are the presence +
+    # "v0 != v1" checks in tests/test_dev1555_v0_v1_shared_prompts.py.)
     from bird_interact_agents.agents.claude_sdk_otf_v1 import prompts as cs_otf
     from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import (
         prompts as cs_otf_ainteract,
@@ -129,10 +130,11 @@ def test_otf_prompts_modules_import_the_same_object():
 def test_claude_sdk_otf_one_shot_includes_playbook():
     """DEV-1555: v1 prompts assemble live ``HOST_DISCOVERY_PLAYBOOK``.
 
-    The v0 one-shot template is a frozen origin/main snapshot — its
-    embedded playbook is the origin/main version, not the live
-    constant; that contract is pinned by the V0 SHA snapshot test, not
-    by this membership check.
+    The v0 one-shot template embeds its OWN inline copy of the playbook
+    text (not the live constant); DEV-1591 patched that snapshot. The
+    surviving v0 contracts are the presence + "v0 != v1" checks in
+    tests/test_dev1555_v0_v1_shared_prompts.py, not this membership
+    check.
     """
     from bird_interact_agents.agents.claude_sdk_otf_v1 import prompts
 

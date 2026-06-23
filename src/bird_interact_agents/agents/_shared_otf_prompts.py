@@ -354,6 +354,59 @@ window scope and resubmit. The point is to flip a single structural
 bit, not to keep submitting near-identical queries."""
 
 
+# DEV-1591 — broad-search compact discipline. Shared across every SLayer
+# prompt (v0 snapshots, v1 head blocks, the host-discovery playbook, and
+# the claude_sdk a/c-interact prompts). A glm-5.2 households run issued a
+# broad `search(question=..., compact=False)` that returned 10 full entity
+# renders (~55K chars) which then rode in cached context every turn
+# (~6x cache-read, ~3.8x prompt tokens vs raw mode). SLayer 0.8.1:
+# `SearchHit.text == "" if compact else <full render>`, so `compact=False`
+# only pays off for a small, already-chosen entity set; broad discovery
+# only needs the one-line `description` that `compact=True` returns.
+#
+# This constant is param-free AND brace-free (no `{`/`}`): the
+# host-discovery playbook contract forbids `.format()` placeholders, and
+# several consumers (SLAYER_A_INTERACT / SLAYER_C_INTERACT) are
+# `str.format` templates that would break on a stray brace. All examples
+# are synthetic — no real eval-set DB / model / column names.
+_COMPACT_SEARCH_DISCIPLINE = """\
+COMPACT-MODE SEARCH DISCIPLINE. The `search` tool's `compact` flag controls
+how much each hit returns, and `cypher_filter` controls WHICH kinds of hits
+come back. Use both to keep broad searches cheap and on-target:
+
+  * BROAD EXPLORATION — when you call `search(question="…")` with a large
+    `max_results` to DISCOVER what exists, keep `compact=True` (the default).
+    It returns each hit's one-line `description` — enough to choose
+    candidates. Do NOT pass `compact=False` on a broad search: that renders
+    the FULL per-entity body (Type / Description / Sample values / SQL /
+    allowed aggregations) for EVERY hit — tens of thousands of characters
+    that then ride in cached context on every later turn, costing many times
+    the tokens for no added signal.
+
+  * NARROW THE BROAD SEARCH BY KIND with `cypher_filter`, so the
+    `max_results` slots are spent on the kind you actually want instead of an
+    RRF-fused mix of memories + columns + measures + models. Pass a
+    `MATCH … RETURN n.id AS id` constraint (multi-label is union semantics):
+      - only KB memories:        cypher_filter='MATCH (n:Memory) RETURN n.id AS id'
+      - only entity definitions: cypher_filter='MATCH (n:ModelColumn:Measure:Aggregation:Model) RETURN n.id AS id'
+      - only columns:            cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'
+    Use the `ModelColumn` label, NOT `Column` (`Column` is a reserved keyword
+    in LadybugDB ≥0.15 and only matches on the naive fallback path;
+    `ModelColumn` works on naive AND graph-backed installs).
+
+  * TARGETED DETAIL — only when you already have a SMALL, chosen set of known
+    ids do you want the full body. Call
+    `search(entities=["<db>.<model>.<col>", …])` (or a single `memory:<id>`)
+    with a tight `max_results` and `compact=False`, plus the matching
+    `cypher_filter` kind constraint so a cross-referencing memory can't
+    outrank the entity you asked for. That is where spending the tokens pays
+    off.
+
+Rule of thumb: `question=` (discovery) → `compact=True` + a `cypher_filter`
+kind constraint; `entities=[…]` (point lookup) → `compact=False` + the
+matching kind constraint."""
+
+
 # DEV-1550 A3: shared "SLAYER TOOLS" block — extracted byte-for-byte
 # from the previously-duplicated `_AINTERACT_SLAYER_TOOLS` /
 # `_ENCODE_CORE_HEAD` (verified identical at extraction time), with
@@ -372,7 +425,8 @@ bit, not to keep submitting near-identical queries."""
 # kwargs at the same time.
 #
 # Format params: {db_name}
-_SLAYER_TOOLS_BLOCK = """\
+_SLAYER_TOOLS_BLOCK = (
+    """\
 The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
 knowledge-base (KB) item, with ids like `{db_name}_kb_<n>` whose body
 starts `KB <n> —`. The base tables are already ingested as SLayer models,
@@ -413,21 +467,35 @@ result to the memory you asked for — without it, a parent memory whose
 entities cross-reference `memory:<id>` can occupy the single slot
 instead of the memory you want.
 
+"""
+    + _COMPACT_SEARCH_DISCIPLINE
+    + """
+
 ENCODE-THEN-QUERY DISCIPLINE:"""
+)
 
 
 # ---------------------------------------------------------------------------
 # DEV-1555 v0/v1 split — origin/main prompt snapshots.
 #
-# These four constants are the byte-for-byte origin/main rendered prompt
-# templates (post-helper-substitution, pre-`.format(budget=..., db_name=...,
-# user_query=...)`). They back the four v0 agents under
-# `claude_sdk_otf*/prompts.py`. SHA-256 snapshots pinned in
-# `tests/test_dev1555_v0_v1_shared_prompts.py`.
+# These four constants started as the byte-for-byte origin/main rendered
+# prompt templates (post-helper-substitution, pre-`.format(budget=...,
+# db_name=..., user_query=...)`) backing the four v0 agents under
+# `claude_sdk_otf*/prompts.py`. The byte-identity SHA-256 pin was dropped
+# when the unified `query` tool landed (see
+# `tests/test_dev1555_v0_v1_shared_prompts.py`, which now keeps only
+# presence + "v0 != v1" + "no query_nested/query_json" contracts), so they
+# are NO LONGER a pure frozen origin/main snapshot.
+#
+# DEV-1591 deliberately patches the two SLAYER v0 snapshots (one-shot +
+# a-interact) to carry the broad-search compact discipline alongside the
+# live v1 prompts — the raw v0 snapshots have no `search`/`compact` concept
+# and stay untouched.
 # ---------------------------------------------------------------------------
 
 
-SLAYER_OTF_ONE_SHOT_V0 = """\
+SLAYER_OTF_ONE_SHOT_V0 = (
+    """\
 You are a data analyst. You have a SLayer semantic-layer MCP server plus a
 native `submit_query` tool. Your job: answer the user's question by
 ENCODING the domain knowledge it needs into the SLayer model as named
@@ -479,6 +547,10 @@ returns the full `learning` body. The `:Memory` kind filter pins the
 result to the memory you asked for — without it, a parent memory whose
 entities cross-reference `memory:<id>` can occupy the single slot
 instead of the memory you want.
+
+"""
+    + _COMPACT_SEARCH_DISCIPLINE
+    + """
 
 ENCODE-THEN-QUERY DISCIPLINE:
 
@@ -820,8 +892,10 @@ description signal alone — tie-breakers are unnecessary. If both
 descriptions had been equally on-intent, the 1-hop tiebreaker would
 have picked `asset_inspections` anyway.
 """
+)
 
-SLAYER_OTF_AINTERACT_V0 = """\
+SLAYER_OTF_AINTERACT_V0 = (
+    """\
 You are a data analyst. You have a SLayer semantic-layer MCP server plus
 native `ask_user` and `submit_query` tools. Your job: answer the user's
 question by ENCODING the domain knowledge it needs into the SLayer model
@@ -878,6 +952,10 @@ returns the full `learning` body. The `:Memory` kind filter pins the
 result to the memory you asked for — without it, a parent memory whose
 entities cross-reference `memory:<id>` can occupy the single slot
 instead of the memory you want.
+
+"""
+    + _COMPACT_SEARCH_DISCIPLINE
+    + """
 
 ENCODE-THEN-QUERY DISCIPLINE:
 
@@ -1281,6 +1359,7 @@ description signal alone — tie-breakers are unnecessary. If both
 descriptions had been equally on-intent, the 1-hop tiebreaker would
 have picked `asset_inspections` anyway.
 """
+)
 
 RAW_OTF_ONE_SHOT_V0 = """\
 You are a data analyst. You have direct SQL access to a database plus a
