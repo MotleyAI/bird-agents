@@ -26,72 +26,19 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# 1. Partition deny hook
+# 1. Discovery client cap
+#
+# DEV-1581 R2 removed the SDK-subagent split (and the ``partition_deny`` hook
+# / ``DISCOVERY_AGENT_NAME``): discovery is now a SEPARATE persistent client,
+# so there is no per-call deny hook to test. ``DISCOVERY_MAX_TURNS`` still caps
+# one discovery answer.
 # ---------------------------------------------------------------------------
-
-_DISCOVERY_ONLY = frozenset(
-    {"mcp__slayer__search", "mcp__slayer__models_summary"}
-)
-
-
-def _make_hook():
-    from bird_interact_agents.agents.claude_sdk.partition import (
-        make_partition_deny_hook,
-    )
-    return make_partition_deny_hook(_DISCOVERY_ONLY)
-
-
-@pytest.mark.asyncio
-async def test_partition_hook_denies_discovery_tool_in_main_loop():
-    hook = _make_hook()
-    out = await hook(
-        {"tool_name": "mcp__slayer__search", "tool_input": {}}, "tu_1", None,
-    )
-    hso = out["hookSpecificOutput"]
-    assert hso["hookEventName"] == "PreToolUse"
-    assert hso["permissionDecision"] == "deny"
-    assert "discovery" in hso["permissionDecisionReason"]
-
-
-@pytest.mark.asyncio
-async def test_partition_hook_allows_discovery_tool_inside_subagent():
-    hook = _make_hook()
-    out = await hook(
-        {
-            "tool_name": "mcp__slayer__search",
-            "tool_input": {},
-            "agent_id": "agent-123",
-        },
-        "tu_1",
-        None,
-    )
-    assert out == {}
-
-
-@pytest.mark.asyncio
-async def test_partition_hook_ignores_non_discovery_tools():
-    hook = _make_hook()
-    out = await hook(
-        {"tool_name": "mcp__slayer__help", "tool_input": {}}, "tu_1", None,
-    )
-    assert out == {}
-
-
-def test_partition_hook_callback_name_is_pinned():
-    """Options-wiring tests identify the hook by ``__name__`` — pin it."""
-    assert _make_hook().__name__ == "partition_deny"
-
-
-def test_discovery_agent_name_constant():
-    from bird_interact_agents.agents.claude_sdk import partition
-
-    assert partition.DISCOVERY_AGENT_NAME == "discovery"
 
 
 def test_discovery_max_turns_matches_model_turn_budget():
-    """SDK ``max_turns`` only caps the MAIN loop; the discovery
-    AgentDefinition needs its own cap. Pin it to the base model-turn
-    budget so a runaway discovery sweep cannot spin unbounded."""
+    """SDK ``max_turns`` caps each discovery answer (one ``ask_discovery``
+    round); pin it to the base model-turn budget so a runaway discovery sweep
+    cannot spin unbounded."""
     from bird_interact_agents.agents.claude_sdk import partition
     from bird_interact_agents.harness import MAX_MODEL_TURNS
 

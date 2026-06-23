@@ -18,61 +18,43 @@ for Rule 0 (ask before encode) plus the shared encode-then-query rules.
 
 from __future__ import annotations
 
-import dataclasses
 import logging
 import time
 from pathlib import Path
 
-from claude_agent_sdk import (
-    AgentDefinition,
-    ClaudeAgentOptions,
-    HookMatcher,
-    create_sdk_mcp_server,
-)
+from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
 
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
     SdkUsageTracker,
-    accumulate_assistant_usage,
-    ask_user,
-    get_all_external_knowledge_names,
-    get_all_knowledge_definitions,
-    get_knowledge_definition,
-    query,
-    submit_query,
+    build_bird_interact_server,
+    native_tool_full_name,
 )
 from bird_interact_agents.agents.claude_sdk.context_budget import (
     context_window_for,
     make_context_budget_hook,
     make_wall_clock_budget_hook,
     per_task_timeout_s,
-    update_context_tokens,
     update_wall_clock_start,
 )
+from bird_interact_agents.agents.claude_sdk.discovery_runtime import (
+    run_main_with_discovery,
+)
 from bird_interact_agents.agents.claude_sdk.partition import (
-    DISCOVERY_AGENT_NAME,
     DISCOVERY_MAX_TURNS,
-    MAIN_WORKFLOW_NOTE,
     build_main_workflow_note,
     build_discovery_prompt,
-    make_partition_deny_hook,
-)
-from bird_interact_agents.agents.claude_sdk.sdk_env import (
-    hermetic_claude_sdk_session,
 )
 from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
     _MAX_TURNS,
-    _NORMALIZE_WRITE_FILTERS_MATCHER,
     _make_query_before_submit_guard,
     _make_turn_budget_hook,
-    _normalize_write_tool_filters_hook,
-    _slayer_tool_names,
 )
 from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
-    DISCOVERY_TOOLS as _ONE_SHOT_DISCOVERY_TOOLS,
+    DISCOVERY_NATIVE_TOOL_NAMES as _ONE_SHOT_DISCOVERY_TOOL_NAMES,
 )
 from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
-    MAIN_TOOLS as _ONE_SHOT_MAIN_TOOLS,
+    MAIN_NATIVE_TOOL_NAMES as _ONE_SHOT_MAIN_TOOL_NAMES,
 )
 from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1.prompts import (
     SLAYER_OTF_AINTERACT,
@@ -96,7 +78,6 @@ from bird_interact_agents.harness import (
     finalize_result_row,
     load_db_data_if_needed,
     materialize_task_db,
-    slayer_mcp_stdio_config,
 )
 from bird_interact_agents.eval.annotation_io import (
     task_annotation_path,
@@ -196,32 +177,12 @@ def _make_ask_user_guards():
     return pre_submit_gate, post_ask_counter, post_nag
 
 
-# DEV-1534 Fix C: `query` / `query_nested` are bird-interact-tools
-# wrappers (not SLayer subprocess tools) so the agent can opt out of
-# filter normalization mid-flight via the `normalize_filters` parameter.
-_KNOWLEDGE_TOOLS = [
-    get_all_external_knowledge_names,
-    get_knowledge_definition,
-    get_all_knowledge_definitions,
-    query,
-]
-
-
-def _select_tools(eval_mode: str) -> list:
-    if eval_mode != "a-interact":
-        raise ValueError(
-            "claude_sdk_otf_ainteract supports only eval_mode='a-interact' "
-            "(use claude_sdk_otf for one-shot); "
-            f"got {eval_mode!r}"
-        )
-    return [*_KNOWLEDGE_TOOLS, ask_user, submit_query]
-
-
-# DEV-1555: a-interact partition = the one-shot partition + ask_user in
-# BOTH contexts (discovery does the bulk of clarification; the main loop
-# can still ask directly when submit feedback reveals an ambiguity).
-DISCOVERY_TOOLS = [*_ONE_SHOT_DISCOVERY_TOOLS, _ASK_USER_TOOL]
-MAIN_TOOLS = [*_ONE_SHOT_MAIN_TOOLS, _ASK_USER_TOOL]
+# DEV-1581 R2: a-interact partition = the one-shot partition + ask_user in
+# BOTH contexts (discovery does the bulk of clarification; the main loop can
+# still ask directly when submit feedback reveals an ambiguity). The two
+# halves are separate persistent clients (see claude_sdk_otf_v1.agent).
+MAIN_NATIVE_TOOL_NAMES = [*_ONE_SHOT_MAIN_TOOL_NAMES, _ASK_USER_TOOL]
+DISCOVERY_NATIVE_TOOL_NAMES = [*_ONE_SHOT_DISCOVERY_TOOL_NAMES, _ASK_USER_TOOL]
 
 
 def _build_prompt(
@@ -421,6 +382,7 @@ class ClaudeSDKOtfAInteractAgent:
                 "slayer_storage_dir": slayer_storage_dir,
                 "_slayer_client": None,
                 "_slayer_storage": None,
+                "_discovery": None,
                 "result": None,
                 "eval_mode": eval_mode,
                 "query_mode": query_mode,
@@ -430,45 +392,36 @@ class ClaudeSDKOtfAInteractAgent:
             }
             _ctx_var.set(ctx_dict)
 
-            tools = _select_tools(eval_mode)
             prompt = _build_prompt(
                 eval_mode, task_data, budget, self.pre_encoded_source,
             )
 
+            # DEV-1581 R2: two persistent in-process clients. DEV-1586
+            # pre-encoded mode strips the SLayer WRITE tools from MAIN (the
+            # agent only introspects); ask_user + discovery tools are
+            # unaffected.
+            main_tools = (
+                strip_write_tool_names(MAIN_NATIVE_TOOL_NAMES)
+                if self.pre_encoded_source else list(MAIN_NATIVE_TOOL_NAMES)
+            )
+            discovery_tools = list(DISCOVERY_NATIVE_TOOL_NAMES)
+
             with otf_timer(
                 "run_task.create_sdk_mcp_server", instance_id=instance_id,
             ):
-                server = create_sdk_mcp_server(
-                    name="bird-interact-tools", version="1.0.0", tools=tools,
-                )
-
-            mcp_servers: dict = {
-                "bird-interact-tools": server,
-                # DEV-1508: like the sibling claude_sdk_otf adapter, the
-                # per-task slayer storage here comes from the
-                # `ensure_db_cache`-backed OTF cache (full post-ingestion
-                # state). Skip `--ingest-on-startup` so the Claude Agent
-                # SDK (no MCP startup-timeout knob) doesn't proceed with
-                # slayer status='pending' on big-schema DBs.
-                "slayer": slayer_mcp_stdio_config(
-                    slayer_storage_dir, ingest_on_startup=False,
-                ),
-            }
+                main_mcp_servers = {
+                    "bird-interact-tools": build_bird_interact_server(main_tools),
+                }
+                discovery_mcp_servers = {
+                    "bird-interact-tools": build_bird_interact_server(
+                        discovery_tools,
+                    ),
+                }
 
             # Per-task hook factories — never share state across tasks.
             pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
             pre_query_gate, post_tool_tracker = _make_query_before_submit_guard()
 
-            # DEV-1586: pre-encoded mode strips the SLayer WRITE tools from the
-            # main loop's surface (introspect only); ask_user + discovery tools
-            # are unaffected.
-            main_tools = (
-                strip_write_tool_names(MAIN_TOOLS)
-                if self.pre_encoded_source else list(MAIN_TOOLS)
-            )
-
-            # DEV-1555: discovery/main split (see claude_sdk_otf.agent).
-            discovery_only = sorted(set(DISCOVERY_TOOLS) - set(main_tools))
             context_state: dict = {}
             update_wall_clock_start(context_state)
             (
@@ -480,57 +433,29 @@ class ClaudeSDKOtfAInteractAgent:
                 submit_tool="submit_query",
             )
 
-            # DEV-1579: build the agent's options from the policy-owned env
-            # kwargs (telemetry-disable + hermetic CLAUDE_CONFIG_DIR + any
-            # registry session env / thinking). The agent only supplies its
-            # own tool surface / hooks.
-            pre_tool_use_matchers = [
-                HookMatcher(
-                    matcher="mcp__bird-interact-tools__submit_query",
-                    # ask_user gate runs first; query gate runs second.
-                    hooks=[pre_submit_gate, pre_query_gate],
-                ),
-                HookMatcher(
-                    matcher="|".join(discovery_only),
-                    hooks=[make_partition_deny_hook(discovery_only)],
-                ),
-            ]
-            if not self.pre_encoded_source:
-                # Codex post-merge: normalize backing-query filters baked into
-                # create_model / edit_model payloads. Moot in pre-encoded mode.
-                pre_tool_use_matchers.append(
-                    HookMatcher(
-                        matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
-                        hooks=[_normalize_write_tool_filters_hook],
-                    )
-                )
-            pre_tool_use_matchers.append(HookMatcher(hooks=[wall_clock_deny]))
-
-            def _build_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+            # DEV-1579: build each client's options from the policy-owned env
+            # kwargs. The agent only supplies its own tool surface / hooks per
+            # client. ask_user lives on BOTH clients.
+            def _build_main_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
                 return ClaudeAgentOptions(
                     **_opt_kwargs,
                     system_prompt=prompt + build_main_workflow_note(query_mode='slayer'),
-                    mcp_servers=mcp_servers,
-                    allowed_tools=sorted(set(main_tools) | set(DISCOVERY_TOOLS)),
-                    tools=["Task"],
+                    mcp_servers=main_mcp_servers,
+                    allowed_tools=list(main_tools),
+                    tools=[],
                     setting_sources=[],
-                    agents={
-                        DISCOVERY_AGENT_NAME: AgentDefinition(
-                            description=(
-                                "Schema/data introspection and user clarification "
-                                "for the current task; returns a structured "
-                                "handoff report."
-                            ),
-                            prompt=build_discovery_prompt(with_ask_user=True),
-                            tools=list(DISCOVERY_TOOLS),
-                            maxTurns=DISCOVERY_MAX_TURNS,
-                        ),
-                    },
                     model=native_model_id(self.model),
                     effort=self.reasoning_effort,
                     max_turns=_MAX_TURNS,
                     hooks={
-                        "PreToolUse": pre_tool_use_matchers,
+                        "PreToolUse": [
+                            HookMatcher(
+                                matcher="mcp__bird-interact-tools__submit_query",
+                                # ask_user gate runs first; query gate second.
+                                hooks=[pre_submit_gate, pre_query_gate],
+                            ),
+                            HookMatcher(hooks=[wall_clock_deny]),
+                        ],
                         "PostToolUse": [
                             HookMatcher(
                                 matcher=_ASK_USER_TOOL,
@@ -554,53 +479,80 @@ class ClaudeSDKOtfAInteractAgent:
                     },
                 )
 
-            # DEV-1579: the hermetic session owns CLAUDE_CONFIG_DIR isolation,
-            # API-key auth enforcement, the MCP parity assertion, and cleanup.
-            # DEV-1561: wrap ``__aenter__`` in ``otf_timer`` (via
-            # enter_cm_factory) so a failed initialize handshake still emits
-            # ``.error elapsed_s=… exc=<type>``.
-            async with hermetic_claude_sdk_session(
-                self.model,
-                mcp_servers=mcp_servers,
-                build_options=_build_options,
+            def _build_discovery_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+                return ClaudeAgentOptions(
+                    **_opt_kwargs,
+                    system_prompt=build_discovery_prompt(with_ask_user=True),
+                    mcp_servers=discovery_mcp_servers,
+                    allowed_tools=list(discovery_tools),
+                    tools=[],
+                    setting_sources=[],
+                    model=native_model_id(self.model),
+                    effort=self.reasoning_effort,
+                    max_turns=DISCOVERY_MAX_TURNS,
+                    # Discovery does the bulk of clarification; its ask_user
+                    # calls must increment the SAME shared counter the main
+                    # submit gate reads (post_ask_counter is the closure shared
+                    # with _build_main_options), else a discovery-side ask
+                    # leaves the main gate closed. Discovery also shares main's
+                    # per-task wall-clock guardrails (Codex PR #56).
+                    hooks={
+                        "PreToolUse": [HookMatcher(hooks=[wall_clock_deny])],
+                        "PostToolUse": [
+                            HookMatcher(
+                                matcher=_ASK_USER_TOOL,
+                                hooks=[post_ask_counter],
+                            ),
+                            HookMatcher(hooks=[wall_clock_warning]),
+                        ],
+                    },
+                )
+
+            # DEV-1561: per-message timing log + otf_timer around the main
+            # client's __aenter__ and first query (preserved through
+            # run_main_with_discovery). The first-message elapsed is measured
+            # from immediately after the query returned (passed as the 3rd arg).
+            _msg_timing = {"prev_t": None}
+
+            def _on_main_message(msg, seq, t_after_query):
+                now = time.monotonic()
+                msg_type = type(msg).__name__
+                if seq == 1:
+                    log_otf_event(
+                        "run_task.sdk_first_message",
+                        instance_id=instance_id,
+                        msg_type=msg_type,
+                        elapsed_s=f"{now - t_after_query:.3f}",
+                    )
+                else:
+                    log_otf_event(
+                        "run_task.sdk_message",
+                        instance_id=instance_id,
+                        seq=seq,
+                        msg_type=msg_type,
+                        gap_s=f"{now - (_msg_timing['prev_t'] or now):.3f}",
+                    )
+                _msg_timing["prev_t"] = now
+
+            await run_main_with_discovery(
+                model=self.model,
+                accum=accum,
+                usage_tracker=usage_tracker,
+                context_state=context_state,
+                main_mcp_servers=main_mcp_servers,
+                discovery_mcp_servers=discovery_mcp_servers,
+                build_main_options=_build_main_options,
+                build_discovery_options=_build_discovery_options,
+                initial_query=task_data["amb_user_query"],
+                trajectory=trajectory,
                 enter_cm_factory=lambda: otf_timer(
                     "run_task.sdk_client_enter", instance_id=instance_id,
                 ),
-            ) as client:
-                with otf_timer(
+                query_cm_factory=lambda: otf_timer(
                     "run_task.sdk_first_query", instance_id=instance_id,
-                ):
-                    await client.query(task_data["amb_user_query"])
-                first_msg_t = time.monotonic()
-                msg_count = 0
-                prev_msg_t = first_msg_t
-                async for msg in client.receive_response():
-                    msg_count += 1
-                    now = time.monotonic()
-                    msg_type = type(msg).__name__
-                    if msg_count == 1:
-                        log_otf_event(
-                            "run_task.sdk_first_message",
-                            instance_id=instance_id,
-                            msg_type=msg_type,
-                            elapsed_s=f"{now - first_msg_t:.3f}",
-                        )
-                    else:
-                        log_otf_event(
-                            "run_task.sdk_message",
-                            instance_id=instance_id,
-                            seq=msg_count,
-                            msg_type=msg_type,
-                            gap_s=f"{now - prev_msg_t:.3f}",
-                        )
-                    prev_msg_t = now
-                    try:
-                        _data: object = dataclasses.asdict(msg)
-                    except Exception:  # noqa: BLE001
-                        _data = str(msg)
-                    trajectory.append({"type": msg_type, "data": _data})
-                    usage_tracker.observe(msg)
-                    update_context_tokens(context_state, msg)
+                ),
+                on_main_message=_on_main_message,
+            )
             usage_tracker.finalize()
         except Exception as e:
             usage_tracker.finalize()

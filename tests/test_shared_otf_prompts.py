@@ -36,8 +36,13 @@ import pytest
 # DEV-1545 (_TABLE_SET_PROBE), DEV-1546 (_DEDUP_VS_RAW_ROWS), and
 # DEV-1550 (ModelColumn label + memory drill-in paragraph in
 # _SLAYER_TOOLS_BLOCK).
-_ONE_SHOT_SHA256 = "e671aea393338079d2a3d9e6f790bfb194953928069d405183d5cf60c023a647"
-_AINTERACT_SHA256 = "a3fd695c391ba09ce352e677802dacb378cc7ae33e648f747c21f6565aa1c799"
+# Re-baselined for DEV-1581 R2: the two-stage v1 main loop no longer holds the
+# schema-introspection tools (search / inspect_model / models_summary) — they
+# moved to the discovery client reached via ask_discovery — so the v1 slayer
+# prompts now route schema/sample-value/entity discovery through ask_discovery
+# while keeping KB lookups (get_knowledge_definition) on the main surface.
+_ONE_SHOT_SHA256 = "ecd9dc1343fbb6bb09f0ad336b5df0ad1180b6104d0cfc23212b762c8d9ff12a"
+_AINTERACT_SHA256 = "ffa7ef4d20adeb8c5e548dcd2fcdda3d55bd50a76477eedd54c494ab3843301e"
 
 
 def test_slayer_otf_one_shot_unchanged():

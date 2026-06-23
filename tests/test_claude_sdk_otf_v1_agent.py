@@ -35,149 +35,33 @@ def test_init_accepts_on_the_fly_default():
 # Tool selection
 # ---------------------------------------------------------------------------
 
-def _tool_names(tools):
-    return {t.name for t in tools}
-
-
-def test_select_tools_one_shot_returns_five_native_tools():
-    """DEV-1555 CR r1 unification: query_nested is gone; the single
-    `query` tool accepts object OR list of stages. 3 knowledge tools
-    + `query` + `submit_query` = 5 native; no ask_user."""
-    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
-
-    names = _tool_names(m._select_tools("one-shot"))
-    assert names == {
-        "get_all_external_knowledge_names",
-        "get_knowledge_definition",
-        "get_all_knowledge_definitions",
-        "query",
-        "submit_query",
-    }
-    assert "ask_user" not in names
-    assert "query_nested" not in names
-
-
-def test_select_tools_rejects_a_interact_and_others():
-    """After DEV-1507 the narrowed flavor is one-shot only."""
-    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
-
-    for bad in ("a-interact", "c-interact", "oracle"):
-        with pytest.raises(ValueError):
-            m._select_tools(bad)
-
-
 # ---------------------------------------------------------------------------
-# DEV-1534 Codex post-merge: create_model / edit_model PreToolUse hook
-# normalizes backing-query text-equality filters before SLayer persists
-# them on the model.
+# DEV-1581 R2: the discovery/main partition is two persistent in-process
+# clients. The MAIN client owns the SLayer WRITE tools (create_model /
+# edit_model / validate_models); DISCOVERY owns the introspection tools.
+# Filter normalization on writes now happens INSIDE the in-process
+# create_model / edit_model natives (shared agent module), not a per-task
+# PreToolUse hook — see tests/test_dev1581_*.
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_normalize_write_filters_hook_rewrites_create_model_query():
-    """A `create_model` call whose backing `query` carries a string-equality
-    filter must have that filter wrapped in `lower(trim(col)) = '<lower>'`
-    before SLayer sees it — otherwise the persisted model has
-    case-sensitive backing filters that no later query-time
-    normalization can repair."""
-    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
-        _normalize_write_tool_filters_hook,
-    )
-
-    input_data = {
-        "tool_name": "mcp__slayer__create_model",
-        "tool_input": {
-            "name": "premium_orders",
-            "query": {
-                "source_model": "orders",
-                "filters": ["category == 'Gadgets'"],
-            },
-        },
-    }
-    out = await _normalize_write_tool_filters_hook(input_data, None, None)
-    updated = out["hookSpecificOutput"]["updatedInput"]
-    assert updated["query"]["filters"] == ["lower(trim(category)) == 'gadgets'"]
-    # Input dict must not be mutated (deep-copy contract).
-    assert input_data["tool_input"]["query"]["filters"] == [
-        "category == 'Gadgets'"
-    ]
-
-
-@pytest.mark.asyncio
-async def test_normalize_write_filters_hook_rewrites_edit_model_source_queries():
-    """`edit_model.source_queries` is a list of stages each with its own
-    `filters` — every stage's filters must be normalized."""
-    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
-        _normalize_write_tool_filters_hook,
-    )
-
-    input_data = {
-        "tool_name": "mcp__slayer__edit_model",
-        "tool_input": {
-            "model_name": "orders",
-            "source_queries": [
-                {"source_model": "orders", "filters": ["status == 'OPEN'"]},
-                {"source_model": "products", "filters": ["category == 'Premium'"]},
-            ],
-        },
-    }
-    out = await _normalize_write_tool_filters_hook(input_data, None, None)
-    updated = out["hookSpecificOutput"]["updatedInput"]
-    assert updated["source_queries"][0]["filters"] == [
-        "lower(trim(status)) == 'open'"
-    ]
-    assert updated["source_queries"][1]["filters"] == [
-        "lower(trim(category)) == 'premium'"
-    ]
-
-
-@pytest.mark.asyncio
-async def test_normalize_write_filters_hook_skips_non_write_tools():
-    """Tools other than create_model / edit_model must pass through
-    unchanged — the hook returns `{}` so the SDK falls through to the
-    next hook (or the default allow-and-forward)."""
-    from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
-        _normalize_write_tool_filters_hook,
-    )
-
-    for unrelated in (
-        "mcp__slayer__inspect_model",
-        "mcp__bird-interact-tools__query",
-        "mcp__slayer__save_memory",
-        "",
-    ):
-        out = await _normalize_write_tool_filters_hook(
-            {"tool_name": unrelated, "tool_input": {"x": 1}}, None, None,
-        )
-        assert out == {}
-
-
-def test_slayer_tool_names_include_write_tools():
-    """The OTF agent must be able to WRITE models, unlike the read-only
-    claude_sdk slayer mode. After DEV-1534 Fix C, ``query`` and
-    ``query_nested`` are served by our bird-interact-tools wrappers
-    (NOT the SLayer subprocess), leaving 9 SLayer subprocess tools."""
+def test_main_native_tool_names_include_write_tools():
+    """The OTF main client must be able to WRITE models (unlike the read-only
+    discovery client)."""
     from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
-    names = set(m._slayer_tool_names())
+    names = set(m.MAIN_NATIVE_TOOL_NAMES)
     for t in (
-        "mcp__slayer__create_model",
-        "mcp__slayer__edit_model",
-        "mcp__slayer__save_memory",
-        "mcp__slayer__validate_models",
+        "mcp__bird-interact-tools__create_model",
+        "mcp__bird-interact-tools__edit_model",
+        "mcp__bird-interact-tools__validate_models",
     ):
         assert t in names, f"missing write tool {t}"
-    # Discovery / read tools still come from the SLayer subprocess MCP.
-    for t in ("mcp__slayer__search", "mcp__slayer__inspect_model"):
-        assert t in names
-    # DEV-1534 Fix C: query / query_nested moved off the SLayer
-    # subprocess allowlist onto bird-interact-tools wrappers.
-    for t in ("mcp__slayer__query", "mcp__slayer__query_nested"):
-        assert t not in names, (
-            f"{t} should be served by the bird-interact-tools wrapper "
-            "after DEV-1534 Fix C, not the SLayer subprocess MCP server."
-        )
-    assert len(names) == 9
+    # Introspection tools live on DISCOVERY, NOT main.
+    disc = set(m.DISCOVERY_NATIVE_TOOL_NAMES)
+    for t in ("mcp__bird-interact-tools__search",
+              "mcp__bird-interact-tools__inspect_model"):
+        assert t in disc and t not in names
 
 
 # ---------------------------------------------------------------------------
@@ -427,8 +311,21 @@ def _stub_env(
         captured["slayer_mcp_kw"] = dict(kw)
         return {"command": "slayer", "args": ["mcp"], "env": {}}
 
-    monkeypatch.setattr(m, "slayer_mcp_stdio_config", _fake_slayer_mcp)
-    monkeypatch.setattr(m, "create_sdk_mcp_server", lambda **kw: SimpleNamespace())
+    # DEV-1555 v0 path still uses slayer stdio + create_sdk_mcp_server; the
+    # DEV-1581 R2 v1 path replaced them with build_bird_interact_server and no
+    # slayer stdio process. Patch whichever the target module exposes
+    # (raising=False so the absent ones are a harmless no-op).
+    monkeypatch.setattr(
+        m, "slayer_mcp_stdio_config", _fake_slayer_mcp, raising=False,
+    )
+    monkeypatch.setattr(
+        m, "create_sdk_mcp_server", lambda **kw: SimpleNamespace(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        m, "build_bird_interact_server", lambda *a, **kw: SimpleNamespace(),
+        raising=False,
+    )
 
     async def fake_resolve(*, db_name, task_data, data_path_base, benchmark):
         captured["resolve_kwargs"] = {
@@ -509,8 +406,9 @@ async def test_run_task_uses_cache_resolver_not_committed(monkeypatch, tmp_path)
 
 @pytest.mark.asyncio
 async def test_run_task_attaches_slayer_write_tools(monkeypatch, tmp_path):
-    """The ClaudeAgentOptions handed to the SDK must whitelist the slayer
-    write tools so the agent can encode."""
+    """The MAIN ClaudeAgentOptions handed to the SDK must whitelist the slayer
+    write tools (in-process bird-interact-tools natives) so the agent can
+    encode. ``captured['options']`` is the LAST client created, i.e. main."""
     from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
@@ -519,33 +417,14 @@ async def test_run_task_attaches_slayer_write_tools(monkeypatch, tmp_path):
         dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
     allowed = set(captured["options"].allowed_tools)
-    assert "mcp__slayer__create_model" in allowed
-    assert "mcp__slayer__edit_model" in allowed
-
-
-@pytest.mark.asyncio
-async def test_run_task_passes_ingest_on_startup_false_to_slayer_mcp(
-    monkeypatch, tmp_path,
-):
-    """DEV-1508: claude_sdk_otf must boot the slayer MCP WITHOUT
-    --ingest-on-startup. The OTF cache is post-ingestion by construction;
-    the Claude Agent SDK has no startup-timeout knob, so a slow re-ingest
-    leaves slayer status='pending' for the whole session and the agent
-    silently loses every mcp__slayer__* tool."""
-    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
-
-    captured = _stub_env(monkeypatch, m, tmp_path / "store")
-    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
-    await agent.run_task(
-        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
-    )
-    assert captured["slayer_mcp_kw"].get("ingest_on_startup") is False
+    assert "mcp__bird-interact-tools__create_model" in allowed
+    assert "mcp__bird-interact-tools__edit_model" in allowed
 
 
 @pytest.mark.asyncio
 async def test_run_task_does_not_whitelist_ask_user(monkeypatch, tmp_path):
-    """Narrowed flavor: ask_user must NOT be on the allow-list (livesqlbench
-    has no user simulator)."""
+    """Narrowed flavor: ask_user must NOT be on the MAIN allow-list
+    (livesqlbench has no user simulator)."""
     from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
@@ -560,9 +439,9 @@ async def test_run_task_does_not_whitelist_ask_user(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
-    """Only the Task built-in (DEV-1555 discovery subagent) — no Bash/Edit/
-    ToolSearch (so MCP tools aren't deferred); isolated settings; native
-    max_turns at 2x the base; turn-budget hook."""
+    """DEV-1581 R2: NO Claude Code built-ins (ask_discovery is an in-process
+    native, so no Task/subagent surface); isolated settings; native max_turns
+    at 2x the base; turn-budget hook."""
     from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
     from bird_interact_agents.harness import MAX_MODEL_TURNS
 
@@ -572,7 +451,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
         dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
     opts = captured["options"]
-    assert opts.tools == ["Task"]
+    assert opts.tools == []
     assert opts.setting_sources == []
     assert opts.max_turns == 2 * MAX_MODEL_TURNS == m._MAX_TURNS
     assert "PostToolUse" in (opts.hooks or {})
