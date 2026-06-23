@@ -196,9 +196,14 @@ class SdkUsageTracker:
                               # no-op here.
     """
 
-    def __init__(self, accum: TokenUsage, model: str):
+    def __init__(self, accum: TokenUsage, model: str, *, scope: str = "agent"):
+        # DEV-1589: ``scope`` is the per-(scope, model) breakdown bucket. Default
+        # "agent" keeps every existing caller unchanged; the build-time
+        # reference encoder reuses this tracker with scope="setup_encoder" so its
+        # tokens stay summable separately (the ``_setup_usage.json`` contract).
         self._accum = accum
         self._model = model
+        self._scope = scope
         self._turns: dict = {}
         self._turn_order: list = []
         self._result_usage = None
@@ -247,7 +252,7 @@ class SdkUsageTracker:
 
     def _commit(self, usage, *, n_calls: int) -> None:
         self._accum.add_call(
-            scope="agent",
+            scope=self._scope,
             model=self._model,
             prompt=_usage_value(usage, "input_tokens"),
             completion=_usage_value(usage, "output_tokens"),
@@ -258,7 +263,7 @@ class SdkUsageTracker:
         # callers can compare against the legacy per-AssistantMessage
         # counts and against breakdown rows for non-SDK frameworks.
         if n_calls > 1:
-            row = self._accum._row_for(scope="agent", model=self._model)
+            row = self._accum._row_for(scope=self._scope, model=self._model)
             row.n_calls += n_calls - 1
             self._accum.n_calls += n_calls - 1
 

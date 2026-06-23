@@ -230,7 +230,7 @@ async def _encode_all(
       after its dependencies finish (their results are passed to ``run_one``);
     * independent subtrees run concurrently, bounded by ``concurrency``.
     """
-    from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+    from bird_interact_agents.slayer_otf.encoder_types import (
         EncoderResult,
     )
 
@@ -494,7 +494,7 @@ def _load_reference_entry(target: Path) -> ReferenceEntry:
     setup_results: list[Any] = []
     sr_path = target / _SETUP_RESULTS
     if sr_path.is_file():
-        from bird_interact_agents.agents.pydantic_ai_otf_encode.deps import (
+        from bird_interact_agents.slayer_otf.encoder_types import (
             EncoderResult,
         )
         try:

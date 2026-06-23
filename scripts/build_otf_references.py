@@ -35,6 +35,9 @@ import json
 import logging
 
 from bird_interact_agents import paths
+from bird_interact_agents.agents.claude_sdk_otf_encode.setup_encoder import (
+    make_claude_sdk_build_encoder,
+)
 from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
     _build_shared_slayer_server,
 )
@@ -79,6 +82,29 @@ def _build_model(agent_model: str):
     return build_pydantic_ai_model(agent_model), model_settings
 
 
+def make_build_encoder(framework: str, agent_model: str):
+    """Select the setup-encoder for ``framework`` (DEV-1589).
+
+    ``claude_sdk`` (default) drives ANY registry/open-weight model end-to-end —
+    it gets the RAW model string (e.g. ``zai/glm-5.2``), NOT a built pydantic-ai
+    model (pydantic_ai can't reach z.ai). ``pydantic_ai`` keeps the legacy path.
+    """
+    if framework == "claude_sdk":
+        return make_claude_sdk_build_encoder(
+            model=agent_model,
+            self_model_id=native_model_id(agent_model),
+        )
+    if framework == "pydantic_ai":
+        model, model_settings = _build_model(agent_model)
+        return make_setup_build_encoder(
+            model=model,
+            model_settings=model_settings,
+            self_model_id=native_model_id(agent_model),
+            build_shared_slayer_server=_build_shared_slayer_server,
+        )
+    raise ValueError(f"unknown encoder framework: {framework!r}")
+
+
 async def _build_one(
     db: str, *, benchmark_name: str, build_encoder, force: bool,
 ) -> None:
@@ -111,17 +137,11 @@ async def _main_async(args: argparse.Namespace) -> int:
     if not dbs:
         raise SystemExit(f"no databases found for benchmark {benchmark_name!r}")
 
-    model, model_settings = _build_model(args.agent_model)
-    build_encoder = make_setup_build_encoder(
-        model=model,
-        model_settings=model_settings,
-        self_model_id=native_model_id(args.agent_model),
-        build_shared_slayer_server=_build_shared_slayer_server,
-    )
+    build_encoder = make_build_encoder(args.encoder_framework, args.agent_model)
 
     logger.info(
-        "Building OTF references for %d DB(s) in %s (force=%s): %s",
-        len(dbs), benchmark_name, args.force, dbs,
+        "Building OTF references for %d DB(s) in %s (encoder=%s, force=%s): %s",
+        len(dbs), benchmark_name, args.encoder_framework, args.force, dbs,
     )
     for db in dbs:
         logger.info("encoding %s ...", db)
@@ -136,12 +156,19 @@ async def _main_async(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("benchmark", help="Benchmark registry token.")
     p.add_argument(
         "--agent-model", required=True,
         help="Encoder model (LiteLLM-style provider/model_id).",
+    )
+    p.add_argument(
+        "--encoder-framework", choices=["claude_sdk", "pydantic_ai"],
+        default="claude_sdk",
+        help="Which setup-encoder builds the reference (DEV-1589). Default "
+             "claude_sdk drives any registry/open-weight model; pydantic_ai is "
+             "the legacy Anthropic-only path.",
     )
     p.add_argument(
         "--force", action="store_true",
@@ -151,7 +178,11 @@ def main(argv: list[str] | None = None) -> int:
         "--only", default=None,
         help="Comma-separated subset of DB names to build (default: all).",
     )
-    args = p.parse_args(argv)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     return asyncio.run(_main_async(args))
 
