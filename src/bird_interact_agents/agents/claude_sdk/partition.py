@@ -40,11 +40,11 @@ task yourself. You are long-lived: the main agent will ask you a series of
 focused questions and your context carries over between them, so build on
 what you already found instead of re-introspecting from scratch.
 
-For the FIRST, broad request, produce a structured report; for narrow
-follow-ups, answer just what was asked. When you do report broadly, use
-these sections:
+For the FIRST, broad request, produce a structured report with EXACTLY the
+sections below. For a NARROW follow-up, do NOT re-emit the whole report —
+answer just what was asked (you may cite the relevant section by name).
 
-Produce a handoff report with EXACTLY these sections:
+Report sections (broad request only):
 
 1. RELEVANT ENTITIES — every table/model plausibly needed, with a one-line
    purpose each.
@@ -119,7 +119,11 @@ _VERIFY_TOOL_BY_MODE = {
 # serve the single-agent v0 flavors) is correctly rerouted through
 # ``ask_discovery`` for the two-stage v1 main loop.
 _INTROSPECTION_TOOLS_BY_MODE = {
-    "slayer": "`search` / `inspect_model` / `models_summary` / `list_datasources`",
+    # The slayer discovery client owns search / inspect_model / models_summary.
+    # ``list_datasources`` was retired (one datasource per task) — it is not on
+    # ANY surface; the general "introspection is NOT on your tool surface"
+    # statement above already reroutes a stale reference to ``ask_discovery``.
+    "slayer": "`search` / `inspect_model` / `models_summary`",
     "raw": "`get_schema` / `get_all_column_meanings`",
 }
 
