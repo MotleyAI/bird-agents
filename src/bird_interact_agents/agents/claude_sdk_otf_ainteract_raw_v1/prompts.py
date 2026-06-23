@@ -30,11 +30,13 @@ question by exploring the schema and knowledge definitions, then writing
 a SQL query that precisely captures what the question asks for."""
 
 _RAW_AINTERACT_DB_TOOLS = """\
-DATABASE TOOLS (read their own descriptions). Use `get_schema` FIRST to
-see all tables, columns, and types. Use `get_all_column_meanings` or
-`get_column_meaning` to read column descriptions and sample values. Use
-`get_all_external_knowledge_names`, `get_knowledge_definition`, or
-`get_all_knowledge_definitions` to retrieve domain knowledge. Use
+DATABASE TOOLS (read their own descriptions). To see the FULL schema (all
+tables, columns, types) or ALL column descriptions at once, ask the
+`ask_discovery` tool — it owns `get_schema` / `get_all_column_meanings` and
+accumulates context across your questions, so follow-ups are cheap. Use
+`get_column_meaning` to read a SINGLE column's description and sample values
+yourself. Use `get_all_external_knowledge_names`, `get_knowledge_definition`,
+or `get_all_knowledge_definitions` to retrieve domain knowledge. Use
 `execute_sql` to explore data and test queries.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
@@ -55,7 +57,8 @@ _RAW_AINTERACT_RULES_2_3 = """\
    - Use `get_column_meaning` to confirm which table and column best
      represents what the block describes. Never guess from names alone.
    - To join tables, use only relationships evident from the schema
-     (`get_schema`). Do NOT invent a join not present in the schema.
+     (ask `ask_discovery` for the schema). Do NOT invent a join not present
+     in the schema.
    - When a later sub-expression builds on an earlier one, compose the
      SQL incrementally — do NOT re-derive or inline an intermediate
      expression.

@@ -113,6 +113,16 @@ _VERIFY_TOOL_BY_MODE = {
     "raw": ("execute_sql", "submit_sql"),
 }
 
+# The introspection tools that moved to the discovery client per mode. Named
+# in the bridging clause so any task-guidance that still says "call <tool>"
+# (e.g. the shared host-discovery playbook / decompose discipline, which also
+# serve the single-agent v0 flavors) is correctly rerouted through
+# ``ask_discovery`` for the two-stage v1 main loop.
+_INTROSPECTION_TOOLS_BY_MODE = {
+    "slayer": "`search` / `inspect_model` / `models_summary` / `list_datasources`",
+    "raw": "`get_schema` / `get_all_column_meanings`",
+}
+
 
 def build_main_workflow_note(*, query_mode: str) -> str:
     """Compose the main-agent workflow note.
@@ -124,6 +134,7 @@ def build_main_workflow_note(*, query_mode: str) -> str:
     """
     try:
         verify_tool, submit_tool = _VERIFY_TOOL_BY_MODE[query_mode]
+        introspection_tools = _INTROSPECTION_TOOLS_BY_MODE[query_mode]
     except KeyError as exc:
         raise ValueError(
             f"build_main_workflow_note: unknown query_mode {query_mode!r}; "
@@ -139,6 +150,13 @@ physically cannot call them. A long-lived 'discovery' assistant holds them.
 Reach it ONLY through the `ask_discovery` tool: ask a focused question and it
 returns its findings. Start by asking discovery for everything you need to
 answer the user's question, then work from its answer.
+
+This OVERRIDES any instruction elsewhere in this prompt: wherever the task
+guidance tells you to call an introspection tool directly
+({introspection_tools}), you do NOT have it — ask `ask_discovery` for that
+exact information instead. (Knowledge-base item definitions ARE on your
+surface: read those verbatim with `get_knowledge_definition` /
+`get_all_external_knowledge_names`, not through discovery.)
 
 Discovery is WARM — it remembers your earlier questions, so follow-ups are
 cheap. But before asking, check whether discovery ALREADY told you the
