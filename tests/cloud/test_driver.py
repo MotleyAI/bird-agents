@@ -1282,8 +1282,12 @@ def test_read_api_keys_oauth_ships_subscription_signal(monkeypatch):
 
 def test_read_api_keys_api_key_path_no_subscription_signal(monkeypatch):
     """DEV-1602: the API-key path (--no-subscription-auth) must NOT ship the
-    subscription signal var — the worker stays on the ANTHROPIC_API_KEY path."""
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    subscription signal var — the worker stays on the ANTHROPIC_API_KEY path.
+
+    An ambient CLAUDE_CODE_OAUTH_TOKEN is deliberately PRESENT: the explicit
+    opt-out (no_subscription_auth=True) must win over an ambient credential and
+    still suppress the signal var."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
     monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
     keys = driver.read_api_keys_from_local_env(
         "anthropic/claude-sonnet-4-5",
@@ -1332,6 +1336,25 @@ def test_read_api_keys_registry_missing_provider_key_raises(monkeypatch):
             "moonshot/kimi-k2.7-code",
             "anthropic/claude-haiku-4-5-20251001",
             framework="claude_sdk",
+            no_subscription_auth=False,
+        )
+
+
+def test_read_api_keys_annotator_registry_model_stays_on_oauth_path(monkeypatch):
+    """DEV-1602 (Codex finding #2): the registry exemption is scoped to the
+    PROVIDER-AWARE claude_sdk* frameworks. The `annotator` framework runs
+    Anthropic-only (provider_aware=False) at runtime, so a registry agent model
+    must NOT divert it to the provider-key branch — it stays on the OAuth path
+    and fails on the missing OAuth token rather than silently shipping a
+    provider key."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    with pytest.raises(driver.PrereqError, match="CLAUDE_CODE_OAUTH_TOKEN"):
+        driver.read_api_keys_from_local_env(
+            "moonshot/kimi-k2.7-code",
+            "anthropic/claude-haiku-4-5-20251001",
+            framework="annotator",
             no_subscription_auth=False,
         )
 

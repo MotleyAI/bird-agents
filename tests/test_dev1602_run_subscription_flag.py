@@ -141,10 +141,17 @@ def test_main_registers_subscription_auth_flag_default_off():
 
 
 def test_main_invokes_subscription_auth_helper():
-    """main() must actually call the helper (wiring), not just define the flag."""
+    """main() must actually CALL the helper (wiring), not merely mention it — a
+    comment / string literal / dead alias must not satisfy this."""
+    import ast
     import inspect
 
-    assert "_apply_subscription_auth_env" in inspect.getsource(run.main)
+    tree = ast.parse(inspect.getsource(run.main))
+    assert any(
+        isinstance(node, ast.Call)
+        and getattr(node.func, "id", None) == "_apply_subscription_auth_env"
+        for node in ast.walk(tree)
+    ), "run.main does not call _apply_subscription_auth_env"
 
 
 def test_subscription_on_non_claude_sdk_framework_errors(monkeypatch):

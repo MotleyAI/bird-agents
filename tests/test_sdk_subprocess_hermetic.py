@@ -228,6 +228,9 @@ def test_session_env_subscription_masks_api_key_keeps_oauth(monkeypatch):
     assert env["CLAUDE_CONFIG_DIR"] == "/tmp/cfgSub"
     assert _TELEMETRY_KEYS <= set(env)
     assert env["ANTHROPIC_API_KEY"] == ""
+    # The Bearer auth token is ALSO masked — it is an SDK credential the
+    # auth-precedence rule would pick over the OAuth token (Codex review).
+    assert env["ANTHROPIC_AUTH_TOKEN"] == ""
     # OAuth token left to inherit (not pinned to "" in the options.env layer).
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
 

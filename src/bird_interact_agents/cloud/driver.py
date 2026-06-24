@@ -177,11 +177,18 @@ def read_api_keys_from_local_env(
     # via its provider key, NEVER OAuth — gate the OAuth branch on the agent
     # model not being a registry model so a programmatic/resubmit caller passing
     # no_subscription_auth=False for a registry model falls through to the
-    # provider-key branch instead of demanding an OAuth token.
+    # provider-key branch instead of demanding an OAuth token. The exemption is
+    # scoped to the PROVIDER-AWARE claude_sdk* agent frameworks: the `annotator`
+    # framework runs `provider_aware=False` (Anthropic-only) at runtime, so it
+    # must never take the registry provider-key branch — keep it on the OAuth
+    # path regardless of the agent model.
     if (
         _is_claude_sdk_framework(framework)
         and not no_subscription_auth
-        and provider_registry.get_provider(agent_model) is None
+        and not (
+            framework.startswith("claude_sdk")
+            and provider_registry.get_provider(agent_model) is not None
+        )
     ):
         token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
         if not token:

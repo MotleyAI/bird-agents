@@ -232,10 +232,10 @@ def build_hermetic_session_env(
 
     DEV-1602 auth-path masking (Anthropic models only — registry is exempt):
 
-    * subscription path (``BIRD_INTERACT_SUBSCRIPTION_AUTH`` set): mask
-      ``ANTHROPIC_API_KEY`` (empty string) so the SDK's auth-precedence rule
-      cannot pick the API key over the OAuth token, and leave
-      ``CLAUDE_CODE_OAUTH_TOKEN`` to inherit from the parent env into the
+    * subscription path (``BIRD_INTERACT_SUBSCRIPTION_AUTH`` set): mask BOTH
+      ``ANTHROPIC_API_KEY`` and ``ANTHROPIC_AUTH_TOKEN`` (empty strings) so the
+      SDK's auth-precedence rule cannot pick either over the OAuth token, and
+      leave ``CLAUDE_CODE_OAUTH_TOKEN`` to inherit from the parent env into the
       subprocess. NB the parent process keeps ``ANTHROPIC_API_KEY`` (the litellm
       user-sim needs it on local runs); only the SDK subprocess sees it masked.
     * API-key path (default): mask an ambient ``CLAUDE_CODE_OAUTH_TOKEN`` so the
@@ -248,8 +248,12 @@ def build_hermetic_session_env(
     env["CLAUDE_CONFIG_DIR"] = config_dir_val
     is_registry = provider_aware and get_provider(model) is not None
     if _subscription_auth_selected() and not is_registry:
-        # Subscription path: mask the API key (precedence trap); OAuth inherits.
+        # Subscription path: mask the API key AND the Bearer auth token (both are
+        # SDK credentials the auth-precedence rule would pick over the OAuth
+        # token — see the registry path, which uses ANTHROPIC_AUTH_TOKEN for
+        # Bearer auth). OAuth is authoritative; the token inherits.
         env["ANTHROPIC_API_KEY"] = ""
+        env["ANTHROPIC_AUTH_TOKEN"] = ""
     else:
         # API-key path (and the base layer for registry, overwritten below):
         # mask an ambient OAuth token so the SDK uses ANTHROPIC_API_KEY.
