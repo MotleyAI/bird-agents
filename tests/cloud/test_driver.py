@@ -1341,17 +1341,22 @@ def test_read_api_keys_registry_missing_provider_key_raises(monkeypatch):
 
 
 @pytest.mark.parametrize("no_sub", [False, True])
-def test_read_api_keys_annotator_rejects_registry_model(monkeypatch, no_sub):
+@pytest.mark.parametrize("bad_model", ["moonshot/kimi-k2.7-code", "openai/gpt-4o"])
+def test_read_api_keys_annotator_rejects_non_anthropic_model(
+    monkeypatch, no_sub, bad_model,
+):
     """DEV-1602 (Codex): the annotator is Anthropic-only (provider_aware=False)
-    at runtime, so a registry agent model is rejected EARLY — consistently for
-    both --subscription-auth and --no-subscription-auth — rather than diverting
-    to the OAuth or provider-key branch and failing late."""
+    at runtime, so ANY non-Anthropic agent model — registry (moonshot/*) OR
+    other (openai/*) — is rejected EARLY, consistently for both
+    --subscription-auth and --no-subscription-auth, rather than diverting to the
+    OAuth or provider-key branch and failing late."""
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
     monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
+    monkeypatch.setenv("OPENAI_API_KEY", _OPENAI_KEY)
     monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
     with pytest.raises(driver.PrereqError, match="Anthropic-only"):
         driver.read_api_keys_from_local_env(
-            "moonshot/kimi-k2.7-code",
+            bad_model,
             "anthropic/claude-haiku-4-5-20251001",
             framework="annotator",
             no_subscription_auth=no_sub,

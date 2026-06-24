@@ -159,13 +159,14 @@ def read_api_keys_from_local_env(
     import os
 
     # DEV-1602 (Codex): the `annotator` framework runs Anthropic-only
-    # (provider_aware=False) at runtime, so a registry open-weight agent model is
-    # never usable there. Reject it EARLY (consistently across every
-    # no_subscription_auth value) instead of letting it fall into the OAuth or
-    # provider-key branches below — annotate has no other model-provider guard.
-    if framework == "annotator" and provider_registry.get_provider(agent_model) is not None:
+    # (provider_aware=False) at runtime, so ANY non-Anthropic agent model
+    # (registry open-weight, openai/*, gemini/*, …) is unusable there. Reject it
+    # EARLY (consistently across every no_subscription_auth value) instead of
+    # letting it fall into the OAuth or provider-key branches below — annotate
+    # has no other model-provider guard.
+    if framework == "annotator" and not agent_model.startswith("anthropic/"):
         raise PrereqError(
-            f"the annotator is Anthropic-only; got registry agent model "
+            f"the annotator is Anthropic-only; got non-Anthropic agent model "
             f"{agent_model!r}.",
             remediation="pass an anthropic/* --agent-model for annotate.",
         )
