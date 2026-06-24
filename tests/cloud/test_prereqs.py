@@ -584,22 +584,22 @@ def test_claude_sdk_registry_agent_still_requires_provider_key(
         )
 
 
-def test_annotator_registry_model_stays_on_oauth_path(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("no_sub", [False, True])
+def test_annotator_rejects_registry_model(
+    monkeypatch: pytest.MonkeyPatch, no_sub: bool,
 ) -> None:
-    """DEV-1602 (Codex finding #2): the registry exemption is scoped to
-    provider-aware claude_sdk* frameworks. The Anthropic-only `annotator`
-    framework must stay on the OAuth path even with a registry agent model —
-    so a missing OAuth token fails on CLAUDE_CODE_OAUTH_TOKEN, not on the
-    provider key."""
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    """DEV-1602 (Codex): the Anthropic-only `annotator` rejects a registry agent
+    model EARLY — for both --subscription-auth and --no-subscription-auth —
+    rather than reaching the OAuth or provider-key branch and failing late."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
     monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
     monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
-    with pytest.raises(prereqs.PrereqError, match="CLAUDE_CODE_OAUTH_TOKEN"):
+    with pytest.raises(prereqs.PrereqError, match="Anthropic-only"):
         prereqs.check_api_keys(
             agent_model="moonshot/kimi-k2.7-code",
             user_sim_model="anthropic/claude-haiku-4-5-20251001",
             framework="annotator",
+            no_subscription_auth=no_sub,
         )
 
 

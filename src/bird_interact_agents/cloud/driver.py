@@ -158,6 +158,18 @@ def read_api_keys_from_local_env(
 ) -> dict[str, str]:
     import os
 
+    # DEV-1602 (Codex): the `annotator` framework runs Anthropic-only
+    # (provider_aware=False) at runtime, so a registry open-weight agent model is
+    # never usable there. Reject it EARLY (consistently across every
+    # no_subscription_auth value) instead of letting it fall into the OAuth or
+    # provider-key branches below — annotate has no other model-provider guard.
+    if framework == "annotator" and provider_registry.get_provider(agent_model) is not None:
+        raise PrereqError(
+            f"the annotator is Anthropic-only; got registry agent model "
+            f"{agent_model!r}.",
+            remediation="pass an anthropic/* --agent-model for annotate.",
+        )
+
     # claude_sdk* + subscription auth opted-in (no_subscription_auth=False)
     # → OAuth path. Ship the token and rename the user-sim Anthropic key so
     # the SDK cannot see ANTHROPIC_API_KEY and is forced to use the OAuth
@@ -177,18 +189,12 @@ def read_api_keys_from_local_env(
     # via its provider key, NEVER OAuth — gate the OAuth branch on the agent
     # model not being a registry model so a programmatic/resubmit caller passing
     # no_subscription_auth=False for a registry model falls through to the
-    # provider-key branch instead of demanding an OAuth token. The exemption is
-    # scoped to the PROVIDER-AWARE claude_sdk* agent frameworks: the `annotator`
-    # framework runs `provider_aware=False` (Anthropic-only) at runtime, so it
-    # must never take the registry provider-key branch — keep it on the OAuth
-    # path regardless of the agent model.
+    # provider-key branch instead of demanding an OAuth token. (The annotator is
+    # already handled by the Anthropic-only guard above.)
     if (
         _is_claude_sdk_framework(framework)
         and not no_subscription_auth
-        and not (
-            framework.startswith("claude_sdk")
-            and provider_registry.get_provider(agent_model) is not None
-        )
+        and provider_registry.get_provider(agent_model) is None
     ):
         token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
         if not token:
