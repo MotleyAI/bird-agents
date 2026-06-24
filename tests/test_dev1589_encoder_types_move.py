@@ -63,6 +63,24 @@ def test_reference_build_imports_encoder_result_from_neutral():
     assert out[0].status == "deferred"
 
 
+def test_reference_build_source_no_longer_imports_obsolete_deps():
+    """Codex test #9: because pydantic deps RE-EXPORTS the neutral class, an
+    identity test alone can't prove reference_build stopped reaching into the
+    obsolete module. Assert it at the source level: reference_build imports the
+    neutral module and NOT `pydantic_ai_otf_encode.deps import EncoderResult`."""
+    import inspect
+
+    import bird_interact_agents.slayer_otf.reference_build as rb
+
+    src = inspect.getsource(rb)
+    assert "slayer_otf.encoder_types import" in src or \
+        "from bird_interact_agents.slayer_otf.encoder_types" in src
+    assert "pydantic_ai_otf_encode.deps import" not in src, (
+        "reference_build must not import EncoderResult from the obsolete "
+        "pydantic_ai_otf_encode.deps module"
+    )
+
+
 def test_encoder_result_shape_unchanged():
     from bird_interact_agents.slayer_otf.encoder_types import (
         EncodedEntity,

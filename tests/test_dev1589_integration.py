@@ -21,15 +21,21 @@ households smoke also needs the local deterministic cache. Run with:
 from __future__ import annotations
 
 import os
+import shutil
 
 import pytest
 
 pytestmark = pytest.mark.integration
 
 _HAS_KEY = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ZAI_API_KEY"))
+# The encoder spawns the bundled `claude` CLI — gate on it too, so a box with a
+# key but no CLI skips cleanly instead of failing (CodeRabbit).
+_HAS_CLAUDE_CLI = shutil.which("claude") is not None
+_CAN_RUN = _HAS_KEY and _HAS_CLAUDE_CLI
+_SKIP_REASON = "needs ANTHROPIC_API_KEY/ZAI_API_KEY and the `claude` CLI"
 
 
-@pytest.mark.skipif(not _HAS_KEY, reason="needs ANTHROPIC_API_KEY or ZAI_API_KEY")
+@pytest.mark.skipif(not _CAN_RUN, reason=_SKIP_REASON)
 async def test_result_message_usage_is_per_query():
     """Drive a warm client twice; assert the 2nd ResultMessage.usage is NOT the
     cumulative of both turns (i.e. per-query). If this ever fails, the
@@ -84,11 +90,9 @@ async def test_result_message_usage_is_per_query():
     )
 
 
-@pytest.mark.skipif(not _HAS_KEY, reason="needs ANTHROPIC_API_KEY or ZAI_API_KEY")
+@pytest.mark.skipif(not _CAN_RUN, reason=_SKIP_REASON)
 async def test_households_kb_encode_smoke(tmp_path):
     """End-to-end encode of a couple of households KBs against a real cache."""
-    import shutil
-
     from slayer.storage.yaml_storage import YAMLStorage
 
     from bird_interact_agents import paths
@@ -112,12 +116,35 @@ async def test_households_kb_encode_smoke(tmp_path):
         model=model, self_model_id=model,
     )
     run_one = be(storage, build_dir, db, tmp_path / "_sessions")
+    results = []
     await run_one.aopen()
     try:
-        # encode the first KB row
-        kb_rows = cache_entry.kb_rows[:1]
-        for row in kb_rows:
-            res = await run_one(int(row["id"]), row, [])
-            assert res.status in {"encoded", "deferred", "error"}
+        for row in cache_entry.kb_rows[:3]:
+            results.append(await run_one(int(row["id"]), row, []))
     finally:
         await run_one.aclose()
+
+    # The encoder must actually DO something — not every row may be encodable,
+    # but they can't all be hard errors (Codex test #8).
+    assert any(r.status != "error" for r in results)
+
+    # For every row it claims `encoded`, the storage invariants MUST hold:
+    # entity present + tagged meta.kb_id, description carries the verbatim KB
+    # row, and the KB memory carries each entity ref.
+    s = YAMLStorage(base_dir=str(build_dir))
+    encoded = [r for r in results if r.status == "encoded"]
+    for r in encoded:
+        mem = await s.get_memory_row(f"{db}_kb_{r.kb_id}")
+        for ent in r.entities:
+            model = await s.get_model(ent.host_model or ent.name, data_source=db)
+            assert model is not None
+            assert ent.entity_ref in mem.entities
+            # description injection (HC-desc) — at least the [kb=N] tag present
+            blob = ""
+            for bucket in (model.columns or []) + (model.measures or []) + \
+                    (getattr(model, "aggregations", None) or []):
+                if getattr(bucket, "name", None) == ent.name:
+                    blob = getattr(bucket, "description", "") or ""
+            if ent.kind == "model":
+                blob = model.description or ""
+            assert f"[kb={r.kb_id}]" in blob

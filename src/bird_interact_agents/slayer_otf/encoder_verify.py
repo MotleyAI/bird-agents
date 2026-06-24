@@ -193,6 +193,19 @@ async def hard_failures(
     storage = _fresh_storage(build_dir)
     failures: list[str] = []
     for ent in entities:
+        # The reported entity_ref MUST be the canonical one for this entity —
+        # otherwise a typo'd/wrong-datasource ref passes the presence check and
+        # autowire_memory_backrefs later stores the bad ref (Codex review).
+        expected_ref = (
+            f"{db}.{ent.name}" if ent.kind == "model"
+            else f"{db}.{ent.host_model}.{ent.name}"
+        )
+        if ent.entity_ref != expected_ref:
+            failures.append(
+                f"entity_ref {ent.entity_ref!r} is not canonical for this "
+                f"entity (expected {expected_ref!r})."
+            )
+            continue
         if not await entity_present_and_tagged(ent, storage, db, kb_id):
             failures.append(
                 f"{ent.entity_ref} is missing or not tagged meta.kb_id={kb_id} "
@@ -296,6 +309,10 @@ async def purge_kb_entities_and_backrefs(
     except ValueError:
         return
     removed_refs: set[str] = set()
+    # When a whole model is deleted, its leaf backrefs (`<db>.<model>.<leaf>`)
+    # must also be pruned from memory — exact-match removal alone would leave
+    # them dangling (CodeRabbit). Tracked as prefixes.
+    removed_model_prefixes: set[str] = set()
     for name in names:
         model = await storage.get_model(name, data_source=db)
         if model is None:
@@ -303,8 +320,12 @@ async def purge_kb_entities_and_backrefs(
         # A query-backed model entity tagged for this KB → delete the model.
         if meta_has_kb_id(getattr(model, "meta", None), kb_id):
             removed_refs.add(f"{db}.{name}")
+            removed_model_prefixes.add(f"{db}.{name}.")
             try:
-                await storage.delete_model(name)
+                # Scope the delete to `db` — a bare name resolves by datasource
+                # priority and could drop a same-named model in another
+                # datasource (Codex review).
+                await storage.delete_model(name, data_source=db)
             except Exception:  # noqa: BLE001 — already absent is fine
                 logger.debug("purge: model %r already absent", name)
             continue
@@ -323,7 +344,11 @@ async def purge_kb_entities_and_backrefs(
     mem = await storage.get_memory_row(mem_id)
     if mem is None:
         return
-    pruned = [e for e in mem.entities if e not in removed_refs]
+    prefixes = tuple(removed_model_prefixes)
+    pruned = [
+        e for e in mem.entities
+        if e not in removed_refs and not (prefixes and e.startswith(prefixes))
+    ]
     if len(pruned) != len(mem.entities):
         saved = await storage.save_memory(
             learning=mem.learning, entities=pruned, query=mem.query,

@@ -202,6 +202,77 @@ async def test_hard_failures_depuse_string_literal_does_not_count(tmp_path):
     assert failures
 
 
+async def test_hard_failures_depuse_via_measure_formula(tmp_path):
+    """Structured-field inspection must read a Measure's `formula` (not just a
+    Column's `sql`) when the dependent entity is a measure (Codex test #5)."""
+    storage = await _storage(tmp_path)
+    await storage.save_model(SlayerModel(
+        name="orders", data_source=DB, sql_table="orders",
+        columns=[Column(name="id", primary_key=True), Column(name="amount", sql="amount")],
+        measures=[
+            ModelMeasure(name="premium_revenue", formula="amount:sum",
+                         meta={"kb_id": 4}),
+            # dependent measure 'margin_rate' references the dep measure by name
+            ModelMeasure(name="margin_rate", formula="premium_revenue / 100",
+                         meta={"kb_id": 7}),
+        ],
+    ))
+    ent = EncodedEntity(kind="measure", host_model="orders", name="margin_rate",
+                        entity_ref=f"{DB}.orders.margin_rate")
+    failures = await ev.hard_failures(
+        tmp_path, DB, 7, [ent], encoded_deps=[_dep_kb4()],
+    )
+    assert failures == []
+
+
+async def test_hard_failures_depuse_description_only_does_not_count(tmp_path):
+    """A dep name appearing only in the dependent's DESCRIPTION (not in a
+    structured definition field) does NOT count as a reference (Codex test #5)."""
+    storage = await _storage(tmp_path)
+    await storage.save_model(SlayerModel(
+        name="orders", data_source=DB, sql_table="orders",
+        columns=[
+            Column(name="id", primary_key=True),
+            Column(name="amount", sql="amount"),
+            Column(name="margin", sql="SUM(amount) / 2",
+                   description="builds on premium_revenue conceptually",
+                   meta={"kb_id": 7}),
+        ],
+        measures=[ModelMeasure(name="premium_revenue", formula="amount:sum",
+                               meta={"kb_id": 4})],
+    ))
+    failures = await ev.hard_failures(
+        tmp_path, DB, 7, [_ent("margin", host="orders")],
+        encoded_deps=[_dep_kb4()],
+    )
+    assert failures  # description mention is not a real reference
+
+
+async def test_hard_failures_opens_fresh_storage_per_call(tmp_path, monkeypatch):
+    """Codex r1 #4 / test #6: verification must construct a FRESH
+    YAMLStorage(base_dir=build_dir) each pass — never a cached handle."""
+    storage = await _storage(tmp_path)
+    await storage.save_model(SlayerModel(
+        name="m", data_source=DB, sql_table="m",
+        columns=[Column(name="id", primary_key=True),
+                 Column(name="c", sql="1", meta={"kb_id": 5})],
+    ))
+    real = ev.YAMLStorage
+    count = {"n": 0}
+
+    def _counting(*a, **k):
+        count["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(ev, "YAMLStorage", _counting)
+    await ev.hard_failures(tmp_path, DB, 5, [_ent("c")], encoded_deps=[])
+    n_first = count["n"]
+    assert n_first >= 1
+    # A second call constructs storage AGAIN (no module-level caching).
+    await ev.hard_failures(tmp_path, DB, 5, [_ent("c")], encoded_deps=[])
+    assert count["n"] > n_first
+
+
 # ---------------------------------------------------------------------------
 # auto-wire: description (HC-desc) + memory backref (HC-mem)
 # ---------------------------------------------------------------------------
@@ -282,3 +353,31 @@ async def test_purge_deletes_tagged_entities_and_prunes_memory(tmp_path):
     assert f"{DB}.m.drop_me" not in mem.entities
     assert f"{DB}.m.drop_meas" not in mem.entities
     assert DB in mem.entities  # the datasource anchor stays
+
+
+async def test_purge_whole_model_prunes_model_and_leaf_backrefs(tmp_path):
+    """When an entire query-backed model is tagged meta.kb_id and deleted, BOTH
+    its model-level ref `<db>.<model>` AND any leaf refs `<db>.<model>.<leaf>`
+    must be pruned from memory (CodeRabbit) — exact-match removal alone would
+    leave the leaf refs dangling."""
+    storage = await _storage(tmp_path)
+    await storage.save_model(SlayerModel(
+        name="qmodel", data_source=DB, sql_table="qmodel",
+        columns=[Column(name="id", primary_key=True)],
+        meta={"kb_id": 7},   # the WHOLE model is tagged for kb 7
+    ))
+    await storage.save_memory(
+        learning="KB 7 — x",
+        entities=[DB, f"{DB}.qmodel", f"{DB}.qmodel.id", f"{DB}.other.keep"],
+        query=None, id=f"{DB}_kb_7", description="",
+    )
+
+    await ev.purge_kb_entities_and_backrefs(tmp_path, DB, 7)
+
+    s2 = YAMLStorage(base_dir=str(tmp_path))
+    assert await s2.get_model("qmodel", data_source=DB) is None  # model deleted
+    mem = await s2.get_memory_row(f"{DB}_kb_7")
+    assert f"{DB}.qmodel" not in mem.entities       # model-level ref pruned
+    assert f"{DB}.qmodel.id" not in mem.entities    # dangling leaf ref pruned
+    assert DB in mem.entities                       # datasource anchor stays
+    assert f"{DB}.other.keep" in mem.entities        # unrelated ref untouched

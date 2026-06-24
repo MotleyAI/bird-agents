@@ -37,7 +37,10 @@ MODEL = "orders"
 # ---------------------------------------------------------------------------
 
 
-class _Result:
+class ResultMessage:
+    """Name MUST be 'ResultMessage' — run_one breaks the receive loop on it AND
+    SdkUsageTracker.observe() commits only this type name."""
+
     def __init__(self, usage=None):
         self.usage = usage or {
             "input_tokens": 10, "output_tokens": 2,
@@ -72,7 +75,7 @@ class _FakeClient:
     async def _gen(self, cur):
         if cur.get("block"):
             await asyncio.sleep(100)  # never reaches a ResultMessage → times out
-        yield _Result(cur.get("usage"))
+        yield ResultMessage(cur.get("usage"))
 
 
 class _FakeSession:
@@ -87,20 +90,29 @@ class _FakeSession:
         if self._inflight is not None:
             self._inflight["cur"] += 1
             self._inflight["max"] = max(self._inflight["max"], self._inflight["cur"])
+            # Force a scheduling window: if run_one did NOT hold the per-build
+            # lock across the whole session, a second concurrent run_one would
+            # enter here during this await and drive max to 2 (Codex test #2).
+            await asyncio.sleep(0.02)
         return self._client
 
     async def __aexit__(self, *exc):
         if self._inflight is not None:
+            await asyncio.sleep(0.02)
             self._inflight["cur"] -= 1
         return False
 
 
-def _patch_session(monkeypatch, clients, *, inflight=None, raise_on_enter=False):
+def _patch_session(monkeypatch, clients, *, inflight=None, raise_on_enter=False,
+                   captured=None):
     """Patch `setup_encoder.hermetic_claude_sdk_session` to hand out `clients`
-    (a list, one per run_one invocation) wrapped in fake sessions."""
+    (a list, one per run_one invocation) wrapped in fake sessions. When
+    `captured` is given, each call's kwargs (incl. mcp_servers) are appended."""
     q = list(clients)
 
     def _factory(model, **kwargs):
+        if captured is not None:
+            captured.append({"model": model, **kwargs})
         client = q.pop(0) if q else _FakeClient([])
         return _FakeSession(client, inflight=inflight, raise_on_enter=raise_on_enter)
 
@@ -132,11 +144,14 @@ async def _seed(build_dir, *, kb_id=7, with_memory=True):
 
 
 async def _write_col(build_dir, name, kb_id, *, sql="1", tagged=True):
+    """Upsert a column (mirrors SLayer edit_model — unique names, replace in
+    place), so re-writing the same entity across retries doesn't duplicate it."""
     s = YAMLStorage(base_dir=str(build_dir))
     m = await s.get_model(MODEL, data_source=DB)
-    cols = list(m.columns or [])
     meta = {"kb_id": kb_id} if tagged else {}
-    cols.append(Column(name=name, sql=sql, description="agent wrote this", meta=meta))
+    new = Column(name=name, sql=sql, description="agent wrote this", meta=meta)
+    cols = [c for c in (m.columns or []) if c.name != name]
+    cols.append(new)
     await s.save_model(m.model_copy(update={"columns": cols}))
 
 
@@ -285,9 +300,16 @@ async def test_run_one_retries_then_succeeds(tmp_path, monkeypatch):
         {"behavior": fail_absent},
         {"behavior": succeed},
     ])
-    result, _ = await _run_one(tmp_path, [client], monkeypatch)
+    result, run_one = await _run_one(tmp_path, [client], monkeypatch)
     assert result.status == "encoded"
     assert len(client.queries) == 3  # 1 + 2 retries before success
+    # The corrective re-prompts (queries[1:]) must name the concrete failure so
+    # the agent can act on it (Codex test #3) — the failing entity ref appears.
+    assert any("c" in q and "tinydb" in q for q in client.queries[1:]), (
+        f"corrective prompt must name the failing entity; got {client.queries[1:]}"
+    )
+    # One triage row appended per run_one (Codex test #7).
+    assert len(run_one.index_rows) == 1
 
 
 async def test_run_one_always_fails_present_downgrades(tmp_path, monkeypatch):
@@ -340,6 +362,102 @@ async def test_run_one_downgrade_purges_tagged_partials(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # error / no-submit / deferred-with-entities
 # ---------------------------------------------------------------------------
+
+
+async def test_run_one_heuristic_dep_not_required(tmp_path, monkeypatch):
+    """HC-depuse applies ONLY to DECLARED children_knowledge deps. An encoded
+    dep that reached run_one via a heuristic formula-token edge (NOT in
+    children_knowledge) must NOT force a reference — inlining it stays encoded
+    (DEV-1589-spec §1; Codex test #4)."""
+    await _seed(tmp_path, kb_id=7)
+    dep = EncoderResult(
+        kb_id=4, status="encoded",
+        entities=[EncodedEntity(kind="measure", host_model=MODEL,
+                                name="premium_revenue",
+                                entity_ref=f"{DB}.{MODEL}.premium_revenue")],
+    )
+    # children_knowledge == -1 → KB 4 is NOT a declared child, even though it's
+    # passed in deps_results (heuristic edge).
+    row = {"id": 7, "knowledge": "margin", "children_knowledge": -1}
+
+    async def inline_dep():
+        await _write_col(tmp_path, "margin", 7, sql="SUM(amount) / 2")
+        await _submit(_encoded(7, ["margin"]))
+
+    client = _FakeClient([{"behavior": inline_dep}])
+    result, _ = await _run_one(
+        tmp_path, [client], monkeypatch, row=row, deps_results=[dep],
+    )
+    assert result.status == "encoded"  # NOT downgraded
+    assert len(client.queries) == 1    # no corrective retry
+
+
+async def test_hermetic_session_gets_real_mcp_servers(tmp_path, monkeypatch):
+    """Codex review (critical): the `slayer` stdio server (and bird-interact-
+    tools) MUST be declared to hermetic_claude_sdk_session, else its parity
+    assertion rejects the loaded slayer subprocess and every KB errors."""
+    await _seed(tmp_path, kb_id=7)
+    captured: list[dict] = []
+
+    async def behavior():
+        await _write_col(tmp_path, "c", 7)
+        await _submit(_encoded(7, ["c"]))
+
+    _patch_session(monkeypatch, [_FakeClient([{"behavior": behavior}])],
+                   captured=captured)
+    be = se.make_claude_sdk_build_encoder(model="zai/glm-5.2", self_model_id="glm")
+    run_one = be(YAMLStorage(base_dir=str(tmp_path)), tmp_path, DB, tmp_path / "s")
+    await run_one.aopen()
+    try:
+        await run_one(7, _row(7), [])
+    finally:
+        await run_one.aclose()
+    assert captured, "hermetic session must be entered"
+    servers = captured[0]["mcp_servers"]
+    assert "slayer" in servers and "bird-interact-tools" in servers
+
+
+async def test_encoded_with_no_entities_downgrades(tmp_path, monkeypatch):
+    """Codex review: an 'encoded' submission listing NO entities is downgraded
+    to deferred (legacy verifier parity)."""
+    await _seed(tmp_path, kb_id=7)
+
+    async def behavior():
+        await _submit(EncoderResult(kb_id=7, status="encoded", entities=[], notes="x"))
+
+    cycles = [{"behavior": behavior} for _ in range(se.MAX_ENCODE_ATTEMPTS)]
+    result, _ = await _run_one(tmp_path, [_FakeClient(cycles)], monkeypatch)
+    assert result.status == "deferred"
+
+
+async def test_non_canonical_entity_ref_downgrades(tmp_path, monkeypatch):
+    """Codex review: a present+tagged entity reported with a wrong entity_ref is
+    a hard failure (else the bad ref leaks into memory backrefs)."""
+    await _seed(tmp_path, kb_id=7)
+
+    async def behavior():
+        await _write_col(tmp_path, "c", 7)
+        bad = EncodedEntity(kind="column", host_model=MODEL, name="c",
+                            entity_ref=f"{DB}.WRONGMODEL.c")
+        await _submit(EncoderResult(kb_id=7, status="encoded", entities=[bad]))
+
+    cycles = [{"behavior": behavior} for _ in range(se.MAX_ENCODE_ATTEMPTS)]
+    result, _ = await _run_one(tmp_path, [_FakeClient(cycles)], monkeypatch)
+    assert result.status == "deferred"
+
+
+async def test_index_row_appended_on_error(tmp_path, monkeypatch):
+    """A triage row is appended even on the error path (Codex test #7)."""
+    await _seed(tmp_path, kb_id=7)
+    _patch_session(monkeypatch, [_FakeClient([])], raise_on_enter=True)
+    be = se.make_claude_sdk_build_encoder(model="zai/glm-5.2", self_model_id="glm")
+    run_one = be(YAMLStorage(base_dir=str(tmp_path)), tmp_path, DB, tmp_path / "s")
+    await run_one.aopen()
+    try:
+        await run_one(7, _row(7), [])
+    finally:
+        await run_one.aclose()
+    assert len(run_one.index_rows) == 1
 
 
 async def test_run_one_no_submit_is_error_and_purges(tmp_path, monkeypatch):

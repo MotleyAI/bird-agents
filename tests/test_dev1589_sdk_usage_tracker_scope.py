@@ -13,7 +13,10 @@ from bird_interact_agents.agents.claude_sdk.agent import SdkUsageTracker
 from bird_interact_agents.usage import TokenUsage
 
 
-class _Result:
+class ResultMessage:
+    """Name MUST be exactly 'ResultMessage' — SdkUsageTracker.observe() commits
+    only `type(msg).__name__ == 'ResultMessage'`."""
+
     def __init__(self, usage):
         self.usage = usage
 
@@ -28,8 +31,8 @@ _USAGE = {
 
 def test_default_scope_is_agent():
     accum = TokenUsage()
-    t = SdkUsageTracker(accum, "m")
-    t.observe(_Result(_USAGE))
+    t = SdkUsageTracker(accum, "anthropic/claude-opus-4-7")
+    t.observe(ResultMessage(_USAGE))
     t.finalize()
     rows = {r.scope for r in accum.breakdown}
     assert rows == {"agent"}
@@ -37,8 +40,8 @@ def test_default_scope_is_agent():
 
 def test_explicit_setup_encoder_scope():
     accum = TokenUsage()
-    t = SdkUsageTracker(accum, "m", scope="setup_encoder")
-    t.observe(_Result(_USAGE))
+    t = SdkUsageTracker(accum, "anthropic/claude-opus-4-7", scope="setup_encoder")
+    t.observe(ResultMessage(_USAGE))
     t.finalize()
     rows = {r.scope for r in accum.breakdown}
     assert rows == {"setup_encoder"}
@@ -52,8 +55,8 @@ def test_fresh_tracker_per_cycle_sums_across_cycles():
     re-prompt accounting; mirrors DiscoveryChannel.ask)."""
     accum = TokenUsage()
     for _ in range(3):
-        t = SdkUsageTracker(accum, "m", scope="setup_encoder")
-        t.observe(_Result(_USAGE))
+        t = SdkUsageTracker(accum, "anthropic/claude-opus-4-7", scope="setup_encoder")
+        t.observe(ResultMessage(_USAGE))
         t.finalize()
     row = next(r for r in accum.breakdown if r.scope == "setup_encoder")
     assert row.prompt_tokens == 300

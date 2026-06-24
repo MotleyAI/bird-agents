@@ -378,7 +378,9 @@ async def _remove_entities_from_storage(
 
     for name in model_drops:
         try:
-            await storage.delete_model(name)
+            # Scope to `db` — a bare name resolves by datasource priority and
+            # could drop a same-named model in another datasource (CodeRabbit).
+            await storage.delete_model(name, data_source=db)
         except Exception:  # noqa: BLE001 — already absent is fine
             logger.debug("reference_build: model %r already absent on collision drop", name)
 

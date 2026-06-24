@@ -175,14 +175,21 @@ def make_claude_sdk_build_encoder(
         native_server = create_sdk_mcp_server(
             name="bird-interact-tools", version="1.0.0", tools=[submit_encoding],
         )
+        # Build the MCP server set ONCE and pass it BOTH to the options builder
+        # AND to hermetic_claude_sdk_session: the hermetic parity assertion's
+        # `expected` set is exactly the keys handed to the session, so the
+        # `slayer` stdio server MUST be declared there or every KB raises
+        # HermeticEnvError before the first query (Codex review, critical). A
+        # fresh subprocess is still spawned per KB on each session enter; the
+        # config dict is reusable.
+        mcp_servers = {
+            "bird-interact-tools": native_server,
+            "slayer": slayer_mcp_stdio_config(
+                str(build_dir), ingest_on_startup=False,
+            ),
+        }
 
         def _build_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
-            mcp_servers = {
-                "bird-interact-tools": native_server,
-                "slayer": slayer_mcp_stdio_config(
-                    str(build_dir), ingest_on_startup=False,
-                ),
-            }
             return ClaudeAgentOptions(
                 **_opt_kwargs,
                 mcp_servers=mcp_servers,
@@ -205,10 +212,10 @@ def make_claude_sdk_build_encoder(
             async with lock:
                 return await _encode_one_kb(
                     kb_id=kb_id, row=row, deps_results=deps_results,
-                    db=db, build_dir=build_dir, model=model,
-                    self_model_id=self_model_id, usage=usage,
+                    reverse_deps=reverse_deps, db=db, build_dir=build_dir,
+                    model=model, self_model_id=self_model_id, usage=usage,
                     index_rows=index_rows, sessions_dir=sessions_dir,
-                    mcp_servers_factory=_build_options,
+                    mcp_servers=mcp_servers, build_options=_build_options,
                 )
 
         run_one.aopen = aopen  # type: ignore[attr-defined]
@@ -226,8 +233,8 @@ def make_claude_sdk_build_encoder(
 
 
 async def _encode_one_kb(
-    *, kb_id, row, deps_results, db, build_dir, model, self_model_id,
-    usage, index_rows, sessions_dir, mcp_servers_factory,
+    *, kb_id, row, deps_results, reverse_deps, db, build_dir, model,
+    self_model_id, usage, index_rows, sessions_dir, mcp_servers, build_options,
 ) -> EncoderResult:
     started = time.monotonic()
     ctx = {"_encoder_submission": None}
@@ -245,7 +252,7 @@ async def _encode_one_kb(
     prompt = ENCODER_PROMPT.format(
         db_name=db, kb_id=kb_id, kb_body=kb_body,
         deps_block=_format_deps_block(encoded_deps),
-        reverse_deps_block=_format_reverse_deps_block(reverse_deps_rows(deps_results)),
+        reverse_deps_block=_format_reverse_deps_block(reverse_deps),
     )
 
     submission: EncoderResult | None = None
@@ -254,8 +261,8 @@ async def _encode_one_kb(
     try:
         async with hermetic_claude_sdk_session(
             model,
-            mcp_servers={},  # the real servers are built inside build_options
-            build_options=mcp_servers_factory,
+            mcp_servers=mcp_servers,
+            build_options=build_options,
             enter_cm_factory=lambda: otf_timer(
                 "setup_encoder.sdk_client_enter", instance_id=f"{db}_kb_{kb_id}",
             ),
@@ -330,9 +337,14 @@ async def _finalize_kb(
 
     result = submission.model_copy(update={"kb_id": kb_id})
     if result.status == "encoded":
-        failures = await ev.hard_failures(
+        failures = list(await ev.hard_failures(
             build_dir, db, kb_id, result.entities, encoded_deps,
-        )
+        ))
+        # An 'encoded' result that lists NO entities is not a real encoding —
+        # downgrade so a later per-task agent retries (legacy verifier parity;
+        # Codex review).
+        if not result.entities:
+            failures.append("claimed 'encoded' but listed no entities")
     else:
         failures = ["submission status is not 'encoded'"]
 
@@ -386,11 +398,29 @@ def _format_deps_block(encoded_deps: list[EncoderResult]) -> str:
     return "\n".join(lines)
 
 
-def reverse_deps_rows(deps_results) -> list[dict]:
-    # The build-time encoder does not currently thread reverse-deps; kept as a
-    # hook so the prompt always has a deterministic substitution value.
-    return []
-
-
 def _format_reverse_deps_block(parents: list[dict] | None) -> str:
-    return "(none)"
+    """Render the KBs that REFERENCE this one (its parents) so a
+    value_illustration can defer an embedded score to a calculation_knowledge
+    parent that owns it (DEV-1466). Sorted by id, deduped, fields truncated so
+    a long definition can't blow the prompt budget."""
+    if not parents:
+        return "(none)"
+    seen: set[int] = set()
+    lines: list[str] = []
+    for p in sorted(parents, key=lambda r: int(r.get("id", 0))):
+        pid = int(p.get("id", 0))
+        if pid in seen:
+            continue
+        seen.add(pid)
+        line = f"KB {pid}"
+        typ = p.get("type")
+        if typ:
+            line += f" ({typ})"
+        knowledge = str(p.get("knowledge", "") or "")[:200]
+        if knowledge:
+            line += f": {knowledge}"
+        definition = str(p.get("definition", "") or "")[:200]
+        if definition:
+            line += f" | def: {definition}"
+        lines.append(line)
+    return "\n".join(lines)
