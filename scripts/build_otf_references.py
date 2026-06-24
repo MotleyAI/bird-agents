@@ -35,15 +35,6 @@ import json
 import logging
 
 from bird_interact_agents import paths
-from bird_interact_agents.agents.claude_sdk_otf_encode.setup_encoder import (
-    make_claude_sdk_build_encoder,
-)
-from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
-    _build_shared_slayer_server,
-)
-from bird_interact_agents.agents.pydantic_ai_otf_encode.setup_encoder import (
-    make_setup_build_encoder,
-)
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.model_string import (
     build_pydantic_ai_model,
@@ -51,6 +42,35 @@ from bird_interact_agents.model_string import (
     native_model_id,
 )
 from bird_interact_agents.slayer_otf import ensure_db_reference
+
+# The two encoder frameworks live behind SEPARATE optional extras
+# (`claude-sdk` vs `pydantic-ai`). Guard the imports so building with one
+# framework does not require the OTHER framework's extra to be installed
+# (Codex review). `make_build_encoder` raises a clear error if the chosen
+# framework's dependency is missing. Imports stay at module top per repo style.
+try:
+    from bird_interact_agents.agents.claude_sdk_otf_encode.setup_encoder import (
+        make_claude_sdk_build_encoder,
+    )
+except ImportError as _e:  # pragma: no cover - exercised only without the extra
+    make_claude_sdk_build_encoder = None
+    _CLAUDE_SDK_IMPORT_ERROR = _e
+else:
+    _CLAUDE_SDK_IMPORT_ERROR = None
+
+try:
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.agent import (
+        _build_shared_slayer_server,
+    )
+    from bird_interact_agents.agents.pydantic_ai_otf_encode.setup_encoder import (
+        make_setup_build_encoder,
+    )
+except ImportError as _e:  # pragma: no cover - exercised only without the extra
+    _build_shared_slayer_server = None
+    make_setup_build_encoder = None
+    _PYDANTIC_AI_IMPORT_ERROR = _e
+else:
+    _PYDANTIC_AI_IMPORT_ERROR = None
 
 logger = logging.getLogger("build_otf_references")
 
@@ -90,11 +110,23 @@ def make_build_encoder(framework: str, agent_model: str):
     model (pydantic_ai can't reach z.ai). ``pydantic_ai`` keeps the legacy path.
     """
     if framework == "claude_sdk":
+        if make_claude_sdk_build_encoder is None:
+            raise SystemExit(
+                "--encoder-framework claude_sdk needs the `claude-sdk` extra "
+                f"(uv sync --extra claude-sdk). Import failed: "
+                f"{_CLAUDE_SDK_IMPORT_ERROR}"
+            )
         return make_claude_sdk_build_encoder(
             model=agent_model,
             self_model_id=native_model_id(agent_model),
         )
     if framework == "pydantic_ai":
+        if make_setup_build_encoder is None:
+            raise SystemExit(
+                "--encoder-framework pydantic_ai needs the `pydantic-ai` extra "
+                f"(uv sync --extra pydantic-ai). Import failed: "
+                f"{_PYDANTIC_AI_IMPORT_ERROR}"
+            )
         model, model_settings = _build_model(agent_model)
         return make_setup_build_encoder(
             model=model,
