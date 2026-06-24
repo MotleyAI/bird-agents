@@ -80,18 +80,39 @@ def referenced_identifiers(text: Any) -> set[str]:
     return set(_IDENT_RE.findall(stripped))
 
 
-def _to_text(value: Any) -> str:
-    """Flatten a structured field (list / dict / pydantic model) to a string so
-    its identifier tokens can be extracted. Best-effort — never raises."""
+def _iter_strings(value: Any):
+    """Yield every string LEAF of a structured value (list/dict/pydantic),
+    recursively. Dict KEYS are not yielded — only values."""
     if value is None:
-        return ""
-    try:
-        dump = getattr(value, "model_dump", None)
-        if callable(dump):
+        return
+    dump = getattr(value, "model_dump", None)
+    if callable(dump):
+        try:
             value = dump()
-        return str(value)
-    except Exception:  # noqa: BLE001
-        return str(value)
+        except Exception:  # noqa: BLE001
+            value = str(value)
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _iter_strings(v)
+    elif isinstance(value, (list, tuple, set)):
+        for v in value:
+            yield from _iter_strings(v)
+
+
+def _structured_ref_tokens(value: Any) -> set[str]:
+    """Identifier tokens from the string VALUES of a STRUCTURED field
+    (`source_queries` / `source_model_origin`). Unlike
+    :func:`referenced_identifiers`, it does NOT strip quoted literals — in these
+    structures a dependency reference IS a string value (e.g.
+    ``source_model: "premium_revenue"``), so stripping it would lose the
+    reference; and only values (not dict keys / field names) are tokenised, so
+    structural field names can't create accidental matches (Codex review)."""
+    toks: set[str] = set()
+    for s in _iter_strings(value):
+        toks |= set(_IDENT_RE.findall(s))
+    return toks
 
 
 def _leaf_buckets(model: Any) -> dict[str, list]:
@@ -158,8 +179,8 @@ async def _entity_reference_tokens(
             # model that references a dep through one of these must NOT be falsely
             # downgraded (Codex review).
             toks |= referenced_identifiers(getattr(model, "backing_query_sql", None))
-            toks |= referenced_identifiers(_to_text(getattr(model, "source_queries", None)))
-            toks |= referenced_identifiers(_to_text(getattr(model, "source_model_origin", None)))
+            toks |= _structured_ref_tokens(getattr(model, "source_queries", None))
+            toks |= _structured_ref_tokens(getattr(model, "source_model_origin", None))
             for bucket in _leaf_buckets(model).values():
                 for item in bucket:
                     toks |= referenced_identifiers(_leaf_definition_text(item))

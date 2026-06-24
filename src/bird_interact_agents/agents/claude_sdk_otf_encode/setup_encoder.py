@@ -302,7 +302,8 @@ async def _encode_one_kb(
         reverse_deps_block=_format_reverse_deps_block(reverse_deps),
     )
 
-    submission: EncoderResult | None = None
+    confirmed: EncoderResult | None = None        # fresh submission that passed all checks
+    last_submission: EncoderResult | None = None  # most recent submission (any status)
     failures: list[str] = []
     err: str | None = None
     try:
@@ -345,24 +346,32 @@ async def _encode_one_kb(
                     cycle_tracker.finalize()
 
                 attempt_sub = ctx["_encoder_submission"]
-                if attempt_sub is not None:
-                    submission = attempt_sub
-                if submission is None or submission.status != "encoded":
-                    break
                 if attempt_sub is None:
-                    # A corrective attempt that edited storage but did NOT call
-                    # submit_encoding must not be accepted by re-verifying the
-                    # PRIOR attempt's (stale) submission — keep prompting for an
-                    # explicit re-submit (Codex review).
+                    # No fresh submission this attempt.
+                    if attempt == 0:
+                        break  # never submitted at all → error path
+                    # A corrective attempt that edited storage WITHOUT re-calling
+                    # submit_encoding is NOT accepted by re-verifying a prior
+                    # submission — keep prompting for an explicit re-submit, so a
+                    # timeout/exception after a silent fix can't finalize a stale
+                    # encoding (Codex review).
                     failures = [
-                        "You did not call submit_encoding this turn — call it "
-                        "to confirm the entities you encoded for this KB."
+                        "You did not call submit_encoding this turn — call it to "
+                        "confirm the entities you encoded for this KB."
                     ]
                     continue
-                failures = await ev.hard_failures(
-                    build_dir, db, kb_id, submission.entities, encoded_deps,
-                )
+                last_submission = attempt_sub
+                if attempt_sub.status != "encoded":
+                    break  # explicit deferred/error — nothing to verify
+                failures = list(await ev.hard_failures(
+                    build_dir, db, kb_id, attempt_sub.entities, encoded_deps,
+                ))
+                # An 'encoded' result that lists NO entities is not a real
+                # encoding (legacy verifier parity).
+                if not attempt_sub.entities:
+                    failures.append("claimed 'encoded' but listed no entities")
                 if not failures:
+                    confirmed = attempt_sub   # passed IN THIS attempt — definitive
                     break
     except Exception as exc:  # noqa: BLE001 — never abort the build
         err = f"{type(exc).__name__}: {exc}"
@@ -370,8 +379,8 @@ async def _encode_one_kb(
 
     # ---- client/subprocess CLOSED → parent storage is single-writer-safe ----
     result = await _finalize_kb(
-        kb_id=kb_id, submission=submission, err=err, db=db,
-        build_dir=build_dir, encoded_deps=encoded_deps,
+        kb_id=kb_id, confirmed=confirmed, last_submission=last_submission,
+        last_failures=failures, err=err, db=db, build_dir=build_dir,
         verbatim_desc=verbatim_desc,
     )
 
@@ -382,47 +391,42 @@ async def _encode_one_kb(
 
 
 async def _finalize_kb(
-    *, kb_id, submission, err, db, build_dir, encoded_deps, verbatim_desc,
+    *, kb_id, confirmed, last_submission, last_failures, err, db, build_dir,
+    verbatim_desc,
 ) -> EncoderResult:
-    if submission is None:
-        # never submitted (or the session raised) → error + purge partials.
-        await ev.purge_kb_entities_and_backrefs(build_dir, db, kb_id)
+    """Act on the loop's verdict WITHOUT re-verifying — only a submission that
+    passed all hard checks IN-LOOP (``confirmed``) is accepted as encoded, so a
+    stale prior submission can never be re-verified into success on the
+    timeout/exception path (Codex review)."""
+    if confirmed is not None:
+        result = confirmed.model_copy(update={"kb_id": kb_id})
+        # encoded + all hard checks passed → auto-wire the mechanical properties.
+        await ev.autowire_descriptions(build_dir, db, result.entities, verbatim_desc)
+        await ev.autowire_memory_backrefs(build_dir, db, kb_id, result.entities)
+        return result
+
+    # Not confirmed → purge ALL of this KB's tagged partial writes (not just any
+    # reported entities) and force entities=[], so no orphan entity / dangling
+    # backref survives into the committed reference.
+    await ev.purge_kb_entities_and_backrefs(build_dir, db, kb_id)
+
+    if last_submission is None:
         return EncoderResult(
             kb_id=kb_id, status="error", entities=[],
             error=err or "agent never called submit_encoding",
         )
-
-    result = submission.model_copy(update={"kb_id": kb_id})
-    if result.status == "encoded":
-        failures = list(await ev.hard_failures(
-            build_dir, db, kb_id, result.entities, encoded_deps,
-        ))
-        # An 'encoded' result that lists NO entities is not a real encoding —
-        # downgrade so a later per-task agent retries (legacy verifier parity;
-        # Codex review).
-        if not result.entities:
-            failures.append("claimed 'encoded' but listed no entities")
-    else:
-        failures = ["submission status is not 'encoded'"]
-
-    if result.status != "encoded" or failures:
-        # Codex r1 #6 + r2 #4: purge ALL of this KB's tagged writes (not just
-        # the reported entities) and force entities=[] for EVERY non-encoded
-        # outcome, preserving notes/error/clarifying_questions.
-        await ev.purge_kb_entities_and_backrefs(build_dir, db, kb_id)
-        new_status = "deferred" if result.status == "encoded" else result.status
+    if last_submission.status == "encoded":
+        # encoded but failed the hard checks across all attempts → defer.
         extra = (
-            " | downgraded: " + "; ".join(failures)
-            if result.status == "encoded" else ""
+            " | downgraded: " + "; ".join(last_failures)
+            if last_failures else " | downgraded: failed hard checks"
         )
-        return result.model_copy(update={
-            "status": new_status, "entities": [], "notes": result.notes + extra,
+        return last_submission.model_copy(update={
+            "kb_id": kb_id, "status": "deferred", "entities": [],
+            "notes": last_submission.notes + extra,
         })
-
-    # encoded + all hard checks pass → auto-wire the mechanical properties.
-    await ev.autowire_descriptions(build_dir, db, result.entities, verbatim_desc)
-    await ev.autowire_memory_backrefs(build_dir, db, kb_id, result.entities)
-    return result
+    # explicit deferred / error submission — keep its status/notes, clear entities.
+    return last_submission.model_copy(update={"kb_id": kb_id, "entities": []})
 
 
 def _append_index_row(index_rows, sessions_dir, kb_id, result, duration_s):

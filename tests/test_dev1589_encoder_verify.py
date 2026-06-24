@@ -135,6 +135,19 @@ def test_referenced_identifiers_picks_up_identifier_position():
     assert "order_count" in toks
 
 
+def test_structured_ref_tokens_extracts_values_not_keys():
+    """For structured fields (source_queries), a dep reference is a string VALUE
+    (e.g. source_model: 'premium_revenue') — it must be extracted (not stripped
+    as a literal), and dict KEYS / field names must NOT become tokens (Codex)."""
+    toks = ev._structured_ref_tokens(
+        {"source_model": "premium_revenue", "measures": ["amount", "qty"]},
+    )
+    assert "premium_revenue" in toks   # the string VALUE (a real reference)
+    assert "amount" in toks and "qty" in toks
+    assert "source_model" not in toks  # a dict KEY — not a reference
+    assert "measures" not in toks
+
+
 # ---------------------------------------------------------------------------
 # hard_failures: HC-depuse (structured-field)
 # ---------------------------------------------------------------------------
