@@ -248,6 +248,32 @@ async def test_hard_failures_depuse_description_only_does_not_count(tmp_path):
     assert failures  # description mention is not a real reference
 
 
+async def test_hard_failures_depuse_via_model_backing_query(tmp_path):
+    """For a query-backed MODEL entity, HC-depuse must read structural dep refs
+    from backing_query_sql / source_queries, not just model.sql + leaf fields
+    (Codex review)."""
+    storage = await _storage(tmp_path)
+    await storage.save_model(SlayerModel(
+        name="orders", data_source=DB, sql_table="orders",
+        columns=[Column(name="id", primary_key=True), Column(name="amount", sql="amount")],
+        measures=[ModelMeasure(name="premium_revenue", formula="amount:sum",
+                               meta={"kb_id": 4})],
+    ))
+    # A dependent query-backed model referencing the dep via its backing query.
+    await storage.save_model(SlayerModel(
+        name="summary", data_source=DB, sql_table="summary",
+        columns=[Column(name="id", primary_key=True)],
+        backing_query_sql="SELECT premium_revenue FROM orders",
+        meta={"kb_id": 7},
+    ))
+    ent = EncodedEntity(kind="model", host_model=None, name="summary",
+                        entity_ref=f"{DB}.summary")
+    failures = await ev.hard_failures(
+        tmp_path, DB, 7, [ent], encoded_deps=[_dep_kb4()],
+    )
+    assert failures == []
+
+
 async def test_hard_failures_opens_fresh_storage_per_call(tmp_path, monkeypatch):
     """Codex r1 #4 / test #6: verification must construct a FRESH
     YAMLStorage(base_dir=build_dir) each pass — never a cached handle."""

@@ -135,16 +135,19 @@ async def test_households_kb_encode_smoke(tmp_path):
     encoded = [r for r in results if r.status == "encoded"]
     for r in encoded:
         mem = await s.get_memory_row(f"{db}_kb_{r.kb_id}")
+        assert mem is not None, f"missing memory row for kb_id={r.kb_id}"
         for ent in r.entities:
-            model = await s.get_model(ent.host_model or ent.name, data_source=db)
-            assert model is not None
+            entity_model = await s.get_model(
+                ent.host_model or ent.name, data_source=db,
+            )
+            assert entity_model is not None
             assert ent.entity_ref in mem.entities
             # description injection (HC-desc) — at least the [kb=N] tag present
             blob = ""
-            for bucket in (model.columns or []) + (model.measures or []) + \
-                    (getattr(model, "aggregations", None) or []):
+            for bucket in (entity_model.columns or []) + (entity_model.measures or []) + \
+                    (getattr(entity_model, "aggregations", None) or []):
                 if getattr(bucket, "name", None) == ent.name:
                     blob = getattr(bucket, "description", "") or ""
             if ent.kind == "model":
-                blob = model.description or ""
+                blob = entity_model.description or ""
             assert f"[kb={r.kb_id}]" in blob

@@ -27,7 +27,12 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from claude_agent_sdk import ClaudeAgentOptions, create_sdk_mcp_server, tool
+from claude_agent_sdk import (
+    ClaudeAgentOptions,
+    HookMatcher,
+    create_sdk_mcp_server,
+    tool,
+)
 from pydantic import ValidationError
 
 from bird_interact_agents.agents._session_log import write_session
@@ -48,6 +53,9 @@ from bird_interact_agents.model_string import native_model_id
 from bird_interact_agents.slayer_otf import encoder_verify as ev
 from bird_interact_agents.slayer_otf.encoder_types import EncoderResult
 from bird_interact_agents.slayer_otf.kb_memory_encoder import _normalise_children
+from bird_interact_agents.slayer_pipeline.filter_normalization import (
+    normalize_tool_filters,
+)
 from bird_interact_agents.slayer_otf.timing import otf_timer
 from bird_interact_agents.usage import TokenUsage
 
@@ -86,6 +94,39 @@ DISALLOWED_TOOL_NAMES = [
 ]
 
 NATIVE_TOOL_NAME = "mcp__bird-interact-tools__submit_encoding"
+
+# Write tools whose backing-query `filters` must be normalised
+# (`lower(trim(col)) = '<lower>'`) BEFORE SLayer persists them — otherwise the
+# committed reference bakes case-sensitive raw text-equality predicates that
+# break case-insensitive pre-encoded runs. Mirrors the pydantic encoder + the
+# claude_sdk_otf agent (Codex review).
+_WRITE_TOOLS_NEEDING_NORMALIZATION = (
+    "mcp__slayer__create_model",
+    "mcp__slayer__edit_model",
+)
+_NORMALIZE_WRITE_FILTERS_MATCHER = "|".join(_WRITE_TOOLS_NEEDING_NORMALIZATION)
+
+
+async def _normalize_write_tool_filters_hook(input_data, tool_use_id, context):
+    """PreToolUse: rewrite create_model/edit_model `filters` to
+    `lower(trim(col)) = '<lower>'` before SLayer persists them. Returns the SDK's
+    `updatedInput` directive; a no-op normalisation returns the (deep-copied)
+    input unchanged."""
+    tool_name = input_data.get("tool_name") or ""
+    if tool_name not in _WRITE_TOOLS_NEEDING_NORMALIZATION:
+        return {}
+    bare = tool_name.split("__", 2)[-1]
+    tool_input = input_data.get("tool_input") or {}
+    if not isinstance(tool_input, dict):
+        return {}
+    updated = normalize_tool_filters(bare, tool_input)
+    if not isinstance(updated, dict):
+        return {}
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "updatedInput": updated,
+        }
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +241,12 @@ def make_claude_sdk_build_encoder(
                 model=native_model_id(model),
                 effort=reasoning_effort,
                 max_turns=_MAX_TURNS,
+                hooks={
+                    "PreToolUse": [HookMatcher(
+                        matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
+                        hooks=[_normalize_write_tool_filters_hook],
+                    )],
+                },
             )
 
         async def aopen() -> None:  # no-op: fresh client per KB inside run_one
@@ -302,6 +349,16 @@ async def _encode_one_kb(
                     submission = attempt_sub
                 if submission is None or submission.status != "encoded":
                     break
+                if attempt_sub is None:
+                    # A corrective attempt that edited storage but did NOT call
+                    # submit_encoding must not be accepted by re-verifying the
+                    # PRIOR attempt's (stale) submission — keep prompting for an
+                    # explicit re-submit (Codex review).
+                    failures = [
+                        "You did not call submit_encoding this turn — call it "
+                        "to confirm the entities you encoded for this KB."
+                    ]
+                    continue
                 failures = await ev.hard_failures(
                     build_dir, db, kb_id, submission.entities, encoded_deps,
                 )

@@ -364,6 +364,33 @@ async def test_run_one_downgrade_purges_tagged_partials(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+async def test_no_resubmit_on_corrective_attempt_keeps_prompting(tmp_path, monkeypatch):
+    """Codex review: a corrective attempt that fixes storage but does NOT call
+    submit_encoding must not be accepted by re-verifying the PRIOR (stale)
+    submission — the loop keeps prompting for an explicit re-submit."""
+    await _seed(tmp_path, kb_id=7)
+
+    async def fail_absent():
+        await _submit(_encoded(7, ["c"]))     # claims c, never writes it → fail
+
+    async def fix_no_submit():
+        await _write_col(tmp_path, "c", 7)    # writes c but does NOT re-submit
+
+    async def resubmit():
+        await _submit(_encoded(7, ["c"]))     # re-confirm now that c exists
+
+    client = _FakeClient([
+        {"behavior": fail_absent},
+        {"behavior": fix_no_submit},
+        {"behavior": resubmit},
+    ])
+    result, _ = await _run_one(tmp_path, [client], monkeypatch)
+    assert result.status == "encoded"
+    # Without the guard, the no-submit attempt would have short-circuited to
+    # success at cycle 2 (queries==2); the guard forces the 3rd confirm.
+    assert len(client.queries) == 3
+
+
 async def test_run_one_heuristic_dep_not_required(tmp_path, monkeypatch):
     """HC-depuse applies ONLY to DECLARED children_knowledge deps. An encoded
     dep that reached run_one via a heuristic formula-token edge (NOT in

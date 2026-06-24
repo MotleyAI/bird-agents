@@ -80,6 +80,20 @@ def referenced_identifiers(text: Any) -> set[str]:
     return set(_IDENT_RE.findall(stripped))
 
 
+def _to_text(value: Any) -> str:
+    """Flatten a structured field (list / dict / pydantic model) to a string so
+    its identifier tokens can be extracted. Best-effort — never raises."""
+    if value is None:
+        return ""
+    try:
+        dump = getattr(value, "model_dump", None)
+        if callable(dump):
+            value = dump()
+        return str(value)
+    except Exception:  # noqa: BLE001
+        return str(value)
+
+
 def _leaf_buckets(model: Any) -> dict[str, list]:
     return {
         "column": list(getattr(model, "columns", None) or []),
@@ -139,6 +153,13 @@ async def _entity_reference_tokens(
             if model is None:
                 return set()
             toks: set[str] = referenced_identifiers(getattr(model, "sql", None))
+            # Query-backed models persist their structural dependency references
+            # in backing_query_sql / source_queries / source_model_origin — a
+            # model that references a dep through one of these must NOT be falsely
+            # downgraded (Codex review).
+            toks |= referenced_identifiers(getattr(model, "backing_query_sql", None))
+            toks |= referenced_identifiers(_to_text(getattr(model, "source_queries", None)))
+            toks |= referenced_identifiers(_to_text(getattr(model, "source_model_origin", None)))
             for bucket in _leaf_buckets(model).values():
                 for item in bucket:
                     toks |= referenced_identifiers(_leaf_definition_text(item))
