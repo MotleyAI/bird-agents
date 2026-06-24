@@ -410,10 +410,18 @@ async def _finalize_kb(
     # backref survives into the committed reference.
     await ev.purge_kb_entities_and_backrefs(build_dir, db, kb_id)
 
+    if err is not None:
+        # A timeout / exception interrupted the encode — surface it as `error`
+        # (with the message), NOT a clean `deferred`, even if an earlier attempt
+        # had submitted a (failed) encoded result (Codex review).
+        return EncoderResult(
+            kb_id=kb_id, status="error", entities=[], error=err,
+            notes=(last_submission.notes if last_submission else ""),
+        )
     if last_submission is None:
         return EncoderResult(
             kb_id=kb_id, status="error", entities=[],
-            error=err or "agent never called submit_encoding",
+            error="agent never called submit_encoding",
         )
     if last_submission.status == "encoded":
         # encoded but failed the hard checks across all attempts → defer.

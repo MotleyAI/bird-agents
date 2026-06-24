@@ -548,6 +548,25 @@ async def test_run_one_attempt_timeout_is_error(tmp_path, monkeypatch):
     assert result.status == "error"
 
 
+async def test_timeout_after_failed_encoded_is_error_not_deferred(tmp_path, monkeypatch):
+    """Codex review: a timeout on a corrective attempt AFTER an earlier failed
+    encoded submission surfaces as `error` (with the message), not a clean
+    `deferred` that hides the interrupted build."""
+    await _seed(tmp_path, kb_id=7)
+    monkeypatch.setattr(se, "ENCODE_ATTEMPT_TIMEOUT_S", 0.05, raising=False)
+
+    async def fail_absent():
+        await _submit(_encoded(7, ["ghost"]))   # encoded but never written → fails
+
+    client = _FakeClient([
+        {"behavior": fail_absent},   # attempt 0: failed encoded submission
+        {"block": True},             # attempt 1: hangs → timeout
+    ])
+    result, _ = await _run_one(tmp_path, [client], monkeypatch)
+    assert result.status == "error"
+    assert result.error
+
+
 # ---------------------------------------------------------------------------
 # per-build lock serializes concurrent run_one (E1)
 # ---------------------------------------------------------------------------
