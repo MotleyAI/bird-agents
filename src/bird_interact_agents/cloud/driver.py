@@ -173,7 +173,16 @@ def read_api_keys_from_local_env(
     # MagicMock; with the attribute access, `prereqs._is_claude_sdk_framework`
     # becomes a truthy mock and the OAuth path fires for every framework,
     # masking real test failures. The direct-name import is mock-safe.
-    if _is_claude_sdk_framework(framework) and not no_subscription_auth:
+    # DEV-1602 (registry-first): a registry open-weight agent model authenticates
+    # via its provider key, NEVER OAuth — gate the OAuth branch on the agent
+    # model not being a registry model so a programmatic/resubmit caller passing
+    # no_subscription_auth=False for a registry model falls through to the
+    # provider-key branch instead of demanding an OAuth token.
+    if (
+        _is_claude_sdk_framework(framework)
+        and not no_subscription_auth
+        and provider_registry.get_provider(agent_model) is None
+    ):
         token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
         if not token:
             raise PrereqError(
@@ -192,7 +201,13 @@ def read_api_keys_from_local_env(
                 "(expected sk-ant-oat01- prefix).",
                 remediation="claude setup-token",
             )
-        result: dict[str, str] = {"CLAUDE_CODE_OAUTH_TOKEN": token}
+        # DEV-1602: ship the explicit subscription-path signal so sdk_env on the
+        # worker takes the OAuth path (path chosen by operator intent, never
+        # inferred from which credential happens to be present).
+        result: dict[str, str] = {
+            "CLAUDE_CODE_OAUTH_TOKEN": token,
+            "BIRD_INTERACT_SUBSCRIPTION_AUTH": "1",
+        }
         # Track the LOCAL env var names for error messages (the worker-side names
         # differ — e.g. ANTHROPIC_API_KEY → BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY).
         missing_local: list[str] = []

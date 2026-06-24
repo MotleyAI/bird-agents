@@ -547,6 +547,43 @@ def test_claude_sdk_oauth_plus_api_key_openai_usersim_passes(
     )
 
 
+def test_claude_sdk_registry_agent_skips_oauth_when_subscription_opted_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DEV-1602 (Codex finding #1): a registry open-weight agent model must take
+    the provider-key path even with no_subscription_auth=False — the OAuth
+    branch is gated on the agent model NOT being a registry model. No
+    CLAUDE_CODE_OAUTH_TOKEN is required here."""
+    # A valid OAuth token is ALSO present — the registry-first gate must ignore
+    # it (the provider key path wins) rather than enter the OAuth branch.
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)  # for the user-sim
+    # Must NOT raise about CLAUDE_CODE_OAUTH_TOKEN.
+    prereqs.check_api_keys(
+        agent_model="moonshot/kimi-k2.7-code",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+    )
+
+
+def test_claude_sdk_registry_agent_still_requires_provider_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DEV-1602: the registry-first gate must not skip BOTH OAuth and
+    provider-key validation. A registry agent missing its provider key still
+    fails (so the implementation can't pass by merely short-circuiting OAuth)."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    with pytest.raises(prereqs.PrereqError, match="MOONSHOT_API_KEY"):
+        prereqs.check_api_keys(
+            agent_model="moonshot/kimi-k2.7-code",
+            user_sim_model="anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+        )
+
+
 def test_claude_sdk_oauth_slayer_still_requires_openai_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

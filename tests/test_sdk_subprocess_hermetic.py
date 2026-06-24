@@ -12,9 +12,11 @@ This module pins the new ``agents/claude_sdk/sdk_env.py`` surface that all
 ``claude_sdk*`` agents route through:
 
 * ``hermetic_claude_config_dir`` — fresh empty per-task ``CLAUDE_CONFIG_DIR``.
-* ``assert_api_key_auth`` — claude_sdk agents MUST auth via ``ANTHROPIC_API_KEY``
-  (Claude.ai subscription/OAuth auth was disabled for the Agent SDK 2026-06-15);
-  registry open-weight models are exempt (own provider token).
+* ``assert_api_key_auth`` — claude_sdk agents auth via ``ANTHROPIC_API_KEY`` on
+  the API-key path; on the subscription path (DEV-1602, signalled by
+  ``BIRD_INTERACT_SUBSCRIPTION_AUTH``) a valid ``sk-ant-oat01-``
+  ``CLAUDE_CODE_OAUTH_TOKEN`` satisfies auth instead. Registry open-weight models
+  are exempt either way (own provider token).
 * ``build_hermetic_session_env`` / ``hermetic_session_option_kwargs`` — the
   ``ClaudeAgentOptions`` env (+ registry session env + thinking) the policy owns.
 * ``assert_hermetic_mcp_servers`` — runtime parity assertion (name-set only).
@@ -37,6 +39,16 @@ from bird_interact_agents.agents.claude_sdk import sdk_env
 
 _ANTHROPIC = "anthropic/claude-sonnet-4-5"
 _REGISTRY = "moonshot/kimi-k2.7-code"  # registry, requires_thinking=True
+_GOOD_OAUTH = "sk-ant-oat01-deadbeef"
+
+
+@pytest.fixture(autouse=True)
+def _clear_subscription_signal(monkeypatch):
+    """DEV-1602: the subscription path is gated ONLY by the explicit
+    ``BIRD_INTERACT_SUBSCRIPTION_AUTH`` signal var (never inferred from which
+    credential survives). Clear it before every test so the API-key path is the
+    deterministic default; subscription-path tests opt in with ``setenv``."""
+    monkeypatch.delenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -64,9 +76,10 @@ def test_config_dir_writes_claude_json_with_no_mcp_servers():
 
 
 def test_config_dir_does_not_copy_credentials():
-    """Subscription/OAuth auth is dead for the Agent SDK (2026-06-15); the
-    hermetic dir must NOT carry a .credentials.json forward — auth goes via
-    ANTHROPIC_API_KEY (process env)."""
+    """The hermetic dir must NOT carry a .credentials.json forward — auth always
+    flows from the process env (ANTHROPIC_API_KEY on the API-key path,
+    CLAUDE_CODE_OAUTH_TOKEN on the DEV-1602 subscription path), never from a
+    copied credential file."""
     val, path = sdk_env.hermetic_claude_config_dir()
     try:
         assert not (path / ".credentials.json").exists()
@@ -101,13 +114,68 @@ def test_api_key_auth_raises_for_anthropic_without_key(monkeypatch):
         sdk_env.assert_api_key_auth(_ANTHROPIC)
 
 
-def test_api_key_auth_raises_on_lone_oauth_token(monkeypatch):
-    """A lone CLAUDE_CODE_OAUTH_TOKEN (subscription auth) does NOT satisfy the
-    API-key requirement — the dead subscription path must hard-fail."""
+def test_api_key_auth_raises_on_lone_oauth_token_without_signal(monkeypatch):
+    """DEV-1602: a lone CLAUDE_CODE_OAUTH_TOKEN does NOT satisfy auth on the
+    API-key path (no BIRD_INTERACT_SUBSCRIPTION_AUTH signal). The operator must
+    opt in to the subscription path explicitly; an ambient OAuth token alone
+    never flips the path."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-deadbeef")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_OAUTH)
     with pytest.raises(sdk_env.ApiKeyAuthError):
         sdk_env.assert_api_key_auth(_ANTHROPIC)
+
+
+def test_api_key_auth_subscription_accepts_valid_oauth(monkeypatch):
+    """DEV-1602: on the subscription path (signal set) a valid sk-ant-oat01-
+    OAuth token satisfies auth WITHOUT ANTHROPIC_API_KEY."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_OAUTH)
+    sdk_env.assert_api_key_auth(_ANTHROPIC)  # no raise
+
+
+def test_api_key_auth_subscription_accepts_oauth_even_with_api_key(monkeypatch):
+    """On the subscription path the OAuth token is authoritative — auth passes
+    even when ANTHROPIC_API_KEY is ALSO present (the precedence trap is
+    neutralised in build_hermetic_session_env, not here)."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_OAUTH)
+    sdk_env.assert_api_key_auth(_ANTHROPIC)  # no raise
+
+
+def test_api_key_auth_subscription_raises_on_missing_oauth(monkeypatch):
+    """Subscription selected but no OAuth token → hard fail (no silent
+    fall-back to the API-key path even if ANTHROPIC_API_KEY is present)."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    with pytest.raises(sdk_env.ApiKeyAuthError):
+        sdk_env.assert_api_key_auth(_ANTHROPIC)
+
+
+def test_api_key_auth_subscription_raises_on_malformed_oauth(monkeypatch):
+    """Subscription selected but the token lacks the sk-ant-oat01- prefix →
+    hard fail (matches the driver/prereqs/actor-invariant validation).
+
+    ANTHROPIC_API_KEY is deliberately PRESENT here: the subscription path must
+    NOT silently fall back to the API key when the OAuth token is malformed
+    (without this, the test would pass under the old API-key-only behavior)."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-api-not-oauth")
+    with pytest.raises(sdk_env.ApiKeyAuthError):
+        sdk_env.assert_api_key_auth(_ANTHROPIC)
+
+
+def test_api_key_auth_subscription_exempts_registry(monkeypatch):
+    """The registry exemption is checked FIRST: a registry model passes with no
+    OAuth token even when the subscription signal is set (the signal is
+    Anthropic-only; registry models auth via their provider token)."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    sdk_env.assert_api_key_auth(_REGISTRY)  # no raise
 
 
 def test_api_key_auth_exempts_registry_model(monkeypatch):
@@ -137,16 +205,78 @@ _TELEMETRY_KEYS = {
 }
 
 
-def test_session_env_anthropic_has_config_dir_and_telemetry_no_registry():
+def test_session_env_anthropic_api_key_path_masks_oauth():
+    """API-key path (no subscription signal): the ambient OAuth token is masked
+    so the SDK is forced onto ANTHROPIC_API_KEY."""
     env = sdk_env.build_hermetic_session_env(_ANTHROPIC, "/tmp/cfgX")
     assert env["CLAUDE_CONFIG_DIR"] == "/tmp/cfgX"
     assert _TELEMETRY_KEYS <= set(env)
-    # Ambient subscription/OAuth token is masked so the SDK is forced onto
-    # ANTHROPIC_API_KEY (subscription auth is dead).
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == ""
+    # The API-key path must NOT mask ANTHROPIC_API_KEY.
+    assert "ANTHROPIC_API_KEY" not in env
     # No registry layering for an Anthropic model.
     assert "ANTHROPIC_BASE_URL" not in env
     assert "ANTHROPIC_AUTH_TOKEN" not in env
+
+
+def test_session_env_subscription_masks_api_key_keeps_oauth(monkeypatch):
+    """DEV-1602 subscription path: ANTHROPIC_API_KEY is masked (so the SDK
+    auth-precedence rule can't bypass the subscription) and CLAUDE_CODE_OAUTH_TOKEN
+    is NOT masked — it inherits from the process env into the subprocess."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    env = sdk_env.build_hermetic_session_env(_ANTHROPIC, "/tmp/cfgSub")
+    assert env["CLAUDE_CONFIG_DIR"] == "/tmp/cfgSub"
+    assert _TELEMETRY_KEYS <= set(env)
+    assert env["ANTHROPIC_API_KEY"] == ""
+    # OAuth token left to inherit (not pinned to "" in the options.env layer).
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
+
+
+def test_session_env_subscription_precedence_trap_both_creds(monkeypatch):
+    """The core precedence trap (Codex finding #4): when the parent process has
+    BOTH a valid OAuth token AND ANTHROPIC_API_KEY, the subscription-path
+    options.env must mask ANTHROPIC_API_KEY (empty string) while leaving the
+    OAuth token to inherit — otherwise the bundled CLI would silently pick the
+    API key and bill credits instead of the subscription."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_OAUTH)
+    env = sdk_env.build_hermetic_session_env(_ANTHROPIC, "/tmp/cfgTrap")
+    assert env["ANTHROPIC_API_KEY"] == ""
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
+
+
+def test_session_env_subscription_signal_ignored_for_registry(monkeypatch):
+    """The subscription signal is Anthropic-only: a registry model still gets
+    the provider layering and BOTH Anthropic creds masked, regardless of the
+    signal (registry exemption wins)."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
+    env = sdk_env.build_hermetic_session_env(_REGISTRY, "/tmp/cfgRegSub")
+    assert env["ANTHROPIC_BASE_URL"] == "https://api.moonshot.ai/anthropic"
+    assert env["ANTHROPIC_AUTH_TOKEN"] == "ms-key-1"
+    assert env["ANTHROPIC_API_KEY"] == ""
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == ""
+
+
+@pytest.mark.parametrize("falsy", ["", "0"])
+def test_session_env_signal_falsy_takes_api_key_path(monkeypatch, falsy):
+    """The signal is truthy ONLY when non-empty and not "0". An empty string or
+    "0" must take the API-key path (mask OAuth, do NOT mask ANTHROPIC_API_KEY)."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", falsy)
+    env = sdk_env.build_hermetic_session_env(_ANTHROPIC, "/tmp/cfgF")
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == ""
+    assert "ANTHROPIC_API_KEY" not in env
+
+
+@pytest.mark.parametrize("truthy", ["1", "true", "yes"])
+def test_session_env_signal_truthy_takes_subscription_path(monkeypatch, truthy):
+    """Any non-empty, non-"0" value selects the subscription path (mask the API
+    key, leave OAuth to inherit)."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", truthy)
+    env = sdk_env.build_hermetic_session_env(_ANTHROPIC, "/tmp/cfgT")
+    assert env["ANTHROPIC_API_KEY"] == ""
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
 
 
 def test_session_env_registry_layers_provider_auth(monkeypatch):
@@ -481,6 +611,49 @@ async def test_session_fails_fast_on_missing_api_key(monkeypatch):
         ):
             pass
     # No client was ever constructed.
+    assert cls.instances == []
+
+
+@pytest.mark.asyncio
+async def test_session_subscription_path_yields_and_masks_api_key(monkeypatch):
+    """DEV-1602: end-to-end through the choke point on the subscription path —
+    a valid OAuth token + signal (and no ANTHROPIC_API_KEY) yields a client
+    whose options.env masks ANTHROPIC_API_KEY and lets the OAuth token inherit."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_OAUTH)
+    _patch_client(monkeypatch)
+    seen = {}
+    async with sdk_env.hermetic_claude_sdk_session(
+        _ANTHROPIC,
+        mcp_servers={"bird-interact-tools": object(), "slayer": object()},
+        build_options=_build_options,
+    ) as client:
+        assert client.entered
+        assert client.options.env["ANTHROPIC_API_KEY"] == ""
+        assert "CLAUDE_CODE_OAUTH_TOKEN" not in client.options.env
+        seen["cfg"] = client.options.env["CLAUDE_CONFIG_DIR"]
+    assert not Path(seen["cfg"]).exists()
+
+
+@pytest.mark.asyncio
+async def test_session_subscription_fails_fast_on_missing_oauth(monkeypatch):
+    """Subscription selected but no OAuth token → assert fires BEFORE any
+    client construction.
+
+    ANTHROPIC_API_KEY is PRESENT to prove there is no silent fall-back to the
+    API-key path: under the subscription signal a missing OAuth token fails even
+    when the API key would otherwise satisfy auth."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    cls = _patch_client(monkeypatch)
+    with pytest.raises(sdk_env.ApiKeyAuthError):
+        async with sdk_env.hermetic_claude_sdk_session(
+            _ANTHROPIC, mcp_servers={"slayer": object()},
+            build_options=_build_options,
+        ):
+            pass
     assert cls.instances == []
 
 

@@ -15,6 +15,7 @@ import sqlite3 as _sqlite3
 from typing import Any as _Any
 
 from bird_interact_agents import paths
+from bird_interact_agents.provider_registry import get_provider
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
 from bird_interact_agents.eval.annotation_schema import SubmissionConfig
@@ -1637,6 +1638,58 @@ def _apply_price_overrides(path: str) -> None:
         }
 
 
+def _apply_subscription_auth_env(
+    *,
+    subscription_auth: bool,
+    framework: str,
+    agent_model: str,
+    error,
+) -> None:
+    """Translate the local ``--subscription-auth`` choice into the
+    ``BIRD_INTERACT_SUBSCRIPTION_AUTH`` signal env var that ``sdk_env`` reads
+    (DEV-1602). Local claude_sdk agents run in-process, so this is the only
+    wiring needed — ``sdk_env`` masks ``ANTHROPIC_API_KEY`` for the SDK
+    subprocess while the parent keeps it for the litellm user-sim.
+
+    ``error`` is a callable (``parser.error``) invoked with a message on misuse.
+    When the flag is off (default), an ambient signal is actively CLEARED so a
+    stray exported ``BIRD_INTERACT_SUBSCRIPTION_AUTH`` cannot hijack the run.
+    The flag is Anthropic-only and claude_sdk-only, mirroring the cloud CLI.
+    """
+    if not subscription_auth:
+        os.environ.pop("BIRD_INTERACT_SUBSCRIPTION_AUTH", None)
+        return
+    if not framework.startswith("claude_sdk"):
+        error(
+            "--subscription-auth only applies to claude_sdk* frameworks; "
+            f"got framework={framework!r}. Other frameworks authenticate via "
+            "their own provider key env var."
+        )
+        return
+    if get_provider(agent_model) is not None:
+        error(
+            f"--subscription-auth is Anthropic-only; {agent_model!r} is a "
+            "registry open-weight model that authenticates via its provider "
+            "key. Omit the flag for registry models."
+        )
+        return
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+    if not token:
+        error(
+            "--subscription-auth requires CLAUDE_CODE_OAUTH_TOKEN to be set "
+            "in the env. Run `claude setup-token`, or omit the flag to use "
+            "the ANTHROPIC_API_KEY path."
+        )
+        return
+    if not token.startswith("sk-ant-oat01-"):
+        error(
+            "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai OAuth token "
+            "(expected sk-ant-oat01- prefix). Re-run `claude setup-token`."
+        )
+        return
+    os.environ["BIRD_INTERACT_SUBSCRIPTION_AUTH"] = "1"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="BIRD-Interact benchmark runner with pluggable agents"
@@ -1730,6 +1783,20 @@ def main() -> None:
         "--slayer-storage-root",
         default="./slayer_storage",
         help="Root dir of per-DB SLayer model stores (only used in --query-mode slayer)",
+    )
+    parser.add_argument(
+        "--subscription-auth",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        dest="subscription_auth",
+        help=(
+            "DEV-1602: authenticate claude_sdk* agents via the Claude.ai "
+            "subscription (CLAUDE_CODE_OAUTH_TOKEN, sk-ant-oat01- prefix) "
+            "instead of ANTHROPIC_API_KEY. Default off (the API-key path). "
+            "Anthropic-only: registry open-weight models reject the flag. "
+            "When on, a valid CLAUDE_CODE_OAUTH_TOKEN must be in the env; the "
+            "user-sim still uses ANTHROPIC_API_KEY as normal."
+        ),
     )
     parser.add_argument(
         "--filter-ids",
@@ -1871,6 +1938,14 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+    # DEV-1602: translate --subscription-auth into the BIRD_INTERACT_SUBSCRIPTION_AUTH
+    # signal env var (or clear an ambient one) before any agent is constructed.
+    _apply_subscription_auth_env(
+        subscription_auth=args.subscription_auth,
+        framework=args.framework,
+        agent_model=args.agent_model,
+        error=parser.error,
+    )
     # DEV-1586: derive the internal slayer_setup from the user-facing flag.
     from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
     args.slayer_setup = derive_slayer_setup(args.pre_encoded_source)

@@ -253,7 +253,14 @@ def check_api_keys(
     # claude_sdk* + subscription auth opted-in → OAuth path. Missing or
     # malformed token = hard failure (no silent fall-back to API key —
     # see `driver.read_api_keys_from_local_env` for the analogous guard).
-    if _is_claude_sdk_framework(framework) and not no_subscription_auth:
+    # DEV-1602 (registry-first): a registry open-weight agent model takes the
+    # provider-key path even with no_subscription_auth=False, so gate the OAuth
+    # branch on the agent model not being a registry model.
+    if (
+        _is_claude_sdk_framework(framework)
+        and not no_subscription_auth
+        and provider_registry.get_provider(agent_model) is None
+    ):
         token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
         if not token:
             raise PrereqError(
