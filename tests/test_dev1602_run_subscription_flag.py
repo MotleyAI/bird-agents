@@ -125,9 +125,10 @@ def _find_add_argument(flag: str):
     return None
 
 
-def test_main_registers_subscription_auth_flag_default_off():
+def test_main_registers_subscription_auth_flag_default_none():
     """main() must register --subscription-auth as a BooleanOptionalAction with
-    default False (local default-off, preserving existing invocations)."""
+    default None (cloud parity: an explicit choice is required for claude_sdk*
+    Anthropic runs — no silent default)."""
     import ast
 
     node = _find_add_argument("--subscription-auth")
@@ -136,8 +137,91 @@ def test_main_registers_subscription_auth_flag_default_off():
     # BooleanOptionalAction (argparse.BooleanOptionalAction attribute access).
     assert "action" in kw
     assert getattr(kw["action"], "attr", None) == "BooleanOptionalAction"
-    # default False.
-    assert isinstance(kw.get("default"), ast.Constant) and kw["default"].value is False
+    # default None (tri-state: True / False / unset).
+    assert isinstance(kw.get("default"), ast.Constant) and kw["default"].value is None
+
+
+def test_subscription_none_on_claude_sdk_anthropic_errors(monkeypatch):
+    """Cloud parity: a claude_sdk* run on an Anthropic agent model with NEITHER
+    --subscription-auth nor --no-subscription-auth (None) must error — no silent
+    default."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_OAUTH)
+    with pytest.raises(_CalledError, match="explicit"):
+        run._apply_subscription_auth_env(
+            subscription_auth=None,
+            framework="claude_sdk_otf",
+            agent_model="anthropic/claude-opus-4-7",
+            error=_err,
+        )
+    import os
+    assert "BIRD_INTERACT_SUBSCRIPTION_AUTH" not in os.environ
+
+
+def test_subscription_none_on_non_claude_sdk_is_off(monkeypatch):
+    """None on a non-claude_sdk framework is fine (defaults off) — the
+    explicit-choice requirement is claude_sdk-only."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    run._apply_subscription_auth_env(
+        subscription_auth=None,
+        framework="pydantic_ai",
+        agent_model="anthropic/claude-opus-4-7",
+        error=_err,
+    )
+    import os
+    assert "BIRD_INTERACT_SUBSCRIPTION_AUTH" not in os.environ
+
+
+def test_subscription_none_on_registry_model_is_off(monkeypatch):
+    """None on a claude_sdk* run with a registry model is fine (registry is
+    Anthropic-only-exempt; defaults off) — no explicit choice required."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    run._apply_subscription_auth_env(
+        subscription_auth=None,
+        framework="claude_sdk_otf",
+        agent_model="moonshot/kimi-k2.7-code",
+        error=_err,
+    )
+    import os
+    assert "BIRD_INTERACT_SUBSCRIPTION_AUTH" not in os.environ
+
+
+def test_main_required_flags_aligned_with_cloud():
+    """Local CLI alignment: --agent-model, --mode, --query-mode are REQUIRED
+    (no default), matching bird-interact-cloud."""
+    import ast
+
+    for flag in ("--agent-model", "--mode", "--query-mode"):
+        node = _find_add_argument(flag)
+        assert node is not None, f"{flag} not registered in run.main"
+        kw = {k.arg: k.value for k in node.keywords}
+        assert "default" not in kw, f"{flag} must not carry a default"
+        req = kw.get("required")
+        assert isinstance(req, ast.Constant) and req.value is True, (
+            f"{flag} must be required=True"
+        )
+
+
+def test_main_value_defaults_aligned_with_cloud():
+    """Local CLI alignment of value-defaults with bird-interact-cloud:
+    --patience=250, --user-sim-model=claude-sonnet-4-6,
+    --use-audited-gold-sql default True via BooleanOptionalAction."""
+    import ast
+
+    pat = _find_add_argument("--patience")
+    pkw = {k.arg: k.value for k in pat.keywords}
+    assert isinstance(pkw["default"], ast.Constant) and pkw["default"].value == 250
+
+    usm = _find_add_argument("--user-sim-model")
+    ukw = {k.arg: k.value for k in usm.keywords}
+    assert (
+        isinstance(ukw["default"], ast.Constant)
+        and ukw["default"].value == "anthropic/claude-sonnet-4-6"
+    )
+
+    aud = _find_add_argument("--use-audited-gold-sql")
+    akw = {k.arg: k.value for k in aud.keywords}
+    assert getattr(akw.get("action"), "attr", None) == "BooleanOptionalAction"
+    assert isinstance(akw.get("default"), ast.Constant) and akw["default"].value is True
 
 
 def test_main_invokes_subscription_auth_helper():
