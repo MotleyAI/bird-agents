@@ -138,10 +138,14 @@ def test_raw_one_shot_v0_no_slayer_vocab() -> None:
 
 
 def test_one_shot_v0_goldens() -> None:
-    from bird_interact_agents.agents._shared_otf_prompts import (
-        RAW_OTF_ONE_SHOT_V0,
-        SLAYER_OTF_ONE_SHOT_V0,
+    # Assert the PUBLIC re-exports (what the v0 agents actually consume), so a
+    # wiring drift in claude_sdk_otf*.prompts is caught alongside the constant.
+    from bird_interact_agents.agents.claude_sdk_otf.prompts import (
+        SLAYER_OTF_ONE_SHOT,
+    )
+    from bird_interact_agents.agents.claude_sdk_otf_raw.prompts import (
+        RAW_OTF_ONE_SHOT,
     )
 
-    assert SLAYER_OTF_ONE_SHOT_V0 == _SLAYER_GOLDEN.read_text()
-    assert RAW_OTF_ONE_SHOT_V0 == _RAW_GOLDEN.read_text()
+    assert SLAYER_OTF_ONE_SHOT == _SLAYER_GOLDEN.read_text()
+    assert RAW_OTF_ONE_SHOT == _RAW_GOLDEN.read_text()

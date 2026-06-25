@@ -43,12 +43,16 @@ def _fields(text: str) -> set[str]:
 # Hard requirement: the SLAYER a-interact v0 prompt must NOT change.
 # ---------------------------------------------------------------------------
 def test_slayer_ainteract_v0_unchanged() -> None:
-    from bird_interact_agents.agents._shared_otf_prompts import SLAYER_OTF_AINTERACT_V0
+    # Public re-export (what the v0 agent consumes) so re-export wiring drift
+    # is caught alongside the constant.
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
+        SLAYER_OTF_AINTERACT,
+    )
 
     expected = _GOLDEN.read_text()
-    assert SLAYER_OTF_AINTERACT_V0 == expected, (
-        "SLAYER_OTF_AINTERACT_V0 changed — DEV-1603 must not alter the slayer "
-        f"prompt (len now={len(SLAYER_OTF_AINTERACT_V0)}, golden={len(expected)})."
+    assert SLAYER_OTF_AINTERACT == expected, (
+        "SLAYER_OTF_AINTERACT changed — DEV-1603 must not alter the slayer "
+        f"prompt (len now={len(SLAYER_OTF_AINTERACT)}, golden={len(expected)})."
     )
 
 
@@ -123,12 +127,14 @@ def test_raw_ainteract_v0_matches_golden() -> None:
     """Byte-preservation lock: raw v0 == today's raw + exactly the planned
     inserted blocks (golden authored during implementation, eyeball-diffed
     against the pre-change raw)."""
-    from bird_interact_agents.agents._shared_otf_prompts import RAW_OTF_AINTERACT_V0
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw.prompts import (
+        RAW_OTF_AINTERACT,
+    )
 
     expected = _RAW_GOLDEN.read_text()
-    assert RAW_OTF_AINTERACT_V0 == expected, (
-        f"RAW_OTF_AINTERACT_V0 drifted from golden "
-        f"(len now={len(RAW_OTF_AINTERACT_V0)}, golden={len(expected)})."
+    assert RAW_OTF_AINTERACT == expected, (
+        f"RAW_OTF_AINTERACT drifted from golden "
+        f"(len now={len(RAW_OTF_AINTERACT)}, golden={len(expected)})."
     )
 
 
