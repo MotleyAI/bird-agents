@@ -45,10 +45,14 @@ def test_table_set_probe_renders_with_knowledge_label_kb() -> None:
     cleanly for slayer-mode 'KB'."""
     from bird_interact_agents.agents._shared_otf_prompts import _TABLE_SET_PROBE
 
-    rendered = _TABLE_SET_PROBE.format(knowledge_label="KB")
+    # DEV-1603: the probe is now also parameterised by `{schema_source}` so
+    # raw mode can fill it without leaking "SLayer"; the slayer fill below
+    # reproduces today's rendered text.
+    rendered = _TABLE_SET_PROBE.format(
+        knowledge_label="KB", schema_source="SLayer's schema lookup"
+    )
     assert "{" not in re.sub(r"\{[^a-zA-Z_]", "", rendered), (
-        f"unsubstituted `{{...}}` after .format(knowledge_label='KB'): "
-        f"{rendered!r}"
+        f"unsubstituted `{{...}}` after .format(): {rendered!r}"
     )
 
 
@@ -57,7 +61,11 @@ def test_grader_zero_vs_one_diagnostic_renders_with_knowledge_label_kb() -> None
         _GRADER_ZERO_VS_ONE_DIAGNOSTIC,
     )
 
-    rendered = _GRADER_ZERO_VS_ONE_DIAGNOSTIC.format(knowledge_label="KB")
+    # DEV-1603: parameterised by `{attempt_noun}`/`{apply_verb}` for raw mode;
+    # slayer fill reproduces today's text.
+    rendered = _GRADER_ZERO_VS_ONE_DIAGNOSTIC.format(
+        attempt_noun="encoding", apply_verb="encode"
+    )
     assert "{" not in re.sub(r"\{[^a-zA-Z_]", "", rendered)
 
 
@@ -74,8 +82,12 @@ def test_blocks_stitched_into_slayer_ainteract() -> None:
         SLAYER_OTF_AINTERACT,
     )
 
-    rendered_table_set = _TABLE_SET_PROBE.format(knowledge_label="KB")
-    rendered_diag = _GRADER_ZERO_VS_ONE_DIAGNOSTIC.format(knowledge_label="KB")
+    rendered_table_set = _TABLE_SET_PROBE.format(
+        knowledge_label="KB", schema_source="SLayer's schema lookup"
+    )
+    rendered_diag = _GRADER_ZERO_VS_ONE_DIAGNOSTIC.format(
+        attempt_noun="encoding", apply_verb="encode"
+    )
     assert rendered_table_set in SLAYER_OTF_AINTERACT, (
         "_TABLE_SET_PROBE not stitched into SLAYER_OTF_AINTERACT"
     )
@@ -99,8 +111,12 @@ def test_blocks_stitched_into_slayer_one_shot() -> None:
         SLAYER_OTF_ONE_SHOT,
     )
 
-    rendered_table_set = _TABLE_SET_PROBE.format(knowledge_label="KB")
-    rendered_diag = _GRADER_ZERO_VS_ONE_DIAGNOSTIC.format(knowledge_label="KB")
+    rendered_table_set = _TABLE_SET_PROBE.format(
+        knowledge_label="KB", schema_source="SLayer's schema lookup"
+    )
+    rendered_diag = _GRADER_ZERO_VS_ONE_DIAGNOSTIC.format(
+        attempt_noun="encoding", apply_verb="encode"
+    )
     assert rendered_table_set in SLAYER_OTF_ONE_SHOT, (
         "_TABLE_SET_PROBE not stitched into SLAYER_OTF_ONE_SHOT"
     )
