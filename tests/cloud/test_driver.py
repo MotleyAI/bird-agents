@@ -1340,6 +1340,21 @@ def test_read_api_keys_registry_missing_provider_key_raises(monkeypatch):
         )
 
 
+def test_read_api_keys_non_anthropic_non_registry_subscription_rejected(monkeypatch):
+    """CodeRabbit: --subscription-auth is Anthropic-only. A claude_sdk*
+    subscription run on a non-Anthropic, non-registry model (openai/*) is
+    rejected rather than wrongly taking the OAuth path."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("OPENAI_API_KEY", _OPENAI_KEY)
+    with pytest.raises(driver.PrereqError, match="Anthropic-only"):
+        driver.read_api_keys_from_local_env(
+            "openai/gpt-4o",
+            "anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+            no_subscription_auth=False,
+        )
+
+
 @pytest.mark.parametrize("no_sub", [False, True])
 @pytest.mark.parametrize("bad_model", ["moonshot/kimi-k2.7-code", "openai/gpt-4o"])
 def test_read_api_keys_annotator_rejects_non_anthropic_model(

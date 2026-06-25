@@ -44,13 +44,13 @@ pip install -e ".[claude-sdk,dev]"
 # CLAUDE_CODE_OAUTH_TOKEN) or `--no-subscription-auth` (ANTHROPIC_API_KEY).
 ```bash
 # Validate eval pipeline (submits ground-truth SQL, no LLM)
-bird-interact --dataset mini-interact --framework claude_sdk --mode oracle \
+uv run bird-interact --dataset mini-interact --framework claude_sdk --mode oracle \
   --query-mode raw --agent-model anthropic/claude-opus-4-7 --no-subscription-auth \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/
 
 # Run with Claude Agent SDK, raw SQL mode (API-key auth)
-bird-interact --dataset mini-interact --framework claude_sdk --query-mode raw --mode a-interact \
+uv run bird-interact --dataset mini-interact --framework claude_sdk --query-mode raw --mode a-interact \
   --agent-model anthropic/claude-opus-4-7 --no-subscription-auth \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/ \
@@ -58,7 +58,7 @@ bird-interact --dataset mini-interact --framework claude_sdk --query-mode raw --
 
 # Run with SLayer mode (KB encoded on the fly) using the Claude.ai subscription
 # (requires a valid CLAUDE_CODE_OAUTH_TOKEN in the env)
-bird-interact --dataset mini-interact --framework claude_sdk --query-mode slayer --mode a-interact \
+uv run bird-interact --dataset mini-interact --framework claude_sdk --query-mode slayer --mode a-interact \
   --agent-model anthropic/claude-opus-4-7 --subscription-auth \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/
@@ -99,7 +99,7 @@ need. For LiveSQLBench one-shot, pass `--dataset livesqlbench-base-lite-sqlite
 --mode one-shot`. Recommended `--reasoning-effort high` (the smoke / baseline default).
 
 ```bash
-bird-interact --framework claude_sdk --query-mode slayer \
+uv run bird-interact --framework claude_sdk --query-mode slayer \
   --dataset livesqlbench-base-lite-sqlite --mode one-shot \
   --agent-model anthropic/claude-opus-4-7 --no-subscription-auth \
   --reasoning-effort high \
@@ -157,7 +157,7 @@ the visible KB alone), and a nag fires every 10 tool calls until the
 first ask. Recommended `--reasoning-effort high`.
 
 ```bash
-bird-interact --framework claude_sdk --query-mode slayer \
+uv run bird-interact --framework claude_sdk --query-mode slayer \
   --dataset mini-interact --mode a-interact \
   --agent-model anthropic/claude-opus-4-7 --no-subscription-auth \
   --reasoning-effort high \
@@ -211,7 +211,7 @@ the committed-reference `pydantic_ai` consumer does.
 
 ```bash
 # Local — one-shot livesqlbench against the OTF-encoded reference
-bird-interact --framework claude_sdk --query-mode slayer \
+uv run bird-interact --framework claude_sdk --query-mode slayer \
   --dataset livesqlbench-base-lite-sqlite --mode one-shot \
   --pre-encoded-models otf \
   --agent-model anthropic/claude-opus-4-7 --no-subscription-auth --reasoning-effort high \

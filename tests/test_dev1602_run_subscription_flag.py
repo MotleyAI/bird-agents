@@ -171,6 +171,36 @@ def test_subscription_none_on_non_claude_sdk_is_off(monkeypatch):
     assert "BIRD_INTERACT_SUBSCRIPTION_AUTH" not in os.environ
 
 
+def test_subscription_on_non_anthropic_non_registry_model_errors(monkeypatch):
+    """CodeRabbit: --subscription-auth is Anthropic-ONLY. A non-Anthropic,
+    non-registry model (openai/*) + claude_sdk + --subscription-auth must be
+    rejected — not slip through onto the OAuth path."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_OAUTH)
+    with pytest.raises(_CalledError, match="Anthropic-only"):
+        run._apply_subscription_auth_env(
+            subscription_auth=True,
+            framework="claude_sdk_otf",
+            agent_model="openai/gpt-4o",
+            error=_err,
+        )
+    import os
+    assert "BIRD_INTERACT_SUBSCRIPTION_AUTH" not in os.environ
+
+
+def test_subscription_none_on_non_anthropic_model_is_off(monkeypatch):
+    """None + claude_sdk + a non-Anthropic model: the explicit-choice
+    requirement is Anthropic-only, so None is fine (defaults off)."""
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    run._apply_subscription_auth_env(
+        subscription_auth=None,
+        framework="claude_sdk_otf",
+        agent_model="openai/gpt-4o",
+        error=_err,
+    )
+    import os
+    assert "BIRD_INTERACT_SUBSCRIPTION_AUTH" not in os.environ
+
+
 def test_subscription_none_on_registry_model_is_off(monkeypatch):
     """None on a claude_sdk* run with a registry model is fine (registry is
     Anthropic-only-exempt; defaults off) — no explicit choice required."""

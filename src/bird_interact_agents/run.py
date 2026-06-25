@@ -1661,17 +1661,20 @@ def _apply_subscription_auth_env(
     The flag is Anthropic-only and claude_sdk-only.
     """
     is_claude_sdk = framework.startswith("claude_sdk")
-    is_registry = get_provider(agent_model) is not None
+    # The flag is Anthropic-ONLY: gate on the model being anthropic/*, NOT merely
+    # "not a registry model" — otherwise a non-Anthropic non-registry model
+    # (openai/*, gemini/*) would slip through onto the OAuth path (CodeRabbit).
+    is_anthropic = agent_model.startswith("anthropic/")
     # Explicit-choice requirement (cloud parity): claude_sdk* + Anthropic model
     # must pass --subscription-auth or --no-subscription-auth.
-    if is_claude_sdk and not is_registry and subscription_auth is None:
+    if is_claude_sdk and is_anthropic and subscription_auth is None:
         error(
             "an explicit --subscription-auth / --no-subscription-auth choice is "
             "required for claude_sdk* runs on an Anthropic agent model (no "
             "default, to prevent a silent fall-back to the API-key path)."
         )
         return
-    if not subscription_auth:  # None (non-claude_sdk / registry) or False → off
+    if not subscription_auth:  # None (non-claude_sdk / non-Anthropic) or False → off
         os.environ.pop("BIRD_INTERACT_SUBSCRIPTION_AUTH", None)
         return
     if not is_claude_sdk:
@@ -1681,11 +1684,11 @@ def _apply_subscription_auth_env(
             "their own provider key env var."
         )
         return
-    if is_registry:
+    if not is_anthropic:
         error(
-            f"--subscription-auth is Anthropic-only; {agent_model!r} is a "
-            "registry open-weight model that authenticates via its provider "
-            "key. Omit the flag for registry models."
+            f"--subscription-auth is Anthropic-only; got non-Anthropic agent "
+            f"model {agent_model!r} (registry open-weight models use their "
+            "provider key; omit the flag for them)."
         )
         return
     token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")

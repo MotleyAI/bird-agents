@@ -261,13 +261,32 @@ def check_api_keys(
             f"{agent_model!r}.",
             remediation="pass an anthropic/* --agent-model for annotate.",
         )
+    # DEV-1602 (CodeRabbit): --subscription-auth is Anthropic-ONLY. Reject a
+    # claude_sdk* subscription run on a non-Anthropic, non-registry model
+    # (openai/*, gemini/*) — otherwise the OAuth branch below (gated only on
+    # "not a registry model") would wrongly require CLAUDE_CODE_OAUTH_TOKEN for it.
+    if (
+        _is_claude_sdk_framework(framework)
+        and not no_subscription_auth
+        and provider_registry.get_provider(agent_model) is None
+        and not agent_model.startswith("anthropic/")
+    ):
+        raise PrereqError(
+            f"--subscription-auth is Anthropic-only; got non-Anthropic agent "
+            f"model {agent_model!r}.",
+            remediation=(
+                "pass an anthropic/* --agent-model for subscription auth, use a "
+                "registry model (provider-key path), or pass --no-subscription-auth."
+            ),
+        )
     # claude_sdk* + subscription auth opted-in → OAuth path. Missing or
     # malformed token = hard failure (no silent fall-back to API key —
     # see `driver.read_api_keys_from_local_env` for the analogous guard).
     # DEV-1602 (registry-first): a registry open-weight agent model takes the
     # provider-key path even with no_subscription_auth=False, so gate the OAuth
-    # branch on the agent model not being a registry model. (The annotator is
-    # already handled by the Anthropic-only guard above.)
+    # branch on the agent model not being a registry model. (Non-Anthropic
+    # non-registry models are rejected by the Anthropic-only guard above; the
+    # annotator by the guard at the top.)
     if (
         _is_claude_sdk_framework(framework)
         and not no_subscription_auth

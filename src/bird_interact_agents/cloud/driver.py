@@ -186,12 +186,34 @@ def read_api_keys_from_local_env(
     # MagicMock; with the attribute access, `prereqs._is_claude_sdk_framework`
     # becomes a truthy mock and the OAuth path fires for every framework,
     # masking real test failures. The direct-name import is mock-safe.
+    # DEV-1602 (CodeRabbit): --subscription-auth is Anthropic-ONLY. A claude_sdk*
+    # subscription run on a non-Anthropic, non-registry model (openai/*,
+    # gemini/*) must be rejected — otherwise the OAuth branch below (gated only on
+    # "not a registry model") would wrongly require/forward CLAUDE_CODE_OAUTH_TOKEN
+    # for it. Registry models are excluded here (get_provider is not None) and
+    # take the provider-key branch.
+    if (
+        _is_claude_sdk_framework(framework)
+        and not no_subscription_auth
+        and provider_registry.get_provider(agent_model) is None
+        and not agent_model.startswith("anthropic/")
+    ):
+        raise PrereqError(
+            f"--subscription-auth is Anthropic-only; got non-Anthropic agent "
+            f"model {agent_model!r}.",
+            remediation=(
+                "pass an anthropic/* --agent-model for subscription auth, use a "
+                "registry model (provider-key path), or pass --no-subscription-auth."
+            ),
+        )
+
     # DEV-1602 (registry-first): a registry open-weight agent model authenticates
     # via its provider key, NEVER OAuth — gate the OAuth branch on the agent
     # model not being a registry model so a programmatic/resubmit caller passing
     # no_subscription_auth=False for a registry model falls through to the
-    # provider-key branch instead of demanding an OAuth token. (The annotator is
-    # already handled by the Anthropic-only guard above.)
+    # provider-key branch instead of demanding an OAuth token. (Non-Anthropic
+    # non-registry models are already rejected by the Anthropic-only guard above;
+    # the annotator by the guard at the top.)
     if (
         _is_claude_sdk_framework(framework)
         and not no_subscription_auth
