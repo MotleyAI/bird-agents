@@ -68,10 +68,21 @@ _MAX_TURNS = 2 * MAX_MODEL_TURNS
 # 1 initial attempt + up to 3 corrective re-prompts.
 MAX_ENCODE_ATTEMPTS = 4
 
-# Per-attempt receive backstop (mirrors DiscoveryChannel's 600s): the per-build
-# lock is held across the whole session, so a hung stream would otherwise block
-# every later KB. A timeout converts the hang into a per-KB ``status="error"``.
-ENCODE_ATTEMPT_TIMEOUT_S = 600.0
+# Per-attempt receive backstop. The per-build lock is held across the whole
+# session, so a hung stream would otherwise block every later KB. A timeout
+# converts the hang into a per-KB ``status="error"``. 300s (was 600s): the
+# submit-or-defer nudge below converts most strugglers into a clean defer well
+# before this, so the cap only catches genuine hangs (DEV-1589 smoke diagnosis).
+ENCODE_ATTEMPT_TIMEOUT_S = 300.0
+
+# Soft turn budget for the submit-or-defer nudge (NOT the hard ``max_turns``=120
+# cap). The DEV-1589 glm-5.2 smoke showed a healthy encode needs ~10 tool calls,
+# while the KBs that timed out looped 40-70+ tool calls WITHOUT ever calling
+# submit_encoding (neither encode nor defer) — the hard turn cap (120) sits above
+# even that, so a nudge keyed to it never fires before the wall-clock timeout.
+# Once a KB crosses this soft budget, EVERY subsequent turn nudges it to submit
+# (encode) or defer, converting dead-end loops into clean deferrals.
+_NUDGE_TURN_BUDGET = 35
 
 # SLayer MCP tools the encoder may call. `save_memory` is REQUIRED (the agent
 # wires its own KB memory); `query_nested` lets it self-test a multi-stage DAG.
@@ -157,6 +168,39 @@ async def submit_encoding(args: dict) -> dict:
 
 def allowed_tool_names() -> list[str]:
     return [f"mcp__slayer__{t}" for t in SLAYER_MCP_TOOLS] + [NATIVE_TOOL_NAME]
+
+
+def _make_submit_or_defer_nudge(soft_budget: int = _NUDGE_TURN_BUDGET):
+    """PostToolUse hook: once a single KB has spent more than ``soft_budget``
+    tool calls (far more than a normal encoding needs), nudge the model on EVERY
+    subsequent turn to STOP exploring and call ``submit_encoding`` — encode if it
+    can, otherwise DEFER. Counts its own invocations (≈ one per turn), so it is
+    per-KB self-contained. Sustained (not a one-shot window) so the pressure
+    holds until the model actually submits (DEV-1589 smoke diagnosis: the timed-
+    out KBs looped without ever submitting)."""
+    state = {"calls": 0}
+
+    async def _hook(input_data, tool_use_id, context):
+        state["calls"] += 1
+        if state["calls"] < soft_budget:
+            return {}
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": (
+                    f"[BUDGET] You have made {state['calls']} tool calls on this "
+                    "single KB — already far more than a normal encoding needs. "
+                    "STOP exploring. EITHER (a) write the entity/entities now "
+                    f"(tag meta.kb_id={{kb}}) and call submit_encoding with "
+                    "status='encoded'; OR (b) if you cannot confidently pin this "
+                    "KB down, call submit_encoding with status='deferred' and your "
+                    "clarifying_questions. A deferred KB is an ACCEPTABLE outcome; "
+                    "an un-submitted KB is recorded as an error."
+                ),
+            }
+        }
+
+    return _hook
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +289,11 @@ def make_claude_sdk_build_encoder(
                     "PreToolUse": [HookMatcher(
                         matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
                         hooks=[_normalize_write_tool_filters_hook],
+                    )],
+                    # Fresh per-KB nudge state (build_options is invoked once per
+                    # KB session, so the counter resets each KB).
+                    "PostToolUse": [HookMatcher(
+                        hooks=[_make_submit_or_defer_nudge()],
                     )],
                 },
             )

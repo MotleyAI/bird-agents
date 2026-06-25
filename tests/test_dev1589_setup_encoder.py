@@ -450,6 +450,20 @@ async def test_hermetic_session_gets_real_mcp_servers(tmp_path, monkeypatch):
     assert "slayer" in servers and "bird-interact-tools" in servers
 
 
+async def test_submit_or_defer_nudge_fires_after_budget():
+    """The PostToolUse nudge stays silent under the soft budget, then fires on
+    EVERY turn after it, telling the model to submit (encode) or defer."""
+    hook = se._make_submit_or_defer_nudge(soft_budget=5)
+    for _ in range(4):                       # calls 1..4 → silent
+        assert await hook({}, None, None) == {}
+    out = await hook({}, None, None)         # call 5 → nudge
+    ctx = out["hookSpecificOutput"]["additionalContext"]
+    assert "submit_encoding" in ctx and "deferred" in ctx
+    # sustained: still nudges on the next turn
+    out2 = await hook({}, None, None)
+    assert "submit_encoding" in out2["hookSpecificOutput"]["additionalContext"]
+
+
 async def test_transcript_persisted_to_session_file(tmp_path, monkeypatch):
     """The per-KB transcript captured by the wrapper proxy (here simulated on
     the fake client) is written into the session `.json` file."""
