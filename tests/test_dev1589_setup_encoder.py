@@ -450,23 +450,48 @@ async def test_hermetic_session_gets_real_mcp_servers(tmp_path, monkeypatch):
     assert "slayer" in servers and "bird-interact-tools" in servers
 
 
-async def test_deps_block_includes_dependency_detail(tmp_path):
-    """The deps block must hand the model each encoded dependency's kind/host/
-    name + its stored formula + the dep's notes, so it can reference by name
-    without re-discovering via search/inspect (DEV-1589 smoke fix)."""
-    await _seed(tmp_path, kb_id=7)  # seeds `orders` with measure premium_revenue (kb_id 4)
-    dep = EncoderResult(
+def _dep_kb4_measure():
+    return EncoderResult(
         kb_id=4, status="encoded",
         entities=[EncodedEntity(kind="measure", host_model=MODEL,
                                 name="premium_revenue",
                                 entity_ref=f"{DB}.{MODEL}.premium_revenue")],
         notes="Sum of order amounts for premium-tier orders.",
     )
-    block = await se._format_deps_block([dep], tmp_path, DB)
-    assert "KB 4" in block
-    assert "premium_revenue" in block            # the entity name
-    assert "amount:sum" in block                 # the stored formula (detail)
-    assert "premium-tier orders" in block        # the dep's encode notes
+
+
+async def test_deps_block_uses_inspect_compact_false_when_available(tmp_path, monkeypatch):
+    """When slayer's inspect() is available, the deps block hands the model the
+    inspect(compact=False) rendering of each created dependency entity."""
+    await _seed(tmp_path, kb_id=7)
+    captured = {}
+
+    class _FakeInspectService:
+        def __init__(self, *, storage, engine=None):
+            self._storage = storage
+
+        async def inspect(self, *, reference, entity_type, compact, **kw):
+            captured["compact"] = compact
+            captured["entity_type"] = entity_type
+            return f"INSPECT_RENDER for {reference}"
+
+    monkeypatch.setattr(se, "_load_inspect_service", lambda: _FakeInspectService)
+    block = await se._format_deps_block([_dep_kb4_measure()], tmp_path, DB)
+    assert captured["compact"] is False                 # full detail requested
+    assert captured["entity_type"] == "measure"         # kind -> entity_type
+    assert f"INSPECT_RENDER for {DB}.{MODEL}.premium_revenue" in block
+    assert "premium-tier orders" in block               # dep notes still included
+
+
+async def test_deps_block_falls_back_to_storage_read_without_inspect(tmp_path, monkeypatch):
+    """On a slayer that predates inspect() (pinned 0.8.1), the deps block falls
+    back to a storage-read formula summary."""
+    await _seed(tmp_path, kb_id=7)
+    monkeypatch.setattr(se, "_load_inspect_service", lambda: None)
+    block = await se._format_deps_block([_dep_kb4_measure()], tmp_path, DB)
+    assert "premium_revenue" in block        # the entity name
+    assert "amount:sum" in block             # the stored formula (fallback detail)
+    assert "premium-tier orders" in block    # the dep's encode notes
 
 
 async def test_deps_block_empty_is_none(tmp_path):

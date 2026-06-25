@@ -515,38 +515,69 @@ def _append_index_row(index_rows, sessions_dir, kb_id, result, duration_s,
 
 
 async def _format_deps_block(encoded_deps, build_dir, db) -> str:
-    """Render each already-encoded DECLARED dependency with enough DETAIL that
-    the model can reference it BY NAME without re-discovering it via
-    search/inspect.
+    """Render each already-encoded DECLARED dependency with the FULL detail of
+    its CREATED ENTITIES, so the model can reference them BY NAME without
+    re-discovering them via search/inspect.
 
     DEV-1589 smoke: the KBs that timed out looped on search/inspect of their own
-    dependencies — and SLayer's default (compact) search returns bare refs with a
-    1-line description, so the model had to drill in repeatedly. Handing it the
-    dep's kind/host/name + the stored formula/SQL + the dep's encode notes
-    up-front removes that whole exploration round-trip.
+    dependencies — SLayer's default (compact) search returns bare refs, so the
+    model had to drill in repeatedly. We hand it, up-front, SLayer's own
+    ``inspect(compact=False)`` rendering for each dependency entity (DEV-1588 —
+    the canonical single-entity point-lookup), exactly what it would get by
+    inspecting the entity itself. On a slayer that predates ``inspect`` (bird-
+    agents pins motley-slayer 0.8.1 until that release reaches PyPI) we fall back
+    to a storage-read formula/SQL summary.
     """
     if not encoded_deps:
         return "(none)"
     storage = YAMLStorage(base_dir=str(build_dir))
-    lines: list[str] = []
+    blocks: list[str] = []
     for dep in sorted(encoded_deps, key=lambda d: d.kb_id):
-        lines.append(
-            f"KB {dep.kb_id} is ALREADY ENCODED — reference it by name, do NOT "
-            f"re-derive it:"
-        )
+        parts = [
+            f"### KB {dep.kb_id} is ALREADY ENCODED — reference these entities "
+            f"BY NAME, do NOT re-derive them:"
+        ]
         for e in dep.entities:
-            defn = await _entity_definition(e, storage, db)
-            host = e.host_model or "(query-backed model)"
-            lines.append(f"  - {e.kind} `{e.name}` on `{host}` (ref `{e.entity_ref}`){defn}")
+            detail = await _inspect_entity_detail(e, storage, db)
+            parts.append(f"Entity `{e.entity_ref}` ({e.kind}):\n{detail}")
         notes = (dep.notes or "").strip()
         if notes:
-            lines.append(f"    notes: {notes[:240]}")
-    return "\n".join(lines)
+            parts.append(f"(its encode notes: {notes[:240]})")
+        blocks.append("\n".join(parts))
+    return "\n\n".join(blocks)
+
+
+def _load_inspect_service():
+    """Return slayer's ``InspectService`` class, or None when the installed
+    slayer predates it (DEV-1588). Indirection point so both branches are
+    testable regardless of the installed slayer version."""
+    try:
+        from slayer.inspect.service import InspectService
+
+        return InspectService
+    except ImportError:
+        return None
+
+
+async def _inspect_entity_detail(ent, storage, db) -> str:
+    """SLayer ``inspect(compact=False)`` rendering of one encoded entity — the
+    same detail the agent would get by inspecting it. Falls back to a storage-
+    read formula/SQL summary when ``inspect`` is unavailable or errors (it must
+    never break the encode)."""
+    service_cls = _load_inspect_service()
+    if service_cls is not None:
+        try:
+            return await service_cls(storage=storage).inspect(
+                reference=ent.entity_ref, entity_type=ent.kind, compact=False,
+            )
+        except Exception:  # noqa: BLE001 — inspect must never break the encode
+            pass
+    return await _entity_definition(ent, storage, db)
 
 
 async def _entity_definition(ent, storage, db) -> str:
-    """Best-effort: the stored formula/SQL of an encoded entity, so the deps
-    block shows WHAT each dependency computes (not just its name)."""
+    """Fallback (pre-inspect slayer): the stored formula/SQL of an encoded
+    entity, so the deps block still shows WHAT each dependency computes."""
     try:
         host = ent.name if ent.kind == "model" else ent.host_model
         if host is None:
