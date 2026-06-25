@@ -182,6 +182,8 @@ def _argv(framework, mode, dataset, *, tmp_path, gold_file=None,
     data_file.write_text("")
     argv = [
         "prog",
+        "--agent-model", "anthropic/claude-sonnet-4-5",
+        "--no-subscription-auth",
         "--framework", framework,
         "--query-mode", "slayer",
         "--mode", mode,

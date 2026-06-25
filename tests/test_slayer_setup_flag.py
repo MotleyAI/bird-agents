@@ -30,6 +30,10 @@ def _argv_base(tmp_path: Path) -> list[str]:
     return [
         "bird-interact",
         "--dataset", "mini-interact",
+        # --agent-model is REQUIRED since the cloud-alignment change.
+        "--agent-model", "anthropic/claude-sonnet-4-5",
+        # claude_sdk* + Anthropic requires an explicit subscription-auth choice.
+        "--no-subscription-auth",
         "--data", str(data),
         "--db-path", str(db_path),
         "--output", str(tmp_path / "out.json"),
@@ -261,6 +265,8 @@ def _otf_argv(tmp_path: Path, *extra: str) -> list[str]:
     return [
         "bird-interact",
         "--dataset", "mini-interact",
+        "--agent-model", "anthropic/claude-sonnet-4-5",
+        "--no-subscription-auth",
         "--data", str(data),
         "--db-path", str(db_path),
         "--output", str(tmp_path / "out.json"),

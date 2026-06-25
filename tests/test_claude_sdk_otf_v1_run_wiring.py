@@ -140,6 +140,8 @@ def test_cli_accepts_claude_sdk_v1_with_pre_encoded(monkeypatch, tmp_path):
     data_file.write_text("")
     argv = [
         "prog",
+        "--agent-model", "anthropic/claude-sonnet-4-5",
+        "--no-subscription-auth",
         "--framework", "claude_sdk_v1",
         "--pre-encoded-models", "otf",
         "--query-mode", "slayer",

@@ -418,17 +418,25 @@ call site (the 8 OTF agents + the annotator) uses it, and **any new
 `claude_sdk*` agent MUST too** — do NOT hand-build `ClaudeAgentOptions.env`
 or `ClaudeSDKClient(...)` directly. The helper owns, in one place:
 
-1. **API-key auth** (`assert_api_key_auth`): claude_sdk agents authenticate
-   via `ANTHROPIC_API_KEY` (Anthropic) or their registry provider token.
-   Claude.ai subscription / OAuth auth was disabled for the Agent SDK on
-   2026-06-15 — a lone `CLAUDE_CODE_OAUTH_TOKEN` hard-fails. (Follow-ups:
-   DEV-1582 retires the `--subscription-auth` machinery; DEV-1583 renames
-   the registry Bearer var.)
+1. **Auth** (`assert_api_key_auth`): two paths, chosen by an EXPLICIT operator
+   signal (`BIRD_INTERACT_SUBSCRIPTION_AUTH`), never inferred from which
+   credential happens to be present. Default (API-key) path: authenticate via
+   `ANTHROPIC_API_KEY` (Anthropic) or the registry provider token. Subscription
+   path (DEV-1602, signal set): authenticate via a Claude.ai OAuth token
+   (`CLAUDE_CODE_OAUTH_TOKEN`, `sk-ant-oat01-` prefix) — a missing/malformed
+   token hard-fails with NO silent fall-back to the API key. The registry
+   exemption is checked FIRST, so the signal (Anthropic-only) is inert for
+   registry models. The cloud driver sets the signal on the actor env when
+   `--subscription-auth` is chosen; the local `run.py --subscription-auth`
+   (default off) sets it in-process. (DEV-1602 supersedes DEV-1582, which would
+   have retired the `--subscription-auth` machinery; DEV-1583 still renames the
+   registry Bearer var.)
 2. **Hermetic `CLAUDE_CONFIG_DIR`**: a fresh empty temp dir whose
    `.claude.json` declares no `mcpServers` (so only the explicit
    `mcp_servers` load) and pre-accepts onboarding/trust so the
    non-interactive CLI never blocks. No `.credentials.json` is copied —
-   auth flows from the env, never from the dead subscription credential.
+   auth always flows from the env (`ANTHROPIC_API_KEY` or, on the subscription
+   path, `CLAUDE_CODE_OAUTH_TOKEN`), never from a copied credential file.
 3. **Provider session env + thinking** for registry open-weight models
    (`provider_aware=True`, the default). Pass `provider_aware=False` for an
    Anthropic-only agent (the annotator) so a stray registry model can't

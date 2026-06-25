@@ -158,6 +158,19 @@ def read_api_keys_from_local_env(
 ) -> dict[str, str]:
     import os
 
+    # DEV-1602 (Codex): the `annotator` framework runs Anthropic-only
+    # (provider_aware=False) at runtime, so ANY non-Anthropic agent model
+    # (registry open-weight, openai/*, gemini/*, …) is unusable there. Reject it
+    # EARLY (consistently across every no_subscription_auth value) instead of
+    # letting it fall into the OAuth or provider-key branches below — annotate
+    # has no other model-provider guard.
+    if framework == "annotator" and not agent_model.startswith("anthropic/"):
+        raise PrereqError(
+            f"the annotator is Anthropic-only; got non-Anthropic agent model "
+            f"{agent_model!r}.",
+            remediation="pass an anthropic/* --agent-model for annotate.",
+        )
+
     # claude_sdk* + subscription auth opted-in (no_subscription_auth=False)
     # → OAuth path. Ship the token and rename the user-sim Anthropic key so
     # the SDK cannot see ANTHROPIC_API_KEY and is forced to use the OAuth
@@ -173,7 +186,39 @@ def read_api_keys_from_local_env(
     # MagicMock; with the attribute access, `prereqs._is_claude_sdk_framework`
     # becomes a truthy mock and the OAuth path fires for every framework,
     # masking real test failures. The direct-name import is mock-safe.
-    if _is_claude_sdk_framework(framework) and not no_subscription_auth:
+    # DEV-1602 (CodeRabbit): --subscription-auth is Anthropic-ONLY. A claude_sdk*
+    # subscription run on a non-Anthropic, non-registry model (openai/*,
+    # gemini/*) must be rejected — otherwise the OAuth branch below (gated only on
+    # "not a registry model") would wrongly require/forward CLAUDE_CODE_OAUTH_TOKEN
+    # for it. Registry models are excluded here (get_provider is not None) and
+    # take the provider-key branch.
+    if (
+        _is_claude_sdk_framework(framework)
+        and not no_subscription_auth
+        and provider_registry.get_provider(agent_model) is None
+        and not agent_model.startswith("anthropic/")
+    ):
+        raise PrereqError(
+            f"--subscription-auth is Anthropic-only; got non-Anthropic agent "
+            f"model {agent_model!r}.",
+            remediation=(
+                "pass an anthropic/* --agent-model for subscription auth, use a "
+                "registry model (provider-key path), or pass --no-subscription-auth."
+            ),
+        )
+
+    # DEV-1602 (registry-first): a registry open-weight agent model authenticates
+    # via its provider key, NEVER OAuth — gate the OAuth branch on the agent
+    # model not being a registry model so a programmatic/resubmit caller passing
+    # no_subscription_auth=False for a registry model falls through to the
+    # provider-key branch instead of demanding an OAuth token. (Non-Anthropic
+    # non-registry models are already rejected by the Anthropic-only guard above;
+    # the annotator by the guard at the top.)
+    if (
+        _is_claude_sdk_framework(framework)
+        and not no_subscription_auth
+        and provider_registry.get_provider(agent_model) is None
+    ):
         token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
         if not token:
             raise PrereqError(
@@ -192,7 +237,13 @@ def read_api_keys_from_local_env(
                 "(expected sk-ant-oat01- prefix).",
                 remediation="claude setup-token",
             )
-        result: dict[str, str] = {"CLAUDE_CODE_OAUTH_TOKEN": token}
+        # DEV-1602: ship the explicit subscription-path signal so sdk_env on the
+        # worker takes the OAuth path (path chosen by operator intent, never
+        # inferred from which credential happens to be present).
+        result: dict[str, str] = {
+            "CLAUDE_CODE_OAUTH_TOKEN": token,
+            "BIRD_INTERACT_SUBSCRIPTION_AUTH": "1",
+        }
         # Track the LOCAL env var names for error messages (the worker-side names
         # differ — e.g. ANTHROPIC_API_KEY → BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY).
         missing_local: list[str] = []

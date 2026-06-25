@@ -1266,6 +1266,118 @@ def test_read_api_keys_pydantic_ai_oauth_ignored(monkeypatch):
     assert "BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY" not in keys
 
 
+def test_read_api_keys_oauth_ships_subscription_signal(monkeypatch):
+    """DEV-1602: the OAuth path ships BIRD_INTERACT_SUBSCRIPTION_AUTH=1 to the
+    actors so sdk_env takes the subscription path on the worker (path chosen by
+    explicit operator intent, not by which credential survived)."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+    )
+    assert keys["BIRD_INTERACT_SUBSCRIPTION_AUTH"] == "1"
+
+
+def test_read_api_keys_api_key_path_no_subscription_signal(monkeypatch):
+    """DEV-1602: the API-key path (--no-subscription-auth) must NOT ship the
+    subscription signal var — the worker stays on the ANTHROPIC_API_KEY path.
+
+    An ambient CLAUDE_CODE_OAUTH_TOKEN is deliberately PRESENT: the explicit
+    opt-out (no_subscription_auth=True) must win over an ambient credential and
+    still suppress the signal var."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+        no_subscription_auth=True,
+    )
+    assert "BIRD_INTERACT_SUBSCRIPTION_AUTH" not in keys
+
+
+def test_read_api_keys_registry_skips_oauth_when_subscription_opted_in(
+    monkeypatch,
+):
+    """DEV-1602 (Codex finding #1): a registry open-weight agent model must take
+    the provider-key path even when no_subscription_auth=False (the default a
+    resubmit/programmatic caller can pass without the CLI's Anthropic-only
+    guard). The OAuth branch is gated on the agent model NOT being a registry
+    model, so no OAuth token is required and the subscription signal is absent."""
+    # A valid OAuth token is ALSO present in the env — the registry-first gate
+    # must ignore it and ship the provider key, never the OAuth token/signal.
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "moonshot/kimi-k2.7-code",
+        "anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+        no_subscription_auth=False,
+    )
+    # Provider key shipped; no OAuth token, no signal var, no raw ANTHROPIC_API_KEY.
+    assert keys["MOONSHOT_API_KEY"] == "ms-key-1"
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in keys
+    assert "BIRD_INTERACT_SUBSCRIPTION_AUTH" not in keys
+    assert "ANTHROPIC_API_KEY" not in keys
+
+
+def test_read_api_keys_registry_missing_provider_key_raises(monkeypatch):
+    """DEV-1602: the registry-first gate must not let a registry run skip BOTH
+    OAuth and provider-key validation — a missing provider key still fails (so
+    the implementation can't pass by simply short-circuiting the OAuth branch)."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    with pytest.raises(driver.PrereqError, match="MOONSHOT_API_KEY"):
+        driver.read_api_keys_from_local_env(
+            "moonshot/kimi-k2.7-code",
+            "anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+            no_subscription_auth=False,
+        )
+
+
+def test_read_api_keys_non_anthropic_non_registry_subscription_rejected(monkeypatch):
+    """CodeRabbit: --subscription-auth is Anthropic-only. A claude_sdk*
+    subscription run on a non-Anthropic, non-registry model (openai/*) is
+    rejected rather than wrongly taking the OAuth path."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("OPENAI_API_KEY", _OPENAI_KEY)
+    with pytest.raises(driver.PrereqError, match="Anthropic-only"):
+        driver.read_api_keys_from_local_env(
+            "openai/gpt-4o",
+            "anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+            no_subscription_auth=False,
+        )
+
+
+@pytest.mark.parametrize("no_sub", [False, True])
+@pytest.mark.parametrize("bad_model", ["moonshot/kimi-k2.7-code", "openai/gpt-4o"])
+def test_read_api_keys_annotator_rejects_non_anthropic_model(
+    monkeypatch, no_sub, bad_model,
+):
+    """DEV-1602 (Codex): the annotator is Anthropic-only (provider_aware=False)
+    at runtime, so ANY non-Anthropic agent model — registry (moonshot/*) OR
+    other (openai/*) — is rejected EARLY, consistently for both
+    --subscription-auth and --no-subscription-auth, rather than diverting to the
+    OAuth or provider-key branch and failing late."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
+    monkeypatch.setenv("OPENAI_API_KEY", _OPENAI_KEY)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    with pytest.raises(driver.PrereqError, match="Anthropic-only"):
+        driver.read_api_keys_from_local_env(
+            bad_model,
+            "anthropic/claude-haiku-4-5-20251001",
+            framework="annotator",
+            no_subscription_auth=no_sub,
+        )
+
+
 def test_read_api_keys_old_manifest_no_framework_legacy_path(monkeypatch):
     """Old manifests without a framework key default framework="" → legacy path.
     The log note fires; ANTHROPIC_API_KEY is shipped."""
