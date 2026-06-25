@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 from bird_interact_agents import paths, provider_registry
-from bird_interact_agents.model_string import encoder_version_slug
+from bird_interact_agents.model_string import resolve_encode_version
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
@@ -338,11 +338,9 @@ def _otf_version_for(cfg: dict[str, Any]) -> str | None:
     ):
         return cfg.get("pre_encoded_version")
     if cfg.get("framework") == "pydantic_ai_otf_encode":
-        v = cfg.get("encode_version")
-        if v:
-            return v
-        model = cfg.get("agent_model")
-        return encoder_version_slug(model) if model else None
+        return resolve_encode_version(
+            cfg.get("encode_version"), cfg.get("agent_model"),
+        )
     return None
 
 
@@ -662,6 +660,7 @@ async def _run_one_task_async(
     user_sim_prompt_version: str | None = None,
     pre_encoded_source: str | None = None,
     pre_encoded_version: str | None = None,
+    encode_version: str | None = None,
     cached_runner: Any = None,
 ) -> dict:
     # Defer the import so monkeypatching `bird_interact_agents.run.run_one_task`
@@ -693,6 +692,7 @@ async def _run_one_task_async(
         slayer_setup=slayer_setup,
         pre_encoded_source=pre_encoded_source,
         pre_encoded_version=pre_encoded_version,
+        encode_version=encode_version,
     )
 
 
@@ -760,6 +760,7 @@ def _run_one_in_actor(
                         slayer_setup=cfg.get("slayer_setup", "pre-encoded"),
                         pre_encoded_source=cfg.get("pre_encoded_source"),
                         pre_encoded_version=cfg.get("pre_encoded_version"),
+                        encode_version=cfg.get("encode_version"),
                         cached_runner=cached_runner,
                     )
                 )

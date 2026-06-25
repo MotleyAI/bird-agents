@@ -56,19 +56,36 @@ class MigrationReport(BaseModel):
     moves: list[Move] = []
 
 
-def _derive_version(db_dir: Path) -> tuple[str, bool]:
-    """Return ``(version, derived)`` for a flat reference dir. Reads the
-    ``setup_encoder`` breakdown model from ``_setup_usage.json``; falls back to
-    ``unknown`` (derived=False) when absent / unparseable / empty."""
+def _setup_encoder_rows(db_dir: Path) -> list[dict]:
+    """Return the ``setup_encoder`` breakdown rows from ``_setup_usage.json``,
+    tolerating any malformed-but-valid JSON shape (a non-object document, a
+    non-list ``breakdown``, or non-dict rows) by returning ``[]`` rather than
+    crashing the migration (CodeRabbit)."""
     usage_fp = db_dir / _SETUP_USAGE
     if not usage_fp.is_file():
-        return _UNKNOWN, False
+        return []
     try:
         data = json.loads(usage_fp.read_text())
     except (ValueError, OSError):
-        return _UNKNOWN, False
-    for row in data.get("breakdown", []):
-        if row.get("scope") == "setup_encoder" and row.get("model"):
+        return []
+    if not isinstance(data, dict):
+        return []
+    breakdown = data.get("breakdown", [])
+    if not isinstance(breakdown, list):
+        return []
+    return [
+        row for row in breakdown
+        if isinstance(row, dict) and row.get("scope") == "setup_encoder"
+    ]
+
+
+def _derive_version(db_dir: Path) -> tuple[str, bool]:
+    """Return ``(version, derived)`` for a flat reference dir. Reads the
+    ``setup_encoder`` breakdown model from ``_setup_usage.json``; falls back to
+    ``unknown`` (derived=False) when absent / unparseable / wrong-shaped /
+    empty."""
+    for row in _setup_encoder_rows(db_dir):
+        if row.get("model"):
             try:
                 return encoder_version_slug(row["model"]), True
             except ValueError:
@@ -91,15 +108,10 @@ def _backfill_encoder_meta(
         return
     fp = (dest_dir / _MARKER).read_text().strip()
     encoder_model = _UNKNOWN
-    usage_fp = dest_dir / _SETUP_USAGE
-    if usage_fp.is_file():
-        try:
-            for row in json.loads(usage_fp.read_text()).get("breakdown", []):
-                if row.get("scope") == "setup_encoder" and row.get("model"):
-                    encoder_model = row["model"]
-                    break
-        except (ValueError, OSError):
-            pass
+    for row in _setup_encoder_rows(dest_dir):
+        if row.get("model"):
+            encoder_model = row["model"]
+            break
     built_at = _dt.datetime.fromtimestamp(
         (dest_dir / _MARKER).stat().st_mtime, tz=_dt.timezone.utc,
     ).replace(microsecond=0).isoformat()
@@ -140,12 +152,12 @@ def migrate_benchmark(*, benchmark: str, dry_run: bool = False) -> MigrationRepo
                 f"version for {benchmark}/{db} (no usable _setup_usage.json); "
                 f"moving under '{_UNKNOWN}/'. Rebuild or relabel it.\n"
             )
-        if dry_run:
-            continue
+        # Check the destination BEFORE the dry-run early-out so a dry run
+        # reports exactly what the real run would do — including dropping a
+        # move whose target already exists (CodeRabbit).
         dest = paths.slayer_models_otf_root(
             benchmark=benchmark, version=version,
         ) / db
-        dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists():
             sys.stderr.write(
                 f"[migrate_otf_references] WARNING: destination {dest} already "
@@ -153,6 +165,9 @@ def migrate_benchmark(*, benchmark: str, dry_run: bool = False) -> MigrationRepo
             )
             report.moves.pop()
             continue
+        if dry_run:
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
         os.rename(db_dir, dest)
         _backfill_encoder_meta(
             dest, benchmark=benchmark, db=db, version=version, derived=derived,

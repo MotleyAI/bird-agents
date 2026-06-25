@@ -92,6 +92,7 @@ from bird_interact_agents.agents.pydantic_ai_otf_encode.setup_encoder import (
     make_setup_build_encoder,
 )
 from bird_interact_agents import paths as _paths
+from bird_interact_agents.model_string import resolve_encode_version
 
 logger = logging.getLogger(__name__)
 
@@ -888,6 +889,9 @@ async def _resolve_otf_task_storage_dir(
     data_path_base: str,
     build_encoder,
     benchmark: str,
+    version: str | None = None,
+    encoder_model: str | None = None,
+    encoder_framework: str | None = None,
 ) -> tuple[str, list[int]]:
     """DEV-1454: lazily build the durable per-DB reference (setup encode of the
     full KB), then materialise a per-task HARD-8 variant copy of it — entities
@@ -903,7 +907,12 @@ async def _resolve_otf_task_storage_dir(
     follows ``--db-path`` (overriding ``$BIRD_DB_PATH``) — Codex #2 fix."""
     deleted = sorted(extract_deleted_kb_ids(task_data))
     instance_id = task_data["instance_id"]
-    reference_root = _paths.slayer_models_otf_root(benchmark=benchmark)
+    # DEV-1605: build into the version-scoped root so the cloud upload-back /
+    # merge (which now walk slayer_models_otf/<benchmark>/<version>/<db>) find
+    # the freshly-encoded reference, and stamp the encoder provenance.
+    reference_root = _paths.slayer_models_otf_root(
+        benchmark=benchmark, version=version,
+    )
     db_root_resolved = Path(data_path_base).resolve()
     await ensure_db_reference(
         db_name,
@@ -913,6 +922,9 @@ async def _resolve_otf_task_storage_dir(
         build_encoder=build_encoder,
         db_root=db_root_resolved,
         benchmark=get_benchmark(benchmark) if benchmark else None,
+        encoder_model=encoder_model,
+        encoder_framework=encoder_framework,
+        version=version,
     )
     scratch = await build_task_variant_storage(
         canonical_storage_root=reference_root,
@@ -984,6 +996,7 @@ class PydanticAIOtfEncodeAgent:
         max_depth: int = 3,
         prompt_cache: bool = True,
         slayer_setup: str = "on-the-fly",
+        encode_version: str | None = None,
     ) -> None:
         from bird_interact_agents.agents.pydantic_ai.agent import (
             _anthropic_cache_settings,
@@ -1004,6 +1017,11 @@ class PydanticAIOtfEncodeAgent:
         self.slayer_storage_root = slayer_storage_root
         self.model_id = model
         self.slayer_setup = slayer_setup
+        # DEV-1605: version label this encoder builds into
+        # (slayer_models_otf/<benchmark>/<version>/<db>). Default = the
+        # encoder-model slug; resolved lazily in run_task so a bad explicit
+        # label surfaces at task time, not construction.
+        self.encode_version = encode_version
         anthropic_model = (
             _build_anthropic_model_with_retries(native_model_id(model))
             if is_anthropic(model) else None
@@ -1123,6 +1141,11 @@ class PydanticAIOtfEncodeAgent:
                     data_path_base=data_path_base,
                     build_encoder=build_encoder,
                     benchmark=benchmark,
+                    version=resolve_encode_version(
+                        self.encode_version, self.model_id,
+                    ),
+                    encoder_model=self.model_id,
+                    encoder_framework="pydantic_ai",
                 )
             )
             shared.slayer_storage_dir = slayer_storage_dir

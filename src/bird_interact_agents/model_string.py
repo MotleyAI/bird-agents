@@ -62,12 +62,25 @@ def encoder_version_slug(model: str) -> str:
     if rest.startswith("claude-"):
         rest = rest[len("claude-"):]
     slug = rest.replace("/", "__")
-    if not slug:
+    if not slug or slug in (".", "..") or "\\" in slug:
         raise ValueError(
-            f"encoder_version_slug({model!r}) produced an empty label; pass an "
-            f"explicit --version."
+            f"encoder_version_slug({model!r}) produced an invalid label "
+            f"{slug!r}; pass an explicit --version."
         )
     return slug
+
+
+def resolve_encode_version(
+    explicit: str | None, model: str | None,
+) -> str | None:
+    """DEV-1605: the single source of truth for an otf_encode run's version
+    label — an explicit ``--version`` wins, else the encoder-model slug, else
+    ``None`` (no model known). Centralised so the cloud actor, upload-back,
+    laptop merge, and the in-cloud encoder all resolve the SAME version (a
+    drift here would build into one dir and upload from another)."""
+    if explicit:
+        return explicit
+    return encoder_version_slug(model) if model else None
 
 
 def native_model_id(model: str) -> str:

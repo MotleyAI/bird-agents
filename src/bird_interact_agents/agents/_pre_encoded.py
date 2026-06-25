@@ -186,11 +186,16 @@ def _read_consumed_reference(db_dir: Path, *, db: str, version: str) -> Consumed
     encoder_model = "unknown"
     meta_fp = db_dir / "_encoder_meta.json"
     if meta_fp.is_file():
+        # Best-effort: a non-object document or a missing/null/non-string
+        # `encoder_model` must NOT crash an otherwise-usable reference — fall
+        # back to "unknown" (CodeRabbit).
         try:
-            encoder_model = json.loads(meta_fp.read_text()).get(
-                "encoder_model", "unknown"
-            )
-        except (ValueError, OSError):
+            meta = json.loads(meta_fp.read_text())
+            if isinstance(meta, dict):
+                raw_model = meta.get("encoder_model")
+                if isinstance(raw_model, str) and raw_model:
+                    encoder_model = raw_model
+        except (ValueError, OSError, TypeError):
             encoder_model = "unknown"
     return ConsumedReference(
         db=db, version=version, encoder_model=encoder_model, reference_fp=fp,

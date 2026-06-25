@@ -114,10 +114,12 @@ def _mock_otf_setup(monkeypatch, tmp_path):
 
     async def fake_resolve(
         *, db_name, task_data, data_path_base, build_encoder=None,
-        benchmark=None,
+        benchmark=None, version=None, encoder_model=None,
+        encoder_framework=None,
     ):
         # DEV-1462: real `_resolve_otf_task_storage_dir` gained a
-        # `benchmark` kwarg; stub must accept it (default None = legacy).
+        # `benchmark` kwarg; DEV-1605 added `version` / `encoder_model` /
+        # `encoder_framework`. Stub accepts them all (defaults = legacy).
         return str(tmp_path), []
 
     monkeypatch.setattr(

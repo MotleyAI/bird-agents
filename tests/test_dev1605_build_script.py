@@ -47,3 +47,13 @@ def test_resolve_build_version_explicit_label():
     )
     assert version == "custom"
     assert explicit is True
+
+
+def test_resolve_build_version_empty_string_is_explicit():
+    """An explicit `--version ""` (e.g. unset env expansion) is preserved as
+    operator-supplied — NOT silently treated as omitted (CodeRabbit)."""
+    version, explicit = build_otf_references.resolve_build_version(
+        agent_model="anthropic/claude-opus-4-7", version_arg="",
+    )
+    assert version == ""
+    assert explicit is True

@@ -336,6 +336,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 slayer_setup=ns.slayer_setup, framework=ns.framework,
                 query_mode=ns.query_mode, mode=ns.mode,
                 pre_encoded_source=ns.pre_encoded_source,
+                pre_encoded_version=ns.pre_encoded_version,
             )
         except ValueError as e:
             p.error(str(e))
@@ -357,11 +358,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         # version dir. The encode label defaults to the agent-model slug; the
         # consumer version resolves against the LOCAL refs (single → use it,
         # 2+ → fail at submit, explicit → must exist).
-        from bird_interact_agents.model_string import encoder_version_slug
+        from bird_interact_agents.model_string import resolve_encode_version
         if ns.framework == "pydantic_ai_otf_encode":
-            ns.encode_version = ns.encode_version or encoder_version_slug(
-                ns.agent_model,
-            )
+            # A malformed --agent-model would make `encoder_version_slug`
+            # raise; route it through `p.error` so submit exits with a clean
+            # CLI message, not a traceback (CodeRabbit).
+            try:
+                ns.encode_version = resolve_encode_version(
+                    ns.encode_version, ns.agent_model,
+                )
+            except ValueError as e:
+                p.error(str(e))
         if ns.pre_encoded_source == "otf":
             from bird_interact_agents.agents._pre_encoded import (
                 PreEncodedSetupError,
@@ -384,7 +391,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                     f"DIFFERENT otf versions {sorted(_resolved)}; pass an "
                     "explicit --pre-encoded-version so the run consumes one."
                 )
-            ns.pre_encoded_version = next(iter(_resolved)) if _resolved else None
+            # Only overwrite with the resolved concrete version when at least
+            # one DB resolved; otherwise PRESERVE the operator's explicit
+            # --pre-encoded-version (clearing it to None would make the
+            # manifest/upload fall back to the unversioned root — CodeRabbit).
+            if _resolved:
+                ns.pre_encoded_version = next(iter(_resolved))
 
         # DEV-1515 follow-up: require every passed instance_id to have a
         # task annotation file. The annotation is the authoritative source

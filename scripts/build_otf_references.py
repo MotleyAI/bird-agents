@@ -50,8 +50,13 @@ def resolve_build_version(
     *, agent_model: str, version_arg: str | None,
 ) -> tuple[str, bool]:
     """DEV-1605: resolve the version label for a build + whether it was
-    operator-supplied. Default = the encoder-model slug."""
-    if version_arg:
+    operator-supplied. Default = the encoder-model slug.
+
+    An explicit ``--version ""`` (empty string, e.g. an unset env expansion)
+    is preserved as operator-supplied — it is NOT silently treated as "flag
+    omitted", so it fails loudly at the path-label validator instead of
+    building into the default slot with the wrong provenance (CodeRabbit)."""
+    if version_arg is not None:
         return version_arg, True
     return encoder_version_slug(agent_model), False
 

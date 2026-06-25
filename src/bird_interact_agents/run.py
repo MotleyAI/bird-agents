@@ -91,6 +91,7 @@ _PRE_ENCODED_FRAMEWORKS = frozenset({
 def _validate_slayer_setup(
     *, slayer_setup: str, framework: str, query_mode: str, mode: str,
     pre_encoded_source: str | None = None,
+    pre_encoded_version: str | None = None,
 ) -> None:
     """Reject inconsistent ``slayer_setup`` / ``pre_encoded_source`` combos.
 
@@ -108,6 +109,16 @@ def _validate_slayer_setup(
         derive_slayer_setup,
         validate_pre_encoded_source,
     )
+
+    # DEV-1605: a version pin is only meaningful for the `otf` source — the
+    # resolver ignores it for `custom` and never consults it on-the-fly, so a
+    # misconfigured `--pre-encoded-version` would silently drop instead of
+    # failing fast (CodeRabbit).
+    if pre_encoded_version is not None and pre_encoded_source != "otf":
+        raise ValueError(
+            "--pre-encoded-version requires --pre-encoded-models otf; got "
+            f"pre_encoded_source={pre_encoded_source!r}."
+        )
 
     # Always validate the source vocabulary + framework gate, BEFORE the
     # raw early-return (Codex DEV-1586 r2 #2 — otherwise `--query-mode raw
@@ -321,6 +332,7 @@ def make_runner(
     user_sim_prompt_version: str | None = None,
     pre_encoded_source: str | None = None,
     pre_encoded_version: str | None = None,
+    encode_version: str | None = None,
 ):
     """Public alias for `_make_runner`. The cloud actor (and other
     throughput-sensitive callers) call this once at startup and reuse the
@@ -346,6 +358,7 @@ def make_runner(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
         pre_encoded_source=pre_encoded_source,
+        pre_encoded_version=pre_encoded_version,
     )
     return _make_runner(
         framework=framework, dataset=dataset, query_mode=query_mode, mode=mode,
@@ -355,6 +368,7 @@ def make_runner(
         user_sim_prompt_version=user_sim_prompt_version,
         pre_encoded_source=pre_encoded_source,
         pre_encoded_version=pre_encoded_version,
+        encode_version=encode_version,
     )
 
 
@@ -517,6 +531,7 @@ def _make_runner(
     user_sim_prompt_version: str | None = None,
     pre_encoded_source: str | None = None,
     pre_encoded_version: str | None = None,
+    encode_version: str | None = None,
 ):
     """Construct the per-task runner closure for the given config.
 
@@ -936,6 +951,7 @@ def _make_runner(
             max_depth=max_depth,
             prompt_cache=prompt_cache,
             slayer_setup=slayer_setup,
+            encode_version=encode_version,
         )
 
         async def run_one(td: dict, data_dir: str, patience: int,
@@ -1026,6 +1042,7 @@ async def run_one_task(
     user_sim_prompt_version: str | None = None,
     pre_encoded_source: str | None = None,
     pre_encoded_version: str | None = None,
+    encode_version: str | None = None,
 ) -> dict:
     """Run a single per-task evaluation and return a `_persist`-consumable dict.
 
@@ -1056,6 +1073,7 @@ async def run_one_task(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
         pre_encoded_source=pre_encoded_source,
+        pre_encoded_version=pre_encoded_version,
     )
     runner = _make_runner(
         framework=framework,
@@ -1072,6 +1090,7 @@ async def run_one_task(
         user_sim_prompt_version=user_sim_prompt_version,
         pre_encoded_source=pre_encoded_source,
         pre_encoded_version=pre_encoded_version,
+        encode_version=encode_version,
     )
     instance_id = str(task_data.get("instance_id") or "")
     t_start = time.perf_counter()
@@ -1170,6 +1189,7 @@ async def run_evaluation(
     user_sim_prompt_version: str | None = None,
     pre_encoded_source: str | None = None,
     pre_encoded_version: str | None = None,
+    encode_version: str | None = None,
 ) -> dict:
     """Run full evaluation across all tasks."""
     from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
@@ -1181,6 +1201,7 @@ async def run_evaluation(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
         pre_encoded_source=pre_encoded_source,
+        pre_encoded_version=pre_encoded_version,
     )
     b = get_benchmark(dataset)
 
@@ -1253,6 +1274,7 @@ async def run_evaluation(
         user_sim_prompt_version=user_sim_prompt_version,
         pre_encoded_source=pre_encoded_source,
         pre_encoded_version=pre_encoded_version,
+        encode_version=encode_version,
     )
 
     # Open the per-run results.db (lives next to eval.json) and write
@@ -2052,6 +2074,7 @@ def main() -> None:
             query_mode=args.query_mode,
             mode=args.mode,
             pre_encoded_source=args.pre_encoded_source,
+            pre_encoded_version=args.pre_encoded_version,
         )
     except ValueError as e:
         parser.error(str(e))

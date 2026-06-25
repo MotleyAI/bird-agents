@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 from bird_interact_agents import paths, provider_registry
-from bird_interact_agents.model_string import encoder_version_slug
+from bird_interact_agents.model_string import resolve_encode_version
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data, cluster, config, gcs, image, prereqs
 from bird_interact_agents.cloud import collation as _collation
@@ -499,9 +499,9 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
         # DEV-1605: the optional reference seed lives in the version-scoped dir
         # (default = agent-model slug) so the cloud encode reuses/extends the
         # right version.
-        _model = getattr(args, "agent_model", None)
-        encode_version = getattr(args, "encode_version", None) or (
-            encoder_version_slug(_model) if _model else None
+        encode_version = resolve_encode_version(
+            getattr(args, "encode_version", None),
+            getattr(args, "agent_model", None),
         )
         return [
             (paths.slayer_otf_cache_root(benchmark=benchmark),
@@ -1199,9 +1199,9 @@ def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
     # manifest has no encode_version; fall back to the slug when agent_model is
     # present (so its cloud-built shards land in the versioned warm cache), and
     # only version=None for an ancient manifest lacking both.
-    _encode_version = manifest.get("encode_version")
-    if not _encode_version and manifest.get("agent_model"):
-        _encode_version = encoder_version_slug(manifest["agent_model"])
+    _encode_version = resolve_encode_version(
+        manifest.get("encode_version"), manifest.get("agent_model"),
+    )
     merge_report = _post_run_merge.merge_post_run_into_warm_cache(
         run_dir=dest,
         reference_root=paths.slayer_models_otf_root(

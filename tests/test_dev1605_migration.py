@@ -124,6 +124,36 @@ def test_migrate_dry_run_moves_nothing(tmp_path, monkeypatch):
     assert any(m.db == "alien" and m.version == "opus-4-7" for m in report.moves)
 
 
+def test_migrate_malformed_usage_json_falls_back_unknown(tmp_path, monkeypatch):
+    """A valid-but-wrong-shaped _setup_usage.json (a JSON list, or non-dict
+    breakdown rows) must NOT crash — it falls back to 'unknown' (CodeRabbit)."""
+    main, _ = _setup_main_and_worktree(tmp_path, monkeypatch)
+    d = _flat_db(main, "alien", model=None)
+    # overwrite with a malformed (list) usage doc
+    (d / "_setup_usage.json").write_text("[1, 2, 3]")
+
+    _migrate().migrate_benchmark(benchmark=BENCH)
+    assert (
+        main / "slayer_models_otf" / BENCH / "unknown" / "alien" / "_reference_fp.txt"
+    ).exists()
+
+
+def test_migrate_dry_run_reports_collision_skip(tmp_path, monkeypatch):
+    """Dry-run must honor a destination collision the same way the real run
+    does — it should NOT report a move whose target already exists."""
+    main, _ = _setup_main_and_worktree(tmp_path, monkeypatch)
+    _flat_db(main, "alien", model="anthropic/claude-opus-4-7")
+    # pre-create the destination so the move would collide
+    dest = main / "slayer_models_otf" / BENCH / "opus-4-7" / "alien"
+    dest.mkdir(parents=True)
+    (dest / "_reference_fp.txt").write_text("existing")
+
+    report = _migrate().migrate_benchmark(benchmark=BENCH, dry_run=True)
+    assert report.moves == []  # collision → not reported as a move
+    # flat dir untouched
+    assert (main / "slayer_models_otf" / BENCH / "alien" / "_reference_fp.txt").exists()
+
+
 def test_migrate_skips_already_versioned(tmp_path, monkeypatch):
     main, _ = _setup_main_and_worktree(tmp_path, monkeypatch)
     # already versioned: <bench>/opus-4-7/alien

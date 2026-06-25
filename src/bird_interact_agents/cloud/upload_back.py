@@ -248,10 +248,10 @@ def upload_otf_reference_delta(
         # built into (encode_version, default = agent-model slug). The GCS
         # post_run prefix stays <db>-keyed — `runs/<run_id>/` already isolates
         # versions across runs, so the version need not enter the prefix.
-        from bird_interact_agents.model_string import encoder_version_slug
-        encode_version = cfg.get("encode_version")
-        if not encode_version and cfg.get("agent_model"):
-            encode_version = encoder_version_slug(cfg["agent_model"])
+        from bird_interact_agents.model_string import resolve_encode_version
+        encode_version = resolve_encode_version(
+            cfg.get("encode_version"), cfg.get("agent_model"),
+        )
         ref_root = paths.slayer_models_otf_root(
             benchmark=benchmark, version=encode_version,
         )

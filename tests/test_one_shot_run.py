@@ -694,9 +694,9 @@ async def test_otf_encode_real_resolver_passes_benchmark_to_paths(monkeypatch, t
         seen_benchmark.append(("cache_root", benchmark))
         return tmp_path / "cache" / (benchmark or "default")
 
-    def spy_ref_root(*, benchmark=None):
+    def spy_ref_root(*, benchmark=None, version=None):
         seen_benchmark.append(("ref_root", benchmark))
-        return tmp_path / "ref" / (benchmark or "default")
+        return tmp_path / "ref" / (benchmark or "default") / (version or "_nov")
 
     monkeypatch.setattr(
         agent_mod._paths, "slayer_otf_cache_root", spy_cache_root,
@@ -707,7 +707,9 @@ async def test_otf_encode_real_resolver_passes_benchmark_to_paths(monkeypatch, t
 
     async def fake_ensure_db_reference(db, *, reference_root, cache_root,
                                         mini_interact_root, build_encoder,
-                                        force=False, db_root=None, benchmark=None):
+                                        force=False, db_root=None, benchmark=None,
+                                        encoder_model=None, encoder_framework=None,
+                                        version=None, encoder_settings=None):
         from bird_interact_agents.slayer_otf.reference_build import ReferenceEntry
         Path(reference_root).mkdir(parents=True, exist_ok=True)
         (Path(reference_root) / db).mkdir(parents=True, exist_ok=True)
