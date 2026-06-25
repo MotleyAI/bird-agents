@@ -13,6 +13,7 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _DECOMPOSE_DISCIPLINE,
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
+    _RAW_HOST_PATH_PRINCIPLE,
 )
 
 _RAW_INTRO = """\
@@ -100,4 +101,6 @@ RAW_OTF_ONE_SHOT = (
       "question needs).\n\n"
       "Database: {db_name}\n"
       "User question: {user_query}\n"
+    + "\n"
+    + _RAW_HOST_PATH_PRINCIPLE
 )

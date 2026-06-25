@@ -100,25 +100,33 @@ def test_blocks_stitched_into_slayer_ainteract() -> None:
 def test_blocks_stitched_into_slayer_one_shot() -> None:
     """One-shot has no user-sim, so the `_GRADER_ZERO_VS_ONE_DIAGNOSTIC`
     block — which prescribes a `ask_user` step — must NOT appear in the
-    one-shot prompt (its trigger is unreachable). `_TABLE_SET_PROBE`
-    applies to one-shot too (the structural-pivot half does not need a
-    user-sim) and SHOULD appear."""
+    one-shot prompt (its trigger is unreachable). The structural-pivot probe
+    applies to one-shot too, but via the user-sim-free
+    `_TABLE_SET_PROBE_ONESHOT` variant (DEV-1603), not the a-interact
+    `_TABLE_SET_PROBE`."""
     from bird_interact_agents.agents._shared_otf_prompts import (
         _GRADER_ZERO_VS_ONE_DIAGNOSTIC,
         _TABLE_SET_PROBE,
+        _TABLE_SET_PROBE_ONESHOT,
     )
     from bird_interact_agents.agents.claude_sdk_otf.prompts import (
         SLAYER_OTF_ONE_SHOT,
     )
 
-    rendered_table_set = _TABLE_SET_PROBE.format(
+    rendered_table_set = _TABLE_SET_PROBE_ONESHOT.format(
+        knowledge_label="KB", schema_source="SLayer's schema lookup"
+    )
+    rendered_ainteract = _TABLE_SET_PROBE.format(
         knowledge_label="KB", schema_source="SLayer's schema lookup"
     )
     rendered_diag = _GRADER_ZERO_VS_ONE_DIAGNOSTIC.format(
         attempt_noun="encoding", apply_verb="encode"
     )
     assert rendered_table_set in SLAYER_OTF_ONE_SHOT, (
-        "_TABLE_SET_PROBE not stitched into SLAYER_OTF_ONE_SHOT"
+        "_TABLE_SET_PROBE_ONESHOT not stitched into SLAYER_OTF_ONE_SHOT"
+    )
+    assert rendered_ainteract not in SLAYER_OTF_ONE_SHOT, (
+        "a-interact _TABLE_SET_PROBE (user-sim) must NOT be in one-shot"
     )
     assert rendered_diag not in SLAYER_OTF_ONE_SHOT, (
         "_GRADER_ZERO_VS_ONE_DIAGNOSTIC must NOT appear in one-shot "

@@ -303,7 +303,7 @@ USER-SIM ANSWERS ARE CLARIFICATIONS, NOT GROUND TRUTH.
 # would worsen `exhausted_budget_guessing`. The agent enumerates
 # internally, narrows by evidence, asks ONE discriminating question if
 # evidence remains thin, and submits ONLY when one path is selected.
-_TABLE_SET_PROBE = """\
+_TABLE_SET_PROBE_HEAD = """\
 ALTERNATIVE-JOIN-PATH PROBE.
 
 When {schema_source} reveals a foreign-key path through a table
@@ -315,13 +315,27 @@ Instead:
 
   1. Enumerate the alternative paths INTERNALLY (read columns +
      {knowledge_label} for each candidate bridge). Pick the most
-     evidence-supported one.
+     evidence-supported one."""
+
+# a-interact: a user-sim is available, so the disambiguation step asks it.
+_TABLE_SET_PROBE = _TABLE_SET_PROBE_HEAD + """
   2. If two paths remain equally plausible, ask the user-sim ONE
      discriminating question — name both paths and ask which provides
      the canonical link. Do not ask vague "which table?" questions.
   3. Submit ONLY after step 2 distinguishes them. If the user-sim
      refuses to choose, fall back to the {knowledge_label}-grounded
      candidate."""
+
+# one-shot: NO user-sim — disambiguate from evidence and submit the
+# best-grounded candidate (DEV-1545: the structural-pivot half needs no
+# user). Shared by the slayer + raw one-shot prompts.
+_TABLE_SET_PROBE_ONESHOT = _TABLE_SET_PROBE_HEAD + """
+  2. If two paths remain equally plausible, re-read the column
+     descriptions and {knowledge_label} for each candidate bridge to
+     find the discriminating detail — do not submit one variant per
+     path.
+  3. Submit ONLY the {knowledge_label}-grounded candidate; if the
+     descriptions still tie, prefer the shortest declared join path."""
 
 
 # DEV-1545: targets `never_asked_key_question` (autopsies: robot_9,
@@ -451,7 +465,8 @@ ENCODE-THEN-QUERY DISCIPLINE:"""
 # ---------------------------------------------------------------------------
 
 
-SLAYER_OTF_ONE_SHOT_V0 = """\
+SLAYER_OTF_ONE_SHOT_V0 = (
+    """\
 You are a data analyst. You have a SLayer semantic-layer MCP server plus a
 native `submit_query` tool. Your job: answer the user's question by
 ENCODING the domain knowledge it needs into the SLayer model as named
@@ -631,27 +646,13 @@ before submitting:
    form. "Defensive" normalisation of an output column, a join key, a
    JSON key, or a CHAR-padded literal silently corrupts the rowset —
    never apply one without an explicit source. There is no user to
-   second-guess this on your behalf.
-
-   ALTERNATIVE-JOIN-PATH PROBE.
-
-When SLayer's schema lookup reveals a foreign-key path through a table
-your current query does NOT use — or when grader diagnostics include
-`wrong_table_set` after a submission — the gold likely flows through a
-different host or bridge table than the one you picked. Do NOT brute-
-force-submit one variant per candidate path; that burns budget.
-Instead:
-
-  1. Enumerate the alternative paths INTERNALLY (read columns +
-     KB for each candidate bridge). Pick the most
-     evidence-supported one.
-  2. If two paths remain equally plausible, ask the user-sim ONE
-     discriminating question — name both paths and ask which provides
-     the canonical link. Do not ask vague "which table?" questions.
-  3. Submit ONLY after step 2 distinguishes them. If the user-sim
-     refuses to choose, fall back to the KB-grounded
-     candidate.
-
+   second-guess this on your behalf."""
+    + "\n\n   "
+    + _TABLE_SET_PROBE_ONESHOT.format(
+        knowledge_label="KB", schema_source="SLayer's schema lookup"
+    )
+    + "\n\n"
+    + """\
 6. SUBMIT. Write the FINAL query so it REFERENCES the named columns /
    measures you encoded — do NOT inline their SQL back into the query.
    Project exactly the columns the question names, and only those.
@@ -844,6 +845,7 @@ description signal alone — tie-breakers are unnecessary. If both
 descriptions had been equally on-intent, the 1-hop tiebreaker would
 have picked `asset_inspections` anyway.
 """
+)
 
 SLAYER_OTF_AINTERACT_V0 = (
     """\
@@ -1276,7 +1278,8 @@ have picked `asset_inspections` anyway.
 """
 )
 
-RAW_OTF_ONE_SHOT_V0 = """\
+RAW_OTF_ONE_SHOT_V0 = (
+    """\
 You are a data analyst. You have direct SQL access to a database plus a
 native `submit_sql` tool. Your job: answer the user's question by
 exploring the schema and knowledge definitions, then writing a SQL query
@@ -1353,8 +1356,13 @@ QUERY DISCIPLINE:
    form. "Defensive" normalisation of an output column, a join key, a
    JSON key, or a CHAR-padded literal silently corrupts the rowset —
    never apply one without an explicit source. There is no user to
-   second-guess this on your behalf.
-
+   second-guess this on your behalf."""
+    + "\n\n   "
+    + _TABLE_SET_PROBE_ONESHOT.format(
+        knowledge_label="knowledge definition", schema_source="the schema"
+    )
+    + "\n\n"
+    + """\
 6. SUBMIT. Call `submit_sql` with your final SQL — a prose answer is
    not a submission. Project exactly the columns the question names,
    and only those.
@@ -1391,6 +1399,9 @@ question needs).
 Database: {db_name}
 User question: {user_query}
 """
+    + "\n"
+    + _RAW_HOST_PATH_PRINCIPLE
+)
 
 RAW_OTF_AINTERACT_V0 = (
     """\
