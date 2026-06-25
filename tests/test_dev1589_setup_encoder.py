@@ -450,6 +450,29 @@ async def test_hermetic_session_gets_real_mcp_servers(tmp_path, monkeypatch):
     assert "slayer" in servers and "bird-interact-tools" in servers
 
 
+async def test_deps_block_includes_dependency_detail(tmp_path):
+    """The deps block must hand the model each encoded dependency's kind/host/
+    name + its stored formula + the dep's notes, so it can reference by name
+    without re-discovering via search/inspect (DEV-1589 smoke fix)."""
+    await _seed(tmp_path, kb_id=7)  # seeds `orders` with measure premium_revenue (kb_id 4)
+    dep = EncoderResult(
+        kb_id=4, status="encoded",
+        entities=[EncodedEntity(kind="measure", host_model=MODEL,
+                                name="premium_revenue",
+                                entity_ref=f"{DB}.{MODEL}.premium_revenue")],
+        notes="Sum of order amounts for premium-tier orders.",
+    )
+    block = await se._format_deps_block([dep], tmp_path, DB)
+    assert "KB 4" in block
+    assert "premium_revenue" in block            # the entity name
+    assert "amount:sum" in block                 # the stored formula (detail)
+    assert "premium-tier orders" in block        # the dep's encode notes
+
+
+async def test_deps_block_empty_is_none(tmp_path):
+    assert await se._format_deps_block([], tmp_path, DB) == "(none)"
+
+
 async def test_submit_or_defer_nudge_fires_after_budget():
     """The PostToolUse nudge stays silent under the soft budget, then fires on
     EVERY turn after it, telling the model to submit (encode) or defer."""

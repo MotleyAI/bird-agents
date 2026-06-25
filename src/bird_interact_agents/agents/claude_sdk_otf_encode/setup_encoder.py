@@ -34,6 +34,7 @@ from claude_agent_sdk import (
     tool,
 )
 from pydantic import ValidationError
+from slayer.storage.yaml_storage import YAMLStorage
 
 from bird_interact_agents.agents._session_log import write_session
 from bird_interact_agents.agents.claude_sdk.agent import (
@@ -347,7 +348,7 @@ async def _encode_one_kb(
     ]
     prompt = ENCODER_PROMPT.format(
         db_name=db, kb_id=kb_id, kb_body=kb_body,
-        deps_block=_format_deps_block(encoded_deps),
+        deps_block=await _format_deps_block(encoded_deps, build_dir, db),
         reverse_deps_block=_format_reverse_deps_block(reverse_deps),
     )
 
@@ -513,14 +514,61 @@ def _append_index_row(index_rows, sessions_dir, kb_id, result, duration_s,
 # ---------------------------------------------------------------------------
 
 
-def _format_deps_block(encoded_deps: list[EncoderResult]) -> str:
+async def _format_deps_block(encoded_deps, build_dir, db) -> str:
+    """Render each already-encoded DECLARED dependency with enough DETAIL that
+    the model can reference it BY NAME without re-discovering it via
+    search/inspect.
+
+    DEV-1589 smoke: the KBs that timed out looped on search/inspect of their own
+    dependencies — and SLayer's default (compact) search returns bare refs with a
+    1-line description, so the model had to drill in repeatedly. Handing it the
+    dep's kind/host/name + the stored formula/SQL + the dep's encode notes
+    up-front removes that whole exploration round-trip.
+    """
     if not encoded_deps:
         return "(none)"
+    storage = YAMLStorage(base_dir=str(build_dir))
     lines: list[str] = []
     for dep in sorted(encoded_deps, key=lambda d: d.kb_id):
-        refs = ", ".join(e.entity_ref for e in dep.entities)
-        lines.append(f"KB {dep.kb_id}: already encoded as {refs}")
+        lines.append(
+            f"KB {dep.kb_id} is ALREADY ENCODED — reference it by name, do NOT "
+            f"re-derive it:"
+        )
+        for e in dep.entities:
+            defn = await _entity_definition(e, storage, db)
+            host = e.host_model or "(query-backed model)"
+            lines.append(f"  - {e.kind} `{e.name}` on `{host}` (ref `{e.entity_ref}`){defn}")
+        notes = (dep.notes or "").strip()
+        if notes:
+            lines.append(f"    notes: {notes[:240]}")
     return "\n".join(lines)
+
+
+async def _entity_definition(ent, storage, db) -> str:
+    """Best-effort: the stored formula/SQL of an encoded entity, so the deps
+    block shows WHAT each dependency computes (not just its name)."""
+    try:
+        host = ent.name if ent.kind == "model" else ent.host_model
+        if host is None:
+            return ""
+        model = await storage.get_model(host, data_source=db)
+        if model is None:
+            return ""
+        if ent.kind == "model":
+            sql = getattr(model, "backing_query_sql", None) or getattr(model, "sql", None)
+            return f"\n      query: {str(sql)[:200]}" if sql else ""
+        bucket = {
+            "column": model.columns, "measure": model.measures,
+            "aggregation": model.aggregations,
+        }.get(ent.kind) or []
+        for item in bucket:
+            if item.name == ent.name:
+                d = getattr(item, "sql", None) or getattr(item, "formula", None)
+                label = "sql" if ent.kind == "column" else "formula"
+                return f"\n      {label}: {str(d)[:200]}" if d else ""
+        return ""
+    except Exception:  # noqa: BLE001 — rendering must never break the encode
+        return ""
 
 
 def _format_reverse_deps_block(parents: list[dict] | None) -> str:
