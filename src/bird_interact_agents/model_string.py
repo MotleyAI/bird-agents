@@ -77,8 +77,14 @@ def resolve_encode_version(
     label — an explicit ``--version`` wins, else the encoder-model slug, else
     ``None`` (no model known). Centralised so the cloud actor, upload-back,
     laptop merge, and the in-cloud encoder all resolve the SAME version (a
-    drift here would build into one dir and upload from another)."""
-    if explicit:
+    drift here would build into one dir and upload from another).
+
+    An explicit value is distinguished by ``is not None``, NOT truthiness — so
+    a deliberate empty ``--version ""`` (e.g. an unset env expansion) is
+    preserved as operator-supplied and fails loudly at the path-label
+    validator, matching ``scripts/build_otf_references.resolve_build_version``
+    instead of silently building the default slot (Codex)."""
+    if explicit is not None:
         return explicit
     return encoder_version_slug(model) if model else None
 

@@ -39,7 +39,12 @@ def test_resolve_encode_version_explicit_wins():
 
 def test_resolve_encode_version_falls_back_to_slug():
     assert resolve_encode_version(None, "anthropic/claude-opus-4-7") == "opus-4-7"
-    assert resolve_encode_version("", "zai/glm-5.2") == "glm-5.2"
+
+
+def test_resolve_encode_version_preserves_explicit_empty():
+    """An explicit "" is operator-supplied (is-not-None), NOT treated as
+    omitted — matches resolve_build_version so cloud/local agree (Codex)."""
+    assert resolve_encode_version("", "zai/glm-5.2") == ""
 
 
 def test_resolve_encode_version_none_model_is_none():
@@ -158,3 +163,40 @@ async def test_otf_encode_resolver_builds_versioned_with_provenance(tmp_path, mo
     assert captured["version"] == "opus-4-7"
     assert captured["encoder_model"] == "anthropic/claude-opus-4-7"
     assert captured["encoder_framework"] == "pydantic_ai"
+
+
+# --- local run enforces one-version-per-run guard (Codex r2 major) -----------
+
+
+async def test_run_evaluation_rejects_mixed_otf_versions(tmp_path, monkeypatch):
+    """A LOCAL pre-encoded otf run over DBs that resolve to DIFFERENT versions
+    must fail (parity with the cloud submit cross-DB guard)."""
+    import bird_interact_agents.run as run_mod
+
+    # Neutralise the unrelated pre-flight validators so the test targets the
+    # cross-DB version guard specifically.
+    monkeypatch.setattr(run_mod, "_validate_dataset_mode", lambda **k: None)
+    monkeypatch.setattr(run_mod, "_validate_framework_mode", lambda **k: None)
+    monkeypatch.setattr(run_mod, "_validate_slayer_setup", lambda **k: None)
+    monkeypatch.setattr(
+        run_mod, "load_benchmark_tasks",
+        lambda *a, **k: [
+            {"instance_id": "a_1", "selected_database": "a"},
+            {"instance_id": "b_1", "selected_database": "b"},
+        ],
+    )
+    monkeypatch.setattr(run_mod, "_maybe_force_wipe_otf", lambda **k: None)
+    monkeypatch.setattr(
+        "bird_interact_agents.agents._pre_encoded.resolve_otf_version",
+        lambda *, benchmark, db, requested: {"a": "opus-4-7", "b": "glm-5.2"}[db],
+    )
+
+    with pytest.raises(ValueError, match="DIFFERENT otf versions"):
+        await run_mod.run_evaluation(
+            data_path=str(tmp_path),
+            data_dir=str(tmp_path),
+            output_path=str(tmp_path / "out.json"),
+            mode="a-interact", query_mode="slayer",
+            framework="claude_sdk_otf", dataset="mini-interact",
+            pre_encoded_source="otf",
+        )

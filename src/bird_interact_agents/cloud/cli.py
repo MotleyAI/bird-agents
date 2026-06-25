@@ -358,15 +358,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         # version dir. The encode label defaults to the agent-model slug; the
         # consumer version resolves against the LOCAL refs (single → use it,
         # 2+ → fail at submit, explicit → must exist).
+        from bird_interact_agents import paths
         from bird_interact_agents.model_string import resolve_encode_version
         if ns.framework == "pydantic_ai_otf_encode":
-            # A malformed --agent-model would make `encoder_version_slug`
-            # raise; route it through `p.error` so submit exits with a clean
-            # CLI message, not a traceback (CodeRabbit).
+            # A malformed --agent-model (slug derivation) OR an explicit but
+            # invalid --version label (e.g. "" / "." from an unset env
+            # expansion) must exit with a clean CLI message, not a traceback —
+            # so resolve AND validate the label inside p.error (CodeRabbit /
+            # Codex).
             try:
                 ns.encode_version = resolve_encode_version(
                     ns.encode_version, ns.agent_model,
                 )
+                if ns.encode_version is not None:
+                    paths._validate_otf_version(ns.encode_version)
             except ValueError as e:
                 p.error(str(e))
         if ns.pre_encoded_source == "otf":

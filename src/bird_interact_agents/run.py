@@ -1237,6 +1237,33 @@ async def run_evaluation(
         pre_encoded_source=pre_encoded_source,
     )
 
+    # DEV-1605 (Codex r2): enforce the same "one run consumes one encoder
+    # version" guard the cloud submit applies, so a LOCAL pre-encoded otf run
+    # can't silently mix per-DB versions (DB A only opus, DB B only glm). The
+    # per-task resolver runs independently per DB; resolve across all selected
+    # DBs once here and pin the concrete version so local == cloud behaviour.
+    if pre_encoded_source == "otf":
+        from bird_interact_agents.agents._pre_encoded import resolve_otf_version
+        _run_dbs = {
+            t.get("selected_database") for t in tasks
+            if t.get("selected_database")
+        }
+        _resolved_versions = {
+            resolve_otf_version(
+                benchmark=benchmark_for_paths, db=_db,
+                requested=pre_encoded_version,
+            )
+            for _db in _run_dbs
+        }
+        if len(_resolved_versions) > 1:
+            raise ValueError(
+                "--pre-encoded-models otf: the selected DBs resolve to "
+                f"DIFFERENT otf versions {sorted(_resolved_versions)}; pass an "
+                "explicit --pre-encoded-version so the run consumes one."
+            )
+        if _resolved_versions:
+            pre_encoded_version = next(iter(_resolved_versions))
+
     # DEV-1510: the audited-gold overlay now fires for ALL benchmarks. The
     # per-benchmark `audited_gold_layout` (per_db / single_file) on the
     # `Benchmark` descriptor selects the on-disk layout, so livesqlbench
