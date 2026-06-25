@@ -283,6 +283,7 @@ class ClaudeSDKOtfAgent:
         slayer_setup: str = "on-the-fly",
         reasoning_effort: str | None = None,
         pre_encoded_source: str | None = None,
+        pre_encoded_version: str | None = None,
     ) -> None:
         # DEV-1586: `pre_encoded_source` (None | "otf" | "custom") selects the
         # read-only pre-encoded mode; `slayer_setup` is derived upstream.
@@ -307,6 +308,8 @@ class ClaudeSDKOtfAgent:
         self.slayer_setup = slayer_setup
         self.reasoning_effort = reasoning_effort
         self.pre_encoded_source = pre_encoded_source
+        # DEV-1605: encoder-model version of the otf reference to consume.
+        self.pre_encoded_version = pre_encoded_version
 
     async def run_task(
         self,
@@ -414,6 +417,8 @@ class ClaudeSDKOtfAgent:
         # would otherwise leak its `result` into this row when an early
         # setup failure (before _ctx_var.set, below) hits the except.
         ctx_dict: dict | None = None
+        # DEV-1605: defined up-front so early-error finalize paths have it.
+        consumed_reference = None
         try:
             load_db_data_if_needed(db_name, data_path_base)
             # LiveSQLBench one-shot: per-task isolated working sqlite (no-op
@@ -423,13 +428,17 @@ class ClaudeSDKOtfAgent:
             # read-only; on-the-fly (default) copies the deterministic cache
             # and the agent encodes into it at task time.
             if self.pre_encoded_source:
-                slayer_storage_dir, deleted_kb_ids = await resolve_pre_encoded_storage_dir(
+                _pe_res = await resolve_pre_encoded_storage_dir(
                     db_name=db_name,
                     task_data=task_data,
                     data_path_base=data_path_base,
                     benchmark=benchmark.name,
                     source=self.pre_encoded_source,
+                    version=self.pre_encoded_version,
                 )
+                slayer_storage_dir = _pe_res.storage_dir
+                deleted_kb_ids = _pe_res.deleted_kb_ids
+                consumed_reference = _pe_res.consumed
             else:
                 slayer_storage_dir, deleted_kb_ids = await resolve_otf_task_storage_dir(
                     db_name=db_name,
@@ -437,6 +446,7 @@ class ClaudeSDKOtfAgent:
                     data_path_base=data_path_base,
                     benchmark=benchmark.name,
                 )
+                consumed_reference = None
 
             max_asks = _ambiguity_count(task_data) + 3  # +patience(3); matches ADK
 
@@ -623,6 +633,7 @@ class ClaudeSDKOtfAgent:
                 },
                 deleted_kb_ids=deleted_kb_ids,
                 slayer_storage_dir=slayer_storage_dir,
+                consumed_reference=consumed_reference,
             )
 
         result = (ctx_dict or {}).get("result") or {}
@@ -694,4 +705,5 @@ class ClaudeSDKOtfAgent:
             },
             deleted_kb_ids=deleted_kb_ids,
             slayer_storage_dir=slayer_storage_dir,
+            consumed_reference=consumed_reference,
         )

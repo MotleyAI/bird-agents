@@ -49,6 +49,49 @@ class EncoderResult(BaseModel):
     clarifying_questions: list[str] = Field(default_factory=list)
 
 
+class EncoderMetaSettings(BaseModel):
+    """DEV-1605: the encoder settings recorded in ``_encoder_meta.json``.
+
+    Stored generously (provenance, not a contract) — every field is optional
+    so the reference build can record whatever it knows.
+    """
+
+    reasoning_effort: str | None = None
+    model_settings_json: str | None = None
+    version_was_explicit: bool = False
+
+
+class EncoderMeta(BaseModel):
+    """DEV-1605: self-describing provenance written next to ``_reference_fp.txt``
+    so an encoded OTF reference records WHO built it (model + framework +
+    version) and WHEN, independent of the incidental ``_setup_usage.json``
+    breakdown name.
+    """
+
+    schema_version: int = 1
+    version: str
+    encoder_model: str
+    encoder_framework: str
+    benchmark: str
+    db: str
+    reference_fp: str
+    built_at: str
+    settings: EncoderMetaSettings = Field(default_factory=EncoderMetaSettings)
+
+
+class ConsumedReference(BaseModel):
+    """DEV-1605: which encoded OTF reference a consumer run actually used for a
+    given db. Stamped into the run manifest (a per-db list) and the per-task
+    ``SubmissionAnnotation`` so ``runs/`` answers "which version did this run
+    consume" without reaching into GCS.
+    """
+
+    db: str
+    version: str
+    encoder_model: str
+    reference_fp: str
+
+
 class EncoderCaptureDeps(BaseModel):
     """Per-run deps for the build-time setup encoder, which has no task context
     (no ``SharedTaskState`` / user-sim). Carries the ``submit_encoding`` result

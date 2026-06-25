@@ -34,8 +34,11 @@ roots and non-mini benchmarks (Codex DEV-1586 High#1).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Iterable
+
+from pydantic import BaseModel
 
 from bird_interact_agents import paths
 from bird_interact_agents.hard8_preprocessor import (
@@ -43,6 +46,7 @@ from bird_interact_agents.hard8_preprocessor import (
     extract_deleted_kb_ids,
 )
 from bird_interact_agents.harness import _task_variant_workdir
+from bird_interact_agents.slayer_otf.encoder_types import ConsumedReference
 
 # Accepted values for the user-facing ``--pre-encoded-models`` flag.
 PRE_ENCODED_SOURCES: tuple[str, ...] = ("otf", "custom")
@@ -102,21 +106,143 @@ def validate_pre_encoded_source(pre_encoded_source: str | None) -> None:
         )
 
 
-def pre_encoded_source_root(source: str, *, benchmark: str) -> Path:
+def pre_encoded_source_root(
+    source: str, *, benchmark: str, version: str | None = None,
+) -> Path:
     """Return the canonical reference root for ``source``.
 
-    * ``otf`` → ``paths.slayer_models_otf_root(benchmark=...)``
-      (benchmark-scoped encoding-agent output).
+    * ``otf`` → ``paths.slayer_models_otf_root(benchmark=..., version=...)``
+      (benchmark-scoped encoding-agent output; DEV-1605 ``version`` selects
+      the encoder-model-versioned subdir).
     * ``custom`` → ``paths.slayer_models_root()`` (benchmark-agnostic
-      hand-curated reference).
+      hand-curated reference; ``version`` is meaningless and ignored).
 
     Both are MAIN-checkout paths via the ``paths`` helpers — never a
     worktree-relative path (CLAUDE.md worktree-safety contract).
     """
     validate_pre_encoded_source(source)
     if source == "otf":
-        return paths.slayer_models_otf_root(benchmark=benchmark)
+        return paths.slayer_models_otf_root(benchmark=benchmark, version=version)
     return paths.slayer_models_root()
+
+
+def _available_otf_versions(benchmark: str, db: str) -> list[str]:
+    """List the versions that have a complete reference for ``db`` —
+    a ``<benchmark>/<version>/<db>/_reference_fp.txt`` exists. Sorted for a
+    deterministic error message. DEV-1605: there is NO legacy flat fallback,
+    so a flat ``<benchmark>/<db>/`` is intentionally not listed."""
+    parent = paths.slayer_models_otf_root(benchmark=benchmark)  # version=None
+    if not parent.is_dir():
+        return []
+    out: list[str] = []
+    for vdir in sorted(p for p in parent.iterdir() if p.is_dir()):
+        if (vdir / db / "_reference_fp.txt").is_file():
+            out.append(vdir.name)
+    return out
+
+
+def resolve_otf_version(
+    *, benchmark: str, db: str, requested: str | None,
+) -> str:
+    """Resolve which OTF reference VERSION a consumer run uses for ``db``.
+
+    DEV-1605 rules (no legacy flat fallback):
+    * ``requested`` given → it must have a complete reference for ``db``,
+      else :class:`PreEncodedSetupError` listing what IS available.
+    * no request, exactly one version present → use it.
+    * no request, 2+ versions present → :class:`PreEncodedSetupError`
+      (ambiguous) listing them; the operator must pass an explicit version.
+    * no version present for ``db`` → :class:`PreEncodedSetupError`.
+    """
+    available = _available_otf_versions(benchmark, db)
+    if requested is not None:
+        if requested in available:
+            return requested
+        raise PreEncodedSetupError(
+            f"requested pre-encoded otf version {requested!r} has no reference "
+            f"for {db!r} under benchmark {benchmark!r}. Available versions: "
+            f"{available or '(none)'}. Build it with "
+            f"`scripts/build_otf_references.py {benchmark} --version {requested}`."
+        )
+    if not available:
+        raise PreEncodedSetupError(
+            f"no pre-encoded otf reference for {db!r} under benchmark "
+            f"{benchmark!r} (looked for <version>/{db}/_reference_fp.txt). "
+            f"Build one with `scripts/build_otf_references.py {benchmark}`."
+        )
+    if len(available) > 1:
+        raise PreEncodedSetupError(
+            f"multiple pre-encoded otf versions exist for {db!r} under "
+            f"benchmark {benchmark!r}: {available}. Pass an explicit "
+            f"--pre-encoded-version to choose one."
+        )
+    return available[0]
+
+
+def _read_consumed_reference(db_dir: Path, *, db: str, version: str) -> ConsumedReference:
+    """Build the :class:`ConsumedReference` for a chosen reference dir from its
+    ``_reference_fp.txt`` (+ ``_encoder_meta.json`` if present, for the model)."""
+    fp = (db_dir / "_reference_fp.txt").read_text().strip()
+    encoder_model = "unknown"
+    meta_fp = db_dir / "_encoder_meta.json"
+    if meta_fp.is_file():
+        try:
+            encoder_model = json.loads(meta_fp.read_text()).get(
+                "encoder_model", "unknown"
+            )
+        except (ValueError, OSError):
+            encoder_model = "unknown"
+    return ConsumedReference(
+        db=db, version=version, encoder_model=encoder_model, reference_fp=fp,
+    )
+
+
+def dedupe_consumed_references(
+    items: Iterable[ConsumedReference | None],
+) -> list[ConsumedReference]:
+    """Collapse a stream of per-task consumed references into one record per
+    db (first-seen wins). Drops ``None`` (non-otf tasks). Returns a LIST (the
+    manifest carries a list, never a Dict — global LLM/JSON convention)."""
+    by_db: dict[str, ConsumedReference] = {}
+    for cr in items:
+        if cr is None:
+            continue
+        by_db.setdefault(cr.db, cr)
+    return list(by_db.values())
+
+
+def collect_consumed_references_from_run_dir(run_dir) -> list[ConsumedReference]:
+    """DEV-1605: walk a fetched cloud run dir for per-task
+    ``submission_annotation.json`` files, read each ``consumed_reference``, and
+    dedupe into the per-db list the run manifest carries.
+
+    Best-effort: an unreadable / malformed annotation is skipped (the manifest
+    list is a convenience aggregate; the per-task annotations are the
+    authoritative record)."""
+    run_dir = Path(run_dir)
+    found: list[ConsumedReference | None] = []
+    for ann_fp in sorted(run_dir.rglob("submission_annotation.json")):
+        try:
+            data = json.loads(ann_fp.read_text())
+        except (ValueError, OSError):
+            continue
+        cr = data.get("consumed_reference")
+        if cr:
+            try:
+                found.append(ConsumedReference.model_validate(cr))
+            except Exception:  # noqa: BLE001 — skip a malformed record
+                continue
+    return dedupe_consumed_references(found)
+
+
+class PreEncodedResolution(BaseModel):
+    """Result of :func:`resolve_pre_encoded_storage_dir` — the per-task SLayer
+    storage dir, the HARD-8 deleted KB ids, and (for the ``otf`` source) the
+    consumed-reference provenance to stamp into the run (DEV-1605)."""
+
+    storage_dir: str
+    deleted_kb_ids: list[int]
+    consumed: ConsumedReference | None = None
 
 
 def strip_write_slayer_tools(bare_names: Iterable[str]) -> list[str]:
@@ -190,7 +316,8 @@ async def resolve_pre_encoded_storage_dir(
     data_path_base: str,
     benchmark: str,
     source: str,
-) -> tuple[str, list[int]]:
+    version: str | None = None,
+) -> PreEncodedResolution:
     """Resolve the per-task SLayer storage for the pre-encoded path.
 
     Materialises a fresh per-task copy of the chosen reference
@@ -200,9 +327,14 @@ async def resolve_pre_encoded_storage_dir(
     committed reference is therefore read-only at runtime; SLayer's
     first-load type-refinement writes land in the per-task scratch dir.
 
-    Returns ``(slayer_storage_dir, deleted_kb_ids)``. Raises
-    :class:`PreEncodedSetupError` (fail-clear) when the reference is missing
-    or has no usable embeddings.
+    Returns a :class:`PreEncodedResolution` (storage dir + deleted KB ids +,
+    for the ``otf`` source, the :class:`ConsumedReference` provenance to stamp
+    into the run). Raises :class:`PreEncodedSetupError` (fail-clear) when the
+    reference is missing or has no usable embeddings.
+
+    DEV-1605: for the ``otf`` source, ``version`` selects the encoder-model-
+    versioned subdir (resolved via :func:`resolve_otf_version` when not
+    explicitly pinned). The ``custom`` source has no versions.
 
     ``benchmark`` / ``data_path_base`` are threaded so the per-task datasource
     connection string re-anchors correctly for benchmark-scoped OTF roots and
@@ -210,9 +342,19 @@ async def resolve_pre_encoded_storage_dir(
     unsafe here (Codex DEV-1586 High#1).
     """
     validate_pre_encoded_source(source)
-    root = pre_encoded_source_root(source, benchmark=benchmark)
+    resolved_version: str | None = None
+    consumed: ConsumedReference | None = None
+    if source == "otf":
+        resolved_version = resolve_otf_version(
+            benchmark=benchmark, db=db_name, requested=version,
+        )
+    root = pre_encoded_source_root(source, benchmark=benchmark, version=resolved_version)
     db_dir = root / db_name
     _assert_reference_present(source, db_dir)
+    if source == "otf":
+        consumed = _read_consumed_reference(
+            db_dir, db=db_name, version=resolved_version,
+        )
 
     deleted = sorted(extract_deleted_kb_ids(task_data))
     instance_id = task_data["instance_id"]
@@ -228,4 +370,6 @@ async def resolve_pre_encoded_storage_dir(
         mini_interact_root=db_root,
         db_root=db_root,
     )
-    return str(variant_dir), deleted
+    return PreEncodedResolution(
+        storage_dir=str(variant_dir), deleted_kb_ids=deleted, consumed=consumed,
+    )

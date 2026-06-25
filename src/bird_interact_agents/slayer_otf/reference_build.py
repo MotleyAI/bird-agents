@@ -32,6 +32,7 @@ so HARD-8 needs no embedding pruning.
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import fcntl
 import json
 import logging
@@ -53,6 +54,10 @@ from bird_interact_agents.slayer_otf.cache import (
     _get_lock,
     ensure_db_cache,
 )
+from bird_interact_agents.slayer_otf.encoder_types import (
+    EncoderMeta,
+    EncoderMetaSettings,
+)
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     _normalise_children,
     encode_kb_as_memories,
@@ -72,6 +77,11 @@ _SETUP_RESULTS = "_setup_results.json"
 # reference-build encode cost is recoverable (it is NOT in the per-task
 # usage_json — that only covers the eval agents + task-time on-the-fly encode).
 _SETUP_USAGE = "_setup_usage.json"
+# DEV-1605: self-describing encoder provenance (model + framework + version +
+# settings) written next to the marker so a versioned reference records WHO
+# built it. Written BEFORE `_MARKER` so any reader that sees the completeness
+# marker is guaranteed the meta is already present.
+_ENCODER_META = "_encoder_meta.json"
 
 # `run_one(kb_id, row, deps_results) -> EncoderResult`
 _RunOne = Callable[..., Awaitable[Any]]
@@ -564,6 +574,10 @@ async def ensure_db_reference(
     force: bool = False,
     db_root: Path | None = None,
     benchmark: object | None = None,
+    encoder_model: str | None = None,
+    encoder_framework: str | None = None,
+    version: str | None = None,
+    encoder_settings: EncoderMetaSettings | None = None,
 ) -> ReferenceEntry:
     """Materialise (or reuse) the durable per-DB reference at
     ``reference_root / db``. See module docstring for the lifecycle contract.
@@ -603,7 +617,12 @@ async def ensure_db_reference(
     kb_rows = cache_entry.kb_rows
     reference_root.mkdir(parents=True, exist_ok=True)
 
-    async with _get_lock(db):
+    # DEV-1605: key the in-process build lock by the versioned TARGET dir
+    # (``<reference_root>/<db>``), not the bare db, so two different VERSIONS
+    # of the same db can build concurrently in one process. The cross-process
+    # flock is already per-(reference_root, db). ``ensure_db_cache`` (run above,
+    # outside this lock) keeps its own bare-``db`` cache lock.
+    async with _get_lock(str(target)):
         # Double-check under the lock — a peer may have built the reference
         # while we waited (or while ensure_db_cache ran).
         if not force and marker.is_file():
@@ -615,6 +634,11 @@ async def ensure_db_reference(
             mini_interact_root=mini_interact_root,
             build_encoder=build_encoder,
             db_root=db_root,
+            encoder_model=encoder_model,
+            encoder_framework=encoder_framework,
+            version=version,
+            encoder_settings=encoder_settings,
+            benchmark=benchmark,
             # CR r2 — pass the USER's `force` only, NOT `force or
             # target.exists()`. The latter would mis-signal "user wants
             # rebuild" whenever a stale markerless dir exists, which
@@ -665,6 +689,8 @@ def _per_db_build_flock(reference_root: Path, db: str) -> Iterator[None]:
 async def _build_reference(
     *, db, fp, cache_entry, kb_rows, reference_root, target,
     mini_interact_root, build_encoder, force, db_root=None,
+    encoder_model=None, encoder_framework=None, version=None,
+    encoder_settings=None, benchmark=None,
 ) -> list[Any]:
     # DEV-1470 / H4 — take the cross-process per-DB flock BEFORE we touch
     # `target` or run the encoder. The asyncio Lock in `ensure_db_reference`
@@ -678,12 +704,19 @@ async def _build_reference(
             mini_interact_root=mini_interact_root,
             build_encoder=build_encoder, force=force,
             db_root=db_root,
+            encoder_model=encoder_model,
+            encoder_framework=encoder_framework,
+            version=version,
+            encoder_settings=encoder_settings,
+            benchmark=benchmark,
         )
 
 
 async def _build_reference_inside_lock(
     *, db, fp, cache_entry, kb_rows, reference_root, target,
     mini_interact_root, build_encoder, force, db_root=None,
+    encoder_model=None, encoder_framework=None, version=None,
+    encoder_settings=None, benchmark=None,
 ) -> list[Any]:
     # Codex r2: re-check the marker INSIDE the cross-process flock. A peer
     # Ray actor process may have passed the marker check in
@@ -784,6 +817,24 @@ async def _build_reference_inside_lock(
         setup_usage = getattr(run_one, "usage", None)
         if setup_usage is not None:
             (tmp / _SETUP_USAGE).write_text(setup_usage.model_dump_json(indent=2))
+        # DEV-1605: write the self-describing encoder provenance BEFORE the
+        # marker (so any reader that sees `_reference_fp.txt` is guaranteed the
+        # meta is present). Only when the caller supplied the encoder identity
+        # — legacy callers/tests that don't pass `encoder_model` build a
+        # reference without the sidecar, unchanged.
+        if encoder_model is not None:
+            meta = EncoderMeta(
+                version=version or "unknown",
+                encoder_model=encoder_model,
+                encoder_framework=encoder_framework or "unknown",
+                benchmark=getattr(benchmark, "name", None) or str(benchmark or "unknown"),
+                db=db,
+                reference_fp=fp,
+                built_at=_dt.datetime.now(_dt.timezone.utc)
+                    .replace(microsecond=0).isoformat(),
+                settings=encoder_settings or EncoderMetaSettings(),
+            )
+            (tmp / _ENCODER_META).write_text(meta.model_dump_json(indent=2))
         (tmp / _MARKER).write_text(fp)
 
         # 7. Atomic-rename onto the (absent) target.

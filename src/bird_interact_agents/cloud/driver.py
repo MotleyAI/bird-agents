@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 from bird_interact_agents import paths, provider_registry
+from bird_interact_agents.model_string import encoder_version_slug
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data, cluster, config, gcs, image, prereqs
 from bird_interact_agents.cloud import collation as _collation
@@ -377,6 +378,12 @@ def build_manifest(
         # DEV-1586: which pre-encoded reference feeds a pre-encoded run
         # (otf=encoding-agent output, custom=hand-curated; None on-the-fly).
         "pre_encoded_source": getattr(args, "pre_encoded_source", None),
+        # DEV-1605: version axis on the otf reference. `pre_encoded_version`
+        # selects which encoder-model version a consumer reads; `encode_version`
+        # labels the version an otf_encode run BUILDS. Both None ⇒ default
+        # (single-version consume / agent-model-slug encode).
+        "pre_encoded_version": getattr(args, "pre_encoded_version", None),
+        "encode_version": getattr(args, "encode_version", None),
         "slayer_storage_root": getattr(
             args, "slayer_storage_root", "/data/slayer_models"
         ),
@@ -481,16 +488,25 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
         # hand-curated slayer_models dir.
         source = getattr(args, "pre_encoded_source", None) or "custom"
         if source == "otf":
+            # DEV-1605: upload the version the consumer will read.
+            version = getattr(args, "pre_encoded_version", None)
             return [
-                (paths.slayer_models_otf_root(benchmark=benchmark),
+                (paths.slayer_models_otf_root(benchmark=benchmark, version=version),
                  "slayer_models_otf", True),
             ]
         return [(submitter_repo_root() / "slayer_models", "slayer_models", True)]
     if fw == "pydantic_ai_otf_encode":
+        # DEV-1605: the optional reference seed lives in the version-scoped dir
+        # (default = agent-model slug) so the cloud encode reuses/extends the
+        # right version.
+        _model = getattr(args, "agent_model", None)
+        encode_version = getattr(args, "encode_version", None) or (
+            encoder_version_slug(_model) if _model else None
+        )
         return [
             (paths.slayer_otf_cache_root(benchmark=benchmark),
              "slayer_otf_cache", True),
-            (paths.slayer_models_otf_root(benchmark=benchmark),
+            (paths.slayer_models_otf_root(benchmark=benchmark, version=encode_version),
              "slayer_models_otf", False),
         ]
     # pydantic_ai_recursive + on-the-fly — cache only, no LLM-encoded reference.
@@ -920,6 +936,13 @@ def _build_job_args(
     # `--pre-encoded-models None` (argparse would reject the choice).
     if getattr(args, "pre_encoded_source", None):
         job_args += ["--pre-encoded-models", args.pre_encoded_source]
+    # DEV-1605: forward the resolved otf version axis. Conditional emission —
+    # never pass an empty string (the receiving argparse would take it as a
+    # literal value and mis-resolve the version dir).
+    if getattr(args, "pre_encoded_version", None):
+        job_args += ["--pre-encoded-version", args.pre_encoded_version]
+    if getattr(args, "encode_version", None):
+        job_args += ["--version", args.encode_version]
     return job_args
 
 
@@ -1151,6 +1174,17 @@ def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
     benchmark = _benchmark_for_dataset(manifest.get("dataset"))
     dest = paths.results_root() / benchmark / "cloud" / run_id
     gcs.concurrent_download_prefix(run_id, dest, client=client)
+    # DEV-1605: stamp the per-db list of consumed otf references (collected
+    # from the downloaded per-task annotations) into the local manifest, so
+    # `results/<benchmark>/cloud/<run_id>/manifest.json` answers "which encoded
+    # versions did this run consume" without re-reading every annotation.
+    from bird_interact_agents.agents._pre_encoded import (
+        collect_consumed_references_from_run_dir,
+    )
+    manifest["consumed_references"] = [
+        cr.model_dump()
+        for cr in collect_consumed_references_from_run_dir(dest)
+    ]
     manifest_path = dest / "manifest.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
@@ -1160,10 +1194,19 @@ def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
     # warm cache at paths.slayer_models_otf_root()/<db>/ (newest-mtime-wins
     # per file, with the marker invariant preserved under a per-DB flock).
     # No-op for runs without any post_run/ shards (raw, pre-encoded, recursive).
+    # DEV-1605: merge into the SAME version dir the cloud encode built into
+    # (manifest encode_version, default = agent-model slug). A pre-DEV-1605
+    # manifest has no encode_version; fall back to the slug when agent_model is
+    # present (so its cloud-built shards land in the versioned warm cache), and
+    # only version=None for an ancient manifest lacking both.
+    _encode_version = manifest.get("encode_version")
+    if not _encode_version and manifest.get("agent_model"):
+        _encode_version = encoder_version_slug(manifest["agent_model"])
     merge_report = _post_run_merge.merge_post_run_into_warm_cache(
         run_dir=dest,
         reference_root=paths.slayer_models_otf_root(
             benchmark=_benchmark_for_dataset(manifest.get("dataset")),
+            version=_encode_version,
         ),
     )
     metrics["merge_report"] = merge_report
@@ -1494,6 +1537,12 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         pre_src = "custom"
     if pre_src:
         job_args += ["--pre-encoded-models", pre_src]
+    # DEV-1605: re-thread the resolved otf version axis from the manifest so a
+    # resubmit consumes/builds the SAME version as the original run.
+    if manifest.get("pre_encoded_version"):
+        job_args += ["--pre-encoded-version", manifest["pre_encoded_version"]]
+    if manifest.get("encode_version"):
+        job_args += ["--version", manifest["encode_version"]]
     return job_args
 
 

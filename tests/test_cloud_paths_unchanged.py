@@ -116,7 +116,7 @@ def test_ray_app_artifacts_select_mini_interact_root(monkeypatch):
         seen.append(("cache", benchmark))
         return Path("/data") / f"otf_cache_{benchmark}"
 
-    def _record_models(*, benchmark):
+    def _record_models(*, benchmark, version=None):
         seen.append(("models", benchmark))
         return Path("/data") / f"models_otf_{benchmark}"
 
@@ -141,7 +141,7 @@ def _spy_path_helpers(monkeypatch):
         seen.append(("cache", benchmark))
         return Path("/data") / f"otf_cache_{benchmark}"
 
-    def _models(*, benchmark):
+    def _models(*, benchmark, version=None):
         seen.append(("models", benchmark))
         return Path("/data") / f"models_otf_{benchmark}"
 

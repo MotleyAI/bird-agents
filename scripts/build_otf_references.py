@@ -38,10 +38,22 @@ from bird_interact_agents import paths
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.model_string import (
     build_pydantic_ai_model,
+    encoder_version_slug,
     is_anthropic,
     native_model_id,
 )
 from bird_interact_agents.slayer_otf import ensure_db_reference
+from bird_interact_agents.slayer_otf.encoder_types import EncoderMetaSettings
+
+
+def resolve_build_version(
+    *, agent_model: str, version_arg: str | None,
+) -> tuple[str, bool]:
+    """DEV-1605: resolve the version label for a build + whether it was
+    operator-supplied. Default = the encoder-model slug."""
+    if version_arg:
+        return version_arg, True
+    return encoder_version_slug(agent_model), False
 
 # The two encoder frameworks live behind SEPARATE optional extras
 # (`claude-sdk` vs `pydantic-ai`). Guard the imports so building with one
@@ -139,18 +151,30 @@ def make_build_encoder(framework: str, agent_model: str):
 
 async def _build_one(
     db: str, *, benchmark_name: str, build_encoder, force: bool,
+    encoder_model: str, encoder_framework: str, version: str,
+    version_was_explicit: bool,
 ) -> None:
     bench = get_benchmark(benchmark_name)
     data_root = paths.benchmark_data_root(benchmark_name)
     entry = await ensure_db_reference(
         db,
-        reference_root=paths.slayer_models_otf_root(benchmark=benchmark_name),
+        # DEV-1605: build into the version-scoped root
+        # slayer_models_otf/<benchmark>/<version>/<db>.
+        reference_root=paths.slayer_models_otf_root(
+            benchmark=benchmark_name, version=version,
+        ),
         cache_root=paths.slayer_otf_cache_root(benchmark=benchmark_name),
         mini_interact_root=data_root,
         build_encoder=build_encoder,
         force=force,
         db_root=data_root,
         benchmark=bench,
+        encoder_model=encoder_model,
+        encoder_framework=encoder_framework,
+        version=version,
+        encoder_settings=EncoderMetaSettings(
+            version_was_explicit=version_was_explicit,
+        ),
     )
     logger.info("  %s -> %s", db, entry.reference_dir)
 
@@ -170,20 +194,28 @@ async def _main_async(args: argparse.Namespace) -> int:
         raise SystemExit(f"no databases found for benchmark {benchmark_name!r}")
 
     build_encoder = make_build_encoder(args.encoder_framework, args.agent_model)
+    version, version_was_explicit = resolve_build_version(
+        agent_model=args.agent_model, version_arg=args.version,
+    )
 
     logger.info(
-        "Building OTF references for %d DB(s) in %s (encoder=%s, force=%s): %s",
-        len(dbs), benchmark_name, args.encoder_framework, args.force, dbs,
+        "Building OTF references for %d DB(s) in %s "
+        "(encoder=%s, version=%s, force=%s): %s",
+        len(dbs), benchmark_name, args.encoder_framework, version,
+        args.force, dbs,
     )
     for db in dbs:
         logger.info("encoding %s ...", db)
         await _build_one(
             db, benchmark_name=benchmark_name,
             build_encoder=build_encoder, force=args.force,
+            encoder_model=args.agent_model,
+            encoder_framework=args.encoder_framework,
+            version=version, version_was_explicit=version_was_explicit,
         )
     logger.info(
         "Done. References at %s",
-        paths.slayer_models_otf_root(benchmark=benchmark_name),
+        paths.slayer_models_otf_root(benchmark=benchmark_name, version=version),
     )
     return 0
 
@@ -203,8 +235,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
              "the legacy Anthropic-only path.",
     )
     p.add_argument(
+        "--version", default=None,
+        help="DEV-1605: version label for this build (the subdir under "
+             "slayer_models_otf/<benchmark>/). Default = the --agent-model "
+             "slug (e.g. opus-4-7, glm-5.2). Pass an explicit label for two "
+             "builds with the same model but different settings.",
+    )
+    p.add_argument(
         "--force", action="store_true",
-        help="Rebuild even if a DB's _reference_fp.txt marker is present.",
+        help="Rebuild even if this version's _reference_fp.txt marker is "
+             "present (rebuilds ONLY the targeted version slot).",
     )
     p.add_argument(
         "--only", default=None,

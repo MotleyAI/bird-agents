@@ -132,6 +132,24 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     sp_submit.add_argument(
+        "--pre-encoded-version", dest="pre_encoded_version", default=None,
+        help=(
+            "DEV-1605: which encoder-model VERSION of the otf reference to "
+            "consume (e.g. opus-4-7, glm-5.2). Only meaningful with "
+            "--pre-encoded-models otf. Omitted = use the single present "
+            "version (error if 2+ exist locally)."
+        ),
+    )
+    sp_submit.add_argument(
+        "--version", dest="encode_version", default=None,
+        help=(
+            "DEV-1605: version LABEL for an otf_encode run's output "
+            "(slayer_models_otf/<benchmark>/<version>/<db>). Default = the "
+            "--agent-model slug (e.g. opus-4-7). Pass an explicit label for "
+            "two builds with the same model but different settings."
+        ),
+    )
+    sp_submit.add_argument(
         "--slayer-storage-root", default="/data/slayer_models",
     )
     sp_submit.add_argument(
@@ -334,6 +352,40 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 "--instance-ids resolved to an empty list "
                 "(no ids parsed from `--instance-ids` or `--instance-ids-file`)"
             )
+        # DEV-1605: resolve the otf version axis to a CONCRETE value at submit
+        # so the upload (driver) / download (actor) / merge agree on one
+        # version dir. The encode label defaults to the agent-model slug; the
+        # consumer version resolves against the LOCAL refs (single → use it,
+        # 2+ → fail at submit, explicit → must exist).
+        from bird_interact_agents.model_string import encoder_version_slug
+        if ns.framework == "pydantic_ai_otf_encode":
+            ns.encode_version = ns.encode_version or encoder_version_slug(
+                ns.agent_model,
+            )
+        if ns.pre_encoded_source == "otf":
+            from bird_interact_agents.agents._pre_encoded import (
+                PreEncodedSetupError,
+                resolve_otf_version,
+            )
+            from bird_interact_agents.cloud.driver import _dbs_for_instances
+            _dbs = _dbs_for_instances(ns.instance_ids, ns.dataset)
+            _resolved: set[str] = set()
+            try:
+                for _db in _dbs:
+                    _resolved.add(resolve_otf_version(
+                        benchmark=ns.dataset, db=_db,
+                        requested=ns.pre_encoded_version,
+                    ))
+            except PreEncodedSetupError as e:
+                p.error(str(e))
+            if len(_resolved) > 1:
+                p.error(
+                    "--pre-encoded-models otf: the selected DBs resolve to "
+                    f"DIFFERENT otf versions {sorted(_resolved)}; pass an "
+                    "explicit --pre-encoded-version so the run consumes one."
+                )
+            ns.pre_encoded_version = next(iter(_resolved)) if _resolved else None
+
         # DEV-1515 follow-up: require every passed instance_id to have a
         # task annotation file. The annotation is the authoritative source
         # for grading (gold_variants, evaluator_prompt, masked_terms,

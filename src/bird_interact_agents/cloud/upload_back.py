@@ -244,7 +244,17 @@ def upload_otf_reference_delta(
                 "task data is missing the required 'dataset' field"
             )
         benchmark = get_benchmark(dataset).name
-        ref_root = paths.slayer_models_otf_root(benchmark=benchmark)
+        # DEV-1605: walk the version-scoped reference root the cloud encode
+        # built into (encode_version, default = agent-model slug). The GCS
+        # post_run prefix stays <db>-keyed — `runs/<run_id>/` already isolates
+        # versions across runs, so the version need not enter the prefix.
+        from bird_interact_agents.model_string import encoder_version_slug
+        encode_version = cfg.get("encode_version")
+        if not encode_version and cfg.get("agent_model"):
+            encode_version = encoder_version_slug(cfg["agent_model"])
+        ref_root = paths.slayer_models_otf_root(
+            benchmark=benchmark, version=encode_version,
+        )
         if not ref_root.is_dir():
             return
         for db_dir in sorted(p for p in ref_root.iterdir() if p.is_dir()):

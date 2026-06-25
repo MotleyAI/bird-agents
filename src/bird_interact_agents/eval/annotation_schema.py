@@ -18,6 +18,8 @@ from typing import Annotated, Any, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator  # noqa: F401
 
+from bird_interact_agents.slayer_otf.encoder_types import ConsumedReference
+
 # DEV-1541: caps for AutopsyError excerpt fields.
 _AUTOPSY_ERROR_MESSAGE_CAP = 500
 _AUTOPSY_ERROR_TRACEBACK_CAP = 2000
@@ -1004,3 +1006,11 @@ class SubmissionAnnotation(BaseModel):
     partition cascade to distinguish L1 (correct original matched) from L2
     (wrong original coincidentally matched). None for migrated/legacy
     annotations that pre-date DEV-1533."""
+
+    consumed_reference: Optional[ConsumedReference] = None
+    """DEV-1605: which encoded OTF reference (db / version / encoder_model /
+    reference_fp) this run consumed for the task's db. Populated for
+    ``--pre-encoded-models otf`` runs so ``runs/`` answers "which encoded
+    version did this run use" standalone. ``None`` for non-otf runs and for
+    legacy annotations that pre-date DEV-1605 — an ADDITIVE optional field, so
+    ``schema_version`` stays ``1`` and old on-disk annotations keep validating."""

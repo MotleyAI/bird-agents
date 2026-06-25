@@ -220,7 +220,8 @@ def _make_ref_dir(root: Path, db: str, *, marker: bool, embeddings: bool) -> Pat
 async def test_resolver_fail_clear_missing_otf_marker(tmp_path, monkeypatch):
     root = tmp_path / "otf"
     _make_ref_dir(root, "demo", marker=False, embeddings=True)
-    monkeypatch.setattr(pe, "pre_encoded_source_root", lambda s, *, benchmark: root)
+    monkeypatch.setattr(pe, "pre_encoded_source_root", lambda s, *, benchmark, version=None: root)
+    monkeypatch.setattr(pe, "resolve_otf_version", lambda *, benchmark, db, requested: "v1")
     with pytest.raises(pe.PreEncodedSetupError):
         await pe.resolve_pre_encoded_storage_dir(
             db_name="demo",
@@ -234,7 +235,8 @@ async def test_resolver_fail_clear_missing_otf_marker(tmp_path, monkeypatch):
 async def test_resolver_fail_clear_empty_custom(tmp_path, monkeypatch):
     root = tmp_path / "custom"
     (root / "demo").mkdir(parents=True)  # empty dir
-    monkeypatch.setattr(pe, "pre_encoded_source_root", lambda s, *, benchmark: root)
+    monkeypatch.setattr(pe, "pre_encoded_source_root", lambda s, *, benchmark, version=None: root)
+    monkeypatch.setattr(pe, "resolve_otf_version", lambda *, benchmark, db, requested: "v1")
     with pytest.raises(pe.PreEncodedSetupError):
         await pe.resolve_pre_encoded_storage_dir(
             db_name="demo",
@@ -248,7 +250,8 @@ async def test_resolver_fail_clear_empty_custom(tmp_path, monkeypatch):
 async def test_resolver_fail_clear_missing_embeddings(tmp_path, monkeypatch):
     root = tmp_path / "otf"
     _make_ref_dir(root, "demo", marker=True, embeddings=False)
-    monkeypatch.setattr(pe, "pre_encoded_source_root", lambda s, *, benchmark: root)
+    monkeypatch.setattr(pe, "pre_encoded_source_root", lambda s, *, benchmark, version=None: root)
+    monkeypatch.setattr(pe, "resolve_otf_version", lambda *, benchmark, db, requested: "v1")
     with pytest.raises(pe.PreEncodedSetupError):
         await pe.resolve_pre_encoded_storage_dir(
             db_name="demo",
@@ -265,7 +268,8 @@ async def test_resolver_threads_benchmark_aware_roots(tmp_path, monkeypatch):
     db_root (NOT the sibling-dir fallback)."""
     root = tmp_path / "otf"
     _make_ref_dir(root, "demo", marker=True, embeddings=True)
-    monkeypatch.setattr(pe, "pre_encoded_source_root", lambda s, *, benchmark: root)
+    monkeypatch.setattr(pe, "pre_encoded_source_root", lambda s, *, benchmark, version=None: root)
+    monkeypatch.setattr(pe, "resolve_otf_version", lambda *, benchmark, db, requested: "v1")
 
     captured: dict = {}
 
@@ -277,7 +281,7 @@ async def test_resolver_threads_benchmark_aware_roots(tmp_path, monkeypatch):
 
     data_base = tmp_path / "data"
     data_base.mkdir()
-    out, deleted = await pe.resolve_pre_encoded_storage_dir(
+    res = await pe.resolve_pre_encoded_storage_dir(
         db_name="demo",
         task_data={"instance_id": "i1"},
         data_path_base=str(data_base),
@@ -290,7 +294,7 @@ async def test_resolver_threads_benchmark_aware_roots(tmp_path, monkeypatch):
     # canonical_storage_root.parent.parent/"mini-interact" fallback.
     assert captured["mini_interact_root"] == data_base.resolve()
     assert captured["db_root"] == data_base.resolve()
-    assert deleted == []
+    assert res.deleted_kb_ids == []
 
 
 # ---------------------------------------------------------------------------

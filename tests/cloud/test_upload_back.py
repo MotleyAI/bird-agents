@@ -252,7 +252,7 @@ def _make_otf_ref_root(
         (d / "models" / "x.yaml").write_text(f"name: {db}\n")
         (d / "memories.yaml").write_text("[]\n")
         (d / "_reference_fp.txt").write_text(fp)
-    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda *, benchmark=None: root)
+    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda *, benchmark=None, version=None: root)
     return root
 
 
@@ -531,7 +531,7 @@ def test_upload_otf_reference_delta_skips_incomplete_reference(
     (root / "db_a" / "models").mkdir(parents=True)
     (root / "db_a" / "models" / "x.yaml").write_text("name: x\n")
     # NO _reference_fp.txt
-    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda *, benchmark=None: root)
+    monkeypatch.setattr(_paths, "slayer_models_otf_root", lambda *, benchmark=None, version=None: root)
 
     upload_back.upload_otf_reference_delta(
         run_id=RUN_ID, cfg=_cfg_for_otf_encode(),

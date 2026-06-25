@@ -262,21 +262,51 @@ def slayer_otf_cache_root(*, benchmark: str) -> Path:
     return main_checkout_root() / "slayer_otf_cache" / benchmark
 
 
-def slayer_models_otf_root(*, benchmark: str) -> Path:
+def _validate_otf_version(version: str) -> None:
+    """Reject a version label that isn't a safe single path segment.
+
+    DEV-1605: ``<version>`` becomes a directory name under
+    ``slayer_models_otf/<benchmark>/``; a label containing a path separator,
+    a parent-dir component, or that is empty/``.`` could escape the tree.
+    """
+    if (
+        not version
+        or version in (".", "..")
+        or "/" in version
+        or "\\" in version
+    ):
+        raise ValueError(
+            f"invalid OTF version label {version!r}: must be a non-empty single "
+            f"path segment (no '/', '\\', '.' or '..')."
+        )
+
+
+def slayer_models_otf_root(*, benchmark: str, version: str | None = None) -> Path:
     """Per-DB reference models built by the on-the-fly KB-encode setup pass.
 
     All benchmarks share a single parent dir ``slayer_models_otf/`` under the
     main checkout; each benchmark gets its own subdirectory:
     ``slayer_models_otf/<benchmark>/``.
 
+    DEV-1605: ``version`` adds a segment ABOVE the per-db dir, so the full
+    per-db path is ``slayer_models_otf/<benchmark>/<version>/<db>/``. With
+    ``version=None`` this returns the ``<benchmark>`` parent unchanged — both
+    the legacy shape for callers that append ``/<db>`` themselves AND the
+    "list all versions" root used by the consumer resolver + migration.
+
     ``BIRD_SLAYER_MODELS_OTF_ROOT`` overrides the parent for ALL benchmarks —
-    benchmark subdir is still appended under it.
+    benchmark (and version) subdir is still appended under it.
     """
     _validate_benchmark(benchmark)
+    if version is not None:
+        _validate_otf_version(version)
     parent_override = os.environ.get("BIRD_SLAYER_MODELS_OTF_ROOT")
-    if parent_override:
-        return Path(parent_override).expanduser() / benchmark
-    return main_checkout_root() / "slayer_models_otf" / benchmark
+    base = (
+        Path(parent_override).expanduser() / benchmark
+        if parent_override
+        else main_checkout_root() / "slayer_models_otf" / benchmark
+    )
+    return base / version if version is not None else base
 
 
 def gated_gold_root(*, benchmark: str | None) -> Path:

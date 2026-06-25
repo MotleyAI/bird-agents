@@ -1069,6 +1069,7 @@ def finalize_result_row(
     *,
     deleted_kb_ids: list[int],
     slayer_storage_dir: str,
+    consumed_reference: object | None = None,
 ) -> dict:
     """Stamp HARD-8 bookkeeping onto an adapter's result row.
 
@@ -1076,6 +1077,10 @@ def finalize_result_row(
     used a deletion variant (i.e. ``deleted_kb_ids`` is non-empty);
     otherwise it stays ``None`` so canonical-storage rows can be told
     apart from variant rows in the results JSON.
+
+    DEV-1605: ``consumed_reference`` (a ``ConsumedReference`` or ``None``) is
+    stamped onto the row (as a plain dict) so the downstream grader can copy
+    it onto the per-task ``SubmissionAnnotation``. ``None`` for non-otf runs.
 
     DEV-1535 fix: also backfills ``n_agent_turns`` from the trajectory
     when the adapter hasn't set it explicitly. Pre-fix only the
@@ -1087,6 +1092,12 @@ def finalize_result_row(
     """
     row["deleted_kb_ids"] = deleted_kb_ids
     row["variant_storage_path"] = slayer_storage_dir if deleted_kb_ids else None
+    # DEV-1605: carry the consumed OTF reference (if any) as a plain dict so
+    # the grader can stamp it onto the SubmissionAnnotation. `model_dump()`
+    # for a pydantic model; pass-through for a dict; None stays None.
+    if consumed_reference is not None and not isinstance(consumed_reference, dict):
+        consumed_reference = consumed_reference.model_dump()
+    row["consumed_reference"] = consumed_reference
     # DEV-1535 r2 (CodeRabbit): the early-error paths in
     # `claude_sdk_otf/agent.py:393-406` and the analogous spots in
     # `claude_sdk_otf_raw/agent.py:163-176` build a row WITHOUT any

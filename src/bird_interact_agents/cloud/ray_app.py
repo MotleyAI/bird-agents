@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 from bird_interact_agents import paths, provider_registry
+from bird_interact_agents.model_string import encoder_version_slug
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
@@ -308,16 +309,41 @@ def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
     else:
         artifacts = [("slayer_otf_cache", True)]
     benchmark = _cloud_benchmark(cfg)
+    # DEV-1605: the otf reference root is version-scoped. A consumer reads the
+    # resolved `pre_encoded_version`; an encode run builds into `encode_version`
+    # (default = agent-model slug). Both are concrete by submit time.
+    otf_version = _otf_version_for(cfg)
     out: list[tuple[str, Path, bool]] = []
     for artifact, required in artifacts:
         root_fn = getattr(paths, _ARTIFACT_ROOT_FN_NAME[artifact])
-        root = (
-            root_fn(benchmark=benchmark)
-            if artifact in _BENCHMARK_SCOPED
-            else root_fn()
-        )
+        if artifact == "slayer_models_otf":
+            root = root_fn(benchmark=benchmark, version=otf_version)
+        elif artifact in _BENCHMARK_SCOPED:
+            root = root_fn(benchmark=benchmark)
+        else:
+            root = root_fn()
         out.append((artifact, root, required))
     return out
+
+
+def _otf_version_for(cfg: dict[str, Any]) -> str | None:
+    """DEV-1605: the concrete otf reference version for this run's combo.
+
+    * pre-encoded otf consumer → the resolved ``pre_encoded_version``.
+    * ``pydantic_ai_otf_encode`` builder → ``encode_version`` (default = the
+      agent-model slug).
+    * anything else → ``None`` (no otf reference involved)."""
+    if cfg.get("slayer_setup") == "pre-encoded" and (
+        cfg.get("pre_encoded_source") == "otf"
+    ):
+        return cfg.get("pre_encoded_version")
+    if cfg.get("framework") == "pydantic_ai_otf_encode":
+        v = cfg.get("encode_version")
+        if v:
+            return v
+        model = cfg.get("agent_model")
+        return encoder_version_slug(model) if model else None
+    return None
 
 
 def _slayer_download_target(cfg: dict[str, Any]) -> tuple[str, Path]:
@@ -635,6 +661,7 @@ async def _run_one_task_async(
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
     pre_encoded_source: str | None = None,
+    pre_encoded_version: str | None = None,
     cached_runner: Any = None,
 ) -> dict:
     # Defer the import so monkeypatching `bird_interact_agents.run.run_one_task`
@@ -665,6 +692,7 @@ async def _run_one_task_async(
         slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup,
         pre_encoded_source=pre_encoded_source,
+        pre_encoded_version=pre_encoded_version,
     )
 
 
@@ -731,6 +759,7 @@ def _run_one_in_actor(
                         slayer_storage_root=cfg.get("slayer_storage_root"),
                         slayer_setup=cfg.get("slayer_setup", "pre-encoded"),
                         pre_encoded_source=cfg.get("pre_encoded_source"),
+                        pre_encoded_version=cfg.get("pre_encoded_version"),
                         cached_runner=cached_runner,
                     )
                 )
@@ -851,6 +880,8 @@ def _run_one_in_actor(
             harness_passed=row.get("phase1_passed") is True,
             predicted_result=_decode_result_json(row.get("predicted_result_json")),
             gold_result=_decode_result_json(row.get("gold_result_json")),
+            # DEV-1605: stamp the consumed otf reference (None for non-otf).
+            consumed_reference=row.get("consumed_reference"),
         )
         _gcs.write_submission_annotation(
             run_id, iid, json.loads(ann_path.read_text()),
@@ -878,6 +909,7 @@ def _run_one_in_actor(
                 n_agent_turns=_usage_dict.get("n_agent_turns"),
                 n_ask_user_calls=_usage_dict.get("n_ask_user_calls"),
                 config=_submission_config,
+                consumed_reference=row.get("consumed_reference"),
             )
             _gcs.write_submission_annotation(
                 run_id, iid, json.loads(failed_path.read_text()),
@@ -1318,6 +1350,8 @@ def run_pool(
     user_sim_prompt_version: str | None = None,
     slayer_setup: str = "pre-encoded",
     pre_encoded_source: str | None = None,
+    pre_encoded_version: str | None = None,
+    encode_version: str | None = None,
     slayer_storage_root: str | None = None,
     ray_job_id: str = "local",
     gcs_client=None,
@@ -1353,6 +1387,9 @@ def run_pool(
         "user_sim_prompt_version": user_sim_prompt_version,
         "slayer_setup": slayer_setup,
         "pre_encoded_source": pre_encoded_source,
+        # DEV-1605: otf version axis (concrete by submit time).
+        "pre_encoded_version": pre_encoded_version,
+        "encode_version": encode_version,
         "slayer_storage_root": slayer_storage_root,
         # De-bake: carry the benchmark + its GCS dataset prefix so the actor
         # can resolve the OTF roots and download the dataset per node.
@@ -1742,6 +1779,10 @@ def main(argv: list[str] | None = None) -> int:
     # flavor and downloads the right reference.
     p.add_argument("--pre-encoded-models", dest="pre_encoded_source",
                    default=None, choices=("otf", "custom"))
+    # DEV-1605: internal worker args (driver-fed) for the otf version axis.
+    p.add_argument("--pre-encoded-version", dest="pre_encoded_version",
+                   default=None)
+    p.add_argument("--version", dest="encode_version", default=None)
     p.add_argument("--slayer-storage-root", default="/data/slayer_models")
     p.add_argument("--instance-ids", required=True,
                    help="comma-separated list")
@@ -1796,6 +1837,8 @@ def main(argv: list[str] | None = None) -> int:
         user_sim_prompt_version=args.user_sim_prompt_version,
         slayer_setup=args.slayer_setup,
         pre_encoded_source=args.pre_encoded_source,
+        pre_encoded_version=args.pre_encoded_version,
+        encode_version=args.encode_version,
         slayer_storage_root=args.slayer_storage_root,
         ray_job_id=args.ray_job_id,
         actor_env_vars=actor_env_vars,

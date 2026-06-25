@@ -42,6 +42,34 @@ def to_pydantic_ai(model: str) -> str:
     return f"{provider}:{rest}"
 
 
+def encoder_version_slug(model: str) -> str:
+    """Derive the default OTF-reference version label from a model string.
+
+    DEV-1605: strip the provider prefix, strip a leading ``claude-`` (so the
+    common Anthropic case reads ``opus-4-7`` not ``claude-opus-4-7``), and
+    replace any remaining ``/`` with ``__`` so the result is a safe single
+    filesystem path segment.
+
+        anthropic/claude-opus-4-7      -> opus-4-7
+        zai/glm-5.2                    -> glm-5.2
+        openai/gpt-5.2                 -> gpt-5.2
+        openrouter/z-ai/glm-4.7-flash  -> z-ai__glm-4.7-flash
+
+    Raises ``ValueError`` when the transformation yields an empty label (e.g.
+    ``anthropic/claude-``), which would otherwise be an unusable path segment.
+    """
+    rest = native_model_id(model)
+    if rest.startswith("claude-"):
+        rest = rest[len("claude-"):]
+    slug = rest.replace("/", "__")
+    if not slug:
+        raise ValueError(
+            f"encoder_version_slug({model!r}) produced an empty label; pass an "
+            f"explicit --version."
+        )
+    return slug
+
+
 def native_model_id(model: str) -> str:
     """Strip the provider prefix: `anthropic/claude-sonnet-4-5` -> `claude-sonnet-4-5`.
 

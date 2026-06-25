@@ -31,6 +31,18 @@ from bird_interact_agents.eval.annotation_schema import (
     TaskAnnotation,
     UserSimInteraction,
 )
+from bird_interact_agents.slayer_otf.encoder_types import ConsumedReference
+
+
+def _coerce_consumed_reference(
+    value: "ConsumedReference | dict | None",
+) -> Optional[ConsumedReference]:
+    """Accept a ``ConsumedReference``, a plain dict (as carried on a result
+    row), or ``None``. DEV-1605: callers stamp the row's
+    ``consumed_reference`` straight through without pre-parsing."""
+    if value is None or isinstance(value, ConsumedReference):
+        return value
+    return ConsumedReference.model_validate(value)
 
 if TYPE_CHECKING:
     from bird_interact_agents.eval.annotation_schema import AutopsyResult
@@ -281,6 +293,7 @@ def _build_submission_annotation(
     user_sim_interaction: Optional[UserSimInteraction] = None,
     config: Optional[SubmissionConfig] = None,
     epsilon: float = 1e-6,
+    consumed_reference: "ConsumedReference | dict | None" = None,
 ) -> SubmissionAnnotation:
     """Map the in-memory CascadeVerdict → on-disk SubmissionAnnotation."""
     verdict_label = verdict_label_from_cascade(cascade)
@@ -350,6 +363,7 @@ def _build_submission_annotation(
         predicted_result=cascade.predicted_rows,
         gold_result=cascade.gold_rows,
         original_gold_annotated_correct=original_gold_is_correct,
+        consumed_reference=_coerce_consumed_reference(consumed_reference),
     )
 
 
@@ -421,6 +435,7 @@ def _write_harness_confirmed_annotation(
     predicted_result: Optional[List[Any]] = None,
     gold_result: Optional[List[Any]] = None,
     config: Optional[SubmissionConfig] = None,
+    consumed_reference: "ConsumedReference | dict | None" = None,
 ) -> Path:
     """Write an all-pass annotation without re-executing SQL.
 
@@ -497,6 +512,7 @@ def _write_harness_confirmed_annotation(
         predicted_result=predicted_result,
         gold_result=gold_result,
         original_gold_annotated_correct=original_gold_is_correct,
+        consumed_reference=_coerce_consumed_reference(consumed_reference),
     )
     out_path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
     _write_to_runs(ann, rows_dir=Path(rows_dir), benchmark=benchmark, run_id=run_id)
@@ -529,6 +545,7 @@ def grade_and_write(
     epsilon: float = 1e-6,
     autopsy_result: Optional["AutopsyResult"] = None,
     conditions: Optional[dict] = None,
+    consumed_reference: "ConsumedReference | dict | None" = None,
 ) -> Path:
     """Run the tolerant grader and write the SubmissionAnnotation to
     ``<rows_dir>/<instance_id>/submission_annotation.json``.
@@ -596,6 +613,7 @@ def grade_and_write(
         user_sim_interaction=user_sim_interaction,
         config=config,
         epsilon=epsilon,
+        consumed_reference=consumed_reference,
     )
     if autopsy_result is not None:
         ann.autopsy = autopsy_result
@@ -633,6 +651,7 @@ def write_failed_submission_annotation(
     n_ask_user_calls: Optional[int] = None,
     predicted_row_count: Optional[int] = None,
     config: Optional[SubmissionConfig] = None,
+    consumed_reference: "ConsumedReference | dict | None" = None,
 ) -> Path:
     """Write a 0-pass ``submission_annotation.json`` for a task that
     bypassed the grader (e.g. agent crashed before submit, no
@@ -709,6 +728,7 @@ def write_failed_submission_annotation(
             n_ask_user_calls=n_ask_user_calls,
         ),
         original_gold_annotated_correct=None,
+        consumed_reference=_coerce_consumed_reference(consumed_reference),
     )
     out_path = out_dir / "submission_annotation.json"
     out_path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
@@ -836,6 +856,7 @@ def grade_one_submission(
     harness_passed: Optional[bool] = None,
     predicted_result: Optional[List[Any]] = None,
     gold_result: Optional[List[Any]] = None,
+    consumed_reference: "ConsumedReference | dict | None" = None,
 ) -> Path:
     """Inline-grade one submission and write the per-row
     ``submission_annotation.json``. Idempotent at the per-(task, run)
@@ -893,6 +914,7 @@ def grade_one_submission(
             predicted_result=predicted_result,
             gold_result=gold_result,
             config=config,
+            consumed_reference=consumed_reference,
         )
 
     audited_rows = load_audited_gold_rows_for(
@@ -925,4 +947,5 @@ def grade_one_submission(
         # `conditions={"order": True}`. Without this forward, the new
         # ex_base N1 path would silently grade them as set-dedup.
         conditions=task_data.get("conditions"),
+        consumed_reference=consumed_reference,
     )
