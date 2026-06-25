@@ -212,7 +212,7 @@ record to the parent batch"); that intent is the canonical answer to
 key from the column NAME alone.
 
 USE ONLY DECLARED JOINS. Join exclusively on foreign-key relationships
-visible in `get_schema`; never invent a relationship the schema does not
+the schema declares; never invent a relationship the schema does not
 declare. When two tables can be linked by more than one path, prefer the
 candidate whose column description matches the relationship the question
 needs; if descriptions tie, take the SHORTEST foreign-key path. A direct
