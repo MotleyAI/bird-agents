@@ -193,11 +193,11 @@ def _make_submit_or_defer_nudge(soft_budget: int = _NUDGE_TURN_BUDGET):
                     f"[BUDGET] You have made {state['calls']} tool calls on this "
                     "single KB — already far more than a normal encoding needs. "
                     "STOP exploring. EITHER (a) write the entity/entities now "
-                    f"(tag meta.kb_id={{kb}}) and call submit_encoding with "
-                    "status='encoded'; OR (b) if you cannot confidently pin this "
-                    "KB down, call submit_encoding with status='deferred' and your "
-                    "clarifying_questions. A deferred KB is an ACCEPTABLE outcome; "
-                    "an un-submitted KB is recorded as an error."
+                    "(tagged with this KB's meta.kb_id) and call submit_encoding "
+                    "with status='encoded'; OR (b) if you cannot confidently pin "
+                    "this KB down, call submit_encoding with status='deferred' and "
+                    "your clarifying_questions. A deferred KB is an ACCEPTABLE "
+                    "outcome; an un-submitted KB is recorded as an error."
                 ),
             }
         }

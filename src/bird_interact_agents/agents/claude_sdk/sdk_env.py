@@ -311,12 +311,17 @@ def serialize_sdk_message(msg: Any) -> dict:
     """Serialise one SDK stream message into a JSON-able ``{type, data}`` dict.
 
     Mirrors the trajectory shape the claude_sdk agents already build by hand
-    (``dataclasses.asdict`` when possible, else ``str``)."""
+    (``dataclasses.asdict`` when possible, else ``str``). NEVER raises — capture
+    must not break the receive stream, so this owns the full guard (the caller
+    appends its result directly)."""
+    name = type(msg).__name__
     try:
-        data: object = dataclasses.asdict(msg)
+        return {"type": name, "data": dataclasses.asdict(msg)}
     except Exception:  # noqa: BLE001 — non-dataclass / unserialisable
-        data = str(msg)
-    return {"type": type(msg).__name__, "data": data}
+        try:
+            return {"type": name, "data": str(msg)}
+        except Exception:  # noqa: BLE001 — pathological __str__
+            return {"type": name, "data": "<unserializable>"}
 
 
 class _TranscriptClient:
@@ -343,10 +348,8 @@ class _TranscriptClient:
     async def _record(self, agen):
         try:
             async for msg in agen:
-                try:
-                    self.transcript.append(serialize_sdk_message(msg))
-                except Exception:  # noqa: BLE001 — capture must never break the stream
-                    pass
+                # serialize_sdk_message never raises, so the stream is safe.
+                self.transcript.append(serialize_sdk_message(msg))
                 yield msg
         finally:
             aclose = getattr(agen, "aclose", None)
