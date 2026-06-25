@@ -37,20 +37,29 @@ pip install -e ".[claude-sdk,dev]"
 
 ### Run
 
+# NOTE: the local `bird-interact` CLI is aligned with `bird-interact-cloud`:
+# `--dataset`, `--framework`, `--mode`, `--query-mode`, and `--agent-model` are
+# all REQUIRED (no defaults). For claude_sdk* runs on an Anthropic agent model
+# you must also choose `--subscription-auth` (Claude.ai OAuth via
+# CLAUDE_CODE_OAUTH_TOKEN) or `--no-subscription-auth` (ANTHROPIC_API_KEY).
 ```bash
 # Validate eval pipeline (submits ground-truth SQL, no LLM)
-bird-interact --dataset mini-interact --framework claude_sdk --mode oracle \
+uv run bird-interact --dataset mini-interact --framework claude_sdk --mode oracle \
+  --query-mode raw --agent-model anthropic/claude-opus-4-7 --no-subscription-auth \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/
 
-# Run with Claude Agent SDK, raw SQL mode
-bird-interact --dataset mini-interact --framework claude_sdk --query-mode raw --mode a-interact \
+# Run with Claude Agent SDK, raw SQL mode (API-key auth)
+uv run bird-interact --dataset mini-interact --framework claude_sdk --query-mode raw --mode a-interact \
+  --agent-model anthropic/claude-opus-4-7 --no-subscription-auth \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/ \
   --limit 10 --concurrency 3
 
-# Run with SLayer mode (KB encoded on the fly — the default for slayer mode)
-bird-interact --dataset mini-interact --framework claude_sdk --query-mode slayer --mode a-interact \
+# Run with SLayer mode (KB encoded on the fly) using the Claude.ai subscription
+# (requires a valid CLAUDE_CODE_OAUTH_TOKEN in the env)
+uv run bird-interact --dataset mini-interact --framework claude_sdk --query-mode slayer --mode a-interact \
+  --agent-model anthropic/claude-opus-4-7 --subscription-auth \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/
 ```
@@ -90,9 +99,9 @@ need. For LiveSQLBench one-shot, pass `--dataset livesqlbench-base-lite-sqlite
 --mode one-shot`. Recommended `--reasoning-effort high` (the smoke / baseline default).
 
 ```bash
-bird-interact --framework claude_sdk --query-mode slayer \
+uv run bird-interact --framework claude_sdk --query-mode slayer \
   --dataset livesqlbench-base-lite-sqlite --mode one-shot \
-  --agent-model anthropic/claude-opus-4-7 \
+  --agent-model anthropic/claude-opus-4-7 --no-subscription-auth \
   --reasoning-effort high \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
@@ -148,9 +157,9 @@ the visible KB alone), and a nag fires every 10 tool calls until the
 first ask. Recommended `--reasoning-effort high`.
 
 ```bash
-bird-interact --framework claude_sdk --query-mode slayer \
+uv run bird-interact --framework claude_sdk --query-mode slayer \
   --dataset mini-interact --mode a-interact \
-  --agent-model anthropic/claude-opus-4-7 \
+  --agent-model anthropic/claude-opus-4-7 --no-subscription-auth \
   --reasoning-effort high \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/ --instance-id households_1
@@ -202,10 +211,10 @@ the committed-reference `pydantic_ai` consumer does.
 
 ```bash
 # Local — one-shot livesqlbench against the OTF-encoded reference
-bird-interact --framework claude_sdk --query-mode slayer \
+uv run bird-interact --framework claude_sdk --query-mode slayer \
   --dataset livesqlbench-base-lite-sqlite --mode one-shot \
   --pre-encoded-models otf \
-  --agent-model anthropic/claude-opus-4-7 --reasoning-effort high \
+  --agent-model anthropic/claude-opus-4-7 --no-subscription-auth --reasoning-effort high \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
 
@@ -529,6 +538,8 @@ simulator, no `ask_user` anywhere in the spawn tree.
 
 ```bash
 uv run bird-interact --dataset livesqlbench-base-lite-sqlite --mode oracle \
+  --framework claude_sdk --query-mode raw \
+  --agent-model anthropic/claude-opus-4-7 --no-subscription-auth \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
 ```
@@ -541,6 +552,7 @@ Submits the gold SQL directly and scores it — no LLM. Expected
 ```bash
 uv run bird-interact --dataset livesqlbench-base-lite-sqlite --mode one-shot --query-mode slayer \
   --framework claude_sdk \
+  --agent-model anthropic/claude-opus-4-7 --no-subscription-auth \
   --data ../livesqlbench-base-lite-sqlite/livesqlbench_data_sqlite.jsonl \
   --db-path ../livesqlbench-base-lite-sqlite/
 ```

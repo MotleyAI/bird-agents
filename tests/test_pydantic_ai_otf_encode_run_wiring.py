@@ -106,6 +106,7 @@ def test_cli_rejects_pre_encoded_for_otf_encode_framework(monkeypatch):
     argv = [
         "prog",
         "--dataset", "mini-interact",
+        "--agent-model", "anthropic/claude-sonnet-4-5",
         "--framework", "pydantic_ai_otf_encode",
         "--pre-encoded-models", "otf",
         "--query-mode", "slayer",
@@ -129,6 +130,8 @@ def test_cli_defaults_to_on_the_fly(
     argv = [
         "prog",
         "--dataset", "mini-interact",
+        "--agent-model", "anthropic/claude-sonnet-4-5",
+        "--no-subscription-auth",
         "--framework", "claude_sdk",
         "--query-mode", "slayer",
         "--mode", "a-interact",

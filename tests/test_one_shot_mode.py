@@ -29,6 +29,13 @@ def _argv_base(tmp_path: Path) -> list[str]:
     db_path.mkdir()
     return [
         "bird-interact",
+        # --agent-model and --query-mode are REQUIRED since the cloud-alignment
+        # change; per-test argv appends override these via argparse last-wins.
+        "--agent-model", "anthropic/claude-sonnet-4-5",
+        "--query-mode", "raw",
+        # claude_sdk* + Anthropic now requires an explicit subscription-auth
+        # choice (cloud parity); these tests exercise the API-key path.
+        "--no-subscription-auth",
         "--data", str(data),
         "--db-path", str(db_path),
         "--output", str(tmp_path / "out.json"),

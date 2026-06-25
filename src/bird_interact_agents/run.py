@@ -15,6 +15,7 @@ import sqlite3 as _sqlite3
 from typing import Any as _Any
 
 from bird_interact_agents import paths
+from bird_interact_agents.provider_registry import get_provider
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
 from bird_interact_agents.eval.annotation_schema import SubmissionConfig
@@ -1637,6 +1638,76 @@ def _apply_price_overrides(path: str) -> None:
         }
 
 
+def _apply_subscription_auth_env(
+    *,
+    subscription_auth: bool,
+    framework: str,
+    agent_model: str,
+    error,
+) -> None:
+    """Translate the local ``--subscription-auth`` choice into the
+    ``BIRD_INTERACT_SUBSCRIPTION_AUTH`` signal env var that ``sdk_env`` reads
+    (DEV-1602). Local claude_sdk agents run in-process, so this is the only
+    wiring needed — ``sdk_env`` masks ``ANTHROPIC_API_KEY`` for the SDK
+    subprocess while the parent keeps it for the litellm user-sim.
+
+    ``subscription_auth`` is the tri-state BooleanOptionalAction value: ``True``
+    (--subscription-auth), ``False`` (--no-subscription-auth), or ``None`` (the
+    operator passed neither). Mirroring the cloud CLI, a claude_sdk* run on an
+    Anthropic agent model MUST choose explicitly — a ``None`` there is an error
+    (no silent default). ``error`` is a callable (``parser.error``) invoked with
+    a message on misuse. When off, an ambient signal is actively CLEARED so a
+    stray exported ``BIRD_INTERACT_SUBSCRIPTION_AUTH`` cannot hijack the run.
+    The flag is Anthropic-only and claude_sdk-only.
+    """
+    is_claude_sdk = framework.startswith("claude_sdk")
+    # The flag is Anthropic-ONLY: gate on the model being anthropic/*, NOT merely
+    # "not a registry model" — otherwise a non-Anthropic non-registry model
+    # (openai/*, gemini/*) would slip through onto the OAuth path (CodeRabbit).
+    is_anthropic = agent_model.startswith("anthropic/")
+    # Explicit-choice requirement (cloud parity): claude_sdk* + Anthropic model
+    # must pass --subscription-auth or --no-subscription-auth.
+    if is_claude_sdk and is_anthropic and subscription_auth is None:
+        error(
+            "an explicit --subscription-auth / --no-subscription-auth choice is "
+            "required for claude_sdk* runs on an Anthropic agent model (no "
+            "default, to prevent a silent fall-back to the API-key path)."
+        )
+        return
+    if not subscription_auth:  # None (non-claude_sdk / non-Anthropic) or False → off
+        os.environ.pop("BIRD_INTERACT_SUBSCRIPTION_AUTH", None)
+        return
+    if not is_claude_sdk:
+        error(
+            "--subscription-auth only applies to claude_sdk* frameworks; "
+            f"got framework={framework!r}. Other frameworks authenticate via "
+            "their own provider key env var."
+        )
+        return
+    if not is_anthropic:
+        error(
+            f"--subscription-auth is Anthropic-only; got non-Anthropic agent "
+            f"model {agent_model!r} (registry open-weight models use their "
+            "provider key; omit the flag for them)."
+        )
+        return
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+    if not token:
+        error(
+            "--subscription-auth requires CLAUDE_CODE_OAUTH_TOKEN to be set "
+            "in the env. Run `claude setup-token`, or omit the flag to use "
+            "the ANTHROPIC_API_KEY path."
+        )
+        return
+    if not token.startswith("sk-ant-oat01-"):
+        error(
+            "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai OAuth token "
+            "(expected sk-ant-oat01- prefix). Re-run `claude setup-token`."
+        )
+        return
+    os.environ["BIRD_INTERACT_SUBSCRIPTION_AUTH"] = "1"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="BIRD-Interact benchmark runner with pluggable agents"
@@ -1666,8 +1737,9 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         choices=["a-interact", "c-interact", "oracle", "one-shot"],
-        default="a-interact",
+        required=True,
         help=(
+            "REQUIRED (aligned with bird-interact-cloud: no default). "
             "Evaluation mode. ``one-shot`` (DEV-1462) is the non-interactive "
             "path used by --dataset livesqlbench: no user-sim, no ask_user."
         ),
@@ -1686,8 +1758,11 @@ def main() -> None:
     parser.add_argument(
         "--query-mode",
         choices=["slayer", "raw"],
-        default="raw",
-        help="Query mode: slayer (semantic layer) or raw (direct SQL)",
+        required=True,
+        help=(
+            "REQUIRED (aligned with bird-interact-cloud: no default). "
+            "Query mode: slayer (semantic layer) or raw (direct SQL)"
+        ),
     )
     parser.add_argument(
         "--data", required=True, help="Path to mini_interact.jsonl"
@@ -1706,12 +1781,21 @@ def main() -> None:
     )
     parser.add_argument("--limit", type=int, default=None, help="Max tasks to run")
     parser.add_argument("--concurrency", type=int, default=3)
-    parser.add_argument("--patience", type=int, default=3, help="User patience budget")
+    parser.add_argument(
+        "--patience", type=int, default=250,
+        help=(
+            "User patience budget (aligned with bird-interact-cloud's default "
+            "of 250; the old local default of 3 was too low and skewed eval "
+            "results)."
+        ),
+    )
     parser.add_argument(
         "--agent-model",
-        default="anthropic/claude-sonnet-4-5",
+        required=True,
         help=(
-            "LiteLLM-style PROVIDER/MODEL_ID for the system agent. "
+            "REQUIRED (aligned with bird-interact-cloud: no default, to avoid "
+            "a silent wrong-model run). LiteLLM-style PROVIDER/MODEL_ID for the "
+            "system agent. "
             "Examples: cerebras/zai-glm-4.7, openrouter/z-ai/glm-4.7-flash, "
             "anthropic/claude-sonnet-4-5, fireworks_ai/glm-4p7. The matching "
             "API-key env var (CEREBRAS_API_KEY, OPENROUTER_API_KEY, "
@@ -1723,13 +1807,29 @@ def main() -> None:
     )
     parser.add_argument(
         "--user-sim-model",
-        default="anthropic/claude-haiku-4-5-20251001",
-        help="LiteLLM model for user simulator",
+        default="anthropic/claude-sonnet-4-6",
+        help="LiteLLM model for user simulator (aligned with bird-interact-cloud default)",
     )
     parser.add_argument(
         "--slayer-storage-root",
         default="./slayer_storage",
         help="Root dir of per-DB SLayer model stores (only used in --query-mode slayer)",
+    )
+    parser.add_argument(
+        "--subscription-auth",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        dest="subscription_auth",
+        help=(
+            "DEV-1602: authenticate claude_sdk* agents via the Claude.ai "
+            "subscription (CLAUDE_CODE_OAUTH_TOKEN, sk-ant-oat01- prefix) "
+            "instead of ANTHROPIC_API_KEY. Aligned with bird-interact-cloud: an "
+            "explicit --subscription-auth / --no-subscription-auth choice is "
+            "REQUIRED for claude_sdk* runs on an Anthropic agent model (no "
+            "silent default). Anthropic-only: registry open-weight models reject "
+            "--subscription-auth. When on, a valid CLAUDE_CODE_OAUTH_TOKEN must "
+            "be in the env; the user-sim still uses ANTHROPIC_API_KEY as normal."
+        ),
     )
     parser.add_argument(
         "--filter-ids",
@@ -1776,9 +1876,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--use-audited-gold-sql",
-        action="store_true",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help=(
+            "Default True (aligned with bird-interact-cloud); pass "
+            "--no-use-audited-gold-sql to opt out. "
             "Swap each task's gold sol_sql for the audited version from "
             "audited_gold/<db>/<db>_audited.jsonl when available (status "
             "in {edited, unrecoverable}). Tasks marked 'clean' or missing "
@@ -1871,6 +1973,14 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+    # DEV-1602: translate --subscription-auth into the BIRD_INTERACT_SUBSCRIPTION_AUTH
+    # signal env var (or clear an ambient one) before any agent is constructed.
+    _apply_subscription_auth_env(
+        subscription_auth=args.subscription_auth,
+        framework=args.framework,
+        agent_model=args.agent_model,
+        error=parser.error,
+    )
     # DEV-1586: derive the internal slayer_setup from the user-facing flag.
     from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
     args.slayer_setup = derive_slayer_setup(args.pre_encoded_source)
