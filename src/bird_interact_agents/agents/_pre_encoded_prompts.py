@@ -118,6 +118,44 @@ _PRE_ENCODED_DISCIPLINE = """\
      values, do not write that predicate.
 """
 
+# Deferred-KB fallback — the case where a needed KB block has NO encoded entity
+# because it was deliberately DEFERRED at encode time (too ambiguous to pin down
+# without a task). The encoder leaves a `[kb=<n>]` MEMORY recording the deferral
+# reason + clarifying questions + the raw definition. Injected as a string
+# constant into the relevant prompt so the wording is IDENTICAL across every
+# agent of the same type. Two variants by type:
+#   * one-shot (no user): resolve the open questions from the memory + schema.
+#   * a-interact (has `ask_user`): ask the user to settle the open decision.
+_DEFERRED_KB_FALLBACK_ONE_SHOT = """\
+NO ENCODED ENTITY — A DEFERRED KB BLOCK. Not every KB item is materialised:
+some were deliberately DEFERRED at encode time because they could not be pinned
+down without a task. A deferred block has NO encoded column/measure — only a
+`[kb=<n>]` MEMORY recording WHY it was deferred, its open clarifying questions,
+and the raw definition. When the question needs such a block and neither
+`search` nor `inspect_model` surfaces an encoded entity for it:
+  - `search` for the KB MEMORY (allow memories — do NOT pass `max_memories=0`)
+    and READ the `[kb=<n>]` item's deferral notes + definition.
+  - Build that logic yourself INSIDE your query from the base columns, following
+    the definition and taking the most conservative reading the notes + the
+    columns' sampled values support. There is no user to consult — resolve the
+    open questions from the memory and the schema."""
+
+_DEFERRED_KB_FALLBACK_AINTERACT = """\
+NO ENCODED ENTITY — A DEFERRED KB BLOCK. Not every KB item is materialised:
+some were deliberately DEFERRED at encode time because they could not be pinned
+down without a task. A deferred block has NO encoded column/measure — only a
+`[kb=<n>]` MEMORY recording WHY it was deferred, its open clarifying questions,
+and the raw definition. When the question needs such a block and neither
+`search` nor `inspect_model` surfaces an encoded entity for it:
+  - `search` for the KB MEMORY (allow memories — do NOT pass `max_memories=0`)
+    and READ the `[kb=<n>]` item's deferral notes + clarifying questions.
+  - Use `ask_user` to resolve the SPECIFIC missing operationalisation the
+    deferral left open (the threshold / predicate / join / grain named in its
+    clarifying questions) BEFORE building the query — do NOT silently guess a
+    deferred block's operationalisation when `ask_user` can settle it.
+  - Once clarified, build the logic from the base columns following the
+    definition."""
+
 
 SLAYER_PRE_ENCODED_ONE_SHOT = (
     "You are a data analyst. You have a SLayer semantic-layer MCP server plus a\n"
@@ -134,7 +172,9 @@ SLAYER_PRE_ENCODED_ONE_SHOT = (
     + _DECOMPOSE_DISCIPLINE
     + "\n\n"
     + _PRE_ENCODED_DISCIPLINE
-    + "\n4. TEST the final query with `query` (single object or nested-DAG "
+    + "\n"
+    + _DEFERRED_KB_FALLBACK_ONE_SHOT
+    + "\n\n4. TEST the final query with `query` (single object or nested-DAG "
       "`queries` list); sanity-check the generated SQL.\n\n"
       "   "
     + _SLAYER_SQL_ARTIFACT_CHECK
@@ -179,7 +219,9 @@ SLAYER_PRE_ENCODED_AINTERACT = (
     + _DECOMPOSE_DISCIPLINE
     + "\n\n"
     + _PRE_ENCODED_DISCIPLINE
-    + "\n"
+    + "\n\n"
+    + _DEFERRED_KB_FALLBACK_AINTERACT
+    + "\n\n   "
     + _ASK_AGAIN_RULE.format(knowledge_source="an encoded entity")
     + "\n\n   "
     + _USER_SIM_TRUST_CALIBRATION.format(knowledge_label="KB")

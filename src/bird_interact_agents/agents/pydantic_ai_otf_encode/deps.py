@@ -32,41 +32,17 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from bird_interact_agents.harness import SampleStatus
 from bird_interact_agents.usage import TokenUsage
 
-
-# ---------------------------------------------------------------------------
-# Encoder output types (also serve as the registry payload)
-# ---------------------------------------------------------------------------
-
-
-class EncodedEntity(BaseModel):
-    """One SLayer entity the encoder wrote for a KB.
-
-    `host_model` is None for kind='model' (query-backed models live at
-    the datasource root, not on a host).
-    """
-
-    kind: Literal["column", "measure", "aggregation", "model"]
-    host_model: str | None = None
-    name: str
-    entity_ref: str
-
-
-class EncoderResult(BaseModel):
-    """The encoder sub-agent's structured output AND the per-task
-    dedup registry's per-kb value (Codex finding 8 — store the full
-    result, not just `.entities`, so failure reuse + notes survival
-    work correctly).
-    """
-
-    kb_id: int
-    status: Literal["encoded", "deferred", "error"]
-    entities: list[EncodedEntity] = Field(default_factory=list)
-    notes: str = ""
-    error: str | None = None
-    # DEV-1454: the setup encoder (no ask_user) defers ambiguous KB items,
-    # recording the questions a later per-task agent must ask. Empty for the
-    # encoded/error paths. List of str (not a Dict — global LLM-output rule).
-    clarifying_questions: list[str] = Field(default_factory=list)
+# DEV-1589: the encoder output types moved to a framework-neutral module so the
+# scheduler + the new claude_sdk encoder no longer import from this obsolete
+# agent package. Re-exported here (same class objects) for back-compat — every
+# existing `from ...pydantic_ai_otf_encode.deps import EncoderResult` keeps
+# working and resolves to the neutral class (load-bearing for model_validate /
+# isinstance across the codebase).
+from bird_interact_agents.slayer_otf.encoder_types import (  # noqa: F401
+    EncodedEntity,
+    EncoderCaptureDeps,
+    EncoderResult,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -157,15 +133,9 @@ class TaskDeps(BaseModel):
     projection_submission: list[str] | None = None
 
 
-class EncoderCaptureDeps(BaseModel):
-    """Per-run deps for the build-time setup encoder, which has no task context
-    (no ``SharedTaskState`` / user-sim). Carries the ``submit_encoding`` result
-    so the encoder can reason in text and deliver its ``EncoderResult`` via a
-    tool rather than pydantic-ai structured output (DEV-1454)."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    encoder_submission: EncoderResult | None = None
+# NB: ``EncoderCaptureDeps`` now lives in
+# ``bird_interact_agents.slayer_otf.encoder_types`` and is re-exported at the
+# top of this module (DEV-1589).
 
 
 # ---------------------------------------------------------------------------
