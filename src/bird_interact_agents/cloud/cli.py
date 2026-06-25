@@ -135,6 +135,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--slayer-storage-root", default="/data/slayer_models",
     )
     sp_submit.add_argument(
+        "--zai-billing", default="coding-plan",
+        choices=("coding-plan", "per-token"),
+        help=(
+            "DEV-1604: z.ai billing surface. coding-plan (default) uses z.ai's "
+            "Anthropic endpoint (GLM-Coding-Plan quota, can hit the [1313] "
+            "Fair-Usage throttle); per-token routes the claude_sdk agent through "
+            "the local bridge proxy to z.ai's per-token OpenAI endpoint. "
+            "z.ai-only — per-token is rejected for any other agent provider; "
+            "Doubleword auto-bridges (no flag)."
+        ),
+    )
+    sp_submit.add_argument(
         "--subscription-auth", action=argparse.BooleanOptionalAction,
         default=None, dest="subscription_auth",
         help=(
@@ -248,6 +260,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                     "choice is REQUIRED for Anthropic agent models (no "
                     "default, to prevent a silent fall-back to the API-key "
                     "path burning credits)."
+                )
+
+        # DEV-1604: --zai-billing per-token routes through the bridge to z.ai's
+        # per-token OpenAI endpoint — it is z.ai-only. Reject it for any other
+        # agent provider (Doubleword auto-bridges via its OpenAI-only format and
+        # needs no flag; Anthropic/Moonshot have no per-token OpenAI surface).
+        if (
+            ns.subcommand == "submit"
+            and getattr(ns, "zai_billing", "coding-plan") == "per-token"
+        ):
+            _zspec = provider_registry.get_provider(ns.agent_model)
+            if _zspec is None or _zspec.key != "zai":
+                p.error(
+                    "--zai-billing per-token is z.ai-only (zai/* agent models); "
+                    f"got agent model {ns.agent_model!r}. Doubleword auto-bridges "
+                    "(no flag); omit --zai-billing for every other provider."
                 )
 
         ns.no_subscription_auth = not ns.subscription_auth

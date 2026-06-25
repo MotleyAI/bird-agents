@@ -15,7 +15,10 @@ import sqlite3 as _sqlite3
 from typing import Any as _Any
 
 from bird_interact_agents import paths
-from bird_interact_agents.provider_registry import get_provider
+from bird_interact_agents.provider_registry import agent_needs_bridge, get_provider
+# DEV-1604: imported as a MODULE so `_maybe_start_bridge_proxy` and its test
+# monkeypatch share the `run.bridge_proxy.ensure_bridge_proxy_for_actor` target.
+from bird_interact_agents.cloud import bridge_proxy
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
 from bird_interact_agents.eval.annotation_schema import SubmissionConfig
@@ -1638,6 +1641,30 @@ def _apply_price_overrides(path: str) -> None:
         }
 
 
+def _maybe_start_bridge_proxy(*, agent_model: str, zai_billing: str, error) -> None:
+    """DEV-1604: local-run wiring for the Anthropic⇄OpenAI bridge proxy.
+
+    ``--zai-billing per-token`` is z.ai-only — reject it for any other agent
+    provider (Doubleword auto-bridges via its OpenAI-only ``api_format`` and
+    needs no flag). When the agent provider needs the bridge, start the loopback
+    proxy and point ``ANTHROPIC_BASE_URL``'s override at it. Called from
+    ``main`` BEFORE any runner is built so the override is in place when the SDK
+    session is constructed. ``error`` is ``parser.error`` (exit-2 on misuse)."""
+    if zai_billing == "per-token":
+        spec = get_provider(agent_model)
+        if spec is None or spec.key != "zai":
+            error(
+                "--zai-billing per-token is z.ai-only; got agent model "
+                f"{agent_model!r}. Doubleword auto-bridges (no flag); omit "
+                "--zai-billing for every other provider."
+            )
+            return
+    if agent_needs_bridge(agent_model, zai_billing):
+        bridge_proxy.ensure_bridge_proxy_for_actor(
+            agent_model, {"zai_billing": zai_billing}
+        )
+
+
 def _apply_subscription_auth_env(
     *,
     subscription_auth: bool,
@@ -1816,6 +1843,18 @@ def main() -> None:
         help="Root dir of per-DB SLayer model stores (only used in --query-mode slayer)",
     )
     parser.add_argument(
+        "--zai-billing",
+        default="coding-plan",
+        choices=("coding-plan", "per-token"),
+        help=(
+            "DEV-1604: z.ai billing surface. coding-plan (default) uses z.ai's "
+            "Anthropic endpoint (GLM-Coding-Plan quota); per-token routes the "
+            "agent through the local bridge proxy to z.ai's per-token OpenAI "
+            "endpoint (escapes the [1313] Fair-Usage throttle). z.ai-only — "
+            "Doubleword auto-bridges and needs no flag."
+        ),
+    )
+    parser.add_argument(
         "--subscription-auth",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -1979,6 +2018,14 @@ def main() -> None:
         subscription_auth=args.subscription_auth,
         framework=args.framework,
         agent_model=args.agent_model,
+        error=parser.error,
+    )
+    # DEV-1604: start the Anthropic⇄OpenAI bridge proxy (Doubleword / z.ai
+    # per-token) and point the base-url override at it BEFORE any runner is
+    # built. Validates that --zai-billing per-token is z.ai-only.
+    _maybe_start_bridge_proxy(
+        agent_model=args.agent_model,
+        zai_billing=args.zai_billing,
         error=parser.error,
     )
     # DEV-1586: derive the internal slayer_setup from the user-facing flag.
