@@ -460,38 +460,17 @@ def _dep_kb4_measure():
     )
 
 
-async def test_deps_block_uses_inspect_compact_false_when_available(tmp_path, monkeypatch):
-    """When slayer's inspect() is available, the deps block hands the model the
-    inspect(compact=False) rendering of each created dependency entity."""
-    await _seed(tmp_path, kb_id=7)
-    captured = {}
-
-    class _FakeInspectService:
-        def __init__(self, *, storage, engine=None):
-            self._storage = storage
-
-        async def inspect(self, *, reference, entity_type, compact, **kw):
-            captured["compact"] = compact
-            captured["entity_type"] = entity_type
-            return f"INSPECT_RENDER for {reference}"
-
-    monkeypatch.setattr(se, "_load_inspect_service", lambda: _FakeInspectService)
+async def test_deps_block_uses_inspect_compact_false(tmp_path):
+    """The deps block hands the model SLayer's real inspect(compact=False)
+    rendering of each created dependency entity (motley-slayer >= 0.8.3):
+    formula + description + label, so it references by name without
+    re-discovering via search/inspect."""
+    await _seed(tmp_path, kb_id=7)  # seeds `orders` w/ measure premium_revenue (amount:sum, kb_id 4)
     block = await se._format_deps_block([_dep_kb4_measure()], tmp_path, DB)
-    assert captured["compact"] is False                 # full detail requested
-    assert captured["entity_type"] == "measure"         # kind -> entity_type
-    assert f"INSPECT_RENDER for {DB}.{MODEL}.premium_revenue" in block
-    assert "premium-tier orders" in block               # dep notes still included
-
-
-async def test_deps_block_falls_back_to_storage_read_without_inspect(tmp_path, monkeypatch):
-    """On a slayer that predates inspect() (pinned 0.8.1), the deps block falls
-    back to a storage-read formula summary."""
-    await _seed(tmp_path, kb_id=7)
-    monkeypatch.setattr(se, "_load_inspect_service", lambda: None)
-    block = await se._format_deps_block([_dep_kb4_measure()], tmp_path, DB)
-    assert "premium_revenue" in block        # the entity name
-    assert "amount:sum" in block             # the stored formula (fallback detail)
-    assert "premium-tier orders" in block    # the dep's encode notes
+    assert "KB 4" in block
+    assert "premium_revenue" in block           # the entity name
+    assert "amount:sum" in block                # inspect renders the measure formula
+    assert "premium-tier orders" in block       # the dep's encode notes
 
 
 async def test_deps_block_empty_is_none(tmp_path):

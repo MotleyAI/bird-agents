@@ -34,6 +34,7 @@ from claude_agent_sdk import (
     tool,
 )
 from pydantic import ValidationError
+from slayer.inspect.service import InspectService
 from slayer.storage.yaml_storage import YAMLStorage
 
 from bird_interact_agents.agents._session_log import write_session
@@ -346,18 +347,19 @@ async def _encode_one_kb(
         and getattr(d, "entities", None)
         and d.kb_id in declared_ids
     ]
-    prompt = ENCODER_PROMPT.format(
-        db_name=db, kb_id=kb_id, kb_body=kb_body,
-        deps_block=await _format_deps_block(encoded_deps, build_dir, db),
-        reverse_deps_block=_format_reverse_deps_block(reverse_deps),
-    )
-
     confirmed: EncoderResult | None = None        # fresh submission that passed all checks
     last_submission: EncoderResult | None = None  # most recent submission (any status)
     failures: list[str] = []
     err: str | None = None
     transcript: list[dict] = []                   # captured by the wrapper's recording proxy
     try:
+        # Inside the try so an inspect()/format failure surfaces as a per-KB
+        # error rather than crashing the whole build.
+        prompt = ENCODER_PROMPT.format(
+            db_name=db, kb_id=kb_id, kb_body=kb_body,
+            deps_block=await _format_deps_block(encoded_deps, build_dir, db),
+            reverse_deps_block=_format_reverse_deps_block(reverse_deps),
+        )
         async with hermetic_claude_sdk_session(
             model,
             mcp_servers=mcp_servers,
@@ -515,22 +517,18 @@ def _append_index_row(index_rows, sessions_dir, kb_id, result, duration_s,
 
 
 async def _format_deps_block(encoded_deps, build_dir, db) -> str:
-    """Render each already-encoded DECLARED dependency with the FULL detail of
-    its CREATED ENTITIES, so the model can reference them BY NAME without
-    re-discovering them via search/inspect.
+    """Hand each task the FULL detail of its dependencies' CREATED ENTITIES via
+    SLayer's ``inspect(compact=False)`` (DEV-1588, motley-slayer >= 0.8.3) — the
+    canonical single-entity point-lookup: formula + full description + label,
+    exactly what the agent would get by inspecting the entity itself.
 
     DEV-1589 smoke: the KBs that timed out looped on search/inspect of their own
-    dependencies — SLayer's default (compact) search returns bare refs, so the
-    model had to drill in repeatedly. We hand it, up-front, SLayer's own
-    ``inspect(compact=False)`` rendering for each dependency entity (DEV-1588 —
-    the canonical single-entity point-lookup), exactly what it would get by
-    inspecting the entity itself. On a slayer that predates ``inspect`` (bird-
-    agents pins motley-slayer 0.8.1 until that release reaches PyPI) we fall back
-    to a storage-read formula/SQL summary.
+    dependencies (SLayer's default compact search returns bare refs). Handing
+    over the inspect rendering up-front removes that whole exploration round-trip.
     """
     if not encoded_deps:
         return "(none)"
-    storage = YAMLStorage(base_dir=str(build_dir))
+    svc = InspectService(storage=YAMLStorage(base_dir=str(build_dir)))
     blocks: list[str] = []
     for dep in sorted(encoded_deps, key=lambda d: d.kb_id):
         parts = [
@@ -538,68 +536,15 @@ async def _format_deps_block(encoded_deps, build_dir, db) -> str:
             f"BY NAME, do NOT re-derive them:"
         ]
         for e in dep.entities:
-            detail = await _inspect_entity_detail(e, storage, db)
+            detail = await svc.inspect(
+                reference=e.entity_ref, entity_type=e.kind, compact=False,
+            )
             parts.append(f"Entity `{e.entity_ref}` ({e.kind}):\n{detail}")
         notes = (dep.notes or "").strip()
         if notes:
             parts.append(f"(its encode notes: {notes[:240]})")
         blocks.append("\n".join(parts))
     return "\n\n".join(blocks)
-
-
-def _load_inspect_service():
-    """Return slayer's ``InspectService`` class, or None when the installed
-    slayer predates it (DEV-1588). Indirection point so both branches are
-    testable regardless of the installed slayer version."""
-    try:
-        from slayer.inspect.service import InspectService
-
-        return InspectService
-    except ImportError:
-        return None
-
-
-async def _inspect_entity_detail(ent, storage, db) -> str:
-    """SLayer ``inspect(compact=False)`` rendering of one encoded entity — the
-    same detail the agent would get by inspecting it. Falls back to a storage-
-    read formula/SQL summary when ``inspect`` is unavailable or errors (it must
-    never break the encode)."""
-    service_cls = _load_inspect_service()
-    if service_cls is not None:
-        try:
-            return await service_cls(storage=storage).inspect(
-                reference=ent.entity_ref, entity_type=ent.kind, compact=False,
-            )
-        except Exception:  # noqa: BLE001 — inspect must never break the encode
-            pass
-    return await _entity_definition(ent, storage, db)
-
-
-async def _entity_definition(ent, storage, db) -> str:
-    """Fallback (pre-inspect slayer): the stored formula/SQL of an encoded
-    entity, so the deps block still shows WHAT each dependency computes."""
-    try:
-        host = ent.name if ent.kind == "model" else ent.host_model
-        if host is None:
-            return ""
-        model = await storage.get_model(host, data_source=db)
-        if model is None:
-            return ""
-        if ent.kind == "model":
-            sql = getattr(model, "backing_query_sql", None) or getattr(model, "sql", None)
-            return f"\n      query: {str(sql)[:200]}" if sql else ""
-        bucket = {
-            "column": model.columns, "measure": model.measures,
-            "aggregation": model.aggregations,
-        }.get(ent.kind) or []
-        for item in bucket:
-            if item.name == ent.name:
-                d = getattr(item, "sql", None) or getattr(item, "formula", None)
-                label = "sql" if ent.kind == "column" else "formula"
-                return f"\n      {label}: {str(d)[:200]}" if d else ""
-        return ""
-    except Exception:  # noqa: BLE001 — rendering must never break the encode
-        return ""
 
 
 def _format_reverse_deps_block(parents: list[dict] | None) -> str:
