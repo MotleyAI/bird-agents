@@ -685,6 +685,66 @@ async def test_same_entity_name_collision_is_downgraded(fake_cache, tmp_path):
     )
 
 
+@pytest.mark.asyncio
+async def test_collision_downgrade_prunes_memory_backrefs(tmp_path):
+    """A collision-downgraded KB must not ship dangling memory backrefs: the
+    `<db>_kb_<id>` memory of EVERY collision participant must have the removed
+    entity ref pruned (Codex). The surviving storage entity carries only one
+    KB's `meta.kb_id`, so pruning must be by REF across all owners — a
+    kb_id-keyed purge would miss the loser's backref."""
+    from slayer.core.models import Column, DatasourceConfig, SlayerModel
+    from slayer.storage.yaml_storage import YAMLStorage
+    from bird_interact_agents.slayer_otf.reference_build import _collision_check
+    from bird_interact_agents.slayer_otf.encoder_types import (
+        EncodedEntity, EncoderResult,
+    )
+
+    storage = YAMLStorage(base_dir=str(tmp_path))
+    await storage.save_datasource(DatasourceConfig(
+        name=DB, type="sqlite", connection_string="sqlite:///x.sqlite",
+    ))
+    # The survivor 'dup' carries only kb 8's tag (last writer wins).
+    await storage.save_model(SlayerModel(
+        name="households", data_source=DB, sql_table="households",
+        columns=[
+            Column(name="id", primary_key=True),
+            Column(name="dup", sql="1", meta={"kb_id": 8}),
+        ],
+    ))
+    # Both KBs autowired a backref to the colliding entity during encoding.
+    for kb in (5, 8):
+        await storage.save_memory(
+            learning=f"KB {kb}",
+            entities=[f"{DB}.households.dup", f"{DB}.households.keep_{kb}"],
+            query=None, id=f"{DB}_kb_{kb}", description="",
+        )
+
+    def _result(kb):
+        return EncoderResult(
+            kb_id=kb, status="encoded",
+            entities=[EncodedEntity(
+                kind="column", host_model="households", name="dup",
+                entity_ref=f"{DB}.households.dup",
+            )],
+            notes="",
+        )
+
+    out = await _collision_check([_result(5), _result(8)], storage, DB)
+
+    assert all(r.status == "deferred" for r in out)
+    s2 = YAMLStorage(base_dir=str(tmp_path))
+    hm = await s2.get_model("households", data_source=DB)
+    assert not any(c.name == "dup" for c in (hm.columns or []))
+    for kb in (5, 8):
+        mem = await s2.get_memory_row(f"{DB}_kb_{kb}")
+        assert f"{DB}.households.dup" not in mem.entities, (
+            f"stale backref to removed entity survived in kb {kb} memory"
+        )
+        assert f"{DB}.households.keep_{kb}" in mem.entities, (
+            "unrelated backref must be left untouched"
+        )
+
+
 # ---------------------------------------------------------------------------
 # _edges_from_kb_rows
 # ---------------------------------------------------------------------------
