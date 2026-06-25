@@ -59,6 +59,10 @@ class _FakeClient:
         self.i = 0
         self.queries: list[str] = []
         self._cur = {}
+        # Mimic the wrapper's recording proxy: the real _TranscriptClient
+        # populates `.transcript`; here we append a serialized message per
+        # streamed ResultMessage so the encoder's persistence wiring is testable.
+        self.transcript: list[dict] = []
 
     async def query(self, msg):
         self.queries.append(msg)
@@ -75,7 +79,9 @@ class _FakeClient:
     async def _gen(self, cur):
         if cur.get("block"):
             await asyncio.sleep(100)  # never reaches a ResultMessage → times out
-        yield ResultMessage(cur.get("usage"))
+        m = ResultMessage(cur.get("usage"))
+        self.transcript.append({"type": "ResultMessage", "data": {}})
+        yield m
 
 
 class _FakeSession:
@@ -442,6 +448,24 @@ async def test_hermetic_session_gets_real_mcp_servers(tmp_path, monkeypatch):
     assert captured, "hermetic session must be entered"
     servers = captured[0]["mcp_servers"]
     assert "slayer" in servers and "bird-interact-tools" in servers
+
+
+async def test_transcript_persisted_to_session_file(tmp_path, monkeypatch):
+    """The per-KB transcript captured by the wrapper proxy (here simulated on
+    the fake client) is written into the session `.json` file."""
+    import json
+    await _seed(tmp_path, kb_id=7)
+
+    async def behavior():
+        await _write_col(tmp_path, "c", 7)
+        await _submit(_encoded(7, ["c"]))
+
+    client = _FakeClient([{"behavior": behavior}])
+    result, _ = await _run_one(tmp_path, [client], monkeypatch)
+    assert result.status == "encoded"
+    j = json.loads((tmp_path / "_sessions" / "setup__kb_007.json").read_text())
+    assert isinstance(j, list) and len(j) >= 1
+    assert any(e.get("type") == "ResultMessage" for e in j)
 
 
 async def test_encoded_with_no_entities_downgrades(tmp_path, monkeypatch):

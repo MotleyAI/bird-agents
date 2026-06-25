@@ -26,12 +26,13 @@ override before launching the runner.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from claude_agent_sdk import ClaudeSDKClient
 
@@ -296,6 +297,63 @@ async def hermetic_claude_sdk_session(
                     ClaudeSDKClient(options=options)
                 )
             await assert_hermetic_mcp_servers(client, mcp_servers.keys())
-            yield client
+            # Wrap the client so every message streamed through
+            # `receive_response()` is recorded into `client.transcript` — making
+            # per-session transcript capture an INTRINSIC property of every
+            # claude_sdk agent (no agent re-implements it). Wrap AFTER the parity
+            # assertion so it runs against the raw client.
+            yield _TranscriptClient(client)
     finally:
         shutil.rmtree(config_path, ignore_errors=True)
+
+
+def serialize_sdk_message(msg: Any) -> dict:
+    """Serialise one SDK stream message into a JSON-able ``{type, data}`` dict.
+
+    Mirrors the trajectory shape the claude_sdk agents already build by hand
+    (``dataclasses.asdict`` when possible, else ``str``)."""
+    try:
+        data: object = dataclasses.asdict(msg)
+    except Exception:  # noqa: BLE001 — non-dataclass / unserialisable
+        data = str(msg)
+    return {"type": type(msg).__name__, "data": data}
+
+
+class _TranscriptClient:
+    """Transparent proxy over a ``ClaudeSDKClient`` that tees every message
+    streamed through ``receive_response()`` into ``.transcript``.
+
+    Everything except ``query``/``receive_response`` delegates to the wrapped
+    client via ``__getattr__`` (``get_mcp_status``, ``interrupt``, ``aclose``,
+    …), so existing call sites are unaffected. ``.transcript`` accumulates ACROSS
+    every ``query()``/``receive_response()`` cycle on the warm client, so a
+    multi-turn (or re-prompt-loop) session yields one complete transcript.
+    """
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+        self.transcript: list[dict] = []
+
+    async def query(self, *args, **kwargs):
+        return await self._client.query(*args, **kwargs)
+
+    def receive_response(self):
+        return self._record(self._client.receive_response())
+
+    async def _record(self, agen):
+        try:
+            async for msg in agen:
+                try:
+                    self.transcript.append(serialize_sdk_message(msg))
+                except Exception:  # noqa: BLE001 — capture must never break the stream
+                    pass
+                yield msg
+        finally:
+            aclose = getattr(agen, "aclose", None)
+            if aclose is not None:
+                with contextlib.suppress(Exception):
+                    await agen.aclose()
+
+    def __getattr__(self, name: str):
+        # Only reached for attributes not defined on the proxy itself.
+        return getattr(self._client, name)

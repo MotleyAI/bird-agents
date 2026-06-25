@@ -306,6 +306,7 @@ async def _encode_one_kb(
     last_submission: EncoderResult | None = None  # most recent submission (any status)
     failures: list[str] = []
     err: str | None = None
+    transcript: list[dict] = []                   # captured by the wrapper's recording proxy
     try:
         async with hermetic_claude_sdk_session(
             model,
@@ -315,6 +316,10 @@ async def _encode_one_kb(
                 "setup_encoder.sdk_client_enter", instance_id=f"{db}_kb_{kb_id}",
             ),
         ) as client:
+            # Live reference to the wrapper's recording-proxy transcript list —
+            # captured BEFORE the loop so a timeout/exception still leaves the
+            # partial transcript (the cases most worth inspecting).
+            transcript = getattr(client, "transcript", transcript)
             for attempt in range(MAX_ENCODE_ATTEMPTS):
                 ctx["_encoder_submission"] = None
                 msg = prompt if attempt == 0 else _corrective_message(kb_id, failures)
@@ -386,6 +391,7 @@ async def _encode_one_kb(
 
     _append_index_row(
         index_rows, sessions_dir, kb_id, result, time.monotonic() - started,
+        transcript,
     )
     return result
 
@@ -437,7 +443,8 @@ async def _finalize_kb(
     return last_submission.model_copy(update={"kb_id": kb_id, "entities": []})
 
 
-def _append_index_row(index_rows, sessions_dir, kb_id, result, duration_s):
+def _append_index_row(index_rows, sessions_dir, kb_id, result, duration_s,
+                      transcript=None):
     if sessions_dir is None:
         index_rows.append({
             "session_id": f"setup__kb_{kb_id:03d}", "role": "setup_encoder",
@@ -445,7 +452,7 @@ def _append_index_row(index_rows, sessions_dir, kb_id, result, duration_s):
         })
         return
     row = write_session(
-        sessions_dir, f"setup__kb_{kb_id:03d}", messages=None,
+        sessions_dir, f"setup__kb_{kb_id:03d}", messages=transcript or [],
         role="setup_encoder", meta={"kb_id": kb_id}, status=result.status,
         output=result.model_dump(), error=result.error, duration_s=duration_s,
     )
