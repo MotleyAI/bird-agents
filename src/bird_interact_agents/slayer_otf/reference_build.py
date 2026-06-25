@@ -53,6 +53,9 @@ from bird_interact_agents.slayer_otf.cache import (
     _get_lock,
     ensure_db_cache,
 )
+from bird_interact_agents.slayer_otf.encoder_verify import (
+    purge_kb_entities_and_backrefs,
+)
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     _normalise_children,
     encode_kb_as_memories,
@@ -301,7 +304,9 @@ async def _encode_all(
 # ---------------------------------------------------------------------------
 
 
-async def _collision_check(results: list[Any], storage: Any, db: str) -> list[Any]:
+async def _collision_check(
+    results: list[Any], storage: Any, build_dir: Path | str, db: str,
+) -> list[Any]:
     """Downgrade every KB whose encoded entity name collides with another KB's
     (same ``(host_model, name, kind)`` written under a different ``kb_id``) AND
     **remove the ambiguous entity from storage**. A clash means one writer
@@ -329,17 +334,26 @@ async def _collision_check(results: list[Any], storage: Any, db: str) -> list[An
         "reference_build: entity-name collision across kb_ids %s — removing the "
         "ambiguous entities and deferring", sorted(colliding_kb_ids),
     )
-    await _remove_entities_from_storage(storage, db, colliding_keys)
-    # The colliding entities were just deleted from storage, but each owning
-    # KB's `<db>_kb_<id>` memory still backrefs them (written per-KB by
-    # `autowire_memory_backrefs` during encoding). `_annotate_memories` only
-    # APPENDS refs (and only for `encoded` results), so without an explicit
-    # prune the deferred KB memories would ship dangling entity refs to removed
-    # entities (Codex). Prune by ref across ALL owners — a single survivor
-    # entity carries only the winner's `meta.kb_id`, so a kb_id-keyed purge
-    # would miss the loser's backref.
+    # Fully purge each collision participant: removes ALL of its
+    # ``meta.kb_id``-tagged entities — the colliding one AND any NON-colliding
+    # entities the same KB also wrote, which must not linger as orphans once the
+    # KB is deferred (Codex r2) — and prunes that KB's own memory backrefs with
+    # model-prefix handling (so a deleted whole model's leaf refs don't dangle).
+    # Same cleanup primitive as the per-KB non-encoded path.
+    for kb_id in sorted(colliding_kb_ids):
+        await purge_kb_entities_and_backrefs(build_dir, db, kb_id)
+    # A colliding survivor entity carries only the winner KB's ``meta.kb_id``, so
+    # the loser KB's purge above left the loser's backref to it dangling.
+    # Ref-prune the colliding refs (and any leaf refs under a colliding model)
+    # across ALL participants to clear that cross-claimed backref.
     removed_refs = {_collision_entity_ref(db, *k) for k in colliding_keys}
-    await _prune_memory_backrefs(storage, db, colliding_kb_ids, removed_refs)
+    removed_prefixes = tuple(
+        f"{db}.{name}." for (host, name, kind) in colliding_keys
+        if kind == "model" or host is None
+    )
+    await _prune_memory_backrefs(
+        storage, db, colliding_kb_ids, removed_refs, removed_prefixes,
+    )
 
     out: list[Any] = []
     for r in results:
@@ -356,48 +370,6 @@ async def _collision_check(results: list[Any], storage: Any, db: str) -> list[An
     return out
 
 
-async def _remove_entities_from_storage(
-    storage: Any, db: str, keys: set[tuple[str | None, str, str]],
-) -> None:
-    """Drop each ``(host_model, name, kind)`` entity from the reference. Column/
-    measure/aggregation entities are stripped from their host model; a
-    query-backed ``model`` entity (host=None) is deleted outright."""
-    # Group leaf removals by host model so each model is rewritten once.
-    by_host: dict[str, set[tuple[str, str]]] = {}
-    model_drops: set[str] = set()
-    for host, name, kind in keys:
-        if kind == "model" or host is None:
-            model_drops.add(name)
-        else:
-            by_host.setdefault(host, set()).add((name, kind))
-
-    for host, leaves in by_host.items():
-        # Scope to `db` — a bare name resolves by datasource priority and could
-        # read/rewrite a same-named model in another datasource, matching the
-        # scoped `delete_model` below (Codex).
-        model = await storage.get_model(host, data_source=db)
-        if model is None:
-            continue
-        drop_cols = {n for n, k in leaves if k == "column"}
-        drop_meas = {n for n, k in leaves if k == "measure"}
-        drop_aggs = {n for n, k in leaves if k == "aggregation"}
-        await storage.save_model(model.model_copy(update={
-            "columns": [c for c in (model.columns or []) if c.name not in drop_cols],
-            "measures": [m for m in (model.measures or []) if m.name not in drop_meas],
-            "aggregations": [
-                a for a in (model.aggregations or []) if a.name not in drop_aggs
-            ],
-        }))
-
-    for name in model_drops:
-        try:
-            # Scope to `db` — a bare name resolves by datasource priority and
-            # could drop a same-named model in another datasource (CodeRabbit).
-            await storage.delete_model(name, data_source=db)
-        except Exception:  # noqa: BLE001 — already absent is fine
-            logger.debug("reference_build: model %r already absent on collision drop", name)
-
-
 def _collision_entity_ref(
     db: str, host: str | None, name: str, kind: str,
 ) -> str:
@@ -411,19 +383,27 @@ def _collision_entity_ref(
 
 async def _prune_memory_backrefs(
     storage: Any, db: str, kb_ids: set[int], removed_refs: set[str],
+    removed_prefixes: tuple[str, ...] = (),
 ) -> None:
     """Strip ``removed_refs`` from each ``<db>_kb_<id>`` memory's ``entities``.
 
     Called after a collision removes ambiguous entities from storage so the
-    owning KBs' memories don't ship dangling backrefs. Idempotent; touches a
-    memory only when it actually references a removed entity. Embedding refresh
-    is left to the subsequent ``_annotate_memories`` upsert."""
+    owning KBs' memories don't ship dangling backrefs. ``removed_prefixes``
+    additionally drops any ref under a deleted model (``<db>.<model>.`` →
+    matches its leaf refs), mirroring ``purge_kb_entities_and_backrefs``.
+    Idempotent; touches a memory only when it actually references a removed
+    entity. Embedding refresh is left to the subsequent ``_annotate_memories``
+    upsert."""
     for kb_id in sorted(kb_ids):
         mem_id = f"{db}_kb_{kb_id}"
         mem = await storage.get_memory_row(mem_id)
         if mem is None:
             continue
-        pruned = [e for e in mem.entities if e not in removed_refs]
+        pruned = [
+            e for e in mem.entities
+            if e not in removed_refs
+            and not (removed_prefixes and e.startswith(removed_prefixes))
+        ]
         if len(pruned) != len(mem.entities):
             await storage.save_memory(
                 learning=mem.learning, entities=pruned, query=mem.query,
@@ -808,7 +788,7 @@ async def _build_reference_inside_lock(
         # 5. Post-build integrity + memory annotation. (Neither queries the
         # DB — they operate on the YAML/memories — so the server is already
         # closed above.)
-        results = await _collision_check(results, storage, db)
+        results = await _collision_check(results, storage, tmp, db)
         await _annotate_memories(
             storage=storage, db=db, setup_results=results, kb_rows=kb_rows,
         )

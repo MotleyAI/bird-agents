@@ -729,7 +729,7 @@ async def test_collision_downgrade_prunes_memory_backrefs(tmp_path):
             notes="",
         )
 
-    out = await _collision_check([_result(5), _result(8)], storage, DB)
+    out = await _collision_check([_result(5), _result(8)], storage, tmp_path, DB)
 
     assert all(r.status == "deferred" for r in out)
     s2 = YAMLStorage(base_dir=str(tmp_path))
@@ -743,6 +743,112 @@ async def test_collision_downgrade_prunes_memory_backrefs(tmp_path):
         assert f"{DB}.households.keep_{kb}" in mem.entities, (
             "unrelated backref must be left untouched"
         )
+
+
+@pytest.mark.asyncio
+async def test_collision_downgrade_purges_noncolliding_entities(tmp_path):
+    """A KB downgraded for ONE colliding entity must not leave its OTHER
+    (non-colliding) entities committed — once deferred, the KB owns no
+    reference entities, so the orphan tagged entity + its backref must go
+    too (Codex r2)."""
+    from slayer.core.models import Column, DatasourceConfig, SlayerModel
+    from slayer.storage.yaml_storage import YAMLStorage
+    from bird_interact_agents.slayer_otf.reference_build import _collision_check
+    from bird_interact_agents.slayer_otf.encoder_types import (
+        EncodedEntity, EncoderResult,
+    )
+
+    storage = YAMLStorage(base_dir=str(tmp_path))
+    await storage.save_datasource(DatasourceConfig(
+        name=DB, type="sqlite", connection_string="sqlite:///x.sqlite",
+    ))
+    await storage.save_model(SlayerModel(
+        name="households", data_source=DB, sql_table="households",
+        columns=[
+            Column(name="id", primary_key=True),
+            Column(name="dup", sql="1", meta={"kb_id": 8}),    # collides
+            Column(name="solo", sql="2", meta={"kb_id": 5}),   # kb 5 only
+        ],
+    ))
+    await storage.save_memory(
+        learning="KB 5", entities=[f"{DB}.households.dup", f"{DB}.households.solo"],
+        query=None, id=f"{DB}_kb_5", description="",
+    )
+    await storage.save_memory(
+        learning="KB 8", entities=[f"{DB}.households.dup"],
+        query=None, id=f"{DB}_kb_8", description="",
+    )
+
+    results = [
+        EncoderResult(kb_id=5, status="encoded", entities=[
+            EncodedEntity(kind="column", host_model="households", name="dup",
+                          entity_ref=f"{DB}.households.dup"),
+            EncodedEntity(kind="column", host_model="households", name="solo",
+                          entity_ref=f"{DB}.households.solo"),
+        ], notes=""),
+        EncoderResult(kb_id=8, status="encoded", entities=[
+            EncodedEntity(kind="column", host_model="households", name="dup",
+                          entity_ref=f"{DB}.households.dup"),
+        ], notes=""),
+    ]
+
+    out = await _collision_check(results, storage, tmp_path, DB)
+
+    assert all(r.status == "deferred" for r in out)
+    s2 = YAMLStorage(base_dir=str(tmp_path))
+    cols = {c.name for c in (await s2.get_model("households", data_source=DB)).columns or []}
+    assert "dup" not in cols          # colliding entity removed
+    assert "solo" not in cols         # non-colliding orphan of a deferred KB removed
+    assert "id" in cols               # untagged base column untouched
+    mem5 = await s2.get_memory_row(f"{DB}_kb_5")
+    assert f"{DB}.households.solo" not in mem5.entities
+    assert f"{DB}.households.dup" not in mem5.entities
+
+
+@pytest.mark.asyncio
+async def test_collision_downgrade_prunes_model_leaf_backrefs(tmp_path):
+    """When a colliding query-backed MODEL is deleted, leaf backrefs
+    `<db>.<model>.<leaf>` in EVERY participant's memory must be pruned by
+    prefix, not just the exact `<db>.<model>` ref (Codex r2)."""
+    from slayer.core.models import Column, DatasourceConfig, SlayerModel
+    from slayer.storage.yaml_storage import YAMLStorage
+    from bird_interact_agents.slayer_otf.reference_build import _collision_check
+    from bird_interact_agents.slayer_otf.encoder_types import (
+        EncodedEntity, EncoderResult,
+    )
+
+    storage = YAMLStorage(base_dir=str(tmp_path))
+    await storage.save_datasource(DatasourceConfig(
+        name=DB, type="sqlite", connection_string="sqlite:///x.sqlite",
+    ))
+    await storage.save_model(SlayerModel(
+        name="qm", data_source=DB, sql_table="qm",
+        columns=[Column(name="id", primary_key=True)],
+        meta={"kb_id": 8},   # whole query-backed model tagged for the survivor
+    ))
+    for kb in (5, 8):
+        await storage.save_memory(
+            learning=f"KB {kb}",
+            entities=[f"{DB}.qm", f"{DB}.qm.id", f"{DB}.other.keep"],
+            query=None, id=f"{DB}_kb_{kb}", description="",
+        )
+
+    def _model_result(kb):
+        return EncoderResult(kb_id=kb, status="encoded", entities=[
+            EncodedEntity(kind="model", host_model=None, name="qm",
+                          entity_ref=f"{DB}.qm"),
+        ], notes="")
+
+    out = await _collision_check([_model_result(5), _model_result(8)], storage, tmp_path, DB)
+
+    assert all(r.status == "deferred" for r in out)
+    s2 = YAMLStorage(base_dir=str(tmp_path))
+    assert await s2.get_model("qm", data_source=DB) is None   # model deleted
+    for kb in (5, 8):
+        mem = await s2.get_memory_row(f"{DB}_kb_{kb}")
+        assert f"{DB}.qm" not in mem.entities          # exact ref pruned
+        assert f"{DB}.qm.id" not in mem.entities       # leaf ref pruned by prefix
+        assert f"{DB}.other.keep" in mem.entities       # unrelated ref untouched
 
 
 # ---------------------------------------------------------------------------
