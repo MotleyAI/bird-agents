@@ -620,9 +620,15 @@ def test_motley_slayer_floor_is_at_least_0_8_3():
     floors = re.findall(
         r'"motley-slayer\[advanced-search\]>=([0-9.]+)"', text,
     )
-    assert floors, "no motley-slayer floor found in pyproject.toml"
+    # BOTH the `slayer` and `all` extras must carry the pin (the docstring
+    # contract) — assert at least two matches so dropping one extra's pin fails
+    # instead of passing vacuously (CodeRabbit).
+    assert len(floors) >= 2, (
+        "motley-slayer floor must be pinned in BOTH the `slayer` and `all` "
+        f"extras of pyproject.toml; found {len(floors)}: {floors}"
+    )
     for raw in floors:
-        major, minor, patch, *_ = (raw.split(".") + ["0", "0"])
+        major, minor, patch, *_ = [*raw.split("."), "0", "0"]
         version = (int(major), int(minor), int(patch))
         assert version >= (0, 8, 3), (
             f"motley-slayer floor {raw!r} is below 0.8.3 — the claude_sdk "
