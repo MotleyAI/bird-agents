@@ -222,10 +222,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         # agno, smolagents etc. legitimately use non-Anthropic agent
         # models (e.g. `openai/gpt-4o`) that `is_supported_agent_model`
         # would otherwise reject before dispatch.
+        # DEV-1604: the annotator is now provider-aware too, so the registry /
+        # subscription-endpoint handling applies to BOTH a claude_sdk submit AND
+        # an annotate run (which is always the claude_sdk-based annotator).
         if (
-            ns.subcommand == "submit"
-            and ns.framework.startswith("claude_sdk")
-        ):
+            ns.subcommand == "submit" and ns.framework.startswith("claude_sdk")
+        ) or ns.subcommand == "annotate":
             if not provider_registry.is_supported_agent_model(ns.agent_model):
                 known = ", ".join(["anthropic", *sorted(provider_registry.REGISTRY)])
                 p.error(

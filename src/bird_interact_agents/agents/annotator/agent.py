@@ -625,8 +625,12 @@ async def run_task(
     cap = max_turns or MAX_MODEL_TURNS
 
     # DEV-1579: build the agent's options from the policy-owned env kwargs
-    # (telemetry-disable + hermetic CLAUDE_CONFIG_DIR). The annotator is
-    # Anthropic-only, so the session is provider_aware=False.
+    # (telemetry-disable + hermetic CLAUDE_CONFIG_DIR).
+    # DEV-1604: provider_aware=True so the annotator can run on a registry
+    # open-weight model (e.g. doubleword/* or zai/* per-token) through the
+    # Anthropic⇄OpenAI bridge — it inherits ANTHROPIC_BASE_URL from the registry
+    # session env exactly like the OTF agents. For an Anthropic model this is a
+    # no-op (get_provider is None ⇒ no registry layer, same auth path as before).
     def _build_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
         return ClaudeAgentOptions(
             **_opt_kwargs,
@@ -646,7 +650,7 @@ async def run_task(
             model,
             mcp_servers=mcp_servers,
             build_options=_build_options,
-            provider_aware=False,
+            provider_aware=True,
         ) as client:
             await client.query(task_data["amb_user_query"])
             async for msg in client.receive_response():
