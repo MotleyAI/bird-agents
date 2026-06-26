@@ -347,10 +347,27 @@ def _start_proxy(target: BridgeTarget, port: int) -> None:  # pragma: no cover
             env=env, stdout=logf, stderr=subprocess.STDOUT,
         )
     _STARTED_PROCS.append(proc)
+
+    def _reap() -> None:
+        # Don't leave a half-started child holding the port after we declare
+        # startup failed (Codex).
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+        except Exception:
+            pass
+        with contextlib.suppress(ValueError):
+            _STARTED_PROCS.remove(proc)
+
     want = healthz_payload(target, port)
     deadline = time.monotonic() + _READY_TIMEOUT_S
     while time.monotonic() < deadline:
         if proc.poll() is not None:
+            _reap()
             raise BridgeProxyError(
                 f"bridge proxy for {target.provider} exited early "
                 f"(code {proc.returncode}); see {log_path(port)}"
@@ -358,6 +375,7 @@ def _start_proxy(target: BridgeTarget, port: int) -> None:  # pragma: no cover
         if identity_matches(_probe_identity(port), want):
             return
         time.sleep(0.25)
+    _reap()
     raise BridgeProxyError(
         f"bridge proxy for {target.provider} on {SERVE_HOST}:{port} did not "
         f"become ready within {_READY_TIMEOUT_S}s; see {log_path(port)}"

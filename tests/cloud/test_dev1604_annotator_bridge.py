@@ -81,6 +81,37 @@ def test_annotator_actor_constructor_calls_bridge_bootstrap():
     )
 
 
+def test_run_annotator_pool_local_path_starts_bridge(monkeypatch):
+    """The sequential/local annotator path (no AnnotatorActor) must also start
+    the bridge for a registry model (Codex round-2)."""
+    calls = []
+    monkeypatch.setattr(
+        ray_app_annotator, "_maybe_ensure_bridge",
+        lambda cfg: calls.append(cfg.get("agent_model")),
+    )
+
+    class _NoHeartbeat:
+        def __init__(self, *a, **k):
+            pass
+
+        def __getattr__(self, _name):  # start / stop_and_flush / … → no-op
+            return lambda *a, **k: None
+
+    monkeypatch.setattr(ray_app_annotator, "HeartbeatWriter", _NoHeartbeat)
+    ray_app_annotator.run_annotator_pool(
+        run_id="r1",
+        instance_ids=[],  # no tasks: still must bring up the bridge first
+        task_data_by_id={},
+        cfg={"benchmark": "mini-interact", "agent_model": _DW, "model": _DW,
+             "framework": "annotator", "no_subscription_auth": True},
+        data_path_base="/tmp/data",
+        num_actors=1,
+        gcs_client=object(),
+        local_only=True,
+    )
+    assert calls == [_DW]
+
+
 def test_annotator_main_threads_subscription_flag_into_cfg(monkeypatch):
     """`--subscription-auth` parsed by the in-cluster annotator main reaches the
     actor cfg as no_subscription_auth so the bridge decision is correct."""

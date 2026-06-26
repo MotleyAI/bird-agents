@@ -321,6 +321,11 @@ def run_annotator_pool(
         if use_local:
             if actor_env_vars:
                 _apply_actor_env_local(actor_env_vars)
+            # DEV-1604: the sequential/local path has no AnnotatorActor, so start
+            # the bridge here (the remote actor does it in __init__) — else a
+            # doubleword/* local annotator run has no base-url override and fails
+            # before the SDK session (Codex).
+            _maybe_ensure_bridge(cfg)
             for iid in instance_ids:
                 _run_one_task(
                     task_data=task_data_by_id[iid],
