@@ -2051,6 +2051,19 @@ def main() -> None:
             "explicit version."
         ),
     )
+    parser.add_argument(
+        "--version",
+        dest="encode_version",
+        default=None,
+        help=(
+            "DEV-1605: version LABEL an on-the-fly `pydantic_ai_otf_encode` "
+            "run builds into (slayer_models_otf/<benchmark>/<version>/<db>). "
+            "Default = the --agent-model slug (e.g. opus-4-7). Mirror of the "
+            "build-script / cloud-submit --version, so local encode runs can "
+            "create separate version slots for same-model different-settings "
+            "builds."
+        ),
+    )
     args = parser.parse_args()
     # DEV-1602: translate --subscription-auth into the BIRD_INTERACT_SUBSCRIPTION_AUTH
     # signal env var (or clear an ambient one) before any agent is constructed.
@@ -2160,6 +2173,7 @@ def main() -> None:
             user_sim_prompt_version=args.user_sim_prompt_version,
             pre_encoded_source=args.pre_encoded_source,
             pre_encoded_version=args.pre_encoded_version,
+            encode_version=args.encode_version,
         )
     )
 

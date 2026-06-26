@@ -200,3 +200,27 @@ async def test_run_evaluation_rejects_mixed_otf_versions(tmp_path, monkeypatch):
             framework="claude_sdk_otf", dataset="mini-interact",
             pre_encoded_source="otf",
         )
+
+
+def test_make_runner_threads_encode_version_to_otf_encode_agent(monkeypatch):
+    """The local `--version` (encode label) must reach the
+    PydanticAIOtfEncodeAgent (Codex r4: local encode versioning surface)."""
+    import bird_interact_agents.run as run_mod
+    import bird_interact_agents.agents.pydantic_ai_otf_encode as otf_pkg
+
+    captured: dict = {}
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(otf_pkg, "PydanticAIOtfEncodeAgent", FakeAgent)
+
+    run_mod._make_runner(
+        framework="pydantic_ai_otf_encode", dataset="livesqlbench-base-lite-sqlite",
+        query_mode="slayer", mode="one-shot",
+        agent_model="anthropic/claude-opus-4-7", strict=False,
+        prompt_cache=True, max_depth=3, slayer_storage_root=None,
+        slayer_setup="on-the-fly", encode_version="my-label",
+    )
+    assert captured["encode_version"] == "my-label"
