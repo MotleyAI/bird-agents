@@ -611,7 +611,7 @@ def test_annotator_rejects_non_anthropic_non_registry_model(
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
     monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
-    with pytest.raises(prereqs.PrereqError, match="anthropic/. or a registry"):
+    with pytest.raises(prereqs.PrereqError, match=r"anthropic/\* or a registry"):
         prereqs.check_api_keys(
             agent_model="openai/gpt-4o",
             user_sim_model="anthropic/claude-haiku-4-5-20251001",

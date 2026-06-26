@@ -30,6 +30,7 @@ from __future__ import annotations
 import contextlib
 import fcntl
 import hashlib
+import hmac
 import json
 import os
 import subprocess
@@ -176,8 +177,27 @@ def messages_call_kwargs(
 
 def count_tokens_response(body: dict, target: BridgeTarget) -> dict:
     """Anthropic ``/v1/messages/count_tokens`` shape ``{"input_tokens": N}``,
-    estimated offline via litellm's token counter."""
-    messages = body.get("messages", [])
+    estimated offline via litellm's token counter.
+
+    Counts the ``system`` prompt and ``tools`` in addition to ``messages`` — the
+    SDK ships large tool schemas + system instructions, so counting messages
+    alone materially undercounts the real context (CodeRabbit/Codex).
+
+    ``system``/``tools`` are folded in as a leading text message rather than via
+    litellm's ``tools=`` kwarg: the SDK sends Anthropic-format tools
+    (``name``/``input_schema``) which litellm's OpenAI-shaped token counter
+    can't parse, so we count their serialized form as text — a sound estimate
+    that never raises on the inbound shape."""
+    messages = list(body.get("messages", []))
+    extra: list[str] = []
+    system = body.get("system")
+    if system:
+        extra.append(system if isinstance(system, str) else json.dumps(system))
+    tools = body.get("tools")
+    if tools:
+        extra.append(json.dumps(tools))
+    if extra:
+        messages = [{"role": "system", "content": "\n".join(extra)}] + messages
     n = litellm.token_counter(
         model=f"openai/{target.native_id}", messages=messages
     )
@@ -199,6 +219,24 @@ def configure_litellm_for_bridge() -> None:
     litellm.drop_params = True
 
 
+def _request_authorized(request: Request, target: BridgeTarget) -> bool:
+    """Defence-in-depth on the (loopback-bound) key-spending routes: only accept
+    a caller that presents the provider key as its bearer.
+
+    The SDK sends ``ANTHROPIC_AUTH_TOKEN`` (which ``sdk_session_env`` sets to the
+    provider key) as ``Authorization: Bearer <key>``, so a legitimate request
+    already carries it; a foreign same-host process that discovered the port via
+    ``/healthz`` does not know the key and is rejected. If the key env var is
+    somehow unset we cannot verify, and fall back to the prior loopback-only
+    posture (allow) rather than hard-failing a misconfigured run."""
+    expected = os.environ.get(target.auth_env, "")
+    if not expected:
+        return True
+    auth = request.headers.get("authorization", "")
+    token = auth[7:] if auth[:7].lower() == "bearer " else ""
+    return bool(token) and hmac.compare_digest(token, expected)
+
+
 # ---------------------------------------------------------------------------
 # The FastAPI app
 # ---------------------------------------------------------------------------
@@ -211,6 +249,8 @@ def create_app(target: BridgeTarget, port: Optional[int] = None) -> FastAPI:
 
     @app.post("/v1/messages")
     async def messages(request: Request):  # noqa: ANN202
+        if not _request_authorized(request, target):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
         body = await request.json()
         api_key = os.environ.get(target.auth_env, "")
         kwargs = messages_call_kwargs(body, target, api_key=api_key)
@@ -231,6 +271,8 @@ def create_app(target: BridgeTarget, port: Optional[int] = None) -> FastAPI:
 
     @app.post("/v1/messages/count_tokens")
     async def count_tokens(request: Request):  # noqa: ANN202
+        if not _request_authorized(request, target):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
         body = await request.json()
         return JSONResponse(count_tokens_response(body, target))
 
@@ -297,11 +339,13 @@ def _start_proxy(target: BridgeTarget, port: int) -> None:  # pragma: no cover
     env[_ENV_NATIVE_ID] = target.native_id
     env[_ENV_AUTH_ENV] = target.auth_env
     env[_ENV_PORT] = str(port)
-    logf = open(log_path(port), "ab")
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "bird_interact_agents.cloud.bridge_proxy"],
-        env=env, stdout=logf, stderr=subprocess.STDOUT,
-    )
+    # Close the parent's copy of the log fd after spawn — only the child keeps
+    # the redirected stdout/stderr handle, so repeated starts can't leak fds.
+    with open(log_path(port), "ab") as logf:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "bird_interact_agents.cloud.bridge_proxy"],
+            env=env, stdout=logf, stderr=subprocess.STDOUT,
+        )
     _STARTED_PROCS.append(proc)
     want = healthz_payload(target, port)
     deadline = time.monotonic() + _READY_TIMEOUT_S
@@ -374,14 +418,21 @@ def terminate_local_proxies() -> None:
     """Terminate proxy subprocesses started by THIS process (test/manual
     teardown — production leaves them for the VM lifetime)."""
     global _STARTED_PROCS
+    survivors: list = []
     for proc in _STARTED_PROCS:
         try:
             if proc.poll() is None:
                 proc.terminate()
-                proc.wait(timeout=5)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
+            if proc.poll() is None:  # still alive — keep the handle
+                survivors.append(proc)
         except Exception:
-            pass
-    _STARTED_PROCS = []
+            survivors.append(proc)
+    _STARTED_PROCS = survivors
 
 
 if __name__ == "__main__":  # pragma: no cover

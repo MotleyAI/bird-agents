@@ -1073,10 +1073,18 @@ def _maybe_ensure_bridge(cfg: dict[str, Any]) -> None:
     override at option-build time, so the proxy must exist first. Keys on the
     recycled ``no_subscription_auth`` flag (default True): z.ai per-token /
     Doubleword bridge; z.ai ``--subscription-auth`` keeps its direct coding-plan
-    endpoint."""
+    endpoint.
+
+    The bridge is a ``claude_sdk``-specific concern (only the SDK speaks
+    Anthropic Messages). Gate on the framework so a non-SDK run (e.g.
+    ``pydantic_ai`` against a ``doubleword/*`` model, which litellm reaches
+    directly) does NOT start a useless proxy or mutate the base-url override.
+    The annotator counts — it runs the claude_sdk session."""
+    framework = str(cfg.get("framework") or "")
+    is_sdk = framework.startswith("claude_sdk") or framework == "annotator"
     agent_model = cfg.get("agent_model") or ""
     no_sub = cfg.get("no_subscription_auth", True)
-    if provider_registry.agent_needs_bridge(agent_model, no_sub):
+    if is_sdk and provider_registry.agent_needs_bridge(agent_model, no_sub):
         ensure_bridge_proxy_for_actor(agent_model, cfg)
 
 

@@ -181,9 +181,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--subscription-auth", action=argparse.BooleanOptionalAction,
         required=True, dest="subscription_auth",
         help=(
-            "REQUIRED. Same shape as `submit`: `--subscription-auth` requires "
-            "a valid CLAUDE_CODE_OAUTH_TOKEN in the env, "
-            "`--no-subscription-auth` uses ANTHROPIC_API_KEY. No default."
+            "REQUIRED. Same shape as `submit`. For an ANTHROPIC agent model: "
+            "`--subscription-auth` requires a valid CLAUDE_CODE_OAUTH_TOKEN, "
+            "`--no-subscription-auth` uses ANTHROPIC_API_KEY. DEV-1604: the "
+            "annotator is provider-aware, so for a z.ai agent model the flag is "
+            "the ENDPOINT selector (still ZAI_API_KEY, NOT OAuth): "
+            "`--subscription-auth` = direct coding-plan, default / "
+            "`--no-subscription-auth` = per-token bridge. Doubleword is "
+            "OpenAI-only (always bridged; `--subscription-auth` rejected). "
+            "No default."
         ),
     )
 

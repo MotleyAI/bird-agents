@@ -54,21 +54,31 @@ def test_annotator_resubmit_args_emit_subscription_flag():
     assert "--no-subscription-auth" in job_args
 
 
-def test_annotator_actor_bridges_for_registry_model(monkeypatch):
-    """The annotator cloud actor brings up the bridge when its model is a
-    registry provider — via the shared `_maybe_ensure_bridge` seam."""
-    calls = []
-    monkeypatch.setattr(
-        ray_app_annotator, "_maybe_ensure_bridge",
-        lambda cfg: calls.append((cfg.get("agent_model"),
-                                  cfg.get("no_subscription_auth"))),
-    )
-    cfg = {
-        "benchmark": "mini-interact", "agent_model": _DW, "model": _DW,
-        "framework": "annotator", "no_subscription_auth": True,
+def test_annotator_actor_constructor_calls_bridge_bootstrap():
+    """The AnnotatorActor constructor itself must call `_maybe_ensure_bridge`
+    (the @ray.remote class can't be instantiated without a live Ray cluster, so
+    AST-inspect the constructor source — this fails if the bootstrap call is
+    removed, unlike a test that drives the mocked helper directly)."""
+    import ast
+    import inspect
+
+    src = inspect.getsource(ray_app_annotator._build_annotator_actor_class)
+    tree = ast.parse(src)
+    # Find the AnnotatorActor.__init__ and assert it calls _maybe_ensure_bridge.
+    init = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "__init__":
+            init = node
+            break
+    assert init is not None, "AnnotatorActor.__init__ not found"
+    called = {
+        n.func.id
+        for n in ast.walk(init)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
     }
-    ray_app_annotator._maybe_ensure_bridge(cfg)
-    assert calls == [(_DW, True)]
+    assert "_maybe_ensure_bridge" in called, (
+        "AnnotatorActor.__init__ must call _maybe_ensure_bridge(cfg)"
+    )
 
 
 def test_annotator_main_threads_subscription_flag_into_cfg(monkeypatch):

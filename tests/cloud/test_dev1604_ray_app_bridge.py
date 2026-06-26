@@ -85,6 +85,21 @@ def test_anthropic_actor_does_not_bridge(actor_harness):
     assert order == ["runner"]
 
 
+def test_maybe_ensure_bridge_skips_non_sdk_framework(monkeypatch):
+    """The bridge is claude_sdk-specific. A non-SDK framework (pydantic_ai) on a
+    doubleword model must NOT start a proxy — litellm reaches it directly."""
+    calls = []
+    monkeypatch.setattr(
+        ray_app, "ensure_bridge_proxy_for_actor",
+        lambda model, cfg: calls.append(model),
+    )
+    ray_app._maybe_ensure_bridge({
+        "framework": "pydantic_ai", "agent_model": _DW, "query_mode": "raw",
+        "no_subscription_auth": True,
+    })
+    assert calls == []
+
+
 def test_maybe_ensure_bridge_helper(monkeypatch):
     """Both `_LocalActor` AND the real Ray `WorkerActor` route their bridge
     bring-up through this one shared helper, so testing it once covers both

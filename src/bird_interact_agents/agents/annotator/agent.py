@@ -46,6 +46,7 @@ from bird_interact_agents.harness import (
     materialize_task_db,
 )
 from bird_interact_agents.model_string import is_anthropic, native_model_id
+from bird_interact_agents.provider_registry import get_provider
 from bird_interact_agents.agents.annotator.prompts import build_system_prompt
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
     hermetic_claude_sdk_session,
@@ -585,10 +586,14 @@ async def run_task(
     db_name = task_data["selected_database"]
     t0 = time.monotonic()
 
-    if not is_anthropic(model):
+    # DEV-1604: the annotator is provider-aware — an Anthropic model OR a
+    # registry open-weight model (Doubleword / z.ai per-token, run through the
+    # bridge) is allowed. A non-Anthropic NON-registry model has no claude_sdk
+    # session and is rejected.
+    if not is_anthropic(model) and get_provider(model) is None:
         msg = (
-            f"annotator agent requires an Anthropic model; got {model!r}. "
-            "Use an anthropic/* model string."
+            f"annotator agent requires an Anthropic or registry open-weight "
+            f"model; got {model!r}."
         )
         logger.warning("[%s] %s", instance_id, msg)
         return AnnotatorResult(

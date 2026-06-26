@@ -19,6 +19,7 @@ Marked `integration` (excluded from the default suite). Needs the provider key
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 import pytest
@@ -97,30 +98,37 @@ async def test_bridge_full_sdk_tool_loop(model, no_subscription_auth, key_env):
     async with hermetic_claude_sdk_session(
         model, mcp_servers=mcp_servers, build_options=_build_options,
     ) as client:
-        await client.query(
-            "What's the weather in Paris? You MUST call the get_weather tool, "
-            "then tell me the result in one sentence."
-        )
-        async for msg in client.receive_response():
-            name = type(msg).__name__
-            blob = repr(msg)
-            # (6) z.ai per-token must NOT hit the Fair-Usage throttle.
-            assert "1313" not in blob, f"z.ai [1313] throttle surfaced: {blob}"
-            if name == "AssistantMessage":
-                for block in getattr(msg, "content", []) or []:
-                    if getattr(block, "type", None) == "text" or hasattr(
-                        block, "text"
-                    ):
-                        texts.append(getattr(block, "text", "") or "")
-            if name == "ResultMessage":
-                # The SDK's usage dict key names vary; sum every integer token
-                # field rather than assume input_tokens/output_tokens.
-                usage = getattr(msg, "usage", None)
-                if isinstance(usage, dict):
-                    usage_total = sum(
-                        v for v in usage.values() if isinstance(v, int)
-                    )
-                cost_usd = getattr(msg, "total_cost_usd", 0.0) or 0.0
+        # Local deadline around the live query/stream: the SDK's own timeout only
+        # covers session init, so a stalled provider or a stream that never
+        # closes would otherwise hang until the job-level timeout. Fail fast.
+        async def _drive():
+            nonlocal usage_total, cost_usd
+            await client.query(
+                "What's the weather in Paris? You MUST call the get_weather "
+                "tool, then tell me the result in one sentence."
+            )
+            async for msg in client.receive_response():
+                name = type(msg).__name__
+                blob = repr(msg)
+                # (6) z.ai per-token must NOT hit the Fair-Usage throttle.
+                assert "1313" not in blob, f"z.ai [1313] throttle: {blob}"
+                if name == "AssistantMessage":
+                    for block in getattr(msg, "content", []) or []:
+                        if getattr(block, "type", None) == "text" or hasattr(
+                            block, "text"
+                        ):
+                            texts.append(getattr(block, "text", "") or "")
+                if name == "ResultMessage":
+                    # The SDK's usage dict key names vary; sum every integer
+                    # token field rather than assume input/output_tokens.
+                    usage = getattr(msg, "usage", None)
+                    if isinstance(usage, dict):
+                        usage_total = sum(
+                            v for v in usage.values() if isinstance(v, int)
+                        )
+                    cost_usd = getattr(msg, "total_cost_usd", 0.0) or 0.0
+
+        await asyncio.wait_for(_drive(), timeout=180.0)
 
     # (3)(4) the tool was actually invoked and the loop continued past it.
     assert weather_calls, "the MCP get_weather tool was never called"

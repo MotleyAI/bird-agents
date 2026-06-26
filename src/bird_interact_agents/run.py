@@ -2027,14 +2027,6 @@ def main() -> None:
         agent_model=args.agent_model,
         error=parser.error,
     )
-    # DEV-1604: start the Anthropic⇄OpenAI bridge proxy (Doubleword / z.ai
-    # per-token) and point the base-url override at it BEFORE any runner is
-    # built. Recycles --subscription-auth as the z.ai endpoint selector.
-    _maybe_start_bridge_proxy(
-        agent_model=args.agent_model,
-        subscription_auth=args.subscription_auth,
-        error=parser.error,
-    )
     # DEV-1586: derive the internal slayer_setup from the user-facing flag.
     from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
     args.slayer_setup = derive_slayer_setup(args.pre_encoded_source)
@@ -2079,6 +2071,17 @@ def main() -> None:
         )
     except ValueError as e:
         parser.error(str(e))
+
+    # DEV-1604: start the Anthropic⇄OpenAI bridge proxy (Doubleword / z.ai
+    # per-token) and point the base-url override at it BEFORE any runner is
+    # built, but AFTER all the parser.error validation above — so an invalid
+    # invocation fails fast without spawning a proxy or mutating the env.
+    # Recycles --subscription-auth as the z.ai endpoint selector.
+    _maybe_start_bridge_proxy(
+        agent_model=args.agent_model,
+        subscription_auth=args.subscription_auth,
+        error=parser.error,
+    )
 
     if args.output is None:
         ts = datetime.datetime.now().strftime("%Y%m%dt%H%M")

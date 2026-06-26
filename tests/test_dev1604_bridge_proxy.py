@@ -213,6 +213,11 @@ def test_identity_matches_same_target_mismatch_other(dw_target, zai_target):
 # ---------------------------------------------------------------------------
 
 
+# The SDK presents the provider key as its bearer (sdk_session_env sets
+# ANTHROPIC_AUTH_TOKEN to it); the proxy verifies it.
+_AUTH = {"authorization": "Bearer dw-key-1"}
+
+
 def _client(target):
     from starlette.testclient import TestClient
 
@@ -232,7 +237,7 @@ def test_app_messages_non_stream_routes_to_openai_native(monkeypatch, dw_target)
 
     monkeypatch.setattr(bp.litellm, "anthropic_messages", fake_messages)
     resp = _client(dw_target).post(
-        "/v1/messages",
+        "/v1/messages", headers=_AUTH,
         json={"model": _DW_NATIVE, "max_tokens": 16,
               "messages": [{"role": "user", "content": "hi"}]},
     )
@@ -257,7 +262,7 @@ def test_app_messages_streaming_returns_sse(monkeypatch, dw_target):
     monkeypatch.setattr(bp.litellm, "anthropic_messages", fake_stream)
     with _client(dw_target) as c:
         resp = c.post(
-            "/v1/messages",
+            "/v1/messages", headers=_AUTH,
             json={"model": _DW_NATIVE, "max_tokens": 16, "stream": True,
                   "messages": [{"role": "user", "content": "hi"}]},
         )
@@ -270,15 +275,31 @@ def test_app_messages_streaming_returns_sse(monkeypatch, dw_target):
 def test_app_count_tokens_route(monkeypatch, dw_target):
     monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
     resp = _client(dw_target).post(
-        "/v1/messages/count_tokens",
+        "/v1/messages/count_tokens", headers=_AUTH,
         json={"model": _DW_NATIVE,
-              "messages": [{"role": "user", "content": "hello there"}]},
+              "messages": [{"role": "user", "content": "hello there"}],
+              "system": "You are a helpful SQL assistant.",
+              "tools": [{"name": "run_sql", "description": "Run SQL",
+                         "input_schema": {"type": "object"}}]},
     )
     assert resp.status_code == 200
     assert resp.json()["input_tokens"] > 0
 
 
-def test_app_healthz_route(dw_target):
+def test_app_messages_rejects_missing_bearer(monkeypatch, dw_target):
+    """A same-host caller that discovered the port via /healthz but doesn't know
+    the provider key is rejected — it can't spend the actor's key."""
+    monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
+    c = _client(dw_target)
+    assert c.post("/v1/messages", json={"messages": []}).status_code == 401
+    assert c.post(
+        "/v1/messages", headers={"authorization": "Bearer wrong"},
+        json={"messages": []},
+    ).status_code == 401
+
+
+def test_app_healthz_route_needs_no_auth(dw_target):
+    # /healthz exposes no secret and is the identity probe — it stays open.
     resp = _client(dw_target).get("/healthz")
     assert resp.status_code == 200
     assert resp.json()["provider"] == "doubleword"
@@ -415,7 +436,8 @@ def test_terminate_local_proxies_terminates_tracked(monkeypatch):
             self.terminated = False
 
         def poll(self):
-            return None
+            # Alive until terminated, then reports an exit code.
+            return 0 if self.terminated else None
 
         def terminate(self):
             self.terminated = True
@@ -427,4 +449,27 @@ def test_terminate_local_proxies_terminates_tracked(monkeypatch):
     monkeypatch.setattr(bp, "_STARTED_PROCS", [proc])
     bp.terminate_local_proxies()
     assert proc.terminated is True
+    # A cleanly-terminated proc is dropped from the tracking list.
     assert bp._STARTED_PROCS == []
+
+
+def test_terminate_local_proxies_keeps_survivor(monkeypatch):
+    """A proc that refuses to die (poll stays None even after terminate+kill)
+    must NOT be dropped from tracking — we keep the handle."""
+    class _StubbornProc:
+        def poll(self):
+            return None  # never exits
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            pass
+
+        def wait(self, timeout=None):
+            return 0
+
+    proc = _StubbornProc()
+    monkeypatch.setattr(bp, "_STARTED_PROCS", [proc])
+    bp.terminate_local_proxies()
+    assert bp._STARTED_PROCS == [proc]

@@ -1365,7 +1365,7 @@ def test_read_api_keys_annotator_rejects_non_anthropic_non_registry(
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
     monkeypatch.setenv("OPENAI_API_KEY", _OPENAI_KEY)
     monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
-    with pytest.raises(driver.PrereqError, match="anthropic/. or a registry"):
+    with pytest.raises(driver.PrereqError, match=r"anthropic/\* or a registry"):
         driver.read_api_keys_from_local_env(
             "openai/gpt-4o",
             "anthropic/claude-haiku-4-5-20251001",

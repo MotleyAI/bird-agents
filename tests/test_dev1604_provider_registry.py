@@ -7,8 +7,8 @@ it through the local Anthropic⇄OpenAI bridge proxy. This module pins:
 * the registry entry (`base_url=None`, `api_format="openai"`, the FP8 native
   id `zai-org/GLM-5.2-FP8`, pricing deliberately UNSET pending the DW console);
 * `per_token_openai_target` (the upstream the proxy POSTs to);
-* `agent_needs_bridge` (Doubleword always; z.ai only on `--zai-billing
-  per-token`);
+* `agent_needs_bridge` (Doubleword always; z.ai only on the default
+  `--no-subscription-auth` / per-token path);
 * the `resolve_base_url` fail-fast guard so a `None` base_url never leaks to
   any consumer (`sdk_session_env` AND `eval/autopsy`);
 * that the anthropic-format providers (moonshot, z.ai coding-plan) are wholly
