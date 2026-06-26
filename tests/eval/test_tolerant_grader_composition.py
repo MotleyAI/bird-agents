@@ -68,6 +68,15 @@ def test_compare_relaxed_casefold():
     ) is False
 
 
+def test_compare_relaxed_casefold_is_unicode_aware():
+    """casefold (not lower) lifts Unicode-equivalent case pairs like
+    'ß' == 'SS' (CodeRabbit DEV-1606)."""
+    assert tg.compare_relaxed(
+        [("straße",)], [("STRASSE",)],
+        epsilon=1e-6, strip=False, casefold=True,
+    ) is True
+
+
 def test_compare_relaxed_trailing_whitespace():
     assert tg.compare_relaxed(
         [("a   ",)], [("a",)],

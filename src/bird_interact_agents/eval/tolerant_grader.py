@@ -443,7 +443,9 @@ def _relaxed_cell_equal(
         if strip:
             a, b = a.rstrip(), b.rstrip()
         if casefold:
-            a, b = a.lower(), b.lower()
+            # Unicode-aware case folding (e.g. "ß" == "SS"); strictly more
+            # permissive than .lower() (CodeRabbit DEV-1606).
+            a, b = a.casefold(), b.casefold()
         return a == b
     return _numeric_cell_equal(a, b, epsilon=epsilon)
 

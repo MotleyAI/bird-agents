@@ -352,7 +352,7 @@ def run_env_action(
 def _dispatch_eval(state: Any, sql: str):
     """Run the submission evaluator and return
     ``(observation, reward, p1, p2, finished, audited_passes, original_passes,
-       audited_observation, original_observation)``.
+       audited_observation, original_observation, matched_variant_id)``.
 
     On single-eval runs (no overlay applied to the task) the dual fields
     are ``None``. On dual-eval runs (``task["original_sol_sql"]`` set by
@@ -360,6 +360,11 @@ def _dispatch_eval(state: Any, sql: str):
     `evaluate_dual_gold` — the AUDITED side drives the agent-visible
     return values (so the agent grades against what it interacted with);
     the ORIGINAL side goes into the diagnostic payload only.
+
+    ``matched_variant_id`` (10th element, DEV-1606 Defect 1) is the
+    audited variant the agent's answer best-of matched when the audited
+    primary missed — ``None`` on a primary pass, a total miss, or a
+    single-eval run. It is a non-agent-visible diagnostic only.
     """
     original_sol_sql = state.status.original_data.get("original_sol_sql")
     if not original_sol_sql:
@@ -555,6 +560,10 @@ def submit_raw_sql(state: Any, sql: str) -> str:
             "finished": False,
             "submitted_sql": sql,
             "submitted_query": None,
+            # Clear any stale best-of match from a prior passing submit —
+            # a later dry-run failure must not carry forward the id via
+            # the ``**prior`` spread (CodeRabbit DEV-1606).
+            "phase1_matched_audited_variant_id": None,
             **diag,
         }
         if pre_phase == 1:

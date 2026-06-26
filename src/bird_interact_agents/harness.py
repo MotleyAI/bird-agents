@@ -894,9 +894,17 @@ def apply_audited_gold_overlay(
                     "primary": True,
                 }
                 # Legacy flat layout: keep every row that carries SQL as a
-                # best-of candidate (DEV-1606 Defect 1).
+                # best-of candidate (DEV-1606 Defect 1). flat_rows is keyed
+                # only by instance_id, so filter to the primary row's
+                # (selected_database, benchmark) — otherwise a same-
+                # instance_id row from another DB/benchmark in the
+                # consolidated file would leak FOREIGN SQL into best-of
+                # grading (CodeRabbit DEV-1606).
                 variants_by_iid[inst_id] = [
-                    r for r in flat_rows if r.get("audited_sol_sql")
+                    r for r in flat_rows
+                    if r.get("audited_sol_sql")
+                    and r.get("selected_database") == primary_row.get("selected_database")
+                    and r.get("benchmark") == primary_row.get("benchmark")
                 ]
         for task in tasks:
             inst = task.get("instance_id")

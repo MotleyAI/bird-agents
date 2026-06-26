@@ -86,6 +86,43 @@ def test_overlay_attaches_all_variants_even_when_primary_is_original(tmp_path):
     assert v2["audited_sol_sql"] == ["SELECT strict FROM t"]
 
 
+def _write_flat(audited_root, benchmark_name, rows: list[dict]) -> None:
+    d = audited_root / benchmark_name
+    d.mkdir(parents=True, exist_ok=True)
+    with (d / f"{benchmark_name}_audited.jsonl").open("w") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+
+
+def test_overlay_legacy_flat_filters_foreign_db_variants(tmp_path):
+    """Legacy flat single_file rows are keyed only by instance_id; a
+    same-instance_id row from another selected_database must NOT leak into
+    audited_variants (CodeRabbit DEV-1606 — foreign-SQL guard)."""
+    from bird_interact_agents.harness import apply_audited_gold_overlay
+    from bird_interact_agents.benchmark import get_benchmark
+
+    b = get_benchmark("mini-interact")
+    _write_flat(tmp_path, b.name, [
+        {"instance_id": "dup_1", "selected_database": "reverse_logistics",
+         "benchmark": b.name, "primary": True, "audit_status": "edited",
+         "audited_sol_sql": ["SELECT ours FROM t"]},
+        {"instance_id": "dup_1", "selected_database": "other_db",
+         "benchmark": b.name, "primary": False, "audit_status": "edited",
+         "audited_sol_sql": ["SELECT foreign_sql FROM t"]},
+    ])
+    task = {
+        "instance_id": "dup_1",
+        "selected_database": "reverse_logistics",
+        "sol_sql": ["SELECT ours FROM t"],
+    }
+    apply_audited_gold_overlay([task], tmp_path, benchmark=b)
+
+    variants = task.get("audited_variants", [])
+    sqls = [v["audited_sol_sql"] for v in variants]
+    assert ["SELECT ours FROM t"] in sqls
+    assert ["SELECT foreign_sql FROM t"] not in sqls
+
+
 # ---------------------------------------------------------------------------
 # evaluate_best_of_audited_variants — first match wins, no id leak
 # ---------------------------------------------------------------------------
@@ -308,3 +345,29 @@ def test_submit_raw_sql_records_matched_variant_id_hidden_from_agent(monkeypatch
     assert state.result["phase1_matched_audited_variant_id"] == "v2_kb_strict_trc"
     # The agent-facing reply must NOT reveal which variant matched.
     assert "v2_kb_strict_trc" not in agent_reply
+
+
+def test_submit_raw_sql_dry_run_failure_clears_stale_matched_variant_id(monkeypatch):
+    """A best-of pass on one submit sets the matched id; a SUBSEQUENT
+    dry-run failure must clear it rather than carry it forward via the
+    ``**prior`` spread (CodeRabbit DEV-1606)."""
+    from bird_interact_agents.agents import _submit
+    from bird_interact_agents import harness
+
+    monkeypatch.setattr(_submit, "_diagnostic_payload", lambda **kw: {})
+    fake_eval, _ = _make_dispatcher({
+        "SELECT broad": False, "SELECT orig": False, "SELECT strict": True,
+    })
+    monkeypatch.setattr(harness, "execute_submit_action", fake_eval)
+
+    state = _state(_VARIANTS)
+    # 1) best-of pass → id recorded.
+    monkeypatch.setattr(_submit, "_dry_run_sql", lambda *a, **kw: None)
+    _submit.submit_raw_sql(state, "SELECT agent")
+    assert state.result["phase1_matched_audited_variant_id"] == "v2_kb_strict_trc"
+
+    # 2) next submit fails the free dry-run gate → stale id cleared.
+    monkeypatch.setattr(_submit, "_dry_run_sql", lambda *a, **kw: "boom: bad col")
+    _submit.submit_raw_sql(state, "SELECT broken")
+    assert state.result["phase1_passed"] is False
+    assert state.result["phase1_matched_audited_variant_id"] is None
