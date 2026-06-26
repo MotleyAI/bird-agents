@@ -3,11 +3,13 @@
 The bridge proxy must exist (and `os.environ[base_url_env]` must point at it)
 before the cached SDK runner / first task is built, because the SDK subprocess
 inherits `ANTHROPIC_BASE_URL` from `sdk_session_env`, which reads the override
-at option-build time (Codex #9). So `ensure_bridge_proxy_for_actor` runs ahead
-of `_maybe_build_cached_runner` in BOTH `_LocalActor` and `WorkerActor`.
+at option-build time. So `_maybe_ensure_bridge` runs ahead of
+`_maybe_build_cached_runner` in BOTH `_LocalActor` and `WorkerActor`.
 
 It runs ONLY when the agent provider needs a bridge — Doubleword (always) and
-z.ai per-token — never for Anthropic, Moonshot, or z.ai coding-plan.
+z.ai on the per-token path (the recycled `--subscription-auth` flag, carried as
+`no_subscription_auth=True`) — never for Anthropic, Moonshot, or z.ai
+coding-plan (`no_subscription_auth=False`).
 """
 
 from __future__ import annotations
@@ -40,8 +42,6 @@ def actor_harness(monkeypatch):
         return "http://127.0.0.1:8788"
 
     monkeypatch.setattr(ray_app, "ensure_bridge_proxy_for_actor", _fake_ensure)
-    # Clean ambient Anthropic creds so the OAuth invariant stays quiet for a
-    # registry run.
     for var in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
                 "ANTHROPIC_AUTH_TOKEN"):
         monkeypatch.delenv(var, raising=False)
@@ -50,16 +50,16 @@ def actor_harness(monkeypatch):
     return order
 
 
-def _cfg(agent_model: str, zai_billing: str = "coding-plan") -> dict:
+def _cfg(agent_model: str, no_subscription_auth: bool = True) -> dict:
     return {
         "framework": "claude_sdk_v1",
         "agent_model": agent_model,
         "query_mode": "raw",
-        "zai_billing": zai_billing,
+        "no_subscription_auth": no_subscription_auth,
     }
 
 
-def test_doubleword_actor_bridges_before_runner(actor_harness, monkeypatch):
+def test_doubleword_actor_bridges_before_runner(actor_harness):
     order = actor_harness
     ray_app._LocalActor(_cfg(_DW), RUN_ID, 1, gcs_client=object())
     assert order == ["bridge", "runner"]
@@ -67,13 +67,13 @@ def test_doubleword_actor_bridges_before_runner(actor_harness, monkeypatch):
 
 def test_zai_per_token_actor_bridges(actor_harness):
     order = actor_harness
-    ray_app._LocalActor(_cfg(_GLM, "per-token"), RUN_ID, 1, gcs_client=object())
+    ray_app._LocalActor(_cfg(_GLM, True), RUN_ID, 1, gcs_client=object())
     assert order == ["bridge", "runner"]
 
 
 def test_zai_coding_plan_actor_does_not_bridge(actor_harness):
     order = actor_harness
-    ray_app._LocalActor(_cfg(_GLM, "coding-plan"), RUN_ID, 1, gcs_client=object())
+    ray_app._LocalActor(_cfg(_GLM, False), RUN_ID, 1, gcs_client=object())
     assert order == ["runner"]
 
 
@@ -92,20 +92,21 @@ def test_maybe_ensure_bridge_helper(monkeypatch):
     calls = []
     monkeypatch.setattr(
         ray_app, "ensure_bridge_proxy_for_actor",
-        lambda model, cfg: calls.append((model, cfg.get("zai_billing"))),
+        lambda model, cfg: calls.append((model, cfg.get("no_subscription_auth"))),
     )
-    ray_app._maybe_ensure_bridge(_cfg(_DW))
-    ray_app._maybe_ensure_bridge(_cfg(_GLM, "per-token"))
-    ray_app._maybe_ensure_bridge(_cfg(_GLM, "coding-plan"))
+    ray_app._maybe_ensure_bridge(_cfg(_DW))            # doubleword -> bridge
+    ray_app._maybe_ensure_bridge(_cfg(_GLM, True))     # per-token -> bridge
+    ray_app._maybe_ensure_bridge(_cfg(_GLM, False))    # coding-plan -> no bridge
     ray_app._maybe_ensure_bridge(_cfg("anthropic/claude-sonnet-4-6"))
-    assert calls == [(_DW, "coding-plan"), (_GLM, "per-token")]
+    assert calls == [(_DW, True), (_GLM, True)]
 
 
-def test_run_pool_folds_zai_billing_into_actor_cfg(monkeypatch, fake_gcs_bucket):
-    """`run_pool` must place `zai_billing` into the cfg the actor reads — not
-    merely accept the kwarg. Capture the cfg a dispatched actor receives."""
+def test_run_pool_folds_no_subscription_auth_into_actor_cfg(
+    monkeypatch, fake_gcs_bucket
+):
+    """`run_pool` must place `no_subscription_auth` into the cfg the actor reads
+    so a per-token z.ai run actually bridges. Capture a dispatched actor's cfg."""
     client, _store = fake_gcs_bucket
-    # A registry (zai/) run forbids ambient Anthropic creds in the actor env.
     for var in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
                 "ANTHROPIC_AUTH_TOKEN"):
         monkeypatch.delenv(var, raising=False)
@@ -146,51 +147,53 @@ def test_run_pool_folds_zai_billing_into_actor_cfg(monkeypatch, fake_gcs_bucket)
         task_data_by_id={"db_a_1": {"instance_id": "db_a_1",
                                     "selected_database": "db_a"}},
         dataset="mini-interact",
-        zai_billing="per-token",
+        no_subscription_auth=True,
         local_only=True,
         actor_cls=_CaptureActor,
     )
-    assert captured["zai_billing"] == "per-token"
+    assert captured["no_subscription_auth"] is True
 
 
-def test_ray_app_main_threads_zai_billing_to_run_pool(monkeypatch):
-    """`--zai-billing` parsed by the in-cluster ray_app main must reach
-    `run_pool` (which folds it into the actor cfg). Capture the kwarg."""
-    captured = {}
-    monkeypatch.setattr(ray_app, "_load_secrets_file", lambda f: {})
-    monkeypatch.setattr(ray_app, "download_benchmark_data", lambda *a, **k: None)
-    monkeypatch.setattr(ray_app, "_load_task_data", lambda *a, **k: {})
-    monkeypatch.setattr(ray_app, "run_pool", lambda **kw: captured.update(kw))
-    ray_app.main([
+def _main_argv(model: str, extra: list[str] | None = None) -> list[str]:
+    return [
         "--run-id", RUN_ID,
         "--attempt", "1",
         "--framework", "claude_sdk_v1",
         "--query-mode", "raw",
         "--mode", "one-shot",
-        "--agent-model", _GLM,
+        "--agent-model", model,
         "--user-sim-model", "anthropic/claude-haiku-4-5-20251001",
         "--dataset", "livesqlbench-base-lite-sqlite",
         "--instance-ids", "alien_1",
-        "--zai-billing", "per-token",
-    ])
-    assert captured["zai_billing"] == "per-token"
+        *(extra or []),
+    ]
 
 
-def test_ray_app_main_zai_billing_defaults_coding_plan(monkeypatch):
-    captured = {}
+def _patch_main(monkeypatch, captured):
     monkeypatch.setattr(ray_app, "_load_secrets_file", lambda f: {})
     monkeypatch.setattr(ray_app, "download_benchmark_data", lambda *a, **k: None)
     monkeypatch.setattr(ray_app, "_load_task_data", lambda *a, **k: {})
     monkeypatch.setattr(ray_app, "run_pool", lambda **kw: captured.update(kw))
-    ray_app.main([
-        "--run-id", RUN_ID,
-        "--attempt", "1",
-        "--framework", "claude_sdk_v1",
-        "--query-mode", "raw",
-        "--mode", "one-shot",
-        "--agent-model", _DW,
-        "--user-sim-model", "anthropic/claude-haiku-4-5-20251001",
-        "--dataset", "livesqlbench-base-lite-sqlite",
-        "--instance-ids", "alien_1",
-    ])
-    assert captured["zai_billing"] == "coding-plan"
+
+
+def test_ray_app_main_subscription_flag_to_run_pool(monkeypatch):
+    """--no-subscription-auth parsed by the in-cluster ray_app main must reach
+    run_pool as no_subscription_auth=True (per-token bridge)."""
+    captured = {}
+    _patch_main(monkeypatch, captured)
+    ray_app.main(_main_argv(_GLM, ["--no-subscription-auth"]))
+    assert captured["no_subscription_auth"] is True
+
+
+def test_ray_app_main_subscription_auth_coding_plan(monkeypatch):
+    captured = {}
+    _patch_main(monkeypatch, captured)
+    ray_app.main(_main_argv(_GLM, ["--subscription-auth"]))
+    assert captured["no_subscription_auth"] is False
+
+
+def test_ray_app_main_default_is_per_token_bridge(monkeypatch):
+    captured = {}
+    _patch_main(monkeypatch, captured)
+    ray_app.main(_main_argv(_DW))
+    assert captured["no_subscription_auth"] is True

@@ -129,27 +129,28 @@ def test_per_token_openai_target_rejects_non_registry():
 # ---------------------------------------------------------------------------
 
 
+# DEV-1604: the bridge keys on the recycled --subscription-auth flag, carried as
+# no_subscription_auth (True = API-key/per-token path = bridge for z.ai).
 @pytest.mark.parametrize(
-    "model,zai_billing,expected",
+    "model,no_subscription_auth,expected",
     [
-        # Doubleword (openai-format) always needs the bridge, billing-agnostic.
-        (_DW, None, True),
-        (_DW, "coding-plan", True),
-        (_DW, "per-token", True),
-        # z.ai needs the bridge ONLY on the per-token opt-in.
-        (_GLM, "per-token", True),
-        (_GLM, "coding-plan", False),
-        (_GLM, None, False),
+        # Doubleword (openai-format) ALWAYS bridges, flag-agnostic.
+        (_DW, True, True),
+        (_DW, False, True),
+        # z.ai bridges on the per-token path (no_subscription_auth=True, the
+        # default); --subscription-auth (False) keeps the direct coding-plan.
+        (_GLM, True, True),
+        (_GLM, False, False),
         # Anthropic-format moonshot never bridges.
-        (_KIMI, "per-token", False),
-        (_KIMI, None, False),
+        (_KIMI, True, False),
+        (_KIMI, False, False),
         # Anthropic-proper never bridges.
-        ("anthropic/claude-sonnet-4-6", "per-token", False),
-        ("anthropic/claude-sonnet-4-6", None, False),
+        ("anthropic/claude-sonnet-4-6", True, False),
+        ("anthropic/claude-sonnet-4-6", False, False),
     ],
 )
-def test_agent_needs_bridge(model, zai_billing, expected):
-    assert pr.agent_needs_bridge(model, zai_billing) is expected
+def test_agent_needs_bridge(model, no_subscription_auth, expected):
+    assert pr.agent_needs_bridge(model, no_subscription_auth) is expected
 
 
 # ---------------------------------------------------------------------------

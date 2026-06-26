@@ -1070,9 +1070,13 @@ def _maybe_ensure_bridge(cfg: dict[str, Any]) -> None:
 
     The single seam both ``_LocalActor`` and the real Ray ``WorkerActor`` call
     BEFORE building their cached runner — the SDK subprocess inherits the
-    override at option-build time, so the proxy must exist first."""
+    override at option-build time, so the proxy must exist first. Keys on the
+    recycled ``no_subscription_auth`` flag (default True): z.ai per-token /
+    Doubleword bridge; z.ai ``--subscription-auth`` keeps its direct coding-plan
+    endpoint."""
     agent_model = cfg.get("agent_model") or ""
-    if provider_registry.agent_needs_bridge(agent_model, cfg.get("zai_billing")):
+    no_sub = cfg.get("no_subscription_auth", True)
+    if provider_registry.agent_needs_bridge(agent_model, no_sub):
         ensure_bridge_proxy_for_actor(agent_model, cfg)
 
 
@@ -1342,7 +1346,7 @@ def run_pool(
     slayer_setup: str = "pre-encoded",
     pre_encoded_source: str | None = None,
     slayer_storage_root: str | None = None,
-    zai_billing: str = "coding-plan",
+    no_subscription_auth: bool = True,
     ray_job_id: str = "local",
     gcs_client=None,
     heartbeat_interval_s: float = 30.0,
@@ -1378,8 +1382,9 @@ def run_pool(
         "slayer_setup": slayer_setup,
         "pre_encoded_source": pre_encoded_source,
         "slayer_storage_root": slayer_storage_root,
-        # DEV-1604: drives _maybe_ensure_bridge for a z.ai per-token agent.
-        "zai_billing": zai_billing,
+        # DEV-1604: drives _maybe_ensure_bridge — recycled --subscription-auth
+        # flag (True/default = z.ai per-token + Doubleword bridge).
+        "no_subscription_auth": no_subscription_auth,
         # De-bake: carry the benchmark + its GCS dataset prefix so the actor
         # can resolve the OTF roots and download the dataset per node.
         "dataset": dataset,
@@ -1769,10 +1774,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pre-encoded-models", dest="pre_encoded_source",
                    default=None, choices=("otf", "custom"))
     p.add_argument("--slayer-storage-root", default="/data/slayer_models")
-    # DEV-1604: z.ai billing surface (coding-plan = direct Anthropic endpoint;
-    # per-token = bridge proxy to the OpenAI endpoint). Doubleword auto-bridges.
-    p.add_argument("--zai-billing", default="coding-plan",
-                   choices=("coding-plan", "per-token"))
+    # DEV-1604: recycled --subscription-auth flag, threaded to the actor so it
+    # can decide the z.ai endpoint (default no-subscription = per-token bridge;
+    # --subscription-auth = direct coding-plan). Doubleword auto-bridges.
+    p.add_argument("--subscription-auth", action=argparse.BooleanOptionalAction,
+                   default=False, dest="subscription_auth")
     p.add_argument("--instance-ids", required=True,
                    help="comma-separated list")
     p.add_argument(
@@ -1827,7 +1833,7 @@ def main(argv: list[str] | None = None) -> int:
         slayer_setup=args.slayer_setup,
         pre_encoded_source=args.pre_encoded_source,
         slayer_storage_root=args.slayer_storage_root,
-        zai_billing=args.zai_billing,
+        no_subscription_auth=not args.subscription_auth,
         ray_job_id=args.ray_job_id,
         actor_env_vars=actor_env_vars,
     )

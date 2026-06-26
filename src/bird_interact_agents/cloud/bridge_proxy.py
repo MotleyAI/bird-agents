@@ -86,14 +86,16 @@ class BridgeTarget(BaseModel):
     auth_env: str  # env var holding the provider key
 
 
-def resolve_bridge_target(model: str, zai_billing: "str | None") -> BridgeTarget:
+def resolve_bridge_target(
+    model: str, no_subscription_auth: bool
+) -> BridgeTarget:
     """The upstream the proxy fronts for ``model``. Raises if ``model`` does not
     need the bridge (callers gate on ``agent_needs_bridge``; a direct call for a
     non-bridge model is misuse and fails fast)."""
-    if not provider_registry.agent_needs_bridge(model, zai_billing):
+    if not provider_registry.agent_needs_bridge(model, no_subscription_auth):
         raise ValueError(
-            f"{model!r} (zai_billing={zai_billing!r}) does not need the bridge "
-            "proxy"
+            f"{model!r} (no_subscription_auth={no_subscription_auth!r}) does "
+            "not need the bridge proxy"
         )
     base, native_id, auth_env = provider_registry.per_token_openai_target(model)
     spec = provider_registry.get_provider(model)
@@ -340,8 +342,13 @@ def ensure_bridge_proxy_for_actor(model: str, cfg: dict) -> str:
     readiness window so concurrent actors share one proxy. A healthy proxy with
     OUR identity is reused; a healthy FOREIGN service on the port is an anomaly
     we refuse (never kill); otherwise we start one. The override is set AFTER
-    the proxy is confirmed ready, BEFORE the caller builds the SDK runner."""
-    target = resolve_bridge_target(model, cfg.get("zai_billing"))
+    the proxy is confirmed ready, BEFORE the caller builds the SDK runner.
+
+    ``cfg["no_subscription_auth"]`` (default True — the registry default) is the
+    z.ai endpoint selector; Doubleword bridges regardless."""
+    target = resolve_bridge_target(
+        model, cfg.get("no_subscription_auth", True)
+    )
     port = deterministic_port(target)
     url = f"http://{SERVE_HOST}:{port}"
     spec = provider_registry.get_provider(model)

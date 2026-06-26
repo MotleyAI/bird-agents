@@ -154,7 +154,7 @@ def mint_run_id(framework: str, query_mode: str) -> str:
 def read_api_keys_from_local_env(
     agent_model: str, user_sim_model: str, *, query_mode: str = "raw",
     framework: str = "", no_subscription_auth: bool = False,
-    dataset: str = "", zai_billing: str = "coding-plan",
+    dataset: str = "",
 ) -> dict[str, str]:
     import os
 
@@ -312,7 +312,8 @@ def read_api_keys_from_local_env(
         # bridge proxy (Doubleword always; z.ai per-token), the ACTOR owns
         # base_url_env (it points it at the local loopback proxy), so forwarding
         # a stale submitter value would clobber that. Suppress it in that case.
-        if not provider_registry.agent_needs_bridge(agent_model, zai_billing):
+        # Keys on the recycled --subscription-auth flag (no_subscription_auth).
+        if not provider_registry.agent_needs_bridge(agent_model, no_subscription_auth):
             override = os.environ.get(_agent_spec.base_url_env, "")
             if override:
                 result[_agent_spec.base_url_env] = override
@@ -385,10 +386,9 @@ def build_manifest(
         "slayer_storage_root": getattr(
             args, "slayer_storage_root", "/data/slayer_models"
         ),
+        # DEV-1604: also the z.ai bridge selector (per-token when True) — the
+        # actor reads it via --subscription-auth threaded in _build_job_args.
         "no_subscription_auth": bool(getattr(args, "no_subscription_auth", False)),
-        # DEV-1604: z.ai billing surface (drives the actor's bridge-proxy
-        # bring-up for a z.ai per-token agent). Recorded for resubmit replay.
-        "zai_billing": getattr(args, "zai_billing", "coding-plan"),
         "render_inputs": {
             "workers": args.workers,
             "actors_per_worker": args.actors_per_worker,
@@ -839,7 +839,6 @@ def submit(args) -> str:
             framework=args.framework,
             no_subscription_auth=getattr(args, "no_subscription_auth", False),
             dataset=getattr(args, "dataset", ""),
-            zai_billing=getattr(args, "zai_billing", "coding-plan"),
         )
         job_args = _build_job_args(
             args, run_id, attempt=1,
@@ -923,8 +922,10 @@ def _build_job_args(
         "--slayer-setup", getattr(args, "slayer_setup", "pre-encoded"),
         "--slayer-storage-root",
         getattr(args, "slayer_storage_root", "/data/slayer_models"),
-        # DEV-1604: thread the z.ai billing surface to the in-cluster actor.
-        "--zai-billing", getattr(args, "zai_billing", "coding-plan"),
+        # DEV-1604: thread the recycled --subscription-auth flag to the actor so
+        # it picks the z.ai endpoint (no-subscription = per-token bridge).
+        "--no-subscription-auth" if getattr(args, "no_subscription_auth", False)
+        else "--subscription-auth",
     ]
     # DEV-1586: forward the pre-encoded source so the in-cluster worker
     # routes to the read-only flavor. Conditional — never emit
@@ -1421,7 +1422,6 @@ def resubmit(run_id: str) -> None:
                 framework=_framework,
                 no_subscription_auth=_no_subscription_auth,
                 dataset=manifest.get("dataset", ""),
-                zai_billing=manifest.get("zai_billing", "coding-plan"),
             )
             job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
             cluster.submit_job(
@@ -1497,9 +1497,11 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         "--slayer-setup", manifest.get("slayer_setup", "pre-encoded"),
         "--slayer-storage-root",
         manifest.get("slayer_storage_root", "/data/slayer_models"),
-        # DEV-1604: re-emit the z.ai billing surface so a per-token resubmit
-        # still bridges. Old manifests lack the key → default coding-plan.
-        "--zai-billing", manifest.get("zai_billing", "coding-plan"),
+        # DEV-1604: re-emit the recycled --subscription-auth flag so a per-token
+        # z.ai resubmit still bridges. Old manifests default no_subscription_auth
+        # to True (the registry default = per-token bridge).
+        "--no-subscription-auth" if manifest.get("no_subscription_auth", True)
+        else "--subscription-auth",
     ]
     # DEV-1586: forward the pre-encoded source. Back-compat: a pre-DEV-1586
     # manifest with slayer_setup="pre-encoded" but no source meant the

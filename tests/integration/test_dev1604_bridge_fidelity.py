@@ -35,11 +35,13 @@ pytestmark = [pytest.mark.integration]
 
 _PROVIDERS = [
     pytest.param(
-        "doubleword/zai-org/GLM-5.2-FP8", "coding-plan", "DOUBLEWORD_API_KEY",
+        # (model, no_subscription_auth, key_env). no_subscription_auth=True is
+        # the per-token/bridge path for z.ai; Doubleword bridges regardless.
+        "doubleword/zai-org/GLM-5.2-FP8", True, "DOUBLEWORD_API_KEY",
         id="doubleword",
     ),
     pytest.param(
-        "zai/glm-5.2", "per-token", "ZAI_API_KEY", id="zai-per-token",
+        "zai/glm-5.2", True, "ZAI_API_KEY", id="zai-per-token",
     ),
 ]
 
@@ -54,9 +56,9 @@ def _clean_ambient_creds(monkeypatch):
     bridge_proxy.terminate_local_proxies()
 
 
-@pytest.mark.parametrize("model,zai_billing,key_env", _PROVIDERS)
+@pytest.mark.parametrize("model,no_subscription_auth,key_env", _PROVIDERS)
 @pytest.mark.asyncio
-async def test_bridge_full_sdk_tool_loop(model, zai_billing, key_env):
+async def test_bridge_full_sdk_tool_loop(model, no_subscription_auth, key_env):
     if not os.environ.get(key_env):
         pytest.skip(f"needs {key_env} (+ balance) for the {model} bridge gate")
 
@@ -74,7 +76,7 @@ async def test_bridge_full_sdk_tool_loop(model, zai_billing, key_env):
 
     # Bring up the real loopback proxy and point the registry override at it.
     url = bridge_proxy.ensure_bridge_proxy_for_actor(
-        model, {"zai_billing": zai_billing}
+        model, {"no_subscription_auth": no_subscription_auth}
     )
     assert url.startswith("http://127.0.0.1:")
 

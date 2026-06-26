@@ -233,15 +233,22 @@ def per_token_openai_target(model: str) -> tuple[str, str, str]:
     return spec.openai_base_url, native_id, spec.auth_env
 
 
-def agent_needs_bridge(model: str, zai_billing: "str | None") -> bool:
+def agent_needs_bridge(model: str, no_subscription_auth: bool) -> bool:
     """True iff the ``claude_sdk`` agent for ``model`` must route through the
     Anthropic⇄OpenAI bridge proxy.
 
+    DEV-1604 recycles the ``--subscription-auth`` flag as the z.ai endpoint
+    selector (``no_subscription_auth`` is its carried form), so this keys on the
+    SAME field the rest of the auth machinery already threads everywhere:
+
     * OpenAI-only providers (``api_format=="openai"``, e.g. Doubleword) have NO
-      Anthropic endpoint — they ALWAYS need the bridge, billing-agnostic.
-    * z.ai needs it ONLY when the operator opts into per-token billing
-      (``zai_billing=="per-token"``); the default coding-plan path keeps its
-      direct Anthropic endpoint.
+      Anthropic endpoint — they ALWAYS need the bridge (``--subscription-auth``
+      is rejected for them upstream).
+    * z.ai needs the bridge on the API-key / per-token path
+      (``no_subscription_auth=True``, the default); ``--subscription-auth``
+      (``no_subscription_auth=False``) keeps its direct coding-plan Anthropic
+      endpoint with ``ZAI_API_KEY`` — NOT the Claude.ai OAuth path, which stays
+      Anthropic-only.
     * Everything else (Moonshot anthropic-format, Anthropic-proper) never
       bridges."""
     spec = get_provider(model)
@@ -249,7 +256,7 @@ def agent_needs_bridge(model: str, zai_billing: "str | None") -> bool:
         return False
     if spec.api_format == "openai":
         return True
-    return spec.key == "zai" and zai_billing == "per-token"
+    return spec.key == "zai" and bool(no_subscription_auth)
 
 
 def provider_api_key(spec: ProviderSpec) -> str:

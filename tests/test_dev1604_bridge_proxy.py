@@ -32,16 +32,17 @@ _DW_NATIVE = "zai-org/GLM-5.2-FP8"
 _ZAI_MODEL = "zai/glm-5.2"
 
 
+# DEV-1604: the 2nd arg is no_subscription_auth (True = per-token/bridge path).
 @pytest.fixture
 def dw_target(monkeypatch):
     monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
-    return bp.resolve_bridge_target(_DW_MODEL, None)
+    return bp.resolve_bridge_target(_DW_MODEL, True)
 
 
 @pytest.fixture
 def zai_target(monkeypatch):
     monkeypatch.setenv("ZAI_API_KEY", "zai-key-1")
-    return bp.resolve_bridge_target(_ZAI_MODEL, "per-token")
+    return bp.resolve_bridge_target(_ZAI_MODEL, True)
 
 
 # ---------------------------------------------------------------------------
@@ -64,11 +65,12 @@ def test_resolve_bridge_target_zai_per_token(zai_target):
 
 
 def test_resolve_bridge_target_rejects_non_bridge_model():
-    # z.ai on the coding-plan default does NOT bridge.
+    # z.ai with --subscription-auth (no_subscription_auth=False) = coding-plan,
+    # does NOT bridge.
     with pytest.raises((ValueError, RuntimeError)):
-        bp.resolve_bridge_target(_ZAI_MODEL, "coding-plan")
+        bp.resolve_bridge_target(_ZAI_MODEL, False)
     with pytest.raises((ValueError, RuntimeError)):
-        bp.resolve_bridge_target("anthropic/claude-sonnet-4-6", None)
+        bp.resolve_bridge_target("anthropic/claude-sonnet-4-6", True)
 
 
 # ---------------------------------------------------------------------------
@@ -306,9 +308,9 @@ def test_ensure_starts_proxy_and_sets_env(
         bp, "_start_proxy",
         lambda target, port: started.append((target.provider, port)),
     )
-    url = bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"zai_billing": None})
+    url = bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"no_subscription_auth": True})
 
-    target = bp.resolve_bridge_target(_DW_MODEL, None)
+    target = bp.resolve_bridge_target(_DW_MODEL, True)
     port = bp.deterministic_port(target)
     assert url == f"http://127.0.0.1:{port}"
     assert started == [("doubleword", port)]
@@ -318,7 +320,7 @@ def test_ensure_starts_proxy_and_sets_env(
 
 def test_ensure_reuses_identity_matching_proxy(monkeypatch, isolated_runtime):
     monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
-    target = bp.resolve_bridge_target(_DW_MODEL, None)
+    target = bp.resolve_bridge_target(_DW_MODEL, True)
     port = bp.deterministic_port(target)
     # A healthy proxy with OUR identity is already on the port.
     monkeypatch.setattr(
@@ -328,7 +330,7 @@ def test_ensure_reuses_identity_matching_proxy(monkeypatch, isolated_runtime):
     monkeypatch.setattr(
         bp, "_start_proxy", lambda t, p: spawned.append(p)
     )
-    url = bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"zai_billing": None})
+    url = bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"no_subscription_auth": True})
     assert url == f"http://127.0.0.1:{port}"
     assert spawned == []  # reused, did NOT respawn
 
@@ -347,7 +349,7 @@ def test_ensure_refuses_healthy_mismatch(monkeypatch, isolated_runtime):
         lambda t, p: pytest.fail("must not spawn over a healthy mismatch"),
     )
     with pytest.raises(bp.BridgeProxyError):
-        bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"zai_billing": None})
+        bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"no_subscription_auth": True})
 
 
 def test_ensure_zai_coding_plan_fails_fast(monkeypatch, isolated_runtime):
@@ -358,7 +360,7 @@ def test_ensure_zai_coding_plan_fails_fast(monkeypatch, isolated_runtime):
     )
     # No bridge target resolvable -> error surfaced to the caller.
     with pytest.raises((ValueError, RuntimeError)):
-        bp.ensure_bridge_proxy_for_actor(_ZAI_MODEL, {"zai_billing": "coding-plan"})
+        bp.ensure_bridge_proxy_for_actor(_ZAI_MODEL, {"no_subscription_auth": False})
 
 
 # ---------------------------------------------------------------------------
@@ -400,8 +402,8 @@ def test_ensure_uses_per_port_lock_file(monkeypatch, isolated_runtime):
     monkeypatch.delenv("BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL", raising=False)
     monkeypatch.setattr(bp, "_probe_identity", lambda port: None)
     monkeypatch.setattr(bp, "_start_proxy", lambda target, port: None)
-    bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"zai_billing": None})
-    target = bp.resolve_bridge_target(_DW_MODEL, None)
+    bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"no_subscription_auth": True})
+    target = bp.resolve_bridge_target(_DW_MODEL, True)
     port = bp.deterministic_port(target)
     # The lock file was created under the runtime dir during the critical section.
     assert bp.lock_path(port).exists()

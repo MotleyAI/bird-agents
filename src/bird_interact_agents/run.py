@@ -1641,27 +1641,35 @@ def _apply_price_overrides(path: str) -> None:
         }
 
 
-def _maybe_start_bridge_proxy(*, agent_model: str, zai_billing: str, error) -> None:
+def _maybe_start_bridge_proxy(*, agent_model: str, subscription_auth, error) -> None:
     """DEV-1604: local-run wiring for the Anthropic⇄OpenAI bridge proxy.
 
-    ``--zai-billing per-token`` is z.ai-only — reject it for any other agent
-    provider (Doubleword auto-bridges via its OpenAI-only ``api_format`` and
-    needs no flag). When the agent provider needs the bridge, start the loopback
-    proxy and point ``ANTHROPIC_BASE_URL``'s override at it. Called from
-    ``main`` BEFORE any runner is built so the override is in place when the SDK
-    session is constructed. ``error`` is ``parser.error`` (exit-2 on misuse)."""
-    if zai_billing == "per-token":
-        spec = get_provider(agent_model)
-        if spec is None or spec.key != "zai":
-            error(
-                "--zai-billing per-token is z.ai-only; got agent model "
-                f"{agent_model!r}. Doubleword auto-bridges (no flag); omit "
-                "--zai-billing for every other provider."
-            )
-            return
-    if agent_needs_bridge(agent_model, zai_billing):
+    Recycles ``--subscription-auth``: for z.ai, ``--subscription-auth`` selects
+    the direct coding-plan Anthropic endpoint (no bridge) and the default /
+    ``--no-subscription-auth`` uses the per-token bridge. Doubleword is
+    OpenAI-only (always bridged; ``--subscription-auth`` rejected); Moonshot is
+    provider-key-only (``--subscription-auth`` rejected). When the agent needs
+    the bridge, start the loopback proxy and point ``ANTHROPIC_BASE_URL``'s
+    override at it. Called from ``main`` BEFORE any runner is built. ``error``
+    is ``parser.error`` (exit-2 on misuse)."""
+    spec = get_provider(agent_model)
+    if spec is None:  # Anthropic (or unknown) — never bridges.
+        return
+    if bool(subscription_auth) and spec.key != "zai":
+        _why = (
+            "OpenAI-only — no Anthropic endpoint"
+            if spec.api_format == "openai"
+            else f"authenticates via {spec.auth_env}"
+        )
+        error(
+            f"--subscription-auth is not valid for {spec.key} agent models "
+            f"({_why}). Omit the flag or pass --no-subscription-auth."
+        )
+        return
+    no_subscription_auth = not bool(subscription_auth)
+    if agent_needs_bridge(agent_model, no_subscription_auth):
         bridge_proxy.ensure_bridge_proxy_for_actor(
-            agent_model, {"zai_billing": zai_billing}
+            agent_model, {"no_subscription_auth": no_subscription_auth}
         )
 
 
@@ -1688,6 +1696,14 @@ def _apply_subscription_auth_env(
     The flag is Anthropic-only and claude_sdk-only.
     """
     is_claude_sdk = framework.startswith("claude_sdk")
+    # DEV-1604: registry models NEVER use the Claude.ai OAuth path. For z.ai,
+    # --subscription-auth is the ENDPOINT selector (coding-plan vs per-token
+    # bridge), validated in `_maybe_start_bridge_proxy`; Moonshot/Doubleword
+    # reject it there. So clear any ambient OAuth signal and return — do not run
+    # the Anthropic-only OAuth machinery (which would reject z.ai here).
+    if get_provider(agent_model) is not None:
+        os.environ.pop("BIRD_INTERACT_SUBSCRIPTION_AUTH", None)
+        return
     # The flag is Anthropic-ONLY: gate on the model being anthropic/*, NOT merely
     # "not a registry model" — otherwise a non-Anthropic non-registry model
     # (openai/*, gemini/*) would slip through onto the OAuth path (CodeRabbit).
@@ -1843,18 +1859,6 @@ def main() -> None:
         help="Root dir of per-DB SLayer model stores (only used in --query-mode slayer)",
     )
     parser.add_argument(
-        "--zai-billing",
-        default="coding-plan",
-        choices=("coding-plan", "per-token"),
-        help=(
-            "DEV-1604: z.ai billing surface. coding-plan (default) uses z.ai's "
-            "Anthropic endpoint (GLM-Coding-Plan quota); per-token routes the "
-            "agent through the local bridge proxy to z.ai's per-token OpenAI "
-            "endpoint (escapes the [1313] Fair-Usage throttle). z.ai-only — "
-            "Doubleword auto-bridges and needs no flag."
-        ),
-    )
-    parser.add_argument(
         "--subscription-auth",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -1865,9 +1869,12 @@ def main() -> None:
             "instead of ANTHROPIC_API_KEY. Aligned with bird-interact-cloud: an "
             "explicit --subscription-auth / --no-subscription-auth choice is "
             "REQUIRED for claude_sdk* runs on an Anthropic agent model (no "
-            "silent default). Anthropic-only: registry open-weight models reject "
-            "--subscription-auth. When on, a valid CLAUDE_CODE_OAUTH_TOKEN must "
-            "be in the env; the user-sim still uses ANTHROPIC_API_KEY as normal."
+            "silent default). When on for Anthropic, a valid "
+            "CLAUDE_CODE_OAUTH_TOKEN must be in the env. DEV-1604: for z.ai the "
+            "flag is recycled as the ENDPOINT selector (still ZAI_API_KEY, NOT "
+            "OAuth): --subscription-auth = direct coding-plan; default / "
+            "--no-subscription-auth = per-token OpenAI bridge. Doubleword "
+            "(OpenAI-only) and Moonshot (provider-key-only) reject the flag."
         ),
     )
     parser.add_argument(
@@ -2022,10 +2029,10 @@ def main() -> None:
     )
     # DEV-1604: start the Anthropic⇄OpenAI bridge proxy (Doubleword / z.ai
     # per-token) and point the base-url override at it BEFORE any runner is
-    # built. Validates that --zai-billing per-token is z.ai-only.
+    # built. Recycles --subscription-auth as the z.ai endpoint selector.
     _maybe_start_bridge_proxy(
         agent_model=args.agent_model,
-        zai_billing=args.zai_billing,
+        subscription_auth=args.subscription_auth,
         error=parser.error,
     )
     # DEV-1586: derive the internal slayer_setup from the user-facing flag.

@@ -135,18 +135,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--slayer-storage-root", default="/data/slayer_models",
     )
     sp_submit.add_argument(
-        "--zai-billing", default="coding-plan",
-        choices=("coding-plan", "per-token"),
-        help=(
-            "DEV-1604: z.ai billing surface. coding-plan (default) uses z.ai's "
-            "Anthropic endpoint (GLM-Coding-Plan quota, can hit the [1313] "
-            "Fair-Usage throttle); per-token routes the claude_sdk agent through "
-            "the local bridge proxy to z.ai's per-token OpenAI endpoint. "
-            "z.ai-only — per-token is rejected for any other agent provider; "
-            "Doubleword auto-bridges (no flag)."
-        ),
-    )
-    sp_submit.add_argument(
         "--subscription-auth", action=argparse.BooleanOptionalAction,
         default=None, dest="subscription_auth",
         help=(
@@ -158,11 +146,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "(ANTHROPIC_API_KEY). No default for Anthropic models — an "
             "explicit choice is required to prevent a silent fall-back to "
             "the API-key path burning credits when the operator meant to "
-            "hit the subscription. DEV-1555: subscription auth is "
-            "Anthropic-only — registry open-weight models (moonshot/, zai/, ...) "
-            "must not use `--subscription-auth`; omit the flag or pass "
-            "`--no-subscription-auth` so the provider key env var is "
-            "used instead."
+            "hit the subscription. DEV-1604: for z.ai the flag is recycled as "
+            "the ENDPOINT selector (still ZAI_API_KEY, NOT Claude.ai OAuth): "
+            "`--subscription-auth` = direct GLM-Coding-Plan Anthropic endpoint; "
+            "default / `--no-subscription-auth` = per-token OpenAI endpoint via "
+            "the bridge proxy (escapes the [1313] throttle). Doubleword is "
+            "OpenAI-only (always bridged; `--subscription-auth` rejected); "
+            "Moonshot is provider-key-only (`--subscription-auth` rejected)."
         ),
     )
 
@@ -244,16 +234,29 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 )
             _spec = provider_registry.get_provider(ns.agent_model)
             if _spec is not None:
-                # DEV-1579: the v0 ``claude_sdk`` aggregator now carries the
-                # provider-aware hermetic session env, so registry open-weight
-                # models run on v0 too — no parse-time rejection anymore.
-                if ns.subscription_auth:
-                    p.error(
-                        f"--subscription-auth is Anthropic-only; {_spec.key} "
-                        f"models authenticate via {_spec.auth_env}. Omit the "
-                        "flag or pass --no-subscription-auth."
+                # DEV-1604: z.ai recycles --subscription-auth as its ENDPOINT
+                # selector, NOT the Claude.ai OAuth path: --subscription-auth =
+                # direct coding-plan Anthropic endpoint (no bridge); default /
+                # --no-subscription-auth = per-token OpenAI bridge. Both auth with
+                # ZAI_API_KEY. So leave ns.subscription_auth as parsed (it drives
+                # no_subscription_auth below); the OAuth-token validation is gated
+                # on non-registry so it never fires for z.ai.
+                if _spec.key != "zai" and ns.subscription_auth:
+                    # OpenAI-only (Doubleword: no Anthropic endpoint) and
+                    # anthropic-format-with-key (Moonshot: no subscription) reject
+                    # --subscription-auth.
+                    _why = (
+                        "OpenAI-only — no Anthropic endpoint"
+                        if _spec.api_format == "openai"
+                        else f"authenticates via {_spec.auth_env}"
                     )
-                ns.subscription_auth = False
+                    p.error(
+                        f"--subscription-auth is not valid for {_spec.key} agent "
+                        f"models ({_why}). Omit the flag or pass "
+                        "--no-subscription-auth."
+                    )
+                if _spec.key != "zai":
+                    ns.subscription_auth = False
             elif ns.subscription_auth is None:
                 p.error(
                     "an explicit --subscription-auth / --no-subscription-auth "
@@ -262,24 +265,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                     "path burning credits)."
                 )
 
-        # DEV-1604: --zai-billing per-token routes through the bridge to z.ai's
-        # per-token OpenAI endpoint — it is z.ai-only. Reject it for any other
-        # agent provider (Doubleword auto-bridges via its OpenAI-only format and
-        # needs no flag; Anthropic/Moonshot have no per-token OpenAI surface).
-        if (
-            ns.subcommand == "submit"
-            and getattr(ns, "zai_billing", "coding-plan") == "per-token"
-        ):
-            _zspec = provider_registry.get_provider(ns.agent_model)
-            if _zspec is None or _zspec.key != "zai":
-                p.error(
-                    "--zai-billing per-token is z.ai-only (zai/* agent models); "
-                    f"got agent model {ns.agent_model!r}. Doubleword auto-bridges "
-                    "(no flag); omit --zai-billing for every other provider."
-                )
-
         ns.no_subscription_auth = not ns.subscription_auth
-        if ns.subscription_auth:
+        # OAuth-token validation is Anthropic-only: registry models (incl. a z.ai
+        # --subscription-auth coding-plan run) authenticate via their provider key.
+        if ns.subscription_auth and provider_registry.get_provider(ns.agent_model) is None:
             token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
             if not token:
                 p.error(
