@@ -138,6 +138,24 @@ def test_migrate_malformed_usage_json_falls_back_unknown(tmp_path, monkeypatch):
     ).exists()
 
 
+def test_migrate_non_string_model_falls_back_unknown(tmp_path, monkeypatch):
+    """A setup_encoder row with a non-string `model` (e.g. an int) must fall
+    back to 'unknown' rather than crash encoder_version_slug (Codex)."""
+    main, _ = _setup_main_and_worktree(tmp_path, monkeypatch)
+    d = main / "slayer_models_otf" / BENCH / "alien"
+    d.mkdir(parents=True)
+    (d / "_reference_fp.txt").write_text("fp")
+    (d / "embeddings.db").write_bytes(b"x")
+    (d / "_setup_usage.json").write_text(json.dumps({
+        "breakdown": [{"scope": "setup_encoder", "model": 123}],
+    }))
+
+    _migrate().migrate_benchmark(benchmark=BENCH)
+    assert (
+        main / "slayer_models_otf" / BENCH / "unknown" / "alien" / "_reference_fp.txt"
+    ).exists()
+
+
 def test_migrate_dry_run_reports_collision_skip(tmp_path, monkeypatch):
     """Dry-run must honor a destination collision the same way the real run
     does — it should NOT report a move whose target already exists."""

@@ -85,9 +85,13 @@ def _derive_version(db_dir: Path) -> tuple[str, bool]:
     ``unknown`` (derived=False) when absent / unparseable / wrong-shaped /
     empty."""
     for row in _setup_encoder_rows(db_dir):
-        if row.get("model"):
+        model = row.get("model")
+        # Require a non-empty STRING — a malformed-but-valid row like
+        # {"model": 123} must fall back to 'unknown', not crash
+        # encoder_version_slug's .partition() (Codex).
+        if isinstance(model, str) and model:
             try:
-                return encoder_version_slug(row["model"]), True
+                return encoder_version_slug(model), True
             except ValueError:
                 return _UNKNOWN, False
     return _UNKNOWN, False
@@ -109,8 +113,9 @@ def _backfill_encoder_meta(
     fp = (dest_dir / _MARKER).read_text().strip()
     encoder_model = _UNKNOWN
     for row in _setup_encoder_rows(dest_dir):
-        if row.get("model"):
-            encoder_model = row["model"]
+        model = row.get("model")
+        if isinstance(model, str) and model:
+            encoder_model = model
             break
     built_at = _dt.datetime.fromtimestamp(
         (dest_dir / _MARKER).stat().st_mtime, tz=_dt.timezone.utc,
