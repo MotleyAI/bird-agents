@@ -2116,6 +2116,15 @@ def main() -> None:
             pre_encoded_source=args.pre_encoded_source,
             pre_encoded_version=args.pre_encoded_version,
         )
+        # DEV-1605 (Codex r5): fail-fast on a bad encode `--version` label
+        # (e.g. "" or "a/b") at the CLI boundary, mirroring cloud submit —
+        # otherwise an invalid label only surfaces per-task inside the
+        # adapter's broad except as failed result rows.
+        if args.framework == "pydantic_ai_otf_encode":
+            from bird_interact_agents.model_string import resolve_encode_version
+            _ev = resolve_encode_version(args.encode_version, args.agent_model)
+            if _ev is not None:
+                paths._validate_otf_version(_ev)
     except ValueError as e:
         parser.error(str(e))
 
