@@ -34,6 +34,7 @@ from bird_interact_agents.harness import (
     _schema_cache,
     build_user_decoder_prompt,
     build_user_encoder_prompt,
+    evaluate_best_of_audited_variants,
     evaluate_dual_gold,
     execute_env_action,
     execute_submit_action,
@@ -367,20 +368,51 @@ def _dispatch_eval(state: Any, sql: str):
             sql, state.status, state.data_path_base,
         )
         return (observation, reward, p1, p2, finished,
-                None, None, None, None)
+                None, None, None, None, None)
 
     # Dual-eval: audited gold drives `state.result` + agent feedback;
     # original gold lands in the diagnostic columns for offline scoring.
     audited_sol_sql = state.status.original_data["sol_sql"]
+    audited_sol_sql_list = (
+        list(audited_sol_sql) if isinstance(audited_sol_sql, list)
+        else [audited_sol_sql]
+    )
     dual = evaluate_dual_gold(
         pred_sql=sql,
-        audited_sol_sqls=list(audited_sol_sql) if isinstance(audited_sol_sql, list) else [audited_sol_sql],
+        audited_sol_sqls=audited_sol_sql_list,
         original_sol_sqls=list(original_sol_sql) if isinstance(original_sol_sql, list) else [original_sol_sql],
         status=state.status,
         data_path_base=state.data_path_base,
     )
     aud = dual["audited"]
     orig = dual["original"]
+
+    # DEV-1606 Defect 1: when the agent misses the audited PRIMARY, accept
+    # a best-of match against ANY audited variant (mirror the final
+    # cascade's N2/N3). The matched variant id is surfaced ONLY through the
+    # non-agent-visible 10th return element — the agent's observation stays
+    # the generic pass string so it never learns which reading matched.
+    matched_variant_id = None
+    audited_variants = state.status.original_data.get("audited_variants")
+    if not aud["p1"] and audited_variants:
+        passed, matched_variant_id, best_obs = evaluate_best_of_audited_variants(
+            pred_sql=sql,
+            variants=audited_variants,
+            status=state.status,
+            data_path_base=state.data_path_base,
+            skip_variant_sqls={tuple(audited_sol_sql_list)},
+        )
+        if passed:
+            aud = {
+                **aud,
+                "p1": True,
+                "reward": 1.0,
+                # A phase-1 pass finishes the task for BOTH one-shot and
+                # interactive benchmarks (mini-interact has no phase 2).
+                "finished": True,
+                "observation": best_obs,
+            }
+
     return (
         aud["observation"],
         aud["reward"],
@@ -394,6 +426,7 @@ def _dispatch_eval(state: Any, sql: str):
         orig["p1"],
         aud["observation"],
         orig["observation"],
+        matched_variant_id,
     )
 
 
@@ -532,9 +565,11 @@ def submit_raw_sql(state: Any, sql: str) -> str:
 
     infra_failed = False
     audited_obs = original_obs = None
+    matched_variant_id = None
     try:
         (observation, reward, p1, p2, finished,
-         _audited_p1, _original_p1, audited_obs, original_obs) = _dispatch_eval(state, sql)
+         _audited_p1, _original_p1, audited_obs, original_obs,
+         matched_variant_id) = _dispatch_eval(state, sql)
     except Exception as e:  # noqa: BLE001
         logger.exception("execute_submit_action raised on %s", sql[:80])
         observation = f"Error processing submission: {e}"
@@ -562,6 +597,10 @@ def submit_raw_sql(state: Any, sql: str) -> str:
         "finished": finished,
         "submitted_sql": sql,
         "submitted_query": None,
+        # DEV-1606 Defect 1: which audited variant the agent's answer
+        # matched in-task (best-of). Non-agent-visible diagnostic only;
+        # None on a primary pass or a total miss.
+        "phase1_matched_audited_variant_id": matched_variant_id,
         # Diagnostic fields. _diagnostic_payload writes phaseN_observation
         # only for the phase this call ran in; we keep the other one from
         # `prior` so a phase-2 submission doesn't blank out a stored phase-1
@@ -683,7 +722,8 @@ def submit_slayer_query(
                 dry_run_failed: bool = False,
                 infrastructure_failed: bool = False,
                 phase1_observation_audited: str | None = None,
-                phase1_observation_original: str | None = None) -> None:
+                phase1_observation_original: str | None = None,
+                matched_audited_variant_id: str | None = None) -> None:
         diag = _diagnostic_payload(
             submitted_sql=sql,
             sample_status=state.status,
@@ -706,6 +746,9 @@ def submit_slayer_query(
             "finished": finished,
             "submitted_sql": sql,
             "submitted_query": query_json,
+            # DEV-1606 Defect 1: best-of matched audited variant id
+            # (non-agent-visible diagnostic; None on primary-pass / miss).
+            "phase1_matched_audited_variant_id": matched_audited_variant_id,
             **diag,
         }
         if pre_phase == 1:
@@ -795,9 +838,11 @@ def submit_slayer_query(
 
     infra_failed = False
     audited_obs = original_obs = None
+    matched_variant_id = None
     try:
         (observation, reward, p1, p2, finished,
-         _audited_p1, _original_p1, audited_obs, original_obs) = _dispatch_eval(state, sql)
+         _audited_p1, _original_p1, audited_obs, original_obs,
+         matched_variant_id) = _dispatch_eval(state, sql)
     except Exception as e:  # noqa: BLE001
         logger.exception("execute_submit_action raised on slayer-rendered SQL")
         observation = f"Error processing submission: {e}"
@@ -812,6 +857,7 @@ def submit_slayer_query(
         infrastructure_failed=infra_failed,
         phase1_observation_audited=audited_obs,
         phase1_observation_original=original_obs,
+        matched_audited_variant_id=matched_variant_id,
     )
     return f"Generated SQL:\n{sql}\n\nResult: {observation}" + _budget_note(state)
 

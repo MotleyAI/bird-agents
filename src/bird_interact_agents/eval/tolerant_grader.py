@@ -229,8 +229,10 @@ def _set_equal(pred: Sequence[Sequence], gold: Sequence[Sequence]) -> bool:
 try:
     from bird_interact_agents.eval.upstream_ex_base import (
         ExBaseUnavailableError,
+        clean_sqls_like_ex_base,
         compare_pred_vs_gold_ex_base,
         is_mutation_sql,  # noqa: F401  (re-export for callers)
+        preprocess_rows_like_ex_base,
     )
 except Exception:  # noqa: BLE001  (defensive — module-load failure)
     class ExBaseUnavailableError(Exception):  # type: ignore[no-redef]
@@ -244,6 +246,12 @@ except Exception:  # noqa: BLE001  (defensive — module-load failure)
         # non-mutation so grading degrades to the legacy comparison
         # via the ExBaseUnavailableError path below.
         return False
+
+    def clean_sqls_like_ex_base(_benchmark, sqls):  # type: ignore[no-redef]
+        return list(sqls)
+
+    def preprocess_rows_like_ex_base(_benchmark, rows):  # type: ignore[no-redef]
+        return list(rows)
 
 
 _EX_BASE_N1_BENCHMARKS = frozenset({
@@ -380,31 +388,99 @@ def _numeric_cell_equal(a: Any, b: Any, *, epsilon: float) -> bool:
     return a == b
 
 
+def _perfect_bipartite_match(
+    pred: Sequence[Sequence],
+    gold: Sequence[Sequence],
+    cell_match: Callable[[Any, Any], bool],
+) -> bool:
+    """Return True iff there is a PERFECT matching between ``pred`` rows
+    and ``gold`` rows where pred row ``i`` may match gold row ``j`` iff the
+    two rows have equal width and every aligned cell satisfies
+    ``cell_match``.
+
+    DEV-1606 Codex #4: a greedy first-match consumer can false-fail when
+    the tolerance intervals overlap (pred row A matches the gold row that
+    pred row B uniquely needs). Kuhn's augmenting-path algorithm finds a
+    perfect matching when one exists. Rowsets in these benchmarks are
+    small, so the O(V·E) cost is negligible."""
+    if len(pred) != len(gold):
+        return False
+    n = len(pred)
+    adj: List[List[int]] = []
+    for pr in pred:
+        row: List[int] = []
+        for j, gr in enumerate(gold):
+            if len(pr) == len(gr) and all(
+                cell_match(a, b) for a, b in zip(pr, gr)
+            ):
+                row.append(j)
+        adj.append(row)
+
+    match_to = [-1] * n  # gold j -> pred i
+
+    def _augment(i: int, seen: List[bool]) -> bool:
+        for j in adj[i]:
+            if not seen[j]:
+                seen[j] = True
+                if match_to[j] == -1 or _augment(match_to[j], seen):
+                    match_to[j] = i
+                    return True
+        return False
+
+    matched = 0
+    for i in range(n):
+        if _augment(i, [False] * n):
+            matched += 1
+    return matched == n
+
+
+def _relaxed_cell_equal(
+    a: Any, b: Any, *, epsilon: float, strip: bool, casefold: bool,
+) -> bool:
+    """Cell equality composing numeric epsilon with optional trailing-
+    whitespace strip and optional case-fold for string cells."""
+    if isinstance(a, str) and isinstance(b, str):
+        if strip:
+            a, b = a.rstrip(), b.rstrip()
+        if casefold:
+            a, b = a.lower(), b.lower()
+        return a == b
+    return _numeric_cell_equal(a, b, epsilon=epsilon)
+
+
+def compare_relaxed(
+    pred: Sequence[Sequence],
+    gold: Sequence[Sequence],
+    *,
+    epsilon: float,
+    strip: bool,
+    casefold: bool,
+) -> bool:
+    """Multiset row equality under a COMPOSED cell predicate (numeric
+    epsilon + optional trailing-whitespace strip + optional case-fold),
+    using a perfect bipartite matching so overlapping tolerances never
+    cause a spurious miss (DEV-1606 Defect 2)."""
+    if not _row_count_match(pred, gold):
+        return False
+
+    def _cell(a: Any, b: Any) -> bool:
+        return _relaxed_cell_equal(
+            a, b, epsilon=epsilon, strip=strip, casefold=casefold,
+        )
+
+    return _perfect_bipartite_match(list(pred), list(gold), _cell)
+
+
 def compare_numeric_epsilon(
     pred: Sequence[Sequence],
     gold: Sequence[Sequence],
     *,
     epsilon: float,
 ) -> bool:
-    if not _row_count_match(pred, gold):
-        return False
-    # Per-row, per-cell tolerance, but we still need bag semantics.
-    used = [False] * len(gold)
-    for pr in pred:
-        match = -1
-        for j, gr in enumerate(gold):
-            if used[j] or len(pr) != len(gr):
-                continue
-            if all(
-                _numeric_cell_equal(a, b, epsilon=epsilon)
-                for a, b in zip(pr, gr)
-            ):
-                match = j
-                break
-        if match < 0:
-            return False
-        used[match] = True
-    return all(used)
+    """Per-cell numeric tolerance with bag semantics. Delegates to the
+    composed relaxed comparator (bipartite matching) so the pre-existing
+    greedy false-fail is gone (DEV-1606 Codex #4)."""
+    return compare_relaxed(pred, gold, epsilon=epsilon, strip=False, casefold=False)
 
 
 def _strip_trailing(cell: Any) -> Any:
@@ -477,6 +553,42 @@ def compare_column_order(
     perm = [pred_l.index(c) for c in gold_l]
     aligned = [tuple(r[i] for i in perm) for r in pred]
     return _set_equal(aligned, gold)
+
+
+def compare_column_order_relaxed(
+    pred: Sequence[Sequence],
+    gold: Sequence[Sequence],
+    *,
+    pred_cols: Sequence[str],
+    gold_cols: Sequence[str],
+    epsilon: float,
+    strip: bool,
+    casefold: bool,
+) -> bool:
+    """Align columns by case-insensitive name (same guards as
+    :func:`compare_column_order` — count match, no duplicate names, equal
+    name sets) THEN compare with the composed relaxed cell predicate.
+
+    This is the composition target for DEV-1606 Defect 2: an answer correct
+    only under (column-reorder ∘ epsilon) — or the terminal full
+    cross-product (reorder ∘ epsilon ∘ strip ∘ case-fold) — passes here."""
+    if len(pred_cols) != len(gold_cols):
+        return False
+    pred_l = [c.lower() for c in pred_cols]
+    gold_l = [c.lower() for c in gold_cols]
+    if len(pred_l) != len(set(pred_l)) or len(gold_l) != len(set(gold_l)):
+        return False
+    if set(pred_l) != set(gold_l):
+        return False
+    # Defensive: a wrong-width row would IndexError on r[i] below; treat
+    # as a non-match rather than letting it bubble out of the grader.
+    if any(len(r) < len(pred_cols) for r in pred):
+        return False
+    perm = [pred_l.index(c) for c in gold_l]
+    aligned = [tuple(r[i] for i in perm) for r in pred]
+    return compare_relaxed(
+        aligned, gold, epsilon=epsilon, strip=strip, casefold=casefold,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1005,6 +1117,25 @@ def grade_submission(
         executor = default_executor  # type: ignore[assignment]
     assert executor is not None  # narrowing
 
+    # DEV-1606 Defect 3: align cascade precision with the authoritative
+    # ``ex_base`` grader. ``remove_round`` strips ROUND(...) from the
+    # executed SQL and ``preprocess_results`` rounds fetched rows to 2dp
+    # (+ date / dict canonicalisation). The NORMALISED rows below are the
+    # single variables every downstream tier (N2/N3, N4, N6–N9, the N1
+    # legacy fallback), the LLM judge, the persisted result sets and the
+    # miss diagnostics all use — so the cascade never rejects what the
+    # benchmark grader accepts. N1's PRIMARY path still re-executes the
+    # RAW SQL inside ``compare_pred_vs_gold_ex_base`` (it cleans
+    # internally), so ``submitted_sql`` / ``original_sol_sql`` are passed
+    # to ``_compute_n1`` un-cleaned.
+    bench_name = getattr(benchmark, "name", None) or str(benchmark or "")
+
+    def _clean(sqls: Sequence[str]) -> List[str]:
+        return list(clean_sqls_like_ex_base(bench_name, list(sqls)))
+
+    def _norm(rows: Sequence[Sequence]) -> List[Sequence]:
+        return list(preprocess_rows_like_ex_base(bench_name, rows))
+
     # 1) Run predicted + original gold + each variant. The agent's
     # SQL is wrapped in try/except so a syntax / runtime error
     # produces an empty rowset + an error excerpt rather than aborting
@@ -1013,9 +1144,13 @@ def grade_submission(
     agent_sql_executed_ok = True
     agent_sql_error_excerpt: Optional[str] = None
     try:
-        pred_rows, pred_cols = executor(
-            submitted_sql, db_path=db_path, conn=conn,
+        pred_sql_for_exec = (
+            _clean([submitted_sql])[0] if submitted_sql else submitted_sql
         )
+        pred_rows, pred_cols = executor(
+            pred_sql_for_exec, db_path=db_path, conn=conn,
+        )
+        pred_rows = _norm(pred_rows)
     except Exception as exc:  # noqa: BLE001
         agent_sql_executed_ok = False
         agent_sql_error_excerpt = f"{type(exc).__name__}: {exc}"[:200]
@@ -1034,9 +1169,10 @@ def grade_submission(
     original_sql_executed_ok = True
     try:
         orig_rows, orig_cols = _multi_sql_execute(
-            list(original_sol_sql),
+            _clean(original_sol_sql),
             db_path=db_path, conn=conn, executor=executor, benchmark=benchmark,
         )
+        orig_rows = _norm(orig_rows)
     except Exception:  # noqa: BLE001
         logger.exception(
             "original gold execution failed; degrading N1 to False "
@@ -1053,8 +1189,9 @@ def grade_submission(
             continue
         try:
             v_rows, v_cols = _multi_sql_execute(
-                sqls, db_path=db_path, conn=conn, executor=executor, benchmark=benchmark,
+                _clean(sqls), db_path=db_path, conn=conn, executor=executor, benchmark=benchmark,
             )
+            v_rows = _norm(v_rows)
         except Exception:  # noqa: BLE001
             # Variant SQL didn't execute — SKIP it instead of coercing
             # to ``([], [])``. An empty stand-in lets N2/N3 falsely pass
@@ -1215,6 +1352,12 @@ def grade_submission(
                 if compare_trailing_whitespace(pred_rows, v_rows):
                     n7 = True
                     break
+    # DEV-1606 Defect 2: COMPOSE the relaxation tiers. N8 accepts a strict
+    # column-reorder OR (reorder ∘ epsilon). N9 is the terminal full
+    # cross-product: case-fold OR (epsilon ∘ strip ∘ case-fold) with no
+    # reorder (rescues same-order answers whose column NAMES don't align)
+    # OR (reorder ∘ epsilon ∘ strip ∘ case-fold). Monotonicity is
+    # preserved by ``enforce_monotone_cascade`` (N8 > N6/N7; N9 terminal).
     if not n8:
         n8 = n7
         if not n8:
@@ -1222,13 +1365,23 @@ def grade_submission(
                 if compare_column_order(
                     pred_rows, v_rows,
                     pred_cols=list(pred_cols), gold_cols=list(v_cols),
+                ) or compare_column_order_relaxed(
+                    pred_rows, v_rows,
+                    pred_cols=list(pred_cols), gold_cols=list(v_cols),
+                    epsilon=epsilon, strip=False, casefold=False,
                 ):
                     n8 = True
                     break
     n9 = n8
     if not n9:
-        for _v_meta, v_rows, _v_cols in _comparator_targets:
-            if compare_case_fold(pred_rows, v_rows):
+        for _v_meta, v_rows, v_cols in _comparator_targets:
+            if compare_case_fold(pred_rows, v_rows) or compare_relaxed(
+                pred_rows, v_rows, epsilon=epsilon, strip=True, casefold=True,
+            ) or compare_column_order_relaxed(
+                pred_rows, v_rows,
+                pred_cols=list(pred_cols), gold_cols=list(v_cols),
+                epsilon=epsilon, strip=True, casefold=True,
+            ):
                 n9 = True
                 break
 
