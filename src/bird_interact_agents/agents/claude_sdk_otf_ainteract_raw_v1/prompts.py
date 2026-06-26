@@ -19,6 +19,7 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _DECOMPOSE_DISCIPLINE,
     _PIVOT_AFTER_REPEATED_FAILURES,
     _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
+    _RAW_HOST_PATH_PRINCIPLE,
     _RULE_0_ASK_BEFORE,
     _USER_SIM_TRUST_CALIBRATION,
 )
@@ -127,4 +128,6 @@ RAW_OTF_AINTERACT = (
       "exploration tools are free but your total work is turn-bounded — explore\n"
       "only what the question needs. If your budget runs out, submit immediately.\n"
       "\nDatabase: {db_name}\nUser question: {user_query}\n"
+    + "\n"
+    + _RAW_HOST_PATH_PRINCIPLE
 )

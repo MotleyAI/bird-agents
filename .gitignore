@@ -32,3 +32,5 @@ annotations/
 # DEV-1533: per-run submission annotations + trajectory sidecars.
 # Same posture as annotations/ — local only, not committed.
 runs/
+# DEV-1603: local prompt-comparison + spec scratch, never committed.
+dev1603_prompt_audit/
