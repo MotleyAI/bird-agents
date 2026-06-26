@@ -229,3 +229,30 @@ def test_sdk_session_env_doubleword_missing_key_raises(monkeypatch):
     monkeypatch.delenv("DOUBLEWORD_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="DOUBLEWORD_API_KEY"):
         pr.sdk_session_env(_DW)
+
+
+# ---------------------------------------------------------------------------
+# Unpriced-registry cost path (regression: a Doubleword user-sim must not crash
+# the run). litellm doesn't know the `doubleword/` provider AND pricing is
+# unset, so the cost calc must short-circuit to $0 instead of raising.
+# ---------------------------------------------------------------------------
+
+
+def test_unpriced_doubleword_cost_is_zero_not_crash():
+    from bird_interact_agents import usage
+
+    prompt_cost, completion_cost = usage._safe_cost(
+        model=_DW, prompt_tokens=1000, completion_tokens=500,
+    )
+    assert prompt_cost == 0.0
+    assert completion_cost == 0.0
+
+
+def test_priced_zai_cost_still_nonzero():
+    from bird_interact_agents import usage
+
+    prompt_cost, completion_cost = usage._safe_cost(
+        model=_GLM, prompt_tokens=1_000_000, completion_tokens=1_000_000,
+    )
+    assert prompt_cost > 0
+    assert completion_cost > 0

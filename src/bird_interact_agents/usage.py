@@ -227,10 +227,24 @@ def _safe_cost(
                 + cache_read_input_tokens * read_rate
             )
             return prompt_cost, completion_tokens * pricing.output_cost_per_token
-    # Registry models WITHOUT a pricing entry (e.g. a not-yet-priced
-    # zai/glm-5.3 or moonshot/<future-id>) still flow through litellm here.
-    # Register the known prices first (idempotent, no-op after the first
-    # call) so priced ids resolve normally.
+        # DEV-1604: a registry model WITHOUT an in-house price (e.g. Doubleword,
+        # whose per-token price is unconfirmed → model_pricing={}). Record $0
+        # directly — do NOT ask litellm: an OpenAI-only provider like Doubleword
+        # is unknown to litellm's `get_llm_provider`, which raises
+        # `BadRequestError: LLM Provider NOT provided` (neither NotFoundError nor
+        # "isn't mapped yet"), so the litellm fallback below would re-raise and
+        # crash the run. We already know this is a registry model; $0 (absent,
+        # not wrong) is the correct unpriced behaviour. Warn once.
+        if model not in _warned_unpriced:
+            _warned_unpriced.add(model)
+            logger.warning(
+                "No registry price entry for model %r; recording cost_usd=0 "
+                "for this run (pricing unconfirmed).", model,
+            )
+        return 0.0, 0.0
+    # Non-registry models still flow through litellm here. Register the known
+    # prices first (idempotent, no-op after the first call) so priced ids
+    # resolve normally.
     provider_registry.ensure_litellm_pricing()
     try:
         return _cost_per_token(
