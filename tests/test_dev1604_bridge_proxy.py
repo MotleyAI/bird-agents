@@ -373,6 +373,52 @@ def test_ensure_refuses_healthy_mismatch(monkeypatch, isolated_runtime):
         bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"no_subscription_auth": True})
 
 
+def test_key_fingerprint_is_nonsecret_stable(monkeypatch):
+    fp = bp.key_fingerprint("secret-key-abc")
+    assert fp == bp.key_fingerprint("secret-key-abc")   # stable
+    assert "secret-key-abc" not in fp                   # never the key itself
+    assert bp.key_fingerprint("other-key") != fp
+    assert bp.key_fingerprint("") == ""
+
+
+def test_ensure_restarts_proxy_on_rotated_key(monkeypatch, isolated_runtime):
+    """A reused proxy holding a DIFFERENT key (rotation / new secret on a reused
+    VM) would 401 our auth check — detect it via the key fingerprint and restart
+    (Codex). Same target, different key_fp → replace + start."""
+    monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-NEW")
+    target = bp.resolve_bridge_target(_DW_MODEL, True)
+    port = bp.deterministic_port(target)
+    stale = bp.healthz_payload(target, port)
+    stale["key_fp"] = bp.key_fingerprint("dw-key-OLD")
+    stale["pid"] = 999999
+    monkeypatch.setattr(bp, "_probe_identity", lambda p: stale)
+    replaced, started = [], []
+    monkeypatch.setattr(
+        bp, "_replace_stale_proxy", lambda pid, p: replaced.append((pid, p))
+    )
+    monkeypatch.setattr(bp, "_start_proxy", lambda t, p: started.append(p))
+    bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"no_subscription_auth": True})
+    assert replaced == [(999999, port)]
+    assert started == [port]
+
+
+def test_ensure_reuses_when_key_fp_matches(monkeypatch, isolated_runtime):
+    monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
+    target = bp.resolve_bridge_target(_DW_MODEL, True)
+    port = bp.deterministic_port(target)
+    ident = bp.healthz_payload(target, port)
+    ident["key_fp"] = bp.key_fingerprint("dw-key-1")
+    ident["pid"] = 123
+    monkeypatch.setattr(bp, "_probe_identity", lambda p: ident)
+    spawned = []
+    monkeypatch.setattr(bp, "_start_proxy", lambda t, p: spawned.append(p))
+    monkeypatch.setattr(
+        bp, "_replace_stale_proxy", lambda pid, p: spawned.append("REPLACED")
+    )
+    bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"no_subscription_auth": True})
+    assert spawned == []  # full match incl key → reuse, no restart
+
+
 def test_ensure_zai_coding_plan_fails_fast(monkeypatch, isolated_runtime):
     """Callers gate on agent_needs_bridge; a DIRECT call for a non-bridge model
     is misuse and must fail fast (loud), never silently spawn a phantom proxy."""

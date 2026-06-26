@@ -33,6 +33,7 @@ import hashlib
 import hmac
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -156,6 +157,14 @@ def identity_matches(got: object, want: dict) -> bool:
     )
 
 
+def key_fingerprint(key: str) -> str:
+    """Non-secret fingerprint of a provider key, exposed on /healthz so a later
+    actor can tell whether a reused VM-lifetime proxy holds the SAME key. A hash
+    prefix — never the key itself (Codex: the auth check 401s a reused proxy that
+    still carries a rotated key, so we must detect the change and restart)."""
+    return hashlib.sha256(key.encode()).hexdigest()[:16] if key else ""
+
+
 def messages_call_kwargs(
     body: dict, target: BridgeTarget, *, api_key: str
 ) -> dict:
@@ -234,7 +243,11 @@ def _request_authorized(request: Request, target: BridgeTarget) -> bool:
         return True
     auth = request.headers.get("authorization", "")
     token = auth[7:] if auth[:7].lower() == "bearer " else ""
-    return bool(token) and hmac.compare_digest(token, expected)
+    # Compare as BYTES: hmac.compare_digest raises TypeError on a non-ASCII str,
+    # so a malformed (non-ASCII) bearer would 500 instead of cleanly 401-ing.
+    return bool(token) and hmac.compare_digest(
+        token.encode("utf-8"), expected.encode("utf-8")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +291,12 @@ def create_app(target: BridgeTarget, port: Optional[int] = None) -> FastAPI:
 
     @app.get("/healthz")
     async def healthz():  # noqa: ANN202
-        return JSONResponse(healthz_payload(target, health_port))
+        payload = healthz_payload(target, health_port)
+        # Non-secret key fingerprint + pid so a later actor can detect a rotated
+        # key on a reused proxy and restart it (it would otherwise 401).
+        payload["key_fp"] = key_fingerprint(os.environ.get(target.auth_env, ""))
+        payload["pid"] = os.getpid()
+        return JSONResponse(payload)
 
     return app
 
@@ -358,6 +376,7 @@ def _start_proxy(target: BridgeTarget, port: int) -> None:  # pragma: no cover
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     proc.kill()
+                    proc.wait(timeout=5)  # reap the killed child, no zombie
         except Exception:
             pass
         with contextlib.suppress(ValueError):
@@ -402,9 +421,11 @@ def ensure_bridge_proxy_for_actor(model: str, cfg: dict) -> str:
 
     Idempotent and concurrency-safe: a per-port lock spans the probe → start →
     readiness window so concurrent actors share one proxy. A healthy proxy with
-    OUR identity is reused; a healthy FOREIGN service on the port is an anomaly
-    we refuse (never kill); otherwise we start one. The override is set AFTER
-    the proxy is confirmed ready, BEFORE the caller builds the SDK runner.
+    OUR identity AND key is reused; a same-target proxy holding a DIFFERENT (e.g.
+    rotated) key is OURS-but-stale and is restarted (it would otherwise 401 the
+    auth check); a healthy FOREIGN service on the port is an anomaly we refuse
+    (never kill); otherwise we start one. The override is set AFTER the proxy is
+    confirmed ready, BEFORE the caller builds the SDK runner.
 
     ``cfg["no_subscription_auth"]`` (default True — the registry default) is the
     z.ai endpoint selector; Doubleword bridges regardless."""
@@ -415,6 +436,7 @@ def ensure_bridge_proxy_for_actor(model: str, cfg: dict) -> str:
     url = f"http://{SERVE_HOST}:{port}"
     spec = provider_registry.get_provider(model)
     want = healthz_payload(target, port)
+    my_key_fp = key_fingerprint(os.environ.get(spec.auth_env, ""))
     with _vm_lock(port):
         ident = _probe_identity(port)
         if ident is not None:
@@ -424,12 +446,31 @@ def ensure_bridge_proxy_for_actor(model: str, cfg: dict) -> str:
                     f"(identity={ident!r}); refusing to replace it. Set "
                     f"{spec.base_url_env} or free the port."
                 )
-            # Healthy, OURS — reuse.
+            live_fp = ident.get("key_fp")
+            if live_fp and my_key_fp and live_fp != my_key_fp:
+                # OURS but a different key (rotation / new secret on a reused VM):
+                # the auth check would 401 our requests. Restart with our key.
+                _replace_stale_proxy(ident.get("pid"), port)
+                _start_proxy(target, port)
+            # else: healthy, OURS, same key — reuse.
         else:
             _start_proxy(target, port)
         marker_path(port).write_text(json.dumps(want))
     os.environ[spec.base_url_env] = url
     return url
+
+
+def _replace_stale_proxy(pid: "int | None", port: int) -> None:  # pragma: no cover
+    """Terminate a same-target proxy that carries a different key, then wait for
+    its port to free so a fresh ``_start_proxy`` can bind it."""
+    if pid:
+        with contextlib.suppress(Exception):
+            os.kill(int(pid), signal.SIGTERM)
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        if _probe_identity(port) is None:
+            return
+        time.sleep(0.2)
 
 
 def terminate_local_proxies() -> None:
