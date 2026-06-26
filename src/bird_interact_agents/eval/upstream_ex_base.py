@@ -611,6 +611,69 @@ def compare_pred_vs_gold_ex_base(
                 )
 
 
+def _load_upstream_for(benchmark: str) -> ModuleType:
+    """Load the upstream comparator module for ``benchmark`` (mini-interact
+    or the livesqlbench family). Raises :class:`ExBaseUnavailableError` for
+    an unsupported benchmark or any load failure — callers fall back to an
+    identity transform so a missing tree never crashes grading."""
+    loader, _driver = _benchmark_loader(benchmark)
+    try:
+        return loader()
+    except ExBaseUnavailableError:
+        raise
+    except (ImportError, FileNotFoundError) as exc:
+        raise ExBaseUnavailableError(
+            f"upstream comparator unavailable for {benchmark!r}: {exc}"
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise ExBaseUnavailableError(
+            f"loading upstream comparator for {benchmark!r} raised: {exc}"
+        ) from exc
+
+
+def clean_sqls_like_ex_base(benchmark: str, sqls) -> list:
+    """Strip ``ROUND(...)`` from each SQL exactly as upstream ``ex_base``
+    does (``remove_round``), so cascade/in-task comparisons execute the
+    same un-rounded queries the benchmark grader does. Precision-only: we
+    deliberately do NOT apply ``remove_distinct`` / ``remove_comments``.
+
+    Identity fallback on unsupported benchmark or unavailable upstream —
+    the caller keeps grading with the raw SQL (DEV-1606 Defect 3)."""
+    sqls = list(sqls)
+    try:
+        upstream = _load_upstream_for(benchmark)
+        return list(upstream.remove_round(sqls))
+    except ExBaseUnavailableError:
+        return sqls
+    except Exception:  # noqa: BLE001 — never crash grading on normalization
+        logger.exception(
+            "[clean_sqls_like_ex_base] remove_round failed for %r; "
+            "falling back to raw SQL", benchmark,
+        )
+        return sqls
+
+
+def preprocess_rows_like_ex_base(benchmark: str, rows) -> list:
+    """Normalize fetched rows exactly as upstream ``ex_base`` does
+    (``preprocess_results``): round floats/Decimals to 2dp ROUND_HALF_UP,
+    dates→'YYYY-MM-DD', dict/list cells→sorted-key JSON strings.
+
+    Identity fallback (returns ``list(rows)`` unchanged) on unsupported
+    benchmark or unavailable upstream (DEV-1606 Defect 3)."""
+    rows = list(rows)
+    try:
+        upstream = _load_upstream_for(benchmark)
+        return list(upstream.preprocess_results(rows))
+    except ExBaseUnavailableError:
+        return rows
+    except Exception:  # noqa: BLE001 — never crash grading on normalization
+        logger.exception(
+            "[preprocess_rows_like_ex_base] preprocess_results failed for "
+            "%r; falling back to raw rows", benchmark,
+        )
+        return rows
+
+
 def _both_results_empty(
     upstream: ModuleType,
     pred_sqls: Sequence[str],
