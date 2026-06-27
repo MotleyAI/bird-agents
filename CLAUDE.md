@@ -198,7 +198,7 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --subscription-auth \
   --agent-model anthropic/claude-haiku-4-5-20251001 \
   --user-sim-model anthropic/claude-haiku-4-5-20251001 \
-  --mode a-interact --slayer-setup on-the-fly \
+  --mode a-interact \
   --instance-ids <db>_1 \
   --workers 1 --actors-per-worker 1 \
   --worker-type e2-standard-4 --max-runtime-hours 2 --detach
@@ -243,7 +243,7 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --subscription-auth \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
-  --mode a-interact --slayer-setup on-the-fly \
+  --mode a-interact \
   --instance-ids households_1 \
   --workers 1 --actors-per-worker 1 \
   --worker-type e2-standard-4 --max-runtime-hours 2 --detach
