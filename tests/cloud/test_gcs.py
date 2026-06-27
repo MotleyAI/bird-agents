@@ -465,6 +465,8 @@ def test_concurrent_download_prefix_skips_by_default(tmp_path: Path) -> None:
         ("pre-encoded", "claude_sdk", "slayer_models"),
         ("on-the-fly", "pydantic_ai_recursive", "slayer_otf_cache"),
         ("on-the-fly", "pydantic_ai_otf_encode", "slayer_models_otf"),
+        # DEV-1609: the claude_sdk encoder maps to the same reference artifact.
+        ("on-the-fly", "claude_sdk_otf_encode", "slayer_models_otf"),
     ],
 )
 def test_slayer_artifact_name(slayer_setup, framework, expected) -> None:

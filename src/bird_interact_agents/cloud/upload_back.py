@@ -40,6 +40,7 @@ from typing import Any
 
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import gcs as _gcs
+from bird_interact_agents.frameworks import is_otf_encode_framework
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +231,7 @@ def upload_otf_reference_delta(
     and pollute the laptop warm cache (CodeRabbit)."""
     if (
         cfg.get("query_mode") != "slayer"
-        or cfg.get("framework") != "pydantic_ai_otf_encode"
+        or not is_otf_encode_framework(cfg.get("framework"))
         or cfg.get("slayer_setup") != "on-the-fly"
     ):
         return

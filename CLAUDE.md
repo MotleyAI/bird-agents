@@ -158,7 +158,14 @@ returns a single `WaitResult` with the terminal state. No bash, no column
 juggling. Use this (or a future `bird-interact-cloud wait <run-id>`
 subcommand wrapping it) instead of an ad-hoc shell poll.
 
-## Cheap end-to-end smoke for `pydantic_ai_otf_encode + on-the-fly` (DEV-1470)
+## Cheap end-to-end smoke for the OTF encoder + on-the-fly (DEV-1470)
+
+DEV-1609: `claude_sdk_otf_encode` is now the DEFAULT OTF encode framework
+everywhere (local + cloud) and the recipe below uses it. It is build-only —
+it constructs the claude_sdk reference encoder (DEV-1589) and merges the
+canonical `slayer_models_otf/<benchmark>/<db>` reference back, behaviourally
+identical to `scripts/build_otf_references.py`. The legacy
+`pydantic_ai_otf_encode` is retained only for back-compat / `resubmit`.
 
 Validates the full upload-back + merge round-trip — the deterministic
 cache stays local, the LLM stage runs in the cloud, the encoded reference
@@ -182,8 +189,13 @@ asyncio.run(ensure_db_cache('<db>',
 "
 
 # 3. Submit otf_encode (cloud does the LLM stage).
+#    claude_sdk_otf_encode is a claude_sdk* framework, so an Anthropic
+#    agent model REQUIRES an explicit --subscription-auth / --no-subscription-auth
+#    choice (DEV-1602). Use --subscription-auth for Anthropic; registry
+#    open-weight models (zai/, moonshot/) take --no-subscription-auth.
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
-  --framework pydantic_ai_otf_encode --query-mode slayer \
+  --framework claude_sdk_otf_encode --query-mode slayer \
+  --subscription-auth \
   --agent-model anthropic/claude-haiku-4-5-20251001 \
   --user-sim-model anthropic/claude-haiku-4-5-20251001 \
   --mode a-interact --slayer-setup on-the-fly \
@@ -225,8 +237,10 @@ asyncio.run(ensure_db_cache('households',
 "
 
 # 3. Submit otf_encode — Opus encoder, Sonnet user-sim, households only.
+#    Anthropic claude_sdk* framework → explicit --subscription-auth required.
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
-  --framework pydantic_ai_otf_encode --query-mode slayer \
+  --framework claude_sdk_otf_encode --query-mode slayer \
+  --subscription-auth \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
   --mode a-interact --slayer-setup on-the-fly \

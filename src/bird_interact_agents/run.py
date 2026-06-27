@@ -222,7 +222,12 @@ def _maybe_force_wipe_otf(
     if pre_encoded_source is not None:
         return
     # DEV-1555 v0/v1: both aggregator tokens dispatch to on-the-fly agents.
-    if framework not in ("claude_sdk", "claude_sdk_v1"):
+    # DEV-1609: the claude_sdk OTF encoder rebuilds the reference from scratch,
+    # so `--otf-rebuild` MUST wipe both layers for it too — otherwise a stale
+    # cache would be re-encoded into a "fresh" reference.
+    if framework not in (
+        "claude_sdk", "claude_sdk_v1", "claude_sdk_otf_encode",
+    ):
         return
     from bird_interact_agents.slayer_otf.reference_build import (
         purge_caches,
@@ -931,6 +936,36 @@ def _make_runner(
                           user_sim_model: str) -> dict:
             budget = calculate_budget(td, patience, mode=mode)
             return await agent_otf.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_encode":
+        # DEV-1609: the default OTF *reference* encoder. Build-only — it
+        # constructs the claude_sdk build-encoder (DEV-1589) and builds the
+        # canonical per-DB reference via `ensure_db_reference`, which the
+        # cloud merge-back uploads home. No per-task masking / eval loop.
+        from bird_interact_agents.agents.claude_sdk_otf_encode import (
+            ClaudeSDKOtfEncodeAgent,
+        )
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_encode] --strict is unsupported; ignored.",
+            )
+        agent_csenc = ClaudeSDKOtfEncodeAgent(
+            slayer_storage_root=slayer_storage_root,
+            model=agent_model,
+            reasoning_effort=reasoning_effort,
+            slayer_setup=slayer_setup,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csenc.run_task(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
@@ -1723,6 +1758,8 @@ def main() -> None:
         choices=[
             "claude_sdk",
             "claude_sdk_v1",
+            # DEV-1609: the default OTF reference encoder.
+            "claude_sdk_otf_encode",
             # non-SDK frameworks unchanged.
             "pydantic_ai",
             "pydantic_ai_recursive",

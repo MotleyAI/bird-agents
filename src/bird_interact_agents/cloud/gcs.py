@@ -21,6 +21,7 @@ from typing import Any
 from google.api_core.exceptions import NotFound as _GcsNotFound
 
 from bird_interact_agents.cloud import config
+from bird_interact_agents.frameworks import is_otf_encode_framework
 
 
 logger = logging.getLogger(__name__)
@@ -389,11 +390,12 @@ def slayer_artifact_name(slayer_setup: str, framework: str) -> str:
 
     - pre-encoded (any framework) -> ``slayer_models``
     - on-the-fly + pydantic_ai_recursive -> ``slayer_otf_cache``
-    - on-the-fly + pydantic_ai_otf_encode -> ``slayer_models_otf``
+    - on-the-fly + an OTF encode framework -> ``slayer_models_otf``
+      (``claude_sdk_otf_encode`` / legacy ``pydantic_ai_otf_encode``)
     """
     if slayer_setup == "pre-encoded":
         return _ARTIFACT_PRE_ENCODED
-    if framework == "pydantic_ai_otf_encode":
+    if is_otf_encode_framework(framework):
         return _ARTIFACT_OTF_REFERENCE
     return _ARTIFACT_OTF_CACHE
 

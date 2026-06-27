@@ -29,6 +29,7 @@ from typing import Any, Callable, Iterable, Iterator
 
 from bird_interact_agents import paths, provider_registry
 from bird_interact_agents.benchmark import get_benchmark
+from bird_interact_agents.frameworks import is_otf_encode_framework
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
 from bird_interact_agents.cloud import upload_back as _upload_back
@@ -300,7 +301,7 @@ def _slayer_artifacts_for(cfg: dict[str, Any]) -> list[tuple[str, Path, bool]]:
             artifacts = [("slayer_models_otf", True)]
         else:
             artifacts = [("slayer_models", True)]
-    elif fw == "pydantic_ai_otf_encode":
+    elif is_otf_encode_framework(fw):
         artifacts = [
             ("slayer_otf_cache", True),
             ("slayer_models_otf", False),
@@ -966,7 +967,7 @@ def _snapshot_initial_seed_fps(
     """
     if cfg.get("query_mode") != "slayer":
         return {}
-    if cfg.get("framework") != "pydantic_ai_otf_encode":
+    if not is_otf_encode_framework(cfg.get("framework")):
         return {}
     prefix = f"runs/{run_id}/slayer_setup/slayer_models_otf/"
     out: dict[str, str] = {}

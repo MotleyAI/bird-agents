@@ -6,8 +6,11 @@ pydantic_ai cannot drive. The default builder used by
 ``scripts/build_otf_references.py``.
 """
 
+from bird_interact_agents.agents.claude_sdk_otf_encode.agent import (
+    ClaudeSDKOtfEncodeAgent,
+)
 from bird_interact_agents.agents.claude_sdk_otf_encode.setup_encoder import (
     make_claude_sdk_build_encoder,
 )
 
-__all__ = ["make_claude_sdk_build_encoder"]
+__all__ = ["ClaudeSDKOtfEncodeAgent", "make_claude_sdk_build_encoder"]

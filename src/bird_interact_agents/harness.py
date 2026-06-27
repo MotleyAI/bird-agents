@@ -1572,10 +1572,12 @@ def slayer_mcp_stdio_config(
             so dropping this flag is safe under the project's locked-
             slayer-version invariant.
 
-            ``pydantic_ai_otf_encode`` does NOT yet opt out: its storage
-            comes from ``reference_build.ensure_db_reference``, whose
-            reuse path is presence-gated on ``_reference_fp.txt`` without
-            the impl-fingerprint check. Extending the impl-fp split to
+            The OTF *encode* frameworks (``claude_sdk_otf_encode`` —
+            DEV-1609 — and legacy ``pydantic_ai_otf_encode``) do NOT opt
+            out: their storage comes from
+            ``reference_build.ensure_db_reference``, whose reuse path is
+            presence-gated on ``_reference_fp.txt`` without the
+            impl-fingerprint check. Extending the impl-fp split to
             ``ensure_db_reference`` is a follow-up; until then the encoder
             keeps the startup ingest as its drift safety net.
 
