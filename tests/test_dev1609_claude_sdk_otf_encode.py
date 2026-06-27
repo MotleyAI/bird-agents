@@ -237,6 +237,7 @@ async def test_run_task_builds_reference_via_claude_sdk_encoder(
     class _FakeEntry:
         reference_dir = tmp_path / "ref" / "alien"
         setup_results = []
+        built = True
 
     async def _fake_ensure(db, **kwargs):
         calls["ensure"] = dict(db=db, **kwargs)
@@ -344,6 +345,7 @@ async def test_run_task_success_telemetry_from_reference_entry(
     class _FakeEntry:
         reference_dir = ref_dir
         setup_results = [_Result()]
+        built = True
 
     async def _fake_ensure(db, **kwargs):
         return _FakeEntry()
@@ -379,25 +381,21 @@ async def test_run_task_success_telemetry_from_reference_entry(
 
 @pytest.mark.asyncio
 async def test_run_task_reuse_does_not_recount_usage(monkeypatch, tmp_path):
-    """Codex review: `_setup_usage.json` persists from the original build, so a
-    REUSE (pre-existing `_reference_fp.txt` marker) must report ZERO usage —
-    not the original build's tokens — to avoid double-counting across tasks for
-    the same DB."""
+    """Codex review: `_setup_usage.json` persists in the reference dir from the
+    original build, so a REUSE (`entry.built is False`, the authoritative
+    build-vs-reuse signal from `ensure_db_reference`) must report ZERO usage —
+    not the original build's tokens — even though the stale sidecar is present
+    on disk. This avoids double-counting across tasks for the same DB."""
     import bird_interact_agents.agents.claude_sdk_otf_encode.agent as agent_mod
     from bird_interact_agents.agents.claude_sdk_otf_encode import (
         ClaudeSDKOtfEncodeAgent,
     )
-    from bird_interact_agents.slayer_otf.reference_build import (
-        _MARKER, _SETUP_USAGE,
-    )
+    from bird_interact_agents.slayer_otf.reference_build import _SETUP_USAGE
     from bird_interact_agents.usage import TokenUsage
 
-    refroot = tmp_path / "refroot"
-    ref_dir = refroot / "alien"
+    ref_dir = tmp_path / "ref" / "alien"
     ref_dir.mkdir(parents=True)
-    # Pre-existing marker → this task REUSES (does not build).
-    (ref_dir / _MARKER).write_text("fp-existing")
-    # A stale usage sidecar from the original build is present.
+    # A stale usage sidecar from the original build is present on disk...
     (ref_dir / _SETUP_USAGE).write_text(
         TokenUsage(prompt_tokens=999, completion_tokens=999).model_dump_json()
     )
@@ -405,6 +403,7 @@ async def test_run_task_reuse_does_not_recount_usage(monkeypatch, tmp_path):
     class _FakeEntry:
         reference_dir = ref_dir
         setup_results = []
+        built = False  # this task reused — did NOT run the encoder
 
     async def _fake_ensure(db, **kwargs):
         return _FakeEntry()
@@ -416,14 +415,6 @@ async def test_run_task_reuse_does_not_recount_usage(monkeypatch, tmp_path):
                         lambda *a, **k: None)
     monkeypatch.setattr(agent_mod, "materialize_task_db",
                         lambda *a, **k: None)
-    monkeypatch.setattr(
-        agent_mod.paths, "slayer_models_otf_root",
-        lambda *, benchmark: refroot,
-    )
-    monkeypatch.setattr(
-        agent_mod.paths, "slayer_otf_cache_root",
-        lambda *, benchmark: tmp_path / "cacheroot",
-    )
 
     agent = ClaudeSDKOtfEncodeAgent(model="anthropic/claude-opus-4-7")
     row = await agent.run_task(
@@ -431,6 +422,7 @@ async def test_run_task_reuse_does_not_recount_usage(monkeypatch, tmp_path):
          "dataset": "mini-interact", "amb_user_query": "q"},
         str(tmp_path / "data"), 5.0, "slayer", eval_mode="a-interact",
     )
+    # ...but built=False → zero usage, NOT the stale 999/999.
     assert row["usage"]["prompt_tokens"] == 0
     assert row["usage"]["completion_tokens"] == 0
 
@@ -450,6 +442,7 @@ async def test_run_task_accepts_one_shot_mode(monkeypatch, tmp_path):
     class _FakeEntry:
         reference_dir = tmp_path / "ref" / "alien"
         setup_results = []
+        built = True
 
     async def _fake_ensure(db, **kwargs):
         calls["ensure"] = True

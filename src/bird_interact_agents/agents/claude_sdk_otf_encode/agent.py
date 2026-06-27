@@ -29,7 +29,7 @@ from bird_interact_agents.harness import (
 )
 from bird_interact_agents.model_string import native_model_id
 from bird_interact_agents.slayer_otf import ensure_db_reference
-from bird_interact_agents.slayer_otf.reference_build import _MARKER, _SETUP_USAGE
+from bird_interact_agents.slayer_otf.reference_build import _SETUP_USAGE
 from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -156,19 +156,14 @@ class ClaudeSDKOtfEncodeAgent:
                 reasoning_effort=self.reasoning_effort,
             )
             db_root_resolved = Path(data_path_base).resolve()
-            reference_root = paths.slayer_models_otf_root(benchmark=benchmark)
-            # Detect build-vs-reuse BEFORE the call: reuse is presence-gated on
-            # the `_reference_fp.txt` marker. `_setup_usage.json` persists in the
-            # reference dir from the ORIGINAL build, so reporting it on a reuse
-            # would double-count tokens across tasks for the same DB — count it
-            # only on the task that actually built (Codex review).
-            built = not (reference_root / db_name / _MARKER).is_file()
             # Build (or reuse) the canonical full-KB reference — the exact call
             # `scripts/build_otf_references.py::_build_one` makes. The cloud
             # merge-back uploads `slayer_models_otf/<benchmark>/<db>` home.
             entry = await ensure_db_reference(
                 db_name,
-                reference_root=reference_root,
+                reference_root=paths.slayer_models_otf_root(
+                    benchmark=benchmark
+                ),
                 cache_root=paths.slayer_otf_cache_root(benchmark=benchmark),
                 mini_interact_root=db_root_resolved,
                 build_encoder=build_encoder,
@@ -179,9 +174,16 @@ class ClaudeSDKOtfEncodeAgent:
                 r.model_dump() if hasattr(r, "model_dump") else r
                 for r in (entry.setup_results or [])
             ]
+            # Attribute setup-encode tokens ONLY to the task that actually built
+            # the reference. `_setup_usage.json` persists in the reference dir,
+            # so reading it on a reuse (incl. the cross-process under-flock
+            # peer-reuse) would re-count the original build's tokens. The
+            # `entry.built` flag is the authoritative build-vs-reuse signal — a
+            # pre-call marker check can't see a peer that builds concurrently
+            # (Codex review).
             usage = (
                 _read_setup_usage(entry.reference_dir)
-                if built else TokenUsage().model_dump()
+                if entry.built else TokenUsage().model_dump()
             )
             return _encode_result_row(
                 instance_id=instance_id,
