@@ -29,15 +29,34 @@ _MARKER = "_benchmark_data.marker"
 GATED_GOLD_SUBDIR = "_gated_gold"
 
 
-def _is_vcs_path(rel: Path) -> bool:
-    """VCS metadata to exclude from BOTH the content hash and the upload.
+# Transient SQLite WAL sidecars created live while a `.sqlite` DB is open in
+# WAL/journal mode. They are NOT dataset content (SQLite regenerates them), and
+# crucially they are created/removed concurrently with the upload — a sidecar
+# enumerated by the dir-walk can vanish before it is read, which raised
+# `FileNotFoundError` mid-upload (and also flips the content hash run-to-run).
+_TRANSIENT_SQLITE_SUFFIXES = ("-shm", "-wal", "-journal")
 
-    A benchmark data dir can be its own git checkout (e.g. livesqlbench's
-    ``livesqlbench-base-lite-sqlite/.git/``). Including ``.git/`` would (a)
-    churn the content hash on every upstream commit — defeating the
-    upload-ONCE property — and (b) bloat the upload with repo history. The
-    actual dataset (per-DB sqlite + tasks JSONL + KB) is what matters."""
-    return ".git" in rel.parts
+
+def _is_excluded_path(rel: Path) -> bool:
+    """Files to exclude from BOTH the content hash and the upload.
+
+    1. VCS metadata: a benchmark data dir can be its own git checkout (e.g.
+       livesqlbench's ``livesqlbench-base-lite-sqlite/.git/``). Including
+       ``.git/`` would churn the content hash on every upstream commit (defeating
+       upload-ONCE) and bloat the upload with repo history.
+    2. Transient SQLite WAL sidecars (``*.sqlite-shm`` / ``-wal`` / ``-journal``):
+       regenerable, not dataset content, and created/removed live — so including
+       them caused a dir-walk-then-read race (``FileNotFoundError``) and an
+       unstable content hash.
+
+    The actual dataset (per-DB ``.sqlite`` + tasks JSONL + KB) is what matters."""
+    if ".git" in rel.parts:
+        return True
+    return any(rel.name.endswith(sfx) for sfx in _TRANSIENT_SQLITE_SUFFIXES)
+
+
+# Back-compat alias (the predicate is no longer VCS-only).
+_is_vcs_path = _is_excluded_path
 
 
 def _as_benchmark(benchmark: str | Benchmark) -> Benchmark:
@@ -51,7 +70,7 @@ def _hash_dir_into(h, root: Path, *, path_prefix: str = "") -> None:
     different source dirs are distinguished in the combined hash."""
     for f in sorted(
         (p for p in root.rglob("*")
-         if p.is_file() and not _is_vcs_path(p.relative_to(root))),
+         if p.is_file() and not _is_excluded_path(p.relative_to(root))),
         key=lambda p: p.relative_to(root).as_posix(),
     ):
         h.update((path_prefix + f.relative_to(root).as_posix()).encode())
@@ -115,14 +134,14 @@ def ensure_uploaded(
     if marker.exists():
         return prefix
     gcs.upload_dir_prefix(
-        root, prefix.rstrip("/"), client=client, exclude=_is_vcs_path,
+        root, prefix.rstrip("/"), client=client, exclude=_is_excluded_path,
     )
     if gated_gold.is_dir():
         gcs.upload_dir_prefix(
             gated_gold,
             f"{prefix.rstrip('/')}/{GATED_GOLD_SUBDIR}/{b.name}",
             client=client,
-            exclude=_is_vcs_path,
+            exclude=_is_excluded_path,
         )
     marker.upload_from_string(chash)  # marker LAST — completeness invariant
     return prefix
