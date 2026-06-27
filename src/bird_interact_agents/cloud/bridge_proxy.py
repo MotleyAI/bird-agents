@@ -30,7 +30,6 @@ from __future__ import annotations
 import contextlib
 import fcntl
 import hashlib
-import hmac
 import json
 import os
 import subprocess
@@ -147,21 +146,18 @@ def healthz_payload(target: BridgeTarget, port: int) -> dict:
 
 def identity_matches(got: object, want: dict) -> bool:
     """Is ``got`` (a /healthz payload from whatever is on the port) OUR proxy
-    for the same provider/upstream/native id? Tolerant of garbage payloads."""
+    for the same provider/upstream/native id? Tolerant of garbage payloads.
+
+    This is a cheap CORRECTNESS guard against a port collision (don't send
+    Anthropic traffic to some unrelated service), NOT a security check — the
+    proxy binds loopback only and runs on a transient, single-tenant VM, so the
+    inbound caller is trusted and the provider key never leaves the env."""
     if not isinstance(got, dict):
         return False
     return all(
         got.get(k) == want.get(k)
         for k in ("provider", "upstream", "native_id")
     )
-
-
-def key_fingerprint(key: str) -> str:
-    """Non-secret fingerprint of a provider key, exposed on /healthz so a later
-    actor can tell whether a reused VM-lifetime proxy holds the SAME key. A hash
-    prefix — never the key itself (Codex: the auth check 401s a reused proxy that
-    still carries a rotated key, so we must detect the change and restart)."""
-    return hashlib.sha256(key.encode()).hexdigest()[:16] if key else ""
 
 
 def messages_call_kwargs(
@@ -227,31 +223,16 @@ def configure_litellm_for_bridge() -> None:
     litellm.drop_params = True
 
 
-def _request_authorized(request: Request, target: BridgeTarget) -> bool:
-    """Defence-in-depth on the (loopback-bound) key-spending routes: only accept
-    a caller that presents the provider key as its bearer.
-
-    The SDK sends ``ANTHROPIC_AUTH_TOKEN`` (which ``sdk_session_env`` sets to the
-    provider key) as ``Authorization: Bearer <key>``, so a legitimate request
-    already carries it; a foreign same-host process that discovered the port via
-    ``/healthz`` does not know the key and is rejected. If the key env var is
-    somehow unset we cannot verify, and fall back to the prior loopback-only
-    posture (allow) rather than hard-failing a misconfigured run."""
-    expected = os.environ.get(target.auth_env, "")
-    if not expected:
-        return True
-    auth = request.headers.get("authorization", "")
-    token = auth[7:] if auth[:7].lower() == "bearer " else ""
-    # Compare as BYTES: hmac.compare_digest raises TypeError on a non-ASCII str,
-    # so a malformed (non-ASCII) bearer would 500 instead of cleanly 401-ing.
-    return bool(token) and hmac.compare_digest(
-        token.encode("utf-8"), expected.encode("utf-8")
-    )
-
-
 # ---------------------------------------------------------------------------
 # The FastAPI app
 # ---------------------------------------------------------------------------
+#
+# No inbound auth: the proxy binds 127.0.0.1 only and runs on a transient,
+# single-tenant, self-controlled VM, so the loopback caller is trusted. The
+# provider key lives in the proxy's env and is used to auth UPSTREAM only — it is
+# never required from (or echoed to) the caller. (We deliberately do NOT add a
+# bearer check: it bought nothing for this threat model and forced reused-proxy
+# key-rotation handling that was pure complexity.)
 
 
 def create_app(target: BridgeTarget, port: Optional[int] = None) -> FastAPI:
@@ -261,8 +242,6 @@ def create_app(target: BridgeTarget, port: Optional[int] = None) -> FastAPI:
 
     @app.post("/v1/messages")
     async def messages(request: Request):  # noqa: ANN202
-        if not _request_authorized(request, target):
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
         body = await request.json()
         api_key = os.environ.get(target.auth_env, "")
         kwargs = messages_call_kwargs(body, target, api_key=api_key)
@@ -283,19 +262,12 @@ def create_app(target: BridgeTarget, port: Optional[int] = None) -> FastAPI:
 
     @app.post("/v1/messages/count_tokens")
     async def count_tokens(request: Request):  # noqa: ANN202
-        if not _request_authorized(request, target):
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
         body = await request.json()
         return JSONResponse(count_tokens_response(body, target))
 
     @app.get("/healthz")
     async def healthz():  # noqa: ANN202
-        payload = healthz_payload(target, health_port)
-        # Non-secret key fingerprint + pid so a later actor can detect a rotated
-        # key on a reused proxy and restart it (it would otherwise 401).
-        payload["key_fp"] = key_fingerprint(os.environ.get(target.auth_env, ""))
-        payload["pid"] = os.getpid()
-        return JSONResponse(payload)
+        return JSONResponse(healthz_payload(target, health_port))
 
     return app
 
@@ -435,80 +407,25 @@ def ensure_bridge_proxy_for_actor(model: str, cfg: dict) -> str:
     url = f"http://{SERVE_HOST}:{port}"
     spec = provider_registry.get_provider(model)
     want = healthz_payload(target, port)
-    my_key_fp = key_fingerprint(os.environ.get(spec.auth_env, ""))
     with _vm_lock(port):
         ident = _probe_identity(port)
         if ident is not None:
+            # A healthy proxy with OUR identity (same provider/upstream/native id)
+            # is reused — concurrent actors on one VM share it, and the key is the
+            # same across a run, so its upstream auth is still valid. A DIFFERENT
+            # service on the port is a port collision we refuse (never replace
+            # something we didn't start).
             if not identity_matches(ident, want):
                 raise BridgeProxyError(
                     f"loopback port {port} is occupied by a foreign service "
-                    f"(identity={ident!r}); refusing to replace it. Set "
-                    f"{spec.base_url_env} or free the port."
+                    f"(identity={ident!r}); refusing to replace it. Free the "
+                    f"port or set {spec.base_url_env}."
                 )
-            live_fp = ident.get("key_fp")
-            if live_fp == my_key_fp:
-                # Healthy, OURS-or-shared, SAME key — reuse. (Equality also
-                # covers the both-empty case; a present-vs-missing fp never
-                # matches, so a key we can't verify is NOT silently reused.)
-                pass
-            else:
-                # Same target but a different / unverifiable key: our auth check
-                # would 401 against it. We may ONLY replace it if it is our own
-                # child (a pid we tracked in _STARTED_PROCS) — we never SIGTERM
-                # an arbitrary pid reported by the unauthenticated /healthz, so a
-                # foreign / cross-process proxy is REFUSED, not killed (Codex
-                # HIGH: the prior os.kill(pid) path was a local-DoS regression).
-                own_child = _find_own_child(ident.get("pid"))
-                if own_child is None:
-                    raise BridgeProxyError(
-                        f"loopback port {port} holds a same-target proxy with a "
-                        f"different/unverifiable key that this process did not "
-                        f"start; refusing to kill an unverified process. Free "
-                        f"the port (or kill that proxy) and retry, or set "
-                        f"{spec.base_url_env}."
-                    )
-                _replace_stale_proxy(own_child, port)
-                _start_proxy(target, port)
         else:
             _start_proxy(target, port)
         marker_path(port).write_text(json.dumps(want))
     os.environ[spec.base_url_env] = url
     return url
-
-
-def _find_own_child(pid: "int | None"):
-    """The tracked ``Popen`` for ``pid`` if WE started it, else None."""
-    if pid is None:
-        return None
-    return next((p for p in _STARTED_PROCS if p.pid == int(pid)), None)
-
-
-def _replace_stale_proxy(proc, port: int) -> None:
-    """Reap OUR own stale-key child ``proc`` and wait for its port to free so a
-    fresh ``_start_proxy`` can bind it. Caller guarantees ``proc`` is in
-    ``_STARTED_PROCS`` (never an unverified foreign pid). Raises
-    ``BridgeProxyError`` if the port does not actually release."""
-    try:
-        if proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=5)
-    except Exception:
-        pass
-    with contextlib.suppress(ValueError):
-        _STARTED_PROCS.remove(proc)
-    deadline = time.monotonic() + 10.0
-    while time.monotonic() < deadline:
-        if _probe_identity(port) is None:
-            return
-        time.sleep(0.2)
-    raise BridgeProxyError(
-        f"stale bridge proxy on {SERVE_HOST}:{port} did not release the port "
-        f"after termination; cannot rebind."
-    )
 
 
 def terminate_local_proxies() -> None:
