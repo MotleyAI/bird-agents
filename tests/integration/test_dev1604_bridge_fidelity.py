@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import subprocess
 
 import pytest
 
@@ -47,14 +48,27 @@ _PROVIDERS = [
 ]
 
 
+def _kill_leftover_proxies():
+    """Free the fixed loopback port from any proxy left by a PRIOR gate run /
+    commit. In production each VM is fresh so this never happens, but a local
+    re-run would otherwise hit a non-child proxy on the deterministic port and
+    (correctly) refuse it — so the test owns the port by clearing it first."""
+    subprocess.run(
+        ["pkill", "-f", "python -m bird_interact_agents.cloud.bridge_proxy"],
+        check=False,
+    )
+
+
 @pytest.fixture(autouse=True)
 def _clean_ambient_creds(monkeypatch):
     # A registry run must not silently authenticate against Anthropic.
     for var in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
                 "ANTHROPIC_AUTH_TOKEN", "BIRD_INTERACT_SUBSCRIPTION_AUTH"):
         monkeypatch.delenv(var, raising=False)
+    _kill_leftover_proxies()
     yield
     bridge_proxy.terminate_local_proxies()
+    _kill_leftover_proxies()
 
 
 @pytest.mark.parametrize("model,no_subscription_auth,key_env", _PROVIDERS)

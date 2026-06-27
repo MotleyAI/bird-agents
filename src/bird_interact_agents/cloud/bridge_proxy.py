@@ -33,7 +33,6 @@ import hashlib
 import hmac
 import json
 import os
-import signal
 import subprocess
 import sys
 import tempfile
@@ -447,12 +446,29 @@ def ensure_bridge_proxy_for_actor(model: str, cfg: dict) -> str:
                     f"{spec.base_url_env} or free the port."
                 )
             live_fp = ident.get("key_fp")
-            if live_fp and my_key_fp and live_fp != my_key_fp:
-                # OURS but a different key (rotation / new secret on a reused VM):
-                # the auth check would 401 our requests. Restart with our key.
-                _replace_stale_proxy(ident.get("pid"), port)
+            if live_fp == my_key_fp:
+                # Healthy, OURS-or-shared, SAME key — reuse. (Equality also
+                # covers the both-empty case; a present-vs-missing fp never
+                # matches, so a key we can't verify is NOT silently reused.)
+                pass
+            else:
+                # Same target but a different / unverifiable key: our auth check
+                # would 401 against it. We may ONLY replace it if it is our own
+                # child (a pid we tracked in _STARTED_PROCS) — we never SIGTERM
+                # an arbitrary pid reported by the unauthenticated /healthz, so a
+                # foreign / cross-process proxy is REFUSED, not killed (Codex
+                # HIGH: the prior os.kill(pid) path was a local-DoS regression).
+                own_child = _find_own_child(ident.get("pid"))
+                if own_child is None:
+                    raise BridgeProxyError(
+                        f"loopback port {port} holds a same-target proxy with a "
+                        f"different/unverifiable key that this process did not "
+                        f"start; refusing to kill an unverified process. Free "
+                        f"the port (or kill that proxy) and retry, or set "
+                        f"{spec.base_url_env}."
+                    )
+                _replace_stale_proxy(own_child, port)
                 _start_proxy(target, port)
-            # else: healthy, OURS, same key — reuse.
         else:
             _start_proxy(target, port)
         marker_path(port).write_text(json.dumps(want))
@@ -460,41 +476,39 @@ def ensure_bridge_proxy_for_actor(model: str, cfg: dict) -> str:
     return url
 
 
-def _replace_stale_proxy(pid: "int | None", port: int) -> None:
-    """Terminate a same-target proxy that carries a different key, then wait for
-    its port to free so a fresh ``_start_proxy`` can bind it.
+def _find_own_child(pid: "int | None"):
+    """The tracked ``Popen`` for ``pid`` if WE started it, else None."""
+    if pid is None:
+        return None
+    return next((p for p in _STARTED_PROCS if p.pid == int(pid)), None)
 
-    If the stale proxy is OUR own child (its pid is tracked in
-    ``_STARTED_PROCS``), terminate/kill/wait/remove the handle so it is reaped —
-    a bare ``os.kill`` would leave a zombie + a stale tracked handle (Codex).
-    Fall back to ``os.kill`` only for a non-child pid (a proxy started by another
-    actor process on the same VM)."""
-    own_child = None
-    if pid is not None:
-        own_child = next(
-            (p for p in _STARTED_PROCS if p.pid == int(pid)), None
-        )
-    if own_child is not None:
-        try:
-            if own_child.poll() is None:
-                own_child.terminate()
-                try:
-                    own_child.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    own_child.kill()
-                    own_child.wait(timeout=5)
-        except Exception:
-            pass
-        with contextlib.suppress(ValueError):
-            _STARTED_PROCS.remove(own_child)
-    elif pid:
-        with contextlib.suppress(Exception):
-            os.kill(int(pid), signal.SIGTERM)
+
+def _replace_stale_proxy(proc, port: int) -> None:
+    """Reap OUR own stale-key child ``proc`` and wait for its port to free so a
+    fresh ``_start_proxy`` can bind it. Caller guarantees ``proc`` is in
+    ``_STARTED_PROCS`` (never an unverified foreign pid). Raises
+    ``BridgeProxyError`` if the port does not actually release."""
+    try:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+    except Exception:
+        pass
+    with contextlib.suppress(ValueError):
+        _STARTED_PROCS.remove(proc)
     deadline = time.monotonic() + 10.0
     while time.monotonic() < deadline:
         if _probe_identity(port) is None:
             return
         time.sleep(0.2)
+    raise BridgeProxyError(
+        f"stale bridge proxy on {SERVE_HOST}:{port} did not release the port "
+        f"after termination; cannot rebind."
+    )
 
 
 def terminate_local_proxies() -> None:

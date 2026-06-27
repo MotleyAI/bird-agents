@@ -343,10 +343,14 @@ def test_ensure_reuses_identity_matching_proxy(monkeypatch, isolated_runtime):
     monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
     target = bp.resolve_bridge_target(_DW_MODEL, True)
     port = bp.deterministic_port(target)
-    # A healthy proxy with OUR identity is already on the port.
-    monkeypatch.setattr(
-        bp, "_probe_identity", lambda p: bp.healthz_payload(target, port)
-    )
+
+    # A healthy proxy with OUR identity AND our key fingerprint is on the port.
+    def _ident(p):
+        payload = bp.healthz_payload(target, port)
+        payload["key_fp"] = bp.key_fingerprint("dw-key-1")
+        return payload
+
+    monkeypatch.setattr(bp, "_probe_identity", _ident)
     spawned = []
     monkeypatch.setattr(
         bp, "_start_proxy", lambda t, p: spawned.append(p)
@@ -381,69 +385,120 @@ def test_key_fingerprint_is_nonsecret_stable(monkeypatch):
     assert bp.key_fingerprint("") == ""
 
 
-def test_ensure_restarts_proxy_on_rotated_key(monkeypatch, isolated_runtime):
-    """A reused proxy holding a DIFFERENT key (rotation / new secret on a reused
-    VM) would 401 our auth check — detect it via the key fingerprint and restart
-    (Codex). Same target, different key_fp → replace + start."""
+def test_ensure_restarts_own_child_on_rotated_key(monkeypatch, isolated_runtime):
+    """A reused proxy that is OUR own child but holds a DIFFERENT key (rotation)
+    would 401 our auth check — detect it via the key fingerprint and restart
+    (Codex r3). Same target, different key_fp, pid IS our child → replace +
+    start."""
     monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-NEW")
     target = bp.resolve_bridge_target(_DW_MODEL, True)
     port = bp.deterministic_port(target)
     stale = bp.healthz_payload(target, port)
     stale["key_fp"] = bp.key_fingerprint("dw-key-OLD")
-    stale["pid"] = 999999
+    stale["pid"] = 4242
+
+    class _Child:
+        pid = 4242
+    monkeypatch.setattr(bp, "_STARTED_PROCS", [_Child()])
     monkeypatch.setattr(bp, "_probe_identity", lambda p: stale)
     replaced, started = [], []
     monkeypatch.setattr(
-        bp, "_replace_stale_proxy", lambda pid, p: replaced.append((pid, p))
+        bp, "_replace_stale_proxy", lambda proc, p: replaced.append((proc.pid, p))
     )
     monkeypatch.setattr(bp, "_start_proxy", lambda t, p: started.append(p))
     bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"no_subscription_auth": True})
-    assert replaced == [(999999, port)]
+    assert replaced == [(4242, port)]
     assert started == [port]
 
 
+def test_ensure_refuses_non_child_stale_key_never_kills(monkeypatch, isolated_runtime):
+    """Codex r5 (HIGH): a same-target proxy with a different/unverifiable key that
+    is NOT our child must be REFUSED — never SIGTERM an arbitrary pid taken from
+    the unauthenticated /healthz. Preserves 'never kill what we don't own'."""
+    monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-NEW")
+    target = bp.resolve_bridge_target(_DW_MODEL, True)
+    port = bp.deterministic_port(target)
+    spoof = bp.healthz_payload(target, port)
+    spoof["key_fp"] = bp.key_fingerprint("attacker-key")
+    spoof["pid"] = 13  # an arbitrary same-user pid
+    monkeypatch.setattr(bp, "_STARTED_PROCS", [])  # not our child
+    monkeypatch.setattr(bp, "_probe_identity", lambda p: spoof)
+    monkeypatch.setattr(
+        bp, "_start_proxy",
+        lambda t, p: pytest.fail("must not start over an unverified process"),
+    )
+    monkeypatch.setattr(
+        bp, "_replace_stale_proxy",
+        lambda *a, **k: pytest.fail("must not kill an unverified process"),
+    )
+    with pytest.raises(bp.BridgeProxyError, match="did not start"):
+        bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"no_subscription_auth": True})
+
+
+def test_ensure_refuses_same_target_missing_key_fp(monkeypatch, isolated_runtime):
+    """CodeRabbit r5: a same-target proxy with NO key_fp (can't verify the key
+    matches) must not be silently reused — present-vs-missing never matches, so
+    it falls to the non-child refuse path."""
+    monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
+    target = bp.resolve_bridge_target(_DW_MODEL, True)
+    port = bp.deterministic_port(target)
+    ident = bp.healthz_payload(target, port)  # no key_fp / pid set
+    monkeypatch.setattr(bp, "_STARTED_PROCS", [])
+    monkeypatch.setattr(bp, "_probe_identity", lambda p: ident)
+    monkeypatch.setattr(
+        bp, "_start_proxy", lambda t, p: pytest.fail("must not reuse/replace"),
+    )
+    with pytest.raises(bp.BridgeProxyError):
+        bp.ensure_bridge_proxy_for_actor(_DW_MODEL, {"no_subscription_auth": True})
+
+
+class _FakeProc:
+    def __init__(self, pid):
+        self.pid = pid
+        self.terminated = False
+        self.waited = False
+
+    def poll(self):
+        return 0 if self.terminated else None
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        self.waited = True
+        return 0
+
+
 def test_replace_stale_proxy_reaps_own_child(monkeypatch):
-    """When the stale proxy is OUR child (pid tracked in _STARTED_PROCS),
-    terminate/wait/remove the handle rather than a bare os.kill (Codex)."""
-    class _FakeProc:
-        def __init__(self, pid):
-            self.pid = pid
-            self.terminated = False
-            self.waited = False
-
-        def poll(self):
-            return 0 if self.terminated else None
-
-        def terminate(self):
-            self.terminated = True
-
-        def wait(self, timeout=None):
-            self.waited = True
-            return 0
-
+    """`_replace_stale_proxy` reaps the OWN-child Popen (terminate/wait/remove)
+    and never touches os.kill — the caller guarantees it's our child (Codex)."""
     proc = _FakeProc(4242)
     monkeypatch.setattr(bp, "_STARTED_PROCS", [proc])
-    # os.kill must NOT be used for an own child.
     monkeypatch.setattr(
         bp.os, "kill",
         lambda *a, **k: pytest.fail("own child must be reaped, not os.kill'd"),
     )
-    # Port frees immediately after termination.
-    monkeypatch.setattr(bp, "_probe_identity", lambda p: None)
-    bp._replace_stale_proxy(4242, 8800)
+    monkeypatch.setattr(bp, "_probe_identity", lambda p: None)  # port frees
+    bp._replace_stale_proxy(proc, 8800)
     assert proc.terminated and proc.waited
     assert bp._STARTED_PROCS == []  # handle removed → reaped
 
 
-def test_replace_stale_proxy_oskills_foreign_pid(monkeypatch):
-    """A non-child pid (proxy started by another actor process) is SIGTERM'd via
-    os.kill — we have no Popen handle for it."""
-    killed = []
-    monkeypatch.setattr(bp, "_STARTED_PROCS", [])
-    monkeypatch.setattr(bp.os, "kill", lambda pid, sig: killed.append((pid, sig)))
-    monkeypatch.setattr(bp, "_probe_identity", lambda p: None)
-    bp._replace_stale_proxy(7777, 8800)
-    assert killed == [(7777, bp.signal.SIGTERM)]
+def test_replace_stale_proxy_raises_if_port_not_freed(monkeypatch):
+    """CodeRabbit r5: if the killed proxy never releases the port, raise instead
+    of returning silently (a later _start_proxy would fail to bind)."""
+    proc = _FakeProc(4242)
+    monkeypatch.setattr(bp, "_STARTED_PROCS", [proc])
+    # Port stays occupied forever.
+    monkeypatch.setattr(
+        bp, "_probe_identity", lambda p: {"provider": "x"}
+    )
+    # Make the wait loop terminate fast by faking the clock budget.
+    monkeypatch.setattr(bp.time, "sleep", lambda s: None)
+    ticks = iter([0.0, 0.5, 11.0])  # start, one poll, then past the 10s deadline
+    monkeypatch.setattr(bp.time, "monotonic", lambda: next(ticks))
+    with pytest.raises(bp.BridgeProxyError, match="did not release the port"):
+        bp._replace_stale_proxy(proc, 8800)
 
 
 def test_ensure_reuses_when_key_fp_matches(monkeypatch, isolated_runtime):
