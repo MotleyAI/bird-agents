@@ -402,6 +402,50 @@ def test_ensure_restarts_proxy_on_rotated_key(monkeypatch, isolated_runtime):
     assert started == [port]
 
 
+def test_replace_stale_proxy_reaps_own_child(monkeypatch):
+    """When the stale proxy is OUR child (pid tracked in _STARTED_PROCS),
+    terminate/wait/remove the handle rather than a bare os.kill (Codex)."""
+    class _FakeProc:
+        def __init__(self, pid):
+            self.pid = pid
+            self.terminated = False
+            self.waited = False
+
+        def poll(self):
+            return 0 if self.terminated else None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            self.waited = True
+            return 0
+
+    proc = _FakeProc(4242)
+    monkeypatch.setattr(bp, "_STARTED_PROCS", [proc])
+    # os.kill must NOT be used for an own child.
+    monkeypatch.setattr(
+        bp.os, "kill",
+        lambda *a, **k: pytest.fail("own child must be reaped, not os.kill'd"),
+    )
+    # Port frees immediately after termination.
+    monkeypatch.setattr(bp, "_probe_identity", lambda p: None)
+    bp._replace_stale_proxy(4242, 8800)
+    assert proc.terminated and proc.waited
+    assert bp._STARTED_PROCS == []  # handle removed → reaped
+
+
+def test_replace_stale_proxy_oskills_foreign_pid(monkeypatch):
+    """A non-child pid (proxy started by another actor process) is SIGTERM'd via
+    os.kill — we have no Popen handle for it."""
+    killed = []
+    monkeypatch.setattr(bp, "_STARTED_PROCS", [])
+    monkeypatch.setattr(bp.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    monkeypatch.setattr(bp, "_probe_identity", lambda p: None)
+    bp._replace_stale_proxy(7777, 8800)
+    assert killed == [(7777, bp.signal.SIGTERM)]
+
+
 def test_ensure_reuses_when_key_fp_matches(monkeypatch, isolated_runtime):
     monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
     target = bp.resolve_bridge_target(_DW_MODEL, True)

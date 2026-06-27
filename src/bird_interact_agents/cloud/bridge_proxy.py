@@ -460,10 +460,34 @@ def ensure_bridge_proxy_for_actor(model: str, cfg: dict) -> str:
     return url
 
 
-def _replace_stale_proxy(pid: "int | None", port: int) -> None:  # pragma: no cover
+def _replace_stale_proxy(pid: "int | None", port: int) -> None:
     """Terminate a same-target proxy that carries a different key, then wait for
-    its port to free so a fresh ``_start_proxy`` can bind it."""
-    if pid:
+    its port to free so a fresh ``_start_proxy`` can bind it.
+
+    If the stale proxy is OUR own child (its pid is tracked in
+    ``_STARTED_PROCS``), terminate/kill/wait/remove the handle so it is reaped —
+    a bare ``os.kill`` would leave a zombie + a stale tracked handle (Codex).
+    Fall back to ``os.kill`` only for a non-child pid (a proxy started by another
+    actor process on the same VM)."""
+    own_child = None
+    if pid is not None:
+        own_child = next(
+            (p for p in _STARTED_PROCS if p.pid == int(pid)), None
+        )
+    if own_child is not None:
+        try:
+            if own_child.poll() is None:
+                own_child.terminate()
+                try:
+                    own_child.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    own_child.kill()
+                    own_child.wait(timeout=5)
+        except Exception:
+            pass
+        with contextlib.suppress(ValueError):
+            _STARTED_PROCS.remove(own_child)
+    elif pid:
         with contextlib.suppress(Exception):
             os.kill(int(pid), signal.SIGTERM)
     deadline = time.monotonic() + 10.0
