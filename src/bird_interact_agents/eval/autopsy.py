@@ -114,16 +114,27 @@ def _build_anthropic_client(model: str = "") -> "anthropic.AsyncAnthropic":
     ``moonshot/kimi-k2.7-code``) route to the provider's
     Anthropic-compatible endpoint instead — ambient Anthropic credentials
     are deliberately ignored for those.
+
+    DEV-1604: this covers BOTH anthropic-format providers (Moonshot, z.ai
+    coding-plan) AND openai-format providers reached through the bridge
+    (Doubleword, z.ai per-token). ``run_autopsy`` runs inline in the actor
+    after a miss, so ``resolve_base_url(spec)`` returns the loopback bridge URL
+    the actor already set on ``base_url_env`` for a bridged provider (and its
+    fail-fast guard raises clearly if the bridge wasn't set). Gating on
+    ``api_format == "anthropic"`` used to drop the openai-format providers onto
+    the ambient-Anthropic path — which is stripped on a registry run, so a
+    Doubleword autopsy lost all autopsy capability.
     """
     spec = get_provider(model)
-    if spec is not None and spec.api_format == "anthropic":
+    if spec is not None:
         # Codex r5: registry Anthropic-compatible endpoints (Moonshot's
         # `/anthropic` base) expect Bearer auth, not the legacy
         # `x-api-key` header. The Anthropic SDK routes `api_key=` to
         # `x-api-key` and `auth_token=` to the Bearer header. The main
         # SDK agent already uses ANTHROPIC_AUTH_TOKEN for the same
         # reason via `sdk_session_env`; autopsy must match or the
-        # request 401s.
+        # request 401s. (Bridged providers point at the loopback proxy,
+        # which ignores the inbound bearer and upstream-auths itself.)
         # Pass api_key="" (NOT None) so the Anthropic SDK does NOT
         # silently fall back to the ambient ANTHROPIC_API_KEY env var
         # — otherwise a developer running the autopsy locally with

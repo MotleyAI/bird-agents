@@ -146,11 +146,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "(ANTHROPIC_API_KEY). No default for Anthropic models — an "
             "explicit choice is required to prevent a silent fall-back to "
             "the API-key path burning credits when the operator meant to "
-            "hit the subscription. DEV-1555: subscription auth is "
-            "Anthropic-only — registry open-weight models (moonshot/, zai/, ...) "
-            "must not use `--subscription-auth`; omit the flag or pass "
-            "`--no-subscription-auth` so the provider key env var is "
-            "used instead."
+            "hit the subscription. DEV-1604: for z.ai the flag is recycled as "
+            "the ENDPOINT selector (still ZAI_API_KEY, NOT Claude.ai OAuth): "
+            "`--subscription-auth` = direct GLM-Coding-Plan Anthropic endpoint; "
+            "default / `--no-subscription-auth` = per-token OpenAI endpoint via "
+            "the bridge proxy (escapes the [1313] throttle). Doubleword is "
+            "OpenAI-only (always bridged; `--subscription-auth` rejected); "
+            "Moonshot is provider-key-only (`--subscription-auth` rejected)."
         ),
     )
 
@@ -179,9 +181,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--subscription-auth", action=argparse.BooleanOptionalAction,
         required=True, dest="subscription_auth",
         help=(
-            "REQUIRED. Same shape as `submit`: `--subscription-auth` requires "
-            "a valid CLAUDE_CODE_OAUTH_TOKEN in the env, "
-            "`--no-subscription-auth` uses ANTHROPIC_API_KEY. No default."
+            "REQUIRED. Same shape as `submit`. For an ANTHROPIC agent model: "
+            "`--subscription-auth` requires a valid CLAUDE_CODE_OAUTH_TOKEN, "
+            "`--no-subscription-auth` uses ANTHROPIC_API_KEY. DEV-1604: the "
+            "annotator is provider-aware, so for a z.ai agent model the flag is "
+            "the ENDPOINT selector (still ZAI_API_KEY, NOT OAuth): "
+            "`--subscription-auth` = direct coding-plan, default / "
+            "`--no-subscription-auth` = per-token bridge. Doubleword is "
+            "OpenAI-only (always bridged; `--subscription-auth` rejected). "
+            "No default."
         ),
     )
 
@@ -220,10 +228,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         # agno, smolagents etc. legitimately use non-Anthropic agent
         # models (e.g. `openai/gpt-4o`) that `is_supported_agent_model`
         # would otherwise reject before dispatch.
+        # DEV-1604: the annotator is now provider-aware too, so the registry /
+        # subscription-endpoint handling applies to BOTH a claude_sdk submit AND
+        # an annotate run (which is always the claude_sdk-based annotator).
         if (
-            ns.subcommand == "submit"
-            and ns.framework.startswith("claude_sdk")
-        ):
+            ns.subcommand == "submit" and ns.framework.startswith("claude_sdk")
+        ) or ns.subcommand == "annotate":
             if not provider_registry.is_supported_agent_model(ns.agent_model):
                 known = ", ".join(["anthropic", *sorted(provider_registry.REGISTRY)])
                 p.error(
@@ -232,16 +242,29 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 )
             _spec = provider_registry.get_provider(ns.agent_model)
             if _spec is not None:
-                # DEV-1579: the v0 ``claude_sdk`` aggregator now carries the
-                # provider-aware hermetic session env, so registry open-weight
-                # models run on v0 too — no parse-time rejection anymore.
-                if ns.subscription_auth:
-                    p.error(
-                        f"--subscription-auth is Anthropic-only; {_spec.key} "
-                        f"models authenticate via {_spec.auth_env}. Omit the "
-                        "flag or pass --no-subscription-auth."
+                # DEV-1604: z.ai recycles --subscription-auth as its ENDPOINT
+                # selector, NOT the Claude.ai OAuth path: --subscription-auth =
+                # direct coding-plan Anthropic endpoint (no bridge); default /
+                # --no-subscription-auth = per-token OpenAI bridge. Both auth with
+                # ZAI_API_KEY. So leave ns.subscription_auth as parsed (it drives
+                # no_subscription_auth below); the OAuth-token validation is gated
+                # on non-registry so it never fires for z.ai.
+                if _spec.key != "zai" and ns.subscription_auth:
+                    # OpenAI-only (Doubleword: no Anthropic endpoint) and
+                    # anthropic-format-with-key (Moonshot: no subscription) reject
+                    # --subscription-auth.
+                    _why = (
+                        "OpenAI-only — no Anthropic endpoint"
+                        if _spec.api_format == "openai"
+                        else f"authenticates via {_spec.auth_env}"
                     )
-                ns.subscription_auth = False
+                    p.error(
+                        f"--subscription-auth is not valid for {_spec.key} agent "
+                        f"models ({_why}). Omit the flag or pass "
+                        "--no-subscription-auth."
+                    )
+                if _spec.key != "zai":
+                    ns.subscription_auth = False
             elif ns.subscription_auth is None:
                 p.error(
                     "an explicit --subscription-auth / --no-subscription-auth "
@@ -251,7 +274,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 )
 
         ns.no_subscription_auth = not ns.subscription_auth
-        if ns.subscription_auth:
+        # OAuth-token validation is Anthropic-only: registry models (incl. a z.ai
+        # --subscription-auth coding-plan run) authenticate via their provider key.
+        if ns.subscription_auth and provider_registry.get_provider(ns.agent_model) is None:
             token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
             if not token:
                 p.error(

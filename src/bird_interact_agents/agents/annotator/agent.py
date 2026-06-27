@@ -46,6 +46,7 @@ from bird_interact_agents.harness import (
     materialize_task_db,
 )
 from bird_interact_agents.model_string import is_anthropic, native_model_id
+from bird_interact_agents.provider_registry import get_provider
 from bird_interact_agents.agents.annotator.prompts import build_system_prompt
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
     hermetic_claude_sdk_session,
@@ -585,10 +586,14 @@ async def run_task(
     db_name = task_data["selected_database"]
     t0 = time.monotonic()
 
-    if not is_anthropic(model):
+    # DEV-1604: the annotator is provider-aware — an Anthropic model OR a
+    # registry open-weight model (Doubleword / z.ai per-token, run through the
+    # bridge) is allowed. A non-Anthropic NON-registry model has no claude_sdk
+    # session and is rejected.
+    if not is_anthropic(model) and get_provider(model) is None:
         msg = (
-            f"annotator agent requires an Anthropic model; got {model!r}. "
-            "Use an anthropic/* model string."
+            f"annotator agent requires an Anthropic or registry open-weight "
+            f"model; got {model!r}."
         )
         logger.warning("[%s] %s", instance_id, msg)
         return AnnotatorResult(
@@ -625,8 +630,12 @@ async def run_task(
     cap = max_turns or MAX_MODEL_TURNS
 
     # DEV-1579: build the agent's options from the policy-owned env kwargs
-    # (telemetry-disable + hermetic CLAUDE_CONFIG_DIR). The annotator is
-    # Anthropic-only, so the session is provider_aware=False.
+    # (telemetry-disable + hermetic CLAUDE_CONFIG_DIR).
+    # DEV-1604: provider_aware=True so the annotator can run on a registry
+    # open-weight model (e.g. doubleword/* or zai/* per-token) through the
+    # Anthropic⇄OpenAI bridge — it inherits ANTHROPIC_BASE_URL from the registry
+    # session env exactly like the OTF agents. For an Anthropic model this is a
+    # no-op (get_provider is None ⇒ no registry layer, same auth path as before).
     def _build_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
         return ClaudeAgentOptions(
             **_opt_kwargs,
@@ -646,7 +655,7 @@ async def run_task(
             model,
             mcp_servers=mcp_servers,
             build_options=_build_options,
-            provider_aware=False,
+            provider_aware=True,
         ) as client:
             await client.query(task_data["amb_user_query"])
             async for msg in client.receive_response():

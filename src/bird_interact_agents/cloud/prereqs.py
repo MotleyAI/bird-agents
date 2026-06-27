@@ -250,16 +250,19 @@ def check_api_keys(
     *, agent_model: str, user_sim_model: str, query_mode: str = "raw",
     framework: str = "", no_subscription_auth: bool = False,
 ) -> None:
-    # DEV-1602 (Codex): the `annotator` is Anthropic-only (provider_aware=False)
-    # at runtime, so ANY non-Anthropic agent model (registry, openai/*,
-    # gemini/*, …) is unusable there. Reject it EARLY (consistently across every
-    # no_subscription_auth value) rather than letting it reach the OAuth or
-    # provider-key branches.
-    if framework == "annotator" and not agent_model.startswith("anthropic/"):
+    # DEV-1604: the annotator is now provider-aware — a registry open-weight
+    # model is allowed (it runs through the bridge). A non-Anthropic,
+    # non-registry model (openai/*, gemini/*, …) still has no claude_sdk session
+    # and is rejected; registry models take the provider-key path below.
+    if (
+        framework == "annotator"
+        and not agent_model.startswith("anthropic/")
+        and provider_registry.get_provider(agent_model) is None
+    ):
         raise PrereqError(
-            f"the annotator is Anthropic-only; got non-Anthropic agent model "
-            f"{agent_model!r}.",
-            remediation="pass an anthropic/* --agent-model for annotate.",
+            f"the annotator agent model must be anthropic/* or a registry "
+            f"open-weight provider; got {agent_model!r}.",
+            remediation="pass an anthropic/* or registry --agent-model for annotate.",
         )
     # DEV-1602 (CodeRabbit): --subscription-auth is Anthropic-ONLY. Reject a
     # claude_sdk* subscription run on a non-Anthropic, non-registry model

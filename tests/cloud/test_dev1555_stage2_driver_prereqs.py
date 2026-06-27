@@ -152,6 +152,11 @@ def test_zai_missing_provider_key_fails_fast(monkeypatch):
 
 
 def test_zai_base_url_override_forwarded_when_set(monkeypatch):
+    # DEV-1604: the operator override is forwarded only on z.ai's NON-bridge
+    # path — i.e. --subscription-auth / coding-plan (no_subscription_auth=False).
+    # On the per-token bridge path (no_subscription_auth=True) the actor owns the
+    # override (it points it at the loopback proxy), so it is suppressed; that is
+    # pinned by tests/cloud/test_dev1604_driver_bridge.
     _clear_creds_zai(monkeypatch)
     monkeypatch.setenv(
         "BIRD_ZAI_ANTHROPIC_BASE_URL", "https://other.example/anthropic",
@@ -159,7 +164,7 @@ def test_zai_base_url_override_forwarded_when_set(monkeypatch):
     result = driver.read_api_keys_from_local_env(
         _GLM, _GLM,
         query_mode="slayer", framework="claude_sdk",
-        no_subscription_auth=True, dataset="mini-interact",
+        no_subscription_auth=False, dataset="mini-interact",
     )
     assert (
         result["BIRD_ZAI_ANTHROPIC_BASE_URL"]

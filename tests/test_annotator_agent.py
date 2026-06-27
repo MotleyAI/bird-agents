@@ -182,6 +182,53 @@ async def test_run_task_happy_path_returns_valid_result(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_task_admits_registry_model(monkeypatch):
+    """DEV-1604: the annotator is provider-aware — a registry open-weight model
+    (z.ai per-token here, reached via the bridge) must NOT be rejected by the
+    agent-level admission gate; it proceeds through the provider-aware session
+    exactly like an Anthropic model. (CodeRabbit caught that flipping
+    provider_aware alone left this earlier `is_anthropic` gate blocking it.)"""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    monkeypatch.setenv("ZAI_API_KEY", "zai-stub")
+    _make_fake_sdk(
+        monkeypatch, ann_agent,
+        submit_calls=[(_valid_task_annotation_json(), "[]")],
+    )
+
+    result = await ann_agent.run_task(
+        task_data=_task_mini(),
+        data_path_base="/tmp/data",
+        benchmark="mini-interact",
+        model="zai/glm-5.2",
+        effort="medium",
+    )
+
+    # Admitted (no "requires an Anthropic/registry" rejection) and ran to a
+    # valid annotation through the registry session.
+    assert result.error is None, result.error
+    assert result.task_annotation is not None
+
+
+@pytest.mark.asyncio
+async def test_run_task_rejects_non_anthropic_non_registry_model(monkeypatch):
+    """A non-Anthropic, non-registry model (openai/*) has no claude_sdk session
+    and is still rejected at the admission gate."""
+    from bird_interact_agents.agents.annotator import agent as ann_agent
+
+    _make_fake_sdk(monkeypatch, ann_agent, submit_calls=[])
+    result = await ann_agent.run_task(
+        task_data=_task_mini(),
+        data_path_base="/tmp/data",
+        benchmark="mini-interact",
+        model="openai/gpt-4o",
+        effort="medium",
+    )
+    assert result.error is not None
+    assert "registry" in result.error or "Anthropic" in result.error
+
+
+@pytest.mark.asyncio
 async def test_run_task_happy_path_parses_audited_gold_variants(monkeypatch):
     from bird_interact_agents.agents.annotator import agent as ann_agent
 

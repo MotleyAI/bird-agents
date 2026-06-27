@@ -83,6 +83,35 @@ def test_content_hash_excludes_git_dir(tmp_path):
     assert bd.content_hash(root) != h1
 
 
+def test_content_hash_excludes_transient_sqlite_sidecars(tmp_path):
+    """Transient SQLite WAL sidecars (`-shm` / `-wal` / `-journal`) are created
+    live while a `.sqlite` DB is open. They must NOT enter the content hash —
+    else the upload-once prefix churns run-to-run depending on whether a DB
+    happened to be open during hashing."""
+    root = tmp_path / "ds"
+    _make_dataset(root)
+    h1 = bd.content_hash(root)
+    (root / "alien" / "alien.sqlite-shm").write_bytes(b"\x00\x01")
+    (root / "alien" / "alien.sqlite-wal").write_bytes(b"\x02\x03")
+    (root / "gaming").mkdir(exist_ok=True)
+    (root / "gaming" / "gaming.sqlite-journal").write_bytes(b"\x04")
+    assert bd.content_hash(root) == h1  # sidecars ignored
+    # A real `.sqlite` change still flips it.
+    (root / "alien" / "alien.sqlite").write_bytes(b"CHANGED")
+    assert bd.content_hash(root) != h1
+
+
+def test_exclude_predicate_drops_sidecars_and_git(tmp_path):
+    from pathlib import Path as _P
+    assert bd._is_excluded_path(_P("alien/alien.sqlite-shm")) is True
+    assert bd._is_excluded_path(_P("alien/alien.sqlite-wal")) is True
+    assert bd._is_excluded_path(_P("gaming/gaming.sqlite-journal")) is True
+    assert bd._is_excluded_path(_P(".git/config")) is True
+    # Real dataset files are kept.
+    assert bd._is_excluded_path(_P("alien/alien.sqlite")) is False
+    assert bd._is_excluded_path(_P("mini_interact.jsonl")) is False
+
+
 def _no_gated_gold(tmp_path):
     """Return a lambda that monkeypatches `gated_gold_root` to a non-existent
     path so upload tests are isolated from any real gated gold on disk."""

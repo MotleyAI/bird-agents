@@ -29,6 +29,9 @@ from typing import Any, Callable, Iterable, Iterator
 
 from bird_interact_agents import paths, provider_registry
 from bird_interact_agents.benchmark import get_benchmark
+# DEV-1604: imported by NAME (not module-qualified) so both the bridge call and
+# its test monkeypatch resolve to `ray_app.ensure_bridge_proxy_for_actor`.
+from bird_interact_agents.cloud.bridge_proxy import ensure_bridge_proxy_for_actor
 from bird_interact_agents.cloud import benchmark_data as _benchmark_data
 from bird_interact_agents.cloud import gcs as _gcs
 from bird_interact_agents.cloud import upload_back as _upload_back
@@ -1039,6 +1042,9 @@ class _LocalActor:
             run_id, cfg, client=self.gcs_client,
         )
         self.uploaded_dbs: set[str] = set()
+        # DEV-1604: bring up the Anthropic⇄OpenAI bridge proxy (Doubleword / z.ai
+        # per-token) and set the base-url override BEFORE the runner is built.
+        _maybe_ensure_bridge(cfg)
         # CR#14: cache the framework runner across tasks for raw mode.
         # Slayer mode keeps per-task reconstruction because the storage
         # root rotates per task (per §4#5 isolation).
@@ -1055,6 +1061,31 @@ class _LocalActor:
             uploaded_dbs=self.uploaded_dbs,
             initial_seed_fp_by_db=self.initial_seed_fp_by_db,
         )
+
+
+def _maybe_ensure_bridge(cfg: dict[str, Any]) -> None:
+    """DEV-1604: if the agent provider needs the Anthropic⇄OpenAI bridge
+    (Doubleword always; z.ai per-token), bring up the per-VM proxy and point
+    ``ANTHROPIC_BASE_URL``'s override env var at it.
+
+    The single seam both ``_LocalActor`` and the real Ray ``WorkerActor`` call
+    BEFORE building their cached runner — the SDK subprocess inherits the
+    override at option-build time, so the proxy must exist first. Keys on the
+    recycled ``no_subscription_auth`` flag (default True): z.ai per-token /
+    Doubleword bridge; z.ai ``--subscription-auth`` keeps its direct coding-plan
+    endpoint.
+
+    The bridge is a ``claude_sdk``-specific concern (only the SDK speaks
+    Anthropic Messages). Gate on the framework so a non-SDK run (e.g.
+    ``pydantic_ai`` against a ``doubleword/*`` model, which litellm reaches
+    directly) does NOT start a useless proxy or mutate the base-url override.
+    The annotator counts — it runs the claude_sdk session."""
+    framework = str(cfg.get("framework") or "")
+    is_sdk = framework.startswith("claude_sdk") or framework == "annotator"
+    agent_model = cfg.get("agent_model") or ""
+    no_sub = cfg.get("no_subscription_auth", True)
+    if is_sdk and provider_registry.agent_needs_bridge(agent_model, no_sub):
+        ensure_bridge_proxy_for_actor(agent_model, cfg)
 
 
 def _maybe_build_cached_runner(cfg: dict[str, Any]):
@@ -1114,6 +1145,10 @@ def _build_actor_class():
                 run_id, cfg, client=self.gcs_client,
             )
             self.uploaded_dbs = set()
+            # DEV-1604: mirror `_LocalActor` — ensure the bridge proxy + base-url
+            # override before the cached runner is built (secret delivery is
+            # per-actor, so this MUST run inside the actor, not at bootstrap).
+            _maybe_ensure_bridge(cfg)
             # CR#14 — cache the framework runner across tasks for raw
             # mode. `_LocalActor` does the same in its __init__; without
             # mirroring it here, the real Ray production path was paying
@@ -1319,6 +1354,7 @@ def run_pool(
     slayer_setup: str = "pre-encoded",
     pre_encoded_source: str | None = None,
     slayer_storage_root: str | None = None,
+    no_subscription_auth: bool = True,
     ray_job_id: str = "local",
     gcs_client=None,
     heartbeat_interval_s: float = 30.0,
@@ -1354,6 +1390,9 @@ def run_pool(
         "slayer_setup": slayer_setup,
         "pre_encoded_source": pre_encoded_source,
         "slayer_storage_root": slayer_storage_root,
+        # DEV-1604: drives _maybe_ensure_bridge — recycled --subscription-auth
+        # flag (True/default = z.ai per-token + Doubleword bridge).
+        "no_subscription_auth": no_subscription_auth,
         # De-bake: carry the benchmark + its GCS dataset prefix so the actor
         # can resolve the OTF roots and download the dataset per node.
         "dataset": dataset,
@@ -1743,6 +1782,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pre-encoded-models", dest="pre_encoded_source",
                    default=None, choices=("otf", "custom"))
     p.add_argument("--slayer-storage-root", default="/data/slayer_models")
+    # DEV-1604: recycled --subscription-auth flag, threaded to the actor so it
+    # can decide the z.ai endpoint (default no-subscription = per-token bridge;
+    # --subscription-auth = direct coding-plan). Doubleword auto-bridges.
+    p.add_argument("--subscription-auth", action=argparse.BooleanOptionalAction,
+                   default=False, dest="subscription_auth")
     p.add_argument("--instance-ids", required=True,
                    help="comma-separated list")
     p.add_argument(
@@ -1797,6 +1841,7 @@ def main(argv: list[str] | None = None) -> int:
         slayer_setup=args.slayer_setup,
         pre_encoded_source=args.pre_encoded_source,
         slayer_storage_root=args.slayer_storage_root,
+        no_subscription_auth=not args.subscription_auth,
         ray_job_id=args.ray_job_id,
         actor_env_vars=actor_env_vars,
     )

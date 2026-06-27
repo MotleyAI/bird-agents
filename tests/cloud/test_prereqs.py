@@ -602,25 +602,39 @@ def test_non_anthropic_non_registry_subscription_rejected(
 
 
 @pytest.mark.parametrize("no_sub", [False, True])
-@pytest.mark.parametrize("bad_model", ["moonshot/kimi-k2.7-code", "openai/gpt-4o"])
-def test_annotator_rejects_non_anthropic_model(
-    monkeypatch: pytest.MonkeyPatch, no_sub: bool, bad_model: str,
+def test_annotator_rejects_non_anthropic_non_registry_model(
+    monkeypatch: pytest.MonkeyPatch, no_sub: bool,
 ) -> None:
-    """DEV-1602 (Codex): the Anthropic-only `annotator` rejects ANY non-Anthropic
-    agent model EARLY — registry (moonshot/*) or other (openai/*), for both
-    --subscription-auth and --no-subscription-auth — rather than reaching the
-    OAuth or provider-key branch and failing late."""
+    """DEV-1604: the annotator is provider-aware, so a non-Anthropic,
+    NON-registry model (openai/*, gemini/*) — which has no claude_sdk session —
+    is still rejected early, for both --subscription-auth values."""
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
-    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
     monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
-    with pytest.raises(prereqs.PrereqError, match="Anthropic-only"):
+    with pytest.raises(prereqs.PrereqError, match=r"anthropic/\* or a registry"):
         prereqs.check_api_keys(
-            agent_model=bad_model,
+            agent_model="openai/gpt-4o",
             user_sim_model="anthropic/claude-haiku-4-5-20251001",
             framework="annotator",
             no_subscription_auth=no_sub,
         )
+
+
+@pytest.mark.parametrize("no_sub", [False, True])
+def test_annotator_accepts_registry_model(
+    monkeypatch: pytest.MonkeyPatch, no_sub: bool,
+) -> None:
+    """DEV-1604: a registry open-weight annotator model (Moonshot, z.ai,
+    Doubleword) is now accepted — it runs through the bridge / provider-key
+    path. No rejection regardless of the --subscription-auth value."""
+    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    prereqs.check_api_keys(
+        agent_model="moonshot/kimi-k2.7-code",
+        user_sim_model="",
+        framework="annotator",
+        no_subscription_auth=no_sub,
+    )
 
 
 def test_claude_sdk_oauth_slayer_still_requires_openai_key(
