@@ -29,7 +29,7 @@ from bird_interact_agents.harness import (
 )
 from bird_interact_agents.model_string import native_model_id
 from bird_interact_agents.slayer_otf import ensure_db_reference
-from bird_interact_agents.slayer_otf.reference_build import _SETUP_USAGE
+from bird_interact_agents.slayer_otf.reference_build import _MARKER, _SETUP_USAGE
 from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -76,8 +76,9 @@ def _encode_result_row(
 
 def _read_setup_usage(reference_dir: Path) -> dict:
     """Best-effort read of the encoder's ``_setup_usage.json`` from the built
-    reference dir. Present only on a fresh build; absent on a cache reuse (no
-    LLM ran → zero usage is correct)."""
+    reference dir. The caller MUST gate this on having actually built (not
+    reused) — the file persists from the original build, so reading it on a
+    reuse would re-report the original build's tokens."""
     fp = Path(reference_dir) / _SETUP_USAGE
     try:
         return TokenUsage.model_validate_json(fp.read_text()).model_dump()
@@ -122,10 +123,16 @@ class ClaudeSDKOtfEncodeAgent:
                 "claude_sdk_otf_encode supports only --query-mode slayer; "
                 f"got {query_mode!r}"
             )
-        if eval_mode != "a-interact":
+        # Mode is irrelevant to what an encode run builds (it only calls
+        # `ensure_db_reference`), but mirror the legacy encoder's accepted set
+        # so EVERY benchmark can be encoded: a-interact benchmarks
+        # (mini-interact, bird-interact-lite-exp) AND one-shot benchmarks
+        # (LiveSQLBench, whose only non-oracle mode is one-shot). Rejecting
+        # one-shot would make claude_sdk encoding of LiveSQLBench impossible.
+        if eval_mode not in ("a-interact", "one-shot"):
             raise ValueError(
-                "claude_sdk_otf_encode supports only --mode a-interact; "
-                f"got {eval_mode!r}"
+                "claude_sdk_otf_encode supports only --mode a-interact or "
+                f"--mode one-shot; got {eval_mode!r}"
             )
 
         _dataset = task_data.get("dataset")
@@ -149,14 +156,19 @@ class ClaudeSDKOtfEncodeAgent:
                 reasoning_effort=self.reasoning_effort,
             )
             db_root_resolved = Path(data_path_base).resolve()
+            reference_root = paths.slayer_models_otf_root(benchmark=benchmark)
+            # Detect build-vs-reuse BEFORE the call: reuse is presence-gated on
+            # the `_reference_fp.txt` marker. `_setup_usage.json` persists in the
+            # reference dir from the ORIGINAL build, so reporting it on a reuse
+            # would double-count tokens across tasks for the same DB — count it
+            # only on the task that actually built (Codex review).
+            built = not (reference_root / db_name / _MARKER).is_file()
             # Build (or reuse) the canonical full-KB reference — the exact call
             # `scripts/build_otf_references.py::_build_one` makes. The cloud
             # merge-back uploads `slayer_models_otf/<benchmark>/<db>` home.
             entry = await ensure_db_reference(
                 db_name,
-                reference_root=paths.slayer_models_otf_root(
-                    benchmark=benchmark
-                ),
+                reference_root=reference_root,
                 cache_root=paths.slayer_otf_cache_root(benchmark=benchmark),
                 mini_interact_root=db_root_resolved,
                 build_encoder=build_encoder,
@@ -167,7 +179,10 @@ class ClaudeSDKOtfEncodeAgent:
                 r.model_dump() if hasattr(r, "model_dump") else r
                 for r in (entry.setup_results or [])
             ]
-            usage = _read_setup_usage(entry.reference_dir)
+            usage = (
+                _read_setup_usage(entry.reference_dir)
+                if built else TokenUsage().model_dump()
+            )
             return _encode_result_row(
                 instance_id=instance_id,
                 db_name=db_name,

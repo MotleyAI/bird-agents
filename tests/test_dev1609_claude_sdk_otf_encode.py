@@ -355,6 +355,16 @@ async def test_run_task_success_telemetry_from_reference_entry(
                         lambda *a, **k: None)
     monkeypatch.setattr(agent_mod, "materialize_task_db",
                         lambda *a, **k: None)
+    # reference_root has NO pre-existing marker for alien → this task BUILT,
+    # so the build usage is reported.
+    monkeypatch.setattr(
+        agent_mod.paths, "slayer_models_otf_root",
+        lambda *, benchmark: tmp_path / "refroot",
+    )
+    monkeypatch.setattr(
+        agent_mod.paths, "slayer_otf_cache_root",
+        lambda *, benchmark: tmp_path / "cacheroot",
+    )
 
     agent = ClaudeSDKOtfEncodeAgent(model="anthropic/claude-opus-4-7")
     row = await agent.run_task(
@@ -365,6 +375,110 @@ async def test_run_task_success_telemetry_from_reference_entry(
     assert row["kb_encoded"] == [{"kb_id": 7, "status": "encoded"}]
     assert row["usage"]["prompt_tokens"] == 11
     assert row["usage"]["completion_tokens"] == 22
+
+
+@pytest.mark.asyncio
+async def test_run_task_reuse_does_not_recount_usage(monkeypatch, tmp_path):
+    """Codex review: `_setup_usage.json` persists from the original build, so a
+    REUSE (pre-existing `_reference_fp.txt` marker) must report ZERO usage —
+    not the original build's tokens — to avoid double-counting across tasks for
+    the same DB."""
+    import bird_interact_agents.agents.claude_sdk_otf_encode.agent as agent_mod
+    from bird_interact_agents.agents.claude_sdk_otf_encode import (
+        ClaudeSDKOtfEncodeAgent,
+    )
+    from bird_interact_agents.slayer_otf.reference_build import (
+        _MARKER, _SETUP_USAGE,
+    )
+    from bird_interact_agents.usage import TokenUsage
+
+    refroot = tmp_path / "refroot"
+    ref_dir = refroot / "alien"
+    ref_dir.mkdir(parents=True)
+    # Pre-existing marker → this task REUSES (does not build).
+    (ref_dir / _MARKER).write_text("fp-existing")
+    # A stale usage sidecar from the original build is present.
+    (ref_dir / _SETUP_USAGE).write_text(
+        TokenUsage(prompt_tokens=999, completion_tokens=999).model_dump_json()
+    )
+
+    class _FakeEntry:
+        reference_dir = ref_dir
+        setup_results = []
+
+    async def _fake_ensure(db, **kwargs):
+        return _FakeEntry()
+
+    monkeypatch.setattr(agent_mod, "make_claude_sdk_build_encoder",
+                        lambda **k: "ENC")
+    monkeypatch.setattr(agent_mod, "ensure_db_reference", _fake_ensure)
+    monkeypatch.setattr(agent_mod, "load_db_data_if_needed",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(agent_mod, "materialize_task_db",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(
+        agent_mod.paths, "slayer_models_otf_root",
+        lambda *, benchmark: refroot,
+    )
+    monkeypatch.setattr(
+        agent_mod.paths, "slayer_otf_cache_root",
+        lambda *, benchmark: tmp_path / "cacheroot",
+    )
+
+    agent = ClaudeSDKOtfEncodeAgent(model="anthropic/claude-opus-4-7")
+    row = await agent.run_task(
+        {"selected_database": "alien", "instance_id": "alien_2",
+         "dataset": "mini-interact", "amb_user_query": "q"},
+        str(tmp_path / "data"), 5.0, "slayer", eval_mode="a-interact",
+    )
+    assert row["usage"]["prompt_tokens"] == 0
+    assert row["usage"]["completion_tokens"] == 0
+
+
+@pytest.mark.asyncio
+async def test_run_task_accepts_one_shot_mode(monkeypatch, tmp_path):
+    """Codex review: one-shot benchmarks (LiveSQLBench, the Postgres variants
+    this issue unblocks) only support --mode one-shot. The encoder MUST accept
+    it — rejecting one-shot would make claude_sdk encoding of those impossible."""
+    import bird_interact_agents.agents.claude_sdk_otf_encode.agent as agent_mod
+    from bird_interact_agents.agents.claude_sdk_otf_encode import (
+        ClaudeSDKOtfEncodeAgent,
+    )
+
+    calls: dict = {}
+
+    class _FakeEntry:
+        reference_dir = tmp_path / "ref" / "alien"
+        setup_results = []
+
+    async def _fake_ensure(db, **kwargs):
+        calls["ensure"] = True
+        return _FakeEntry()
+
+    monkeypatch.setattr(agent_mod, "make_claude_sdk_build_encoder",
+                        lambda **k: "ENC")
+    monkeypatch.setattr(agent_mod, "ensure_db_reference", _fake_ensure)
+    monkeypatch.setattr(agent_mod, "load_db_data_if_needed",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(agent_mod, "materialize_task_db",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(
+        agent_mod.paths, "slayer_models_otf_root",
+        lambda *, benchmark: tmp_path / "refroot",
+    )
+    monkeypatch.setattr(
+        agent_mod.paths, "slayer_otf_cache_root",
+        lambda *, benchmark: tmp_path / "cacheroot",
+    )
+
+    agent = ClaudeSDKOtfEncodeAgent(model="anthropic/claude-opus-4-7")
+    row = await agent.run_task(
+        {"selected_database": "alien", "instance_id": "alien_1",
+         "dataset": "livesqlbench-base-lite-sqlite", "amb_user_query": "q"},
+        str(tmp_path / "data"), 5.0, "slayer", eval_mode="one-shot",
+    )
+    assert calls.get("ensure") is True
+    assert row["error"] is None
 
 
 @pytest.mark.asyncio
