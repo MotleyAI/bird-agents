@@ -25,6 +25,7 @@ override before launching the runner.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import dataclasses
 import json
@@ -105,6 +106,19 @@ class HermeticEnvError(RuntimeError):
     Signals that ``CLAUDE_CONFIG_DIR`` isolation broke — typically the host's
     ``~/.claude.json`` claude.ai connectors leaked into the agent's tool
     surface, making the run non-equivalent to cloud.
+    """
+
+
+class SdkSessionEnterError(RuntimeError):
+    """The SDK session did not become ready within ``enter_timeout_s``.
+
+    The bundled ``claude`` Node CLI + stdio-MCP subprocess handshake
+    (``ClaudeSDKClient.__aenter__`` followed by the ``get_mcp_status`` parity
+    probe) stalled. Nothing else in the session bounds this step — the per-call
+    query timeout only applies AFTER a successful enter — so without this the
+    cloud actor stays alive but produces no output until the VM self-delete
+    timer (the DEV-1609 maiden-cloud on-the-fly encode hang). Surfacing it as an
+    error lets the caller record a clean per-KB ``status="error"`` and move on.
     """
 
 
@@ -318,6 +332,31 @@ async def assert_hermetic_mcp_servers(client, expected: Iterable[str]) -> None:
         )
 
 
+def _maybe_timeout(timeout_s: float | None):
+    """Async CM that enforces ``timeout_s`` seconds (``asyncio.timeout``), or a
+    no-op (``nullcontext``) when ``timeout_s`` is None — preserving the exact
+    pre-existing behaviour for every call site that does not opt in."""
+    if timeout_s is None:
+        return contextlib.nullcontext()
+    return asyncio.timeout(timeout_s)
+
+
+async def _quiet_aexit(client) -> None:
+    """Best-effort ``__aexit__`` on a client that DID finish ``__aenter__``."""
+    with contextlib.suppress(Exception):
+        await client.__aexit__(None, None, None)
+
+
+async def _quiet_disconnect(client) -> None:
+    """Best-effort teardown of a client whose ``__aenter__`` never returned (so
+    ``__aexit__`` is not valid). ``ClaudeSDKClient.disconnect()`` kills any
+    half-started CLI/MCP subprocess. No-op if the client has no ``disconnect``."""
+    disconnect = getattr(client, "disconnect", None)
+    if disconnect is not None:
+        with contextlib.suppress(Exception):
+            await disconnect()
+
+
 @contextlib.asynccontextmanager
 async def hermetic_claude_sdk_session(
     model: str,
@@ -326,6 +365,7 @@ async def hermetic_claude_sdk_session(
     build_options: Callable[[dict], object],
     enter_cm_factory: Callable[[], object] | None = None,
     provider_aware: bool = True,
+    enter_timeout_s: float | None = None,
 ):
     """The single choke point every ``claude_sdk*`` agent routes through.
 
@@ -344,6 +384,13 @@ async def hermetic_claude_sdk_session(
 
     ``provider_aware=False`` for Anthropic-only agents (the annotator) so a
     stray registry model never silently gains registry behaviour.
+
+    ``enter_timeout_s`` (default None = unbounded, unchanged for existing
+    callers) bounds steps 4-5 — the ``ClaudeSDKClient.__aenter__`` handshake AND
+    the ``get_mcp_status`` parity probe, both of which can stall on an
+    unresponsive CLI. On expiry the half-started subprocess is torn down
+    (best-effort) and :class:`SdkSessionEnterError` is raised, converting a
+    silent hang into a surfaced error (DEV-1609 cloud encode).
     """
     assert_api_key_auth(model, provider_aware=provider_aware)
     config_val, config_path = hermetic_claude_config_dir()
@@ -353,22 +400,49 @@ async def hermetic_claude_sdk_session(
                 model, config_val, provider_aware=provider_aware,
             )
         )
-        async with contextlib.AsyncExitStack() as stack:
-            enter_cm = (
-                enter_cm_factory() if enter_cm_factory is not None
-                else contextlib.nullcontext()
-            )
-            with enter_cm:
-                client = await stack.enter_async_context(
-                    ClaudeSDKClient(options=options)
+        client_obj = ClaudeSDKClient(options=options)
+        entered = False
+        try:
+            async with _maybe_timeout(enter_timeout_s):
+                enter_cm = (
+                    enter_cm_factory() if enter_cm_factory is not None
+                    else contextlib.nullcontext()
                 )
-            await assert_hermetic_mcp_servers(client, mcp_servers.keys())
-            # Wrap the client so every message streamed through
-            # `receive_response()` is recorded into `client.transcript` — making
-            # per-session transcript capture an INTRINSIC property of every
-            # claude_sdk agent (no agent re-implements it). Wrap AFTER the parity
-            # assertion so it runs against the raw client.
+                with enter_cm:
+                    client = await client_obj.__aenter__()
+                    entered = True
+                # Parity probe is INSIDE the enter timeout: get_mcp_status can
+                # itself hang on an unresponsive CLI, and "becoming ready" must
+                # be bounded as a whole.
+                await assert_hermetic_mcp_servers(client, mcp_servers.keys())
+        except TimeoutError as te:
+            # The bundled CLI + stdio-MCP handshake stalled. Tear down a
+            # half-started subprocess, then surface as a clear error so the
+            # caller records a per-KB error instead of blocking until the VM
+            # self-delete timer (DEV-1609).
+            if entered:
+                await _quiet_aexit(client_obj)
+            else:
+                await _quiet_disconnect(client_obj)
+            raise SdkSessionEnterError(
+                f"claude_sdk session did not become ready within "
+                f"{enter_timeout_s}s (model={model!r}): the bundled CLI + MCP "
+                f"handshake stalled (ClaudeSDKClient.__aenter__ / "
+                f"get_mcp_status)."
+            ) from te
+        except BaseException:
+            if entered:
+                await _quiet_aexit(client_obj)
+            raise
+        # Wrap the client so every message streamed through `receive_response()`
+        # is recorded into `client.transcript` — making per-session transcript
+        # capture an INTRINSIC property of every claude_sdk agent (no agent
+        # re-implements it). Wrap AFTER the parity assertion so it runs against
+        # the raw client.
+        try:
             yield _TranscriptClient(client)
+        finally:
+            await _quiet_aexit(client_obj)
     finally:
         shutil.rmtree(config_path, ignore_errors=True)
 

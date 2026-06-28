@@ -695,3 +695,37 @@ async def test_usage_scope_setup_encoder_summed_over_cycles(tmp_path, monkeypatc
     assert rows, "usage must be recorded under scope=setup_encoder"
     total_prompt = sum(r.prompt_tokens for r in rows)
     assert total_prompt == 200  # 2 cycles summed (not just the first)
+
+
+# ---------------------------------------------------------------------------
+# DEV-1609: the build encoder bounds the SDK session enter so a stalled cloud
+# CLI/MCP handshake surfaces as a per-KB error instead of hanging forever.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_encode_forwards_session_enter_timeout(tmp_path, monkeypatch):
+    await _seed(tmp_path)
+    captured: list[dict] = []
+
+    async def _beh():
+        await _write_col(tmp_path, "c", 7)
+        await _submit(_encoded(7, ["c"]))
+
+    client = _FakeClient([{"behavior": _beh, "usage": None}])
+    _patch_session(monkeypatch, [client], captured=captured)
+
+    build_encoder = se.make_claude_sdk_build_encoder(
+        model="zai/glm-5.2", self_model_id="glm",
+    )
+    run_one = build_encoder(
+        YAMLStorage(base_dir=str(tmp_path)), tmp_path, DB, tmp_path / "_s",
+    )
+    await run_one.aopen()
+    try:
+        await run_one(7, _row(7), [])
+    finally:
+        await run_one.aclose()
+
+    assert captured, "hermetic session factory was never invoked"
+    assert captured[0]["enter_timeout_s"] == se.SESSION_ENTER_TIMEOUT_S

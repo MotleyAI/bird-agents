@@ -58,7 +58,7 @@ from bird_interact_agents.slayer_otf.kb_memory_encoder import _normalise_childre
 from bird_interact_agents.slayer_pipeline.filter_normalization import (
     normalize_tool_filters,
 )
-from bird_interact_agents.slayer_otf.timing import otf_timer
+from bird_interact_agents.slayer_otf.timing import log_otf_event, otf_timer
 from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -76,6 +76,15 @@ MAX_ENCODE_ATTEMPTS = 4
 # submit-or-defer nudge below converts most strugglers into a clean defer well
 # before this, so the cap only catches genuine hangs (DEV-1589 smoke diagnosis).
 ENCODE_ATTEMPT_TIMEOUT_S = 300.0
+
+# Backstop for the SDK session ENTER (the bundled `claude` CLI + slayer stdio
+# MCP handshake + parity probe), which the per-attempt timeout above does NOT
+# cover. A healthy enter is seconds (DEV-1561, telemetry disabled); 240s is far
+# above that yet bounds a genuine handshake hang. DEV-1609: the maiden cloud
+# on-the-fly encode stalled forever in `__aenter__` (actor alive, zero output,
+# killed only by the 2h VM self-delete timer) — this converts that into a clean
+# per-KB `status="error"`.
+SESSION_ENTER_TIMEOUT_S = 240.0
 
 # Soft turn budget for the submit-or-defer nudge (NOT the hard ``max_turns``=120
 # cap). The DEV-1589 glm-5.2 smoke showed a healthy encode needs ~10 tool calls,
@@ -335,6 +344,11 @@ async def _encode_one_kb(
     self_model_id, usage, index_rows, sessions_dir, mcp_servers, build_options,
 ) -> EncoderResult:
     started = time.monotonic()
+    # Per-KB milestone on the (already INFO-configured, cloud-visible)
+    # otf_timing logger so a healthy build shows KB-by-KB progress and a stall
+    # is localised — root logging defaults to WARNING in the cloud actor, so a
+    # bare module `logger.info` would not surface (DEV-1609 diagnosis).
+    log_otf_event("setup_encoder.kb.start", instance_id=f"{db}_kb_{kb_id}")
     ctx = {"_encoder_submission": None}
     _ctx_var.set(ctx)
 
@@ -364,6 +378,7 @@ async def _encode_one_kb(
             model,
             mcp_servers=mcp_servers,
             build_options=build_options,
+            enter_timeout_s=SESSION_ENTER_TIMEOUT_S,
             enter_cm_factory=lambda: otf_timer(
                 "setup_encoder.sdk_client_enter", instance_id=f"{db}_kb_{kb_id}",
             ),
@@ -444,6 +459,10 @@ async def _encode_one_kb(
     _append_index_row(
         index_rows, sessions_dir, kb_id, result, time.monotonic() - started,
         transcript,
+    )
+    log_otf_event(
+        "setup_encoder.kb.done", instance_id=f"{db}_kb_{kb_id}",
+        status=result.status, elapsed_s=f"{time.monotonic() - started:.3f}",
     )
     return result
 
