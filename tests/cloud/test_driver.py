@@ -1356,26 +1356,36 @@ def test_read_api_keys_non_anthropic_non_registry_subscription_rejected(monkeypa
 
 
 @pytest.mark.parametrize("no_sub", [False, True])
-@pytest.mark.parametrize("bad_model", ["moonshot/kimi-k2.7-code", "openai/gpt-4o"])
-def test_read_api_keys_annotator_rejects_non_anthropic_model(
-    monkeypatch, no_sub, bad_model,
+def test_read_api_keys_annotator_rejects_non_anthropic_non_registry(
+    monkeypatch, no_sub,
 ):
-    """DEV-1602 (Codex): the annotator is Anthropic-only (provider_aware=False)
-    at runtime, so ANY non-Anthropic agent model — registry (moonshot/*) OR
-    other (openai/*) — is rejected EARLY, consistently for both
-    --subscription-auth and --no-subscription-auth, rather than diverting to the
-    OAuth or provider-key branch and failing late."""
+    """DEV-1604: the annotator is provider-aware, so a non-Anthropic NON-registry
+    model (openai/*, gemini/*) is still rejected early (no claude_sdk session),
+    for both --subscription-auth values."""
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
-    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
     monkeypatch.setenv("OPENAI_API_KEY", _OPENAI_KEY)
     monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
-    with pytest.raises(driver.PrereqError, match="Anthropic-only"):
+    with pytest.raises(driver.PrereqError, match=r"anthropic/\* or a registry"):
         driver.read_api_keys_from_local_env(
-            bad_model,
+            "openai/gpt-4o",
             "anthropic/claude-haiku-4-5-20251001",
             framework="annotator",
             no_subscription_auth=no_sub,
         )
+
+
+@pytest.mark.parametrize("no_sub", [False, True])
+def test_read_api_keys_annotator_ships_registry_key(monkeypatch, no_sub):
+    """DEV-1604: a registry annotator model ships its provider key (annotator is
+    a claude_sdk framework) and never raw Anthropic creds."""
+    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    keys = driver.read_api_keys_from_local_env(
+        "moonshot/kimi-k2.7-code", "",
+        framework="annotator", no_subscription_auth=no_sub,
+    )
+    assert keys["MOONSHOT_API_KEY"] == "ms-key-1"
+    assert "ANTHROPIC_API_KEY" not in keys
 
 
 def test_read_api_keys_old_manifest_no_framework_legacy_path(monkeypatch):

@@ -365,8 +365,16 @@ def upload_dir_prefix(
 
     def _one(path: Path) -> None:
         rel = path.relative_to(local_dir).as_posix()
-        blob = bucket.blob(f"{base}/{rel}")
-        blob.upload_from_string(path.read_bytes())
+        try:
+            data = path.read_bytes()
+        except FileNotFoundError:
+            # The file vanished between the dir-walk and the read — e.g. a
+            # transient SQLite WAL sidecar removed when its DB closed. It is not
+            # real content; skip it rather than abort the whole upload. (The
+            # benchmark-data `exclude` already drops known sidecars; this is the
+            # belt for anything else that disappears under us.)
+            return
+        bucket.blob(f"{base}/{rel}").upload_from_string(data)
 
     workers = max(1, min(max_workers, len(files)))
     with ThreadPoolExecutor(max_workers=workers) as pool:

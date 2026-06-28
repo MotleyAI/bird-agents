@@ -267,6 +267,47 @@ def test_build_client_zai_missing_key_raises(monkeypatch):
         _build_anthropic_client(_GLM)
 
 
+# ---------------------------------------------------------------------------
+# DEV-1604: an openai-format bridged provider (Doubleword) autopsies THROUGH the
+# bridge. run_autopsy runs inline in the actor, which already set base_url_env to
+# the loopback proxy, so resolve_base_url returns it; the provider key rides on
+# auth_token (the proxy ignores it and upstream-auths itself). Gating on
+# api_format=="anthropic" previously dropped Doubleword onto the ambient-Anthropic
+# path (stripped on a registry run) → no autopsy. (Codex.)
+# ---------------------------------------------------------------------------
+
+_DW = "doubleword/zai-org/GLM-5.2-FP8"
+
+
+def test_build_client_doubleword_uses_bridge(monkeypatch):
+    from bird_interact_agents.eval.autopsy import _build_anthropic_client
+
+    monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
+    # The actor set this to the loopback proxy before autopsy runs.
+    monkeypatch.setenv(
+        "BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL", "http://127.0.0.1:8822"
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "should-not-be-used")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-x")
+
+    client = _build_anthropic_client(_DW)
+    assert str(client.base_url).rstrip("/") == "http://127.0.0.1:8822"
+    assert client.auth_token == "dw-key-1"
+    assert client.api_key == ""
+
+
+def test_build_client_doubleword_without_bridge_fails_fast(monkeypatch):
+    """No base_url override set (e.g. autopsy invoked outside the actor that
+    started the bridge): resolve_base_url's guard raises rather than silently
+    routing to Anthropic — an openai-only provider has no direct endpoint."""
+    from bird_interact_agents.eval.autopsy import _build_anthropic_client
+
+    monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
+    monkeypatch.delenv("BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL", raising=False)
+    with pytest.raises(RuntimeError, match="BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL"):
+        _build_anthropic_client(_DW)
+
+
 @pytest.mark.asyncio
 async def test_zai_autopsy_request_shape_no_thinking(monkeypatch, tmp_path):
     """GLM does not require thinking: the autopsy request for a registry

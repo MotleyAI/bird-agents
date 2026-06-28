@@ -28,6 +28,7 @@ from bird_interact_agents.cloud.ray_app import (
     HeartbeatWriter,
     _apply_actor_env_local,
     _load_secrets_file,
+    _maybe_ensure_bridge,
     _run_with_actors,
     _with_actor_env,
     download_benchmark_data,
@@ -262,6 +263,10 @@ def _build_annotator_actor_class():
             self.attempt = attempt
             self.gcs_client = default_gcs_client()
             download_benchmark_data(cfg, client=self.gcs_client)
+            # DEV-1604: bring up the Anthropic⇄OpenAI bridge if the annotator
+            # runs a registry model (Doubleword / z.ai per-token) BEFORE the
+            # first task builds the SDK session.
+            _maybe_ensure_bridge(cfg)
 
         def run_one(self, task_data: dict) -> None:
             _run_one_task(
@@ -316,6 +321,11 @@ def run_annotator_pool(
         if use_local:
             if actor_env_vars:
                 _apply_actor_env_local(actor_env_vars)
+            # DEV-1604: the sequential/local path has no AnnotatorActor, so start
+            # the bridge here (the remote actor does it in __init__) — else a
+            # doubleword/* local annotator run has no base-url override and fails
+            # before the SDK session (Codex).
+            _maybe_ensure_bridge(cfg)
             for iid in instance_ids:
                 _run_one_task(
                     task_data=task_data_by_id[iid],
@@ -372,6 +382,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--attempt", type=int, default=1,
                    help="attempt number (1-based); used in the GCS blob name")
+    # DEV-1604: recycled --subscription-auth flag (z.ai endpoint selector;
+    # default no-subscription = per-token bridge). Doubleword auto-bridges.
+    p.add_argument("--subscription-auth", action=argparse.BooleanOptionalAction,
+                   default=False, dest="subscription_auth")
     args = p.parse_args(argv)
 
     args.benchmark = get_benchmark(args.benchmark).name
@@ -399,6 +413,11 @@ def main(argv: list[str] | None = None) -> int:
         "dataset": args.benchmark,
         "benchmark_data_prefix": args.benchmark_data_prefix or "",
         "model": args.model,
+        # DEV-1604: `_maybe_ensure_bridge` reads `agent_model` + the recycled
+        # `no_subscription_auth` flag to decide the z.ai/Doubleword bridge.
+        "agent_model": args.model,
+        "framework": "annotator",
+        "no_subscription_auth": not args.subscription_auth,
         "effort": args.effort,
         "override": args.override,
     }

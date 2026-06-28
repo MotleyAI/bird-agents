@@ -297,6 +297,33 @@ def test_upload_dir_prefix_round_trip(fake_gcs_bucket, tmp_path: Path) -> None:
     assert (dest / "embeddings.db").read_bytes() == expected["embeddings.db"]
 
 
+def test_upload_dir_prefix_tolerates_file_vanishing_mid_walk(
+    fake_gcs_bucket, tmp_path: Path, monkeypatch,
+) -> None:
+    """A file enumerated by the dir-walk can disappear before it is read — e.g.
+    a transient SQLite WAL sidecar removed when its DB closes. The upload must
+    skip the vanished file, not abort the whole transfer with FileNotFoundError."""
+    client, store = fake_gcs_bucket
+    src = tmp_path / "ds"
+    src.mkdir()
+    (src / "keep.txt").write_text("keep\n")
+    vanishing = src / "db.sqlite-shm"
+    vanishing.write_bytes(b"\x00")
+
+    real_read = Path.read_bytes
+
+    def _flaky_read(self):
+        if self.name == "db.sqlite-shm":
+            raise FileNotFoundError(2, "No such file or directory", str(self))
+        return real_read(self)
+
+    monkeypatch.setattr(Path, "read_bytes", _flaky_read)
+    gcs.upload_dir_prefix(src, "runs/r/ds", client=client)
+    # The surviving file uploaded; the vanished one was skipped (no crash).
+    assert store["runs/r/ds/keep.txt"] == b"keep\n"
+    assert "runs/r/ds/db.sqlite-shm" not in store
+
+
 def test_upload_dir_prefix_preserves_nested_rel_paths(
     fake_gcs_bucket, tmp_path: Path,
 ) -> None:

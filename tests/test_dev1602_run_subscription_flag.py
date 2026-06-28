@@ -88,19 +88,22 @@ def test_subscription_on_malformed_token_errors(monkeypatch):
     assert "BIRD_INTERACT_SUBSCRIPTION_AUTH" not in os.environ
 
 
-def test_subscription_on_registry_model_errors(monkeypatch):
-    """--subscription-auth is Anthropic-only (Codex finding #3): a registry
-    model with the flag must error on the Anthropic-only rule EVEN with a valid
-    OAuth token present — proving the registry check fires before (and
-    independent of) token validation."""
+def test_subscription_on_registry_model_skips_oauth_machinery(monkeypatch):
+    """DEV-1604: ``_apply_subscription_auth_env`` is the Claude.ai OAuth wiring,
+    which is Anthropic-ONLY. For ANY registry model it early-returns — it never
+    sets ``BIRD_INTERACT_SUBSCRIPTION_AUTH`` and never errors here (the
+    provider-specific meaning of ``--subscription-auth`` — z.ai endpoint select,
+    Moonshot/Doubleword rejection — is handled by ``_maybe_start_bridge_proxy``).
+    A registry --subscription-auth run must NOT acquire the OAuth signal even
+    with a valid token present."""
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_OAUTH)
-    with pytest.raises(_CalledError, match="Anthropic-only"):
-        run._apply_subscription_auth_env(
-            subscription_auth=True,
-            framework="claude_sdk_otf",
-            agent_model="moonshot/kimi-k2.7-code",
-            error=_err,
-        )
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")  # ambient
+    run._apply_subscription_auth_env(
+        subscription_auth=True,
+        framework="claude_sdk_otf",
+        agent_model="moonshot/kimi-k2.7-code",
+        error=_err,
+    )
     import os
     assert "BIRD_INTERACT_SUBSCRIPTION_AUTH" not in os.environ
 
