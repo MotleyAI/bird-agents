@@ -61,63 +61,34 @@ def _tool_names(tools):
     return {t.name for t in tools}
 
 
-def test_select_tools_a_interact_returns_six_native_tools():
-    """DEV-1555 CR r1 unification: query_nested is gone; the single
-    `query` tool accepts object OR list of stages. 3 knowledge tools
-    + `query` + `submit_query` + `ask_user` = 6 native."""
+def test_ainteract_partition_has_ask_user_on_both_clients():
+    """DEV-1581 R2: the a-interact partition is the one-shot partition + the
+    in-process ``ask_user`` native on BOTH clients (main asks on submit-feedback
+    ambiguities; discovery does the bulk of clarification)."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
-    names = _tool_names(m._select_tools("a-interact"))
-    assert names == {
-        "get_all_external_knowledge_names",
-        "get_knowledge_definition",
-        "get_all_knowledge_definitions",
-        "query",
-        "submit_query",
-        "ask_user",
-    }
-    assert "query_nested" not in names
-    assert len(m._select_tools("a-interact")) == 6
+    ask = "mcp__bird-interact-tools__ask_user"
+    main = set(m.MAIN_NATIVE_TOOL_NAMES)
+    disc = set(m.DISCOVERY_NATIVE_TOOL_NAMES)
+    assert ask in main and ask in disc
+    assert "mcp__bird-interact-tools__submit_query" in main
+    # Introspection tools live on DISCOVERY, not main.
+    for t in ("mcp__bird-interact-tools__search",
+              "mcp__bird-interact-tools__inspect_model"):
+        assert t in disc and t not in main
 
 
-def test_select_tools_rejects_unknown_eval_mode():
+def test_main_native_tool_names_include_write_tools():
+    """The ainteract OTF main client must also expose SLayer write tools."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
-    for bad in ("one-shot", "c-interact", "oracle"):
-        with pytest.raises(ValueError):
-            m._select_tools(bad)
-
-
-def test_slayer_tool_names_include_write_tools():
-    """The ainteract OTF agent must also expose SLayer write tools.
-    After DEV-1534 Fix C, ``query`` and ``query_nested`` move off the
-    SLayer subprocess allowlist onto our bird-interact-tools wrappers,
-    leaving 9 SLayer subprocess tools."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
-
-    names = set(m._slayer_tool_names())
+    names = set(m.MAIN_NATIVE_TOOL_NAMES)
     for t in (
-        "mcp__slayer__create_model",
-        "mcp__slayer__edit_model",
-        "mcp__slayer__save_memory",
-        "mcp__slayer__validate_models",
+        "mcp__bird-interact-tools__create_model",
+        "mcp__bird-interact-tools__edit_model",
+        "mcp__bird-interact-tools__validate_models",
     ):
-        assert t in names, f"missing slayer write tool {t}"
-    for t in (
-        "mcp__slayer__search",
-        "mcp__slayer__inspect_model",
-        "mcp__slayer__help",
-        "mcp__slayer__list_datasources",
-        "mcp__slayer__models_summary",
-    ):
-        assert t in names
-    # DEV-1534 Fix C: query / query_nested are bird-interact-tools wrappers.
-    for t in ("mcp__slayer__query", "mcp__slayer__query_nested"):
-        assert t not in names, (
-            f"{t} should be served by the bird-interact-tools wrapper "
-            "after DEV-1534 Fix C, not the SLayer subprocess MCP server."
-        )
-    assert len(names) == 9
+        assert t in names, f"missing write tool {t}"
 
 
 # ---------------------------------------------------------------------------
@@ -537,8 +508,20 @@ def _stub_env(
         captured["slayer_mcp_kw"] = dict(kw)
         return {"command": "slayer", "args": ["mcp"], "env": {}}
 
-    monkeypatch.setattr(m, "slayer_mcp_stdio_config", _fake_slayer_mcp)
-    monkeypatch.setattr(m, "create_sdk_mcp_server", lambda **kw: SimpleNamespace())
+    # DEV-1581 R2: v1 replaced slayer stdio + create_sdk_mcp_server with the
+    # in-process build_bird_interact_server (no slayer process). Patch
+    # whichever the module exposes (raising=False → harmless no-op if absent).
+    monkeypatch.setattr(
+        m, "slayer_mcp_stdio_config", _fake_slayer_mcp, raising=False,
+    )
+    monkeypatch.setattr(
+        m, "create_sdk_mcp_server", lambda **kw: SimpleNamespace(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        m, "build_bird_interact_server", lambda *a, **kw: SimpleNamespace(),
+        raising=False,
+    )
 
     async def fake_resolve(*, db_name, task_data, data_path_base, benchmark):
         captured["resolve_kwargs"] = {
@@ -615,8 +598,9 @@ async def test_run_task_uses_cache_resolver_with_mini_interact_benchmark(
 
 @pytest.mark.asyncio
 async def test_run_task_attaches_slayer_write_tools(monkeypatch, tmp_path):
-    """The ClaudeAgentOptions handed to the SDK must whitelist the slayer
-    write tools so the agent can encode."""
+    """The MAIN ClaudeAgentOptions handed to the SDK must whitelist the slayer
+    write tools (in-process bird-interact-tools natives) so the agent can
+    encode. ``captured['options']`` is the LAST client created, i.e. main."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
@@ -625,28 +609,9 @@ async def test_run_task_attaches_slayer_write_tools(monkeypatch, tmp_path):
         dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
     )
     allowed = set(captured["options"].allowed_tools)
-    assert "mcp__slayer__create_model" in allowed
-    assert "mcp__slayer__edit_model" in allowed
-    assert "mcp__slayer__validate_models" in allowed
-
-
-@pytest.mark.asyncio
-async def test_run_task_passes_ingest_on_startup_false_to_slayer_mcp(
-    monkeypatch, tmp_path,
-):
-    """DEV-1508: same reasoning as the livesqlbench sibling — the OTF cache
-    is post-ingestion by construction, the Claude Agent SDK has no MCP
-    startup-timeout knob, so the slayer MCP must boot WITHOUT
-    --ingest-on-startup or the agent silently loses every mcp__slayer__*
-    tool to a stuck-pending handshake."""
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
-
-    captured = _stub_env(monkeypatch, m, tmp_path / "store")
-    agent = m.ClaudeSDKOtfAInteractAgent(model="anthropic/claude-sonnet-4-5")
-    await agent.run_task(
-        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
-    )
-    assert captured["slayer_mcp_kw"].get("ingest_on_startup") is False
+    assert "mcp__bird-interact-tools__create_model" in allowed
+    assert "mcp__bird-interact-tools__edit_model" in allowed
+    assert "mcp__bird-interact-tools__validate_models" in allowed
 
 
 @pytest.mark.asyncio
@@ -698,10 +663,11 @@ async def test_run_task_passes_disallowed_slayer_tools_to_sdk(
 async def test_run_task_registers_three_guards_plus_turn_budget(
     monkeypatch, tmp_path,
 ):
-    """Hook registration: PreToolUse has one matcher (submit_query) carrying
-    two guards — the ask-user gate and the query-before-submit gate;
-    PostToolUse carries the ask-counter, the nag, the turn-budget hook, AND
-    the all-tools tracker for the query-before-submit gate."""
+    """Hook registration (DEV-1581 R2 MAIN client): PreToolUse has the
+    submit_query matcher (ask-user + query-before-submit gates) plus the
+    wall-clock deny; PostToolUse carries the ask-counter, the nag, the
+    turn-budget hook, context-budget, wall-clock-warning, AND the all-tools
+    tracker. No partition-deny / normalize-write hooks (R2 removed them)."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
@@ -714,19 +680,15 @@ async def test_run_task_registers_three_guards_plus_turn_budget(
     assert "PostToolUse" in hooks
 
     pre_matchers = hooks["PreToolUse"]
-    # Four PreToolUse matchers now: [0] submit_query (ask + query gates),
-    # [1] discovery-only tools (partition deny, DEV-1555),
-    # [2] create_model|edit_model (normalize-write-filters hook, Codex
-    # post-merge), [3] wall-clock budget deny (matcher None — fires on
-    # every tool, only denies past-budget non-submits; DEV-1555 follow-up).
-    assert len(pre_matchers) == 4
-    pre_by_matcher = {pm.matcher: pm for pm in pre_matchers}
-    submit_pm = pre_by_matcher["mcp__bird-interact-tools__submit_query"]
+    # Two PreToolUse matchers: [0] submit_query (ask + query gates),
+    # [1] wall-clock budget deny (matcher None — fires on every tool, only
+    # denies past-budget non-submits).
+    assert len(pre_matchers) == 2
+    submit_pm = next(
+        pm for pm in pre_matchers
+        if pm.matcher == "mcp__bird-interact-tools__submit_query"
+    )
     assert len(submit_pm.hooks) == 2  # ask-user gate, then query-before-submit
-    write_pm = pre_by_matcher[
-        "mcp__slayer__create_model|mcp__slayer__edit_model"
-    ]
-    assert len(write_pm.hooks) == 1
 
     post_matchers = hooks["PostToolUse"]
     # Exactly six PostToolUse matchers: ask-counter (matcher == ask_user),
@@ -905,7 +867,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
         dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
     )
     opts = captured["options"]
-    assert opts.tools == ["Task"]  # DEV-1555: only built-in re-enabled
+    assert opts.tools == []  # DEV-1581 R2: no built-ins (ask_discovery native)
     assert opts.setting_sources == []
     assert opts.max_turns == 2 * MAX_MODEL_TURNS
 

@@ -44,33 +44,25 @@ def _tool_names(tools):
     return {t.name for t in tools}
 
 
-def test_select_tools_a_interact_returns_nine_native_tools():
-    """7 BIRD_INTERACT_TOOLS + submit_sql + ask_user = 9 native tools.
-    No SLayer tools."""
+def _bare(names):
+    return {n.split("__")[-1] for n in names}
+
+
+def test_raw_ainteract_partition_with_ask_user_on_both():
+    """DEV-1581 R2: the raw a-interact partition is the one-shot raw partition
+    + ask_user on BOTH clients. Introspection-exclusive tools live on
+    DISCOVERY; MAIN keeps execute_sql/submit_sql/get_column_meaning/KB/
+    ask_discovery. No submit_query (raw)."""
     from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
 
-    names = _tool_names(m._select_tools("a-interact"))
-    assert names == {
-        "execute_sql",
-        "get_schema",
-        "get_all_column_meanings",
-        "get_column_meaning",
-        "get_all_external_knowledge_names",
-        "get_knowledge_definition",
-        "get_all_knowledge_definitions",
-        "submit_sql",
-        "ask_user",
-    }
-    assert "submit_query" not in names
-    assert len(names) == 9
-
-
-def test_select_tools_rejects_unknown_eval_mode():
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
-
-    for bad in ("one-shot", "c-interact", "oracle"):
-        with pytest.raises(ValueError):
-            m._select_tools(bad)
+    main = _bare(m.MAIN_NATIVE_TOOL_NAMES)
+    disc = _bare(m.DISCOVERY_NATIVE_TOOL_NAMES)
+    assert "ask_user" in main and "ask_user" in disc
+    assert {"get_schema", "get_all_column_meanings"} <= disc
+    assert not ({"get_schema", "get_all_column_meanings"} & main)
+    assert {"execute_sql", "submit_sql", "get_column_meaning",
+            "ask_discovery"} <= main
+    assert "submit_query" not in main
 
 
 def test_no_slayer_tool_names_function():
@@ -425,7 +417,15 @@ def _stub_env(
         captured["materialize_calls"] += 1
 
     monkeypatch.setattr(m, "materialize_task_db", _fake_materialize)
-    monkeypatch.setattr(m, "create_sdk_mcp_server", lambda **kw: SimpleNamespace())
+    # DEV-1581 R2: v1 builds in-process servers via build_bird_interact_server.
+    monkeypatch.setattr(
+        m, "create_sdk_mcp_server", lambda **kw: SimpleNamespace(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        m, "build_bird_interact_server", lambda *a, **kw: SimpleNamespace(),
+        raising=False,
+    )
     from bird_interact_agents.agents.claude_sdk import sdk_env as _sdk_env
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-stub")
     monkeypatch.setattr(
@@ -503,9 +503,9 @@ async def test_run_task_registers_three_guards_plus_turn_budget(monkeypatch, tmp
     assert "PostToolUse" in hooks
 
     pre_matchers = hooks["PreToolUse"]
-    # [0] submit_sql gate, [1] discovery-only partition deny (DEV-1555),
-    # [2] wall-clock budget deny (DEV-1555 follow-up).
-    assert len(pre_matchers) == 3
+    # DEV-1581 R2: [0] submit_sql gate, [1] wall-clock budget deny. No
+    # partition-deny hook (R2 uses two separate clients).
+    assert len(pre_matchers) == 2
     # Gate must be scoped to submit_sql, not submit_query.
     assert pre_matchers[0].matcher == "mcp__bird-interact-tools__submit_sql"
 
@@ -529,7 +529,7 @@ async def test_run_task_restricts_tools_and_caps_turns(monkeypatch, tmp_path):
         dict(_TASK), str(tmp_path), 20.0, "raw", eval_mode="a-interact",
     )
     opts = captured["options"]
-    assert opts.tools == ["Task"]  # DEV-1555: only built-in re-enabled
+    assert opts.tools == []  # DEV-1581 R2: no built-ins (ask_discovery native)
     assert opts.setting_sources == []
     assert opts.max_turns == 2 * MAX_MODEL_TURNS
 

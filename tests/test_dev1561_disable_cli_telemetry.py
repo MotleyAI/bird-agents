@@ -150,8 +150,11 @@ async def test_registry_options_env_layers_disable_telemetry_under_session(
 def test_annotator_routes_through_hermetic_session_anthropic_only():
     """DEV-1579: the annotator must route its SDK session through the shared
     ``hermetic_claude_sdk_session`` helper (which owns the telemetry-disable
-    env + CLAUDE_CONFIG_DIR isolation + API-key auth + MCP parity), and must
-    pass ``provider_aware=False`` since the annotator is Anthropic-only.
+    env + CLAUDE_CONFIG_DIR isolation + API-key auth + MCP parity).
+
+    DEV-1604: it now passes ``provider_aware=True`` — the annotator is
+    provider-aware so it can run a registry open-weight model through the bridge
+    (for an Anthropic model this is a no-op, same auth path as before).
 
     AST-inspect the annotator source: lower-overhead than driving the full
     annotation pipeline (which needs a gold sidecar + benchmark config), and
@@ -185,10 +188,11 @@ def test_annotator_routes_through_hermetic_session_anthropic_only():
             "annotator's hermetic_claude_sdk_session call must pass "
             "provider_aware=… explicitly"
         )
-        # The annotator is Anthropic-only — registry layering must be off.
+        # DEV-1604: the annotator is provider-aware (registry models run through
+        # the bridge); the call must pass provider_aware=True explicitly.
         assert (
-            isinstance(pa.value, ast.Constant) and pa.value.value is False
-        ), f"annotator must pass provider_aware=False, got {ast.dump(pa.value)}"
+            isinstance(pa.value, ast.Constant) and pa.value.value is True
+        ), f"annotator must pass provider_aware=True, got {ast.dump(pa.value)}"
         found = True
         break
     assert found, (

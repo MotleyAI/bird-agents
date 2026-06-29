@@ -158,6 +158,24 @@ def read_api_keys_from_local_env(
 ) -> dict[str, str]:
     import os
 
+    # DEV-1604: the annotator is now provider-aware (it can run a registry
+    # open-weight model through the bridge), so a non-Anthropic agent model is
+    # allowed PROVIDED it is a registry provider. A non-Anthropic, non-registry
+    # model (openai/*, gemini/*, …) still has no claude_sdk session and is
+    # rejected here. Registry models fall through to the provider-key branch
+    # below (annotator is a claude_sdk framework per _is_claude_sdk_framework).
+    if (
+        framework == "annotator"
+        and not agent_model.startswith("anthropic/")
+        and provider_registry.get_provider(agent_model) is None
+    ):
+        raise PrereqError(
+            f"the annotator agent model must be anthropic/* or a registry "
+            f"open-weight provider ({', '.join(sorted(provider_registry.REGISTRY))}); "
+            f"got {agent_model!r}.",
+            remediation="pass an anthropic/* or registry --agent-model for annotate.",
+        )
+
     # claude_sdk* + subscription auth opted-in (no_subscription_auth=False)
     # → OAuth path. Ship the token and rename the user-sim Anthropic key so
     # the SDK cannot see ANTHROPIC_API_KEY and is forced to use the OAuth
@@ -173,7 +191,39 @@ def read_api_keys_from_local_env(
     # MagicMock; with the attribute access, `prereqs._is_claude_sdk_framework`
     # becomes a truthy mock and the OAuth path fires for every framework,
     # masking real test failures. The direct-name import is mock-safe.
-    if _is_claude_sdk_framework(framework) and not no_subscription_auth:
+    # DEV-1602 (CodeRabbit): --subscription-auth is Anthropic-ONLY. A claude_sdk*
+    # subscription run on a non-Anthropic, non-registry model (openai/*,
+    # gemini/*) must be rejected — otherwise the OAuth branch below (gated only on
+    # "not a registry model") would wrongly require/forward CLAUDE_CODE_OAUTH_TOKEN
+    # for it. Registry models are excluded here (get_provider is not None) and
+    # take the provider-key branch.
+    if (
+        _is_claude_sdk_framework(framework)
+        and not no_subscription_auth
+        and provider_registry.get_provider(agent_model) is None
+        and not agent_model.startswith("anthropic/")
+    ):
+        raise PrereqError(
+            f"--subscription-auth is Anthropic-only; got non-Anthropic agent "
+            f"model {agent_model!r}.",
+            remediation=(
+                "pass an anthropic/* --agent-model for subscription auth, use a "
+                "registry model (provider-key path), or pass --no-subscription-auth."
+            ),
+        )
+
+    # DEV-1602 (registry-first): a registry open-weight agent model authenticates
+    # via its provider key, NEVER OAuth — gate the OAuth branch on the agent
+    # model not being a registry model so a programmatic/resubmit caller passing
+    # no_subscription_auth=False for a registry model falls through to the
+    # provider-key branch instead of demanding an OAuth token. (Non-Anthropic
+    # non-registry models are already rejected by the Anthropic-only guard above;
+    # the annotator by the guard at the top.)
+    if (
+        _is_claude_sdk_framework(framework)
+        and not no_subscription_auth
+        and provider_registry.get_provider(agent_model) is None
+    ):
         token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
         if not token:
             raise PrereqError(
@@ -192,7 +242,13 @@ def read_api_keys_from_local_env(
                 "(expected sk-ant-oat01- prefix).",
                 remediation="claude setup-token",
             )
-        result: dict[str, str] = {"CLAUDE_CODE_OAUTH_TOKEN": token}
+        # DEV-1602: ship the explicit subscription-path signal so sdk_env on the
+        # worker takes the OAuth path (path chosen by operator intent, never
+        # inferred from which credential happens to be present).
+        result: dict[str, str] = {
+            "CLAUDE_CODE_OAUTH_TOKEN": token,
+            "BIRD_INTERACT_SUBSCRIPTION_AUTH": "1",
+        }
         # Track the LOCAL env var names for error messages (the worker-side names
         # differ — e.g. ANTHROPIC_API_KEY → BIRD_INTERACT_LITELLM_ANTHROPIC_API_KEY).
         missing_local: list[str] = []
@@ -256,10 +312,16 @@ def read_api_keys_from_local_env(
             if not result["OPENAI_API_KEY"] and "OPENAI_API_KEY" not in missing_local:
                 missing_local.append("OPENAI_API_KEY")
         # Forward an operator base-url override so workers hit the same
-        # endpoint the submitter validated against.
-        override = os.environ.get(_agent_spec.base_url_env, "")
-        if override:
-            result[_agent_spec.base_url_env] = override
+        # endpoint the submitter validated against — but ONLY for providers that
+        # talk to their endpoint directly. DEV-1604: when the agent needs the
+        # bridge proxy (Doubleword always; z.ai per-token), the ACTOR owns
+        # base_url_env (it points it at the local loopback proxy), so forwarding
+        # a stale submitter value would clobber that. Suppress it in that case.
+        # Keys on the recycled --subscription-auth flag (no_subscription_auth).
+        if not provider_registry.agent_needs_bridge(agent_model, no_subscription_auth):
+            override = os.environ.get(_agent_spec.base_url_env, "")
+            if override:
+                result[_agent_spec.base_url_env] = override
         if missing_local:
             missing_local_sorted = sorted(missing_local)
             cmds = "\n".join(f"export {k}=<your-key>" for k in missing_local_sorted)
@@ -323,9 +385,14 @@ def build_manifest(
             args, "user_sim_prompt_version", None
         ),
         "slayer_setup": getattr(args, "slayer_setup", "pre-encoded"),
+        # DEV-1586: which pre-encoded reference feeds a pre-encoded run
+        # (otf=encoding-agent output, custom=hand-curated; None on-the-fly).
+        "pre_encoded_source": getattr(args, "pre_encoded_source", None),
         "slayer_storage_root": getattr(
             args, "slayer_storage_root", "/data/slayer_models"
         ),
+        # DEV-1604: also the z.ai bridge selector (per-token when True) — the
+        # actor reads it via --subscription-auth threaded in _build_job_args.
         "no_subscription_auth": bool(getattr(args, "no_subscription_auth", False)),
         "render_inputs": {
             "workers": args.workers,
@@ -421,6 +488,16 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
     setup = args.slayer_setup
     benchmark = _submit_benchmark(args)
     if setup == "pre-encoded":
+        # DEV-1586: source selects which encoded reference is uploaded.
+        # 'otf' = the benchmark-scoped encoding-agent output (marker
+        # _reference_fp.txt); 'custom' (default / legacy) = the committed
+        # hand-curated slayer_models dir.
+        source = getattr(args, "pre_encoded_source", None) or "custom"
+        if source == "otf":
+            return [
+                (paths.slayer_models_otf_root(benchmark=benchmark),
+                 "slayer_models_otf", True),
+            ]
         return [(submitter_repo_root() / "slayer_models", "slayer_models", True)]
     if fw == "pydantic_ai_otf_encode":
         return [
@@ -457,6 +534,13 @@ def _check_gold_present(benchmark_name: str) -> None:
             f"files — auto-discovery is ambiguous: "
             f"{[f.name for f in jsonls]}. Remove the stale copies."
         )
+
+
+def _has_nonempty_embeddings(db_dir: Path) -> bool:
+    """True iff ``<db_dir>/embeddings.db`` exists and is non-empty. DEV-1586:
+    the submit-side pre-encoded preflight mirror of the runtime guard."""
+    emb = db_dir / "embeddings.db"
+    return emb.is_file() and emb.stat().st_size > 0
 
 
 def _artifact_present(root: Path, db: str, artifact: str) -> bool:
@@ -510,10 +594,32 @@ def _check_slayer_setup_present(args) -> list[str]:
     benchmark = _submit_benchmark(args)
     dbs = _dbs_for_instances(args.instance_ids, benchmark)
     uploads = _slayer_uploads_for(args)
+    # DEV-1586: the claude_sdk pre-encoded agents start SLayer with
+    # ingest_on_startup=False, so a present reference is unusable without a
+    # built embeddings.db. Mirror the runtime guard
+    # (agents/_pre_encoded._assert_reference_present) at submit so a doomed
+    # pre-encoded run fails BEFORE the cluster spins up (Codex review). Gate on
+    # `pre_encoded_source` (set ONLY for the claude_sdk consumers) — the legacy
+    # pydantic committed-reference path ingests on startup and needs no
+    # pre-built embeddings.
+    pre_encoded = getattr(args, "pre_encoded_source", None) is not None
     for root, artifact, required in uploads:
         if not required:
             continue
         missing = [db for db in dbs if not _artifact_present(root, db, artifact)]
+        if pre_encoded:
+            no_emb = [
+                db for db in dbs
+                if db not in missing and not _has_nonempty_embeddings(root / db)
+            ]
+            if no_emb:
+                raise FileNotFoundError(
+                    f"cloud slayer: pre-encoded reference for {no_emb} under "
+                    f"{root} has no usable embeddings.db (the pre-encoded "
+                    f"agents run with ingest_on_startup=False). Build the "
+                    f"embeddings before submitting "
+                    f"(scripts/build_otf_references.py for the otf source)."
+                )
         if not missing:
             continue
         if artifact == "slayer_otf_cache":
@@ -821,7 +927,16 @@ def _build_job_args(
         "--slayer-setup", getattr(args, "slayer_setup", "pre-encoded"),
         "--slayer-storage-root",
         getattr(args, "slayer_storage_root", "/data/slayer_models"),
+        # DEV-1604: thread the recycled --subscription-auth flag to the actor so
+        # it picks the z.ai endpoint (no-subscription = per-token bridge).
+        "--no-subscription-auth" if getattr(args, "no_subscription_auth", False)
+        else "--subscription-auth",
     ]
+    # DEV-1586: forward the pre-encoded source so the in-cluster worker
+    # routes to the read-only flavor. Conditional — never emit
+    # `--pre-encoded-models None` (argparse would reject the choice).
+    if getattr(args, "pre_encoded_source", None):
+        job_args += ["--pre-encoded-models", args.pre_encoded_source]
     return job_args
 
 
@@ -881,6 +996,12 @@ def _build_annotator_job_args(
         job_args += ["--benchmark-data-prefix", benchmark_data_prefix]
     if getattr(args, "override", False):
         job_args.append("--override")
+    # DEV-1604: thread the recycled --subscription-auth flag so the annotator
+    # actor picks the z.ai endpoint (default no-subscription = per-token bridge).
+    job_args.append(
+        "--no-subscription-auth" if getattr(args, "no_subscription_auth", False)
+        else "--subscription-auth"
+    )
     return job_args
 
 
@@ -1387,7 +1508,20 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         "--slayer-setup", manifest.get("slayer_setup", "pre-encoded"),
         "--slayer-storage-root",
         manifest.get("slayer_storage_root", "/data/slayer_models"),
+        # DEV-1604: re-emit the recycled --subscription-auth flag so a per-token
+        # z.ai resubmit still bridges. Old manifests default no_subscription_auth
+        # to True (the registry default = per-token bridge).
+        "--no-subscription-auth" if manifest.get("no_subscription_auth", True)
+        else "--subscription-auth",
     ]
+    # DEV-1586: forward the pre-encoded source. Back-compat: a pre-DEV-1586
+    # manifest with slayer_setup="pre-encoded" but no source meant the
+    # committed slayer_models reference → "custom".
+    pre_src = manifest.get("pre_encoded_source")
+    if not pre_src and manifest.get("slayer_setup") == "pre-encoded":
+        pre_src = "custom"
+    if pre_src:
+        job_args += ["--pre-encoded-models", pre_src]
     return job_args
 
 
@@ -1413,4 +1547,11 @@ def _build_annotator_resubmit_args(
         job_args += ["--benchmark-data-prefix", prefix]
     if manifest.get("override"):
         job_args.append("--override")
+    # DEV-1604: re-emit the recycled --subscription-auth flag so a registry
+    # annotator resubmit still bridges. Old manifests default no_subscription_auth
+    # to True (registry default = per-token bridge).
+    job_args.append(
+        "--no-subscription-auth" if manifest.get("no_subscription_auth", True)
+        else "--subscription-auth"
+    )
     return job_args

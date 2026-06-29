@@ -22,10 +22,12 @@ agent.
 """
 
 import contextvars
+import functools
+import inspect
 import logging
 from types import SimpleNamespace
 
-from claude_agent_sdk import tool
+from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from bird_interact_agents.agents import _query as _query_mod
 from bird_interact_agents.agents._submit import (
@@ -36,6 +38,9 @@ from bird_interact_agents.agents._submit import (
 from bird_interact_agents.agents._tool_specs import (
     BIRD_INTERACT_TOOLS,
     render_action,
+)
+from bird_interact_agents.slayer_pipeline.filter_normalization import (
+    normalize_tool_filters,
 )
 from bird_interact_agents.harness import (
     ACTION_COSTS,
@@ -191,9 +196,14 @@ class SdkUsageTracker:
                               # no-op here.
     """
 
-    def __init__(self, accum: TokenUsage, model: str):
+    def __init__(self, accum: TokenUsage, model: str, *, scope: str = "agent"):
+        # DEV-1589: ``scope`` is the per-(scope, model) breakdown bucket. Default
+        # "agent" keeps every existing caller unchanged; the build-time
+        # reference encoder reuses this tracker with scope="setup_encoder" so its
+        # tokens stay summable separately (the ``_setup_usage.json`` contract).
         self._accum = accum
         self._model = model
+        self._scope = scope
         self._turns: dict = {}
         self._turn_order: list = []
         self._result_usage = None
@@ -242,7 +252,7 @@ class SdkUsageTracker:
 
     def _commit(self, usage, *, n_calls: int) -> None:
         self._accum.add_call(
-            scope="agent",
+            scope=self._scope,
             model=self._model,
             prompt=_usage_value(usage, "input_tokens"),
             completion=_usage_value(usage, "output_tokens"),
@@ -253,7 +263,7 @@ class SdkUsageTracker:
         # callers can compare against the legacy per-AssistantMessage
         # counts and against breakdown rows for non-SDK frameworks.
         if n_calls > 1:
-            row = self._accum._row_for(scope="agent", model=self._model)
+            row = self._accum._row_for(scope=self._scope, model=self._model)
             row.n_calls += n_calls - 1
             self._accum.n_calls += n_calls - 1
 
@@ -754,6 +764,181 @@ async def query_nested(args: dict) -> dict:
         normalize_filters=bool(args.get("normalize_filters", True)),
     )
     return _text(result if isinstance(result, str) else str(result))
+
+
+# ---------------------------------------------------------------------------
+# DEV-1581 R2: warm-discovery bridge native + in-process SLayer natives.
+#
+# R2 drops the SDK-subagent split AND the slayer stdio subprocess. The main
+# loop reaches the long-lived *discovery* client only through the in-process
+# ``ask_discovery`` tool below; both clients' SLayer tools are in-process
+# natives backed by the SAME task-local engine (``_query._get_slayer_tool_fn``),
+# so a model main writes is immediately visible to discovery's introspection.
+# ---------------------------------------------------------------------------
+
+
+async def _ask_discovery_impl(question: str) -> str:
+    """Forward ``question`` to the per-task warm :class:`DiscoveryChannel`
+    stored in ``_ctx['_discovery']`` and return its text answer.
+
+    Never raises into the main loop: if no channel is wired (which should not
+    happen in a real run) it returns a usable error string rather than a
+    ``KeyError``. The channel itself owns the single-flight lock, the call cap,
+    per-stream usage, and its own never-raise contract.
+    """
+    channel = _ctx.get("_discovery")
+    if channel is None:
+        return (
+            "[discovery unavailable: no discovery channel is wired for this "
+            "task] Proceed with the information you already have."
+        )
+    return await channel.ask(question)
+
+
+@tool(
+    "ask_discovery",
+    (
+        "Ask the long-lived 'discovery' assistant a focused schema / data / "
+        "knowledge-base question and get back its findings. Discovery holds "
+        "the introspection tools (schema, sample values, joins, KB "
+        "definitions) and accumulates context across your questions, so "
+        "follow-ups are cheap — ask it instead of re-deriving facts yourself. "
+        "It cannot submit answers or run your candidate query."
+    ),
+    {"question": str},
+)
+async def ask_discovery(args: dict) -> dict:
+    return _text(await _ask_discovery_impl(args["question"]))
+
+
+def _ensure_slayer_storage_attached() -> None:
+    """Attach the current task's SLayer storage to the task-local query
+    engine so the in-process SLayer natives resolve against it (the shared
+    engine both main and discovery read/write)."""
+    storage = _ctx.get("_slayer_storage")
+    if storage is None:
+        _slayer_client()  # populates _ctx["_slayer_storage"] as a side-effect
+        storage = _ctx["_slayer_storage"]
+    _query_mod.attach_storage(storage)
+
+
+# SLayer MCP tools we expose as in-process natives (no slayer stdio process).
+# create/edit run our filter normalization first — symmetry with the
+# pydantic_ai_otf_encode adapter, which already normalizes every write.
+_SLAYER_NATIVE_NAMES: frozenset[str] = frozenset({
+    "search",
+    "models_summary",
+    "inspect_model",
+    "create_model",
+    "edit_model",
+    "validate_models",
+    "help",
+})
+_SLAYER_NATIVE_NORMALIZE_WRITE: frozenset[str] = frozenset({
+    "create_model",
+    "edit_model",
+})
+
+
+@functools.lru_cache(maxsize=None)
+def _slayer_tool_metadata(name: str) -> tuple[str, dict]:
+    """Extract ``(description, json_schema)`` for a SLayer MCP tool from a
+    storage-less ``create_mcp_server`` so the in-process native advertises
+    SLayer's real signature to the model.
+
+    The schema is derived from the tool fn's signature and is
+    storage-independent; the per-task fn that DOES need storage is resolved
+    separately at call time via ``_query._get_slayer_tool_fn`` (the shared,
+    task-local engine). Cached per name so we build the storage-less server
+    only once per process. Reuses SLayer's own tool definitions rather than
+    hand-maintaining a parallel schema.
+    """
+    from slayer.mcp.server import create_mcp_server
+
+    mcp = create_mcp_server(None)
+    t = mcp._tool_manager._tools[name]
+    return t.description, t.parameters
+
+
+def _make_slayer_native(name: str):
+    """Build an in-process SDK ``@tool`` for SLayer tool ``name``, bridging
+    SLayer's real description + schema and forwarding to the shared task-local
+    engine fn. ``create_model`` / ``edit_model`` payloads are filter-normalized
+    before SLayer persists them."""
+    description, schema = _slayer_tool_metadata(name)
+    normalize_write = name in _SLAYER_NATIVE_NORMALIZE_WRITE
+
+    async def _handler(args: dict) -> dict:
+        _ensure_slayer_storage_attached()
+        payload = dict(args)
+        if normalize_write:
+            normalized = normalize_tool_filters(name, payload)
+            if isinstance(normalized, dict):
+                payload = normalized
+        fn = _query_mod._get_slayer_tool_fn(name)
+        result = fn(**payload)
+        if inspect.isawaitable(result):
+            result = await result
+        return _text(result if isinstance(result, str) else str(result))
+
+    return tool(name, description, schema)(_handler)
+
+
+# Static in-process natives (module-level singletons defined above).
+_STATIC_NATIVE_TOOLS: dict = {
+    "execute_sql": execute_sql,
+    "get_schema": get_schema,
+    "get_all_column_meanings": get_all_column_meanings,
+    "get_column_meaning": get_column_meaning,
+    "get_all_external_knowledge_names": get_all_external_knowledge_names,
+    "get_knowledge_definition": get_knowledge_definition,
+    "get_all_knowledge_definitions": get_all_knowledge_definitions,
+    "ask_user": ask_user,
+    "submit_sql": submit_sql,
+    "submit_query": submit_query,
+    "query": query,
+    "query_nested": query_nested,
+    "ask_discovery": ask_discovery,
+}
+
+#: Full ``mcp__bird-interact-tools__*`` prefix every in-process native carries.
+BIRD_INTERACT_SERVER_NAME = "bird-interact-tools"
+_NATIVE_PREFIX = f"mcp__{BIRD_INTERACT_SERVER_NAME}__"
+
+
+def native_tool_full_name(bare_name: str) -> str:
+    """Map a bare native tool name to its full ``mcp__bird-interact-tools__*``
+    name (what ``allowed_tools`` / the agents' partition constants use)."""
+    return f"{_NATIVE_PREFIX}{bare_name}"
+
+
+def resolve_native_tool(bare_name: str):
+    """Return the in-process ``SdkMcpTool`` for ``bare_name`` (static singleton
+    or a freshly-built SLayer native). Raises ``KeyError`` for unknown names so
+    a typo in an agent's partition constant fails loudly at build time."""
+    if bare_name in _STATIC_NATIVE_TOOLS:
+        return _STATIC_NATIVE_TOOLS[bare_name]
+    if bare_name in _SLAYER_NATIVE_NAMES:
+        return _make_slayer_native(bare_name)
+    raise KeyError(f"unknown in-process native tool {bare_name!r}")
+
+
+def build_bird_interact_server(full_or_bare_names):
+    """Build the per-client in-process ``bird-interact-tools`` MCP server for
+    the given tool names (full ``mcp__bird-interact-tools__*`` or bare).
+
+    Each ClaudeSDKClient (main, discovery) gets its OWN server holding only
+    its half of the partition — because the two clients are separate
+    subprocesses, the main client's tool schema never contains discovery's
+    introspection tools (the core DEV-1581 guarantee), and vice-versa.
+    """
+    tools = []
+    for n in full_or_bare_names:
+        bare = n[len(_NATIVE_PREFIX):] if n.startswith(_NATIVE_PREFIX) else n
+        tools.append(resolve_native_tool(bare))
+    return create_sdk_mcp_server(
+        name=BIRD_INTERACT_SERVER_NAME, version="1.0.0", tools=tools,
+    )
 
 
 # NOTE: this module no longer exports a top-level ``ClaudeSDKAgent``

@@ -25,7 +25,6 @@ from bird_interact_agents.agents._host_discovery_playbook import (
 )
 from bird_interact_agents.agents._shared_otf_prompts import (
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
-    _COMPACT_SEARCH_DISCIPLINE,
     _DECOMPOSE_DISCIPLINE,
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
@@ -53,41 +52,41 @@ submission. If a `filters` predicate needs a computed value, encode it as
 a named column first and filter on the name; raw SQL expressions are
 rejected in `filters`."""
 
-_ENCODE_CORE_HEAD = (
-    """\
+_ENCODE_CORE_HEAD = """\
 The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
 knowledge-base (KB) item, with ids like `{db_name}_kb_<n>` whose body
 starts `KB <n> —`. The base tables are already ingested as SLayer models,
 but NOTHING is encoded yet: you encode exactly what THIS question needs,
 on the fly.
 
-SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
+YOUR TOOLS (read their own descriptions). Call `help` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-`search` to find relevant memories and existing entities; `inspect_model`
-to see a model's columns / measures / joins; `create_model` / `edit_model`
-to add columns and measures; `query` (single object OR list of stage objects for nested DAG) to test.
-
-"""
-    + _COMPACT_SEARCH_DISCIPLINE
-    + """
+`create_model` / `edit_model` to add columns and measures; `query` (single
+object OR list of stage objects for nested DAG) to test. You do NOT hold the
+schema-introspection tools — to learn what models / columns / joins exist,
+their descriptions, and their sampled values, ask the `ask_discovery` tool
+(it owns `search` / `inspect_model` / `models_summary` and accumulates
+context across your questions, so follow-ups are cheap). Read each KB item's
+formula VERBATIM with `get_knowledge_definition` (and
+`get_all_external_knowledge_names` to list them) — never paraphrase a KB
+formula.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — `search` with `entities=[
-"<db>.<model>.<col>"]`, `max_memories=0`, `max_example_queries=0`. The
-returned `EntityHit.text` carries `Description:` and `Sample values:`
-inline. The truncated `Sample values:` line is your authoritative source
+filter, projection, or join key — ask `ask_discovery` for that column's
+`Description:` and `Sample values:` (discovery reads them via `search` /
+`inspect_model`). The reported `Sample values:` are your authoritative source
 of which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same concept.
-Use it BEFORE writing any IN-set (see rule 3 below).
+Use them BEFORE writing any IN-set (see rule 3 below).
 
 ENCODE-THEN-QUERY DISCIPLINE:"""
-)
 
 _ENCODE_CORE_TAIL = """\
-2. For each block, `search` for the relevant KB memory and any entity
-   that already encodes it. A `memory:<id>` token inside a KB body means
-   that KB DEPENDS ON the referenced KB.
+2. For each block, read the relevant KB item with `get_knowledge_definition`
+   and ask `ask_discovery` for any entity that already encodes it. A
+   `memory:<id>` token inside a KB body means that KB DEPENDS ON the
+   referenced KB.
 
 3. ENCODE IN DEPENDENCY ORDER. Encode a KB that others depend on BEFORE
    the KBs that reference it (topological order). For each KB:
@@ -110,8 +109,8 @@ _ENCODE_CORE_TAIL = """\
      projected, grouped, or join-key column (that would corrupt the
      returned value).
    - If a KB cites named literals that are ABSENT from the column's
-     sampled values (check via `inspect_model`), do not write that
-     predicate.
+     sampled values (confirm the sampled values via `ask_discovery`), do
+     not write that predicate.
    - Symmetric companion: if the column's `Sample values` show variants
      of the KB-named literals — case differences, internal whitespace,
      abbreviations (`apt` for `Apartment`, `Y` for `yes`), or alternate

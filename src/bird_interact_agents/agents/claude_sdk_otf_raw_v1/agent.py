@@ -11,47 +11,30 @@ operates on raw SQL instead of a SLayer model store.
 
 from __future__ import annotations
 
-import dataclasses
 import logging
 
-from claude_agent_sdk import (
-    AgentDefinition,
-    ClaudeAgentOptions,
-    HookMatcher,
-    create_sdk_mcp_server,
-)
+from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
 
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
     SdkUsageTracker,
-    accumulate_assistant_usage,
-    execute_sql,
-    get_all_column_meanings,
-    get_all_external_knowledge_names,
-    get_all_knowledge_definitions,
-    get_column_meaning,
-    get_knowledge_definition,
-    get_schema,
-    submit_sql,
+    build_bird_interact_server,
+    native_tool_full_name,
 )
 from bird_interact_agents.agents.claude_sdk.context_budget import (
     context_window_for,
     make_context_budget_hook,
     make_wall_clock_budget_hook,
     per_task_timeout_s,
-    update_context_tokens,
     update_wall_clock_start,
 )
+from bird_interact_agents.agents.claude_sdk.discovery_runtime import (
+    run_main_with_discovery,
+)
 from bird_interact_agents.agents.claude_sdk.partition import (
-    DISCOVERY_AGENT_NAME,
     DISCOVERY_MAX_TURNS,
-    MAIN_WORKFLOW_NOTE,
     build_main_workflow_note,
     build_discovery_prompt,
-    make_partition_deny_hook,
-)
-from bird_interact_agents.agents.claude_sdk.sdk_env import (
-    hermetic_claude_sdk_session,
 )
 from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
     _MAX_TURNS,
@@ -86,47 +69,36 @@ def _make_turn_budget_hook(
     return _make_turn_budget_hook_base(max_turns, warn_within, submit_tool)
 
 
-# All 7 BIRD raw-exploration tools + the raw submission tool.
-_RAW_TOOLS = [
-    execute_sql,
-    get_schema,
-    get_all_column_meanings,
-    get_column_meaning,
-    get_all_external_knowledge_names,
-    get_knowledge_definition,
-    get_all_knowledge_definitions,
-    submit_sql,
+# DEV-1581 R2: discovery/main partition (raw flavor) as two separate
+# persistent clients. DISCOVERY owns schema/column/KB introspection plus
+# execute_sql for data profiling; MAIN keeps execute_sql (candidate
+# verification), submit_sql, a single-column get_column_meaning lookup, the
+# KB natives, and the ask_discovery bridge. The introspection-exclusive
+# tools (get_schema, get_all_column_meanings) are NOT on main's surface.
+_KB_NATIVE_BARE = [
+    "get_all_external_knowledge_names",
+    "get_knowledge_definition",
+    "get_all_knowledge_definitions",
 ]
 
-
-def _select_tools(eval_mode: str) -> list:
-    if eval_mode != "one-shot":
-        raise ValueError(
-            "claude_sdk_otf_raw supports only eval_mode='one-shot'; "
-            f"got {eval_mode!r}"
-        )
-    return list(_RAW_TOOLS)
-
-
-# DEV-1555: discovery/main tool partition (raw flavor). Discovery owns
-# schema/column/KB introspection plus execute_sql for data profiling; the
-# main loop keeps execute_sql (candidate verification) and submit_sql.
-_RAW_PREFIX = "mcp__bird-interact-tools__"
-
-DISCOVERY_TOOLS = [
-    f"{_RAW_PREFIX}get_schema",
-    f"{_RAW_PREFIX}get_all_column_meanings",
-    f"{_RAW_PREFIX}get_column_meaning",
-    f"{_RAW_PREFIX}get_all_external_knowledge_names",
-    f"{_RAW_PREFIX}get_knowledge_definition",
-    f"{_RAW_PREFIX}get_all_knowledge_definitions",
-    f"{_RAW_PREFIX}execute_sql",
+_MAIN_NATIVE_BARE = [
+    "execute_sql",
+    "submit_sql",
+    "get_column_meaning",
+    "ask_discovery",
+    *_KB_NATIVE_BARE,
+]
+_DISCOVERY_NATIVE_BARE = [
+    "get_schema",
+    "get_all_column_meanings",
+    "get_column_meaning",
+    "execute_sql",
+    *_KB_NATIVE_BARE,
 ]
 
-MAIN_TOOLS = [
-    "Task",
-    f"{_RAW_PREFIX}execute_sql",
-    f"{_RAW_PREFIX}submit_sql",
+MAIN_NATIVE_TOOL_NAMES = [native_tool_full_name(b) for b in _MAIN_NATIVE_BARE]
+DISCOVERY_NATIVE_TOOL_NAMES = [
+    native_tool_full_name(b) for b in _DISCOVERY_NATIVE_BARE
 ]
 
 
@@ -242,6 +214,7 @@ class ClaudeSDKOtfRawAgent:
                 "data_path_base": data_path_base,
                 "user_sim_model": user_sim_model,
                 "user_sim_prompt_version": user_sim_prompt_version,
+                "_discovery": None,
                 "result": None,
                 "eval_mode": eval_mode,
                 "query_mode": query_mode,
@@ -249,17 +222,18 @@ class ClaudeSDKOtfRawAgent:
             }
             _ctx_var.set(ctx_dict)
 
-            tools = _select_tools(eval_mode)
             prompt = _build_prompt(eval_mode, task_data, budget)
 
-            server = create_sdk_mcp_server(
-                name="bird-interact-tools", version="1.0.0", tools=tools,
-            )
+            # DEV-1581 R2: two persistent in-process clients (raw flavor).
+            main_tools = list(MAIN_NATIVE_TOOL_NAMES)
+            discovery_tools = list(DISCOVERY_NATIVE_TOOL_NAMES)
+            main_mcp_servers = {
+                "bird-interact-tools": build_bird_interact_server(main_tools),
+            }
+            discovery_mcp_servers = {
+                "bird-interact-tools": build_bird_interact_server(discovery_tools),
+            }
 
-            mcp_servers: dict = {"bird-interact-tools": server}
-
-            # DEV-1555: discovery/main split (see claude_sdk_otf.agent).
-            discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
             context_state: dict = {}
             update_wall_clock_start(context_state)
             (
@@ -271,38 +245,21 @@ class ClaudeSDKOtfRawAgent:
                 submit_tool="submit_sql",
             )
 
-            # DEV-1579: build the agent's options from the policy-owned env
-            # kwargs (telemetry-disable + hermetic CLAUDE_CONFIG_DIR + any
-            # registry session env / thinking). The agent only supplies its
-            # own tool surface / hooks.
-            def _build_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+            # DEV-1579: build each client's options from the policy-owned env
+            # kwargs. The agent only supplies its own tool surface / hooks.
+            def _build_main_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
                 return ClaudeAgentOptions(
                     **_opt_kwargs,
                     system_prompt=prompt + build_main_workflow_note(query_mode='raw'),
-                    mcp_servers=mcp_servers,
-                    allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
-                    tools=["Task"],
+                    mcp_servers=main_mcp_servers,
+                    allowed_tools=list(main_tools),
+                    tools=[],
                     setting_sources=[],
-                    agents={
-                        DISCOVERY_AGENT_NAME: AgentDefinition(
-                            description=(
-                                "Schema/data introspection for the current task; "
-                                "returns a structured handoff report."
-                            ),
-                            prompt=build_discovery_prompt(with_ask_user=False),
-                            tools=list(DISCOVERY_TOOLS),
-                            maxTurns=DISCOVERY_MAX_TURNS,
-                        ),
-                    },
                     model=native_model_id(self.model),
                     effort=self.reasoning_effort,
                     max_turns=_MAX_TURNS,
                     hooks={
                         "PreToolUse": [
-                            HookMatcher(
-                                matcher="|".join(discovery_only),
-                                hooks=[make_partition_deny_hook(discovery_only)],
-                            ),
                             HookMatcher(hooks=[wall_clock_deny]),
                         ],
                         "PostToolUse": [
@@ -324,29 +281,41 @@ class ClaudeSDKOtfRawAgent:
                     },
                 )
 
-            # DEV-1579: the hermetic session owns CLAUDE_CONFIG_DIR isolation,
-            # API-key auth enforcement, the MCP parity assertion, and cleanup.
-            async with hermetic_claude_sdk_session(
-                self.model,
-                mcp_servers=mcp_servers,
-                build_options=_build_options,
-            ) as client:
-                await client.query(task_data["amb_user_query"])
-                async for msg in client.receive_response():
-                    # CR r1 (PR #49 follow-up): structured trajectory via
-                    # ``dataclasses.asdict`` instead of ``str(msg)[:500]`` —
-                    # matches the three sibling v1 agents and preserves the
-                    # nested SDK message fields (content blocks, usage,
-                    # tool_use_result) that ``str()`` flattens to a repr.
-                    try:
-                        _data: object = dataclasses.asdict(msg)
-                    except Exception:  # noqa: BLE001
-                        _data = str(msg)
-                    trajectory.append(
-                        {"type": str(type(msg).__name__), "data": _data}
-                    )
-                    usage_tracker.observe(msg)
-                    update_context_tokens(context_state, msg)
+            def _build_discovery_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+                return ClaudeAgentOptions(
+                    **_opt_kwargs,
+                    system_prompt=build_discovery_prompt(
+                        with_ask_user=False, query_mode="raw"
+                    ),
+                    mcp_servers=discovery_mcp_servers,
+                    allowed_tools=list(discovery_tools),
+                    tools=[],
+                    setting_sources=[],
+                    model=native_model_id(self.model),
+                    effort=self.reasoning_effort,
+                    max_turns=DISCOVERY_MAX_TURNS,
+                    # Discovery work counts against the SAME per-task wall-clock
+                    # budget as main (shared context_state) — else it could run
+                    # outside the guardrails while main is blocked inside
+                    # ask_discovery (Codex PR #56).
+                    hooks={
+                        "PreToolUse": [HookMatcher(hooks=[wall_clock_deny])],
+                        "PostToolUse": [HookMatcher(hooks=[wall_clock_warning])],
+                    },
+                )
+
+            await run_main_with_discovery(
+                model=self.model,
+                accum=accum,
+                usage_tracker=usage_tracker,
+                context_state=context_state,
+                main_mcp_servers=main_mcp_servers,
+                discovery_mcp_servers=discovery_mcp_servers,
+                build_main_options=_build_main_options,
+                build_discovery_options=_build_discovery_options,
+                initial_query=task_data["amb_user_query"],
+                trajectory=trajectory,
+            )
             usage_tracker.finalize()
         except Exception as e:
             usage_tracker.finalize()

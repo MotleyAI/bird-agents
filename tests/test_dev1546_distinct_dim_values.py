@@ -598,13 +598,15 @@ def test_submit_slayer_distinct_false_with_time_dim_only(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_motley_slayer_floor_is_at_least_0_7_2():
-    """``pyproject.toml`` must pin ``motley-slayer >= 0.7.2`` in BOTH
-    the ``slayer`` and ``all`` extras. Slayer 0.7.2 is the version
-    that introduced ``SlayerQuery.distinct_dimension_values``; an
-    accidental floor regression (e.g. ``0.7.0``) would silently strip
-    the field via Pydantic's ``model_validate`` (since 0.7.0 doesn't
-    declare it) and the wiring this PR adds would no-op.
+def test_motley_slayer_floor_is_at_least_0_8_3():
+    """``pyproject.toml`` must pin ``motley-slayer >= 0.8.3`` in BOTH
+    the ``slayer`` and ``all`` extras.
+
+    0.7.2 introduced ``SlayerQuery.distinct_dimension_values`` (a floor
+    regression below it silently strips the field via Pydantic). 0.8.3 is the
+    binding floor now: it ships the ``inspect()`` single-entity point-lookup
+    (DEV-1588) the claude_sdk OTF encoder's deps block calls directly (no
+    fallback) — a downgrade below it would break the encoder at import.
 
     Mechanical text-level check (no version-comparator dependency).
     """
@@ -614,17 +616,23 @@ def test_motley_slayer_floor_is_at_least_0_7_2():
 
     root = Path(__file__).resolve().parents[1]
     text = (root / "pyproject.toml").read_text()
-    # Both extras must use a >= floor at least 0.7.2 (allow patch bumps).
+    # Both extras must use a >= floor at least 0.8.3 (allow patch bumps).
     floors = re.findall(
         r'"motley-slayer\[advanced-search\]>=([0-9.]+)"', text,
     )
-    assert floors, "no motley-slayer floor found in pyproject.toml"
+    # BOTH the `slayer` and `all` extras must carry the pin (the docstring
+    # contract) — assert at least two matches so dropping one extra's pin fails
+    # instead of passing vacuously (CodeRabbit).
+    assert len(floors) >= 2, (
+        "motley-slayer floor must be pinned in BOTH the `slayer` and `all` "
+        f"extras of pyproject.toml; found {len(floors)}: {floors}"
+    )
     for raw in floors:
-        major, minor, patch, *_ = (raw.split(".") + ["0", "0"])
+        major, minor, patch, *_ = [*raw.split("."), "0", "0"]
         version = (int(major), int(minor), int(patch))
-        assert version >= (0, 7, 2), (
-            f"motley-slayer floor {raw!r} is below 0.7.2 — "
-            "the distinct_dimension_values field requires 0.7.2+."
+        assert version >= (0, 8, 3), (
+            f"motley-slayer floor {raw!r} is below 0.8.3 — the claude_sdk "
+            "encoder's deps block calls inspect() (DEV-1588) directly."
         )
 
 

@@ -89,16 +89,22 @@ async def test_run_evaluation_branches_to_otf_agent(monkeypatch, tmp_path):
     assert constructed[0].get("reasoning_effort") == "high"
 
 
-def test_validate_slayer_setup_requires_on_the_fly():
+def test_validate_slayer_setup_pre_encoded_consistency():
     from bird_interact_agents import run as run_mod
 
-    # pre-encoded must be rejected for claude_sdk_otf
+    # pre-encoded WITHOUT a source is an inconsistent (derived) pair → reject.
     with pytest.raises(ValueError):
         run_mod._validate_slayer_setup(
             slayer_setup="pre-encoded", framework="claude_sdk_otf_v1",
             query_mode="slayer", mode="one-shot",
+            pre_encoded_source=None,
         )
-    # on-the-fly + slayer + one-shot must pass for the narrowed flavor.
+    # pre-encoded WITH a source is accepted (DEV-1586).
+    run_mod._validate_slayer_setup(
+        slayer_setup="pre-encoded", framework="claude_sdk_otf_v1",
+        query_mode="slayer", mode="one-shot", pre_encoded_source="otf",
+    )
+    # on-the-fly + slayer + one-shot still passes for the narrowed flavor.
     run_mod._validate_slayer_setup(
         slayer_setup="on-the-fly", framework="claude_sdk_otf_v1",
         query_mode="slayer", mode="one-shot",
@@ -125,7 +131,40 @@ def test_maybe_force_wipe_otf_purges_cache_for_claude_sdk_otf(monkeypatch):
     assert purged.get("cache") == {"museum"}
 
 
-def test_cli_rejects_claude_sdk_otf_with_pre_encoded(monkeypatch, tmp_path):
+def test_cli_accepts_claude_sdk_v1_with_pre_encoded(monkeypatch, tmp_path):
+    """DEV-1586: claude_sdk_v1 one-shot + --pre-encoded-models otf is now
+    accepted; slayer_setup derives to pre-encoded."""
+    from bird_interact_agents import run as run_mod
+
+    data_file = tmp_path / "x.jsonl"
+    data_file.write_text("")
+    argv = [
+        "prog",
+        "--agent-model", "anthropic/claude-sonnet-4-5",
+        "--no-subscription-auth",
+        "--framework", "claude_sdk_v1",
+        "--pre-encoded-models", "otf",
+        "--query-mode", "slayer",
+        "--mode", "one-shot",
+        "--dataset", "livesqlbench-base-lite-sqlite",
+        "--data", str(data_file),
+        "--db-path", str(tmp_path),
+        "--output", str(tmp_path / "eval.json"),
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    called = {}
+
+    async def fake_run(**kw):
+        called.update(kw)
+        return {}
+
+    monkeypatch.setattr(run_mod, "run_evaluation", fake_run)
+    run_mod.main()
+    assert called["slayer_setup"] == "pre-encoded"
+    assert called["pre_encoded_source"] == "otf"
+
+
+def test_cli_slayer_setup_flag_retired(monkeypatch, tmp_path):
     from bird_interact_agents import run as run_mod
 
     data_file = tmp_path / "x.jsonl"
@@ -133,7 +172,7 @@ def test_cli_rejects_claude_sdk_otf_with_pre_encoded(monkeypatch, tmp_path):
     argv = [
         "prog",
         "--framework", "claude_sdk_v1",
-        "--slayer-setup", "pre-encoded",
+        "--slayer-setup", "on-the-fly",
         "--query-mode", "slayer",
         "--mode", "one-shot",
         "--dataset", "livesqlbench-base-lite-sqlite",

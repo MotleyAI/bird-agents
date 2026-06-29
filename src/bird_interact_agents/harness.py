@@ -20,6 +20,10 @@ from collections import Counter
 from bird_interact_agents.benchmark import Benchmark, get_benchmark
 from bird_interact_agents.db_connection import make_db_connection
 from bird_interact_agents import paths as _paths
+from bird_interact_agents.eval.upstream_ex_base import (
+    clean_sqls_like_ex_base,
+    preprocess_rows_like_ex_base,
+)
 
 logger = logging.getLogger(__name__)
 from bird_interact_agents.hard8_preprocessor import (
@@ -159,6 +163,37 @@ def _pg_hashable_row(row: tuple) -> tuple:
     )
 
 
+def _compare_pg_rows_2dp(
+    pred_rows: list, gold_rows: list, *, benchmark, ordered: bool,
+) -> bool:
+    """Compare two postgres result sets the way the SQLite ``ex_base``
+    grader does — round to 2dp (+ date / dict canonicalisation) via the
+    upstream ``preprocess_results`` before the ordered/unordered compare.
+
+    DEV-1606 Defect 3: the pg in-task grader was stricter than ex_base
+    (raw rows, no 2dp). When the upstream normaliser is unavailable we
+    fall back to ``_pg_hashable_row`` (NOT identity — identity would
+    re-raise ``unhashable type: dict`` for JSONB cells)."""
+    bench_name = getattr(benchmark, "name", None) or str(benchmark or "")
+    try:
+        pred_n = preprocess_rows_like_ex_base(bench_name, pred_rows)
+        gold_n = preprocess_rows_like_ex_base(bench_name, gold_rows)
+        pred_h = [tuple(r) for r in pred_n]
+        gold_h = [tuple(r) for r in gold_n]
+        if ordered:
+            return pred_h == gold_h
+        return Counter(pred_h) == Counter(gold_h)
+    except TypeError:
+        # Unhashable cells (dict/list) surfaced because the upstream
+        # normaliser was unavailable (identity fallback) — use the
+        # legacy hashable-row shim. No 2dp in this degraded path.
+        pred_h = [_pg_hashable_row(tuple(r)) for r in pred_rows]
+        gold_h = [_pg_hashable_row(tuple(r)) for r in gold_rows]
+        if ordered:
+            return pred_h == gold_h
+        return Counter(pred_h) == Counter(gold_h)
+
+
 def _pg_execute_submit_action(
     sql: str, sample_status: "SampleStatus", data_path_base: str
 ) -> tuple[str, float, bool, bool, bool]:
@@ -173,6 +208,12 @@ def _pg_execute_submit_action(
     if isinstance(sol_sqls, str):
         sol_sqls = [sol_sqls]
     benchmark = get_benchmark(sample_status.original_data["dataset"])
+
+    # DEV-1606 Defect 3: strip ROUND(...) from BOTH the agent's SQL and
+    # the gold SQL exactly as the SQLite ``ex_base`` grader does, so the
+    # postgres in-task grader is not stricter than ex_base on precision.
+    sol_sqls = clean_sqls_like_ex_base(benchmark.name, sol_sqls)
+    sql = clean_sqls_like_ex_base(benchmark.name, [sql])[0] if sql else sql
 
     def _run(query: str) -> tuple[list, bool]:
         try:
@@ -219,12 +260,9 @@ def _pg_execute_submit_action(
     # _pg_hashable_row makes JSONB/dict/list cells hashable for Counter.
     conditions = sample_status.original_data.get("conditions") or {}
     ordered = bool(conditions.get("order", False))
-    pred_h = [_pg_hashable_row(r) for r in pred_rows]
-    gold_h = [_pg_hashable_row(r) for r in gold_rows]
-    if ordered:
-        p1 = not gold_err and pred_h == gold_h
-    else:
-        p1 = not gold_err and Counter(pred_h) == Counter(gold_h)
+    p1 = (not gold_err) and _compare_pg_rows_2dp(
+        pred_rows, gold_rows, benchmark=benchmark, ordered=ordered,
+    )
 
     reward = 1.0 if p1 else 0.0
     obs = f"Submitted. Result match: {p1}"
@@ -773,6 +811,10 @@ def apply_audited_gold_overlay(
         # exist in this layout).
         single_file_path = audited_root / benchmark.name / f"{benchmark.name}_audited.jsonl"
         single_rows: dict[str, dict] | None
+        # DEV-1606 Defect 1: the FULL variant set per instance, attached to
+        # the task dict so the in-task grader can accept a best-of match
+        # against ANY audited variant (not just the primary).
+        variants_by_iid: dict[str, list[dict]] = {}
         if not single_file_path.exists():
             logger.warning(
                 "audited-gold single_file missing for benchmark=%s: %s — "
@@ -821,6 +863,11 @@ def apply_audited_gold_overlay(
                             "audited_sol_sql": pv.audited_sol_sql,
                             "primary": True,
                         }
+                        # Keep the WHOLE variant set for best-of in-task
+                        # grading (DEV-1606 Defect 1).
+                        variants_by_iid[agr.instance_id] = [
+                            v.model_dump() for v in agr.variants
+                        ]
                     else:
                         # Legacy flat-row format — buffer by instance_id.
                         inst_id = d.get("instance_id")
@@ -846,6 +893,19 @@ def apply_audited_gold_overlay(
                     "audited_sol_sql": primary_row.get("audited_sol_sql") or [],
                     "primary": True,
                 }
+                # Legacy flat layout: keep every row that carries SQL as a
+                # best-of candidate (DEV-1606 Defect 1). flat_rows is keyed
+                # only by instance_id, so filter to the primary row's
+                # (selected_database, benchmark) — otherwise a same-
+                # instance_id row from another DB/benchmark in the
+                # consolidated file would leak FOREIGN SQL into best-of
+                # grading (CodeRabbit DEV-1606).
+                variants_by_iid[inst_id] = [
+                    r for r in flat_rows
+                    if r.get("audited_sol_sql")
+                    and r.get("selected_database") == primary_row.get("selected_database")
+                    and r.get("benchmark") == primary_row.get("benchmark")
+                ]
         for task in tasks:
             inst = task.get("instance_id")
             db = task.get("selected_database")
@@ -905,6 +965,15 @@ def apply_audited_gold_overlay(
                 )
                 overlay_log[inst] = "missing-row"
                 continue
+            # DEV-1606 Defect 1 (Codex #1): attach the WHOLE variant set for
+            # any guard-passing row — INDEPENDENT of whether the primary's
+            # status triggers a ``sol_sql`` swap below. The defect's row has
+            # a primary with audit_status='original' (so ``sol_sql`` is NOT
+            # swapped) yet still carries valid non-primary edited variants
+            # the in-task grader must be able to accept.
+            variants = variants_by_iid.get(inst)
+            if variants:
+                task["audited_variants"] = variants
             status = entry.get("audit_status")
             overlay_log[inst] = status or "missing-row"
             if status in ("edited", "unrecoverable"):  # keep "unrecoverable" for legacy rows
@@ -1036,6 +1105,56 @@ def evaluate_dual_gold(
         return {"audited": audited_result, "original": dict(audited_result)}
     original_result = _one_call(original_sol_sqls)
     return {"audited": audited_result, "original": original_result}
+
+
+def evaluate_best_of_audited_variants(
+    *,
+    pred_sql: str,
+    variants: list[dict],
+    status,
+    data_path_base: str,
+    skip_variant_sqls: set | None = None,
+) -> tuple[bool, Optional[str], str]:
+    """Score ``pred_sql`` against EACH audited variant and accept the FIRST
+    whose result matches (DEV-1606 Defect 1 — mirror the final cascade's
+    best-of-variant acceptance in-task).
+
+    Each variant's ``audited_sol_sql`` is swapped into
+    ``status.original_data["sol_sql"]`` and graded via
+    ``execute_submit_action`` (the swap-and-call pattern from
+    ``evaluate_dual_gold``); the swap is restored in a ``finally`` so the
+    caller's status is never left corrupted.
+
+    Returns ``(passed, matched_variant_id, observation)``. The observation
+    is the matching variant's OWN generic pass observation — it never names
+    the variant, so the matched id is NEVER revealed to the agent whose
+    answer is being scored. ``skip_variant_sqls`` lets the caller skip a
+    variant it already evaluated (e.g. the audited primary)."""
+    skip = set(skip_variant_sqls or ())
+    original_data = status.original_data
+    prev = original_data.get("sol_sql")
+    try:
+        for v in variants:
+            raw = v.get("audited_sol_sql") or []
+            sqls = list(raw) if isinstance(raw, list) else [raw]
+            if not sqls or tuple(sqls) in skip:
+                continue
+            original_data["sol_sql"] = list(sqls)
+            try:
+                obs, _reward, p1, _p2, _finished = execute_submit_action(
+                    pred_sql, status, data_path_base,
+                )
+            except Exception:  # noqa: BLE001 — one bad variant must not abort
+                logger.exception(
+                    "best-of variant eval raised for variant_id=%s",
+                    v.get("variant_id"),
+                )
+                continue
+            if p1:
+                return True, v.get("variant_id"), str(obs)
+        return False, None, ""
+    finally:
+        original_data["sol_sql"] = prev
 
 
 # ---------------------------------------------------------------------------

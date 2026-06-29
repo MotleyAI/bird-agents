@@ -15,6 +15,10 @@ import sqlite3 as _sqlite3
 from typing import Any as _Any
 
 from bird_interact_agents import paths
+from bird_interact_agents.provider_registry import agent_needs_bridge, get_provider
+# DEV-1604: imported as a MODULE so `_maybe_start_bridge_proxy` and its test
+# monkeypatch share the `run.bridge_proxy.ensure_bridge_proxy_for_actor` target.
+from bird_interact_agents.cloud import bridge_proxy
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
 from bird_interact_agents.eval.annotation_schema import SubmissionConfig
@@ -74,22 +78,74 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# DEV-1586: frameworks whose agents implement the read-only pre-encoded mode
+# (the SLayer claude_sdk consumers — aggregators + the four direct OTF slayer
+# flavors). Raw flavors never reach the slayer branch of the validator.
+_PRE_ENCODED_FRAMEWORKS = frozenset({
+    "claude_sdk",
+    "claude_sdk_v1",
+    "claude_sdk_otf",
+    "claude_sdk_otf_ainteract",
+    "claude_sdk_otf_v1",
+    "claude_sdk_otf_ainteract_v1",
+})
+
+
 def _validate_slayer_setup(
     *, slayer_setup: str, framework: str, query_mode: str, mode: str,
+    pre_encoded_source: str | None = None,
 ) -> None:
-    """Reject invalid ``slayer_setup`` / ``query_mode`` combinations.
+    """Reject inconsistent ``slayer_setup`` / ``pre_encoded_source`` combos.
 
-    ``raw`` query_mode has no SLayer dependency — ``slayer_setup`` is ignored.
-    ``slayer`` query_mode requires ``on-the-fly``; any other value raises.
+    DEV-1586: ``slayer_setup`` is no longer user-set — it is DERIVED from the
+    user-facing ``--pre-encoded-models`` flag (``"pre-encoded"`` when a source
+    is set, else ``"on-the-fly"``). This guard just enforces that the derived
+    value is internally consistent with the source, so a hand-built manifest
+    or a stale resubmit can't carry a contradictory pair.
+
+    ``raw`` query_mode has no SLayer dependency, but a stray
+    ``--pre-encoded-models`` there is still nonsensical and rejected (the
+    flag is slayer-only). ``slayer_setup`` itself is ignored for raw.
     """
+    from bird_interact_agents.agents._pre_encoded import (
+        derive_slayer_setup,
+        validate_pre_encoded_source,
+    )
+
+    # Always validate the source vocabulary + framework gate, BEFORE the
+    # raw early-return (Codex DEV-1586 r2 #2 — otherwise `--query-mode raw
+    # --framework pydantic_ai --pre-encoded-models otf` slips through).
+    validate_pre_encoded_source(pre_encoded_source)
+    if pre_encoded_source is not None:
+        # The flag only controls the SLayer datasource source, so it is
+        # meaningless in raw mode.
+        if query_mode != "slayer":
+            raise ValueError(
+                "--pre-encoded-models is only valid with --query-mode slayer; "
+                f"got --query-mode {query_mode!r}."
+            )
+        # pre-encoded mode is implemented only by the read-only SLayer
+        # claude_sdk consumers. Routing it to the encoder
+        # (pydantic_ai_otf_encode) or the recursive/plain pydantic agents
+        # would mis-route cloud artifacts and silently ignore the flag.
+        if framework not in _PRE_ENCODED_FRAMEWORKS:
+            raise ValueError(
+                f"--pre-encoded-models is only supported for the SLayer "
+                f"claude_sdk frameworks {sorted(_PRE_ENCODED_FRAMEWORKS)}; got "
+                f"--framework {framework!r}. Omit --pre-encoded-models to "
+                "encode on the fly."
+            )
+
     if query_mode == "raw":
         return
-    if slayer_setup == "on-the-fly":
-        return
-    raise ValueError(
-        "--slayer-setup on-the-fly is required with --query-mode slayer; "
-        f"got --slayer-setup {slayer_setup!r}"
-    )
+    expected = derive_slayer_setup(pre_encoded_source)
+    if slayer_setup != expected:
+        raise ValueError(
+            f"--query-mode slayer with pre_encoded_source="
+            f"{pre_encoded_source!r} requires slayer_setup={expected!r}; "
+            f"got {slayer_setup!r}. (slayer_setup is derived from "
+            "--pre-encoded-models; do not set it directly.)"
+        )
 
 
 def _validate_dataset_mode(dataset: str, mode: str) -> None:
@@ -143,6 +199,7 @@ def _validate_framework_mode(
 def _maybe_force_wipe_otf(
     *, otf_rebuild: bool, framework: str, dbs,
     benchmark: str,
+    pre_encoded_source: str | None = None,
 ) -> None:
     """``--otf-rebuild`` force-wipe: drop BOTH on-the-fly layers (the phase-1-3
     cache AND the KB-encoded reference) for ``dbs``, for either on-the-fly
@@ -155,8 +212,17 @@ def _maybe_force_wipe_otf(
     DEV-1462: ``benchmark`` (REQUIRED, explicit) selects the per-benchmark
     scoped roots so a LiveSQLBench ``--otf-rebuild`` never wipes the
     mini-interact cache (and vice versa).
+
+    DEV-1586: NO-OP in pre-encoded mode. The on-the-fly cache/reference are
+    not owned by a pre-encoded run — and for ``--pre-encoded-models otf`` the
+    reference IS the thing the read-only agent consumes, so wiping it here
+    would delete the input and the agent could never rebuild it. (For
+    ``custom`` it would needlessly purge unrelated OTF references for the
+    selected DBs.)
     """
     if not otf_rebuild:
+        return
+    if pre_encoded_source is not None:
         return
     # DEV-1555 v0/v1: both aggregator tokens dispatch to on-the-fly agents.
     if framework not in ("claude_sdk", "claude_sdk_v1"):
@@ -253,9 +319,10 @@ def make_runner(
     prompt_cache: bool,
     max_depth: int,
     slayer_storage_root: str | None,
-    slayer_setup: str = "pre-encoded",
+    slayer_setup: str | None = None,
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
+    pre_encoded_source: str | None = None,
 ):
     """Public alias for `_make_runner`. The cloud actor (and other
     throughput-sensitive callers) call this once at startup and reuse the
@@ -270,9 +337,17 @@ def make_runner(
     each framework's `run_task` closure (so explicit-None does not
     shadow the agent class's Python "v2" default).
     """
+    # DEV-1586: slayer_setup is a pure function of the pre-encoded source.
+    # Omitted (None) ⇒ derive (on-the-fly when no source). An explicit value
+    # (the cloud actor passes the manifest's derived value) is honored and
+    # consistency-checked below.
+    from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
+    if slayer_setup is None:
+        slayer_setup = derive_slayer_setup(pre_encoded_source)
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
+        pre_encoded_source=pre_encoded_source,
     )
     return _make_runner(
         framework=framework, dataset=dataset, query_mode=query_mode, mode=mode,
@@ -280,6 +355,7 @@ def make_runner(
         max_depth=max_depth, slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup, reasoning_effort=reasoning_effort,
         user_sim_prompt_version=user_sim_prompt_version,
+        pre_encoded_source=pre_encoded_source,
     )
 
 
@@ -437,9 +513,10 @@ def _make_runner(
     prompt_cache: bool,
     max_depth: int,
     slayer_storage_root: str | None,
-    slayer_setup: str = "pre-encoded",
+    slayer_setup: str | None = None,
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
+    pre_encoded_source: str | None = None,
 ):
     """Construct the per-task runner closure for the given config.
 
@@ -460,6 +537,12 @@ def _make_runner(
     ``USER_SIMULATOR_ENCODER[None]`` in the user-sim invocation site.
     """
     _v = user_sim_prompt_version or "v2"
+    # DEV-1586: derive slayer_setup from the pre-encoded source when omitted
+    # (None), so direct callers get the same "omitted ⇒ on-the-fly" default
+    # as the CLIs / make_runner.
+    if slayer_setup is None:
+        from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
+        slayer_setup = derive_slayer_setup(pre_encoded_source)
     if mode == "oracle":
         async def run_one(td: dict, data_dir: str, patience: int,
                           user_sim_model: str) -> dict:
@@ -482,6 +565,7 @@ def _make_runner(
                 slayer_storage_root=slayer_storage_root,
                 model=agent_model,
                 slayer_setup=slayer_setup,
+                pre_encoded_source=pre_encoded_source,
                 reasoning_effort=reasoning_effort,
             )
         elif not b.one_shot and query_mode == "slayer":
@@ -492,6 +576,7 @@ def _make_runner(
                 slayer_storage_root=slayer_storage_root,
                 model=agent_model,
                 slayer_setup=slayer_setup,
+                pre_encoded_source=pre_encoded_source,
                 reasoning_effort=reasoning_effort,
             )
         elif b.one_shot and query_mode == "raw":
@@ -531,6 +616,7 @@ def _make_runner(
             slayer_storage_root=slayer_storage_root,
             model=agent_model,
             slayer_setup=slayer_setup,
+            pre_encoded_source=pre_encoded_source,
             reasoning_effort=reasoning_effort,
         )
 
@@ -558,6 +644,7 @@ def _make_runner(
             slayer_storage_root=slayer_storage_root,
             model=agent_model,
             slayer_setup=slayer_setup,
+            pre_encoded_source=pre_encoded_source,
             reasoning_effort=reasoning_effort,
         )
 
@@ -634,6 +721,7 @@ def _make_runner(
                 slayer_storage_root=slayer_storage_root,
                 model=agent_model,
                 slayer_setup=slayer_setup,
+                pre_encoded_source=pre_encoded_source,
                 reasoning_effort=reasoning_effort,
             )
         elif not b.one_shot and query_mode == "slayer":
@@ -644,6 +732,7 @@ def _make_runner(
                 slayer_storage_root=slayer_storage_root,
                 model=agent_model,
                 slayer_setup=slayer_setup,
+                pre_encoded_source=pre_encoded_source,
                 reasoning_effort=reasoning_effort,
             )
         elif b.one_shot and query_mode == "raw":
@@ -685,6 +774,7 @@ def _make_runner(
             slayer_storage_root=slayer_storage_root,
             model=agent_model,
             slayer_setup=slayer_setup,
+            pre_encoded_source=pre_encoded_source,
             reasoning_effort=reasoning_effort,
         )
 
@@ -712,6 +802,7 @@ def _make_runner(
             slayer_storage_root=slayer_storage_root,
             model=agent_model,
             slayer_setup=slayer_setup,
+            pre_encoded_source=pre_encoded_source,
             reasoning_effort=reasoning_effort,
         )
 
@@ -922,9 +1013,10 @@ async def run_one_task(
     prompt_cache: bool,
     max_depth: int,
     slayer_storage_root: str | None,
-    slayer_setup: str = "pre-encoded",
+    slayer_setup: str | None = None,
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
+    pre_encoded_source: str | None = None,
 ) -> dict:
     """Run a single per-task evaluation and return a `_persist`-consumable dict.
 
@@ -948,9 +1040,13 @@ async def run_one_task(
     one-shot run on un-marked task data (Codex #1 — programmatic-bypass
     close, complementary to ``_validate_dataset_mode`` on the CLI side).
     """
+    from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
+    if slayer_setup is None:
+        slayer_setup = derive_slayer_setup(pre_encoded_source)
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
+        pre_encoded_source=pre_encoded_source,
     )
     runner = _make_runner(
         framework=framework,
@@ -965,6 +1061,7 @@ async def run_one_task(
         slayer_setup=slayer_setup,
         reasoning_effort=reasoning_effort,
         user_sim_prompt_version=user_sim_prompt_version,
+        pre_encoded_source=pre_encoded_source,
     )
     instance_id = str(task_data.get("instance_id") or "")
     t_start = time.perf_counter()
@@ -1056,18 +1153,23 @@ async def run_evaluation(
     use_audited_gold_sql: bool = False,
     prompt_cache: bool = True,
     max_depth: int = 3,
-    slayer_setup: str = "pre-encoded",
+    slayer_setup: str | None = None,
     otf_rebuild: bool = False,
     dataset: str = "mini-interact",
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
+    pre_encoded_source: str | None = None,
 ) -> dict:
     """Run full evaluation across all tasks."""
+    from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
+    if slayer_setup is None:
+        slayer_setup = derive_slayer_setup(pre_encoded_source)
     _validate_dataset_mode(dataset=dataset, mode=mode)
     _validate_framework_mode(framework=framework, dataset=dataset, mode=mode)
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
+        pre_encoded_source=pre_encoded_source,
     )
     b = get_benchmark(dataset)
 
@@ -1100,6 +1202,7 @@ async def run_evaluation(
         framework=framework,
         dbs={t.get("selected_database") for t in tasks if t.get("selected_database")},
         benchmark=benchmark_for_paths,
+        pre_encoded_source=pre_encoded_source,
     )
 
     # DEV-1510: the audited-gold overlay now fires for ALL benchmarks. The
@@ -1137,6 +1240,7 @@ async def run_evaluation(
         slayer_setup=slayer_setup,
         reasoning_effort=reasoning_effort,
         user_sim_prompt_version=user_sim_prompt_version,
+        pre_encoded_source=pre_encoded_source,
     )
 
     # Open the per-run results.db (lives next to eval.json) and write
@@ -1160,6 +1264,7 @@ async def run_evaluation(
         started_at=time.time(),
         query_mode=query_mode,
         slayer_setup=slayer_setup,
+        pre_encoded_source=pre_encoded_source,
         patience=patience,
         max_depth=max_depth,
         reasoning_effort=reasoning_effort,
@@ -1180,6 +1285,7 @@ async def run_evaluation(
         agent_model=agent_model,
         user_sim_model=user_sim_model,
         slayer_setup=slayer_setup,
+        pre_encoded_source=pre_encoded_source,
         reasoning_effort=reasoning_effort,
         patience=patience,
         max_depth=max_depth,
@@ -1535,6 +1641,116 @@ def _apply_price_overrides(path: str) -> None:
         }
 
 
+def _maybe_start_bridge_proxy(*, agent_model: str, subscription_auth, error) -> None:
+    """DEV-1604: local-run wiring for the Anthropic⇄OpenAI bridge proxy.
+
+    Recycles ``--subscription-auth``: for z.ai, ``--subscription-auth`` selects
+    the direct coding-plan Anthropic endpoint (no bridge) and the default /
+    ``--no-subscription-auth`` uses the per-token bridge. Doubleword is
+    OpenAI-only (always bridged; ``--subscription-auth`` rejected); Moonshot is
+    provider-key-only (``--subscription-auth`` rejected). When the agent needs
+    the bridge, start the loopback proxy and point ``ANTHROPIC_BASE_URL``'s
+    override at it. Called from ``main`` BEFORE any runner is built. ``error``
+    is ``parser.error`` (exit-2 on misuse)."""
+    spec = get_provider(agent_model)
+    if spec is None:  # Anthropic (or unknown) — never bridges.
+        return
+    if bool(subscription_auth) and spec.key != "zai":
+        _why = (
+            "OpenAI-only — no Anthropic endpoint"
+            if spec.api_format == "openai"
+            else f"authenticates via {spec.auth_env}"
+        )
+        error(
+            f"--subscription-auth is not valid for {spec.key} agent models "
+            f"({_why}). Omit the flag or pass --no-subscription-auth."
+        )
+        return
+    no_subscription_auth = not bool(subscription_auth)
+    if agent_needs_bridge(agent_model, no_subscription_auth):
+        bridge_proxy.ensure_bridge_proxy_for_actor(
+            agent_model, {"no_subscription_auth": no_subscription_auth}
+        )
+
+
+def _apply_subscription_auth_env(
+    *,
+    subscription_auth: bool,
+    framework: str,
+    agent_model: str,
+    error,
+) -> None:
+    """Translate the local ``--subscription-auth`` choice into the
+    ``BIRD_INTERACT_SUBSCRIPTION_AUTH`` signal env var that ``sdk_env`` reads
+    (DEV-1602). Local claude_sdk agents run in-process, so this is the only
+    wiring needed — ``sdk_env`` masks ``ANTHROPIC_API_KEY`` for the SDK
+    subprocess while the parent keeps it for the litellm user-sim.
+
+    ``subscription_auth`` is the tri-state BooleanOptionalAction value: ``True``
+    (--subscription-auth), ``False`` (--no-subscription-auth), or ``None`` (the
+    operator passed neither). Mirroring the cloud CLI, a claude_sdk* run on an
+    Anthropic agent model MUST choose explicitly — a ``None`` there is an error
+    (no silent default). ``error`` is a callable (``parser.error``) invoked with
+    a message on misuse. When off, an ambient signal is actively CLEARED so a
+    stray exported ``BIRD_INTERACT_SUBSCRIPTION_AUTH`` cannot hijack the run.
+    The flag is Anthropic-only and claude_sdk-only.
+    """
+    is_claude_sdk = framework.startswith("claude_sdk")
+    # DEV-1604: registry models NEVER use the Claude.ai OAuth path. For z.ai,
+    # --subscription-auth is the ENDPOINT selector (coding-plan vs per-token
+    # bridge), validated in `_maybe_start_bridge_proxy`; Moonshot/Doubleword
+    # reject it there. So clear any ambient OAuth signal and return — do not run
+    # the Anthropic-only OAuth machinery (which would reject z.ai here).
+    if get_provider(agent_model) is not None:
+        os.environ.pop("BIRD_INTERACT_SUBSCRIPTION_AUTH", None)
+        return
+    # The flag is Anthropic-ONLY: gate on the model being anthropic/*, NOT merely
+    # "not a registry model" — otherwise a non-Anthropic non-registry model
+    # (openai/*, gemini/*) would slip through onto the OAuth path (CodeRabbit).
+    is_anthropic = agent_model.startswith("anthropic/")
+    # Explicit-choice requirement (cloud parity): claude_sdk* + Anthropic model
+    # must pass --subscription-auth or --no-subscription-auth.
+    if is_claude_sdk and is_anthropic and subscription_auth is None:
+        error(
+            "an explicit --subscription-auth / --no-subscription-auth choice is "
+            "required for claude_sdk* runs on an Anthropic agent model (no "
+            "default, to prevent a silent fall-back to the API-key path)."
+        )
+        return
+    if not subscription_auth:  # None (non-claude_sdk / non-Anthropic) or False → off
+        os.environ.pop("BIRD_INTERACT_SUBSCRIPTION_AUTH", None)
+        return
+    if not is_claude_sdk:
+        error(
+            "--subscription-auth only applies to claude_sdk* frameworks; "
+            f"got framework={framework!r}. Other frameworks authenticate via "
+            "their own provider key env var."
+        )
+        return
+    if not is_anthropic:
+        error(
+            f"--subscription-auth is Anthropic-only; got non-Anthropic agent "
+            f"model {agent_model!r} (registry open-weight models use their "
+            "provider key; omit the flag for them)."
+        )
+        return
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+    if not token:
+        error(
+            "--subscription-auth requires CLAUDE_CODE_OAUTH_TOKEN to be set "
+            "in the env. Run `claude setup-token`, or omit the flag to use "
+            "the ANTHROPIC_API_KEY path."
+        )
+        return
+    if not token.startswith("sk-ant-oat01-"):
+        error(
+            "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai OAuth token "
+            "(expected sk-ant-oat01- prefix). Re-run `claude setup-token`."
+        )
+        return
+    os.environ["BIRD_INTERACT_SUBSCRIPTION_AUTH"] = "1"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="BIRD-Interact benchmark runner with pluggable agents"
@@ -1564,8 +1780,9 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         choices=["a-interact", "c-interact", "oracle", "one-shot"],
-        default="a-interact",
+        required=True,
         help=(
+            "REQUIRED (aligned with bird-interact-cloud: no default). "
             "Evaluation mode. ``one-shot`` (DEV-1462) is the non-interactive "
             "path used by --dataset livesqlbench: no user-sim, no ask_user."
         ),
@@ -1584,8 +1801,11 @@ def main() -> None:
     parser.add_argument(
         "--query-mode",
         choices=["slayer", "raw"],
-        default="raw",
-        help="Query mode: slayer (semantic layer) or raw (direct SQL)",
+        required=True,
+        help=(
+            "REQUIRED (aligned with bird-interact-cloud: no default). "
+            "Query mode: slayer (semantic layer) or raw (direct SQL)"
+        ),
     )
     parser.add_argument(
         "--data", required=True, help="Path to mini_interact.jsonl"
@@ -1604,12 +1824,21 @@ def main() -> None:
     )
     parser.add_argument("--limit", type=int, default=None, help="Max tasks to run")
     parser.add_argument("--concurrency", type=int, default=3)
-    parser.add_argument("--patience", type=int, default=3, help="User patience budget")
+    parser.add_argument(
+        "--patience", type=int, default=250,
+        help=(
+            "User patience budget (aligned with bird-interact-cloud's default "
+            "of 250; the old local default of 3 was too low and skewed eval "
+            "results)."
+        ),
+    )
     parser.add_argument(
         "--agent-model",
-        default="anthropic/claude-sonnet-4-5",
+        required=True,
         help=(
-            "LiteLLM-style PROVIDER/MODEL_ID for the system agent. "
+            "REQUIRED (aligned with bird-interact-cloud: no default, to avoid "
+            "a silent wrong-model run). LiteLLM-style PROVIDER/MODEL_ID for the "
+            "system agent. "
             "Examples: cerebras/zai-glm-4.7, openrouter/z-ai/glm-4.7-flash, "
             "anthropic/claude-sonnet-4-5, fireworks_ai/glm-4p7. The matching "
             "API-key env var (CEREBRAS_API_KEY, OPENROUTER_API_KEY, "
@@ -1621,13 +1850,32 @@ def main() -> None:
     )
     parser.add_argument(
         "--user-sim-model",
-        default="anthropic/claude-haiku-4-5-20251001",
-        help="LiteLLM model for user simulator",
+        default="anthropic/claude-sonnet-4-6",
+        help="LiteLLM model for user simulator (aligned with bird-interact-cloud default)",
     )
     parser.add_argument(
         "--slayer-storage-root",
         default="./slayer_storage",
         help="Root dir of per-DB SLayer model stores (only used in --query-mode slayer)",
+    )
+    parser.add_argument(
+        "--subscription-auth",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        dest="subscription_auth",
+        help=(
+            "DEV-1602: authenticate claude_sdk* agents via the Claude.ai "
+            "subscription (CLAUDE_CODE_OAUTH_TOKEN, sk-ant-oat01- prefix) "
+            "instead of ANTHROPIC_API_KEY. Aligned with bird-interact-cloud: an "
+            "explicit --subscription-auth / --no-subscription-auth choice is "
+            "REQUIRED for claude_sdk* runs on an Anthropic agent model (no "
+            "silent default). When on for Anthropic, a valid "
+            "CLAUDE_CODE_OAUTH_TOKEN must be in the env. DEV-1604: for z.ai the "
+            "flag is recycled as the ENDPOINT selector (still ZAI_API_KEY, NOT "
+            "OAuth): --subscription-auth = direct coding-plan; default / "
+            "--no-subscription-auth = per-token OpenAI bridge. Doubleword "
+            "(OpenAI-only) and Moonshot (provider-key-only) reject the flag."
+        ),
     )
     parser.add_argument(
         "--filter-ids",
@@ -1674,9 +1922,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--use-audited-gold-sql",
-        action="store_true",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help=(
+            "Default True (aligned with bird-interact-cloud); pass "
+            "--no-use-audited-gold-sql to opt out. "
             "Swap each task's gold sol_sql for the audited version from "
             "audited_gold/<db>/<db>_audited.jsonl when available (status "
             "in {edited, unrecoverable}). Tasks marked 'clean' or missing "
@@ -1753,24 +2003,33 @@ def main() -> None:
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
-        "--slayer-setup",
-        choices=["pre-encoded", "on-the-fly"],
-        default="pre-encoded",
+        "--pre-encoded-models",
+        dest="pre_encoded_source",
+        choices=["otf", "custom"],
+        default=None,
         help=(
-            "How SLayer storage is provisioned for each task. "
-            "'pre-encoded' (default) uses the committed slayer_models/ "
-            "as today. 'on-the-fly' (DEV-1455) ingests the relevant DB "
-            "into SLayer at task setup time and encodes each KB item "
-            "as a SLayer memory, preserving cross-references as "
-            "memory:<id> entity tokens. Valid with --query-mode slayer "
-            "and --framework pydantic_ai_recursive, pydantic_ai_otf_encode, "
-            "claude_sdk_otf, or claude_sdk_otf_ainteract, under --mode "
-            "a-interact or one-shot. (pydantic_ai_otf_encode, "
-            "claude_sdk_otf, and claude_sdk_otf_ainteract REQUIRE "
-            "on-the-fly.)"
+            "DEV-1586: run the SLayer agents against an ALREADY-encoded "
+            "datasource (read-only; no model-mutation tools). "
+            "'otf' = the encoding-agent output at "
+            "slayer_models_otf/<benchmark>/<db>; 'custom' = the hand-curated "
+            "slayer_models/<db>. When omitted (default), the SLayer agents "
+            "encode KB items ON THE FLY. This flag REPLACES the retired "
+            "--slayer-setup flag: the internal slayer_setup value is derived "
+            "from it ('pre-encoded' when set, else 'on-the-fly')."
         ),
     )
     args = parser.parse_args()
+    # DEV-1602: translate --subscription-auth into the BIRD_INTERACT_SUBSCRIPTION_AUTH
+    # signal env var (or clear an ambient one) before any agent is constructed.
+    _apply_subscription_auth_env(
+        subscription_auth=args.subscription_auth,
+        framework=args.framework,
+        agent_model=args.agent_model,
+        error=parser.error,
+    )
+    # DEV-1586: derive the internal slayer_setup from the user-facing flag.
+    from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
+    args.slayer_setup = derive_slayer_setup(args.pre_encoded_source)
 
     # Resolve --db-path to an absolute path ONCE at the CLI boundary. Every
     # downstream consumer (orchestrator ingest, on-the-fly cache/reference,
@@ -1808,9 +2067,21 @@ def main() -> None:
             framework=args.framework,
             query_mode=args.query_mode,
             mode=args.mode,
+            pre_encoded_source=args.pre_encoded_source,
         )
     except ValueError as e:
         parser.error(str(e))
+
+    # DEV-1604: start the Anthropic⇄OpenAI bridge proxy (Doubleword / z.ai
+    # per-token) and point the base-url override at it BEFORE any runner is
+    # built, but AFTER all the parser.error validation above — so an invalid
+    # invocation fails fast without spawning a proxy or mutating the env.
+    # Recycles --subscription-auth as the z.ai endpoint selector.
+    _maybe_start_bridge_proxy(
+        agent_model=args.agent_model,
+        subscription_auth=args.subscription_auth,
+        error=parser.error,
+    )
 
     if args.output is None:
         ts = datetime.datetime.now().strftime("%Y%m%dt%H%M")
@@ -1864,6 +2135,7 @@ def main() -> None:
             dataset=args.dataset,
             reasoning_effort=args.reasoning_effort,
             user_sim_prompt_version=args.user_sim_prompt_version,
+            pre_encoded_source=args.pre_encoded_source,
         )
     )
 

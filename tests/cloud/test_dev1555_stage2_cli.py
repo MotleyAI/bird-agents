@@ -32,7 +32,6 @@ def _submit_argv(
         "--mode", "one-shot",
         "--agent-model", model,
         "--instance-ids", "alien_1",
-        "--slayer-setup", "on-the-fly",
         "--dataset", "livesqlbench-base-lite-sqlite",
         "--no-require-annotation",
         *(extra or []),
@@ -51,13 +50,15 @@ def test_moonshot_submit_explicit_no_subscription_auth_parses():
 
 
 def test_moonshot_submit_with_subscription_auth_rejected(monkeypatch, capsys):
-    # Even with a valid-looking token present, subscription auth is
-    # Anthropic-only — the registry-provider error must fire first.
+    # DEV-1604: Moonshot is provider-key-only (no subscription concept), so
+    # --subscription-auth is still rejected — even with a valid-looking token —
+    # and the error names its provider key. (z.ai, by contrast, now ACCEPTS the
+    # flag as its endpoint selector; see test_dev1604_cli_subscription.)
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-x")
     with pytest.raises(SystemExit):
         cli.parse_args(_submit_argv(_KIMI, ["--subscription-auth"]))
     err = capsys.readouterr().err
-    assert "Anthropic-only" in err
+    assert "subscription-auth" in err
     assert "MOONSHOT_API_KEY" in err
 
 

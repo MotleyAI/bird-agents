@@ -21,51 +21,45 @@ the SLayer write-tool whitelist, the prompts, and the mode gating differ.
 
 from __future__ import annotations
 
-import dataclasses
 import logging
 from pathlib import Path
 
-from claude_agent_sdk import (
-    AgentDefinition,
-    ClaudeAgentOptions,
-    HookMatcher,
-    create_sdk_mcp_server,
-)
+from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
 
-# Reuse the sibling claude_sdk adapter's contextvar + native tools. These
-# tools read/write the SAME `_ctx_var` we set below, so binding them here
-# is sound.
+# Reuse the sibling claude_sdk adapter's contextvar + native tools / native
+# in-process server builder. These tools read/write the SAME `_ctx_var` we set
+# below, so binding them here is sound.
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
     SdkUsageTracker,
-    accumulate_assistant_usage,
-    get_all_external_knowledge_names,
-    get_all_knowledge_definitions,
-    get_knowledge_definition,
-    query,
-    submit_query,
+    build_bird_interact_server,
+    native_tool_full_name,
 )
 from bird_interact_agents.agents.claude_sdk.context_budget import (
     context_window_for,
     make_context_budget_hook,
     make_wall_clock_budget_hook,
     per_task_timeout_s,
-    update_context_tokens,
     update_wall_clock_start,
 )
+from bird_interact_agents.agents.claude_sdk.discovery_runtime import (
+    run_main_with_discovery,
+)
 from bird_interact_agents.agents.claude_sdk.partition import (
-    DISCOVERY_AGENT_NAME,
     DISCOVERY_MAX_TURNS,
-    MAIN_WORKFLOW_NOTE,
     build_main_workflow_note,
     build_discovery_prompt,
-    make_partition_deny_hook,
-)
-from bird_interact_agents.agents.claude_sdk.sdk_env import (
-    hermetic_claude_sdk_session,
 )
 from bird_interact_agents.agents.claude_sdk_otf_v1.prompts import (
     SLAYER_OTF_ONE_SHOT,
+)
+from bird_interact_agents.agents._pre_encoded import (
+    resolve_pre_encoded_storage_dir,
+    strip_write_tool_names,
+    validate_pre_encoded_source,
+)
+from bird_interact_agents.agents._pre_encoded_prompts import (
+    SLAYER_PRE_ENCODED_ONE_SHOT,
 )
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.model_string import native_model_id
@@ -79,7 +73,6 @@ from bird_interact_agents.harness import (
     finalize_result_row,
     load_db_data_if_needed,
     materialize_task_db,
-    slayer_mcp_stdio_config,
 )
 from bird_interact_agents.eval.annotation_io import (
     task_annotation_path,
@@ -92,9 +85,6 @@ from bird_interact_agents.eval.grade_in_place import (
 )
 from bird_interact_agents.eval.tolerant_grader import grade_submission, make_executor
 from bird_interact_agents.slayer_otf import resolve_otf_task_storage_dir
-from bird_interact_agents.slayer_pipeline.filter_normalization import (
-    normalize_tool_filters,
-)
 from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -168,82 +158,6 @@ def _make_query_before_submit_guard():
     return pre_submit_gate, post_tool_tracker
 
 
-# SLayer MCP tools the OTF agent may call. The existing claude_sdk slayer
-# mode is read-only; this adapter ADDS the write tools (create_model /
-# edit_model / save_memory / validate_models) so the agent can encode KB
-# items.
-#
-# DEV-1534 Fix C: `query` and `query_nested` are served by our own
-# wrappers on the bird-interact-tools SDK MCP server (registered via
-# `_KNOWLEDGE_TOOLS` below) so the agent can opt out of filter
-# normalization mid-flight via the `normalize_filters` parameter. They
-# are NOT in this allowlist.
-SLAYER_MCP_TOOLS = [
-    "help",
-    "list_datasources",
-    "models_summary",
-    "inspect_model",
-    "search",
-    "create_model",
-    "edit_model",
-    "save_memory",
-    "validate_models",
-]
-
-
-def _slayer_tool_names() -> list[str]:
-    return [f"mcp__slayer__{t}" for t in SLAYER_MCP_TOOLS]
-
-
-# Full MCP tool names whose payloads carry backing-query filter strings
-# that we need to normalize (lower(trim(col)) wrap) before SLayer
-# persists them on a model. Without this hook, the agent's `create_model`
-# / `edit_model` calls baked raw text-equality filters into the stored
-# entity definition — and the DEV-1534 Fix C `query` / `query_nested`
-# wrappers can never repair filters hidden inside the model's own
-# backing SQL (Codex post-merge catch; the pydantic_ai_otf_encode
-# adapter already runs the same `normalize_tool_filters` call on every
-# write).
-_WRITE_TOOLS_NEEDING_NORMALIZATION = (
-    "mcp__slayer__create_model",
-    "mcp__slayer__edit_model",
-)
-_NORMALIZE_WRITE_FILTERS_MATCHER = "|".join(_WRITE_TOOLS_NEEDING_NORMALIZATION)
-
-
-async def _normalize_write_tool_filters_hook(input_data, tool_use_id, context):
-    """PreToolUse hook: rewrite ``create_model`` / ``edit_model`` payloads
-    so their backing-query ``filters`` strings are wrapped in
-    ``lower(trim(col)) = '<lower>'`` before SLayer persists them.
-
-    Returns the SDK's ``updatedInput`` directive on the
-    ``hookSpecificOutput`` envelope — the Claude Agent SDK applies it to
-    the tool invocation (see ``PreToolUseHookSpecificOutput`` in
-    ``claude_agent_sdk.types``). When normalization is a no-op (no
-    in-scope filters), the hook still returns the deep-copy
-    ``normalize_tool_filters`` produced — harmless and keeps the hook
-    side-effect-free with respect to the original input dict.
-    """
-    tool_name = input_data.get("tool_name") or ""
-    if tool_name not in _WRITE_TOOLS_NEEDING_NORMALIZATION:
-        return {}
-    # Strip the `mcp__slayer__` prefix so `normalize_tool_filters` sees
-    # the bare SLayer tool name it expects (`create_model` / `edit_model`).
-    bare = tool_name.split("__", 2)[-1]
-    tool_input = input_data.get("tool_input") or {}
-    if not isinstance(tool_input, dict):
-        return {}
-    updated = normalize_tool_filters(bare, tool_input)
-    if not isinstance(updated, dict):
-        return {}
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "updatedInput": updated,
-        }
-    }
-
-
 # Encode-then-query is turn-expensive (one turn per KB column created/tested),
 # so this agent needs more headroom than the base agentic cap. 2x the base.
 _MAX_TURNS = 2 * MAX_MODEL_TURNS
@@ -288,66 +202,51 @@ def _make_turn_budget_hook(
     return _hook
 
 
-# Native (in-process) tools registered under the "bird-interact-tools"
-# MCP server. one-shot decides autonomously (no user simulator), so the
-# knowledge-lookup tools + `submit_query` are the only natives the agent
-# needs. (The a-interact flavor adds `ask_user` in
-# ``claude_sdk_otf_ainteract``.)
-#
-# DEV-1534 Fix C: `query` / `query_nested` are bird-interact-tools
-# wrappers (not SLayer subprocess tools) so the agent can opt out of
-# filter normalization mid-flight.
-_KNOWLEDGE_TOOLS = [
-    get_all_external_knowledge_names,
-    get_knowledge_definition,
-    get_all_knowledge_definitions,
-    query,
+# DEV-1581 R2: the discovery/main partition is now two SEPARATE persistent
+# clients, each with its OWN in-process ``bird-interact-tools`` server holding
+# only its half. Because the clients are separate sessions, main's per-turn
+# tool schema NEVER contains discovery's introspection tools (the core
+# guarantee). KB lookups live in BOTH so exact formulas never pass through a
+# lossy summary before encoding; the main loop reaches discovery's schema/data
+# tools only through ``ask_discovery``.
+_KB_NATIVE_BARE = [
+    "get_all_external_knowledge_names",
+    "get_knowledge_definition",
+    "get_all_knowledge_definitions",
+]
+
+# Bare native names per client (full ``mcp__bird-interact-tools__*`` derived
+# below). MAIN owns encode/query/submit + the ask_discovery bridge; DISCOVERY
+# owns the introspection tools (+ ``query`` so it can profile sample values).
+_MAIN_NATIVE_BARE = [
+    "query",
+    "query_nested",
+    "submit_query",
+    "create_model",
+    "edit_model",
+    "validate_models",
+    "help",
+    "ask_discovery",
+    *_KB_NATIVE_BARE,
+]
+_DISCOVERY_NATIVE_BARE = [
+    "search",
+    "models_summary",
+    "inspect_model",
+    "query",
+    *_KB_NATIVE_BARE,
+]
+
+MAIN_NATIVE_TOOL_NAMES = [native_tool_full_name(b) for b in _MAIN_NATIVE_BARE]
+DISCOVERY_NATIVE_TOOL_NAMES = [
+    native_tool_full_name(b) for b in _DISCOVERY_NATIVE_BARE
 ]
 
 
-def _select_tools(eval_mode: str) -> list:
-    if eval_mode != "one-shot":
-        raise ValueError(
-            "claude_sdk_otf supports only eval_mode='one-shot' "
-            "(use claude_sdk_otf_ainteract for a-interact); "
-            f"got {eval_mode!r}"
-        )
-    return [*_KNOWLEDGE_TOOLS, submit_query]
-
-
-# DEV-1555: discovery/main tool partition. The discovery subagent owns the
-# big-output introspection tools; the main loop owns encode/query/submit.
-# KB lookups live in BOTH so exact formulas never pass through a lossy
-# handoff summary before encoding. Enforcement is `partition_deny` on the
-# main loop (a global disallow would block the subagent too).
-_KB_NATIVE_TOOL_NAMES = [
-    "mcp__bird-interact-tools__get_all_external_knowledge_names",
-    "mcp__bird-interact-tools__get_knowledge_definition",
-    "mcp__bird-interact-tools__get_all_knowledge_definitions",
-]
-
-DISCOVERY_TOOLS = [
-    "mcp__slayer__search",
-    "mcp__slayer__models_summary",
-    "mcp__slayer__inspect_model",
-    "mcp__slayer__list_datasources",
-    *_KB_NATIVE_TOOL_NAMES,
-]
-
-MAIN_TOOLS = [
-    "Task",
-    "mcp__slayer__help",
-    "mcp__slayer__create_model",
-    "mcp__slayer__edit_model",
-    "mcp__slayer__validate_models",
-    "mcp__slayer__save_memory",
-    *_KB_NATIVE_TOOL_NAMES,
-    "mcp__bird-interact-tools__query",
-    "mcp__bird-interact-tools__submit_query",
-]
-
-
-def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
+def _build_prompt(
+    eval_mode: str, task_data: dict, budget: float,
+    pre_encoded_source: str | None = None,
+) -> str:
     if eval_mode != "one-shot":
         raise ValueError(
             "claude_sdk_otf supports only eval_mode='one-shot'; "
@@ -355,7 +254,11 @@ def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
         )
     user_query = task_data["amb_user_query"]
     db_name = task_data["selected_database"]
-    return SLAYER_OTF_ONE_SHOT.format(
+    template = (
+        SLAYER_PRE_ENCODED_ONE_SHOT if pre_encoded_source
+        else SLAYER_OTF_ONE_SHOT
+    )
+    return template.format(
         budget=budget, db_name=db_name, user_query=user_query,
     )
 
@@ -379,11 +282,20 @@ class ClaudeSDKOtfAgent:
         model: str = "anthropic/claude-sonnet-4-5",
         slayer_setup: str = "on-the-fly",
         reasoning_effort: str | None = None,
+        pre_encoded_source: str | None = None,
     ) -> None:
-        if slayer_setup != "on-the-fly":
+        # DEV-1586: `pre_encoded_source` (None | "otf" | "custom") selects the
+        # read-only pre-encoded mode; `slayer_setup` is derived upstream.
+        validate_pre_encoded_source(pre_encoded_source)
+        if pre_encoded_source is None and slayer_setup != "on-the-fly":
             raise ValueError(
-                "claude_sdk_otf requires slayer_setup='on-the-fly'; "
-                f"got {slayer_setup!r}"
+                "claude_sdk_otf requires slayer_setup='on-the-fly' when no "
+                f"pre_encoded_source is set; got {slayer_setup!r}"
+            )
+        if pre_encoded_source is not None and slayer_setup != "pre-encoded":
+            raise ValueError(
+                "claude_sdk_otf with a pre_encoded_source requires "
+                f"slayer_setup='pre-encoded'; got {slayer_setup!r}"
             )
         if reasoning_effort is not None and reasoning_effort not in self._EFFORT_CHOICES:
             raise ValueError(
@@ -394,6 +306,7 @@ class ClaudeSDKOtfAgent:
         self.model = model
         self.slayer_setup = slayer_setup
         self.reasoning_effort = reasoning_effort
+        self.pre_encoded_source = pre_encoded_source
 
     async def run_task(
         self,
@@ -506,15 +419,24 @@ class ClaudeSDKOtfAgent:
             # LiveSQLBench one-shot: per-task isolated working sqlite (no-op
             # for mini-interact).
             materialize_task_db(task_data, data_path_base)
-            # Cache-only per-task storage: deterministic OTF cache copied to
-            # a scratch dir with this task's deleted KBs masked. The agent
-            # encodes into THIS dir at task time.
-            slayer_storage_dir, deleted_kb_ids = await resolve_otf_task_storage_dir(
-                db_name=db_name,
-                task_data=task_data,
-                data_path_base=data_path_base,
-                benchmark=benchmark.name,
-            )
+            # DEV-1586: pre-encoded mode reads an ALREADY-encoded reference
+            # read-only; on-the-fly (default) copies the deterministic cache
+            # and the agent encodes into it at task time.
+            if self.pre_encoded_source:
+                slayer_storage_dir, deleted_kb_ids = await resolve_pre_encoded_storage_dir(
+                    db_name=db_name,
+                    task_data=task_data,
+                    data_path_base=data_path_base,
+                    benchmark=benchmark.name,
+                    source=self.pre_encoded_source,
+                )
+            else:
+                slayer_storage_dir, deleted_kb_ids = await resolve_otf_task_storage_dir(
+                    db_name=db_name,
+                    task_data=task_data,
+                    data_path_base=data_path_base,
+                    benchmark=benchmark.name,
+                )
 
             max_asks = _ambiguity_count(task_data) + 3  # +patience(3); matches ADK
 
@@ -526,6 +448,7 @@ class ClaudeSDKOtfAgent:
                 "slayer_storage_dir": slayer_storage_dir,
                 "_slayer_client": None,
                 "_slayer_storage": None,
+                "_discovery": None,
                 "result": None,
                 "eval_mode": eval_mode,
                 "query_mode": query_mode,
@@ -535,28 +458,30 @@ class ClaudeSDKOtfAgent:
             }
             _ctx_var.set(ctx_dict)
 
-            tools = _select_tools(eval_mode)
-            prompt = _build_prompt(eval_mode, task_data, budget)
-
-            server = create_sdk_mcp_server(
-                name="bird-interact-tools", version="1.0.0", tools=tools,
+            prompt = _build_prompt(
+                eval_mode, task_data, budget, self.pre_encoded_source,
             )
 
-            mcp_servers: dict = {
-                "bird-interact-tools": server,
-                "slayer": slayer_mcp_stdio_config(
-                    slayer_storage_dir, ingest_on_startup=False,
-                ),
+            # DEV-1581 R2: two persistent in-process clients. DEV-1586
+            # pre-encoded mode strips the SLayer WRITE tools from MAIN (the
+            # agent only introspects); discovery is read-only already.
+            main_tools = (
+                strip_write_tool_names(MAIN_NATIVE_TOOL_NAMES)
+                if self.pre_encoded_source else list(MAIN_NATIVE_TOOL_NAMES)
+            )
+            discovery_tools = list(DISCOVERY_NATIVE_TOOL_NAMES)
+
+            main_mcp_servers = {
+                "bird-interact-tools": build_bird_interact_server(main_tools),
+            }
+            discovery_mcp_servers = {
+                "bird-interact-tools": build_bird_interact_server(discovery_tools),
             }
 
             # Per-task hook factories — must be created here (not on the
             # agent constructor) to avoid cross-task state bleed.
             pre_query_gate, post_tool_tracker = _make_query_before_submit_guard()
 
-            # DEV-1555: discovery/main split. Both partitions stay in
-            # allowed_tools (a global disallow would block the subagent
-            # too); the main-loop side is enforced by `partition_deny`.
-            discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
             context_state: dict = {}
             update_wall_clock_start(context_state)
             (
@@ -568,70 +493,33 @@ class ClaudeSDKOtfAgent:
                 submit_tool="submit_query",
             )
 
-            # DEV-1579: build the agent's options from the policy-owned env
+            # DEV-1579: build each client's options from the policy-owned env
             # kwargs (telemetry-disable + hermetic CLAUDE_CONFIG_DIR + any
-            # registry session env / thinking). The agent only supplies its
-            # own tool surface / hooks.
-            def _build_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+            # registry session env / thinking). The agent only supplies its own
+            # tool surface / hooks per client.
+            def _build_main_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
                 return ClaudeAgentOptions(
                     **_opt_kwargs,
                     system_prompt=prompt + build_main_workflow_note(query_mode='slayer'),
-                    mcp_servers=mcp_servers,
-                    allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
-                    # Re-enable ONLY the Task built-in (for the discovery
-                    # subagent); every other Claude Code built-in stays dropped
-                    # (Bash/Edit/WebFetch/ToolSearch/...). Removing ToolSearch
-                    # is load-bearing — with the built-ins gone the ~15 MCP
-                    # tools are exposed directly instead of being deferred
-                    # behind ToolSearch (which previously wasted ~5 turns/run
-                    # while the agent re-discovered its own tools).
-                    # setting_sources=[] also keeps the run reproducible (no
-                    # user/project settings, no CLAUDE.md bleed-through).
-                    tools=["Task"],
+                    mcp_servers=main_mcp_servers,
+                    allowed_tools=list(main_tools),
+                    # No Claude Code built-ins: ask_discovery is an in-process
+                    # native, so there is no Task/subagent surface. Dropping the
+                    # built-ins also exposes the MCP tools directly (no
+                    # ToolSearch deferral) and keeps the run reproducible.
+                    tools=[],
                     setting_sources=[],
-                    agents={
-                        DISCOVERY_AGENT_NAME: AgentDefinition(
-                            description=(
-                                "Schema/data introspection and user clarification "
-                                "for the current task; returns a structured "
-                                "handoff report."
-                            ),
-                            prompt=build_discovery_prompt(with_ask_user=False),
-                            tools=list(DISCOVERY_TOOLS),
-                            maxTurns=DISCOVERY_MAX_TURNS,
-                        ),
-                    },
-                    # Pin the requested Anthropic model (bare id, no provider
-                    # prefix) so --agent-model actually takes effect instead of
-                    # the claude CLI's configured default.
                     model=native_model_id(self.model),
-                    # Reasoning-effort level (None => SDK default).
                     effort=self.reasoning_effort,
-                    # Native turn cap (2x the base), MAIN loop only — the
-                    # discovery subagent has its own maxTurns. Unlike a manual
-                    # break on the receive stream, max_turns lets the FINAL
-                    # turn's tool (e.g. submit_query) execute before the run
-                    # stops — the off-by-one that previously dropped a
-                    # last-turn submission.
+                    # Native turn cap (2x the base) on the MAIN loop. max_turns
+                    # lets the FINAL turn's tool (e.g. submit_query) run before
+                    # the loop stops.
                     max_turns=_MAX_TURNS,
                     hooks={
                         "PreToolUse": [
                             HookMatcher(
                                 matcher="mcp__bird-interact-tools__submit_query",
                                 hooks=[pre_query_gate],
-                            ),
-                            HookMatcher(
-                                matcher="|".join(discovery_only),
-                                hooks=[make_partition_deny_hook(discovery_only)],
-                            ),
-                            # Codex post-merge: normalize backing-query filters
-                            # baked into create_model / edit_model payloads so
-                            # the persisted model definition matches the
-                            # filter-normalization contract the query path
-                            # already enforces.
-                            HookMatcher(
-                                matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
-                                hooks=[_normalize_write_tool_filters_hook],
                             ),
                             HookMatcher(hooks=[wall_clock_deny]),
                         ],
@@ -653,22 +541,43 @@ class ClaudeSDKOtfAgent:
                     },
                 )
 
-            # DEV-1579: the hermetic session owns CLAUDE_CONFIG_DIR isolation,
-            # API-key auth enforcement, the MCP parity assertion, and cleanup.
-            async with hermetic_claude_sdk_session(
-                self.model,
-                mcp_servers=mcp_servers,
-                build_options=_build_options,
-            ) as client:
-                await client.query(task_data["amb_user_query"])
-                async for msg in client.receive_response():
-                    try:
-                        _data: object = dataclasses.asdict(msg)
-                    except Exception:  # noqa: BLE001
-                        _data = str(msg)
-                    trajectory.append({"type": str(type(msg).__name__), "data": _data})
-                    usage_tracker.observe(msg)
-                    update_context_tokens(context_state, msg)
+            def _build_discovery_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+                return ClaudeAgentOptions(
+                    **_opt_kwargs,
+                    system_prompt=build_discovery_prompt(
+                        with_ask_user=False, query_mode="slayer"
+                    ),
+                    mcp_servers=discovery_mcp_servers,
+                    allowed_tools=list(discovery_tools),
+                    tools=[],
+                    setting_sources=[],
+                    model=native_model_id(self.model),
+                    effort=self.reasoning_effort,
+                    # Per-answer turn cap; the per-task number of ask_discovery
+                    # rounds is bounded by the DiscoveryChannel call cap.
+                    max_turns=DISCOVERY_MAX_TURNS,
+                    # Discovery work counts against the SAME per-task wall-clock
+                    # budget as main (shared context_state); without these the
+                    # introspection client could run outside the guardrails
+                    # while main is blocked inside ask_discovery (Codex PR #56).
+                    hooks={
+                        "PreToolUse": [HookMatcher(hooks=[wall_clock_deny])],
+                        "PostToolUse": [HookMatcher(hooks=[wall_clock_warning])],
+                    },
+                )
+
+            await run_main_with_discovery(
+                model=self.model,
+                accum=accum,
+                usage_tracker=usage_tracker,
+                context_state=context_state,
+                main_mcp_servers=main_mcp_servers,
+                discovery_mcp_servers=discovery_mcp_servers,
+                build_main_options=_build_main_options,
+                build_discovery_options=_build_discovery_options,
+                initial_query=task_data["amb_user_query"],
+                trajectory=trajectory,
+            )
             usage_tracker.finalize()
         except Exception as e:
             usage_tracker.finalize()

@@ -26,12 +26,13 @@ override before launching the runner.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from claude_agent_sdk import ClaudeSDKClient
 
@@ -108,36 +109,79 @@ class HermeticEnvError(RuntimeError):
 
 
 class ApiKeyAuthError(RuntimeError):
-    """A ``claude_sdk`` agent has no usable API-key credential.
+    """A ``claude_sdk`` agent has no usable auth credential.
 
-    Claude.ai subscription / OAuth auth (``CLAUDE_CODE_OAUTH_TOKEN``) was
-    disabled for the Agent SDK on 2026-06-15; agents must authenticate via
-    ``ANTHROPIC_API_KEY`` (Anthropic) or their registry provider token.
+    On the default API-key path the agent authenticates via ``ANTHROPIC_API_KEY``
+    (Anthropic) or its registry provider token. On the DEV-1602 subscription path
+    (selected by the ``BIRD_INTERACT_SUBSCRIPTION_AUTH`` signal) it authenticates
+    via a Claude.ai OAuth token (``CLAUDE_CODE_OAUTH_TOKEN``, ``sk-ant-oat01-``
+    prefix). This is raised when the selected path has no usable credential.
     """
 
 
+# DEV-1602: the subscription/OAuth path is gated by an EXPLICIT operator signal,
+# never inferred from which credential happens to be present in the env. The
+# cloud driver sets this on the actor env when ``--subscription-auth`` is chosen;
+# the local ``run.py`` sets it from its own ``--subscription-auth`` flag.
+_SUBSCRIPTION_AUTH_ENV = "BIRD_INTERACT_SUBSCRIPTION_AUTH"
+
+# A Claude.ai OAuth token always carries this prefix; the driver, prereqs, and
+# the cloud actor invariant all validate it, and so do we.
+_OAUTH_TOKEN_PREFIX = "sk-ant-oat01-"
+
+
+def _subscription_auth_selected() -> bool:
+    """True iff the operator explicitly opted into the subscription/OAuth path.
+
+    Truthy means the signal var is present and not empty and not ``"0"`` — any
+    other non-empty value selects the subscription path.
+    """
+    val = os.environ.get(_SUBSCRIPTION_AUTH_ENV, "")
+    return bool(val) and val != "0"
+
+
 def assert_api_key_auth(model: str, *, provider_aware: bool = True) -> None:
-    """Enforce API-key auth for a ``claude_sdk`` agent.
+    """Enforce auth for a ``claude_sdk`` agent (API-key OR subscription path).
 
     Registry open-weight models authenticate via their own provider token
     (layered by :func:`build_hermetic_session_env`) and are exempt — but only
     when the call site is provider-aware. An Anthropic-only call site
     (``provider_aware=False``) that is somehow handed a registry model would
-    NOT receive that provider env, so it must still demand ``ANTHROPIC_API_KEY``
-    rather than silently skip the check.
+    NOT receive that provider env, so it must still demand a real credential
+    rather than silently skip the check. The registry exemption is checked
+    FIRST, so the subscription signal (Anthropic-only) never applies to it.
 
-    Raises :class:`ApiKeyAuthError` for an Anthropic model when no
-    ``ANTHROPIC_API_KEY`` is present in the process environment. A lone
-    ``CLAUDE_CODE_OAUTH_TOKEN`` (dead subscription auth) does NOT satisfy it.
+    On the subscription path (``BIRD_INTERACT_SUBSCRIPTION_AUTH`` set) a valid
+    ``CLAUDE_CODE_OAUTH_TOKEN`` (``sk-ant-oat01-`` prefix) satisfies auth and a
+    missing/malformed token hard-fails — there is NO silent fall-back to
+    ``ANTHROPIC_API_KEY`` even when it is present. Otherwise (API-key path) an
+    ``ANTHROPIC_API_KEY`` is required. Raises :class:`ApiKeyAuthError` on
+    failure.
     """
     if provider_aware and get_provider(model) is not None:
         return
+    if _subscription_auth_selected():
+        token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+        if not token:
+            raise ApiKeyAuthError(
+                "claude_sdk subscription auth was selected "
+                f"({_SUBSCRIPTION_AUTH_ENV} set) but CLAUDE_CODE_OAUTH_TOKEN is "
+                f"not set (model={model!r}). Run `claude setup-token`, or unset "
+                f"{_SUBSCRIPTION_AUTH_ENV} to use the ANTHROPIC_API_KEY path."
+            )
+        if not token.startswith(_OAUTH_TOKEN_PREFIX):
+            raise ApiKeyAuthError(
+                "CLAUDE_CODE_OAUTH_TOKEN does not look like a Claude.ai OAuth "
+                f"token (expected {_OAUTH_TOKEN_PREFIX} prefix, model={model!r}). "
+                "Re-run `claude setup-token`."
+            )
+        return
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise ApiKeyAuthError(
-            f"claude_sdk agents require ANTHROPIC_API_KEY (model={model!r}). "
-            "Claude.ai subscription / OAuth auth (CLAUDE_CODE_OAUTH_TOKEN) was "
-            "disabled for the Claude Agent SDK on 2026-06-15. Export "
-            "ANTHROPIC_API_KEY (cloud: submit with --no-subscription-auth)."
+            f"claude_sdk agents require ANTHROPIC_API_KEY (model={model!r}) on "
+            f"the API-key path. Export ANTHROPIC_API_KEY, or select the "
+            f"subscription path ({_SUBSCRIPTION_AUTH_ENV}=1 with a valid "
+            "CLAUDE_CODE_OAUTH_TOKEN; cloud: submit with --subscription-auth)."
         )
 
 
@@ -150,9 +194,10 @@ def hermetic_claude_config_dir() -> tuple[str, Path]:
     onboarding / trust flags pre-accept the CLI's first-run prompts so it never
     blocks on interactive stdin in a non-tty subprocess.
 
-    We deliberately do NOT copy a ``.credentials.json`` forward: subscription /
-    OAuth auth is dead for the Agent SDK (see :func:`assert_api_key_auth`), so
-    auth flows from ``ANTHROPIC_API_KEY`` in the process env instead.
+    We deliberately do NOT copy a ``.credentials.json`` forward: auth always
+    flows from the process env — ``ANTHROPIC_API_KEY`` on the API-key path, or
+    ``CLAUDE_CODE_OAUTH_TOKEN`` on the DEV-1602 subscription path (see
+    :func:`assert_api_key_auth`) — never from a copied credential file.
 
     Returns ``(env_var_value, dir_path)``. The caller owns cleanup
     (``shutil.rmtree(dir_path, ignore_errors=True)``);
@@ -180,19 +225,41 @@ def build_hermetic_session_env(
     """The ``ClaudeAgentOptions.env`` mapping the isolation policy owns.
 
     Layers: telemetry-disable knobs (DEV-1561) + the hermetic
-    ``CLAUDE_CONFIG_DIR`` + (for registry open-weight models, when
-    ``provider_aware``) the provider session env (``ANTHROPIC_BASE_URL`` +
-    Bearer token + ambient-Anthropic-credential neutralisation). The registry
-    layer never sets ``CLAUDE_CONFIG_DIR``, so isolation survives it.
+    ``CLAUDE_CONFIG_DIR`` + the auth-path credential masking + (for registry
+    open-weight models, when ``provider_aware``) the provider session env
+    (``ANTHROPIC_BASE_URL`` + Bearer token + ambient-Anthropic-credential
+    neutralisation). The registry layer never sets ``CLAUDE_CONFIG_DIR``, so
+    isolation survives it.
+
+    DEV-1602 auth-path masking (Anthropic models only — registry is exempt):
+
+    * subscription path (``BIRD_INTERACT_SUBSCRIPTION_AUTH`` set): mask BOTH
+      ``ANTHROPIC_API_KEY`` and ``ANTHROPIC_AUTH_TOKEN`` (empty strings) so the
+      SDK's auth-precedence rule cannot pick either over the OAuth token, and
+      leave ``CLAUDE_CODE_OAUTH_TOKEN`` to inherit from the parent env into the
+      subprocess. NB the parent process keeps ``ANTHROPIC_API_KEY`` (the litellm
+      user-sim needs it on local runs); only the SDK subprocess sees it masked.
+    * API-key path (default): mask an ambient ``CLAUDE_CODE_OAUTH_TOKEN`` so the
+      SDK is forced onto ``ANTHROPIC_API_KEY``.
+
+    For registry models the provider layer below masks BOTH and sets the
+    provider's own bearer token, so the subscription signal is inert for them.
     """
     env = disable_cli_telemetry_env()
     env["CLAUDE_CONFIG_DIR"] = config_dir_val
-    # Neutralise an ambient subscription/OAuth token so the SDK subprocess is
-    # forced onto ANTHROPIC_API_KEY (subscription auth is dead — see
-    # `assert_api_key_auth`). For registry models the provider layer below
-    # re-asserts this (and sets the provider's own bearer token).
-    env["CLAUDE_CODE_OAUTH_TOKEN"] = ""
-    if provider_aware and get_provider(model) is not None:
+    is_registry = provider_aware and get_provider(model) is not None
+    if _subscription_auth_selected() and not is_registry:
+        # Subscription path: mask the API key AND the Bearer auth token (both are
+        # SDK credentials the auth-precedence rule would pick over the OAuth
+        # token — see the registry path, which uses ANTHROPIC_AUTH_TOKEN for
+        # Bearer auth). OAuth is authoritative; the token inherits.
+        env["ANTHROPIC_API_KEY"] = ""
+        env["ANTHROPIC_AUTH_TOKEN"] = ""
+    else:
+        # API-key path (and the base layer for registry, overwritten below):
+        # mask an ambient OAuth token so the SDK uses ANTHROPIC_API_KEY.
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = ""
+    if is_registry:
         env.update(sdk_session_env(model))
     return env
 
@@ -296,6 +363,66 @@ async def hermetic_claude_sdk_session(
                     ClaudeSDKClient(options=options)
                 )
             await assert_hermetic_mcp_servers(client, mcp_servers.keys())
-            yield client
+            # Wrap the client so every message streamed through
+            # `receive_response()` is recorded into `client.transcript` — making
+            # per-session transcript capture an INTRINSIC property of every
+            # claude_sdk agent (no agent re-implements it). Wrap AFTER the parity
+            # assertion so it runs against the raw client.
+            yield _TranscriptClient(client)
     finally:
         shutil.rmtree(config_path, ignore_errors=True)
+
+
+def serialize_sdk_message(msg: Any) -> dict:
+    """Serialise one SDK stream message into a JSON-able ``{type, data}`` dict.
+
+    Mirrors the trajectory shape the claude_sdk agents already build by hand
+    (``dataclasses.asdict`` when possible, else ``str``). NEVER raises — capture
+    must not break the receive stream, so this owns the full guard (the caller
+    appends its result directly)."""
+    name = type(msg).__name__
+    try:
+        return {"type": name, "data": dataclasses.asdict(msg)}
+    except Exception:  # noqa: BLE001 — non-dataclass / unserialisable
+        try:
+            return {"type": name, "data": str(msg)}
+        except Exception:  # noqa: BLE001 — pathological __str__
+            return {"type": name, "data": "<unserializable>"}
+
+
+class _TranscriptClient:
+    """Transparent proxy over a ``ClaudeSDKClient`` that tees every message
+    streamed through ``receive_response()`` into ``.transcript``.
+
+    Everything except ``query``/``receive_response`` delegates to the wrapped
+    client via ``__getattr__`` (``get_mcp_status``, ``interrupt``, ``aclose``,
+    …), so existing call sites are unaffected. ``.transcript`` accumulates ACROSS
+    every ``query()``/``receive_response()`` cycle on the warm client, so a
+    multi-turn (or re-prompt-loop) session yields one complete transcript.
+    """
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+        self.transcript: list[dict] = []
+
+    async def query(self, *args, **kwargs):
+        return await self._client.query(*args, **kwargs)
+
+    def receive_response(self):
+        return self._record(self._client.receive_response())
+
+    async def _record(self, agen):
+        try:
+            async for msg in agen:
+                # serialize_sdk_message never raises, so the stream is safe.
+                self.transcript.append(serialize_sdk_message(msg))
+                yield msg
+        finally:
+            aclose = getattr(agen, "aclose", None)
+            if aclose is not None:
+                with contextlib.suppress(Exception):
+                    await agen.aclose()
+
+    def __getattr__(self, name: str):
+        # Only reached for attributes not defined on the proxy itself.
+        return getattr(self._client, name)

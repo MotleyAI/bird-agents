@@ -41,6 +41,7 @@ Out of scope: pydantic_ai_* adapters (their existing
 """
 from __future__ import annotations
 
+import contextvars
 import copy
 import json
 from typing import Any, Optional
@@ -118,59 +119,95 @@ def _strip_tool_level_keys(parsed: Any) -> Any:
                     stage.pop(k, None)
     return parsed
 
-# Task-local storage handle. ``attach_storage`` is called by the agent
-# at task startup; the FastMCP-extracted ``query``.fn is cached lazily
-# in ``_cached_slayer_query_fn`` (kept as a top-level for direct test
-# monkeypatching), other tools in ``_cached_slayer_tool_fns``.
-_slayer_storage: Any = None
-_cached_slayer_query_fn: Any = None
-_cached_slayer_tool_fns: dict[str, Any] = {}
+# DEV-1581 (Codex R2 finding #2): the SLayer storage handle + the
+# FastMCP-extracted tool-fn caches MUST be TASK-LOCAL, not module
+# globals. Under the R2 two-persistent-clients design (main + discovery
+# in one process) and ``run.py``'s ``asyncio.gather`` over multiple
+# ``run_task``s, concurrent tasks with DIFFERENT ``slayer_storage_dir``
+# would otherwise interleave and clobber a shared module global: task A
+# attaches storage A, yields inside SLayer query code, task B attaches
+# storage B, and A's next tool lookup silently resolves against B.
+#
+# The state lives in a ``ContextVar``. ``attach_storage`` REBINDS the var
+# to a fresh state object (never mutates the existing one in place) so an
+# ``asyncio.Task`` that inherited the parent context gets its own binding
+# the moment it attaches — sibling tasks never observe each other's
+# storage. The cache (``query_fn`` + ``tool_fns``) hangs off that
+# per-task state object, so it is task-local for free.
+
+
+class _TaskQueryState:
+    """Per-task SLayer storage handle + lazily-extracted tool-fn cache."""
+
+    __slots__ = ("storage", "query_fn", "tool_fns")
+
+    def __init__(self, storage: Any = None) -> None:
+        self.storage = storage
+        self.query_fn: Any = None
+        self.tool_fns: dict[str, Any] = {}
+
+
+_query_state: contextvars.ContextVar[_TaskQueryState] = contextvars.ContextVar(
+    "bird_interact_slayer_query_state",
+)
+
+
+def _state() -> _TaskQueryState:
+    """Return the current task's query state, lazily creating + binding an
+    empty one if this context has never attached storage."""
+    st = _query_state.get(None)
+    if st is None:
+        st = _TaskQueryState()
+        _query_state.set(st)
+    return st
 
 
 def attach_storage(storage: Any) -> None:
-    """Wire the SLayer storage handle for the current task.
+    """Wire the SLayer storage handle for the CURRENT task (contextvar).
 
-    Invalidates the cached tool functions ONLY when the storage object
-    actually changes — calling this per-tool-invocation with the same
-    storage is a no-op. (The claude_sdk handler attaches per-call so the
-    wrapper survives storage swaps between tasks; without this guard
-    the cache never hits and ``create_mcp_server`` re-runs on every
-    query call. Flagged by CodeRabbit on PR #38.)
+    Rebinds the context var to a FRESH state object whenever the storage
+    identity changes (or ``storage is None`` — a reset), so concurrent
+    ``asyncio.Task``s that inherited the parent context each get their own
+    binding and never clobber one another. Calling this repeatedly with
+    the SAME storage object is a no-op that preserves the cache (the
+    claude_sdk handler attaches per query call; without this guard
+    ``create_mcp_server`` would re-run every time — flagged by CodeRabbit
+    on PR #38).
     """
-    global _slayer_storage, _cached_slayer_query_fn
-    if storage is _slayer_storage:
+    if storage is None:
+        # ``None`` is an explicit reset: always rebind to a clean state so
+        # no stale cache survives (a plain identity check would early-return
+        # when the prior storage was also ``None`` and keep its cache).
+        _query_state.set(_TaskQueryState())
         return
-    _slayer_storage = storage
-    _cached_slayer_query_fn = None
-    _cached_slayer_tool_fns.clear()
+    st = _query_state.get(None)
+    if st is not None and st.storage is storage:
+        return
+    _query_state.set(_TaskQueryState(storage))
 
 
 def _get_slayer_tool_fn(name: str):
     """Extract a SLayer MCP tool function via
     ``create_mcp_server(storage)._tool_manager._tools[name].fn``,
-    cached per-task per-name. Tests monkeypatch
-    ``slayer.mcp.server.create_mcp_server`` to swap in a fake.
-
-    The ``query`` lookup keeps a module-level alias
-    (``_cached_slayer_query_fn``) for back-compat with tests that
-    monkeypatch that name directly.
+    cached per-task per-name on the current ``_TaskQueryState``. Tests
+    monkeypatch ``slayer.mcp.server.create_mcp_server`` to swap in a fake.
     """
-    global _cached_slayer_query_fn
+    st = _state()
     if name == "query":
-        if _cached_slayer_query_fn is not None:
-            return _cached_slayer_query_fn
+        if st.query_fn is not None:
+            return st.query_fn
     else:
-        cached = _cached_slayer_tool_fns.get(name)
+        cached = st.tool_fns.get(name)
         if cached is not None:
             return cached
     from slayer.mcp.server import create_mcp_server
 
-    mcp = create_mcp_server(_slayer_storage)
+    mcp = create_mcp_server(st.storage)
     fn = mcp._tool_manager._tools[name].fn
     if name == "query":
-        _cached_slayer_query_fn = fn
+        st.query_fn = fn
     else:
-        _cached_slayer_tool_fns[name] = fn
+        st.tool_fns[name] = fn
     return fn
 
 

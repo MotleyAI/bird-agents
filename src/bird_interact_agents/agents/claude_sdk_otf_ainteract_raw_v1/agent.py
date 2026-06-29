@@ -12,59 +12,40 @@ built by ``_make_ask_user_guards``.
 
 from __future__ import annotations
 
-import dataclasses
 import logging
 import time
 
-from claude_agent_sdk import (
-    AgentDefinition,
-    ClaudeAgentOptions,
-    HookMatcher,
-    create_sdk_mcp_server,
-)
+from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
 
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
     SdkUsageTracker,
-    accumulate_assistant_usage,
-    ask_user,
-    execute_sql,
-    get_all_column_meanings,
-    get_all_external_knowledge_names,
-    get_all_knowledge_definitions,
-    get_column_meaning,
-    get_knowledge_definition,
-    get_schema,
-    submit_sql,
+    build_bird_interact_server,
 )
 from bird_interact_agents.agents.claude_sdk.context_budget import (
     context_window_for,
     make_context_budget_hook,
     make_wall_clock_budget_hook,
     per_task_timeout_s,
-    update_context_tokens,
     update_wall_clock_start,
 )
+from bird_interact_agents.agents.claude_sdk.discovery_runtime import (
+    run_main_with_discovery,
+)
 from bird_interact_agents.agents.claude_sdk.partition import (
-    DISCOVERY_AGENT_NAME,
     DISCOVERY_MAX_TURNS,
-    MAIN_WORKFLOW_NOTE,
     build_main_workflow_note,
     build_discovery_prompt,
-    make_partition_deny_hook,
-)
-from bird_interact_agents.agents.claude_sdk.sdk_env import (
-    hermetic_claude_sdk_session,
 )
 from bird_interact_agents.agents.claude_sdk_otf_v1.agent import (
     _MAX_TURNS,
     _make_turn_budget_hook,
 )
 from bird_interact_agents.agents.claude_sdk_otf_raw_v1.agent import (
-    DISCOVERY_TOOLS as _ONE_SHOT_RAW_DISCOVERY_TOOLS,
+    DISCOVERY_NATIVE_TOOL_NAMES as _ONE_SHOT_RAW_DISCOVERY_TOOL_NAMES,
 )
 from bird_interact_agents.agents.claude_sdk_otf_raw_v1.agent import (
-    MAIN_TOOLS as _ONE_SHOT_RAW_MAIN_TOOLS,
+    MAIN_NATIVE_TOOL_NAMES as _ONE_SHOT_RAW_MAIN_TOOL_NAMES,
 )
 from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1.prompts import (
     RAW_OTF_AINTERACT,
@@ -96,23 +77,10 @@ _SUBMIT_SQL_TOOL = "mcp__bird-interact-tools__submit_sql"
 # How often (in total tool calls without ask_user) the nag fires.
 _NAG_EVERY = 10
 
-# DEV-1555: a-interact raw partition = the one-shot raw partition +
-# ask_user in BOTH contexts.
-DISCOVERY_TOOLS = [*_ONE_SHOT_RAW_DISCOVERY_TOOLS, _ASK_USER_TOOL]
-MAIN_TOOLS = [*_ONE_SHOT_RAW_MAIN_TOOLS, _ASK_USER_TOOL]
-
-# All 7 BIRD raw-exploration tools + ask_user + raw submission tool.
-_AINTERACT_RAW_TOOLS = [
-    execute_sql,
-    get_schema,
-    get_all_column_meanings,
-    get_column_meaning,
-    get_all_external_knowledge_names,
-    get_knowledge_definition,
-    get_all_knowledge_definitions,
-    ask_user,
-    submit_sql,
-]
+# DEV-1581 R2: a-interact raw partition = the one-shot raw partition +
+# ask_user in BOTH contexts (two separate persistent clients).
+MAIN_NATIVE_TOOL_NAMES = [*_ONE_SHOT_RAW_MAIN_TOOL_NAMES, _ASK_USER_TOOL]
+DISCOVERY_NATIVE_TOOL_NAMES = [*_ONE_SHOT_RAW_DISCOVERY_TOOL_NAMES, _ASK_USER_TOOL]
 
 
 def _make_ask_user_guards():
@@ -174,15 +142,6 @@ def _make_ask_user_guards():
         return {}
 
     return pre_submit_gate, post_ask_counter, post_nag
-
-
-def _select_tools(eval_mode: str) -> list:
-    if eval_mode != "a-interact":
-        raise ValueError(
-            "claude_sdk_otf_ainteract_raw supports only eval_mode='a-interact'; "
-            f"got {eval_mode!r}"
-        )
-    return list(_AINTERACT_RAW_TOOLS)
 
 
 def _build_prompt(eval_mode: str, task_data: dict, budget: float) -> str:
@@ -308,6 +267,7 @@ class ClaudeSDKOtfAInteractRawAgent:
                 "data_path_base": data_path_base,
                 "user_sim_model": user_sim_model,
                 "user_sim_prompt_version": user_sim_prompt_version,
+                "_discovery": None,
                 "result": None,
                 "eval_mode": eval_mode,
                 "query_mode": query_mode,
@@ -317,22 +277,25 @@ class ClaudeSDKOtfAInteractRawAgent:
             }
             _ctx_var.set(ctx_dict)
 
-            tools = _select_tools(eval_mode)
             prompt = _build_prompt(eval_mode, task_data, budget)
 
+            # DEV-1581 R2: two persistent in-process clients (raw a-interact).
+            main_tools = list(MAIN_NATIVE_TOOL_NAMES)
+            discovery_tools = list(DISCOVERY_NATIVE_TOOL_NAMES)
             with otf_timer(
                 "run_task.create_sdk_mcp_server", instance_id=instance_id,
             ):
-                server = create_sdk_mcp_server(
-                    name="bird-interact-tools", version="1.0.0", tools=tools,
-                )
-
-            mcp_servers: dict = {"bird-interact-tools": server}
+                main_mcp_servers = {
+                    "bird-interact-tools": build_bird_interact_server(main_tools),
+                }
+                discovery_mcp_servers = {
+                    "bird-interact-tools": build_bird_interact_server(
+                        discovery_tools,
+                    ),
+                }
 
             pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
 
-            # DEV-1555: discovery/main split (see claude_sdk_otf.agent).
-            discovery_only = sorted(set(DISCOVERY_TOOLS) - set(MAIN_TOOLS))
             context_state: dict = {}
             update_wall_clock_start(context_state)
             (
@@ -344,30 +307,17 @@ class ClaudeSDKOtfAInteractRawAgent:
                 submit_tool="submit_sql",
             )
 
-            # DEV-1579: build the agent's options from the policy-owned env
-            # kwargs (telemetry-disable + hermetic CLAUDE_CONFIG_DIR + any
-            # registry session env / thinking). The agent only supplies its
-            # own tool surface / hooks.
-            def _build_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+            # DEV-1579: build each client's options from the policy-owned env
+            # kwargs. The agent only supplies its own tool surface / hooks.
+            # ask_user lives on BOTH clients.
+            def _build_main_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
                 return ClaudeAgentOptions(
                     **_opt_kwargs,
                     system_prompt=prompt + build_main_workflow_note(query_mode='raw'),
-                    mcp_servers=mcp_servers,
-                    allowed_tools=sorted(set(MAIN_TOOLS) | set(DISCOVERY_TOOLS)),
-                    tools=["Task"],
+                    mcp_servers=main_mcp_servers,
+                    allowed_tools=list(main_tools),
+                    tools=[],
                     setting_sources=[],
-                    agents={
-                        DISCOVERY_AGENT_NAME: AgentDefinition(
-                            description=(
-                                "Schema/data introspection and user clarification "
-                                "for the current task; returns a structured "
-                                "handoff report."
-                            ),
-                            prompt=build_discovery_prompt(with_ask_user=True),
-                            tools=list(DISCOVERY_TOOLS),
-                            maxTurns=DISCOVERY_MAX_TURNS,
-                        ),
-                    },
                     model=native_model_id(self.model),
                     effort=self.reasoning_effort,
                     max_turns=_MAX_TURNS,
@@ -376,10 +326,6 @@ class ClaudeSDKOtfAInteractRawAgent:
                             HookMatcher(
                                 matcher=_SUBMIT_SQL_TOOL,
                                 hooks=[pre_submit_gate],
-                            ),
-                            HookMatcher(
-                                matcher="|".join(discovery_only),
-                                hooks=[make_partition_deny_hook(discovery_only)],
                             ),
                             HookMatcher(hooks=[wall_clock_deny]),
                         ],
@@ -407,60 +353,81 @@ class ClaudeSDKOtfAInteractRawAgent:
                     },
                 )
 
-            # DEV-1579: the hermetic session owns CLAUDE_CONFIG_DIR isolation,
-            # API-key auth enforcement, the MCP parity assertion, and cleanup.
-            # DEV-1561: wrap ``__aenter__`` in ``otf_timer`` (via
-            # enter_cm_factory) so a failed initialize handshake still emits
-            # ``.error elapsed_s=… exc=<type>``.
-            async with hermetic_claude_sdk_session(
-                self.model,
-                mcp_servers=mcp_servers,
-                build_options=_build_options,
+            def _build_discovery_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
+                return ClaudeAgentOptions(
+                    **_opt_kwargs,
+                    system_prompt=build_discovery_prompt(
+                        with_ask_user=True, query_mode="raw"
+                    ),
+                    mcp_servers=discovery_mcp_servers,
+                    allowed_tools=list(discovery_tools),
+                    tools=[],
+                    setting_sources=[],
+                    model=native_model_id(self.model),
+                    effort=self.reasoning_effort,
+                    max_turns=DISCOVERY_MAX_TURNS,
+                    # Discovery's ask_user must increment the SAME shared counter
+                    # the main submit_sql gate reads (post_ask_counter closure
+                    # shared with _build_main_options), else a discovery-side ask
+                    # leaves the main gate closed. Discovery also shares main's
+                    # per-task wall-clock guardrails (Codex PR #56).
+                    hooks={
+                        "PreToolUse": [HookMatcher(hooks=[wall_clock_deny])],
+                        "PostToolUse": [
+                            HookMatcher(
+                                matcher=_ASK_USER_TOOL,
+                                hooks=[post_ask_counter],
+                            ),
+                            HookMatcher(hooks=[wall_clock_warning]),
+                        ],
+                    },
+                )
+
+            # DEV-1561: per-message timing log + otf_timer around the main
+            # client's __aenter__ and first query (preserved through
+            # run_main_with_discovery). The first-message elapsed is measured
+            # from immediately after the query returned (passed as the 3rd arg).
+            _msg_timing = {"prev_t": None}
+
+            def _on_main_message(msg, seq, t_after_query):
+                now = time.monotonic()
+                msg_type = type(msg).__name__
+                if seq == 1:
+                    log_otf_event(
+                        "run_task.sdk_first_message",
+                        instance_id=instance_id,
+                        msg_type=msg_type,
+                        elapsed_s=f"{now - t_after_query:.3f}",
+                    )
+                else:
+                    log_otf_event(
+                        "run_task.sdk_message",
+                        instance_id=instance_id,
+                        seq=seq,
+                        msg_type=msg_type,
+                        gap_s=f"{now - (_msg_timing['prev_t'] or now):.3f}",
+                    )
+                _msg_timing["prev_t"] = now
+
+            await run_main_with_discovery(
+                model=self.model,
+                accum=accum,
+                usage_tracker=usage_tracker,
+                context_state=context_state,
+                main_mcp_servers=main_mcp_servers,
+                discovery_mcp_servers=discovery_mcp_servers,
+                build_main_options=_build_main_options,
+                build_discovery_options=_build_discovery_options,
+                initial_query=task_data["amb_user_query"],
+                trajectory=trajectory,
                 enter_cm_factory=lambda: otf_timer(
                     "run_task.sdk_client_enter", instance_id=instance_id,
                 ),
-            ) as client:
-                with otf_timer(
+                query_cm_factory=lambda: otf_timer(
                     "run_task.sdk_first_query", instance_id=instance_id,
-                ):
-                    await client.query(task_data["amb_user_query"])
-                first_msg_t = time.monotonic()
-                msg_count = 0
-                prev_msg_t = first_msg_t
-                async for msg in client.receive_response():
-                    msg_count += 1
-                    now = time.monotonic()
-                    msg_type = type(msg).__name__
-                    if msg_count == 1:
-                        log_otf_event(
-                            "run_task.sdk_first_message",
-                            instance_id=instance_id,
-                            msg_type=msg_type,
-                            elapsed_s=f"{now - first_msg_t:.3f}",
-                        )
-                    else:
-                        log_otf_event(
-                            "run_task.sdk_message",
-                            instance_id=instance_id,
-                            seq=msg_count,
-                            msg_type=msg_type,
-                            gap_s=f"{now - prev_msg_t:.3f}",
-                        )
-                    prev_msg_t = now
-                    # DEV-1561: capture the full dataclass payload so
-                    # subagent (discovery) intermediate AssistantMessage /
-                    # TaskProgressMessage entries land in the trajectory
-                    # with structured content, not a 500-char truncation
-                    # of the dataclass __repr__. Matches the non-raw
-                    # ainteract agent's trajectory shape and re-enables
-                    # the `_run_capture` tool-stats walker for raw runs.
-                    try:
-                        _data: object = dataclasses.asdict(msg)
-                    except Exception:  # noqa: BLE001
-                        _data = str(msg)
-                    trajectory.append({"type": msg_type, "data": _data})
-                    usage_tracker.observe(msg)
-                    update_context_tokens(context_state, msg)
+                ),
+                on_main_message=_on_main_message,
+            )
             usage_tracker.finalize()
         except Exception as e:
             usage_tracker.finalize()

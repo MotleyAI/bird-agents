@@ -39,13 +39,21 @@ import pytest
 # DEV-1545 (_TABLE_SET_PROBE), DEV-1546 (_DEDUP_VS_RAW_ROWS), and
 # DEV-1550 (ModelColumn label + memory drill-in paragraph in
 # _SLAYER_TOOLS_BLOCK).
-# Re-baselined again for DEV-1591: the broad-search compact discipline
-# (`_COMPACT_SEARCH_DISCIPLINE`) is embedded into the v1 head blocks
-# (_ENCODE_CORE_HEAD / _AINTERACT_SLAYER_TOOLS) AND into the shared
-# HOST_DISCOVERY_PLAYBOOK these prompts append, so each v1 SLAYER prompt
-# now carries the rule twice.
-_ONE_SHOT_SHA256 = "49d83ce25c6284dbf0a5b8e2ae20089ad05ac8f1c07c0b96276e6c9501552521"
-_AINTERACT_SHA256 = "9c0a572914ecad40712ca7bd261ce58850ba5a43167da58fd54bf541dbd020c8"
+# Re-baselined for DEV-1581 R2: the two-stage v1 main loop no longer holds the
+# schema-introspection tools (search / inspect_model / models_summary) — they
+# moved to the discovery client reached via ask_discovery — so the v1 slayer
+# prompts now route schema/sample-value/entity discovery through ask_discovery
+# while keeping KB lookups (get_knowledge_definition) on the main surface.
+# Re-baselined again for the DEV-1591 ∩ DEV-1581 merge: under the ask_discovery
+# two-stage split, the v1 MAIN loop does not call `search` (it reaches the warm
+# discovery client through `ask_discovery`), so the broad-search compact
+# discipline (`_COMPACT_SEARCH_DISCIPLINE`) lives on the DISCOVERY client prompt
+# (partition.build_discovery_prompt, slayer-only) — NOT the v1 main heads. The
+# only copy still reaching the v1 main prompt is the one inside the shared
+# HOST_DISCOVERY_PLAYBOOK these prompts append (itself overridden for the main
+# loop by build_main_workflow_note). Snapshots recomputed for that placement.
+_ONE_SHOT_SHA256 = "be82869a90c5ce4e76f9c9d30dcdd4a5b3ae3936acdd354668b7e1d30123ef65"
+_AINTERACT_SHA256 = "c3503705d7b59ab03f7f4c4d06e59981d303e8ebd6e1208e1d8d36916563396b"
 
 
 def test_slayer_otf_one_shot_unchanged():

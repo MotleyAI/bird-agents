@@ -547,6 +547,96 @@ def test_claude_sdk_oauth_plus_api_key_openai_usersim_passes(
     )
 
 
+def test_claude_sdk_registry_agent_skips_oauth_when_subscription_opted_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DEV-1602 (Codex finding #1): a registry open-weight agent model must take
+    the provider-key path even with no_subscription_auth=False — the OAuth
+    branch is gated on the agent model NOT being a registry model. No
+    CLAUDE_CODE_OAUTH_TOKEN is required here."""
+    # A valid OAuth token is ALSO present — the registry-first gate must ignore
+    # it (the provider key path wins) rather than enter the OAuth branch.
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)  # for the user-sim
+    # Must NOT raise about CLAUDE_CODE_OAUTH_TOKEN.
+    prereqs.check_api_keys(
+        agent_model="moonshot/kimi-k2.7-code",
+        user_sim_model="anthropic/claude-haiku-4-5-20251001",
+        framework="claude_sdk",
+    )
+
+
+def test_claude_sdk_registry_agent_still_requires_provider_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DEV-1602: the registry-first gate must not skip BOTH OAuth and
+    provider-key validation. A registry agent missing its provider key still
+    fails (so the implementation can't pass by merely short-circuiting OAuth)."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    with pytest.raises(prereqs.PrereqError, match="MOONSHOT_API_KEY"):
+        prereqs.check_api_keys(
+            agent_model="moonshot/kimi-k2.7-code",
+            user_sim_model="anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+        )
+
+
+def test_non_anthropic_non_registry_subscription_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CodeRabbit: --subscription-auth is Anthropic-only. A claude_sdk*
+    subscription run on a non-Anthropic, non-registry model (openai/*) is
+    rejected rather than requiring an OAuth token."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    with pytest.raises(prereqs.PrereqError, match="Anthropic-only"):
+        prereqs.check_api_keys(
+            agent_model="openai/gpt-4o",
+            user_sim_model="anthropic/claude-haiku-4-5-20251001",
+            framework="claude_sdk",
+            no_subscription_auth=False,
+        )
+
+
+@pytest.mark.parametrize("no_sub", [False, True])
+def test_annotator_rejects_non_anthropic_non_registry_model(
+    monkeypatch: pytest.MonkeyPatch, no_sub: bool,
+) -> None:
+    """DEV-1604: the annotator is provider-aware, so a non-Anthropic,
+    NON-registry model (openai/*, gemini/*) — which has no claude_sdk session —
+    is still rejected early, for both --subscription-auth values."""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    with pytest.raises(prereqs.PrereqError, match=r"anthropic/\* or a registry"):
+        prereqs.check_api_keys(
+            agent_model="openai/gpt-4o",
+            user_sim_model="anthropic/claude-haiku-4-5-20251001",
+            framework="annotator",
+            no_subscription_auth=no_sub,
+        )
+
+
+@pytest.mark.parametrize("no_sub", [False, True])
+def test_annotator_accepts_registry_model(
+    monkeypatch: pytest.MonkeyPatch, no_sub: bool,
+) -> None:
+    """DEV-1604: a registry open-weight annotator model (Moonshot, z.ai,
+    Doubleword) is now accepted — it runs through the bridge / provider-key
+    path. No rejection regardless of the --subscription-auth value."""
+    monkeypatch.setenv("MOONSHOT_API_KEY", "ms-key-1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", _ANTHROPIC_KEY)
+    prereqs.check_api_keys(
+        agent_model="moonshot/kimi-k2.7-code",
+        user_sim_model="",
+        framework="annotator",
+        no_subscription_auth=no_sub,
+    )
+
+
 def test_claude_sdk_oauth_slayer_still_requires_openai_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

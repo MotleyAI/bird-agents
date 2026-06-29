@@ -35,13 +35,23 @@ class ModelPricing(BaseModel):
 
 class ProviderSpec(BaseModel):
     key: str
-    # Anthropic-format endpoint (what ANTHROPIC_BASE_URL points at).
-    base_url: str
-    # Env var that overrides ``base_url`` at runtime.
+    # Anthropic-format endpoint (what ANTHROPIC_BASE_URL points at). ``None``
+    # for OpenAI-only providers (DEV-1604, e.g. Doubleword) that have NO
+    # Anthropic ``/v1/messages`` surface — the bridge proxy supplies the URL via
+    # ``base_url_env`` at runtime, and ``resolve_base_url`` fails fast if it is
+    # still unset (so a ``None`` never leaks to any consumer).
+    base_url: Optional[str]
+    # Env var that overrides ``base_url`` at runtime. STAYS required — it is the
+    # override carrier the bridge proxy + driver shipping read.
     base_url_env: str
     api_format: Literal["anthropic", "openai"]
     auth_env: str
     default_context_window: int
+    # False marks pricing as a deliberate, unconfirmed placeholder (DEV-1604
+    # Doubleword): ``model_pricing`` is left empty so cost rows are $0/absent
+    # rather than WRONG, and this flag stops the placeholder silently shipping
+    # as if real console numbers were entered.
+    pricing_confirmed: bool = True
     # Per-model overrides; provider default applies otherwise.
     model_context_windows: dict[str, int] = {}
     # OpenAI-compatible endpoint for the litellm (user-sim) route.
@@ -128,6 +138,28 @@ REGISTRY: dict[str, ProviderSpec] = {
             "glm-4.6": _GLM46_PRICING,
         },
     ),
+    # DEV-1604: Doubleword (api.doubleword.ai) — OpenAI-Chat-Completions ONLY,
+    # no Anthropic endpoint. `claude_sdk*` agents reach it through the local
+    # Anthropic⇄OpenAI bridge proxy, which sets ANTHROPIC_BASE_URL via
+    # `base_url_env`. The GLM-5.2 native id is the FP8 build `zai-org/GLM-5.2-FP8`
+    # (verified live via GET /v1/models); it flows through `_split` / the SDK as
+    # a multi-slash native id (only the FIRST slash splits provider from id).
+    #
+    # MUST-CONFIRM (Doubleword console — not published): exact per-token price
+    # and the true context window for GLM-5.2-FP8. Until then pricing is UNSET
+    # (`pricing_confirmed=False`, cost rows $0 not wrong) and the window mirrors
+    # Doubleword's published GLM-5.1 (~198K, max 202,752 → 200K).
+    "doubleword": ProviderSpec(
+        key="doubleword",
+        base_url=None,  # no Anthropic endpoint — the proxy supplies it
+        base_url_env="BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL",
+        api_format="openai",
+        auth_env="DOUBLEWORD_API_KEY",
+        default_context_window=200_000,  # placeholder — MUST-CONFIRM console
+        openai_base_url="https://api.doubleword.ai/v1",
+        model_pricing={},  # UNSET — MUST-CONFIRM console (see pricing_confirmed)
+        pricing_confirmed=False,
+    ),
 }
 
 
@@ -165,7 +197,66 @@ def requires_thinking(model: str) -> bool:
 
 
 def resolve_base_url(spec: ProviderSpec) -> str:
-    return os.environ.get(spec.base_url_env) or spec.base_url
+    """The Anthropic base URL for this provider: the ``base_url_env`` override
+    if set, else the static ``base_url``.
+
+    DEV-1604: an OpenAI-only provider has ``base_url=None`` and reaches the SDK
+    only through the bridge proxy, which sets ``base_url_env`` to its loopback
+    URL. If neither is present (or the override is an empty string — a common
+    misconfig), this raises rather than letting a falsy ``None``/`""`` leak to
+    any consumer (``sdk_session_env`` AND ``eval/autopsy``)."""
+    url = os.environ.get(spec.base_url_env) or spec.base_url
+    if not url:
+        raise RuntimeError(
+            f"{spec.key}: no Anthropic base URL — {spec.base_url_env} is unset "
+            f"and the provider has no direct Anthropic endpoint "
+            f"(api_format={spec.api_format!r}). An OpenAI-only provider must run "
+            f"behind the bridge proxy, which sets {spec.base_url_env} to its "
+            f"loopback URL before the SDK session is built."
+        )
+    return url
+
+
+def per_token_openai_target(model: str) -> tuple[str, str, str]:
+    """``(openai_base_url, native_id, auth_env)`` for the bridge's upstream POST.
+
+    The bridge proxy POSTs Anthropic-translated requests to
+    ``<openai_base_url>/chat/completions`` as ``openai/<native_id>`` with the
+    provider key from ``auth_env``. Raises if ``model`` is not a registry
+    provider exposing an OpenAI-compatible endpoint."""
+    spec = get_provider(model)
+    if spec is None or not spec.openai_base_url:
+        raise ValueError(
+            f"{model!r} has no OpenAI-compatible endpoint for the bridge proxy"
+        )
+    _, native_id = _split(model)
+    return spec.openai_base_url, native_id, spec.auth_env
+
+
+def agent_needs_bridge(model: str, no_subscription_auth: bool) -> bool:
+    """True iff the ``claude_sdk`` agent for ``model`` must route through the
+    Anthropic⇄OpenAI bridge proxy.
+
+    DEV-1604 recycles the ``--subscription-auth`` flag as the z.ai endpoint
+    selector (``no_subscription_auth`` is its carried form), so this keys on the
+    SAME field the rest of the auth machinery already threads everywhere:
+
+    * OpenAI-only providers (``api_format=="openai"``, e.g. Doubleword) have NO
+      Anthropic endpoint — they ALWAYS need the bridge (``--subscription-auth``
+      is rejected for them upstream).
+    * z.ai needs the bridge on the API-key / per-token path
+      (``no_subscription_auth=True``, the default); ``--subscription-auth``
+      (``no_subscription_auth=False``) keeps its direct coding-plan Anthropic
+      endpoint with ``ZAI_API_KEY`` — NOT the Claude.ai OAuth path, which stays
+      Anthropic-only.
+    * Everything else (Moonshot anthropic-format, Anthropic-proper) never
+      bridges."""
+    spec = get_provider(model)
+    if spec is None:
+        return False
+    if spec.api_format == "openai":
+        return True
+    return spec.key == "zai" and bool(no_subscription_auth)
 
 
 def provider_api_key(spec: ProviderSpec) -> str:
