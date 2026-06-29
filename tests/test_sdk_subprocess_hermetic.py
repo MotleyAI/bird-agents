@@ -794,3 +794,60 @@ async def test_session_enter_timeout_none_does_not_bound(monkeypatch):
         build_options=_build_options,
     ) as client:
         assert client.entered
+
+
+# ---------------------------------------------------------------------------
+# Bounded teardown (Codex review): _quiet_aexit / _quiet_disconnect must never
+# block past _SDK_TEARDOWN_TIMEOUT_S, else the enter-timeout cleanup re-hangs.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_quiet_aexit_is_time_bounded(monkeypatch):
+    monkeypatch.setattr(sdk_env, "_SDK_TEARDOWN_TIMEOUT_S", 0.05, raising=False)
+
+    class _HangAexit:
+        async def __aexit__(self, *a):
+            await asyncio.sleep(10)  # teardown wedges
+
+    # Outer guard: the call must return well under 5s despite the 10s hang.
+    await asyncio.wait_for(sdk_env._quiet_aexit(_HangAexit()), timeout=5.0)
+
+
+@pytest.mark.asyncio
+async def test_quiet_disconnect_is_time_bounded(monkeypatch):
+    monkeypatch.setattr(sdk_env, "_SDK_TEARDOWN_TIMEOUT_S", 0.05, raising=False)
+
+    class _HangDisconnect:
+        async def disconnect(self):
+            await asyncio.sleep(10)  # teardown wedges
+
+    await asyncio.wait_for(sdk_env._quiet_disconnect(_HangDisconnect()), timeout=5.0)
+
+
+@pytest.mark.asyncio
+async def test_enter_timeout_raises_even_when_cleanup_hangs(monkeypatch):
+    """The whole point: an enter timeout whose subsequent __aexit__ wedges must
+    STILL raise SdkSessionEnterError promptly (not re-hang in cleanup)."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr(sdk_env, "_SDK_TEARDOWN_TIMEOUT_S", 0.05, raising=False)
+
+    class _EnterThenHangCleanup(_FakeSDKClient):
+        async def get_mcp_status(self):
+            await asyncio.sleep(10)  # parity probe stalls → enter timeout fires
+
+        async def __aexit__(self, *a):
+            await asyncio.sleep(10)  # ...and cleanup wedges too
+
+    _patch_client(monkeypatch, _EnterThenHangCleanup)
+
+    async def _call():
+        with pytest.raises(sdk_env.SdkSessionEnterError):
+            async with sdk_env.hermetic_claude_sdk_session(
+                _ANTHROPIC,
+                mcp_servers={"bird-interact-tools": object(), "slayer": object()},
+                build_options=_build_options,
+                enter_timeout_s=0.05,
+            ):
+                pass
+
+    await asyncio.wait_for(_call(), timeout=5.0)

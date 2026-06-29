@@ -341,20 +341,47 @@ def _maybe_timeout(timeout_s: float | None):
     return asyncio.timeout(timeout_s)
 
 
+# Bound on best-effort SDK teardown (Codex review). The SDK's __aexit__ /
+# disconnect() have no internal timeout and a half-started subprocess can wedge;
+# without a cap, the enter-timeout cleanup below would re-introduce the very
+# indefinite hang SdkSessionEnterError exists to prevent.
+_SDK_TEARDOWN_TIMEOUT_S = 30.0
+
+
+async def _bounded_teardown(coro, timeout_s: float | None = None) -> None:
+    """Await ``coro`` but NEVER block past ``timeout_s``. Uses ``asyncio.wait``
+    (which does not cancel on timeout) + abandon, NOT ``asyncio.wait_for``: a
+    teardown stuck in an uncancellable SDK transport read would make
+    ``wait_for`` hang during its cancellation, defeating the bound. If teardown
+    overruns we abandon the leaked task (the process reaps it) and return.
+
+    ``timeout_s`` defaults to the module-level ``_SDK_TEARDOWN_TIMEOUT_S`` read
+    at CALL time (not a signature default, which would bind once at import and
+    be unpatchable)."""
+    if timeout_s is None:
+        timeout_s = _SDK_TEARDOWN_TIMEOUT_S
+    task = asyncio.ensure_future(coro)
+    # Retrieve the eventual result so an abandoned/late task does not log an
+    # "exception was never retrieved" warning.
+    task.add_done_callback(lambda t: t.cancelled() or t.exception())
+    await asyncio.wait({task}, timeout=timeout_s)
+
+
 async def _quiet_aexit(client) -> None:
-    """Best-effort ``__aexit__`` on a client that DID finish ``__aenter__``."""
+    """Best-effort, time-bounded ``__aexit__`` on a client that finished
+    ``__aenter__``."""
     with contextlib.suppress(Exception):
-        await client.__aexit__(None, None, None)
+        await _bounded_teardown(client.__aexit__(None, None, None))
 
 
 async def _quiet_disconnect(client) -> None:
-    """Best-effort teardown of a client whose ``__aenter__`` never returned (so
-    ``__aexit__`` is not valid). ``ClaudeSDKClient.disconnect()`` kills any
-    half-started CLI/MCP subprocess. No-op if the client has no ``disconnect``."""
+    """Best-effort, time-bounded teardown of a client whose ``__aenter__`` never
+    returned (so ``__aexit__`` is not valid). ``ClaudeSDKClient.disconnect()``
+    kills any half-started CLI/MCP subprocess. No-op if no ``disconnect``."""
     disconnect = getattr(client, "disconnect", None)
     if disconnect is not None:
         with contextlib.suppress(Exception):
-            await disconnect()
+            await _bounded_teardown(disconnect())
 
 
 @contextlib.asynccontextmanager
