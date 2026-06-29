@@ -89,15 +89,25 @@ def provenance_from_manifest(
 
 def load_local_manifest(benchmark: str, run_id: str) -> Optional[dict]:
     """Best-effort LOCAL-ONLY manifest read (no GCS) — keeps the write path
-    cheap and side-effect-free. Returns None when absent/corrupt."""
-    p = paths.results_root() / benchmark / "cloud" / run_id / "manifest.json"
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text())
-    except (json.JSONDecodeError, OSError) as exc:  # pragma: no cover - rare
-        logger.warning("corrupt local manifest %s: %s", p, exc)
-        return None
+    cheap and side-effect-free. Returns None when absent/corrupt.
+
+    Checks the benchmark-scoped run dir first, then the legacy-flat layout
+    (``results/cloud/<run_id>/``) that ``eval.annotate`` / ``eval.regrade``
+    still fall back to — without this, a legacy-flat run can't surface its
+    framework and gets stamped default-v0 with no agent_model."""
+    results_root = paths.results_root()
+    for p in (
+        results_root / benchmark / "cloud" / run_id / "manifest.json",
+        results_root / "cloud" / run_id / "manifest.json",
+    ):
+        if not p.exists():
+            continue
+        try:
+            return json.loads(p.read_text())
+        except (json.JSONDecodeError, OSError) as exc:  # pragma: no cover
+            logger.warning("corrupt local manifest %s: %s", p, exc)
+            return None
+    return None
 
 
 def stamp_provenance(

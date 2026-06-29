@@ -412,7 +412,12 @@ def write_submission_skeleton(
         run_id=run_id, task_row=task_row, grader=grader,
     )
     if not dry_run:
-        write_run_annotation(ann, dest)
+        # DEV-1591: pass benchmark/run_id so provenance stamping works even
+        # when ``repo_root`` pins ``dest`` outside the default runs root
+        # (path inference would otherwise miss it). The manifest is self-
+        # loaded by ``stamp_provenance`` — including the legacy-flat
+        # ``results/cloud/<run_id>/`` layout this CLI reads from.
+        write_run_annotation(ann, dest, benchmark=benchmark, run_id=run_id)
     return dest
 
 

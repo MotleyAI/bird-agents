@@ -219,6 +219,26 @@ def test_stamp_self_loads_local_manifest(isolated_roots):
     assert ann.agent_model == "anthropic/claude-opus-4-7"
 
 
+def test_stamp_self_loads_legacy_flat_manifest(isolated_roots):
+    """Codex (loop r2): the eval.annotate / regrade legacy-flat run dir is
+    ``results/cloud/<run_id>/`` (no benchmark segment). The self-load must
+    fall back to it, else a clean claude_sdk_v1 run there is mis-stamped v0
+    with no agent_model."""
+    runs, results = isolated_roots
+    run_id = "20260601t1000-x-slayer-zzzzzz"
+    # ONLY the legacy-flat manifest exists (no benchmark-scoped one).
+    dest = results / "cloud" / run_id / "manifest.json"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps({
+        "framework": "claude_sdk_v1",
+        "agent_model": "anthropic/claude-sonnet-4-6", "query_mode": "slayer",
+    }))
+    ann = SubmissionAnnotation.model_validate(_ann_dict(run_id=run_id))
+    versioning.stamp_provenance(ann, benchmark="mini-interact", run_id=run_id)
+    assert ann.version == "v1"   # not the default v0
+    assert ann.agent_model == "anthropic/claude-sonnet-4-6"
+
+
 def test_stamp_never_clobbers_preset_fields(isolated_roots):
     ann = SubmissionAnnotation.model_validate(
         _ann_dict(version="v3", agent_model="preset/model")
