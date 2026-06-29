@@ -499,6 +499,17 @@ def merge_submission_annotations(
     """
     rows_dir = downloaded_run_dir / "rows"
     report = AnnotationMergeReport(run_id=run_id, benchmark=benchmark)
+    # DEV-1591: stamp version/agent_model provenance from the run's manifest
+    # as each record lands in runs/. Loaded once (best-effort) from the
+    # fetched run dir; ``stamp_provenance`` falls back to the override table
+    # (keyed by run_id) when the manifest is absent.
+    _manifest: "dict | None" = None
+    _manifest_path = downloaded_run_dir / "manifest.json"
+    if _manifest_path.exists():
+        try:
+            _manifest = json.loads(_manifest_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            _manifest = None
     if rows_dir.exists():
         for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
             src = sub / "submission_annotation.json"
@@ -523,7 +534,10 @@ def merge_submission_annotations(
                 repo_root=None,
             )
             dest_existed = dest.exists()
-            written = write_run_annotation_no_overwrite(ann, dest)
+            written = write_run_annotation_no_overwrite(
+                ann, dest, benchmark=benchmark, run_id=run_id,
+                manifest=_manifest,
+            )
             if written:
                 if dest_existed:
                     report.overwritten_newer_attempt += 1

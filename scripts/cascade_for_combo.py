@@ -39,6 +39,7 @@ from typing import Optional
 from bird_interact_agents import paths
 from bird_interact_agents.cloud import gcs
 from bird_interact_agents.eval.annotation_io import read_submission_annotation
+from bird_interact_agents.eval.versioning import DEFAULT_VERSION
 from bird_interact_agents.eval.cascading_report import (
     _annotation_cascade_bools,
     _assign_partition_tier,
@@ -119,10 +120,20 @@ def collect_latest_per_task(
     runs_root: Optional[Path] = None,
     allow_gcs: bool = True,
     gcs_client=None,
+    version: Optional[str] = None,
 ) -> tuple[list[Path], dict[str, int]]:
     """Pick the latest non-eval_failed run per ``(db, instance_id)`` that
-    matches ``(mode, agent_model)``. Returns the list of chosen file paths
-    plus a small bookkeeping dict (files seen / skipped / overrides used)."""
+    matches ``(mode, agent_model)`` — and, when ``version`` is set, the
+    requested code version. Returns the list of chosen file paths plus a
+    small bookkeeping dict (files seen / skipped / overrides used).
+
+    DEV-1591: the per-task RECORD is the authoritative source for
+    ``agent_model`` and ``version`` (self-describing); the cloud manifest is
+    consulted only as a fallback for legacy records that pre-date stamping.
+    Mode comes from the run-id filename. A run is therefore NOT skipped just
+    because its manifest is missing/stale, provided the record carries the
+    fields — that was the bug that let manifest gaps drop stamped records.
+    """
     runs_root = runs_root or (paths.runs_root() / benchmark)
     manifest_cache: dict[str, Optional[dict]] = {}
     candidates: dict[tuple[str, str], list[tuple[str, Path, str]]] = {}
@@ -131,6 +142,7 @@ def collect_latest_per_task(
         "matched_mode": 0,
         "matched_model": 0,
         "skipped_no_manifest": 0,
+        "skipped_wrong_version": 0,
         "stale_eval_failed_overridden": 0,
         "skipped_eval_failed_only": 0,
     }
@@ -154,24 +166,30 @@ def collect_latest_per_task(
             continue
         db, iid, run_file = parts
         run_id = run_file[:-5]
-        if run_id not in manifest_cache:
-            manifest_cache[run_id] = load_manifest(
-                benchmark, run_id, gcs_client=gcs_client, allow_gcs=allow_gcs,
-            )
-        manifest = manifest_cache[run_id]
-        if manifest is None:
-            counters["skipped_no_manifest"] += 1
-            continue
-        if manifest.get("query_mode") != mode:
-            continue
-        if not model_matches(manifest.get("agent_model"), agent_model):
-            continue
-        counters["matched_model"] += 1
         try:
             data = json.loads(path.read_text())
         except json.JSONDecodeError as exc:
             logger.warning("unreadable annotation %s: %s", path, exc)
             continue
+        # Record is authoritative; manifest is a fallback for legacy records.
+        if run_id not in manifest_cache:
+            manifest_cache[run_id] = load_manifest(
+                benchmark, run_id, gcs_client=gcs_client, allow_gcs=allow_gcs,
+            )
+        manifest = manifest_cache[run_id] or {}
+        eff_model = data.get("agent_model") or manifest.get("agent_model")
+        if not eff_model:
+            # Unattributable: neither the record nor a manifest names a model.
+            counters["skipped_no_manifest"] += 1
+            continue
+        if not model_matches(eff_model, agent_model):
+            continue
+        counters["matched_model"] += 1
+        if version is not None:
+            eff_version = data.get("version") or DEFAULT_VERSION
+            if eff_version != version:
+                counters["skipped_wrong_version"] += 1
+                continue
         verdict = _effective_verdict(data)
         annotated_at = data.get("annotated_at") or ""
         candidates.setdefault((db, iid), []).append(
@@ -297,6 +315,7 @@ def render(
         f"matched_mode={counters['matched_mode']}  "
         f"matched_model={counters['matched_model']}  "
         f"skipped_no_manifest={counters['skipped_no_manifest']}  "
+        f"skipped_wrong_version={counters['skipped_wrong_version']}  "
         f"stale_eval_failed_overridden={counters['stale_eval_failed_overridden']}  "
         f"skipped_eval_failed_only={counters['skipped_eval_failed_only']}"
     )
@@ -325,6 +344,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         ),
     )
     parser.add_argument(
+        "--version", default=None,
+        help=(
+            "Filter to one agent code version (e.g. 'v0' for the clean "
+            "origin/main baseline). Read from each record's stamped "
+            "'version' field, defaulting a missing value to "
+            f"'{DEFAULT_VERSION}'. Omit to include all versions (legacy "
+            "behaviour). See eval/versioning.py for the taxonomy."
+        ),
+    )
+    parser.add_argument(
         "--no-gcs", action="store_true",
         help=(
             "Don't fall back to GCS for missing local manifests. Run files "
@@ -350,6 +379,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         mode=args.mode,
         agent_model=args.agent_model,
         allow_gcs=not args.no_gcs,
+        version=args.version,
     )
     agg = aggregate(chosen)
 
@@ -358,6 +388,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "benchmark": args.benchmark,
             "mode": args.mode,
             "agent_model_filter": args.agent_model,
+            "version_filter": args.version,
             "n_tasks": agg["n"],
             "cumulative_n_counts": agg["n_counts"],
             "partition_l_counts": agg["p_counts"],

@@ -375,7 +375,8 @@ def _write_to_runs(
         instance_id=ann.instance_id,
         run_id=run_id,
     )
-    write_run_annotation(ann, dest)
+    # DEV-1591: stamp version/agent_model provenance at the write.
+    write_run_annotation(ann, dest, benchmark=benchmark, run_id=run_id)
 
     # Trajectory sidecar — best-effort (never raises). Always overwrite so
     # reruns with the same run_id update the sidecar too.

@@ -309,7 +309,10 @@ def regrade_run(
             benchmark=benchmark, selected_database=selected_database,
             instance_id=instance_id, run_id=run_id, repo_root=repo_root,
         )
-        write_run_annotation(ann, dest)
+        # DEV-1591: pass benchmark/run_id explicitly so provenance stamping
+        # works even when ``repo_root`` pins ``dest`` outside the default
+        # runs root (path inference would otherwise miss it).
+        write_run_annotation(ann, dest, benchmark=benchmark, run_id=run_id)
 
         report.regraded += 1
         report.regraded_instances.append(instance_id)

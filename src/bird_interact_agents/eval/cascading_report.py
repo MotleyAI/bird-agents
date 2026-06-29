@@ -342,15 +342,24 @@ def aggregate_cascading_phase1(
 
 
 def aggregate_cascading_latest(
-    benchmark: str, *, repo_root: "Path | None" = None,
+    benchmark: str,
+    *,
+    repo_root: "Path | None" = None,
+    version: "str | None" = None,
 ) -> dict:
     """Aggregate cascade metrics using the latest run per task.
 
     "Latest" is determined by ``annotated_at`` field (max per
     ``(db, instance_id)`` pair) — safe for local run_ids that are not
     timestamp-formatted.
+
+    When ``version`` is set (DEV-1591), only records of that code version
+    are considered (a missing stamped version defaults to ``v0``), so a
+    newer wrong-version run cannot override the requested-version baseline.
     """
-    latest = latest_run_per_instance(benchmark=benchmark, repo_root=repo_root)
+    latest = latest_run_per_instance(
+        benchmark=benchmark, repo_root=repo_root, version=version,
+    )
     # The path slot in the tuple is unused by ``_aggregate_from_annotations``
     # (iterated as ``for _path, ann in ...``); a ``Path()`` placeholder
     # avoids the ``paths.runs_root()`` mkdir side-effect, which otherwise

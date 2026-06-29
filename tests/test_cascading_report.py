@@ -32,9 +32,13 @@ def _make_annotation_json(
     original_gold_annotated_correct: bool = True,
     rationale: str = "",
     annotated_at: str = "2026-06-01T10:00:00+00:00",
+    version=None,
+    agent_model=None,
 ) -> dict:
     """Build the JSON shape produced by tolerant_grader → SubmissionAnnotation."""
     return {
+        "version": version,
+        "agent_model": agent_model,
         "schema_version": 1,
         "kind": "submission_annotation",
         "instance_id": instance_id,
@@ -451,3 +455,43 @@ def test_aggregate_cascading_latest_with_repo_root_does_not_touch_default(
         "aggregate_cascading_latest(repo_root=X) must not create the "
         "default-checkout runs/ directory as a side effect"
     )
+
+
+def test_aggregate_cascading_latest_version_filter(monkeypatch, tmp_path):
+    """DEV-1591 stream 2 (Codex Medium #5): the latest aggregator must be
+    able to scope to a single ``version``, so a newer wrong-version run for a
+    task does not override the clean-version baseline. The wrong-version
+    record is excluded BEFORE the latest-per-task pick."""
+    from bird_interact_agents.eval.cascading_report import (
+        aggregate_cascading_latest,
+    )
+
+    alt_root = tmp_path / "alt-root"
+    alt_root.mkdir()
+    # clean v0 pass (older)
+    v0 = _make_annotation_json(
+        instance_id="households_1", selected_database="households",
+        n1=True, n2=True, n3=True, n4=True, n5=True, n6=True, n7=True, n8=True,
+        annotated_at="2026-06-25T13:17:00+00:00", version="v0",
+    )
+    _write_run_annotation(alt_root / "runs", v0,
+                          run_id="20260625t1317-claudes-slayer-1330bf")
+    # newer v2 miss for the SAME task
+    v2 = _make_annotation_json(
+        instance_id="households_1", selected_database="households",
+        n1=False, n2=False, n3=False, n4=False, n5=False,
+        n6=False, n7=False, n8=False, verdict="agent_miss",
+        original_gold_annotated_correct=True,
+        annotated_at="2026-06-29T12:09:00+00:00", version="v2",
+    )
+    _write_run_annotation(alt_root / "runs", v2,
+                          run_id="20260629t1209-claudes-slayer-cea364")
+
+    block = aggregate_cascading_latest(_BENCHMARK, repo_root=alt_root,
+                                       version="v0")
+    assert block["n_dual_eval_tasks"] == 1
+    assert block["counts"]["n1"] == 1  # the v0 pass, not the v2 miss
+
+    # Unfiltered: the newer v2 miss wins → N1 drops to 0 (the pollution).
+    block_all = aggregate_cascading_latest(_BENCHMARK, repo_root=alt_root)
+    assert block_all["counts"]["n1"] == 0

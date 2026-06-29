@@ -38,6 +38,8 @@ def _write_annotation(
     n1: bool = False,
     n2: bool = False,
     verdict: str = "correct",
+    version=None,
+    agent_model=None,
 ) -> Path:
     """Write a minimal SubmissionAnnotation JSON. Mode is encoded into the
     run_id (caller threads ``-raw-`` / ``-slayer-``)."""
@@ -46,6 +48,8 @@ def _write_annotation(
     dest.write_text(
         json.dumps(
             {
+                "version": version,
+                "agent_model": agent_model,
                 "schema_version": 1,
                 "kind": "submission_annotation",
                 "instance_id": iid,
@@ -308,6 +312,98 @@ def test_legacy_invalid_plus_other_is_treated_as_eval_failed(isolated_tree):
     assert len(chosen) == 1
     assert "20260601t1000" in chosen[0].name
     assert counters["stale_eval_failed_overridden"] == 1
+
+
+# ---------------------------------------------------------------------------
+# DEV-1591 stream 2 — version filter
+# ---------------------------------------------------------------------------
+def test_version_filter_excludes_newer_wrong_version(isolated_tree):
+    """The pollution bug: a newer v2 run must NOT override the clean v0
+    baseline when filtering ``--version v0``. The wrong-version record is
+    excluded BEFORE the latest-per-task pick, so the older v0 wins."""
+    runs, results = isolated_tree
+    iid = "households_1"
+    _write_annotation(
+        runs_root=runs, db="households", iid=iid,
+        run_id="20260625t1317-claudes-slayer-1330bf",
+        annotated_at="2026-06-25T13:17:00+00:00",
+        n1=True, verdict="correct",
+        version="v0", agent_model="anthropic/claude-opus-4-7",
+    )
+    _write_manifest(
+        results_root=results, run_id="20260625t1317-claudes-slayer-1330bf",
+        query_mode="slayer", agent_model="anthropic/claude-opus-4-7",
+    )
+    # newer v2 (this branch) run for the SAME task
+    _write_annotation(
+        runs_root=runs, db="households", iid=iid,
+        run_id="20260629t1209-claudes-slayer-cea364",
+        annotated_at="2026-06-29T12:09:00+00:00",
+        n1=False, verdict="agent_miss",
+        version="v2", agent_model="anthropic/claude-opus-4-7",
+    )
+    _write_manifest(
+        results_root=results, run_id="20260629t1209-claudes-slayer-cea364",
+        query_mode="slayer", agent_model="anthropic/claude-opus-4-7",
+    )
+
+    chosen, _ = cascade_for_combo.collect_latest_per_task(
+        benchmark=_BENCHMARK, mode="slayer", agent_model="opus",
+        allow_gcs=False, version="v0",
+    )
+    assert [p.name for p in chosen] == [
+        "20260625t1317-claudes-slayer-1330bf.json"
+    ]
+    # No version filter → latest (the v2 run) wins, reproducing the pollution.
+    chosen_all, _ = cascade_for_combo.collect_latest_per_task(
+        benchmark=_BENCHMARK, mode="slayer", agent_model="opus",
+        allow_gcs=False,
+    )
+    assert [p.name for p in chosen_all] == [
+        "20260629t1209-claudes-slayer-cea364.json"
+    ]
+
+
+def test_missing_version_defaults_to_v0(isolated_tree):
+    """A legacy record (no ``version`` field) is treated as v0 for the
+    filter (read-time default)."""
+    runs, results = isolated_tree
+    _write_annotation(
+        runs_root=runs, db="alien", iid="alien_1",
+        run_id="20260601t1000-claudes-slayer-aaaaaa",
+        annotated_at="2026-06-01T10:00:00+00:00", n1=True,
+        version=None,  # legacy — no version stamped
+        agent_model="anthropic/claude-opus-4-7",
+    )
+    _write_manifest(
+        results_root=results, run_id="20260601t1000-claudes-slayer-aaaaaa",
+        query_mode="slayer", agent_model="anthropic/claude-opus-4-7",
+    )
+    chosen, _ = cascade_for_combo.collect_latest_per_task(
+        benchmark=_BENCHMARK, mode="slayer", agent_model="opus",
+        allow_gcs=False, version="v0",
+    )
+    assert len(chosen) == 1
+
+
+def test_record_agent_model_used_when_manifest_missing(isolated_tree):
+    """Codex High #2: a record stamped with ``agent_model`` must be matched
+    on the RECORD, not require a present/matching manifest. With the manifest
+    absent (and GCS disabled), the record is still selected."""
+    runs, _results = isolated_tree
+    _write_annotation(
+        runs_root=runs, db="alien", iid="alien_1",
+        run_id="20260601t1000-claudes-slayer-aaaaaa",
+        annotated_at="2026-06-01T10:00:00+00:00", n1=True,
+        version="v0", agent_model="anthropic/claude-opus-4-7",
+    )
+    # NB: no manifest written for this run_id.
+    chosen, counters = cascade_for_combo.collect_latest_per_task(
+        benchmark=_BENCHMARK, mode="slayer", agent_model="opus",
+        allow_gcs=False, version="v0",
+    )
+    assert len(chosen) == 1, counters
+    assert counters["matched_model"] == 1
 
 
 def test_no_manifest_with_no_gcs_skips_run(isolated_tree):

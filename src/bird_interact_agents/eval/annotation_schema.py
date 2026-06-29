@@ -1004,3 +1004,18 @@ class SubmissionAnnotation(BaseModel):
     partition cascade to distinguish L1 (correct original matched) from L2
     (wrong original coincidentally matched). None for migrated/legacy
     annotations that pre-date DEV-1533."""
+
+    # DEV-1591 stream 2: code-version provenance so a run from this branch's
+    # modified agent code doesn't silently override clean-vN cascade stats.
+    # Additive optional fields — legacy records (no keys) parse with both
+    # None; resolved/stamped via ``eval.versioning``. Kept optional (not a
+    # ``schema_version`` bump) since reading old files is unaffected.
+    version: Optional[str] = None
+    """Agent code version: ``v0`` (clean origin/main ``claude_sdk``), ``v1``
+    (clean ``claude_sdk_v1``), ``v2``/``v3`` (this branch's modified v0/v1),
+    or a framework token for other frameworks. None on unstamped/legacy
+    records; readers default a missing value to ``v0``."""
+    agent_model: Optional[str] = None
+    """The agent model that produced the submission, mirrored from the cloud
+    manifest's ``agent_model`` (e.g. ``anthropic/claude-opus-4-7``). None on
+    unstamped/legacy records; readers fall back to the manifest."""
