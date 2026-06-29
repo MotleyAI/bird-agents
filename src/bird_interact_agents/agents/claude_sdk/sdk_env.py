@@ -332,15 +332,6 @@ async def assert_hermetic_mcp_servers(client, expected: Iterable[str]) -> None:
         )
 
 
-def _maybe_timeout(timeout_s: float | None):
-    """Async CM that enforces ``timeout_s`` seconds (``asyncio.timeout``), or a
-    no-op (``nullcontext``) when ``timeout_s`` is None — preserving the exact
-    pre-existing behaviour for every call site that does not opt in."""
-    if timeout_s is None:
-        return contextlib.nullcontext()
-    return asyncio.timeout(timeout_s)
-
-
 # Bound on best-effort SDK teardown (Codex review). The SDK's __aexit__ /
 # disconnect() have no internal timeout and a half-started subprocess can wedge;
 # without a cap, the enter-timeout cleanup below would re-introduce the very
@@ -429,38 +420,56 @@ async def hermetic_claude_sdk_session(
         )
         client_obj = ClaudeSDKClient(options=options)
         entered = False
+        client = None
+
+        async def _enter_and_assert() -> None:
+            nonlocal client, entered
+            enter_cm = (
+                enter_cm_factory() if enter_cm_factory is not None
+                else contextlib.nullcontext()
+            )
+            with enter_cm:
+                client = await client_obj.__aenter__()
+                entered = True
+            # Parity probe is INSIDE the bounded region: get_mcp_status can
+            # itself hang on an unresponsive CLI, and "becoming ready" must be
+            # bounded as a whole.
+            await assert_hermetic_mcp_servers(client, mcp_servers.keys())
+
         try:
-            async with _maybe_timeout(enter_timeout_s):
-                enter_cm = (
-                    enter_cm_factory() if enter_cm_factory is not None
-                    else contextlib.nullcontext()
-                )
-                with enter_cm:
-                    client = await client_obj.__aenter__()
-                    entered = True
-                # Parity probe is INSIDE the enter timeout: get_mcp_status can
-                # itself hang on an unresponsive CLI, and "becoming ready" must
-                # be bounded as a whole.
-                await assert_hermetic_mcp_servers(client, mcp_servers.keys())
-        except TimeoutError as te:
-            # The bundled CLI + stdio-MCP handshake stalled. Tear down a
-            # half-started subprocess, then surface as a clear error so the
-            # caller records a per-KB error instead of blocking until the VM
-            # self-delete timer (DEV-1609).
-            if entered:
-                await _quiet_aexit(client_obj)
+            if enter_timeout_s is None:
+                await _enter_and_assert()
             else:
-                await _quiet_disconnect(client_obj)
-            raise SdkSessionEnterError(
-                f"claude_sdk session did not become ready within "
-                f"{enter_timeout_s}s (model={model!r}): the bundled CLI + MCP "
-                f"handshake stalled (ClaudeSDKClient.__aenter__ / "
-                f"get_mcp_status)."
-            ) from te
+                # Bound the enter+parity with the SAME wait+abandon pattern as
+                # _drive_with_timeout (Codex): asyncio.timeout cannot bound a
+                # CANCELLATION-RESISTANT __aenter__/get_mcp_status (a stalled
+                # CLI/MCP handshake), so time it with asyncio.wait (no cancel)
+                # and force-disconnect on expiry to break it.
+                et = asyncio.ensure_future(_enter_and_assert())
+                et.add_done_callback(lambda t: t.cancelled() or t.exception())
+                done, _pending = await asyncio.wait({et}, timeout=enter_timeout_s)
+                if et not in done:
+                    # Wedged handshake. Tear down (entered-aware) — both helpers
+                    # are themselves time-bounded — then surface a clear error so
+                    # the caller records a per-KB error instead of blocking until
+                    # the VM self-delete timer (DEV-1609).
+                    if entered:
+                        await _quiet_aexit(client_obj)
+                    else:
+                        await _quiet_disconnect(client_obj)
+                    raise SdkSessionEnterError(
+                        f"claude_sdk session did not become ready within "
+                        f"{enter_timeout_s}s (model={model!r}): the bundled CLI "
+                        f"+ MCP handshake stalled (ClaudeSDKClient.__aenter__ / "
+                        f"get_mcp_status)."
+                    )
+                et.result()  # propagate any enter/parity exception
+        except SdkSessionEnterError:
+            raise  # already torn down above — do not double-clean
         except BaseException:
-            # Symmetric with the timeout path: if __aenter__ raised before
+            # __aenter__/parity raised (non-timeout). If __aenter__ raised before
             # `entered`, a half-started CLI/MCP subprocess can linger, so
-            # force-close it too (CodeRabbit).
+            # force-close it too (CodeRabbit); else __aexit__ the entered client.
             if entered:
                 await _quiet_aexit(client_obj)
             else:

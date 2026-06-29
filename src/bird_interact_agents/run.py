@@ -180,6 +180,19 @@ def _validate_framework_mode(
     benchmark (or ``oracle`` with a one-shot benchmark) would pass the
     dataset-mode gate but fail deep inside the agent at task runtime.
     """
+    # DEV-1609: the claude_sdk_otf_encode agent builds the reference and accepts
+    # ONLY a-interact / one-shot (agent.py guardrail) regardless of benchmark —
+    # reject c-interact / oracle at CLI/cloud validation rather than failing
+    # per-task after setup (Codex review).
+    if framework == "claude_sdk_otf_encode":
+        if mode not in ("a-interact", "one-shot"):
+            raise ValueError(
+                "--framework claude_sdk_otf_encode only supports "
+                f"--mode a-interact / one-shot; got {mode!r}. An encode run "
+                "builds the canonical reference; c-interact / oracle are "
+                "unsupported."
+            )
+        return
     # DEV-1555 v0/v1: validate both aggregator tokens.
     if framework not in ("claude_sdk", "claude_sdk_v1"):
         return
