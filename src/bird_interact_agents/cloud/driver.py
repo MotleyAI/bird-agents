@@ -34,6 +34,7 @@ from bird_interact_agents.cloud.prereqs import (
     _is_claude_sdk_framework,
     _required_api_keys,
 )
+from bird_interact_agents.frameworks import is_otf_encode_framework
 # Imported by NAME so `_build_missing_otf_caches` can be exercised with a mock
 # (`monkeypatch.setattr(driver, "ensure_db_cache", ...)`) without a real build.
 from bird_interact_agents.slayer_otf.cache import ensure_db_cache
@@ -499,7 +500,7 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
                  "slayer_models_otf", True),
             ]
         return [(submitter_repo_root() / "slayer_models", "slayer_models", True)]
-    if fw == "pydantic_ai_otf_encode":
+    if is_otf_encode_framework(fw):
         return [
             (paths.slayer_otf_cache_root(benchmark=benchmark),
              "slayer_otf_cache", True),

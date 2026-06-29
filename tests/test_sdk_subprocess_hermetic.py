@@ -29,6 +29,7 @@ smoke at the bottom.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -694,3 +695,159 @@ async def test_session_enter_cm_factory_wraps_client_enter(monkeypatch):
     ):
         order.append("body")
     assert order == ["factory_enter", "client_enter", "factory_exit", "body"]
+
+
+# ---------------------------------------------------------------------------
+# enter_timeout_s  (DEV-1609: bound the CLI/MCP handshake so a stall surfaces
+# as an error instead of hanging until the VM self-delete timer)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_session_enter_timeout_raises_and_cleans_up(monkeypatch):
+    """A ``__aenter__`` that never returns is cut off at ``enter_timeout_s``:
+    raises SdkSessionEnterError, tears down the half-started subprocess via
+    disconnect(), and removes the temp config dir."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    class _HangEnter(_FakeSDKClient):
+        disconnected = False
+
+        async def __aenter__(self):
+            await asyncio.sleep(10)  # >> the tiny enter_timeout_s below
+            return self
+
+        async def disconnect(self):
+            type(self).disconnected = True
+
+    _patch_client(monkeypatch, _HangEnter)
+    captured = {}
+
+    def _bo(opt_kwargs):
+        captured["dir"] = opt_kwargs["env"]["CLAUDE_CONFIG_DIR"]
+        return _build_options(opt_kwargs)
+
+    with pytest.raises(sdk_env.SdkSessionEnterError):
+        async with sdk_env.hermetic_claude_sdk_session(
+            _ANTHROPIC,
+            mcp_servers={"bird-interact-tools": object(), "slayer": object()},
+            build_options=_bo,
+            enter_timeout_s=0.05,
+        ):
+            pass
+    assert not Path(captured["dir"]).exists()
+    # __aenter__ never returned → teardown goes through disconnect(), not aexit.
+    assert _HangEnter.disconnected
+
+
+@pytest.mark.asyncio
+async def test_session_enter_timeout_covers_parity_probe(monkeypatch):
+    """The timeout spans the parity probe too: a hung ``get_mcp_status`` (after
+    a clean enter) still raises SdkSessionEnterError, and the entered client is
+    torn down via ``__aexit__``."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    class _HangStatus(_FakeSDKClient):
+        aexited = False
+
+        async def get_mcp_status(self):
+            await asyncio.sleep(10)
+
+        async def __aexit__(self, *a):
+            type(self).aexited = True
+            return None
+
+    _patch_client(monkeypatch, _HangStatus)
+    captured = {}
+
+    def _bo(opt_kwargs):
+        captured["dir"] = opt_kwargs["env"]["CLAUDE_CONFIG_DIR"]
+        return _build_options(opt_kwargs)
+
+    with pytest.raises(sdk_env.SdkSessionEnterError):
+        async with sdk_env.hermetic_claude_sdk_session(
+            _ANTHROPIC,
+            mcp_servers={"bird-interact-tools": object(), "slayer": object()},
+            build_options=_bo,
+            enter_timeout_s=0.05,
+        ):
+            pass
+    assert not Path(captured["dir"]).exists()
+    assert _HangStatus.aexited
+
+
+@pytest.mark.asyncio
+async def test_session_enter_timeout_none_does_not_bound(monkeypatch):
+    """Default (enter_timeout_s=None) imposes NO timeout — a slow-but-finite
+    enter still succeeds (no spurious SdkSessionEnterError for other agents)."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    class _SlowEnter(_FakeSDKClient):
+        async def __aenter__(self):
+            await asyncio.sleep(0.05)
+            self.entered = True
+            return self
+
+    _patch_client(monkeypatch, _SlowEnter)
+    async with sdk_env.hermetic_claude_sdk_session(
+        _ANTHROPIC,
+        mcp_servers={"bird-interact-tools": object(), "slayer": object()},
+        build_options=_build_options,
+    ) as client:
+        assert client.entered
+
+
+# ---------------------------------------------------------------------------
+# Bounded teardown (Codex review): _quiet_aexit / _quiet_disconnect must never
+# block past _SDK_TEARDOWN_TIMEOUT_S, else the enter-timeout cleanup re-hangs.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_quiet_aexit_is_time_bounded(monkeypatch):
+    monkeypatch.setattr(sdk_env, "_SDK_TEARDOWN_TIMEOUT_S", 0.05, raising=False)
+
+    class _HangAexit:
+        async def __aexit__(self, *a):
+            await asyncio.sleep(10)  # teardown wedges
+
+    # Outer guard: the call must return well under 5s despite the 10s hang.
+    await asyncio.wait_for(sdk_env._quiet_aexit(_HangAexit()), timeout=5.0)
+
+
+@pytest.mark.asyncio
+async def test_quiet_disconnect_is_time_bounded(monkeypatch):
+    monkeypatch.setattr(sdk_env, "_SDK_TEARDOWN_TIMEOUT_S", 0.05, raising=False)
+
+    class _HangDisconnect:
+        async def disconnect(self):
+            await asyncio.sleep(10)  # teardown wedges
+
+    await asyncio.wait_for(sdk_env._quiet_disconnect(_HangDisconnect()), timeout=5.0)
+
+
+@pytest.mark.asyncio
+async def test_enter_timeout_raises_even_when_cleanup_hangs(monkeypatch):
+    """The whole point: an enter timeout whose subsequent __aexit__ wedges must
+    STILL raise SdkSessionEnterError promptly (not re-hang in cleanup)."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr(sdk_env, "_SDK_TEARDOWN_TIMEOUT_S", 0.05, raising=False)
+
+    class _EnterThenHangCleanup(_FakeSDKClient):
+        async def get_mcp_status(self):
+            await asyncio.sleep(10)  # parity probe stalls → enter timeout fires
+
+        async def __aexit__(self, *a):
+            await asyncio.sleep(10)  # ...and cleanup wedges too
+
+    _patch_client(monkeypatch, _EnterThenHangCleanup)
+
+    async def _call():
+        with pytest.raises(sdk_env.SdkSessionEnterError):
+            async with sdk_env.hermetic_claude_sdk_session(
+                _ANTHROPIC,
+                mcp_servers={"bird-interact-tools": object(), "slayer": object()},
+                build_options=_build_options,
+                enter_timeout_s=0.05,
+            ):
+                pass
+
+    await asyncio.wait_for(_call(), timeout=5.0)

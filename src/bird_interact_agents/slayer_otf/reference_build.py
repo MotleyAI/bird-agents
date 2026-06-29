@@ -91,6 +91,12 @@ class ReferenceEntry(BaseModel):
     fingerprint: str
     kb_rows: list[dict] = Field(default_factory=list)
     setup_results: list[Any] = Field(default_factory=list)
+    # True ONLY when THIS call ran the setup encoder (a fresh build). False on
+    # every reuse path (top marker check, under-lock double-check, and the
+    # cross-process under-flock peer-reuse). Lets callers attribute setup-encode
+    # token usage to the building task only, never re-count it on a reuse
+    # (DEV-1609 — Codex review).
+    built: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -635,7 +641,9 @@ async def ensure_db_reference(
         if not force and marker.is_file():
             return _reuse_reference(target, db)
 
-        results = await _build_reference(
+        # Returns a ReferenceEntry carrying `built` — True on a real build,
+        # False on the under-flock cross-process peer-reuse (DEV-1609).
+        return await _build_reference(
             db=db, fp=fp, cache_entry=cache_entry, kb_rows=kb_rows,
             reference_root=reference_root, target=target,
             mini_interact_root=mini_interact_root,
@@ -651,10 +659,6 @@ async def ensure_db_reference(
             # rmtrees a markerless target before the atomic rename), so we
             # no longer need to overload `force` for that purpose.
             force=force,
-        )
-        return ReferenceEntry(
-            reference_dir=target, fingerprint=fp,
-            kb_rows=kb_rows, setup_results=results,
         )
 
 
@@ -691,7 +695,7 @@ def _per_db_build_flock(reference_root: Path, db: str) -> Iterator[None]:
 async def _build_reference(
     *, db, fp, cache_entry, kb_rows, reference_root, target,
     mini_interact_root, build_encoder, force, db_root=None,
-) -> list[Any]:
+) -> ReferenceEntry:
     # DEV-1470 / H4 — take the cross-process per-DB flock BEFORE we touch
     # `target` or run the encoder. The asyncio Lock in `ensure_db_reference`
     # serializes WITHIN this process; the flock here serializes ACROSS Ray
@@ -710,7 +714,7 @@ async def _build_reference(
 async def _build_reference_inside_lock(
     *, db, fp, cache_entry, kb_rows, reference_root, target,
     mini_interact_root, build_encoder, force, db_root=None,
-) -> list[Any]:
+) -> ReferenceEntry:
     # Codex r2: re-check the marker INSIDE the cross-process flock. A peer
     # Ray actor process may have passed the marker check in
     # `ensure_db_reference`, then blocked on this flock while we ran the
@@ -727,7 +731,9 @@ async def _build_reference_inside_lock(
             "for cross-process build lock; reusing without rebuild",
             db,
         )
-        return _load_reference_entry(target).setup_results
+        # Reuse (built=False default) — this task did NOT run the encoder, so
+        # its usage must not be attributed to the peer's tokens.
+        return _load_reference_entry(target)
 
     tmp = Path(tempfile.mkdtemp(prefix=f".{fp}.tmp-", dir=str(reference_root)))
     try:
@@ -814,7 +820,10 @@ async def _build_reference_inside_lock(
 
         # 7. Atomic-rename onto the (absent) target.
         _commit_reference(tmp, target, force=force)
-        return results
+        return ReferenceEntry(
+            reference_dir=target, fingerprint=fp, kb_rows=kb_rows,
+            setup_results=results, built=True,
+        )
     except BaseException:
         if tmp.exists():
             shutil.rmtree(tmp, ignore_errors=True)

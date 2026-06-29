@@ -292,7 +292,7 @@ class ClaudeSDKOtfAInteractAgent:
                 f"claude_sdk_otf_ainteract requires an Anthropic or registry "
                 f"open-weight model; "
                 f"got {self.model!r}. Skipped — use --framework "
-                "pydantic_ai_otf_encode for non-Anthropic models."
+                "claude_sdk_otf_encode for non-Anthropic models."
             )
             logger.warning("[%s] %s", instance_id, msg)
             return finalize_result_row(
