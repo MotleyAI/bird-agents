@@ -87,6 +87,13 @@ ENCODE_ATTEMPT_TIMEOUT_S = 300.0
 # per-KB `status="error"`.
 SESSION_ENTER_TIMEOUT_S = 240.0
 
+# Secondary cap on the force-close TEARDOWN inside _drive_with_timeout. The SDK's
+# disconnect() has no internal timeout and a cancelled drive task may ignore
+# cancellation, so disconnect()+drain could itself hang — wedging the very path
+# meant to contain a hang (CodeRabbit). If teardown stalls past this, abandon it
+# and raise anyway, so _drive_with_timeout ALWAYS returns within its budget.
+TEARDOWN_TIMEOUT_S = 30.0
+
 # Soft turn budget for the submit-or-defer nudge (NOT the hard ``max_turns``=120
 # cap). The DEV-1589 glm-5.2 smoke showed a healthy encode needs ~10 tool calls,
 # while the KBs that timed out looped 40-70+ tool calls WITHOUT ever calling
@@ -356,11 +363,24 @@ async def _drive_with_timeout(client, drive, timeout_s: float) -> None:
     task = asyncio.ensure_future(drive())
     done, _pending = await asyncio.wait({task}, timeout=timeout_s)
     if task not in done:
-        with contextlib.suppress(Exception):
-            await client.disconnect()  # break the uninterruptible transport read
-        task.cancel()
-        with contextlib.suppress(BaseException):
-            await task
+        # Force-close to break the wedged read, then drain the task — but BOTH
+        # disconnect() and the drain can themselves hang (CodeRabbit). Run them
+        # as a child task capped by asyncio.wait (which does NOT cancel on
+        # timeout): if teardown stalls past TEARDOWN_TIMEOUT_S, abandon the
+        # leaked child (the actor/process reaps it) and raise anyway, so this
+        # function ALWAYS returns within timeout_s + TEARDOWN_TIMEOUT_S.
+        async def _teardown() -> None:
+            with contextlib.suppress(Exception):
+                await client.disconnect()  # break the uninterruptible read
+            task.cancel()
+            with contextlib.suppress(BaseException):
+                await task
+
+        td = asyncio.ensure_future(_teardown())
+        # Retrieve the result once done so an abandoned/late child doesn't log
+        # an "exception was never retrieved" warning.
+        td.add_done_callback(lambda t: t.cancelled() or t.exception())
+        await asyncio.wait({td}, timeout=TEARDOWN_TIMEOUT_S)
         raise TimeoutError(
             f"encode attempt exceeded {timeout_s}s; SDK client force-closed"
         )

@@ -778,3 +778,34 @@ async def test_drive_with_timeout_propagates_inner_error():
     with pytest.raises(ValueError, match="boom in cycle"):
         await se._drive_with_timeout(client, drive, 5.0)
     assert client.disconnects == 0
+
+
+@pytest.mark.asyncio
+async def test_drive_with_timeout_bounds_a_wedged_teardown(monkeypatch):
+    """CodeRabbit: even when BOTH disconnect() hangs AND the drive task ignores
+    cancellation, _drive_with_timeout must still return (raise TimeoutError)
+    within its budget — the teardown is itself capped by TEARDOWN_TIMEOUT_S."""
+    monkeypatch.setattr(se, "TEARDOWN_TIMEOUT_S", 0.05, raising=False)
+    released = asyncio.Event()
+
+    class _WedgedClient:
+        async def disconnect(self):
+            await asyncio.sleep(10)  # disconnect itself hangs
+
+    async def drive():
+        # Ignore the first cancellation and keep waiting — a truly
+        # cancellation-resistant hang (plain asyncio.sleep would exit on cancel).
+        while not released.is_set():
+            try:
+                await released.wait()
+            except asyncio.CancelledError:
+                continue
+
+    try:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(
+                se._drive_with_timeout(_WedgedClient(), drive, 0.05),
+                timeout=5.0,  # outer guard: the call must return well under this
+            )
+    finally:
+        released.set()  # let the abandoned child task unwind

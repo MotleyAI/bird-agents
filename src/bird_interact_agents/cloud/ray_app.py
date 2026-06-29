@@ -526,9 +526,12 @@ def _ensure_actor_logging() -> None:
     handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
     setattr(handler, _ACTOR_LOG_HANDLER_FLAG, True)
     pkg.addHandler(handler)
-    # Don't ALSO propagate to the root WARNING handler — avoids duplicate
-    # WARNING/ERROR lines; INFO would be dropped there anyway.
-    pkg.propagate = False
+    # NB: leave `propagate` at its default (True). Setting it False to dedupe
+    # WARNING+ lines would globally suppress propagation for ALL
+    # `bird_interact_agents.*` loggers, breaking `caplog`-based tests (which
+    # capture via the root logger) and any other root handler. A rare duplicate
+    # WARNING line in the cloud log is a fair price; INFO (our breadcrumbs) is
+    # dropped by the WARNING-level root handler anyway, so it appears once.
 
 
 @contextlib.contextmanager

@@ -431,8 +431,13 @@ async def hermetic_claude_sdk_session(
                 f"get_mcp_status)."
             ) from te
         except BaseException:
+            # Symmetric with the timeout path: if __aenter__ raised before
+            # `entered`, a half-started CLI/MCP subprocess can linger, so
+            # force-close it too (CodeRabbit).
             if entered:
                 await _quiet_aexit(client_obj)
+            else:
+                await _quiet_disconnect(client_obj)
             raise
         # Wrap the client so every message streamed through `receive_response()`
         # is recorded into `client.transcript` — making per-session transcript
