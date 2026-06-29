@@ -180,6 +180,19 @@ def regrade_run(
     if not rows_dir.exists():
         return report
 
+    # DEV-1591: read THIS run's manifest from run_dir so provenance stamping
+    # derives version/agent_model from the run actually being regraded.
+    # ``stamp_provenance`` would otherwise self-load from
+    # ``paths.results_root()/...``, which misses an out-of-tree / legacy-flat
+    # ``run_dir`` and could stamp a clean claude_sdk_v1 run as default v0.
+    _manifest: Optional[dict] = None
+    _manifest_path = run_dir / "manifest.json"
+    if _manifest_path.exists():
+        try:
+            _manifest = json.loads(_manifest_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            _manifest = None
+
     filter_set = set(instance_ids) if instance_ids else None
 
     # Reset the fresh-rows scratch dir so a partial regrade doesn't
@@ -309,10 +322,13 @@ def regrade_run(
             benchmark=benchmark, selected_database=selected_database,
             instance_id=instance_id, run_id=run_id, repo_root=repo_root,
         )
-        # DEV-1591: pass benchmark/run_id explicitly so provenance stamping
-        # works even when ``repo_root`` pins ``dest`` outside the default
-        # runs root (path inference would otherwise miss it).
-        write_run_annotation(ann, dest, benchmark=benchmark, run_id=run_id)
+        # DEV-1591: pass benchmark/run_id (so stamping works even when
+        # ``repo_root`` pins ``dest`` outside the default runs root) AND the
+        # run's own manifest (so the version/agent_model come from THIS run,
+        # not a same-named run under the default results root).
+        write_run_annotation(
+            ann, dest, benchmark=benchmark, run_id=run_id, manifest=_manifest,
+        )
 
         report.regraded += 1
         report.regraded_instances.append(instance_id)

@@ -171,13 +171,18 @@ def collect_latest_per_task(
         except json.JSONDecodeError as exc:
             logger.warning("unreadable annotation %s: %s", path, exc)
             continue
-        # Record is authoritative; manifest is a fallback for legacy records.
-        if run_id not in manifest_cache:
-            manifest_cache[run_id] = load_manifest(
-                benchmark, run_id, gcs_client=gcs_client, allow_gcs=allow_gcs,
-            )
-        manifest = manifest_cache[run_id] or {}
-        eff_model = data.get("agent_model") or manifest.get("agent_model")
+        # Record is authoritative; the manifest is only a fallback for legacy
+        # records that pre-date stamping. Defer the (potentially GCS-backed)
+        # manifest load until the record itself can't name the model — a
+        # stamped record never pays for a lookup it doesn't need.
+        eff_model = data.get("agent_model")
+        if not eff_model:
+            if run_id not in manifest_cache:
+                manifest_cache[run_id] = load_manifest(
+                    benchmark, run_id,
+                    gcs_client=gcs_client, allow_gcs=allow_gcs,
+                )
+            eff_model = (manifest_cache[run_id] or {}).get("agent_model")
         if not eff_model:
             # Unattributable: neither the record nor a manifest names a model.
             counters["skipped_no_manifest"] += 1
