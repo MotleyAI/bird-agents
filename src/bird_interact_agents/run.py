@@ -112,6 +112,16 @@ def _validate_slayer_setup(
         validate_pre_encoded_source,
     )
 
+    # DEV-1609: the encoder builds the SLayer reference, so it REQUIRES
+    # --query-mode slayer (agent.py guardrail). Reject raw at CLI/cloud
+    # validation — BEFORE the raw early-return below — rather than failing every
+    # task after setup is built/uploaded (Codex review).
+    if framework == "claude_sdk_otf_encode" and query_mode != "slayer":
+        raise ValueError(
+            "--framework claude_sdk_otf_encode requires --query-mode slayer; "
+            f"got {query_mode!r}. An encode run builds the SLayer reference."
+        )
+
     # Always validate the source vocabulary + framework gate, BEFORE the
     # raw early-return (Codex DEV-1586 r2 #2 — otherwise `--query-mode raw
     # --framework pydantic_ai --pre-encoded-models otf` slips through).
