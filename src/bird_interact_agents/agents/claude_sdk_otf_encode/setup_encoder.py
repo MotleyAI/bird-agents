@@ -361,6 +361,10 @@ async def _drive_with_timeout(client, drive, timeout_s: float) -> None:
     — drain the task, and raise ``TimeoutError`` so the caller records a per-KB
     error rather than blocking forever."""
     task = asyncio.ensure_future(drive())
+    # Retrieve the eventual result so an abandoned/late drive task (timeout path
+    # below) never logs an "exception was never retrieved" warning. Harmless on
+    # the success path — task.result() there retrieves first.
+    task.add_done_callback(lambda t: t.cancelled() or t.exception())
     done, _pending = await asyncio.wait({task}, timeout=timeout_s)
     if task not in done:
         # Force-close to break the wedged read, then drain the task — but BOTH
@@ -370,11 +374,17 @@ async def _drive_with_timeout(client, drive, timeout_s: float) -> None:
         # leaked child (the actor/process reaps it) and raise anyway, so this
         # function ALWAYS returns within timeout_s + TEARDOWN_TIMEOUT_S.
         async def _teardown() -> None:
-            with contextlib.suppress(Exception):
-                await client.disconnect()  # break the uninterruptible read
+            # Cancel the drive task FIRST (Codex): otherwise, if disconnect()
+            # hangs, the cancel is never even requested and the drive coroutine
+            # stays alive holding the SDK stream / MCP subprocess — free to
+            # write into the build dir after _encode_one_kb finalizes. With the
+            # cancel requested up front, the task dies the moment disconnect (or
+            # process teardown) unblocks the read.
             task.cancel()
+            with contextlib.suppress(Exception):
+                await client.disconnect()  # unblock the read so the cancel lands
             with contextlib.suppress(BaseException):
-                await task
+                await task  # drain (bounded by the outer asyncio.wait below)
 
         td = asyncio.ensure_future(_teardown())
         # Retrieve the result once done so an abandoned/late child doesn't log
