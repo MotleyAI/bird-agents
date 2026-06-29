@@ -21,6 +21,7 @@ KB's fresh subprocess reads the committed YAML at startup.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from pathlib import Path
@@ -339,6 +340,34 @@ def make_claude_sdk_build_encoder(
 # ---------------------------------------------------------------------------
 
 
+async def _drive_with_timeout(client, drive, timeout_s: float) -> None:
+    """Run one query/receive cycle under a hard wall-clock cap that a wedged SDK
+    transport read cannot defeat.
+
+    DEV-1609: plain ``asyncio.wait_for(drive(), t)`` can HANG indefinitely here.
+    On timeout it cancels the inner coroutine and AWAITS its cancellation — but
+    the Claude Agent SDK's transport read runs through an anyio-threaded
+    subprocess, and when the CLI never responds (the cloud failure mode), the
+    cancellation never returns, so ``wait_for`` itself never returns either.
+    Instead, time the cycle with ``asyncio.wait`` (which does NOT cancel on
+    timeout), then on expiry force-close the client — unblocking the stuck read
+    — drain the task, and raise ``TimeoutError`` so the caller records a per-KB
+    error rather than blocking forever."""
+    task = asyncio.ensure_future(drive())
+    done, _pending = await asyncio.wait({task}, timeout=timeout_s)
+    if task not in done:
+        with contextlib.suppress(Exception):
+            await client.disconnect()  # break the uninterruptible transport read
+        task.cancel()
+        with contextlib.suppress(BaseException):
+            await task
+        raise TimeoutError(
+            f"encode attempt exceeded {timeout_s}s; SDK client force-closed"
+        )
+    # Completed within budget — surface any exception raised inside the cycle.
+    task.result()
+
+
 async def _encode_one_kb(
     *, kb_id, row, deps_results, reverse_deps, db, build_dir, model,
     self_model_id, usage, index_rows, sessions_dir, mcp_servers, build_options,
@@ -411,8 +440,8 @@ async def _encode_one_kb(
                             await agen.aclose()
 
                 try:
-                    await asyncio.wait_for(
-                        _drive(), timeout=ENCODE_ATTEMPT_TIMEOUT_S,
+                    await _drive_with_timeout(
+                        client, _drive, ENCODE_ATTEMPT_TIMEOUT_S,
                     )
                 finally:
                     cycle_tracker.finalize()

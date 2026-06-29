@@ -2475,3 +2475,52 @@ def test_apply_actor_env_local_legacy_path_keeps_anthropic_key(
 
     assert os.environ.get("ANTHROPIC_API_KEY") == "sk-ant-key"
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in os.environ
+
+
+# ---------------------------------------------------------------------------
+# DEV-1609: _ensure_actor_logging — INFO breadcrumbs must surface in the actor
+# (root handler defaults to WARNING, dropping otf_timing kb.* milestones).
+# ---------------------------------------------------------------------------
+
+import logging as _logging  # noqa: E402
+
+
+def _clear_pkg_handlers():
+    pkg = _logging.getLogger("bird_interact_agents")
+    for h in list(pkg.handlers):
+        if getattr(h, ray_app._ACTOR_LOG_HANDLER_FLAG, False):
+            pkg.removeHandler(h)
+    pkg.propagate = True
+
+
+def test_ensure_actor_logging_attaches_info_handler():
+    _clear_pkg_handlers()
+    try:
+        ray_app._ensure_actor_logging()
+        pkg = _logging.getLogger("bird_interact_agents")
+        ours = [
+            h for h in pkg.handlers
+            if getattr(h, ray_app._ACTOR_LOG_HANDLER_FLAG, False)
+        ]
+        assert len(ours) == 1
+        assert ours[0].level == _logging.INFO
+        assert pkg.level == _logging.INFO
+        assert pkg.propagate is False
+    finally:
+        _clear_pkg_handlers()
+
+
+def test_ensure_actor_logging_is_idempotent():
+    _clear_pkg_handlers()
+    try:
+        ray_app._ensure_actor_logging()
+        ray_app._ensure_actor_logging()
+        ray_app._ensure_actor_logging()
+        pkg = _logging.getLogger("bird_interact_agents")
+        ours = [
+            h for h in pkg.handlers
+            if getattr(h, ray_app._ACTOR_LOG_HANDLER_FLAG, False)
+        ]
+        assert len(ours) == 1  # no duplicate handlers across repeated calls
+    finally:
+        _clear_pkg_handlers()

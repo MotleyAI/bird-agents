@@ -729,3 +729,52 @@ async def test_encode_forwards_session_enter_timeout(tmp_path, monkeypatch):
 
     assert captured, "hermetic session factory was never invoked"
     assert captured[0]["enter_timeout_s"] == se.SESSION_ENTER_TIMEOUT_S
+
+
+# ---------------------------------------------------------------------------
+# DEV-1609: _drive_with_timeout — a wedged SDK transport read must become a
+# per-KB error (force-close the client), never a forever-hang.
+# ---------------------------------------------------------------------------
+
+
+class _DisconnectClient:
+    def __init__(self):
+        self.disconnects = 0
+
+    async def disconnect(self):
+        self.disconnects += 1
+
+
+@pytest.mark.asyncio
+async def test_drive_with_timeout_returns_on_completion():
+    client = _DisconnectClient()
+
+    async def drive():
+        return None
+
+    await se._drive_with_timeout(client, drive, 5.0)
+    assert client.disconnects == 0  # healthy cycle never force-closes
+
+
+@pytest.mark.asyncio
+async def test_drive_with_timeout_force_closes_on_hang():
+    client = _DisconnectClient()
+
+    async def drive():
+        await asyncio.sleep(10)  # >> the tiny timeout below
+
+    with pytest.raises(TimeoutError):
+        await se._drive_with_timeout(client, drive, 0.05)
+    assert client.disconnects == 1  # force-closed to break the wedged read
+
+
+@pytest.mark.asyncio
+async def test_drive_with_timeout_propagates_inner_error():
+    client = _DisconnectClient()
+
+    async def drive():
+        raise ValueError("boom in cycle")
+
+    with pytest.raises(ValueError, match="boom in cycle"):
+        await se._drive_with_timeout(client, drive, 5.0)
+    assert client.disconnects == 0

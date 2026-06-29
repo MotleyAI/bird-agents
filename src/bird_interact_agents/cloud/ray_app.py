@@ -13,6 +13,7 @@ import contextlib
 import fcntl
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -503,6 +504,33 @@ def download_slayer_setup(run_id: str, cfg: dict[str, Any], *, client) -> None:
 # ---------------------------------------------------------------------------
 
 
+_ACTOR_LOG_HANDLER_FLAG = "_bird_actor_info_handler"
+
+
+def _ensure_actor_logging() -> None:
+    """Make INFO logs from ``bird_interact_agents.*`` visible in the cloud actor.
+
+    The Ray actor's root log handler defaults to WARNING, so our INFO progress
+    breadcrumbs — ``otf_timing`` ``kb.start``/``kb.done``/``sdk_client_enter``
+    milestones and the encoder's per-KB INFO — were DROPPED. That made a
+    healthy-but-slow encode indistinguishable from a hang in ``ray job logs``
+    and in the per-task debug log (DEV-1609). Attach ONE INFO ``StreamHandler``
+    to the package logger so the breadcrumbs land in the captured fd-1 stream
+    (per-task debug log, uploaded once the task finishes). Idempotent."""
+    pkg = logging.getLogger("bird_interact_agents")
+    pkg.setLevel(logging.INFO)
+    if any(getattr(h, _ACTOR_LOG_HANDLER_FLAG, False) for h in pkg.handlers):
+        return
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+    setattr(handler, _ACTOR_LOG_HANDLER_FLAG, True)
+    pkg.addHandler(handler)
+    # Don't ALSO propagate to the root WARNING handler — avoids duplicate
+    # WARNING/ERROR lines; INFO would be dropped there anyway.
+    pkg.propagate = False
+
+
 @contextlib.contextmanager
 def fd_capture(log_path: Path):
     """Redirect OS-level fd 1 and 2 to `log_path` for the duration of the
@@ -698,6 +726,7 @@ def _run_one_in_actor(
     → ``upload_otf_reference_delta``. Any upload-back exception is swallowed
     and logged to stderr — the per-task row already landed, and a logging
     failure must never poison the actor."""
+    _ensure_actor_logging()
     iid = str(task_data.get("instance_id") or "")
     database = str(task_data.get("selected_database") or "")
     log_dir = Path(tempfile.mkdtemp(prefix="cloud_log_"))
