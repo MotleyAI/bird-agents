@@ -145,6 +145,27 @@ def test_backfill_missing_manifest_defaults_v0(tree):
     assert counters["no_manifest"] == 1
 
 
+def test_backfill_reads_legacy_flat_manifest(tree):
+    """Codex (loop r3): backfill must find the legacy-flat manifest at
+    results/cloud/<run_id>/ (no benchmark segment), else a clean
+    claude_sdk_v1 legacy-flat run backfills as v0 with no agent_model."""
+    runs, results = tree
+    run_id = "20260601t1100-claudes-slayer-bbbbbb"
+    p = _write_record(runs, "alien", "alien_2", run_id)
+    # ONLY the legacy-flat manifest exists.
+    flat = results / "cloud" / run_id / "manifest.json"
+    flat.parent.mkdir(parents=True, exist_ok=True)
+    flat.write_text(json.dumps({
+        "framework": "claude_sdk_v1", "agent_model": "zai/glm-5.2",
+        "query_mode": "slayer",
+    }))
+    counters = backfill_run_versions.backfill(_BENCH, allow_gcs=False)
+    rec = _read(p)
+    assert rec["version"] == "v1"          # not the default v0
+    assert rec["agent_model"] == "zai/glm-5.2"
+    assert counters["no_manifest"] == 0    # found via the legacy-flat fallback
+
+
 def test_backfill_override_without_manifest_still_v2(tree):
     runs, _ = tree
     p = _write_record(runs, "households", "households_1", _CEA364)

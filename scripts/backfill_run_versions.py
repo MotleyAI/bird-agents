@@ -96,9 +96,13 @@ def backfill(
             continue
 
         if run_id not in manifest_cache:
+            # cascade.load_manifest covers benchmark-scoped local + GCS; fall
+            # back to versioning.load_local_manifest for the legacy-flat
+            # results/cloud/<run_id>/ layout it doesn't check (else a clean
+            # claude_sdk_v1 legacy-flat run backfills as v0 with no model).
             manifest_cache[run_id] = _cascade.load_manifest(
                 benchmark, run_id, gcs_client=gcs_client, allow_gcs=allow_gcs,
-            )
+            ) or versioning.load_local_manifest(benchmark, run_id)
         manifest = manifest_cache[run_id]
         if manifest is None:
             counters["no_manifest"] += 1
