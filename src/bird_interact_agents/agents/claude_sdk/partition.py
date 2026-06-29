@@ -129,6 +129,11 @@ def build_discovery_prompt(*, with_ask_user: bool, query_mode: str) -> str:
     ``search`` (and gets the DEV-1591 compact-mode discipline); raw discovery
     introspects via ``get_schema`` and has no ``compact`` concept.
     """
+    if query_mode not in _VERIFY_TOOL_BY_MODE:
+        raise ValueError(
+            f"build_discovery_prompt: unknown query_mode {query_mode!r}; "
+            f"expected one of {sorted(_VERIFY_TOOL_BY_MODE)}"
+        )
     parts = [_DISCOVERY_PROMPT_COMMON]
     if query_mode == "slayer":
         parts.append(_DISCOVERY_COMPACT_NOTE)

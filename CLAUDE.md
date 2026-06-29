@@ -182,13 +182,13 @@ asyncio.run(ensure_db_cache('<db>',
 "
 
 # 3. Submit otf_encode (cloud does the LLM stage).
+# on-the-fly is the default; --slayer-setup was retired (DEV-1586).
+# Pass --pre-encoded-models otf|custom to use pre-encoded models instead.
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --framework pydantic_ai_otf_encode --query-mode slayer \
   --agent-model anthropic/claude-haiku-4-5-20251001 \
   --user-sim-model anthropic/claude-haiku-4-5-20251001 \
   --mode a-interact \
-  `# on-the-fly is the default; --slayer-setup was retired (DEV-1586).` \
-  `# Pass --pre-encoded-models otf|custom to use pre-encoded models instead.` \
   --instance-ids <db>_1 \
   --workers 1 --actors-per-worker 1 \
   --worker-type e2-standard-4 --max-runtime-hours 2 --detach
@@ -227,13 +227,13 @@ asyncio.run(ensure_db_cache('households',
 "
 
 # 3. Submit otf_encode — Opus encoder, Sonnet user-sim, households only.
+# on-the-fly is the default; --slayer-setup was retired (DEV-1586).
+# Pass --pre-encoded-models otf|custom to use pre-encoded models instead.
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --framework pydantic_ai_otf_encode --query-mode slayer \
   --agent-model anthropic/claude-opus-4-7 \
   --user-sim-model anthropic/claude-sonnet-4-6 \
   --mode a-interact \
-  `# on-the-fly is the default; --slayer-setup was retired (DEV-1586).` \
-  `# Pass --pre-encoded-models otf|custom to use pre-encoded models instead.` \
   --instance-ids households_1 \
   --workers 1 --actors-per-worker 1 \
   --worker-type e2-standard-4 --max-runtime-hours 2 --detach
