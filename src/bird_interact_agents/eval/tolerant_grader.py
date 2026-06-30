@@ -888,10 +888,17 @@ class LiteLLMJudge:
         self,
         *,
         model: str,
-        temperature: float = 0.0,
+        temperature: Optional[float] = None,
         timeout_s: float = 60.0,
         num_retries: int = _JUDGE_NUM_RETRIES,
     ) -> None:
+        # ``temperature`` defaults to None → not sent at all. Newer Anthropic
+        # models (e.g. claude-opus-4-7) reject an explicit temperature with a
+        # 400 ("temperature is deprecated for this model"), and for a cached
+        # binary ACCEPT/REJECT judge the determinism a fixed temperature buys
+        # is marginal (CachedLLMJudge already persists verdicts; temp 0 isn't
+        # truly deterministic anyway). A caller may still opt in by passing an
+        # explicit value for a model that supports it.
         self._model = model
         self._temperature = temperature
         self._timeout_s = timeout_s
@@ -914,20 +921,25 @@ class LiteLLMJudge:
             submitted_sql=kwargs.get("submitted_sql") or "",
             predicted_rows_head=kwargs.get("predicted_rows_head") or [],
         )
+        call_kwargs = {
+            "model": self._model,
+            "timeout": self._timeout_s,
+            # DEV-1613: lean on litellm's built-in retry/backoff so a transient
+            # 429 (the cea364 autopsy rate-limit pressure) retries rather than
+            # immediately falling through to None.
+            "num_retries": self._num_retries,
+            "messages": [
+                {"role": "system", "content": _JUDGE_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        # Only send ``temperature`` when a caller explicitly opted in (see
+        # __init__): omitting it keeps the judge working on models that reject
+        # an explicit temperature, at no real cost to grading reproducibility.
+        if self._temperature is not None:
+            call_kwargs["temperature"] = self._temperature
         try:
-            resp = litellm.completion(
-                model=self._model,
-                temperature=self._temperature,
-                timeout=self._timeout_s,
-                # DEV-1613: lean on litellm's built-in retry/backoff so a
-                # transient 429 (the cea364 autopsy rate-limit pressure)
-                # retries rather than immediately falling through to None.
-                num_retries=self._num_retries,
-                messages=[
-                    {"role": "system", "content": _JUDGE_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
+            resp = litellm.completion(**call_kwargs)
         except Exception:  # noqa: BLE001
             logger.exception(
                 "LiteLLMJudge.judge raised against model=%s instance=%s",

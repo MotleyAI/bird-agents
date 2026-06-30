@@ -107,6 +107,23 @@ def test_validate_slayer_setup_slayer_requires_otf():
     )  # must not raise
 
 
+def test_validate_slayer_setup_otf_encode_raw_raises():
+    """DEV-1609: claude_sdk_otf_encode requires --query-mode slayer; reject raw
+    at validation (not per-task after setup is built) — Codex review."""
+    with pytest.raises(ValueError, match="requires --query-mode slayer"):
+        _validate_slayer_setup(
+            slayer_setup="on-the-fly", framework="claude_sdk_otf_encode",
+            query_mode="raw", mode="a-interact",
+        )
+
+
+def test_validate_slayer_setup_otf_encode_slayer_passes():
+    _validate_slayer_setup(
+        slayer_setup="on-the-fly", framework="claude_sdk_otf_encode",
+        query_mode="slayer", mode="a-interact",
+    )  # must not raise
+
+
 def test_validate_slayer_setup_slayer_pre_encoded_raises():
     with pytest.raises(ValueError, match="on-the-fly"):
         _validate_slayer_setup(
@@ -415,3 +432,37 @@ def test_validate_framework_mode_non_claude_sdk_is_noop():
     _validate_framework_mode(
         framework="pydantic_ai", dataset="mini-interact", mode="c-interact",
     )  # must not raise (unknown framework is a no-op)
+
+
+# DEV-1609: claude_sdk_otf_encode accepts ONLY a-interact / one-shot, enforced
+# at CLI/cloud validation (not just per-task in the agent) — Codex review.
+
+def test_validate_framework_mode_otf_encode_c_interact_raises():
+    with pytest.raises(ValueError, match="claude_sdk_otf_encode"):
+        _validate_framework_mode(
+            framework="claude_sdk_otf_encode",
+            dataset="mini-interact", mode="c-interact",
+        )
+
+
+def test_validate_framework_mode_otf_encode_oracle_raises():
+    """oracle is NOT a valid encode mode (unlike the eval claude_sdk agents)."""
+    with pytest.raises(ValueError, match="claude_sdk_otf_encode"):
+        _validate_framework_mode(
+            framework="claude_sdk_otf_encode",
+            dataset="mini-interact", mode="oracle",
+        )
+
+
+def test_validate_framework_mode_otf_encode_a_interact_passes():
+    _validate_framework_mode(
+        framework="claude_sdk_otf_encode",
+        dataset="mini-interact", mode="a-interact",
+    )  # must not raise
+
+
+def test_validate_framework_mode_otf_encode_one_shot_passes():
+    _validate_framework_mode(
+        framework="claude_sdk_otf_encode",
+        dataset="livesqlbench-base-lite-sqlite", mode="one-shot",
+    )  # must not raise

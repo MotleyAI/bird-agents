@@ -352,7 +352,7 @@ class ClaudeSDKOtfAgent:
             msg = (
                 f"claude_sdk_otf requires an Anthropic or registry open-weight "
                 f"model; got {self.model!r}. "
-                "Skipped — use --framework pydantic_ai_otf_encode for "
+                "Skipped — use --framework claude_sdk_otf_encode for "
                 "non-Anthropic models."
             )
             logger.warning("[%s] %s", instance_id, msg)

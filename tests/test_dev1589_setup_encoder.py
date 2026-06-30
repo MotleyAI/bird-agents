@@ -695,3 +695,117 @@ async def test_usage_scope_setup_encoder_summed_over_cycles(tmp_path, monkeypatc
     assert rows, "usage must be recorded under scope=setup_encoder"
     total_prompt = sum(r.prompt_tokens for r in rows)
     assert total_prompt == 200  # 2 cycles summed (not just the first)
+
+
+# ---------------------------------------------------------------------------
+# DEV-1609: the build encoder bounds the SDK session enter so a stalled cloud
+# CLI/MCP handshake surfaces as a per-KB error instead of hanging forever.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_encode_forwards_session_enter_timeout(tmp_path, monkeypatch):
+    await _seed(tmp_path)
+    captured: list[dict] = []
+
+    async def _beh():
+        await _write_col(tmp_path, "c", 7)
+        await _submit(_encoded(7, ["c"]))
+
+    client = _FakeClient([{"behavior": _beh, "usage": None}])
+    _patch_session(monkeypatch, [client], captured=captured)
+
+    build_encoder = se.make_claude_sdk_build_encoder(
+        model="zai/glm-5.2", self_model_id="glm",
+    )
+    run_one = build_encoder(
+        YAMLStorage(base_dir=str(tmp_path)), tmp_path, DB, tmp_path / "_s",
+    )
+    await run_one.aopen()
+    try:
+        await run_one(7, _row(7), [])
+    finally:
+        await run_one.aclose()
+
+    assert captured, "hermetic session factory was never invoked"
+    assert captured[0]["enter_timeout_s"] == se.SESSION_ENTER_TIMEOUT_S
+
+
+# ---------------------------------------------------------------------------
+# DEV-1609: _drive_with_timeout — a wedged SDK transport read must become a
+# per-KB error (force-close the client), never a forever-hang.
+# ---------------------------------------------------------------------------
+
+
+class _DisconnectClient:
+    def __init__(self):
+        self.disconnects = 0
+
+    async def disconnect(self):
+        self.disconnects += 1
+
+
+@pytest.mark.asyncio
+async def test_drive_with_timeout_returns_on_completion():
+    client = _DisconnectClient()
+
+    async def drive():
+        return None
+
+    await se._drive_with_timeout(client, drive, 5.0)
+    assert client.disconnects == 0  # healthy cycle never force-closes
+
+
+@pytest.mark.asyncio
+async def test_drive_with_timeout_force_closes_on_hang():
+    client = _DisconnectClient()
+
+    async def drive():
+        await asyncio.sleep(10)  # >> the tiny timeout below
+
+    with pytest.raises(TimeoutError):
+        await se._drive_with_timeout(client, drive, 0.05)
+    assert client.disconnects == 1  # force-closed to break the wedged read
+
+
+@pytest.mark.asyncio
+async def test_drive_with_timeout_propagates_inner_error():
+    client = _DisconnectClient()
+
+    async def drive():
+        raise ValueError("boom in cycle")
+
+    with pytest.raises(ValueError, match="boom in cycle"):
+        await se._drive_with_timeout(client, drive, 5.0)
+    assert client.disconnects == 0
+
+
+@pytest.mark.asyncio
+async def test_drive_with_timeout_bounds_a_wedged_teardown(monkeypatch):
+    """CodeRabbit: even when BOTH disconnect() hangs AND the drive task ignores
+    cancellation, _drive_with_timeout must still return (raise TimeoutError)
+    within its budget — the teardown is itself capped by TEARDOWN_TIMEOUT_S."""
+    monkeypatch.setattr(se, "TEARDOWN_TIMEOUT_S", 0.05, raising=False)
+    released = asyncio.Event()
+
+    class _WedgedClient:
+        async def disconnect(self):
+            await asyncio.sleep(10)  # disconnect itself hangs
+
+    async def drive():
+        # Ignore the first cancellation and keep waiting — a truly
+        # cancellation-resistant hang (plain asyncio.sleep would exit on cancel).
+        while not released.is_set():
+            try:
+                await released.wait()
+            except asyncio.CancelledError:
+                continue
+
+    try:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(
+                se._drive_with_timeout(_WedgedClient(), drive, 0.05),
+                timeout=5.0,  # outer guard: the call must return well under this
+            )
+    finally:
+        released.set()  # let the abandoned child task unwind

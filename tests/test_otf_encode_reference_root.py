@@ -113,7 +113,12 @@ async def test_ensure_db_reference_threads_db_root_into_build_path(
         (tgt / "_reference_fp.txt").write_text(kwargs["fp"])
         (tgt / "_kb_rows.json").write_text("[]")
         (tgt / "_setup_results.json").write_text("[]")
-        return []
+        # DEV-1609: `_build_reference` returns a ReferenceEntry (with `built`),
+        # not a bare list.
+        return reference_build.ReferenceEntry(
+            reference_dir=tgt, fingerprint=kwargs["fp"],
+            kb_rows=[], setup_results=[], built=True,
+        )
 
     monkeypatch.setattr(
         reference_build, "_build_reference", fake_build_reference,

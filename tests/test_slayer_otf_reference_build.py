@@ -153,6 +153,8 @@ async def test_build_when_absent_runs_encoder_over_full_kb(fake_cache, tmp_path)
     assert (ref / "_reference_fp.txt").exists()
     assert {r.kb_id for r in entry.setup_results} == {1, 2, 3}
     assert all(r.status == "encoded" for r in entry.setup_results)
+    # DEV-1609: a fresh build reports built=True (drives encode-usage attribution).
+    assert entry.built is True
 
 
 async def test_setup_encode_usage_is_persisted(fake_cache, tmp_path):
@@ -1422,7 +1424,7 @@ def test_build_reference_rechecks_marker_inside_flock(tmp_path):
 
         # The peer's commit is in flight; we block on flock until it
         # finishes, then must see the marker and short-circuit.
-        results = asyncio.run(run_build())
+        entry = asyncio.run(run_build())
         assert encoder_invocations["n"] == 0, (
             f"build_encoder was invoked {encoder_invocations['n']}x after "
             f"peer process committed the reference — Codex r2 marker "
@@ -1430,7 +1432,10 @@ def test_build_reference_rechecks_marker_inside_flock(tmp_path):
         )
         # Reused metadata loads from the peer's _setup_results.json (empty
         # list in this fixture).
-        assert results == []
+        assert entry.setup_results == []
+        # DEV-1609: a cross-process peer-reuse is NOT a build — `built` must be
+        # False so the caller never re-attributes the peer's setup-encode usage.
+        assert entry.built is False
         # And the peer's marker is intact.
         assert (target / "_reference_fp.txt").read_text() == "peer-committed-fp"
     finally:

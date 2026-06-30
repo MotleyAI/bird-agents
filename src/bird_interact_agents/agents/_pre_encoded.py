@@ -163,7 +163,7 @@ def _assert_reference_present(source: str, db_dir: Path) -> None:
                 f"pre-encoded 'otf' reference missing for {db_dir.name!r}: "
                 f"no _reference_fp.txt under {db_dir}. Build it first with "
                 f"`scripts/build_otf_references.py <benchmark>` (runs the LLM "
-                f"encoder), or submit a `pydantic_ai_otf_encode` run for the DB."
+                f"encoder), or submit a `claude_sdk_otf_encode` run for the DB."
             )
     else:  # custom
         if not (db_dir.is_dir() and any(db_dir.iterdir())):
