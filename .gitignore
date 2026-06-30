@@ -17,6 +17,9 @@ slayer_otf_cache/
 # image-build time for the cloud runner; never source.
 slayer_models/*/embeddings.db
 slayer_models_otf/*/embeddings.db
+# Stray top-level embeddings sidecar (created when a tool opens the repo root
+# as a model dir); same posture — generated, never source.
+/embeddings.db
 # Scratch spec docs — not part of the package.
 _specs/
 

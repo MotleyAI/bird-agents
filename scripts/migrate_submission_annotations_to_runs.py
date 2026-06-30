@@ -33,6 +33,8 @@ def main(argv: list[str] | None = None) -> int:
     dry_run: bool = args.dry_run
 
     from bird_interact_agents import paths
+    from bird_interact_agents.eval.annotation_io import write_run_annotation
+    from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation
     ann_root = paths.annotations_root()
     runs_root = paths.runs_root()
 
@@ -76,8 +78,20 @@ def main(argv: list[str] | None = None) -> int:
             print(f"         →    {dest}")
             copied += 1
         else:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(json.dumps(content, indent=2) + "\n")
+            # DEV-1591: route through write_run_annotation so a migrated record
+            # gets its version/agent_model COPIED from the run's manifest (the
+            # producer literal), like every other runs/ writer. Fall back to a
+            # raw copy if a legacy file doesn't validate against the current
+            # schema, so the migration never silently drops a record.
+            try:
+                ann = SubmissionAnnotation.model_validate(content)
+                write_run_annotation(
+                    ann, dest, benchmark=benchmark, run_id=run_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(json.dumps(content, indent=2) + "\n")
+                print(f"  (raw copy — did not validate: {exc})", file=sys.stderr)
             print(f"  COPY  {path}")
             print(f"      → {dest}")
             copied += 1

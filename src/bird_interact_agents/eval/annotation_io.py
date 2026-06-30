@@ -194,7 +194,62 @@ def run_trajectory_path(
     )
 
 
-def write_run_annotation(ann: SubmissionAnnotation, path: Path) -> None:
+def _infer_benchmark_run_id(
+    path: Path,
+) -> "tuple[Optional[str], Optional[str]]":
+    """Best-effort ``(benchmark, run_id)`` from a ``runs/`` destination path
+    (``<runs_root>/<benchmark>/<db>/<inst>/<run_id>.json``). Returns
+    ``(None, None)`` when ``path`` is not under the default runs root — e.g.
+    a tmp path in tests, or a writer that pinned an explicit ``repo_root``
+    (those pass benchmark/run_id explicitly instead)."""
+    try:
+        rel = path.relative_to(_runs_root(None))
+    except ValueError:
+        return (None, None)
+    parts = rel.parts
+    if len(parts) >= 4 and parts[-1].endswith(".json"):
+        return (parts[0], parts[-1][: -len(".json")])
+    return (None, None)
+
+
+def _copy_provenance(
+    ann: SubmissionAnnotation,
+    path: Path,
+    *,
+    benchmark: Optional[str],
+    run_id: Optional[str],
+    manifest: Optional[dict],
+) -> None:
+    """DEV-1591: fill ``version`` + ``agent_model`` on ``ann`` (if missing) by
+    COPYING the literal the producer recorded in the run's manifest — never
+    re-derived from the framework. Producer-stamped records already carry both
+    (no-op). Explicit ``benchmark``/``run_id`` (passed by the runs/ writers)
+    take precedence; otherwise infer from the path. A no-op when neither is
+    resolvable (a tmp path in tests, etc.)."""
+    if benchmark is None or run_id is None:
+        b2, r2 = _infer_benchmark_run_id(path)
+        benchmark = benchmark or b2
+        run_id = run_id or r2
+    if not benchmark or not run_id:
+        return
+    from bird_interact_agents.eval import versioning
+
+    versioning.copy_provenance_from_manifest(
+        ann, benchmark=benchmark, run_id=run_id, manifest=manifest,
+    )
+
+
+def write_run_annotation(
+    ann: SubmissionAnnotation,
+    path: Path,
+    *,
+    benchmark: Optional[str] = None,
+    run_id: Optional[str] = None,
+    manifest: Optional[dict] = None,
+) -> None:
+    _copy_provenance(
+        ann, path, benchmark=benchmark, run_id=run_id, manifest=manifest,
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
 
@@ -213,7 +268,14 @@ def _attempt_from_trajectory(trajectory_path: Optional[str]) -> Optional[int]:
     return None
 
 
-def write_run_annotation_no_overwrite(ann: SubmissionAnnotation, path: Path) -> bool:
+def write_run_annotation_no_overwrite(
+    ann: SubmissionAnnotation,
+    path: Path,
+    *,
+    benchmark: Optional[str] = None,
+    run_id: Optional[str] = None,
+    manifest: Optional[dict] = None,
+) -> bool:
     """Write ``ann`` to ``path`` only if absent or the new attempt is strictly
     greater than the stored one (resubmit case). Returns True if written.
 
@@ -240,7 +302,9 @@ def write_run_annotation_no_overwrite(ann: SubmissionAnnotation, path: Path) -> 
                 return False
         except Exception:  # noqa: BLE001
             pass  # corrupt destination — overwrite
-    write_run_annotation(ann, path)
+    write_run_annotation(
+        ann, path, benchmark=benchmark, run_id=run_id, manifest=manifest,
+    )
     return True
 
 
@@ -280,12 +344,18 @@ def latest_run_per_instance(
     *,
     benchmark: str,
     repo_root: Optional[Path] = None,
+    version: Optional[str] = None,
 ) -> "dict[tuple[str, str], tuple[str, SubmissionAnnotation]]":
     """Return the latest run annotation per ``(selected_database, instance_id)``.
 
     "Latest" is determined by the ``annotated_at`` field of each annotation
     (ISO timestamp written at grading time), not by lexicographic run_id —
     this handles local run_ids that are not timestamp-formatted.
+
+    When ``version`` is set (DEV-1591), records whose effective version (the
+    stamped ``version``, defaulting a missing value to ``v0``) does not match
+    are excluded BEFORE the latest-per-task pick — so a newer wrong-version
+    run can't override the requested-version baseline.
 
     Returns ``{(db, instance_id): (run_id, annotation)}``.
     """
@@ -315,6 +385,10 @@ def latest_run_per_instance(
                 path, type(exc).__name__, exc,
             )
             continue
+        if version is not None:
+            from bird_interact_agents.eval.versioning import DEFAULT_VERSION
+            if (ann.version or DEFAULT_VERSION) != version:
+                continue
         key = (db, iid)
         annotated_at = ann.annotated_at or ""
         cur = best.get(key)
