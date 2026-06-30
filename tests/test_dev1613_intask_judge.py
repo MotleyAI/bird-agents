@@ -243,6 +243,37 @@ def test_fetch_head_rows_caps_at_twenty(tmp_path):
     assert 0 < len(rows) <= 20
 
 
+def test_fetch_head_rows_postgres_unpacks_tuple(monkeypatch):
+    """DbConnection.execute returns ``(rows, cols)`` (a tuple, not a cursor)
+    for postgres too — the pg branch must unpack it, not call .fetchall().
+    Regression for the Codex finding where the pg branch always returned []."""
+    import bird_interact_agents.agents._submit as sm
+
+    class _FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql):  # noqa: ANN001
+            return ([(i,) for i in range(25)], ["n"])
+
+    class _PgBench:
+        db_backend = "postgres"
+
+    monkeypatch.setattr(sm, "make_db_connection", lambda *a, **kw: _FakeConn())
+
+    rows = sm._fetch_head_rows(
+        "SELECT n FROM t",
+        data_path_base="/dev/null",
+        db_name="x",
+        benchmark=_PgBench(),
+    )
+    assert 0 < len(rows) <= 20
+    assert rows[0] == (0,)
+
+
 def test_intask_judge_accept_flips_dual_eval(monkeypatch):
     from bird_interact_agents.agents._submit import submit_raw_sql
 

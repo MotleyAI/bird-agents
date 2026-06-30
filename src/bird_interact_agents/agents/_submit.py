@@ -386,9 +386,10 @@ def _fetch_head_rows(
             with make_db_connection(
                 db_name, benchmark=benchmark, read_only=True,
             ) as conn:
-                cur = conn.execute(sql)
-                data = cur.fetchall() if hasattr(cur, "fetchall") else []
-                return [tuple(r) for r in data[:limit]]
+                # DbConnection.execute returns ``(rows, column_names)`` — a
+                # tuple, NOT a cursor — for both sqlite and postgres.
+                rows, _cols = conn.execute(sql)
+                return [tuple(r) for r in list(rows)[:limit]]
         # SQLite — prefer the template (canonical reset state) if present.
         if db_file_path:
             db_path = db_file_path
