@@ -173,6 +173,20 @@ def test_backfill_override_without_manifest_still_v2(tree):
     assert _read(p)["version"] == "v2"     # override table keyed by run-id
 
 
+def test_backfill_preserves_existing_live_stamp(tree):
+    """A record already stamped v2/v3 by the live write path must NOT be
+    clobbered back to clean v0/v1 — backfill only fills a MISSING version."""
+    runs, results = tree
+    run_id = "20260601t1200-claudes-slayer-cccccc"
+    p = _write_record(runs, "alien", "alien_3", run_id,
+                      version="v2", agent_model="anthropic/claude-opus-4-7")
+    # Manifest says framework=claude_sdk → clean resolution would be v0.
+    _write_manifest(results, run_id, framework="claude_sdk",
+                    agent_model="anthropic/claude-opus-4-7")
+    backfill_run_versions.backfill(_BENCH, allow_gcs=False)
+    assert _read(p)["version"] == "v2"   # preserved, not reverted to v0
+
+
 def test_backfill_is_idempotent(tree):
     runs, results = tree
     _write_record(runs, "alien", "alien_1",

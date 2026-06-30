@@ -73,6 +73,49 @@ def test_resolve_version_present_but_unmapped_framework_stays_separable():
     ) == "claude_sdk_otf_v1"
 
 
+# --- live_run vs backfill resolution (branch-modified marker) -------------
+def test_resolve_version_live_run_on_modified_branch(monkeypatch):
+    """A run PRODUCED by this (modified) branch tags clean frameworks as
+    their modified twins, and defaults modified — never v0/v1."""
+    monkeypatch.setattr(versioning, "_BRANCH_IS_MODIFIED", True)
+    assert versioning.resolve_version("new", "claude_sdk", live_run=True) == "v2"
+    assert versioning.resolve_version("new", "claude_sdk_v1", live_run=True) == "v3"
+    assert versioning.resolve_version("new", None, live_run=True) == "v2"
+    # An unmapped framework still stays separable (not forced to v2).
+    assert versioning.resolve_version(
+        "new", "claude_sdk_otf_v1", live_run=True) == "claude_sdk_otf_v1"
+
+
+def test_resolve_version_backfill_stays_clean_on_modified_branch(monkeypatch):
+    """The historical/backfill path (default live_run=False) must NOT use the
+    branch marker — a historical record's branch is unknown, so it resolves
+    clean v0/v1 unless the override table says otherwise. Else backfill would
+    re-tag genuinely-clean runs from other branches as v2/v3."""
+    monkeypatch.setattr(versioning, "_BRANCH_IS_MODIFIED", True)
+    assert versioning.resolve_version("new", "claude_sdk") == "v0"
+    assert versioning.resolve_version("new", "claude_sdk_v1") == "v1"
+    assert versioning.resolve_version("new", None) == "v0"
+    # Override table still wins on both paths.
+    assert versioning.resolve_version(_CEA364, "claude_sdk") == "v2"
+    assert versioning.resolve_version(_CEA364, "claude_sdk", live_run=True) == "v2"
+
+
+def test_resolve_version_live_run_on_clean_branch(monkeypatch):
+    """When the marker is False (the modifications have merged to main / been
+    retired), live runs resolve exactly like the clean path."""
+    monkeypatch.setattr(versioning, "_BRANCH_IS_MODIFIED", False)
+    assert versioning.resolve_version("new", "claude_sdk", live_run=True) == "v0"
+    assert versioning.resolve_version("new", "claude_sdk_v1", live_run=True) == "v1"
+
+
+@pytest.fixture
+def modified_branch(monkeypatch):
+    """Pin the branch-modified marker True so stamp tests assert v2/v3
+    deterministically, independent of the checked-in constant (which flips to
+    False at merge)."""
+    monkeypatch.setattr(versioning, "_BRANCH_IS_MODIFIED", True)
+
+
 # --------------------------------------------------------------------------
 # provenance_from_manifest
 # --------------------------------------------------------------------------
@@ -189,14 +232,15 @@ def _write_manifest(results: Path, run_id: str, *, benchmark="mini-interact",
     }))
 
 
-def test_stamp_from_explicit_manifest(isolated_roots):
+def test_stamp_from_explicit_manifest(isolated_roots, modified_branch):
     ann = SubmissionAnnotation.model_validate(_ann_dict())
     versioning.stamp_provenance(
         ann, benchmark="mini-interact", run_id="20260601t1000-x-slayer-zzzzzz",
         manifest={"framework": "claude_sdk_v1",
                   "agent_model": "anthropic/claude-sonnet-4-6"},
     )
-    assert ann.version == "v1"
+    # Live stamp on the modified branch: claude_sdk_v1 → v3 (modified-v1).
+    assert ann.version == "v3"
     assert ann.agent_model == "anthropic/claude-sonnet-4-6"
 
 
@@ -209,21 +253,21 @@ def test_stamp_override_run_id_without_manifest(isolated_roots):
     assert ann.agent_model is None
 
 
-def test_stamp_self_loads_local_manifest(isolated_roots):
+def test_stamp_self_loads_local_manifest(isolated_roots, modified_branch):
     runs, results = isolated_roots
     run_id = "20260601t1000-x-slayer-zzzzzz"
     _write_manifest(results, run_id)
     ann = SubmissionAnnotation.model_validate(_ann_dict(run_id=run_id))
     versioning.stamp_provenance(ann, benchmark="mini-interact", run_id=run_id)
-    assert ann.version == "v0"
+    assert ann.version == "v2"   # live stamp: claude_sdk → modified-v0
     assert ann.agent_model == "anthropic/claude-opus-4-7"
 
 
-def test_stamp_self_loads_legacy_flat_manifest(isolated_roots):
+def test_stamp_self_loads_legacy_flat_manifest(isolated_roots, modified_branch):
     """Codex (loop r2): the eval.annotate / regrade legacy-flat run dir is
     ``results/cloud/<run_id>/`` (no benchmark segment). The self-load must
-    fall back to it, else a clean claude_sdk_v1 run there is mis-stamped v0
-    with no agent_model."""
+    fall back to it, else the framework is lost and the run is mis-stamped
+    (modified default) with no agent_model."""
     runs, results = isolated_roots
     run_id = "20260601t1000-x-slayer-zzzzzz"
     # ONLY the legacy-flat manifest exists (no benchmark-scoped one).
@@ -235,7 +279,7 @@ def test_stamp_self_loads_legacy_flat_manifest(isolated_roots):
     }))
     ann = SubmissionAnnotation.model_validate(_ann_dict(run_id=run_id))
     versioning.stamp_provenance(ann, benchmark="mini-interact", run_id=run_id)
-    assert ann.version == "v1"   # not the default v0
+    assert ann.version == "v3"   # claude_sdk_v1 surfaced → modified-v1
     assert ann.agent_model == "anthropic/claude-sonnet-4-6"
 
 
@@ -258,7 +302,8 @@ def _read(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
-def test_write_run_annotation_stamps_from_local_manifest(isolated_roots):
+def test_write_run_annotation_stamps_from_local_manifest(isolated_roots,
+                                                          modified_branch):
     runs, results = isolated_roots
     run_id = "20260601t1000-x-slayer-zzzzzz"
     _write_manifest(results, run_id)
@@ -269,7 +314,7 @@ def test_write_run_annotation_stamps_from_local_manifest(isolated_roots):
     )
     write_run_annotation(ann, dest, benchmark="mini-interact", run_id=run_id)
     on_disk = _read(dest)
-    assert on_disk["version"] == "v0"
+    assert on_disk["version"] == "v2"   # live stamp on the modified branch
     assert on_disk["agent_model"] == "anthropic/claude-opus-4-7"
 
 
@@ -289,7 +334,8 @@ def test_write_run_annotation_explicit_args_cover_repo_root_writer(tmp_path,
     assert _read(dest)["version"] == "v2"
 
 
-def test_write_run_annotation_path_inference_fallback(isolated_roots):
+def test_write_run_annotation_path_inference_fallback(isolated_roots,
+                                                      modified_branch):
     """No explicit benchmark/run_id: infer from the destination path when it
     lives under runs_root."""
     runs, results = isolated_roots
@@ -301,7 +347,7 @@ def test_write_run_annotation_path_inference_fallback(isolated_roots):
         instance_id="alien_1", run_id=run_id,
     )
     write_run_annotation(ann, dest)  # no explicit benchmark/run_id
-    assert _read(dest)["version"] == "v0"
+    assert _read(dest)["version"] == "v2"
 
 
 def test_write_run_annotation_outside_runs_root_no_crash(tmp_path, monkeypatch):
@@ -313,7 +359,8 @@ def test_write_run_annotation_outside_runs_root_no_crash(tmp_path, monkeypatch):
     assert _read(dest)["version"] is None  # nothing to infer → left unstamped
 
 
-def test_no_overwrite_stamps_on_write_but_preserves_existing(isolated_roots):
+def test_no_overwrite_stamps_on_write_but_preserves_existing(isolated_roots,
+                                                             modified_branch):
     runs, results = isolated_roots
     run_id = "20260601t1000-x-slayer-zzzzzz"
     _write_manifest(results, run_id)
@@ -324,7 +371,7 @@ def test_no_overwrite_stamps_on_write_but_preserves_existing(isolated_roots):
     ann = SubmissionAnnotation.model_validate(_ann_dict(run_id=run_id))
     assert write_run_annotation_no_overwrite(
         ann, dest, benchmark="mini-interact", run_id=run_id) is True
-    assert _read(dest)["version"] == "v0"
+    assert _read(dest)["version"] == "v2"
     # A second write of the SAME attempt must be preserved (no overwrite) and
     # leave the existing stamped content intact.
     ann2 = SubmissionAnnotation.model_validate(
@@ -332,4 +379,4 @@ def test_no_overwrite_stamps_on_write_but_preserves_existing(isolated_roots):
     )
     assert write_run_annotation_no_overwrite(
         ann2, dest, benchmark="mini-interact", run_id=run_id) is False
-    assert _read(dest)["version"] == "v0"  # original preserved
+    assert _read(dest)["version"] == "v2"  # original preserved

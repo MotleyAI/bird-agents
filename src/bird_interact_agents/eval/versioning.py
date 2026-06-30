@@ -47,9 +47,39 @@ _FRAMEWORK_TO_VERSION = {
     "claude_sdk_v1": "v1",
 }
 
-# The ONLY durable v2/v3 signal. Keyed by the exact run-id (the ``runs/``
-# filename stem). Override wins over the framework map because these runs
-# carry the clean framework token (``claude_sdk`` / ``claude_sdk_v1``).
+# This branch carries MODIFIED agent code (the DEV-1591 compact-search
+# prompt changes), so every run PRODUCED BY IT is a modified variant: v2
+# (modified-v0 / ``claude_sdk``) or v3 (modified-v1 / ``claude_sdk_v1``),
+# never the clean v0/v1. ``_BRANCH_IS_MODIFIED`` is the durable, code-baked
+# signal that the running process is this branch — it travels into the cloud
+# image (unlike git state), so cloud runs are tagged correctly too.
+#
+# ┌─ IMPORTANT ──────────────────────────────────────────────────────────┐
+# │ Reset to False when these modifications land on main / are retired.   │
+# │ Once "modified" IS main, its runs ARE the clean v0/v1 baseline, and   │
+# │ leaving this True would mis-tag every main run as v2/v3.              │
+# └──────────────────────────────────────────────────────────────────────┘
+#
+# It governs ONLY live write-time stamping (``resolve_version(...,
+# live_run=True)`` from ``stamp_provenance``), where we KNOW the running
+# code is this branch. The BACKFILL of historical records uses the default
+# ``live_run=False`` path: a historical record's branch is unknown, so its
+# version is derived from its own manifest framework + the override table
+# (assume clean unless explicitly overridden). Mixing the two would let the
+# backfill re-tag genuinely-clean runs from other branches as v2/v3.
+_BRANCH_IS_MODIFIED = True
+
+_MODIFIED_FRAMEWORK_TO_VERSION = {
+    "claude_sdk": "v2",
+    "claude_sdk_v1": "v3",
+}
+_MODIFIED_DEFAULT_VERSION = "v2"
+
+# Historical runs from this branch made BEFORE ``_BRANCH_IS_MODIFIED`` existed
+# (their records were written by code that stamped clean v0/v1, then fixed by
+# the backfill via this table). Keyed by the exact run-id (the ``runs/``
+# filename stem); wins over every framework map. New live runs no longer need
+# an entry here — they self-stamp v2/v3 via ``_BRANCH_IS_MODIFIED``.
 _RUN_ID_VERSION_OVERRIDES = {
     "20260629t1209-claudes-slayer-cea364": "v2",  # modified-v0 (opus smoke)
     "20260624t0833-claudes-slayer-4df43f": "v2",  # modified-v0 (glm smoke)
@@ -57,20 +87,38 @@ _RUN_ID_VERSION_OVERRIDES = {
 }
 
 
-def resolve_version(run_id: str, framework: Optional[str]) -> str:
+def resolve_version(
+    run_id: str, framework: Optional[str], *, live_run: bool = False,
+) -> str:
     """Resolve a record's ``version`` from its run-id and framework token.
 
     Precedence:
-      1. The run-id override table (the only v2/v3 signal).
-      2. The framework→version map (``claude_sdk``→v0, ``claude_sdk_v1``→v1).
-      3. ``DEFAULT_VERSION`` (v0) when the framework is missing/unknown — the
-         clean-run default for in-flight origin/main runs.
-      4. Otherwise the framework token verbatim, so a present-but-unmapped
+      1. The run-id override table (authoritative for the listed runs).
+      2. When ``live_run`` AND this is the modified branch: the MODIFIED
+         framework map (``claude_sdk``→v2, ``claude_sdk_v1``→v3) and a
+         modified default (v2) — every run this branch produces is tagged
+         distinctly from clean main without needing a per-run override.
+      3. The clean framework→version map (``claude_sdk``→v0,
+         ``claude_sdk_v1``→v1).
+      4. ``DEFAULT_VERSION`` (v0) when the framework is missing/unknown — the
+         clean-run default for historical / origin/main runs.
+      5. Otherwise the framework token verbatim, so a present-but-unmapped
          framework (e.g. an otf/encoder run) stays SEPARABLE from v0 rather
          than being silently folded into the clean-v0 bucket.
+
+    ``live_run=True`` is passed ONLY by the write-time stamp of a run being
+    produced by THIS process (``stamp_provenance``). The backfill and any
+    historical re-derivation use the default (clean) path — see
+    ``_BRANCH_IS_MODIFIED``.
     """
     if run_id in _RUN_ID_VERSION_OVERRIDES:
         return _RUN_ID_VERSION_OVERRIDES[run_id]
+    if live_run and _BRANCH_IS_MODIFIED:
+        if framework in _MODIFIED_FRAMEWORK_TO_VERSION:
+            return _MODIFIED_FRAMEWORK_TO_VERSION[framework]
+        if not framework:
+            return _MODIFIED_DEFAULT_VERSION
+        return framework
     if framework in _FRAMEWORK_TO_VERSION:
         return _FRAMEWORK_TO_VERSION[framework]
     if not framework:
@@ -119,15 +167,19 @@ def stamp_provenance(
 ) -> None:
     """Stamp ``version`` + ``agent_model`` onto ``ann`` IN PLACE.
 
-    No-clobber: only fills a field that is currently ``None`` (never
-    overwrites an explicitly-set value). When ``manifest`` is omitted, a
-    local manifest is loaded best-effort. The override table is keyed by
-    ``run_id``, so an override run is tagged even with no manifest on disk.
+    This is the LIVE write path — the run is being produced by THIS process,
+    so version resolution runs with ``live_run=True``: on the modified branch
+    a clean framework is tagged as its modified twin (v2/v3). No-clobber:
+    only fills a field that is currently ``None`` (never overwrites an
+    explicitly-set value — so the backfill's clean resolution, pre-set before
+    the write, is preserved). When ``manifest`` is omitted, a local manifest
+    is loaded best-effort. The override table is keyed by ``run_id``, so an
+    override run is tagged even with no manifest on disk.
     """
     if manifest is None:
         manifest = load_local_manifest(benchmark, run_id)
     framework, agent_model = provenance_from_manifest(manifest)
     if ann.version is None:
-        ann.version = resolve_version(run_id, framework)
+        ann.version = resolve_version(run_id, framework, live_run=True)
     if ann.agent_model is None and agent_model:
         ann.agent_model = agent_model

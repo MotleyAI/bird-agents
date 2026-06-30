@@ -108,7 +108,15 @@ def backfill(
             counters["no_manifest"] += 1
         framework, manifest_model = versioning.provenance_from_manifest(manifest)
 
-        new_version = versioning.resolve_version(run_id, framework)
+        # version: clean/historical resolution (NOT live_run) — a record's
+        # branch is unknown here, so assume clean unless the override table
+        # says otherwise. Only fill a MISSING version: a record already
+        # stamped (by the live write path as v2/v3, or a prior backfill) is
+        # authoritative and must not be clobbered back to clean v0/v1.
+        new_version = (
+            ann.version if ann.version is not None
+            else versioning.resolve_version(run_id, framework)
+        )
 
         # agent_model: manifest is authoritative; preserve the record's value
         # when the manifest has none. Flag (but still record) a disagreement.
