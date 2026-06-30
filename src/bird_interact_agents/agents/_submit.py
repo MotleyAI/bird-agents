@@ -496,7 +496,12 @@ def _maybe_apply_intask_judge(
     try:
         head_rows = list(preprocess_rows_like_ex_base(bench_name, head_rows))
     except Exception:  # noqa: BLE001
-        pass
+        # Best-effort: keep the (raw) rows and proceed, but log so a parity
+        # divergence between the in-task and final judge prompts is diagnosable.
+        logger.exception(
+            "in-task judge: failed to normalize predicted rows for %s",
+            instance_id,
+        )
     audited = load_audited_gold_rows_for(benchmark=benchmark, instance_id=instance_id)
     judge = LiteLLMJudge(model=agent_model)
     accepted = run_novel_reading_judge(
