@@ -48,6 +48,7 @@ from bird_interact_agents.eval.grade_in_place import (
 )
 from bird_interact_agents.eval.tolerant_grader import (
     LiteLLMJudge,
+    preprocess_rows_like_ex_base,
     run_novel_reading_judge,
 )
 
@@ -477,6 +478,16 @@ def _maybe_apply_intask_judge(
         db_file_path=od.get("db_file_path"),
         benchmark=benchmark_obj,
     )
+    # DEV-1613 (Codex r2): normalize the head rows the same way the final
+    # cascade does (`preprocess_rows_like_ex_base` — 2dp float / date / dict
+    # canonicalisation) so the in-task judge prompt's predicted-rows block
+    # matches final grading's, keeping in-task↔final verdict parity.
+    # Best-effort: rows are informational, never block the judge on it.
+    bench_name = getattr(benchmark_obj, "name", None) or benchmark
+    try:
+        head_rows = list(preprocess_rows_like_ex_base(bench_name, head_rows))
+    except Exception:  # noqa: BLE001
+        pass
     audited = load_audited_gold_rows_for(benchmark=benchmark, instance_id=instance_id)
     judge = LiteLLMJudge(model=agent_model)
     accepted = run_novel_reading_judge(

@@ -195,6 +195,32 @@ def test_intask_judge_receives_predicted_head_rows(monkeypatch):
     assert recorder[0]["predicted_rows_head"] == rows
 
 
+def test_intask_judge_normalizes_predicted_rows_like_cascade(monkeypatch):
+    """Codex r2: the in-task judge must see rows normalized the SAME way the
+    final cascade normalizes them (preprocess_rows_like_ex_base) so the two
+    judge prompts agree. Compare against the real normalizer's output rather
+    than hardcoding, so this pins "same normalization", not a magic value."""
+    from bird_interact_agents.agents._submit import submit_raw_sql
+    from bird_interact_agents.eval.tolerant_grader import (
+        preprocess_rows_like_ex_base,
+    )
+
+    state = _single_eval_state()
+    raw = [(1.23456,)]
+    expected = list(preprocess_rows_like_ex_base("mini-interact", raw))
+    recorder: list = []
+    with ExitStack() as stack:
+        stack.enter_context(patch(
+            "bird_interact_agents.agents._submit.execute_submit_action",
+            _miss_eval()))
+        _patch_intask(stack, verdict="insufficient", accept=True,
+                      head_rows=raw, recorder=recorder)
+        submit_raw_sql(state, "PRED SELECT *")
+
+    assert recorder, "run_novel_reading_judge was not invoked"
+    assert recorder[0]["predicted_rows_head"] == expected
+
+
 def test_intask_judge_does_not_fire_on_deterministic_pass(monkeypatch):
     """If the deterministic eval already passed, the judge must not run
     (and must not be constructed) — no wasted call."""
