@@ -48,6 +48,7 @@ from bird_interact_agents.eval.grade_in_place import (
 )
 from bird_interact_agents.eval.tolerant_grader import (
     LiteLLMJudge,
+    clean_sqls_like_ex_base,
     preprocess_rows_like_ex_base,
     run_novel_reading_judge,
 )
@@ -471,19 +472,27 @@ def _maybe_apply_intask_judge(
         benchmark_obj = _get_benchmark(benchmark)
     except ValueError:
         pass
+    # DEV-1613 (Codex r2/r3): reproduce the final cascade's N5 predicted-rows
+    # exactly — CLEAN the SQL like ex_base (strip ROUND(...) etc.) before
+    # executing, then NORMALIZE the fetched rows (2dp float / date / dict
+    # canonicalisation). Mirrors grade_submission's pred_rows pipeline
+    # (`_clean` → executor → `_norm`), so the in-task and final N5 prompts'
+    # predicted-rows blocks agree. The judge is still shown the RAW
+    # ``submitted_sql`` (both paths do). Best-effort: rows are informational,
+    # never block the judge on cleaning/normalization failures.
+    bench_name = getattr(benchmark_obj, "name", None) or benchmark
+    try:
+        _cleaned = list(clean_sqls_like_ex_base(bench_name, [sql]))
+        exec_sql = _cleaned[0] if _cleaned else sql
+    except Exception:  # noqa: BLE001
+        exec_sql = sql
     head_rows = _fetch_head_rows(
-        sql,
+        exec_sql,
         data_path_base=state.data_path_base,
         db_name=db,
         db_file_path=od.get("db_file_path"),
         benchmark=benchmark_obj,
     )
-    # DEV-1613 (Codex r2): normalize the head rows the same way the final
-    # cascade does (`preprocess_rows_like_ex_base` — 2dp float / date / dict
-    # canonicalisation) so the in-task judge prompt's predicted-rows block
-    # matches final grading's, keeping in-task↔final verdict parity.
-    # Best-effort: rows are informational, never block the judge on it.
-    bench_name = getattr(benchmark_obj, "name", None) or benchmark
     try:
         head_rows = list(preprocess_rows_like_ex_base(bench_name, head_rows))
     except Exception:  # noqa: BLE001

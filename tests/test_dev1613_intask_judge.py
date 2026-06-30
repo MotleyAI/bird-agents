@@ -221,6 +221,46 @@ def test_intask_judge_normalizes_predicted_rows_like_cascade(monkeypatch):
     assert recorder[0]["predicted_rows_head"] == expected
 
 
+def test_intask_judge_cleans_sql_before_fetching_rows(monkeypatch):
+    """Codex r3: the in-task judge must execute ex_base-CLEANED SQL (ROUND
+    stripped, etc.) to fetch its predicted rows — the same SQL the final
+    cascade executes — even though the judge is shown the RAW submitted SQL.
+    Compare the exec SQL against the real cleaner's output (robust to its
+    exact transform)."""
+    import bird_interact_agents.agents._submit as sm
+    from bird_interact_agents.agents._submit import submit_raw_sql
+    from bird_interact_agents.eval.tolerant_grader import clean_sqls_like_ex_base
+
+    state = _single_eval_state()
+    raw_sql = "SELECT ROUND(x, 4) FROM t"
+    expected_exec = list(clean_sqls_like_ex_base("mini-interact", [raw_sql]))[0]
+
+    captured: dict = {}
+
+    def _capture_fetch(sql, **kw):  # noqa: ANN001
+        captured["sql"] = sql
+        return []
+
+    ann = _make_task_annotation(verdict="insufficient")
+    with ExitStack() as stack:
+        stack.enter_context(patch(
+            "bird_interact_agents.agents._submit.execute_submit_action",
+            _miss_eval()))
+        stack.enter_context(patch.object(
+            sm, "load_task_annotation_or_implicit", lambda **kw: ann))
+        stack.enter_context(patch.object(
+            sm, "load_audited_gold_rows_for", lambda **kw: []))
+        stack.enter_context(patch.object(sm, "_fetch_head_rows", _capture_fetch))
+        _CountingJudge.instances = []
+        _CountingJudge.next_accept = False
+        stack.enter_context(patch.object(sm, "LiteLLMJudge", _CountingJudge))
+        submit_raw_sql(state, raw_sql)
+
+    assert captured.get("sql") == expected_exec
+    # The judge is still shown the RAW submitted SQL (parity with the cascade).
+    assert _CountingJudge.instances  # judge was constructed (insufficient miss)
+
+
 def test_intask_judge_does_not_fire_on_deterministic_pass(monkeypatch):
     """If the deterministic eval already passed, the judge must not run
     (and must not be constructed) — no wasted call."""
