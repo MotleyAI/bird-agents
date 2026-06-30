@@ -142,20 +142,32 @@ def test_write_failure_is_not_masked(roots, monkeypatch):
 
 def test_raw_copy_write_failure_continues(roots, monkeypatch):
     """An IO failure during the LEGACY raw-copy path (record fails
-    model_validate) increments errors and continues rather than aborting the
-    whole loop — the error-continue contract applies to the raw copy too."""
+    model_validate) increments errors and CONTINUES to the next record rather
+    than aborting the whole loop — the error-continue contract applies to the
+    raw copy too. A second, valid record must still be migrated."""
     ann_root, runs_root, _results = roots
-    # A genuine legacy record (fails model_validate) → enters the raw-copy path.
+    # alien_1: a genuine legacy record (fails model_validate) → raw-copy path,
+    # whose write we make fail. alien_2: a valid record that must still migrate.
     _write_source(ann_root, content={"kind": "submission_annotation",
                                      "totally": "legacy"})
+    _write_source(ann_root, iid="alien_2", run_id="r2",
+                  content=_ann_dict(iid="alien_2", run_id="r2"))
 
-    def _boom(self, *a, **k):
-        # Only the destination raw-copy write fails; reads use read_text.
-        raise OSError("disk full")
+    legacy_dest = runs_root / "mini-interact" / "alien" / "alien_1" / "r1.json"
+    orig_write_text = Path.write_text
 
-    monkeypatch.setattr(Path, "write_text", _boom)
+    def _selective(self, *a, **k):
+        # Only the first record's raw-copy write fails; everything else (incl.
+        # the second record's write) goes through normally.
+        if self == legacy_dest:
+            raise OSError("disk full")
+        return orig_write_text(self, *a, **k)
 
-    rc = migrate.main([])  # write_text restored by monkeypatch teardown
-    assert rc == 1
-    dest = runs_root / "mini-interact" / "alien" / "alien_1" / "r1.json"
-    assert not dest.exists()
+    monkeypatch.setattr(Path, "write_text", _selective)
+
+    rc = migrate.main([])
+    assert rc == 1                       # the failed record kept exit non-zero
+    assert not legacy_dest.exists()      # its raw copy did not land
+    # ...but the loop continued and migrated the second, valid record.
+    assert (runs_root / "mini-interact" / "alien" / "alien_2"
+            / "r2.json").exists()

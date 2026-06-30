@@ -63,12 +63,15 @@ def mode_from_filename(name: str) -> Optional[str]:
 
 def load_manifest(
     benchmark: str, run_id: str, *, gcs_client=None, allow_gcs: bool = True,
+    cache: bool = True,
 ) -> Optional[dict]:
     """Return the cloud manifest for ``run_id``, or ``None`` if unavailable.
 
     Reads from ``results/<benchmark>/cloud/<run_id>/manifest.json`` when
     present. Falls back to GCS (caching the result locally) unless
-    ``allow_gcs`` is False.
+    ``allow_gcs`` is False. Pass ``cache=False`` to suppress the local
+    cache write on a GCS fetch — used by callers (e.g. a ``--dry-run``) that
+    must not mutate the results tree.
     """
     local = (
         paths.results_root() / benchmark / "cloud" / run_id / "manifest.json"
@@ -85,8 +88,9 @@ def load_manifest(
     except Exception as exc:  # noqa: BLE001 — any GCS error is "skip this run"
         logger.warning("GCS manifest for %s unavailable: %s", run_id, exc)
         return None
-    local.parent.mkdir(parents=True, exist_ok=True)
-    local.write_text(json.dumps(manifest, indent=2, default=str))
+    if cache:
+        local.parent.mkdir(parents=True, exist_ok=True)
+        local.write_text(json.dumps(manifest, indent=2, default=str))
     return manifest
 
 

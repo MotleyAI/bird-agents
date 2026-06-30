@@ -97,8 +97,12 @@ def backfill(
             # back to versioning.load_local_manifest for the legacy-flat
             # results/cloud/<run_id>/ layout it doesn't check (else a clean
             # claude_sdk_v1 legacy-flat run backfills as v0 with no model).
+            # cache=not dry_run: a --dry-run must not mutate the results tree by
+            # persisting GCS-fetched manifests (the "report without writing"
+            # contract); a real run warms the cache as before.
             manifest_cache[run_id] = _cascade.load_manifest(
                 benchmark, run_id, gcs_client=gcs_client, allow_gcs=allow_gcs,
+                cache=not dry_run,
             ) or versioning.load_local_manifest(benchmark, run_id)
         manifest = manifest_cache[run_id]
         if manifest is None:
