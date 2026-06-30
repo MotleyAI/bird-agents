@@ -52,8 +52,15 @@ import pytest
 # only copy still reaching the v1 main prompt is the one inside the shared
 # HOST_DISCOVERY_PLAYBOOK these prompts append (itself overridden for the main
 # loop by build_main_workflow_note). Snapshots recomputed for that placement.
-_ONE_SHOT_SHA256 = "be82869a90c5ce4e76f9c9d30dcdd4a5b3ae3936acdd354668b7e1d30123ef65"
-_AINTERACT_SHA256 = "c3503705d7b59ab03f7f4c4d06e59981d303e8ebd6e1208e1d8d36916563396b"
+# Re-baselined for DEV-1591 stream 1: `search` is now discovery-only and the
+# search-vs-inspect discipline + host-discovery playbook route every targeted
+# detail read (column / memory full body) through the `inspect` point-lookup
+# (`entity_type=…`, `compact=False`), dropping the `search(entities=…,
+# compact=False)` + `cypher_filter` detail-read pattern. The shared
+# `_COMPACT_SEARCH_DISCIPLINE` and `HOST_DISCOVERY_PLAYBOOK` both changed, so
+# the v1 main prompts (which still append the playbook) re-hash.
+_ONE_SHOT_SHA256 = "c5e1eb3736abaecdf21d4d066329795b59952afa97b8d6b7addea98ee9815b50"
+_AINTERACT_SHA256 = "6346e4f56662948757166c23b8b2e2f55e61a3c8e7e0794f1f589b70b0f8af6f"
 
 
 def test_slayer_otf_one_shot_unchanged():

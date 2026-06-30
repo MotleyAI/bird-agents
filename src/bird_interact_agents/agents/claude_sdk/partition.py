@@ -104,19 +104,19 @@ choice in section 6 with the two or three candidate interpretations.
 """
 
 
-# DEV-1591: the broad-search compact discipline lives on the DISCOVERY client,
-# not the main loop — discovery is the only half that actually calls `search`
-# (the main loop reaches it through `ask_discovery`). It is slayer-only: the raw
-# discovery client introspects via `get_schema` / `get_all_column_meanings`,
-# which have no `compact` / `cypher_filter` concept. The note maps directly onto
-# discovery's job — a broad `compact=True` sweep to pick candidate entities,
-# then targeted `compact=False` reads of the chosen ids — and keeps discovery's
-# OWN warm context lean.
+# DEV-1591: the search-vs-inspect discipline lives on the DISCOVERY client,
+# not the main loop — discovery is the half that actually calls `search` /
+# `inspect` (the main loop reaches them through `ask_discovery`). It is
+# slayer-only: the raw discovery client introspects via `get_schema` /
+# `get_all_column_meanings`, which have no `search` / `inspect` concept. The
+# note maps directly onto discovery's job — a broad compact `search` sweep to
+# pick candidate ids, then targeted `inspect(..., compact=False)` reads of
+# those ids — and keeps discovery's OWN warm context lean.
 _DISCOVERY_COMPACT_NOTE = (
-    "\nTOOL-USAGE EFFICIENCY. You own `search` (plus `inspect_model` /\n"
-    "`models_summary`). Use the broad-then-targeted compact discipline below so a\n"
-    "single broad sweep does not bloat your warm context — and so the facts you\n"
-    "report stay crisp:\n\n"
+    "\nTOOL-USAGE EFFICIENCY. You own `search` and `inspect` (plus\n"
+    "`inspect_model` / `models_summary`). Use the search-for-discovery,\n"
+    "inspect-for-detail discipline below so a single broad sweep does not\n"
+    "bloat your warm context — and so the facts you report stay crisp:\n\n"
     + _COMPACT_SEARCH_DISCIPLINE
     + "\n"
 )
@@ -126,8 +126,8 @@ def build_discovery_prompt(*, with_ask_user: bool, query_mode: str) -> str:
     """Compose the discovery subagent system prompt.
 
     ``query_mode`` selects the introspection surface: slayer discovery owns
-    ``search`` (and gets the DEV-1591 compact-mode discipline); raw discovery
-    introspects via ``get_schema`` and has no ``compact`` concept.
+    ``search`` / ``inspect`` (and gets the DEV-1591 search-vs-inspect
+    discipline); raw discovery introspects via ``get_schema`` and has neither.
     """
     if query_mode not in _VERIFY_TOOL_BY_MODE:
         raise ValueError(
@@ -153,11 +153,12 @@ _VERIFY_TOOL_BY_MODE = {
 # serve the single-agent v0 flavors) is correctly rerouted through
 # ``ask_discovery`` for the two-stage v1 main loop.
 _INTROSPECTION_TOOLS_BY_MODE = {
-    # The slayer discovery client owns search / inspect_model / models_summary.
-    # ``list_datasources`` was retired (one datasource per task) — it is not on
-    # ANY surface; the general "introspection is NOT on your tool surface"
-    # statement above already reroutes a stale reference to ``ask_discovery``.
-    "slayer": "`search` / `inspect_model` / `models_summary`",
+    # The slayer discovery client owns search / inspect / inspect_model /
+    # models_summary. ``list_datasources`` was retired (one datasource per
+    # task) — it is not on ANY surface; the general "introspection is NOT on
+    # your tool surface" statement above already reroutes a stale reference to
+    # ``ask_discovery``.
+    "slayer": "`search` / `inspect` / `inspect_model` / `models_summary`",
     "raw": "`get_schema` / `get_all_column_meanings`",
 }
 

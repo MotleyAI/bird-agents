@@ -231,6 +231,11 @@ _MAIN_NATIVE_BARE = [
 ]
 _DISCOVERY_NATIVE_BARE = [
     "search",
+    # DEV-1591: discovery owns the targeted point-lookup `inspect` (the
+    # prompts route all column / memory detail reads to it). `search` is
+    # discovery-only and hardwired-compact; `inspect` is how discovery
+    # reads full bodies.
+    "inspect",
     "models_summary",
     "inspect_model",
     "query",

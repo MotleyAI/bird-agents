@@ -174,6 +174,11 @@ SLAYER_MCP_TOOLS = [
     "models_summary",
     "inspect_model",
     "search",
+    # DEV-1591: `inspect` is the targeted point-lookup the prompts route all
+    # detail reads to (column / memory full bodies). It must be on the
+    # allow-list — `allowed_tools` gates auto-execute, so without it the
+    # model's prompted `inspect(...)` calls would be denied in headless runs.
+    "inspect",
     "create_model",
     "edit_model",
     "save_memory",
@@ -255,6 +260,42 @@ async def _normalize_write_tool_filters_hook(input_data, tool_use_id, context):
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "updatedInput": updated,
+        }
+    }
+
+
+# DEV-1591: the SLayer MCP tool name for the broad-discovery `search`.
+_SLAYER_SEARCH_TOOL = "mcp__slayer__search"
+
+
+async def _force_compact_search_hook(input_data, tool_use_id, context):
+    """PreToolUse hook (DEV-1591): force ``compact=True`` on every SLayer
+    ``search`` call, unconditionally.
+
+    `search`'s `compact` already defaults to True, but the trajectory
+    analysis of the cea364 opus run showed the model *explicitly* passing
+    `compact=False` on ~1/3 of `question=`-style broad-discovery searches —
+    each one dragging a ~55K-char, 10-entity full render into the cached
+    context for every subsequent turn (~6x the cache-read of the raw-mode
+    agent on the same task). A prose-only rule already forbade this and the
+    model ignored it, so we enforce it mechanically: discovery `search` is
+    description-only; all targeted detail reads go through `inspect`
+    (`compact=False`), which is never touched by this hook.
+
+    Mirrors `_normalize_write_tool_filters_hook`: returns the SDK's
+    ``updatedInput`` directive on the ``hookSpecificOutput`` envelope. Setting
+    `compact=True` even when it is already True/absent makes the enforcement
+    explicit and auditable in the recorded tool input.
+    """
+    if input_data.get("tool_name") != _SLAYER_SEARCH_TOOL:
+        return {}
+    tool_input = input_data.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return {}
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "updatedInput": {**tool_input, "compact": True},
         }
     }
 
@@ -592,6 +633,12 @@ class ClaudeSDKOtfAgent:
                 HookMatcher(
                     matcher="mcp__bird-interact-tools__submit_query",
                     hooks=[pre_query_gate],
+                ),
+                # DEV-1591: hardwire SLayer `search` to compact=True so broad
+                # discovery never drags full per-entity renders into context.
+                HookMatcher(
+                    matcher=_SLAYER_SEARCH_TOOL,
+                    hooks=[_force_compact_search_hook],
                 ),
             ]
             if not self.pre_encoded_source:

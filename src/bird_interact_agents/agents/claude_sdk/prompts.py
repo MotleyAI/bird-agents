@@ -9,7 +9,8 @@ stdio and see SLayer's authentic tool descriptions. The prompt mandates
 they call `help` first to learn the query syntax.
 """
 
-# DEV-1591: broad-search compact discipline, shared single source. The
+# DEV-1591: search-vs-inspect discipline, shared single source (search is
+# discovery-only; targeted detail reads use the `inspect` point-lookup). The
 # constant is param-free and brace-free, so concatenating it into these
 # ``str.format``-consumed templates is safe.
 from bird_interact_agents.agents._shared_otf_prompts import (
@@ -314,7 +315,7 @@ Specific traps to avoid:
   other multi-column derived value the user's qualifier implies.
 
 Budget: {budget} bird-coins. Each tool call costs bird-coins:
-- help / list_datasources / inspect_model / search: 0.5
+- help / list_datasources / inspect_model / inspect / search: 0.5
 - models_summary / query: 1
 - ask_user: 2
 - submit_query: 3
@@ -404,9 +405,9 @@ REQUIRED FIRST STEPS:
     + _COMPACT_SEARCH_DISCIPLINE
     + """
 
-Budget: {budget} bird-coins. inspect_model and query cost 0.5-1, asking
-the user costs 2, submitting costs 3. If your first submission is wrong
-you may have one chance to debug it.
+Budget: {budget} bird-coins. inspect_model, inspect and query cost 0.5-1,
+asking the user costs 2, submitting costs 3. If your first submission is
+wrong you may have one chance to debug it.
 
 # SLayer help (excerpt)
 {slayer_help}

@@ -15,10 +15,13 @@ underspecifies the join graph. Used by:
 The text has no ``str.format`` placeholders so it can be concatenated
 into any prompt body without breaking the call site's ``.format(...)``.
 
-DEV-1591: the broad-search compact discipline (``_COMPACT_SEARCH_DISCIPLINE``)
+DEV-1591: the search-vs-inspect discipline (``_COMPACT_SEARCH_DISCIPLINE``)
 is imported from ``_shared_otf_prompts`` and embedded inline so the rule
-lives in exactly one place. The constant is param-free and brace-free, so
-the no-``.format()``-placeholder contract still holds.
+lives in exactly one place. `search` is discovery-only (hardwired compact);
+every targeted detail read in this playbook uses the ``inspect`` point-lookup
+(``entity_type=…``, ``compact=False``), which has no RRF fusion and so needs
+no ``cypher_filter``. The constant is param-free and brace-free, so the
+no-``.format()``-placeholder contract still holds.
 """
 
 from bird_interact_agents.agents._shared_otf_prompts import (
@@ -54,39 +57,33 @@ HOW TO READ COLUMN DESCRIPTIONS via SLayer MCP:
 
   * Known column(s), want their descriptions by canonical ref:
 
-        search(
-            entities=["<db>.<model>.<col>", ...],
-            max_results=<len(entities)>,
+        inspect(
+            reference=["<db>.<model>.<col>", ...],
+            entity_type="column",
             compact=False,
-            cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id',
-            datasource="<db>",
         )
 
-    Each named entity surfaces as a `SearchHit(id, kind, score, text,
-    description, ...)` with `kind == "column"` here. With `compact=False`
-    the `text` field carries a multi-line block — `Column:
-    <ds>.<model>.<col> / Type: <type> / Description: <intent text> /
-    Sample values: ...`. The default `compact=True` only fills
-    `description` (one-line) and leaves `text` empty. The
-    `cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'` constraint
-    is load-bearing: without it, the unified `max_results` cap is
-    RRF-fused across kinds, so a memory tagged to the column can outrank
-    the column itself and consume the cap before all requested column
-    hits surface. Use the `ModelColumn` label (not `Column`) because
-    `Column` is a reserved keyword in LadybugDB ≥0.15 — `ModelColumn`
-    works on both the naive fallback and the graph-backed advanced path.
+    `inspect` is a clean point-lookup — no RRF fusion, no bundled
+    memories — so it returns exactly the columns you name and needs no
+    `cypher_filter` or `max_results` budgeting. Pass a list to read
+    several columns of the same kind in one call (per-id resolution
+    errors are isolated and don't sink the batch). Each column comes back
+    as a multi-line block — `Column: <ds>.<model>.<col> / Type: <type> /
+    Description: <intent text> / Sample values: ...`. (The default
+    `compact=True` returns description-only; pass `compact=False` for the
+    full body with Sample values.)
   * Whole-model bulk read (every column at once): `inspect_model(<model>,
     sections=["columns"], data_source="<db>")` — Column.name + .type +
     .description for every column. Use when scanning a model end-to-end.
   * Discover columns whose descriptions match a phrase:
     `search(question="<one-sentence paraphrase>", max_results=10,
-    compact=True,
     datasource="<db>", cypher_filter='MATCH (n:ModelColumn:Measure:Aggregation:Model) RETURN n.id AS id')`.
     The cypher filter pins the result list to entity hits (multi-label
     is union semantics); the tantivy + dense-embedding channels then
     rank all column / model / measure descriptions and return a unified
-    `results` list of entity hits. This is a BROAD search — keep
-    `compact=True` (see COMPACT-MODE SEARCH DISCIPLINE below).
+    `results` list of entity hits. This is a BROAD search — it returns
+    one-line descriptions only; you never pass `compact` (see
+    SEARCH-vs-INSPECT DISCIPLINE below).
 
 """
     + _COMPACT_SEARCH_DISCIPLINE
@@ -129,13 +126,11 @@ DECISION ORDER:
   every step and silently multiply rows even when structurally valid.
 
   TIE-BREAKER 2 (KB body re-read). If still tied, re-read the KB body
-  via `search(question="<KB definition>", datasource="<db>",
-  max_results=3, compact=False,
-  cypher_filter='MATCH (n:Memory) RETURN n.id AS id')` — KB definitions
-  occasionally include parenthetical hints ("per entity", "per
-  inspection") that pin the grain. The `compact=False` + `:Memory`
-  filter is required: compact-mode hits carry only the one-line
-  `description`, not the full `learning` body.
+  via `inspect(reference=["memory:<id>"], entity_type="memory",
+  compact=False)` — KB definitions occasionally include parenthetical
+  hints ("per entity", "per inspection") that pin the grain. `inspect`
+  with `compact=False` returns the full `learning` body, whereas a
+  `search` would only return the one-line `description`.
 
   LAST RESORT (deterministic). If still ambiguous, pick the candidate
   whose model name sorts FIRST lexicographically and record the choice
@@ -154,13 +149,12 @@ format="json")` and scan each model's `joins_to`:
 candidate.
 
 Description read (PRIMARY):
-  search(
-    entities=["demo.asset_inspections.sensor_read_ref",
-              "demo.maintenance_log.sensor_read_ref"],
-    max_results=2, compact=False, datasource="demo",
-    cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id',
+  inspect(
+    reference=["demo.asset_inspections.sensor_read_ref",
+               "demo.maintenance_log.sensor_read_ref"],
+    entity_type="column", compact=False,
   )
-returns `SearchHit.text` excerpts:
+returns the column bodies:
   * `asset_inspections.sensor_read_ref` — "Associates the inspection
     with the relevant sensor reading."
   * `maintenance_log.sensor_read_ref` — "Associates maintenance data

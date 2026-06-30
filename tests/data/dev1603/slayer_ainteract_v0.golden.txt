@@ -24,53 +24,48 @@ on the fly.
 SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-`search` to find relevant memories and existing entities; `inspect_model`
-to see a model's columns / measures / joins; `create_model` / `edit_model`
-to add columns and measures; `query` to test.
+`search` to DISCOVER relevant memories and existing entities (it returns
+one-line descriptions only); `inspect` to read the FULL body of specific
+entities you have already pinned down — columns, measures, or memories — by
+reference; `inspect_model` to see a whole model's columns / measures / joins;
+`create_model` / `edit_model` to add columns and measures; `query` to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — `search` with `entities=[
-"<db>.<model>.<col>"]`, `max_results=1`, `compact=False`,
-`cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'`. The kind
-filter is load-bearing: without it, the unified `max_results` cap is
-RRF-fused across kinds and a memory tagged to that column can outrank
-the column itself, returning prose instead of the schema-author
-description. Use the `ModelColumn` label (not `Column`) because
-`Column` is a reserved keyword in LadybugDB ≥0.15 and only matches on
-the naive fallback path; `ModelColumn` works on both naive and graph-
-backed installs. The returned hit's `text` carries `Description:` and
-`Sample values:` inline.
+filter, projection, or join key — `inspect(reference=[
+"<db>.<model>.<col>"], entity_type="column", compact=False)`. `inspect`
+is a clean point-lookup (no RRF fusion, no bundled memories), so unlike a
+`search` it returns the schema-author entry directly and needs no
+`cypher_filter` to keep a tagged memory from outranking the column. Batch
+several columns in one call by listing more references. The returned body
+carries `Description:` and `Sample values:` inline.
 The truncated `Sample values:` line is your authoritative source of
 which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same
 concept. Use it BEFORE writing any IN-set (see rule 3 below).
 
 READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
-a memory id you've already identified — `search` with `entities=[
-"memory:<id>"]`, `max_results=1`, `compact=False`,
-`cypher_filter='MATCH (n:Memory) RETURN n.id AS id'`. By default `search`
-is compact (one-line `description` summary per hit); `compact=False`
-returns the full `learning` body. The `:Memory` kind filter pins the
-result to the memory you asked for — without it, a parent memory whose
-entities cross-reference `memory:<id>` can occupy the single slot
-instead of the memory you want.
+a memory id you've already identified — `inspect(reference=["memory:<id>"],
+entity_type="memory", compact=False)`. `search` only ever returns the
+one-line `description` summary; `inspect` with `compact=False` returns the
+full `learning` body. Because `inspect` is a point-lookup it returns exactly
+the memory you asked for — no cross-referencing parent memory can occupy its
+slot — so no `cypher_filter` is needed. Batch several memory ids in one call
+by listing more references.
 
-COMPACT-MODE SEARCH DISCIPLINE. The `search` tool's `compact` flag controls
-how much each hit returns, and `cypher_filter` controls WHICH kinds of hits
-come back. Use both to keep broad searches cheap and on-target:
+SEARCH-vs-INSPECT DISCIPLINE. `search` is for DISCOVERY ONLY; `inspect` is
+for DETAIL. Keeping them separate is what keeps context cheap:
 
-  * BROAD EXPLORATION — when you call `search(question="…")` with a large
-    `max_results` to DISCOVER what exists, keep `compact=True` (the default).
-    It returns each hit's one-line `description` — enough to choose
-    candidates. Do NOT pass `compact=False` on a broad search: that renders
-    the FULL per-entity body (Type / Description / Sample values / SQL /
-    allowed aggregations) for EVERY hit — tens of thousands of characters
-    that then ride in cached context on every later turn, costing many times
-    the tokens for no added signal.
+  * DISCOVER with `search(question="…")`. It returns each hit's one-line
+    `description` — enough to choose candidates. Treat broad search as
+    compact-only: never pass `compact`, and don't try to pull per-entity
+    Type / Description / Sample values / SQL out of `search`. (A broad
+    `compact=False` search drags tens of thousands of characters of full
+    renders into cached context on every later turn for no added signal —
+    so the detail belongs in `inspect`, below.)
 
-  * NARROW THE BROAD SEARCH BY KIND with `cypher_filter`, so the
-    `max_results` slots are spent on the kind you actually want instead of an
-    RRF-fused mix of memories + columns + measures + models. Pass a
+  * NARROW THE DISCOVERY BY KIND with `cypher_filter`, so the `max_results`
+    slots are spent on the kind you actually want instead of an RRF-fused
+    mix of memories + columns + measures + models. Pass a
     `MATCH … RETURN n.id AS id` constraint (multi-label is union semantics):
       - only KB memories:        cypher_filter='MATCH (n:Memory) RETURN n.id AS id'
       - only entity definitions: cypher_filter='MATCH (n:ModelColumn:Measure:Aggregation:Model) RETURN n.id AS id'
@@ -79,17 +74,17 @@ come back. Use both to keep broad searches cheap and on-target:
     in LadybugDB ≥0.15 and only matches on the naive fallback path;
     `ModelColumn` works on naive AND graph-backed installs).
 
-  * TARGETED DETAIL — only when you already have a SMALL, chosen set of known
-    ids do you want the full body. Call
-    `search(entities=["<db>.<model>.<col>", …])` (or a single `memory:<id>`)
-    with a tight `max_results` and `compact=False`, plus the matching
-    `cypher_filter` kind constraint so a cross-referencing memory can't
-    outrank the entity you asked for. That is where spending the tokens pays
-    off.
+  * INSPECT for the full body once you have a SMALL, chosen set of known
+    ids. `inspect(reference=[…], entity_type="…", compact=False)` is a clean
+    point-lookup — no RRF fusion, no bundled memories — so it needs NO
+    `cypher_filter` and no `max_results` budgeting. Batch ids of the SAME
+    kind in one call:
+      - columns:  inspect(reference=["<db>.<model>.<col>", …], entity_type="column", compact=False)
+      - memories: inspect(reference=["memory:<id>", …], entity_type="memory", compact=False)
 
-Rule of thumb: `question=` (discovery) → `compact=True` + a `cypher_filter`
-kind constraint; `entities=[…]` (point lookup) → `compact=False` + the
-matching kind constraint.
+Rule of thumb: `search(question=…)` to FIND ids (compact + a `cypher_filter`
+kind constraint); `inspect(reference=[ids], entity_type=…, compact=False)` to
+READ them.
 
 ENCODE-THEN-QUERY DISCIPLINE:
 
@@ -381,27 +376,21 @@ HOW TO READ COLUMN DESCRIPTIONS via SLayer MCP:
 
   * Known column(s), want their descriptions by canonical ref:
 
-        search(
-            entities=["<db>.<model>.<col>", ...],
-            max_results=<len(entities)>,
+        inspect(
+            reference=["<db>.<model>.<col>", ...],
+            entity_type="column",
             compact=False,
-            cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id',
-            datasource="<db>",
         )
 
-    Each named entity surfaces as a `SearchHit(id, kind, score, text,
-    description, ...)` with `kind == "column"` here. With `compact=False`
-    the `text` field carries a multi-line block — `Column:
-    <ds>.<model>.<col> / Type: <type> / Description: <intent text> /
-    Sample values: ...`. The default `compact=True` only fills
-    `description` (one-line) and leaves `text` empty. The
-    `cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'` constraint
-    is load-bearing: without it, the unified `max_results` cap is
-    RRF-fused across kinds, so a memory tagged to the column can outrank
-    the column itself and consume the cap before all requested column
-    hits surface. Use the `ModelColumn` label (not `Column`) because
-    `Column` is a reserved keyword in LadybugDB ≥0.15 — `ModelColumn`
-    works on both the naive fallback and the graph-backed advanced path.
+    `inspect` is a clean point-lookup — no RRF fusion, no bundled
+    memories — so it returns exactly the columns you name and needs no
+    `cypher_filter` or `max_results` budgeting. Pass a list to read
+    several columns of the same kind in one call (per-id resolution
+    errors are isolated and don't sink the batch). Each column comes back
+    as a multi-line block — `Column: <ds>.<model>.<col> / Type: <type> /
+    Description: <intent text> / Sample values: ...`. (The default
+    `compact=True` returns description-only; pass `compact=False` for the
+    full body with Sample values.)
   * Whole-model bulk read (every column at once): `inspect_model(<model>,
     sections=["columns"], data_source="<db>")` — Column.name + .type +
     .description for every column. Use when scanning a model end-to-end.
@@ -450,13 +439,11 @@ DECISION ORDER:
   every step and silently multiply rows even when structurally valid.
 
   TIE-BREAKER 2 (KB body re-read). If still tied, re-read the KB body
-  via `search(question="<KB definition>", datasource="<db>",
-  max_results=3, compact=False,
-  cypher_filter='MATCH (n:Memory) RETURN n.id AS id')` — KB definitions
-  occasionally include parenthetical hints ("per entity", "per
-  inspection") that pin the grain. The `compact=False` + `:Memory`
-  filter is required: compact-mode hits carry only the one-line
-  `description`, not the full `learning` body.
+  via `inspect(reference=["memory:<id>"], entity_type="memory",
+  compact=False)` — KB definitions occasionally include parenthetical
+  hints ("per entity", "per inspection") that pin the grain. `inspect`
+  with `compact=False` returns the full `learning` body, whereas a
+  `search` would only return the one-line `description`.
 
   LAST RESORT (deterministic). If still ambiguous, pick the candidate
   whose model name sorts FIRST lexicographically and record the choice
@@ -475,13 +462,12 @@ format="json")` and scan each model's `joins_to`:
 candidate.
 
 Description read (PRIMARY):
-  search(
-    entities=["demo.asset_inspections.sensor_read_ref",
-              "demo.maintenance_log.sensor_read_ref"],
-    max_results=2, compact=False, datasource="demo",
-    cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id',
+  inspect(
+    reference=["demo.asset_inspections.sensor_read_ref",
+               "demo.maintenance_log.sensor_read_ref"],
+    entity_type="column", compact=False,
   )
-returns `SearchHit.text` excerpts:
+returns the column bodies:
   * `asset_inspections.sensor_read_ref` — "Associates the inspection
     with the relevant sensor reading."
   * `maintenance_log.sensor_read_ref` — "Associates maintenance data

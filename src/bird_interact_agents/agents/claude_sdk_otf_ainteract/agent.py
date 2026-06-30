@@ -45,8 +45,10 @@ from bird_interact_agents.slayer_otf.timing import otf_timer
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
     _NORMALIZE_WRITE_FILTERS_MATCHER,
+    _SLAYER_SEARCH_TOOL,
     SLAYER_MCP_DISALLOWED_TOOL_NAMES,
     SLAYER_MCP_TOOLS,
+    _force_compact_search_hook,
     _make_query_before_submit_guard,
     _make_turn_budget_hook,
     _normalize_write_tool_filters_hook,
@@ -440,6 +442,12 @@ class ClaudeSDKOtfAInteractAgent:
                     matcher="mcp__bird-interact-tools__submit_query",
                     # ask_user gate runs first; query gate runs second.
                     hooks=[pre_submit_gate, pre_query_gate],
+                ),
+                # DEV-1591: hardwire SLayer `search` to compact=True so broad
+                # discovery never drags full per-entity renders into context.
+                HookMatcher(
+                    matcher=_SLAYER_SEARCH_TOOL,
+                    hooks=[_force_compact_search_hook],
                 ),
             ]
             if not self.pre_encoded_source:
