@@ -806,6 +806,12 @@ class CachedLLMJudge:
         return result
 
 
+# DEV-1613: default litellm retry budget for the N5 judge — enough to ride
+# out a transient 429 burst without stalling grading when the LLM is truly
+# down (final failure still falls through to the deterministic tiers).
+_JUDGE_NUM_RETRIES = 4
+
+
 _JUDGE_SYSTEM_PROMPT = (
     "You are an expert SQL evaluator. The user has issued an "
     "ambiguous task; a strict cascade has confirmed that the agent's "
@@ -884,10 +890,12 @@ class LiteLLMJudge:
         model: str,
         temperature: float = 0.0,
         timeout_s: float = 60.0,
+        num_retries: int = _JUDGE_NUM_RETRIES,
     ) -> None:
         self._model = model
         self._temperature = temperature
         self._timeout_s = timeout_s
+        self._num_retries = num_retries
 
     @property
     def model_name(self) -> str:
@@ -911,6 +919,10 @@ class LiteLLMJudge:
                 model=self._model,
                 temperature=self._temperature,
                 timeout=self._timeout_s,
+                # DEV-1613: lean on litellm's built-in retry/backoff so a
+                # transient 429 (the cea364 autopsy rate-limit pressure)
+                # retries rather than immediately falling through to None.
+                num_retries=self._num_retries,
                 messages=[
                     {"role": "system", "content": _JUDGE_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
@@ -931,6 +943,64 @@ class LiteLLMJudge:
             )
             return None
         return _parse_judge_decision(text)
+
+
+def run_novel_reading_judge(
+    *,
+    task_annotation: Any,
+    audited_gold_rows: List[dict],
+    submitted_sql: str,
+    predicted_rows_head: Sequence[Sequence],
+    llm_judge: Optional[Any],
+) -> Optional[bool]:
+    """Shared N5 'novel reading' judge invocation (DEV-1613).
+
+    Returns ``True`` (accept), ``False`` (reject), or ``None`` (skip /
+    inconclusive). Gated identically to the cascade's N5 tier: fires ONLY
+    when an ``llm_judge`` is provided, ``metadata_sufficiency.verdict`` is
+    ``"insufficient"``, and an ``evaluator_prompt`` is present — so
+    sufficient-task grading never pays a judge call. Judge exceptions are
+    swallowed to ``None`` so callers fall through to the deterministic
+    verdict rather than crashing or silently dropping to agent_miss.
+
+    Used by both ``grade_submission`` (the post-run cascade) and the
+    in-task ``submit``-feedback grader so the two agree on the same gate
+    and judge-arg construction.
+    """
+    if (
+        llm_judge is None
+        or task_annotation.metadata_sufficiency.verdict != "insufficient"
+        or task_annotation.evaluator_prompt is None
+    ):
+        return None
+    try:
+        return llm_judge.judge(
+            evaluator_prompt=task_annotation.evaluator_prompt,
+            gold_variants_summary=[
+                {
+                    "variant_id": v.get("variant_id"),
+                    "interpretation": next(
+                        (gv.interpretation
+                         for gv in task_annotation.gold_variants
+                         if gv.variant_id == v.get("variant_id")),
+                        "",
+                    ),
+                }
+                for v in audited_gold_rows
+            ],
+            metadata_anchors=[m.term for m in task_annotation.masked_terms],
+            submitted_sql=submitted_sql,
+            predicted_rows_head=list(predicted_rows_head[:20]),
+            annotation_content_hash=_annotation_hash(task_annotation),
+            gold_variants_content_hash=_gold_hash(audited_gold_rows),
+            instance_id=task_annotation.instance_id,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "LLM judge raised on instance=%s",
+            getattr(task_annotation, "instance_id", "<unknown>"),
+        )
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -1288,38 +1358,19 @@ def grade_submission(
                     matched_variant = v_meta["variant_id"]
                 break
 
-    # 5) N5 — LLM judge, gated on insufficient verdict.
+    # 5) N5 — LLM judge, gated on insufficient verdict. Delegates to the
+    # shared ``run_novel_reading_judge`` so the post-run cascade and the
+    # in-task submit-feedback grader apply identical gating + judge args.
     novel_judgment: Optional[PhaseVerdict] = None
     n5 = n4
-    if not n5 and (
-        task_annotation.metadata_sufficiency.verdict == "insufficient"
-        and llm_judge is not None
-        and task_annotation.evaluator_prompt is not None
-    ):
-        try:
-            judged = llm_judge.judge(
-                evaluator_prompt=task_annotation.evaluator_prompt,
-                gold_variants_summary=[
-                    {
-                        "variant_id": v.get("variant_id"),
-                        "interpretation": next(
-                            (gv.interpretation for gv in task_annotation.gold_variants
-                             if gv.variant_id == v.get("variant_id")), "",
-                        ),
-                    }
-                    for v in audited_gold_rows
-                ],
-                metadata_anchors=[m.term for m in task_annotation.masked_terms],
-                submitted_sql=submitted_sql,
-                predicted_rows_head=list(pred_rows[:20]),
-                annotation_content_hash=_annotation_hash(task_annotation),
-                gold_variants_content_hash=_gold_hash(audited_gold_rows),
-                instance_id=task_annotation.instance_id,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("LLM judge raised on instance=%s",
-                             task_annotation.instance_id)
-            judged = None
+    if not n5:
+        judged = run_novel_reading_judge(
+            task_annotation=task_annotation,
+            audited_gold_rows=audited_gold_rows,
+            submitted_sql=submitted_sql,
+            predicted_rows_head=pred_rows,
+            llm_judge=llm_judge,
+        )
         if judged is True:
             n5 = True
             novel_judgment = "pass"

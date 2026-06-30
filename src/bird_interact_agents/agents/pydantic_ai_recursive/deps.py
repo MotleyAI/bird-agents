@@ -74,6 +74,8 @@ class SharedTaskState(BaseModel):
     amb_user_query: str
     slayer_storage_dir: str = ""
     user_sim_model: str
+    # DEV-1613: agent model for the in-task N5 insufficient-task judge.
+    agent_model: str | None = None
     user_sim_prompt_version: str
     agent_records: list[AgentRecord] = Field(default_factory=list)
     submitter_result: dict | None = None
@@ -129,6 +131,10 @@ class _LegacyAdapter:
     @property
     def user_sim_model(self) -> str:
         return self._deps.shared.user_sim_model
+
+    @property
+    def agent_model(self) -> str | None:
+        return self._deps.shared.agent_model
 
     @property
     def user_sim_prompt_version(self) -> str:

@@ -1463,6 +1463,9 @@ async def run_evaluation(
                 harness_passed=r.get("phase1_passed") is True,
                 predicted_result=_decode_result_json(r.get("predicted_result_json")),
                 gold_result=_decode_result_json(r.get("gold_result_json")),
+                # DEV-1613: build the N5 insufficient-task judge from the
+                # run's agent_model so the cascade can fire it inline.
+                agent_model=agent_model,
             )
         except Exception as exc:  # noqa: BLE001 — keep the loop alive
             logger.exception(
