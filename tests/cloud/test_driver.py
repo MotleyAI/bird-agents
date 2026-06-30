@@ -2824,3 +2824,128 @@ def test_capture_diagnostics_never_raises(
     # A dead/unreachable head must not mask the run outcome.
     driver._capture_diagnostics_on_stall("run-1", Path("/tmp/run.yaml"), result)
     mocks["gcs"].write_diagnostics.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Single-run status path: `list_run` / `_run_row` (cheap, no bucket scan)
+# vs `list_runs` (bucket-wide). Regression for the slow-`list` complaint.
+# ---------------------------------------------------------------------------
+
+
+def _wire_one_run(
+    mocks: dict[str, MagicMock],
+    *,
+    instance_ids=("households_1", "households_2", "households_3"),
+    attempts=None,
+    status=None,
+    head_alive=True,
+) -> None:
+    mocks["gcs"].read_manifest.return_value = {
+        "framework": "claude_sdk",
+        "query_mode": "slayer",
+        "mode": "a-interact",
+        "instance_ids": list(instance_ids),
+    }
+    mocks["gcs"].list_attempts.return_value = (
+        {"households_1": [1]} if attempts is None else attempts
+    )
+    mocks["gcs"].read_status.return_value = {} if status is None else status
+    mocks["cluster"].head_is_alive.return_value = head_alive
+
+
+def test_list_run_builds_row_without_bucket_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mocks = _patch_collaborators(monkeypatch)
+    _wire_one_run(mocks)
+
+    row = driver.list_run("rid-x")
+
+    assert row == {
+        "run_id": "rid-x",
+        "framework": "claude_sdk",
+        "mode": "a-interact",
+        "query_mode": "slayer",
+        "status": "live",
+        "done": 1,
+        "total": 3,
+    }
+    # The whole point: a single-run query must NOT enumerate every run's
+    # manifest via `client.bucket(...).list_blobs(...)`.
+    client = mocks["gcs"].default_gcs_client.return_value
+    client.bucket.assert_not_called()
+    # And it reads exactly that one run's manifest.
+    mocks["gcs"].read_manifest.assert_called_once()
+    assert mocks["gcs"].read_manifest.call_args.args[0] == "rid-x"
+
+
+@pytest.mark.parametrize("terminal", ["done", "error"])
+def test_list_run_terminal_status_skips_head_probe(
+    monkeypatch: pytest.MonkeyPatch, terminal: str,
+) -> None:
+    mocks = _patch_collaborators(monkeypatch)
+    _wire_one_run(mocks, status={"terminal_state": terminal}, head_alive=True)
+
+    row = driver.list_run("rid-x")
+
+    assert row["status"] == terminal
+    # A persisted terminal state is authoritative — no liveness probe needed.
+    mocks["cluster"].head_is_alive.assert_not_called()
+
+
+def test_list_run_non_terminal_dead_head_is_done(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mocks = _patch_collaborators(monkeypatch)
+    _wire_one_run(mocks, status={}, head_alive=False)
+
+    assert driver.list_run("rid-x")["status"] == "done"
+
+
+def test_list_runs_scans_bucket_and_reuses_run_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mocks = _patch_collaborators(monkeypatch)
+    blob_a = MagicMock()
+    blob_a.name = "runs/rid-a/manifest.json"
+    blob_b = MagicMock()
+    blob_b.name = "runs/rid-b/rows/households_1.json"
+    bucket = mocks["gcs"].default_gcs_client.return_value.bucket.return_value
+    bucket.list_blobs.return_value = [blob_a, blob_b]
+    _wire_one_run(mocks)
+
+    rows = driver.list_runs()
+
+    assert {r["run_id"] for r in rows} == {"rid-a", "rid-b"}
+    bucket.list_blobs.assert_called_once()
+
+
+def test_list_runs_skips_run_with_unreadable_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mocks = _patch_collaborators(monkeypatch)
+    blob_a = MagicMock()
+    blob_a.name = "runs/rid-good/manifest.json"
+    blob_b = MagicMock()
+    blob_b.name = "runs/rid-bad/manifest.json"
+    bucket = mocks["gcs"].default_gcs_client.return_value.bucket.return_value
+    bucket.list_blobs.return_value = [blob_a, blob_b]
+
+    def fake_read_manifest(rid, *, client=None):
+        if rid == "rid-bad":
+            raise RuntimeError("corrupt manifest")
+        return {
+            "framework": "claude_sdk",
+            "query_mode": "slayer",
+            "mode": "a-interact",
+            "instance_ids": ["households_1"],
+        }
+
+    mocks["gcs"].read_manifest.side_effect = fake_read_manifest
+    mocks["gcs"].list_attempts.return_value = {}
+    mocks["gcs"].read_status.return_value = {}
+    mocks["cluster"].head_is_alive.return_value = True
+
+    rows = driver.list_runs()
+
+    assert {r["run_id"] for r in rows} == {"rid-good"}
