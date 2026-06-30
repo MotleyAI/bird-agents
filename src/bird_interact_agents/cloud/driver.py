@@ -1148,15 +1148,32 @@ def wait_until_done(run_id: str, manifest: dict, *,
         # No-progress deadline: even with a fresh heartbeat, if NO new rows
         # have landed for this long the job is wedged (e.g. workers never
         # autoscaled up, so actors sit PENDING forever while the heartbeat
-        # keeps writing `terminal_state: null`). Resets on every new row, so
-        # a slow-but-progressing run is never falsely timed out.
-        if (time.time() - last_progress_ts) > no_progress_deadline_s:
+        # keeps writing `terminal_state: null`). Resets on every new row.
+        #
+        # Activity-aware: a single long task (e.g. a 200-turn agent loop) can
+        # legitimately run past the deadline without completing a row, and the
+        # blunt "no new rows" check would falsely kill it. So we also treat a
+        # freshly-updated in-flight partial transcript as forward progress — a
+        # streaming task refreshes its partial every ~throttle seconds, while a
+        # genuinely wedged one stops. Only NO new rows AND NO transcript
+        # activity for the whole window trips the deadline. (Older runs without
+        # the `in_flight` heartbeat field fall back to the row-only behaviour.)
+        latest_activity = 0.0
+        for entry in status.get("in_flight") or []:
+            iid = entry.get("instance_id") if isinstance(entry, dict) else None
+            if not iid:
+                continue
+            ts = gcs.partial_transcript_updated_ts(run_id, iid)
+            if ts is not None and ts > latest_activity:
+                latest_activity = ts
+        effective_progress_ts = max(last_progress_ts, latest_activity)
+        if (time.time() - effective_progress_ts) > no_progress_deadline_s:
             return WaitResult(
                 terminal_state="timed-out",
                 hint=(
-                    "no new rows within the no-progress deadline; check "
-                    "`ray status` on the head (workers may not have scaled "
-                    "up); resubmit"
+                    "no new rows AND no in-flight transcript activity within "
+                    "the no-progress deadline; check `ray status` + the partial "
+                    "transcript on the head; resubmit"
                 ),
             )
         if poll_interval_s <= 0:

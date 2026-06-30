@@ -450,6 +450,86 @@ def test_wait_until_done_progress_resets_deadline(
     assert result.terminal_state == "done"
 
 
+def test_wait_until_done_transcript_activity_holds_off_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A single long task with NO completed rows must NOT be falsely timed out
+    while its in-flight partial transcript keeps refreshing — that fresh
+    activity counts as forward progress. Here the wall clock blows past the
+    no-progress deadline every poll and zero rows ever land, yet the run is held
+    alive until the transcript activity goes stale."""
+    mocks = _patch_collaborators(monkeypatch)
+    now = [1_000_000.0]
+    mocks["gcs"].read_status.return_value = {
+        "ray_job_id": "raysubmit_abc",
+        "last_heartbeat_ts": now[0],
+        "rows_done": 0,
+        "rows_total": 2,
+        "terminal_state": None,
+        "in_flight": [{"instance_id": "a", "elapsed_s": 100}],
+    }
+    mocks["gcs"].list_attempts.return_value = {}  # NO rows ever
+    mocks["cluster"].head_is_alive.return_value = True
+    monkeypatch.setattr(driver.time, "time", lambda: now[0])
+
+    def fake_sleep(_s):
+        now[0] += 200  # each poll jumps 200s; deadline is 300s
+        mocks["gcs"].read_status.return_value["last_heartbeat_ts"] = now[0]
+
+    monkeypatch.setattr(driver.time, "sleep", fake_sleep)
+
+    polls = {"n": 0}
+
+    def fake_activity(_rid, _iid):
+        polls["n"] += 1
+        # Fresh transcript for the first 5 polls (task streaming), then it
+        # freezes — a genuine wedge — and the deadline finally trips.
+        return now[0] - 5 if polls["n"] <= 5 else now[0] - 10_000
+
+    mocks["gcs"].partial_transcript_updated_ts.side_effect = fake_activity
+
+    manifest = {"run_id": RUN_ID, "instance_ids": ["a", "b"]}
+    result = driver.wait_until_done(
+        RUN_ID, manifest, poll_interval_s=1.0, no_progress_deadline_s=300.0
+    )
+    assert result.terminal_state == "timed-out"
+    # The row-only deadline would have fired on poll 2; activity held it off.
+    assert polls["n"] > 5
+
+
+def test_wait_until_done_times_out_when_transcript_frozen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A genuinely wedged task (in-flight, but its partial transcript was never
+    written / never updates) must still trip the no-progress deadline."""
+    mocks = _patch_collaborators(monkeypatch)
+    now = [1_000_000.0]
+    mocks["gcs"].read_status.return_value = {
+        "ray_job_id": "raysubmit_abc",
+        "last_heartbeat_ts": now[0] - 5,
+        "rows_done": 0,
+        "rows_total": 2,
+        "terminal_state": None,
+        "in_flight": [{"instance_id": "a", "elapsed_s": 50}],
+    }
+    mocks["gcs"].list_attempts.return_value = {}
+    mocks["gcs"].partial_transcript_updated_ts.return_value = None  # never written
+    mocks["cluster"].head_is_alive.return_value = True
+
+    def fake_time():
+        now[0] += 100
+        mocks["gcs"].read_status.return_value["last_heartbeat_ts"] = now[0] - 5
+        return now[0]
+
+    monkeypatch.setattr(driver.time, "time", fake_time)
+
+    manifest = {"run_id": RUN_ID, "instance_ids": ["a", "b"]}
+    result = driver.wait_until_done(
+        RUN_ID, manifest, poll_interval_s=0.001, no_progress_deadline_s=300.0
+    )
+    assert result.terminal_state == "timed-out"
+
+
 # ---------------------------------------------------------------------------
 # T16 — teardown idempotency across exit / exception / SIGINT pathways.
 # ---------------------------------------------------------------------------

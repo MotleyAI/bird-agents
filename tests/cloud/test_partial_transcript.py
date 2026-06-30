@@ -156,3 +156,42 @@ def test_partial_transcript_blob_under_rows_dir():
         gcs.partial_transcript_blob("run-1", "alpha")
         == "runs/run-1/rows/alpha/partial_transcript.jsonl"
     )
+
+
+def test_partial_transcript_updated_ts_returns_blob_mtime():
+    import datetime
+
+    when = datetime.datetime(2026, 6, 30, 12, 0, 0, tzinfo=datetime.timezone.utc)
+
+    class _Blob:
+        updated = when
+
+        def reload(self):
+            pass
+
+    class _Bucket:
+        def blob(self, _path):
+            return _Blob()
+
+    class _Client:
+        def bucket(self, _name):
+            return _Bucket()
+
+    ts = gcs.partial_transcript_updated_ts("r", "a", client=_Client())
+    assert ts == when.timestamp()
+
+
+def test_partial_transcript_updated_ts_none_on_error():
+    class _Blob:
+        def reload(self):
+            raise RuntimeError("404 not found")
+
+    class _Bucket:
+        def blob(self, _path):
+            return _Blob()
+
+    class _Client:
+        def bucket(self, _name):
+            return _Bucket()
+
+    assert gcs.partial_transcript_updated_ts("r", "a", client=_Client()) is None

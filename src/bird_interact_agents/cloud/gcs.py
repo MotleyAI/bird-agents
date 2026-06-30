@@ -169,6 +169,25 @@ def read_partial_transcript(
         return None
 
 
+def partial_transcript_updated_ts(
+    run_id: str, instance_id: str, *, client=None,
+) -> "float | None":
+    """Epoch seconds of the last write to a task's in-flight partial transcript,
+    or None if it was never written. A streaming task refreshes this every
+    ~throttle seconds, so it is the forward-progress signal `wait_until_done`
+    uses to tell a slow-but-healthy task from a wedged one."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(
+        partial_transcript_blob(run_id, instance_id)
+    )
+    try:
+        blob.reload()
+        updated = blob.updated
+        return updated.timestamp() if updated is not None else None
+    except Exception:  # noqa: BLE001 — best-effort progress probe
+        return None
+
+
 def write_submission_annotation(
     run_id: str,
     instance_id: str,
