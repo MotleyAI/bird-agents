@@ -33,6 +33,8 @@ def main(argv: list[str] | None = None) -> int:
     dry_run: bool = args.dry_run
 
     from bird_interact_agents import paths
+    from bird_interact_agents.eval.annotation_io import write_run_annotation
+    from bird_interact_agents.eval.annotation_schema import SubmissionAnnotation
     ann_root = paths.annotations_root()
     runs_root = paths.runs_root()
 
@@ -76,8 +78,38 @@ def main(argv: list[str] | None = None) -> int:
             print(f"         →    {dest}")
             copied += 1
         else:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(json.dumps(content, indent=2) + "\n")
+            # DEV-1591: route through write_run_annotation so a migrated record
+            # gets its version/agent_model COPIED from the run's manifest (the
+            # producer literal), like every other runs/ writer. Fall back to a
+            # raw copy ONLY when a legacy file doesn't validate against the
+            # current schema, so the migration never silently drops a record.
+            # The raw-copy fallback is scoped to model_validate FAILURES alone —
+            # a write/provenance/IO failure must NOT be masked as a legacy
+            # record; it propagates to the outer error counter so the run stays
+            # non-zero.
+            try:
+                ann = SubmissionAnnotation.model_validate(content)
+            except Exception as exc:  # noqa: BLE001 — genuine legacy-schema record
+                # The raw copy itself must honour the error-continue contract:
+                # a write/IO failure here (disk full, perms) increments errors
+                # and continues rather than aborting the whole migration loop.
+                try:
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_text(json.dumps(content, indent=2) + "\n")
+                except Exception as werr:  # noqa: BLE001 — real write/IO failure
+                    errors += 1
+                    print(f"  ERROR writing {dest}: {werr}", file=sys.stderr)
+                    continue
+                print(f"  (raw copy — did not validate: {exc})", file=sys.stderr)
+            else:
+                try:
+                    write_run_annotation(
+                        ann, dest, benchmark=benchmark, run_id=run_id,
+                    )
+                except Exception as exc:  # noqa: BLE001 — real write/IO failure
+                    errors += 1
+                    print(f"  ERROR writing {dest}: {exc}", file=sys.stderr)
+                    continue
             print(f"  COPY  {path}")
             print(f"      → {dest}")
             copied += 1

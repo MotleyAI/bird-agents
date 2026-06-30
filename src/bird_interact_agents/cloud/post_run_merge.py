@@ -499,6 +499,23 @@ def merge_submission_annotations(
     """
     rows_dir = downloaded_run_dir / "rows"
     report = AnnotationMergeReport(run_id=run_id, benchmark=benchmark)
+    # DEV-1591: the actor already wrote version/agent_model onto each record
+    # at the source, so the merge just preserves them; this manifest is only a
+    # fallback to COPY version/agent_model onto any record that lacks them
+    # (legacy runs). Loaded once (best-effort) from the fetched run dir.
+    _manifest: "dict | None" = None
+    # DEV-1591: distinguish "manifest absent" from "present-but-unreadable". A
+    # corrupt manifest must NOT re-enable the downstream self-load fallback
+    # (which would draw version/agent_model from a same-named run under the
+    # default results root); pass allow_manifest_fallback=False in that case.
+    _manifest_unreadable = False
+    _manifest_path = downloaded_run_dir / "manifest.json"
+    if _manifest_path.exists():
+        try:
+            _manifest = json.loads(_manifest_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            _manifest = None
+            _manifest_unreadable = True
     if rows_dir.exists():
         for sub in sorted(p for p in rows_dir.iterdir() if p.is_dir()):
             src = sub / "submission_annotation.json"
@@ -523,7 +540,11 @@ def merge_submission_annotations(
                 repo_root=None,
             )
             dest_existed = dest.exists()
-            written = write_run_annotation_no_overwrite(ann, dest)
+            written = write_run_annotation_no_overwrite(
+                ann, dest, benchmark=benchmark, run_id=run_id,
+                manifest=_manifest,
+                allow_manifest_fallback=not _manifest_unreadable,
+            )
             if written:
                 if dest_existed:
                     report.overwritten_newer_attempt += 1
