@@ -136,6 +136,30 @@ def test_uploader_uploads_when_interval_elapsed(monkeypatch, tmp_path):
     assert len(uploads) == 1  # interval=0 → uploads immediately
 
 
+def test_failed_first_upload_does_not_throttle_retry(monkeypatch, tmp_path):
+    # The throttle must only advance after a SUCCESSFUL upload. If the first
+    # GCS write fails, the next message must retry immediately rather than being
+    # suppressed for the whole window — otherwise a task that wedges right after
+    # a failed first write leaves nothing behind.
+    attempts: list = []
+
+    def _flaky_write(run_id, instance_id, text, *, client=None):
+        attempts.append(text)
+        if len(attempts) == 1:
+            raise RuntimeError("transient GCS error")
+
+    monkeypatch.setattr(ray_app._gcs, "write_partial_transcript", _flaky_write)
+    up = ray_app.PartialTranscriptUploader(
+        run_id="r", instance_id="delta", gcs_client=object(),
+        local_path=tmp_path / "p.jsonl", min_upload_interval_s=1_000.0,  # long throttle
+    )
+    up({"type": "X", "data": "1"})  # first upload raises → throttle NOT stamped
+    up({"type": "Y", "data": "2"})  # within the window, but must still retry
+
+    assert len(attempts) == 2  # the failed first attempt did not suppress the retry
+    assert "2" in attempts[1]
+
+
 def test_flush_without_messages_uploads_nothing(monkeypatch, tmp_path):
     uploads = _patch_gcs(monkeypatch)
     up = ray_app.PartialTranscriptUploader(

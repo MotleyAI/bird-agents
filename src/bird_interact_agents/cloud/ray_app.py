@@ -694,22 +694,27 @@ class PartialTranscriptUploader:
             self._count += 1
             now = time.time()
             due = (now - self._last_upload) >= self.min_upload_interval_s
-            if due:
+        # Only advance the throttle on a SUCCESSFUL upload: stamping it before
+        # _upload() runs means a failed first write suppresses every later
+        # message in the window, so a task that then wedges (and never reaches
+        # flush()) leaves nothing behind. Stamp after success so a failure
+        # retries on the very next message instead.
+        if due and self._upload():
+            with self._lock:
                 self._last_upload = now
-        if due:
-            self._upload()
 
-    def _upload(self) -> None:
+    def _upload(self) -> bool:
         try:
             data = self.local_path.read_text(encoding="utf-8")
         except Exception:  # noqa: BLE001
-            return
+            return False
         try:
             _gcs.write_partial_transcript(
                 self.run_id, self.instance_id, data, client=self.client,
             )
+            return True
         except Exception:  # noqa: BLE001 — best-effort
-            pass
+            return False
 
     def flush(self) -> None:
         """Final upload (e.g. after the task returns) so the last turns land."""

@@ -793,6 +793,44 @@ class WaitResult:
         self.hint = hint
 
 
+# Terminal states where the head node is still expected to be reachable AND the
+# run did not finish cleanly — the only cases where a `ray exec` diagnostics
+# dump is both possible and useful. "done"/"error" finished normally; "headless"
+# means the head is already gone (every `ray exec` would just burn its timeout);
+# "poll-once-exit" is the non-blocking probe, not a terminal verdict.
+_DIAGNOSE_TERMINAL_STATES = frozenset({"stalled", "timed-out"})
+
+
+def _capture_diagnostics_on_stall(
+    run_id: str, yaml_path: Path, result: WaitResult,
+) -> None:
+    """When a non-detached run ends in a non-clean terminal state, dump
+    head-node state (`ray status` + the in-cluster driver log) BEFORE teardown
+    destroys the VM, and persist it to GCS so the fetch path brings it back.
+
+    Best-effort: never raises into the submit/resubmit/annotate flow.
+    """
+    if result is None or result.terminal_state not in _DIAGNOSE_TERMINAL_STATES:
+        return
+    try:
+        status = gcs.read_status(run_id) or {}
+        ray_job_id = status.get("ray_job_id")
+        logger.warning(
+            "run %s ended %s (%s); capturing head-node diagnostics before "
+            "teardown", run_id, result.terminal_state, result.hint or "no hint",
+        )
+        dump = cluster.capture_diagnostics(yaml_path, ray_job_id=ray_job_id)
+        header = (
+            f"# diagnostics for run {run_id}\n"
+            f"# terminal_state: {result.terminal_state}\n"
+            f"# hint: {result.hint}\n"
+            f"# ray_job_id: {ray_job_id}\n\n"
+        )
+        gcs.write_diagnostics(run_id, header + dump)
+    except Exception as exc:  # noqa: BLE001 — diagnostics must not mask the run outcome
+        logger.warning("diagnostics capture failed for run %s: %s", run_id, exc)
+
+
 def submit(args) -> str:
     _validate_instance_ids(args.instance_ids, _submit_benchmark(args))
     prereqs.check(args)
@@ -871,7 +909,8 @@ def submit(args) -> str:
         )
         submit_succeeded = True
         if not args.detach:
-            wait_until_done(run_id, manifest)
+            result = wait_until_done(run_id, manifest)
+            _capture_diagnostics_on_stall(run_id, yaml_path, result)
             fetch(run_id)
     finally:
         # Detach skips teardown ONLY on successful submit — if we never
@@ -1077,7 +1116,8 @@ def submit_annotator(args) -> str:
         )
         submit_succeeded = True
         if not args.detach:
-            wait_until_done(run_id, manifest)
+            result = wait_until_done(run_id, manifest)
+            _capture_diagnostics_on_stall(run_id, yaml_path, result)
             fetch(run_id)
     finally:
         if (not args.detach) or (not submit_succeeded):
@@ -1466,7 +1506,8 @@ def resubmit(run_id: str) -> None:
         # min_attempt=next_attempt: don't count failed prior-attempt rows
         # toward this retry's completion.
         retry_manifest = {**manifest, "instance_ids": missing}
-        wait_until_done(run_id, retry_manifest, min_attempt=next_attempt)
+        result = wait_until_done(run_id, retry_manifest, min_attempt=next_attempt)
+        _capture_diagnostics_on_stall(run_id, yaml_path, result)
         fetch(run_id)
     finally:
         h.teardown(reason="resubmit-finally")

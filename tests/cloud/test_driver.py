@@ -2772,3 +2772,55 @@ def test_read_api_keys_pg_vars_forwarded_for_empty_dataset(
     )
 
     assert result.get("BIRD_PG_HOST") == "external.db.host"
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics capture on a non-clean terminal state (stalled / timed-out):
+# the head-node dump must be taken BEFORE teardown destroys the VM and
+# persisted to GCS so the fetch path brings it back.
+# ---------------------------------------------------------------------------
+
+
+def test_capture_diagnostics_on_stall_dumps_and_persists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mocks = _patch_collaborators(monkeypatch)
+    mocks["gcs"].read_status.return_value = {"ray_job_id": "raysubmit_xyz"}
+    mocks["cluster"].capture_diagnostics.return_value = "RAY STATUS DUMP"
+
+    result = driver.WaitResult(
+        terminal_state="stalled", hint="job appears stalled",
+    )
+    driver._capture_diagnostics_on_stall("run-1", Path("/tmp/run.yaml"), result)
+
+    mocks["cluster"].capture_diagnostics.assert_called_once_with(
+        Path("/tmp/run.yaml"), ray_job_id="raysubmit_xyz",
+    )
+    mocks["gcs"].write_diagnostics.assert_called_once()
+    written = mocks["gcs"].write_diagnostics.call_args[0][1]
+    assert "RAY STATUS DUMP" in written
+    assert "stalled" in written  # the header records the terminal state
+
+
+@pytest.mark.parametrize("state", ["done", "error", "headless", "poll-once-exit"])
+def test_capture_diagnostics_skips_clean_terminal_states(
+    monkeypatch: pytest.MonkeyPatch, state: str,
+) -> None:
+    mocks = _patch_collaborators(monkeypatch)
+    result = driver.WaitResult(terminal_state=state)
+    driver._capture_diagnostics_on_stall("run-1", Path("/tmp/run.yaml"), result)
+    mocks["cluster"].capture_diagnostics.assert_not_called()
+    mocks["gcs"].write_diagnostics.assert_not_called()
+
+
+def test_capture_diagnostics_never_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mocks = _patch_collaborators(monkeypatch)
+    mocks["gcs"].read_status.return_value = {"ray_job_id": "j"}
+    mocks["cluster"].capture_diagnostics.side_effect = RuntimeError("ssh dead")
+
+    result = driver.WaitResult(terminal_state="timed-out")
+    # A dead/unreachable head must not mask the run outcome.
+    driver._capture_diagnostics_on_stall("run-1", Path("/tmp/run.yaml"), result)
+    mocks["gcs"].write_diagnostics.assert_not_called()

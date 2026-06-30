@@ -79,6 +79,14 @@ def partial_transcript_blob(run_id: str, instance_id: str) -> str:
     return f"runs/{run_id}/rows/{instance_id}/partial_transcript.jsonl"
 
 
+def diagnostics_blob(run_id: str) -> str:
+    """Head-node diagnostics dump captured when a non-detached run ends in a
+    non-clean terminal state (stalled / timed-out). Lives at the run root so
+    the fetch path downloads it alongside ``status.json`` / ``manifest.json``,
+    making the head-node evidence inspectable after teardown destroys the VM."""
+    return f"runs/{run_id}/diagnostics.txt"
+
+
 def task_annotation_blob(run_id: str, instance_id: str) -> str:
     """DEV-1518: run-specific task annotation blob path."""
     return f"runs/{run_id}/rows/{instance_id}/task_annotation.json"
@@ -234,6 +242,13 @@ def write_status(run_id: str, status: dict, *, client=None) -> None:
     blob.upload_from_string(
         json.dumps(status).encode(), content_type="application/json"
     )
+
+
+def write_diagnostics(run_id: str, text: str, *, client=None) -> None:
+    """Persist a head-node diagnostics dump for `run_id` (see diagnostics_blob)."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(diagnostics_blob(run_id))
+    blob.upload_from_string(text.encode(), content_type="text/plain")
 
 
 # ---------------------------------------------------------------------------

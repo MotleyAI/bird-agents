@@ -12,9 +12,10 @@ from bird_interact_agents.eval.autopsy import (
 )
 
 
-def test_max_retries_above_sdk_default():
-    # The whole point is to exceed the anthropic SDK default of 2.
-    assert _AUTOPSY_MAX_RETRIES > 2
+def test_max_retries_pins_the_contract():
+    # Pin the exact contract (6), not just "> SDK default of 2": a regression
+    # to 3-5 should fail here, since the whole point is to ride out 429 bursts.
+    assert _AUTOPSY_MAX_RETRIES == 6
 
 
 def test_api_key_path_passes_max_retries(monkeypatch):
@@ -31,4 +32,21 @@ def test_oauth_path_passes_max_retries(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with patch("anthropic.AsyncAnthropic") as m:
         _build_anthropic_client("")
+    assert m.call_args.kwargs.get("max_retries") == _AUTOPSY_MAX_RETRIES
+
+
+def test_provider_path_passes_max_retries():
+    # Registry open-weight models route to the provider's Anthropic-compatible
+    # endpoint, NOT the ambient-Anthropic env paths above. This branch must
+    # also carry the raised retry budget.
+    with patch(
+        "bird_interact_agents.eval.autopsy.get_provider", return_value=object()
+    ), patch(
+        "bird_interact_agents.eval.autopsy.resolve_base_url",
+        return_value="https://example.invalid",
+    ), patch(
+        "bird_interact_agents.eval.autopsy.provider_api_key",
+        return_value="provider-token",
+    ), patch("anthropic.AsyncAnthropic") as m:
+        _build_anthropic_client("moonshot/kimi-k2.7-code")
     assert m.call_args.kwargs.get("max_retries") == _AUTOPSY_MAX_RETRIES
