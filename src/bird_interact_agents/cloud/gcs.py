@@ -71,6 +71,14 @@ def _normalise_benchmark(benchmark: str) -> str:
     return benchmark.replace("-", "_")
 
 
+def partial_transcript_blob(run_id: str, instance_id: str) -> str:
+    """In-flight claude_sdk transcript for a task, uploaded on a throttle WHILE
+    the task runs (not just at completion) so a hung/slow task is inspectable
+    from the laptop. Co-located under ``rows/<iid>/`` so the fetch path picks it
+    up with everything else."""
+    return f"runs/{run_id}/rows/{instance_id}/partial_transcript.jsonl"
+
+
 def task_annotation_blob(run_id: str, instance_id: str) -> str:
     """DEV-1518: run-specific task annotation blob path."""
     return f"runs/{run_id}/rows/{instance_id}/task_annotation.json"
@@ -124,6 +132,41 @@ def write_log(
     client = client or default_gcs_client()
     blob = client.bucket(BUCKET_NAME).blob(log_blob(run_id, instance_id, attempt))
     blob.upload_from_string(text, content_type="text/plain")
+
+
+def write_partial_transcript(
+    run_id: str,
+    instance_id: str,
+    text: str,
+    *,
+    client=None,
+) -> None:
+    """Upload the (growing) in-flight transcript JSONL for one task. Called on
+    a throttle while the task runs, so it gets overwritten with a fuller
+    version each time and the final upload is the complete in-flight view."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(
+        partial_transcript_blob(run_id, instance_id)
+    )
+    blob.upload_from_string(text, content_type="application/x-ndjson")
+
+
+def read_partial_transcript(
+    run_id: str, instance_id: str, *, client=None,
+) -> "str | None":
+    """Return the uploaded in-flight transcript JSONL for one task, or None if
+    it was never written (task finished before the first throttled upload, or
+    never started)."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(
+        partial_transcript_blob(run_id, instance_id)
+    )
+    try:
+        if not blob.exists():
+            return None
+        return blob.download_as_bytes().decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 — best-effort diagnostics read
+        return None
 
 
 def write_submission_annotation(

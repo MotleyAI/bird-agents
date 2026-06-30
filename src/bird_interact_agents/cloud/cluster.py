@@ -291,6 +291,56 @@ def submit_job(
     )
 
 
+def capture_diagnostics(
+    yaml_path: Path,
+    *,
+    ray_job_id: str | None = None,
+    timeout_s: float = 120.0,
+) -> str:
+    """Best-effort dump of head-node state for a stalled/timed-out run.
+
+    Pulls ``ray status`` (node states + ``Pending Demands`` + recent failures)
+    and, when ``ray_job_id`` is known, the in-cluster driver log via
+    ``ray job logs`` — the authoritative place a wedge / OOM / import error
+    surfaces, which the laptop-side ``ray up`` stdout never shows. Meant to be
+    called BEFORE tearing the cluster down, so the evidence isn't destroyed.
+
+    Never raises: a dead/unreachable head, an SSH timeout, or a missing job id
+    each yield an annotated section instead, so the caller can always write the
+    result and proceed to fetch+kill.
+    """
+    sections: list[str] = []
+
+    def _exec(label: str, inner_cmd: str) -> None:
+        argv = ["ray", "exec", str(yaml_path), inner_cmd]
+        try:
+            res = subprocess.run(
+                argv, capture_output=True, text=True,
+                check=False, timeout=timeout_s,
+            )
+            body = (res.stdout or "").strip()
+            if res.stderr:
+                body += f"\n[stderr]\n{res.stderr.strip()}"
+            sections.append(
+                f"===== {label} (exit {res.returncode}) =====\n{body}"
+            )
+        except Exception as exc:  # noqa: BLE001 — diagnostics are best-effort
+            sections.append(f"===== {label} (FAILED: {exc!r}) =====")
+
+    _exec("ray status", "ray status")
+    if ray_job_id:
+        _exec(
+            f"ray job logs {ray_job_id}",
+            f"ray job logs --address http://localhost:8265 "
+            f"{shlex.quote(ray_job_id)}",
+        )
+    else:
+        sections.append(
+            "===== ray job logs (SKIPPED: no ray_job_id in status.json) ====="
+        )
+    return "\n\n".join(sections)
+
+
 def head_is_alive(run_id: str) -> bool:
     """True iff there's at least one GCE instance with the run-id label
     whose status is RUNNING."""

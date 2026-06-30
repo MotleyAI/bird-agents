@@ -86,6 +86,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# The autopsy is a best-effort, post-hoc explainer that runs inline in the
+# actor right after a miss — exactly when a serial run is under the most
+# rate-limit pressure. The Anthropic SDK retries 408/409/429/5xx/overloaded
+# with exponential backoff + jitter and honors the `Retry-After` header; its
+# default of 2 retries proved too few (whole batches of autopsies came back as
+# `rate_limit_error` 429 → eval_failed). Raise it so a transient 429 is ridden
+# out rather than recorded as an autopsy failure.
+_AUTOPSY_MAX_RETRIES = 6
+
+
 def _build_anthropic_client(model: str = "") -> "anthropic.AsyncAnthropic":
     """Construct the Anthropic SDK client for the autopsy LLM call.
 
@@ -145,13 +155,18 @@ def _build_anthropic_client(model: str = "") -> "anthropic.AsyncAnthropic":
             base_url=resolve_base_url(spec),
             auth_token=provider_api_key(spec),
             api_key="",
+            max_retries=_AUTOPSY_MAX_RETRIES,
         )
     oauth = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
     if oauth:
-        return anthropic.AsyncAnthropic(auth_token=oauth, api_key=None)
+        return anthropic.AsyncAnthropic(
+            auth_token=oauth, api_key=None, max_retries=_AUTOPSY_MAX_RETRIES,
+        )
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if api_key:
-        return anthropic.AsyncAnthropic(api_key=api_key)
+        return anthropic.AsyncAnthropic(
+            api_key=api_key, max_retries=_AUTOPSY_MAX_RETRIES,
+        )
     raise RuntimeError(
         "no Anthropic auth available for autopsy: set "
         "CLAUDE_CODE_OAUTH_TOKEN (subscription) or ANTHROPIC_API_KEY"
