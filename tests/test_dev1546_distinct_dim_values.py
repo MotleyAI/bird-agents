@@ -598,15 +598,15 @@ def test_submit_slayer_distinct_false_with_time_dim_only(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_motley_slayer_floor_is_at_least_0_8_3():
-    """``pyproject.toml`` must pin ``motley-slayer >= 0.8.3`` in BOTH
+def test_motley_slayer_floor_is_at_least_0_9_1():
+    """``pyproject.toml`` must pin ``motley-slayer >= 0.9.1`` in BOTH
     the ``slayer`` and ``all`` extras.
 
     0.7.2 introduced ``SlayerQuery.distinct_dimension_values`` (a floor
-    regression below it silently strips the field via Pydantic). 0.8.3 is the
-    binding floor now: it ships the ``inspect()`` single-entity point-lookup
-    (DEV-1588) the claude_sdk OTF encoder's deps block calls directly (no
-    fallback) — a downgrade below it would break the encoder at import.
+    regression below it silently strips the field via Pydantic). 0.8.3 shipped
+    the ``inspect()`` single-entity point-lookup (DEV-1588) the claude_sdk OTF
+    encoder's deps block calls directly (no fallback). 0.9.1 is the binding
+    floor now — a downgrade below it would break the encoder at import.
 
     Mechanical text-level check (no version-comparator dependency).
     """
@@ -616,7 +616,7 @@ def test_motley_slayer_floor_is_at_least_0_8_3():
 
     root = Path(__file__).resolve().parents[1]
     text = (root / "pyproject.toml").read_text()
-    # Both extras must use a >= floor at least 0.8.3 (allow patch bumps).
+    # Both extras must use a >= floor at least 0.9.1 (allow patch bumps).
     floors = re.findall(
         r'"motley-slayer\[advanced-search\]>=([0-9.]+)"', text,
     )
@@ -630,8 +630,8 @@ def test_motley_slayer_floor_is_at_least_0_8_3():
     for raw in floors:
         major, minor, patch, *_ = [*raw.split("."), "0", "0"]
         version = (int(major), int(minor), int(patch))
-        assert version >= (0, 8, 3), (
-            f"motley-slayer floor {raw!r} is below 0.8.3 — the claude_sdk "
+        assert version >= (0, 9, 1), (
+            f"motley-slayer floor {raw!r} is below 0.9.1 — the claude_sdk "
             "encoder's deps block calls inspect() (DEV-1588) directly."
         )
 
