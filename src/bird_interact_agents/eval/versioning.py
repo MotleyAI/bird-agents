@@ -69,7 +69,7 @@ DEFAULT_VERSION = "v0"
 
 def version_for_framework(framework: Optional[str]) -> Optional[str]:
     """The version THIS checkout's producer assigns to a framework token, or
-    ``None`` for a framework outside the v0–v3 taxonomy (e.g. an otf/encoder
+    ``None`` for a framework outside the v0-v3 taxonomy (e.g. an otf/encoder
     run). Called ONLY by producers; never to reconstruct an existing run."""
     return VERSION_BY_FRAMEWORK.get(framework or "")
 
@@ -112,6 +112,7 @@ def copy_provenance_from_manifest(
     benchmark: str,
     run_id: str,
     manifest: Optional[dict] = None,
+    allow_manifest_fallback: bool = True,
 ) -> None:
     """Fill ``version`` + ``agent_model`` on ``ann`` IN PLACE by COPYING the
     literal the producer recorded in the run's manifest — no framework→version
@@ -119,8 +120,16 @@ def copy_provenance_from_manifest(
     fields (a regrade/annotate rebuild, or a legacy merge); a producer-stamped
     record already has them, so this is a no-op (no-clobber). When ``manifest``
     is omitted it is loaded best-effort.
+
+    ``allow_manifest_fallback=False`` suppresses the best-effort
+    ``load_local_manifest`` self-load. Callers that already TRIED and FAILED to
+    read THIS run's manifest (present-but-unreadable) pass it so a corrupt
+    manifest can't silently fall back to a same-named run under the default
+    results root — preserving the "copy from THIS run's manifest only" contract.
     """
     if manifest is None:
+        if not allow_manifest_fallback:
+            return
         manifest = load_local_manifest(benchmark, run_id)
     if not manifest:
         return

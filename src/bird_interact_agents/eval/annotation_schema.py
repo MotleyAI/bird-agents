@@ -1012,9 +1012,9 @@ class SubmissionAnnotation(BaseModel):
     # ``schema_version`` bump) since reading old files is unaffected.
     version: Optional[str] = None
     """Agent code version: ``v0`` (clean origin/main ``claude_sdk``), ``v1``
-    (clean ``claude_sdk_v1``), ``v2``/``v3`` (a branch's modified v0/v1),
-    or a framework token for other frameworks. None on unstamped/legacy
-    records; readers default a missing value to ``v0``."""
+    (clean ``claude_sdk_v1``), ``v2``/``v3`` (a branch's modified v0/v1).
+    None for frameworks outside the version taxonomy and for
+    unstamped/legacy records; readers default a missing value to ``v0``."""
     agent_model: Optional[str] = None
     """The agent model that produced the submission, mirrored from the cloud
     manifest's ``agent_model`` (e.g. ``anthropic/claude-opus-4-7``). None on

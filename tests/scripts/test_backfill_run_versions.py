@@ -192,8 +192,15 @@ def test_backfill_dry_run_writes_nothing(tree):
 
 def test_backfill_agent_model_mismatch_flagged(tree):
     runs, results = tree
-    _write_record(runs, "alien", "alien_1", "rid_m", agent_model="stale/model")
+    p = _write_record(runs, "alien", "alien_1", "rid_m",
+                      agent_model="stale/model")
     _write_manifest(results, "rid_m", framework="claude_sdk",
                     agent_model="anthropic/claude-opus-4-7", version="v2")
     counters = backfill_run_versions.backfill(_BENCH, allow_gcs=False)
     assert counters["agent_model_mismatch"] == 1
+    # Copy-not-clobber: the mismatch is flagged but NOT treated as fatal — the
+    # missing version is still backfilled from the manifest, and the existing
+    # (mismatching) agent_model is left untouched.
+    rec = _read(p)
+    assert rec["version"] == "v2"
+    assert rec["agent_model"] == "stale/model"
