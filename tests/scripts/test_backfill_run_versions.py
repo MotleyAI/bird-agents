@@ -190,10 +190,56 @@ def test_backfill_dry_run_writes_nothing(tree):
     assert _read(p).get("version") is None
 
 
+def test_backfill_dry_run_does_not_cache_gcs_manifest(tree, monkeypatch):
+    """A --dry-run must not mutate the results tree: when the manifest is only
+    available from GCS, the dry-run reports the change but does NOT persist the
+    fetched manifest to the local cache."""
+    runs, results = tree
+    _write_record(runs, "alien", "alien_1", "rid_gcs")  # version missing
+
+    gcs_manifest = {"framework": "claude_sdk", "query_mode": "slayer",
+                    "agent_model": "anthropic/claude-opus-4-7", "version": "v2"}
+    monkeypatch.setattr(backfill_run_versions._cascade.gcs, "read_manifest",
+                        lambda run_id, client=None: gcs_manifest)
+
+    counters = backfill_run_versions.backfill(_BENCH, allow_gcs=True,
+                                              dry_run=True)
+    assert counters["updated"] == 1
+    # The local cache file must NOT have been written by the dry-run.
+    cache_fp = results / _BENCH / "cloud" / "rid_gcs" / "manifest.json"
+    assert not cache_fp.exists()
+    # And the record itself stays unmodified.
+    p = runs / _BENCH / "alien" / "alien_1" / "rid_gcs.json"
+    assert _read(p).get("version") is None
+
+
+def test_backfill_real_run_caches_gcs_manifest(tree, monkeypatch):
+    """A real (non-dry) run still warms the local manifest cache on a GCS
+    fetch — the cache suppression is scoped to dry-run only."""
+    runs, results = tree
+    _write_record(runs, "alien", "alien_1", "rid_gcs2")
+
+    gcs_manifest = {"framework": "claude_sdk", "query_mode": "slayer",
+                    "agent_model": "anthropic/claude-opus-4-7", "version": "v2"}
+    monkeypatch.setattr(backfill_run_versions._cascade.gcs, "read_manifest",
+                        lambda run_id, client=None: gcs_manifest)
+
+    backfill_run_versions.backfill(_BENCH, allow_gcs=True, dry_run=False)
+    cache_fp = results / _BENCH / "cloud" / "rid_gcs2" / "manifest.json"
+    assert cache_fp.exists()
+
+
 def test_backfill_agent_model_mismatch_flagged(tree):
     runs, results = tree
-    _write_record(runs, "alien", "alien_1", "rid_m", agent_model="stale/model")
+    p = _write_record(runs, "alien", "alien_1", "rid_m",
+                      agent_model="stale/model")
     _write_manifest(results, "rid_m", framework="claude_sdk",
                     agent_model="anthropic/claude-opus-4-7", version="v2")
     counters = backfill_run_versions.backfill(_BENCH, allow_gcs=False)
     assert counters["agent_model_mismatch"] == 1
+    # Copy-not-clobber: the mismatch is flagged but NOT treated as fatal — the
+    # missing version is still backfilled from the manifest, and the existing
+    # (mismatching) agent_model is left untouched.
+    rec = _read(p)
+    assert rec["version"] == "v2"
+    assert rec["agent_model"] == "stale/model"

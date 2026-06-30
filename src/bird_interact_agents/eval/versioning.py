@@ -1,27 +1,28 @@
 """DEV-1591 stream 2 — code-version provenance for ``runs/`` records.
 
 Per-task ``runs/`` records (``SubmissionAnnotation``) carry a ``version`` so
-this branch's modified-agent runs don't pollute the clean baselines: the
+runs from a modified-agent branch don't pollute the clean baselines: the
 cascade tooling buckets on ``(query_mode, agent_model)`` and never read
-``framework``, so a run from this branch's modified ``claude_sdk`` code (same
-framework token as clean origin/main) silently overrode the clean-v0 stats.
+``framework``, so a run from a branch's modified ``claude_sdk`` code (same
+framework token as clean origin/main) would silently override the clean-v0
+stats.
 
 The version is written by the PRODUCER at creation time — never reconstructed
 downstream:
 
 * ``v0`` = clean origin/main ``claude_sdk`` (single-agent).
 * ``v1`` = clean ``claude_sdk_v1`` (DEV-1581 R2 two-stage ``ask_discovery``).
-* ``v2`` = this branch's modified ``claude_sdk``.
-* ``v3`` = this branch's modified ``claude_sdk_v1``.
+* ``v2`` = a modified ``claude_sdk`` (the DEV-1591 prompt-experiment branch).
+* ``v3`` = a modified ``claude_sdk_v1``.
 
-``version_for_framework`` is this branch's identity and is applied ONLY by the
+``version_for_framework`` is THIS checkout's identity and is applied ONLY by the
 producers — ``cloud.driver.build_manifest`` at submit and
 ``grade_in_place._build_submission_annotation`` at grade. Both run inside the
 producing process/image, so they know the true code version. Every downstream
 path (merge, regrade, annotate, backfill) only COPIES the literal the producer
 wrote (from the record or the run's manifest); none of them re-map a framework
-token, so a clean run merged/regraded while this branch is checked out stays
-clean.
+token, so a clean run merged/regraded while a modified branch is checked out
+stays clean (and vice-versa).
 """
 
 from __future__ import annotations
@@ -38,15 +39,20 @@ if TYPE_CHECKING:  # avoid an import cycle (annotation_io imports this module)
 logger = logging.getLogger(__name__)
 
 
-# THIS branch's agents ARE the modified variants, so its producers stamp v2/v3.
-# Applied ONLY at production (build_manifest at submit, _build_submission_-
-# annotation at grade); downstream copies the literal, never re-derives.
+# THIS checkout IS the DEV-1591 modified-agent branch (the prompt-experiment
+# branch: search discovery-only + inspect for detail), so its producers stamp
+# v2/v3 — NOT the clean v0/v1. Applied ONLY at production (build_manifest at
+# submit, _build_submission_annotation at grade); downstream copies the
+# literal, never re-derives.
 #
 # ┌─ IMPORTANT ──────────────────────────────────────────────────────────┐
-# │ Reset to {"claude_sdk":"v0","claude_sdk_v1":"v1"} when these          │
-# │ modifications land on main / are retired — or make it a submit-time   │
-# │ selection for the "support all 4 agent versions on one branch" work.  │
-# │ Leaving v2/v3 here on main would mis-tag every newly-produced run.    │
+# │ This is the modified-agent branch, so the map is flipped to           │
+# │ {"claude_sdk":"v2","claude_sdk_v1":"v3"} so its experimental runs      │
+# │ don't override the clean baselines. When these modifications land on   │
+# │ main / are retired, RESET this to {"claude_sdk":"v0",                  │
+# │ "claude_sdk_v1":"v1"} (or make it a submit-time selection for the      │
+# │ "support all 4 agent versions on one branch" work) — leaving v2/v3     │
+# │ on main would mis-tag every clean run.                                 │
 # └──────────────────────────────────────────────────────────────────────┘
 VERSION_BY_FRAMEWORK = {
     "claude_sdk": "v2",
@@ -65,8 +71,8 @@ DEFAULT_VERSION = "v0"
 
 
 def version_for_framework(framework: Optional[str]) -> Optional[str]:
-    """The version THIS branch's producer assigns to a framework token, or
-    ``None`` for a framework outside the v0–v3 taxonomy (e.g. an otf/encoder
+    """The version THIS checkout's producer assigns to a framework token, or
+    ``None`` for a framework outside the v0-v3 taxonomy (e.g. an otf/encoder
     run). Called ONLY by producers; never to reconstruct an existing run."""
     return VERSION_BY_FRAMEWORK.get(framework or "")
 
@@ -109,6 +115,7 @@ def copy_provenance_from_manifest(
     benchmark: str,
     run_id: str,
     manifest: Optional[dict] = None,
+    allow_manifest_fallback: bool = True,
 ) -> None:
     """Fill ``version`` + ``agent_model`` on ``ann`` IN PLACE by COPYING the
     literal the producer recorded in the run's manifest — no framework→version
@@ -116,8 +123,16 @@ def copy_provenance_from_manifest(
     fields (a regrade/annotate rebuild, or a legacy merge); a producer-stamped
     record already has them, so this is a no-op (no-clobber). When ``manifest``
     is omitted it is loaded best-effort.
+
+    ``allow_manifest_fallback=False`` suppresses the best-effort
+    ``load_local_manifest`` self-load. Callers that already TRIED and FAILED to
+    read THIS run's manifest (present-but-unreadable) pass it so a corrupt
+    manifest can't silently fall back to a same-named run under the default
+    results root — preserving the "copy from THIS run's manifest only" contract.
     """
     if manifest is None:
+        if not allow_manifest_fallback:
+            return
         manifest = load_local_manifest(benchmark, run_id)
     if not manifest:
         return

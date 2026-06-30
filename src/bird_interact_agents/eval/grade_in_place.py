@@ -294,8 +294,8 @@ def _apply_config_provenance(
 ) -> SubmissionAnnotation:
     """DEV-1591: at the PRODUCER, write the run's ``version`` + ``agent_model``
     directly onto the record from the agent config it was generated under.
-    ``version_for_framework`` is this branch's identity, so a run produced here
-    is stamped v2/v3 at the source; nothing downstream re-derives it."""
+    ``version_for_framework`` is this checkout's identity, so a run produced
+    here is stamped v0/v1 at the source; nothing downstream re-derives it."""
     if config is not None:
         ann.version = versioning.version_for_framework(config.framework)
         ann.agent_model = config.agent_model

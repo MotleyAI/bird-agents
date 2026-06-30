@@ -186,12 +186,18 @@ def regrade_run(
     # out-of-tree / legacy-flat ``run_dir``). The regrade rebuilds the record
     # with version=None, so this copy is what re-fills it.
     _manifest: Optional[dict] = None
+    # DEV-1591: a present-but-unreadable manifest must NOT re-enable the
+    # downstream self-load fallback (which would draw version/agent_model from a
+    # same-named run under the default results root); track it distinctly and
+    # pass allow_manifest_fallback=False so provenance stays scoped to THIS run.
+    _manifest_unreadable = False
     _manifest_path = run_dir / "manifest.json"
     if _manifest_path.exists():
         try:
             _manifest = json.loads(_manifest_path.read_text())
         except (json.JSONDecodeError, OSError):
             _manifest = None
+            _manifest_unreadable = True
 
     filter_set = set(instance_ids) if instance_ids else None
 
@@ -328,6 +334,7 @@ def regrade_run(
         # not a same-named run under the default results root).
         write_run_annotation(
             ann, dest, benchmark=benchmark, run_id=run_id, manifest=_manifest,
+            allow_manifest_fallback=not _manifest_unreadable,
         )
 
         report.regraded += 1

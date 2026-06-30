@@ -219,13 +219,19 @@ def _copy_provenance(
     benchmark: Optional[str],
     run_id: Optional[str],
     manifest: Optional[dict],
+    allow_manifest_fallback: bool = True,
 ) -> None:
     """DEV-1591: fill ``version`` + ``agent_model`` on ``ann`` (if missing) by
     COPYING the literal the producer recorded in the run's manifest — never
     re-derived from the framework. Producer-stamped records already carry both
     (no-op). Explicit ``benchmark``/``run_id`` (passed by the runs/ writers)
     take precedence; otherwise infer from the path. A no-op when neither is
-    resolvable (a tmp path in tests, etc.)."""
+    resolvable (a tmp path in tests, etc.).
+
+    ``allow_manifest_fallback=False`` (set by a caller that already read THIS
+    run's manifest and found it unreadable) suppresses the best-effort
+    self-load so a corrupt manifest can't draw provenance from an unrelated
+    same-named run under the default results root."""
     if benchmark is None or run_id is None:
         b2, r2 = _infer_benchmark_run_id(path)
         benchmark = benchmark or b2
@@ -236,6 +242,7 @@ def _copy_provenance(
 
     versioning.copy_provenance_from_manifest(
         ann, benchmark=benchmark, run_id=run_id, manifest=manifest,
+        allow_manifest_fallback=allow_manifest_fallback,
     )
 
 
@@ -246,9 +253,11 @@ def write_run_annotation(
     benchmark: Optional[str] = None,
     run_id: Optional[str] = None,
     manifest: Optional[dict] = None,
+    allow_manifest_fallback: bool = True,
 ) -> None:
     _copy_provenance(
         ann, path, benchmark=benchmark, run_id=run_id, manifest=manifest,
+        allow_manifest_fallback=allow_manifest_fallback,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
@@ -275,6 +284,7 @@ def write_run_annotation_no_overwrite(
     benchmark: Optional[str] = None,
     run_id: Optional[str] = None,
     manifest: Optional[dict] = None,
+    allow_manifest_fallback: bool = True,
 ) -> bool:
     """Write ``ann`` to ``path`` only if absent or the new attempt is strictly
     greater than the stored one (resubmit case). Returns True if written.
@@ -304,6 +314,7 @@ def write_run_annotation_no_overwrite(
             pass  # corrupt destination — overwrite
     write_run_annotation(
         ann, path, benchmark=benchmark, run_id=run_id, manifest=manifest,
+        allow_manifest_fallback=allow_manifest_fallback,
     )
     return True
 

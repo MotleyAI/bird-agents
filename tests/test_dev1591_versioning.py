@@ -275,6 +275,25 @@ def test_copy_self_loads_legacy_flat_manifest(isolated_roots):
     assert ann.agent_model == "anthropic/claude-sonnet-4-6"
 
 
+def test_copy_no_fallback_skips_self_load(isolated_roots):
+    """A present-but-unreadable run manifest (manifest=None +
+    allow_manifest_fallback=False) must NOT self-load a same-named run's
+    manifest under the default results root — provenance stays unset rather
+    than picking up an unrelated run's version/agent_model."""
+    runs, results = isolated_roots
+    run_id = "20260601t1000-x-slayer-yyyyyy"
+    # A same-named run DOES exist under the default results root...
+    _write_manifest(results, run_id, version="v0",
+                    agent_model="anthropic/claude-opus-4-7")
+    ann = SubmissionAnnotation.model_validate(_ann_dict(run_id=run_id))
+    versioning.copy_provenance_from_manifest(
+        ann, benchmark="mini-interact", run_id=run_id,
+        allow_manifest_fallback=False)
+    # ...but the fallback is suppressed, so nothing is copied.
+    assert ann.version is None
+    assert ann.agent_model is None
+
+
 # --------------------------------------------------------------------------
 # write_run_annotation — persists, copying from manifest when missing
 # --------------------------------------------------------------------------
@@ -310,6 +329,25 @@ def test_write_preserves_producer_version(isolated_roots):
     )
     write_run_annotation(ann, dest, benchmark="mini-interact", run_id=run_id)
     assert _read(dest)["version"] == "v2"   # producer literal preserved
+
+
+def test_write_no_fallback_leaves_version_unset(isolated_roots):
+    """allow_manifest_fallback=False (an unreadable run manifest) prevents the
+    write path from self-loading a same-named run's manifest, so version stays
+    unset instead of being drawn from an unrelated run."""
+    runs, results = isolated_roots
+    run_id = "20260601t1000-x-slayer-zzzzzz"
+    _write_manifest(results, run_id, version="v2")  # same-named, would tempt fallback
+    ann = SubmissionAnnotation.model_validate(_ann_dict(run_id=run_id))
+    dest = run_annotation_path(
+        benchmark="mini-interact", selected_database="alien",
+        instance_id="alien_1", run_id=run_id,
+    )
+    write_run_annotation(ann, dest, benchmark="mini-interact", run_id=run_id,
+                         allow_manifest_fallback=False)
+    on_disk = _read(dest)
+    assert on_disk["version"] is None
+    assert on_disk["agent_model"] is None
 
 
 def test_write_path_inference_fallback(isolated_roots):

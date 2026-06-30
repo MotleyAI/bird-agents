@@ -368,8 +368,8 @@ def build_manifest(
         "run_id": run_id,
         "framework": args.framework,
         # DEV-1591: the submitting code IS the producer, so it writes the run's
-        # version literal here (v2/v3 on this branch). Downstream copies it;
-        # nothing re-derives v2/v3-vs-v0/v1 from the framework on the
+        # version literal here (v0/v1 on clean main). Downstream copies it;
+        # nothing re-derives the version from the framework on the
         # merge/regrade workstation. None for frameworks outside the taxonomy.
         _versioning.MANIFEST_VERSION_KEY: _versioning.version_for_framework(
             args.framework
