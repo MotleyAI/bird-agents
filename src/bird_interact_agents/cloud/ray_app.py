@@ -586,6 +586,13 @@ class HeartbeatWriter:
         self.interval_s = interval_s
         self.client = client or default_gcs_client()
         self._done = 0
+        # iid -> monotonic-ish start wall-clock, for the tasks currently
+        # in flight. Emitted in status.json so a long-running task is visibly
+        # "in flight for N seconds" instead of indistinguishable from a wedge:
+        # rows_done alone can't tell a slow task from a stuck actor, which is
+        # exactly what tripped the no-progress deadline on a healthy-but-slow
+        # task (DEV: run instrumentation).
+        self._in_flight: dict[str, float] = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -594,16 +601,37 @@ class HeartbeatWriter:
         with self._lock:
             self._done += 1
 
+    def mark_start(self, instance_id: str) -> None:
+        """Record that ``instance_id`` started running (driver-side)."""
+        with self._lock:
+            self._in_flight[instance_id] = time.time()
+
+    def mark_done(self, instance_id: str) -> None:
+        """Record that ``instance_id`` finished (success or failure)."""
+        with self._lock:
+            self._in_flight.pop(instance_id, None)
+
     def _write(self, terminal_state: str | None) -> None:
+        now = time.time()
         with self._lock:
             done = self._done
+            in_flight = [
+                {"instance_id": iid, "elapsed_s": round(now - started, 1)}
+                for iid, started in sorted(
+                    self._in_flight.items(), key=lambda kv: kv[1],
+                )
+            ]
         status = {
             "ray_job_id": self.ray_job_id,
-            "last_heartbeat_ts": time.time(),
+            "last_heartbeat_ts": now,
             "rows_done": done,
             "rows_total": self.total,
             "terminal_state": terminal_state,
             "attempt": self.attempt,
+            # Tasks currently executing, oldest-first, each with how long it
+            # has been running. Lets `wait_until_done`/operators see WHICH task
+            # is slow and for how long.
+            "in_flight": in_flight,
         }
         _gcs.write_status(self.run_id, status, client=self.client)
 
@@ -622,6 +650,76 @@ class HeartbeatWriter:
         if self._thread is not None:
             self._thread.join(timeout=5.0)
         self._write(terminal_state=terminal_state)
+
+
+class PartialTranscriptUploader:
+    """Per-task sink for serialised claude_sdk messages (installed via
+    ``sdk_env.record_partial_transcript``). Appends each message to a local
+    JSONL — cheap, per-turn — and re-uploads the whole file to GCS on a
+    throttle, so a hung or slow task's transcript is visible from the laptop
+    (`wait_until_done` / `capture_diagnostics` / fetch) instead of lost: the
+    agent only returns its full transcript on completion, which a stalled task
+    never reaches. Best-effort throughout — never raises into the receive
+    stream."""
+
+    def __init__(
+        self,
+        *,
+        run_id: str,
+        instance_id: str,
+        gcs_client,
+        local_path: Path,
+        min_upload_interval_s: float = 20.0,
+    ) -> None:
+        self.run_id = run_id
+        self.instance_id = instance_id
+        self.client = gcs_client
+        self.local_path = Path(local_path)
+        self.min_upload_interval_s = min_upload_interval_s
+        self._count = 0
+        self._last_upload = 0.0
+        self._lock = threading.Lock()
+
+    def __call__(self, msg: dict) -> None:
+        try:
+            line = json.dumps(msg, default=str)
+        except Exception:  # noqa: BLE001 — capture must not break the stream
+            return
+        with self._lock:
+            try:
+                with open(self.local_path, "a", encoding="utf-8") as fh:
+                    fh.write(line + "\n")
+            except Exception:  # noqa: BLE001
+                return
+            self._count += 1
+            now = time.time()
+            due = (now - self._last_upload) >= self.min_upload_interval_s
+        # Only advance the throttle on a SUCCESSFUL upload: stamping it before
+        # _upload() runs means a failed first write suppresses every later
+        # message in the window, so a task that then wedges (and never reaches
+        # flush()) leaves nothing behind. Stamp after success so a failure
+        # retries on the very next message instead.
+        if due and self._upload():
+            with self._lock:
+                self._last_upload = now
+
+    def _upload(self) -> bool:
+        try:
+            data = self.local_path.read_text(encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            return False
+        try:
+            _gcs.write_partial_transcript(
+                self.run_id, self.instance_id, data, client=self.client,
+            )
+            return True
+        except Exception:  # noqa: BLE001 — best-effort
+            return False
+
+    def flush(self) -> None:
+        """Final upload (e.g. after the task returns) so the last turns land."""
+        if self._count > 0:
+            self._upload()
 
 
 # ---------------------------------------------------------------------------
@@ -747,29 +845,52 @@ def _run_one_in_actor(
         with fd_capture(log_tmp):
             try:
                 _grader_data_dir = data_dir
-                row = asyncio.run(
-                    _run_one_task_async(
-                        task_data=task_data,
-                        dataset=cfg["dataset"],
-                        framework=cfg["framework"],
-                        query_mode=cfg["query_mode"],
-                        mode=cfg["mode"],
-                        agent_model=cfg["agent_model"],
-                        user_sim_model=cfg["user_sim_model"],
-                        patience=cfg["patience"],
-                        strict=cfg["strict"],
-                        use_audited_gold_sql=cfg["use_audited_gold_sql"],
-                        prompt_cache=cfg["prompt_cache"],
-                        max_depth=cfg["max_depth"],
-                        reasoning_effort=cfg.get("reasoning_effort"),
-                        user_sim_prompt_version=cfg.get("user_sim_prompt_version"),
-                        data_dir=data_dir,
-                        slayer_storage_root=cfg.get("slayer_storage_root"),
-                        slayer_setup=cfg.get("slayer_setup", "pre-encoded"),
-                        pre_encoded_source=cfg.get("pre_encoded_source"),
-                        cached_runner=cached_runner,
+                # Stream the claude_sdk transcript to GCS WHILE the task runs
+                # (throttled), so a hung/slow task leaves an inspectable partial
+                # behind instead of nothing. Only claude_sdk* frameworks route
+                # through the _TranscriptClient that feeds this sink; for others
+                # the contextvar is set but never called (harmless).
+                _partial_uploader = None
+                _partial_cm: Any = contextlib.nullcontext()
+                if str(cfg.get("framework") or "").startswith("claude_sdk"):
+                    from bird_interact_agents.agents.claude_sdk.sdk_env import (
+                        record_partial_transcript,
                     )
-                )
+                    _partial_uploader = PartialTranscriptUploader(
+                        run_id=run_id,
+                        instance_id=iid,
+                        gcs_client=gcs_client,
+                        local_path=log_dir / "partial_transcript.jsonl",
+                    )
+                    _partial_cm = record_partial_transcript(_partial_uploader)
+                try:
+                    with _partial_cm:
+                        row = asyncio.run(
+                            _run_one_task_async(
+                                task_data=task_data,
+                                dataset=cfg["dataset"],
+                                framework=cfg["framework"],
+                                query_mode=cfg["query_mode"],
+                                mode=cfg["mode"],
+                                agent_model=cfg["agent_model"],
+                                user_sim_model=cfg["user_sim_model"],
+                                patience=cfg["patience"],
+                                strict=cfg["strict"],
+                                use_audited_gold_sql=cfg["use_audited_gold_sql"],
+                                prompt_cache=cfg["prompt_cache"],
+                                max_depth=cfg["max_depth"],
+                                reasoning_effort=cfg.get("reasoning_effort"),
+                                user_sim_prompt_version=cfg.get("user_sim_prompt_version"),
+                                data_dir=data_dir,
+                                slayer_storage_root=cfg.get("slayer_storage_root"),
+                                slayer_setup=cfg.get("slayer_setup", "pre-encoded"),
+                                pre_encoded_source=cfg.get("pre_encoded_source"),
+                                cached_runner=cached_runner,
+                            )
+                        )
+                finally:
+                    if _partial_uploader is not None:
+                        _partial_uploader.flush()
             except Exception as e:  # noqa: BLE001
                 row = _build_error_row(iid, database, str(e))
     finally:
@@ -1554,6 +1675,7 @@ def _run_with_actors(
         try:
             future = actor.run_one.remote(task_data_by_id[iid])
             in_flight[future] = (actor, iid)
+            heartbeat.mark_start(iid)
         except Exception as e:  # noqa: BLE001
             # Could not dispatch — log + write an `error` row so the iid
             # is visible in `eval.json` rather than silently missing.
@@ -1601,6 +1723,7 @@ def _run_with_actors(
         ready_futures, _ = ray.wait(list(in_flight.keys()), num_returns=1)
         future = ready_futures[0]
         actor, iid = in_flight.pop(future)
+        heartbeat.mark_done(iid)
         try:
             ray.get(future)
             heartbeat.tick_done()

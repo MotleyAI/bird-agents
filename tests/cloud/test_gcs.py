@@ -35,6 +35,19 @@ def test_write_list_read_round_trip(fake_gcs_bucket, sample_task_result_row):
     assert back["phase1_passed"] is True
 
 
+def test_diagnostics_blob_at_run_root():
+    # Must live at the run root (not under rows/) so the fetch path downloads
+    # it alongside status.json / manifest.json.
+    assert gcs.diagnostics_blob("run-1") == "runs/run-1/diagnostics.txt"
+
+
+def test_write_diagnostics_round_trip(fake_gcs_bucket):
+    client, store = fake_gcs_bucket
+    gcs.write_diagnostics(RUN_ID, "RAY STATUS DUMP\nline 2", client=client)
+    blob = gcs.diagnostics_blob(RUN_ID)
+    assert store[blob].decode() == "RAY STATUS DUMP\nline 2"
+
+
 # ---------------------------------------------------------------------------
 # T10 — concurrent writes don't lose objects.
 # ---------------------------------------------------------------------------

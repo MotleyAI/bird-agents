@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import dataclasses
 import json
 import os
@@ -505,6 +506,31 @@ def serialize_sdk_message(msg: Any) -> dict:
             return {"type": name, "data": "<unserializable>"}
 
 
+# A per-task sink that receives each serialised SDK message ({type, data}) the
+# instant it streams, so a hung claude_sdk task leaves a partial transcript
+# behind instead of nothing — the agent only returns its full transcript on
+# completion, which is exactly what a stalled task never reaches. Installed by
+# the cloud actor around each task via ``record_partial_transcript``; a
+# ContextVar so no agent/harness signature has to thread it through. None
+# (the default) makes the recorder a pure no-op for local/non-instrumented runs.
+_partial_transcript_sink: contextvars.ContextVar = contextvars.ContextVar(
+    "bird_partial_transcript_sink", default=None,
+)
+
+
+@contextlib.contextmanager
+def record_partial_transcript(sink: "Callable[[dict], None]"):
+    """Install ``sink`` for the duration of the block: it is called with each
+    serialised message dict as it streams through every claude_sdk client.
+    ``sink`` must not raise — the recorder guards it regardless, since capture
+    must never break the receive stream."""
+    token = _partial_transcript_sink.set(sink)
+    try:
+        yield
+    finally:
+        _partial_transcript_sink.reset(token)
+
+
 class _TranscriptClient:
     """Transparent proxy over a ``ClaudeSDKClient`` that tees every message
     streamed through ``receive_response()`` into ``.transcript``.
@@ -530,7 +556,14 @@ class _TranscriptClient:
         try:
             async for msg in agen:
                 # serialize_sdk_message never raises, so the stream is safe.
-                self.transcript.append(serialize_sdk_message(msg))
+                serialized = serialize_sdk_message(msg)
+                self.transcript.append(serialized)
+                sink = _partial_transcript_sink.get()
+                if sink is not None:
+                    try:
+                        sink(serialized)
+                    except Exception:  # noqa: BLE001 — capture must not break the stream
+                        pass
                 yield msg
         finally:
             aclose = getattr(agen, "aclose", None)

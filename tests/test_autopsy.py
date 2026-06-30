@@ -2416,12 +2416,15 @@ def test_build_anthropic_client_prefers_oauth_token(monkeypatch):
 
     from bird_interact_agents.eval.autopsy import _build_anthropic_client
 
+    from bird_interact_agents.eval.autopsy import _AUTOPSY_MAX_RETRIES
+
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-fake")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-fake")
     with patch.object(anthropic, "AsyncAnthropic") as mock_cls:
         _build_anthropic_client()
     mock_cls.assert_called_once_with(
         auth_token="sk-ant-oat01-fake", api_key=None,
+        max_retries=_AUTOPSY_MAX_RETRIES,
     )
 
 
@@ -2432,11 +2435,15 @@ def test_build_anthropic_client_falls_back_to_api_key(monkeypatch):
 
     from bird_interact_agents.eval.autopsy import _build_anthropic_client
 
+    from bird_interact_agents.eval.autopsy import _AUTOPSY_MAX_RETRIES
+
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-fake")
     with patch.object(anthropic, "AsyncAnthropic") as mock_cls:
         _build_anthropic_client()
-    mock_cls.assert_called_once_with(api_key="sk-ant-api03-fake")
+    mock_cls.assert_called_once_with(
+        api_key="sk-ant-api03-fake", max_retries=_AUTOPSY_MAX_RETRIES,
+    )
 
 
 def test_build_anthropic_client_raises_without_creds(monkeypatch):
