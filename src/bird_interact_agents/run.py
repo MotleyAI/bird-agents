@@ -112,6 +112,16 @@ def _validate_slayer_setup(
         validate_pre_encoded_source,
     )
 
+    # DEV-1609: the encoder builds the SLayer reference, so it REQUIRES
+    # --query-mode slayer (agent.py guardrail). Reject raw at CLI/cloud
+    # validation — BEFORE the raw early-return below — rather than failing every
+    # task after setup is built/uploaded (Codex review).
+    if framework == "claude_sdk_otf_encode" and query_mode != "slayer":
+        raise ValueError(
+            "--framework claude_sdk_otf_encode requires --query-mode slayer; "
+            f"got {query_mode!r}. An encode run builds the SLayer reference."
+        )
+
     # Always validate the source vocabulary + framework gate, BEFORE the
     # raw early-return (Codex DEV-1586 r2 #2 — otherwise `--query-mode raw
     # --framework pydantic_ai --pre-encoded-models otf` slips through).
@@ -180,6 +190,19 @@ def _validate_framework_mode(
     benchmark (or ``oracle`` with a one-shot benchmark) would pass the
     dataset-mode gate but fail deep inside the agent at task runtime.
     """
+    # DEV-1609: the claude_sdk_otf_encode agent builds the reference and accepts
+    # ONLY a-interact / one-shot (agent.py guardrail) regardless of benchmark —
+    # reject c-interact / oracle at CLI/cloud validation rather than failing
+    # per-task after setup (Codex review).
+    if framework == "claude_sdk_otf_encode":
+        if mode not in ("a-interact", "one-shot"):
+            raise ValueError(
+                "--framework claude_sdk_otf_encode only supports "
+                f"--mode a-interact / one-shot; got {mode!r}. An encode run "
+                "builds the canonical reference; c-interact / oracle are "
+                "unsupported."
+            )
+        return
     # DEV-1555 v0/v1: validate both aggregator tokens.
     if framework not in ("claude_sdk", "claude_sdk_v1"):
         return
@@ -225,7 +248,12 @@ def _maybe_force_wipe_otf(
     if pre_encoded_source is not None:
         return
     # DEV-1555 v0/v1: both aggregator tokens dispatch to on-the-fly agents.
-    if framework not in ("claude_sdk", "claude_sdk_v1"):
+    # DEV-1609: the claude_sdk OTF encoder rebuilds the reference from scratch,
+    # so `--otf-rebuild` MUST wipe both layers for it too — otherwise a stale
+    # cache would be re-encoded into a "fresh" reference.
+    if framework not in (
+        "claude_sdk", "claude_sdk_v1", "claude_sdk_otf_encode",
+    ):
         return
     from bird_interact_agents.slayer_otf.reference_build import (
         purge_caches,
@@ -940,6 +968,36 @@ def _make_runner(
                 user_sim_prompt_version=_v,
             )
         return run_one
+    if framework == "claude_sdk_otf_encode":
+        # DEV-1609: the default OTF *reference* encoder. Build-only — it
+        # constructs the claude_sdk build-encoder (DEV-1589) and builds the
+        # canonical per-DB reference via `ensure_db_reference`, which the
+        # cloud merge-back uploads home. No per-task masking / eval loop.
+        from bird_interact_agents.agents.claude_sdk_otf_encode import (
+            ClaudeSDKOtfEncodeAgent,
+        )
+
+        if strict:
+            logger.warning(
+                "[claude_sdk_otf_encode] --strict is unsupported; ignored.",
+            )
+        agent_csenc = ClaudeSDKOtfEncodeAgent(
+            slayer_storage_root=slayer_storage_root,
+            model=agent_model,
+            reasoning_effort=reasoning_effort,
+            slayer_setup=slayer_setup,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csenc.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
+            )
+        return run_one
     if framework == "mcp_agent":
         from bird_interact_agents.agents.mcp_agent.agent import McpAgentAgent
 
@@ -1463,6 +1521,9 @@ async def run_evaluation(
                 harness_passed=r.get("phase1_passed") is True,
                 predicted_result=_decode_result_json(r.get("predicted_result_json")),
                 gold_result=_decode_result_json(r.get("gold_result_json")),
+                # DEV-1613: build the N5 insufficient-task judge from the
+                # run's agent_model so the cascade can fire it inline.
+                agent_model=agent_model,
             )
         except Exception as exc:  # noqa: BLE001 — keep the loop alive
             logger.exception(
@@ -1766,6 +1827,8 @@ def main() -> None:
         choices=[
             "claude_sdk",
             "claude_sdk_v1",
+            # DEV-1609: the default OTF reference encoder.
+            "claude_sdk_otf_encode",
             # non-SDK frameworks unchanged.
             "pydantic_ai",
             "pydantic_ai_recursive",

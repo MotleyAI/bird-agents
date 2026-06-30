@@ -35,6 +35,7 @@ from bird_interact_agents.cloud.prereqs import (
     _is_claude_sdk_framework,
     _required_api_keys,
 )
+from bird_interact_agents.frameworks import is_otf_encode_framework
 # Imported by NAME so `_build_missing_otf_caches` can be exercised with a mock
 # (`monkeypatch.setattr(driver, "ensure_db_cache", ...)`) without a real build.
 from bird_interact_agents.slayer_otf.cache import ensure_db_cache
@@ -507,7 +508,7 @@ def _slayer_uploads_for(args) -> list[tuple[Path, str, bool]]:
                  "slayer_models_otf", True),
             ]
         return [(submitter_repo_root() / "slayer_models", "slayer_models", True)]
-    if fw == "pydantic_ai_otf_encode":
+    if is_otf_encode_framework(fw):
         return [
             (paths.slayer_otf_cache_root(benchmark=benchmark),
              "slayer_otf_cache", True),
@@ -800,6 +801,44 @@ class WaitResult:
         self.hint = hint
 
 
+# Terminal states where the head node is still expected to be reachable AND the
+# run did not finish cleanly — the only cases where a `ray exec` diagnostics
+# dump is both possible and useful. "done"/"error" finished normally; "headless"
+# means the head is already gone (every `ray exec` would just burn its timeout);
+# "poll-once-exit" is the non-blocking probe, not a terminal verdict.
+_DIAGNOSE_TERMINAL_STATES = frozenset({"stalled", "timed-out"})
+
+
+def _capture_diagnostics_on_stall(
+    run_id: str, yaml_path: Path, result: WaitResult,
+) -> None:
+    """When a non-detached run ends in a non-clean terminal state, dump
+    head-node state (`ray status` + the in-cluster driver log) BEFORE teardown
+    destroys the VM, and persist it to GCS so the fetch path brings it back.
+
+    Best-effort: never raises into the submit/resubmit/annotate flow.
+    """
+    if result is None or result.terminal_state not in _DIAGNOSE_TERMINAL_STATES:
+        return
+    try:
+        status = gcs.read_status(run_id) or {}
+        ray_job_id = status.get("ray_job_id")
+        logger.warning(
+            "run %s ended %s (%s); capturing head-node diagnostics before "
+            "teardown", run_id, result.terminal_state, result.hint or "no hint",
+        )
+        dump = cluster.capture_diagnostics(yaml_path, ray_job_id=ray_job_id)
+        header = (
+            f"# diagnostics for run {run_id}\n"
+            f"# terminal_state: {result.terminal_state}\n"
+            f"# hint: {result.hint}\n"
+            f"# ray_job_id: {ray_job_id}\n\n"
+        )
+        gcs.write_diagnostics(run_id, header + dump)
+    except Exception as exc:  # noqa: BLE001 — diagnostics must not mask the run outcome
+        logger.warning("diagnostics capture failed for run %s: %s", run_id, exc)
+
+
 def submit(args) -> str:
     _validate_instance_ids(args.instance_ids, _submit_benchmark(args))
     prereqs.check(args)
@@ -878,7 +917,8 @@ def submit(args) -> str:
         )
         submit_succeeded = True
         if not args.detach:
-            wait_until_done(run_id, manifest)
+            result = wait_until_done(run_id, manifest)
+            _capture_diagnostics_on_stall(run_id, yaml_path, result)
             fetch(run_id)
     finally:
         # Detach skips teardown ONLY on successful submit — if we never
@@ -1084,7 +1124,8 @@ def submit_annotator(args) -> str:
         )
         submit_succeeded = True
         if not args.detach:
-            wait_until_done(run_id, manifest)
+            result = wait_until_done(run_id, manifest)
+            _capture_diagnostics_on_stall(run_id, yaml_path, result)
             fetch(run_id)
     finally:
         if (not args.detach) or (not submit_succeeded):
@@ -1155,15 +1196,32 @@ def wait_until_done(run_id: str, manifest: dict, *,
         # No-progress deadline: even with a fresh heartbeat, if NO new rows
         # have landed for this long the job is wedged (e.g. workers never
         # autoscaled up, so actors sit PENDING forever while the heartbeat
-        # keeps writing `terminal_state: null`). Resets on every new row, so
-        # a slow-but-progressing run is never falsely timed out.
-        if (time.time() - last_progress_ts) > no_progress_deadline_s:
+        # keeps writing `terminal_state: null`). Resets on every new row.
+        #
+        # Activity-aware: a single long task (e.g. a 200-turn agent loop) can
+        # legitimately run past the deadline without completing a row, and the
+        # blunt "no new rows" check would falsely kill it. So we also treat a
+        # freshly-updated in-flight partial transcript as forward progress — a
+        # streaming task refreshes its partial every ~throttle seconds, while a
+        # genuinely wedged one stops. Only NO new rows AND NO transcript
+        # activity for the whole window trips the deadline. (Older runs without
+        # the `in_flight` heartbeat field fall back to the row-only behaviour.)
+        latest_activity = 0.0
+        for entry in status.get("in_flight") or []:
+            iid = entry.get("instance_id") if isinstance(entry, dict) else None
+            if not iid:
+                continue
+            ts = gcs.partial_transcript_updated_ts(run_id, iid)
+            if ts is not None and ts > latest_activity:
+                latest_activity = ts
+        effective_progress_ts = max(last_progress_ts, latest_activity)
+        if (time.time() - effective_progress_ts) > no_progress_deadline_s:
             return WaitResult(
                 terminal_state="timed-out",
                 hint=(
-                    "no new rows within the no-progress deadline; check "
-                    "`ray status` on the head (workers may not have scaled "
-                    "up); resubmit"
+                    "no new rows AND no in-flight transcript activity within "
+                    "the no-progress deadline; check `ray status` + the partial "
+                    "transcript on the head; resubmit"
                 ),
             )
         if poll_interval_s <= 0:
@@ -1456,7 +1514,8 @@ def resubmit(run_id: str) -> None:
         # min_attempt=next_attempt: don't count failed prior-attempt rows
         # toward this retry's completion.
         retry_manifest = {**manifest, "instance_ids": missing}
-        wait_until_done(run_id, retry_manifest, min_attempt=next_attempt)
+        result = wait_until_done(run_id, retry_manifest, min_attempt=next_attempt)
+        _capture_diagnostics_on_stall(run_id, yaml_path, result)
         fetch(run_id)
     finally:
         h.teardown(reason="resubmit-finally")

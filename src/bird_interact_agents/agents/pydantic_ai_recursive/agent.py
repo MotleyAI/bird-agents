@@ -391,6 +391,7 @@ class PydanticAIRecursiveAgent:
             amb_user_query=task_data["amb_user_query"],
             slayer_storage_dir=slayer_storage_dir,
             user_sim_model=user_sim_model,
+            agent_model=self.model_id,
             user_sim_prompt_version=user_sim_prompt_version,
         )
 

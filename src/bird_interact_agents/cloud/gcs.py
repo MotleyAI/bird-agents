@@ -21,6 +21,7 @@ from typing import Any
 from google.api_core.exceptions import NotFound as _GcsNotFound
 
 from bird_interact_agents.cloud import config
+from bird_interact_agents.frameworks import is_otf_encode_framework
 
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,22 @@ def submission_annotation_blob(run_id: str, instance_id: str) -> str:
 
 def _normalise_benchmark(benchmark: str) -> str:
     return benchmark.replace("-", "_")
+
+
+def partial_transcript_blob(run_id: str, instance_id: str) -> str:
+    """In-flight claude_sdk transcript for a task, uploaded on a throttle WHILE
+    the task runs (not just at completion) so a hung/slow task is inspectable
+    from the laptop. Co-located under ``rows/<iid>/`` so the fetch path picks it
+    up with everything else."""
+    return f"runs/{run_id}/rows/{instance_id}/partial_transcript.jsonl"
+
+
+def diagnostics_blob(run_id: str) -> str:
+    """Head-node diagnostics dump captured when a non-detached run ends in a
+    non-clean terminal state (stalled / timed-out). Lives at the run root so
+    the fetch path downloads it alongside ``status.json`` / ``manifest.json``,
+    making the head-node evidence inspectable after teardown destroys the VM."""
+    return f"runs/{run_id}/diagnostics.txt"
 
 
 def task_annotation_blob(run_id: str, instance_id: str) -> str:
@@ -125,6 +142,60 @@ def write_log(
     blob.upload_from_string(text, content_type="text/plain")
 
 
+def write_partial_transcript(
+    run_id: str,
+    instance_id: str,
+    text: str,
+    *,
+    client=None,
+) -> None:
+    """Upload the (growing) in-flight transcript JSONL for one task. Called on
+    a throttle while the task runs, so it gets overwritten with a fuller
+    version each time and the final upload is the complete in-flight view."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(
+        partial_transcript_blob(run_id, instance_id)
+    )
+    blob.upload_from_string(text, content_type="application/x-ndjson")
+
+
+def read_partial_transcript(
+    run_id: str, instance_id: str, *, client=None,
+) -> "str | None":
+    """Return the uploaded in-flight transcript JSONL for one task, or None if
+    it was never written (task finished before the first throttled upload, or
+    never started)."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(
+        partial_transcript_blob(run_id, instance_id)
+    )
+    try:
+        if not blob.exists():
+            return None
+        return blob.download_as_bytes().decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 — best-effort diagnostics read
+        return None
+
+
+def partial_transcript_updated_ts(
+    run_id: str, instance_id: str, *, client=None,
+) -> "float | None":
+    """Epoch seconds of the last write to a task's in-flight partial transcript,
+    or None if it was never written. A streaming task refreshes this every
+    ~throttle seconds, so it is the forward-progress signal `wait_until_done`
+    uses to tell a slow-but-healthy task from a wedged one."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(
+        partial_transcript_blob(run_id, instance_id)
+    )
+    try:
+        blob.reload()
+        updated = blob.updated
+        return updated.timestamp() if updated is not None else None
+    except Exception:  # noqa: BLE001 — best-effort progress probe
+        return None
+
+
 def write_submission_annotation(
     run_id: str,
     instance_id: str,
@@ -171,6 +242,13 @@ def write_status(run_id: str, status: dict, *, client=None) -> None:
     blob.upload_from_string(
         json.dumps(status).encode(), content_type="application/json"
     )
+
+
+def write_diagnostics(run_id: str, text: str, *, client=None) -> None:
+    """Persist a head-node diagnostics dump for `run_id` (see diagnostics_blob)."""
+    client = client or default_gcs_client()
+    blob = client.bucket(BUCKET_NAME).blob(diagnostics_blob(run_id))
+    blob.upload_from_string(text.encode(), content_type="text/plain")
 
 
 # ---------------------------------------------------------------------------
@@ -397,11 +475,12 @@ def slayer_artifact_name(slayer_setup: str, framework: str) -> str:
 
     - pre-encoded (any framework) -> ``slayer_models``
     - on-the-fly + pydantic_ai_recursive -> ``slayer_otf_cache``
-    - on-the-fly + pydantic_ai_otf_encode -> ``slayer_models_otf``
+    - on-the-fly + an OTF encode framework -> ``slayer_models_otf``
+      (``claude_sdk_otf_encode`` / legacy ``pydantic_ai_otf_encode``)
     """
     if slayer_setup == "pre-encoded":
         return _ARTIFACT_PRE_ENCODED
-    if framework == "pydantic_ai_otf_encode":
+    if is_otf_encode_framework(framework):
         return _ARTIFACT_OTF_REFERENCE
     return _ARTIFACT_OTF_CACHE
 

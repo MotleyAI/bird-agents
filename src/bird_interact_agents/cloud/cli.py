@@ -33,6 +33,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=[
             "claude_sdk",
             "claude_sdk_v1",
+            # DEV-1609: the default OTF reference encoder.
+            "claude_sdk_otf_encode",
             # non-SDK frameworks unchanged.
             "pydantic_ai",
             "pydantic_ai_recursive",

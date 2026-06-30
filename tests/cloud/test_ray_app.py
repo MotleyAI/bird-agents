@@ -2475,3 +2475,62 @@ def test_apply_actor_env_local_legacy_path_keeps_anthropic_key(
 
     assert os.environ.get("ANTHROPIC_API_KEY") == "sk-ant-key"
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in os.environ
+
+
+# ---------------------------------------------------------------------------
+# DEV-1609: _ensure_actor_logging — INFO breadcrumbs must surface in the actor
+# (root handler defaults to WARNING, dropping otf_timing kb.* milestones).
+# ---------------------------------------------------------------------------
+
+import logging as _logging  # noqa: E402
+from contextlib import contextmanager as _contextmanager  # noqa: E402
+
+
+def _clear_pkg_handlers(pkg):
+    for h in list(pkg.handlers):
+        if getattr(h, ray_app._ACTOR_LOG_HANDLER_FLAG, False):
+            pkg.removeHandler(h)
+            h.close()
+
+
+@_contextmanager
+def _isolated_actor_logging():
+    """Save/restore the bird_interact_agents logger's full state (handlers,
+    level, propagate) so _ensure_actor_logging's global mutations don't leak
+    into later tests (CodeRabbit)."""
+    pkg = _logging.getLogger("bird_interact_agents")
+    old_level, old_propagate = pkg.level, pkg.propagate
+    _clear_pkg_handlers(pkg)
+    try:
+        yield pkg
+    finally:
+        _clear_pkg_handlers(pkg)
+        pkg.setLevel(old_level)
+        pkg.propagate = old_propagate
+
+
+def test_ensure_actor_logging_attaches_info_handler():
+    with _isolated_actor_logging() as pkg:
+        ray_app._ensure_actor_logging()
+        ours = [
+            h for h in pkg.handlers
+            if getattr(h, ray_app._ACTOR_LOG_HANDLER_FLAG, False)
+        ]
+        assert len(ours) == 1
+        assert ours[0].level == _logging.INFO
+        assert pkg.level == _logging.INFO
+        # propagate stays True: flipping it would globally break caplog +
+        # any root handler for bird_interact_agents.* loggers.
+        assert pkg.propagate is True
+
+
+def test_ensure_actor_logging_is_idempotent():
+    with _isolated_actor_logging() as pkg:
+        ray_app._ensure_actor_logging()
+        ray_app._ensure_actor_logging()
+        ray_app._ensure_actor_logging()
+        ours = [
+            h for h in pkg.handlers
+            if getattr(h, ray_app._ACTOR_LOG_HANDLER_FLAG, False)
+        ]
+        assert len(ours) == 1  # no duplicate handlers across repeated calls

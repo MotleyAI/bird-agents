@@ -126,6 +126,9 @@ class TaskDeps(BaseModel):
     status: SampleStatus
     data_path_base: str
     user_sim_model: str = "anthropic/claude-haiku-4-5-20251001"
+    # DEV-1613: the run's agent model, read by the shared submit helpers to
+    # build the N5 insufficient-task judge for in-task feedback.
+    agent_model: str | None = None
     user_sim_prompt_version: str = "v2"
     slayer_storage_dir: str = ""
     # Mutable scratch space — recorded by submit tools, read by the runner.
@@ -460,6 +463,7 @@ class PydanticAIAgent:
             status=status,
             data_path_base=data_path_base,
             user_sim_model=user_sim_model,
+            agent_model=self.model_id,
             user_sim_prompt_version=user_sim_prompt_version,
             slayer_storage_dir=slayer_storage_dir,
         )

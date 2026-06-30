@@ -486,7 +486,7 @@ class ClaudeSDKOtfAgent:
             msg = (
                 f"claude_sdk_otf requires an Anthropic or registry open-weight "
                 f"model; got {self.model!r}. Skipped — use --framework "
-                "pydantic_ai_otf_encode for non-supported models."
+                "claude_sdk_otf_encode for non-supported models."
             )
             logger.warning("[%s] %s", instance_id, msg)
             return finalize_result_row(
@@ -579,6 +579,8 @@ class ClaudeSDKOtfAgent:
                 "status": status,
                 "data_path_base": data_path_base,
                 "user_sim_model": user_sim_model,
+                # DEV-1613: agent model for the in-task N5 judge.
+                "agent_model": self.model,
                 "user_sim_prompt_version": user_sim_prompt_version,
                 "slayer_storage_dir": slayer_storage_dir,
                 "_slayer_client": None,
