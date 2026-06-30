@@ -1,10 +1,11 @@
 """Tests for ``scripts/cascade_for_combo.py``.
 
 Covers the contract that matters: pick the latest non-eval_failed run per
-(db, instance_id) AFTER filtering by manifest's ``query_mode`` AND
-``agent_model`` substring. The cumulative-N and partition-L aggregations
-reuse the production helpers in
-``bird_interact_agents.eval.cascading_report`` so are not re-tested here.
+(db, instance_id) AFTER filtering by mode (from the run-id filename) AND
+``agent_model`` (the record's stamped field, manifest only as a legacy
+fallback). The cumulative-N and partition-L aggregations reuse the
+production helpers in ``bird_interact_agents.eval.cascading_report`` so are
+not re-tested here.
 """
 
 from __future__ import annotations
