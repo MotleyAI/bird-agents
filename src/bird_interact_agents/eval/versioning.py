@@ -1,26 +1,27 @@
 """DEV-1591 stream 2 — code-version provenance for ``runs/`` records.
 
-Per-task ``runs/`` records (``SubmissionAnnotation``) historically carried
-no signal of WHICH agent code version produced them. The cascade tooling
-buckets only on ``(query_mode, agent_model)`` from the cloud manifest and
-never reads ``framework``, so a run from this branch's *modified* agent code
-(same ``claude_sdk`` framework token as clean origin/main) silently overrode
-the clean-v0 baselines per task.
+Per-task ``runs/`` records (``SubmissionAnnotation``) carry a ``version`` so
+this branch's modified-agent runs don't pollute the clean baselines: the
+cascade tooling buckets on ``(query_mode, agent_model)`` and never read
+``framework``, so a run from this branch's modified ``claude_sdk`` code (same
+framework token as clean origin/main) silently overrode the clean-v0 stats.
 
-This module owns the version taxonomy and the rules to resolve a record's
-``version`` + ``agent_model``:
+The version is written by the PRODUCER at creation time — never reconstructed
+downstream:
 
 * ``v0`` = clean origin/main ``claude_sdk`` (single-agent).
 * ``v1`` = clean ``claude_sdk_v1`` (DEV-1581 R2 two-stage ``ask_discovery``).
-* ``v2`` = this branch's modified ``claude_sdk`` (the compact-search work).
+* ``v2`` = this branch's modified ``claude_sdk``.
 * ``v3`` = this branch's modified ``claude_sdk_v1``.
 
-The manifest records NO durable code-version signal (no git commit / code
-hash; the image tag is a content hash that can't be mapped back). So the
-three runs positively attributable to this branch can only be tagged via an
-explicit run-id override table — a token→version mapping ALONE would fold
-them back into clean v0/v1. See the ``project_dev1591_modified_run_versions``
-note for the provenance of this list.
+``version_for_framework`` is this branch's identity and is applied ONLY by the
+producers — ``cloud.driver.build_manifest`` at submit and
+``grade_in_place._build_submission_annotation`` at grade. Both run inside the
+producing process/image, so they know the true code version. Every downstream
+path (merge, regrade, annotate, backfill) only COPIES the literal the producer
+wrote (from the record or the run's manifest); none of them re-map a framework
+token, so a clean run merged/regraded while this branch is checked out stays
+clean.
 """
 
 from __future__ import annotations
@@ -37,93 +38,37 @@ if TYPE_CHECKING:  # avoid an import cycle (annotation_io imports this module)
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_VERSION = "v0"
-"""Version assigned when the framework is unknown/missing. In-flight clean
-runs are submitted from origin/main, so a record whose manifest is absent
-defaults to clean v0 (a deliberate decision — see DEV-1591)."""
-
-_FRAMEWORK_TO_VERSION = {
-    "claude_sdk": "v0",
-    "claude_sdk_v1": "v1",
-}
-
-# This branch carries MODIFIED agent code (the DEV-1591 compact-search
-# prompt changes), so every run PRODUCED BY IT is a modified variant: v2
-# (modified-v0 / ``claude_sdk``) or v3 (modified-v1 / ``claude_sdk_v1``),
-# never the clean v0/v1. ``_BRANCH_IS_MODIFIED`` is the durable, code-baked
-# signal that the running process is this branch — it travels into the cloud
-# image (unlike git state), so cloud runs are tagged correctly too.
+# THIS branch's agents ARE the modified variants, so its producers stamp v2/v3.
+# Applied ONLY at production (build_manifest at submit, _build_submission_-
+# annotation at grade); downstream copies the literal, never re-derives.
 #
 # ┌─ IMPORTANT ──────────────────────────────────────────────────────────┐
-# │ Reset to False when these modifications land on main / are retired.   │
-# │ Once "modified" IS main, its runs ARE the clean v0/v1 baseline, and   │
-# │ leaving this True would mis-tag every main run as v2/v3.              │
+# │ Reset to {"claude_sdk":"v0","claude_sdk_v1":"v1"} when these          │
+# │ modifications land on main / are retired — or make it a submit-time   │
+# │ selection for the "support all 4 agent versions on one branch" work.  │
+# │ Leaving v2/v3 here on main would mis-tag every newly-produced run.    │
 # └──────────────────────────────────────────────────────────────────────┘
-#
-# It governs ONLY live write-time stamping (``resolve_version(...,
-# live_run=True)`` from ``stamp_provenance``), where we KNOW the running
-# code is this branch. The BACKFILL of historical records uses the default
-# ``live_run=False`` path: a historical record's branch is unknown, so its
-# version is derived from its own manifest framework + the override table
-# (assume clean unless explicitly overridden). Mixing the two would let the
-# backfill re-tag genuinely-clean runs from other branches as v2/v3.
-_BRANCH_IS_MODIFIED = True
-
-_MODIFIED_FRAMEWORK_TO_VERSION = {
+VERSION_BY_FRAMEWORK = {
     "claude_sdk": "v2",
     "claude_sdk_v1": "v3",
 }
-_MODIFIED_DEFAULT_VERSION = "v2"
 
-# Historical runs from this branch made BEFORE ``_BRANCH_IS_MODIFIED`` existed
-# (their records were written by code that stamped clean v0/v1, then fixed by
-# the backfill via this table). Keyed by the exact run-id (the ``runs/``
-# filename stem); wins over every framework map. New live runs no longer need
-# an entry here — they self-stamp v2/v3 via ``_BRANCH_IS_MODIFIED``.
-_RUN_ID_VERSION_OVERRIDES = {
-    "20260629t1209-claudes-slayer-cea364": "v2",  # modified-v0 (opus smoke)
-    "20260624t0833-claudes-slayer-4df43f": "v2",  # modified-v0 (glm smoke)
-    "20260624t0844-claudes-slayer-4246fd": "v3",  # modified-v1 (glm smoke)
-}
+# Manifest key the producer records (``build_manifest``); copied by downstream
+# stampers. Absent on pre-DEV-1591 manifests.
+MANIFEST_VERSION_KEY = "version"
+
+# READ-SIDE ONLY. The cascade ``--version`` filter treats an UNTAGGED record
+# (legacy, pre-stamping) as this version when deciding whether it matches the
+# requested filter. This is a filtering convenience, NOT write-time
+# reconstruction — the producer always writes the real version going forward.
+DEFAULT_VERSION = "v0"
 
 
-def resolve_version(
-    run_id: str, framework: Optional[str], *, live_run: bool = False,
-) -> str:
-    """Resolve a record's ``version`` from its run-id and framework token.
-
-    Precedence:
-      1. The run-id override table (authoritative for the listed runs).
-      2. When ``live_run`` AND this is the modified branch: the MODIFIED
-         framework map (``claude_sdk``→v2, ``claude_sdk_v1``→v3) and a
-         modified default (v2) — every run this branch produces is tagged
-         distinctly from clean main without needing a per-run override.
-      3. The clean framework→version map (``claude_sdk``→v0,
-         ``claude_sdk_v1``→v1).
-      4. ``DEFAULT_VERSION`` (v0) when the framework is missing/unknown — the
-         clean-run default for historical / origin/main runs.
-      5. Otherwise the framework token verbatim, so a present-but-unmapped
-         framework (e.g. an otf/encoder run) stays SEPARABLE from v0 rather
-         than being silently folded into the clean-v0 bucket.
-
-    ``live_run=True`` is passed ONLY by the write-time stamp of a run being
-    produced by THIS process (``stamp_provenance``). The backfill and any
-    historical re-derivation use the default (clean) path — see
-    ``_BRANCH_IS_MODIFIED``.
-    """
-    if run_id in _RUN_ID_VERSION_OVERRIDES:
-        return _RUN_ID_VERSION_OVERRIDES[run_id]
-    if live_run and _BRANCH_IS_MODIFIED:
-        if framework in _MODIFIED_FRAMEWORK_TO_VERSION:
-            return _MODIFIED_FRAMEWORK_TO_VERSION[framework]
-        if not framework:
-            return _MODIFIED_DEFAULT_VERSION
-        return framework
-    if framework in _FRAMEWORK_TO_VERSION:
-        return _FRAMEWORK_TO_VERSION[framework]
-    if not framework:
-        return DEFAULT_VERSION
-    return framework
+def version_for_framework(framework: Optional[str]) -> Optional[str]:
+    """The version THIS branch's producer assigns to a framework token, or
+    ``None`` for a framework outside the v0–v3 taxonomy (e.g. an otf/encoder
+    run). Called ONLY by producers; never to reconstruct an existing run."""
+    return VERSION_BY_FRAMEWORK.get(framework or "")
 
 
 def provenance_from_manifest(
@@ -141,8 +86,8 @@ def load_local_manifest(benchmark: str, run_id: str) -> Optional[dict]:
 
     Checks the benchmark-scoped run dir first, then the legacy-flat layout
     (``results/cloud/<run_id>/``) that ``eval.annotate`` / ``eval.regrade``
-    still fall back to — without this, a legacy-flat run can't surface its
-    framework and gets stamped default-v0 with no agent_model."""
+    still fall back to — without this, a legacy-flat run can't surface the
+    ``version`` its producer recorded in the manifest."""
     results_root = paths.results_root()
     for p in (
         results_root / benchmark / "cloud" / run_id / "manifest.json",
@@ -158,28 +103,25 @@ def load_local_manifest(benchmark: str, run_id: str) -> Optional[dict]:
     return None
 
 
-def stamp_provenance(
+def copy_provenance_from_manifest(
     ann: "SubmissionAnnotation",
     *,
     benchmark: str,
     run_id: str,
     manifest: Optional[dict] = None,
 ) -> None:
-    """Stamp ``version`` + ``agent_model`` onto ``ann`` IN PLACE.
-
-    This is the LIVE write path — the run is being produced by THIS process,
-    so version resolution runs with ``live_run=True``: on the modified branch
-    a clean framework is tagged as its modified twin (v2/v3). No-clobber:
-    only fills a field that is currently ``None`` (never overwrites an
-    explicitly-set value — so the backfill's clean resolution, pre-set before
-    the write, is preserved). When ``manifest`` is omitted, a local manifest
-    is loaded best-effort. The override table is keyed by ``run_id``, so an
-    override run is tagged even with no manifest on disk.
+    """Fill ``version`` + ``agent_model`` on ``ann`` IN PLACE by COPYING the
+    literal the producer recorded in the run's manifest — no framework→version
+    mapping, no branch detection. For records that don't already carry the
+    fields (a regrade/annotate rebuild, or a legacy merge); a producer-stamped
+    record already has them, so this is a no-op (no-clobber). When ``manifest``
+    is omitted it is loaded best-effort.
     """
     if manifest is None:
         manifest = load_local_manifest(benchmark, run_id)
-    framework, agent_model = provenance_from_manifest(manifest)
-    if ann.version is None:
-        ann.version = resolve_version(run_id, framework, live_run=True)
-    if ann.agent_model is None and agent_model:
-        ann.agent_model = agent_model
+    if not manifest:
+        return
+    if ann.version is None and manifest.get(MANIFEST_VERSION_KEY):
+        ann.version = manifest[MANIFEST_VERSION_KEY]
+    if ann.agent_model is None and manifest.get("agent_model"):
+        ann.agent_model = manifest["agent_model"]

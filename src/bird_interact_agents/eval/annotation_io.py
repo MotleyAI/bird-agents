@@ -212,7 +212,7 @@ def _infer_benchmark_run_id(
     return (None, None)
 
 
-def _stamp_provenance(
+def _copy_provenance(
     ann: SubmissionAnnotation,
     path: Path,
     *,
@@ -220,11 +220,12 @@ def _stamp_provenance(
     run_id: Optional[str],
     manifest: Optional[dict],
 ) -> None:
-    """DEV-1591: stamp ``version`` + ``agent_model`` on ``ann`` before it is
-    persisted. Explicit ``benchmark``/``run_id`` (passed by the three runs/
-    writers) take precedence; otherwise infer from the path. A no-op when
-    neither is resolvable (the field stays None for the backfill / read-time
-    default to fill)."""
+    """DEV-1591: fill ``version`` + ``agent_model`` on ``ann`` (if missing) by
+    COPYING the literal the producer recorded in the run's manifest — never
+    re-derived from the framework. Producer-stamped records already carry both
+    (no-op). Explicit ``benchmark``/``run_id`` (passed by the runs/ writers)
+    take precedence; otherwise infer from the path. A no-op when neither is
+    resolvable (a tmp path in tests, etc.)."""
     if benchmark is None or run_id is None:
         b2, r2 = _infer_benchmark_run_id(path)
         benchmark = benchmark or b2
@@ -233,7 +234,7 @@ def _stamp_provenance(
         return
     from bird_interact_agents.eval import versioning
 
-    versioning.stamp_provenance(
+    versioning.copy_provenance_from_manifest(
         ann, benchmark=benchmark, run_id=run_id, manifest=manifest,
     )
 
@@ -246,7 +247,7 @@ def write_run_annotation(
     run_id: Optional[str] = None,
     manifest: Optional[dict] = None,
 ) -> None:
-    _stamp_provenance(
+    _copy_provenance(
         ann, path, benchmark=benchmark, run_id=run_id, manifest=manifest,
     )
     path.parent.mkdir(parents=True, exist_ok=True)

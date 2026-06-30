@@ -180,11 +180,11 @@ def regrade_run(
     if not rows_dir.exists():
         return report
 
-    # DEV-1591: read THIS run's manifest from run_dir so provenance stamping
-    # derives version/agent_model from the run actually being regraded.
-    # ``stamp_provenance`` would otherwise self-load from
-    # ``paths.results_root()/...``, which misses an out-of-tree / legacy-flat
-    # ``run_dir`` and could stamp a clean claude_sdk_v1 run as default v0.
+    # DEV-1591: read THIS run's manifest from run_dir so version/agent_model
+    # are COPIED from the run actually being regraded (the producer's literal),
+    # not self-loaded from ``paths.results_root()/...`` (which misses an
+    # out-of-tree / legacy-flat ``run_dir``). The regrade rebuilds the record
+    # with version=None, so this copy is what re-fills it.
     _manifest: Optional[dict] = None
     _manifest_path = run_dir / "manifest.json"
     if _manifest_path.exists():

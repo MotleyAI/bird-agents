@@ -20,6 +20,7 @@ from bird_interact_agents.cloud import benchmark_data, cluster, config, gcs, ima
 from bird_interact_agents.cloud import collation as _collation
 from bird_interact_agents.cloud import post_run_merge as _post_run_merge
 from bird_interact_agents.eval import cascading_report as _cascading_report
+from bird_interact_agents.eval import versioning as _versioning
 # Imported by NAME (not via the `gcs` module attr) so tests that mock
 # `driver.gcs` still get the real pure mapping — only the I/O helpers
 # (`gcs.upload_dir_prefix` etc.) need to be mockable.
@@ -365,6 +366,13 @@ def build_manifest(
     return {
         "run_id": run_id,
         "framework": args.framework,
+        # DEV-1591: the submitting code IS the producer, so it writes the run's
+        # version literal here (v2/v3 on this branch). Downstream copies it;
+        # nothing re-derives v2/v3-vs-v0/v1 from the framework on the
+        # merge/regrade workstation. None for frameworks outside the taxonomy.
+        _versioning.MANIFEST_VERSION_KEY: _versioning.version_for_framework(
+            args.framework
+        ),
         "mode": args.mode,
         "dataset": _submit_benchmark(args),
         "benchmark_data_prefix": benchmark_data_prefix,

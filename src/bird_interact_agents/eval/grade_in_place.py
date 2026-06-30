@@ -34,6 +34,7 @@ from bird_interact_agents.eval.annotation_schema import (
 
 if TYPE_CHECKING:
     from bird_interact_agents.eval.annotation_schema import AutopsyResult
+from bird_interact_agents.eval import versioning
 from bird_interact_agents.eval.annotation_io import (
     run_annotation_path,
     run_trajectory_path,
@@ -264,6 +265,19 @@ def _auto_failure_class(cascade: CascadeVerdict) -> tuple[str, bool, str]:
     return ("agent_miss", True, "agent")
 
 
+def _apply_config_provenance(
+    ann: SubmissionAnnotation, config: Optional[SubmissionConfig],
+) -> SubmissionAnnotation:
+    """DEV-1591: at the PRODUCER, write the run's ``version`` + ``agent_model``
+    directly onto the record from the agent config it was generated under.
+    ``version_for_framework`` is this branch's identity, so a run produced here
+    is stamped v2/v3 at the source; nothing downstream re-derives it."""
+    if config is not None:
+        ann.version = versioning.version_for_framework(config.framework)
+        ann.agent_model = config.agent_model
+    return ann
+
+
 def _build_submission_annotation(
     *,
     task_annotation: TaskAnnotation,
@@ -315,7 +329,7 @@ def _build_submission_annotation(
     original_gold_is_correct = getattr(
         task_annotation, "original_gold_is_correct", None
     )
-    return SubmissionAnnotation(
+    ann = SubmissionAnnotation(
         instance_id=task_annotation.instance_id,
         selected_database=task_annotation.selected_database,
         task_annotation_ref=task_ann_ref,
@@ -351,6 +365,7 @@ def _build_submission_annotation(
         gold_result=cascade.gold_rows,
         original_gold_annotated_correct=original_gold_is_correct,
     )
+    return _apply_config_provenance(ann, config)
 
 
 def _write_to_runs(
@@ -375,7 +390,8 @@ def _write_to_runs(
         instance_id=ann.instance_id,
         run_id=run_id,
     )
-    # DEV-1591: stamp version/agent_model provenance at the write.
+    # DEV-1591: the producer already wrote ``version``/``agent_model`` onto
+    # ``ann`` (``_apply_config_provenance``); this write just persists it.
     write_run_annotation(ann, dest, benchmark=benchmark, run_id=run_id)
 
     # Trajectory sidecar — best-effort (never raises). Always overwrite so
@@ -499,6 +515,7 @@ def _write_harness_confirmed_annotation(
         gold_result=gold_result,
         original_gold_annotated_correct=original_gold_is_correct,
     )
+    _apply_config_provenance(ann, config)  # DEV-1591: producer stamps version
     out_path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
     _write_to_runs(ann, rows_dir=Path(rows_dir), benchmark=benchmark, run_id=run_id)
     return out_path
@@ -711,6 +728,7 @@ def write_failed_submission_annotation(
         ),
         original_gold_annotated_correct=None,
     )
+    _apply_config_provenance(ann, config)  # DEV-1591: producer stamps version
     out_path = out_dir / "submission_annotation.json"
     out_path.write_text(ann.model_dump_json(indent=2, exclude_none=False) + "\n")
     _write_to_runs(ann, rows_dir=Path(rows_dir), benchmark=benchmark, run_id=run_id)

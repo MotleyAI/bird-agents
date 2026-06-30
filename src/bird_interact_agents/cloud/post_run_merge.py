@@ -499,10 +499,10 @@ def merge_submission_annotations(
     """
     rows_dir = downloaded_run_dir / "rows"
     report = AnnotationMergeReport(run_id=run_id, benchmark=benchmark)
-    # DEV-1591: stamp version/agent_model provenance from the run's manifest
-    # as each record lands in runs/. Loaded once (best-effort) from the
-    # fetched run dir; ``stamp_provenance`` falls back to the override table
-    # (keyed by run_id) when the manifest is absent.
+    # DEV-1591: the actor already wrote version/agent_model onto each record
+    # at the source, so the merge just preserves them; this manifest is only a
+    # fallback to COPY version/agent_model onto any record that lacks them
+    # (legacy runs). Loaded once (best-effort) from the fetched run dir.
     _manifest: "dict | None" = None
     _manifest_path = downloaded_run_dir / "manifest.json"
     if _manifest_path.exists():

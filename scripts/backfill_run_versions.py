@@ -1,21 +1,18 @@
 """Backfill ``version`` + ``agent_model`` onto existing ``runs/`` records.
 
-DEV-1591 stream 2. New runs are stamped at write time (see
-``eval.annotation_io.write_run_annotation``), but records written before
-this change carry neither field. The cascade tooling defaults a missing
-``version`` to ``v0``, so until this one-time, idempotent migration runs,
-this branch's modified (v2/v3) runs would still silently override clean-v0
-baselines.
+DEV-1591 stream 2. New runs carry ``version`` + ``agent_model`` because the
+PRODUCER writes them at grade/submit time (see
+``grade_in_place._apply_config_provenance`` and ``driver.build_manifest``).
+This script is kept "just in case" — to re-fill records that are missing the
+fields by COPYING the literal the producer recorded, never reconstructing it.
 
 For each ``runs/<benchmark>/<db>/<inst>/<run_id>.json`` it:
 * loads the run's cloud manifest (local first, GCS fallback — reusing the
   cascade helper's caching read);
-* sets ``version`` = ``versioning.resolve_version(run_id, framework)``
-  (override table → framework map → default-v0) — authoritative and
-  deterministic, so re-running is a no-op;
+* fills a MISSING ``version`` by copying ``manifest["version"]`` (the producer
+  literal); a record already stamped is left untouched (idempotent);
 * fills ``agent_model`` from the manifest, preserving any value already on
-  the record but WARNING when a present value disagrees with the manifest
-  (Codex Low #7).
+  the record but WARNING when a present value disagrees with the manifest.
 
 Usage::
 
@@ -106,17 +103,14 @@ def backfill(
         manifest = manifest_cache[run_id]
         if manifest is None:
             counters["no_manifest"] += 1
-        framework, manifest_model = versioning.provenance_from_manifest(manifest)
+        _, manifest_model = versioning.provenance_from_manifest(manifest)
+        manifest_version = (manifest or {}).get(versioning.MANIFEST_VERSION_KEY)
 
-        # version: clean/historical resolution (NOT live_run) — a record's
-        # branch is unknown here, so assume clean unless the override table
-        # says otherwise. Only fill a MISSING version: a record already
-        # stamped (by the live write path as v2/v3, or a prior backfill) is
-        # authoritative and must not be clobbered back to clean v0/v1.
-        new_version = (
-            ann.version if ann.version is not None
-            else versioning.resolve_version(run_id, framework)
-        )
+        # Only fill a MISSING version by COPYING the literal the producer
+        # recorded in the manifest — never reconstruct from the framework. A
+        # record already stamped (by the producer at grade, or a prior
+        # backfill) is authoritative and is left untouched.
+        new_version = ann.version if ann.version is not None else manifest_version
 
         # agent_model: manifest is authoritative; preserve the record's value
         # when the manifest has none. Flag (but still record) a disagreement.

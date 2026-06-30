@@ -1,15 +1,14 @@
 """Tests for ``scripts/backfill_run_versions.py`` (DEV-1591 stream 2).
 
-The backfill stamps ``version`` + ``agent_model`` onto every existing
-per-task ``runs/`` record. Contract:
-* override table (run-id) wins over the framework→version map;
-* plain ``claude_sdk`` → v0, ``claude_sdk_v1`` → v1;
-* a missing manifest still version-stamps via override/default-v0, leaving
-  ``agent_model`` untouched;
-* idempotent — a second run changes nothing;
+The backfill is the "just in case" re-filler: it COPIES the producer's
+``version`` (+ ``agent_model``) from a run's manifest onto any record that is
+missing it. It never reconstructs the version from the framework. Contract:
+* a record missing ``version`` gets ``manifest["version"]`` copied;
+* no manifest version → left as-is (no guessing);
+* a record already stamped is preserved (idempotent);
 * ``--dry-run`` writes nothing;
-* a record whose existing ``agent_model`` disagrees with the manifest is
-  flagged (mismatch counter) — Codex Low #7.
+* legacy-flat manifest (``results/cloud/<run_id>/``) is read;
+* an existing ``agent_model`` that disagrees with the manifest is flagged.
 """
 
 from __future__ import annotations
@@ -31,7 +30,6 @@ sys.modules["backfill_run_versions"] = backfill_run_versions
 _spec.loader.exec_module(backfill_run_versions)
 
 _BENCH = "mini-interact"
-_CEA364 = "20260629t1209-claudes-slayer-cea364"  # override → v2
 
 
 def _ann_dict(*, iid, db, run_id, **extra) -> dict:
@@ -85,13 +83,20 @@ def _write_record(runs: Path, db, iid, run_id, **extra) -> Path:
     return dest
 
 
-def _write_manifest(results: Path, run_id, *, framework, agent_model):
-    dest = results / _BENCH / "cloud" / run_id / "manifest.json"
+def _write_manifest(results: Path, run_id, *, framework, agent_model,
+                    version=None, legacy_flat=False):
+    if legacy_flat:
+        dest = results / "cloud" / run_id / "manifest.json"
+    else:
+        dest = results / _BENCH / "cloud" / run_id / "manifest.json"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(json.dumps({
+    payload = {
         "framework": framework, "agent_model": agent_model,
         "query_mode": "slayer",
-    }))
+    }
+    if version is not None:
+        payload["version"] = version
+    dest.write_text(json.dumps(payload))
 
 
 @pytest.fixture
@@ -107,92 +112,66 @@ def _read(p: Path) -> dict:
     return json.loads(p.read_text())
 
 
-def test_backfill_override_and_framework_map(tree):
+def test_backfill_copies_manifest_version(tree):
     runs, results = tree
-    # v2 override run (framework token is claude_sdk → would map to v0)
-    p_v2 = _write_record(runs, "households", "households_1", _CEA364)
-    _write_manifest(results, _CEA364, framework="claude_sdk",
-                    agent_model="anthropic/claude-opus-4-7")
-    # plain v0
-    p_v0 = _write_record(runs, "alien", "alien_1",
-                         "20260601t1000-claudes-slayer-aaaaaa")
-    _write_manifest(results, "20260601t1000-claudes-slayer-aaaaaa",
-                    framework="claude_sdk", agent_model="anthropic/claude-haiku-4-5")
-    # v1
-    p_v1 = _write_record(runs, "alien", "alien_2",
-                         "20260601t1100-claudes-slayer-bbbbbb")
-    _write_manifest(results, "20260601t1100-claudes-slayer-bbbbbb",
-                    framework="claude_sdk_v1", agent_model="zai/glm-5.2")
+    # v2 producer literal in the manifest.
+    p2 = _write_record(runs, "households", "households_1", "rid_v2")
+    _write_manifest(results, "rid_v2", framework="claude_sdk",
+                    agent_model="anthropic/claude-opus-4-7", version="v2")
+    # clean v0 producer literal.
+    p0 = _write_record(runs, "alien", "alien_1", "rid_v0")
+    _write_manifest(results, "rid_v0", framework="claude_sdk",
+                    agent_model="anthropic/claude-haiku-4-5", version="v0")
 
     counters = backfill_run_versions.backfill(_BENCH, allow_gcs=False)
-
-    assert _read(p_v2)["version"] == "v2"
-    assert _read(p_v2)["agent_model"] == "anthropic/claude-opus-4-7"
-    assert _read(p_v0)["version"] == "v0"
-    assert _read(p_v1)["version"] == "v1"
-    assert counters["updated"] == 3
+    assert _read(p2)["version"] == "v2"
+    assert _read(p2)["agent_model"] == "anthropic/claude-opus-4-7"
+    assert _read(p0)["version"] == "v0"
+    assert counters["updated"] == 2
 
 
-def test_backfill_missing_manifest_defaults_v0(tree):
+def test_backfill_no_manifest_version_leaves_none(tree):
+    """No version in the manifest → nothing to copy, no guessing."""
     runs, results = tree
-    p = _write_record(runs, "alien", "alien_1",
-                      "20260601t1000-claudes-slayer-aaaaaa")
-    # no manifest written
-    counters = backfill_run_versions.backfill(_BENCH, allow_gcs=False)
+    p = _write_record(runs, "alien", "alien_1", "rid_x")
+    _write_manifest(results, "rid_x", framework="claude_sdk",
+                    agent_model="anthropic/claude-opus-4-7")  # no version
+    backfill_run_versions.backfill(_BENCH, allow_gcs=False)
     rec = _read(p)
-    assert rec["version"] == "v0"          # default when framework unknown
-    assert rec["agent_model"] is None      # nothing to fill from
-    assert counters["no_manifest"] == 1
+    assert rec["version"] is None
+    assert rec["agent_model"] == "anthropic/claude-opus-4-7"  # model still copied
 
 
 def test_backfill_reads_legacy_flat_manifest(tree):
-    """Codex (loop r3): backfill must find the legacy-flat manifest at
-    results/cloud/<run_id>/ (no benchmark segment), else a clean
-    claude_sdk_v1 legacy-flat run backfills as v0 with no agent_model."""
+    """Legacy-flat manifest at results/cloud/<run_id>/ is read for the copy."""
     runs, results = tree
-    run_id = "20260601t1100-claudes-slayer-bbbbbb"
+    run_id = "rid_legacy"
     p = _write_record(runs, "alien", "alien_2", run_id)
-    # ONLY the legacy-flat manifest exists.
-    flat = results / "cloud" / run_id / "manifest.json"
-    flat.parent.mkdir(parents=True, exist_ok=True)
-    flat.write_text(json.dumps({
-        "framework": "claude_sdk_v1", "agent_model": "zai/glm-5.2",
-        "query_mode": "slayer",
-    }))
+    _write_manifest(results, run_id, framework="claude_sdk_v1",
+                    agent_model="zai/glm-5.2", version="v3", legacy_flat=True)
     counters = backfill_run_versions.backfill(_BENCH, allow_gcs=False)
-    rec = _read(p)
-    assert rec["version"] == "v1"          # not the default v0
-    assert rec["agent_model"] == "zai/glm-5.2"
-    assert counters["no_manifest"] == 0    # found via the legacy-flat fallback
+    assert _read(p)["version"] == "v3"
+    assert counters["no_manifest"] == 0
 
 
-def test_backfill_override_without_manifest_still_v2(tree):
-    runs, _ = tree
-    p = _write_record(runs, "households", "households_1", _CEA364)
-    backfill_run_versions.backfill(_BENCH, allow_gcs=False)
-    assert _read(p)["version"] == "v2"     # override table keyed by run-id
-
-
-def test_backfill_preserves_existing_live_stamp(tree):
-    """A record already stamped v2/v3 by the live write path must NOT be
-    clobbered back to clean v0/v1 — backfill only fills a MISSING version."""
+def test_backfill_preserves_existing_stamp(tree):
+    """A record already carrying a version is never re-derived/clobbered."""
     runs, results = tree
-    run_id = "20260601t1200-claudes-slayer-cccccc"
+    run_id = "rid_pre"
     p = _write_record(runs, "alien", "alien_3", run_id,
                       version="v2", agent_model="anthropic/claude-opus-4-7")
-    # Manifest says framework=claude_sdk → clean resolution would be v0.
+    # Manifest disagrees (says v0) — must NOT override the producer literal.
     _write_manifest(results, run_id, framework="claude_sdk",
-                    agent_model="anthropic/claude-opus-4-7")
+                    agent_model="anthropic/claude-opus-4-7", version="v0")
     backfill_run_versions.backfill(_BENCH, allow_gcs=False)
-    assert _read(p)["version"] == "v2"   # preserved, not reverted to v0
+    assert _read(p)["version"] == "v2"
 
 
 def test_backfill_is_idempotent(tree):
     runs, results = tree
-    _write_record(runs, "alien", "alien_1",
-                  "20260601t1000-claudes-slayer-aaaaaa")
-    _write_manifest(results, "20260601t1000-claudes-slayer-aaaaaa",
-                    framework="claude_sdk", agent_model="anthropic/claude-opus-4-7")
+    _write_record(runs, "alien", "alien_1", "rid_i")
+    _write_manifest(results, "rid_i", framework="claude_sdk",
+                    agent_model="anthropic/claude-opus-4-7", version="v2")
     first = backfill_run_versions.backfill(_BENCH, allow_gcs=False)
     assert first["updated"] == 1
     second = backfill_run_versions.backfill(_BENCH, allow_gcs=False)
@@ -202,24 +181,19 @@ def test_backfill_is_idempotent(tree):
 
 def test_backfill_dry_run_writes_nothing(tree):
     runs, results = tree
-    p = _write_record(runs, "alien", "alien_1",
-                      "20260601t1000-claudes-slayer-aaaaaa")
-    _write_manifest(results, "20260601t1000-claudes-slayer-aaaaaa",
-                    framework="claude_sdk", agent_model="anthropic/claude-opus-4-7")
+    p = _write_record(runs, "alien", "alien_1", "rid_d")
+    _write_manifest(results, "rid_d", framework="claude_sdk",
+                    agent_model="anthropic/claude-opus-4-7", version="v2")
     counters = backfill_run_versions.backfill(_BENCH, allow_gcs=False,
                                               dry_run=True)
-    assert counters["updated"] == 1           # would-update count still reported
-    assert _read(p).get("version") is None    # but nothing written
-    assert "agent_model" not in _read(p) or _read(p)["agent_model"] is None
+    assert counters["updated"] == 1
+    assert _read(p).get("version") is None
 
 
 def test_backfill_agent_model_mismatch_flagged(tree):
     runs, results = tree
-    # record already carries a (stale) agent_model that disagrees with manifest
-    _write_record(runs, "alien", "alien_1",
-                  "20260601t1000-claudes-slayer-aaaaaa",
-                  agent_model="stale/model")
-    _write_manifest(results, "20260601t1000-claudes-slayer-aaaaaa",
-                    framework="claude_sdk", agent_model="anthropic/claude-opus-4-7")
+    _write_record(runs, "alien", "alien_1", "rid_m", agent_model="stale/model")
+    _write_manifest(results, "rid_m", framework="claude_sdk",
+                    agent_model="anthropic/claude-opus-4-7", version="v2")
     counters = backfill_run_versions.backfill(_BENCH, allow_gcs=False)
     assert counters["agent_model_mismatch"] == 1
