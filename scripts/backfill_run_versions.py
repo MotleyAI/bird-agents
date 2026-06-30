@@ -112,15 +112,16 @@ def backfill(
         # backfill) is authoritative and is left untouched.
         new_version = ann.version if ann.version is not None else manifest_version
 
-        # agent_model: manifest is authoritative; preserve the record's value
-        # when the manifest has none. Flag (but still record) a disagreement.
+        # agent_model: the record (producer-written) is authoritative; only
+        # fill it from the manifest when MISSING — same copy-not-clobber rule
+        # as version. Flag a disagreement but keep the record's own value.
         if manifest_model and ann.agent_model and ann.agent_model != manifest_model:
             counters["agent_model_mismatch"] += 1
             logger.warning(
-                "%s: record agent_model %r != manifest %r (using manifest)",
+                "%s: record agent_model %r != manifest %r (keeping record)",
                 path, ann.agent_model, manifest_model,
             )
-        new_model = manifest_model or ann.agent_model
+        new_model = ann.agent_model if ann.agent_model is not None else manifest_model
 
         changed = (ann.version != new_version) or (ann.agent_model != new_model)
         if not changed:
