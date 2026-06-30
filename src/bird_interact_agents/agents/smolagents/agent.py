@@ -90,6 +90,8 @@ class TaskState(BaseModel):
     status: SampleStatus
     data_path_base: str
     user_sim_model: str
+    # DEV-1613: agent model for the in-task N5 insufficient-task judge.
+    agent_model: str | None = None
     user_sim_prompt_version: str
     slayer_storage_dir: str = ""
     result: dict | None = None
@@ -390,6 +392,7 @@ class SmolagentsAgent:
             ),
             data_path_base=data_path_base,
             user_sim_model=user_sim_model,
+            agent_model=self.model_id,
             user_sim_prompt_version=user_sim_prompt_version,
             slayer_storage_dir=slayer_storage_dir,
         )

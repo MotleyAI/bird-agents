@@ -323,6 +323,8 @@ def _state_view() -> SimpleNamespace:
         status=d.get("status"),
         data_path_base=d.get("data_path_base"),
         user_sim_model=d.get("user_sim_model", "anthropic/claude-haiku-4-5-20251001"),
+        # DEV-1613: agent model for the in-task N5 insufficient-task judge.
+        agent_model=d.get("agent_model"),
         user_sim_prompt_version=d.get("user_sim_prompt_version", "v2"),
         slayer_storage_dir=d.get("slayer_storage_dir", ""),
         usage=d.get("usage") or TokenUsage(),

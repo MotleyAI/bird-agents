@@ -1008,6 +1008,10 @@ def _run_one_in_actor(
             harness_passed=row.get("phase1_passed") is True,
             predicted_result=_decode_result_json(row.get("predicted_result_json")),
             gold_result=_decode_result_json(row.get("gold_result_json")),
+            # DEV-1613: build the N5 insufficient-task judge from the run's
+            # agent_model so the cloud inline grader fires it (it never did
+            # before — l6_llm_judge was 0 across the whole cohort).
+            agent_model=cfg.get("agent_model"),
         )
         _gcs.write_submission_annotation(
             run_id, iid, json.loads(ann_path.read_text()),

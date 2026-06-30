@@ -44,9 +44,33 @@ from bird_interact_agents.eval.implicit_annotation import (
 )
 from bird_interact_agents.eval.tolerant_grader import (
     CascadeVerdict,
+    LiteLLMJudge,
     grade_submission,
     make_executor,
 )
+
+
+def build_inline_judge(agent_model: Optional[str]) -> Optional[LiteLLMJudge]:
+    """DEV-1613: construct the N5 LLM judge for the cloud + local inline
+    graders from the run's ``agent_model``.
+
+    Returns a BARE :class:`LiteLLMJudge` (no on-disk cache — the cloud
+    worker has no stable per-run cache dir; each task is graded inline
+    once). ``regrade.py`` keeps its own ``CachedLLMJudge`` for the offline
+    re-grade path. Returns ``None`` for a falsy model so callers fall back
+    to deterministic-only grading (no judge).
+    """
+    if not agent_model:
+        return None
+    return LiteLLMJudge(model=agent_model)
+
+
+def _is_insufficient(task_annotation: TaskAnnotation) -> bool:
+    """True when the task is annotated ``metadata_sufficiency.verdict ==
+    'insufficient'`` — i.e. the N5 judge tier is in play. Defensive against
+    partially-built annotations."""
+    ms = getattr(task_annotation, "metadata_sufficiency", None)
+    return getattr(ms, "verdict", None) == "insufficient"
 
 
 def _resolve_default_user_sim(
@@ -836,6 +860,8 @@ def grade_one_submission(
     harness_passed: Optional[bool] = None,
     predicted_result: Optional[List[Any]] = None,
     gold_result: Optional[List[Any]] = None,
+    agent_model: Optional[str] = None,
+    llm_judge: Any = None,
 ) -> Path:
     """Inline-grade one submission and write the per-row
     ``submission_annotation.json``. Idempotent at the per-(task, run)
@@ -865,6 +891,11 @@ def grade_one_submission(
             amb_user_query=task_data.get("amb_user_query", ""),
         )
 
+    # DEV-1613: build the N5 judge from the run's agent_model unless the
+    # caller passed one explicitly (regrade passes its own CachedLLMJudge).
+    if llm_judge is None:
+        llm_judge = build_inline_judge(agent_model)
+
     # Harness short-circuit: the upstream harness is authoritative for
     # phase1_passed=True (it normalises floats to 2dp before comparison;
     # re-running here with epsilon=1e-6 would disagree on float-heavy
@@ -872,8 +903,20 @@ def grade_one_submission(
     # original was annotated as wrong, the harness may have compared
     # against audited gold; we must fall through to full grading so the
     # cascade tiers are computed correctly.
+    #
+    # DEV-1613: ALSO never short-circuit an ``insufficient`` task. The
+    # in-task judge can flip phase1_passed=True for a judge-accepted
+    # defensible reading; if we trusted that here we'd write a
+    # harness-confirmed "correct" annotation and skip the cascade — losing
+    # the N5/``novel_reading_judgment`` signal and the
+    # ``valid_interpretation`` verdict. Falling through runs the cascade
+    # (incl. the judge) so the annotation is authoritative.
     _orig_correct = getattr(task_annotation, "original_gold_is_correct", None)
-    if harness_passed is True and _orig_correct is not False:
+    if (
+        harness_passed is True
+        and _orig_correct is not False
+        and not _is_insufficient(task_annotation)
+    ):
         return _write_harness_confirmed_annotation(
             rows_dir=Path(rows_dir),
             instance_id=instance_id,
@@ -921,6 +964,7 @@ def grade_one_submission(
         user_sim_interaction=user_sim_interaction,
         config=config,
         autopsy_result=autopsy_result,
+        llm_judge=llm_judge,
         # DEV-1550 round-2 (Codex): order-sensitive tasks carry
         # `conditions={"order": True}`. Without this forward, the new
         # ex_base N1 path would silently grade them as set-dedup.

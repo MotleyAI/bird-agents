@@ -42,8 +42,23 @@ from bird_interact_agents.harness import (
     update_budget,
 )
 from bird_interact_agents.usage import acompletion_tracked
+from bird_interact_agents.eval.grade_in_place import (
+    load_audited_gold_rows_for,
+    load_task_annotation_or_implicit,
+)
+from bird_interact_agents.eval.tolerant_grader import (
+    LiteLLMJudge,
+    clean_sqls_like_ex_base,
+    preprocess_rows_like_ex_base,
+    run_novel_reading_judge,
+)
 
 logger = logging.getLogger(__name__)
+
+# DEV-1613: rows shown to the N5 judge as informational context, matching
+# the final cascade's ``pred_rows[:20]`` so in-task and final judge prompts
+# agree.
+_JUDGE_PREDICTED_ROWS_HEAD = 20
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +364,160 @@ def run_env_action(
     return str(observation) + _budget_note(state)
 
 
+def _fetch_head_rows(
+    sql: str,
+    *,
+    data_path_base: str,
+    db_name: str,
+    db_file_path: str | None = None,
+    benchmark: Any = None,
+    limit: int = _JUDGE_PREDICTED_ROWS_HEAD,
+) -> list:
+    """Best-effort read-only fetch of up to ``limit`` predicted rows for the
+    N5 judge prompt (DEV-1613).
+
+    Mirrors ``_dry_run_sql``'s connection logic but returns the first
+    ``limit`` rows so the in-task judge sees the same ``pred_rows[:20]``
+    informational context the final cascade does. Returns ``[]`` on any
+    error / missing DB — the rows are context only, never load-bearing for
+    the verdict."""
+    if not sql or not sql.strip():
+        return []
+    try:
+        if getattr(benchmark, "db_backend", "sqlite") == "postgres":
+            with make_db_connection(
+                db_name, benchmark=benchmark, read_only=True,
+            ) as conn:
+                # DbConnection.execute returns ``(rows, column_names)`` — a
+                # tuple, NOT a cursor — for both sqlite and postgres.
+                rows, _cols = conn.execute(sql)
+                return [tuple(r) for r in list(rows)[:limit]]
+        # SQLite — prefer the template (canonical reset state) if present.
+        if db_file_path:
+            db_path = db_file_path
+        else:
+            template = os.path.join(
+                data_path_base, db_name, f"{db_name}_template.sqlite",
+            )
+            db_path = template if os.path.exists(template) else os.path.join(
+                data_path_base, db_name, f"{db_name}.sqlite",
+            )
+        if not os.path.exists(db_path):
+            return []
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
+        try:
+            cur = conn.cursor()
+            cur.execute(sql)
+            return [tuple(r) for r in cur.fetchmany(limit)]
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _maybe_apply_intask_judge(
+    state: Any,
+    sql: str,
+    *,
+    observation: Any,
+    reward: Any,
+    p1: bool,
+    finished: bool,
+):
+    """DEV-1613: run the N5 insufficient-task judge for the in-task submit
+    feedback so the agent gets, mid-run, the same verdict final scoring
+    will give (in-task↔final parity, judge included).
+
+    Fires ONLY when the deterministic eval missed (``p1`` False), the run
+    carries an ``agent_model`` on the state, and the task is annotated
+    ``insufficient`` with an ``evaluator_prompt``. On a judge accept the
+    agent-facing boolean flips to a pass (``Result match: True`` /
+    reward 1.0 / finished) — which flows to ``state.result['phase1_passed']``
+    consistently. The post-run cascade re-derives the authoritative
+    ``valid_interpretation`` verdict (the harness short-circuit is exempted
+    for insufficient tasks). Reject / inconclusive leaves the miss as-is.
+
+    Returns the (possibly updated) ``(observation, reward, p1, finished)``.
+    The verdict gate runs BEFORE any judge construction / row fetch so
+    sufficient-task submits pay nothing."""
+    if p1:
+        return observation, reward, p1, finished
+    agent_model = getattr(state, "agent_model", None)
+    if not agent_model:
+        return observation, reward, p1, finished
+    od = getattr(state.status, "original_data", {}) or {}
+    instance_id = od.get("instance_id") or ""
+    db = od.get("selected_database") or ""
+    benchmark = od.get("dataset") or ""
+    if not (instance_id and db and benchmark):
+        return observation, reward, p1, finished
+    try:
+        ann = load_task_annotation_or_implicit(
+            instance_id=instance_id,
+            selected_database=db,
+            benchmark=benchmark,
+            amb_user_query=od.get("amb_user_query", ""),
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "in-task judge: failed to load annotation for %s", instance_id,
+        )
+        return observation, reward, p1, finished
+    ms = getattr(ann, "metadata_sufficiency", None)
+    if getattr(ms, "verdict", None) != "insufficient" or ann.evaluator_prompt is None:
+        return observation, reward, p1, finished
+
+    benchmark_obj = None
+    try:
+        benchmark_obj = _get_benchmark(benchmark)
+    except ValueError:
+        pass
+    # DEV-1613 (Codex r2/r3): reproduce the final cascade's N5 predicted-rows
+    # exactly — CLEAN the SQL like ex_base (strip ROUND(...) etc.) before
+    # executing, then NORMALIZE the fetched rows (2dp float / date / dict
+    # canonicalisation). Mirrors grade_submission's pred_rows pipeline
+    # (`_clean` → executor → `_norm`), so the in-task and final N5 prompts'
+    # predicted-rows blocks agree. The judge is still shown the RAW
+    # ``submitted_sql`` (both paths do). Best-effort: rows are informational,
+    # never block the judge on cleaning/normalization failures.
+    bench_name = getattr(benchmark_obj, "name", None) or benchmark
+    try:
+        _cleaned = list(clean_sqls_like_ex_base(bench_name, [sql]))
+        exec_sql = _cleaned[0] if _cleaned else sql
+    except Exception:  # noqa: BLE001
+        exec_sql = sql
+    head_rows = _fetch_head_rows(
+        exec_sql,
+        data_path_base=state.data_path_base,
+        db_name=db,
+        db_file_path=od.get("db_file_path"),
+        benchmark=benchmark_obj,
+    )
+    try:
+        head_rows = list(preprocess_rows_like_ex_base(bench_name, head_rows))
+    except Exception:  # noqa: BLE001
+        # Best-effort: keep the (raw) rows and proceed, but log so a parity
+        # divergence between the in-task and final judge prompts is diagnosable.
+        logger.exception(
+            "in-task judge: failed to normalize predicted rows for %s",
+            instance_id,
+        )
+    audited = load_audited_gold_rows_for(benchmark=benchmark, instance_id=instance_id)
+    judge = LiteLLMJudge(model=agent_model)
+    accepted = run_novel_reading_judge(
+        task_annotation=ann,
+        audited_gold_rows=audited,
+        submitted_sql=sql,
+        predicted_rows_head=head_rows,
+        llm_judge=judge,
+    )
+    if accepted is True:
+        # A phase-1 pass finishes the task for both one-shot and
+        # interactive benchmarks (mini-interact has no phase 2).
+        return "Submitted. Result match: True", 1.0, True, True
+    return observation, reward, p1, finished
+
+
 def _dispatch_eval(state: Any, sql: str):
     """Run the submission evaluator and return
     ``(observation, reward, p1, p2, finished, audited_passes, original_passes,
@@ -368,9 +537,14 @@ def _dispatch_eval(state: Any, sql: str):
     """
     original_sol_sql = state.status.original_data.get("original_sol_sql")
     if not original_sol_sql:
-        # Single-eval path — current behavior, unchanged.
+        # Single-eval path — current behavior, plus the DEV-1613 in-task
+        # insufficient-task judge applied to the deterministic miss.
         observation, reward, p1, p2, finished = execute_submit_action(
             sql, state.status, state.data_path_base,
+        )
+        observation, reward, p1, finished = _maybe_apply_intask_judge(
+            state, sql, observation=observation, reward=reward,
+            p1=p1, finished=finished,
         )
         return (observation, reward, p1, p2, finished,
                 None, None, None, None, None)
@@ -418,15 +592,23 @@ def _dispatch_eval(state: Any, sql: str):
                 "observation": best_obs,
             }
 
+    # DEV-1613: apply the in-task insufficient-task judge to the agent-facing
+    # audited result. The diagnostic audited/original columns (positions
+    # 6/8/9) stay DETERMINISTIC so offline analysis can still see "strict
+    # miss, judge-accepted"; only the agent-visible verdict is flipped.
+    agent_obs, agent_reward, agent_p1, agent_finished = _maybe_apply_intask_judge(
+        state, sql, observation=aud["observation"], reward=aud["reward"],
+        p1=aud["p1"], finished=aud["finished"],
+    )
     return (
-        aud["observation"],
-        aud["reward"],
-        aud["p1"],
+        agent_obs,
+        agent_reward,
+        agent_p1,
         aud["p2"],
         # `finished` comes from upstream verbatim — for mini-interact
         # (no phase 2) a phase-1 pass returns finished=True even when
         # p2=False, and we must preserve that for downstream consumers.
-        aud["finished"],
+        agent_finished,
         aud["p1"],
         orig["p1"],
         aud["observation"],
