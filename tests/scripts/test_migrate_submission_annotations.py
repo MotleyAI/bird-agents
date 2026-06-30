@@ -138,3 +138,24 @@ def test_write_failure_is_not_masked(roots, monkeypatch):
     dest = runs_root / "mini-interact" / "alien" / "alien_1" / "r1.json"
     # The failed write must NOT have been masked by a raw copy.
     assert not dest.exists()
+
+
+def test_raw_copy_write_failure_continues(roots, monkeypatch):
+    """An IO failure during the LEGACY raw-copy path (record fails
+    model_validate) increments errors and continues rather than aborting the
+    whole loop — the error-continue contract applies to the raw copy too."""
+    ann_root, runs_root, _results = roots
+    # A genuine legacy record (fails model_validate) → enters the raw-copy path.
+    _write_source(ann_root, content={"kind": "submission_annotation",
+                                     "totally": "legacy"})
+
+    def _boom(self, *a, **k):
+        # Only the destination raw-copy write fails; reads use read_text.
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "write_text", _boom)
+
+    rc = migrate.main([])  # write_text restored by monkeypatch teardown
+    assert rc == 1
+    dest = runs_root / "mini-interact" / "alien" / "alien_1" / "r1.json"
+    assert not dest.exists()
