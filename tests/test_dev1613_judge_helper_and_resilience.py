@@ -108,6 +108,24 @@ def test_helper_swallows_judge_exception_to_none():
     assert out is None  # never raises; falls through to deterministic tiers
 
 
+def test_helper_returns_none_on_partial_annotation_without_crashing():
+    """A malformed/partial annotation (no metadata_sufficiency) must fall
+    through to None, not raise — the judge path is required to be resilient."""
+    from bird_interact_agents.eval.tolerant_grader import run_novel_reading_judge
+
+    class _Partial:
+        metadata_sufficiency = None
+        evaluator_prompt = None
+
+    judge = _RecordingJudge(accept=True)
+    out = run_novel_reading_judge(
+        task_annotation=_Partial(), audited_gold_rows=[], submitted_sql="S",
+        predicted_rows_head=[], llm_judge=judge,
+    )
+    assert out is None
+    assert judge.calls == []
+
+
 def test_helper_forwards_predicted_rows_to_judge():
     from bird_interact_agents.eval.tolerant_grader import run_novel_reading_judge
 

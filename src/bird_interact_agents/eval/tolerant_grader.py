@@ -967,10 +967,14 @@ def run_novel_reading_judge(
     in-task ``submit``-feedback grader so the two agree on the same gate
     and judge-arg construction.
     """
+    # Gate defensively: a partial/malformed annotation must fall through to
+    # ``None`` (deterministic verdict), never crash grading (the judge path
+    # is required to be resilient).
+    metadata_sufficiency = getattr(task_annotation, "metadata_sufficiency", None)
     if (
         llm_judge is None
-        or task_annotation.metadata_sufficiency.verdict != "insufficient"
-        or task_annotation.evaluator_prompt is None
+        or getattr(metadata_sufficiency, "verdict", None) != "insufficient"
+        or getattr(task_annotation, "evaluator_prompt", None) is None
     ):
         return None
     try:
