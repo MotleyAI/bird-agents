@@ -512,6 +512,21 @@ def test_non_sdk_trajectory_with_agent_breakdown_is_not_derived():
     assert row["n_agent_turns"] == 0
 
 
+def test_discovery_only_crash_derives_from_breakdown_when_main_empty():
+    """Codex edge: a crash AFTER discovery ran but BEFORE any main
+    AssistantMessage was recorded leaves the main trajectory empty
+    (traj_turns==0). The v1 adapter still set a positive n_discovery_turns and
+    the discovery turns are in the agent-scope breakdown — n_agent_turns must
+    include them (the 'headline includes discovery' contract), not stay at 0."""
+    trajectory = [{"type": "SystemMessage", "data": {}}]  # no AssistantMessage
+    usage = {"breakdown": [_agent_row(2)], "n_discovery_turns": 2}
+    row = finalize_result_row(
+        _row(trajectory=trajectory, usage=usage),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["n_agent_turns"] == 2
+
+
 def test_falls_back_to_trajectory_when_no_agent_scope_row():
     """A claude_sdk-shaped trajectory whose usage carries only a user_sim row
     (agent usage not committed) falls back to the trajectory count."""

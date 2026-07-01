@@ -1239,7 +1239,11 @@ def finalize_result_row(
             # traj_turns>0 so non-SDK adapters (agno/smolagents) that also
             # write scope="agent" usage but emit no AssistantMessage entries
             # keep their trajectory-derived count (0), never the breakdown sum.
-            if traj_turns > 0:
+            # A positive n_discovery_turns is an equally decisive claude_sdk
+            # signal (only the v1 adapters set it): it keeps the headline
+            # inclusive of discovery even when a crash after some ask_discovery
+            # calls left the MAIN trajectory empty (0 AssistantMessage entries).
+            if traj_turns > 0 or (_usage.get("n_discovery_turns") or 0) > 0:
                 agent_calls = sum(
                     int(r.get("n_calls") or 0)
                     for r in (_usage.get("breakdown") or [])

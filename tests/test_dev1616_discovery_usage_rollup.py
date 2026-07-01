@@ -247,7 +247,7 @@ async def test_rollup_includes_discovery_turns_tokens_and_calls(monkeypatch):
     """Two discovery asks (1 turn each) + one main turn: the rollup reports 2
     discovery turns/calls, the agent breakdown n_calls == main + discovery, and
     discovery TOKENS are summed (per-ask, NOT cumulative) into the total."""
-    accum, trajectory, rollup, disc = await _drive(
+    accum, _trajectory, rollup, disc = await _drive(
         monkeypatch,
         discovery_scripts=[
             [_AssistantMessage(_usage(100, 5), "a"), _ResultMessage(_usage(100, 5))],
