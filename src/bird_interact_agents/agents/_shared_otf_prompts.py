@@ -651,11 +651,12 @@ identifiers):
      sampled values (check via `inspect_model`), do not write that
      predicate.
    - Symmetric companion: if the column's `Sample values` show variants
-     of the KB-named literals — case differences, internal whitespace,
-     abbreviations (`apt` for `Apartment`, `Y` for `yes`), or alternate
-     phrasings of the same concept (`brick house` vs `brickwork house`,
-     `2014+` / `after 2014` for `2014 or newer`) — NORMALISE and EXTEND
-     the IN-set to include those variants. KB hedges ("etc.", "like",
+     of the KB-named literals that case/whitespace normalisation CANNOT
+     unify — abbreviations (`apt` for `Apartment`, `Y` for `yes`), or
+     alternate phrasings of the same concept (`brick house` vs `brickwork
+     house`, `2014+` / `after 2014` for `2014 or newer`) — EXTEND
+     the IN-set to include those variants (pure case / whitespace
+     variation is handled by the filter-literals rule's `LOWER(TRIM)`). KB hedges ("etc.", "like",
      "include") and the schema author's `Ex.` enumerations are
      deliberately non-exhaustive; the `Sample values` line is the
      authoritative inventory of what's actually present in the column.
@@ -1048,11 +1049,12 @@ identifiers):
      sampled values (check via `inspect_model`), do not write that
      predicate.
    - Symmetric companion: if the column's `Sample values` show variants
-     of the KB-named literals — case differences, internal whitespace,
-     abbreviations (`apt` for `Apartment`, `Y` for `yes`), or alternate
-     phrasings of the same concept (`brick house` vs `brickwork house`,
-     `2014+` / `after 2014` for `2014 or newer`) — NORMALISE and EXTEND
-     the IN-set to include those variants. KB hedges ("etc.", "like",
+     of the KB-named literals that case/whitespace normalisation CANNOT
+     unify — abbreviations (`apt` for `Apartment`, `Y` for `yes`), or
+     alternate phrasings of the same concept (`brick house` vs `brickwork
+     house`, `2014+` / `after 2014` for `2014 or newer`) — EXTEND
+     the IN-set to include those variants (pure case / whitespace
+     variation is handled by the filter-literals rule's `LOWER(TRIM)`). KB hedges ("etc.", "like",
      "include") and the schema author's `Ex.` enumerations are
      deliberately non-exhaustive; the `Sample values` line is the
      authoritative inventory of what's actually present in the column.
@@ -1403,11 +1405,12 @@ QUERY DISCIPLINE:
      the column's sampled values (check via `get_column_meaning`), do
      not write that predicate.
    - Symmetric companion: if the column's `Sample values` show variants
-     of the knowledge-cited literals — case differences, internal
-     whitespace, abbreviations (`apt` for `Apartment`, `Y` for `yes`),
+     of the knowledge-cited literals that case/whitespace normalisation
+     CANNOT unify — abbreviations (`apt` for `Apartment`, `Y` for `yes`),
      or alternate phrasings of the same concept (`brick house` vs
      `brickwork house`, `2014+` / `after 2014` for `2014 or newer`) —
-     NORMALISE and EXTEND the IN-set to include those variants. Knowledge
+     EXTEND the IN-set to include those variants (pure case / whitespace
+     variation is handled by the filter-literals rule's `LOWER(TRIM)`). Knowledge
      definition hedges ("etc.", "like", "include") and `Ex.` enumerations
      are deliberately non-exhaustive; the `Sample values` line is the
      authoritative inventory of what's actually present in the column.
@@ -1537,11 +1540,12 @@ QUERY DISCIPLINE:
      the column's sampled values (check via `get_column_meaning`), do
      not write that predicate.
    - Symmetric companion: if the column's `Sample values` show variants
-     of the knowledge-cited literals — case differences, internal
-     whitespace, abbreviations (`apt` for `Apartment`, `Y` for `yes`),
+     of the knowledge-cited literals that case/whitespace normalisation
+     CANNOT unify — abbreviations (`apt` for `Apartment`, `Y` for `yes`),
      or alternate phrasings of the same concept (`brick house` vs
      `brickwork house`, `2014+` / `after 2014` for `2014 or newer`) —
-     NORMALISE and EXTEND the IN-set to include those variants. Knowledge
+     EXTEND the IN-set to include those variants (pure case / whitespace
+     variation is handled by the filter-literals rule's `LOWER(TRIM)`). Knowledge
      definition hedges ("etc.", "like", "include") and `Ex.` enumerations
      are deliberately non-exhaustive; the `Sample values` line is the
      authoritative inventory of what's actually present in the column.
