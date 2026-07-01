@@ -623,6 +623,119 @@ async def test_run_task_captures_usage(monkeypatch, tmp_path):
     assert rebuilt.cache_read_tokens == 5
 
 
+def _shared_turn_msgs():
+    """4 AssistantMessage events spanning 2 dedup'd TURNS (each turn = 2
+    content blocks sharing ONE usage object, mirroring the live SDK)."""
+    from types import SimpleNamespace
+
+    class _AM:
+        def __init__(self, usage):
+            self.usage = usage
+
+    _AM.__name__ = "AssistantMessage"
+    u1 = SimpleNamespace(
+        input_tokens=10, output_tokens=2,
+        cache_read_input_tokens=0, cache_creation_input_tokens=0,
+    )
+    u2 = SimpleNamespace(
+        input_tokens=20, output_tokens=3,
+        cache_read_input_tokens=0, cache_creation_input_tokens=0,
+    )
+    return [_AM(u1), _AM(u1), _AM(u2), _AM(u2)]
+
+
+@pytest.mark.asyncio
+async def test_run_task_n_agent_turns_counts_turns_not_blocks(monkeypatch, tmp_path):
+    """DEV-1616: the finalized row's n_agent_turns is the dedup'd TURN count
+    (2), not the block count (4 AssistantMessage events), and it carries the
+    n_discovery_turns field (0 with no discovery call in this stub)."""
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
+
+    _stub_env(monkeypatch, m, tmp_path / "store", messages=_shared_turn_msgs())
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert row["n_agent_turns"] == 2
+    assert row["usage"]["n_agent_turns"] == 2
+    assert row["usage"]["n_discovery_turns"] == 0
+
+
+def _fake_rmwd_factory(*, raise_after: bool):
+    """A stand-in for run_main_with_discovery that commits 1 MAIN turn + 2
+    DISCOVERY agent-scope calls into the shared accum and sets the rollup —
+    so the test can prove the agent passes DiscoveryRollup through and
+    surfaces its positive value on both the success and exception usage sites.
+    """
+    from types import SimpleNamespace
+
+    class _AM:
+        def __init__(self, usage):
+            self.usage = usage
+
+    _AM.__name__ = "AssistantMessage"
+
+    async def _fake(*, accum, usage_tracker, trajectory, discovery_rollup,
+                    model, **kw):
+        u = SimpleNamespace(
+            input_tokens=10, output_tokens=2,
+            cache_read_input_tokens=0, cache_creation_input_tokens=0,
+        )
+        usage_tracker.observe(_AM(u))                       # 1 main turn
+        accum.add_call(scope="agent", model=model, prompt=100, completion=5)
+        accum.add_call(scope="agent", model=model, prompt=200, completion=7)
+        discovery_rollup.n_discovery_turns = 2
+        discovery_rollup.n_discovery_calls = 2
+        trajectory.append({"type": "AssistantMessage", "data": {}})
+        if raise_after:
+            raise RuntimeError("boom-after-discovery")
+
+    return _fake
+
+
+@pytest.mark.asyncio
+async def test_run_task_surfaces_positive_discovery_rollup_success(
+    monkeypatch, tmp_path,
+):
+    """DEV-1616 wiring: the agent creates a DiscoveryRollup, passes it to
+    run_main_with_discovery, and writes its value into usage on the SUCCESS
+    path. n_agent_turns (from the breakdown) = main(1) + discovery(2)."""
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
+
+    _stub_env(monkeypatch, m, tmp_path / "store")
+    monkeypatch.setattr(m, "run_main_with_discovery",
+                        _fake_rmwd_factory(raise_after=False))
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert row["error"] is None
+    assert row["usage"]["n_discovery_turns"] == 2
+    assert row["n_agent_turns"] == 3
+    assert row["usage"]["n_agent_turns"] == 3
+
+
+@pytest.mark.asyncio
+async def test_run_task_surfaces_positive_discovery_rollup_on_exception(
+    monkeypatch, tmp_path,
+):
+    """The rollup is updated in run_main_with_discovery's finally, so even when
+    the main loop raises AFTER discovery ran, the EXCEPTION usage site still
+    reports the discovery turns (no silent under-report on the crash path)."""
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as m
+
+    _stub_env(monkeypatch, m, tmp_path / "store")
+    monkeypatch.setattr(m, "run_main_with_discovery",
+                        _fake_rmwd_factory(raise_after=True))
+    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
+    )
+    assert "boom-after-discovery" in (row.get("error") or "")
+    assert row["usage"]["n_discovery_turns"] == 2
+    assert row["n_agent_turns"] == 3
+
+
 # ---------------------------------------------------------------------------
 # Import isolation (Codex): no pydantic_ai ADAPTER package pulled in
 # ---------------------------------------------------------------------------
