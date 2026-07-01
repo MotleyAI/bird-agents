@@ -1438,7 +1438,8 @@ def list_runs() -> list[dict]:
     for rid in sorted(seen):
         try:
             mf = gcs.read_manifest(rid, client=client)
-        except Exception:  # noqa: BLE001 — skip runs whose manifest is missing/corrupt
+        except Exception as exc:  # noqa: BLE001 — skip runs whose manifest is missing/corrupt
+            logger.debug("Skipping run %s: manifest unreadable (%s)", rid, exc)
             continue
         out.append(_run_row(rid, client=client, manifest=mf))
     return out
