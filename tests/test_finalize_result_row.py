@@ -165,9 +165,12 @@ def test_initialises_usage_when_row_has_no_usage_field():
         deleted_kb_ids=[], slayer_storage_dir="",
     )
     # n_agent_turns mirrors in (computed as 0 from empty trajectory),
-    # n_ask_user_calls defaults to 0. No SDK metadata (no ResultMessage)
-    # and no tool_call_stats (empty trajectory fails the discriminator).
-    assert row["usage"] == {"n_agent_turns": 0, "n_ask_user_calls": 0}
+    # n_ask_user_calls + n_discovery_turns default to 0. No SDK metadata
+    # (no ResultMessage) and no tool_call_stats (empty trajectory fails
+    # the discriminator).
+    assert row["usage"] == {
+        "n_agent_turns": 0, "n_ask_user_calls": 0, "n_discovery_turns": 0,
+    }
 
 
 def test_replaces_non_dict_usage_with_initialised_dict():
@@ -178,7 +181,9 @@ def test_replaces_non_dict_usage_with_initialised_dict():
         _row(trajectory=[], usage=None),
         deleted_kb_ids=[], slayer_storage_dir="",
     )
-    assert row["usage"] == {"n_agent_turns": 0, "n_ask_user_calls": 0}
+    assert row["usage"] == {
+        "n_agent_turns": 0, "n_ask_user_calls": 0, "n_discovery_turns": 0,
+    }
 
 
 def test_backfills_predicted_row_count_from_snapshot_dict():
@@ -442,3 +447,111 @@ def test_n_agent_turns_mirror_does_not_clobber_explicit_usage_value():
         deleted_kb_ids=[], slayer_storage_dir="/data/x",
     )
     assert row2["variant_storage_path"] is None
+
+
+# ---------------------------------------------------------------------------
+# DEV-1616 — n_agent_turns is the dedup'd tracker turn count (from the
+# usage.breakdown agent-scope rows) for claude_sdk-shaped rows, so it
+# includes the warm-discovery sub-agent's turns AND is a TURN count (not a
+# block count). Plus the n_discovery_turns default.
+# ---------------------------------------------------------------------------
+
+
+def _agent_row(n_calls: int, model: str = "anthropic/claude-opus-4-7") -> dict:
+    return {
+        "name": f"agent::{model}", "scope": "agent", "model": model,
+        "n_calls": n_calls,
+    }
+
+
+def _user_sim_row(n_calls: int) -> dict:
+    return {
+        "name": "user_sim::u", "scope": "user_sim", "model": "u",
+        "n_calls": n_calls,
+    }
+
+
+def test_prefers_agent_breakdown_sum_over_trajectory_block_count():
+    """Live SDK emits one AssistantMessage per content BLOCK — the trajectory
+    holds 4 here, but the agent breakdown row's n_calls (2) is the dedup'd
+    TURN count and must win. This also folds in discovery turns, since the
+    discovery per-ask trackers commit into the same agent-scope row."""
+    trajectory = [{"type": "AssistantMessage", "data": {}} for _ in range(4)]
+    usage = {"breakdown": [_agent_row(2), _user_sim_row(5)]}
+    row = finalize_result_row(
+        _row(trajectory=trajectory, usage=usage),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["n_agent_turns"] == 2
+    assert row["usage"]["n_agent_turns"] == 2
+
+
+def test_sums_multiple_agent_scope_breakdown_rows():
+    """Defensive: if discovery ever ran under a different model, both
+    agent-scope rows still sum into the headline turn count."""
+    trajectory = [{"type": "AssistantMessage", "data": {}}]
+    usage = {"breakdown": [_agent_row(3, "m1"), _agent_row(4, "m2")]}
+    row = finalize_result_row(
+        _row(trajectory=trajectory, usage=usage),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["n_agent_turns"] == 7
+
+
+def test_non_sdk_trajectory_with_agent_breakdown_is_not_derived():
+    """REGRESSION (Codex HIGH): agno / smolagents also write scope=="agent"
+    usage rows but leave n_agent_turns unset and produce a NON-SDK trajectory
+    (no AssistantMessage entries). The breakdown-sum must NOT hijack their
+    count — they stay at the trajectory-derived 0, never the agent row's 9."""
+    trajectory = [{"final_output": "some tool summary"}]  # agno/smolagents shape
+    usage = {"breakdown": [_agent_row(9)]}
+    row = finalize_result_row(
+        _row(trajectory=trajectory, usage=usage),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["n_agent_turns"] == 0
+
+
+def test_falls_back_to_trajectory_when_no_agent_scope_row():
+    """A claude_sdk-shaped trajectory whose usage carries only a user_sim row
+    (agent usage not committed) falls back to the trajectory count."""
+    trajectory = [
+        {"type": "AssistantMessage", "data": {}},
+        {"type": "AssistantMessage", "data": {}},
+    ]
+    usage = {"breakdown": [_user_sim_row(5)]}
+    row = finalize_result_row(
+        _row(trajectory=trajectory, usage=usage),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["n_agent_turns"] == 2
+
+
+def test_explicit_n_agent_turns_still_wins_over_breakdown():
+    """pydantic_ai* set n_agent_turns explicitly — the breakdown derivation
+    must not clobber it (same None-guard as the legacy backfill)."""
+    trajectory = [{"type": "AssistantMessage", "data": {}}]
+    usage = {"breakdown": [_agent_row(2)]}
+    row = finalize_result_row(
+        _row(trajectory=trajectory, usage=usage, n_agent_turns=42),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["n_agent_turns"] == 42
+
+
+def test_n_discovery_turns_defaults_to_zero():
+    row = finalize_result_row(
+        _row(trajectory=[], usage={"prompt_tokens": 100}),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["usage"]["n_discovery_turns"] == 0
+
+
+def test_preserves_explicit_n_discovery_turns():
+    """The v1 two-stage adapters set usage['n_discovery_turns'] from the
+    DiscoveryRollup — the chokepoint default must not clobber it."""
+    row = finalize_result_row(
+        _row(trajectory=[], usage={"n_discovery_turns": 4}),
+        deleted_kb_ids=[], slayer_storage_dir="",
+    )
+    assert row["usage"]["n_discovery_turns"] == 4

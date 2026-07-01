@@ -92,19 +92,29 @@ class FakeDiscoveryClient:
 
 class FakeTracker:
     """Records that a fresh tracker was finalised per stream, summing tokens
-    into a shared accumulator dict so the test can assert total usage."""
+    into a shared accumulator dict so the test can assert total usage.
+
+    DEV-1616: also exposes ``committed_n_calls`` (the turn count the real
+    ``SdkUsageTracker`` contributes to the breakdown on finalize) so the
+    channel's ``turns`` rollup can sum it — here one ``_Assistant`` observed
+    counts as one turn."""
 
     def __init__(self, accum: dict, model: str):
         self._accum = accum
         self._model = model
         self._seen = 0
+        self._turns = 0
+        self.committed_n_calls = 0
         self.finalized = 0
 
     def observe(self, msg) -> None:
         self._seen += getattr(msg, "usage_tokens", 0)
+        if hasattr(msg, "content"):  # an _Assistant (a "turn"); _Result has none
+            self._turns += 1
 
     def finalize(self) -> None:
         self.finalized += 1
+        self.committed_n_calls = self._turns
         self._accum["tokens"] = self._accum.get("tokens", 0) + self._seen
         self._accum["streams"] = self._accum.get("streams", 0) + 1
 
@@ -261,6 +271,82 @@ async def test_error_does_not_consume_a_cap_slot_inconsistently():
     await ch.ask("q1")
     out = await ch.ask("q2")
     assert "ok" in out
+
+
+# --------------------------------------------------------------------------
+# DEV-1616 — turn rollup: channel.turns sums each ask's committed turn count
+# so the caller can report n_discovery_turns.
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_turns_accumulate_across_asks():
+    client = FakeDiscoveryClient(
+        [[_Assistant("a"), _Assistant("b"), _Result()],  # 2 turns
+         [_Assistant("c"), _Result()]]                    # 1 turn
+    )
+    ch = _make_channel(client, {})
+    await ch.ask("q1")
+    await ch.ask("q2")
+    assert ch.turns == 3
+
+
+@pytest.mark.asyncio
+async def test_capped_ask_adds_no_turns():
+    client = FakeDiscoveryClient([[_Assistant("a"), _Result()]])
+    ch = _make_channel(client, {}, max_calls=1)
+    await ch.ask("q0")   # 1 turn
+    await ch.ask("q1")   # capped → no client call, no tracker, no turns
+    assert ch.turns == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_ask_counts_partial_turns():
+    """A stream that yields one turn then raises still contributes that turn's
+    count (its tokens are already committed by the fresh tracker's finalize)."""
+    client = FakeDiscoveryClient([[_Assistant("a"), RuntimeError("boom")]])
+    ch = _make_channel(client, {})
+    await ch.ask("q")
+    assert ch.turns == 1
+
+
+@pytest.mark.asyncio
+async def test_turns_start_at_zero():
+    ch = _make_channel(FakeDiscoveryClient([]), {})
+    assert ch.turns == 0
+
+
+class _StallingClient:
+    """Yields one assistant turn, then stalls forever — exercises the per-ask
+    timeout backstop while a turn has already been observed."""
+
+    def __init__(self):
+        self.queries: list[str] = []
+
+    async def query(self, prompt: str) -> None:
+        self.queries.append(prompt)
+
+    async def receive_response(self):
+        yield _Assistant("partial")
+        await asyncio.Event().wait()  # never set → stalls past timeout_s
+
+    async def aclose(self) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_timeout_ask_counts_partial_turns():
+    client = _StallingClient()
+    ch = DiscoveryChannel(
+        client=client,
+        usage_accum={},
+        model="anthropic/claude-haiku-4-5-20251001",
+        tracker_factory=lambda acc, model: FakeTracker(acc, model),
+        is_result=_is_result,
+        timeout_s=0.05,
+    )
+    out = await ch.ask("q")
+    assert out.startswith("[discovery timeout")
+    # The one turn observed before the stall is still rolled up.
+    assert ch.turns == 1
 
 
 # --------------------------------------------------------------------------

@@ -38,6 +38,7 @@ from bird_interact_agents.agents.claude_sdk.context_budget import (
     update_wall_clock_start,
 )
 from bird_interact_agents.agents.claude_sdk.discovery_runtime import (
+    DiscoveryRollup,
     run_main_with_discovery,
 )
 from bird_interact_agents.agents.claude_sdk.partition import (
@@ -336,6 +337,9 @@ class ClaudeSDKOtfAInteractAgent:
         slayer_storage_dir = ""
         accum = TokenUsage()
         usage_tracker = SdkUsageTracker(accum, self.model)
+        # DEV-1616: filled by run_main_with_discovery (even on the crash path)
+        # so usage["n_discovery_turns"] surfaces the warm-discovery turns.
+        discovery_rollup = DiscoveryRollup()
         trajectory: list[dict] = []
         # Local handle to the per-task context dict. The exception path
         # reads from THIS local instead of `_ctx_var.get()` — a stale
@@ -554,6 +558,7 @@ class ClaudeSDKOtfAInteractAgent:
                     "run_task.sdk_first_query", instance_id=instance_id,
                 ),
                 on_main_message=_on_main_message,
+                discovery_rollup=discovery_rollup,
             )
             usage_tracker.finalize()
         except Exception as e:
@@ -593,6 +598,7 @@ class ClaudeSDKOtfAInteractAgent:
                     # raise BEFORE ctx_dict is constructed.
                     "usage": {
                         **accum.model_dump(),
+                        "n_discovery_turns": discovery_rollup.n_discovery_turns,
                         "n_ask_user_calls": (ctx_dict or {}).get(
                             "asks_used", 0,
                         ),
@@ -665,6 +671,7 @@ class ClaudeSDKOtfAInteractAgent:
                 # mirrors the error path above for readability.
                 "usage": {
                     **accum.model_dump(),
+                    "n_discovery_turns": discovery_rollup.n_discovery_turns,
                     "n_ask_user_calls": ctx_dict.get("asks_used", 0),
                 },
                 "phase1_observation_audited": result.get("phase1_observation_audited"),

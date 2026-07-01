@@ -625,6 +625,44 @@ async def test_run_task_captures_usage(monkeypatch, tmp_path):
     assert rebuilt.cache_read_tokens == 5
 
 
+def _shared_turn_msgs():
+    """4 AssistantMessage events spanning 2 dedup'd TURNS (each turn = 2
+    content blocks sharing ONE usage object, mirroring the live SDK)."""
+    from types import SimpleNamespace
+
+    class _AM:
+        def __init__(self, usage):
+            self.usage = usage
+
+    _AM.__name__ = "AssistantMessage"
+    u1 = SimpleNamespace(
+        input_tokens=10, output_tokens=2,
+        cache_read_input_tokens=0, cache_creation_input_tokens=0,
+    )
+    u2 = SimpleNamespace(
+        input_tokens=20, output_tokens=3,
+        cache_read_input_tokens=0, cache_creation_input_tokens=0,
+    )
+    return [_AM(u1), _AM(u1), _AM(u2), _AM(u2)]
+
+
+@pytest.mark.asyncio
+async def test_run_task_n_agent_turns_counts_turns_not_blocks(monkeypatch, tmp_path):
+    """DEV-1616: the finalized row's n_agent_turns is the dedup'd TURN count
+    (2), not the block count (4 AssistantMessage events), and it carries the
+    n_discovery_turns field (0 with no discovery call in this stub)."""
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw_v1 import agent as m
+
+    _stub_env(monkeypatch, m, tmp_path / "store", messages=_shared_turn_msgs())
+    agent = m.ClaudeSDKOtfAInteractRawAgent(model="anthropic/claude-sonnet-4-5")
+    row = await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "raw", eval_mode="a-interact",
+    )
+    assert row["n_agent_turns"] == 2
+    assert row["usage"]["n_agent_turns"] == 2
+    assert row["usage"]["n_discovery_turns"] == 0
+
+
 # ---------------------------------------------------------------------------
 # n_ask_user_calls reporting (DEV-1519 parity for raw ainteract)
 # ---------------------------------------------------------------------------

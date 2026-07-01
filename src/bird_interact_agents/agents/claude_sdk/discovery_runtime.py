@@ -21,6 +21,8 @@ import logging
 import time
 from typing import Callable
 
+from pydantic import BaseModel
+
 from bird_interact_agents.agents.claude_sdk.agent import _ctx
 from bird_interact_agents.agents.claude_sdk.context_budget import (
     update_context_tokens,
@@ -34,6 +36,20 @@ from bird_interact_agents.agents.claude_sdk.sdk_env import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class DiscoveryRollup(BaseModel):
+    """DEV-1616: the warm-discovery sub-agent's contribution to the task total.
+
+    ``run_main_with_discovery`` populates this (in a ``finally``, so the crash
+    path is precise too) from the :class:`DiscoveryChannel`. The caller surfaces
+    ``n_discovery_turns`` in the row's ``usage`` blob; the headline
+    ``n_agent_turns`` already includes these turns because discovery commits
+    into the SAME ``agent::<model>`` breakdown row as main.
+    """
+
+    n_discovery_turns: int = 0
+    n_discovery_calls: int = 0
 
 
 async def run_main_with_discovery(
@@ -52,6 +68,7 @@ async def run_main_with_discovery(
     enter_cm_factory: Callable[[], object] | None = None,
     query_cm_factory: Callable[[], object] | None = None,
     on_main_message: Callable[[object, int, float], None] | None = None,
+    discovery_rollup: "DiscoveryRollup | None" = None,
 ) -> None:
     """Run one task across a warm discovery client and the main client.
 
@@ -62,6 +79,13 @@ async def run_main_with_discovery(
     the in-process ``ask_discovery`` native can reach it. Both clients' usage
     flows into the SAME ``accum`` — main via ``usage_tracker`` in the loop
     below; each discovery ask via its own fresh tracker inside the channel.
+    Because every discovery tracker uses the default ``scope="agent"`` and the
+    same ``model``, discovery tokens/cost/turns land in the SAME
+    ``agent::<model>`` breakdown row as main, so the row's ``n_calls`` is the
+    combined (main + discovery) turn count. DEV-1616: when ``discovery_rollup``
+    is supplied it is filled (in the ``finally`` below, so the crash path is
+    precise) with the channel's ``turns`` / ``calls`` so the caller can surface
+    a ``n_discovery_turns`` breakdown alongside that combined headline.
 
     ``enter_cm_factory`` is threaded to BOTH hermetic sessions'
     ``enter_cm_factory`` so the DEV-1561 ``otf_timer``-around-``__aenter__``
@@ -134,4 +158,11 @@ async def run_main_with_discovery(
                 usage_tracker.observe(msg)
                 update_context_tokens(context_state, msg)
         finally:
+            # DEV-1616: roll the warm-discovery usage summary out to the
+            # caller BEFORE restoring _ctx. Runs on every exit (success /
+            # main-loop exception / cancellation), so a crash after some
+            # discovery asks still reports their turns.
+            if discovery_rollup is not None:
+                discovery_rollup.n_discovery_turns = channel.turns
+                discovery_rollup.n_discovery_calls = channel.calls
             _ctx["_discovery"] = prev_discovery

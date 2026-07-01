@@ -29,6 +29,7 @@ from bird_interact_agents.agents.claude_sdk.context_budget import (
     update_wall_clock_start,
 )
 from bird_interact_agents.agents.claude_sdk.discovery_runtime import (
+    DiscoveryRollup,
     run_main_with_discovery,
 )
 from bird_interact_agents.agents.claude_sdk.partition import (
@@ -203,6 +204,9 @@ class ClaudeSDKOtfRawAgent:
 
         accum = TokenUsage()
         usage_tracker = SdkUsageTracker(accum, self.model)
+        # DEV-1616: filled by run_main_with_discovery (even on the crash path)
+        # so usage["n_discovery_turns"] surfaces the warm-discovery turns.
+        discovery_rollup = DiscoveryRollup()
         trajectory: list[dict] = []
         ctx_dict: dict | None = None
         try:
@@ -315,6 +319,7 @@ class ClaudeSDKOtfRawAgent:
                 build_discovery_options=_build_discovery_options,
                 initial_query=task_data["amb_user_query"],
                 trajectory=trajectory,
+                discovery_rollup=discovery_rollup,
             )
             usage_tracker.finalize()
         except Exception as e:
@@ -345,6 +350,7 @@ class ClaudeSDKOtfRawAgent:
                     # — symmetry with the a-interact variant.
                     "usage": {
                         **accum.model_dump(),
+                        "n_discovery_turns": discovery_rollup.n_discovery_turns,
                         "n_ask_user_calls": (ctx_dict or {}).get(
                             "asks_used", 0,
                         ),
@@ -376,6 +382,7 @@ class ClaudeSDKOtfRawAgent:
                 "error": None,
                 "usage": {
                     **accum.model_dump(),
+                    "n_discovery_turns": discovery_rollup.n_discovery_turns,
                     "n_ask_user_calls": (ctx_dict or {}).get(
                         "asks_used", 0,
                     ),
