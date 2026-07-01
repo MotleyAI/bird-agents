@@ -852,3 +852,80 @@ def test_subscription_auth_annotate_without_token_rejected(monkeypatch) -> None:
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     with pytest.raises(SystemExit):
         cli.parse_args(_minimal_annotate_argv(["--subscription-auth"]))
+
+
+# ---------------------------------------------------------------------------
+# `list [run_id]` dispatch: optional positional selects the cheap single-run
+# path (`driver.list_run`) instead of the bucket-wide `driver.list_runs`.
+# ---------------------------------------------------------------------------
+
+
+def test_list_with_run_id_uses_single_run_path(
+    monkeypatch: pytest.MonkeyPatch, capsys,
+) -> None:
+    from bird_interact_agents.cloud import driver as _driver
+
+    seen: dict[str, object] = {"list_run": [], "list_runs": 0}
+
+    def fake_list_run(rid: str) -> dict:
+        seen["list_run"].append(rid)
+        return {
+            "run_id": rid,
+            "framework": "claude_sdk",
+            "query_mode": "slayer",
+            "mode": "a-interact",
+            "status": "live",
+            "done": 2,
+            "total": 15,
+        }
+
+    def fake_list_runs() -> list:
+        seen["list_runs"] += 1
+        return []
+
+    monkeypatch.setattr(_driver, "list_run", fake_list_run)
+    monkeypatch.setattr(_driver, "list_runs", fake_list_runs)
+
+    rc = cli.main(["list", "rid-xyz"])
+
+    assert rc == 0
+    assert seen["list_run"] == ["rid-xyz"]
+    assert seen["list_runs"] == 0, "single-run query must skip the bucket scan"
+    out = capsys.readouterr().out
+    assert "rid-xyz" in out
+    assert "claude_sdk/slayer/a-interact" in out
+    assert "2/15" in out
+
+
+def test_list_without_run_id_uses_list_runs(
+    monkeypatch: pytest.MonkeyPatch, capsys,
+) -> None:
+    from bird_interact_agents.cloud import driver as _driver
+
+    seen: dict[str, object] = {"list_run": 0, "list_runs": 0}
+
+    def fake_list_run(rid: str) -> dict:  # pragma: no cover - must not run
+        seen["list_run"] += 1
+        return {}
+
+    def fake_list_runs() -> list:
+        seen["list_runs"] += 1
+        return [{
+            "run_id": "rid-a",
+            "framework": "pydantic_ai",
+            "query_mode": "raw",
+            "mode": "c-interact",
+            "status": "done",
+            "done": 3,
+            "total": 3,
+        }]
+
+    monkeypatch.setattr(_driver, "list_run", fake_list_run)
+    monkeypatch.setattr(_driver, "list_runs", fake_list_runs)
+
+    rc = cli.main(["list"])
+
+    assert rc == 0
+    assert seen["list_runs"] == 1
+    assert seen["list_run"] == 0
+    assert "rid-a" in capsys.readouterr().out

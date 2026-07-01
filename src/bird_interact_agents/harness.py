@@ -1221,11 +1221,37 @@ def finalize_result_row(
     if row.get("n_agent_turns") is None:
         traj = row.get("trajectory")
         if isinstance(traj, list):
-            row["n_agent_turns"] = sum(
+            # Legacy base: count of AssistantMessage trajectory entries.
+            traj_turns = sum(
                 1 for item in traj
                 if isinstance(item, dict)
                 and item.get("type") == "AssistantMessage"
             )
+            n = traj_turns
+            # DEV-1616: for claude_sdk-shaped rows (>=1 AssistantMessage
+            # entry) prefer the dedup'd TURN count from the usage breakdown's
+            # agent-scope rows. For the live SDK the trajectory holds one
+            # AssistantMessage per content BLOCK (an over-count), and the
+            # two-stage v1 agents' warm-discovery turns are absent from the
+            # trajectory entirely — but discovery commits into the SAME
+            # agent::<model> breakdown row, so the agent-scope n_calls sum is
+            # both the true turn count AND inclusive of discovery. Gated on
+            # traj_turns>0 so non-SDK adapters (agno/smolagents) that also
+            # write scope="agent" usage but emit no AssistantMessage entries
+            # keep their trajectory-derived count (0), never the breakdown sum.
+            # A positive n_discovery_turns is an equally decisive claude_sdk
+            # signal (only the v1 adapters set it): it keeps the headline
+            # inclusive of discovery even when a crash after some ask_discovery
+            # calls left the MAIN trajectory empty (0 AssistantMessage entries).
+            if traj_turns > 0 or (_usage.get("n_discovery_turns") or 0) > 0:
+                agent_calls = sum(
+                    int(r.get("n_calls") or 0)
+                    for r in (_usage.get("breakdown") or [])
+                    if isinstance(r, dict) and r.get("scope") == "agent"
+                )
+                if agent_calls > 0:
+                    n = agent_calls
+            row["n_agent_turns"] = n
     # DEV-1535 r2 (Codex): the n_agent_turns backfill above sets only
     # the top-level row key, but every annotation writer (run.py,
     # cloud/ray_app.py) reads `usage_blob.get("n_agent_turns")`. Mirror
@@ -1243,6 +1269,12 @@ def finalize_result_row(
     # benchmark is one-shot (no user-sim), so a default of 0 is correct.
     # Defensive against future adapters that forget the convention.
     _usage.setdefault("n_ask_user_calls", 0)
+    # DEV-1616: warm-discovery turn count. The two-stage v1 adapters set this
+    # from their DiscoveryRollup; single-agent claude_sdk (and every other)
+    # adapter has no discovery sub-agent, so 0 is correct. Kept in usage_json
+    # for parity with n_ask_user_calls (not a TokenUsage field, so run-level
+    # total_usage aggregation does not sum it — per-task is the contract).
+    _usage.setdefault("n_discovery_turns", 0)
     # DEV-1535 follow-up: backfill `predicted_row_count` from the
     # snapshot dict that `capture_result_snapshot` stores at
     # `predicted_result_json` (shape: `{"columns":[...], "row_count":N,

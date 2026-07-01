@@ -99,11 +99,20 @@ class DiscoveryChannel:
         self._timeout_s = timeout_s
         self._lock = asyncio.Lock()
         self._calls = 0
+        self._turns_total = 0
         self._closed = False
 
     @property
     def calls(self) -> int:
         return self._calls
+
+    @property
+    def turns(self) -> int:
+        """DEV-1616: total discovery TURNS across every ask (each ask's
+        fresh tracker's committed n_calls). The caller rolls this into the
+        task's ``n_discovery_turns`` so the headline ``n_agent_turns``
+        (derived from the shared agent-scope breakdown) is accountable."""
+        return self._turns_total
 
     async def ask(self, question: str) -> str:
         """Forward ``question`` to the warm discovery client and return its
@@ -152,6 +161,11 @@ class DiscoveryChannel:
                     with contextlib.suppress(Exception):
                         await aclose()
                 tracker.finalize()
+                # DEV-1616: roll this ask's committed turn count into the
+                # per-task total. Runs on every path (success / timeout /
+                # error), so a partial ask still contributes the turns it
+                # completed (their tokens are already committed above).
+                self._turns_total += getattr(tracker, "committed_n_calls", 0)
             text = "".join(parts).strip()
             if not text:
                 return "[discovery returned no content for this question]"

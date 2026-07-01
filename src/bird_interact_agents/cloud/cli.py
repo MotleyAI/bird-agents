@@ -205,7 +205,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         spx = sub.add_parser(name)
         spx.add_argument("run_id")
 
-    sub.add_parser("list")
+    sp_list = sub.add_parser("list")
+    sp_list.add_argument(
+        "run_id", nargs="?", default=None,
+        help="Optional run_id. When given, query ONLY that run (skips the "
+        "bucket-wide scan over every run's manifest, which dominates "
+        "wall-time once many runs accumulate).",
+    )
     sp_build = sub.add_parser("build")
     sp_build.add_argument("--force", action="store_true")
 
@@ -475,7 +481,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         driver.resubmit(ns.run_id)
         return 0
     if ns.subcommand == "list":
-        for row in driver.list_runs():
+        rows = (
+            [driver.list_run(ns.run_id)]
+            if ns.run_id
+            else driver.list_runs()
+        )
+        for row in rows:
             print(
                 f"{row['run_id']}  {row['framework']}/{row['query_mode']}/"
                 f"{row['mode']}  {row['status']}  {row['done']}/{row['total']}"

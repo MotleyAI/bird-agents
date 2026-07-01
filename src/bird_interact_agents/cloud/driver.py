@@ -1383,6 +1383,49 @@ def kill(run_id: str) -> None:
         cluster.fallback_delete_by_label(run_id)
 
 
+def _run_row(rid: str, *, client, manifest: dict | None = None) -> dict:
+    """Compute the one-line status row for a single run.
+
+    Reads only that run's manifest, attempts, and status (plus a head
+    liveness probe) — no bucket-wide blob listing. Shared by ``list_runs``
+    (all runs) and ``list_run`` (a single run); see DEV-1470 note in
+    CLAUDE.md on keeping single-run queries cheap.
+
+    ``manifest`` lets ``list_runs`` pass a manifest it already read (so its
+    own read-failure skip stays scoped to the manifest — a transient
+    ``list_attempts``/``head_is_alive`` error must surface, not silently drop
+    the run). ``list_run`` passes nothing and reads it here.
+    """
+    mf = manifest if manifest is not None else gcs.read_manifest(rid, client=client)
+    attempts = gcs.list_attempts(rid, client=client)
+    run_status = gcs.read_status(rid, client=client) or {}
+    terminal = run_status.get("terminal_state")
+    if terminal in ("done", "error"):
+        status = terminal
+    else:
+        status = "live" if cluster.head_is_alive(rid) else "done"
+    return {
+        "run_id": rid,
+        "framework": mf.get("framework"),
+        "mode": mf.get("mode"),
+        "query_mode": mf.get("query_mode"),
+        "status": status,
+        "done": len(attempts),
+        "total": len(mf.get("instance_ids", [])),
+    }
+
+
+def list_run(run_id: str) -> dict:
+    """Fast single-run status row.
+
+    Avoids the ``list_blobs(prefix="runs/")`` bucket scan that ``list_runs``
+    does over EVERY run's manifest — that scan dominates wall-time once many
+    runs accumulate. Use this when you already know the run_id.
+    """
+    client = default_gcs_client()
+    return _run_row(run_id, client=client)
+
+
 def list_runs() -> list[dict]:
     client = default_gcs_client()
     bucket = client.bucket(gcs.BUCKET_NAME)
@@ -1395,24 +1438,10 @@ def list_runs() -> list[dict]:
     for rid in sorted(seen):
         try:
             mf = gcs.read_manifest(rid, client=client)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — skip runs whose manifest is missing/corrupt
+            logger.debug("Skipping run %s: manifest unreadable (%s)", rid, exc)
             continue
-        attempts = gcs.list_attempts(rid, client=client)
-        run_status = gcs.read_status(rid, client=client) or {}
-        terminal = run_status.get("terminal_state")
-        if terminal in ("done", "error"):
-            status = terminal
-        else:
-            status = "live" if cluster.head_is_alive(rid) else "done"
-        out.append({
-            "run_id": rid,
-            "framework": mf.get("framework"),
-            "mode": mf.get("mode"),
-            "query_mode": mf.get("query_mode"),
-            "status": status,
-            "done": len(attempts),
-            "total": len(mf.get("instance_ids", [])),
-        })
+        out.append(_run_row(rid, client=client, manifest=mf))
     return out
 
 

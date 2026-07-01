@@ -209,6 +209,19 @@ class SdkUsageTracker:
         self._turn_order: list = []
         self._result_usage = None
         self._committed = False
+        # DEV-1616: the exact n_calls this tracker contributed to the
+        # accum's (scope, model) breakdown row on finalize. For a stream
+        # with a terminal ResultMessage that is ``max(1, turns)``; on the
+        # crash path it is the summed per-turn count; 0 before finalize /
+        # with no activity. The warm-discovery channel sums THIS across
+        # asks so ``n_discovery_turns`` matches the breakdown contribution.
+        self._committed_n_calls = 0
+
+    @property
+    def committed_n_calls(self) -> int:
+        """n_calls this tracker committed to its breakdown row (0 until
+        finalize)."""
+        return self._committed_n_calls
 
     def observe(self, msg: object) -> None:
         name = type(msg).__name__
@@ -252,6 +265,9 @@ class SdkUsageTracker:
         self._accum.partial = True
 
     def _commit(self, usage, *, n_calls: int) -> None:
+        # DEV-1616: record the committed count so callers (the discovery
+        # channel) can sum the exact breakdown contribution.
+        self._committed_n_calls = n_calls
         self._accum.add_call(
             scope=self._scope,
             model=self._model,
