@@ -28,6 +28,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from slayer.engine.profiling import refresh_table_backed_model_sampled
+from slayer.engine.query_engine import SlayerQueryEngine
 from slayer.storage.yaml_storage import YAMLStorage
 
 from .. import paths
@@ -187,6 +189,11 @@ async def _phase3_jsonb(
     added_total = 0
     typing_warnings: list[str] = []
     drift_warnings: list[str] = []
+    # DEV-1614: the leaves are appended via a bare ``save_model`` and so miss
+    # both SLayer sample-profiling triggers (end-of-ingest and lazy-on-read).
+    # Sample exactly the genuine leaves right after they're persisted, mirroring
+    # ``slayer.engine.ingestion``'s end-of-ingest refresh. One engine, reused.
+    engine = SlayerQueryEngine(storage=storage)
     for table, json_col, entry in _detect_jsonb_columns(meanings_path):
         model = await storage.get_model(table, data_source=db)
         if model is None or model.data_source != db:
@@ -200,6 +207,11 @@ async def _phase3_jsonb(
         typing_warnings.extend(warns)
         added_here = 0
         changed_here = False
+        # DEV-1614: the precise set of leaves WE own on this model (added now,
+        # or an existing leaf whose derived_from matched). Hand-written columns
+        # that merely collide with a leaf name are excluded — they must not be
+        # re-sampled.
+        leaf_names: set[str] = set()
         for col in new_cols:
             existing = existing_by_name.get(col.name)
             if existing is not None:
@@ -216,10 +228,12 @@ async def _phase3_jsonb(
                     existing.label = col.label
                     existing.meta = col.meta
                     changed_here = True
+                    leaf_names.add(col.name)
                 continue
             model.columns.append(col)
             existing_by_name[col.name] = col
             added_here += 1
+            leaf_names.add(col.name)
         # Top-level JSONB column gets a meta.jsonb=True flag so future
         # passes can find it without re-sniffing the description.
         jsonb_flagged = False
@@ -247,6 +261,22 @@ async def _phase3_jsonb(
         if added_here or changed_here or jsonb_flagged:
             await storage.save_model(model)
             added_total += added_here
+            # DEV-1614: born-sampled leaves. Must run AFTER save_model — the
+            # refresh persists per-column via storage.update_column_sampled,
+            # so the leaves have to already exist on disk. Best-effort, exactly
+            # mirroring ingestion.py: a returned error list OR a raised
+            # exception is folded into the warnings, never aborts the build.
+            if leaf_names:
+                try:
+                    sample_errs = await refresh_table_backed_model_sampled(
+                        model=model,
+                        engine=engine,
+                        storage=storage,
+                        only_columns=leaf_names,
+                    )
+                except Exception as exc:  # NOSONAR(S112) — best-effort, see above
+                    sample_errs = [f"{table}.{json_col}: sample refresh: {exc}"]
+                typing_warnings.extend(sample_errs)
     return added_total, typing_warnings, drift_warnings
 
 
