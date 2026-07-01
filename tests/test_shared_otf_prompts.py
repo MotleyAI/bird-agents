@@ -44,9 +44,12 @@ import pytest
 # Re-baselined for DEV-1623: the shared `_SAMPLE_VALUE_FILTER_MANDATE` fragment
 # (mandate sample-value-aware filter literals to cut submit-verify thrash) is
 # now spliced into both v1 slayer prompts after the rules-2/3 block, rendered
-# with `sample_source="`ask_discovery`"`.
-_ONE_SHOT_SHA256 = "7881e66b3b5f97e427b617bcc2447d75a845f593a8d8ecfbfeed796c7fc48d11"
-_AINTERACT_SHA256 = "09a421c92801d55859df8d461cf70c004c8fd72f6f15cae6335255f72028208f"
+# with `sample_source="`ask_discovery`"`. Reworded per PR #72 review to assign
+# each variation kind to exactly one strategy (case/whitespace -> LOWER(TRIM);
+# abbreviation/spelling -> IN-set enumeration) so it no longer conflicts with
+# rule 3's "Symmetric companion" bullet.
+_ONE_SHOT_SHA256 = "ca4e31084561f85e019fab7cedf5069bf0bec60eb341dbe7ab3ed33a3a59221e"
+_AINTERACT_SHA256 = "27909bf15defb27d8481a13e0ef3bc2224b0e5575da1bc840c5a86e8b299f4c6"
 
 
 def test_slayer_otf_one_shot_unchanged():
