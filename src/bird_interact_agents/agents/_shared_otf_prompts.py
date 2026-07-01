@@ -454,6 +454,48 @@ instead of the memory you want.
 ENCODE-THEN-QUERY DISCIPLINE:"""
 
 
+# DEV-1623: cut submit-verify thrash on noisy categorical columns. A single
+# shared fragment referenced by BOTH the frozen v0 literals AND the v1
+# compositions (slayer + raw) — the tool that surfaces sampled values differs
+# per (version, mode), so it is parameterised by `{sample_source}`:
+#   * slayer v0  -> `search` (compact=False) / `inspect_model`
+#   * slayer v1  -> `ask_discovery` (the v1 main agent has no direct introspection)
+#   * raw v0/v1  -> `get_column_meaning`
+# Rendered for raw it carries NO slayer vocabulary (asserted in
+# tests/test_dev1623_filter_and_submit_mandates.py and the raw-vocab contract
+# in tests/test_shared_otf_prompts.py). The `LOWER(TRIM(...))` fallback is
+# scoped to FILTER position only, so it does not clash with the pre-submit
+# mutation check's "drop unauthorized normalisation of output columns" rule.
+_SAMPLE_VALUE_FILTER_MANDATE = """\
+FILTER LITERALS — MATCH THE STORED SPELLING, DO NOT GUESS. Before writing
+any `=`, `IN`, or `LIKE` predicate on a text / categorical column, read its
+`Sample values:` via {sample_source} and build the predicate from the forms
+that ACTUALLY occur there. When the stored spelling is unambiguous, match it
+verbatim. When the samples show case / whitespace / spelling variation — or
+you are unsure of the exact stored form — compare case- and
+whitespace-insensitively in the FILTER position ONLY
+(`LOWER(TRIM(col)) = 'lowercased literal'`), never on a projected, grouped,
+or join-key column. Do NOT submit a guessed literal and then blind-iterate
+on case / whitespace variants when it returns 0 rows: each such retry burns
+a whole submit cycle."""
+
+
+# DEV-1623 Fix 2: proactive query-before-submit reminder for the v0 slayer
+# literals only. Both v0 slayer agents ALREADY hard-gate `submit_query`
+# (PreToolUse deny unless the previous tool was `query`), and the v1 slayer
+# main loop already carries an equivalent "Verify-before-submit checklist"
+# (agents/claude_sdk/partition.py::build_main_workflow_note). This fragment
+# brings the v0 literals to parity so the agent volunteers the `query` step
+# instead of tripping the gate and wasting the retry turn. No format fields.
+_QUERY_BEFORE_SUBMIT = """\
+RUN THE FINAL QUERY BEFORE YOU SUBMIT. Immediately before `submit_query`,
+run the EXACT query you intend to submit through `query` in the SAME turn and
+confirm it returns a non-zero, plausible rowset with the expected casing and
+whitespace on string values. A `submit_query` that is not directly preceded
+by a matching `query` is rejected and wastes the turn — never submit an
+unvalidated query."""
+
+
 # ---------------------------------------------------------------------------
 # DEV-1555 v0/v1 split — origin/main prompt snapshots.
 #
@@ -613,6 +655,12 @@ identifiers):
      no user-sim to confirm this for you in one-shot mode — read the
      sampled values yourself.
 
+"""
+    + _SAMPLE_VALUE_FILTER_MANDATE.format(
+        sample_source="`search` (compact=False) / `inspect_model`"
+    )
+    + """
+
 4. TEST candidate columns and the final query with `query`; sanity-check the generated SQL.
 
    SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query` returns, inspect the rendered SQL for these patterns
@@ -698,6 +746,10 @@ You MUST call `submit_query` to finish — a prose answer is not a
 submission. If a `filters` predicate needs a computed value, encode it as
 a named column first and filter on the name; raw SQL expressions are
 rejected in `filters`.
+
+"""
+    + _QUERY_BEFORE_SUBMIT
+    + """
 
 Budget: {budget} bird-coins (`submit_query` costs 3; SLayer reads/writes
 are free but your total work is turn-bounded — encode only what the
@@ -999,6 +1051,12 @@ identifiers):
      A canonical-only IN-set will silently miss matching rows. Do not
      rely on the user-sim to enumerate the variants — they will not.
 
+"""
+    + _SAMPLE_VALUE_FILTER_MANDATE.format(
+        sample_source="`search` (compact=False) / `inspect_model`"
+    )
+    + """
+
 4. ASK AGAIN IF NEEDED. Rule 0 covers the FIRST ask; for any further
    operationalisation choice not pinned by a memory or column
    description, call `ask_user` again. If a reply lists multiple criteria
@@ -1129,6 +1187,10 @@ You MUST call `submit_query` to finish — a prose answer is not a
 submission. If a `filters` predicate needs a computed value, encode it as
 a named column first and filter on the name; raw SQL expressions are
 rejected in `filters`.
+
+"""
+    + _QUERY_BEFORE_SUBMIT
+    + """
 
 Budget: {budget} bird-coins. `ask_user` costs 2, `submit_query` costs 3;
 SLayer reads/writes are free but your total work is turn-bounded — encode
@@ -1345,6 +1407,10 @@ QUERY DISCIPLINE:
      no user-sim to confirm this for you in one-shot mode — read the
      sampled values yourself.
 
+"""
+    + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`get_column_meaning`")
+    + """
+
 4. TEST the final query with `execute_sql`; sanity-check the result
    shape, row count, and values.
 
@@ -1473,6 +1539,10 @@ QUERY DISCIPLINE:
      authoritative inventory of what's actually present in the column.
      A canonical-only IN-set will silently miss matching rows. Do not
      rely on the user-sim to enumerate the variants — they will not.
+
+"""
+    + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`get_column_meaning`")
+    + """
 
 4. ASK AGAIN IF NEEDED. Rule 0 covers the FIRST ask; for any further
    operationalisation choice not pinned by a knowledge definition or column

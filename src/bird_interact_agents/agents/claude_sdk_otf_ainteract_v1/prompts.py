@@ -33,6 +33,7 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _PIVOT_AFTER_REPEATED_FAILURES,
     _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
     _RULE_0_ASK_BEFORE,
+    _SAMPLE_VALUE_FILTER_MANDATE,
     _SLAYER_SQL_ARTIFACT_CHECK,
     _USER_SIM_TRUST_CALIBRATION,
 )
@@ -150,6 +151,8 @@ SLAYER_OTF_AINTERACT = (
     + _DECOMPOSE_DISCIPLINE
     + "\n\n"
     + _AINTERACT_RULES_2_3
+    + "\n\n"
+    + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`ask_discovery`")
     + "\n\n"
     + _ASK_AGAIN_RULE.format(knowledge_source="a memory")
     + "\n\n   "

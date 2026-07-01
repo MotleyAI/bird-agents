@@ -67,6 +67,18 @@ QUERY DISCIPLINE:
      A canonical-only IN-set will silently miss matching rows. Do not
      rely on the user-sim to enumerate the variants — they will not.
 
+FILTER LITERALS — MATCH THE STORED SPELLING, DO NOT GUESS. Before writing
+any `=`, `IN`, or `LIKE` predicate on a text / categorical column, read its
+`Sample values:` via `get_column_meaning` and build the predicate from the forms
+that ACTUALLY occur there. When the stored spelling is unambiguous, match it
+verbatim. When the samples show case / whitespace / spelling variation — or
+you are unsure of the exact stored form — compare case- and
+whitespace-insensitively in the FILTER position ONLY
+(`LOWER(TRIM(col)) = 'lowercased literal'`), never on a projected, grouped,
+or join-key column. Do NOT submit a guessed literal and then blind-iterate
+on case / whitespace variants when it returns 0 rows: each such retry burns
+a whole submit cycle.
+
 4. ASK AGAIN IF NEEDED. Rule 0 covers the FIRST ask; for any further
    operationalisation choice not pinned by a knowledge definition or column
    description, call `ask_user` again. If a reply lists multiple criteria

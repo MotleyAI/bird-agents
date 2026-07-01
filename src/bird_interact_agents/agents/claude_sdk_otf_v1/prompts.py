@@ -28,6 +28,7 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _DECOMPOSE_DISCIPLINE,
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
+    _SAMPLE_VALUE_FILTER_MANDATE,
     _SLAYER_SQL_ARTIFACT_CHECK,
 )
 
@@ -136,7 +137,9 @@ SLAYER_OTF_ONE_SHOT = (
     + _NO_USER_TO_CONSULT.format(sources_desc="the memories and column\ndescriptions")
     + "\n\n"
     + _ENCODE_CORE
-    + "\n4. TEST candidate columns and the final query with `query` "
+    + "\n\n"
+    + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`ask_discovery`")
+    + "\n\n4. TEST candidate columns and the final query with `query` "
       "(single object or nested-DAG `queries` list); sanity-check the "
       "generated SQL.\n\n"
       "   "

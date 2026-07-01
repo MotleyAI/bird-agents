@@ -41,8 +41,12 @@ import pytest
 # moved to the discovery client reached via ask_discovery — so the v1 slayer
 # prompts now route schema/sample-value/entity discovery through ask_discovery
 # while keeping KB lookups (get_knowledge_definition) on the main surface.
-_ONE_SHOT_SHA256 = "ecd9dc1343fbb6bb09f0ad336b5df0ad1180b6104d0cfc23212b762c8d9ff12a"
-_AINTERACT_SHA256 = "ffa7ef4d20adeb8c5e548dcd2fcdda3d55bd50a76477eedd54c494ab3843301e"
+# Re-baselined for DEV-1623: the shared `_SAMPLE_VALUE_FILTER_MANDATE` fragment
+# (mandate sample-value-aware filter literals to cut submit-verify thrash) is
+# now spliced into both v1 slayer prompts after the rules-2/3 block, rendered
+# with `sample_source="`ask_discovery`"`.
+_ONE_SHOT_SHA256 = "7881e66b3b5f97e427b617bcc2447d75a845f593a8d8ecfbfeed796c7fc48d11"
+_AINTERACT_SHA256 = "09a421c92801d55859df8d461cf70c004c8fd72f6f15cae6335255f72028208f"
 
 
 def test_slayer_otf_one_shot_unchanged():
