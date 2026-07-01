@@ -1383,15 +1383,20 @@ def kill(run_id: str) -> None:
         cluster.fallback_delete_by_label(run_id)
 
 
-def _run_row(rid: str, *, client) -> dict:
+def _run_row(rid: str, *, client, manifest: dict | None = None) -> dict:
     """Compute the one-line status row for a single run.
 
     Reads only that run's manifest, attempts, and status (plus a head
     liveness probe) — no bucket-wide blob listing. Shared by ``list_runs``
     (all runs) and ``list_run`` (a single run); see DEV-1470 note in
     CLAUDE.md on keeping single-run queries cheap.
+
+    ``manifest`` lets ``list_runs`` pass a manifest it already read (so its
+    own read-failure skip stays scoped to the manifest — a transient
+    ``list_attempts``/``head_is_alive`` error must surface, not silently drop
+    the run). ``list_run`` passes nothing and reads it here.
     """
-    mf = gcs.read_manifest(rid, client=client)
+    mf = manifest if manifest is not None else gcs.read_manifest(rid, client=client)
     attempts = gcs.list_attempts(rid, client=client)
     run_status = gcs.read_status(rid, client=client) or {}
     terminal = run_status.get("terminal_state")
@@ -1432,9 +1437,10 @@ def list_runs() -> list[dict]:
     out: list[dict] = []
     for rid in sorted(seen):
         try:
-            out.append(_run_row(rid, client=client))
-        except Exception:  # noqa: BLE001
+            mf = gcs.read_manifest(rid, client=client)
+        except Exception:  # noqa: BLE001 — skip runs whose manifest is missing/corrupt
             continue
+        out.append(_run_row(rid, client=client, manifest=mf))
     return out
 
 

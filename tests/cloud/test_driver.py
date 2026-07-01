@@ -2900,6 +2900,7 @@ def test_list_run_non_terminal_dead_head_is_done(
     _wire_one_run(mocks, status={}, head_alive=False)
 
     assert driver.list_run("rid-x")["status"] == "done"
+    mocks["cluster"].head_is_alive.assert_called_once_with("rid-x")
 
 
 def test_list_runs_scans_bucket_and_reuses_run_row(
@@ -2917,7 +2918,7 @@ def test_list_runs_scans_bucket_and_reuses_run_row(
     rows = driver.list_runs()
 
     assert {r["run_id"] for r in rows} == {"rid-a", "rid-b"}
-    bucket.list_blobs.assert_called_once()
+    bucket.list_blobs.assert_called_once_with(prefix="runs/")
 
 
 def test_list_runs_skips_run_with_unreadable_manifest(
@@ -2949,3 +2950,21 @@ def test_list_runs_skips_run_with_unreadable_manifest(
     rows = driver.list_runs()
 
     assert {r["run_id"] for r in rows} == {"rid-good"}
+
+
+def test_list_runs_surfaces_non_manifest_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The skip is scoped to the manifest read: a transient
+    # `list_attempts`/`head_is_alive` failure must surface, not silently
+    # drop the run from the listing (regression for the broadened-except).
+    mocks = _patch_collaborators(monkeypatch)
+    blob = MagicMock()
+    blob.name = "runs/rid-a/manifest.json"
+    bucket = mocks["gcs"].default_gcs_client.return_value.bucket.return_value
+    bucket.list_blobs.return_value = [blob]
+    _wire_one_run(mocks)
+    mocks["gcs"].list_attempts.side_effect = RuntimeError("transient GCS error")
+
+    with pytest.raises(RuntimeError, match="transient GCS error"):
+        driver.list_runs()
