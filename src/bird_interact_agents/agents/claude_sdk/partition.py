@@ -157,6 +157,14 @@ in the request, and for broad whole-schema questions (it accumulates context
 across questions). Knowledge-base item definitions are on your surface too —
 read them verbatim with `get_knowledge_definition` /
 `get_all_external_knowledge_names`."""
+        post_fail = f"""
+
+After a FAILED `{submit_tool}` (any non-pass status), do NOT go back to
+re-introspect the schema — the new evidence is in the grader's miss
+diagnostics and in your candidate query's output, not in the schema. Re-run
+the candidate through `{verify_tool}`, pivot your operationalisation, or ask
+the user. Re-introspection is for schema/KB gaps you discover while building,
+not for grader misses."""
     else:
         introspection_tools = _INTROSPECTION_TOOLS_BY_MODE[query_mode]
         discovery_section = f"""
@@ -179,15 +187,16 @@ surface: read those verbatim with `get_knowledge_definition` /
 Discovery is WARM — it remembers your earlier questions, so follow-ups are
 cheap. But before asking, check whether discovery ALREADY told you the
 answer in a previous reply; do not re-ask for facts you already have."""
-    return f"""
-{discovery_section}
+        post_fail = f"""
 
 After a FAILED `{submit_tool}` (any non-pass status), do NOT go back to
-re-introspect the schema — the new evidence is in the grader's miss
-diagnostics and in your candidate query's output, not in the schema. Re-run
-the candidate through `{verify_tool}`, pivot your operationalisation, or ask
-the user. Re-introspection is for schema/KB gaps you discover while building,
-not for grader misses.
+`ask_discovery` to re-introspect the schema — the new evidence is in the
+grader's miss diagnostics and in your candidate query's output, not in the
+schema. Re-run the candidate through `{verify_tool}`, pivot your
+operationalisation, or ask the user. `ask_discovery` is for schema/KB gaps
+you discover while reading discovery's answers, not for grader misses."""
+    return f"""
+{discovery_section}{post_fail}
 
 ## Verify-before-submit checklist (mandatory)
 

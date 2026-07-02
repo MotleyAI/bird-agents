@@ -225,11 +225,13 @@ _MAIN_NATIVE_BARE = [
     "submit_query",
     "recommend_root_model",
     # DEV-1629: the main loop nails down query details itself — `search` /
-    # `inspect_model` are on MAIN directly (no longer discovery-only). They stay
-    # on the discovery client too, so `ask_discovery` can still introspect when
-    # grilling the user.
+    # `inspect_model` / `inspect` are on MAIN directly (no longer discovery-only).
+    # They stay on the discovery client too, so `ask_discovery` can still
+    # introspect when grilling the user. `inspect` (single-entity point lookup)
+    # is the primitive for confirming a known column's sampled values.
     "search",
     "inspect_model",
+    "inspect",
     "create_model",
     "edit_model",
     "validate_models",

@@ -129,7 +129,7 @@ identifiers):
      projected, grouped, or join-key column (that would corrupt the
      returned value).
    - If a KB cites named literals that are ABSENT from the column's
-     sampled values (check via `inspect_model`), do not write that
+     sampled values (check via `inspect`), do not write that
      predicate.
    - Symmetric companion: if the column's `Sample values` show variants
      of the KB-named literals that case/whitespace normalisation CANNOT
@@ -147,7 +147,7 @@ identifiers):
 
 FILTER LITERALS — MATCH THE STORED SPELLING, DO NOT GUESS. Before writing
 any `=`, `IN`, or `LIKE` predicate on a text / categorical column, read its
-`Sample values:` via `search` (compact=False) / `inspect_model` and build the predicate from the forms
+`Sample values:` via `inspect` and build the predicate from the forms
 that ACTUALLY occur there — never from a guessed literal. When the stored
 spelling is unambiguous, match it verbatim. Pick the resolution by the KIND
 of variation the samples show, and use exactly ONE:

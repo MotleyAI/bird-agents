@@ -173,6 +173,7 @@ SLAYER_MCP_TOOLS = [
     "list_datasources",
     "models_summary",
     "inspect_model",
+    "inspect",
     "search",
     "recommend_root_model",
     "create_model",

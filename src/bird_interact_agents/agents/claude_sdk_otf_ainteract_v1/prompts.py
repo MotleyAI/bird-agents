@@ -84,8 +84,8 @@ formula VERBATIM with `get_knowledge_definition` (and
 formula.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — use `search` / `inspect_model` for that
-column's `Description:` and `Sample values:`. The reported `Sample values:` are your authoritative source
+filter, projection, or join key — use `inspect` for that column's
+`Description:` and `Sample values:` (single-entity point lookup). The reported `Sample values:` are your authoritative source
 of which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same concept.
 Use them BEFORE writing any IN-set (see rule 3 below).
@@ -119,8 +119,8 @@ _AINTERACT_RULES_2_3 = """\
      projected, grouped, or join-key column (that would corrupt the
      returned value).
    - If a KB cites named literals that are ABSENT from the column's
-     sampled values (confirm the sampled values via `search` /
-     `inspect_model`), do not write that predicate.
+     sampled values (confirm the sampled values via `inspect`), do not write that
+     predicate.
    - Symmetric companion: if the column's `Sample values` show variants
      of the KB-named literals that case/whitespace normalisation CANNOT
      unify — abbreviations (`apt` for `Apartment`, `Y` for `yes`), or
@@ -149,9 +149,7 @@ SLAYER_OTF_AINTERACT = (
     + "\n\n"
     + _AINTERACT_RULES_2_3
     + "\n\n"
-    + _SAMPLE_VALUE_FILTER_MANDATE.format(
-        sample_source="`search` (compact=False) / `inspect_model`"
-    )
+    + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`inspect`")
     + "\n\n"
     + _ASK_AGAIN_RULE.format(knowledge_source="a memory")
     + "\n\n   "

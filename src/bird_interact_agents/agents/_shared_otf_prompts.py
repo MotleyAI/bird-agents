@@ -458,9 +458,9 @@ ENCODE-THEN-QUERY DISCIPLINE:"""
 # shared fragment referenced by BOTH the frozen v0 literals AND the v1
 # compositions (slayer + raw) — the tool that surfaces sampled values differs
 # per (version, mode), so it is parameterised by `{sample_source}`:
-#   * slayer v0  -> `search` (compact=False) / `inspect_model`
-#   * slayer v1  -> `ask_discovery` (the v1 main agent has no direct introspection)
-#   * raw v0/v1  -> `get_column_meaning`
+#   * slayer v0/v1 -> `inspect` (single-entity point lookup surfaces a known
+#     column's `Sample values:` directly — DEV-1629)
+#   * raw v0/v1    -> `get_column_meaning`
 # Rendered for raw it carries NO slayer vocabulary (asserted in
 # tests/test_dev1623_filter_and_submit_mandates.py and the raw-vocab contract
 # in tests/test_shared_otf_prompts.py). The `LOWER(TRIM(...))` fallback is
@@ -699,7 +699,7 @@ identifiers):
      projected, grouped, or join-key column (that would corrupt the
      returned value).
    - If a KB cites named literals that are ABSENT from the column's
-     sampled values (check via `inspect_model`), do not write that
+     sampled values (check via `inspect`), do not write that
      predicate.
    - Symmetric companion: if the column's `Sample values` show variants
      of the KB-named literals that case/whitespace normalisation CANNOT
@@ -717,7 +717,7 @@ identifiers):
 
 """
     + _SAMPLE_VALUE_FILTER_MANDATE.format(
-        sample_source="`search` (compact=False) / `inspect_model`"
+        sample_source="`inspect`"
     )
     + """
 
@@ -963,7 +963,7 @@ identifiers):
      projected, grouped, or join-key column (that would corrupt the
      returned value).
    - If a KB cites named literals that are ABSENT from the column's
-     sampled values (check via `inspect_model`), do not write that
+     sampled values (check via `inspect`), do not write that
      predicate.
    - Symmetric companion: if the column's `Sample values` show variants
      of the KB-named literals that case/whitespace normalisation CANNOT
@@ -980,7 +980,7 @@ identifiers):
 
 """
     + _SAMPLE_VALUE_FILTER_MANDATE.format(
-        sample_source="`search` (compact=False) / `inspect_model`"
+        sample_source="`inspect`"
     )
     + """
 
