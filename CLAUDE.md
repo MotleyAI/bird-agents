@@ -185,6 +185,15 @@ Everything after `--` is passed straight to `bird-interact`. Notes / gotchas
   docker hostname, not env-aware) logs that error and is unused for the verdict.
   The CLOUD hits the identical error for the same reason — do NOT "fix" it by
   patching the upstream config; that would diverge from cloud behaviour.
+- **large-v1 dumps ship PER-TABLE**, not as one combined file. The Google
+  Drive zip (`download_pg_dumps.py`) has `postgre_table_dumps_large/<db>_template/
+  <table>.sql` (one per table, each with its own FK constraints) plus PARTIAL
+  `*_full.sql` aggregates (e.g. `disaster_relief` full = 29/49 tables). The old
+  "pick the largest file" heuristic grabbed a single big table → a 1-table DB.
+  `download_pg_dumps.combine_per_table_dumps` now concatenates the single-table
+  files with `CREATE TYPE` hoisted first and `FOREIGN KEY`s deferred last, so
+  the combined dump loads in one clean pass. If you see a livesqlbench-large DB
+  with implausibly few tables, re-stage from the zip with the current script.
 - Manage the cluster directly: `scripts/setup_local_postgres.py --benchmark X`
   (idempotent provision — all benchmark DBs by default, or `--instance-ids` for
   a subset), `--stop` to stop it, `--recreate` to wipe+rebuild. Pure helpers are
