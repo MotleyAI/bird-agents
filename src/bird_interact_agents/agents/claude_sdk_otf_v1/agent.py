@@ -224,6 +224,12 @@ _MAIN_NATIVE_BARE = [
     "query_nested",
     "submit_query",
     "recommend_root_model",
+    # DEV-1629: the main loop nails down query details itself — `search` /
+    # `inspect_model` are on MAIN directly (no longer discovery-only). They stay
+    # on the discovery client too, so `ask_discovery` can still introspect when
+    # grilling the user.
+    "search",
+    "inspect_model",
     "create_model",
     "edit_model",
     "validate_models",

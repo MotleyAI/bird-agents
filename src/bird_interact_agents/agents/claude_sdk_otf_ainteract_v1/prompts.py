@@ -74,19 +74,18 @@ YOUR TOOLS (read their own descriptions). Call `help` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 `create_model` / `edit_model` to add columns and measures; `query` (single
-object OR list of stage objects for nested DAG) to test. You do NOT hold the
-schema-introspection tools — to learn what models / columns / joins exist,
-their descriptions, and their sampled values, ask the `ask_discovery` tool
-(it owns `search` / `inspect_model` / `models_summary` and accumulates
-context across your questions, so follow-ups are cheap). Read each KB item's
+object OR list of stage objects for nested DAG) to test. You HOLD the
+schema-introspection tools `search` and `inspect_model` — call them DIRECTLY
+to learn what models / columns / joins exist, their descriptions, and their
+sampled values. FIRST call `ask_discovery` to grill the user about any
+ambiguity in the request, then introspect and build. Read each KB item's
 formula VERBATIM with `get_knowledge_definition` (and
 `get_all_external_knowledge_names` to list them) — never paraphrase a KB
 formula.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — ask `ask_discovery` for that column's
-`Description:` and `Sample values:` (discovery reads them via `search` /
-`inspect_model`). The reported `Sample values:` are your authoritative source
+filter, projection, or join key — use `search` / `inspect_model` for that
+column's `Description:` and `Sample values:`. The reported `Sample values:` are your authoritative source
 of which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same concept.
 Use them BEFORE writing any IN-set (see rule 3 below).
@@ -150,7 +149,9 @@ SLAYER_OTF_AINTERACT = (
     + "\n\n"
     + _AINTERACT_RULES_2_3
     + "\n\n"
-    + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`ask_discovery`")
+    + _SAMPLE_VALUE_FILTER_MANDATE.format(
+        sample_source="`search` (compact=False) / `inspect_model`"
+    )
     + "\n\n"
     + _ASK_AGAIN_RULE.format(knowledge_source="a memory")
     + "\n\n   "

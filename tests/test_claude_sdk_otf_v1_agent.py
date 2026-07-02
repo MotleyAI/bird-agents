@@ -57,11 +57,15 @@ def test_main_native_tool_names_include_write_tools():
         "mcp__bird-interact-tools__validate_models",
     ):
         assert t in names, f"missing write tool {t}"
-    # Introspection tools live on DISCOVERY, NOT main.
+    # DEV-1629: search / inspect_model now live on BOTH clients (main nails down
+    # query details directly; discovery keeps them so ask_discovery can still
+    # introspect). models_summary stays discovery-only.
     disc = set(m.DISCOVERY_NATIVE_TOOL_NAMES)
     for t in ("mcp__bird-interact-tools__search",
               "mcp__bird-interact-tools__inspect_model"):
-        assert t in disc and t not in names
+        assert t in disc and t in names
+    assert "mcp__bird-interact-tools__models_summary" in disc
+    assert "mcp__bird-interact-tools__models_summary" not in names
 
 
 # ---------------------------------------------------------------------------

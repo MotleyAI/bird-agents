@@ -214,8 +214,6 @@ def test_tool_is_read_only_global_invariant():
     ],
 )
 def test_claude_sdk_prompts_no_longer_import_playbook(module_path):
-    import importlib
-
     mod = importlib.import_module(module_path)
     assert not hasattr(mod, "_HOST_DISCOVERY_PLAYBOOK"), (
         f"{module_path} still imports the HOST DISCOVERY playbook; DEV-1629 "
@@ -231,8 +229,6 @@ def test_claude_sdk_prompts_no_longer_import_playbook(module_path):
     ],
 )
 def test_pydantic_ai_prompts_still_import_playbook(module_path):
-    import importlib
-
     from bird_interact_agents.agents._host_discovery_playbook import (
         HOST_DISCOVERY_PLAYBOOK,
     )

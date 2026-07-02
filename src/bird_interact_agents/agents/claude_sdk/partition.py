@@ -147,8 +147,23 @@ def build_main_workflow_note(*, query_mode: str) -> str:
             f"build_main_workflow_note: unknown query_mode {query_mode!r}; "
             f"expected one of {sorted(_VERIFY_TOOL_BY_MODE)}"
         ) from exc
-    return f"""
+    if query_mode == "slayer":
+        # DEV-1629: the slayer main loop now HOLDS `search` / `inspect_model`
+        # directly; the warm discovery assistant is for grilling the user and
+        # broad whole-schema questions, not the primary introspection path.
+        discovery_section = """
+## Discovery workflow
 
+You HOLD the schema-introspection tools `search` and `inspect_model` on your
+own surface — call them DIRECTLY for model/column/join schemas, sample values,
+and descriptions. A long-lived warm 'discovery' assistant is ALSO available
+through the `ask_discovery` tool: use it to grill the user about ambiguities
+in the request, and for broad whole-schema questions (it accumulates context
+across questions). Knowledge-base item definitions are on your surface too —
+read them verbatim with `get_knowledge_definition` /
+`get_all_external_knowledge_names`."""
+    else:
+        discovery_section = f"""
 ## Discovery workflow (mandatory)
 
 Schema/data introspection tools (model/table schemas, sample values, join
@@ -167,14 +182,16 @@ surface: read those verbatim with `get_knowledge_definition` /
 
 Discovery is WARM — it remembers your earlier questions, so follow-ups are
 cheap. But before asking, check whether discovery ALREADY told you the
-answer in a previous reply; do not re-ask for facts you already have.
+answer in a previous reply; do not re-ask for facts you already have."""
+    return f"""
+{discovery_section}
 
 After a FAILED `{submit_tool}` (any non-pass status), do NOT go back to
-`ask_discovery` to re-introspect the schema — the new evidence is in the
-grader's miss diagnostics and in your candidate query's output, not in the
-schema. Re-run the candidate through `{verify_tool}`, pivot your
-operationalisation, or ask the user. `ask_discovery` is for schema/KB gaps
-you discover while reading discovery's answers, not for grader misses.
+re-introspect the schema — the new evidence is in the grader's miss
+diagnostics and in your candidate query's output, not in the schema. Re-run
+the candidate through `{verify_tool}`, pivot your operationalisation, or ask
+the user. Re-introspection is for schema/KB gaps you discover while building,
+not for grader misses.
 
 ## Verify-before-submit checklist (mandatory)
 
