@@ -33,6 +33,7 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _PIVOT_AFTER_REPEATED_FAILURES,
     _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
     _RULE_0_ASK_BEFORE,
+    _SAMPLE_VALUE_FILTER_MANDATE,
     _SLAYER_SQL_ARTIFACT_CHECK,
     _USER_SIM_TRUST_CALIBRATION,
 )
@@ -125,11 +126,12 @@ _AINTERACT_RULES_2_3 = """\
      sampled values (confirm the sampled values via `ask_discovery`), do not write that
      predicate.
    - Symmetric companion: if the column's `Sample values` show variants
-     of the KB-named literals — case differences, internal whitespace,
-     abbreviations (`apt` for `Apartment`, `Y` for `yes`), or alternate
-     phrasings of the same concept (`brick house` vs `brickwork house`,
-     `2014+` / `after 2014` for `2014 or newer`) — NORMALISE and EXTEND
-     the IN-set to include those variants. KB hedges ("etc.", "like",
+     of the KB-named literals that case/whitespace normalisation CANNOT
+     unify — abbreviations (`apt` for `Apartment`, `Y` for `yes`), or
+     alternate phrasings of the same concept (`brick house` vs `brickwork
+     house`, `2014+` / `after 2014` for `2014 or newer`) — EXTEND
+     the IN-set to include those variants (pure case / whitespace
+     variation is handled by the filter-literals rule's `LOWER(TRIM)`). KB hedges ("etc.", "like",
      "include") and the schema author's `Ex.` enumerations are
      deliberately non-exhaustive; the `Sample values` line is the
      authoritative inventory of what's actually present in the column.
@@ -150,6 +152,8 @@ SLAYER_OTF_AINTERACT = (
     + _DECOMPOSE_DISCIPLINE
     + "\n\n"
     + _AINTERACT_RULES_2_3
+    + "\n\n"
+    + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`ask_discovery`")
     + "\n\n"
     + _ASK_AGAIN_RULE.format(knowledge_source="a memory")
     + "\n\n   "

@@ -59,8 +59,15 @@ import pytest
 # compact=False)` + `cypher_filter` detail-read pattern. The shared
 # `_COMPACT_SEARCH_DISCIPLINE` and `HOST_DISCOVERY_PLAYBOOK` both changed, so
 # the v1 main prompts (which still append the playbook) re-hash.
-_ONE_SHOT_SHA256 = "c5e1eb3736abaecdf21d4d066329795b59952afa97b8d6b7addea98ee9815b50"
-_AINTERACT_SHA256 = "6346e4f56662948757166c23b8b2e2f55e61a3c8e7e0794f1f589b70b0f8af6f"
+# Re-baselined again for the DEV-1591 ∩ DEV-1623 merge: DEV-1623 splices the
+# shared `_SAMPLE_VALUE_FILTER_MANDATE` fragment (mandate sample-value-aware
+# filter literals to cut submit-verify thrash) into both v1 slayer prompts after
+# the rules-2/3 block, rendered with `sample_source="`ask_discovery`"`. The
+# merged prompt now carries BOTH the DEV-1591 search/inspect discipline AND the
+# DEV-1623 filter mandate, so the snapshots are recomputed from the merged
+# source (neither side's pre-merge value).
+_ONE_SHOT_SHA256 = "f94817c9aa7caed324ef7d126092b488da3a7a25a1b191d988559b90b69c4c2a"
+_AINTERACT_SHA256 = "5489215b1fcf12f64c039b85c61e4f82b9c47c9bef0241817bb33e4ef33bd7f1"
 
 
 def test_slayer_otf_one_shot_unchanged():
