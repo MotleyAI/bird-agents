@@ -199,6 +199,25 @@ def test_tool_is_read_only_global_invariant():
     assert TOOL not in WRITE_SLAYER_TOOLS
 
 
+def test_pre_encoded_v1_drops_discovery_only_inventory_tools():
+    """DEV-1629 unshare: the v1 pre-encoded prompts must NOT advertise
+    `list_datasources` / `models_summary` (not on the slayer v1 MAIN surface),
+    while the v0 prompts (single client, both tools present) keep them."""
+    from bird_interact_agents.agents import _pre_encoded_prompts as p
+
+    for tool in ("list_datasources", "models_summary"):
+        assert tool in p.SLAYER_PRE_ENCODED_ONE_SHOT
+        assert tool in p.SLAYER_PRE_ENCODED_AINTERACT
+        assert tool not in p.SLAYER_PRE_ENCODED_ONE_SHOT_V1
+        assert tool not in p.SLAYER_PRE_ENCODED_AINTERACT_V1
+    # The v1 agents consume the v1 variants (not the v0 shared constants).
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as one_shot
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import agent as ainteract
+
+    assert one_shot.SLAYER_PRE_ENCODED_ONE_SHOT is p.SLAYER_PRE_ENCODED_ONE_SHOT_V1
+    assert ainteract.SLAYER_PRE_ENCODED_AINTERACT is p.SLAYER_PRE_ENCODED_AINTERACT_V1
+
+
 # ---------------------------------------------------------------------------
 # 5. Playbook divergence (Codex F7): claude_sdk side drops the playbook import;
 #    pydantic_ai side keeps it. (claude_sdk-only scope.)

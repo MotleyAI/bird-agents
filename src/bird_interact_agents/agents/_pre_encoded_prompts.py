@@ -69,11 +69,10 @@ DISCOVER the entities the question needs and QUERY off them.
 SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-`list_datasources` / `models_summary` to see what exists; `search` to find
-the encoded entities and KB-derived columns relevant to the question;
-`inspect_model` to see a model's columns / measures / joins; `query`
-(single object OR list of stage objects for a nested DAG) to test before
-submitting. There are no model-mutation tools — if an entity you expected
+{inventory_tools}`search` to find the encoded entities and KB-derived columns
+relevant to the question; `inspect_model` to see a model's columns / measures
+/ joins; `query` (single object OR list of stage objects for a nested DAG) to
+test before submitting. There are no model-mutation tools — if an entity you expected
 is missing, search for an equivalent or build the logic INSIDE your query
 referencing existing columns; never assume a column you have not confirmed.
 
@@ -156,6 +155,14 @@ and the raw definition. When the question needs such a block and neither
     definition."""
 
 
+# {inventory_tools} slot for the pre-encoded tools block. v0 agents hold
+# `list_datasources` / `models_summary` on their single surface; the slayer v1
+# MAIN agent does NOT (DEV-1629 keeps those discovery-only and introspects via
+# `search` / `inspect_model` directly), so its variant drops the clause.
+_V0_INVENTORY = "`list_datasources` / `models_summary` to see what exists; "
+_V1_INVENTORY = ""
+
+
 SLAYER_PRE_ENCODED_ONE_SHOT = (
     "You are a data analyst. You have a SLayer semantic-layer MCP server plus a\n"
     "native `submit_query` tool. The domain knowledge is ALREADY ENCODED as\n"
@@ -166,7 +173,7 @@ SLAYER_PRE_ENCODED_ONE_SHOT = (
         sources_desc="the encoded columns/measures and their\ndescriptions"
     )
     + "\n\n"
-    + _PRE_ENCODED_TOOLS_BLOCK
+    + _PRE_ENCODED_TOOLS_BLOCK.format(inventory_tools=_V0_INVENTORY)
     + "\n\nDISCOVER-THEN-QUERY DISCIPLINE:\n\n"
     + _DECOMPOSE_DISCIPLINE
     + "\n\n"
@@ -213,7 +220,7 @@ SLAYER_PRE_ENCODED_AINTERACT = (
         submit_tool="submit_query",
     )
     + "\n\n"
-    + _PRE_ENCODED_TOOLS_BLOCK
+    + _PRE_ENCODED_TOOLS_BLOCK.format(inventory_tools=_V0_INVENTORY)
     + "\n\nDISCOVER-THEN-QUERY DISCIPLINE:\n\n"
     + _DECOMPOSE_DISCIPLINE
     + "\n\n"
@@ -263,7 +270,24 @@ SLAYER_PRE_ENCODED_AINTERACT = (
 )
 
 
+# DEV-1629: v1 variants — identical to v0 except the pre-encoded tools block
+# drops the `list_datasources` / `models_summary` inventory clause (not on the
+# slayer v1 MAIN surface). Derived by dropping the clause so the rest of the
+# prompt stays byte-identical to v0; the assertions guard against a silent
+# no-op if the v0 clause text ever changes.
+SLAYER_PRE_ENCODED_ONE_SHOT_V1 = SLAYER_PRE_ENCODED_ONE_SHOT.replace(
+    _V0_INVENTORY, _V1_INVENTORY
+)
+SLAYER_PRE_ENCODED_AINTERACT_V1 = SLAYER_PRE_ENCODED_AINTERACT.replace(
+    _V0_INVENTORY, _V1_INVENTORY
+)
+assert SLAYER_PRE_ENCODED_ONE_SHOT_V1 != SLAYER_PRE_ENCODED_ONE_SHOT
+assert SLAYER_PRE_ENCODED_AINTERACT_V1 != SLAYER_PRE_ENCODED_AINTERACT
+
+
 __all__ = [
     "SLAYER_PRE_ENCODED_ONE_SHOT",
     "SLAYER_PRE_ENCODED_AINTERACT",
+    "SLAYER_PRE_ENCODED_ONE_SHOT_V1",
+    "SLAYER_PRE_ENCODED_AINTERACT_V1",
 ]

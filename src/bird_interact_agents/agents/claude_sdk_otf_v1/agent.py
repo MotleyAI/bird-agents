@@ -60,7 +60,7 @@ from bird_interact_agents.agents._pre_encoded import (
     validate_pre_encoded_source,
 )
 from bird_interact_agents.agents._pre_encoded_prompts import (
-    SLAYER_PRE_ENCODED_ONE_SHOT,
+    SLAYER_PRE_ENCODED_ONE_SHOT_V1 as SLAYER_PRE_ENCODED_ONE_SHOT,
 )
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.model_string import native_model_id

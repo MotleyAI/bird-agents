@@ -116,17 +116,13 @@ _VERIFY_TOOL_BY_MODE = {
     "raw": ("execute_sql", "submit_sql"),
 }
 
-# The introspection tools that moved to the discovery client per mode. Named
-# in the bridging clause so any task-guidance that still says "call <tool>"
-# (e.g. the shared host-discovery playbook / decompose discipline, which also
-# serve the single-agent v0 flavors) is correctly rerouted through
-# ``ask_discovery`` for the two-stage v1 main loop.
+# The raw-mode introspection tools that live only on the discovery client, named
+# in the bridging clause so any task-guidance that says "call <tool>" is rerouted
+# through ``ask_discovery`` for the two-stage v1 main loop. DEV-1629: the slayer
+# main loop now HOLDS ``search`` / ``inspect_model`` directly, so slayer no longer
+# needs this reroute clause (its ``discovery_section`` is written directly); only
+# raw still routes introspection through ``ask_discovery``.
 _INTROSPECTION_TOOLS_BY_MODE = {
-    # The slayer discovery client owns search / inspect_model / models_summary.
-    # ``list_datasources`` was retired (one datasource per task) — it is not on
-    # ANY surface; the general "introspection is NOT on your tool surface"
-    # statement above already reroutes a stale reference to ``ask_discovery``.
-    "slayer": "`search` / `inspect_model` / `models_summary`",
     "raw": "`get_schema` / `get_all_column_meanings`",
 }
 
@@ -141,7 +137,6 @@ def build_main_workflow_note(*, query_mode: str) -> str:
     """
     try:
         verify_tool, submit_tool = _VERIFY_TOOL_BY_MODE[query_mode]
-        introspection_tools = _INTROSPECTION_TOOLS_BY_MODE[query_mode]
     except KeyError as exc:
         raise ValueError(
             f"build_main_workflow_note: unknown query_mode {query_mode!r}; "
@@ -163,6 +158,7 @@ across questions). Knowledge-base item definitions are on your surface too —
 read them verbatim with `get_knowledge_definition` /
 `get_all_external_knowledge_names`."""
     else:
+        introspection_tools = _INTROSPECTION_TOOLS_BY_MODE[query_mode]
         discovery_section = f"""
 ## Discovery workflow (mandatory)
 
