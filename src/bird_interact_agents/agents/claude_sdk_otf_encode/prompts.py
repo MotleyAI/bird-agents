@@ -36,9 +36,9 @@ THE KB ITEM TO ENCODE (id {kb_id}):
 TOOLS (read their own descriptions):
 * `help` — learn the query/colon-aggregation syntax (`revenue:sum`, `*:count`)
   and the `source_model` / `dimensions` / `measures` / `filters` schema.
-* `search` — find existing models / columns / measures and read a known
-  entity's full `Description:` + `Sample values:` (pass
-  `entities=["<db>.<model>.<col>"]`, `max_memories=0`, `max_example_queries=0`).
+* `search` — find existing models / columns / measures relevant to the KB.
+* `inspect` — read a known entity's full `Description:` + `Sample values:` by
+  reference (`<db>.<model>.<col>`; single-entity point lookup).
 * `models_summary` / `inspect_model` — list models and view a model's columns /
   measures / declared joins.
 * `create_model` / `edit_model` — write the encoded entities. `validate_models`
