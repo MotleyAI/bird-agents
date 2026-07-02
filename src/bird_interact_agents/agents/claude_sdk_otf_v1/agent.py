@@ -243,6 +243,7 @@ _DISCOVERY_NATIVE_BARE = [
     "search",
     "models_summary",
     "inspect_model",
+    "inspect",
     "query",
     *_KB_NATIVE_BARE,
 ]

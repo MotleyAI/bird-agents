@@ -199,6 +199,30 @@ def test_tool_is_read_only_global_invariant():
     assert TOOL not in WRITE_SLAYER_TOOLS
 
 
+def test_inspect_tool_on_surface_alongside_inspect_model():
+    """DEV-1629: the SLayer single-entity `inspect` tool (for reading a known
+    column's sample values) is on the surface ALONGSIDE `inspect_model`, and
+    survives the pre-encoded write-strip (it is read-only)."""
+    from bird_interact_agents.agents._pre_encoded import (
+        strip_write_slayer_tools,
+        strip_write_tool_names,
+    )
+    from bird_interact_agents.agents.claude_sdk import agent as base
+    from bird_interact_agents.agents.claude_sdk_otf import agent as v0
+    from bird_interact_agents.agents.claude_sdk_otf_v1 import agent as v1
+
+    assert {"inspect", "inspect_model"} <= base._SLAYER_NATIVE_NAMES
+    assert {"inspect", "inspect_model"} <= set(v0.SLAYER_MCP_TOOLS)
+    inspect_full = "mcp__bird-interact-tools__inspect"
+    assert inspect_full in v1.MAIN_NATIVE_TOOL_NAMES
+    # read-only → survives the pre-encoded strip on both v0 and v1.
+    assert "inspect" in strip_write_slayer_tools(v0.SLAYER_MCP_TOOLS)
+    assert inspect_full in strip_write_tool_names(v1.MAIN_NATIVE_TOOL_NAMES)
+    # bridge resolves its real schema from the installed slayer.
+    desc, _schema = base._slayer_tool_metadata("inspect")
+    assert isinstance(desc, str) and desc
+
+
 def test_pre_encoded_v1_drops_discovery_only_inventory_tools():
     """DEV-1629 unshare: the v1 pre-encoded prompts must NOT advertise
     `list_datasources` / `models_summary` (not on the slayer v1 MAIN surface),

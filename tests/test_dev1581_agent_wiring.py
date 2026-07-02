@@ -49,10 +49,11 @@ def _bare(names):
 
 
 # agent module → partition expectations (bare tool names).
-# DEV-1629: `search` / `inspect_model` moved ONTO slayer v1 main (the main loop
-# nails down query details itself). `models_summary` stays discovery-only, so it
-# is the lone slayer tool still exclusive to the discovery client.
-_SLAYER_MAIN_INTROSPECTION = {"search", "inspect_model"}
+# DEV-1629: `search` / `inspect_model` / `inspect` moved ONTO slayer v1 main (the
+# main loop nails down query details itself; `inspect` reads a known column's
+# sample values). `models_summary` stays discovery-only, so it is the lone slayer
+# tool still exclusive to the discovery client.
+_SLAYER_MAIN_INTROSPECTION = {"search", "inspect_model", "inspect"}
 _SLAYER_DISCOVERY_ONLY = {"models_summary"}
 _SLAYER_INTROSPECTION = _SLAYER_MAIN_INTROSPECTION | _SLAYER_DISCOVERY_ONLY
 _RAW_INTROSPECTION = {"get_schema", "get_all_column_meanings"}

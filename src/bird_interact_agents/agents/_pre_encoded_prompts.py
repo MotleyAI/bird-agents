@@ -77,9 +77,9 @@ is missing, search for an equivalent or build the logic INSIDE your query
 referencing existing columns; never assume a column you have not confirmed.
 
 READ A COLUMN'S FULL DESCRIPTION before committing to it as a filter,
-projection, or join key — `search` with `entities=["<db>.<model>.<col>"]`,
-`max_memories=0`, `max_example_queries=0`. The returned `EntityHit.text`
-carries `Description:` and `Sample values:` inline. The truncated
+projection, or join key — `inspect` the column reference
+(`<db>.<model>.<col>`) to read its `Description:` and `Sample values:`
+(single-entity point lookup). The
 `Sample values:` line is your authoritative source of which literal forms
 actually occur in this column — case variants, whitespace forms,
 abbreviations, alternate phrasings of the same concept. Use it BEFORE

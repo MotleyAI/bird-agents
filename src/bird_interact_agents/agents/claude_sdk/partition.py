@@ -149,11 +149,12 @@ def build_main_workflow_note(*, query_mode: str) -> str:
         discovery_section = """
 ## Discovery workflow
 
-You HOLD the schema-introspection tools `search` and `inspect_model` on your
-own surface — call them DIRECTLY for model/column/join schemas, sample values,
-and descriptions. A long-lived warm 'discovery' assistant is ALSO available
-through the `ask_discovery` tool: use it to grill the user about ambiguities
-in the request, and for broad whole-schema questions (it accumulates context
+You HOLD the schema-introspection tools `search`, `inspect_model`, and
+`inspect` (single-entity point lookup — use it for a known column's sample
+values) on your own surface — call them DIRECTLY for model/column/join
+schemas, sample values, and descriptions. A long-lived warm 'discovery'
+assistant is ALSO available through the `ask_discovery` tool for delegating
+broad whole-schema questions (it owns `models_summary` and accumulates context
 across questions). Knowledge-base item definitions are on your surface too —
 read them verbatim with `get_knowledge_definition` /
 `get_all_external_knowledge_names`."""
