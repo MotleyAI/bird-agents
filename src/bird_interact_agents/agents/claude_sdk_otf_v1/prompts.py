@@ -81,7 +81,7 @@ ENCODE-THEN-QUERY DISCIPLINE:"""
 
 _ENCODE_CORE_TAIL = """\
 2. For each block, read the relevant KB item with `get_knowledge_definition`
-   and ask `ask_discovery` for any entity that already encodes it. A
+   and `search` for any entity that already encodes it. A
    `memory:<id>` token inside a KB body means that KB DEPENDS ON the
    referenced KB.
 
@@ -106,8 +106,8 @@ _ENCODE_CORE_TAIL = """\
      projected, grouped, or join-key column (that would corrupt the
      returned value).
    - If a KB cites named literals that are ABSENT from the column's
-     sampled values (confirm the sampled values via `ask_discovery`), do
-     not write that predicate.
+     sampled values (confirm the sampled values via `search` /
+     `inspect_model`), do not write that predicate.
    - Symmetric companion: if the column's `Sample values` show variants
      of the KB-named literals that case/whitespace normalisation CANNOT
      unify — abbreviations (`apt` for `Apartment`, `Y` for `yes`), or
