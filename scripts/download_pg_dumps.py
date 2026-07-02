@@ -170,7 +170,8 @@ def combine_per_table_dumps(sql_files: list[Path]) -> str:
     ) + "\n"
 
 
-def stage_dumps(benchmark: str, zip_path: Path, *, dry_run: bool = False) -> None:
+def stage_dumps(benchmark: str, zip_path: Path, *, dry_run: bool = False,
+                force: bool = False) -> None:
     from bird_interact_agents import paths
 
     data_root = paths.benchmark_data_root(benchmark)
@@ -223,8 +224,9 @@ def stage_dumps(benchmark: str, zip_path: Path, *, dry_run: bool = False) -> Non
         for target, sources in sorted(by_target.items()):
             if not dry_run:
                 target.parent.mkdir(parents=True, exist_ok=True)
-            if target.exists():
-                print(f"  skip (exists): {target.relative_to(data_root)}")
+            if target.exists() and not force:
+                print(f"  skip (exists): {target.relative_to(data_root)} "
+                      "(pass --force to re-stage / repair)")
                 continue
             if not dry_run:
                 if len(sources) == 1:
@@ -251,8 +253,11 @@ def main() -> None:
                    help="Path to the downloaded SQL dumps zip file")
     p.add_argument("--dry-run", action="store_true",
                    help="Show what would be done without extracting")
+    p.add_argument("--force", action="store_true",
+                   help="Overwrite existing staged dumps (repair a partial / "
+                        "broken dump from an earlier staging).")
     args = p.parse_args()
-    stage_dumps(args.benchmark, args.zip, dry_run=args.dry_run)
+    stage_dumps(args.benchmark, args.zip, dry_run=args.dry_run, force=args.force)
 
 
 if __name__ == "__main__":

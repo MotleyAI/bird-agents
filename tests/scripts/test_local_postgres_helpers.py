@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+
+import pytest
 from pathlib import Path
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
@@ -121,6 +123,40 @@ def _prep_load_databases(monkeypatch, tmp_path, *, load_stderr, table_count):
 
     monkeypatch.setattr(slp, "_psql", _fake_psql)
     return slp, markers / "livesqlbench-large__somedb.done"
+
+
+def test_resolve_dbs_raises_when_no_dumps(monkeypatch, tmp_path):
+    slp = setup_local_postgres
+
+    class _BM:
+        name = "livesqlbench-large"
+
+    monkeypatch.setattr(slp, "get_benchmark", lambda _n: _BM())
+    # benchmark_data_root/pg_dumps does not exist → available is empty.
+    monkeypatch.setattr(slp.paths, "benchmark_data_root", lambda _n: tmp_path)
+    with pytest.raises(SystemExit):
+        slp.resolve_dbs_for("livesqlbench-large", None)
+
+
+def test_running_port_parses_postmaster_pid(tmp_path):
+    slp = setup_local_postgres
+    (tmp_path / "postmaster.pid").write_text(
+        "12345\n" + str(tmp_path) + "\n1700000000\n5544\n/sock\n")
+    assert slp._running_port(tmp_path) == 5544
+    # No pidfile → None.
+    assert slp._running_port(tmp_path / "empty") is None
+
+
+def test_start_cluster_rejects_port_mismatch(monkeypatch, tmp_path):
+    slp = setup_local_postgres
+    monkeypatch.setattr(slp, "_paths", lambda: {"data": tmp_path})
+    monkeypatch.setattr(slp, "_server_running", lambda *a, **k: True)
+    monkeypatch.setattr(slp, "_running_port", lambda _d: 9999)
+    with pytest.raises(SystemExit):
+        slp.start_cluster(bindir=None, port=5544)
+    # Matching port → no raise, returns cleanly (no subprocess start attempted).
+    monkeypatch.setattr(slp, "_running_port", lambda _d: 5544)
+    slp.start_cluster(bindir=None, port=5544)
 
 
 def test_load_marks_done_on_clean_load(monkeypatch, tmp_path):

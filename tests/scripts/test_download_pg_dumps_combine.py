@@ -120,6 +120,31 @@ def test_combine_prefers_single_table_files_over_aggregate(tmp_path):
     assert 'INSERT INTO public."parent"' in out
 
 
+def test_stage_dumps_force_overwrites_existing(tmp_path, monkeypatch):
+    import zipfile
+
+    # A one-DB zip: single file → copied verbatim to pg_dumps/<db>/<db>.sql.
+    zip_path = tmp_path / "dumps.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("mydb_template/mydb_template.sql", "V1\n")
+    data_root = tmp_path / "data"
+    # stage_dumps imports `paths` locally, so patch the real module.
+    from bird_interact_agents import paths as _paths
+    monkeypatch.setattr(_paths, "benchmark_data_root", lambda _b: data_root)
+
+    dpd.stage_dumps("livesqlbench-large", zip_path)
+    staged = data_root / "pg_dumps" / "mydb" / "mydb.sql"
+    assert staged.read_text() == "V1\n"
+
+    # New zip content; a plain re-run SKIPS (existing), --force OVERWRITES.
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("mydb_template/mydb_template.sql", "V2\n")
+    dpd.stage_dumps("livesqlbench-large", zip_path)
+    assert staged.read_text() == "V1\n"  # skipped
+    dpd.stage_dumps("livesqlbench-large", zip_path, force=True)
+    assert staged.read_text() == "V2\n"  # repaired
+
+
 def test_iter_statements_handles_copy_and_drops_meta(tmp_path):
     text = (
         "\\restrict TOKEN\n"

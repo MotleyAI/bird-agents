@@ -193,7 +193,8 @@ Everything after `--` is passed straight to `bird-interact`. Notes / gotchas
   `download_pg_dumps.combine_per_table_dumps` now concatenates the single-table
   files with `CREATE TYPE` hoisted first and `FOREIGN KEY`s deferred last, so
   the combined dump loads in one clean pass. If you see a livesqlbench-large DB
-  with implausibly few tables, re-stage from the zip with the current script.
+  with implausibly few tables, re-stage from the zip with
+  `download_pg_dumps.py --force` (plain re-runs skip existing staged files).
 - Manage the cluster directly: `scripts/setup_local_postgres.py --benchmark X`
   (idempotent provision — all benchmark DBs by default, or `--instance-ids` for
   a subset), `--stop` to stop it, `--recreate` to wipe+rebuild. Pure helpers are

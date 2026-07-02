@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     bm = get_benchmark(args.benchmark).name
-    ids = ([s.strip() for s in args.instance_ids.split(",")]
+    ids = ([s.strip() for s in args.instance_ids.split(",") if s.strip()]
            if args.instance_ids else None)
     rows = {
         r["instance_id"]: r

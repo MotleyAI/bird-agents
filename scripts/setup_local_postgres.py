@@ -92,7 +92,16 @@ def resolve_dbs_for(
             )
         return sorted(wanted)
 
-    return sorted(available)
+    dbs = sorted(available)
+    if not dbs:
+        # Mirror the subset path's fail-fast: a full run with no dumps would
+        # otherwise "provision 0 DB(s)" and launch bird-interact against an
+        # empty cluster.
+        raise SystemExit(
+            f"no pg_dumps/<db>/ dumps found under {pg_dumps}; "
+            "fetch them with scripts/download_pg_dumps.py first"
+        )
+    return dbs
 
 
 def _resolve_bindir() -> Path:
@@ -171,9 +180,34 @@ def ensure_cluster(bindir: Path, recreate: bool = False) -> None:
         )
 
 
+def _running_port(data: Path) -> "int | None":
+    """The port a running cluster is listening on, from postmaster.pid line 4
+    (1=pid, 2=datadir, 3=start-time, 4=port). None if not derivable."""
+    pidfile = data / "postmaster.pid"
+    if not pidfile.exists():
+        return None
+    lines = pidfile.read_text().splitlines()
+    if len(lines) >= 4:
+        try:
+            return int(lines[3].strip())
+        except ValueError:
+            return None
+    return None
+
+
 def start_cluster(bindir: Path, port: int) -> None:
     p = _paths()
     if _server_running(bindir, p["data"]):
+        actual = _running_port(p["data"])
+        if actual is not None and actual != port:
+            # A cluster is up on a different port than requested; returning
+            # here would export BIRD_PG_PORT=<port> while the server listens on
+            # <actual>, so every downstream psql/agent connection would fail.
+            raise SystemExit(
+                f"local postgres is already running on port {actual}, not "
+                f"{port}. Re-run with --port {actual}, or stop it first: "
+                f"scripts/setup_local_postgres.py --stop"
+            )
         return
     subprocess.run(
         [str(bindir / "pg_ctl"), "-D", str(p["data"]), "-l", str(p["log"]),
@@ -316,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
         ap.error(f"{bm.name} is not a postgres benchmark (db_backend="
                  f"{getattr(bm, 'db_backend', 'sqlite')})")
 
-    ids = ([s.strip() for s in args.instance_ids.split(",")]
+    ids = ([s.strip() for s in args.instance_ids.split(",") if s.strip()]
            if args.instance_ids else None)
     dbs = resolve_dbs_for(bm.name, ids)
     print(f"provisioning {len(dbs)} DB(s) for {bm.name} on port {args.port}",
