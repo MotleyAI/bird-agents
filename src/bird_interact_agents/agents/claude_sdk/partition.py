@@ -49,8 +49,11 @@ Report sections (broad request only):
 1. RELEVANT ENTITIES — every table/model plausibly needed, with a one-line
    purpose each.
 2. COLUMNS — for each relevant column: name, description, observed sample
-   values (quote them verbatim; flag mismatches between documented enums
-   and actual values).
+   values (quote them verbatim, preserving the EXACT stored spelling — never
+   canonicalise). For text / categorical columns, explicitly flag any case,
+   whitespace, or spelling variation across the sampled values, and any
+   mismatch between documented enums and the actual values, so the main agent
+   can build filter predicates that match what is really stored.
 3. JOIN PATHS — how the relevant entities connect (direction and keys).
 4. KNOWLEDGE-BASE ITEMS — every KB item that bears on the question, with
    its definition quoted VERBATIM (formulas must not be paraphrased).

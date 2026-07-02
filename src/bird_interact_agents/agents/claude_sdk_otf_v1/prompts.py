@@ -28,6 +28,7 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _DECOMPOSE_DISCIPLINE,
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
+    _SAMPLE_VALUE_FILTER_MANDATE,
     _SLAYER_SQL_ARTIFACT_CHECK,
 )
 
@@ -112,11 +113,12 @@ _ENCODE_CORE_TAIL = """\
      sampled values (confirm the sampled values via `ask_discovery`), do
      not write that predicate.
    - Symmetric companion: if the column's `Sample values` show variants
-     of the KB-named literals — case differences, internal whitespace,
-     abbreviations (`apt` for `Apartment`, `Y` for `yes`), or alternate
-     phrasings of the same concept (`brick house` vs `brickwork house`,
-     `2014+` / `after 2014` for `2014 or newer`) — NORMALISE and EXTEND
-     the IN-set to include those variants. KB hedges ("etc.", "like",
+     of the KB-named literals that case/whitespace normalisation CANNOT
+     unify — abbreviations (`apt` for `Apartment`, `Y` for `yes`), or
+     alternate phrasings of the same concept (`brick house` vs `brickwork
+     house`, `2014+` / `after 2014` for `2014 or newer`) — EXTEND
+     the IN-set to include those variants (pure case / whitespace
+     variation is handled by the filter-literals rule's `LOWER(TRIM)`). KB hedges ("etc.", "like",
      "include") and the schema author's `Ex.` enumerations are
      deliberately non-exhaustive; the `Sample values` line is the
      authoritative inventory of what's actually present in the column.
@@ -136,7 +138,9 @@ SLAYER_OTF_ONE_SHOT = (
     + _NO_USER_TO_CONSULT.format(sources_desc="the memories and column\ndescriptions")
     + "\n\n"
     + _ENCODE_CORE
-    + "\n4. TEST candidate columns and the final query with `query` "
+    + "\n\n"
+    + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`ask_discovery`")
+    + "\n\n4. TEST candidate columns and the final query with `query` "
       "(single object or nested-DAG `queries` list); sanity-check the "
       "generated SQL.\n\n"
       "   "

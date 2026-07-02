@@ -41,8 +41,17 @@ import pytest
 # moved to the discovery client reached via ask_discovery — so the v1 slayer
 # prompts now route schema/sample-value/entity discovery through ask_discovery
 # while keeping KB lookups (get_knowledge_definition) on the main surface.
-_ONE_SHOT_SHA256 = "ecd9dc1343fbb6bb09f0ad336b5df0ad1180b6104d0cfc23212b762c8d9ff12a"
-_AINTERACT_SHA256 = "ffa7ef4d20adeb8c5e548dcd2fcdda3d55bd50a76477eedd54c494ab3843301e"
+# Re-baselined for DEV-1623: the shared `_SAMPLE_VALUE_FILTER_MANDATE` fragment
+# (mandate sample-value-aware filter literals to cut submit-verify thrash) is
+# now spliced into both v1 slayer prompts after the rules-2/3 block, rendered
+# with `sample_source="`ask_discovery`"`. Reworded per PR #72 review to assign
+# each variation kind to exactly one strategy (case/whitespace -> LOWER(TRIM);
+# abbreviation/spelling -> IN-set enumeration). Round 2 (Codex): also narrowed
+# rule 3's "Symmetric companion" bullet itself so it no longer lists
+# case/whitespace among the extend-the-IN-set triggers — the two rules are now
+# fully complementary with zero overlap.
+_ONE_SHOT_SHA256 = "f3f085bf318e9d43361a8752971f748654147dc9dc0d9b26d2b1984a222416ca"
+_AINTERACT_SHA256 = "a6b465e197fd98e239d2cbe09351f0d8ee9562b65a527498e45be2a5de72071f"
 
 
 def test_slayer_otf_one_shot_unchanged():
