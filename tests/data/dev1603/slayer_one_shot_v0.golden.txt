@@ -24,17 +24,9 @@ to see a model's columns / measures / joins; `create_model` / `edit_model`
 to add columns and measures; `query` to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — `search` with `entities=[
-"<db>.<model>.<col>"]`, `max_results=1`, `compact=False`,
-`cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'`. The kind
-filter is load-bearing: without it, the unified `max_results` cap is
-RRF-fused across kinds and a memory tagged to that column can outrank
-the column itself, returning prose instead of the schema-author
-description. Use the `ModelColumn` label (not `Column`) because
-`Column` is a reserved keyword in LadybugDB ≥0.15 and only matches on
-the naive fallback path; `ModelColumn` works on both naive and graph-
-backed installs. The returned hit's `text` carries `Description:` and
-`Sample values:` inline.
+filter, projection, or join key — `inspect` the column reference
+(`<db>.<model>.<col>`) to read its `Description:` and `Sample values:`
+(single-entity point lookup).
 The truncated `Sample values:` line is your authoritative source of
 which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same
