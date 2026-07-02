@@ -223,6 +223,7 @@ _MAIN_NATIVE_BARE = [
     "query",
     "query_nested",
     "submit_query",
+    "recommend_root_model",
     "create_model",
     "edit_model",
     "validate_models",

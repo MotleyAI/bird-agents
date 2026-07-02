@@ -20,10 +20,9 @@ a real dataset's table/column/value names.
 Format params: ``budget``, ``db_name``, ``user_query``.
 """
 
-from bird_interact_agents.agents._host_discovery_playbook import (
-    HOST_DISCOVERY_PLAYBOOK as _HOST_DISCOVERY_PLAYBOOK,
-)
 from bird_interact_agents.agents._shared_otf_prompts import (
+    ENCODE_HOST_GUIDANCE,
+    QUERY_ROOT_GUIDANCE,
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
     _DECOMPOSE_DISCIPLINE,
     _NO_USER_TO_CONSULT,
@@ -93,9 +92,9 @@ _ENCODE_CORE_TAIL = """\
    the KBs that reference it (topological order). For each KB:
    - Create the column / measure on the HOST whose row is 1:1 with what
      the KB describes. When the KB does not pin the host unambiguously,
-     follow the HOST DISCOVERY playbook below to pick it — description
-     match first, then shortest declared-join path. Never pick a host
-     that needs an undeclared join.
+     pick it with the "CHOOSING THE HOST" steps below (read the column
+     descriptions, then call `recommend_root_model` with a `root_hint`).
+     Never pick a host that needs an undeclared join.
    - To reach a column on another table, reference it through a DECLARED
      join, alias-qualified (e.g. `other_alias.col`). Do NOT invent a join
      inside the SQL and do NOT write a correlated subquery in a row-level
@@ -163,5 +162,7 @@ SLAYER_OTF_ONE_SHOT = (
       "Database: {db_name}\n"
       "User question: {user_query}\n"
     + "\n"
-    + _HOST_DISCOVERY_PLAYBOOK
+    + QUERY_ROOT_GUIDANCE
+    + "\n\n"
+    + ENCODE_HOST_GUIDANCE
 )

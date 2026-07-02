@@ -33,7 +33,7 @@ pydantic-ai = [
 smolagents = ["smolagents>=1.0"]
 agno = ["agno>=2.0"]
 mcp-agent = ["mcp-agent>=0.0.16"]
-slayer = ["motley-slayer[advanced-search]>=0.9.1"]
+slayer = ["motley-slayer[advanced-search]>=0.9.3"]
 # `original` brings in the upstream BIRD-Interact mini_interact_agent harness
 # so we can call its main.py directly via `uv run python -m batch_run_bird_interact.main`.
 original = ["mini-interact-agent"]
@@ -51,7 +51,7 @@ all = [
     "smolagents>=1.0",
     "agno>=2.0",
     "mcp-agent>=0.0.16",
-    "motley-slayer[advanced-search]>=0.9.1",
+    "motley-slayer[advanced-search]>=0.9.3",
     "mini-interact-agent",
     "ray[default]>=2.30",
     "google-cloud-storage>=2.18",

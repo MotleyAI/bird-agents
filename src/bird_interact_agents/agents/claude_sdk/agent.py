@@ -847,6 +847,7 @@ _SLAYER_NATIVE_NAMES: frozenset[str] = frozenset({
     "search",
     "models_summary",
     "inspect_model",
+    "recommend_root_model",
     "create_model",
     "edit_model",
     "validate_models",

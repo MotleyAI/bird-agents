@@ -245,7 +245,7 @@ def test_exact_tool_surface():
     assert slayer == {
         "create_model", "edit_model", "save_memory", "validate_models",
         "help", "search", "models_summary", "inspect_model",
-        "query", "query_nested",
+        "recommend_root_model", "query", "query_nested",
     }
     assert se.NATIVE_TOOL_NAME == "mcp__bird-interact-tools__submit_encoding"
     # save_memory is REQUIRED here (the agent wires its own memory) and must

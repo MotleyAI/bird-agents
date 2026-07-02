@@ -20,12 +20,9 @@ table/column/value names.
 Format params: ``budget``, ``db_name``, ``user_query``.
 """
 
-# DEV-1512: HOST DISCOVERY playbook — appended to SLAYER_OTF_AINTERACT.
-# Single source in bird_interact_agents.agents._host_discovery_playbook.
-from bird_interact_agents.agents._host_discovery_playbook import (
-    HOST_DISCOVERY_PLAYBOOK as _HOST_DISCOVERY_PLAYBOOK,
-)
 from bird_interact_agents.agents._shared_otf_prompts import (
+    ENCODE_HOST_GUIDANCE,
+    QUERY_ROOT_GUIDANCE,
     _AFTER_REJECTED_DISCIPLINE,
     _ASK_AGAIN_RULE,
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
@@ -106,9 +103,9 @@ _AINTERACT_RULES_2_3 = """\
    the KBs that reference it (topological order). For each KB:
    - Create the column / measure on the HOST whose row is 1:1 with what
      the KB describes. When the KB does not pin the host unambiguously,
-     follow the HOST DISCOVERY playbook below to pick it — description
-     match first, then shortest declared-join path. Never pick a host
-     that needs an undeclared join.
+     pick it with the "CHOOSING THE HOST" steps below (read the column
+     descriptions, then call `recommend_root_model` with a `root_hint`).
+     Never pick a host that needs an undeclared join.
    - To reach a column on another table, reference it through a DECLARED
      join, alias-qualified (e.g. `other_alias.col`). Do NOT invent a join
      inside the SQL and do NOT write a correlated subquery in a row-level
@@ -194,5 +191,7 @@ SLAYER_OTF_AINTERACT = (
       "only what the question needs. If your budget runs out, submit immediately.\n"
       "\nDatabase: {db_name}\nUser question: {user_query}\n"
     + "\n"
-    + _HOST_DISCOVERY_PLAYBOOK
+    + QUERY_ROOT_GUIDANCE
+    + "\n\n"
+    + ENCODE_HOST_GUIDANCE
 )

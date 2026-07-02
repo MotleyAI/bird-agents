@@ -174,6 +174,7 @@ SLAYER_MCP_TOOLS = [
     "models_summary",
     "inspect_model",
     "search",
+    "recommend_root_model",
     "create_model",
     "edit_model",
     "save_memory",

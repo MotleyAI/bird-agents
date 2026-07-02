@@ -16,10 +16,8 @@ Format params (both): ``budget``, ``db_name``, ``user_query``.
 All examples are synthetic — never a real dataset's table/column/value names.
 """
 
-from bird_interact_agents.agents._host_discovery_playbook import (
-    HOST_DISCOVERY_PLAYBOOK as _HOST_DISCOVERY_PLAYBOOK,
-)
 from bird_interact_agents.agents._shared_otf_prompts import (
+    QUERY_ROOT_GUIDANCE,
     _AFTER_REJECTED_DISCIPLINE,
     _ASK_AGAIN_RULE,
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
@@ -99,9 +97,10 @@ _PRE_ENCODED_DISCIPLINE = """\
 3. BUILD THE QUERY OFF THE ENCODED ENTITIES. Reference encoded
    columns / measures BY NAME — do NOT re-derive or inline their logic.
    - To reach a column on another model, use a DECLARED join,
-     alias-qualified (e.g. `other_alias.col`). When the host is ambiguous,
-     follow the HOST DISCOVERY playbook below (description match first,
-     then shortest declared-join path). Never assume an undeclared join.
+     alias-qualified (e.g. `other_alias.col`). When you are unsure which
+     model to root the query at, use the "CHOOSING A QUERY ROOT" steps
+     below (call `recommend_root_model` with the columns/measures you need).
+     Never assume an undeclared join.
    - Where the question still needs an operationalisation choice the
      encoded entities do not pin (a threshold, an IN-set, a unit, a
      rounding), apply the most conservative reading the column descriptions
@@ -196,7 +195,7 @@ SLAYER_PRE_ENCODED_ONE_SHOT = (
       "Database: {db_name}\n"
       "User question: {user_query}\n"
     + "\n"
-    + _HOST_DISCOVERY_PLAYBOOK
+    + QUERY_ROOT_GUIDANCE
 )
 
 
@@ -260,7 +259,7 @@ SLAYER_PRE_ENCODED_AINTERACT = (
       "only what the question needs. If your budget runs out, submit immediately.\n"
       "\nDatabase: {db_name}\nUser question: {user_query}\n"
     + "\n"
-    + _HOST_DISCOVERY_PLAYBOOK
+    + QUERY_ROOT_GUIDANCE
 )
 
 

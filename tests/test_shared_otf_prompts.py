@@ -50,8 +50,13 @@ import pytest
 # rule 3's "Symmetric companion" bullet itself so it no longer lists
 # case/whitespace among the extend-the-IN-set triggers — the two rules are now
 # fully complementary with zero overlap.
-_ONE_SHOT_SHA256 = "f3f085bf318e9d43361a8752971f748654147dc9dc0d9b26d2b1984a222416ca"
-_AINTERACT_SHA256 = "a6b465e197fd98e239d2cbe09351f0d8ee9562b65a527498e45be2a5de72071f"
+# Re-baselined for DEV-1629: the HOST DISCOVERY playbook is retired from the
+# claude_sdk prompts in favour of the shared `QUERY_ROOT_GUIDANCE` /
+# `ENCODE_HOST_GUIDANCE` blocks that drive the SLayer `recommend_root_model`
+# tool (query = no hint; encode = descriptions-first `root_hint`). Both v1 slayer
+# prompts now append the two guidance blocks and reword rule-3 to point at them.
+_ONE_SHOT_SHA256 = "6f89075fc2057d4036c6a9c192973e5391abd8c4a9b05c370a2a6ccb4d915b7e"
+_AINTERACT_SHA256 = "a8d73aff14bd5ae05bef58bdb28e170a416a6b49bd53daa2f15231bb4f30b9eb"
 
 
 def test_slayer_otf_one_shot_unchanged():
