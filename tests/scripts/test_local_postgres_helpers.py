@@ -80,3 +80,65 @@ def test_load_env_file_parses_export_and_quotes(tmp_path, monkeypatch):
 
 def test_load_env_file_absent_is_noop(tmp_path):
     assert run_local_postgres.load_env_file(tmp_path / "nope.env") == 0
+
+
+class _FakeProc:
+    def __init__(self, stderr=""):
+        self.stdout = ""
+        self.stderr = stderr
+        self.returncode = 0
+
+
+def _prep_load_databases(monkeypatch, tmp_path, *, load_stderr, table_count):
+    """Wire load_databases against a fake psql so we can assert the marker
+    policy (touch only on a clean, non-empty load)."""
+    slp = setup_local_postgres
+    markers = tmp_path / "markers"
+    markers.mkdir()
+    monkeypatch.setattr(slp, "_paths", lambda: {"markers": markers,
+                                                "sock": tmp_path / "sock"})
+    # A benchmark whose pg_dumps/<db>/<db>.sql exists (content is irrelevant —
+    # _psql is faked).
+    pg = tmp_path / "data" / "pg_dumps" / "somedb"
+    pg.mkdir(parents=True)
+    (pg / "somedb.sql").write_text("-- fake dump\n")
+
+    class _BM:
+        name = "livesqlbench-large"
+
+    monkeypatch.setattr(slp, "get_benchmark", lambda _n: _BM())
+    monkeypatch.setattr(slp.paths, "benchmark_data_root",
+                        lambda _n: tmp_path / "data")
+    monkeypatch.setattr(slp, "_db_exists", lambda *a, **k: False)
+    monkeypatch.setattr(slp, "_table_count", lambda *a, **k: table_count)
+
+    def _fake_psql(bindir, port, sock, *args, **kw):
+        # The load call carries "-f"; everything else (CREATE DATABASE, …) is
+        # a no-op fake.
+        if "-f" in args:
+            return _FakeProc(stderr=load_stderr)
+        return _FakeProc()
+
+    monkeypatch.setattr(slp, "_psql", _fake_psql)
+    return slp, markers / "livesqlbench-large__somedb.done"
+
+
+def test_load_marks_done_on_clean_load(monkeypatch, tmp_path):
+    slp, marker = _prep_load_databases(
+        monkeypatch, tmp_path, load_stderr="", table_count=50)
+    slp.load_databases(bindir=None, port=5544, benchmark="livesqlbench-large",
+                       dbs=["somedb"])
+    assert marker.exists()  # clean, many tables → marked done
+
+
+def test_load_skips_marker_on_dump_error(monkeypatch, tmp_path):
+    slp, marker = _prep_load_databases(
+        monkeypatch, tmp_path,
+        load_stderr='psql:somedb.sql:29771: ERROR:  relation '
+                    '"public.Household_Telecomm_Metrix" does not exist\n',
+        table_count=1)
+    slp.load_databases(bindir=None, port=5544, benchmark="livesqlbench-large",
+                       dbs=["somedb"])
+    # Partial dump (FK ALTER to a missing table) → NOT marked, so a re-provision
+    # after the dump is fixed will retry.
+    assert not marker.exists()

@@ -215,6 +215,20 @@ def _db_exists(bindir: Path, port: int, db: str) -> bool:
     return r.stdout.strip() == "1"
 
 
+def _table_count(bindir: Path, port: int, db: str) -> int:
+    p = _paths()
+    r = _psql(
+        bindir, port, p["sock"], "-tAc",
+        "SELECT count(*) FROM information_schema.tables "
+        "WHERE table_schema='public'",
+        db=db, capture_output=True, text=True, check=False,
+    )
+    try:
+        return int(r.stdout.strip())
+    except ValueError:
+        return 0
+
+
 def load_databases(
     bindir: Path, port: int, benchmark: str, dbs: list[str]
 ) -> None:
@@ -234,13 +248,34 @@ def load_databases(
         sql_files = sorted((pg_dumps / db).glob("*.sql"))
         if not sql_files:
             raise SystemExit(f"no *.sql under {pg_dumps / db}")
+        had_errors = False
         for sql in sql_files:
             print(f"  [load] {db} <- {sql.name}", file=sys.stderr)
             # -o /dev/null: dumps run `SELECT setval(...)` etc. whose result
-            # rows would otherwise spam stdout.
-            _psql(bindir, port, p["sock"], "-q", "-o", os.devnull,
-                  "-f", str(sql), db=db)
-        marker.touch()
+            # rows would otherwise spam stdout. Capture stderr so a partial /
+            # corrupt dump (e.g. a single-table livesqlbench-large dump that
+            # ALTERs FKs to tables it never creates) is SURFACED, not silently
+            # loaded and left to fail later as a cryptic per-task dry_run_error.
+            r = _psql(bindir, port, p["sock"], "-q", "-o", os.devnull,
+                      "-v", "ON_ERROR_STOP=0", "-f", str(sql), db=db,
+                      capture_output=True, text=True, check=False)
+            errs = [ln for ln in (r.stderr or "").splitlines() if "ERROR:" in ln]
+            if errs:
+                had_errors = True
+                print(f"  [WARN] {db}: {len(errs)} error(s) loading {sql.name}; "
+                      f"first: {errs[0].strip()}", file=sys.stderr)
+        n_tables = _table_count(bindir, port, db)
+        if had_errors or n_tables == 0:
+            # Do NOT touch the marker: a re-provision after the dump is fixed
+            # must retry. Warn loudly so the operator does not mistake the
+            # downstream dry_run_errors for agent failures.
+            print(f"  [WARN] {db}: load INCOMPLETE (tables={n_tables}, "
+                  f"errors={'yes' if had_errors else 'no'}); NOT marking done. "
+                  f"The dump under {pg_dumps / db} is likely partial/corrupt — "
+                  f"re-fetch it (scripts/download_pg_dumps.py) and re-provision.",
+                  file=sys.stderr)
+        else:
+            marker.touch()
 
 
 def write_env(port: int) -> Path:
