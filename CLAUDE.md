@@ -330,6 +330,31 @@ Reach for this script, not ad-hoc `rglob` + cascade computation. The
 either of these two filters. Contract is pinned by
 `tests/scripts/test_cascade_for_combo.py`.
 
+### Per-task baselines — record-by-record, NEVER run-by-run
+
+To compare a run against "the latest raw/slayer `<model>` result **per
+task**" (e.g. a fresh slayer run vs the newest raw-opus numbers), reuse
+`cascade_for_combo.collect_latest_per_task(benchmark=…, mode=…,
+agent_model=…)` — it returns the chosen record `Path` for each
+`(db, instance_id)`. This is **record-by-record / latest-per-task, NOT
+run-by-run**: the newest *whole run* is NOT necessarily the latest for a
+given task (one task's latest raw record can come from a different, older
+run than another task's). Do not pick a single run and compare every task
+to it — walk per task and let each task resolve independently. Mode comes
+from the run-id filename slot (`…-raw-…` / `…-slayer-…`), `agent_model`
+from the record (manifest fallback), so `opus` = `anthropic/claude-opus-4-7`.
+
+The `runs/<bench>/<db>/<iid>/<run-id>.json` records
+(`SubmissionAnnotation`) carry **correctness + provenance only** —
+`evaluation.phase1_against_original_gold` (N1 / original gold),
+`evaluation.phase1_against_any_audited_variant` (audited best-of),
+`evaluation.verdict`, plus stamped `agent_model` / `version` — but **NOT
+turns or tokens**. For turns/tokens read the cloud eval row instead:
+`gcs.read_row(run_id, iid, gcs.latest_attempt(run_id, iid))` →
+`n_agent_turns` + `usage` (prompt/completion/cache tokens). `run_id` is the
+record filename stem. (GCS rows persist for past runs, so this works for
+old baselines too.)
+
 ## Debugging the cloud runner: pull live state, don't guess
 
 When a `bird-interact-cloud` run fails on GCE, **do not iterate by editing
