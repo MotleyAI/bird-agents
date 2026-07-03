@@ -65,8 +65,11 @@ def main(argv: list[str] | None = None) -> int:
         ap.error(f"{bm.name} is not a postgres benchmark (db_backend="
                  f"{getattr(bm, 'db_backend', 'sqlite')})")
 
-    ids = ([s.strip() for s in args.instance_ids.split(",") if s.strip()]
-           if args.instance_ids else None)
+    # Distinguish OMITTED (None → whole benchmark) from an explicitly-provided
+    # empty value (`--instance-ids ""` / `",,,"` → [] → no DBs), so a degenerate
+    # value never silently provisions every DB (Codex PR #75 r5).
+    ids = (None if args.instance_ids is None
+           else [s.strip() for s in args.instance_ids.split(",") if s.strip()])
     dbs = resolve_dbs_for(bm.name, ids)
     print(f"provisioning {len(dbs)} DB(s) for {bm.name} on port {args.port}",
           file=sys.stderr)

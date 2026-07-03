@@ -146,6 +146,30 @@ def test_missing_in_gcs_counted_not_raised(monkeypatch):
     assert result["fetched"] == 0
 
 
+@pytest.mark.parametrize("arg,expected", [
+    (None, None),          # --instance-ids omitted → whole benchmark
+    ("", []),              # explicit empty → no scope
+    (",,,", []),           # explicit all-blank → no scope
+    ("a_1,b_2", ["a_1", "b_2"]),
+])
+def test_main_instance_ids_parsing(monkeypatch, arg, expected):
+    """Codex PR #75 r5: the standalone CLI must distinguish an OMITTED
+    --instance-ids (None → whole) from an explicitly-provided empty value
+    ([] → nothing)."""
+    seen = {}
+
+    def _rec(benchmark, ids, overwrite=False):
+        seen["ids"] = ids
+        return {"fetched": 0, "already_local": 0, "missing_in_gcs": 0}
+
+    monkeypatch.setattr(local_annotations, "sync_annotations", _rec)
+    argv = ["--benchmark", "livesqlbench-large"]
+    if arg is not None:
+        argv += ["--instance-ids", arg]
+    local_annotations.main(argv)
+    assert seen["ids"] == expected
+
+
 def test_empty_id_list_syncs_nothing(monkeypatch):
     """Codex PR #75 r3: an EXPLICIT empty list is 'no scope', NOT the whole
     benchmark — no GCS client, nothing fetched (distinct from None)."""

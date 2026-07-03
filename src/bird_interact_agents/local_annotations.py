@@ -114,8 +114,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="Re-download even if a local .task.json already exists.")
     args = ap.parse_args(argv)
 
-    ids = ([s.strip() for s in args.instance_ids.split(",") if s.strip()]
-           if args.instance_ids else None)
+    # Distinguish OMITTED (None → whole benchmark) from an explicitly-provided
+    # empty value (`--instance-ids ""` / `",,,"` → [] → sync nothing), so a
+    # degenerate value never silently syncs every annotation (Codex PR #75 r5).
+    ids = (None if args.instance_ids is None
+           else [s.strip() for s in args.instance_ids.split(",") if s.strip()])
     result = sync_annotations(args.benchmark, ids, overwrite=args.overwrite)
     print(
         f"fetched={result['fetched']} already_local={result['already_local']} "
