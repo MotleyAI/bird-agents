@@ -215,3 +215,77 @@ def test_tool_use_without_explicit_id_still_counted():
     stats = extract_tool_stats_from_claude_sdk_trajectory(trajectory)
     assert stats is not None
     assert stats["total_calls"] == 1
+
+
+# ---------------------------------------------------------------------------
+# REAL production serialization shape (regression for the all-zero bug).
+#
+# The fixtures above all hand-write `"type": "tool_use"` / `"tool_result"`,
+# but the trajectory serializer uses `dataclasses.asdict(msg)` and the SDK's
+# ToolUseBlock / ToolResultBlock dataclasses have NO `type` field — so the
+# real production trajectory never carries `type` on its content blocks and
+# the walker silently counted ZERO tool calls (empty stats in local AND cloud
+# results.db). These build fixtures from the ACTUAL SDK dataclasses via
+# `dataclasses.asdict`, exactly like claude_sdk_otf/agent.py, so they break if
+# the SDK block shape ever regresses.
+# ---------------------------------------------------------------------------
+
+
+def _asdict_blocks(blocks: list) -> list[dict]:
+    import dataclasses
+
+    return [dataclasses.asdict(b) for b in blocks]
+
+
+def test_real_asdict_shape_counts_tool_calls():
+    """The real `dataclasses.asdict(ToolUseBlock)` shape ({id,name,input},
+    no `type`) must be counted — this is the bug that produced empty stats."""
+    from claude_agent_sdk.types import (
+        TextBlock,
+        ToolResultBlock,
+        ToolUseBlock,
+    )
+
+    assistant = _asdict_blocks([
+        ToolUseBlock(id="t1", name="recommend_root_model", input={"items": ["a.b"]}),
+        TextBlock(text="reasoning..."),
+        ToolUseBlock(id="t2", name="inspect", input={"reference": "db.m.c"}),
+    ])
+    user = _asdict_blocks([
+        ToolResultBlock(tool_use_id="t1", content=[{"type": "text", "text": "ok"}],
+                        is_error=False),
+        ToolResultBlock(tool_use_id="t2", content=[{"type": "text", "text": "boom"}],
+                        is_error=True),
+    ])
+    # Sanity: the real asdict shape truly has NO `type` on the blocks.
+    assert all("type" not in b for b in assistant)
+    assert all("type" not in b for b in user)
+
+    trajectory = [
+        {"type": "AssistantMessage", "data": {"content": assistant}},
+        {"type": "UserMessage", "data": {"content": user}},
+    ]
+    stats = extract_tool_stats_from_claude_sdk_trajectory(trajectory)
+    assert stats is not None
+    assert stats["total_calls"] == 2
+    assert stats["total_errors"] == 1
+    assert stats["per_tool"] == [
+        {"tool": "inspect", "n_calls": 1, "n_errors": 1},
+        {"tool": "recommend_root_model", "n_calls": 1, "n_errors": 0},
+    ]
+    assert stats["error_samples"] == [{"tool": "inspect", "error": "boom"}]
+
+
+def test_real_asdict_text_block_not_counted_as_tool():
+    """A `dataclasses.asdict(TextBlock)` ({text}) must NOT be miscounted as
+    a tool call by the structural detector."""
+    from claude_agent_sdk.types import TextBlock
+
+    trajectory = [
+        {"type": "AssistantMessage",
+         "data": {"content": _asdict_blocks([TextBlock(text="just prose")])}},
+    ]
+    stats = extract_tool_stats_from_claude_sdk_trajectory(trajectory)
+    assert stats is not None
+    assert stats["total_calls"] == 0
+    assert stats["per_tool"] == []

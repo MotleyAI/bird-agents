@@ -20,10 +20,9 @@ a real dataset's table/column/value names.
 Format params: ``budget``, ``db_name``, ``user_query``.
 """
 
-from bird_interact_agents.agents._host_discovery_playbook import (
-    HOST_DISCOVERY_PLAYBOOK as _HOST_DISCOVERY_PLAYBOOK,
-)
 from bird_interact_agents.agents._shared_otf_prompts import (
+    ENCODE_HOST_GUIDANCE,
+    QUERY_ROOT_GUIDANCE,
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
     _DECOMPOSE_DISCIPLINE,
     _NO_USER_TO_CONSULT,
@@ -64,19 +63,18 @@ YOUR TOOLS (read their own descriptions). Call `help` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 `create_model` / `edit_model` to add columns and measures; `query` (single
-object OR list of stage objects for nested DAG) to test. You do NOT hold the
-schema-introspection tools — to learn what models / columns / joins exist,
-their descriptions, and their sampled values, ask the `ask_discovery` tool
-(it owns `search` / `inspect_model` / `models_summary` and accumulates
-context across your questions, so follow-ups are cheap). Read each KB item's
-formula VERBATIM with `get_knowledge_definition` (and
-`get_all_external_knowledge_names` to list them) — never paraphrase a KB
-formula.
+object OR list of stage objects for nested DAG) to test. You HOLD the
+schema-introspection tools `search`, `inspect_model`, and `inspect` — call
+them DIRECTLY: `search` to find models / columns / measures, `inspect_model`
+for a whole model's columns / measures / joins, and `inspect` for a single
+known column's `Description:` and `Sample values:`. Read each KB item's
+formula VERBATIM with
+`get_knowledge_definition` (and `get_all_external_knowledge_names` to list
+them) — never paraphrase a KB formula.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — ask `ask_discovery` for that column's
-`Description:` and `Sample values:` (discovery reads them via `search` /
-`inspect_model`). The reported `Sample values:` are your authoritative source
+filter, projection, or join key — use `inspect` for that column's
+`Description:` and `Sample values:` (single-entity point lookup). The reported `Sample values:` are your authoritative source
 of which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same concept.
 Use them BEFORE writing any IN-set (see rule 3 below).
@@ -85,7 +83,7 @@ ENCODE-THEN-QUERY DISCIPLINE:"""
 
 _ENCODE_CORE_TAIL = """\
 2. For each block, read the relevant KB item with `get_knowledge_definition`
-   and ask `ask_discovery` for any entity that already encodes it. A
+   and `search` for any entity that already encodes it. A
    `memory:<id>` token inside a KB body means that KB DEPENDS ON the
    referenced KB.
 
@@ -93,9 +91,9 @@ _ENCODE_CORE_TAIL = """\
    the KBs that reference it (topological order). For each KB:
    - Create the column / measure on the HOST whose row is 1:1 with what
      the KB describes. When the KB does not pin the host unambiguously,
-     follow the HOST DISCOVERY playbook below to pick it — description
-     match first, then shortest declared-join path. Never pick a host
-     that needs an undeclared join.
+     pick it with the "CHOOSING THE HOST" steps below (read the column
+     descriptions, then call `recommend_root_model` with a `root_hint`).
+     Never pick a host that needs an undeclared join.
    - To reach a column on another table, reference it through a DECLARED
      join, alias-qualified (e.g. `other_alias.col`). Do NOT invent a join
      inside the SQL and do NOT write a correlated subquery in a row-level
@@ -110,7 +108,7 @@ _ENCODE_CORE_TAIL = """\
      projected, grouped, or join-key column (that would corrupt the
      returned value).
    - If a KB cites named literals that are ABSENT from the column's
-     sampled values (confirm the sampled values via `ask_discovery`), do
+     sampled values (confirm the sampled values via `inspect`), do
      not write that predicate.
    - Symmetric companion: if the column's `Sample values` show variants
      of the KB-named literals that case/whitespace normalisation CANNOT
@@ -139,7 +137,7 @@ SLAYER_OTF_ONE_SHOT = (
     + "\n\n"
     + _ENCODE_CORE
     + "\n\n"
-    + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`ask_discovery`")
+    + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`inspect`")
     + "\n\n4. TEST candidate columns and the final query with `query` "
       "(single object or nested-DAG `queries` list); sanity-check the "
       "generated SQL.\n\n"
@@ -163,5 +161,7 @@ SLAYER_OTF_ONE_SHOT = (
       "Database: {db_name}\n"
       "User question: {user_query}\n"
     + "\n"
-    + _HOST_DISCOVERY_PLAYBOOK
+    + QUERY_ROOT_GUIDANCE
+    + "\n\n"
+    + ENCODE_HOST_GUIDANCE
 )

@@ -16,7 +16,10 @@ Format params: ``db_name``, ``kb_id``, ``kb_body``, ``deps_block``,
 ``reverse_deps_block``.
 """
 
-ENCODER_PROMPT = """\
+from bird_interact_agents.agents._shared_otf_prompts import ENCODE_HOST_GUIDANCE
+
+ENCODER_PROMPT = (
+    """\
 You are a SLayer semantic-layer ENCODER. Your job is to encode EXACTLY ONE
 knowledge-base (KB) item into the `{db_name}` SLayer model store as named
 entities (columns / measures / aggregations / models), then report what you
@@ -33,9 +36,9 @@ THE KB ITEM TO ENCODE (id {kb_id}):
 TOOLS (read their own descriptions):
 * `help` — learn the query/colon-aggregation syntax (`revenue:sum`, `*:count`)
   and the `source_model` / `dimensions` / `measures` / `filters` schema.
-* `search` — find existing models / columns / measures and read a known
-  entity's full `Description:` + `Sample values:` (pass
-  `entities=["<db>.<model>.<col>"]`, `max_memories=0`, `max_example_queries=0`).
+* `search` — find existing models / columns / measures relevant to the KB.
+* `inspect` — read a known entity's full `Description:` + `Sample values:` by
+  reference (`<db>.<model>.<col>`; single-entity point lookup).
 * `models_summary` / `inspect_model` — list models and view a model's columns /
   measures / declared joins.
 * `create_model` / `edit_model` — write the encoded entities. `validate_models`
@@ -50,10 +53,9 @@ TOOLS (read their own descriptions):
 ENCODING DISCIPLINE:
 1. Read the KB item. If it cites a formula, encode it VERBATIM — never
    paraphrase a formula.
-2. Find the HOST whose row is 1:1 with what the KB describes (use `search` /
-   `inspect_model`; read column descriptions FIRST, then fall back to the
-   shortest DECLARED-join path). Never pick a host that needs an undeclared
-   join.
+2. Choose the HOST for the entity — the model whose row is 1:1 with what the
+   KB describes — using the "CHOOSING THE HOST" steps at the end of this
+   prompt. Never pick a host that needs an undeclared join.
 3. To reach a column on another table, reference it through a DECLARED join,
    alias-qualified (e.g. `other_alias.col`). Do NOT invent a join in SQL and do
    NOT write a correlated subquery in a row-level Column.
@@ -106,3 +108,6 @@ exist in the store and carry `meta.kb_id={kb_id}` — write it BEFORE you submit
 For `status="deferred"`, leave `entities` empty and put the open questions in
 `clarifying_questions`. Reply briefly after the tool call to finish.
 """
+    + "\n\n"
+    + ENCODE_HOST_GUIDANCE
+)

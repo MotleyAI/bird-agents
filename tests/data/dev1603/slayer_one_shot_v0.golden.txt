@@ -24,17 +24,9 @@ to see a model's columns / measures / joins; `create_model` / `edit_model`
 to add columns and measures; `query` to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — `search` with `entities=[
-"<db>.<model>.<col>"]`, `max_results=1`, `compact=False`,
-`cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'`. The kind
-filter is load-bearing: without it, the unified `max_results` cap is
-RRF-fused across kinds and a memory tagged to that column can outrank
-the column itself, returning prose instead of the schema-author
-description. Use the `ModelColumn` label (not `Column`) because
-`Column` is a reserved keyword in LadybugDB ≥0.15 and only matches on
-the naive fallback path; `ModelColumn` works on both naive and graph-
-backed installs. The returned hit's `text` carries `Description:` and
-`Sample values:` inline.
+filter, projection, or join key — `inspect` the column reference
+(`<db>.<model>.<col>`) to read its `Description:` and `Sample values:`
+(single-entity point lookup).
 The truncated `Sample values:` line is your authoritative source of
 which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same
@@ -112,9 +104,9 @@ identifiers):
    the KBs that reference it (topological order). For each KB:
    - Create the column / measure on the HOST whose row is 1:1 with what
      the KB describes. When the KB does not pin the host unambiguously,
-     follow the HOST DISCOVERY playbook below to pick it — description
-     match first, then shortest declared-join path. Never pick a host
-     that needs an undeclared join.
+     pick it with the "CHOOSING THE HOST" steps below (read the column
+     descriptions, then call `recommend_root_model` with a `root_hint`).
+     Never pick a host that needs an undeclared join.
    - To reach a column on another table, reference it through a DECLARED
      join, alias-qualified (e.g. `other_alias.col`). Do NOT invent a join
      inside the SQL and do NOT write a correlated subquery in a row-level
@@ -129,7 +121,7 @@ identifiers):
      projected, grouped, or join-key column (that would corrupt the
      returned value).
    - If a KB cites named literals that are ABSENT from the column's
-     sampled values (check via `inspect_model`), do not write that
+     sampled values (check via `inspect`), do not write that
      predicate.
    - Symmetric companion: if the column's `Sample values` show variants
      of the KB-named literals that case/whitespace normalisation CANNOT
@@ -147,7 +139,7 @@ identifiers):
 
 FILTER LITERALS — MATCH THE STORED SPELLING, DO NOT GUESS. Before writing
 any `=`, `IN`, or `LIKE` predicate on a text / categorical column, read its
-`Sample values:` via `search` (compact=False) / `inspect_model` and build the predicate from the forms
+`Sample values:` via `inspect` and build the predicate from the forms
 that ACTUALLY occur there — never from a guessed literal. When the stored
 spelling is unambiguous, match it verbatim. Pick the resolution by the KIND
 of variation the samples show, and use exactly ONE:
@@ -279,141 +271,40 @@ question needs).
 Database: {db_name}
 User question: {user_query}
 
-HOST DISCOVERY (when picking a root model [`source_model`] for a query or
-a host for an encoded entity, AND the KB body does not pin the host
-unambiguously — i.e. the KB names columns/fields that exist on more than
-one candidate table, or the formula's columns live on a table T that's
-not the natural per-entity grain of the question).
+CHOOSING A QUERY ROOT (`source_model`). Do not hand-pick the root or
+hand-assemble dotted join paths — ask the tool:
 
-HARD REQUIREMENT — READ COLUMN DESCRIPTIONS BEFORE COMMITTING. For every
-candidate (root model OR join-key column) you are about to use, read its
-description first. Column descriptions are the PRIMARY signal — they
-often state the schema author's semantic intent verbatim ("Associates
-the inspection with the relevant sensor reading", "Links this audit to
-the underlying measurement", "References the parent batch's sample
-set"). That intent is the canonical answer to "which table is this
-column meant to be reached from". Skip this only when the host is
-trivially pinned (single candidate table, KB explicitly names it, OR no
-joins involved at all).
+  1. List the exact `model.column` / `model.metric` references your query
+     needs (aggregation suffixes like `:sum` are fine). If a column NAME
+     could belong to more than one model, resolve its owning model first
+     with `search` / `inspect_model`, then pass the qualified `model.column`.
+  2. Call `recommend_root_model(items=[...], data_source="<db>")` DIRECTLY —
+     it is on your own tool surface, so do not route it through a discovery
+     helper. When you are merely building a query, trust the model it picks.
+  3. Use the returned `root_model` as the query `source_model`, and drop each
+     returned `path` in verbatim as the dimension / measure / filter
+     reference — the aggregation suffix is already attached.
+  4. If `reachable` is false, no single model reaches every item: read the
+     `coverage` frontier and split the request into a multi-stage nested-DAG
+     query (a `queries` list of stage objects, each rooted at one of the
+     partial roots `coverage` lists).
 
-NEVER read raw `*_column_meaning_base.json` / `*_schema.txt` /
-`*_kb.jsonl` files. They are already projected into the SLayer surface:
-column meanings live in `Column.description`, schema FKs are ModelJoin
-entries on the source-side table only (the FK side, not both sides),
-and KB items are memories you `search` for.
+CHOOSING THE HOST for a new or edited column / measure. The host is the
+model whose row grain is 1:1 with what the knowledge item describes — not
+merely a model where the input columns happen to live:
 
-HOW TO READ COLUMN DESCRIPTIONS via SLayer MCP:
-
-  * Known column(s), want their descriptions by canonical ref:
-
-        search(
-            entities=["<db>.<model>.<col>", ...],
-            max_results=<len(entities)>,
-            compact=False,
-            cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id',
-            datasource="<db>",
-        )
-
-    Each named entity surfaces as a `SearchHit(id, kind, score, text,
-    description, ...)` with `kind == "column"` here. With `compact=False`
-    the `text` field carries a multi-line block — `Column:
-    <ds>.<model>.<col> / Type: <type> / Description: <intent text> /
-    Sample values: ...`. The default `compact=True` only fills
-    `description` (one-line) and leaves `text` empty. The
-    `cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'` constraint
-    is load-bearing: without it, the unified `max_results` cap is
-    RRF-fused across kinds, so a memory tagged to the column can outrank
-    the column itself and consume the cap before all requested column
-    hits surface. Use the `ModelColumn` label (not `Column`) because
-    `Column` is a reserved keyword in LadybugDB ≥0.15 — `ModelColumn`
-    works on both the naive fallback and the graph-backed advanced path.
-  * Whole-model bulk read (every column at once): `inspect_model(<model>,
-    sections=["columns"], data_source="<db>")` — Column.name + .type +
-    .description for every column. Use when scanning a model end-to-end.
-  * Discover columns whose descriptions match a phrase:
-    `search(question="<one-sentence paraphrase>", max_results=10,
-    datasource="<db>", cypher_filter='MATCH (n:ModelColumn:Measure:Aggregation:Model) RETURN n.id AS id')`.
-    The cypher filter pins the result list to entity hits (multi-label
-    is union semantics); the tantivy + dense-embedding channels then
-    rank all column / model / measure descriptions and return a unified
-    `results` list of entity hits.
-
-HOW TO FIND CANDIDATE HOSTS for a target table T (the table whose
-columns the KB references):
-
-  1. Call `models_summary(datasource_name="<db>", format="json")` once.
-     Every model's `joins_to` list is its OUTGOING declared joins.
-     Models whose `joins_to` contains T are the candidate 1-hop hosts.
-     (SLayer ingestion only emits FKs on the source side, so calling
-     `inspect_model(T, sections=["joins"])` would only list joins FROM
-     T and miss inbound candidates — the inverse direction.)
-
-  2. For each candidate host H, call `inspect_model(H,
-     sections=["columns", "joins"], data_source="<db>")` to see (a)
-     the join_pairs naming the FK columns that connect H to T, and (b)
-     the descriptions of those FK columns on H's side.
-
-  3. If no candidate has a 1-hop join to T, widen the search: for each
-     candidate H, call `inspect_model(H, sections=["reachable_fields"],
-     reachable_fields_depth=3, data_source="<db>")` and grep the
-     returned dotted paths for those ending at one of T's columns —
-     path depth equals hop count.
-
-DECISION ORDER:
-
-  PRIMARY (description match). Pick the candidate whose FK column's
-  description literally states the relationship the KB needs
-  ("associates X with Y" / "links X to Y" / "references X's Y data").
-  This is the canonical schema-author signal.
-
-  TIE-BREAKER 1 (shortest declared path). If multiple candidates match
-  on description (or none does), prefer the candidate with the SHORTEST
-  declared-join path to T. A 1-hop FK is almost always more canonical
-  than a 3-hop chain through shared-infrastructure tables (e.g. tables
-  named "events", "log", "sites", "registry", or any table with
-  many-to-many roles in the schema) — those chains are one-to-many at
-  every step and silently multiply rows even when structurally valid.
-
-  TIE-BREAKER 2 (KB body re-read). If still tied, re-read the KB body
-  via `search(question="<KB definition>", datasource="<db>",
-  max_results=3, compact=False,
-  cypher_filter='MATCH (n:Memory) RETURN n.id AS id')` — KB definitions
-  occasionally include parenthetical hints ("per entity", "per
-  inspection") that pin the grain. The `compact=False` + `:Memory`
-  filter is required: compact-mode hits carry only the one-line
-  `description`, not the full `learning` body.
-
-  LAST RESORT (deterministic). If still ambiguous, pick the candidate
-  whose model name sorts FIRST lexicographically and record the choice
-  in your notes / final answer so a reviewer can flag it. Never
-  silently guess.
-
-WORKED EXAMPLE (fictional names — invent your own).
-KB defines `quality_risk = sp * sw * ml / 100` on columns of
-`sensor_readings`. Call `models_summary(datasource_name="demo",
-format="json")` and scan each model's `joins_to`:
-`asset_inspections.joins_to` includes `sensor_readings` (1 hop);
-`service_log.joins_to` includes `equipment` only;
-`equipment.joins_to` includes `maintenance_log`;
-`maintenance_log.joins_to` includes `sensor_readings`. So
-`asset_inspections` is a 1-hop candidate and `service_log` is a 3-hop
-candidate.
-
-Description read (PRIMARY):
-  search(
-    entities=["demo.asset_inspections.sensor_read_ref",
-              "demo.maintenance_log.sensor_read_ref"],
-    max_results=2, compact=False, datasource="demo",
-    cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id',
-  )
-returns `SearchHit.text` excerpts:
-  * `asset_inspections.sensor_read_ref` — "Associates the inspection
-    with the relevant sensor reading."
-  * `maintenance_log.sensor_read_ref` — "Associates maintenance data
-    with an existing sensor measurement."
-Only `asset_inspections.sensor_read_ref` directly states an
-inspection-to-sensor relationship; `maintenance_log` talks about
-maintenance data, not inspection. PICK `asset_inspections` on the
-description signal alone — tie-breakers are unnecessary. If both
-descriptions had been equally on-intent, the 1-hop tiebreaker would
-have picked `asset_inspections` anyway.
+  1. List the base `model.column` references the entity's SQL will use
+     (resolve any ambiguous column NAME to its owning model first with
+     `search` / `inspect_model`).
+  2. Read those columns' — and the target entity's — DESCRIPTIONS to decide
+     the intended host: the grain the knowledge item is actually about.
+  3. Call `recommend_root_model(items=[...], data_source="<db>",
+     root_hint="<intended host model>")` DIRECTLY. The `root_hint` forces
+     your intended host when it can reach every referenced item — even a
+     bridge model that owns none of them.
+  4. Use the returned `root_model` as the host, and drop each returned `path`
+     in verbatim into the entity's SQL.
+  5. If a warning says the hint "cannot reach ..." or that it "fell back",
+     your intended host cannot reach every referenced item: re-check the
+     grain and that each reference is on the right model, then retry. Do not
+     silently accept the fallback host.

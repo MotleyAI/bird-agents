@@ -72,10 +72,14 @@ def test_ainteract_partition_has_ask_user_on_both_clients():
     disc = set(m.DISCOVERY_NATIVE_TOOL_NAMES)
     assert ask in main and ask in disc
     assert "mcp__bird-interact-tools__submit_query" in main
-    # Introspection tools live on DISCOVERY, not main.
+    # DEV-1629: search / inspect_model live on BOTH clients now (main introspects
+    # directly; discovery keeps them for ask_discovery). models_summary stays
+    # discovery-only.
     for t in ("mcp__bird-interact-tools__search",
               "mcp__bird-interact-tools__inspect_model"):
-        assert t in disc and t not in main
+        assert t in disc and t in main
+    assert "mcp__bird-interact-tools__models_summary" in disc
+    assert "mcp__bird-interact-tools__models_summary" not in main
 
 
 def test_main_native_tool_names_include_write_tools():

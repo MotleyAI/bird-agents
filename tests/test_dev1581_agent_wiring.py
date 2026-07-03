@@ -2,9 +2,14 @@
 
 R2 gives each task two persistent clients. The MAIN client holds the
 orchestration + encode/query/submit tools and the ``ask_discovery`` bridge;
-the DISCOVERY client holds the schema/KB introspection tools. Because they
-are separate clients, main's tool schema NEVER contains the introspection
-tools — for slayer AND raw alike (the old raw "schema leak" is gone).
+the DISCOVERY client holds the schema/KB introspection tools.
+
+DEV-1629: slayer v1 main ALSO holds ``search`` / ``inspect_model`` directly
+(the main loop nails down query details itself); only ``models_summary`` stays
+discovery-exclusive for slayer. Raw v1 keeps the full introspection split
+(``get_schema`` / ``get_all_column_meanings`` discovery-only). The
+``introspection_exclusive`` spec per agent captures exactly the tools that must
+NOT leak into that agent's main.
 
 Each v1 agent module exposes the partition as two stable constants of full
 ``mcp__…`` tool names:
@@ -44,7 +49,13 @@ def _bare(names):
 
 
 # agent module → partition expectations (bare tool names).
-_SLAYER_INTROSPECTION = {"search", "models_summary", "inspect_model"}
+# DEV-1629: `search` / `inspect_model` / `inspect` moved ONTO slayer v1 main (the
+# main loop nails down query details itself; `inspect` reads a known column's
+# sample values). `models_summary` stays discovery-only, so it is the lone slayer
+# tool still exclusive to the discovery client.
+_SLAYER_MAIN_INTROSPECTION = {"search", "inspect_model", "inspect"}
+_SLAYER_DISCOVERY_ONLY = {"models_summary"}
+_SLAYER_INTROSPECTION = _SLAYER_MAIN_INTROSPECTION | _SLAYER_DISCOVERY_ONLY
 _RAW_INTROSPECTION = {"get_schema", "get_all_column_meanings"}
 _KB = {
     "get_all_external_knowledge_names",
@@ -60,18 +71,19 @@ _RAW_WRITE_SUBMIT = {"submit_sql"}
 
 _SPECS = {
     "claude_sdk_otf_v1": {
-        "introspection_exclusive": _SLAYER_INTROSPECTION,
-        "main_required": {"query", "submit_query", "create_model", "edit_model",
-                          "validate_models", "help", "ask_discovery"} | _KB,
+        "introspection_exclusive": _SLAYER_DISCOVERY_ONLY,
+        "main_required": ({"query", "submit_query", "create_model", "edit_model",
+                           "validate_models", "help", "ask_discovery"}
+                          | _SLAYER_MAIN_INTROSPECTION | _KB),
         "discovery_required": _SLAYER_INTROSPECTION | _KB,
         "discovery_forbidden": {"ask_discovery"} | _SLAYER_WRITE_SUBMIT,
         "ask_user": False,
     },
     "claude_sdk_otf_ainteract_v1": {
-        "introspection_exclusive": _SLAYER_INTROSPECTION,
-        "main_required": {"query", "submit_query", "create_model", "edit_model",
-                          "validate_models", "help", "ask_discovery",
-                          "ask_user"} | _KB,
+        "introspection_exclusive": _SLAYER_DISCOVERY_ONLY,
+        "main_required": ({"query", "submit_query", "create_model", "edit_model",
+                           "validate_models", "help", "ask_discovery",
+                           "ask_user"} | _SLAYER_MAIN_INTROSPECTION | _KB),
         "discovery_required": _SLAYER_INTROSPECTION | _KB | {"ask_user"},
         "discovery_forbidden": {"ask_discovery"} | _SLAYER_WRITE_SUBMIT,
         "ask_user": True,

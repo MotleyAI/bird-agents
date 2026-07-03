@@ -116,17 +116,13 @@ _VERIFY_TOOL_BY_MODE = {
     "raw": ("execute_sql", "submit_sql"),
 }
 
-# The introspection tools that moved to the discovery client per mode. Named
-# in the bridging clause so any task-guidance that still says "call <tool>"
-# (e.g. the shared host-discovery playbook / decompose discipline, which also
-# serve the single-agent v0 flavors) is correctly rerouted through
-# ``ask_discovery`` for the two-stage v1 main loop.
+# The raw-mode introspection tools that live only on the discovery client, named
+# in the bridging clause so any task-guidance that says "call <tool>" is rerouted
+# through ``ask_discovery`` for the two-stage v1 main loop. DEV-1629: the slayer
+# main loop now HOLDS ``search`` / ``inspect_model`` directly, so slayer no longer
+# needs this reroute clause (its ``discovery_section`` is written directly); only
+# raw still routes introspection through ``ask_discovery``.
 _INTROSPECTION_TOOLS_BY_MODE = {
-    # The slayer discovery client owns search / inspect_model / models_summary.
-    # ``list_datasources`` was retired (one datasource per task) — it is not on
-    # ANY surface; the general "introspection is NOT on your tool surface"
-    # statement above already reroutes a stale reference to ``ask_discovery``.
-    "slayer": "`search` / `inspect_model` / `models_summary`",
     "raw": "`get_schema` / `get_all_column_meanings`",
 }
 
@@ -141,14 +137,38 @@ def build_main_workflow_note(*, query_mode: str) -> str:
     """
     try:
         verify_tool, submit_tool = _VERIFY_TOOL_BY_MODE[query_mode]
-        introspection_tools = _INTROSPECTION_TOOLS_BY_MODE[query_mode]
     except KeyError as exc:
         raise ValueError(
             f"build_main_workflow_note: unknown query_mode {query_mode!r}; "
             f"expected one of {sorted(_VERIFY_TOOL_BY_MODE)}"
         ) from exc
-    return f"""
+    if query_mode == "slayer":
+        # DEV-1629: the slayer main loop now HOLDS `search` / `inspect_model`
+        # directly; the warm discovery assistant is for grilling the user and
+        # broad whole-schema questions, not the primary introspection path.
+        discovery_section = """
+## Discovery workflow
 
+You HOLD the schema-introspection tools `search`, `inspect_model`, and
+`inspect` (single-entity point lookup — use it for a known column's sample
+values) on your own surface — call them DIRECTLY for model/column/join
+schemas, sample values, and descriptions. A long-lived warm 'discovery'
+assistant is ALSO available through the `ask_discovery` tool for delegating
+broad whole-schema questions (it owns `models_summary` and accumulates context
+across questions). Knowledge-base item definitions are on your surface too —
+read them verbatim with `get_knowledge_definition` /
+`get_all_external_knowledge_names`."""
+        post_fail = f"""
+
+After a FAILED `{submit_tool}` (any non-pass status), do NOT go back to
+re-introspect the schema — the new evidence is in the grader's miss
+diagnostics and in your candidate query's output, not in the schema. Re-run
+the candidate through `{verify_tool}`, pivot your operationalisation, or ask
+the user. Re-introspection is for schema/KB gaps you discover while building,
+not for grader misses."""
+    else:
+        introspection_tools = _INTROSPECTION_TOOLS_BY_MODE[query_mode]
+        discovery_section = f"""
 ## Discovery workflow (mandatory)
 
 Schema/data introspection tools (model/table schemas, sample values, join
@@ -167,14 +187,17 @@ surface: read those verbatim with `get_knowledge_definition` /
 
 Discovery is WARM — it remembers your earlier questions, so follow-ups are
 cheap. But before asking, check whether discovery ALREADY told you the
-answer in a previous reply; do not re-ask for facts you already have.
+answer in a previous reply; do not re-ask for facts you already have."""
+        post_fail = f"""
 
 After a FAILED `{submit_tool}` (any non-pass status), do NOT go back to
 `ask_discovery` to re-introspect the schema — the new evidence is in the
 grader's miss diagnostics and in your candidate query's output, not in the
 schema. Re-run the candidate through `{verify_tool}`, pivot your
 operationalisation, or ask the user. `ask_discovery` is for schema/KB gaps
-you discover while reading discovery's answers, not for grader misses.
+you discover while reading discovery's answers, not for grader misses."""
+    return f"""
+{discovery_section}{post_fail}
 
 ## Verify-before-submit checklist (mandatory)
 
