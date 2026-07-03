@@ -1193,6 +1193,29 @@ async def run_one_task(
     return r
 
 
+def write_local_attempt_row(rows_dir: Path, instance_id: str, row: dict) -> None:
+    """Persist a finalized per-task row to ``rows/<iid>/attempt-1.json``,
+    the local mirror of the cloud actor's ``_gcs.write_row`` (which writes
+    the same blob to GCS at ``ray_app.py``). This is what makes local runs
+    capture the SAME raw per-turn ``trajectory`` (and the ``tool_call_stats``
+    derived from it) that cloud runs do — local/cloud capability parity.
+
+    The caller pops the non-serialisable Pydantic objects (``_task_annotation``
+    / ``_autopsy``) from ``row`` first, exactly as the cloud path does before
+    its ``json.dumps(row)``; ``default=str`` is a belt-and-braces guard so a
+    stray object can never take down the run loop. Best-effort: a write
+    failure is logged, never raised (the row is already in results.db).
+    """
+    try:
+        dest = rows_dir / instance_id / "attempt-1.json"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(json.dumps(row, default=str))
+    except Exception:  # noqa: BLE001 — persistence is best-effort
+        logger.exception(
+            "failed to write local attempt row for %s", instance_id
+        )
+
+
 async def run_evaluation(
     data_path: str,
     data_dir: str,
@@ -1596,6 +1619,11 @@ async def run_evaluation(
             _grade_local_row(td, r)
             r.pop("_autopsy", None)
             r.pop("_task_annotation", None)
+            # Parity with the cloud actor (which writes this row to GCS via
+            # `_gcs.write_row`): persist the raw trajectory + tool_call_stats
+            # locally so `submission.trajectory_path` resolves and local runs
+            # capture the same data as cloud.
+            write_local_attempt_row(rows_dir, instance_id, r)
 
     try:
         await asyncio.gather(*[_run_with_sem(i, td) for i, td in enumerate(tasks)])

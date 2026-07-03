@@ -154,6 +154,32 @@ def _looks_like_claude_sdk_trajectory(trajectory: list[Any] | None) -> bool:
     return True
 
 
+def _is_tool_use_block(block: dict) -> bool:
+    """True iff a serialized content block is a tool call.
+
+    The trajectory serializer uses ``dataclasses.asdict(msg)`` and the
+    Claude Agent SDK's ``ToolUseBlock`` dataclass has fields
+    ``{id, name, input}`` with NO ``type`` field — so keying on
+    ``block["type"] == "tool_use"`` never matched and produced all-zero
+    stats. Detect structurally (``name`` + ``input`` present, and NOT a
+    ``tool_use_id``-bearing result block), while still honouring an
+    explicit ``type`` when a future serializer tags one.
+    """
+    if block.get("type") == "tool_use":
+        return True
+    return (
+        "name" in block and "input" in block and "tool_use_id" not in block
+    )
+
+
+def _is_tool_result_block(block: dict) -> bool:
+    """True iff a serialized content block is a tool result. The SDK's
+    ``ToolResultBlock`` dataclass has ``{tool_use_id, content, is_error}``
+    and no ``type`` field — detect via ``tool_use_id`` presence (honouring
+    an explicit ``type`` when tagged)."""
+    return block.get("type") == "tool_result" or "tool_use_id" in block
+
+
 def extract_tool_stats_from_claude_sdk_trajectory(
     trajectory: list[Any] | None,
 ) -> dict | None:
@@ -167,7 +193,8 @@ def extract_tool_stats_from_claude_sdk_trajectory(
 
     Counting:
     1. Build a ``tool_use_id → tool_name`` map from ``AssistantMessage``
-       content blocks where ``type == "tool_use"``.
+       content blocks that ``_is_tool_use_block`` (``ToolUseBlock`` asdict:
+       ``{id, name, input}`` — no ``type`` field, so detected structurally).
     2. ``n_calls[name]`` = count of those tool_use blocks.
     3. ``n_errors[name]`` = count of ``tool_result`` blocks (in
        ``UserMessage`` content) where ``is_error == True``; resolve
@@ -199,7 +226,7 @@ def extract_tool_stats_from_claude_sdk_trajectory(
         for block in content:
             if not isinstance(block, dict):
                 continue
-            if block.get("type") != "tool_use":
+            if not _is_tool_use_block(block):
                 continue
             name = block.get("name") or "<unknown>"
             calls[name] = calls.get(name, 0) + 1
@@ -220,7 +247,7 @@ def extract_tool_stats_from_claude_sdk_trajectory(
         for block in content:
             if not isinstance(block, dict):
                 continue
-            if block.get("type") != "tool_result":
+            if not _is_tool_result_block(block):
                 continue
             if not block.get("is_error"):
                 continue
