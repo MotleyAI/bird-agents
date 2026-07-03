@@ -1874,10 +1874,14 @@ def _effective_instance_ids(args, filter_ids):
 
     ``filter_ids`` (from ``--instance-id`` / ``--filter-ids``) wins; else
     ``--limit`` selects the first-N via the SAME loader ``run_evaluation`` uses
-    (identical ordering); else ``None`` (whole benchmark)."""
+    (identical ordering); else ``None`` (whole benchmark).
+
+    ``is not None`` (not truthiness) on ``--limit`` so a direct caller passing
+    ``limit=0`` gets the honest empty selection rather than the whole-benchmark
+    ``None`` (Codex PR #75 r2; the CLI also rejects ``--limit <= 0`` upfront)."""
     if filter_ids:
         return filter_ids
-    if args.limit:
+    if args.limit is not None:
         rows = load_benchmark_tasks(args.dataset, args.data, limit=args.limit)
         return [r["instance_id"] for r in rows]
     return None
@@ -1894,6 +1898,11 @@ def _maybe_bootstrap_local_postgres(args, effective_ids) -> None:
         return
     if "BIRD_PG_HOST" in os.environ:
         return  # caller brought their own postgres connection
+    # Distinguish an EMPTY id list (e.g. `--limit 0` → zero-task validation run)
+    # from None (whole benchmark). Empty ⇒ nothing to provision; provisioning
+    # the whole benchmark here would be the scope-expansion Codex PR #75 flagged.
+    if effective_ids is not None and not effective_ids:
+        return
     exports = provision_and_export(args.dataset, effective_ids, args.pg_port)
     os.environ.update(exports)
 
@@ -1905,6 +1914,9 @@ def _maybe_sync_annotations(args, effective_ids) -> None:
     Best-effort: a GCS failure warns, never aborts the run. Warns loudly on any
     id still missing after the sync (surfaces the silent N1 degradation)."""
     if args.skip_annotations:
+        return
+    # Empty id list (e.g. `--limit 0`) ⇒ nothing to sync; None ⇒ whole benchmark.
+    if effective_ids is not None and not effective_ids:
         return
     try:
         result = sync_annotations(args.dataset, effective_ids)

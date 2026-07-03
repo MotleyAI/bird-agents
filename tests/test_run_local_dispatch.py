@@ -77,6 +77,16 @@ def test_effective_ids_whole_benchmark_is_none():
     assert run._effective_instance_ids(args, None) is None
 
 
+def test_effective_ids_limit_zero_is_empty_not_whole_benchmark(monkeypatch):
+    """Codex PR #75 r2: limit=0 must NOT collapse to None (whole benchmark)."""
+    monkeypatch.setattr(
+        run, "load_benchmark_tasks",
+        lambda dataset, data_path, limit=None, filter_ids=None: [],
+    )
+    args = argparse.Namespace(dataset="livesqlbench-large", data="d", limit=0)
+    assert run._effective_instance_ids(args, None) == []
+
+
 # --------------------------------------------------------------------------- #
 # _maybe_bootstrap_local_postgres — gated on backend + BIRD_PG_HOST (Codex #1)
 # --------------------------------------------------------------------------- #
@@ -353,3 +363,25 @@ def test_cli_empty_filter_ids_file_errors_before_provision(_stub_run, monkeypatc
     # Must NOT have provisioned or synced the whole benchmark.
     assert _stub_run["provision_calls"] == []
     assert _stub_run["sync_calls"] == []
+
+
+def test_cli_limit_zero_runs_but_skips_provision_and_sync(_stub_run, monkeypatch):
+    """Codex PR #75 r2: `--limit 0` is a valid zero-task run (an established
+    idiom). It must NOT provision the whole benchmark or sync all annotations —
+    an empty effective-id list means "nothing to scope", distinct from None
+    (whole benchmark)."""
+    monkeypatch.setattr(
+        run, "load_benchmark_tasks",
+        lambda dataset, data_path, limit=None, filter_ids=None: [],
+    )
+    _argv(
+        monkeypatch,
+        "--framework", "pydantic_ai", "--mode", "one-shot",
+        "--dataset", "livesqlbench-large", "--query-mode", "raw",
+        "--agent-model", "anthropic/claude-haiku-4-5-20251001",
+        "--limit", "0",
+    )
+    run.main()  # no SystemExit — limit 0 is valid
+    assert _stub_run["provision_calls"] == []
+    assert _stub_run["sync_calls"] == []
+    assert _stub_run["run_kwargs"] is not None  # reached run_evaluation
