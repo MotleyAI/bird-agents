@@ -57,7 +57,11 @@ def sync_annotations(
     """
     bm = get_benchmark(benchmark).name
     inst_to_db = _load_dataset_instance_db_map(benchmark=get_benchmark(bm))
-    if instance_ids:
+    # `is not None` (not truthiness) so an EXPLICIT empty list means "no scope →
+    # sync nothing", NOT the whole benchmark (Codex PR #75 r3). Only `None`
+    # (omitted) means the whole benchmark. Reachable via the standalone
+    # `fetch_local_annotations.py --instance-ids ",,,"` path.
+    if instance_ids is not None:
         unknown = [i for i in instance_ids if i not in inst_to_db]
         if unknown:
             print(f"  not in {bm} dataset (skipped): {unknown}", file=sys.stderr)

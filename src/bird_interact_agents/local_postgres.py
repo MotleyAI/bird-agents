@@ -62,8 +62,11 @@ def resolve_dbs_for(
 ) -> list[str]:
     """Return the sorted unique ``selected_database`` names to load.
 
-    With ``instance_ids`` → only the DBs backing those tasks. Otherwise every
-    DB that has a ``pg_dumps/<db>/`` directory for the benchmark.
+    A non-empty ``instance_ids`` → only the DBs backing those tasks. ``None``
+    (omitted) → every DB that has a ``pg_dumps/<db>/`` directory. An EXPLICIT
+    empty list → ``[]`` (no scope), NOT the whole benchmark (Codex PR #75 r3):
+    `None` and `[]` must not collapse, else a malformed
+    ``setup_local_postgres.py --instance-ids ",,,"`` would provision every DB.
     """
     bm = get_benchmark(benchmark)
     pg_dumps = paths.benchmark_data_root(bm.name) / "pg_dumps"
@@ -71,7 +74,9 @@ def resolve_dbs_for(
         p.name for p in pg_dumps.iterdir() if p.is_dir()
     } if pg_dumps.is_dir() else set()
 
-    if instance_ids:
+    if instance_ids is not None:
+        if not instance_ids:
+            return []  # explicit empty subset → load nothing (not everything)
         rows = {
             r["instance_id"]: r
             for r in load_benchmark_tasks(

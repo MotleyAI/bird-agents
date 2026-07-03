@@ -146,6 +146,17 @@ def test_missing_in_gcs_counted_not_raised(monkeypatch):
     assert result["fetched"] == 0
 
 
+def test_empty_id_list_syncs_nothing(monkeypatch):
+    """Codex PR #75 r3: an EXPLICIT empty list is 'no scope', NOT the whole
+    benchmark — no GCS client, nothing fetched (distinct from None)."""
+    def _boom():
+        raise AssertionError("no client should be built for an empty id list")
+
+    monkeypatch.setattr(local_annotations._gcs, "default_gcs_client", _boom)
+    result = local_annotations.sync_annotations(_BENCH, [])
+    assert result == {"fetched": 0, "already_local": 0, "missing_in_gcs": 0}
+
+
 def test_unknown_id_skipped_not_raised(monkeypatch):
     """CodeRabbit PR #75: an id not in the dataset is skipped + warned, NEVER
     raised (uniform non-SystemExit contract across callers). A GCS client is

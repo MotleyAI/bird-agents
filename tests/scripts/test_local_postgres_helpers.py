@@ -79,6 +79,25 @@ def _prep_load_databases(monkeypatch, tmp_path, *, load_stderr, table_count):
     return slp, markers / "livesqlbench-large__somedb.done"
 
 
+def test_resolve_dbs_empty_list_is_empty_not_whole_benchmark(monkeypatch, tmp_path):
+    """Codex PR #75 r3: an EXPLICIT empty instance_ids list resolves to no DBs
+    (not every dump). `None` vs `[]` must not collapse."""
+    slp = setup_local_postgres
+
+    class _BM:
+        name = "livesqlbench-large"
+
+    monkeypatch.setattr(slp, "get_benchmark", lambda _n: _BM())
+    monkeypatch.setattr(slp.paths, "benchmark_data_root", lambda _n: tmp_path)
+    # load_benchmark_tasks must NOT be consulted for an empty subset.
+    monkeypatch.setattr(
+        slp, "load_benchmark_tasks",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("empty subset must not load tasks")),
+    )
+    assert slp.resolve_dbs_for("livesqlbench-large", []) == []
+
+
 def test_resolve_dbs_raises_when_no_dumps(monkeypatch, tmp_path):
     slp = setup_local_postgres
 
