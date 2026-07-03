@@ -132,48 +132,63 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   concurrent Opus actors + postgres; use e2-standard-8 (32 GB) for runs of
   10–20 tasks until per-actor density on each tier is characterised.
 
-## Running a postgres benchmark LOCALLY (sudo-free) — `scripts/run_local_postgres.py`
+## Running a postgres benchmark LOCALLY (sudo-free) — just `bird-interact` (DEV-1638)
 
-The DB-load logic (`_ensure_postgres_loaded`) lives ONLY in the cloud worker,
-so a local `bird-interact --dataset livesqlbench-large` (or any
-`db_backend == "postgres"` benchmark) has nowhere to connect — the system
-postgres on `:5432` isn't provisioned with the `bird_interact` role or the
-task DBs, and you have no sudo to it. You do NOT need the system instance:
-`scripts/setup_local_postgres.py` runs an ENTIRELY SEPARATE PostgreSQL cluster
-owned by the current user under `<main_checkout>/.local_pg/` (gitignored) on a
-spare port (default `5544`), so no sudo and no collision with `:5432`.
-
-The one-shot orchestrator ties the three local-only gaps together — load auth
-env, provision+load postgres, sync annotations from GCS — then execs
-`bird-interact` with `--data`/`--db-path` auto-derived:
+The DB-load logic (`_ensure_postgres_loaded`) lives in the cloud worker, but
+`bird-interact` now folds the equivalent local bootstrap in: a local
+`bird-interact --dataset livesqlbench-large` (or any `db_backend == "postgres"`
+benchmark) auto-derives `--data`/`--db-path` from the registry and, unless
+`BIRD_PG_HOST` is already set, provisions + loads an ENTIRELY SEPARATE
+PostgreSQL cluster owned by the current user under `<main_checkout>/.local_pg/`
+(gitignored) on a spare port (default `5544` / `--pg-port` / `BIRD_PG_PORT`),
+then exports `BIRD_PG_*`. No sudo, no collision with `:5432`. It also
+best-effort syncs the authoritative task annotations from GCS (opt out with
+`--skip-annotations`). The old `scripts/run_local_postgres.py` orchestrator is
+retired — `bird-interact` IS the one local entrypoint for both sqlite and
+postgres benchmarks now.
 
 ```bash
-env -u SSH_AUTH_SOCK uv run python scripts/run_local_postgres.py \
-  --benchmark livesqlbench-large \
-  --instance-ids solar_panel_6,fake_account_15,...  \
-  -- \
+env -u SSH_AUTH_SOCK uv run bird-interact \
+  --dataset livesqlbench-large \
+  --instance-id solar_panel_6,fake_account_15,...  \
+  --env-file /home/james/Dropbox/SLayer/.env.agents \
   --framework claude_sdk --query-mode raw --mode one-shot \
   --agent-model anthropic/claude-opus-4-8 --subscription-auth \
   --use-audited-gold-sql --concurrency 1
 ```
 
-Everything after `--` is passed straight to `bird-interact`. Notes / gotchas
-(each cost real debugging the first time):
+Notes / gotchas (each cost real debugging the first time):
 
-- **Auth env**: the orchestrator loads a dotenv (`--env-file`, default
-  `~/Dropbox/PyCharmProjects/shared/.env.ubuntu`, or `BIRD_ENV_FILE`) for
+- **Auth env**: pass `--env-file <dotenv>` (or export `BIRD_ENV_FILE`) to load
   `CLAUDE_CODE_OAUTH_TOKEN` (`--subscription-auth`) / `ANTHROPIC_API_KEY`
-  (`--no-subscription-auth`). Missing file → skipped, assumes the shell already
-  has the creds. The token is the SAME one the cloud `submit`/`annotate` reads.
+  (`--no-subscription-auth`). No machine path is baked into the code (DEV-1638);
+  on this machine the file is `/home/james/Dropbox/SLayer/.env.agents`. Missing
+  file → skipped, assumes the shell already has the creds. The token is the SAME
+  one the cloud `submit`/`annotate` reads.
+- **Provisioning is gated on `BIRD_PG_HOST`, not on `--data`/`--db-path`**:
+  postgres connects via `BIRD_PG_*`, and `--db-path` is only the data/KB root.
+  So passing explicit paths does NOT suppress provisioning; set `BIRD_PG_HOST`
+  (bring-your-own postgres) to skip it. `--data`/`--db-path` are both-or-neither.
+- **Local ⇄ cloud annotation parity**: the sync writes into the same
+  `annotations/` dir the cloud image bakes, and the cloud `submit` runs the SAME
+  `sync_annotations` before its `require_annotation` gate — so the set the local
+  grader reads == the set the cloud image bakes. A pre-existing divergence
+  remains: local creates a `root` role (dumps `OWNER TO root`), cloud does not
+  (relies on the non-fatal error) — table data/schema identical, ownership
+  differs, SELECT grading unaffected.
 - **Dumps need a `root` role**: every livesqlbench dump does
   `ALTER TABLE … OWNER TO root`, so the provisioner creates BOTH `bird_interact`
   (the LOGIN role the harness connects as) and `root` (the owner), as SUPERUSER
   under loopback `trust` auth (transient single-tenant dev cluster → no password
   hardening).
-- **`--require-annotation` (default ON)**: annotations are the authoritative
-  grading source and live in GCS after a cloud `annotate` run; they are NOT
-  local unless pulled. `fetch_local_annotations.py` syncs the stable
-  `*.task.json` for the selected ids into `annotations/<benchmark>/<db>/`.
+- **Annotations are auto-synced (opt out `--skip-annotations`)**: annotations
+  are the authoritative grading source and live in GCS after a cloud `annotate`
+  run; they are NOT local unless pulled. `bird-interact` now best-effort syncs
+  the stable `*.task.json` for the selected ids into `annotations/<benchmark>/
+  <db>/` (shared `bird_interact_agents.local_annotations.sync_annotations`;
+  standalone script: `scripts/fetch_local_annotations.py`). A GCS failure warns
+  but never aborts the run; ids still missing after the sync warn loudly and
+  grade against the implicit N1 annotation only.
 - **`--reasoning-effort` is a NO-OP for the base `claude_sdk`/`pydantic_ai`
   frameworks** — it only maps to `ClaudeAgentOptions.effort` for the
   `claude_sdk_otf*` agents. A raw run ignores it (opus still does default
@@ -195,10 +210,14 @@ Everything after `--` is passed straight to `bird-interact`. Notes / gotchas
   the combined dump loads in one clean pass. If you see a livesqlbench-large DB
   with implausibly few tables, re-stage from the zip with
   `download_pg_dumps.py --force` (plain re-runs skip existing staged files).
-- Manage the cluster directly: `scripts/setup_local_postgres.py --benchmark X`
-  (idempotent provision — all benchmark DBs by default, or `--instance-ids` for
-  a subset), `--stop` to stop it, `--recreate` to wipe+rebuild. Pure helpers are
-  pinned by `tests/scripts/test_local_postgres_helpers.py`.
+- Manage the cluster directly (admin tool for what `bird-interact` does NOT do):
+  `scripts/setup_local_postgres.py --benchmark X` (idempotent provision — all
+  benchmark DBs by default, or `--instance-ids` for a subset), `--stop` to stop
+  it, `--recreate` to wipe+rebuild. `bird-interact` auto-provisions but never
+  stops the cluster (leaves it running for reuse). The provisioning logic lives
+  in `bird_interact_agents.local_postgres` (the script is a thin CLI over it);
+  helpers pinned by `tests/scripts/test_local_postgres_helpers.py` +
+  `tests/test_local_postgres_provision.py`.
 
 ## Waiting on a cloud run to finish — use `driver.wait_until_done`, never bash
 

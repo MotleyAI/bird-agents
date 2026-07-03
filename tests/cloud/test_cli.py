@@ -351,11 +351,25 @@ def _stub_empty_annotations_root(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(_paths, "annotations_root", lambda: annotations_root)
 
 
+def _stub_no_annotation_sync(monkeypatch) -> None:
+    """DEV-1638: the submit gate now runs `sync_annotations` first (self-healing:
+    pull missing annotations from GCS). These gate-logic tests isolate the GATE,
+    so neutralise the sync to a no-op — otherwise it would reach real GCS and
+    heal the very absence the test is asserting. The sync itself is covered by
+    tests/cloud/test_submit_annotation_presync.py."""
+    from bird_interact_agents import local_annotations
+    monkeypatch.setattr(
+        local_annotations, "sync_annotations",
+        lambda *a, **k: {"fetched": 0, "already_local": 0, "missing_in_gcs": 0},
+    )
+
+
 def test_require_annotation_default_on_for_livesqlbench(
     tmp_path, monkeypatch,
 ) -> None:
     """Annotation guard fires for livesqlbench too. `museum_7` with no
     annotation must reject."""
+    _stub_no_annotation_sync(monkeypatch)
     _stub_empty_annotations_root(tmp_path, monkeypatch)
     _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
 
@@ -413,6 +427,7 @@ def test_require_annotation_passes_for_livesqlbench_when_file_present(
     )
     write_task_annotation(ann, ann_dir / "museum_7.task.json")
     monkeypatch.setattr(_paths, "annotations_root", lambda: annotations_root)
+    _stub_no_annotation_sync(monkeypatch)
     _stub_lsb_dataset_file(tmp_path, monkeypatch, instance_id="museum_7")
 
     ns = _parse(_lsb_ann_argv())
