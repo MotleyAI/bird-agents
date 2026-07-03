@@ -75,10 +75,12 @@ query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 `create_model` / `edit_model` to add columns and measures; `query` (single
 object OR list of stage objects for nested DAG) to test. You HOLD the
-schema-introspection tools `search` and `inspect_model` — call them DIRECTLY
-to learn what models / columns / joins exist, their descriptions, and their
-sampled values. FIRST call `ask_discovery` to grill the user about any
-ambiguity in the request, then introspect and build. Read each KB item's
+schema-introspection tools `search`, `inspect_model`, and `inspect` — call
+them DIRECTLY: `search` to find models / columns / measures, `inspect_model`
+for a whole model's columns / measures / joins, and `inspect` for a single
+known column's `Description:` and `Sample values:`. FIRST call `ask_discovery`
+to grill the user about any ambiguity in the request, then introspect and
+build. Read each KB item's
 formula VERBATIM with `get_knowledge_definition` (and
 `get_all_external_knowledge_names` to list them) — never paraphrase a KB
 formula.

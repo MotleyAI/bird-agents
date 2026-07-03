@@ -60,14 +60,18 @@ import pytest
 # main now HOLDS `search` / `inspect_model` directly, so both v1 prompts say to
 # call them directly (and read sample values via them) instead of routing every
 # introspection through `ask_discovery`.
-# DEV-1591 ∩ DEV-1629 merge: these SHAs are UNCHANGED vs DEV-1629. The DEV-1591
-# search-vs-inspect compact discipline reaches the v1 slayer MAIN loop through
+# Re-baselined for the DEV-1629 follow-up (merged via origin/main): the v1
+# slayer inventory line was reworded to list `search` (find) / `inspect_model`
+# (whole model) / `inspect` (a single known column's Description + Sample
+# values), moving these two digests.
+# DEV-1591 ∩ DEV-1629 merge note: the DEV-1591 search-vs-inspect compact
+# discipline reaches the v1 slayer MAIN loop through
 # `partition.build_main_workflow_note` (appended to these prompts at runtime,
 # see agent.py), NOT through the static `SLAYER_OTF_ONE_SHOT` /
 # `SLAYER_OTF_AINTERACT` constants hashed here — so the discipline splice does
-# not move these digests.
-_ONE_SHOT_SHA256 = "1acbe23f67a66d4801c2411d9a549023869802d11cba48a8c4756b069b10cf46"
-_AINTERACT_SHA256 = "000957c41c6f411650b5bdcc0175b4dad8a14b1b63826b4bc310f12792389c95"
+# not itself move these digests (the rewording above did).
+_ONE_SHOT_SHA256 = "942ce8e96a040629c66064d892d071207cef6a54b65125aa6590da580db77907"
+_AINTERACT_SHA256 = "39eecf2fcaeba4260d28180c2aba24d6f909ed56b52b19014420017d729153bb"
 
 
 def test_slayer_otf_one_shot_unchanged():
