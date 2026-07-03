@@ -70,7 +70,108 @@ def _find_sql_files(extracted: Path) -> list[Path]:
     )
 
 
-def stage_dumps(benchmark: str, zip_path: Path, *, dry_run: bool = False) -> None:
+def _count_create_tables(text: str) -> int:
+    return sum(1 for ln in text.splitlines() if ln.lstrip().startswith("CREATE TABLE"))
+
+
+def _iter_statements(text: str):
+    """Yield SQL statements from a pg_dump `--inserts` dump.
+
+    Handles `COPY ... FROM stdin;` … `\\.` blocks as single statements and
+    drops psql meta-commands (`\\restrict` / `\\unrestrict`) that only guard the
+    client and repeat per-file. Naive `;`-at-end-of-line termination is safe for
+    pg_dump output (one INSERT per line, no embedded unquoted semicolons).
+    """
+    buf: list[str] = []
+    in_copy = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if in_copy:
+            buf.append(line)
+            if stripped == r"\.":
+                in_copy = False
+                yield "\n".join(buf)
+                buf = []
+            continue
+        if stripped.startswith("\\restrict") or stripped.startswith("\\unrestrict"):
+            continue  # client-side guard; not needed for a trusted load
+        buf.append(line)
+        if stripped.upper().startswith("COPY ") and "FROM stdin" in stripped:
+            in_copy = True
+            continue
+        if stripped.endswith(";"):
+            yield "\n".join(buf)
+            buf = []
+    if buf:
+        yield "\n".join(buf)
+
+
+def _first_sql_line(stmt: str) -> str:
+    """The first non-comment, non-blank line — pg_dump prefixes each statement
+    with `-- Name: …; Type: …` comment lines."""
+    for line in stmt.splitlines():
+        s = line.strip()
+        if s and not s.startswith("--"):
+            return s
+    return ""
+
+
+def _is_fk_statement(stmt: str) -> bool:
+    s = _first_sql_line(stmt).upper()
+    return s.startswith("ALTER TABLE") and "FOREIGN KEY" in stmt.upper()
+
+
+def _is_type_statement(stmt: str) -> bool:
+    # CREATE TYPE / CREATE DOMAIN must precede the tables that use them.
+    s = _first_sql_line(stmt).upper()
+    return s.startswith("CREATE TYPE") or s.startswith("CREATE DOMAIN")
+
+
+def combine_per_table_dumps(sql_files: list[Path]) -> str:
+    """Build one loadable dump from large-v1's per-table files.
+
+    The large-v1 zip ships one file per table (each: CREATE TABLE + INSERTs +
+    its own FK constraints) plus partial `*_full.sql` aggregates. Loading a
+    single file (the old "pick largest" heuristic) yields a 1-table DB; the
+    `*_full.sql` aggregates are themselves incomplete for some DBs (e.g.
+    disaster_relief: 29/49 tables). So concatenate the SINGLE-table files (the
+    authoritative complete set, as the upstream loader uses) and DEFER every
+    foreign-key constraint to the end, so the combined dump loads in ONE clean
+    pass regardless of table order (all tables exist before any FK is added).
+    """
+    texts = [(f, f.read_text(encoding="utf-8", errors="replace")) for f in sql_files]
+    per_table = [(f, t) for f, t in texts if _count_create_tables(t) == 1]
+    # Fall back to the largest-by-table-count aggregate if there are no
+    # per-table files (e.g. a benchmark that only ships a combined dump).
+    chosen = per_table or [max(texts, key=lambda ft: _count_create_tables(ft[1]))]
+
+    head: list[str] = [
+        "-- Combined by scripts/download_pg_dumps.py "
+        "(per-table; types first, FKs deferred).",
+        "CREATE EXTENSION IF NOT EXISTS hstore;",
+        "CREATE EXTENSION IF NOT EXISTS citext;",
+    ]
+    types: list[str] = []   # CREATE TYPE/DOMAIN — before any table that uses them
+    body: list[str] = []    # tables + data + inline PK/unique constraints
+    fks: list[str] = []     # foreign keys — after every table exists
+    for _f, text in sorted(chosen, key=lambda ft: ft[0].name):
+        for stmt in _iter_statements(text):
+            if not stmt.strip():
+                continue
+            bucket = (types if _is_type_statement(stmt)
+                      else fks if _is_fk_statement(stmt)
+                      else body)
+            bucket.append(stmt.rstrip())
+    return "\n".join(
+        head
+        + ["-- Custom types."] + types
+        + ["-- Tables, data, and inline constraints."] + body
+        + ["-- Deferred foreign-key constraints."] + fks
+    ) + "\n"
+
+
+def stage_dumps(benchmark: str, zip_path: Path, *, dry_run: bool = False,
+                force: bool = False) -> None:
     from bird_interact_agents import paths
 
     data_root = paths.benchmark_data_root(benchmark)
@@ -102,36 +203,41 @@ def stage_dumps(benchmark: str, zip_path: Path, *, dry_run: bool = False) -> Non
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(tmp)
 
-        # Walk extracted tree and move the best SQL dump for each DB into
-        # pg_dumps/<db>/<db>.sql.  Strip a trailing "_template" suffix: the
-        # upstream zips use e.g. alien_template/alien_template.sql, but
-        # benchmark instances reference the DB as "alien".
+        # Group extracted SQL files by target DB and stage pg_dumps/<db>/<db>.sql.
+        # Strip a trailing "_template" suffix: the upstream zips use e.g.
+        # alien_template/alien_template.sql, but instances reference "alien".
         #
-        # When multiple SQL files map to the same target (e.g. large-v1 ships
-        # per-table files alongside a <db>_full.sql), pick the largest file —
-        # that is always the combined full-dump, not a single-table file.
-        candidates: dict[Path, Path] = {}  # target → best sql_file so far
+        # large-v1 ships MANY files per DB (one per table + partial `*_full.sql`
+        # aggregates). Concatenating the single-table files with FKs deferred
+        # (combine_per_table_dumps) is the only complete option — the aggregate
+        # `*_full.sql` is itself missing tables for some DBs (disaster_relief:
+        # 29/49). A DB with a single source file (base-lite/full docker dumps) is
+        # copied verbatim.
+        by_target: dict[Path, list[Path]] = {}
         for sql_file in _find_sql_files(tmp):
             raw_db = sql_file.parent.name if sql_file.parent != tmp else sql_file.stem
             db = raw_db.removesuffix("_template")
-            db_dir = dest / db
-            target = db_dir / f"{db}.sql"
-            prev = candidates.get(target)
-            if prev is None or sql_file.stat().st_size > prev.stat().st_size:
-                candidates[target] = sql_file
+            target = dest / db / f"{db}.sql"
+            by_target.setdefault(target, []).append(sql_file)
 
         placed = 0
-        for target, sql_file in sorted(candidates.items()):
-            db_dir = target.parent
+        for target, sources in sorted(by_target.items()):
             if not dry_run:
-                db_dir.mkdir(parents=True, exist_ok=True)
-            if target.exists():
-                print(f"  skip (exists): {target.relative_to(data_root)}")
-            else:
-                if not dry_run:
-                    shutil.copy2(sql_file, target)
-                print(f"  placed: {target.relative_to(data_root)}")
-                placed += 1
+                target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists() and not force:
+                print(f"  skip (exists): {target.relative_to(data_root)} "
+                      "(pass --force to re-stage / repair)")
+                continue
+            if not dry_run:
+                if len(sources) == 1:
+                    shutil.copy2(sources[0], target)
+                else:
+                    target.write_text(combine_per_table_dumps(sources),
+                                      encoding="utf-8")
+            n = 1 if len(sources) == 1 else len(sources)
+            print(f"  placed: {target.relative_to(data_root)} "
+                  f"({'copied' if len(sources) == 1 else f'combined {n} files'})")
+            placed += 1
 
         print(f"\nDone — {placed} dump(s) staged under {dest}")
     finally:
@@ -147,8 +253,11 @@ def main() -> None:
                    help="Path to the downloaded SQL dumps zip file")
     p.add_argument("--dry-run", action="store_true",
                    help="Show what would be done without extracting")
+    p.add_argument("--force", action="store_true",
+                   help="Overwrite existing staged dumps (repair a partial / "
+                        "broken dump from an earlier staging).")
     args = p.parse_args()
-    stage_dumps(args.benchmark, args.zip, dry_run=args.dry_run)
+    stage_dumps(args.benchmark, args.zip, dry_run=args.dry_run, force=args.force)
 
 
 if __name__ == "__main__":

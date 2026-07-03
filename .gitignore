@@ -37,3 +37,7 @@ annotations/
 runs/
 # DEV-1603: local prompt-comparison + spec scratch, never committed.
 dev1603_prompt_audit/
+
+# Private, sudo-free local PostgreSQL cluster for local postgres-benchmark runs
+# (scripts/setup_local_postgres.py). Generated data, never committed.
+/.local_pg/

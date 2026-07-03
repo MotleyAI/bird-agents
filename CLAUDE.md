@@ -132,6 +132,74 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   concurrent Opus actors + postgres; use e2-standard-8 (32 GB) for runs of
   10–20 tasks until per-actor density on each tier is characterised.
 
+## Running a postgres benchmark LOCALLY (sudo-free) — `scripts/run_local_postgres.py`
+
+The DB-load logic (`_ensure_postgres_loaded`) lives ONLY in the cloud worker,
+so a local `bird-interact --dataset livesqlbench-large` (or any
+`db_backend == "postgres"` benchmark) has nowhere to connect — the system
+postgres on `:5432` isn't provisioned with the `bird_interact` role or the
+task DBs, and you have no sudo to it. You do NOT need the system instance:
+`scripts/setup_local_postgres.py` runs an ENTIRELY SEPARATE PostgreSQL cluster
+owned by the current user under `<main_checkout>/.local_pg/` (gitignored) on a
+spare port (default `5544`), so no sudo and no collision with `:5432`.
+
+The one-shot orchestrator ties the three local-only gaps together — load auth
+env, provision+load postgres, sync annotations from GCS — then execs
+`bird-interact` with `--data`/`--db-path` auto-derived:
+
+```bash
+env -u SSH_AUTH_SOCK uv run python scripts/run_local_postgres.py \
+  --benchmark livesqlbench-large \
+  --instance-ids solar_panel_6,fake_account_15,...  \
+  -- \
+  --framework claude_sdk --query-mode raw --mode one-shot \
+  --agent-model anthropic/claude-opus-4-8 --subscription-auth \
+  --use-audited-gold-sql --concurrency 1
+```
+
+Everything after `--` is passed straight to `bird-interact`. Notes / gotchas
+(each cost real debugging the first time):
+
+- **Auth env**: the orchestrator loads a dotenv (`--env-file`, default
+  `~/Dropbox/PyCharmProjects/shared/.env.ubuntu`, or `BIRD_ENV_FILE`) for
+  `CLAUDE_CODE_OAUTH_TOKEN` (`--subscription-auth`) / `ANTHROPIC_API_KEY`
+  (`--no-subscription-auth`). Missing file → skipped, assumes the shell already
+  has the creds. The token is the SAME one the cloud `submit`/`annotate` reads.
+- **Dumps need a `root` role**: every livesqlbench dump does
+  `ALTER TABLE … OWNER TO root`, so the provisioner creates BOTH `bird_interact`
+  (the LOGIN role the harness connects as) and `root` (the owner), as SUPERUSER
+  under loopback `trust` auth (transient single-tenant dev cluster → no password
+  hardening).
+- **`--require-annotation` (default ON)**: annotations are the authoritative
+  grading source and live in GCS after a cloud `annotate` run; they are NOT
+  local unless pulled. `fetch_local_annotations.py` syncs the stable
+  `*.task.json` for the selected ids into `annotations/<benchmark>/<db>/`.
+- **`--reasoning-effort` is a NO-OP for the base `claude_sdk`/`pydantic_ai`
+  frameworks** — it only maps to `ClaudeAgentOptions.effort` for the
+  `claude_sdk_otf*` agents. A raw run ignores it (opus still does default
+  thinking).
+- **Benign log line**: `could not translate host name "livesqlbench_postgresql"`
+  is EXPECTED and harmless. The authoritative result-match grading path
+  (`eval/upstream_ex_base.py`) opens a `BIRD_PG_*` conn and passes it explicitly;
+  a secondary upstream pool (`bird_interact_env`'s own `db_config`, default
+  docker hostname, not env-aware) logs that error and is unused for the verdict.
+  The CLOUD hits the identical error for the same reason — do NOT "fix" it by
+  patching the upstream config; that would diverge from cloud behaviour.
+- **large-v1 dumps ship PER-TABLE**, not as one combined file. The Google
+  Drive zip (`download_pg_dumps.py`) has `postgre_table_dumps_large/<db>_template/
+  <table>.sql` (one per table, each with its own FK constraints) plus PARTIAL
+  `*_full.sql` aggregates (e.g. `disaster_relief` full = 29/49 tables). The old
+  "pick the largest file" heuristic grabbed a single big table → a 1-table DB.
+  `download_pg_dumps.combine_per_table_dumps` now concatenates the single-table
+  files with `CREATE TYPE` hoisted first and `FOREIGN KEY`s deferred last, so
+  the combined dump loads in one clean pass. If you see a livesqlbench-large DB
+  with implausibly few tables, re-stage from the zip with
+  `download_pg_dumps.py --force` (plain re-runs skip existing staged files).
+- Manage the cluster directly: `scripts/setup_local_postgres.py --benchmark X`
+  (idempotent provision — all benchmark DBs by default, or `--instance-ids` for
+  a subset), `--stop` to stop it, `--recreate` to wipe+rebuild. Pure helpers are
+  pinned by `tests/scripts/test_local_postgres_helpers.py`.
+
 ## Waiting on a cloud run to finish — use `driver.wait_until_done`, never bash
 
 Polling for a run's terminal state from a bash loop is a maintenance trap.
