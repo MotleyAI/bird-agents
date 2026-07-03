@@ -57,8 +57,8 @@ import pytest
 # main now HOLDS `search` / `inspect_model` directly, so both v1 prompts say to
 # call them directly (and read sample values via them) instead of routing every
 # introspection through `ask_discovery`.
-_ONE_SHOT_SHA256 = "1acbe23f67a66d4801c2411d9a549023869802d11cba48a8c4756b069b10cf46"
-_AINTERACT_SHA256 = "000957c41c6f411650b5bdcc0175b4dad8a14b1b63826b4bc310f12792389c95"
+_ONE_SHOT_SHA256 = "942ce8e96a040629c66064d892d071207cef6a54b65125aa6590da580db77907"
+_AINTERACT_SHA256 = "39eecf2fcaeba4260d28180c2aba24d6f909ed56b52b19014420017d729153bb"
 
 
 def test_slayer_otf_one_shot_unchanged():

@@ -1209,7 +1209,13 @@ def write_local_attempt_row(rows_dir: Path, instance_id: str, row: dict) -> None
     try:
         dest = rows_dir / instance_id / "attempt-1.json"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(json.dumps(row, default=str))
+        # Atomic write (tmp + rename) so a crash/kill mid-write can never
+        # leave a truncated attempt-1.json that downstream consumers
+        # (autopsy regen, tool-stats re-derivation) fail to parse — matches
+        # the atomicity of the cloud path's GCS blob upload.
+        tmp = dest.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(row, default=str))
+        tmp.replace(dest)
     except Exception:  # noqa: BLE001 — persistence is best-effort
         logger.exception(
             "failed to write local attempt row for %s", instance_id
