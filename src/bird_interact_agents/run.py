@@ -2340,18 +2340,24 @@ def main() -> None:
         _apply_price_overrides(args.price_overrides)
 
     filter_ids: list[str] | None = None
-    if args.instance_id:
+    # `is not None` (not truthiness) so an EXPLICIT empty value (`--instance-id
+    # ""` / `--filter-ids ""`) is REJECTED here rather than falling through to
+    # whole-benchmark scope (Codex PR #75 r6). Only an OMITTED flag (None)
+    # leaves filter_ids=None → whole benchmark.
+    if args.instance_id is not None:
         # Accept either a single id or a comma-separated list. Whitespace
         # around items is trimmed; empty tokens are dropped.
         filter_ids = [s.strip() for s in args.instance_id.split(",") if s.strip()]
-        # Reject input that parses to an empty list (e.g. ",,, "). Without
+        # Reject input that parses to an empty list (e.g. "" / ",,, "). Without
         # this, filter_ids=[] later falls back to running the full
         # benchmark — a silent expansion of scope from a malformed flag.
         if not filter_ids:
             parser.error(
                 "--instance-id must include at least one non-empty id",
             )
-    elif args.filter_ids:
+    elif args.filter_ids is not None:
+        if not args.filter_ids:
+            parser.error("--filter-ids requires a non-empty file path")
         with open(args.filter_ids) as f:
             filter_ids = [line.strip() for line in f if line.strip()]
         # Symmetric with the --instance-id empty check above (Codex PR #75): an

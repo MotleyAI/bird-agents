@@ -372,6 +372,29 @@ def test_cli_empty_filter_ids_file_errors_before_provision(_stub_run, monkeypatc
     assert _stub_run["sync_calls"] == []
 
 
+@pytest.mark.parametrize("flag,value", [
+    ("--instance-id", ""),
+    ("--instance-id", ",,,"),
+    ("--filter-ids", ""),
+])
+def test_cli_explicit_empty_scope_errors_before_provision(
+    _stub_run, monkeypatch, flag, value,
+):
+    """Codex PR #75 r6: an explicit empty --instance-id / --filter-ids must
+    error (not collapse to whole-benchmark provision + sync)."""
+    _argv(
+        monkeypatch,
+        "--framework", "pydantic_ai", "--mode", "one-shot",
+        "--dataset", "livesqlbench-large", "--query-mode", "raw",
+        "--agent-model", "anthropic/claude-haiku-4-5-20251001",
+        flag, value,
+    )
+    with pytest.raises(SystemExit):
+        run.main()
+    assert _stub_run["provision_calls"] == []
+    assert _stub_run["sync_calls"] == []
+
+
 def test_cli_limit_zero_runs_but_skips_provision_and_sync(_stub_run, monkeypatch):
     """Codex PR #75 r2: `--limit 0` is a valid zero-task run (an established
     idiom). It must NOT provision the whole benchmark or sync all annotations —
