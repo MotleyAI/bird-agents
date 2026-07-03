@@ -16,10 +16,8 @@ Format params (both): ``budget``, ``db_name``, ``user_query``.
 All examples are synthetic — never a real dataset's table/column/value names.
 """
 
-from bird_interact_agents.agents._host_discovery_playbook import (
-    HOST_DISCOVERY_PLAYBOOK as _HOST_DISCOVERY_PLAYBOOK,
-)
 from bird_interact_agents.agents._shared_otf_prompts import (
+    QUERY_ROOT_GUIDANCE,
     _AFTER_REJECTED_DISCIPLINE,
     _ASK_AGAIN_RULE,
     _COLUMN_NAMES_DONT_AFFECT_GRADING,
@@ -71,18 +69,17 @@ DISCOVER the entities the question needs and QUERY off them.
 SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-`list_datasources` / `models_summary` to see what exists; `search` to find
-the encoded entities and KB-derived columns relevant to the question;
-`inspect_model` to see a model's columns / measures / joins; `query`
-(single object OR list of stage objects for a nested DAG) to test before
-submitting. There are no model-mutation tools — if an entity you expected
+{inventory_tools}`search` to find the encoded entities and KB-derived columns
+relevant to the question; `inspect_model` to see a model's columns / measures
+/ joins; `query` (single object OR list of stage objects for a nested DAG) to
+test before submitting. There are no model-mutation tools — if an entity you expected
 is missing, search for an equivalent or build the logic INSIDE your query
 referencing existing columns; never assume a column you have not confirmed.
 
 READ A COLUMN'S FULL DESCRIPTION before committing to it as a filter,
-projection, or join key — `search` with `entities=["<db>.<model>.<col>"]`,
-`max_memories=0`, `max_example_queries=0`. The returned `EntityHit.text`
-carries `Description:` and `Sample values:` inline. The truncated
+projection, or join key — `inspect` the column reference
+(`<db>.<model>.<col>`) to read its `Description:` and `Sample values:`
+(single-entity point lookup). The
 `Sample values:` line is your authoritative source of which literal forms
 actually occur in this column — case variants, whitespace forms,
 abbreviations, alternate phrasings of the same concept. Use it BEFORE
@@ -99,9 +96,10 @@ _PRE_ENCODED_DISCIPLINE = """\
 3. BUILD THE QUERY OFF THE ENCODED ENTITIES. Reference encoded
    columns / measures BY NAME — do NOT re-derive or inline their logic.
    - To reach a column on another model, use a DECLARED join,
-     alias-qualified (e.g. `other_alias.col`). When the host is ambiguous,
-     follow the HOST DISCOVERY playbook below (description match first,
-     then shortest declared-join path). Never assume an undeclared join.
+     alias-qualified (e.g. `other_alias.col`). When you are unsure which
+     model to root the query at, use the "CHOOSING A QUERY ROOT" steps
+     below (call `recommend_root_model` with the columns/measures you need).
+     Never assume an undeclared join.
    - Where the question still needs an operationalisation choice the
      encoded entities do not pin (a threshold, an IN-set, a unit, a
      rounding), apply the most conservative reading the column descriptions
@@ -157,6 +155,14 @@ and the raw definition. When the question needs such a block and neither
     definition."""
 
 
+# {inventory_tools} slot for the pre-encoded tools block. v0 agents hold
+# `list_datasources` / `models_summary` on their single surface; the slayer v1
+# MAIN agent does NOT (DEV-1629 keeps those discovery-only and introspects via
+# `search` / `inspect_model` directly), so its variant drops the clause.
+_V0_INVENTORY = "`list_datasources` / `models_summary` to see what exists; "
+_V1_INVENTORY = ""
+
+
 SLAYER_PRE_ENCODED_ONE_SHOT = (
     "You are a data analyst. You have a SLayer semantic-layer MCP server plus a\n"
     "native `submit_query` tool. The domain knowledge is ALREADY ENCODED as\n"
@@ -167,7 +173,7 @@ SLAYER_PRE_ENCODED_ONE_SHOT = (
         sources_desc="the encoded columns/measures and their\ndescriptions"
     )
     + "\n\n"
-    + _PRE_ENCODED_TOOLS_BLOCK
+    + _PRE_ENCODED_TOOLS_BLOCK.format(inventory_tools=_V0_INVENTORY)
     + "\n\nDISCOVER-THEN-QUERY DISCIPLINE:\n\n"
     + _DECOMPOSE_DISCIPLINE
     + "\n\n"
@@ -196,7 +202,7 @@ SLAYER_PRE_ENCODED_ONE_SHOT = (
       "Database: {db_name}\n"
       "User question: {user_query}\n"
     + "\n"
-    + _HOST_DISCOVERY_PLAYBOOK
+    + QUERY_ROOT_GUIDANCE
 )
 
 
@@ -214,7 +220,7 @@ SLAYER_PRE_ENCODED_AINTERACT = (
         submit_tool="submit_query",
     )
     + "\n\n"
-    + _PRE_ENCODED_TOOLS_BLOCK
+    + _PRE_ENCODED_TOOLS_BLOCK.format(inventory_tools=_V0_INVENTORY)
     + "\n\nDISCOVER-THEN-QUERY DISCIPLINE:\n\n"
     + _DECOMPOSE_DISCIPLINE
     + "\n\n"
@@ -260,11 +266,28 @@ SLAYER_PRE_ENCODED_AINTERACT = (
       "only what the question needs. If your budget runs out, submit immediately.\n"
       "\nDatabase: {db_name}\nUser question: {user_query}\n"
     + "\n"
-    + _HOST_DISCOVERY_PLAYBOOK
+    + QUERY_ROOT_GUIDANCE
 )
+
+
+# DEV-1629: v1 variants — identical to v0 except the pre-encoded tools block
+# drops the `list_datasources` / `models_summary` inventory clause (not on the
+# slayer v1 MAIN surface). Derived by dropping the clause so the rest of the
+# prompt stays byte-identical to v0; the assertions guard against a silent
+# no-op if the v0 clause text ever changes.
+SLAYER_PRE_ENCODED_ONE_SHOT_V1 = SLAYER_PRE_ENCODED_ONE_SHOT.replace(
+    _V0_INVENTORY, _V1_INVENTORY
+)
+SLAYER_PRE_ENCODED_AINTERACT_V1 = SLAYER_PRE_ENCODED_AINTERACT.replace(
+    _V0_INVENTORY, _V1_INVENTORY
+)
+assert SLAYER_PRE_ENCODED_ONE_SHOT_V1 != SLAYER_PRE_ENCODED_ONE_SHOT
+assert SLAYER_PRE_ENCODED_AINTERACT_V1 != SLAYER_PRE_ENCODED_AINTERACT
 
 
 __all__ = [
     "SLAYER_PRE_ENCODED_ONE_SHOT",
     "SLAYER_PRE_ENCODED_AINTERACT",
+    "SLAYER_PRE_ENCODED_ONE_SHOT_V1",
+    "SLAYER_PRE_ENCODED_AINTERACT_V1",
 ]

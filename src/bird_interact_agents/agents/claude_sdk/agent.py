@@ -817,12 +817,13 @@ async def _ask_discovery_impl(question: str) -> str:
 @tool(
     "ask_discovery",
     (
-        "Ask the long-lived 'discovery' assistant a focused schema / data / "
-        "knowledge-base question and get back its findings. Discovery holds "
-        "the introspection tools (schema, sample values, joins, KB "
-        "definitions) and accumulates context across your questions, so "
-        "follow-ups are cheap — ask it instead of re-deriving facts yourself. "
-        "It cannot submit answers or run your candidate query."
+        "Ask the long-lived 'discovery' assistant a focused question and get "
+        "back its findings. Use it to clarify request ambiguities with the user "
+        "and for broad whole-schema questions; it can also introspect the "
+        "schema / sample values / joins / KB definitions on your behalf and "
+        "accumulates context across questions, so follow-ups are cheap. (When "
+        "your own surface has direct introspection tools, prefer those for "
+        "focused lookups.) It cannot submit answers or run your candidate query."
     ),
     {"question": str},
 )
@@ -849,6 +850,7 @@ _SLAYER_NATIVE_NAMES: frozenset[str] = frozenset({
     "inspect",
     "models_summary",
     "inspect_model",
+    "recommend_root_model",
     "create_model",
     "edit_model",
     "validate_models",

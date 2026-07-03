@@ -60,7 +60,7 @@ from bird_interact_agents.agents._pre_encoded import (
     validate_pre_encoded_source,
 )
 from bird_interact_agents.agents._pre_encoded_prompts import (
-    SLAYER_PRE_ENCODED_ONE_SHOT,
+    SLAYER_PRE_ENCODED_ONE_SHOT_V1 as SLAYER_PRE_ENCODED_ONE_SHOT,
 )
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.model_string import native_model_id
@@ -223,6 +223,15 @@ _MAIN_NATIVE_BARE = [
     "query",
     "query_nested",
     "submit_query",
+    "recommend_root_model",
+    # DEV-1629: the main loop nails down query details itself — `search` /
+    # `inspect_model` / `inspect` are on MAIN directly (no longer discovery-only).
+    # They stay on the discovery client too, so `ask_discovery` can still
+    # introspect when grilling the user. `inspect` (single-entity point lookup)
+    # is the primitive for confirming a known column's sampled values.
+    "search",
+    "inspect_model",
+    "inspect",
     "create_model",
     "edit_model",
     "validate_models",

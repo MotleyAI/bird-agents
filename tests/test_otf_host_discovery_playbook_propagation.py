@@ -95,20 +95,14 @@ def test_canonical_playbook_has_no_format_fields():
 
 
 def test_otf_prompts_modules_import_the_same_object():
-    """Every OTF prompts module re-exports the canonical playbook as a
-    private alias `_HOST_DISCOVERY_PLAYBOOK`. They MUST be the same
-    object — drift is impossible by construction."""
-    # DEV-1555: import-identity is meaningful only for the v1 prompts
-    # path. The v0 prompts re-export a static snapshot from
-    # ``_shared_otf_prompts`` that embeds its OWN inline copy of the
-    # playbook text — they do not import the live playbook constant, so
-    # `is`-equality is N/A there. (DEV-1591 deliberately patched the v0
-    # SLAYER snapshots; the surviving v0 contracts are the presence +
-    # "v0 != v1" checks in tests/test_dev1555_v0_v1_shared_prompts.py.)
-    from bird_interact_agents.agents.claude_sdk_otf_v1 import prompts as cs_otf
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import (
-        prompts as cs_otf_ainteract,
-    )
+    """The pydantic_ai OTF prompts modules re-export the canonical playbook as a
+    private alias `_HOST_DISCOVERY_PLAYBOOK`. They MUST be the same object —
+    drift is impossible by construction.
+
+    DEV-1629: the claude_sdk v1 prompts NO LONGER import the playbook — they use
+    the `recommend_root_model` guidance constants instead (pinned in
+    tests/test_dev1629_recommend_root_model_surface.py). Only the pydantic_ai
+    agents keep the playbook."""
     from bird_interact_agents.agents.pydantic_ai_otf_encode import (
         prompts as otf_encode,
     )
@@ -116,8 +110,6 @@ def test_otf_prompts_modules_import_the_same_object():
         prompts as recursive,
     )
 
-    assert cs_otf._HOST_DISCOVERY_PLAYBOOK is HOST_DISCOVERY_PLAYBOOK
-    assert cs_otf_ainteract._HOST_DISCOVERY_PLAYBOOK is HOST_DISCOVERY_PLAYBOOK
     assert otf_encode._HOST_DISCOVERY_PLAYBOOK is HOST_DISCOVERY_PLAYBOOK
     assert recursive._HOST_DISCOVERY_PLAYBOOK is HOST_DISCOVERY_PLAYBOOK
 
@@ -125,32 +117,6 @@ def test_otf_prompts_modules_import_the_same_object():
 # ---------------------------------------------------------------------------
 # 2. Playbook is injected into every named render site.
 # ---------------------------------------------------------------------------
-
-
-def test_claude_sdk_otf_one_shot_includes_playbook():
-    """DEV-1555: v1 prompts assemble live ``HOST_DISCOVERY_PLAYBOOK``.
-
-    The v0 one-shot template embeds its OWN inline copy of the playbook
-    text (not the live constant); DEV-1591 patched that snapshot. The
-    surviving v0 contracts are the presence + "v0 != v1" checks in
-    tests/test_dev1555_v0_v1_shared_prompts.py, not this membership
-    check.
-    """
-    from bird_interact_agents.agents.claude_sdk_otf_v1 import prompts
-
-    rendered = prompts.SLAYER_OTF_ONE_SHOT.format(**_claude_sdk_otf_args())
-    assert HOST_DISCOVERY_PLAYBOOK in rendered
-
-
-def test_claude_sdk_otf_ainteract_includes_playbook():
-    """DEV-1555: v1 a-interact prompts assemble live ``HOST_DISCOVERY_PLAYBOOK``.
-
-    (See note on the one-shot variant for why v0 is excluded.)
-    """
-    from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import prompts
-
-    rendered = prompts.SLAYER_OTF_AINTERACT.format(**_claude_sdk_otf_args())
-    assert HOST_DISCOVERY_PLAYBOOK in rendered
 
 
 def test_kb_encoder_prompt_includes_playbook():

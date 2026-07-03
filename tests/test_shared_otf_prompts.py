@@ -44,30 +44,30 @@ import pytest
 # moved to the discovery client reached via ask_discovery — so the v1 slayer
 # prompts now route schema/sample-value/entity discovery through ask_discovery
 # while keeping KB lookups (get_knowledge_definition) on the main surface.
-# Re-baselined again for the DEV-1591 ∩ DEV-1581 merge: under the ask_discovery
-# two-stage split, the v1 MAIN loop does not call `search` (it reaches the warm
-# discovery client through `ask_discovery`), so the broad-search compact
-# discipline (`_COMPACT_SEARCH_DISCIPLINE`) lives on the DISCOVERY client prompt
-# (partition.build_discovery_prompt, slayer-only) — NOT the v1 main heads. The
-# only copy still reaching the v1 main prompt is the one inside the shared
-# HOST_DISCOVERY_PLAYBOOK these prompts append (itself overridden for the main
-# loop by build_main_workflow_note). Snapshots recomputed for that placement.
-# Re-baselined for DEV-1591 stream 1: `search` is now discovery-only and the
-# search-vs-inspect discipline + host-discovery playbook route every targeted
-# detail read (column / memory full body) through the `inspect` point-lookup
-# (`entity_type=…`, `compact=False`), dropping the `search(entities=…,
-# compact=False)` + `cypher_filter` detail-read pattern. The shared
-# `_COMPACT_SEARCH_DISCIPLINE` and `HOST_DISCOVERY_PLAYBOOK` both changed, so
-# the v1 main prompts (which still append the playbook) re-hash.
-# Re-baselined again for the DEV-1591 ∩ DEV-1623 merge: DEV-1623 splices the
-# shared `_SAMPLE_VALUE_FILTER_MANDATE` fragment (mandate sample-value-aware
-# filter literals to cut submit-verify thrash) into both v1 slayer prompts after
-# the rules-2/3 block, rendered with `sample_source="`ask_discovery`"`. The
-# merged prompt now carries BOTH the DEV-1591 search/inspect discipline AND the
-# DEV-1623 filter mandate, so the snapshots are recomputed from the merged
-# source (neither side's pre-merge value).
-_ONE_SHOT_SHA256 = "f94817c9aa7caed324ef7d126092b488da3a7a25a1b191d988559b90b69c4c2a"
-_AINTERACT_SHA256 = "5489215b1fcf12f64c039b85c61e4f82b9c47c9bef0241817bb33e4ef33bd7f1"
+# Re-baselined for DEV-1623: the shared `_SAMPLE_VALUE_FILTER_MANDATE` fragment
+# (mandate sample-value-aware filter literals to cut submit-verify thrash) is
+# now spliced into both v1 slayer prompts after the rules-2/3 block, rendered
+# with `sample_source="`ask_discovery`"`. Reworded per PR #72 review to assign
+# each variation kind to exactly one strategy (case/whitespace -> LOWER(TRIM);
+# abbreviation/spelling -> IN-set enumeration). Round 2 (Codex): also narrowed
+# rule 3's "Symmetric companion" bullet itself so it no longer lists
+# case/whitespace among the extend-the-IN-set triggers — the two rules are now
+# fully complementary with zero overlap.
+# Re-baselined for DEV-1629: (1) the HOST DISCOVERY playbook is retired from the
+# claude_sdk prompts in favour of the shared `QUERY_ROOT_GUIDANCE` /
+# `ENCODE_HOST_GUIDANCE` blocks that drive the SLayer `recommend_root_model`
+# tool (query = no hint; encode = descriptions-first `root_hint`); (2) slayer v1
+# main now HOLDS `search` / `inspect_model` directly, so both v1 prompts say to
+# call them directly (and read sample values via them) instead of routing every
+# introspection through `ask_discovery`.
+# DEV-1591 ∩ DEV-1629 merge: these SHAs are UNCHANGED vs DEV-1629. The DEV-1591
+# search-vs-inspect compact discipline reaches the v1 slayer MAIN loop through
+# `partition.build_main_workflow_note` (appended to these prompts at runtime,
+# see agent.py), NOT through the static `SLAYER_OTF_ONE_SHOT` /
+# `SLAYER_OTF_AINTERACT` constants hashed here — so the discipline splice does
+# not move these digests.
+_ONE_SHOT_SHA256 = "1acbe23f67a66d4801c2411d9a549023869802d11cba48a8c4756b069b10cf46"
+_AINTERACT_SHA256 = "000957c41c6f411650b5bdcc0175b4dad8a14b1b63826b4bc310f12792389c95"
 
 
 def test_slayer_otf_one_shot_unchanged():

@@ -173,12 +173,13 @@ SLAYER_MCP_TOOLS = [
     "list_datasources",
     "models_summary",
     "inspect_model",
-    "search",
     # DEV-1591: `inspect` is the targeted point-lookup the prompts route all
     # detail reads to (column / memory full bodies). It must be on the
     # allow-list — `allowed_tools` gates auto-execute, so without it the
     # model's prompted `inspect(...)` calls would be denied in headless runs.
     "inspect",
+    "search",
+    "recommend_root_model",
     "create_model",
     "edit_model",
     "save_memory",

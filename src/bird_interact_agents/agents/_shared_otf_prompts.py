@@ -369,7 +369,7 @@ bit, not to keep submitting near-identical queries."""
 
 
 # DEV-1591 — search-vs-inspect discipline. Shared across every SLayer
-# prompt (v0 snapshots, v1 head blocks, the host-discovery playbook, and
+# prompt (v0 snapshots, v1 head blocks, the v1 main workflow note, and
 # the claude_sdk a/c-interact prompts). A glm-5.2 households run issued a
 # broad `search(question=..., compact=False)` that returned 10 full entity
 # renders (~55K chars) which then rode in cached context every turn
@@ -382,14 +382,26 @@ bit, not to keep submitting near-identical queries."""
 # RRF fusion, so it needs no `cypher_filter`. This prose teaches the same
 # split the hook enforces.
 #
-# This constant is param-free AND brace-free (no `{`/`}`): the
-# host-discovery playbook contract forbids `.format()` placeholders, and
-# several consumers (SLAYER_A_INTERACT / SLAYER_C_INTERACT) are
-# `str.format` templates that would break on a stray brace. All examples
-# are synthetic — no real eval-set DB / model / column names.
+# DEV-1629 merge: `search` / `inspect` now live on the v1 slayer MAIN loop
+# too (no longer discovery-only), so this block is spliced into the main
+# workflow note as well. It therefore frames "discovery" as the ACTIVITY of
+# finding candidate ids (not the discovery subagent), and defers root / host
+# selection to `recommend_root_model` (Codex review of the merge).
+#
+# This constant is param-free AND brace-free (no `{`/`}`): several consumers
+# (SLAYER_A_INTERACT / SLAYER_C_INTERACT and the `.format()`-rendered v0/v1
+# templates) would break on a stray brace. All examples are synthetic — no
+# real eval-set DB / model / column names.
 _COMPACT_SEARCH_DISCIPLINE = """\
-SEARCH-vs-INSPECT DISCIPLINE. `search` is for DISCOVERY ONLY; `inspect` is
-for DETAIL. Keeping them separate is what keeps context cheap:
+SEARCH-vs-INSPECT DISCIPLINE. Two different jobs; keeping them separate is
+what keeps context cheap. `search` is for broad DISCOVERY — finding candidate
+entity ids by relevance. `inspect` is for DETAIL — reading the full body of
+ids you have already pinned down. ("Discovery" here is the activity of finding
+candidates, not any particular agent.) Choosing the query root / `source_model`
+/ encoding host is a SEPARATE decision — where your tool surface offers
+`recommend_root_model`, use that for it. `search` and `inspect` here are only
+for finding candidate ids and reading their details, never for selecting the
+root or host.
 
   * DISCOVER with `search(question="…")`. It returns each hit's one-line
     `description` — enough to choose candidates. Treat broad search as
@@ -478,13 +490,9 @@ reference; `inspect_model` to see a whole model's columns / measures / joins;
 `create_model` / `edit_model` to add columns and measures; `query` to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — `inspect(reference=[
-"<db>.<model>.<col>"], entity_type="column", compact=False)`. `inspect`
-is a clean point-lookup (no RRF fusion, no bundled memories), so unlike a
-`search` it returns the schema-author entry directly and needs no
-`cypher_filter` to keep a tagged memory from outranking the column. Batch
-several columns in one call by listing more references. The returned body
-carries `Description:` and `Sample values:` inline.
+filter, projection, or join key — `inspect` the column reference
+(`<db>.<model>.<col>`) to read its `Description:` and `Sample values:`
+(single-entity point lookup).
 The truncated `Sample values:` line is your authoritative source of
 which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same
@@ -492,12 +500,8 @@ concept. Use it BEFORE writing any IN-set (see rule 3 below).
 
 READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
 a memory id you've already identified — `inspect(reference=["memory:<id>"],
-entity_type="memory", compact=False)`. `search` only ever returns the
-one-line `description` summary; `inspect` with `compact=False` returns the
-full `learning` body. Because `inspect` is a point-lookup it returns exactly
-the memory you asked for — no cross-referencing parent memory can occupy its
-slot — so no `cypher_filter` is needed. Batch several memory ids in one call
-by listing more references.
+entity_type="memory", compact=False)` returns the full `learning` body
+(single-entity point lookup).
 
 """
     + _COMPACT_SEARCH_DISCIPLINE
@@ -511,9 +515,9 @@ ENCODE-THEN-QUERY DISCIPLINE:"""
 # shared fragment referenced by BOTH the frozen v0 literals AND the v1
 # compositions (slayer + raw) — the tool that surfaces sampled values differs
 # per (version, mode), so it is parameterised by `{sample_source}`:
-#   * slayer v0  -> `search` (compact=False) / `inspect_model`
-#   * slayer v1  -> `ask_discovery` (the v1 main agent has no direct introspection)
-#   * raw v0/v1  -> `get_column_meaning`
+#   * slayer v0/v1 -> `inspect` (single-entity point lookup surfaces a known
+#     column's `Sample values:` directly — DEV-1629)
+#   * raw v0/v1    -> `get_column_meaning`
 # Rendered for raw it carries NO slayer vocabulary (asserted in
 # tests/test_dev1623_filter_and_submit_mandates.py and the raw-vocab contract
 # in tests/test_shared_otf_prompts.py). The `LOWER(TRIM(...))` fallback is
@@ -555,6 +559,57 @@ confirm it returns a non-zero, plausible rowset with the expected casing and
 whitespace on string values. A `submit_query` that is not directly preceded
 by a matching `query` is rejected and wastes the turn — never submit an
 unvalidated query."""
+
+
+# ---------------------------------------------------------------------------
+# DEV-1629 — root-model / host selection via the SLayer `recommend_root_model`
+# tool. TWO blocks, split by task: querying trusts the tool's auto pick;
+# encoding steers it with a description-derived hint. Both are shared verbatim
+# across v0 (spliced into the frozen monoliths) and v1 (imported). NO format
+# fields — they are concatenated into `.format(budget/db_name/user_query)`
+# templates. The QUERY block deliberately never mentions the hint parameter.
+# ---------------------------------------------------------------------------
+
+QUERY_ROOT_GUIDANCE = """\
+CHOOSING A QUERY ROOT (`source_model`). Do not hand-pick the root or
+hand-assemble dotted join paths — ask the tool:
+
+  1. List the exact `model.column` / `model.metric` references your query
+     needs (aggregation suffixes like `:sum` are fine). If a column NAME
+     could belong to more than one model, resolve its owning model first
+     with `search` / `inspect_model`, then pass the qualified `model.column`.
+  2. Call `recommend_root_model(items=[...], data_source="<db>")` DIRECTLY —
+     it is on your own tool surface, so do not route it through a discovery
+     helper. When you are merely building a query, trust the model it picks.
+  3. Use the returned `root_model` as the query `source_model`, and drop each
+     returned `path` in verbatim as the dimension / measure / filter
+     reference — the aggregation suffix is already attached.
+  4. If `reachable` is false, no single model reaches every item: read the
+     `coverage` frontier and split the request into a multi-stage nested-DAG
+     query (a `queries` list of stage objects, each rooted at one of the
+     partial roots `coverage` lists)."""
+
+
+ENCODE_HOST_GUIDANCE = """\
+CHOOSING THE HOST for a new or edited column / measure. The host is the
+model whose row grain is 1:1 with what the knowledge item describes — not
+merely a model where the input columns happen to live:
+
+  1. List the base `model.column` references the entity's SQL will use
+     (resolve any ambiguous column NAME to its owning model first with
+     `search` / `inspect_model`).
+  2. Read those columns' — and the target entity's — DESCRIPTIONS to decide
+     the intended host: the grain the knowledge item is actually about.
+  3. Call `recommend_root_model(items=[...], data_source="<db>",
+     root_hint="<intended host model>")` DIRECTLY. The `root_hint` forces
+     your intended host when it can reach every referenced item — even a
+     bridge model that owns none of them.
+  4. Use the returned `root_model` as the host, and drop each returned `path`
+     in verbatim into the entity's SQL.
+  5. If a warning says the hint "cannot reach ..." or that it "fell back",
+     your intended host cannot reach every referenced item: re-check the
+     grain and that each reference is on the right model, then retry. Do not
+     silently accept the fallback host."""
 
 
 # ---------------------------------------------------------------------------
@@ -606,13 +661,9 @@ reference; `inspect_model` to see a whole model's columns / measures / joins;
 `create_model` / `edit_model` to add columns and measures; `query` to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — `inspect(reference=[
-"<db>.<model>.<col>"], entity_type="column", compact=False)`. `inspect`
-is a clean point-lookup (no RRF fusion, no bundled memories), so unlike a
-`search` it returns the schema-author entry directly and needs no
-`cypher_filter` to keep a tagged memory from outranking the column. Batch
-several columns in one call by listing more references. The returned body
-carries `Description:` and `Sample values:` inline.
+filter, projection, or join key — `inspect` the column reference
+(`<db>.<model>.<col>`) to read its `Description:` and `Sample values:`
+(single-entity point lookup).
 The truncated `Sample values:` line is your authoritative source of
 which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same
@@ -620,12 +671,8 @@ concept. Use it BEFORE writing any IN-set (see rule 3 below).
 
 READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
 a memory id you've already identified — `inspect(reference=["memory:<id>"],
-entity_type="memory", compact=False)`. `search` only ever returns the
-one-line `description` summary; `inspect` with `compact=False` returns the
-full `learning` body. Because `inspect` is a point-lookup it returns exactly
-the memory you asked for — no cross-referencing parent memory can occupy its
-slot — so no `cypher_filter` is needed. Batch several memory ids in one call
-by listing more references.
+entity_type="memory", compact=False)` returns the full `learning` body
+(single-entity point lookup).
 
 """
     + _COMPACT_SEARCH_DISCIPLINE
@@ -693,9 +740,9 @@ identifiers):
    the KBs that reference it (topological order). For each KB:
    - Create the column / measure on the HOST whose row is 1:1 with what
      the KB describes. When the KB does not pin the host unambiguously,
-     follow the HOST DISCOVERY playbook below to pick it — description
-     match first, then shortest declared-join path. Never pick a host
-     that needs an undeclared join.
+     pick it with the "CHOOSING THE HOST" steps below (read the column
+     descriptions, then call `recommend_root_model` with a `root_hint`).
+     Never pick a host that needs an undeclared join.
    - To reach a column on another table, reference it through a DECLARED
      join, alias-qualified (e.g. `other_alias.col`). Do NOT invent a join
      inside the SQL and do NOT write a correlated subquery in a row-level
@@ -710,7 +757,7 @@ identifiers):
      projected, grouped, or join-key column (that would corrupt the
      returned value).
    - If a KB cites named literals that are ABSENT from the column's
-     sampled values (check via `inspect_model`), do not write that
+     sampled values (check via `inspect`), do not write that
      predicate.
    - Symmetric companion: if the column's `Sample values` show variants
      of the KB-named literals that case/whitespace normalisation CANNOT
@@ -728,7 +775,7 @@ identifiers):
 
 """
     + _SAMPLE_VALUE_FILTER_MANDATE.format(
-        sample_source="`search` (compact=False) / `inspect_model`"
+        sample_source="`inspect`"
     )
     + """
 
@@ -829,136 +876,11 @@ question needs).
 Database: {db_name}
 User question: {user_query}
 
-HOST DISCOVERY (when picking a root model [`source_model`] for a query or
-a host for an encoded entity, AND the KB body does not pin the host
-unambiguously — i.e. the KB names columns/fields that exist on more than
-one candidate table, or the formula's columns live on a table T that's
-not the natural per-entity grain of the question).
-
-HARD REQUIREMENT — READ COLUMN DESCRIPTIONS BEFORE COMMITTING. For every
-candidate (root model OR join-key column) you are about to use, read its
-description first. Column descriptions are the PRIMARY signal — they
-often state the schema author's semantic intent verbatim ("Associates
-the inspection with the relevant sensor reading", "Links this audit to
-the underlying measurement", "References the parent batch's sample
-set"). That intent is the canonical answer to "which table is this
-column meant to be reached from". Skip this only when the host is
-trivially pinned (single candidate table, KB explicitly names it, OR no
-joins involved at all).
-
-NEVER read raw `*_column_meaning_base.json` / `*_schema.txt` /
-`*_kb.jsonl` files. They are already projected into the SLayer surface:
-column meanings live in `Column.description`, schema FKs are ModelJoin
-entries on the source-side table only (the FK side, not both sides),
-and KB items are memories you `search` for.
-
-HOW TO READ COLUMN DESCRIPTIONS via SLayer MCP:
-
-  * Known column(s), want their descriptions by canonical ref:
-
-        inspect(
-            reference=["<db>.<model>.<col>", ...],
-            entity_type="column",
-            compact=False,
-        )
-
-    `inspect` is a clean point-lookup — no RRF fusion, no bundled
-    memories — so it returns exactly the columns you name and needs no
-    `cypher_filter` or `max_results` budgeting. Pass a list to read
-    several columns of the same kind in one call (per-id resolution
-    errors are isolated and don't sink the batch). Each column comes back
-    as a multi-line block — `Column: <ds>.<model>.<col> / Type: <type> /
-    Description: <intent text> / Sample values: ...`. (The default
-    `compact=True` returns description-only; pass `compact=False` for the
-    full body with Sample values.)
-  * Whole-model bulk read (every column at once): `inspect_model(<model>,
-    sections=["columns"], data_source="<db>")` — Column.name + .type +
-    .description for every column. Use when scanning a model end-to-end.
-  * Discover columns whose descriptions match a phrase:
-    `search(question="<one-sentence paraphrase>", max_results=10,
-    datasource="<db>", cypher_filter='MATCH (n:ModelColumn:Measure:Aggregation:Model) RETURN n.id AS id')`.
-    The cypher filter pins the result list to entity hits (multi-label
-    is union semantics); the tantivy + dense-embedding channels then
-    rank all column / model / measure descriptions and return a unified
-    `results` list of entity hits.
-
-HOW TO FIND CANDIDATE HOSTS for a target table T (the table whose
-columns the KB references):
-
-  1. Call `models_summary(datasource_name="<db>", format="json")` once.
-     Every model's `joins_to` list is its OUTGOING declared joins.
-     Models whose `joins_to` contains T are the candidate 1-hop hosts.
-     (SLayer ingestion only emits FKs on the source side, so calling
-     `inspect_model(T, sections=["joins"])` would only list joins FROM
-     T and miss inbound candidates — the inverse direction.)
-
-  2. For each candidate host H, call `inspect_model(H,
-     sections=["columns", "joins"], data_source="<db>")` to see (a)
-     the join_pairs naming the FK columns that connect H to T, and (b)
-     the descriptions of those FK columns on H's side.
-
-  3. If no candidate has a 1-hop join to T, widen the search: for each
-     candidate H, call `inspect_model(H, sections=["reachable_fields"],
-     reachable_fields_depth=3, data_source="<db>")` and grep the
-     returned dotted paths for those ending at one of T's columns —
-     path depth equals hop count.
-
-DECISION ORDER:
-
-  PRIMARY (description match). Pick the candidate whose FK column's
-  description literally states the relationship the KB needs
-  ("associates X with Y" / "links X to Y" / "references X's Y data").
-  This is the canonical schema-author signal.
-
-  TIE-BREAKER 1 (shortest declared path). If multiple candidates match
-  on description (or none does), prefer the candidate with the SHORTEST
-  declared-join path to T. A 1-hop FK is almost always more canonical
-  than a 3-hop chain through shared-infrastructure tables (e.g. tables
-  named "events", "log", "sites", "registry", or any table with
-  many-to-many roles in the schema) — those chains are one-to-many at
-  every step and silently multiply rows even when structurally valid.
-
-  TIE-BREAKER 2 (KB body re-read). If still tied, re-read the KB body
-  via `inspect(reference=["memory:<id>"], entity_type="memory",
-  compact=False)` — KB definitions occasionally include parenthetical
-  hints ("per entity", "per inspection") that pin the grain. `inspect`
-  with `compact=False` returns the full `learning` body, whereas a
-  `search` would only return the one-line `description`.
-
-  LAST RESORT (deterministic). If still ambiguous, pick the candidate
-  whose model name sorts FIRST lexicographically and record the choice
-  in your notes / final answer so a reviewer can flag it. Never
-  silently guess.
-
-WORKED EXAMPLE (fictional names — invent your own).
-KB defines `quality_risk = sp * sw * ml / 100` on columns of
-`sensor_readings`. Call `models_summary(datasource_name="demo",
-format="json")` and scan each model's `joins_to`:
-`asset_inspections.joins_to` includes `sensor_readings` (1 hop);
-`service_log.joins_to` includes `equipment` only;
-`equipment.joins_to` includes `maintenance_log`;
-`maintenance_log.joins_to` includes `sensor_readings`. So
-`asset_inspections` is a 1-hop candidate and `service_log` is a 3-hop
-candidate.
-
-Description read (PRIMARY):
-  inspect(
-    reference=["demo.asset_inspections.sensor_read_ref",
-               "demo.maintenance_log.sensor_read_ref"],
-    entity_type="column", compact=False,
-  )
-returns the column bodies:
-  * `asset_inspections.sensor_read_ref` — "Associates the inspection
-    with the relevant sensor reading."
-  * `maintenance_log.sensor_read_ref` — "Associates maintenance data
-    with an existing sensor measurement."
-Only `asset_inspections.sensor_read_ref` directly states an
-inspection-to-sensor relationship; `maintenance_log` talks about
-maintenance data, not inspection. PICK `asset_inspections` on the
-description signal alone — tie-breakers are unnecessary. If both
-descriptions had been equally on-intent, the 1-hop tiebreaker would
-have picked `asset_inspections` anyway.
 """
+    + QUERY_ROOT_GUIDANCE
+    + "\n\n"
+    + ENCODE_HOST_GUIDANCE
+    + "\n"
 )
 
 SLAYER_OTF_AINTERACT_V0 = (
@@ -996,13 +918,9 @@ reference; `inspect_model` to see a whole model's columns / measures / joins;
 `create_model` / `edit_model` to add columns and measures; `query` to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — `inspect(reference=[
-"<db>.<model>.<col>"], entity_type="column", compact=False)`. `inspect`
-is a clean point-lookup (no RRF fusion, no bundled memories), so unlike a
-`search` it returns the schema-author entry directly and needs no
-`cypher_filter` to keep a tagged memory from outranking the column. Batch
-several columns in one call by listing more references. The returned body
-carries `Description:` and `Sample values:` inline.
+filter, projection, or join key — `inspect` the column reference
+(`<db>.<model>.<col>`) to read its `Description:` and `Sample values:`
+(single-entity point lookup).
 The truncated `Sample values:` line is your authoritative source of
 which literal forms actually occur in this column — case variants,
 whitespace forms, abbreviations, alternate phrasings of the same
@@ -1010,12 +928,8 @@ concept. Use it BEFORE writing any IN-set (see rule 3 below).
 
 READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
 a memory id you've already identified — `inspect(reference=["memory:<id>"],
-entity_type="memory", compact=False)`. `search` only ever returns the
-one-line `description` summary; `inspect` with `compact=False` returns the
-full `learning` body. Because `inspect` is a point-lookup it returns exactly
-the memory you asked for — no cross-referencing parent memory can occupy its
-slot — so no `cypher_filter` is needed. Batch several memory ids in one call
-by listing more references.
+entity_type="memory", compact=False)` returns the full `learning` body
+(single-entity point lookup).
 
 """
     + _COMPACT_SEARCH_DISCIPLINE
@@ -1083,9 +997,9 @@ identifiers):
    the KBs that reference it (topological order). For each KB:
    - Create the column / measure on the HOST whose row is 1:1 with what
      the KB describes. When the KB does not pin the host unambiguously,
-     follow the HOST DISCOVERY playbook below to pick it — description
-     match first, then shortest declared-join path. Never pick a host
-     that needs an undeclared join.
+     pick it with the "CHOOSING THE HOST" steps below (read the column
+     descriptions, then call `recommend_root_model` with a `root_hint`).
+     Never pick a host that needs an undeclared join.
    - To reach a column on another table, reference it through a DECLARED
      join, alias-qualified (e.g. `other_alias.col`). Do NOT invent a join
      inside the SQL and do NOT write a correlated subquery in a row-level
@@ -1100,7 +1014,7 @@ identifiers):
      projected, grouped, or join-key column (that would corrupt the
      returned value).
    - If a KB cites named literals that are ABSENT from the column's
-     sampled values (check via `inspect_model`), do not write that
+     sampled values (check via `inspect`), do not write that
      predicate.
    - Symmetric companion: if the column's `Sample values` show variants
      of the KB-named literals that case/whitespace normalisation CANNOT
@@ -1117,7 +1031,7 @@ identifiers):
 
 """
     + _SAMPLE_VALUE_FILTER_MANDATE.format(
-        sample_source="`search` (compact=False) / `inspect_model`"
+        sample_source="`inspect`"
     )
     + """
 
@@ -1263,136 +1177,11 @@ only what the question needs. If your budget runs out, submit immediately.
 Database: {db_name}
 User question: {user_query}
 
-HOST DISCOVERY (when picking a root model [`source_model`] for a query or
-a host for an encoded entity, AND the KB body does not pin the host
-unambiguously — i.e. the KB names columns/fields that exist on more than
-one candidate table, or the formula's columns live on a table T that's
-not the natural per-entity grain of the question).
-
-HARD REQUIREMENT — READ COLUMN DESCRIPTIONS BEFORE COMMITTING. For every
-candidate (root model OR join-key column) you are about to use, read its
-description first. Column descriptions are the PRIMARY signal — they
-often state the schema author's semantic intent verbatim ("Associates
-the inspection with the relevant sensor reading", "Links this audit to
-the underlying measurement", "References the parent batch's sample
-set"). That intent is the canonical answer to "which table is this
-column meant to be reached from". Skip this only when the host is
-trivially pinned (single candidate table, KB explicitly names it, OR no
-joins involved at all).
-
-NEVER read raw `*_column_meaning_base.json` / `*_schema.txt` /
-`*_kb.jsonl` files. They are already projected into the SLayer surface:
-column meanings live in `Column.description`, schema FKs are ModelJoin
-entries on the source-side table only (the FK side, not both sides),
-and KB items are memories you `search` for.
-
-HOW TO READ COLUMN DESCRIPTIONS via SLayer MCP:
-
-  * Known column(s), want their descriptions by canonical ref:
-
-        inspect(
-            reference=["<db>.<model>.<col>", ...],
-            entity_type="column",
-            compact=False,
-        )
-
-    `inspect` is a clean point-lookup — no RRF fusion, no bundled
-    memories — so it returns exactly the columns you name and needs no
-    `cypher_filter` or `max_results` budgeting. Pass a list to read
-    several columns of the same kind in one call (per-id resolution
-    errors are isolated and don't sink the batch). Each column comes back
-    as a multi-line block — `Column: <ds>.<model>.<col> / Type: <type> /
-    Description: <intent text> / Sample values: ...`. (The default
-    `compact=True` returns description-only; pass `compact=False` for the
-    full body with Sample values.)
-  * Whole-model bulk read (every column at once): `inspect_model(<model>,
-    sections=["columns"], data_source="<db>")` — Column.name + .type +
-    .description for every column. Use when scanning a model end-to-end.
-  * Discover columns whose descriptions match a phrase:
-    `search(question="<one-sentence paraphrase>", max_results=10,
-    datasource="<db>", cypher_filter='MATCH (n:ModelColumn:Measure:Aggregation:Model) RETURN n.id AS id')`.
-    The cypher filter pins the result list to entity hits (multi-label
-    is union semantics); the tantivy + dense-embedding channels then
-    rank all column / model / measure descriptions and return a unified
-    `results` list of entity hits.
-
-HOW TO FIND CANDIDATE HOSTS for a target table T (the table whose
-columns the KB references):
-
-  1. Call `models_summary(datasource_name="<db>", format="json")` once.
-     Every model's `joins_to` list is its OUTGOING declared joins.
-     Models whose `joins_to` contains T are the candidate 1-hop hosts.
-     (SLayer ingestion only emits FKs on the source side, so calling
-     `inspect_model(T, sections=["joins"])` would only list joins FROM
-     T and miss inbound candidates — the inverse direction.)
-
-  2. For each candidate host H, call `inspect_model(H,
-     sections=["columns", "joins"], data_source="<db>")` to see (a)
-     the join_pairs naming the FK columns that connect H to T, and (b)
-     the descriptions of those FK columns on H's side.
-
-  3. If no candidate has a 1-hop join to T, widen the search: for each
-     candidate H, call `inspect_model(H, sections=["reachable_fields"],
-     reachable_fields_depth=3, data_source="<db>")` and grep the
-     returned dotted paths for those ending at one of T's columns —
-     path depth equals hop count.
-
-DECISION ORDER:
-
-  PRIMARY (description match). Pick the candidate whose FK column's
-  description literally states the relationship the KB needs
-  ("associates X with Y" / "links X to Y" / "references X's Y data").
-  This is the canonical schema-author signal.
-
-  TIE-BREAKER 1 (shortest declared path). If multiple candidates match
-  on description (or none does), prefer the candidate with the SHORTEST
-  declared-join path to T. A 1-hop FK is almost always more canonical
-  than a 3-hop chain through shared-infrastructure tables (e.g. tables
-  named "events", "log", "sites", "registry", or any table with
-  many-to-many roles in the schema) — those chains are one-to-many at
-  every step and silently multiply rows even when structurally valid.
-
-  TIE-BREAKER 2 (KB body re-read). If still tied, re-read the KB body
-  via `inspect(reference=["memory:<id>"], entity_type="memory",
-  compact=False)` — KB definitions occasionally include parenthetical
-  hints ("per entity", "per inspection") that pin the grain. `inspect`
-  with `compact=False` returns the full `learning` body, whereas a
-  `search` would only return the one-line `description`.
-
-  LAST RESORT (deterministic). If still ambiguous, pick the candidate
-  whose model name sorts FIRST lexicographically and record the choice
-  in your notes / final answer so a reviewer can flag it. Never
-  silently guess.
-
-WORKED EXAMPLE (fictional names — invent your own).
-KB defines `quality_risk = sp * sw * ml / 100` on columns of
-`sensor_readings`. Call `models_summary(datasource_name="demo",
-format="json")` and scan each model's `joins_to`:
-`asset_inspections.joins_to` includes `sensor_readings` (1 hop);
-`service_log.joins_to` includes `equipment` only;
-`equipment.joins_to` includes `maintenance_log`;
-`maintenance_log.joins_to` includes `sensor_readings`. So
-`asset_inspections` is a 1-hop candidate and `service_log` is a 3-hop
-candidate.
-
-Description read (PRIMARY):
-  inspect(
-    reference=["demo.asset_inspections.sensor_read_ref",
-               "demo.maintenance_log.sensor_read_ref"],
-    entity_type="column", compact=False,
-  )
-returns the column bodies:
-  * `asset_inspections.sensor_read_ref` — "Associates the inspection
-    with the relevant sensor reading."
-  * `maintenance_log.sensor_read_ref` — "Associates maintenance data
-    with an existing sensor measurement."
-Only `asset_inspections.sensor_read_ref` directly states an
-inspection-to-sensor relationship; `maintenance_log` talks about
-maintenance data, not inspection. PICK `asset_inspections` on the
-description signal alone — tie-breakers are unnecessary. If both
-descriptions had been equally on-intent, the 1-hop tiebreaker would
-have picked `asset_inspections` anyway.
 """
+    + QUERY_ROOT_GUIDANCE
+    + "\n\n"
+    + ENCODE_HOST_GUIDANCE
+    + "\n"
 )
 
 RAW_OTF_ONE_SHOT_V0 = (

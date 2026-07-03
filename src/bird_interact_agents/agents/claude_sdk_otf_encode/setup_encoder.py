@@ -107,8 +107,8 @@ _NUDGE_TURN_BUDGET = 35
 # wires its own KB memory); `query_nested` lets it self-test a multi-stage DAG.
 SLAYER_MCP_TOOLS = [
     "create_model", "edit_model", "save_memory", "validate_models",
-    "help", "search", "models_summary", "inspect_model",
-    "query", "query_nested",
+    "help", "search", "models_summary", "inspect_model", "inspect",
+    "recommend_root_model", "query", "query_nested",
 ]
 
 # SLayer MCP tools the encoder never needs — hidden from the model's cacheable
