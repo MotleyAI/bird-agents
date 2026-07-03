@@ -131,8 +131,10 @@ down without a task. A deferred block has NO encoded column/measure — only a
 `[kb=<n>]` MEMORY recording WHY it was deferred, its open clarifying questions,
 and the raw definition. When the question needs such a block and neither
 `search` nor `inspect_model` surfaces an encoded entity for it:
-  - `search` for the KB MEMORY (allow memories — do NOT pass `max_memories=0`)
-    and READ the `[kb=<n>]` item's deferral notes + definition.
+  - `search` for the KB MEMORY to find its id (compact discovery returns
+    one-line descriptions only), then `inspect(reference=["memory:<id>"],
+    entity_type="memory", compact=False)` to READ the `[kb=<n>]` item's full
+    deferral notes + definition.
   - Build that logic yourself INSIDE your query from the base columns, following
     the definition and taking the most conservative reading the notes + the
     columns' sampled values support. There is no user to consult — resolve the
@@ -145,8 +147,10 @@ down without a task. A deferred block has NO encoded column/measure — only a
 `[kb=<n>]` MEMORY recording WHY it was deferred, its open clarifying questions,
 and the raw definition. When the question needs such a block and neither
 `search` nor `inspect_model` surfaces an encoded entity for it:
-  - `search` for the KB MEMORY (allow memories — do NOT pass `max_memories=0`)
-    and READ the `[kb=<n>]` item's deferral notes + clarifying questions.
+  - `search` for the KB MEMORY to find its id (compact discovery returns
+    one-line descriptions only), then `inspect(reference=["memory:<id>"],
+    entity_type="memory", compact=False)` to READ the `[kb=<n>]` item's full
+    deferral notes + clarifying questions.
   - Use `ask_user` to resolve the SPECIFIC missing operationalisation the
     deferral left open (the threshold / predicate / join / grain named in its
     clarifying questions) BEFORE building the query — do NOT silently guess a
