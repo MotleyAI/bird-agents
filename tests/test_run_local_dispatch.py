@@ -334,3 +334,22 @@ def test_cli_exactly_one_path_errors(_stub_run, monkeypatch, tmp_path):
     _sqlite_argv(monkeypatch, "--data", str(tmp_path / "d.jsonl"))  # no --db-path
     with pytest.raises(SystemExit):
         run.main()
+
+
+def test_cli_empty_filter_ids_file_errors_before_provision(_stub_run, monkeypatch, tmp_path):
+    """Codex PR #75: an empty --filter-ids file must error BEFORE provisioning +
+    sync (not fall through to a whole-benchmark provision)."""
+    empty = tmp_path / "ids.txt"
+    empty.write_text("\n  \n")  # only blanks
+    _pg_argv_no_id = [
+        "--framework", "pydantic_ai", "--mode", "one-shot",
+        "--dataset", "livesqlbench-large", "--query-mode", "raw",
+        "--agent-model", "anthropic/claude-haiku-4-5-20251001",
+        "--filter-ids", str(empty),
+    ]
+    _argv(monkeypatch, *_pg_argv_no_id)
+    with pytest.raises(SystemExit):
+        run.main()
+    # Must NOT have provisioned or synced the whole benchmark.
+    assert _stub_run["provision_calls"] == []
+    assert _stub_run["sync_calls"] == []

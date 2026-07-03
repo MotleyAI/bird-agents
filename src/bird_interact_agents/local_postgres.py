@@ -34,6 +34,7 @@ The load recipe mirrors ``_ensure_postgres_loaded`` (createdb + ``psql -f`` per
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -101,9 +102,10 @@ def resolve_dbs_for(
     return dbs
 
 
-def _resolve_bindir() -> Path:
+def resolve_bindir() -> Path:
     """Locate the PostgreSQL server bin dir (initdb/pg_ctl live here, unlike
-    the client tools which are on PATH)."""
+    the client tools which are on PATH). Public: imported across the module
+    boundary by ``scripts/setup_local_postgres.py`` (CodeRabbit PR #75)."""
     if os.environ.get("PG_BINDIR"):
         return Path(os.environ["PG_BINDIR"])
     candidates = sorted(
@@ -168,7 +170,7 @@ def ensure_cluster(bindir: Path, recreate: bool = False) -> None:
     p["markers"].mkdir(parents=True, exist_ok=True)
     if recreate and p["data"].exists():
         stop_cluster(bindir)
-        subprocess.run(["rm", "-rf", str(p["data"])], check=True)
+        shutil.rmtree(p["data"])
     if not (p["data"] / "PG_VERSION").exists():
         subprocess.run(
             [str(bindir / "initdb"), "-D", str(p["data"]),
@@ -329,7 +331,7 @@ def provision_and_export(
     keeps the function pure-return (testable) and lets the caller decide when
     the connection env becomes visible.
     """
-    bindir = _resolve_bindir()
+    bindir = resolve_bindir()
     dbs = resolve_dbs_for(benchmark, instance_ids)
     print(f"[bird-interact] provisioning {len(dbs)} DB(s) for {benchmark} "
           f"on port {port}", file=sys.stderr)

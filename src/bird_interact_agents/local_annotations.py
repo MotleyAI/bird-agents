@@ -47,14 +47,23 @@ def sync_annotations(
     require-annotation gate can report precisely-missing ids. Genuine infra /
     auth errors from the GCS client DO propagate (the caller decides whether to
     swallow them).
+
+    Tolerant of ids not in the dataset (CodeRabbit PR #75): an unknown id is
+    warned + skipped, NEVER raised — so this shared helper has one uniform
+    (non-``SystemExit``) contract across its callers (the local best-effort run
+    and the cloud submit pre-build). Unknown ids are surfaced by the caller's
+    own validation instead (the cloud ``require_annotation`` gate reports them;
+    a local run's task loader drops them).
     """
     bm = get_benchmark(benchmark).name
     inst_to_db = _load_dataset_instance_db_map(benchmark=get_benchmark(bm))
     if instance_ids:
-        missing = [i for i in instance_ids if i not in inst_to_db]
-        if missing:
-            raise SystemExit(f"instance_ids not found in {bm}: {missing}")
-    targets = instance_ids or list(inst_to_db)
+        unknown = [i for i in instance_ids if i not in inst_to_db]
+        if unknown:
+            print(f"  not in {bm} dataset (skipped): {unknown}", file=sys.stderr)
+        targets = [i for i in instance_ids if i in inst_to_db]
+    else:
+        targets = list(inst_to_db)
 
     result = {"fetched": 0, "already_local": 0, "missing_in_gcs": 0}
     to_fetch: list[tuple[str, str]] = []  # (instance_id, db)

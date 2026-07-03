@@ -144,3 +144,16 @@ def test_missing_in_gcs_counted_not_raised(monkeypatch):
     result = local_annotations.sync_annotations(_BENCH, ["fake_account_15"])
     assert result["missing_in_gcs"] == 1
     assert result["fetched"] == 0
+
+
+def test_unknown_id_skipped_not_raised(monkeypatch):
+    """CodeRabbit PR #75: an id not in the dataset is skipped + warned, NEVER
+    raised (uniform non-SystemExit contract across callers). A GCS client is
+    only built if a KNOWN id needs fetching — here the sole id is unknown, so
+    no client is built and nothing is fetched."""
+    def _boom():
+        raise AssertionError("no client should be built for an unknown-only id set")
+
+    monkeypatch.setattr(local_annotations._gcs, "default_gcs_client", _boom)
+    result = local_annotations.sync_annotations(_BENCH, ["not_a_real_id_999"])
+    assert result == {"fetched": 0, "already_local": 0, "missing_in_gcs": 0}

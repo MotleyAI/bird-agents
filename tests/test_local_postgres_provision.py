@@ -27,7 +27,7 @@ _BENCH = "livesqlbench-large"
 
 def _patch_steps(monkeypatch, calls: list[str]):
     monkeypatch.setattr(
-        lp, "_resolve_bindir", lambda: calls.append("_resolve_bindir") or "BINDIR",
+        lp, "resolve_bindir", lambda: calls.append("resolve_bindir") or "BINDIR",
     )
     monkeypatch.setattr(
         lp, "resolve_dbs_for",
@@ -60,7 +60,7 @@ def test_provision_and_export_step_order_and_return(monkeypatch):
 
     # Steps run in dependency order; bindir + DB resolution precede cluster ops.
     assert calls == [
-        "_resolve_bindir",
+        "resolve_bindir",
         "resolve:['solar_panel_6']",
         "ensure_cluster",
         "start_cluster",
@@ -76,7 +76,7 @@ def test_provision_and_export_step_order_and_return(monkeypatch):
 
 
 def test_resolve_failure_propagates(monkeypatch):
-    monkeypatch.setattr(lp, "_resolve_bindir", lambda: "BINDIR")
+    monkeypatch.setattr(lp, "resolve_bindir", lambda: "BINDIR")
 
     def _boom(bench, ids):
         raise SystemExit("pg_dumps/ missing")
@@ -105,12 +105,12 @@ def test_real_provision_smoke(tmp_path):
     """Opt-in: a real provision on a spare port when the postgres server
     toolchain is present. Skips cleanly otherwise."""
     try:
-        lp._resolve_bindir()
+        lp.resolve_bindir()
     except SystemExit:
         pytest.skip("postgres server toolchain (initdb/pg_ctl) not present")
     # A full DB load needs staged pg_dumps/; this smoke only asserts the
     # cluster can be brought up + BIRD_PG_* exported without sudo.
-    bindir = lp._resolve_bindir()
+    bindir = lp.resolve_bindir()
     try:
         lp.ensure_cluster(bindir)
         lp.start_cluster(bindir, 5546)

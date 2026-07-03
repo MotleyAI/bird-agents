@@ -2341,6 +2341,15 @@ def main() -> None:
     elif args.filter_ids:
         with open(args.filter_ids) as f:
             filter_ids = [line.strip() for line in f if line.strip()]
+        # Symmetric with the --instance-id empty check above (Codex PR #75): an
+        # empty --filter-ids file must fail HERE, before provisioning + sync —
+        # otherwise `filter_ids=[]` is falsy, `_effective_instance_ids` returns
+        # None, and we would provision the whole benchmark + hit GCS for every
+        # task before `run_evaluation` rejects the empty filter.
+        if not filter_ids:
+            parser.error(
+                f"--filter-ids file {args.filter_ids!r} contained no instance_ids",
+            )
 
     # DEV-1638: the concrete id list this run uses — so provisioning + sync
     # scope to exactly the run, never the whole benchmark.

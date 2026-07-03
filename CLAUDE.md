@@ -151,7 +151,7 @@ postgres benchmarks now.
 env -u SSH_AUTH_SOCK uv run bird-interact \
   --dataset livesqlbench-large \
   --instance-id solar_panel_6,fake_account_15,...  \
-  --env-file /home/james/Dropbox/SLayer/.env.agents \
+  --env-file <your-auth-dotenv> \
   --framework claude_sdk --query-mode raw --mode one-shot \
   --agent-model anthropic/claude-opus-4-8 --subscription-auth \
   --use-audited-gold-sql --concurrency 1
@@ -161,8 +161,8 @@ Notes / gotchas (each cost real debugging the first time):
 
 - **Auth env**: pass `--env-file <dotenv>` (or export `BIRD_ENV_FILE`) to load
   `CLAUDE_CODE_OAUTH_TOKEN` (`--subscription-auth`) / `ANTHROPIC_API_KEY`
-  (`--no-subscription-auth`). No machine path is baked into the code (DEV-1638);
-  on this machine the file is `/home/james/Dropbox/SLayer/.env.agents`. Missing
+  (`--no-subscription-auth`). No machine path is baked into the code (DEV-1638)
+  and none is hard-coded here — set it to wherever your dotenv lives. Missing
   file → skipped, assumes the shell already has the creds. The token is the SAME
   one the cloud `submit`/`annotate` reads.
 - **Provisioning is gated on `BIRD_PG_HOST`, not on `--data`/`--db-path`**:

@@ -24,11 +24,11 @@ import sys
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.local_postgres import (
     DEFAULT_PORT,
-    _resolve_bindir,
     ensure_cluster,
     ensure_roles,
     env_exports,
     load_databases,
+    resolve_bindir,
     resolve_dbs_for,
     start_cluster,
     stop_cluster,
@@ -51,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="Stop the local cluster and exit.")
     args = ap.parse_args(argv)
 
-    bindir = _resolve_bindir()
+    bindir = resolve_bindir()
 
     if args.stop:
         stop_cluster(bindir)
