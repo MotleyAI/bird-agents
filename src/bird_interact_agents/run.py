@@ -1876,10 +1876,11 @@ def _effective_instance_ids(args, filter_ids):
     ``--limit`` selects the first-N via the SAME loader ``run_evaluation`` uses
     (identical ordering); else ``None`` (whole benchmark).
 
-    ``is not None`` (not truthiness) on ``--limit`` so a direct caller passing
-    ``limit=0`` gets the honest empty selection rather than the whole-benchmark
-    ``None`` (Codex PR #75 r2; the CLI also rejects ``--limit <= 0`` upfront)."""
-    if filter_ids:
+    ``is not None`` (not truthiness) on BOTH ``filter_ids`` and ``--limit`` so an
+    explicit empty selection propagates as ``[]`` (no scope) rather than
+    collapsing to the whole-benchmark ``None`` (Codex PR #75 r2/r4). Only an
+    omitted (``None``) filter AND ``None`` limit yield the whole benchmark."""
+    if filter_ids is not None:
         return filter_ids
     if args.limit is not None:
         rows = load_benchmark_tasks(args.dataset, args.data, limit=args.limit)

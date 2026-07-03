@@ -77,6 +77,13 @@ def test_effective_ids_whole_benchmark_is_none():
     assert run._effective_instance_ids(args, None) is None
 
 
+def test_effective_ids_explicit_empty_filter_stays_empty():
+    """Codex PR #75 r4: an explicit empty filter_ids must NOT collapse to None
+    (whole benchmark) — it is 'no scope'."""
+    args = argparse.Namespace(dataset="livesqlbench-large", data="d", limit=None)
+    assert run._effective_instance_ids(args, []) == []
+
+
 def test_effective_ids_limit_zero_is_empty_not_whole_benchmark(monkeypatch):
     """Codex PR #75 r2: limit=0 must NOT collapse to None (whole benchmark)."""
     monkeypatch.setattr(
