@@ -131,6 +131,10 @@ def _build_metrics(manifest: dict, canonical_rows: list[dict],
         "mode": manifest["mode"],
         "query_mode": manifest["query_mode"],
         "framework": manifest["framework"],
+        # DEV-1639: surface the prompt-cache TTL in the cloud eval.json too (the
+        # manifest carries it), so cloud results match local (run.py stamps the
+        # same key) and 5m-vs-1h A/B comparisons are visible in the primary artifact.
+        "cache_ttl": manifest.get("cache_ttl", "5m"),
         "total_tasks": n,
         "phase1_count": p1_count,
         "phase1_rate": p1_count / n if n else 0,
