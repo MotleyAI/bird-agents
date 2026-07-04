@@ -264,9 +264,19 @@ def _safe_cost(
                 "for this run (pricing unconfirmed).", model,
             )
         return 0.0, 0.0
-    # Non-registry models still flow through litellm here. Register the known
-    # prices first (idempotent, no-op after the first call) so priced ids
-    # resolve normally.
+    # Non-registry models (Anthropic-proper, openai/*, …) flow through litellm
+    # here. Register the known prices first (idempotent, no-op after the first
+    # call) so priced ids resolve normally.
+    #
+    # DEV-1639 KNOWN LIMITATION (accepted): the cache-write TTL multiplier
+    # (``selected_cache_ttl`` → 1.25x/2x) is applied ONLY on the in-house
+    # registry branch above. Anthropic-proper cache-CREATION tokens are priced by
+    # litellm at its standard (5m-tier) cache-creation rate regardless of
+    # ``--cache-ttl``, so an Anthropic run explicitly opted into ``--cache-ttl 1h``
+    # under-reports its cache-WRITE cost (reads and all default 5m runs are
+    # accurate). The default TTL is 5m, so this is inert unless 1h is chosen for
+    # an Anthropic model; a TTL-aware Anthropic path is deferred (it would mean
+    # threading the per-TTL breakdown through the shared litellm cost call).
     provider_registry.ensure_litellm_pricing()
     try:
         return _cost_per_token(
