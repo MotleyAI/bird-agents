@@ -1907,9 +1907,9 @@ def main() -> None:
         default=None,
         help=(
             "Evaluation mode. OPTIONAL — defaults per benchmark: ``one-shot`` "
-            "for one-shot benchmarks (livesqlbench*, bird-interact-lite-exp; "
-            "DEV-1462: no user-sim, no ask_user) and ``a-interact`` for "
-            "interactive benchmarks (mini-interact, bird-interact-full). Only "
+            "for one-shot benchmarks (livesqlbench*; DEV-1462: no user-sim, no "
+            "ask_user) and ``a-interact`` for interactive benchmarks "
+            "(mini-interact, bird-interact-full, bird-interact-lite-exp). Only "
             "pass --mode to select a non-default mode (``oracle``, or "
             "``c-interact`` if/when it is wired to an agent)."
         ),
@@ -2001,7 +2001,8 @@ def main() -> None:
             "flag is recycled as the ENDPOINT selector (still ZAI_API_KEY, NOT "
             "OAuth): --subscription-auth = direct coding-plan; default / "
             "--no-subscription-auth = per-token OpenAI bridge. Doubleword "
-            "(OpenAI-only) and Moonshot (provider-key-only) reject the flag."
+            "(DEV-1639: native Anthropic direct) and Moonshot are both "
+            "provider-key-only and reject the flag."
         ),
     )
     parser.add_argument(

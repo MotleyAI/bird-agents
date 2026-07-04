@@ -2,7 +2,9 @@
 
 The unit tests stub `litellm.anthropic_messages`, so they CANNOT prove the
 bridge survives the full Claude Agent SDK tool loop against a real upstream.
-This gate does, per target provider (Doubleword AND z.ai per-token):
+This gate does, per bridge target. DEV-1639: Doubleword now talks its NATIVE
+Anthropic endpoint directly (no bridge), so it is no longer a bridge target —
+z.ai per-token is the remaining bridge user this gate exercises:
 
 1. native-id route selection (the SDK sends the bare native id; the proxy
    maps it to the provider's OpenAI endpoint);
@@ -38,11 +40,8 @@ pytestmark = [pytest.mark.integration]
 _PROVIDERS = [
     pytest.param(
         # (model, no_subscription_auth, key_env). no_subscription_auth=True is
-        # the per-token/bridge path for z.ai; Doubleword bridges regardless.
-        "doubleword/zai-org/GLM-5.2-FP8", True, "DOUBLEWORD_API_KEY",
-        id="doubleword",
-    ),
-    pytest.param(
+        # the per-token/bridge path for z.ai. DEV-1639: Doubleword was removed —
+        # it now talks its native Anthropic endpoint directly, not via the bridge.
         "zai/glm-5.2", True, "ZAI_API_KEY", id="zai-per-token",
     ),
 ]

@@ -56,10 +56,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--mode", default=None, choices=_VALID_MODES,
         help=(
             "Evaluation mode. OPTIONAL — defaults per benchmark: `one-shot` for "
-            "one-shot benchmarks (livesqlbench*, bird-interact-lite-exp) and "
-            "`a-interact` for interactive ones (mini-interact, bird-interact-full). "
-            "Only pass --mode to select a non-default mode (`oracle`, or "
-            "`c-interact` if/when it is wired to an agent)."
+            "one-shot benchmarks (livesqlbench*) and `a-interact` for "
+            "interactive ones (mini-interact, bird-interact-full, "
+            "bird-interact-lite-exp). Only pass --mode to select a non-default "
+            "mode (`oracle`, or `c-interact` if/when it is wired to an agent)."
         ),
     )
     sp_submit.add_argument(
@@ -354,12 +354,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         # translate to the standard argparse exit-2 + stderr.)
         # Normalize the benchmark token to canonical (e.g. mini-interact alias
         # → mini_interact) before any benchmark-keyed logic.
-        ns.dataset = get_benchmark(ns.dataset).name
+        _benchmark = get_benchmark(ns.dataset)
+        ns.dataset = _benchmark.name
         # --mode is optional: default per benchmark (one-shot for one-shot
         # benchmarks, a-interact otherwise), derived BEFORE the dataset/mode
         # validation below so an omitted --mode is always a supported mode.
         if ns.mode is None:
-            ns.mode = get_benchmark(ns.dataset).default_mode
+            ns.mode = _benchmark.default_mode
         from bird_interact_agents.run import (
             _validate_dataset_mode,
             _validate_framework_mode,
