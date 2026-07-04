@@ -15,6 +15,12 @@ import sqlite3 as _sqlite3
 from typing import Any as _Any
 
 from bird_interact_agents import paths
+# DEV-1638: the local postgres bootstrap + annotation sync + dotenv loader moved
+# into the package so this installed console script can compose them. Imported
+# at module top level so tests monkeypatch `run.<name>`.
+from bird_interact_agents.env_file import load_env_file
+from bird_interact_agents.local_annotations import sync_annotations
+from bird_interact_agents.local_postgres import DEFAULT_PORT, provision_and_export
 from bird_interact_agents.provider_registry import agent_needs_bridge, get_provider
 # DEV-1604: imported as a MODULE so `_maybe_start_bridge_proxy` and its test
 # monkeypatch share the `run.bridge_proxy.ensure_bridge_proxy_for_actor` target.
@@ -1846,6 +1852,90 @@ def _apply_subscription_auth_env(
     os.environ["BIRD_INTERACT_SUBSCRIPTION_AUTH"] = "1"
 
 
+def _resolve_data_paths(args, *, error) -> None:
+    """DEV-1638: derive ``--data``/``--db-path`` from the registry when BOTH are
+    omitted; require both-or-neither. Explicit values pass through unchanged.
+    Runs BEFORE the ``db_path`` ``.resolve()`` at the CLI boundary so a derived
+    ``None`` can never reach ``Path(None)``."""
+    if args.data is None and args.db_path is None:
+        args.data = str(paths.benchmark_data_file(args.dataset))
+        args.db_path = str(paths.benchmark_data_root(args.dataset))
+    elif args.data is None or args.db_path is None:
+        error(
+            "--data and --db-path must be given together or both omitted "
+            "(derived from the benchmark registry)."
+        )
+
+
+def _effective_instance_ids(args, filter_ids):
+    """DEV-1638 (Codex #5): the concrete instance-id list the RUN will use, so
+    provisioning + annotation sync scope to exactly the run (never the whole
+    benchmark) and never trip on an unrelated missing dump/annotation.
+
+    ``filter_ids`` (from ``--instance-id`` / ``--filter-ids``) wins; else
+    ``--limit`` selects the first-N via the SAME loader ``run_evaluation`` uses
+    (identical ordering); else ``None`` (whole benchmark).
+
+    ``is not None`` (not truthiness) on BOTH ``filter_ids`` and ``--limit`` so an
+    explicit empty selection propagates as ``[]`` (no scope) rather than
+    collapsing to the whole-benchmark ``None`` (Codex PR #75 r2/r4). Only an
+    omitted (``None``) filter AND ``None`` limit yield the whole benchmark."""
+    if filter_ids is not None:
+        return filter_ids
+    if args.limit is not None:
+        rows = load_benchmark_tasks(args.dataset, args.data, limit=args.limit)
+        return [r["instance_id"] for r in rows]
+    return None
+
+
+def _maybe_bootstrap_local_postgres(args, effective_ids) -> None:
+    """DEV-1638: for a postgres benchmark with no pre-set ``BIRD_PG_*``,
+    provision a private local cluster + export ``BIRD_PG_*``. Gated on the
+    CONNECTION signal (``BIRD_PG_HOST``), NOT on whether ``--data``/``--db-path``
+    were derived (Codex #1): postgres connects via ``BIRD_PG_*``, and
+    ``--db-path`` is only the data/KB root — so explicit paths must not suppress
+    provisioning."""
+    if get_benchmark(args.dataset).db_backend != "postgres":
+        return
+    if "BIRD_PG_HOST" in os.environ:
+        return  # caller brought their own postgres connection
+    # Distinguish an EMPTY id list (e.g. `--limit 0` → zero-task validation run)
+    # from None (whole benchmark). Empty ⇒ nothing to provision; provisioning
+    # the whole benchmark here would be the scope-expansion Codex PR #75 flagged.
+    if effective_ids is not None and not effective_ids:
+        return
+    exports = provision_and_export(args.dataset, effective_ids, args.pg_port)
+    os.environ.update(exports)
+
+
+def _maybe_sync_annotations(args, effective_ids) -> None:
+    """DEV-1638: best-effort pull of the authoritative task annotations from GCS
+    into the local store (all backends), so the tolerant grader has the real
+    ``gold_variants``/``evaluator_prompt`` instead of the implicit N1 fallback.
+    Best-effort: a GCS failure warns, never aborts the run. Warns loudly on any
+    id still missing after the sync (surfaces the silent N1 degradation)."""
+    if args.skip_annotations:
+        return
+    # Empty id list (e.g. `--limit 0`) ⇒ nothing to sync; None ⇒ whole benchmark.
+    if effective_ids is not None and not effective_ids:
+        return
+    try:
+        result = sync_annotations(args.dataset, effective_ids)
+    except Exception as exc:  # noqa: BLE001 — annotation sync is best-effort
+        logger.warning(
+            "annotation sync failed (%s); grading falls back to the implicit "
+            "N1 annotation for any id lacking a local task.json.", exc,
+        )
+        return
+    if result.get("missing_in_gcs"):
+        logger.warning(
+            "%d task annotation(s) missing in GCS after sync; those ids grade "
+            "against the implicit N1 annotation only. Run a cloud `annotate` "
+            "(or check the ids) to get authoritative gold_variants.",
+            result["missing_in_gcs"],
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="BIRD-Interact benchmark runner with pluggable agents"
@@ -1905,10 +1995,23 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--data", required=True, help="Path to mini_interact.jsonl"
+        "--data", default=None,
+        help=(
+            "Path to the benchmark's tasks JSONL. OPTIONAL (DEV-1638): derived "
+            "from the benchmark registry when omitted. Pass BOTH --data and "
+            "--db-path to override (non-standard local layout), or NEITHER to "
+            "derive."
+        ),
     )
     parser.add_argument(
-        "--db-path", required=True, help="Path to mini-interact/ with SQLite DBs"
+        "--db-path", default=None,
+        help=(
+            "Path to the benchmark's data root (SQLite DBs, or the pg_dumps/ + "
+            "KB root for postgres). OPTIONAL (DEV-1638): derived from the "
+            "registry when omitted. Both-or-neither with --data. NOTE: for a "
+            "postgres benchmark this is only the data/KB root — the DB "
+            "connection comes from BIRD_PG_* (auto-provisioned; see --pg-port)."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -2115,7 +2218,46 @@ def main() -> None:
             "from it ('pre-encoded' when set, else 'on-the-fly')."
         ),
     )
+    # DEV-1638: unify the local entrypoint — fold the postgres bootstrap the
+    # old scripts/run_local_postgres.py did into bird-interact.
+    parser.add_argument(
+        "--env-file",
+        default=os.environ.get("BIRD_ENV_FILE"),
+        help=(
+            "DEV-1638: dotenv file of auth vars (CLAUDE_CODE_OAUTH_TOKEN / "
+            "ANTHROPIC_API_KEY / provider keys) to load into the environment "
+            "BEFORE auth resolution. Best-effort: a missing file is skipped. "
+            "Default: $BIRD_ENV_FILE if set, else no dotenv is loaded (rely on "
+            "the ambient shell env). Applies to all backends."
+        ),
+    )
+    parser.add_argument(
+        "--pg-port", type=int,
+        default=int(os.environ.get("BIRD_PG_PORT", DEFAULT_PORT)),
+        help=(
+            "DEV-1638: port for the auto-provisioned local postgres cluster "
+            "(postgres benchmarks only, when BIRD_PG_HOST is not already set). "
+            f"Default: $BIRD_PG_PORT if set, else {DEFAULT_PORT}."
+        ),
+    )
+    parser.add_argument(
+        "--skip-annotations", action="store_true", default=False,
+        help=(
+            "DEV-1638: skip the best-effort GCS task-annotation sync. By "
+            "default bird-interact pulls any missing authoritative annotations "
+            "so the tolerant grader has the real gold_variants/evaluator_prompt "
+            "instead of degrading to the implicit N1 annotation."
+        ),
+    )
     args = parser.parse_args()
+    # DEV-1638: load the auth dotenv FIRST, before any auth resolution reads the
+    # env. Best-effort — a missing/None path is a no-op.
+    if args.env_file:
+        n_env = load_env_file(Path(args.env_file))
+        if n_env:
+            logger.info("loaded %d var(s) from --env-file %s", n_env, args.env_file)
+        else:
+            logger.info("no env file at --env-file %s (skipping)", args.env_file)
     # DEV-1602: translate --subscription-auth into the BIRD_INTERACT_SUBSCRIPTION_AUTH
     # signal env var (or clear an ambient one) before any agent is constructed.
     _apply_subscription_auth_env(
@@ -2127,6 +2269,11 @@ def main() -> None:
     # DEV-1586: derive the internal slayer_setup from the user-facing flag.
     from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
     args.slayer_setup = derive_slayer_setup(args.pre_encoded_source)
+
+    # DEV-1638: derive --data/--db-path from the registry when both omitted
+    # (both-or-neither), BEFORE the .resolve() below so a derived None can never
+    # reach Path(None).
+    _resolve_data_paths(args, error=parser.error)
 
     # Resolve --db-path to an absolute path ONCE at the CLI boundary. Every
     # downstream consumer (orchestrator ingest, on-the-fly cache/reference,
@@ -2193,20 +2340,44 @@ def main() -> None:
         _apply_price_overrides(args.price_overrides)
 
     filter_ids: list[str] | None = None
-    if args.instance_id:
+    # `is not None` (not truthiness) so an EXPLICIT empty value (`--instance-id
+    # ""` / `--filter-ids ""`) is REJECTED here rather than falling through to
+    # whole-benchmark scope (Codex PR #75 r6). Only an OMITTED flag (None)
+    # leaves filter_ids=None → whole benchmark.
+    if args.instance_id is not None:
         # Accept either a single id or a comma-separated list. Whitespace
         # around items is trimmed; empty tokens are dropped.
         filter_ids = [s.strip() for s in args.instance_id.split(",") if s.strip()]
-        # Reject input that parses to an empty list (e.g. ",,, "). Without
+        # Reject input that parses to an empty list (e.g. "" / ",,, "). Without
         # this, filter_ids=[] later falls back to running the full
         # benchmark — a silent expansion of scope from a malformed flag.
         if not filter_ids:
             parser.error(
                 "--instance-id must include at least one non-empty id",
             )
-    elif args.filter_ids:
+    elif args.filter_ids is not None:
+        if not args.filter_ids:
+            parser.error("--filter-ids requires a non-empty file path")
         with open(args.filter_ids) as f:
             filter_ids = [line.strip() for line in f if line.strip()]
+        # Symmetric with the --instance-id empty check above (Codex PR #75): an
+        # empty --filter-ids file must fail HERE, before provisioning + sync —
+        # otherwise `filter_ids=[]` is falsy, `_effective_instance_ids` returns
+        # None, and we would provision the whole benchmark + hit GCS for every
+        # task before `run_evaluation` rejects the empty filter.
+        if not filter_ids:
+            parser.error(
+                f"--filter-ids file {args.filter_ids!r} contained no instance_ids",
+            )
+
+    # DEV-1638: the concrete id list this run uses — so provisioning + sync
+    # scope to exactly the run, never the whole benchmark.
+    effective_ids = _effective_instance_ids(args, filter_ids)
+    # For a postgres benchmark with no pre-set BIRD_PG_*, spin up + load a
+    # private local cluster and export BIRD_PG_* BEFORE the run connects.
+    _maybe_bootstrap_local_postgres(args, effective_ids)
+    # Best-effort pull of the authoritative task annotations (all backends).
+    _maybe_sync_annotations(args, effective_ids)
 
     asyncio.run(
         run_evaluation(

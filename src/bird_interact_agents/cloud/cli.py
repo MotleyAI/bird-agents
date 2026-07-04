@@ -377,6 +377,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         # warm-up. Decoupled from `--use-audited-gold-sql` because the
         # annotation is needed for grading regardless of overlay use.
         if ns.require_annotation:
+            # DEV-1638 (decision 6b): self-healing annotation gate. Pull any
+            # missing task annotations from GCS into paths.annotations_root()
+            # FIRST — the SAME sync a local `bird-interact` run does — so the
+            # image bakes the same set the local grader reads (parity). NO
+            # blanket try/except: a per-blob-absent is counted inside
+            # sync_annotations (not raised) and reported by the gate below;
+            # genuine infra/auth errors PROPAGATE and fail the submit fast
+            # rather than being misattributed to "missing annotations".
+            from bird_interact_agents.local_annotations import sync_annotations
+            sync_annotations(ns.dataset, ns.instance_ids)
             from bird_interact_agents.cloud._annotation_check import (
                 annotations_requiring_audited_gold_without_rows,
                 missing_annotation_ids,
