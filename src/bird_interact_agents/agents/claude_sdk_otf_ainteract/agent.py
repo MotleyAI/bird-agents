@@ -18,7 +18,6 @@ for Rule 0 (ask before encode) plus the shared encode-then-query rules.
 
 from __future__ import annotations
 
-import dataclasses
 import logging
 from pathlib import Path
 
@@ -40,6 +39,7 @@ from bird_interact_agents.agents.claude_sdk.agent import (
 )
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
     hermetic_claude_sdk_session,
+    serialize_sdk_message,
 )
 from bird_interact_agents.slayer_otf.timing import otf_timer
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
@@ -504,11 +504,9 @@ class ClaudeSDKOtfAInteractAgent:
             ) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
-                    try:
-                        _data: object = dataclasses.asdict(msg)
-                    except Exception:  # noqa: BLE001
-                        _data = str(msg)
-                    trajectory.append({"type": str(type(msg).__name__), "data": _data})
+                    # DEV-1639: serialize_sdk_message stamps a per-turn `ts` so
+                    # the persisted trajectory supports 5m-vs-1h cache analysis.
+                    trajectory.append(serialize_sdk_message(msg))
                     usage_tracker.observe(msg)
             usage_tracker.finalize()
         except Exception as e:

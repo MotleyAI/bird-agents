@@ -543,22 +543,31 @@ async def hermetic_claude_sdk_session(
         shutil.rmtree(config_path, ignore_errors=True)
 
 
-def serialize_sdk_message(msg: Any) -> dict:
+def serialize_sdk_message(msg: Any, *, truncate: int | None = None) -> dict:
     """Serialise one SDK stream message into a JSON-able ``{type, data, ts}`` dict.
 
-    Mirrors the trajectory shape the claude_sdk agents already build by hand
-    (``dataclasses.asdict`` when possible, else ``str``). NEVER raises — capture
-    must not break the receive stream, so this owns the full guard (the caller
-    appends its result directly).
+    The SINGLE serializer every claude_sdk* agent uses to append to its persisted
+    trajectory (and the DEV-1589 ``.transcript``), so the ``ts`` stamp reaches
+    ALL of them uniformly. Default ``data`` is ``dataclasses.asdict`` when
+    possible, else ``str``. Pass ``truncate=N`` for the raw variants that keep a
+    lightweight trajectory: ``data`` becomes ``str(msg)[:N]``. NEVER raises —
+    capture must not break the receive stream, so this owns the full guard (the
+    caller appends its result directly).
 
     DEV-1639: stamps ``ts`` = epoch seconds at RECEIVE time (when this message
     streamed to us, i.e. roughly when its LLM call completed). Because each
     ``AssistantMessage``/``ResultMessage`` already carries its per-turn ``usage``
     (incl. ``cache_read_input_tokens``/``cache_creation_input_tokens``), the
-    persisted transcript then supports per-turn cache-timing analysis (e.g.
+    persisted trajectory then supports per-turn cache-timing analysis (e.g.
     modelling 5m vs 1h TTL) with no change to the usage/CallCost schema."""
     name = type(msg).__name__
     ts = time.time()
+    if truncate is not None:
+        try:
+            data: Any = str(msg)[:truncate]
+        except Exception:  # noqa: BLE001 — pathological __str__
+            data = "<unserializable>"
+        return {"type": name, "data": data, "ts": ts}
     try:
         return {"type": name, "data": dataclasses.asdict(msg), "ts": ts}
     except Exception:  # noqa: BLE001 — non-dataclass / unserialisable
