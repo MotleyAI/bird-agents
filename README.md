@@ -38,8 +38,12 @@ pip install -e ".[claude-sdk,dev]"
 ### Run
 
 # NOTE: the local `bird-interact` CLI is aligned with `bird-interact-cloud`:
-# `--dataset`, `--framework`, `--mode`, `--query-mode`, and `--agent-model` are
-# all REQUIRED (no defaults). For claude_sdk* runs on an Anthropic agent model
+# `--dataset`, `--framework`, `--query-mode`, and `--agent-model` are
+# all REQUIRED (no defaults). `--mode` is OPTIONAL and defaults per benchmark:
+# `one-shot` for one-shot benchmarks (livesqlbench*, bird-interact-lite-exp) and
+# `a-interact` for interactive ones (mini-interact, bird-interact-full). Only
+# pass `--mode` to select a non-default mode (`oracle`, or `c-interact` if/when
+# it is wired to an agent). For claude_sdk* runs on an Anthropic agent model
 # you must also choose `--subscription-auth` (Claude.ai OAuth via
 # CLAUDE_CODE_OAUTH_TOKEN) or `--no-subscription-auth` (ANTHROPIC_API_KEY).
 ```bash

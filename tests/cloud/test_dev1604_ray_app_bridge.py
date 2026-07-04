@@ -59,10 +59,12 @@ def _cfg(agent_model: str, no_subscription_auth: bool = True) -> dict:
     }
 
 
-def test_doubleword_actor_bridges_before_runner(actor_harness):
+def test_doubleword_actor_does_not_bridge(actor_harness):
+    """DEV-1639: Doubleword talks its native Anthropic endpoint directly, so the
+    actor starts the runner WITHOUT a bridge."""
     order = actor_harness
     ray_app._LocalActor(_cfg(_DW), RUN_ID, 1, gcs_client=object())
-    assert order == ["bridge", "runner"]
+    assert order == ["runner"]
 
 
 def test_zai_per_token_actor_bridges(actor_harness):
@@ -109,11 +111,11 @@ def test_maybe_ensure_bridge_helper(monkeypatch):
         ray_app, "ensure_bridge_proxy_for_actor",
         lambda model, cfg: calls.append((model, cfg.get("no_subscription_auth"))),
     )
-    ray_app._maybe_ensure_bridge(_cfg(_DW))            # doubleword -> bridge
+    ray_app._maybe_ensure_bridge(_cfg(_DW))            # DEV-1639: direct, no bridge
     ray_app._maybe_ensure_bridge(_cfg(_GLM, True))     # per-token -> bridge
     ray_app._maybe_ensure_bridge(_cfg(_GLM, False))    # coding-plan -> no bridge
     ray_app._maybe_ensure_bridge(_cfg("anthropic/claude-sonnet-4-6"))
-    assert calls == [(_DW, True), (_GLM, True)]
+    assert calls == [(_GLM, True)]
 
 
 def test_run_pool_folds_no_subscription_auth_into_actor_cfg(

@@ -31,6 +31,13 @@ class ModelPricing(BaseModel):
     input_cost_per_token: float
     output_cost_per_token: float
     cache_read_input_token_cost: Optional[float] = None
+    # DEV-1639: cache-CREATION (write) tokens are billed at ``input_cost`` ×
+    # this multiplier, chosen by the run's cache TTL (``selected_cache_ttl``).
+    # Anthropic/Doubleword's published tiers: 5m write = 1.25×, 1h write = 2×.
+    # Defaults 1.0 preserve the pre-DEV-1639 behaviour for z.ai/moonshot, whose
+    # cache writes were always priced at the full input rate (hit/miss model).
+    cache_write_5m_multiplier: float = 1.0
+    cache_write_1h_multiplier: float = 1.0
 
 
 class ProviderSpec(BaseModel):
@@ -65,6 +72,13 @@ class ProviderSpec(BaseModel):
     # (forced tool_choice is incompatible with thinking — autopsy switches
     # to tool_choice=auto + the text-JSON fallback).
     models_requiring_thinking: list[str] = []
+    # DEV-1639: True iff this endpoint's ``usage.input_tokens`` INCLUDES the
+    # cache-creation tokens (OpenAI ``prompt_tokens`` convention) rather than
+    # EXCLUDING them (Anthropic convention). Doubleword's native Anthropic
+    # endpoint returns the included form (probed live: input_tokens=3020 with
+    # cache_creation=3001). When True, ``_safe_cost`` subtracts cache-creation
+    # from the billable input so those tokens are not counted twice.
+    input_tokens_includes_cache_creation: bool = False
 
 
 # kimi-k2.7-code numbers from the official pricing page (2026-06):
@@ -102,6 +116,19 @@ _GLM46_PRICING = ModelPricing(
     input_cost_per_token=0.60e-6,
     output_cost_per_token=2.20e-6,
 )
+# DEV-1639: Doubleword GLM-5.2-FP8, REALTIME (synchronous /v1/messages) tier —
+# the SLA the claude_sdk agents actually hit (they cannot set service_tier=flex).
+# From Doubleword's model page (docs.doubleword.ai/.../zai-org-glm-5-2-fp8):
+# realtime input $1.40/M, output $4.40/M. Cache read is a true 0.1× of input
+# ($0.14/M) per Doubleword's caching page; distinct from z.ai's own $0.26/M, so
+# this is a SEPARATE instance. Cache writes: 5m = 1.25×, 1h = 2× (same page).
+_DW_GLM52_REALTIME_PRICING = ModelPricing(
+    input_cost_per_token=1.40e-6,
+    output_cost_per_token=4.40e-6,
+    cache_read_input_token_cost=0.14e-6,
+    cache_write_5m_multiplier=1.25,
+    cache_write_1h_multiplier=2.0,
+)
 
 REGISTRY: dict[str, ProviderSpec] = {
     "moonshot": ProviderSpec(
@@ -138,27 +165,36 @@ REGISTRY: dict[str, ProviderSpec] = {
             "glm-4.6": _GLM46_PRICING,
         },
     ),
-    # DEV-1604: Doubleword (api.doubleword.ai) — OpenAI-Chat-Completions ONLY,
-    # no Anthropic endpoint. `claude_sdk*` agents reach it through the local
-    # Anthropic⇄OpenAI bridge proxy, which sets ANTHROPIC_BASE_URL via
-    # `base_url_env`. The GLM-5.2 native id is the FP8 build `zai-org/GLM-5.2-FP8`
-    # (verified live via GET /v1/models); it flows through `_split` / the SDK as
-    # a multi-slash native id (only the FIRST slash splits provider from id).
+    # DEV-1639: Doubleword (api.doubleword.ai) now exposes a NATIVE Anthropic
+    # Messages API (`/v1/messages`, Bearer auth, anthropic-version: 2023-06-01)
+    # with native prompt caching via `cache_control` — so `claude_sdk*` agents
+    # reach it DIRECTLY (no bridge). `base_url` is the gateway root; the SDK
+    # appends `/v1/messages`. This supersedes DEV-1604's OpenAI-only bridge
+    # routing for Doubleword (the bridge stays for z.ai per-token).
     #
-    # MUST-CONFIRM (Doubleword console — not published): exact per-token price
-    # and the true context window for GLM-5.2-FP8. Until then pricing is UNSET
-    # (`pricing_confirmed=False`, cost rows $0 not wrong) and the window mirrors
-    # Doubleword's published GLM-5.1 (~198K, max 202,752 → 200K).
+    # `openai_base_url` is RETAINED for the user-sim litellm route and the
+    # pydantic_ai Doubleword path (both still OpenAI-format, unchanged).
+    #
+    # The GLM-5.2 native id is the FP8 build `zai-org/GLM-5.2-FP8` (verified live
+    # via GET /v1/models); it flows through `_split` / the SDK as a multi-slash
+    # native id (only the FIRST slash splits provider from id).
+    #
+    # Pricing is the REALTIME tier (sync /v1/messages — what the SDK hits) from
+    # Doubleword's model page; window is the published 1,048,576 max-total-tokens.
+    # `input_tokens_includes_cache_creation=True`: DW's native usage reports
+    # `input_tokens` INCLUSIVE of cache-creation tokens (probed live), unlike
+    # Anthropic — `_safe_cost` de-dupes so writes are not double-billed.
     "doubleword": ProviderSpec(
         key="doubleword",
-        base_url=None,  # no Anthropic endpoint — the proxy supplies it
+        base_url="https://api.doubleword.ai",  # SDK appends /v1/messages
         base_url_env="BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL",
-        api_format="openai",
+        api_format="anthropic",
         auth_env="DOUBLEWORD_API_KEY",
-        default_context_window=200_000,  # placeholder — MUST-CONFIRM console
+        default_context_window=1_048_576,
         openai_base_url="https://api.doubleword.ai/v1",
-        model_pricing={},  # UNSET — MUST-CONFIRM console (see pricing_confirmed)
-        pricing_confirmed=False,
+        model_pricing={"zai-org/GLM-5.2-FP8": _DW_GLM52_REALTIME_PRICING},
+        pricing_confirmed=True,
+        input_tokens_includes_cache_creation=True,
     ),
 }
 
@@ -166,6 +202,22 @@ REGISTRY: dict[str, ProviderSpec] = {
 def _split(model: str) -> tuple[str, str]:
     provider, sep, rest = model.partition("/")
     return (provider, rest) if sep else ("", model)
+
+
+# DEV-1639: the prompt-cache TTL selected for this run. Read from ONE env signal
+# by BOTH the SDK-session env layer (which injects the CLI's ENABLE/FORCE knobs)
+# and ``usage._safe_cost`` (which picks the 5m vs 1h cache-write multiplier), so
+# the price charged always matches the TTL actually requested. Default is "5m"
+# (the Claude CLI's own default on the API-key / third-party path — DEV-1639
+# keeps current behaviour; a run opts into 1h via ``--cache-ttl 1h``).
+_CACHE_TTL_ENV = "BIRD_INTERACT_CACHE_TTL"
+CACHE_TTLS = ("5m", "1h")
+
+
+def selected_cache_ttl() -> str:
+    """The run's cache TTL: ``"1h"`` iff ``BIRD_INTERACT_CACHE_TTL == "1h"``,
+    else ``"5m"`` (the default — any unset/unknown value falls back to 5m)."""
+    return "1h" if os.environ.get(_CACHE_TTL_ENV) == "1h" else "5m"
 
 
 def get_provider(model: str) -> Optional[ProviderSpec]:

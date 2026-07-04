@@ -104,9 +104,13 @@ def test_serialize_sdk_message_dataclass_and_fallback():
         b: str
 
     out = sdk_env.serialize_sdk_message(DC(a=1, b="x"))
-    assert out == {"type": "DC", "data": {"a": 1, "b": "x"}}
+    # DEV-1639: a per-turn receive-time `ts` is now stamped alongside type/data.
+    assert out["type"] == "DC"
+    assert out["data"] == {"a": 1, "b": "x"}
+    assert isinstance(out["ts"], float)
 
     # non-dataclass → str fallback, type name preserved
     out2 = sdk_env.serialize_sdk_message(ResultMessage())
     assert out2["type"] == "ResultMessage"
     assert isinstance(out2["data"], str)
+    assert isinstance(out2["ts"], float)

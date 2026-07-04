@@ -66,8 +66,11 @@ def test_context_window_for_unknown_provider_defaults_conservative():
         context_window_for,
     )
 
-    assert context_window_for("doubleword/some-model") == 200_000
+    # An UNKNOWN provider / bare id falls back to the conservative 200K default.
+    assert context_window_for("unknownprovider/some-model") == 200_000
     assert context_window_for("bare-model-id") == 200_000
+    # DEV-1639: doubleword IS a known provider now, with its published window.
+    assert context_window_for("doubleword/zai-org/GLM-5.2-FP8") == 1_048_576
 
 
 # ---------------------------------------------------------------------------

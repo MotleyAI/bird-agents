@@ -1,18 +1,19 @@
-"""DEV-1604: Doubleword registry entry + bridge-proxy resolution helpers.
+"""DEV-1604 registry/bridge helpers, updated for DEV-1639.
 
-Doubleword (`api.doubleword.ai/v1`) is OpenAI-Chat-Completions-only — it has
-NO Anthropic `/v1/messages` endpoint, so `claude_sdk*` agents can only reach
-it through the local Anthropic⇄OpenAI bridge proxy. This module pins:
+DEV-1639: Doubleword now exposes a NATIVE Anthropic `/v1/messages` endpoint, so
+`claude_sdk*` agents reach it DIRECTLY (anthropic-format, no bridge) and it is
+priced (realtime GLM-5.2-FP8). The bridge proxy stays for z.ai per-token. This
+module pins:
 
-* the registry entry (`base_url=None`, `api_format="openai"`, the FP8 native
-  id `zai-org/GLM-5.2-FP8`, pricing deliberately UNSET pending the DW console);
-* `per_token_openai_target` (the upstream the proxy POSTs to);
-* `agent_needs_bridge` (Doubleword always; z.ai only on the default
+* the (updated) Doubleword registry entry (`base_url="https://api.doubleword.ai"`,
+  `api_format="anthropic"`, FP8 native id `zai-org/GLM-5.2-FP8`, priced);
+* `per_token_openai_target` (still valid — the openai_base_url the user-sim +
+  pydantic_ai use);
+* `agent_needs_bridge` (Doubleword NEVER now; z.ai only on the default
   `--no-subscription-auth` / per-token path);
-* the `resolve_base_url` fail-fast guard so a `None` base_url never leaks to
-  any consumer (`sdk_session_env` AND `eval/autopsy`);
-* that the anthropic-format providers (moonshot, z.ai coding-plan) are wholly
-  unaffected by making `base_url` Optional.
+* the `resolve_base_url` fail-fast guard for a hypothetical `None`-base_url
+  provider (via a synthetic spec);
+* that the anthropic-format providers (moonshot, z.ai coding-plan) are unaffected.
 """
 
 from __future__ import annotations
@@ -36,11 +37,13 @@ def test_doubleword_entry_fields():
     spec = pr.get_provider(_DW)
     assert spec is not None
     assert spec.key == "doubleword"
-    assert spec.api_format == "openai"
+    # DEV-1639: Doubleword now exposes a NATIVE Anthropic endpoint, so it is
+    # anthropic-format and reaches the SDK directly (no bridge).
+    assert spec.api_format == "anthropic"
     assert spec.auth_env == "DOUBLEWORD_API_KEY"
     assert spec.base_url_env == "BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL"
-    # OpenAI-only: NO Anthropic endpoint — the proxy supplies ANTHROPIC_BASE_URL.
-    assert spec.base_url is None
+    assert spec.base_url == "https://api.doubleword.ai"
+    # openai_base_url is retained for the user-sim litellm route + pydantic_ai.
     assert spec.openai_base_url == "https://api.doubleword.ai/v1"
 
 
@@ -52,19 +55,24 @@ def test_doubleword_native_id_has_embedded_slash():
     assert native == _DW_NATIVE
 
 
-def test_doubleword_context_window_placeholder():
-    # Placeholder: mirrors DW's published GLM-5.1 window (~198K, max 202,752)
-    # because DW does NOT publish GLM-5.2-FP8's window — MUST-CONFIRM console.
-    assert pr.get_provider(_DW).default_context_window == 200_000
+def test_doubleword_context_window():
+    # DEV-1639: Doubleword's model page publishes GLM-5.2-FP8's max total tokens.
+    assert pr.get_provider(_DW).default_context_window == 1_048_576
 
 
-def test_doubleword_pricing_unset_and_flagged_unconfirmed():
-    """DW per-token price is not public; leaving it UNSET keeps cost rows at $0
-    (absent), never WRONG. `pricing_confirmed=False` is the explicit flag so the
-    placeholder can't silently ship as if real numbers were entered."""
+def test_doubleword_pricing_confirmed():
+    """DEV-1639: GLM-5.2-FP8 realtime pricing is now published — input $1.40/M,
+    output $4.40/M, cache-read 0.1× ($0.14/M), cache writes 1.25× (5m) / 2× (1h)."""
     spec = pr.get_provider(_DW)
-    assert spec.model_pricing == {}
-    assert spec.pricing_confirmed is False
+    assert spec.pricing_confirmed is True
+    pricing = spec.model_pricing[_DW_NATIVE]
+    assert pricing.input_cost_per_token == 1.40e-6
+    assert pricing.output_cost_per_token == 4.40e-6
+    assert pricing.cache_read_input_token_cost == 0.14e-6
+    assert pricing.cache_write_5m_multiplier == 1.25
+    assert pricing.cache_write_1h_multiplier == 2.0
+    # DW's native usage reports input_tokens INCLUSIVE of cache-creation.
+    assert spec.input_tokens_includes_cache_creation is True
 
 
 def test_existing_providers_pricing_confirmed_default_true():
@@ -80,16 +88,15 @@ def test_doubleword_required_env_for():
     assert pr.required_env_for(_DW) == ("DOUBLEWORD_API_KEY",)
 
 
-def test_doubleword_does_not_register_litellm_pricing():
-    """With model_pricing empty, ensure_litellm_pricing registers NO doubleword
-    row — so the $0-unpriced fallback applies (correct) rather than a wrong
-    borrowed price."""
+def test_doubleword_registers_litellm_pricing():
+    """DEV-1639: with GLM-5.2-FP8 now priced, ensure_litellm_pricing registers
+    the row under BOTH the canonical `doubleword/` and the rewritten `openai/`
+    key (the user-sim litellm route uses the latter)."""
     import litellm
 
     pr.ensure_litellm_pricing()
-    # No zai-org/GLM-5.2-FP8 row was registered under either prefix.
-    assert "doubleword/zai-org/GLM-5.2-FP8" not in litellm.model_cost
-    assert "openai/zai-org/GLM-5.2-FP8" not in litellm.model_cost
+    assert "doubleword/zai-org/GLM-5.2-FP8" in litellm.model_cost
+    assert "openai/zai-org/GLM-5.2-FP8" in litellm.model_cost
 
 
 def test_no_native_id_collision_between_zai_and_doubleword():
@@ -134,9 +141,10 @@ def test_per_token_openai_target_rejects_non_registry():
 @pytest.mark.parametrize(
     "model,no_subscription_auth,expected",
     [
-        # Doubleword (openai-format) ALWAYS bridges, flag-agnostic.
-        (_DW, True, True),
-        (_DW, False, True),
+        # DEV-1639: Doubleword now talks its NATIVE Anthropic endpoint directly
+        # (anthropic-format) — it NEVER bridges, flag-agnostic.
+        (_DW, True, False),
+        (_DW, False, False),
         # z.ai bridges on the per-token path (no_subscription_auth=True, the
         # default); --subscription-auth (False) keeps the direct coding-plan.
         (_GLM, True, True),
@@ -158,23 +166,29 @@ def test_agent_needs_bridge(model, no_subscription_auth, expected):
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_base_url_openai_provider_no_override_raises(monkeypatch):
+def test_resolve_base_url_none_base_url_no_override_raises(monkeypatch):
+    """The DEV-1604 fail-fast guard still stands for a hypothetical OpenAI-only
+    provider (base_url=None) with no override — it must raise rather than leak a
+    falsy None. Exercised via a synthetic spec now that Doubleword (DEV-1639) has
+    a real base_url."""
+    spec = pr.ProviderSpec(
+        key="synthetic", base_url=None, base_url_env="BIRD_SYNTHETIC_BASE_URL",
+        api_format="openai", auth_env="SYNTHETIC_API_KEY",
+        default_context_window=200_000,
+    )
+    monkeypatch.delenv("BIRD_SYNTHETIC_BASE_URL", raising=False)
+    with pytest.raises(RuntimeError, match="BIRD_SYNTHETIC_BASE_URL"):
+        pr.resolve_base_url(spec)
+
+
+def test_resolve_base_url_doubleword_default_direct(monkeypatch):
+    """DEV-1639: with no override set, Doubleword resolves to its static NATIVE
+    Anthropic endpoint (no bridge, no raise)."""
     monkeypatch.delenv("BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL", raising=False)
-    spec = pr.get_provider(_DW)
-    with pytest.raises(RuntimeError, match="BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL"):
-        pr.resolve_base_url(spec)
+    assert pr.resolve_base_url(pr.get_provider(_DW)) == "https://api.doubleword.ai"
 
 
-def test_resolve_base_url_openai_provider_empty_override_raises(monkeypatch):
-    """An empty-string override (a common env misconfig) is falsy — it must
-    raise, not fall through to the `None` base_url."""
-    monkeypatch.setenv("BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL", "")
-    spec = pr.get_provider(_DW)
-    with pytest.raises(RuntimeError, match="BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL"):
-        pr.resolve_base_url(spec)
-
-
-def test_resolve_base_url_openai_provider_with_override(monkeypatch):
+def test_resolve_base_url_doubleword_override_wins(monkeypatch):
     monkeypatch.setenv(
         "BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL", "http://127.0.0.1:8788"
     )
@@ -200,12 +214,18 @@ def test_resolve_base_url_anthropic_providers_unaffected(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_sdk_session_env_doubleword_no_override_fails_fast(monkeypatch):
+def test_sdk_session_env_doubleword_default_direct(monkeypatch):
+    """DEV-1639: with no override, the SDK session env points ANTHROPIC_BASE_URL
+    at Doubleword's native endpoint and carries the Bearer provider key."""
     monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
     monkeypatch.delenv("BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL", raising=False)
-    # Never emit ANTHROPIC_BASE_URL=None/"" — must raise loudly instead.
-    with pytest.raises(RuntimeError, match="BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL"):
-        pr.sdk_session_env(_DW)
+    env = pr.sdk_session_env(_DW)
+    assert env == {
+        "ANTHROPIC_API_KEY": "",
+        "CLAUDE_CODE_OAUTH_TOKEN": "",
+        "ANTHROPIC_BASE_URL": "https://api.doubleword.ai",
+        "ANTHROPIC_AUTH_TOKEN": "dw-key-1",
+    }
 
 
 def test_sdk_session_env_doubleword_with_proxy_override(monkeypatch):
@@ -232,20 +252,19 @@ def test_sdk_session_env_doubleword_missing_key_raises(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Unpriced-registry cost path (regression: a Doubleword user-sim must not crash
-# the run). litellm doesn't know the `doubleword/` provider AND pricing is
-# unset, so the cost calc must short-circuit to $0 instead of raising.
+# DEV-1639: Doubleword is now priced (realtime GLM-5.2-FP8), so its cost rows are
+# non-zero (the DEV-1604 $0-unpriced-fallback no longer applies to it).
 # ---------------------------------------------------------------------------
 
 
-def test_unpriced_doubleword_cost_is_zero_not_crash():
+def test_priced_doubleword_cost_is_nonzero():
     from bird_interact_agents import usage
 
     prompt_cost, completion_cost = usage._safe_cost(
         model=_DW, prompt_tokens=1000, completion_tokens=500,
     )
-    assert prompt_cost == 0.0
-    assert completion_cost == 0.0
+    assert prompt_cost == 1000 * 1.40e-6
+    assert completion_cost == 500 * 4.40e-6
 
 
 def test_priced_zai_cost_still_nonzero():

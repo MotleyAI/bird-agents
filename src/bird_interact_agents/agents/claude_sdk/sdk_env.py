@@ -33,6 +33,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -42,6 +43,7 @@ from bird_interact_agents.provider_registry import (
     get_provider,
     requires_thinking,
     sdk_session_env,
+    selected_cache_ttl,
 )
 
 
@@ -78,6 +80,54 @@ def disable_cli_telemetry_env() -> dict[str, str]:
     the module-level constant.
     """
     return dict(_DISABLE_OUTBOUND_TELEMETRY_ENV)
+
+
+# DEV-1639: the bundled `claude` CLI controls its automatic prompt-cache
+# breakpoints through three env knobs (verified against code.claude.com docs):
+#   - ENABLE_PROMPT_CACHING_1H : opt into the 1-hour TTL on the API-key /
+#     third-party-provider path (default there is 5m);
+#   - FORCE_PROMPT_CACHING_5M  : force the 5-minute TTL regardless of auth;
+#   - DISABLE_PROMPT_CACHING   : turn caching off entirely.
+# The parent env is inherited by the SDK subprocess, so an ambient value of any
+# of these would silently override the run's choice. We therefore set ALL THREE
+# EXPLICITLY on every session (the inactive ones to "" so the CLI sees them
+# unset) — hermetic, mirroring how CLAUDE_CONFIG_DIR / the auth vars are pinned.
+_ENABLE_1H_ENV = "ENABLE_PROMPT_CACHING_1H"
+_FORCE_5M_ENV = "FORCE_PROMPT_CACHING_5M"
+_DISABLE_CACHE_ENV = "DISABLE_PROMPT_CACHING"
+
+# Operator signal (set by run.py / the cloud driver from ``--no-prompt-cache``)
+# that prompt caching should be OFF for this claude_sdk run. Separate from the
+# TTL selector so the two flags stay orthogonal.
+_DISABLE_PROMPT_CACHE_SIGNAL = "BIRD_INTERACT_DISABLE_PROMPT_CACHE"
+
+
+def _prompt_cache_disabled() -> bool:
+    """True iff the operator disabled prompt caching (``--no-prompt-cache``).
+
+    Truthy = the signal var is present, non-empty, and not ``"0"``.
+    """
+    val = os.environ.get(_DISABLE_PROMPT_CACHE_SIGNAL, "")
+    return bool(val) and val != "0"
+
+
+def cache_control_env() -> dict[str, str]:
+    """The prompt-cache knobs for the SDK subprocess, set hermetically.
+
+    Reads :func:`provider_registry.selected_cache_ttl` (default ``"5m"``) and the
+    ``--no-prompt-cache`` disable signal, and returns a dict that sets exactly
+    one knob active and the other two to ``""`` (seen as unset), so an ambient
+    ``ENABLE_/FORCE_/DISABLE_PROMPT_CACHING`` in the parent env can never leak
+    into the run.
+    """
+    env = {_ENABLE_1H_ENV: "", _FORCE_5M_ENV: "", _DISABLE_CACHE_ENV: ""}
+    if _prompt_cache_disabled():
+        env[_DISABLE_CACHE_ENV] = "1"
+    elif selected_cache_ttl() == "1h":
+        env[_ENABLE_1H_ENV] = "1"
+    else:  # "5m" — the default; forced explicitly for hermeticity
+        env[_FORCE_5M_ENV] = "1"
+    return env
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +312,10 @@ def build_hermetic_session_env(
     """
     env = disable_cli_telemetry_env()
     env["CLAUDE_CONFIG_DIR"] = config_dir_val
+    # DEV-1639: pin the prompt-cache TTL knobs hermetically for EVERY claude_sdk
+    # run (Anthropic-proper and registry alike). Default is 5m (current CLI
+    # behaviour); --cache-ttl 1h opts in; --no-prompt-cache disables.
+    env.update(cache_control_env())
     is_registry = provider_aware and get_provider(model) is not None
     if _subscription_auth_selected() and not is_registry:
         # Subscription path: mask the API key AND the Bearer auth token (both are
@@ -490,20 +544,28 @@ async def hermetic_claude_sdk_session(
 
 
 def serialize_sdk_message(msg: Any) -> dict:
-    """Serialise one SDK stream message into a JSON-able ``{type, data}`` dict.
+    """Serialise one SDK stream message into a JSON-able ``{type, data, ts}`` dict.
 
     Mirrors the trajectory shape the claude_sdk agents already build by hand
     (``dataclasses.asdict`` when possible, else ``str``). NEVER raises — capture
     must not break the receive stream, so this owns the full guard (the caller
-    appends its result directly)."""
+    appends its result directly).
+
+    DEV-1639: stamps ``ts`` = epoch seconds at RECEIVE time (when this message
+    streamed to us, i.e. roughly when its LLM call completed). Because each
+    ``AssistantMessage``/``ResultMessage`` already carries its per-turn ``usage``
+    (incl. ``cache_read_input_tokens``/``cache_creation_input_tokens``), the
+    persisted transcript then supports per-turn cache-timing analysis (e.g.
+    modelling 5m vs 1h TTL) with no change to the usage/CallCost schema."""
     name = type(msg).__name__
+    ts = time.time()
     try:
-        return {"type": name, "data": dataclasses.asdict(msg)}
+        return {"type": name, "data": dataclasses.asdict(msg), "ts": ts}
     except Exception:  # noqa: BLE001 — non-dataclass / unserialisable
         try:
-            return {"type": name, "data": str(msg)}
+            return {"type": name, "data": str(msg), "ts": ts}
         except Exception:  # noqa: BLE001 — pathological __str__
-            return {"type": name, "data": "<unserializable>"}
+            return {"type": name, "data": "<unserializable>", "ts": ts}
 
 
 # A per-task sink that receives each serialised SDK message ({type, data}) the

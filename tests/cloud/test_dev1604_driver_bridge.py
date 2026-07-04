@@ -5,10 +5,10 @@ Two driver responsibilities for the bridge:
 1. The registry key-shipping generalises on `auth_env`, so a `doubleword/*`
    agent ships `DOUBLEWORD_API_KEY` with no new code.
 2. The submitter forwards a `base_url_env` operator override to the workers —
-   but when the agent NEEDS the bridge (Doubleword always; z.ai per-token), the
-   ACTOR owns `base_url_env` (it points it at the loopback proxy), so the
-   submitter must NOT forward a stale value. Forwarding stays intact for the
-   non-bridge paths (Moonshot, z.ai coding-plan).
+   but when the agent NEEDS the bridge (z.ai per-token), the ACTOR owns
+   `base_url_env` (it points it at the loopback proxy), so the submitter must
+   NOT forward a stale value. Forwarding stays intact for the non-bridge paths
+   (Moonshot, z.ai coding-plan, and DEV-1639: Doubleword-direct).
 
 The bridge selector is the recycled `--subscription-auth` flag, carried as
 `no_subscription_auth` (True = per-token/bridge). Also pins that the flag is
@@ -49,17 +49,18 @@ def test_ships_doubleword_key(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_doubleword_override_not_forwarded(monkeypatch):
+def test_doubleword_override_is_forwarded(monkeypatch):
+    """DEV-1639: Doubleword now talks directly (non-bridge), so an operator
+    base-url override IS forwarded to the workers — same as any direct provider
+    — instead of being suppressed for a proxy the actor no longer starts."""
     monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anth-sim")
-    # Even a stray submitter override must NOT travel to the workers — the actor
-    # sets this var to the local proxy URL. Doubleword always bridges.
-    monkeypatch.setenv("BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL", "http://stale:9999")
+    monkeypatch.setenv("BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL", "https://dw.example")
     keys = driver.read_api_keys_from_local_env(
         _DW, _SIM, query_mode="raw", framework="claude_sdk",
         no_subscription_auth=True,
     )
-    assert "BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL" not in keys
+    assert keys["BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL"] == "https://dw.example"
 
 
 def test_zai_per_token_override_not_forwarded(monkeypatch):

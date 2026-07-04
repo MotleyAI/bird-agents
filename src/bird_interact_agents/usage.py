@@ -221,9 +221,31 @@ def _safe_cost(
                 if pricing.cache_read_input_token_cost is not None
                 else pricing.input_cost_per_token
             )
+            # DEV-1639: cache WRITES are billed at input × the TTL-specific
+            # multiplier (5m=1.25×, 1h=2× for Doubleword; 1.0× default keeps
+            # z.ai/moonshot unchanged). The multiplier tracks the run's TTL so
+            # the price matches what was actually requested.
+            write_mult = (
+                pricing.cache_write_1h_multiplier
+                if provider_registry.selected_cache_ttl() == "1h"
+                else pricing.cache_write_5m_multiplier
+            )
+            # DEV-1639: when this endpoint reports input_tokens INCLUSIVE of
+            # cache-creation (Doubleword's native Anthropic usage), subtract the
+            # write tokens from the billable input so they are not counted twice
+            # (once at 1.0× here and again at write_mult below). Anthropic/z.ai/
+            # moonshot report the EXCLUSIVE form → base_input == prompt_tokens,
+            # which (with write_mult defaulting to 1.0) reproduces the prior
+            # ``(prompt_tokens + cache_creation) × input`` behaviour exactly.
+            if spec.input_tokens_includes_cache_creation:
+                base_input = max(prompt_tokens - cache_creation_input_tokens, 0)
+            else:
+                base_input = prompt_tokens
             prompt_cost = (
-                (prompt_tokens + cache_creation_input_tokens)
+                base_input * pricing.input_cost_per_token
+                + cache_creation_input_tokens
                 * pricing.input_cost_per_token
+                * write_mult
                 + cache_read_input_tokens * read_rate
             )
             return prompt_cost, completion_tokens * pricing.output_cost_per_token

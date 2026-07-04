@@ -15,7 +15,11 @@ import sqlite3 as _sqlite3
 from typing import Any as _Any
 
 from bird_interact_agents import paths
-from bird_interact_agents.provider_registry import agent_needs_bridge, get_provider
+from bird_interact_agents.provider_registry import (
+    agent_needs_bridge,
+    get_provider,
+    selected_cache_ttl,
+)
 # DEV-1604: imported as a MODULE so `_maybe_start_bridge_proxy` and its test
 # monkeypatch share the `run.bridge_proxy.ensure_bridge_proxy_for_actor` target.
 from bird_interact_agents.cloud import bridge_proxy
@@ -1673,6 +1677,9 @@ async def run_evaluation(
         "total_reward": total_reward,
         "average_reward": total_reward / n if n else 0,
         "total_usage": total_usage.model_dump(),
+        # DEV-1639: stamp the prompt-cache TTL actually used (read from the same
+        # signal sdk_env/usage consume) so a 5m-vs-1h A/B can tell runs apart.
+        "cache_ttl": selected_cache_ttl(),
         **timing,
         "results": results,
     }
@@ -1846,6 +1853,26 @@ def _apply_subscription_auth_env(
     os.environ["BIRD_INTERACT_SUBSCRIPTION_AUTH"] = "1"
 
 
+def _apply_cache_ttl_env(*, cache_ttl: str, prompt_cache: bool) -> None:
+    """DEV-1639: translate the local ``--cache-ttl`` / ``--no-prompt-cache``
+    choices into the env signals ``sdk_env`` reads when building the claude_sdk
+    subprocess (``BIRD_INTERACT_CACHE_TTL`` and ``BIRD_INTERACT_DISABLE_PROMPT_CACHE``).
+
+    Local claude_sdk agents run in-process, so mutating ``os.environ`` here is
+    the only wiring needed. Ambient values are actively set/cleared so a stray
+    exported signal cannot hijack the run. ``BIRD_INTERACT_CACHE_TTL`` also
+    drives ``usage._safe_cost``'s cache-write multiplier, keeping the price in
+    step with the TTL actually requested. The flags are inert for non-claude_sdk
+    frameworks (only ``sdk_env`` reads these signals)."""
+    os.environ["BIRD_INTERACT_CACHE_TTL"] = (
+        cache_ttl if cache_ttl in ("5m", "1h") else "5m"
+    )
+    if prompt_cache:
+        os.environ.pop("BIRD_INTERACT_DISABLE_PROMPT_CACHE", None)
+    else:
+        os.environ["BIRD_INTERACT_DISABLE_PROMPT_CACHE"] = "1"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="BIRD-Interact benchmark runner with pluggable agents"
@@ -1877,11 +1904,14 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         choices=["a-interact", "c-interact", "oracle", "one-shot"],
-        required=True,
+        default=None,
         help=(
-            "REQUIRED (aligned with bird-interact-cloud: no default). "
-            "Evaluation mode. ``one-shot`` (DEV-1462) is the non-interactive "
-            "path used by --dataset livesqlbench: no user-sim, no ask_user."
+            "Evaluation mode. OPTIONAL — defaults per benchmark: ``one-shot`` "
+            "for one-shot benchmarks (livesqlbench*, bird-interact-lite-exp; "
+            "DEV-1462: no user-sim, no ask_user) and ``a-interact`` for "
+            "interactive benchmarks (mini-interact, bird-interact-full). Only "
+            "pass --mode to select a non-default mode (``oracle``, or "
+            "``c-interact`` if/when it is wired to an agent)."
         ),
     )
     parser.add_argument(
@@ -2037,12 +2067,26 @@ def main() -> None:
         dest="prompt_cache",
         default=True,
         help=(
-            "Disable Anthropic prompt caching on the agent (pydantic_ai "
-            "framework only). Default is enabled: the agent's system "
-            "prompt and tool definitions are sent with cache_control, "
-            "and subsequent tool-call round-trips within the 5-minute "
-            "TTL re-read from cache at 10%% of input cost. Doesn't "
-            "affect the user-sim, which always uses its own model."
+            "Disable prompt caching on the agent. Default is enabled: the "
+            "agent's system prompt and tool definitions are sent with "
+            "cache_control, and subsequent tool-call round-trips within the "
+            "TTL re-read from cache at 10%% of input cost. DEV-1639: for "
+            "claude_sdk* frameworks this sets DISABLE_PROMPT_CACHING=1 in the "
+            "SDK subprocess (previously a no-op there — pydantic_ai only). "
+            "Doesn't affect the user-sim, which always uses its own model."
+        ),
+    )
+    parser.add_argument(
+        "--cache-ttl",
+        dest="cache_ttl",
+        choices=("5m", "1h"),
+        default="5m",
+        help=(
+            "DEV-1639: prompt-cache TTL for claude_sdk* runs. Default 5m (the "
+            "Claude CLI's own default on the API-key/third-party path). 1h keeps "
+            "the shared system+tools prefix warm across the whole run (cache "
+            "writes cost 2x input vs 1.25x at 5m). Ignored by non-claude_sdk "
+            "frameworks and when --no-prompt-cache is passed."
         ),
     )
     parser.add_argument(
@@ -2124,6 +2168,12 @@ def main() -> None:
         agent_model=args.agent_model,
         error=parser.error,
     )
+    # DEV-1639: translate --cache-ttl / --no-prompt-cache into the env signals
+    # sdk_env reads when building the claude_sdk subprocess.
+    _apply_cache_ttl_env(
+        cache_ttl=args.cache_ttl,
+        prompt_cache=args.prompt_cache,
+    )
     # DEV-1586: derive the internal slayer_setup from the user-facing flag.
     from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
     args.slayer_setup = derive_slayer_setup(args.pre_encoded_source)
@@ -2141,7 +2191,16 @@ def main() -> None:
     # Normalize the benchmark token to its canonical underscore form once, so
     # every downstream consumer (gates, loader dispatch, path roots) sees the
     # canonical name regardless of which alias the user typed.
-    args.dataset = get_benchmark(args.dataset).name
+    _benchmark = get_benchmark(args.dataset)
+    args.dataset = _benchmark.name
+
+    # --mode is optional: default per benchmark (one-shot for one-shot
+    # benchmarks, a-interact otherwise). Derived AFTER benchmark resolution and
+    # BEFORE the dataset/framework-mode validation below, so an omitted --mode
+    # is always a supported mode. --mode is only needed to select a non-default
+    # mode (oracle, or c-interact if/when wired to an agent).
+    if args.mode is None:
+        args.mode = _benchmark.default_mode
 
     # Fail-fast: --slayer-setup on-the-fly is only valid for the
     # pydantic_ai_recursive + slayer + a-interact|one-shot tuple. Validate
