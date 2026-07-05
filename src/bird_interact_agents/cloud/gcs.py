@@ -18,7 +18,20 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from google.api_core.exceptions import NotFound as _GcsNotFound
+try:
+    from google.api_core.exceptions import NotFound as _GcsNotFound
+except ModuleNotFoundError:  # pragma: no cover - exercised only on cloud-free installs
+    # DEV-1640: the local process-pool worker imports this module (via
+    # ray_app / persistence) but only ever uses LocalFsStore — it never calls
+    # a real GCS function. Guarding this single top-level google import keeps
+    # `gcs` importable under a cloud-free local install (README
+    # `.[claude-sdk,dev]`, which lacks the `cloud` extra's google-cloud-storage)
+    # so local runs don't crash every spawned worker at import time. Any REAL
+    # GCS call still fails clearly at `default_gcs_client()`
+    # (`from google.cloud import storage`).
+    class _GcsNotFound(Exception):
+        """Sentinel stand-in for google.api_core NotFound when
+        google-cloud-storage is not installed."""
 
 from bird_interact_agents.cloud import config
 from bird_interact_agents.frameworks import is_otf_encode_framework
