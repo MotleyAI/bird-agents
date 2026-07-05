@@ -11,6 +11,14 @@ import pytest
 
 from tests import test_run_local_inline_grader as base
 
+# DEV-1640: these tests pin the LOCAL in-process per-task wiring / grading by
+# monkeypatching agents + graders + loaders, which a spawned worker process
+# cannot see. The process pool is now the default, so route run_evaluation
+# through the retained legacy single-loop path (identical per-task wiring).
+@pytest.fixture(autouse=True)
+def _dev1640_force_legacy_inprocess(monkeypatch):
+    monkeypatch.setenv("BIRD_INTERACT_LOCAL_INPROCESS", "1")
+
 
 # ---------------------------------------------------------------------------
 # Local (run.py) — _grade_local_row must forward agent_model
@@ -124,9 +132,12 @@ def test_cloud_actor_forwards_agent_model_to_grader(monkeypatch, tmp_path):
     monkeypatch.setattr(ray_app._gcs, "write_submission_annotation", _noop)
     monkeypatch.setattr(ray_app._gcs, "write_row", _noop)
     monkeypatch.setattr(ray_app._gcs, "write_log", _noop)
-    monkeypatch.setattr(ray_app._upload_back, "upload_per_task_debug", _noop)
-    monkeypatch.setattr(ray_app._upload_back, "upload_per_task_setup_sessions", _noop)
-    monkeypatch.setattr(ray_app._upload_back, "upload_otf_reference_delta", _noop)
+    # DEV-1640: the upload-back triple moved into GcsStore.upload_back, which
+    # calls the upload_back MODULE functions — patch those directly.
+    from bird_interact_agents.cloud import upload_back as _ub
+    monkeypatch.setattr(_ub, "upload_per_task_debug", _noop)
+    monkeypatch.setattr(_ub, "upload_per_task_setup_sessions", _noop)
+    monkeypatch.setattr(_ub, "upload_otf_reference_delta", _noop)
 
     ray_app._run_one_in_actor(
         task_data={"instance_id": "alien_1", "selected_database": "alien",
@@ -134,7 +145,7 @@ def test_cloud_actor_forwards_agent_model_to_grader(monkeypatch, tmp_path):
         cfg=cfg,
         run_id="r1",
         attempt=1,
-        gcs_client=object(),
+        store=ray_app.GcsStore(object()),
     )
 
     assert captured.get("agent_model") == "anthropic/claude-opus-4-7"

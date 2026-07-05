@@ -27,6 +27,14 @@ from bird_interact_agents.provider_registry import agent_needs_bridge, get_provi
 from bird_interact_agents.cloud import bridge_proxy
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
+# DEV-1640: the default local path runs each task in its own spawned process
+# (real isolation, fixing the shared event-loop hang). Imported at module top
+# so tests can monkeypatch `run.dispatch_local_process_pool`.
+from bird_interact_agents.cloud.collation import collate
+from bird_interact_agents.local_pool import (
+    dispatch_local_process_pool,
+    reconcile_local_run,
+)
 from bird_interact_agents.eval.annotation_schema import SubmissionConfig
 from bird_interact_agents.eval.grade_in_place import (
     decode_result_json as _decode_result_json,
@@ -1228,6 +1236,153 @@ def write_local_attempt_row(rows_dir: Path, instance_id: str, row: dict) -> None
         )
 
 
+def _local_inprocess_enabled() -> bool:
+    """DEV-1640 escape hatch: ``BIRD_INTERACT_LOCAL_INPROCESS=1`` forces the
+    legacy single event-loop path (debugging only). Default = process pool."""
+    return os.environ.get("BIRD_INTERACT_LOCAL_INPROCESS", "") == "1"
+
+
+def _reset_rows_dir(rows_dir: Path, tasks: list[dict], filter_ids) -> None:
+    """Reset stale per-task annotations under ``rows/`` so a reused output
+    dir does not carry a prior pass's rows into collate/emit. Mirrors the
+    legacy path's reset (full wipe when unfiltered; else only the subdirs
+    this run overwrites)."""
+    if rows_dir.exists():
+        if filter_ids is None:
+            shutil.rmtree(rows_dir, ignore_errors=True)
+        else:
+            wanted = {str(t.get("instance_id") or "") for t in tasks}
+            for sub in list(rows_dir.iterdir()):
+                if sub.is_dir() and sub.name in wanted:
+                    shutil.rmtree(sub, ignore_errors=True)
+    rows_dir.mkdir(parents=True, exist_ok=True)
+
+
+async def _run_process_pool_and_collate(
+    *,
+    tasks: list[dict],
+    output_dir: Path,
+    output_path: str,
+    run_id: str,
+    benchmark,
+    concurrency: int,
+    filter_ids,
+    submission_config,
+    data_dir: str,
+    framework: str,
+    dataset: str,
+    query_mode: str,
+    mode: str,
+    agent_model: str,
+    user_sim_model: str,
+    patience: int,
+    strict: bool,
+    use_audited_gold_sql: bool,
+    prompt_cache: bool,
+    max_depth: int,
+    slayer_setup: str | None,
+    reasoning_effort: str | None,
+    user_sim_prompt_version: str | None,
+    pre_encoded_source: str | None,
+    slayer_storage_root: str | None,
+) -> dict:
+    """DEV-1640 default local path: run each task in its own spawned worker
+    process (real isolation), then assemble ``results.db`` + ``eval.json``
+    from the row blobs exactly like the cloud ``fetch`` does.
+
+    Flow: reset rows/ → build cfg + manifest → dispatch (one process per
+    task, ≤ concurrency at once, off the event loop) → reconcile the
+    hard-crash gap → collate → overlay the cascade block.
+    """
+    attempt = 1
+    _reset_rows_dir(output_dir / "rows", tasks, filter_ids)
+
+    # Worker cfg — mirrors the cloud ``run_pool`` cfg, EXCEPT ``data_dir`` is
+    # the caller's data root (Codex H1), never a cloud container default.
+    cfg = {
+        "framework": framework,
+        "query_mode": query_mode,
+        "mode": mode,
+        "agent_model": agent_model,
+        "user_sim_model": user_sim_model,
+        "patience": patience,
+        "strict": strict,
+        "use_audited_gold_sql": use_audited_gold_sql,
+        "prompt_cache": prompt_cache,
+        "max_depth": max_depth,
+        "reasoning_effort": reasoning_effort,
+        "user_sim_prompt_version": user_sim_prompt_version,
+        "slayer_setup": slayer_setup,
+        "pre_encoded_source": pre_encoded_source,
+        "slayer_storage_root": slayer_storage_root,
+        "dataset": dataset,
+        "data_dir": data_dir,
+    }
+
+    manifest = {
+        "run_id": run_id,
+        "framework": framework,
+        "mode": mode,
+        "query_mode": query_mode,
+        "instance_ids": [str(t.get("instance_id") or "") for t in tasks],
+        "agent_model": agent_model,
+        "user_sim_model": user_sim_model,
+        "slayer_setup": slayer_setup,
+        "pre_encoded_source": pre_encoded_source,
+        "patience": patience,
+        "max_depth": max_depth,
+        "reasoning_effort": reasoning_effort,
+        "dataset": dataset,
+        "strict": strict,
+        "use_audited_gold_sql": use_audited_gold_sql,
+        "prompt_cache": prompt_cache,
+    }
+
+    # Dispatch each task to its own spawned worker process. Called
+    # SYNCHRONOUSLY (not via asyncio.to_thread) on purpose: the parent event
+    # loop has nothing else to do during a local run, and a real Ctrl-C then
+    # lands inside the dispatcher's fut.result() so its finally-block can
+    # terminate live children instead of orphaning them. Name resolved at
+    # call time so tests can monkeypatch it.
+    dispatch_local_process_pool(
+        tasks=tasks,
+        cfg=cfg,
+        run_dir=str(output_dir),
+        attempt=attempt,
+        run_id=run_id,
+        concurrency=concurrency,
+    )
+
+    # Close the hard-crash gap so results.db + cascade both cover every task.
+    reconcile_local_run(
+        run_dir=output_dir,
+        tasks=tasks,
+        benchmark=benchmark.name,
+        run_id=run_id,
+        attempt=attempt,
+        submission_config=submission_config,
+    )
+
+    metrics = collate(output_dir, manifest)
+    # Scope the cascade to THIS run's instance set (mirrors the legacy path)
+    # so a filtered rerun reusing the same run_id can't fold stale runs/
+    # annotations into the published denominator/rates.
+    current_iids = {str(t.get("instance_id") or "") for t in tasks} - {""}
+    try:
+        metrics = emit_cascading_eval_json(
+            benchmark.name, run_id, Path(output_path),
+            base_metrics=metrics, instance_filter=current_iids,
+        )
+    except Exception as exc:  # noqa: BLE001 — surface, don't drop the block
+        logger.warning("cascading_phase1 aggregation failed: %s", exc)
+        metrics["cascading_phase1_error"] = str(exc)
+    logger.info(
+        "%s/%s: %d tasks done (process pool, concurrency=%d)",
+        mode, query_mode, len(tasks), concurrency,
+    )
+    return metrics
+
+
 async def run_evaluation(
     data_path: str,
     data_dir: str,
@@ -1318,6 +1473,80 @@ async def run_evaluation(
         mode, query_mode, len(tasks), concurrency,
     )
 
+    # Open the per-run output dir + resolve the run id (shared by both the
+    # default process-pool path and the legacy in-process path).
+    output_dir = Path(output_path).parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if audited_overlay_log:
+        (output_dir / "audited_gold_overlay.json").write_text(
+            json.dumps(audited_overlay_log, indent=2) + "\n"
+        )
+    run_id = output_dir.name or "default"
+
+    # Per-task `SubmissionConfig` — duplicated into every annotation per
+    # DEV-1535 design choice (B3 = both run_metadata AND annotation). The
+    # config is identical across tasks in a single run, so one instance
+    # is shared.
+    submission_config = SubmissionConfig(
+        framework=framework,
+        mode=mode,
+        query_mode=query_mode,
+        agent_model=agent_model,
+        user_sim_model=user_sim_model,
+        slayer_setup=slayer_setup,
+        pre_encoded_source=pre_encoded_source,
+        reasoning_effort=reasoning_effort,
+        patience=patience,
+        max_depth=max_depth,
+        dataset=dataset,
+        strict=strict,
+        use_audited_gold_sql=use_audited_gold_sql,
+        prompt_cache=prompt_cache,
+    )
+
+    # DEV-1640: the DEFAULT local path runs each task in its own spawned
+    # process (real isolation → fixes the shared event-loop hang that
+    # wedged local slayer@concurrency>=3). The legacy single-loop asyncio
+    # path is retained ONLY behind BIRD_INTERACT_LOCAL_INPROCESS=1 for
+    # debugging.
+    if not _local_inprocess_enabled():
+        return await _run_process_pool_and_collate(
+            tasks=tasks,
+            output_dir=output_dir,
+            output_path=output_path,
+            run_id=run_id,
+            benchmark=b,
+            concurrency=concurrency,
+            filter_ids=filter_ids,
+            submission_config=submission_config,
+            data_dir=data_dir,
+            framework=framework,
+            dataset=dataset,
+            query_mode=query_mode,
+            mode=mode,
+            agent_model=agent_model,
+            user_sim_model=user_sim_model,
+            patience=patience,
+            strict=strict,
+            use_audited_gold_sql=use_audited_gold_sql,
+            prompt_cache=prompt_cache,
+            max_depth=max_depth,
+            slayer_setup=slayer_setup,
+            reasoning_effort=reasoning_effort,
+            user_sim_prompt_version=user_sim_prompt_version,
+            pre_encoded_source=pre_encoded_source,
+            slayer_storage_root=slayer_storage_root,
+        )
+
+    if concurrency >= 2:
+        logger.warning(
+            "BIRD_INTERACT_LOCAL_INPROCESS=1 with --concurrency %d: the legacy "
+            "single event-loop path is hang-prone at concurrency>=2 on the "
+            "SLayer path (DEV-1640); intended for concurrency-1 debugging.",
+            concurrency,
+        )
+
+    # ---- Legacy in-process path (BIRD_INTERACT_LOCAL_INPROCESS=1) ----
     # Build the runner once and reuse across tasks (avoids re-constructing
     # the per-framework agent N times).
     runner = _make_runner(
@@ -1338,15 +1567,8 @@ async def run_evaluation(
 
     # Open the per-run results.db (lives next to eval.json) and write
     # the run-metadata header before any task starts.
-    output_dir = Path(output_path).parent
-    output_dir.mkdir(parents=True, exist_ok=True)
-    if audited_overlay_log:
-        (output_dir / "audited_gold_overlay.json").write_text(
-            json.dumps(audited_overlay_log, indent=2) + "\n"
-        )
     db_path = output_dir / "results.db"
     db_conn = open_db(db_path)
-    run_id = output_dir.name or "default"
     insert_run_metadata(
         db_conn,
         run_id=run_id,
@@ -1361,27 +1583,6 @@ async def run_evaluation(
         patience=patience,
         max_depth=max_depth,
         reasoning_effort=reasoning_effort,
-        dataset=dataset,
-        strict=strict,
-        use_audited_gold_sql=use_audited_gold_sql,
-        prompt_cache=prompt_cache,
-    )
-
-    # Per-task `SubmissionConfig` — duplicated into every annotation per
-    # DEV-1535 design choice (B3 = both run_metadata AND annotation). The
-    # config is identical across tasks in a single run, so one instance
-    # is shared.
-    submission_config = SubmissionConfig(
-        framework=framework,
-        mode=mode,
-        query_mode=query_mode,
-        agent_model=agent_model,
-        user_sim_model=user_sim_model,
-        slayer_setup=slayer_setup,
-        pre_encoded_source=pre_encoded_source,
-        reasoning_effort=reasoning_effort,
-        patience=patience,
-        max_depth=max_depth,
         dataset=dataset,
         strict=strict,
         use_audited_gold_sql=use_audited_gold_sql,
@@ -1783,9 +1984,12 @@ def _apply_subscription_auth_env(
 ) -> None:
     """Translate the local ``--subscription-auth`` choice into the
     ``BIRD_INTERACT_SUBSCRIPTION_AUTH`` signal env var that ``sdk_env`` reads
-    (DEV-1602). Local claude_sdk agents run in-process, so this is the only
-    wiring needed — ``sdk_env`` masks ``ANTHROPIC_API_KEY`` for the SDK
-    subprocess while the parent keeps it for the litellm user-sim.
+    (DEV-1602). This runs in ``main()`` BEFORE the run starts, so the signal
+    is set on the parent's ``os.environ`` — and since DEV-1640 spawns each
+    task in its own worker process, the ``spawn`` children inherit it (along
+    with the bridge base-url override and ``BIRD_PG_*``) at process start,
+    with no extra plumbing. ``sdk_env`` then masks ``ANTHROPIC_API_KEY`` for
+    the SDK subprocess while the parent keeps it for the litellm user-sim.
 
     ``subscription_auth`` is the tri-state BooleanOptionalAction value: ``True``
     (--subscription-auth), ``False`` (--no-subscription-auth), or ``None`` (the
