@@ -209,7 +209,7 @@ async def test_process_pool_is_default_and_bypasses_legacy_machinery(
 
 
 @pytest.mark.asyncio
-async def test_escape_hatch_uses_legacy_inprocess_path(tmp_path, monkeypatch):
+async def test_escape_hatch_uses_legacy_inprocess_path(tmp_path, monkeypatch, runs_root):
     """BIRD_INTERACT_LOCAL_INPROCESS=1 keeps the legacy single-loop path
     (for debugging) and must NOT touch the process pool."""
     monkeypatch.setenv("BIRD_INTERACT_LOCAL_INPROCESS", "1")

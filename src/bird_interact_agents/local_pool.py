@@ -68,7 +68,12 @@ def _local_task_worker(cfg: dict, task_data: dict, run_dir: str, attempt: int,
 def terminate_all(procs) -> None:
     """Terminate + reap a batch of worker processes. Defensive: never raises
     (an unstarted or already-dead process is skipped). Used on cancellation
-    (Ctrl-C) so a stalled task can't orphan its child process."""
+    (Ctrl-C) so a stalled task can't orphan its child process.
+
+    SIGTERM first, then escalate to SIGKILL for any child that ignores it —
+    a worker wedged in an uninterruptible MCP/subprocess bridge call (exactly
+    the DEV-1640 failure mode, now per-process) would otherwise survive the
+    ``join`` timeout and leak."""
     for p in procs:
         try:
             if p.is_alive():
@@ -79,6 +84,13 @@ def terminate_all(procs) -> None:
         try:
             p.join(timeout=5)
         except Exception:  # noqa: BLE001
+            pass
+    for p in procs:
+        try:
+            if p.is_alive():
+                p.kill()
+                p.join(timeout=2)
+        except Exception:  # noqa: BLE001 — best-effort cleanup
             pass
 
 
@@ -183,16 +195,25 @@ def reconcile_local_run(
     rows_dir = run_dir_p / "rows"
     for td in tasks:
         iid = str(td.get("instance_id") or "")
-        db = str(td.get("selected_database") or "")
+        # One normalized database value so the error ROW and the runs/
+        # annotation agree (downstream collation joins on `database`).
+        db = str(td.get("selected_database") or "") or "<unknown>"
         row_path = rows_dir / iid / f"attempt-{attempt}.json"
         if row_path.exists():
             continue  # worker persisted a row -> already counted everywhere
         _msg = "worker process crashed before persisting a row"
         err = _build_error_row(iid, db, _msg)
-        (rows_dir / iid).mkdir(parents=True, exist_ok=True)
-        (rows_dir / iid / f"attempt-{attempt}.json").write_text(
-            json.dumps(err, default=str)
-        )
+        try:
+            # Guarded like the annotation write below: reconciliation must
+            # never abort the run on a stray disk error for one task.
+            (rows_dir / iid).mkdir(parents=True, exist_ok=True)
+            (rows_dir / iid / f"attempt-{attempt}.json").write_text(
+                json.dumps(err, default=str)
+            )
+        except Exception:  # noqa: BLE001 — reconciliation must never abort a run
+            logger.exception(
+                "reconcile_local_run: failed to write crash error row for %s", iid,
+            )
         try:
             # This ALSO writes the runs/ golden store (via _write_to_runs),
             # overwriting any stale annotation for this (iid, run_id).

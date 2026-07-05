@@ -124,7 +124,7 @@ class LocalFsStore(PersistenceStore):
     @staticmethod
     def _atomic_write_text(dest: Path, text: str) -> None:
         tmp = dest.with_suffix(dest.suffix + ".tmp")
-        tmp.write_text(text)
+        tmp.write_text(text, encoding="utf-8")
         tmp.replace(dest)
 
     @staticmethod

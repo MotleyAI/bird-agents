@@ -1344,38 +1344,46 @@ async def _run_process_pool_and_collate(
     # lands inside the dispatcher's fut.result() so its finally-block can
     # terminate live children instead of orphaning them. Name resolved at
     # call time so tests can monkeypatch it.
-    dispatch_local_process_pool(
-        tasks=tasks,
-        cfg=cfg,
-        run_dir=str(output_dir),
-        attempt=attempt,
-        run_id=run_id,
-        concurrency=concurrency,
-    )
-
-    # Close the hard-crash gap so results.db + cascade both cover every task.
-    reconcile_local_run(
-        run_dir=output_dir,
-        tasks=tasks,
-        benchmark=benchmark.name,
-        run_id=run_id,
-        attempt=attempt,
-        submission_config=submission_config,
-    )
-
-    metrics = collate(output_dir, manifest)
-    # Scope the cascade to THIS run's instance set (mirrors the legacy path)
-    # so a filtered rerun reusing the same run_id can't fold stale runs/
-    # annotations into the published denominator/rates.
-    current_iids = {str(t.get("instance_id") or "") for t in tasks} - {""}
+    #
+    # The reconcile/collate/emit run in a `finally` so that if dispatch is
+    # interrupted (Ctrl-C) or raises after some tasks already wrote rows, the
+    # completed work still lands in results.db + eval.json (tasks with no row
+    # blob become crash rows). On the happy path this IS the normal flow; on
+    # an exception the partial artifacts are written and the exception then
+    # propagates.
+    metrics: dict = {}
     try:
-        metrics = emit_cascading_eval_json(
-            benchmark.name, run_id, Path(output_path),
-            base_metrics=metrics, instance_filter=current_iids,
+        dispatch_local_process_pool(
+            tasks=tasks,
+            cfg=cfg,
+            run_dir=str(output_dir),
+            attempt=attempt,
+            run_id=run_id,
+            concurrency=concurrency,
         )
-    except Exception as exc:  # noqa: BLE001 — surface, don't drop the block
-        logger.warning("cascading_phase1 aggregation failed: %s", exc)
-        metrics["cascading_phase1_error"] = str(exc)
+    finally:
+        # Close the hard-crash gap so results.db + cascade both cover every task.
+        reconcile_local_run(
+            run_dir=output_dir,
+            tasks=tasks,
+            benchmark=benchmark.name,
+            run_id=run_id,
+            attempt=attempt,
+            submission_config=submission_config,
+        )
+        metrics = collate(output_dir, manifest)
+        # Scope the cascade to THIS run's instance set (mirrors the legacy
+        # path) so a filtered rerun reusing the same run_id can't fold stale
+        # runs/ annotations into the published denominator/rates.
+        current_iids = {str(t.get("instance_id") or "") for t in tasks} - {""}
+        try:
+            metrics = emit_cascading_eval_json(
+                benchmark.name, run_id, Path(output_path),
+                base_metrics=metrics, instance_filter=current_iids,
+            )
+        except Exception as exc:  # noqa: BLE001 — surface, don't drop the block
+            logger.warning("cascading_phase1 aggregation failed: %s", exc)
+            metrics["cascading_phase1_error"] = str(exc)
     logger.info(
         "%s/%s: %d tasks done (process pool, concurrency=%d)",
         mode, query_mode, len(tasks), concurrency,
@@ -1663,19 +1671,9 @@ async def run_evaluation(
     # aggregator only sees fresh annotations. Mirrors the round-2
     # regrade.py reset pattern.
     rows_dir = output_dir / "rows"
-    if rows_dir.exists():
-        if filter_ids is None:
-            # Full run — wipe everything.
-            shutil.rmtree(rows_dir, ignore_errors=True)
-        else:
-            # Filtered run — reset ONLY the subdirs this run will
-            # overwrite, so unrelated instances from a prior pass
-            # survive (and still contribute to the cascade block).
-            _wanted = {str(t.get("instance_id") or "") for t in tasks}
-            for sub in list(rows_dir.iterdir()):
-                if sub.is_dir() and sub.name in _wanted:
-                    shutil.rmtree(sub, ignore_errors=True)
-    rows_dir.mkdir(parents=True, exist_ok=True)
+    # Single source of truth for the reset (shared with the process-pool
+    # path) so the two branches can't drift.
+    _reset_rows_dir(rows_dir, tasks, filter_ids)
     _benchmark_canonical = b.name
 
     def _grade_local_row(td: dict, r: dict) -> None:
