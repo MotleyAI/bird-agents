@@ -17,6 +17,14 @@ from types import SimpleNamespace
 
 import pytest
 
+# DEV-1640: these tests pin the LOCAL in-process per-task wiring / grading by
+# monkeypatching agents + graders + loaders, which a spawned worker process
+# cannot see. The process pool is now the default, so route run_evaluation
+# through the retained legacy single-loop path (identical per-task wiring).
+@pytest.fixture(autouse=True)
+def _dev1640_force_legacy_inprocess(monkeypatch):
+    monkeypatch.setenv("BIRD_INTERACT_LOCAL_INPROCESS", "1")
+
 
 # ---------------------------------------------------------------------------
 # argparse choices
