@@ -21,6 +21,34 @@ from bird_interact_agents import local_pool
 from tests import _dev1640_workers as workers
 
 
+def test_gcs_importable_without_google_cloud_storage():
+    """DEV-1640: the local worker imports cloud.gcs (via ray_app/persistence)
+    but never calls a real GCS function, so gcs must stay importable under a
+    cloud-free local install (README `.[claude-sdk,dev]`, no google-cloud-
+    storage). Simulate the missing dep in a child interpreter."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys, importlib.abc\n"
+        "class B(importlib.abc.MetaPathFinder):\n"
+        "    def find_spec(self, name, path, target=None):\n"
+        "        if name == 'google.api_core' or name.startswith('google.api_core.'):\n"
+        "            raise ModuleNotFoundError(name)\n"
+        "        return None\n"
+        "for m in [x for x in list(sys.modules) if x.startswith('google.api_core') "
+        "or x == 'bird_interact_agents.cloud.gcs']:\n"
+        "    del sys.modules[m]\n"
+        "sys.meta_path.insert(0, B())\n"
+        "import bird_interact_agents.cloud.gcs as g\n"
+        "assert g._GcsNotFound is not None\n"
+        "print('OK')\n"
+    )
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "OK" in r.stdout
+
+
 def _max_overlap(intervals: list[tuple[float, float]]) -> int:
     events: list[tuple[float, int]] = []
     for t0, t1 in intervals:
