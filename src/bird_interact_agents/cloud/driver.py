@@ -315,10 +315,11 @@ def read_api_keys_from_local_env(
                 missing_local.append("OPENAI_API_KEY")
         # Forward an operator base-url override so workers hit the same
         # endpoint the submitter validated against — but ONLY for providers that
-        # talk to their endpoint directly. DEV-1604: when the agent needs the
-        # bridge proxy (Doubleword always; z.ai per-token), the ACTOR owns
-        # base_url_env (it points it at the local loopback proxy), so forwarding
-        # a stale submitter value would clobber that. Suppress it in that case.
+        # talk to their endpoint directly. When the agent needs the bridge proxy
+        # (z.ai per-token; DEV-1639: Doubleword now talks its NATIVE Anthropic
+        # endpoint directly and no longer bridges), the ACTOR owns base_url_env
+        # (it points it at the local loopback proxy), so forwarding a stale
+        # submitter value would clobber that. Suppress it in that case.
         # Keys on the recycled --subscription-auth flag (no_subscription_auth).
         if not provider_registry.agent_needs_bridge(agent_model, no_subscription_auth):
             override = os.environ.get(_agent_spec.base_url_env, "")
@@ -386,6 +387,9 @@ def build_manifest(
         "use_audited_gold_sql": bool(args.use_audited_gold_sql),
         "max_depth": args.max_depth,
         "prompt_cache": bool(args.prompt_cache),
+        # DEV-1639: the prompt-cache TTL chosen at submit; stamped so resubmit is
+        # deterministic and the 5m-vs-1h A/B analysis can tell runs apart.
+        "cache_ttl": getattr(args, "cache_ttl", "5m"),
         "reasoning_effort": getattr(args, "reasoning_effort", None),
         # DEV-1545: snake_case key per existing convention; None when
         # the CLI flag was unset at submit (resubmit / replay logic
@@ -839,6 +843,27 @@ def _capture_diagnostics_on_stall(
         logger.warning("diagnostics capture failed for run %s: %s", run_id, exc)
 
 
+def _cache_ttl_env_vars(*, cache_ttl: str, prompt_cache: bool = True) -> dict[str, str]:
+    """DEV-1639: env signals shipped to the actor as job-level ``runtime_env``
+    vars (which Ray applies to every task/actor's ``os.environ``, the same
+    channel ``BIRD_INTERACT_SUBSCRIPTION_AUTH`` rides). ``BIRD_INTERACT_CACHE_TTL``
+    is read by ``sdk_env.cache_control_env`` (to inject the CLI's TTL knob) and
+    ``usage.selected_cache_ttl`` (to price cache writes at the matching tier); the
+    disable signal is set only when ``--no-prompt-cache`` turned caching off. The
+    TTL is always shipped explicitly so the actor is deterministic regardless of
+    any ambient value."""
+    return {
+        "BIRD_INTERACT_CACHE_TTL": cache_ttl
+        if cache_ttl in provider_registry.CACHE_TTLS
+        else "5m",
+        # Always ship the disable signal EXPLICITLY ("" when caching is enabled)
+        # so a stale ambient value on the worker cannot flip caching off — Ray
+        # applies env_vars additively, so an unset key would leave the worker's
+        # value intact (matches local run.py, which clears it).
+        "BIRD_INTERACT_DISABLE_PROMPT_CACHE": "" if prompt_cache else "1",
+    }
+
+
 def submit(args) -> str:
     _validate_instance_ids(args.instance_ids, _submit_benchmark(args))
     prereqs.check(args)
@@ -892,6 +917,10 @@ def submit(args) -> str:
             no_subscription_auth=getattr(args, "no_subscription_auth", False),
             dataset=getattr(args, "dataset", ""),
         )
+        env_vars.update(_cache_ttl_env_vars(
+            cache_ttl=getattr(args, "cache_ttl", "5m"),
+            prompt_cache=bool(getattr(args, "prompt_cache", True)),
+        ))
         job_args = _build_job_args(
             args, run_id, attempt=1,
             benchmark_data_prefix=benchmark_data_prefix,
@@ -1013,6 +1042,8 @@ def build_annotator_manifest(
         "override": getattr(args, "override", False),
         "instance_ids": list(args.instance_ids),
         "no_subscription_auth": bool(getattr(args, "no_subscription_auth", False)),
+        # DEV-1639: prompt-cache TTL for the annotator's claude_sdk session.
+        "cache_ttl": getattr(args, "cache_ttl", "5m"),
         "render_inputs": {
             "workers": args.workers,
             "actors_per_worker": args.actors_per_worker,
@@ -1103,6 +1134,9 @@ def submit_annotator(args) -> str:
             no_subscription_auth=getattr(args, "no_subscription_auth", False),
             dataset=getattr(args, "dataset", None) or getattr(args, "benchmark", ""),
         )
+        env_vars.update(_cache_ttl_env_vars(
+            cache_ttl=getattr(args, "cache_ttl", "5m"),
+        ))
         job_args = _build_annotator_job_args(
             args, run_id, benchmark_data_prefix=benchmark_data_prefix,
         )
@@ -1516,6 +1550,9 @@ def resubmit(run_id: str) -> None:
                 no_subscription_auth=_no_subscription_auth,
                 dataset=manifest.get("dataset", manifest.get("benchmark", "")),
             )
+            env_vars.update(_cache_ttl_env_vars(
+                cache_ttl=manifest.get("cache_ttl", "5m"),
+            ))
             job_args = _build_annotator_resubmit_args(manifest, run_id, missing, next_attempt)
             cluster.submit_job(
                 head_address=head, args=job_args, env_vars=env_vars,
@@ -1529,6 +1566,10 @@ def resubmit(run_id: str) -> None:
                 no_subscription_auth=_no_subscription_auth,
                 dataset=manifest.get("dataset", ""),
             )
+            env_vars.update(_cache_ttl_env_vars(
+                cache_ttl=manifest.get("cache_ttl", "5m"),
+                prompt_cache=bool(manifest.get("prompt_cache", True)),
+            ))
             job_args = _build_resubmit_args(manifest, run_id, missing, next_attempt)
             cluster.submit_job(
                 head_address=head, args=job_args, env_vars=env_vars,

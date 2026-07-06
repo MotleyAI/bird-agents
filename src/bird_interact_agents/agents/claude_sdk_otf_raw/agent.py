@@ -33,6 +33,7 @@ from bird_interact_agents.agents.claude_sdk.agent import (
 )
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
     hermetic_claude_sdk_session,
+    serialize_sdk_message,
 )
 from bird_interact_agents.slayer_otf.timing import otf_timer
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
@@ -264,9 +265,9 @@ class ClaudeSDKOtfRawAgent:
             ) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
-                    trajectory.append(
-                        {"type": str(type(msg).__name__), "data": str(msg)[:500]}
-                    )
+                    # DEV-1639: serialize_sdk_message stamps a per-turn `ts`
+                    # (truncate=500 keeps this raw variant's trajectory light).
+                    trajectory.append(serialize_sdk_message(msg, truncate=500))
                     usage_tracker.observe(msg)
             usage_tracker.finalize()
         except Exception as e:

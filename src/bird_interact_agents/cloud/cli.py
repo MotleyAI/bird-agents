@@ -52,7 +52,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     grp = sp_submit.add_mutually_exclusive_group(required=True)
     grp.add_argument("--instance-ids", type=_instance_ids)
     grp.add_argument("--instance-ids-file", type=str)
-    sp_submit.add_argument("--mode", required=True, choices=_VALID_MODES)
+    sp_submit.add_argument(
+        "--mode", default=None, choices=_VALID_MODES,
+        help=(
+            "Evaluation mode. OPTIONAL — defaults per benchmark: `one-shot` for "
+            "one-shot benchmarks (livesqlbench*) and `a-interact` for "
+            "interactive ones (mini-interact, bird-interact-full, "
+            "bird-interact-lite-exp). Only pass --mode to select a non-default "
+            "mode (`oracle`, or `c-interact` if/when it is wired to an agent)."
+        ),
+    )
     sp_submit.add_argument(
         "--dataset", choices=cli_dataset_tokens(), required=True,
         help=(
@@ -114,6 +123,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_submit.add_argument(
         "--no-prompt-cache", dest="prompt_cache", action="store_false"
     )
+    sp_submit.add_argument(
+        "--cache-ttl", dest="cache_ttl", choices=("5m", "1h"), default="5m",
+        help=(
+            "DEV-1639: prompt-cache TTL for claude_sdk* runs. Default 5m (the "
+            "Claude CLI's own default on the API-key/third-party path). 1h keeps "
+            "the shared system+tools prefix warm across a whole run (cache writes "
+            "cost 2x input vs 1.25x at 5m). Ignored by non-claude_sdk frameworks."
+        ),
+    )
     sp_submit.add_argument("--workers", type=int, default=4)
     sp_submit.add_argument("--actors-per-worker", type=int, default=4)
     sp_submit.add_argument("--worker-type", default="e2-standard-4")
@@ -152,8 +170,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "the ENDPOINT selector (still ZAI_API_KEY, NOT Claude.ai OAuth): "
             "`--subscription-auth` = direct GLM-Coding-Plan Anthropic endpoint; "
             "default / `--no-subscription-auth` = per-token OpenAI endpoint via "
-            "the bridge proxy (escapes the [1313] throttle). Doubleword is "
-            "OpenAI-only (always bridged; `--subscription-auth` rejected); "
+            "the bridge proxy (escapes the [1313] throttle). DEV-1639: Doubleword "
+            "now talks its NATIVE Anthropic endpoint directly (no bridge) and "
+            "authenticates via DOUBLEWORD_API_KEY (`--subscription-auth` rejected); "
             "Moonshot is provider-key-only (`--subscription-auth` rejected)."
         ),
     )
@@ -180,6 +199,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_annotate.add_argument("--detach", action="store_true")
     sp_annotate.add_argument("--allow-dirty", action="store_true")
     sp_annotate.add_argument(
+        "--cache-ttl", dest="cache_ttl", choices=("5m", "1h"), default="5m",
+        help=(
+            "DEV-1639: prompt-cache TTL for the annotator's claude_sdk session "
+            "(default 5m; 1h keeps the shared prefix warm across the run)."
+        ),
+    )
+    sp_annotate.add_argument(
         "--subscription-auth", action=argparse.BooleanOptionalAction,
         required=True, dest="subscription_auth",
         help=(
@@ -189,9 +215,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "annotator is provider-aware, so for a z.ai agent model the flag is "
             "the ENDPOINT selector (still ZAI_API_KEY, NOT OAuth): "
             "`--subscription-auth` = direct coding-plan, default / "
-            "`--no-subscription-auth` = per-token bridge. Doubleword is "
-            "OpenAI-only (always bridged; `--subscription-auth` rejected). "
-            "No default."
+            "`--no-subscription-auth` = per-token bridge. DEV-1639: Doubleword "
+            "talks its native Anthropic endpoint directly (DOUBLEWORD_API_KEY; "
+            "`--subscription-auth` rejected). No default."
         ),
     )
 
@@ -328,7 +354,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         # translate to the standard argparse exit-2 + stderr.)
         # Normalize the benchmark token to canonical (e.g. mini-interact alias
         # → mini_interact) before any benchmark-keyed logic.
-        ns.dataset = get_benchmark(ns.dataset).name
+        _benchmark = get_benchmark(ns.dataset)
+        ns.dataset = _benchmark.name
+        # --mode is optional: default per benchmark (one-shot for one-shot
+        # benchmarks, a-interact otherwise), derived BEFORE the dataset/mode
+        # validation below so an omitted --mode is always a supported mode.
+        if ns.mode is None:
+            ns.mode = _benchmark.default_mode
         from bird_interact_agents.run import (
             _validate_dataset_mode,
             _validate_framework_mode,

@@ -221,9 +221,31 @@ def _safe_cost(
                 if pricing.cache_read_input_token_cost is not None
                 else pricing.input_cost_per_token
             )
+            # DEV-1639: cache WRITES are billed at input × the TTL-specific
+            # multiplier (5m=1.25×, 1h=2× for Doubleword; 1.0× default keeps
+            # z.ai/moonshot unchanged). The multiplier tracks the run's TTL so
+            # the price matches what was actually requested.
+            write_mult = (
+                pricing.cache_write_1h_multiplier
+                if provider_registry.selected_cache_ttl() == "1h"
+                else pricing.cache_write_5m_multiplier
+            )
+            # DEV-1639: when this endpoint reports input_tokens INCLUSIVE of
+            # cache-creation (Doubleword's native Anthropic usage), subtract the
+            # write tokens from the billable input so they are not counted twice
+            # (once at 1.0× here and again at write_mult below). Anthropic/z.ai/
+            # moonshot report the EXCLUSIVE form → base_input == prompt_tokens,
+            # which (with write_mult defaulting to 1.0) reproduces the prior
+            # ``(prompt_tokens + cache_creation) × input`` behaviour exactly.
+            if spec.input_tokens_includes_cache_creation:
+                base_input = max(prompt_tokens - cache_creation_input_tokens, 0)
+            else:
+                base_input = prompt_tokens
             prompt_cost = (
-                (prompt_tokens + cache_creation_input_tokens)
+                base_input * pricing.input_cost_per_token
+                + cache_creation_input_tokens
                 * pricing.input_cost_per_token
+                * write_mult
                 + cache_read_input_tokens * read_rate
             )
             return prompt_cost, completion_tokens * pricing.output_cost_per_token
@@ -242,9 +264,19 @@ def _safe_cost(
                 "for this run (pricing unconfirmed).", model,
             )
         return 0.0, 0.0
-    # Non-registry models still flow through litellm here. Register the known
-    # prices first (idempotent, no-op after the first call) so priced ids
-    # resolve normally.
+    # Non-registry models (Anthropic-proper, openai/*, …) flow through litellm
+    # here. Register the known prices first (idempotent, no-op after the first
+    # call) so priced ids resolve normally.
+    #
+    # DEV-1639 KNOWN LIMITATION (accepted): the cache-write TTL multiplier
+    # (``selected_cache_ttl`` → 1.25x/2x) is applied ONLY on the in-house
+    # registry branch above. Anthropic-proper cache-CREATION tokens are priced by
+    # litellm at its standard (5m-tier) cache-creation rate regardless of
+    # ``--cache-ttl``, so an Anthropic run explicitly opted into ``--cache-ttl 1h``
+    # under-reports its cache-WRITE cost (reads and all default 5m runs are
+    # accurate). The default TTL is 5m, so this is inert unless 1h is chosen for
+    # an Anthropic model; a TTL-aware Anthropic path is deferred (it would mean
+    # threading the per-TTL breakdown through the shared litellm cost call).
     provider_registry.ensure_litellm_pricing()
     try:
         return _cost_per_token(

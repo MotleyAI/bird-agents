@@ -85,6 +85,15 @@ class Benchmark(BaseModel):
       mini-interact and livesqlbench, so a per-db dir under
       ``audited_gold/`` would clash)."""
 
+    @property
+    def default_mode(self) -> str:
+        """The eval mode assumed when ``--mode`` is omitted: ``one-shot`` for a
+        one-shot benchmark, else ``a-interact`` (the only interactive mode wired
+        to an agent today). ``--mode`` therefore only needs to be passed to
+        select a non-default interactive mode (``c-interact`` if/when it is
+        implemented, or ``oracle``). Always a member of ``supported_modes``."""
+        return "one-shot" if self.one_shot else "a-interact"
+
 
 MINI_INTERACT = Benchmark(
     name="mini-interact",

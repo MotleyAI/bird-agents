@@ -125,15 +125,16 @@ def _build_anthropic_client(model: str = "") -> "anthropic.AsyncAnthropic":
     Anthropic-compatible endpoint instead — ambient Anthropic credentials
     are deliberately ignored for those.
 
-    DEV-1604: this covers BOTH anthropic-format providers (Moonshot, z.ai
-    coding-plan) AND openai-format providers reached through the bridge
-    (Doubleword, z.ai per-token). ``run_autopsy`` runs inline in the actor
-    after a miss, so ``resolve_base_url(spec)`` returns the loopback bridge URL
-    the actor already set on ``base_url_env`` for a bridged provider (and its
-    fail-fast guard raises clearly if the bridge wasn't set). Gating on
-    ``api_format == "anthropic"`` used to drop the openai-format providers onto
-    the ambient-Anthropic path — which is stripped on a registry run, so a
-    Doubleword autopsy lost all autopsy capability.
+    DEV-1604/DEV-1639: this covers all registry providers via one path —
+    anthropic-format direct endpoints (Moonshot, z.ai coding-plan, and DEV-1639
+    Doubleword-native) AND openai-format providers still reached through the
+    bridge (z.ai per-token). ``run_autopsy`` runs inline in the actor after a
+    miss, so ``resolve_base_url(spec)`` returns the provider's direct endpoint
+    (or, for a bridged provider, the loopback bridge URL the actor set on
+    ``base_url_env`` — its fail-fast guard raises clearly if the bridge wasn't
+    set). Gating on ``api_format == "anthropic"`` used to drop the openai-format
+    providers onto the ambient-Anthropic path — which is stripped on a registry
+    run, so their autopsy lost all capability.
     """
     spec = get_provider(model)
     if spec is not None:

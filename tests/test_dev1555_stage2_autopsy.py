@@ -279,11 +279,12 @@ def test_build_client_zai_missing_key_raises(monkeypatch):
 _DW = "doubleword/zai-org/GLM-5.2-FP8"
 
 
-def test_build_client_doubleword_uses_bridge(monkeypatch):
+def test_build_client_doubleword_override_wins(monkeypatch):
+    """DEV-1639: an operator override still wins over the static endpoint, and
+    the client Bearer-auths with DOUBLEWORD_API_KEY (never ambient Anthropic)."""
     from bird_interact_agents.eval.autopsy import _build_anthropic_client
 
     monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
-    # The actor set this to the loopback proxy before autopsy runs.
     monkeypatch.setenv(
         "BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL", "http://127.0.0.1:8822"
     )
@@ -296,16 +297,20 @@ def test_build_client_doubleword_uses_bridge(monkeypatch):
     assert client.api_key == ""
 
 
-def test_build_client_doubleword_without_bridge_fails_fast(monkeypatch):
-    """No base_url override set (e.g. autopsy invoked outside the actor that
-    started the bridge): resolve_base_url's guard raises rather than silently
-    routing to Anthropic — an openai-only provider has no direct endpoint."""
+def test_build_client_doubleword_default_direct(monkeypatch):
+    """DEV-1639: with no override, Doubleword autopsy builds a client pointed at
+    its NATIVE Anthropic endpoint (no bridge) with Bearer DOUBLEWORD_API_KEY —
+    no longer a fail-fast (it has a real direct endpoint now)."""
     from bird_interact_agents.eval.autopsy import _build_anthropic_client
 
     monkeypatch.setenv("DOUBLEWORD_API_KEY", "dw-key-1")
     monkeypatch.delenv("BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL", raising=False)
-    with pytest.raises(RuntimeError, match="BIRD_DOUBLEWORD_ANTHROPIC_BASE_URL"):
-        _build_anthropic_client(_DW)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "should-not-be-used")
+
+    client = _build_anthropic_client(_DW)
+    assert str(client.base_url).rstrip("/") == "https://api.doubleword.ai"
+    assert client.auth_token == "dw-key-1"
+    assert client.api_key == ""
 
 
 @pytest.mark.asyncio
