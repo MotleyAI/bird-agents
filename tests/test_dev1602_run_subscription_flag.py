@@ -219,11 +219,12 @@ def test_subscription_none_on_registry_model_is_off(monkeypatch):
 
 
 def test_main_required_flags_aligned_with_cloud():
-    """Local CLI alignment: --agent-model, --mode, --query-mode are REQUIRED
-    (no default), matching bird-interact-cloud."""
+    """Local CLI alignment: --agent-model, --query-mode are REQUIRED (no
+    default), matching bird-interact-cloud. (--mode is intentionally NOT here —
+    it defaults per benchmark; see test_main_mode_optional_defaults_per_benchmark.)"""
     import ast
 
-    for flag in ("--agent-model", "--mode", "--query-mode"):
+    for flag in ("--agent-model", "--query-mode"):
         node = _find_add_argument(flag)
         assert node is not None, f"{flag} not registered in run.main"
         kw = {k.arg: k.value for k in node.keywords}
@@ -232,6 +233,25 @@ def test_main_required_flags_aligned_with_cloud():
         assert isinstance(req, ast.Constant) and req.value is True, (
             f"{flag} must be required=True"
         )
+
+
+def test_main_mode_optional_defaults_per_benchmark():
+    """--mode is OPTIONAL (default=None, NOT required=True): run.main derives it
+    per benchmark (one-shot / a-interact). Only c-interact/oracle need it explicit."""
+    import ast
+
+    node = _find_add_argument("--mode")
+    assert node is not None, "--mode not registered in run.main"
+    kw = {k.arg: k.value for k in node.keywords}
+    # Not required.
+    if "required" in kw:
+        req = kw["required"]
+        assert isinstance(req, ast.Constant) and req.value is not True, (
+            "--mode must not be required=True"
+        )
+    # Explicit default=None.
+    assert "default" in kw
+    assert isinstance(kw["default"], ast.Constant) and kw["default"].value is None
 
 
 def test_main_value_defaults_aligned_with_cloud():

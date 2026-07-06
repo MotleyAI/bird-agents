@@ -39,6 +39,9 @@ from slayer.inspect.service import InspectService
 from slayer.storage.yaml_storage import YAMLStorage
 
 from bird_interact_agents.agents._session_log import write_session
+from bird_interact_agents.agents._slayer_tool_surface import (
+    derive_disallowed_slayer_tools,
+)
 from bird_interact_agents.agents.claude_sdk.agent import (
     SdkUsageTracker,
     _ctx,
@@ -115,18 +118,6 @@ SLAYER_MCP_TOOLS = [
     "recommend_root_model", "query", "query_nested",
 ]
 
-# SLayer MCP tools the encoder never needs — hidden from the model's cacheable
-# prefix (`disallowed_tools` removes the JSON Schema; `allowed_tools` only gates
-# auto-execute). NB: `save_memory` is deliberately NOT here.
-DISALLOWED_TOOL_NAMES = [
-    "mcp__slayer__forget_memory",
-    "mcp__slayer__get_datasource_priority",
-    "mcp__slayer__set_datasource_priority",
-    "mcp__slayer__create_datasource",
-    "mcp__slayer__delete_datasource",
-    "mcp__slayer__ingest_datasource_models",
-]
-
 NATIVE_TOOL_NAME = "mcp__bird-interact-tools__submit_encoding"
 
 # Write tools whose backing-query `filters` must be normalised
@@ -191,6 +182,15 @@ async def submit_encoding(args: dict) -> dict:
 
 def allowed_tool_names() -> list[str]:
     return [f"mcp__slayer__{t}" for t in SLAYER_MCP_TOOLS] + [NATIVE_TOOL_NAME]
+
+
+def disallowed_tool_names() -> list[str]:
+    """DEV-1644: the SLayer tools to HIDE from the model's per-turn context,
+    DERIVED as the complement of `SLAYER_MCP_TOOLS` against the live SLayer
+    surface. One allow-list to maintain; nothing leaks by construction (the
+    old hand-written deny-list drifted and left `list_datasources` /
+    `describe_datasource` / `edit_datasource` / `delete_model` visible)."""
+    return derive_disallowed_slayer_tools(SLAYER_MCP_TOOLS)
 
 
 def _make_submit_or_defer_nudge(soft_budget: int = _NUDGE_TURN_BUDGET):
@@ -302,7 +302,7 @@ def make_claude_sdk_build_encoder(
                 **_opt_kwargs,
                 mcp_servers=mcp_servers,
                 allowed_tools=allowed_tool_names(),
-                disallowed_tools=list(DISALLOWED_TOOL_NAMES),
+                disallowed_tools=disallowed_tool_names(),
                 tools=[],
                 setting_sources=[],
                 model=native_model_id(model),

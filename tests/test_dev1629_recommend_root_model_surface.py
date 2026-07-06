@@ -103,10 +103,15 @@ def test_tool_in_otf_slayer_mcp_tools():
 
 
 def test_tool_not_in_otf_disallowed():
+    # DEV-1644: disallowed is DERIVED from the allow-list; a read-only tool on
+    # the allow-list is never in the complement.
+    from bird_interact_agents.agents._slayer_tool_surface import (
+        derive_disallowed_slayer_tools,
+    )
     from bird_interact_agents.agents.claude_sdk_otf import agent as A
 
-    assert SLAYER_PREFIXED not in A.SLAYER_MCP_DISALLOWED_TOOL_NAMES
-    assert TOOL not in A.SLAYER_MCP_DISALLOWED_TOOL_NAMES
+    disallowed = set(derive_disallowed_slayer_tools(A.SLAYER_MCP_TOOLS))
+    assert SLAYER_PREFIXED not in disallowed
 
 
 def test_tool_not_in_otf_write_normalize_registry():
@@ -148,10 +153,15 @@ def test_tool_in_encoder_slayer_mcp_tools():
 
 
 def test_tool_not_in_encoder_disallowed():
+    # DEV-1644: disallowed is DERIVED from the allow-list; a read-only tool on
+    # the allow-list is never in the complement.
+    from bird_interact_agents.agents._slayer_tool_surface import (
+        derive_disallowed_slayer_tools,
+    )
     from bird_interact_agents.agents.claude_sdk_otf_encode import setup_encoder as S
 
-    assert SLAYER_PREFIXED not in S.DISALLOWED_TOOL_NAMES
-    assert TOOL not in S.DISALLOWED_TOOL_NAMES
+    disallowed = set(derive_disallowed_slayer_tools(S.SLAYER_MCP_TOOLS))
+    assert SLAYER_PREFIXED not in disallowed
 
 
 def test_tool_not_in_encoder_write_normalize_registry():

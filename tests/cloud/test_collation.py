@@ -134,6 +134,9 @@ def test_eval_json_matches_local_aggregator(
         "agent_model": "anthropic/claude-sonnet-4-5",
         "user_sim_model": "anthropic/claude-haiku-4-5-20251001",
         "instance_ids": ["db_a_1", "db_a_2"],
+        # DEV-1639: the manifest carries the prompt-cache TTL; the cloud eval.json
+        # must surface it (parity with local run.py's metrics stamp).
+        "cache_ttl": "1h",
     }
     metrics = collation.collate(run_dir, manifest)
     on_disk = json.loads((run_dir / "eval.json").read_text())
@@ -142,7 +145,7 @@ def test_eval_json_matches_local_aggregator(
     assert set(metrics) == set(on_disk)
     # All keys produced by local `bird-interact run`'s aggregator are present.
     expected_keys = {
-        "framework", "mode", "query_mode",
+        "framework", "mode", "query_mode", "cache_ttl",
         "total_tasks",
         "phase1_count", "phase1_rate",
         "phase2_count", "phase2_rate",
@@ -154,6 +157,8 @@ def test_eval_json_matches_local_aggregator(
     assert expected_keys <= set(metrics), (
         f"missing keys: {expected_keys - set(metrics)}"
     )
+    # DEV-1639: the submitted cache_ttl flows into the cloud eval.json.
+    assert metrics["cache_ttl"] == "1h"
     # Values the aggregator computes purely from the row set.
     assert metrics["total_tasks"] == 2
     assert metrics["phase1_count"] == 1

@@ -30,9 +30,12 @@ import contextlib
 import contextvars
 import dataclasses
 import json
+import logging
 import os
 import shutil
 import tempfile
+import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -42,7 +45,10 @@ from bird_interact_agents.provider_registry import (
     get_provider,
     requires_thinking,
     sdk_session_env,
+    selected_cache_ttl,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # Env names recognised by the bundled CLI to opt OUT of outbound side
@@ -78,6 +84,54 @@ def disable_cli_telemetry_env() -> dict[str, str]:
     the module-level constant.
     """
     return dict(_DISABLE_OUTBOUND_TELEMETRY_ENV)
+
+
+# DEV-1639: the bundled `claude` CLI controls its automatic prompt-cache
+# breakpoints through three env knobs (verified against code.claude.com docs):
+#   - ENABLE_PROMPT_CACHING_1H : opt into the 1-hour TTL on the API-key /
+#     third-party-provider path (default there is 5m);
+#   - FORCE_PROMPT_CACHING_5M  : force the 5-minute TTL regardless of auth;
+#   - DISABLE_PROMPT_CACHING   : turn caching off entirely.
+# The parent env is inherited by the SDK subprocess, so an ambient value of any
+# of these would silently override the run's choice. We therefore set ALL THREE
+# EXPLICITLY on every session (the inactive ones to "" so the CLI sees them
+# unset) — hermetic, mirroring how CLAUDE_CONFIG_DIR / the auth vars are pinned.
+_ENABLE_1H_ENV = "ENABLE_PROMPT_CACHING_1H"
+_FORCE_5M_ENV = "FORCE_PROMPT_CACHING_5M"
+_DISABLE_CACHE_ENV = "DISABLE_PROMPT_CACHING"
+
+# Operator signal (set by run.py / the cloud driver from ``--no-prompt-cache``)
+# that prompt caching should be OFF for this claude_sdk run. Separate from the
+# TTL selector so the two flags stay orthogonal.
+_DISABLE_PROMPT_CACHE_SIGNAL = "BIRD_INTERACT_DISABLE_PROMPT_CACHE"
+
+
+def _prompt_cache_disabled() -> bool:
+    """True iff the operator disabled prompt caching (``--no-prompt-cache``).
+
+    Truthy = the signal var is present, non-empty, and not ``"0"``.
+    """
+    val = os.environ.get(_DISABLE_PROMPT_CACHE_SIGNAL, "")
+    return bool(val) and val != "0"
+
+
+def cache_control_env() -> dict[str, str]:
+    """The prompt-cache knobs for the SDK subprocess, set hermetically.
+
+    Reads :func:`provider_registry.selected_cache_ttl` (default ``"5m"``) and the
+    ``--no-prompt-cache`` disable signal, and returns a dict that sets exactly
+    one knob active and the other two to ``""`` (seen as unset), so an ambient
+    ``ENABLE_/FORCE_/DISABLE_PROMPT_CACHING`` in the parent env can never leak
+    into the run.
+    """
+    env = {_ENABLE_1H_ENV: "", _FORCE_5M_ENV: "", _DISABLE_CACHE_ENV: ""}
+    if _prompt_cache_disabled():
+        env[_DISABLE_CACHE_ENV] = "1"
+    elif selected_cache_ttl() == "1h":
+        env[_ENABLE_1H_ENV] = "1"
+    else:  # "5m" — the default; forced explicitly for hermeticity
+        env[_FORCE_5M_ENV] = "1"
+    return env
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +316,10 @@ def build_hermetic_session_env(
     """
     env = disable_cli_telemetry_env()
     env["CLAUDE_CONFIG_DIR"] = config_dir_val
+    # DEV-1639: pin the prompt-cache TTL knobs hermetically for EVERY claude_sdk
+    # run (Anthropic-proper and registry alike). Default is 5m (current CLI
+    # behaviour); --cache-ttl 1h opts in; --no-prompt-cache disables.
+    env.update(cache_control_env())
     is_registry = provider_aware and get_provider(model) is not None
     if _subscription_auth_selected() and not is_registry:
         # Subscription path: mask the API key AND the Bearer auth token (both are
@@ -489,21 +547,38 @@ async def hermetic_claude_sdk_session(
         shutil.rmtree(config_path, ignore_errors=True)
 
 
-def serialize_sdk_message(msg: Any) -> dict:
-    """Serialise one SDK stream message into a JSON-able ``{type, data}`` dict.
+def serialize_sdk_message(msg: Any, *, truncate: int | None = None) -> dict:
+    """Serialise one SDK stream message into a JSON-able ``{type, data, ts}`` dict.
 
-    Mirrors the trajectory shape the claude_sdk agents already build by hand
-    (``dataclasses.asdict`` when possible, else ``str``). NEVER raises — capture
-    must not break the receive stream, so this owns the full guard (the caller
-    appends its result directly)."""
+    The SINGLE serializer every claude_sdk* agent uses to append to its persisted
+    trajectory (and the DEV-1589 ``.transcript``), so the ``ts`` stamp reaches
+    ALL of them uniformly. Default ``data`` is ``dataclasses.asdict`` when
+    possible, else ``str``. Pass ``truncate=N`` for the raw variants that keep a
+    lightweight trajectory: ``data`` becomes ``str(msg)[:N]``. NEVER raises —
+    capture must not break the receive stream, so this owns the full guard (the
+    caller appends its result directly).
+
+    DEV-1639: stamps ``ts`` = epoch seconds at RECEIVE time (when this message
+    streamed to us, i.e. roughly when its LLM call completed). Because each
+    ``AssistantMessage``/``ResultMessage`` already carries its per-turn ``usage``
+    (incl. ``cache_read_input_tokens``/``cache_creation_input_tokens``), the
+    persisted trajectory then supports per-turn cache-timing analysis (e.g.
+    modelling 5m vs 1h TTL) with no change to the usage/CallCost schema."""
     name = type(msg).__name__
+    ts = time.time()
+    if truncate is not None:
+        try:
+            data: Any = str(msg)[:truncate]
+        except Exception:  # noqa: BLE001 — pathological __str__
+            data = "<unserializable>"
+        return {"type": name, "data": data, "ts": ts}
     try:
-        return {"type": name, "data": dataclasses.asdict(msg)}
+        return {"type": name, "data": dataclasses.asdict(msg), "ts": ts}
     except Exception:  # noqa: BLE001 — non-dataclass / unserialisable
         try:
-            return {"type": name, "data": str(msg)}
+            return {"type": name, "data": str(msg), "ts": ts}
         except Exception:  # noqa: BLE001 — pathological __str__
-            return {"type": name, "data": "<unserializable>"}
+            return {"type": name, "data": "<unserializable>", "ts": ts}
 
 
 # A per-task sink that receives each serialised SDK message ({type, data}) the
@@ -529,6 +604,80 @@ def record_partial_transcript(sink: "Callable[[dict], None]"):
         yield
     finally:
         _partial_transcript_sink.reset(token)
+
+
+class LocalTranscriptAppender:
+    """DEV-1642: the append-per-message partial-transcript sink for LOCAL runs.
+
+    Installed via :func:`record_partial_transcript`, it writes each serialised
+    claude_sdk message ({type, data}) as one JSON line to a durable path
+    (typically ``rows/<iid>/partial_transcript.jsonl``) the instant it streams —
+    no throttle, no temp-dir hop, no store round-trip. Locally the file lives on
+    the same filesystem as the run output, so the append IS the durable write:
+    a hard kill (SIGKILL / OOM) loses at most one line interrupted mid-write.
+
+    This is the LOCAL counterpart to the cloud
+    :class:`~bird_interact_agents.cloud.ray_app.PartialTranscriptUploader`, which
+    must instead throttle a full-file re-upload because GCS objects are not
+    cheaply appendable. Both leave the same ``partial_transcript.jsonl`` artifact.
+
+    The file is truncate-created ONCE at construction so a stale file from a
+    prior run/attempt can never bleed into this task's transcript (mirrors the
+    cloud uploader's always-fresh ``mkdtemp`` scratch). Every message is still a
+    plain append after that. Best-effort throughout: nothing here raises into the
+    receive stream (mirrors ``PartialTranscriptUploader`` / ``write_local_attempt_row``).
+    """
+
+    def __init__(self, path: "Path | str") -> None:
+        self.path = Path(path)
+        # Discovery + main clients share ONE sink (both stream through the same
+        # ContextVar), so serialise writes to keep lines intact under any overlap.
+        self._lock = threading.Lock()
+        # First-failure-only guard so a permanently-broken path (missing parent,
+        # bad permissions) leaves ONE diagnostic line rather than spamming one
+        # per streamed message (CodeRabbit / Ruff S110).
+        self._logged_failure = False
+        # Reset ONCE at construction (per-task, not per-message). Best-effort:
+        # the parent dir is created by the caller/seam, but never raise here.
+        try:
+            with open(self.path, "w", encoding="utf-8"):
+                pass
+        except Exception:  # noqa: BLE001 — best-effort; construction must not fail the task
+            self._log_failure_once("truncate")
+
+    def _log_failure_once(self, op: str) -> None:
+        # Best-effort observability: without this, a misconfigured path silently
+        # no-ops every write forever with no trail. Debug level + once-per-sink
+        # keeps the "never raise / never spam" contract.
+        if not self._logged_failure:
+            self._logged_failure = True
+            # The whole point of this class is to never raise into the receive
+            # stream; a custom logging handler that re-raises from emit() must
+            # not defeat that, so the diagnostic itself is suppressed too.
+            with contextlib.suppress(Exception):
+                logger.debug(
+                    "LocalTranscriptAppender: %s failed for %s; "
+                    "partial transcript will not be persisted",
+                    op, self.path, exc_info=True,
+                )
+
+    def __call__(self, msg: dict) -> None:
+        try:
+            line = json.dumps(msg, default=str)
+        except Exception:  # noqa: BLE001 — capture must not break the stream
+            return
+        with self._lock:
+            try:
+                with open(self.path, "a", encoding="utf-8") as fh:
+                    fh.write(line + "\n")
+            except Exception:  # noqa: BLE001 — best-effort
+                self._log_failure_once("append")
+                return
+
+    def flush(self) -> None:
+        """No-op — appends are already durable. Present for API symmetry with
+        ``PartialTranscriptUploader`` so call sites treat recorders uniformly."""
+        return None
 
 
 class _TranscriptClient:

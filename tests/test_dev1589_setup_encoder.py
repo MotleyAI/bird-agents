@@ -248,10 +248,37 @@ def test_exact_tool_surface():
         "recommend_root_model", "query", "query_nested",
     }
     assert se.NATIVE_TOOL_NAME == "mcp__bird-interact-tools__submit_encoding"
+    # DEV-1644: the deny-list is DERIVED (= all advertised slayer tools −
+    # allow-list), not a hand-written constant.
+    from bird_interact_agents.agents._slayer_tool_surface import (
+        derive_disallowed_slayer_tools,
+    )
+
+    disallowed = set(derive_disallowed_slayer_tools(se.SLAYER_MCP_TOOLS))
     # save_memory is REQUIRED here (the agent wires its own memory) and must
     # NOT be in the disallowed set.
-    assert "mcp__slayer__save_memory" not in set(se.DISALLOWED_TOOL_NAMES)
-    assert "mcp__slayer__forget_memory" in set(se.DISALLOWED_TOOL_NAMES)
+    assert "mcp__slayer__save_memory" not in disallowed
+    assert "mcp__slayer__forget_memory" in disallowed
+
+
+def test_disallowed_tool_names_helper_is_derived_and_closes_leaks():
+    """DEV-1644: the encoder exposes a module-level `disallowed_tool_names()`
+    (mirroring `allowed_tool_names()`) that DERIVES the complement — this is
+    what feeds `ClaudeAgentOptions(disallowed_tools=...)`. It must partition the
+    surface against the allow-list and close the pre-existing `list_datasources`
+    leak (encoder's allow-list omits it)."""
+    from bird_interact_agents.agents._slayer_tool_surface import (
+        all_slayer_mcp_tool_names,
+        derive_disallowed_slayer_tools,
+    )
+
+    all_slayer_mcp_tool_names.cache_clear()
+    disallowed = se.disallowed_tool_names()
+    assert disallowed == derive_disallowed_slayer_tools(se.SLAYER_MCP_TOOLS)
+    allow = {f"mcp__slayer__{t}" for t in se.SLAYER_MCP_TOOLS}
+    assert set(disallowed).isdisjoint(allow)
+    assert set(disallowed) | allow == all_slayer_mcp_tool_names()
+    assert "mcp__slayer__list_datasources" in disallowed
 
 
 # ---------------------------------------------------------------------------

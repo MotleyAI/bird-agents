@@ -19,6 +19,7 @@ import pytest
 from claude_agent_sdk import ClaudeAgentOptions
 
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
+    cache_control_env,
     disable_cli_telemetry_env,
 )
 
@@ -122,17 +123,22 @@ async def test_anthropic_model_options_env_is_disable_telemetry(
         eval_mode=eval_mode, model="anthropic/claude-sonnet-4-5",
     )
     env = captured["options"].env
-    # DEV-1579: for an Anthropic model the hermetic session adds exactly two
-    # keys on top of the telemetry-disable overlay — CLAUDE_CONFIG_DIR plus a
-    # masked (empty) CLAUDE_CODE_OAUTH_TOKEN — and NOTHING else (no
-    # ANTHROPIC_BASE_URL / *_AUTH_TOKEN, no real Anthropic credential leaked).
+    # DEV-1579/DEV-1639: for an Anthropic model the hermetic session adds, on top
+    # of the telemetry-disable overlay: CLAUDE_CONFIG_DIR, a masked (empty)
+    # CLAUDE_CODE_OAUTH_TOKEN, and the three prompt-cache TTL knobs
+    # (cache_control_env) — and NOTHING else (no ANTHROPIC_BASE_URL / *_AUTH_TOKEN,
+    # no real Anthropic credential leaked).
     assert set(env) == set(disable_cli_telemetry_env()) | {
         "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN",
-    }
+    } | set(cache_control_env())
     for k, v in disable_cli_telemetry_env().items():
         assert env[k] == v
     assert env["CLAUDE_CONFIG_DIR"]
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == ""
+    # DEV-1639: default (no --cache-ttl) forces the 5m TTL hermetically.
+    assert env["FORCE_PROMPT_CACHING_5M"] == "1"
+    assert env["ENABLE_PROMPT_CACHING_1H"] == ""
+    assert env["DISABLE_PROMPT_CACHING"] == ""
     assert captured["options"].thinking == ClaudeAgentOptions().thinking
 
 

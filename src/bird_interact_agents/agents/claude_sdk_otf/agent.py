@@ -21,7 +21,6 @@ the SLayer write-tool whitelist, the prompts, and the mode gating differ.
 
 from __future__ import annotations
 
-import dataclasses
 import logging
 from pathlib import Path
 
@@ -45,6 +44,7 @@ from bird_interact_agents.agents.claude_sdk.agent import (
 )
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
     hermetic_claude_sdk_session,
+    serialize_sdk_message,
 )
 from bird_interact_agents.slayer_otf.timing import otf_timer
 from bird_interact_agents.agents.claude_sdk_otf.prompts import (
@@ -54,7 +54,9 @@ from bird_interact_agents.agents._pre_encoded import (
     resolve_pre_encoded_storage_dir,
     strip_write_slayer_tools,
     validate_pre_encoded_source,
-    WRITE_SLAYER_TOOL_NAMES,
+)
+from bird_interact_agents.agents._slayer_tool_surface import (
+    derive_disallowed_slayer_tools,
 )
 from bird_interact_agents.agents._pre_encoded_prompts import (
     SLAYER_PRE_ENCODED_ONE_SHOT,
@@ -191,29 +193,14 @@ def _slayer_tool_names() -> list[str]:
     return [f"mcp__slayer__{t}" for t in SLAYER_MCP_TOOLS]
 
 
-# DEV-1548: SLayer MCP tools the OTF agent never (or essentially never)
-# calls in steady-state slayer-mode runs but whose JSON Schemas would
-# otherwise sit in the per-turn cacheable prefix. Listed in
-# `ClaudeAgentOptions.disallowed_tools=` to remove them from the model's
-# context entirely (`allowed_tools=` only gates auto-execute permission,
-# not visibility). A 399-trajectory audit showed zero calls for the
-# first five names; `ingest_datasource_models` had one exploratory call
-# the OTF bootstrap path handles separately.
-#
-# `save_memory` is INTENTIONALLY NOT listed here. The audit shows zero
-# calls today, but the encoder retains the affordance on the allow-list
-# (see `SLAYER_MCP_TOOLS` above) — preserving headroom in case future
-# prompts re-engage it. Filed as a follow-up: if the next post-merge
-# trajectory sweep also shows 0 `save_memory` calls across a comparable
-# sample, open a sibling Linear issue to shave the residual.
-SLAYER_MCP_DISALLOWED_TOOL_NAMES: list[str] = [
-    "mcp__slayer__forget_memory",
-    "mcp__slayer__get_datasource_priority",
-    "mcp__slayer__set_datasource_priority",
-    "mcp__slayer__create_datasource",
-    "mcp__slayer__delete_datasource",
-    "mcp__slayer__ingest_datasource_models",
-]
+# DEV-1644: the SLayer MCP tools to HIDE from the model's per-turn context
+# (`disallowed_tools=` strips the JSON Schema; `allowed_tools=` only gates
+# auto-execute). This is DERIVED as the complement of `SLAYER_MCP_TOOLS`
+# against the live SLayer surface (`derive_disallowed_slayer_tools`) — one
+# allow-list to maintain, nothing leaks by construction. Supersedes the
+# DEV-1548 hand-written partial deny-list, which drifted and leaked
+# `query` / `query_nested` / `describe_datasource` / `edit_datasource` /
+# `delete_model` (the DEV-1644 mode-A errors).
 
 
 # Full MCP tool names whose payloads carry backing-query filter strings
@@ -618,12 +605,11 @@ class ClaudeSDKOtfAgent:
                 if self.pre_encoded_source else SLAYER_MCP_TOOLS
             )
             tool_names.extend(f"mcp__slayer__{t}" for t in slayer_tools)
-            # Also HIDE the write tools' schemas from the model's cacheable
-            # prefix (allowed_tools only gates auto-execute; disallowed_tools
-            # removes visibility — see DEV-1548).
-            disallowed_tool_names = list(SLAYER_MCP_DISALLOWED_TOOL_NAMES)
-            if self.pre_encoded_source:
-                disallowed_tool_names.extend(sorted(WRITE_SLAYER_TOOL_NAMES))
+            # DEV-1644: derive the disallowed set as the complement of the
+            # allow-list against the live SLayer surface. In pre-encoded mode
+            # `slayer_tools` is already write-stripped, so the write tools land
+            # in the complement automatically (no explicit extend needed).
+            disallowed_tool_names = derive_disallowed_slayer_tools(slayer_tools)
 
             # Per-task hook factories — must be created here (not on the
             # agent constructor) to avoid cross-task state bleed.
@@ -713,11 +699,9 @@ class ClaudeSDKOtfAgent:
             ) as client:
                 await client.query(task_data["amb_user_query"])
                 async for msg in client.receive_response():
-                    try:
-                        _data: object = dataclasses.asdict(msg)
-                    except Exception:  # noqa: BLE001
-                        _data = str(msg)
-                    trajectory.append({"type": str(type(msg).__name__), "data": _data})
+                    # DEV-1639: serialize_sdk_message stamps a per-turn `ts` so
+                    # the persisted trajectory supports 5m-vs-1h cache analysis.
+                    trajectory.append(serialize_sdk_message(msg))
                     usage_tracker.observe(msg)
             usage_tracker.finalize()
         except Exception as e:

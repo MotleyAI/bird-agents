@@ -1,10 +1,11 @@
 """DEV-1604: local (`run.py`) bridge wiring.
 
-`bird-interact run` supports `doubleword/*` and `zai/*` exactly like cloud via
+`bird-interact run` supports `zai/*` bridging like cloud via
 `_maybe_start_bridge_proxy` (called from `main()` after `_apply_subscription_
 auth_env`, before any runner is built). It recycles `--subscription-auth`:
 z.ai `--subscription-auth` -> coding-plan (no bridge); default / `--no-
-subscription-auth` -> per-token bridge. Doubleword always bridges and rejects
+subscription-auth` -> per-token bridge. DEV-1639: Doubleword now talks its
+native Anthropic endpoint directly (no bridge) but still rejects
 `--subscription-auth`; Moonshot rejects it too.
 """
 
@@ -41,11 +42,16 @@ def _err(msg):  # argparse-style error sink
 # None (unset), True (--subscription-auth), False (--no-subscription-auth).
 
 
-def test_doubleword_default_starts_bridge(spy_ensure):
+def test_doubleword_does_not_start_bridge(spy_ensure):
+    """DEV-1639: Doubleword talks its native Anthropic endpoint directly, so no
+    bridge proxy is started for it (default or --no-subscription-auth)."""
     run._maybe_start_bridge_proxy(
         agent_model=_DW, subscription_auth=None, error=_err
     )
-    assert spy_ensure == [(_DW, {"no_subscription_auth": True})]
+    run._maybe_start_bridge_proxy(
+        agent_model=_DW, subscription_auth=False, error=_err
+    )
+    assert spy_ensure == []
 
 
 def test_zai_default_starts_per_token_bridge(spy_ensure):

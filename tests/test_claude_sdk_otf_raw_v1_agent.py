@@ -348,11 +348,12 @@ async def test_run_task_does_not_disallow_slayer_tools(monkeypatch, tmp_path):
         dict(_TASK), str(tmp_path), 20.0, "raw", eval_mode="one-shot",
     )
     assert captured["options"].disallowed_tools == [], (
-        "raw adapter exposes no SLayer tools; the DEV-1548 plan explicitly "
-        "leaves disallowed_tools= empty (SDK default). A maintainer who "
-        "needs to disallow built-ins should add a SEPARATE constant rather "
-        "than reusing SLAYER_MCP_DISALLOWED_TOOL_NAMES from the slayer-aware "
-        "adapters."
+        "raw adapter mounts no SLayer stdio server, so there is nothing to "
+        "hide: disallowed_tools= stays empty (SDK default). The slayer-aware "
+        "adapters DERIVE their disallowed set from the allow-list via "
+        "derive_disallowed_slayer_tools (DEV-1644); a maintainer who needs to "
+        "disallow built-ins here should compute a raw-specific set, not reuse "
+        "that slayer-surface complement."
     )
 
 

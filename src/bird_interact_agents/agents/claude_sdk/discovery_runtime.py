@@ -16,7 +16,6 @@ isolation, API-key auth enforcement, MCP parity assertion, and cleanup.
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import logging
 import time
 from typing import Callable
@@ -33,6 +32,7 @@ from bird_interact_agents.agents.claude_sdk.discovery_channel import (
 )
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
     hermetic_claude_sdk_session,
+    serialize_sdk_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -150,11 +150,10 @@ async def run_main_with_discovery(
                 seq += 1
                 if on_main_message is not None:
                     on_main_message(msg, seq, t_after_query)
-                try:
-                    _data: object = dataclasses.asdict(msg)
-                except Exception:  # noqa: BLE001
-                    _data = str(msg)
-                trajectory.append({"type": str(type(msg).__name__), "data": _data})
+                # DEV-1639: use the canonical serializer so the discovery-loop
+                # trajectory carries the same {type, data, ts} shape (with a
+                # per-turn receive timestamp) as the main transcript.
+                trajectory.append(serialize_sdk_message(msg))
                 usage_tracker.observe(msg)
                 update_context_tokens(context_state, msg)
         finally:

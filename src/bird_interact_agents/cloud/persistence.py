@@ -56,6 +56,14 @@ class PersistenceStore(abc.ABC):
     def write_partial_transcript(self, run_id: str, iid: str, data: str) -> None:
         ...
 
+    def partial_transcript_local_path(self, iid: str) -> "Path | None":
+        """DEV-1642: durable ON-DISK path a LOCAL run can append the streaming
+        partial transcript to, message-by-message. ``None`` (the base default)
+        means the backend has no cheap local append target — the caller then
+        keeps the throttled full-snapshot :meth:`write_partial_transcript` path
+        (correct for GCS, where objects are not cheaply appendable)."""
+        return None
+
     @abc.abstractmethod
     def upload_back(
         self, run_id: str, cfg: dict, iid: str, attempt: int, *,
@@ -84,6 +92,11 @@ class GcsStore(PersistenceStore):
 
     def write_partial_transcript(self, run_id, iid, data):
         _gcs.write_partial_transcript(run_id, iid, data, client=self.client)
+
+    def partial_transcript_local_path(self, iid):
+        # Cloud: no cheap local append target — GCS objects are not appendable,
+        # so keep the throttled full-snapshot write_partial_transcript path.
+        return None
 
     def upload_back(self, run_id, cfg, iid, attempt, *, task_start_ts,
                     uploaded_dbs, initial_seed_fp_by_db):
@@ -152,10 +165,19 @@ class LocalFsStore(PersistenceStore):
 
     def write_partial_transcript(self, run_id, iid, data):
         # Full-snapshot semantics mirror gcs.write_partial_transcript (the
-        # uploader passes the whole accumulated JSONL each time).
+        # uploader passes the whole accumulated JSONL each time). DEV-1642: this
+        # remains for any caller/store double that doesn't take the append path,
+        # but the LOCAL per-task body now prefers partial_transcript_local_path
+        # (append-per-message) instead of this throttled snapshot.
         self._atomic_write_text(
             self._row_dir(iid) / "partial_transcript.jsonl", data,
         )
+
+    def partial_transcript_local_path(self, iid):
+        # DEV-1642: local runs append each streamed message straight to this
+        # durable file (same filesystem as the run output → the append IS the
+        # durable write). ``_row_dir`` creates the dir so the append can open it.
+        return self._row_dir(iid) / "partial_transcript.jsonl"
 
     def upload_back(self, run_id, cfg, iid, attempt, *, task_start_ts,
                     uploaded_dbs, initial_seed_fp_by_db):

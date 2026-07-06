@@ -164,8 +164,12 @@ def test_run_one_in_actor_forwards_full_state_to_upload_back(_fake_task):
 
 
 def test_run_one_in_actor_partial_transcript_uses_store(monkeypatch):
-    """For claude_sdk* frameworks the streamed partial transcript MUST go
-    through ``store.write_partial_transcript`` (not gcs.*)."""
+    """For claude_sdk* frameworks on a store WITHOUT a local partial path
+    (the cloud ``GcsStore`` shape — ``_RecordingStore`` here has no
+    ``partial_transcript_local_path``), the streamed partial transcript MUST go
+    through ``store.write_partial_transcript`` (not gcs.*). DEV-1642: a
+    ``LocalFsStore`` instead appends per-message to ``rows/<iid>/`` and bypasses
+    this snapshot — see ``tests/cloud/test_dev1642_local_streaming.py``."""
     store = _RecordingStore()
     monkeypatch.setattr(ray_app, "_maybe_build_cached_runner", lambda _cfg: None)
     _patch_grade(monkeypatch)

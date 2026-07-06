@@ -346,3 +346,12 @@ merely a model where the input columns happen to live:
      your intended host cannot reach every referenced item: re-check the
      grain and that each reference is on the right model, then retry. Do not
      silently accept the fallback host.
+
+DEFINE BEFORE YOU REFERENCE. Every name you put in a `filter`, `dimension`,
+`measure`, or `order` must ALREADY exist on the model that stage queries —
+as a Column, a ModelMeasure, or a named alias. A nested-DAG stage can
+reference only what its own `source_model` defines or what the prior stage
+projected under that name; create anything else with `create_model` /
+`edit_model` (or project it from the prior stage) BEFORE you reference it,
+and check spelling. SLayer rejects an unknown name outright rather than
+guessing.
