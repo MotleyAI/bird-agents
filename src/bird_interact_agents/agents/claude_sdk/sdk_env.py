@@ -580,11 +580,15 @@ class LocalTranscriptAppender:
         # keeps the "never raise / never spam" contract.
         if not self._logged_failure:
             self._logged_failure = True
-            logger.debug(
-                "LocalTranscriptAppender: %s failed for %s; "
-                "partial transcript will not be persisted",
-                op, self.path, exc_info=True,
-            )
+            # The whole point of this class is to never raise into the receive
+            # stream; a custom logging handler that re-raises from emit() must
+            # not defeat that, so the diagnostic itself is suppressed too.
+            with contextlib.suppress(Exception):
+                logger.debug(
+                    "LocalTranscriptAppender: %s failed for %s; "
+                    "partial transcript will not be persisted",
+                    op, self.path, exc_info=True,
+                )
 
     def __call__(self, msg: dict) -> None:
         try:

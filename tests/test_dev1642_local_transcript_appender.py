@@ -132,6 +132,32 @@ def test_write_failure_logged_once_not_per_message(monkeypatch, tmp_path, caplog
     assert len(hits) == 1
 
 
+def test_logging_failure_does_not_break_the_stream(monkeypatch, tmp_path):
+    """Even if the diagnostic logging itself raises (a custom handler that
+    re-raises from emit), the recorder must NOT raise into the receive stream
+    (Codex: the best-effort log call must be guarded too)."""
+    import builtins
+
+    from bird_interact_agents.agents.claude_sdk import sdk_env
+
+    p = tmp_path / "partial_transcript.jsonl"
+    app = LocalTranscriptAppender(p)
+
+    real_open = builtins.open
+
+    def boom_open(file, mode="r", *a, **k):
+        if str(file) == str(p) and "a" in mode:
+            raise OSError("disk full")
+        return real_open(file, mode, *a, **k)
+
+    monkeypatch.setattr(builtins, "open", boom_open)
+    monkeypatch.setattr(
+        sdk_env.logger, "debug",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("handler exploded")),
+    )
+    app({"data": "x"})  # append fails AND logging raises → must still not raise
+
+
 def test_flush_is_noop_and_returns_none(tmp_path):
     p = tmp_path / "partial_transcript.jsonl"
     app = LocalTranscriptAppender(p)
