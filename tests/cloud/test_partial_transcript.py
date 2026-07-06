@@ -103,7 +103,7 @@ def test_uploader_appends_locally_and_throttles_uploads(monkeypatch, tmp_path):
     uploads = _patch_gcs(monkeypatch)
     p = tmp_path / "partial.jsonl"
     up = ray_app.PartialTranscriptUploader(
-        run_id="r", instance_id="alpha", gcs_client=object(),
+        run_id="r", instance_id="alpha", store=ray_app.GcsStore(object()),
         local_path=p, min_upload_interval_s=1_000.0,  # long throttle
     )
     up({"type": "AssistantMessage", "data": "t1"})
@@ -129,7 +129,7 @@ def test_uploader_appends_locally_and_throttles_uploads(monkeypatch, tmp_path):
 def test_uploader_uploads_when_interval_elapsed(monkeypatch, tmp_path):
     uploads = _patch_gcs(monkeypatch)
     up = ray_app.PartialTranscriptUploader(
-        run_id="r", instance_id="beta", gcs_client=object(),
+        run_id="r", instance_id="beta", store=ray_app.GcsStore(object()),
         local_path=tmp_path / "p.jsonl", min_upload_interval_s=0.0,  # always due
     )
     up({"type": "X", "data": "1"})
@@ -150,7 +150,7 @@ def test_failed_first_upload_does_not_throttle_retry(monkeypatch, tmp_path):
 
     monkeypatch.setattr(ray_app._gcs, "write_partial_transcript", _flaky_write)
     up = ray_app.PartialTranscriptUploader(
-        run_id="r", instance_id="delta", gcs_client=object(),
+        run_id="r", instance_id="delta", store=ray_app.GcsStore(object()),
         local_path=tmp_path / "p.jsonl", min_upload_interval_s=1_000.0,  # long throttle
     )
     up({"type": "X", "data": "1"})  # first upload raises → throttle NOT stamped
@@ -163,7 +163,7 @@ def test_failed_first_upload_does_not_throttle_retry(monkeypatch, tmp_path):
 def test_flush_without_messages_uploads_nothing(monkeypatch, tmp_path):
     uploads = _patch_gcs(monkeypatch)
     up = ray_app.PartialTranscriptUploader(
-        run_id="r", instance_id="gamma", gcs_client=object(),
+        run_id="r", instance_id="gamma", store=ray_app.GcsStore(object()),
         local_path=tmp_path / "p.jsonl",
     )
     up.flush()

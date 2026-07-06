@@ -1,40 +1,19 @@
-"""Pure-helper tests for the local-postgres run tooling.
+"""Pure-helper tests for the local-postgres tooling.
 
-Covers only the deterministic, side-effect-free logic:
-* ``setup_local_postgres.env_exports`` / ``cluster_dir`` — the BIRD_PG_* contract
-  and the worktree-safe cluster location.
-* ``run_local_postgres.load_env_file`` — the dotenv parser that loads the auth
-  token into the environment.
+DEV-1638: the logic moved from ``scripts/setup_local_postgres.py`` into the
+package (``bird_interact_agents.local_postgres``) so the installed
+``bird-interact`` console script can provision on demand. These tests now import
+the PACKAGE module directly (no more ``importlib`` loading of the un-packaged
+script). The dotenv parser moved to ``bird_interact_agents.env_file`` and is
+covered by ``tests/test_env_file.py``; ``run_local_postgres`` is retired.
 
-The subprocess-driven cluster lifecycle (initdb/pg_ctl/createdb/psql) and the
-GCS annotation sync are integration behaviour, exercised by real local runs, not
-unit-tested here.
+Covers only the deterministic logic + the marker policy with subprocess faked.
 """
 from __future__ import annotations
 
-import importlib.util
-import sys
-
 import pytest
-from pathlib import Path
 
-_SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
-
-
-def _load(mod_name: str):
-    # scripts/ modules import each other as top-level siblings, so the dir must
-    # be importable.
-    if str(_SCRIPTS) not in sys.path:
-        sys.path.insert(0, str(_SCRIPTS))
-    spec = importlib.util.spec_from_file_location(mod_name, _SCRIPTS / f"{mod_name}.py")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[mod_name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-setup_local_postgres = _load("setup_local_postgres")
-run_local_postgres = _load("run_local_postgres")
+from bird_interact_agents import local_postgres as setup_local_postgres
 
 
 def test_env_exports_shape():
@@ -57,31 +36,6 @@ def test_cluster_dir_is_under_main_checkout():
 def test_required_roles_include_owner_and_login():
     # Dumps do `OWNER TO root`; harness connects as bird_interact. Both needed.
     assert set(setup_local_postgres._REQUIRED_ROLES) == {"bird_interact", "root"}
-
-
-def test_load_env_file_parses_export_and_quotes(tmp_path, monkeypatch):
-    env = tmp_path / ".env.test"
-    env.write_text(
-        "# a comment\n"
-        "\n"
-        "export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-abc\n"
-        'ANTHROPIC_API_KEY="sk-ant-key"\n'
-        "PLAIN=value\n"
-        "  export SPACED = spaced_val \n"  # note surrounding spaces
-    )
-    for k in ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "PLAIN", "SPACED"):
-        monkeypatch.delenv(k, raising=False)
-    n = run_local_postgres.load_env_file(env)
-    import os
-    assert n == 4
-    assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-abc"
-    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-key"  # quotes stripped
-    assert os.environ["PLAIN"] == "value"
-    assert os.environ["SPACED"] == "spaced_val"  # key/val trimmed
-
-
-def test_load_env_file_absent_is_noop(tmp_path):
-    assert run_local_postgres.load_env_file(tmp_path / "nope.env") == 0
 
 
 class _FakeProc:
@@ -123,6 +77,25 @@ def _prep_load_databases(monkeypatch, tmp_path, *, load_stderr, table_count):
 
     monkeypatch.setattr(slp, "_psql", _fake_psql)
     return slp, markers / "livesqlbench-large__somedb.done"
+
+
+def test_resolve_dbs_empty_list_is_empty_not_whole_benchmark(monkeypatch, tmp_path):
+    """Codex PR #75 r3: an EXPLICIT empty instance_ids list resolves to no DBs
+    (not every dump). `None` vs `[]` must not collapse."""
+    slp = setup_local_postgres
+
+    class _BM:
+        name = "livesqlbench-large"
+
+    monkeypatch.setattr(slp, "get_benchmark", lambda _n: _BM())
+    monkeypatch.setattr(slp.paths, "benchmark_data_root", lambda _n: tmp_path)
+    # load_benchmark_tasks must NOT be consulted for an empty subset.
+    monkeypatch.setattr(
+        slp, "load_benchmark_tasks",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("empty subset must not load tasks")),
+    )
+    assert slp.resolve_dbs_for("livesqlbench-large", []) == []
 
 
 def test_resolve_dbs_raises_when_no_dumps(monkeypatch, tmp_path):

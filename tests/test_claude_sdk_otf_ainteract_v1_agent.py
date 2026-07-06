@@ -638,17 +638,17 @@ async def test_run_task_whitelists_ask_user_and_submit_query(monkeypatch, tmp_pa
 async def test_run_task_passes_disallowed_slayer_tools_to_sdk(
     monkeypatch, tmp_path,
 ):
-    """DEV-1548: the a-interact OTF adapter must thread
-    `SLAYER_MCP_DISALLOWED_TOOL_NAMES` verbatim into the
+    """DEV-1644: the a-interact OTF adapter must thread the DERIVED disallowed
+    set (`= all advertised slayer tools − allow-list`) into the
     `ClaudeAgentOptions.disallowed_tools=` field — same contract as the
-    sibling one-shot adapter (the constant lives in `claude_sdk_otf.agent`
-    and is imported explicitly here so the two adapters stay symmetric).
-    The unit contract is that the live `ClaudeAgentOptions` instance
-    reaching the SDK carries the canonical list; the cloud-smoke
-    acceptance criterion asserts the SDK actually applies it.
+    sibling one-shot adapter (both derive from the shared allow-list so the
+    two adapters stay symmetric). The unit contract is that the live
+    `ClaudeAgentOptions` instance reaching the SDK carries the complement so
+    nothing leaks; the cloud-smoke acceptance criterion asserts the SDK
+    actually applies it.
     """
-    from bird_interact_agents.agents.claude_sdk_otf.agent import (
-        SLAYER_MCP_DISALLOWED_TOOL_NAMES,
+    from bird_interact_agents.agents._slayer_tool_surface import (
+        derive_disallowed_slayer_tools,
     )
     from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
 
@@ -657,10 +657,57 @@ async def test_run_task_passes_disallowed_slayer_tools_to_sdk(
     await agent.run_task(
         dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
     )
-    assert (
-        captured["options"].disallowed_tools
-        == SLAYER_MCP_DISALLOWED_TOOL_NAMES
+    expected = derive_disallowed_slayer_tools(m.SLAYER_MCP_TOOLS)
+    assert captured["options"].disallowed_tools == expected
+    allow = set(m._slayer_tool_names())
+    got = set(captured["options"].disallowed_tools)
+    assert got.isdisjoint(allow)
+    for leak in (
+        "mcp__slayer__query", "mcp__slayer__query_nested",
+        "mcp__slayer__describe_datasource", "mcp__slayer__edit_datasource",
+        "mcp__slayer__delete_model",
+    ):
+        assert leak in got
+
+
+@pytest.mark.asyncio
+async def test_run_task_pre_encoded_derives_disallowed_from_stripped_allow_list(
+    monkeypatch, tmp_path,
+):
+    """DEV-1644 + DEV-1586: pre-encoded (read-only) a-interact must derive the
+    disallowed set from the WRITE-STRIPPED allow-list, hiding the write-tool
+    schemas."""
+    from bird_interact_agents.agents._pre_encoded import (
+        WRITE_SLAYER_TOOL_NAMES,
+        strip_write_slayer_tools,
     )
+    from bird_interact_agents.agents._slayer_tool_surface import (
+        derive_disallowed_slayer_tools,
+    )
+    from bird_interact_agents.agents.claude_sdk_otf_ainteract import agent as m
+
+    captured = _stub_env(monkeypatch, m, tmp_path / "store")
+
+    async def _fake_pre_encoded(*, db_name, task_data, data_path_base, benchmark, source):
+        return str(tmp_path / "store"), []
+
+    monkeypatch.setattr(m, "resolve_pre_encoded_storage_dir", _fake_pre_encoded)
+
+    agent = m.ClaudeSDKOtfAInteractAgent(
+        model="anthropic/claude-sonnet-4-5",
+        slayer_setup="pre-encoded",
+        pre_encoded_source="otf",
+    )
+    await agent.run_task(
+        dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="a-interact",
+    )
+    expected = derive_disallowed_slayer_tools(
+        strip_write_slayer_tools(m.SLAYER_MCP_TOOLS)
+    )
+    got = set(captured["options"].disallowed_tools)
+    assert captured["options"].disallowed_tools == expected
+    assert WRITE_SLAYER_TOOL_NAMES <= got
+    assert got.isdisjoint(set(captured["options"].allowed_tools))
 
 
 @pytest.mark.asyncio

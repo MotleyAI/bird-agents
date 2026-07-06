@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import contextlib
 import datetime
 import json
 import logging
@@ -15,6 +16,12 @@ import sqlite3 as _sqlite3
 from typing import Any as _Any
 
 from bird_interact_agents import paths
+# DEV-1638: the local postgres bootstrap + annotation sync + dotenv loader moved
+# into the package so this installed console script can compose them. Imported
+# at module top level so tests monkeypatch `run.<name>`.
+from bird_interact_agents.env_file import load_env_file
+from bird_interact_agents.local_annotations import sync_annotations
+from bird_interact_agents.local_postgres import DEFAULT_PORT, provision_and_export
 from bird_interact_agents.provider_registry import (
     agent_needs_bridge,
     get_provider,
@@ -25,6 +32,14 @@ from bird_interact_agents.provider_registry import (
 from bird_interact_agents.cloud import bridge_proxy
 from bird_interact_agents.benchmark import cli_dataset_tokens, get_benchmark
 from bird_interact_agents.eval.cascading_report import emit_cascading_eval_json
+# DEV-1640: the default local path runs each task in its own spawned process
+# (real isolation, fixing the shared event-loop hang). Imported at module top
+# so tests can monkeypatch `run.dispatch_local_process_pool`.
+from bird_interact_agents.cloud.collation import collate
+from bird_interact_agents.local_pool import (
+    dispatch_local_process_pool,
+    reconcile_local_run,
+)
 from bird_interact_agents.eval.annotation_schema import SubmissionConfig
 from bird_interact_agents.eval.grade_in_place import (
     decode_result_json as _decode_result_json,
@@ -1226,6 +1241,184 @@ def write_local_attempt_row(rows_dir: Path, instance_id: str, row: dict) -> None
         )
 
 
+def _inprocess_transcript_recorder(rows_dir, instance_id: str, framework: str):
+    """DEV-1642: context manager that streams a claude_sdk agent's trajectory to
+    ``rows/<iid>/partial_transcript.jsonl`` message-by-message, for the LEGACY
+    in-process local path (``BIRD_INTERACT_LOCAL_INPROCESS=1``). The DEFAULT
+    process-pool path already streams via ``ray_app._run_one_in_actor``; this
+    brings the debug escape hatch to parity so a hung/killed in-process task also
+    leaves an inspectable partial behind. No-op for non-claude frameworks.
+
+    The claude-only import is deferred on purpose: ``sdk_env`` imports the
+    OPTIONAL ``claude-agent-sdk`` at module load, so a top-level import here would
+    break base installs / non-claude local runs (mirrors ``_run_one_in_actor``'s
+    deferred import)."""
+    if not str(framework).startswith("claude_sdk"):
+        return contextlib.nullcontext()
+    from bird_interact_agents.agents.claude_sdk.sdk_env import (
+        LocalTranscriptAppender,
+        record_partial_transcript,
+    )
+    dest = Path(rows_dir) / instance_id / "partial_transcript.jsonl"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    return record_partial_transcript(LocalTranscriptAppender(dest))
+
+
+def _local_inprocess_enabled() -> bool:
+    """DEV-1640 escape hatch: ``BIRD_INTERACT_LOCAL_INPROCESS=1`` forces the
+    legacy single event-loop path (debugging only). Default = process pool."""
+    return os.environ.get("BIRD_INTERACT_LOCAL_INPROCESS", "") == "1"
+
+
+def _reset_rows_dir(rows_dir: Path, tasks: list[dict], filter_ids) -> None:
+    """Reset stale per-task annotations under ``rows/`` so a reused output
+    dir does not carry a prior pass's rows into collate/emit. Mirrors the
+    legacy path's reset (full wipe when unfiltered; else only the subdirs
+    this run overwrites)."""
+    if rows_dir.exists():
+        if filter_ids is None:
+            shutil.rmtree(rows_dir, ignore_errors=True)
+        else:
+            wanted = {str(t.get("instance_id") or "") for t in tasks}
+            for sub in list(rows_dir.iterdir()):
+                if sub.is_dir() and sub.name in wanted:
+                    shutil.rmtree(sub, ignore_errors=True)
+    rows_dir.mkdir(parents=True, exist_ok=True)
+
+
+async def _run_process_pool_and_collate(
+    *,
+    tasks: list[dict],
+    output_dir: Path,
+    output_path: str,
+    run_id: str,
+    benchmark,
+    concurrency: int,
+    filter_ids,
+    submission_config,
+    data_dir: str,
+    framework: str,
+    dataset: str,
+    query_mode: str,
+    mode: str,
+    agent_model: str,
+    user_sim_model: str,
+    patience: int,
+    strict: bool,
+    use_audited_gold_sql: bool,
+    prompt_cache: bool,
+    max_depth: int,
+    slayer_setup: str | None,
+    reasoning_effort: str | None,
+    user_sim_prompt_version: str | None,
+    pre_encoded_source: str | None,
+    slayer_storage_root: str | None,
+) -> dict:
+    """DEV-1640 default local path: run each task in its own spawned worker
+    process (real isolation), then assemble ``results.db`` + ``eval.json``
+    from the row blobs exactly like the cloud ``fetch`` does.
+
+    Flow: reset rows/ → build cfg + manifest → dispatch (one process per
+    task, ≤ concurrency at once, off the event loop) → reconcile the
+    hard-crash gap → collate → overlay the cascade block.
+    """
+    attempt = 1
+    _reset_rows_dir(output_dir / "rows", tasks, filter_ids)
+
+    # Worker cfg — mirrors the cloud ``run_pool`` cfg, EXCEPT ``data_dir`` is
+    # the caller's data root (Codex H1), never a cloud container default.
+    cfg = {
+        "framework": framework,
+        "query_mode": query_mode,
+        "mode": mode,
+        "agent_model": agent_model,
+        "user_sim_model": user_sim_model,
+        "patience": patience,
+        "strict": strict,
+        "use_audited_gold_sql": use_audited_gold_sql,
+        "prompt_cache": prompt_cache,
+        "max_depth": max_depth,
+        "reasoning_effort": reasoning_effort,
+        "user_sim_prompt_version": user_sim_prompt_version,
+        "slayer_setup": slayer_setup,
+        "pre_encoded_source": pre_encoded_source,
+        "slayer_storage_root": slayer_storage_root,
+        "dataset": dataset,
+        "data_dir": data_dir,
+    }
+
+    manifest = {
+        "run_id": run_id,
+        "framework": framework,
+        "mode": mode,
+        "query_mode": query_mode,
+        "instance_ids": [str(t.get("instance_id") or "") for t in tasks],
+        "agent_model": agent_model,
+        "user_sim_model": user_sim_model,
+        "slayer_setup": slayer_setup,
+        "pre_encoded_source": pre_encoded_source,
+        "patience": patience,
+        "max_depth": max_depth,
+        "reasoning_effort": reasoning_effort,
+        "dataset": dataset,
+        "strict": strict,
+        "use_audited_gold_sql": use_audited_gold_sql,
+        "prompt_cache": prompt_cache,
+    }
+
+    # Dispatch each task to its own spawned worker process. Called
+    # SYNCHRONOUSLY (not via asyncio.to_thread) on purpose: the parent event
+    # loop has nothing else to do during a local run, and a real Ctrl-C then
+    # lands inside the dispatcher's fut.result() so its finally-block can
+    # terminate live children instead of orphaning them. Name resolved at
+    # call time so tests can monkeypatch it.
+    #
+    # The reconcile/collate/emit run in a `finally` so that if dispatch is
+    # interrupted (Ctrl-C) or raises after some tasks already wrote rows, the
+    # completed work still lands in results.db + eval.json (tasks with no row
+    # blob become crash rows). On the happy path this IS the normal flow; on
+    # an exception the partial artifacts are written and the exception then
+    # propagates.
+    metrics: dict = {}
+    try:
+        dispatch_local_process_pool(
+            tasks=tasks,
+            cfg=cfg,
+            run_dir=str(output_dir),
+            attempt=attempt,
+            run_id=run_id,
+            concurrency=concurrency,
+        )
+    finally:
+        # Close the hard-crash gap so results.db + cascade both cover every task.
+        reconcile_local_run(
+            run_dir=output_dir,
+            tasks=tasks,
+            benchmark=benchmark.name,
+            run_id=run_id,
+            attempt=attempt,
+            submission_config=submission_config,
+        )
+        metrics = collate(output_dir, manifest)
+        # Scope the cascade to THIS run's instance set (mirrors the legacy
+        # path) so a filtered rerun reusing the same run_id can't fold stale
+        # runs/ annotations into the published denominator/rates.
+        current_iids = {str(t.get("instance_id") or "") for t in tasks} - {""}
+        try:
+            metrics = emit_cascading_eval_json(
+                benchmark.name, run_id, Path(output_path),
+                base_metrics=metrics, instance_filter=current_iids,
+            )
+        except Exception as exc:  # noqa: BLE001 — surface, don't drop the block
+            logger.warning("cascading_phase1 aggregation failed: %s", exc)
+            metrics["cascading_phase1_error"] = str(exc)
+    logger.info(
+        "%s/%s: %d tasks done (process pool, concurrency=%d)",
+        mode, query_mode, len(tasks), concurrency,
+    )
+    return metrics
+
+
 async def run_evaluation(
     data_path: str,
     data_dir: str,
@@ -1316,6 +1509,80 @@ async def run_evaluation(
         mode, query_mode, len(tasks), concurrency,
     )
 
+    # Open the per-run output dir + resolve the run id (shared by both the
+    # default process-pool path and the legacy in-process path).
+    output_dir = Path(output_path).parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if audited_overlay_log:
+        (output_dir / "audited_gold_overlay.json").write_text(
+            json.dumps(audited_overlay_log, indent=2) + "\n"
+        )
+    run_id = output_dir.name or "default"
+
+    # Per-task `SubmissionConfig` — duplicated into every annotation per
+    # DEV-1535 design choice (B3 = both run_metadata AND annotation). The
+    # config is identical across tasks in a single run, so one instance
+    # is shared.
+    submission_config = SubmissionConfig(
+        framework=framework,
+        mode=mode,
+        query_mode=query_mode,
+        agent_model=agent_model,
+        user_sim_model=user_sim_model,
+        slayer_setup=slayer_setup,
+        pre_encoded_source=pre_encoded_source,
+        reasoning_effort=reasoning_effort,
+        patience=patience,
+        max_depth=max_depth,
+        dataset=dataset,
+        strict=strict,
+        use_audited_gold_sql=use_audited_gold_sql,
+        prompt_cache=prompt_cache,
+    )
+
+    # DEV-1640: the DEFAULT local path runs each task in its own spawned
+    # process (real isolation → fixes the shared event-loop hang that
+    # wedged local slayer@concurrency>=3). The legacy single-loop asyncio
+    # path is retained ONLY behind BIRD_INTERACT_LOCAL_INPROCESS=1 for
+    # debugging.
+    if not _local_inprocess_enabled():
+        return await _run_process_pool_and_collate(
+            tasks=tasks,
+            output_dir=output_dir,
+            output_path=output_path,
+            run_id=run_id,
+            benchmark=b,
+            concurrency=concurrency,
+            filter_ids=filter_ids,
+            submission_config=submission_config,
+            data_dir=data_dir,
+            framework=framework,
+            dataset=dataset,
+            query_mode=query_mode,
+            mode=mode,
+            agent_model=agent_model,
+            user_sim_model=user_sim_model,
+            patience=patience,
+            strict=strict,
+            use_audited_gold_sql=use_audited_gold_sql,
+            prompt_cache=prompt_cache,
+            max_depth=max_depth,
+            slayer_setup=slayer_setup,
+            reasoning_effort=reasoning_effort,
+            user_sim_prompt_version=user_sim_prompt_version,
+            pre_encoded_source=pre_encoded_source,
+            slayer_storage_root=slayer_storage_root,
+        )
+
+    if concurrency >= 2:
+        logger.warning(
+            "BIRD_INTERACT_LOCAL_INPROCESS=1 with --concurrency %d: the legacy "
+            "single event-loop path is hang-prone at concurrency>=2 on the "
+            "SLayer path (DEV-1640); intended for concurrency-1 debugging.",
+            concurrency,
+        )
+
+    # ---- Legacy in-process path (BIRD_INTERACT_LOCAL_INPROCESS=1) ----
     # Build the runner once and reuse across tasks (avoids re-constructing
     # the per-framework agent N times).
     runner = _make_runner(
@@ -1336,15 +1603,8 @@ async def run_evaluation(
 
     # Open the per-run results.db (lives next to eval.json) and write
     # the run-metadata header before any task starts.
-    output_dir = Path(output_path).parent
-    output_dir.mkdir(parents=True, exist_ok=True)
-    if audited_overlay_log:
-        (output_dir / "audited_gold_overlay.json").write_text(
-            json.dumps(audited_overlay_log, indent=2) + "\n"
-        )
     db_path = output_dir / "results.db"
     db_conn = open_db(db_path)
-    run_id = output_dir.name or "default"
     insert_run_metadata(
         db_conn,
         run_id=run_id,
@@ -1359,27 +1619,6 @@ async def run_evaluation(
         patience=patience,
         max_depth=max_depth,
         reasoning_effort=reasoning_effort,
-        dataset=dataset,
-        strict=strict,
-        use_audited_gold_sql=use_audited_gold_sql,
-        prompt_cache=prompt_cache,
-    )
-
-    # Per-task `SubmissionConfig` — duplicated into every annotation per
-    # DEV-1535 design choice (B3 = both run_metadata AND annotation). The
-    # config is identical across tasks in a single run, so one instance
-    # is shared.
-    submission_config = SubmissionConfig(
-        framework=framework,
-        mode=mode,
-        query_mode=query_mode,
-        agent_model=agent_model,
-        user_sim_model=user_sim_model,
-        slayer_setup=slayer_setup,
-        pre_encoded_source=pre_encoded_source,
-        reasoning_effort=reasoning_effort,
-        patience=patience,
-        max_depth=max_depth,
         dataset=dataset,
         strict=strict,
         use_audited_gold_sql=use_audited_gold_sql,
@@ -1460,19 +1699,9 @@ async def run_evaluation(
     # aggregator only sees fresh annotations. Mirrors the round-2
     # regrade.py reset pattern.
     rows_dir = output_dir / "rows"
-    if rows_dir.exists():
-        if filter_ids is None:
-            # Full run — wipe everything.
-            shutil.rmtree(rows_dir, ignore_errors=True)
-        else:
-            # Filtered run — reset ONLY the subdirs this run will
-            # overwrite, so unrelated instances from a prior pass
-            # survive (and still contribute to the cascade block).
-            _wanted = {str(t.get("instance_id") or "") for t in tasks}
-            for sub in list(rows_dir.iterdir()):
-                if sub.is_dir() and sub.name in _wanted:
-                    shutil.rmtree(sub, ignore_errors=True)
-    rows_dir.mkdir(parents=True, exist_ok=True)
+    # Single source of truth for the reset (shared with the process-pool
+    # path) so the two branches can't drift.
+    _reset_rows_dir(rows_dir, tasks, filter_ids)
     _benchmark_canonical = b.name
 
     def _grade_local_row(td: dict, r: dict) -> None:
@@ -1581,27 +1810,34 @@ async def run_evaluation(
             t_start = time.perf_counter()
             _timeout = _per_task_timeout_s()
             try:
-                _coro = runner(td, data_dir, patience, user_sim_model)
-                if _timeout > 0:
-                    # DEV-1535 r5 (Codex): the local `run_evaluation`
-                    # loop awaited `runner(...)` directly, so runaway
-                    # tasks ran uncapped. The cloud (`run_one_task` /
-                    # `run_one_task_with_runner`) entry points both
-                    # already wrap with `asyncio.wait_for`; mirror it
-                    # here so `BIRD_INTERACT_PER_TASK_TIMEOUT_S` binds
-                    # the local CLI path too.
-                    try:
-                        r = await asyncio.wait_for(_coro, timeout=_timeout)
-                    except asyncio.TimeoutError as te:
-                        raise TimeoutError(
-                            f"per-task runaway-grace ceiling of {_timeout:.0f}s "
-                            f"exceeded — the agent ignored the "
-                            f"wall-clock budget hook's deny "
-                            f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 "
-                            f"to disable)"
-                        ) from te
-                else:
-                    r = await _coro
+                # DEV-1642: stream the claude_sdk trajectory to
+                # rows/<iid>/partial_transcript.jsonl as it arrives, so a
+                # hung/killed in-process task leaves an inspectable partial
+                # behind (parity with the default process-pool path). No-op for
+                # non-claude frameworks; the sink must be installed AROUND the
+                # await, since the trajectory streams while the coroutine runs.
+                with _inprocess_transcript_recorder(rows_dir, instance_id, framework):
+                    _coro = runner(td, data_dir, patience, user_sim_model)
+                    if _timeout > 0:
+                        # DEV-1535 r5 (Codex): the local `run_evaluation`
+                        # loop awaited `runner(...)` directly, so runaway
+                        # tasks ran uncapped. The cloud (`run_one_task` /
+                        # `run_one_task_with_runner`) entry points both
+                        # already wrap with `asyncio.wait_for`; mirror it
+                        # here so `BIRD_INTERACT_PER_TASK_TIMEOUT_S` binds
+                        # the local CLI path too.
+                        try:
+                            r = await asyncio.wait_for(_coro, timeout=_timeout)
+                        except asyncio.TimeoutError as te:
+                            raise TimeoutError(
+                                f"per-task runaway-grace ceiling of {_timeout:.0f}s "
+                                f"exceeded — the agent ignored the "
+                                f"wall-clock budget hook's deny "
+                                f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 "
+                                f"to disable)"
+                            ) from te
+                    else:
+                        r = await _coro
             except Exception as e:
                 logger.error("Error on %s: %s", instance_id, e)
                 r = finalize_result_row(
@@ -1784,9 +2020,12 @@ def _apply_subscription_auth_env(
 ) -> None:
     """Translate the local ``--subscription-auth`` choice into the
     ``BIRD_INTERACT_SUBSCRIPTION_AUTH`` signal env var that ``sdk_env`` reads
-    (DEV-1602). Local claude_sdk agents run in-process, so this is the only
-    wiring needed — ``sdk_env`` masks ``ANTHROPIC_API_KEY`` for the SDK
-    subprocess while the parent keeps it for the litellm user-sim.
+    (DEV-1602). This runs in ``main()`` BEFORE the run starts, so the signal
+    is set on the parent's ``os.environ`` — and since DEV-1640 spawns each
+    task in its own worker process, the ``spawn`` children inherit it (along
+    with the bridge base-url override and ``BIRD_PG_*``) at process start,
+    with no extra plumbing. ``sdk_env`` then masks ``ANTHROPIC_API_KEY`` for
+    the SDK subprocess while the parent keeps it for the litellm user-sim.
 
     ``subscription_auth`` is the tri-state BooleanOptionalAction value: ``True``
     (--subscription-auth), ``False`` (--no-subscription-auth), or ``None`` (the
@@ -1873,6 +2112,90 @@ def _apply_cache_ttl_env(*, cache_ttl: str, prompt_cache: bool) -> None:
         os.environ["BIRD_INTERACT_DISABLE_PROMPT_CACHE"] = "1"
 
 
+def _resolve_data_paths(args, *, error) -> None:
+    """DEV-1638: derive ``--data``/``--db-path`` from the registry when BOTH are
+    omitted; require both-or-neither. Explicit values pass through unchanged.
+    Runs BEFORE the ``db_path`` ``.resolve()`` at the CLI boundary so a derived
+    ``None`` can never reach ``Path(None)``."""
+    if args.data is None and args.db_path is None:
+        args.data = str(paths.benchmark_data_file(args.dataset))
+        args.db_path = str(paths.benchmark_data_root(args.dataset))
+    elif args.data is None or args.db_path is None:
+        error(
+            "--data and --db-path must be given together or both omitted "
+            "(derived from the benchmark registry)."
+        )
+
+
+def _effective_instance_ids(args, filter_ids):
+    """DEV-1638 (Codex #5): the concrete instance-id list the RUN will use, so
+    provisioning + annotation sync scope to exactly the run (never the whole
+    benchmark) and never trip on an unrelated missing dump/annotation.
+
+    ``filter_ids`` (from ``--instance-id`` / ``--filter-ids``) wins; else
+    ``--limit`` selects the first-N via the SAME loader ``run_evaluation`` uses
+    (identical ordering); else ``None`` (whole benchmark).
+
+    ``is not None`` (not truthiness) on BOTH ``filter_ids`` and ``--limit`` so an
+    explicit empty selection propagates as ``[]`` (no scope) rather than
+    collapsing to the whole-benchmark ``None`` (Codex PR #75 r2/r4). Only an
+    omitted (``None``) filter AND ``None`` limit yield the whole benchmark."""
+    if filter_ids is not None:
+        return filter_ids
+    if args.limit is not None:
+        rows = load_benchmark_tasks(args.dataset, args.data, limit=args.limit)
+        return [r["instance_id"] for r in rows]
+    return None
+
+
+def _maybe_bootstrap_local_postgres(args, effective_ids) -> None:
+    """DEV-1638: for a postgres benchmark with no pre-set ``BIRD_PG_*``,
+    provision a private local cluster + export ``BIRD_PG_*``. Gated on the
+    CONNECTION signal (``BIRD_PG_HOST``), NOT on whether ``--data``/``--db-path``
+    were derived (Codex #1): postgres connects via ``BIRD_PG_*``, and
+    ``--db-path`` is only the data/KB root — so explicit paths must not suppress
+    provisioning."""
+    if get_benchmark(args.dataset).db_backend != "postgres":
+        return
+    if "BIRD_PG_HOST" in os.environ:
+        return  # caller brought their own postgres connection
+    # Distinguish an EMPTY id list (e.g. `--limit 0` → zero-task validation run)
+    # from None (whole benchmark). Empty ⇒ nothing to provision; provisioning
+    # the whole benchmark here would be the scope-expansion Codex PR #75 flagged.
+    if effective_ids is not None and not effective_ids:
+        return
+    exports = provision_and_export(args.dataset, effective_ids, args.pg_port)
+    os.environ.update(exports)
+
+
+def _maybe_sync_annotations(args, effective_ids) -> None:
+    """DEV-1638: best-effort pull of the authoritative task annotations from GCS
+    into the local store (all backends), so the tolerant grader has the real
+    ``gold_variants``/``evaluator_prompt`` instead of the implicit N1 fallback.
+    Best-effort: a GCS failure warns, never aborts the run. Warns loudly on any
+    id still missing after the sync (surfaces the silent N1 degradation)."""
+    if args.skip_annotations:
+        return
+    # Empty id list (e.g. `--limit 0`) ⇒ nothing to sync; None ⇒ whole benchmark.
+    if effective_ids is not None and not effective_ids:
+        return
+    try:
+        result = sync_annotations(args.dataset, effective_ids)
+    except Exception as exc:  # noqa: BLE001 — annotation sync is best-effort
+        logger.warning(
+            "annotation sync failed (%s); grading falls back to the implicit "
+            "N1 annotation for any id lacking a local task.json.", exc,
+        )
+        return
+    if result.get("missing_in_gcs"):
+        logger.warning(
+            "%d task annotation(s) missing in GCS after sync; those ids grade "
+            "against the implicit N1 annotation only. Run a cloud `annotate` "
+            "(or check the ids) to get authoritative gold_variants.",
+            result["missing_in_gcs"],
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="BIRD-Interact benchmark runner with pluggable agents"
@@ -1935,10 +2258,23 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--data", required=True, help="Path to mini_interact.jsonl"
+        "--data", default=None,
+        help=(
+            "Path to the benchmark's tasks JSONL. OPTIONAL (DEV-1638): derived "
+            "from the benchmark registry when omitted. Pass BOTH --data and "
+            "--db-path to override (non-standard local layout), or NEITHER to "
+            "derive."
+        ),
     )
     parser.add_argument(
-        "--db-path", required=True, help="Path to mini-interact/ with SQLite DBs"
+        "--db-path", default=None,
+        help=(
+            "Path to the benchmark's data root (SQLite DBs, or the pg_dumps/ + "
+            "KB root for postgres). OPTIONAL (DEV-1638): derived from the "
+            "registry when omitted. Both-or-neither with --data. NOTE: for a "
+            "postgres benchmark this is only the data/KB root — the DB "
+            "connection comes from BIRD_PG_* (auto-provisioned; see --pg-port)."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -2160,7 +2496,46 @@ def main() -> None:
             "from it ('pre-encoded' when set, else 'on-the-fly')."
         ),
     )
+    # DEV-1638: unify the local entrypoint — fold the postgres bootstrap the
+    # old scripts/run_local_postgres.py did into bird-interact.
+    parser.add_argument(
+        "--env-file",
+        default=os.environ.get("BIRD_ENV_FILE"),
+        help=(
+            "DEV-1638: dotenv file of auth vars (CLAUDE_CODE_OAUTH_TOKEN / "
+            "ANTHROPIC_API_KEY / provider keys) to load into the environment "
+            "BEFORE auth resolution. Best-effort: a missing file is skipped. "
+            "Default: $BIRD_ENV_FILE if set, else no dotenv is loaded (rely on "
+            "the ambient shell env). Applies to all backends."
+        ),
+    )
+    parser.add_argument(
+        "--pg-port", type=int,
+        default=int(os.environ.get("BIRD_PG_PORT", DEFAULT_PORT)),
+        help=(
+            "DEV-1638: port for the auto-provisioned local postgres cluster "
+            "(postgres benchmarks only, when BIRD_PG_HOST is not already set). "
+            f"Default: $BIRD_PG_PORT if set, else {DEFAULT_PORT}."
+        ),
+    )
+    parser.add_argument(
+        "--skip-annotations", action="store_true", default=False,
+        help=(
+            "DEV-1638: skip the best-effort GCS task-annotation sync. By "
+            "default bird-interact pulls any missing authoritative annotations "
+            "so the tolerant grader has the real gold_variants/evaluator_prompt "
+            "instead of degrading to the implicit N1 annotation."
+        ),
+    )
     args = parser.parse_args()
+    # DEV-1638: load the auth dotenv FIRST, before any auth resolution reads the
+    # env. Best-effort — a missing/None path is a no-op.
+    if args.env_file:
+        n_env = load_env_file(Path(args.env_file))
+        if n_env:
+            logger.info("loaded %d var(s) from --env-file %s", n_env, args.env_file)
+        else:
+            logger.info("no env file at --env-file %s (skipping)", args.env_file)
     # DEV-1602: translate --subscription-auth into the BIRD_INTERACT_SUBSCRIPTION_AUTH
     # signal env var (or clear an ambient one) before any agent is constructed.
     _apply_subscription_auth_env(
@@ -2178,6 +2553,11 @@ def main() -> None:
     # DEV-1586: derive the internal slayer_setup from the user-facing flag.
     from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
     args.slayer_setup = derive_slayer_setup(args.pre_encoded_source)
+
+    # DEV-1638: derive --data/--db-path from the registry when both omitted
+    # (both-or-neither), BEFORE the .resolve() below so a derived None can never
+    # reach Path(None).
+    _resolve_data_paths(args, error=parser.error)
 
     # Resolve --db-path to an absolute path ONCE at the CLI boundary. Every
     # downstream consumer (orchestrator ingest, on-the-fly cache/reference,
@@ -2253,20 +2633,44 @@ def main() -> None:
         _apply_price_overrides(args.price_overrides)
 
     filter_ids: list[str] | None = None
-    if args.instance_id:
+    # `is not None` (not truthiness) so an EXPLICIT empty value (`--instance-id
+    # ""` / `--filter-ids ""`) is REJECTED here rather than falling through to
+    # whole-benchmark scope (Codex PR #75 r6). Only an OMITTED flag (None)
+    # leaves filter_ids=None → whole benchmark.
+    if args.instance_id is not None:
         # Accept either a single id or a comma-separated list. Whitespace
         # around items is trimmed; empty tokens are dropped.
         filter_ids = [s.strip() for s in args.instance_id.split(",") if s.strip()]
-        # Reject input that parses to an empty list (e.g. ",,, "). Without
+        # Reject input that parses to an empty list (e.g. "" / ",,, "). Without
         # this, filter_ids=[] later falls back to running the full
         # benchmark — a silent expansion of scope from a malformed flag.
         if not filter_ids:
             parser.error(
                 "--instance-id must include at least one non-empty id",
             )
-    elif args.filter_ids:
+    elif args.filter_ids is not None:
+        if not args.filter_ids:
+            parser.error("--filter-ids requires a non-empty file path")
         with open(args.filter_ids) as f:
             filter_ids = [line.strip() for line in f if line.strip()]
+        # Symmetric with the --instance-id empty check above (Codex PR #75): an
+        # empty --filter-ids file must fail HERE, before provisioning + sync —
+        # otherwise `filter_ids=[]` is falsy, `_effective_instance_ids` returns
+        # None, and we would provision the whole benchmark + hit GCS for every
+        # task before `run_evaluation` rejects the empty filter.
+        if not filter_ids:
+            parser.error(
+                f"--filter-ids file {args.filter_ids!r} contained no instance_ids",
+            )
+
+    # DEV-1638: the concrete id list this run uses — so provisioning + sync
+    # scope to exactly the run, never the whole benchmark.
+    effective_ids = _effective_instance_ids(args, filter_ids)
+    # For a postgres benchmark with no pre-set BIRD_PG_*, spin up + load a
+    # private local cluster and export BIRD_PG_* BEFORE the run connects.
+    _maybe_bootstrap_local_postgres(args, effective_ids)
+    # Best-effort pull of the authoritative task annotations (all backends).
+    _maybe_sync_annotations(args, effective_ids)
 
     asyncio.run(
         run_evaluation(

@@ -496,6 +496,24 @@ by a matching `query` is rejected and wastes the turn — never submit an
 unvalidated query."""
 
 
+# DEV-1646 mode B (reference-before-define): the agent writes a `filter` /
+# dimension naming an entity it has not created on that (often nested-stage)
+# model yet — SLayer rejects it and the agent self-corrects, burning turns.
+# OTF-only (mentions `create_model` / `edit_model`, which pre-encoded agents
+# do not hold), so this is spliced into the four SLAYER OTF prompts, NOT the
+# shared `QUERY_ROOT_GUIDANCE` (that block is also used by the pre-encoded
+# query prompts).
+_DEFINE_BEFORE_REFERENCE = """\
+DEFINE BEFORE YOU REFERENCE. Every name you put in a `filter`, `dimension`,
+`measure`, or `order` must ALREADY exist on the model that stage queries —
+as a Column, a ModelMeasure, or a named alias. A nested-DAG stage can
+reference only what its own `source_model` defines or what the prior stage
+projected under that name; create anything else with `create_model` /
+`edit_model` (or project it from the prior stage) BEFORE you reference it,
+and check spelling. SLayer rejects an unknown name outright rather than
+guessing."""
+
+
 # ---------------------------------------------------------------------------
 # DEV-1629 — root-model / host selection via the SLayer `recommend_root_model`
 # tool. TWO blocks, split by task: querying trusts the tool's auto pick;
@@ -806,6 +824,8 @@ User question: {user_query}
     + QUERY_ROOT_GUIDANCE
     + "\n\n"
     + ENCODE_HOST_GUIDANCE
+    + "\n\n"
+    + _DEFINE_BEFORE_REFERENCE
     + "\n"
 )
 
@@ -1106,6 +1126,8 @@ User question: {user_query}
     + QUERY_ROOT_GUIDANCE
     + "\n\n"
     + ENCODE_HOST_GUIDANCE
+    + "\n\n"
+    + _DEFINE_BEFORE_REFERENCE
     + "\n"
 )
 

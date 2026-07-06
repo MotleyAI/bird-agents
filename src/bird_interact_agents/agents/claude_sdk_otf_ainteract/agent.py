@@ -45,12 +45,14 @@ from bird_interact_agents.slayer_otf.timing import otf_timer
 from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _MAX_TURNS,
     _NORMALIZE_WRITE_FILTERS_MATCHER,
-    SLAYER_MCP_DISALLOWED_TOOL_NAMES,
     SLAYER_MCP_TOOLS,
     _make_query_before_submit_guard,
     _make_turn_budget_hook,
     _normalize_write_tool_filters_hook,
     _slayer_tool_names,
+)
+from bird_interact_agents.agents._slayer_tool_surface import (
+    derive_disallowed_slayer_tools,
 )
 from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
     SLAYER_OTF_AINTERACT,
@@ -59,7 +61,6 @@ from bird_interact_agents.agents._pre_encoded import (
     resolve_pre_encoded_storage_dir,
     strip_write_slayer_tools,
     validate_pre_encoded_source,
-    WRITE_SLAYER_TOOL_NAMES,
 )
 from bird_interact_agents.agents._pre_encoded_prompts import (
     SLAYER_PRE_ENCODED_AINTERACT,
@@ -420,16 +421,16 @@ class ClaudeSDKOtfAInteractAgent:
                 ),
             }
             # DEV-1586: pre-encoded mode drops the SLayer WRITE tools (the
-            # agent introspects only) and hides their schemas; on-the-fly
-            # keeps the full whitelist.
+            # agent introspects only); on-the-fly keeps the full whitelist.
+            # DEV-1644: the disallowed set is DERIVED as the complement of the
+            # (mode-specific) allow-list against the live SLayer surface, so a
+            # write-stripped allow-list hides the write schemas automatically.
             if self.pre_encoded_source:
                 slayer_tools = strip_write_slayer_tools(SLAYER_MCP_TOOLS)
-                tool_names.extend(f"mcp__slayer__{t}" for t in slayer_tools)
-                disallowed_tool_names = list(SLAYER_MCP_DISALLOWED_TOOL_NAMES)
-                disallowed_tool_names.extend(sorted(WRITE_SLAYER_TOOL_NAMES))
             else:
-                tool_names.extend(_slayer_tool_names())
-                disallowed_tool_names = list(SLAYER_MCP_DISALLOWED_TOOL_NAMES)
+                slayer_tools = SLAYER_MCP_TOOLS
+            tool_names.extend(f"mcp__slayer__{t}" for t in slayer_tools)
+            disallowed_tool_names = derive_disallowed_slayer_tools(slayer_tools)
 
             # Per-task hook factories — never share state across tasks.
             pre_submit_gate, post_ask_counter, post_nag = _make_ask_user_guards()
