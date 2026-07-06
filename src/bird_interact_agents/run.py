@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import contextlib
 import datetime
 import json
 import logging
@@ -1236,6 +1237,29 @@ def write_local_attempt_row(rows_dir: Path, instance_id: str, row: dict) -> None
         )
 
 
+def _inprocess_transcript_recorder(rows_dir, instance_id: str, framework: str):
+    """DEV-1642: context manager that streams a claude_sdk agent's trajectory to
+    ``rows/<iid>/partial_transcript.jsonl`` message-by-message, for the LEGACY
+    in-process local path (``BIRD_INTERACT_LOCAL_INPROCESS=1``). The DEFAULT
+    process-pool path already streams via ``ray_app._run_one_in_actor``; this
+    brings the debug escape hatch to parity so a hung/killed in-process task also
+    leaves an inspectable partial behind. No-op for non-claude frameworks.
+
+    The claude-only import is deferred on purpose: ``sdk_env`` imports the
+    OPTIONAL ``claude-agent-sdk`` at module load, so a top-level import here would
+    break base installs / non-claude local runs (mirrors ``_run_one_in_actor``'s
+    deferred import)."""
+    if not str(framework).startswith("claude_sdk"):
+        return contextlib.nullcontext()
+    from bird_interact_agents.agents.claude_sdk.sdk_env import (
+        LocalTranscriptAppender,
+        record_partial_transcript,
+    )
+    dest = Path(rows_dir) / instance_id / "partial_transcript.jsonl"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    return record_partial_transcript(LocalTranscriptAppender(dest))
+
+
 def _local_inprocess_enabled() -> bool:
     """DEV-1640 escape hatch: ``BIRD_INTERACT_LOCAL_INPROCESS=1`` forces the
     legacy single event-loop path (debugging only). Default = process pool."""
@@ -1782,27 +1806,34 @@ async def run_evaluation(
             t_start = time.perf_counter()
             _timeout = _per_task_timeout_s()
             try:
-                _coro = runner(td, data_dir, patience, user_sim_model)
-                if _timeout > 0:
-                    # DEV-1535 r5 (Codex): the local `run_evaluation`
-                    # loop awaited `runner(...)` directly, so runaway
-                    # tasks ran uncapped. The cloud (`run_one_task` /
-                    # `run_one_task_with_runner`) entry points both
-                    # already wrap with `asyncio.wait_for`; mirror it
-                    # here so `BIRD_INTERACT_PER_TASK_TIMEOUT_S` binds
-                    # the local CLI path too.
-                    try:
-                        r = await asyncio.wait_for(_coro, timeout=_timeout)
-                    except asyncio.TimeoutError as te:
-                        raise TimeoutError(
-                            f"per-task runaway-grace ceiling of {_timeout:.0f}s "
-                            f"exceeded — the agent ignored the "
-                            f"wall-clock budget hook's deny "
-                            f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 "
-                            f"to disable)"
-                        ) from te
-                else:
-                    r = await _coro
+                # DEV-1642: stream the claude_sdk trajectory to
+                # rows/<iid>/partial_transcript.jsonl as it arrives, so a
+                # hung/killed in-process task leaves an inspectable partial
+                # behind (parity with the default process-pool path). No-op for
+                # non-claude frameworks; the sink must be installed AROUND the
+                # await, since the trajectory streams while the coroutine runs.
+                with _inprocess_transcript_recorder(rows_dir, instance_id, framework):
+                    _coro = runner(td, data_dir, patience, user_sim_model)
+                    if _timeout > 0:
+                        # DEV-1535 r5 (Codex): the local `run_evaluation`
+                        # loop awaited `runner(...)` directly, so runaway
+                        # tasks ran uncapped. The cloud (`run_one_task` /
+                        # `run_one_task_with_runner`) entry points both
+                        # already wrap with `asyncio.wait_for`; mirror it
+                        # here so `BIRD_INTERACT_PER_TASK_TIMEOUT_S` binds
+                        # the local CLI path too.
+                        try:
+                            r = await asyncio.wait_for(_coro, timeout=_timeout)
+                        except asyncio.TimeoutError as te:
+                            raise TimeoutError(
+                                f"per-task runaway-grace ceiling of {_timeout:.0f}s "
+                                f"exceeded — the agent ignored the "
+                                f"wall-clock budget hook's deny "
+                                f"(BIRD_INTERACT_PER_TASK_TIMEOUT_S=0 "
+                                f"to disable)"
+                            ) from te
+                    else:
+                        r = await _coro
             except Exception as e:
                 logger.error("Error on %s: %s", instance_id, e)
                 r = finalize_result_row(

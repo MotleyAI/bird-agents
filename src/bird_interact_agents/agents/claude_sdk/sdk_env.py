@@ -33,6 +33,7 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -529,6 +530,59 @@ def record_partial_transcript(sink: "Callable[[dict], None]"):
         yield
     finally:
         _partial_transcript_sink.reset(token)
+
+
+class LocalTranscriptAppender:
+    """DEV-1642: the append-per-message partial-transcript sink for LOCAL runs.
+
+    Installed via :func:`record_partial_transcript`, it writes each serialised
+    claude_sdk message ({type, data}) as one JSON line to a durable path
+    (typically ``rows/<iid>/partial_transcript.jsonl``) the instant it streams —
+    no throttle, no temp-dir hop, no store round-trip. Locally the file lives on
+    the same filesystem as the run output, so the append IS the durable write:
+    a hard kill (SIGKILL / OOM) loses at most one line interrupted mid-write.
+
+    This is the LOCAL counterpart to the cloud
+    :class:`~bird_interact_agents.cloud.ray_app.PartialTranscriptUploader`, which
+    must instead throttle a full-file re-upload because GCS objects are not
+    cheaply appendable. Both leave the same ``partial_transcript.jsonl`` artifact.
+
+    The file is truncate-created ONCE at construction so a stale file from a
+    prior run/attempt can never bleed into this task's transcript (mirrors the
+    cloud uploader's always-fresh ``mkdtemp`` scratch). Every message is still a
+    plain append after that. Best-effort throughout: nothing here raises into the
+    receive stream (mirrors ``PartialTranscriptUploader`` / ``write_local_attempt_row``).
+    """
+
+    def __init__(self, path: "Path | str") -> None:
+        self.path = Path(path)
+        # Discovery + main clients share ONE sink (both stream through the same
+        # ContextVar), so serialise writes to keep lines intact under any overlap.
+        self._lock = threading.Lock()
+        # Reset ONCE at construction (per-task, not per-message). Best-effort:
+        # the parent dir is created by the caller/seam, but never raise here.
+        try:
+            with open(self.path, "w", encoding="utf-8"):
+                pass
+        except Exception:  # noqa: BLE001 — best-effort; construction must not fail the task
+            pass
+
+    def __call__(self, msg: dict) -> None:
+        try:
+            line = json.dumps(msg, default=str)
+        except Exception:  # noqa: BLE001 — capture must not break the stream
+            return
+        with self._lock:
+            try:
+                with open(self.path, "a", encoding="utf-8") as fh:
+                    fh.write(line + "\n")
+            except Exception:  # noqa: BLE001 — best-effort
+                return
+
+    def flush(self) -> None:
+        """No-op — appends are already durable. Present for API symmetry with
+        ``PartialTranscriptUploader`` so call sites treat recorders uniformly."""
+        return None
 
 
 class _TranscriptClient:

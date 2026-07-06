@@ -724,6 +724,37 @@ class PartialTranscriptUploader:
             self._upload()
 
 
+def _build_partial_transcript_recorder(*, store, run_id: str, iid: str, log_dir):
+    """DEV-1642: pick the per-message partial-transcript recorder for a
+    ``claude_sdk*`` task based on the persistence backend.
+
+    * A store advertising a durable local partial path
+      (``partial_transcript_local_path`` → :class:`LocalFsStore`) gets an
+      append-only :class:`~bird_interact_agents.agents.claude_sdk.sdk_env.LocalTranscriptAppender`
+      writing straight to ``rows/<iid>/partial_transcript.jsonl`` — no throttle,
+      no ``store.write_partial_transcript`` round-trip; the append IS the durable
+      write, so there is nothing to flush (returns ``flush=None``).
+    * Any other backend (:class:`GcsStore`, or a duck-typed store without the
+      method) keeps the throttled full-snapshot :class:`PartialTranscriptUploader`
+      and its ``flush`` — correct for GCS, where objects are not cheaply appendable.
+
+    Returns ``(recorder, flush_or_None)``. The caller installs
+    ``record_partial_transcript(recorder)`` around the task and calls ``flush()``
+    (when not None) once it finishes.
+    """
+    from bird_interact_agents.agents.claude_sdk.sdk_env import LocalTranscriptAppender
+
+    _get = getattr(store, "partial_transcript_local_path", None)
+    dest = _get(iid) if _get is not None else None
+    if dest is not None:
+        return LocalTranscriptAppender(dest), None
+    uploader = PartialTranscriptUploader(
+        run_id=run_id, instance_id=iid, store=store,
+        local_path=log_dir / "partial_transcript.jsonl",
+    )
+    return uploader, uploader.flush
+
+
 # ---------------------------------------------------------------------------
 # Per-task body — runs inside the actor
 # ---------------------------------------------------------------------------
@@ -849,24 +880,24 @@ def _run_one_in_actor(
         with fd_capture(log_tmp):
             try:
                 _grader_data_dir = data_dir
-                # Stream the claude_sdk transcript to GCS WHILE the task runs
-                # (throttled), so a hung/slow task leaves an inspectable partial
-                # behind instead of nothing. Only claude_sdk* frameworks route
-                # through the _TranscriptClient that feeds this sink; for others
-                # the contextvar is set but never called (harmless).
-                _partial_uploader = None
+                # Stream the claude_sdk transcript to disk WHILE the task runs,
+                # so a hung/slow task leaves an inspectable partial behind
+                # instead of nothing. Only claude_sdk* frameworks route through
+                # the _TranscriptClient that feeds this sink; for others the
+                # contextvar is set but never called (harmless). DEV-1642: the
+                # recorder is LOCAL append-per-message (LocalFsStore) or the
+                # throttled GCS uploader (cloud), chosen by the store — see
+                # _build_partial_transcript_recorder.
+                _partial_flush = None
                 _partial_cm: Any = contextlib.nullcontext()
                 if str(cfg.get("framework") or "").startswith("claude_sdk"):
                     from bird_interact_agents.agents.claude_sdk.sdk_env import (
                         record_partial_transcript,
                     )
-                    _partial_uploader = PartialTranscriptUploader(
-                        run_id=run_id,
-                        instance_id=iid,
-                        store=store,
-                        local_path=log_dir / "partial_transcript.jsonl",
+                    _recorder, _partial_flush = _build_partial_transcript_recorder(
+                        store=store, run_id=run_id, iid=iid, log_dir=log_dir,
                     )
-                    _partial_cm = record_partial_transcript(_partial_uploader)
+                    _partial_cm = record_partial_transcript(_recorder)
                 try:
                     with _partial_cm:
                         row = asyncio.run(
@@ -893,8 +924,8 @@ def _run_one_in_actor(
                             )
                         )
                 finally:
-                    if _partial_uploader is not None:
-                        _partial_uploader.flush()
+                    if _partial_flush is not None:
+                        _partial_flush()
             except Exception as e:  # noqa: BLE001
                 row = _build_error_row(iid, database, str(e))
     finally:
