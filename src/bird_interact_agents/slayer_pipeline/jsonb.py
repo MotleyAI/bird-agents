@@ -16,15 +16,21 @@ import json
 import re
 import sqlite3
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from pydantic import BaseModel
 
 from slayer.core.models import Column, DataType
 
+from .casts import pg_nullsafe_cast, quote_ident
+from .pg_sampling import detect_date_format, detect_fraction_pg_token
 from .types import parse_leading_type_token
 
 DRIFT_SAMPLE_ROWS = 100
+
+# Type ``sampler(table, extract_sql) -> list[str]`` for best-effort date
+# detection on a JSON leaf's extract expression.
+ExtractSampler = Callable[[str, str], list[str]]
 
 
 class LeafInfo(BaseModel):
@@ -38,13 +44,72 @@ class LeafInfo(BaseModel):
     enum_name: Optional[str] = None
     label: str
     no_type_token: bool = False
+    warning: Optional[str] = None
 
 
 def walk_fields_meaning(
-    json_col: str, fields_meaning: dict
+    json_col: str,
+    fields_meaning: dict,
+    *,
+    backend: str = "sqlite",
+    table: str = "",
+    pg_extract_sampler: Optional[ExtractSampler] = None,
 ) -> Iterable[LeafInfo]:
     """Yield one ``LeafInfo`` per terminal-string entry in *fields_meaning*."""
-    yield from _walk(json_col, [], fields_meaning)
+    yield from _walk(
+        json_col, [], fields_meaning,
+        backend=backend, table=table, pg_extract_sampler=pg_extract_sampler,
+    )
+
+
+def _pg_extract(json_col: str, path: list[str]) -> str:
+    """Postgres ``jsonb_extract_path_text("col", 'seg', …)`` (text extract).
+
+    Base identifier is quoted; each path segment is a single-quote-escaped
+    string literal (a numeric segment works as an array index)."""
+    segs = ", ".join("'" + seg.replace("'", "''") + "'" for seg in path)
+    return f"jsonb_extract_path_text({quote_ident(json_col)}, {segs})"
+
+
+def _leaf_sql(
+    json_col: str,
+    path: list[str],
+    data_type: DataType,
+    *,
+    backend: str,
+    table: str,
+    pg_extract_sampler: Optional[ExtractSampler],
+) -> tuple[str, Optional[str]]:
+    """Return ``(sql, warning)`` for a leaf's extract, dialect-aware.
+
+    SQLite: ``JSON_EXTRACT`` (unchanged). Postgres: a text extract, with
+    numeric/date leaves wrapped in the NULL-safe cast (date detection is
+    best-effort via ``pg_extract_sampler``; an undetectable date leaf stays
+    a bare text extract — still derived, so drift-safe — and warns).
+    """
+    if backend != "postgres":
+        return f"JSON_EXTRACT({json_col}, '{_json_path(path)}')", None
+    extract = _pg_extract(json_col, path)
+    if data_type in (DataType.DOUBLE, DataType.INT):
+        return pg_nullsafe_cast(extract, data_type), None
+    if data_type in (DataType.DATE, DataType.TIMESTAMP):
+        samples = pg_extract_sampler(table, extract) if pg_extract_sampler else []
+        fmt = detect_date_format(samples, with_time=(data_type == DataType.TIMESTAMP))
+        if not fmt:
+            return extract, (
+                f"{table}.{json_col} leaf '{'.'.join(path)}': {data_type.name} "
+                f"but no date format detected from {len(samples)} sampled "
+                f"value(s); left as text extract."
+            )
+        frac = detect_fraction_pg_token(samples)
+        cast = pg_nullsafe_cast(extract, data_type, fmt, frac_pg=frac)
+        if cast is None:
+            return extract, (
+                f"{table}.{json_col} leaf '{'.'.join(path)}': detected format "
+                f"'{fmt}' unsupported on postgres; left as text extract."
+            )
+        return cast, None
+    return extract, None  # TEXT / enum -> bare text extract
 
 
 def _json_path(path: list[str]) -> str:
@@ -61,13 +126,18 @@ def _json_path(path: list[str]) -> str:
 
 
 def _walk(
-    json_col: str, path: list[str], node: object
+    json_col: str,
+    path: list[str],
+    node: object,
+    *,
+    backend: str = "sqlite",
+    table: str = "",
+    pg_extract_sampler: Optional[ExtractSampler] = None,
 ) -> Iterable[LeafInfo]:
     if isinstance(node, str):
         leaf_key = path[-1]
         full_path = [*path]
         column_name = json_col + "__" + "__".join(full_path)
-        json_path = _json_path(full_path)
         parsed = parse_leading_type_token(node)
         if parsed is None:
             data_type = DataType.TEXT
@@ -77,20 +147,28 @@ def _walk(
             data_type, meta_patch = parsed
             enum_name = meta_patch.get("enum_name")
             no_token = False
+        sql, warning = _leaf_sql(
+            json_col, full_path, data_type,
+            backend=backend, table=table, pg_extract_sampler=pg_extract_sampler,
+        )
         yield LeafInfo(
             column_name=column_name,
             path=full_path,
             description=node,
-            sql=f"JSON_EXTRACT({json_col}, '{json_path}')",
+            sql=sql,
             type=data_type,
             enum_name=enum_name,
             label=_humanise(leaf_key),
             no_type_token=no_token,
+            warning=warning,
         )
         return
     if isinstance(node, dict):
         for key, child in node.items():
-            yield from _walk(json_col, [*path, key], child)
+            yield from _walk(
+                json_col, [*path, key], child,
+                backend=backend, table=table, pg_extract_sampler=pg_extract_sampler,
+            )
 
 
 def _humanise(key: str) -> str:
@@ -116,24 +194,35 @@ def leaf_to_column(leaf: LeafInfo, json_col: str) -> Column:
 
 
 def expand_one_column(
-    json_col: str, meaning_entry: dict
+    json_col: str,
+    meaning_entry: dict,
+    *,
+    backend: str = "sqlite",
+    table: str = "",
+    pg_extract_sampler: Optional[ExtractSampler] = None,
 ) -> tuple[list[Column], list[str]]:
     """Expand one ``fields_meaning`` dict into Columns + typing-warning lines.
 
     Returns ``(columns, warnings)``. *warnings* lists leaves whose
-    description had no recognised leading type token (defaulted to
-    TEXT) — caller appends them to ``column_typing_warnings.txt``.
+    description had no recognised leading type token (defaulted to TEXT),
+    plus (postgres) leaves whose numeric/date cast could not be baked —
+    caller appends them to ``column_typing_warnings.txt``.
     """
     fields = meaning_entry.get("fields_meaning") or {}
     columns: list[Column] = []
     warnings: list[str] = []
-    for leaf in walk_fields_meaning(json_col, fields):
+    for leaf in walk_fields_meaning(
+        json_col, fields,
+        backend=backend, table=table, pg_extract_sampler=pg_extract_sampler,
+    ):
         columns.append(leaf_to_column(leaf, json_col))
         if leaf.no_type_token:
             warnings.append(
                 f"{json_col} :: {'.'.join(leaf.path)}: no leading type "
                 f"token in fields_meaning; defaulted to TEXT"
             )
+        if leaf.warning:
+            warnings.append(leaf.warning)
     return columns, warnings
 
 

@@ -19,10 +19,12 @@ import copy
 import json
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from slayer.core.models import Column, DataType, SlayerModel
 
+from .casts import pg_nullsafe_cast, quote_ident
+from .pg_sampling import detect_date_format, detect_fraction_pg_token
 from .types import parse_leading_type_token
 
 # DEV-1381 annotation grammar:
@@ -120,53 +122,177 @@ def _sqlite_reformat_sql(col_name: str, fmt: str) -> Optional[str]:
     return None
 
 
-def _apply_meaning_to_column(col: Column, meaning_text: str) -> None:
-    """Mutate *col* in place: description, type from leading token,
-    DEV-1381 date-format annotation."""
+def _resolve_join_side(side: str, default_table: str) -> tuple[str, str]:
+    """Resolve one side of a ``join_pairs`` entry to ``(table, col)`` lower.
+
+    A dotted ``"table.col"`` names its own table; a bare ``"col"`` lives on
+    *default_table* (the source model for the local side, the join's
+    ``target_model`` for the referenced side).
+    """
+    if "." in side:
+        table, col = side.split(".", 1)
+        return table.lower(), col.lower()
+    return default_table.lower(), side.lower()
+
+
+def collect_key_columns(models: list[SlayerModel]) -> frozenset[tuple[str, str]]:
+    """DB-wide set of ``(table_lower, col_lower)`` for every PK and every
+    join-key participant (both local and referenced sides).
+
+    TABLE-SCOPED: a common name like ``id`` guards only the table where it
+    is actually a key. Guarded columns keep their description but are never
+    retyped / rewritten, so they stay base/TEXT and match live
+    introspection (no drift, no lossy cast on an identifier).
+    """
+    keys: set[tuple[str, str]] = set()
+    for model in models:
+        table = (model.sql_table or model.name).lower()
+        for column in model.columns:
+            if column.primary_key:
+                keys.add((table, column.name.lower()))
+        for join in model.joins or []:
+            target = (join.target_model or "").lower()
+            for pair in join.join_pairs or []:
+                if len(pair) < 2:
+                    continue
+                keys.add(_resolve_join_side(pair[0], table))
+                keys.add(_resolve_join_side(pair[1], target))
+    return frozenset(keys)
+
+
+def _apply_meaning_to_column(
+    col: Column,
+    meaning_text: str,
+    *,
+    backend: str = "sqlite",
+    is_key: bool = False,
+    pg_sampler: Optional[Callable[[str, str], list[str]]] = None,
+    table: str = "",
+) -> Optional[str]:
+    """Mutate *col* in place: description, type from leading token, DEV-1381
+    date annotation. Returns a warning string when a postgres refinement is
+    declined (column left TEXT), else ``None``.
+
+    On postgres, a refined column becomes *derived* — ``col.sql`` is a
+    NULL-safe guarded CAST — but ONLY when the physical (pre-overlay,
+    ingested) type is TEXT; an already-typed live column is left bare.
+    Guarded PK/join-key columns keep their description and nothing else.
+    """
     if meaning_text and not col.description:
         col.description = meaning_text
+
+    if is_key:
+        return None  # guarded: description only, never retyped/rewritten
+
+    physical_type = col.type  # pre-overlay == the live physical type
 
     annot = DATE_ANNOTATION_RE.search(meaning_text or "")
     if annot is not None:
         fmt = annot.group(1)
+        if backend == "postgres":
+            if physical_type != DataType.TEXT:
+                return None  # already typed live -> no cast, no drift
+            cast_sql = pg_nullsafe_cast(quote_ident(col.name), DataType.TIMESTAMP, fmt)
+            if cast_sql is None:
+                return (
+                    f"{table}.{col.name}: DEV-1381 annotation source_format "
+                    f"'{fmt}' unsupported on postgres; column left TEXT."
+                )
+            col.type = DataType.TIMESTAMP
+            col.sql = cast_sql
+            meta = col.meta or {}
+            meta["date_source_format"] = fmt
+            meta["detected_by"] = "column_meaning_annotation"
+            col.meta = meta
+            return None
+        # SQLite (unchanged).
         new_sql = _sqlite_reformat_sql(col.name, fmt)
         if new_sql is None and fmt not in ISO_TEXT_DATE_FORMATS:
-            # No SQLite rewrite path and not an ISO passthrough — leave
-            # the column TEXT so phase 4 can still try, and surface the
-            # unsupported format via the apply_overlay warning path.
-            return
+            return None
         col.type = DataType.TIMESTAMP
         if new_sql is not None:
             col.sql = new_sql
-        # else: ISO-already, sql stays as the bare column.
         meta = col.meta or {}
         meta["date_source_format"] = fmt
         meta["detected_by"] = "column_meaning_annotation"
         col.meta = meta
-        return
+        return None
 
     parsed = parse_leading_type_token(meaning_text)
     if parsed is None:
-        return
+        return None
     data_type, meta_patch = parsed
+
+    def _stamp_meta() -> None:
+        if meta_patch:
+            meta = col.meta or {}
+            meta.update(meta_patch)
+            col.meta = meta
+
+    if backend == "postgres":
+        if physical_type != DataType.TEXT:
+            return None  # already typed live -> leave bare, no drift
+        if data_type in (DataType.DOUBLE, DataType.INT):
+            col.sql = pg_nullsafe_cast(quote_ident(col.name), data_type)
+            col.type = data_type
+            _stamp_meta()
+            return None
+        if data_type in (DataType.DATE, DataType.TIMESTAMP):
+            samples = pg_sampler(table, col.name) if pg_sampler else []
+            fmt = detect_date_format(
+                samples, with_time=(data_type == DataType.TIMESTAMP)
+            )
+            if not fmt:
+                return (
+                    f"{table}.{col.name}: {data_type.name} token but no date "
+                    f"format detected from {len(samples)} sampled value(s); "
+                    f"column left TEXT."
+                )
+            frac = detect_fraction_pg_token(samples)
+            cast_sql = pg_nullsafe_cast(
+                quote_ident(col.name), data_type, fmt, frac_pg=frac
+            )
+            if cast_sql is None:
+                return (
+                    f"{table}.{col.name}: detected format '{fmt}' unsupported "
+                    f"on postgres; column left TEXT."
+                )
+            col.type = data_type
+            col.sql = cast_sql
+            meta = col.meta or {}
+            meta["date_source_format"] = fmt
+            meta["detected_by"] = "pg_sample"
+            col.meta = meta
+            return None
+        # TEXT / BOOLEAN / enum / jsonb tokens: type + meta only, sql bare.
+        col.type = data_type
+        _stamp_meta()
+        return None
+
+    # SQLite (unchanged): set type from token, sql stays bare.
     col.type = data_type
-    if meta_patch:
-        meta = col.meta or {}
-        meta.update(meta_patch)
-        col.meta = meta
+    _stamp_meta()
+    return None
 
 
 def apply_overlay(
-    model: SlayerModel, by_table: dict[str, dict[str, dict | str]]
+    model: SlayerModel,
+    by_table: dict[str, dict[str, dict | str]],
+    *,
+    backend: str = "sqlite",
+    key_columns: frozenset[tuple[str, str]] = frozenset(),
+    pg_sampler: Optional[Callable[[str, str], list[str]]] = None,
 ) -> tuple[int, list[str]]:
     """Apply meanings to *model* in place.
 
-    Returns ``(num_columns_touched, warnings)``. Warnings list any
-    described date columns whose source format we don't know how to
-    reformat (still set to TIMESTAMP, but Column.sql stays raw).
+    Returns ``(num_columns_touched, warnings)``. On ``backend='postgres'``,
+    refined-over-TEXT non-key columns are rewritten to NULL-safe guarded
+    casts (DEV-1648); ``key_columns`` (DB-wide PK/join keys) are guarded;
+    the SQLite path is byte-unchanged.
     """
-    table = (model.sql_table or model.name).lower()
-    col_to_meaning = by_table.get(table, {})
+    table_actual = model.sql_table or model.name
+    table_lc = table_actual.lower()
+    col_to_meaning = by_table.get(table_lc, {})
     if not col_to_meaning:
         return 0, []
     touched = 0
@@ -182,7 +308,13 @@ def apply_overlay(
         before_type = column.type
         before_sql = column.sql
         before_meta = copy.deepcopy(column.meta)
-        _apply_meaning_to_column(column, text)
+        is_key = (table_lc, column.name.lower()) in key_columns
+        warn = _apply_meaning_to_column(
+            column, text, backend=backend, is_key=is_key,
+            pg_sampler=pg_sampler, table=table_actual,
+        )
+        if warn:
+            warnings.append(warn)
         if (
             column.description != before_description
             or column.type != before_type
@@ -190,15 +322,17 @@ def apply_overlay(
             or column.meta != before_meta
         ):
             touched += 1
-        annot = DATE_ANNOTATION_RE.search(text)
-        if (
-            annot is not None
-            and _sqlite_reformat_sql(column.name, annot.group(1)) is None
-            and annot.group(1) not in ISO_TEXT_DATE_FORMATS
-        ):
-            warnings.append(
-                f"{table}.{column.name}: DEV-1381 annotation has "
-                f"unsupported source_format '{annot.group(1)}'; column "
-                f"left as TEXT."
-            )
+        # SQLite-only legacy warning for an unsupported DEV-1381 format.
+        if backend != "postgres":
+            annot = DATE_ANNOTATION_RE.search(text)
+            if (
+                annot is not None
+                and _sqlite_reformat_sql(column.name, annot.group(1)) is None
+                and annot.group(1) not in ISO_TEXT_DATE_FORMATS
+            ):
+                warnings.append(
+                    f"{table_lc}.{column.name}: DEV-1381 annotation has "
+                    f"unsupported source_format '{annot.group(1)}'; column "
+                    f"left as TEXT."
+                )
     return touched, warnings

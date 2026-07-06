@@ -178,15 +178,24 @@ def detect_and_apply(
     sqlite_path: Path,
     client: Anthropic,
     llm_model: str,
+    *,
+    key_columns: frozenset[tuple[str, str]] = frozenset(),
 ) -> tuple[int, list[str]]:
     """For each TEXT column in *model* with no ``meta.date_source_format``
     cached, sample-and-classify. Returns ``(num_retyped, warnings)``.
+
+    DEV-1648: ``key_columns`` (DB-wide ``(table_lower, col_lower)`` PK/join
+    keys) are guarded — a key is an identifier, not a value to upgrade — so
+    they are skipped before any sampling/LLM call.
     """
     table = (model.sql_table or model.name)
+    table_lc = table.lower()
     retyped = 0
     warnings: list[str] = []
     for column in model.columns:
         if column.type != DataType.TEXT:
+            continue
+        if (table_lc, column.name.lower()) in key_columns:
             continue
         if (column.meta or {}).get("date_source_format"):
             continue
