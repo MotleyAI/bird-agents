@@ -57,8 +57,17 @@ import pytest
 # main now HOLDS `search` / `inspect_model` directly, so both v1 prompts say to
 # call them directly (and read sample values via them) instead of routing every
 # introspection through `ask_discovery`.
-_ONE_SHOT_SHA256 = "942ce8e96a040629c66064d892d071207cef6a54b65125aa6590da580db77907"
-_AINTERACT_SHA256 = "39eecf2fcaeba4260d28180c2aba24d6f909ed56b52b19014420017d729153bb"
+# Re-baselined for DEV-1646 (mode B, reference-before-define): a `DEFINE BEFORE
+# YOU REFERENCE` fragment (`_DEFINE_BEFORE_REFERENCE`) was spliced into the four
+# SLAYER OTF prompts after `ENCODE_HOST_GUIDANCE` — any name in a
+# filter/dimension/measure/order must already exist on the model that stage
+# queries; create it via create_model/edit_model (or project it from the prior
+# stage) before referencing it. It is OTF-only (NOT in the shared
+# `QUERY_ROOT_GUIDANCE`), so the pre-encoded prompts — whose write tools are
+# stripped — are unchanged. Cuts the turn-waste where the agent filters on an
+# undefined nested-stage name and self-corrects.
+_ONE_SHOT_SHA256 = "64aa5fd4be4dc10148141aa65cc8e0d0ec61b46d2678be44a2be3c9d5055cc24"
+_AINTERACT_SHA256 = "fb142bf8cf8f1cf6b3b06d778c6b15e78681df5c98d0d1a1712de9bf7bbe1b35"
 
 
 def test_slayer_otf_one_shot_unchanged():
