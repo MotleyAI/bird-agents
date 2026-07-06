@@ -79,37 +79,47 @@ def _leaf_sql(
     backend: str,
     table: str,
     pg_extract_sampler: Optional[ExtractSampler],
-) -> tuple[str, Optional[str]]:
-    """Return ``(sql, warning)`` for a leaf's extract, dialect-aware.
+) -> tuple[str, DataType, Optional[str]]:
+    """Return ``(sql, effective_type, warning)`` for a leaf's extract.
 
-    SQLite: ``JSON_EXTRACT`` (unchanged). Postgres: a text extract, with
-    numeric/date leaves wrapped in the NULL-safe cast (date detection is
-    best-effort via ``pg_extract_sampler``; an undetectable date leaf stays
-    a bare text extract — still derived, so drift-safe — and warns).
+    SQLite: ``JSON_EXTRACT``, type unchanged (unchanged behaviour). Postgres:
+    a text extract, with numeric/date leaves wrapped in the NULL-safe cast.
+    A date leaf whose format can't be detected/mapped is left as a bare text
+    extract AND its type is DOWNGRADED to TEXT — otherwise SLayer would treat
+    the raw text extract as a temporal column (mirrors the phase-2 overlay's
+    "left TEXT" behaviour for the same situation).
     """
     if backend != "postgres":
-        return f"JSON_EXTRACT({json_col}, '{_json_path(path)}')", None
+        return f"JSON_EXTRACT({json_col}, '{_json_path(path)}')", data_type, None
     extract = _pg_extract(json_col, path)
     if data_type in (DataType.DOUBLE, DataType.INT):
-        return pg_nullsafe_cast(extract, data_type), None
+        return pg_nullsafe_cast(extract, data_type), data_type, None
     if data_type in (DataType.DATE, DataType.TIMESTAMP):
         samples = pg_extract_sampler(table, extract) if pg_extract_sampler else []
         fmt = detect_date_format(samples, with_time=(data_type == DataType.TIMESTAMP))
         if not fmt:
-            return extract, (
+            return extract, DataType.TEXT, (
                 f"{table}.{json_col} leaf '{'.'.join(path)}': {data_type.name} "
                 f"but no date format detected from {len(samples)} sampled "
-                f"value(s); left as text extract."
+                f"value(s); left as TEXT extract."
             )
         frac = detect_fraction_pg_token(samples)
         cast = pg_nullsafe_cast(extract, data_type, fmt, frac_pg=frac)
         if cast is None:
-            return extract, (
+            return extract, DataType.TEXT, (
                 f"{table}.{json_col} leaf '{'.'.join(path)}': detected format "
-                f"'{fmt}' unsupported on postgres; left as text extract."
+                f"'{fmt}' unsupported on postgres; left as TEXT extract."
             )
-        return cast, None
-    return extract, None  # TEXT / enum -> bare text extract
+        return cast, data_type, None
+    if data_type == DataType.BOOLEAN:
+        # No NULL-safe boolean cast is in scope; keep the bare text extract
+        # and downgrade the type to TEXT so SLayer doesn't treat raw text as
+        # boolean (mirrors the undetectable-date-leaf handling above).
+        return extract, DataType.TEXT, (
+            f"{table}.{json_col} leaf '{'.'.join(path)}': BOOLEAN not cast on "
+            f"postgres; left as TEXT extract."
+        )
+    return extract, data_type, None  # TEXT / enum -> bare text extract
 
 
 def _json_path(path: list[str]) -> str:
@@ -147,7 +157,7 @@ def _walk(
             data_type, meta_patch = parsed
             enum_name = meta_patch.get("enum_name")
             no_token = False
-        sql, warning = _leaf_sql(
+        sql, effective_type, warning = _leaf_sql(
             json_col, full_path, data_type,
             backend=backend, table=table, pg_extract_sampler=pg_extract_sampler,
         )
@@ -156,7 +166,7 @@ def _walk(
             path=full_path,
             description=node,
             sql=sql,
-            type=data_type,
+            type=effective_type,
             enum_name=enum_name,
             label=_humanise(leaf_key),
             no_type_token=no_token,

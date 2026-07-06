@@ -17,6 +17,8 @@ import re
 from datetime import datetime
 from typing import Callable, Optional
 
+from .casts import quote_ident as _quote_ident
+
 SAMPLE_LIMIT = 20
 
 # Ordered candidate BASE formats (no fractional seconds). ISO / dash-YMD
@@ -110,10 +112,6 @@ def detect_fraction_pg_token(samples: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _quote_ident(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
-
-
 def _sample_query(table: str, col: str, *, limit: int = SAMPLE_LIMIT) -> str:
     q = _quote_ident(col)
     return (
@@ -124,10 +122,13 @@ def _sample_query(table: str, col: str, *, limit: int = SAMPLE_LIMIT) -> str:
 
 
 def _extract_sample_query(table: str, extract_sql: str, *, limit: int = SAMPLE_LIMIT) -> str:
+    # ORDER BY the extracted value (mirrors _sample_query) so repeated calls
+    # on the same DB state return the same sample set -> deterministic format
+    # detection / re-encode.
     return (
         f"SELECT DISTINCT {extract_sql} FROM {_quote_ident(table)} "
         f"WHERE {extract_sql} IS NOT NULL AND {extract_sql} <> '' "
-        f"LIMIT {limit}"
+        f"ORDER BY {extract_sql} LIMIT {limit}"
     )
 
 

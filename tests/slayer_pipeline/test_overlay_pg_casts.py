@@ -178,6 +178,19 @@ def test_pg_already_int_column_not_rewritten() -> None:
     assert col.sql == "dur_sec"
 
 
+def test_pg_boolean_over_text_left_text_with_warning() -> None:
+    # A BOOLEAN token over a physically-TEXT column must NOT be retyped to
+    # BOOLEAN (that would drift persisted-BOOLEAN vs live-TEXT); left TEXT.
+    col = Column(name="is_active", sql="is_active", type=DataType.TEXT)
+    m = _model([col])
+    _touched, warnings = apply_overlay(
+        m, _by_table(is_active="BOOLEAN. Active flag."), backend="postgres",
+    )
+    assert col.type == DataType.TEXT
+    assert col.sql == "is_active"
+    assert any("is_active" in w for w in warnings)
+
+
 def test_pg_annotation_on_already_timestamp_column_not_rewritten() -> None:
     col = Column(name="d", sql="d", type=DataType.TIMESTAMP)
     m = _model([col])

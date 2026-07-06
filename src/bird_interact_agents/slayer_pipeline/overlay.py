@@ -122,16 +122,23 @@ def _sqlite_reformat_sql(col_name: str, fmt: str) -> Optional[str]:
     return None
 
 
-def _resolve_join_side(side: str, default_table: str) -> tuple[str, str]:
+def _resolve_join_side(
+    side: str, default_table: str, name_to_table: dict[str, str]
+) -> tuple[str, str]:
     """Resolve one side of a ``join_pairs`` entry to ``(table, col)`` lower.
 
-    A dotted ``"table.col"`` names its own table; a bare ``"col"`` lives on
-    *default_table* (the source model for the local side, the join's
-    ``target_model`` for the referenced side).
+    A dotted ``"model.col"`` names its own model (resolved to that model's
+    physical table via *name_to_table*); a bare ``"col"`` lives on
+    *default_table* (already the source/target model's physical table). The
+    physical table is what ``apply_overlay`` keys the guard on, so the join's
+    ``target_model`` (a model NAME) must be resolved to its ``sql_table``
+    before this — otherwise a model whose name differs from its table would
+    escape the guard.
     """
     if "." in side:
-        table, col = side.split(".", 1)
-        return table.lower(), col.lower()
+        model_or_table, col = side.split(".", 1)
+        key = model_or_table.lower()
+        return name_to_table.get(key, key), col.lower()
     return default_table.lower(), side.lower()
 
 
@@ -144,6 +151,13 @@ def collect_key_columns(models: list[SlayerModel]) -> frozenset[tuple[str, str]]
     retyped / rewritten, so they stay base/TEXT and match live
     introspection (no drift, no lossy cast on an identifier).
     """
+    # A join's ``target_model`` (and a dotted side's prefix) is a model NAME;
+    # the guard is keyed on the physical table. Map name -> table so an alias
+    # that differs from its sql_table still guards the right table.
+    name_to_table = {
+        model.name.lower(): (model.sql_table or model.name).lower()
+        for model in models
+    }
     keys: set[tuple[str, str]] = set()
     for model in models:
         table = (model.sql_table or model.name).lower()
@@ -151,12 +165,14 @@ def collect_key_columns(models: list[SlayerModel]) -> frozenset[tuple[str, str]]
             if column.primary_key:
                 keys.add((table, column.name.lower()))
         for join in model.joins or []:
-            target = (join.target_model or "").lower()
+            target_table = name_to_table.get(
+                (join.target_model or "").lower(), (join.target_model or "").lower()
+            )
             for pair in join.join_pairs or []:
                 if len(pair) < 2:
                     continue
-                keys.add(_resolve_join_side(pair[0], table))
-                keys.add(_resolve_join_side(pair[1], target))
+                keys.add(_resolve_join_side(pair[0], table, name_to_table))
+                keys.add(_resolve_join_side(pair[1], target_table, name_to_table))
     return frozenset(keys)
 
 
@@ -264,7 +280,16 @@ def _apply_meaning_to_column(
             meta["detected_by"] = "pg_sample"
             col.meta = meta
             return None
-        # TEXT / BOOLEAN / enum / jsonb tokens: type + meta only, sql bare.
+        if data_type == DataType.BOOLEAN:
+            # A BOOLEAN token over a physically-TEXT column would drift the
+            # same way (persisted BOOLEAN vs live TEXT) and no NULL-safe
+            # boolean cast is in scope (value spellings vary). Leave it TEXT
+            # to match live introspection.
+            return (
+                f"{table}.{col.name}: BOOLEAN token over a physically-TEXT "
+                f"column is not cast on postgres; column left TEXT."
+            )
+        # TEXT / enum / jsonb tokens (all map to DataType.TEXT): meta only.
         col.type = data_type
         _stamp_meta()
         return None

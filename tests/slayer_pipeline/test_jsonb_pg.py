@@ -101,6 +101,16 @@ def test_pg_date_leaf_detected_via_extract_sampler() -> None:
     assert leaf.sql == pg_nullsafe_cast(extract, DataType.TIMESTAMP, "%Y-%m-%d %H:%M:%S.%f")
 
 
+def test_pg_boolean_leaf_downgraded_to_text() -> None:
+    entry = {"fields_meaning": {"is_primary": "BOOLEAN. Primary flag."}}
+    cols, warns = _by_name(entry, backend="postgres", table="t")
+    leaf = cols["dwelling_specs__is_primary"]
+    # No boolean cast in scope: bare text extract, type downgraded to TEXT.
+    assert leaf.sql == _pg_extract(JSON_COL, "is_primary")
+    assert leaf.type == DataType.TEXT
+    assert any("is_primary" in w for w in warns)
+
+
 def test_pg_date_leaf_undetectable_stays_bare_extract_with_warning() -> None:
     entry = {"fields_meaning": {"event_ts": "TIMESTAMP. When."}}
 
@@ -110,8 +120,10 @@ def test_pg_date_leaf_undetectable_stays_bare_extract_with_warning() -> None:
     cols, warns = _by_name(entry, backend="postgres", table="t", pg_extract_sampler=sampler)
     leaf = cols["dwelling_specs__event_ts"]
     extract = _pg_extract(JSON_COL, "event_ts")
-    # Still derived (drift-safe), just not cast; warned.
+    # Still derived (drift-safe), just not cast; warned. Type is downgraded
+    # to TEXT so SLayer doesn't treat the raw text extract as temporal.
     assert leaf.sql == extract
+    assert leaf.type == DataType.TEXT
     assert any("event_ts" in w for w in warns)
 
 

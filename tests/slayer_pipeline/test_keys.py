@@ -94,6 +94,25 @@ def test_same_column_name_in_unrelated_tables_is_table_scoped() -> None:
     assert ("b", "id") not in keys  # b.id is a plain column, NOT guarded
 
 
+def test_referenced_side_resolves_target_model_name_to_sql_table() -> None:
+    # A join's target_model is a model NAME; the guard is keyed on the
+    # physical table. When name != sql_table, the referenced-side key must
+    # still land on the target's sql_table.
+    src = SlayerModel(
+        name="a", sql_table="a", data_source="db",
+        columns=[_col("fk")],
+        joins=[ModelJoin(target_model="DemographicsModel",
+                         join_pairs=[["fk", "reg"]])],
+    )
+    target = SlayerModel(
+        name="DemographicsModel", sql_table="demographics_tbl",
+        data_source="db", columns=[_col("reg")],
+    )
+    keys = collect_key_columns([src, target])
+    assert ("demographics_tbl", "reg") in keys       # resolved to sql_table
+    assert ("demographicsmodel", "reg") not in keys  # NOT the model name
+
+
 def test_case_insensitive() -> None:
     m = SlayerModel(
         name="T", sql_table="MixedCase", data_source="db",

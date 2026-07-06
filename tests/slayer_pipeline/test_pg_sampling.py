@@ -125,6 +125,8 @@ def test_extract_sample_query_wraps_expression() -> None:
     assert q.startswith("SELECT DISTINCT ")
     assert 'FROM "households"' in q
     assert "LIMIT 20" in q
+    # Deterministic: ordered by the extracted value (mirrors _sample_query).
+    assert f"ORDER BY {extract} LIMIT" in q
 
 
 def test_make_pg_sampler_swallows_errors_returns_empty(monkeypatch) -> None:
