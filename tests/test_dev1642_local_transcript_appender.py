@@ -107,6 +107,31 @@ def test_io_error_does_not_raise(tmp_path):
     app({"type": "T", "data": "x"})  # must not raise
 
 
+def test_write_failure_logged_once_not_per_message(monkeypatch, tmp_path, caplog):
+    """A permanently-broken path must leave ONE diagnostic line, not one per
+    streamed message (first-failure-only guard; CodeRabbit / Ruff S110)."""
+    import builtins
+
+    p = tmp_path / "partial_transcript.jsonl"
+    app = LocalTranscriptAppender(p)  # construction (truncate) succeeds
+
+    real_open = builtins.open
+
+    def boom_open(file, mode="r", *a, **k):
+        if str(file) == str(p) and "a" in mode:
+            raise OSError("disk full")
+        return real_open(file, mode, *a, **k)
+
+    monkeypatch.setattr(builtins, "open", boom_open)
+    with caplog.at_level("DEBUG", logger="bird_interact_agents.agents.claude_sdk.sdk_env"):
+        app({"data": "1"})
+        app({"data": "2"})
+        app({"data": "3"})
+
+    hits = [r for r in caplog.records if "LocalTranscriptAppender" in r.getMessage()]
+    assert len(hits) == 1
+
+
 def test_flush_is_noop_and_returns_none(tmp_path):
     p = tmp_path / "partial_transcript.jsonl"
     app = LocalTranscriptAppender(p)

@@ -30,6 +30,7 @@ import contextlib
 import contextvars
 import dataclasses
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -44,6 +45,8 @@ from bird_interact_agents.provider_registry import (
     requires_thinking,
     sdk_session_env,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # Env names recognised by the bundled CLI to opt OUT of outbound side
@@ -559,13 +562,29 @@ class LocalTranscriptAppender:
         # Discovery + main clients share ONE sink (both stream through the same
         # ContextVar), so serialise writes to keep lines intact under any overlap.
         self._lock = threading.Lock()
+        # First-failure-only guard so a permanently-broken path (missing parent,
+        # bad permissions) leaves ONE diagnostic line rather than spamming one
+        # per streamed message (CodeRabbit / Ruff S110).
+        self._logged_failure = False
         # Reset ONCE at construction (per-task, not per-message). Best-effort:
         # the parent dir is created by the caller/seam, but never raise here.
         try:
             with open(self.path, "w", encoding="utf-8"):
                 pass
         except Exception:  # noqa: BLE001 — best-effort; construction must not fail the task
-            pass
+            self._log_failure_once("truncate")
+
+    def _log_failure_once(self, op: str) -> None:
+        # Best-effort observability: without this, a misconfigured path silently
+        # no-ops every write forever with no trail. Debug level + once-per-sink
+        # keeps the "never raise / never spam" contract.
+        if not self._logged_failure:
+            self._logged_failure = True
+            logger.debug(
+                "LocalTranscriptAppender: %s failed for %s; "
+                "partial transcript will not be persisted",
+                op, self.path, exc_info=True,
+            )
 
     def __call__(self, msg: dict) -> None:
         try:
@@ -577,6 +596,7 @@ class LocalTranscriptAppender:
                 with open(self.path, "a", encoding="utf-8") as fh:
                     fh.write(line + "\n")
             except Exception:  # noqa: BLE001 — best-effort
+                self._log_failure_once("append")
                 return
 
     def flush(self) -> None:
