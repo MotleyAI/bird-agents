@@ -139,6 +139,7 @@ def _make_engine(db_url: str):
 
 
 def _run_query(db_url: str, query: str) -> list[str]:
+    engine = None
     try:
         import sqlalchemy as sa
 
@@ -148,6 +149,12 @@ def _run_query(db_url: str, query: str) -> list[str]:
             return [str(r[0]) for r in rows if r[0] is not None]
     except Exception:  # noqa: BLE001 — best-effort; caller degrades to TEXT + warn
         return []
+    finally:
+        # Dispose the pool so each sampler call doesn't leak idle connections
+        # (the samplers run once per date column / leaf — hundreds of calls
+        # across a build would otherwise exhaust the DB's connection slots).
+        if engine is not None:
+            engine.dispose()
 
 
 def make_pg_sampler(db_url: str) -> Callable[[str, str], list[str]]:

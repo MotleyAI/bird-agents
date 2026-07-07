@@ -136,3 +136,39 @@ def test_make_pg_sampler_swallows_errors_returns_empty(monkeypatch) -> None:
     monkeypatch.setattr(pg_sampling, "_make_engine", boom)
     sampler = make_pg_sampler("postgresql://x@localhost:1/none")
     assert sampler("t", "c") == []
+
+
+class _FakeConn:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, _stmt):
+        return iter(self._rows)
+
+
+class _FakeEngine:
+    def __init__(self, rows):
+        self._rows = rows
+        self.disposed = False
+
+    def connect(self):
+        return _FakeConn(self._rows)
+
+    def dispose(self):
+        self.disposed = True
+
+
+def test_make_pg_sampler_disposes_engine(monkeypatch) -> None:
+    # Each sampler call must dispose its engine so pooled connections don't
+    # leak (hundreds of calls across a build would exhaust the DB's slots).
+    engine = _FakeEngine([("2025-02-19",)])
+    monkeypatch.setattr(pg_sampling, "_make_engine", lambda _url: engine)
+    sampler = make_pg_sampler("postgresql://x@localhost:5432/db")
+    assert sampler("t", "c") == ["2025-02-19"]
+    assert engine.disposed is True
