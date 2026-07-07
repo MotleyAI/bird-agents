@@ -32,7 +32,7 @@ _HISTORICAL_LEAK_TOOLS = {
     "mcp__slayer__delete_model",
 }
 
-# The full advertised surface for the lock-pinned slayer (0.9.3). Pinning the
+# The full advertised surface for the lock-pinned slayer (0.9.4). Pinning the
 # exact set turns any upstream add/remove into a loud CI failure (the lock only
 # moves on a deliberate version bump) — the strongest anti-leak contract.
 _EXPECTED_SURFACE = {
