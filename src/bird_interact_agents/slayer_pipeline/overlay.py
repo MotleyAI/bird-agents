@@ -19,12 +19,10 @@ import copy
 import json
 import re
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 from slayer.core.models import Column, DataType, SlayerModel
 
-from .casts import pg_nullsafe_cast, quote_ident
-from .pg_sampling import detect_date_format, detect_fraction_pg_token
 from .types import parse_leading_type_token
 
 # DEV-1381 annotation grammar:
@@ -182,49 +180,56 @@ def _apply_meaning_to_column(
     *,
     backend: str = "sqlite",
     is_key: bool = False,
-    pg_sampler: Optional[Callable[[str, str], list[str]]] = None,
-    table: str = "",
-) -> Optional[str]:
-    """Mutate *col* in place: description, type from leading token, DEV-1381
-    date annotation. Returns a warning string when a postgres refinement is
-    declined (column left TEXT), else ``None``.
+) -> None:
+    """Mutate *col* in place: description, and (SQLite only) type from the
+    leading token / DEV-1381 date annotation.
 
-    On postgres, a refined column becomes *derived* — ``col.sql`` is a
-    NULL-safe guarded CAST — but ONLY when the physical (pre-overlay,
-    ingested) type is TEXT; an already-typed live column is left bare.
-    Guarded PK/join-key columns keep their description and nothing else.
+    DEV-1648: on **Postgres** a physically-TEXT top-level column is left as
+    TEXT — its type is NOT refined and no cast is baked into ``Column.sql``.
+    Two reasons this is the right call:
+
+    * A self-referencing cast in ``Column.sql`` (``CASE WHEN (col) … col …``)
+      cycles SLayer's column expansion (``ColumnCycleError``) the moment the
+      column is queried — the inner ``col`` resolves back to the derived
+      column itself.
+    * Refining ``Column.type`` while leaving ``sql`` bare is exactly what
+      trips the mode-C schema-drift false positive (persisted richer type vs
+      live TEXT). Leaving the column TEXT matches live introspection, so
+      there is no drift.
+
+    JSON leaves ARE cast (they reference the JSON column — a *different* base
+    column — so no self-cycle); that lives in :mod:`.jsonb`. The type the
+    token would have assigned came from the ``<db>_column_meaning_base.json``
+    annotation, not from the physical DB or sampled data.
+
+    Guarded PK/join-key columns keep their description and nothing else. The
+    SQLite path is byte-unchanged.
     """
     if meaning_text and not col.description:
         col.description = meaning_text
 
     if is_key:
-        return None  # guarded: description only, never retyped/rewritten
+        return  # guarded: description only, never retyped/rewritten
 
-    physical_type = col.type  # pre-overlay == the live physical type
+    if backend == "postgres":
+        # Leave physically-TEXT top-level columns as-is (TEXT). Still stamp
+        # the harmless enum/jsonb meta markers (no type/sql/drift impact).
+        parsed = parse_leading_type_token(meaning_text)
+        if parsed is not None:
+            _data_type, meta_patch = parsed
+            if meta_patch:
+                meta = col.meta or {}
+                meta.update(meta_patch)
+                col.meta = meta
+        return
 
+    # ---- SQLite (unchanged) ----
     annot = DATE_ANNOTATION_RE.search(meaning_text or "")
     if annot is not None:
         fmt = annot.group(1)
-        if backend == "postgres":
-            if physical_type != DataType.TEXT:
-                return None  # already typed live -> no cast, no drift
-            cast_sql = pg_nullsafe_cast(quote_ident(col.name), DataType.TIMESTAMP, fmt)
-            if cast_sql is None:
-                return (
-                    f"{table}.{col.name}: DEV-1381 annotation source_format "
-                    f"'{fmt}' unsupported on postgres; column left TEXT."
-                )
-            col.type = DataType.TIMESTAMP
-            col.sql = cast_sql
-            meta = col.meta or {}
-            meta["date_source_format"] = fmt
-            meta["detected_by"] = "column_meaning_annotation"
-            col.meta = meta
-            return None
-        # SQLite (unchanged).
         new_sql = _sqlite_reformat_sql(col.name, fmt)
         if new_sql is None and fmt not in ISO_TEXT_DATE_FORMATS:
-            return None
+            return
         col.type = DataType.TIMESTAMP
         if new_sql is not None:
             col.sql = new_sql
@@ -232,72 +237,17 @@ def _apply_meaning_to_column(
         meta["date_source_format"] = fmt
         meta["detected_by"] = "column_meaning_annotation"
         col.meta = meta
-        return None
+        return
 
     parsed = parse_leading_type_token(meaning_text)
     if parsed is None:
-        return None
+        return
     data_type, meta_patch = parsed
-
-    def _stamp_meta() -> None:
-        if meta_patch:
-            meta = col.meta or {}
-            meta.update(meta_patch)
-            col.meta = meta
-
-    if backend == "postgres":
-        if physical_type != DataType.TEXT:
-            return None  # already typed live -> leave bare, no drift
-        if data_type in (DataType.DOUBLE, DataType.INT):
-            col.sql = pg_nullsafe_cast(quote_ident(col.name), data_type)
-            col.type = data_type
-            _stamp_meta()
-            return None
-        if data_type in (DataType.DATE, DataType.TIMESTAMP):
-            samples = pg_sampler(table, col.name) if pg_sampler else []
-            fmt = detect_date_format(
-                samples, with_time=(data_type == DataType.TIMESTAMP)
-            )
-            if not fmt:
-                return (
-                    f"{table}.{col.name}: {data_type.name} token but no date "
-                    f"format detected from {len(samples)} sampled value(s); "
-                    f"column left TEXT."
-                )
-            frac = detect_fraction_pg_token(samples)
-            cast_sql = pg_nullsafe_cast(
-                quote_ident(col.name), data_type, fmt, frac_pg=frac
-            )
-            if cast_sql is None:
-                return (
-                    f"{table}.{col.name}: detected format '{fmt}' unsupported "
-                    f"on postgres; column left TEXT."
-                )
-            col.type = data_type
-            col.sql = cast_sql
-            meta = col.meta or {}
-            meta["date_source_format"] = fmt
-            meta["detected_by"] = "pg_sample"
-            col.meta = meta
-            return None
-        if data_type == DataType.BOOLEAN:
-            # A BOOLEAN token over a physically-TEXT column would drift the
-            # same way (persisted BOOLEAN vs live TEXT) and no NULL-safe
-            # boolean cast is in scope (value spellings vary). Leave it TEXT
-            # to match live introspection.
-            return (
-                f"{table}.{col.name}: BOOLEAN token over a physically-TEXT "
-                f"column is not cast on postgres; column left TEXT."
-            )
-        # TEXT / enum / jsonb tokens (all map to DataType.TEXT): meta only.
-        col.type = data_type
-        _stamp_meta()
-        return None
-
-    # SQLite (unchanged): set type from token, sql stays bare.
     col.type = data_type
-    _stamp_meta()
-    return None
+    if meta_patch:
+        meta = col.meta or {}
+        meta.update(meta_patch)
+        col.meta = meta
 
 
 def apply_overlay(
@@ -306,14 +256,14 @@ def apply_overlay(
     *,
     backend: str = "sqlite",
     key_columns: frozenset[tuple[str, str]] = frozenset(),
-    pg_sampler: Optional[Callable[[str, str], list[str]]] = None,
 ) -> tuple[int, list[str]]:
     """Apply meanings to *model* in place.
 
-    Returns ``(num_columns_touched, warnings)``. On ``backend='postgres'``,
-    refined-over-TEXT non-key columns are rewritten to NULL-safe guarded
-    casts (DEV-1648); ``key_columns`` (DB-wide PK/join keys) are guarded;
-    the SQLite path is byte-unchanged.
+    Returns ``(num_columns_touched, warnings)``. On ``backend='postgres'``
+    physically-TEXT top-level columns are left as TEXT (DEV-1648 — no
+    self-referencing cast; JSON leaves are cast in :mod:`.jsonb`);
+    ``key_columns`` (DB-wide PK/join keys) are guarded; the SQLite path is
+    byte-unchanged.
     """
     table_actual = model.sql_table or model.name
     table_lc = table_actual.lower()
@@ -334,12 +284,9 @@ def apply_overlay(
         before_sql = column.sql
         before_meta = copy.deepcopy(column.meta)
         is_key = (table_lc, column.name.lower()) in key_columns
-        warn = _apply_meaning_to_column(
+        _apply_meaning_to_column(
             column, text, backend=backend, is_key=is_key,
-            pg_sampler=pg_sampler, table=table_actual,
         )
-        if warn:
-            warnings.append(warn)
         if (
             column.description != before_description
             or column.type != before_type

@@ -13,10 +13,9 @@ from __future__ import annotations
 from bird_interact_agents.slayer_pipeline import pg_sampling
 from bird_interact_agents.slayer_pipeline.pg_sampling import (
     _extract_sample_query,
-    _sample_query,
     detect_date_format,
     detect_fraction_pg_token,
-    make_pg_sampler,
+    make_pg_extract_sampler,
 )
 
 
@@ -109,15 +108,6 @@ def test_fraction_token_mixed_widths_defaults_us() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_sample_query_is_deterministic_and_quoted() -> None:
-    q = _sample_query("transplant_matching", "match_ts")
-    assert q == (
-        'SELECT DISTINCT "match_ts" FROM "transplant_matching" '
-        'WHERE "match_ts" IS NOT NULL AND "match_ts" <> \'\' '
-        'ORDER BY "match_ts" LIMIT 20'
-    )
-
-
 def test_extract_sample_query_wraps_expression() -> None:
     extract = "jsonb_extract_path_text(\"socioeconomic\", 'event_ts')"
     q = _extract_sample_query("households", extract)
@@ -129,13 +119,13 @@ def test_extract_sample_query_wraps_expression() -> None:
     assert f"ORDER BY {extract} LIMIT" in q
 
 
-def test_make_pg_sampler_swallows_errors_returns_empty(monkeypatch) -> None:
+def test_extract_sampler_swallows_errors_returns_empty(monkeypatch) -> None:
     def boom(_url):
         raise RuntimeError("no db")
 
     monkeypatch.setattr(pg_sampling, "_make_engine", boom)
-    sampler = make_pg_sampler("postgresql://x@localhost:1/none")
-    assert sampler("t", "c") == []
+    sampler = make_pg_extract_sampler("postgresql://x@localhost:1/none")
+    assert sampler("t", "extract_expr") == []
 
 
 class _FakeConn:
@@ -164,11 +154,11 @@ class _FakeEngine:
         self.disposed = True
 
 
-def test_make_pg_sampler_disposes_engine(monkeypatch) -> None:
+def test_extract_sampler_disposes_engine(monkeypatch) -> None:
     # Each sampler call must dispose its engine so pooled connections don't
-    # leak (hundreds of calls across a build would exhaust the DB's slots).
+    # leak (hundreds of leaf calls across a build would exhaust the DB's slots).
     engine = _FakeEngine([("2025-02-19",)])
     monkeypatch.setattr(pg_sampling, "_make_engine", lambda _url: engine)
-    sampler = make_pg_sampler("postgresql://x@localhost:5432/db")
-    assert sampler("t", "c") == ["2025-02-19"]
+    sampler = make_pg_extract_sampler("postgresql://x@localhost:5432/db")
+    assert sampler("t", "extract_expr") == ["2025-02-19"]
     assert engine.disposed is True

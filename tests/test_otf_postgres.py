@@ -305,11 +305,11 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
     def fake_phase1(db, storage, *, sqlite_path=None, db_url=None, pg_password=None):
         phase1_calls.append({"db_url": db_url, "pg_password": pg_password})
 
-    async def fake_phase2(storage, db, meanings_path, *, backend="sqlite", pg_sampler=None):
+    async def fake_phase2(storage, db, meanings_path, *, backend="sqlite"):
         # Capture PGPASSWORD as seen DURING the build (the postgres branch must
         # export it before phase 2/3 so the in-process engine refresh authns).
         phase2_calls.append({
-            "backend": backend, "pg_sampler": pg_sampler,
+            "backend": backend,
             "pgpassword": os.environ.get("PGPASSWORD"),
         })
         return 0, []
@@ -348,9 +348,10 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
     assert url is not None
     assert "pgpass" not in url, f"password leaked into db_url: {url!r}"
 
-    # DEV-1648: postgres backend + live samplers threaded into phases 2 & 3.
+    # DEV-1648: postgres backend threaded into phases 2 & 3; the JSON-leaf
+    # extract sampler is threaded into phase 3 (top-level columns are not
+    # refined on postgres, so phase 2 needs no sampler).
     assert phase2_calls and phase2_calls[0]["backend"] == "postgres"
-    assert phase2_calls[0]["pg_sampler"] is not None
     assert phase3_calls and phase3_calls[0]["backend"] == "postgres"
     assert phase3_calls[0]["pg_extract_sampler"] is not None
     # DEV-1648: PGPASSWORD is exported so phase-3's in-process engine refresh

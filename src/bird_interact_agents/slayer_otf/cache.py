@@ -82,7 +82,6 @@ from bird_interact_agents.slayer_pipeline.orchestrator import (
 )
 from bird_interact_agents.slayer_pipeline.pg_sampling import (
     make_pg_extract_sampler,
-    make_pg_sampler,
 )
 
 # Re-export _phase4_dates for tests' monkeypatch + assertion. The cache
@@ -476,11 +475,10 @@ async def _build_async(
     is_postgres = getattr(benchmark, "db_backend", "sqlite") == "postgres"
     build_dir.mkdir(parents=True, exist_ok=True)
 
-    # DEV-1648: live-PG value samplers for phase-2 date-format detection and
-    # phase-3 JSON-leaf date detection. In-process only (no subprocess / no
-    # persisted YAML), so the password may ride the URL — the ps/YAML leak
-    # concern that keeps it out of the ingest URL does not apply here.
-    pg_sampler = None
+    # DEV-1648: live-PG value sampler for phase-3 JSON-leaf date detection.
+    # In-process only (no subprocess / no persisted YAML), so the password may
+    # ride the URL — the ps/YAML leak concern that keeps it out of the ingest
+    # URL does not apply here.
     pg_extract_sampler = None
     if is_postgres:
         from urllib.parse import quote as _quote
@@ -493,7 +491,6 @@ async def _build_async(
         # Passed separately as PGPASSWORD env var instead.
         db_url = f"postgresql://{user}@{host}:{port}/{db}"
         sampler_url = f"postgresql://{user}:{_quote(password, safe='')}@{host}:{port}/{db}"
-        pg_sampler = make_pg_sampler(sampler_url)
         pg_extract_sampler = make_pg_extract_sampler(sampler_url)
         # DEV-1648: phase 3's DEV-1614 sample-refresh connects via SLayer's
         # in-process engine over the PASSWORDLESS persisted datasource, so it
@@ -517,7 +514,7 @@ async def _build_async(
     storage = YAMLStorage(base_dir=str(build_dir))
     with otf_timer("ensure_db_cache.phase2_overlay", db=db):
         _touched, p2_warns = await _phase2_overlay(
-            storage, db, meanings_path, backend=backend, pg_sampler=pg_sampler,
+            storage, db, meanings_path, backend=backend,
         )
     if p2_warns:
         logger.info(

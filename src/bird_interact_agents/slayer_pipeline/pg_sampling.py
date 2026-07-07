@@ -1,14 +1,17 @@
 """DEV-1648: deterministic date-format detection from sampled PG values.
 
-Phase 2 refines ``DATE.``/``TIMESTAMP.``-token columns that carry NO
-explicit strftime format. We discover the format by sampling live
-Postgres values and picking the first ordered candidate that round-trips
-ALL samples (no LLM). The fractional-second width (3 vs 6 digits) selects
-the Postgres ``MS``/``US`` token so ``to_timestamp`` scales correctly.
+Used by phase-3 JSON-leaf expansion (:mod:`.jsonb`) to type a date/timestamp
+leaf that carries no explicit strftime format: sample the live extracted
+values and pick the first ordered candidate that round-trips ALL samples (no
+LLM). The fractional-second width (3 vs 6 digits) selects the Postgres
+``MS``/``US`` token so ``to_timestamp`` scales correctly. (Top-level
+physically-TEXT columns are NOT refined on Postgres — see
+:func:`.overlay._apply_meaning_to_column` — so only the JSON-leaf extract
+sampler is wired.)
 
-Sampling is a thin wrapper over SQLAlchemy; the query builders are pure
-and unit-tested, and any DB error degrades to ``[]`` (the caller then
-leaves the column TEXT + warns — never silently NULLs a column).
+Sampling is a thin wrapper over SQLAlchemy; the query builder is pure and
+unit-tested, and any DB error degrades to ``[]`` (the caller then leaves the
+leaf as a bare TEXT extract).
 """
 
 from __future__ import annotations
@@ -112,15 +115,6 @@ def detect_fraction_pg_token(samples: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _sample_query(table: str, col: str, *, limit: int = SAMPLE_LIMIT) -> str:
-    q = _quote_ident(col)
-    return (
-        f"SELECT DISTINCT {q} FROM {_quote_ident(table)} "
-        f"WHERE {q} IS NOT NULL AND {q} <> '' "
-        f"ORDER BY {q} LIMIT {limit}"
-    )
-
-
 def _extract_sample_query(table: str, extract_sql: str, *, limit: int = SAMPLE_LIMIT) -> str:
     # ORDER BY the extracted value (mirrors _sample_query) so repeated calls
     # on the same DB state return the same sample set -> deterministic format
@@ -155,15 +149,6 @@ def _run_query(db_url: str, query: str) -> list[str]:
         # across a build would otherwise exhaust the DB's connection slots).
         if engine is not None:
             engine.dispose()
-
-
-def make_pg_sampler(db_url: str) -> Callable[[str, str], list[str]]:
-    """Return ``sampler(table, col) -> list[str]`` over the live PG DB."""
-
-    def sampler(table: str, col: str) -> list[str]:
-        return _run_query(db_url, _sample_query(table, col))
-
-    return sampler
 
 
 def make_pg_extract_sampler(db_url: str) -> Callable[[str, str], list[str]]:

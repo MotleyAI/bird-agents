@@ -146,7 +146,6 @@ async def _phase2_overlay(
     meanings_path: Path,
     *,
     backend: str = "sqlite",
-    pg_sampler: Optional[object] = None,
 ) -> tuple[int, list[str]]:
     by_table = load_meanings(meanings_path)
     # Load ALL models first so the PK/join-key guard is DB-wide (a join's
@@ -163,7 +162,7 @@ async def _phase2_overlay(
     for model in models:
         touched, warns = apply_overlay(
             model, by_table,
-            backend=backend, key_columns=key_columns, pg_sampler=pg_sampler,
+            backend=backend, key_columns=key_columns,
         )
         if touched or warns:
             await storage.save_model(model)

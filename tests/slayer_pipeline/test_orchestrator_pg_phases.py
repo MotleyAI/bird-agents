@@ -61,23 +61,20 @@ def test_phase2_threads_backend_and_dbwide_keys(monkeypatch, tmp_path) -> None:
     storage = FakeStorage([_pk_model(db)])
     calls = []
 
-    def fake_apply(model, by_table, *, backend="sqlite",
-                   key_columns=frozenset(), pg_sampler=None):
-        calls.append((backend, key_columns, pg_sampler))
+    def fake_apply(model, by_table, *, backend="sqlite", key_columns=frozenset()):
+        calls.append((backend, key_columns))
         return 0, []
 
     monkeypatch.setattr(orchestrator, "apply_overlay", fake_apply)
     monkeypatch.setattr(orchestrator, "load_meanings", lambda p: {})
-    sampler = lambda t, c: []
 
     asyncio.run(orchestrator._phase2_overlay(
-        storage, db, tmp_path / "m.json", backend="postgres", pg_sampler=sampler,
+        storage, db, tmp_path / "m.json", backend="postgres",
     ))
 
     assert calls, "apply_overlay must be called per model"
-    backend, keys, passed_sampler = calls[0]
+    backend, keys = calls[0]
     assert backend == "postgres"
-    assert passed_sampler is sampler
     # DB-wide keys: PK + local join side + referenced join side.
     assert ("transplant_matching", "match_rec_registry") in keys
     assert ("transplant_matching", "donor_ref_reg") in keys
