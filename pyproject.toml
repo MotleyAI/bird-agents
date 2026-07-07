@@ -36,7 +36,7 @@ mcp-agent = ["mcp-agent>=0.0.16"]
 # `asyncpg` is SLayer's async-postgres driver (`postgres -> postgresql+asyncpg`
 # in `slayer/sql/client.py`); it is NOT pulled in transitively, so every SLayer
 # query on a postgres benchmark errored `No module named 'asyncpg'` (DEV-1644).
-slayer = ["motley-slayer[advanced-search]>=0.9.3", "asyncpg>=0.30"]
+slayer = ["motley-slayer[advanced-search]>=0.9.4", "asyncpg>=0.30"]
 # `original` brings in the upstream BIRD-Interact mini_interact_agent harness
 # so we can call its main.py directly via `uv run python -m batch_run_bird_interact.main`.
 original = ["mini-interact-agent"]
@@ -55,7 +55,7 @@ all = [
     "smolagents>=1.0",
     "agno>=2.0",
     "mcp-agent>=0.0.16",
-    "motley-slayer[advanced-search]>=0.9.3",
+    "motley-slayer[advanced-search]>=0.9.4",
     "asyncpg>=0.30",
     "mini-interact-agent",
     "ray[default]>=2.30",
