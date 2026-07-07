@@ -1,19 +1,31 @@
-"""DEV-1648: NULL-safe Postgres cast emission for refined-over-TEXT columns.
+"""DEV-1648: NULL-safe Postgres cast emission for JSON-leaf columns.
 
-The harness OTF encoder refines a *physically TEXT* Postgres column to a
-richer ``DataType`` (DOUBLE / INT / DATE / TIMESTAMP) while leaving
-``Column.sql`` a bare identifier. On Postgres that (a) trips SLayer's
-schema-drift check (bare sql = "base" column, bucket mismatch) and (b)
-runs aggregation against raw TEXT. Baking a guarded CAST *expression*
-into ``Column.sql`` makes the column derived — drift skips it — and casts
-the value everywhere.
+Used by :mod:`.jsonb` to type a JSONB leaf whose extracted value is text:
+the guarded CAST is baked into the leaf's derived ``Column.sql`` so the
+leaf is typed (DOUBLE / INT / DATE / TIMESTAMP) with the cast applied
+everywhere. (Top-level physically-TEXT columns are NOT cast on Postgres —
+a self-referencing cast in a base column's sql cycles SLayer's column
+expansion; they stay TEXT and carry the semantic type in their
+description. See :func:`.overlay._apply_meaning_to_column`.)
 
-Every emitted cast is NULL-safe: a value that does not match the shape
-guard falls through to NULL instead of aborting the whole query
-(Postgres has no ``TRY_CAST``). Numeric guards gate the erroring ``::``
-cast; temporal casts use the lenient ``to_date``/``to_timestamp`` (never
-``::timestamp``, which aborts on an invalid calendar date such as
-``2025-02-30``).
+Every emitted cast is NULL-safe for the primary failure mode — an
+**un-castable value** (non-numeric / wrong-shape text) falls through to
+NULL instead of aborting the whole query (Postgres has no ``TRY_CAST``).
+The numeric regex gates the erroring ``::`` cast; temporal casts use the
+lenient ``to_date``/``to_timestamp`` (never ``::timestamp``, which aborts
+on an invalid calendar date such as ``2025-02-30``).
+
+Known, accepted limitations (out of scope — the data does not exercise
+them, and they are bounded by SLayer, not this helper):
+
+* **Out-of-range numeric.** A shape-valid but out-of-range number
+  (``1e309``, an integer > 2.1e9) can still abort — not on our inner cast
+  but on the OUTER ``CAST(… AS DOUBLE PRECISION)`` / ``CAST(… AS INT)``
+  that SLayer's compiler wraps around every typed column (``DataType.INT``
+  compiles to int4). We do not control that outer cast; switching the
+  inner cast to ``::numeric`` only moves the abort there.
+* **Invalid calendar dates** roll over rather than NULL (``to_date`` is
+  lenient). The bar is no-abort, not calendar validation.
 
 Pure module: no DB, no I/O. Callers own identifier quoting — the
 ``inner_sql`` passed here is wrapped verbatim so a JSON-leaf extract
