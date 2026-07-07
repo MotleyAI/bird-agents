@@ -480,10 +480,6 @@ async def _build_async(
     # ride the URL — the ps/YAML leak concern that keeps it out of the ingest
     # URL does not apply here.
     pg_extract_sampler = None
-    db_url = None
-    password = None
-    _pgpassword_saved = False
-    _prev_pgpassword: str | None = None
     if is_postgres:
         from urllib.parse import quote as _quote
         host = os.environ.get("BIRD_PG_HOST", "localhost")
@@ -498,70 +494,58 @@ async def _build_async(
         pg_extract_sampler = make_pg_extract_sampler(sampler_url)
         # DEV-1648: phase 3's DEV-1614 sample-refresh connects via SLayer's
         # in-process engine over the PASSWORDLESS persisted datasource, so it
-        # relies on libpq's PGPASSWORD env. Phase 1 only sets PGPASSWORD on its
-        # subprocess; export it for the in-process phases too, or the leaf
-        # refresh silently fails auth (best-effort -> warnings) wherever the DB
-        # requires a password (the cloud; local dev uses loopback `trust`).
-        # Saved + restored in the finally below so we don't clobber a caller's
-        # PGPASSWORD process-wide.
-        _prev_pgpassword = os.environ.get("PGPASSWORD")
-        _pgpassword_saved = True
-        os.environ["PGPASSWORD"] = password
+        # relies on libpq's PGPASSWORD env. Real runs already have it —
+        # ``harness.py`` derives PGPASSWORD from BIRD_PG_PASSWORD — so this only
+        # fills it in for a standalone caller (e.g. a re-encode script) that
+        # left it unset. ``setdefault`` (set-if-absent, never restore): never
+        # clobbers a caller's value, and is race-free across concurrent
+        # same-process builds since every build sets the SAME cluster password
+        # and nobody restores it. Same credential the sampler URL carries.
+        os.environ.setdefault("PGPASSWORD", password)
+        with otf_timer("ensure_db_cache.phase1_ingest", db=db, backend="postgres"):
+            await asyncio.to_thread(
+                _phase1_ingest, db, build_dir, db_url=db_url, pg_password=password
+            )
+    else:
+        if sqlite_path is None:
+            raise ValueError("_build_async: sqlite_path is required for non-postgres benchmarks")
+        with otf_timer("ensure_db_cache.phase1_ingest", db=db, backend="sqlite"):
+            await asyncio.to_thread(_phase1_ingest, db, build_dir, sqlite_path=sqlite_path)
 
     backend = "postgres" if is_postgres else "sqlite"
-    try:
-        if is_postgres:
-            with otf_timer("ensure_db_cache.phase1_ingest", db=db, backend="postgres"):
-                await asyncio.to_thread(
-                    _phase1_ingest, db, build_dir, db_url=db_url, pg_password=password
-                )
-        else:
-            if sqlite_path is None:
-                raise ValueError("_build_async: sqlite_path is required for non-postgres benchmarks")
-            with otf_timer("ensure_db_cache.phase1_ingest", db=db, backend="sqlite"):
-                await asyncio.to_thread(_phase1_ingest, db, build_dir, sqlite_path=sqlite_path)
+    storage = YAMLStorage(base_dir=str(build_dir))
+    with otf_timer("ensure_db_cache.phase2_overlay", db=db):
+        _touched, p2_warns = await _phase2_overlay(
+            storage, db, meanings_path, backend=backend,
+        )
+    if p2_warns:
+        logger.info(
+            "[slayer_otf] phase2 produced %d warnings for db=%s",
+            len(p2_warns), db,
+        )
+    with otf_timer("ensure_db_cache.phase3_jsonb", db=db):
+        _added, jsonb_typing, drift = await _phase3_jsonb(
+            storage, db, meanings_path=meanings_path, sqlite_path=sqlite_path,
+            benchmark=benchmark, backend=backend,
+            pg_extract_sampler=pg_extract_sampler,
+        )
+    if jsonb_typing or drift:
+        logger.info(
+            "[slayer_otf] phase3 produced %d typing warnings, %d drift "
+            "findings for db=%s",
+            len(jsonb_typing), len(drift), db,
+        )
 
-        storage = YAMLStorage(base_dir=str(build_dir))
-        with otf_timer("ensure_db_cache.phase2_overlay", db=db):
-            _touched, p2_warns = await _phase2_overlay(
-                storage, db, meanings_path, backend=backend,
-            )
-        if p2_warns:
-            logger.info(
-                "[slayer_otf] phase2 produced %d warnings for db=%s",
-                len(p2_warns), db,
-            )
-        with otf_timer("ensure_db_cache.phase3_jsonb", db=db):
-            _added, jsonb_typing, drift = await _phase3_jsonb(
-                storage, db, meanings_path=meanings_path, sqlite_path=sqlite_path,
-                benchmark=benchmark, backend=backend,
-                pg_extract_sampler=pg_extract_sampler,
-            )
-        if jsonb_typing or drift:
-            logger.info(
-                "[slayer_otf] phase3 produced %d typing warnings, %d drift "
-                "findings for db=%s",
-                len(jsonb_typing), len(drift), db,
-            )
+    (build_dir / "_kb_rows.json").write_text(json.dumps(kb_rows, indent=2))
 
-        (build_dir / "_kb_rows.json").write_text(json.dumps(kb_rows, indent=2))
-
-        # Pre-encode the no-deletion memories + their embeddings into the
-        # cache. Per-task prepare copies these verbatim (no deletions) or
-        # overwrites memories.yaml + prunes the embedding rows for the
-        # deleted memory ids (with deletions).
-        with otf_timer("ensure_db_cache.materialise_memories", db=db, kb_rows=len(kb_rows)):
-            await _materialise_cache_memories(
-                db=db, build_dir=build_dir, kb_rows=kb_rows,
-            )
-    finally:
-        # Restore the caller's PGPASSWORD — never leave the build's credential
-        # in the process environment.
-        if _pgpassword_saved:
-            if _prev_pgpassword is None:
-                os.environ.pop("PGPASSWORD", None)
-            else:
-                os.environ["PGPASSWORD"] = _prev_pgpassword
+    # Pre-encode the no-deletion memories + their embeddings into the
+    # cache. Per-task prepare copies these verbatim (no deletions) or
+    # overwrites memories.yaml + prunes the embedding rows for the
+    # deleted memory ids (with deletions).
+    with otf_timer("ensure_db_cache.materialise_memories", db=db, kb_rows=len(kb_rows)):
+        await _materialise_cache_memories(
+            db=db, build_dir=build_dir, kb_rows=kb_rows,
+        )
 
 
 async def _materialise_cache_memories(

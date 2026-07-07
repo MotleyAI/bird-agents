@@ -327,9 +327,9 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
         "BIRD_PG_PORT": "5432",
         "BIRD_PG_USER": "pguser",
         "BIRD_PG_PASSWORD": "pgpass",
-        "PGPASSWORD": "caller-sentinel",  # a pre-existing caller value
     }
     with patch.dict("os.environ", env_patch):
+        os.environ.pop("PGPASSWORD", None)  # simulate a standalone caller (unset)
         with patch.object(otf_cache, "_phase1_ingest", side_effect=fake_phase1):
             with patch.object(otf_cache, "_phase2_overlay", side_effect=fake_phase2):
                 with patch.object(otf_cache, "_phase3_jsonb", side_effect=fake_phase3):
@@ -342,8 +342,6 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
                             kb_rows=[],
                             benchmark=b,
                         ))
-                        # Captured INSIDE patch.dict (it reverts os.environ on exit).
-                        pgpassword_after_build = os.environ.get("PGPASSWORD")
 
     assert len(phase1_calls) == 1
     url = phase1_calls[0]["db_url"]
@@ -357,10 +355,10 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
     assert phase2_calls and phase2_calls[0]["backend"] == "postgres"
     assert phase3_calls and phase3_calls[0]["backend"] == "postgres"
     assert phase3_calls[0]["pg_extract_sampler"] is not None
-    # DEV-1648: PGPASSWORD is exported so phase-3's in-process engine refresh
-    # authenticates against the passwordless persisted datasource (the sampler
-    # URL carries the password, but the SLayer engine relies on libpq's env)...
+    # DEV-1648: when PGPASSWORD is unset (standalone caller), set-if-absent
+    # fills it from BIRD_PG_PASSWORD so phase-3's in-process engine refresh
+    # authenticates against the passwordless persisted datasource. (In real
+    # runs harness.py already sets it, so setdefault is a no-op — never
+    # clobbering a caller's value, and race-free across concurrent builds.)
     assert phase2_calls[0]["pgpassword"] == "pgpass"
-    # ...and RESTORED afterward so it never clobbers the caller's value.
-    assert pgpassword_after_build == "caller-sentinel"
     assert pw == "pgpass", f"pg_password not passed separately: {pw!r}"
