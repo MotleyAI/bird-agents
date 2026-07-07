@@ -64,13 +64,19 @@ def test_double_bad_value_is_null_not_error() -> None:
     assert _eval_cast(expr, "N/A") is None
 
 
-def test_bigint_overflow_is_null_not_error() -> None:
-    # 30-digit value: must NULL (bounded regex), never abort on ::bigint.
+def test_large_integer_casts_via_numeric_no_overflow() -> None:
+    # 30-digit value: ::numeric has arbitrary precision, so it casts exactly
+    # (no overflow abort, no NULL data loss).
     expr = pg_nullsafe_cast("c", DataType.INT)
-    assert _eval_cast(expr, "1" * 30) is None
+    assert str(_eval_cast(expr, "1" * 30)) == "1" * 30
 
 
-def test_bigint_good_value() -> None:
+def test_integer_bad_value_is_null_not_error() -> None:
+    expr = pg_nullsafe_cast("c", DataType.INT)
+    assert _eval_cast(expr, "N/A") is None
+
+
+def test_integer_good_value() -> None:
     expr = pg_nullsafe_cast("c", DataType.INT)
     assert _eval_cast(expr, "128") == 128
 

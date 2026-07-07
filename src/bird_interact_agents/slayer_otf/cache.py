@@ -495,6 +495,14 @@ async def _build_async(
         sampler_url = f"postgresql://{user}:{_quote(password, safe='')}@{host}:{port}/{db}"
         pg_sampler = make_pg_sampler(sampler_url)
         pg_extract_sampler = make_pg_extract_sampler(sampler_url)
+        # DEV-1648: phase 3's DEV-1614 sample-refresh connects via SLayer's
+        # in-process engine over the PASSWORDLESS persisted datasource, so it
+        # relies on libpq's PGPASSWORD env. Phase 1 only sets PGPASSWORD on its
+        # subprocess; export it here too, or the leaf refresh silently fails
+        # auth (best-effort -> warnings) wherever the DB requires a password
+        # (the cloud; local dev uses loopback `trust`). Same credential the
+        # sampler URL carries.
+        os.environ["PGPASSWORD"] = password
         with otf_timer("ensure_db_cache.phase1_ingest", db=db, backend="postgres"):
             await asyncio.to_thread(
                 _phase1_ingest, db, build_dir, db_url=db_url, pg_password=password

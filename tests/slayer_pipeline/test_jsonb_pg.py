@@ -41,7 +41,7 @@ def test_pg_numeric_leaf_double_cast() -> None:
     assert leaf.sql == pg_nullsafe_cast(extract, DataType.DOUBLE)
 
 
-def test_pg_integer_leaf_bigint_cast() -> None:
+def test_pg_integer_leaf_numeric_cast() -> None:
     entry = {"fields_meaning": {"Auto_Count": "INTEGER. Vehicles."}}
     cols, _ = _by_name(entry, backend="postgres", table="households")
     leaf = cols["dwelling_specs__Auto_Count"]

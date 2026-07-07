@@ -306,7 +306,12 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
         phase1_calls.append({"db_url": db_url, "pg_password": pg_password})
 
     async def fake_phase2(storage, db, meanings_path, *, backend="sqlite", pg_sampler=None):
-        phase2_calls.append({"backend": backend, "pg_sampler": pg_sampler})
+        # Capture PGPASSWORD as seen DURING the build (the postgres branch must
+        # export it before phase 2/3 so the in-process engine refresh authns).
+        phase2_calls.append({
+            "backend": backend, "pg_sampler": pg_sampler,
+            "pgpassword": os.environ.get("PGPASSWORD"),
+        })
         return 0, []
 
     async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *,
@@ -348,4 +353,8 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
     assert phase2_calls[0]["pg_sampler"] is not None
     assert phase3_calls and phase3_calls[0]["backend"] == "postgres"
     assert phase3_calls[0]["pg_extract_sampler"] is not None
+    # DEV-1648: PGPASSWORD is exported so phase-3's in-process engine refresh
+    # authenticates against the passwordless persisted datasource (the sampler
+    # URL carries the password, but the SLayer engine relies on libpq's env).
+    assert phase2_calls[0]["pgpassword"] == "pgpass"
     assert pw == "pgpass", f"pg_password not passed separately: {pw!r}"

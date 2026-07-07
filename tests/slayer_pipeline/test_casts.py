@@ -44,10 +44,10 @@ def test_numeric_regex_constant() -> None:
     assert NUMERIC_REGEX == r"^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*$"
 
 
-def test_integer_regex_is_digit_bounded_to_18() -> None:
-    # Bounded so a >=10^18 value falls through to NULL instead of
-    # aborting the query on ::bigint overflow (bigint max ~9.2e18).
-    assert INTEGER_REGEX == r"^\s*[+-]?\d{1,18}\s*$"
+def test_integer_regex_is_unbounded_integer_shape() -> None:
+    # Unbounded: the cast target is ::numeric (no overflow), so any-length
+    # integer text is accepted with no valid-value loss.
+    assert INTEGER_REGEX == r"^\s*[+-]?\d+\s*$"
 
 
 # ---------------------------------------------------------------------------
@@ -123,10 +123,10 @@ def test_cast_double_bare_column() -> None:
     )
 
 
-def test_cast_int_uses_bounded_bigint() -> None:
+def test_cast_int_uses_numeric() -> None:
     assert pg_nullsafe_cast("dur_sec", DataType.INT) == (
-        r"CASE WHEN (dur_sec) ~ '^\s*[+-]?\d{1,18}\s*$' "
-        r"THEN (dur_sec)::bigint END"
+        r"CASE WHEN (dur_sec) ~ '^\s*[+-]?\d+\s*$' "
+        r"THEN (dur_sec)::numeric END"
     )
 
 

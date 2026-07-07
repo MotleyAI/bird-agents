@@ -57,7 +57,7 @@ def test_pg_real_over_text_gets_double_cast() -> None:
     assert col.sql == pg_nullsafe_cast(_q("score_val"), DataType.DOUBLE)
 
 
-def test_pg_bigint_over_text_gets_bounded_bigint_cast() -> None:
+def test_pg_int_over_text_gets_numeric_cast() -> None:
     col = Column(name="dur_sec", sql="dur_sec", type=DataType.TEXT)
     m = _model([col])
     apply_overlay(m, _by_table(dur_sec="BIGINT. Duration seconds. Example: 128."),

@@ -26,11 +26,12 @@ from typing import Optional
 
 from slayer.core.models import DataType
 
-# Numeric shape guards. INTEGER is bounded to <= 18 digits so a value
-# >= 10^18 (< bigint max ~9.2e18) falls through to NULL rather than
-# aborting the query on a ``::bigint`` overflow.
+# Numeric shape guards. INTEGER accepts any-length integer text because the
+# cast target is ``::numeric`` (arbitrary precision) — it never overflows, so
+# an unbounded guard loses no valid value (a bounded ``::bigint`` would NULL
+# valid 19-digit bigints or abort on overflow).
 NUMERIC_REGEX = r"^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*$"
-INTEGER_REGEX = r"^\s*[+-]?\d{1,18}\s*$"
+INTEGER_REGEX = r"^\s*[+-]?\d+\s*$"
 
 # strptime %token -> Postgres to_char/to_timestamp template token.
 # v1 supports NUMERIC-only tokens; %f is resolved per-column to US or MS
@@ -171,9 +172,11 @@ def pg_nullsafe_cast(
             f"THEN ({inner_sql})::double precision END"
         )
     if target == DataType.INT:
+        # ::numeric (not ::bigint): arbitrary precision, so no overflow abort
+        # and no valid-value loss regardless of magnitude.
         return (
             f"CASE WHEN ({inner_sql}) ~ '{_sql_literal_body(INTEGER_REGEX)}' "
-            f"THEN ({inner_sql})::bigint END"
+            f"THEN ({inner_sql})::numeric END"
         )
     if target in (DataType.DATE, DataType.TIMESTAMP):
         if not source_format:
