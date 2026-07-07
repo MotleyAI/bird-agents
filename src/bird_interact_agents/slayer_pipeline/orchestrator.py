@@ -36,7 +36,7 @@ from .. import paths
 from ..config import get_default_llm_model
 from .dates import detect_and_apply, make_anthropic_client
 from .jsonb import detect_drift, expand_one_column, jsonb_meaning_entries
-from .overlay import apply_overlay, load_meanings
+from .overlay import apply_overlay, collect_key_columns, load_meanings
 from .portable_connection import absolute_sqlite_url
 
 DEFAULT_MINI_INTERACT_ROOT = paths.benchmark_data_root("mini-interact")
@@ -141,16 +141,29 @@ def _phase1_ingest(
 
 
 async def _phase2_overlay(
-    storage: YAMLStorage, db: str, meanings_path: Path
+    storage: YAMLStorage,
+    db: str,
+    meanings_path: Path,
+    *,
+    backend: str = "sqlite",
 ) -> tuple[int, list[str]]:
     by_table = load_meanings(meanings_path)
-    touched_total = 0
-    warnings: list[str] = []
+    # Load ALL models first so the PK/join-key guard is DB-wide (a join's
+    # referenced side lives on another model). Then apply per model.
+    models = []
     for name in await storage.list_models(data_source=db):
         model = await storage.get_model(name, data_source=db)
         if model is None or model.data_source != db:
             continue
-        touched, warns = apply_overlay(model, by_table)
+        models.append(model)
+    key_columns = collect_key_columns(models)
+    touched_total = 0
+    warnings: list[str] = []
+    for model in models:
+        touched, warns = apply_overlay(
+            model, by_table,
+            backend=backend, key_columns=key_columns,
+        )
         if touched or warns:
             await storage.save_model(model)
         touched_total += touched
@@ -177,13 +190,23 @@ async def _phase3_jsonb(
     sqlite_path: Optional[Path] = None,
     *,
     benchmark: Optional[object] = None,
+    backend: Optional[str] = None,
+    pg_extract_sampler: Optional[object] = None,
 ) -> tuple[int, list[str], list[str]]:
-    if getattr(benchmark, "db_backend", "sqlite") == "postgres":
-        return 0, [], []
+    # DEV-1648: postgres now RUNS leaf expansion (livesqlbench has real
+    # JSONB columns) — it only skips the SQLite-native ``detect_drift``
+    # sampling. ``backend`` (when passed by the OTF cache) wins over the
+    # benchmark sniff.
+    is_postgres = (
+        backend == "postgres"
+        if backend is not None
+        else getattr(benchmark, "db_backend", "sqlite") == "postgres"
+    )
+    expand_backend = "postgres" if is_postgres else "sqlite"
 
     if meanings_path is None:
-        raise ValueError("_phase3_jsonb: meanings_path is required for non-postgres benchmarks")
-    if sqlite_path is None:
+        raise ValueError("_phase3_jsonb: meanings_path is required")
+    if not is_postgres and sqlite_path is None:
         raise ValueError("_phase3_jsonb: sqlite_path is required for non-postgres benchmarks")
 
     added_total = 0
@@ -203,7 +226,11 @@ async def _phase3_jsonb(
             )
             continue
         existing_by_name = {c.name: c for c in model.columns}
-        new_cols, warns = expand_one_column(json_col, entry)
+        new_cols, warns = expand_one_column(
+            json_col, entry,
+            backend=expand_backend, table=table,
+            pg_extract_sampler=pg_extract_sampler,
+        )
         typing_warnings.extend(warns)
         added_here = 0
         changed_here = False
@@ -245,19 +272,22 @@ async def _phase3_jsonb(
                     col.meta = meta
                     jsonb_flagged = True
                 break
-        # Drift detection (top-level keys only, first cut).
-        documented_keys = set(entry.get("fields_meaning", {}).keys())
-        undoc, ghost = detect_drift(
-            sqlite_path, table, json_col, documented_keys
-        )
-        for key in sorted(undoc):
-            drift_warnings.append(
-                f"{table}.{json_col}: undocumented top-level key in data: '{key}'"
+        # Drift detection (top-level keys only, first cut). SQLite-native
+        # value sampling — skipped for postgres (DEV-1648): the leaves are
+        # already derived (drift-safe) and postgres ships no .sqlite file.
+        if not is_postgres and sqlite_path is not None:
+            documented_keys = set(entry.get("fields_meaning", {}).keys())
+            undoc, ghost = detect_drift(
+                sqlite_path, table, json_col, documented_keys
             )
-        for key in sorted(ghost):
-            drift_warnings.append(
-                f"{table}.{json_col}: documented key absent from sampled rows: '{key}'"
-            )
+            for key in sorted(undoc):
+                drift_warnings.append(
+                    f"{table}.{json_col}: undocumented top-level key in data: '{key}'"
+                )
+            for key in sorted(ghost):
+                drift_warnings.append(
+                    f"{table}.{json_col}: documented key absent from sampled rows: '{key}'"
+                )
         if added_here or changed_here or jsonb_flagged:
             await storage.save_model(model)
             added_total += added_here
@@ -297,13 +327,20 @@ async def _phase4_dates(
         raise ValueError("_phase4_dates: llm_model is required for non-postgres benchmarks")
 
     client = make_anthropic_client()
-    retyped_total = 0
-    warnings: list[str] = []
+    # Load all models first so the PK/join-key guard is DB-wide.
+    models = []
     for name in await storage.list_models(data_source=db):
         model = await storage.get_model(name, data_source=db)
         if model is None or model.data_source != db:
             continue
-        retyped, warns = detect_and_apply(model, sqlite_path, client, llm_model)
+        models.append(model)
+    key_columns = collect_key_columns(models)
+    retyped_total = 0
+    warnings: list[str] = []
+    for model in models:
+        retyped, warns = detect_and_apply(
+            model, sqlite_path, client, llm_model, key_columns=key_columns,
+        )
         if retyped:
             await storage.save_model(model)
         retyped_total += retyped

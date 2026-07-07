@@ -4,7 +4,9 @@ Verifies:
 - fingerprint_of for postgres uses schema-text hash, not sqlite file stat.
 - ensure_db_cache for postgres does NOT require <db>.sqlite to exist.
 - _phase1_ingest accepts db_url and uses it instead of sqlite_path.
-- Phases 3/4 are skipped for postgres (native types make them a no-op).
+- Phase 3 RUNS JSONB leaf expansion for postgres (DEV-1648) but skips the
+  SQLite-only drift sampling; phase 4 (LLM date detection) stays skipped
+  for postgres (its date refinement flows through phase 2).
 """
 
 from __future__ import annotations
@@ -182,18 +184,29 @@ def test_ensure_db_cache_postgres_skips_sqlite_check(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_phase3_skipped_for_postgres(tmp_path):
-    """_phase3_jsonb must be a no-op for postgres benchmarks (postgres has
-    native JSONB; text-as-JSON detection is meaningless)."""
+def test_phase3_runs_jsonb_expansion_for_postgres(tmp_path):
+    """DEV-1648: _phase3_jsonb now RUNS leaf expansion for postgres
+    (livesqlbench has real JSONB columns), reading the meanings file. It
+    only skips the SQLite-native drift sampling. (Behaviour-detail tests
+    live in tests/slayer_pipeline/test_orchestrator_pg_phases.py.)"""
     import asyncio
     from bird_interact_agents.slayer_pipeline.orchestrator import _phase3_jsonb
 
     b = get_benchmark("livesqlbench-base-lite")
     storage = MagicMock()
+    meanings_path = tmp_path / "alien_column_meaning_base.json"
+    meanings_path.write_text("{}")
 
-    with patch("bird_interact_agents.slayer_pipeline.orchestrator._detect_jsonb_columns") as mock_detect:
-        added, _, _ = asyncio.run(_phase3_jsonb(storage, "alien", benchmark=b))
-        mock_detect.assert_not_called()
+    with patch(
+        "bird_interact_agents.slayer_pipeline.orchestrator._detect_jsonb_columns",
+        return_value=[],
+    ) as mock_detect:
+        added, _, _ = asyncio.run(
+            _phase3_jsonb(storage, "alien", meanings_path=meanings_path,
+                          sqlite_path=None, benchmark=b)
+        )
+        # Postgres no longer short-circuits before reading the meanings.
+        mock_detect.assert_called_once()
     assert added == 0
 
 
@@ -286,14 +299,24 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
     build_dir = tmp_path / "build"
 
     phase1_calls: list[dict] = []
+    phase2_calls: list[dict] = []
+    phase3_calls: list[dict] = []
 
     def fake_phase1(db, storage, *, sqlite_path=None, db_url=None, pg_password=None):
         phase1_calls.append({"db_url": db_url, "pg_password": pg_password})
 
-    async def fake_phase2(storage, db, meanings_path):
+    async def fake_phase2(storage, db, meanings_path, *, backend="sqlite"):
+        # Capture PGPASSWORD as seen DURING the build (the postgres branch must
+        # export it before phase 2/3 so the in-process engine refresh authns).
+        phase2_calls.append({
+            "backend": backend,
+            "pgpassword": os.environ.get("PGPASSWORD"),
+        })
         return 0, []
 
-    async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *, benchmark=None):
+    async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *,
+                          benchmark=None, backend=None, pg_extract_sampler=None):
+        phase3_calls.append({"backend": backend, "pg_extract_sampler": pg_extract_sampler})
         return 0, [], []
 
     async def fake_phase4(storage, db, sqlite_path=None, llm_model=None, *, benchmark=None):
@@ -306,6 +329,7 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
         "BIRD_PG_PASSWORD": "pgpass",
     }
     with patch.dict("os.environ", env_patch):
+        os.environ.pop("PGPASSWORD", None)  # simulate a standalone caller (unset)
         with patch.object(otf_cache, "_phase1_ingest", side_effect=fake_phase1):
             with patch.object(otf_cache, "_phase2_overlay", side_effect=fake_phase2):
                 with patch.object(otf_cache, "_phase3_jsonb", side_effect=fake_phase3):
@@ -324,4 +348,17 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
     pw = phase1_calls[0]["pg_password"]
     assert url is not None
     assert "pgpass" not in url, f"password leaked into db_url: {url!r}"
+
+    # DEV-1648: postgres backend threaded into phases 2 & 3; the JSON-leaf
+    # extract sampler is threaded into phase 3 (top-level columns are not
+    # refined on postgres, so phase 2 needs no sampler).
+    assert phase2_calls and phase2_calls[0]["backend"] == "postgres"
+    assert phase3_calls and phase3_calls[0]["backend"] == "postgres"
+    assert phase3_calls[0]["pg_extract_sampler"] is not None
+    # DEV-1648: when PGPASSWORD is unset (standalone caller), set-if-absent
+    # fills it from BIRD_PG_PASSWORD so phase-3's in-process engine refresh
+    # authenticates against the passwordless persisted datasource. (In real
+    # runs harness.py already sets it, so setdefault is a no-op — never
+    # clobbering a caller's value, and race-free across concurrent builds.)
+    assert phase2_calls[0]["pgpassword"] == "pgpass"
     assert pw == "pgpass", f"pg_password not passed separately: {pw!r}"

@@ -430,20 +430,54 @@ async def test_engine_constructed_once_across_jsonb_columns(
 
 
 # ---------------------------------------------------------------------------
-# Postgres backend — JSONB expansion is sqlite-only; no engine, no sampling.
+# Postgres backend (DEV-1648) — JSONB expansion NOW runs for postgres,
+# emitting PG-native extracts, and the leaves are still sample-refreshed
+# (DEV-1614). Only the SQLite-native detect_drift is skipped.
 # ---------------------------------------------------------------------------
 
 
-async def test_postgres_backend_skips_sampling(monkeypatch) -> None:
-    async def fail_refresh(*, model, engine, storage, only_columns):  # pragma: no cover
-        raise AssertionError("refresh must not run for postgres")
+async def test_postgres_backend_expands_and_refreshes(tmp_path, monkeypatch) -> None:
+    meanings_path = tmp_path / f"{DB}_column_meaning_base.json"
+    meanings_path.write_text(json.dumps({
+        f"{DB}|{TABLE}|{JSON_COL}": {
+            "column_meaning": "JSONB column.",
+            "fields_meaning": {"Tenure_Type": "TEXT. Ownership."},
+        },
+    }), encoding="utf-8")
 
-    monkeypatch.setattr(
-        orchestrator, "refresh_table_backed_model_sampled", fail_refresh,
-        raising=False,
+    storage_dir = tmp_path / "storage"
+    storage = YAMLStorage(base_dir=str(storage_dir))
+    await storage.save_datasource(
+        DatasourceConfig(name=DB, type="sqlite", database=str(tmp_path / "x.sqlite"))
     )
-    benchmark = SimpleNamespace(db_backend="postgres")
+    await storage.save_model(SlayerModel(
+        name=TABLE, sql_table=TABLE, data_source=DB,
+        columns=[Column(name="id", type=DataType.INT, primary_key=True),
+                 Column(name=JSON_COL, type=DataType.TEXT)],
+    ))
+
+    refresh_calls = {"n": 0}
+
+    async def fake_refresh(*, model, engine, storage, only_columns):
+        refresh_calls["n"] += 1
+        return []
+
+    monkeypatch.setattr(orchestrator, "refresh_table_backed_model_sampled", fake_refresh)
+    monkeypatch.setattr(orchestrator, "SlayerQueryEngine", lambda storage=None: object())
+
+    def fail_drift(*a, **k):  # pragma: no cover
+        raise AssertionError("SQLite detect_drift must not run for postgres")
+
+    monkeypatch.setattr(orchestrator, "detect_drift", fail_drift)
+
     added, typing_warnings, drift = await _phase3_jsonb(
-        None, DB, meanings_path=None, sqlite_path=None, benchmark=benchmark
+        storage, DB, meanings_path=meanings_path, sqlite_path=None,
+        backend="postgres",
     )
-    assert (added, typing_warnings, drift) == (0, [], [])
+    assert added >= 1
+    assert refresh_calls["n"] >= 1
+    assert drift == []
+    model = await storage.get_model(TABLE, data_source=DB)
+    leaf = next(c for c in model.columns if c.name == f"{JSON_COL}__Tenure_Type")
+    assert "jsonb_extract_path_text" in leaf.sql
+    assert "JSON_EXTRACT" not in leaf.sql

@@ -212,6 +212,49 @@ def test_unsupported_format_leaves_text_and_warns(tmp_path: Path) -> None:
     assert any("not supported by the SQLite rewrite path" in w for w in warns)
 
 
+def test_key_column_is_guarded_and_never_sampled(tmp_path: Path) -> None:
+    """DEV-1648: a PK/join-key column must be skipped by phase 4 even
+    when its values look like dates — it stays TEXT and the LLM is never
+    called for it."""
+    sqlite_path = _make_sqlite(
+        tmp_path, "orders", "order_ref",
+        ["2025-01-01", "2025-02-15", "2025-03-30", "2025-12-31"],
+    )
+    col = Column(name="order_ref", sql="order_ref", type=DataType.TEXT)
+    model = _model_with(col)
+    client = _FakeAnthropic(
+        json.dumps({"is_date": True, "source_format": "%Y-%m-%d", "confidence": 0.95})
+    )
+    retyped, warns = detect_and_apply(
+        model, sqlite_path, client, "claude-haiku-4-5",
+        key_columns=frozenset({("orders", "order_ref")}),
+    )
+    assert retyped == 0
+    assert col.type == DataType.TEXT
+    assert col.sql == "order_ref"
+    assert client.messages.calls == []
+
+
+def test_non_key_date_column_still_processed(tmp_path: Path) -> None:
+    """Control for the guard test: an identical column that is NOT a key
+    is still retyped."""
+    sqlite_path = _make_sqlite(
+        tmp_path, "orders", "created_at",
+        ["2025-01-01", "2025-02-15", "2025-03-30", "2025-12-31"],
+    )
+    col = Column(name="created_at", sql="created_at", type=DataType.TEXT)
+    model = _model_with(col)
+    client = _FakeAnthropic(
+        json.dumps({"is_date": True, "source_format": "%Y-%m-%d", "confidence": 0.95})
+    )
+    retyped, warns = detect_and_apply(
+        model, sqlite_path, client, "claude-haiku-4-5",
+        key_columns=frozenset({("orders", "order_ref")}),
+    )
+    assert retyped == 1
+    assert col.type == DataType.TIMESTAMP
+
+
 def test_is_date_false_leaves_text(tmp_path: Path) -> None:
     sqlite_path = _make_sqlite(tmp_path, "orders", "name", ["alice", "bob", "carol"])
     col = Column(name="name", sql="name", type=DataType.TEXT)

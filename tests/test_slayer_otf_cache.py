@@ -91,11 +91,11 @@ def mock_orchestrator(monkeypatch):
             f"name: {db}\ntype: sqlite\nconnection_string: sqlite:///{db}.sqlite\n"
         )
 
-    async def fake_phase2(storage, db, meanings_path):
+    async def fake_phase2(storage, db, meanings_path, *, backend="sqlite", pg_sampler=None):
         calls["phase2"] += 1
         return 0, []
 
-    async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *, benchmark=None):
+    async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *, benchmark=None, backend=None, pg_extract_sampler=None):
         calls["phase3"] += 1
         return 0, [], []
 
@@ -332,10 +332,10 @@ async def test_failed_build_leaves_no_db_dir(
     def boom(db, storage, *, sqlite_path=None, db_url=None):
         raise RuntimeError("orchestrator died")
 
-    async def fake_phase2(storage, db, meanings_path):  # pragma: no cover
+    async def fake_phase2(storage, db, meanings_path, *, backend="sqlite", pg_sampler=None):  # pragma: no cover
         return 0, []
 
-    async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *, benchmark=None):  # pragma: no cover
+    async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *, benchmark=None, backend=None, pg_extract_sampler=None):  # pragma: no cover
         return 0, [], []
 
     monkeypatch.setattr(otf_cache, "_phase1_ingest", boom)
@@ -470,10 +470,10 @@ async def test_concurrent_calls_for_same_db_build_once(
             f"name: {db}\ntype: sqlite\nconnection_string: sqlite:///{db}.sqlite\n"
         )
 
-    async def fake_phase2(storage, db, meanings_path):
+    async def fake_phase2(storage, db, meanings_path, *, backend="sqlite", pg_sampler=None):
         return 0, []
 
-    async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *, benchmark=None):
+    async def fake_phase3(storage, db, meanings_path=None, sqlite_path=None, *, benchmark=None, backend=None, pg_extract_sampler=None):
         return 0, [], []
 
     monkeypatch.setattr(otf_cache, "_phase1_ingest", fake_phase1)

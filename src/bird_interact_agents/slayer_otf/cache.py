@@ -80,6 +80,9 @@ from bird_interact_agents.slayer_pipeline.orchestrator import (
     _phase3_jsonb,
     _phase4_dates,  # imported only so tests can monkeypatch + assert non-call
 )
+from bird_interact_agents.slayer_pipeline.pg_sampling import (
+    make_pg_extract_sampler,
+)
 
 # Re-export _phase4_dates for tests' monkeypatch + assertion. The cache
 # layer must NEVER call it.
@@ -472,6 +475,11 @@ async def _build_async(
     is_postgres = getattr(benchmark, "db_backend", "sqlite") == "postgres"
     build_dir.mkdir(parents=True, exist_ok=True)
 
+    # DEV-1648: live-PG value sampler for phase-3 JSON-leaf date detection.
+    # In-process only (no subprocess / no persisted YAML), so the password may
+    # ride the URL — the ps/YAML leak concern that keeps it out of the ingest
+    # URL does not apply here.
+    pg_extract_sampler = None
     if is_postgres:
         from urllib.parse import quote as _quote
         host = os.environ.get("BIRD_PG_HOST", "localhost")
@@ -482,6 +490,18 @@ async def _build_async(
         # command-line args (visible via ps) or persist in datasources YAML.
         # Passed separately as PGPASSWORD env var instead.
         db_url = f"postgresql://{user}@{host}:{port}/{db}"
+        sampler_url = f"postgresql://{user}:{_quote(password, safe='')}@{host}:{port}/{db}"
+        pg_extract_sampler = make_pg_extract_sampler(sampler_url)
+        # DEV-1648: phase 3's DEV-1614 sample-refresh connects via SLayer's
+        # in-process engine over the PASSWORDLESS persisted datasource, so it
+        # relies on libpq's PGPASSWORD env. Real runs already have it —
+        # ``harness.py`` derives PGPASSWORD from BIRD_PG_PASSWORD — so this only
+        # fills it in for a standalone caller (e.g. a re-encode script) that
+        # left it unset. ``setdefault`` (set-if-absent, never restore): never
+        # clobbers a caller's value, and is race-free across concurrent
+        # same-process builds since every build sets the SAME cluster password
+        # and nobody restores it. Same credential the sampler URL carries.
+        os.environ.setdefault("PGPASSWORD", password)
         with otf_timer("ensure_db_cache.phase1_ingest", db=db, backend="postgres"):
             await asyncio.to_thread(
                 _phase1_ingest, db, build_dir, db_url=db_url, pg_password=password
@@ -492,9 +512,12 @@ async def _build_async(
         with otf_timer("ensure_db_cache.phase1_ingest", db=db, backend="sqlite"):
             await asyncio.to_thread(_phase1_ingest, db, build_dir, sqlite_path=sqlite_path)
 
+    backend = "postgres" if is_postgres else "sqlite"
     storage = YAMLStorage(base_dir=str(build_dir))
     with otf_timer("ensure_db_cache.phase2_overlay", db=db):
-        _touched, p2_warns = await _phase2_overlay(storage, db, meanings_path)
+        _touched, p2_warns = await _phase2_overlay(
+            storage, db, meanings_path, backend=backend,
+        )
     if p2_warns:
         logger.info(
             "[slayer_otf] phase2 produced %d warnings for db=%s",
@@ -503,7 +526,8 @@ async def _build_async(
     with otf_timer("ensure_db_cache.phase3_jsonb", db=db):
         _added, jsonb_typing, drift = await _phase3_jsonb(
             storage, db, meanings_path=meanings_path, sqlite_path=sqlite_path,
-            benchmark=benchmark,
+            benchmark=benchmark, backend=backend,
+            pg_extract_sampler=pg_extract_sampler,
         )
     if jsonb_typing or drift:
         logger.info(

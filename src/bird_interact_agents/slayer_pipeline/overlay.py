@@ -120,25 +120,119 @@ def _sqlite_reformat_sql(col_name: str, fmt: str) -> Optional[str]:
     return None
 
 
-def _apply_meaning_to_column(col: Column, meaning_text: str) -> None:
-    """Mutate *col* in place: description, type from leading token,
-    DEV-1381 date-format annotation."""
+def _resolve_join_side(
+    side: str, default_table: str, name_to_table: dict[str, str]
+) -> tuple[str, str]:
+    """Resolve one side of a ``join_pairs`` entry to ``(table, col)`` lower.
+
+    A dotted ``"model.col"`` names its own model (resolved to that model's
+    physical table via *name_to_table*); a bare ``"col"`` lives on
+    *default_table* (already the source/target model's physical table). The
+    physical table is what ``apply_overlay`` keys the guard on, so the join's
+    ``target_model`` (a model NAME) must be resolved to its ``sql_table``
+    before this — otherwise a model whose name differs from its table would
+    escape the guard.
+    """
+    if "." in side:
+        model_or_table, col = side.split(".", 1)
+        key = model_or_table.lower()
+        return name_to_table.get(key, key), col.lower()
+    return default_table.lower(), side.lower()
+
+
+def collect_key_columns(models: list[SlayerModel]) -> frozenset[tuple[str, str]]:
+    """DB-wide set of ``(table_lower, col_lower)`` for every PK and every
+    join-key participant (both local and referenced sides).
+
+    TABLE-SCOPED: a common name like ``id`` guards only the table where it
+    is actually a key. Guarded columns keep their description but are never
+    retyped / rewritten, so they stay base/TEXT and match live
+    introspection (no drift, no lossy cast on an identifier).
+    """
+    # A join's ``target_model`` (and a dotted side's prefix) is a model NAME;
+    # the guard is keyed on the physical table. Map name -> table so an alias
+    # that differs from its sql_table still guards the right table.
+    name_to_table = {
+        model.name.lower(): (model.sql_table or model.name).lower()
+        for model in models
+    }
+    keys: set[tuple[str, str]] = set()
+    for model in models:
+        table = (model.sql_table or model.name).lower()
+        for column in model.columns:
+            if column.primary_key:
+                keys.add((table, column.name.lower()))
+        for join in model.joins or []:
+            target_table = name_to_table.get(
+                (join.target_model or "").lower(), (join.target_model or "").lower()
+            )
+            for pair in join.join_pairs or []:
+                if len(pair) < 2:
+                    continue
+                keys.add(_resolve_join_side(pair[0], table, name_to_table))
+                keys.add(_resolve_join_side(pair[1], target_table, name_to_table))
+    return frozenset(keys)
+
+
+def _apply_meaning_to_column(
+    col: Column,
+    meaning_text: str,
+    *,
+    backend: str = "sqlite",
+    is_key: bool = False,
+) -> None:
+    """Mutate *col* in place: description, and (SQLite only) type from the
+    leading token / DEV-1381 date annotation.
+
+    DEV-1648: on **Postgres** a physically-TEXT top-level column is left as
+    TEXT — its type is NOT refined and no cast is baked into ``Column.sql``.
+    Two reasons this is the right call:
+
+    * A self-referencing cast in ``Column.sql`` (``CASE WHEN (col) … col …``)
+      cycles SLayer's column expansion (``ColumnCycleError``) the moment the
+      column is queried — the inner ``col`` resolves back to the derived
+      column itself.
+    * Refining ``Column.type`` while leaving ``sql`` bare is exactly what
+      trips the mode-C schema-drift false positive (persisted richer type vs
+      live TEXT). Leaving the column TEXT matches live introspection, so
+      there is no drift.
+
+    JSON leaves ARE cast (they reference the JSON column — a *different* base
+    column — so no self-cycle); that lives in :mod:`.jsonb`. The type the
+    token would have assigned came from the ``<db>_column_meaning_base.json``
+    annotation, not from the physical DB or sampled data.
+
+    Guarded PK/join-key columns keep their description and nothing else. The
+    SQLite path is byte-unchanged.
+    """
     if meaning_text and not col.description:
         col.description = meaning_text
 
+    if is_key:
+        return  # guarded: description only, never retyped/rewritten
+
+    if backend == "postgres":
+        # Leave physically-TEXT top-level columns as-is (TEXT). Still stamp
+        # the harmless enum/jsonb meta markers (no type/sql/drift impact).
+        parsed = parse_leading_type_token(meaning_text)
+        if parsed is not None:
+            _data_type, meta_patch = parsed
+            if meta_patch:
+                meta = col.meta or {}
+                meta.update(meta_patch)
+                col.meta = meta
+        return
+
+    # ---- SQLite (unchanged) ----
     annot = DATE_ANNOTATION_RE.search(meaning_text or "")
     if annot is not None:
         fmt = annot.group(1)
         new_sql = _sqlite_reformat_sql(col.name, fmt)
         if new_sql is None and fmt not in ISO_TEXT_DATE_FORMATS:
-            # No SQLite rewrite path and not an ISO passthrough — leave
-            # the column TEXT so phase 4 can still try, and surface the
-            # unsupported format via the apply_overlay warning path.
             return
         col.type = DataType.TIMESTAMP
         if new_sql is not None:
             col.sql = new_sql
-        # else: ISO-already, sql stays as the bare column.
         meta = col.meta or {}
         meta["date_source_format"] = fmt
         meta["detected_by"] = "column_meaning_annotation"
@@ -157,16 +251,23 @@ def _apply_meaning_to_column(col: Column, meaning_text: str) -> None:
 
 
 def apply_overlay(
-    model: SlayerModel, by_table: dict[str, dict[str, dict | str]]
+    model: SlayerModel,
+    by_table: dict[str, dict[str, dict | str]],
+    *,
+    backend: str = "sqlite",
+    key_columns: frozenset[tuple[str, str]] = frozenset(),
 ) -> tuple[int, list[str]]:
     """Apply meanings to *model* in place.
 
-    Returns ``(num_columns_touched, warnings)``. Warnings list any
-    described date columns whose source format we don't know how to
-    reformat (still set to TIMESTAMP, but Column.sql stays raw).
+    Returns ``(num_columns_touched, warnings)``. On ``backend='postgres'``
+    physically-TEXT top-level columns are left as TEXT (DEV-1648 — no
+    self-referencing cast; JSON leaves are cast in :mod:`.jsonb`);
+    ``key_columns`` (DB-wide PK/join keys) are guarded; the SQLite path is
+    byte-unchanged.
     """
-    table = (model.sql_table or model.name).lower()
-    col_to_meaning = by_table.get(table, {})
+    table_actual = model.sql_table or model.name
+    table_lc = table_actual.lower()
+    col_to_meaning = by_table.get(table_lc, {})
     if not col_to_meaning:
         return 0, []
     touched = 0
@@ -182,7 +283,10 @@ def apply_overlay(
         before_type = column.type
         before_sql = column.sql
         before_meta = copy.deepcopy(column.meta)
-        _apply_meaning_to_column(column, text)
+        is_key = (table_lc, column.name.lower()) in key_columns
+        _apply_meaning_to_column(
+            column, text, backend=backend, is_key=is_key,
+        )
         if (
             column.description != before_description
             or column.type != before_type
@@ -190,15 +294,17 @@ def apply_overlay(
             or column.meta != before_meta
         ):
             touched += 1
-        annot = DATE_ANNOTATION_RE.search(text)
-        if (
-            annot is not None
-            and _sqlite_reformat_sql(column.name, annot.group(1)) is None
-            and annot.group(1) not in ISO_TEXT_DATE_FORMATS
-        ):
-            warnings.append(
-                f"{table}.{column.name}: DEV-1381 annotation has "
-                f"unsupported source_format '{annot.group(1)}'; column "
-                f"left as TEXT."
-            )
+        # SQLite-only legacy warning for an unsupported DEV-1381 format.
+        if backend != "postgres":
+            annot = DATE_ANNOTATION_RE.search(text)
+            if (
+                annot is not None
+                and _sqlite_reformat_sql(column.name, annot.group(1)) is None
+                and annot.group(1) not in ISO_TEXT_DATE_FORMATS
+            ):
+                warnings.append(
+                    f"{table_lc}.{column.name}: DEV-1381 annotation has "
+                    f"unsupported source_format '{annot.group(1)}'; column "
+                    f"left as TEXT."
+                )
     return touched, warnings
