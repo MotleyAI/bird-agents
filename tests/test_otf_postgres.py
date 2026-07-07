@@ -327,6 +327,7 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
         "BIRD_PG_PORT": "5432",
         "BIRD_PG_USER": "pguser",
         "BIRD_PG_PASSWORD": "pgpass",
+        "PGPASSWORD": "caller-sentinel",  # a pre-existing caller value
     }
     with patch.dict("os.environ", env_patch):
         with patch.object(otf_cache, "_phase1_ingest", side_effect=fake_phase1):
@@ -341,6 +342,8 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
                             kb_rows=[],
                             benchmark=b,
                         ))
+                        # Captured INSIDE patch.dict (it reverts os.environ on exit).
+                        pgpassword_after_build = os.environ.get("PGPASSWORD")
 
     assert len(phase1_calls) == 1
     url = phase1_calls[0]["db_url"]
@@ -356,6 +359,8 @@ def test_build_async_postgres_url_excludes_password(tmp_path):
     assert phase3_calls[0]["pg_extract_sampler"] is not None
     # DEV-1648: PGPASSWORD is exported so phase-3's in-process engine refresh
     # authenticates against the passwordless persisted datasource (the sampler
-    # URL carries the password, but the SLayer engine relies on libpq's env).
+    # URL carries the password, but the SLayer engine relies on libpq's env)...
     assert phase2_calls[0]["pgpassword"] == "pgpass"
+    # ...and RESTORED afterward so it never clobbers the caller's value.
+    assert pgpassword_after_build == "caller-sentinel"
     assert pw == "pgpass", f"pg_password not passed separately: {pw!r}"
