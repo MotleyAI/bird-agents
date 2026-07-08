@@ -61,11 +61,13 @@ from bird_interact_agents.agents.pydantic_ai_recursive.prompts import (
     ROOT_CLARIFIER_PROMPT,
     ROOT_EXPLORER_PROMPT,
 )
+from bird_interact_agents.agents._edited_models_hook import (
+    finalize_with_edited_models_save,
+)
 from bird_interact_agents.harness import (
     ACTION_COSTS,
     MAX_MODEL_TURNS,
     SampleStatus,
-    finalize_result_row,
     load_db_data_if_needed,
     materialize_task_db,
     resolve_task_storage_dir,
@@ -77,10 +79,12 @@ from bird_interact_agents.slayer_pipeline.filter_normalization import (
     normalize_tool_filters,
 )
 from bird_interact_agents.usage import TokenUsage
+from bird_interact_agents.eval.annotation_io import run_edited_models_archive
 from bird_interact_agents.slayer_otf import (
     ensure_db_cache,
     prepare_task_storage,
 )
+from bird_interact_agents.slayer_otf import edited_models as _edited_models
 from bird_interact_agents import paths as _paths
 
 logger = logging.getLogger(__name__)
@@ -171,6 +175,7 @@ async def _resolve_otf_task_storage_dir(
     task_data: dict,
     data_path_base: str,
     benchmark: str,
+    apply_edited_models: bool = False,
 ) -> tuple[str, list[int]]:
     """On-the-fly equivalent of ``resolve_task_storage_dir``.
 
@@ -202,11 +207,31 @@ async def _resolve_otf_task_storage_dir(
         mini_interact_root=mini_interact_root,
         benchmark=get_benchmark(benchmark) if benchmark else None,
     )
+    work_dir = _otf_work_dir(instance_id)
+    # DEV-1649: stash the cache fingerprint for the save hook + optionally reuse
+    # the task's saved edited store (same contract as the shared resolver).
+    current_cache_fp = _edited_models.read_cache_fp(cache_entry)
+    task_data["_edited_models_cache_fp"] = current_cache_fp
+    if apply_edited_models:
+        applied = await _edited_models.apply_or_none(
+            benchmark=benchmark, db=db_name, instance_id=instance_id,
+            work_dir=work_dir, task_deleted_kb_ids=set(deleted),
+            current_cache_fp=current_cache_fp,
+            mini_interact_root=mini_interact_root, db_root=mini_interact_root,
+        )
+        if applied is not None:
+            task_data["_edited_models_applied_from"] = str(
+                run_edited_models_archive(
+                    benchmark=benchmark, selected_database=db_name,
+                    instance_id=instance_id,
+                )
+            )
+            return str(applied), deleted
     scratch = await prepare_task_storage(
         db=db_name,
         deleted_kb_ids=set(deleted),
         cache_entry=cache_entry,
-        work_dir=_otf_work_dir(instance_id),
+        work_dir=work_dir,
         mini_interact_root=mini_interact_root,
         # DEV-1462: pass the resolved --db-path as the authoritative
         # db_root so it overrides $BIRD_DB_PATH when re-anchoring the
@@ -216,6 +241,7 @@ async def _resolve_otf_task_storage_dir(
         # Mirrors the otf_encode adapter's _resolve_otf_task_storage_dir.
         db_root=mini_interact_root,
     )
+    _edited_models.write_baseline_manifest(work_dir, scratch)
     return str(scratch), deleted
 
 
@@ -267,6 +293,8 @@ class PydanticAIRecursiveAgent:
         max_depth: int = 3,
         prompt_cache: bool = True,
         slayer_setup: str = "pre-encoded",
+        save_edited_models: bool = False,
+        apply_edited_models: bool = False,
     ) -> None:
         # Reuse the existing pydantic_ai adapter's model-construction
         # helpers verbatim — every model/provider quirk is identical.
@@ -289,6 +317,8 @@ class PydanticAIRecursiveAgent:
         self.slayer_storage_root = slayer_storage_root
         self.model_id = model
         self.slayer_setup = slayer_setup
+        self.save_edited_models = save_edited_models
+        self.apply_edited_models = apply_edited_models
         anthropic_model = (
             _build_anthropic_model_with_retries(native_model_id(model))
             if is_anthropic(model) else None
@@ -374,6 +404,7 @@ class PydanticAIRecursiveAgent:
                     task_data=task_data,
                     data_path_base=data_path_base,
                     benchmark=benchmark,
+                    apply_edited_models=self.apply_edited_models,
                 )
             )
         else:
@@ -574,6 +605,9 @@ class PydanticAIRecursiveAgent:
                         final_output_excerpt="",
                         error=None,
                         projection_resolver_status="empty_after_guard",
+                        benchmark=benchmark,
+                        save_edited_models=self.save_edited_models,
+                        task_data=task_data,
                     )
 
                 # ----- CONSTRUCTOR PHASE -----
@@ -660,6 +694,9 @@ class PydanticAIRecursiveAgent:
                 slayer_storage_dir=slayer_storage_dir,
                 final_output_excerpt="",
                 error=str(e),
+                benchmark=benchmark,
+                save_edited_models=self.save_edited_models,
+                task_data=task_data,
             )
 
         return _finalize(
@@ -670,6 +707,9 @@ class PydanticAIRecursiveAgent:
             slayer_storage_dir=slayer_storage_dir,
             final_output_excerpt=constructor_output[:500],
             error=None,
+            benchmark=benchmark,
+            save_edited_models=self.save_edited_models,
+            task_data=task_data,
         )
 
 
@@ -873,6 +913,9 @@ def _finalize(
     final_output_excerpt: str,
     error: str | None,
     projection_resolver_status: str | None = None,
+    benchmark: str | None = None,
+    save_edited_models: bool = False,
+    task_data: dict | None = None,
 ) -> dict:
     """Build the result row from the shared state. Aggregates per-agent
     usage + tool stats + turn counts; preserves whatever AgentRecords
@@ -923,8 +966,12 @@ def _finalize(
     }
     if projection_resolver_status is not None:
         row["projection_resolver_status"] = projection_resolver_status
-    return finalize_result_row(
+    # DEV-1649: finalize + (on success + flag) persist the edited store.
+    return finalize_with_edited_models_save(
         row,
         deleted_kb_ids=deleted_kb_ids,
         slayer_storage_dir=slayer_storage_dir,
+        benchmark=benchmark,
+        save_edited_models=save_edited_models,
+        task_data=task_data,
     )

@@ -28,19 +28,20 @@ from pathlib import Path
 import yaml
 
 from slayer.memories.models import MEMORY_CANONICAL_PREFIX
-from slayer.storage.yaml_storage import YAMLStorage
 
 from bird_interact_agents import paths as _paths
 from bird_interact_agents.benchmark import get_benchmark as _get_benchmark
+from bird_interact_agents.eval.annotation_io import run_edited_models_archive
 from bird_interact_agents.hard8_preprocessor import extract_deleted_kb_ids
+from bird_interact_agents.slayer_otf import edited_models as _edited_models
 from bird_interact_agents.slayer_otf.cache import CacheEntry, ensure_db_cache
+from bird_interact_agents.slayer_otf.datasource_reanchor import (
+    rewrite_datasource_connection_string as _rewrite_datasource_connection_string,
+)
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
 from bird_interact_agents.slayer_otf.timing import log_otf_event, otf_timer
-from bird_interact_agents.slayer_pipeline.portable_connection import (
-    reanchor_connection_string,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ async def resolve_otf_task_storage_dir(
     task_data: dict,
     data_path_base: str,
     benchmark: str,
+    apply_edited_models: bool = False,
 ) -> tuple[str, list[int]]:
     """Cache-only per-task SLayer storage for the on-the-fly path.
 
@@ -114,6 +116,33 @@ async def resolve_otf_task_storage_dir(
             "otf_work_dir.resolved",
             instance_id=instance_id, work_dir=str(work_dir),
         )
+        # DEV-1649: stash the source cache fingerprint so the agent's save hook
+        # (maybe_save_edited_models) can stamp it into the saved store's meta.
+        current_cache_fp = _edited_models.read_cache_fp(cache_entry)
+        task_data["_edited_models_cache_fp"] = current_cache_fp
+        # Reuse the task's saved edited store when --apply-edited-models is set
+        # and a valid snapshot exists. apply_or_none owns the whole decision
+        # (archive presence + meta validation + materialise), so there is exactly
+        # ONE gate and it falls back to the cache path on any miss.
+        if apply_edited_models:
+            applied = await _edited_models.apply_or_none(
+                benchmark=benchmark, db=db_name, instance_id=instance_id,
+                work_dir=work_dir, task_deleted_kb_ids=set(deleted),
+                current_cache_fp=current_cache_fp,
+                mini_interact_root=mini_interact_root, db_root=mini_interact_root,
+            )
+            if applied is not None:
+                log_otf_event(
+                    "otf.edited_models.applied",
+                    instance_id=instance_id, db=db_name, src=str(applied),
+                )
+                task_data["_edited_models_applied_from"] = str(
+                    run_edited_models_archive(
+                        benchmark=benchmark, selected_database=db_name,
+                        instance_id=instance_id,
+                    )
+                )
+                return str(applied), deleted
         with otf_timer(
             "prepare_task_storage", instance_id=instance_id, db=db_name,
         ):
@@ -125,6 +154,9 @@ async def resolve_otf_task_storage_dir(
                 mini_interact_root=mini_interact_root,
                 db_root=mini_interact_root,
             )
+        # DEV-1649: capture the pre-agent baseline (post re-anchor + post mask)
+        # so --save-edited-models can tell whether the agent actually edited.
+        _edited_models.write_baseline_manifest(work_dir, scratch)
     return str(scratch), deleted
 
 
@@ -195,59 +227,6 @@ async def prepare_task_storage(
     # else: the cache's pre-built memories.yaml + embeddings.db are
     # already correct for the no-deletion case.
     return scratch
-
-
-async def _rewrite_datasource_connection_string(
-    *,
-    db: str,
-    scratch: Path,
-    mini_interact_root: Path,
-    db_root: Path | None = None,
-) -> None:
-    """Re-anchor the copied datasource's ``connection_string`` to the
-    current mini-interact root.
-
-    The cache was built by ``slayer datasources create`` against
-    whatever root the FIRST call used. If a subsequent call's
-    ``--db-path`` points elsewhere (e.g. a different worktree, or a
-    fresh clone), the cache's absolute path is stale. The fingerprint
-    fix prevents *most* of these (different root → different cache),
-    but this rewrite is the belt-and-suspenders: it normalises the
-    connection_string to the current root unconditionally, so even an
-    in-tree cache rebuild that landed against an unexpected absolute
-    prefix gets corrected before SLayer opens the sqlite file.
-
-    Delegates to :func:`reanchor_connection_string`, which force-rewrites
-    the stale-foreign-absolute form (the DEV-1478 cloud bug, where a
-    locally-built cache's absolute path doesn't exist in the cloud
-    container) while resolving the relative form against the root.
-
-    Root precedence (DEV-1462): an explicit ``db_root`` wins over
-    ``$BIRD_DB_PATH`` — a LiveSQLBench run threads its ``--db-path`` so
-    conftest's / a dev shell's ``$BIRD_DB_PATH=<mini-interact>`` can't
-    re-anchor an overlapping DB name to the wrong sqlite.
-    """
-    storage = YAMLStorage(base_dir=str(scratch))
-    ds = await storage.get_datasource(db)
-    if ds is None:
-        raise RuntimeError(
-            f"slayer_otf: cached scratch is missing datasource {db!r}; "
-            f"cache_dir layout may have changed."
-        )
-    if ds.connection_string is None:
-        return
-
-    # Re-anchor to the current root's <db>/<db>.sqlite. The OTF cache bakes
-    # in an ABSOLUTE path from the machine that built it, so `reanchor_*`
-    # force-rewrites it (resolving alone would pass a foreign absolute path
-    # through unchanged — the DEV-1478 cloud bug). A relative form (if a
-    # cache ever carried one) resolves against the root, path preserved.
-    resolved = reanchor_connection_string(
-        ds.connection_string, db, mini_interact_root, db_root=db_root,
-    )
-    if resolved != ds.connection_string:
-        ds = ds.model_copy(update={"connection_string": resolved})
-        await storage.save_datasource(ds)
 
 
 def _write_memories_yaml(

@@ -87,6 +87,9 @@ from bird_interact_agents.eval.grade_in_place import (
 )
 from bird_interact_agents.eval.tolerant_grader import grade_submission, make_executor
 from bird_interact_agents.slayer_otf import resolve_otf_task_storage_dir
+from bird_interact_agents.agents._edited_models_hook import (
+    finalize_with_edited_models_save,
+)
 from bird_interact_agents.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -233,6 +236,8 @@ class ClaudeSDKOtfAInteractAgent:
         slayer_setup: str = "on-the-fly",
         reasoning_effort: str | None = None,
         pre_encoded_source: str | None = None,
+        save_edited_models: bool = False,
+        apply_edited_models: bool = False,
     ) -> None:
         # DEV-1586: `pre_encoded_source` (None | "otf" | "custom") selects the
         # read-only pre-encoded mode; `slayer_setup` is derived upstream.
@@ -257,6 +262,8 @@ class ClaudeSDKOtfAInteractAgent:
         self.slayer_setup = slayer_setup
         self.reasoning_effort = reasoning_effort
         self.pre_encoded_source = pre_encoded_source
+        self.save_edited_models = save_edited_models
+        self.apply_edited_models = apply_edited_models
 
     async def run_task(
         self,
@@ -375,6 +382,7 @@ class ClaudeSDKOtfAInteractAgent:
                     task_data=task_data,
                     data_path_base=data_path_base,
                     benchmark=benchmark.name,
+                    apply_edited_models=self.apply_edited_models,
                 )
 
             max_asks = _ambiguity_count(task_data) + 3
@@ -598,7 +606,7 @@ class ClaudeSDKOtfAInteractAgent:
                     "[otf_ainteract] autopsy grading failed for %s; continuing without autopsy",
                     instance_id,
                 )
-        return finalize_result_row(
+        return finalize_with_edited_models_save(
             {
                 "task_id": instance_id,
                 "instance_id": instance_id,
@@ -629,4 +637,7 @@ class ClaudeSDKOtfAInteractAgent:
             },
             deleted_kb_ids=deleted_kb_ids,
             slayer_storage_dir=slayer_storage_dir,
+            benchmark=benchmark.name,
+            save_edited_models=self.save_edited_models,
+            task_data=task_data,
         )

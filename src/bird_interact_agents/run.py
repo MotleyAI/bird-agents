@@ -109,10 +109,20 @@ _PRE_ENCODED_FRAMEWORKS = frozenset({
     "claude_sdk_otf_ainteract_v1",
 })
 
+# DEV-1649: frameworks that build an on-the-fly slayer store the agent can edit
+# (everything that materialises via ``slayer_otf.prepare_task_storage``). Only
+# these accept --save-edited-models / --apply-edited-models; raw / pre-encoded /
+# otf_encode runs are rejected.
+_EDITED_MODELS_FRAMEWORKS = _PRE_ENCODED_FRAMEWORKS | frozenset({
+    "pydantic_ai_recursive",
+})
+
 
 def _validate_slayer_setup(
     *, slayer_setup: str, framework: str, query_mode: str, mode: str,
     pre_encoded_source: str | None = None,
+    save_edited_models: bool = False,
+    apply_edited_models: bool = False,
 ) -> None:
     """Reject inconsistent ``slayer_setup`` / ``pre_encoded_source`` combos.
 
@@ -130,6 +140,33 @@ def _validate_slayer_setup(
         derive_slayer_setup,
         validate_pre_encoded_source,
     )
+
+    # DEV-1649: --save-edited-models / --apply-edited-models persist and reuse
+    # the agent's edited on-the-fly SLayer store. They only make sense for an
+    # on-the-fly slayer INTERACT run: reject raw (no slayer store), pre-encoded
+    # (read-only reference), otf_encode (builds the reference), and any other
+    # framework that never materialises an editable per-task store.
+    if save_edited_models or apply_edited_models:
+        flag = (
+            "--save-edited-models" if save_edited_models
+            else "--apply-edited-models"
+        )
+        if query_mode != "slayer":
+            raise ValueError(
+                f"{flag} is only valid with --query-mode slayer; got "
+                f"--query-mode {query_mode!r}."
+            )
+        if pre_encoded_source is not None:
+            raise ValueError(
+                f"{flag} is incompatible with --pre-encoded-models "
+                f"(the pre-encoded reference is read-only); omit one."
+            )
+        if framework not in _EDITED_MODELS_FRAMEWORKS:
+            raise ValueError(
+                f"{flag} is only supported for on-the-fly slayer interact "
+                f"frameworks {sorted(_EDITED_MODELS_FRAMEWORKS)}; got "
+                f"--framework {framework!r}."
+            )
 
     # DEV-1609: the encoder builds the SLayer reference, so it REQUIRES
     # --query-mode slayer (agent.py guardrail). Reject raw at CLI/cloud
@@ -370,6 +407,8 @@ def make_runner(
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
     pre_encoded_source: str | None = None,
+    save_edited_models: bool = False,
+    apply_edited_models: bool = False,
 ):
     """Public alias for `_make_runner`. The cloud actor (and other
     throughput-sensitive callers) call this once at startup and reuse the
@@ -395,6 +434,8 @@ def make_runner(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
         pre_encoded_source=pre_encoded_source,
+        save_edited_models=save_edited_models,
+        apply_edited_models=apply_edited_models,
     )
     return _make_runner(
         framework=framework, dataset=dataset, query_mode=query_mode, mode=mode,
@@ -403,6 +444,8 @@ def make_runner(
         slayer_setup=slayer_setup, reasoning_effort=reasoning_effort,
         user_sim_prompt_version=user_sim_prompt_version,
         pre_encoded_source=pre_encoded_source,
+        save_edited_models=save_edited_models,
+        apply_edited_models=apply_edited_models,
     )
 
 
@@ -564,6 +607,8 @@ def _make_runner(
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
     pre_encoded_source: str | None = None,
+    save_edited_models: bool = False,
+    apply_edited_models: bool = False,
 ):
     """Construct the per-task runner closure for the given config.
 
@@ -614,6 +659,8 @@ def _make_runner(
                 slayer_setup=slayer_setup,
                 pre_encoded_source=pre_encoded_source,
                 reasoning_effort=reasoning_effort,
+                save_edited_models=save_edited_models,
+                apply_edited_models=apply_edited_models,
             )
         elif not b.one_shot and query_mode == "slayer":
             from bird_interact_agents.agents.claude_sdk_otf_ainteract import (
@@ -625,6 +672,8 @@ def _make_runner(
                 slayer_setup=slayer_setup,
                 pre_encoded_source=pre_encoded_source,
                 reasoning_effort=reasoning_effort,
+                save_edited_models=save_edited_models,
+                apply_edited_models=apply_edited_models,
             )
         elif b.one_shot and query_mode == "raw":
             from bird_interact_agents.agents.claude_sdk_otf_raw import ClaudeSDKOtfRawAgent
@@ -665,6 +714,8 @@ def _make_runner(
             slayer_setup=slayer_setup,
             pre_encoded_source=pre_encoded_source,
             reasoning_effort=reasoning_effort,
+            save_edited_models=save_edited_models,
+            apply_edited_models=apply_edited_models,
         )
 
         async def run_one(td: dict, data_dir: str, patience: int,
@@ -693,6 +744,8 @@ def _make_runner(
             slayer_setup=slayer_setup,
             pre_encoded_source=pre_encoded_source,
             reasoning_effort=reasoning_effort,
+            save_edited_models=save_edited_models,
+            apply_edited_models=apply_edited_models,
         )
 
         async def run_one(td: dict, data_dir: str, patience: int,
@@ -770,6 +823,8 @@ def _make_runner(
                 slayer_setup=slayer_setup,
                 pre_encoded_source=pre_encoded_source,
                 reasoning_effort=reasoning_effort,
+                save_edited_models=save_edited_models,
+                apply_edited_models=apply_edited_models,
             )
         elif not b.one_shot and query_mode == "slayer":
             from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import (
@@ -781,6 +836,8 @@ def _make_runner(
                 slayer_setup=slayer_setup,
                 pre_encoded_source=pre_encoded_source,
                 reasoning_effort=reasoning_effort,
+                save_edited_models=save_edited_models,
+                apply_edited_models=apply_edited_models,
             )
         elif b.one_shot and query_mode == "raw":
             from bird_interact_agents.agents.claude_sdk_otf_raw_v1 import (
@@ -823,6 +880,8 @@ def _make_runner(
             slayer_setup=slayer_setup,
             pre_encoded_source=pre_encoded_source,
             reasoning_effort=reasoning_effort,
+            save_edited_models=save_edited_models,
+            apply_edited_models=apply_edited_models,
         )
 
         async def run_one(td: dict, data_dir: str, patience: int,
@@ -851,6 +910,8 @@ def _make_runner(
             slayer_setup=slayer_setup,
             pre_encoded_source=pre_encoded_source,
             reasoning_effort=reasoning_effort,
+            save_edited_models=save_edited_models,
+            apply_edited_models=apply_edited_models,
         )
 
         async def run_one(td: dict, data_dir: str, patience: int,
@@ -948,6 +1009,8 @@ def _make_runner(
             max_depth=max_depth,
             prompt_cache=prompt_cache,
             slayer_setup=slayer_setup,
+            save_edited_models=save_edited_models,
+            apply_edited_models=apply_edited_models,
         )
 
         async def run_one(td: dict, data_dir: str, patience: int,
@@ -1094,6 +1157,8 @@ async def run_one_task(
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
     pre_encoded_source: str | None = None,
+    save_edited_models: bool = False,
+    apply_edited_models: bool = False,
 ) -> dict:
     """Run a single per-task evaluation and return a `_persist`-consumable dict.
 
@@ -1124,6 +1189,8 @@ async def run_one_task(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
         pre_encoded_source=pre_encoded_source,
+        save_edited_models=save_edited_models,
+        apply_edited_models=apply_edited_models,
     )
     runner = _make_runner(
         framework=framework,
@@ -1139,6 +1206,8 @@ async def run_one_task(
         reasoning_effort=reasoning_effort,
         user_sim_prompt_version=user_sim_prompt_version,
         pre_encoded_source=pre_encoded_source,
+        save_edited_models=save_edited_models,
+        apply_edited_models=apply_edited_models,
     )
     instance_id = str(task_data.get("instance_id") or "")
     t_start = time.perf_counter()
@@ -1313,6 +1382,8 @@ async def _run_process_pool_and_collate(
     user_sim_prompt_version: str | None,
     pre_encoded_source: str | None,
     slayer_storage_root: str | None,
+    save_edited_models: bool = False,
+    apply_edited_models: bool = False,
 ) -> dict:
     """DEV-1640 default local path: run each task in its own spawned worker
     process (real isolation), then assemble ``results.db`` + ``eval.json``
@@ -1345,6 +1416,10 @@ async def _run_process_pool_and_collate(
         "slayer_storage_root": slayer_storage_root,
         "dataset": dataset,
         "data_dir": data_dir,
+        # DEV-1649: local-only; cloud submit never sets these so cloud cfg
+        # lacks the keys (workers read them with .get(..., False)).
+        "save_edited_models": save_edited_models,
+        "apply_edited_models": apply_edited_models,
     }
 
     manifest = {
@@ -1443,6 +1518,8 @@ async def run_evaluation(
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
     pre_encoded_source: str | None = None,
+    save_edited_models: bool = False,
+    apply_edited_models: bool = False,
 ) -> dict:
     """Run full evaluation across all tasks."""
     from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
@@ -1454,6 +1531,8 @@ async def run_evaluation(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
         pre_encoded_source=pre_encoded_source,
+        save_edited_models=save_edited_models,
+        apply_edited_models=apply_edited_models,
     )
     b = get_benchmark(dataset)
 
@@ -1572,6 +1651,8 @@ async def run_evaluation(
             user_sim_prompt_version=user_sim_prompt_version,
             pre_encoded_source=pre_encoded_source,
             slayer_storage_root=slayer_storage_root,
+            save_edited_models=save_edited_models,
+            apply_edited_models=apply_edited_models,
         )
 
     if concurrency >= 2:
@@ -1599,6 +1680,8 @@ async def run_evaluation(
         reasoning_effort=reasoning_effort,
         user_sim_prompt_version=user_sim_prompt_version,
         pre_encoded_source=pre_encoded_source,
+        save_edited_models=save_edited_models,
+        apply_edited_models=apply_edited_models,
     )
 
     # Open the per-run results.db (lives next to eval.json) and write
@@ -1672,6 +1755,8 @@ async def run_evaluation(
             tool_call_stats_json=tool_call_stats_json,
             phase1_observation_audited=r.get("phase1_observation_audited"),
             phase1_observation_original=r.get("phase1_observation_original"),
+            edited_models_saved_path=r.get("edited_models_saved_path"),
+            edited_models_applied_from=r.get("edited_models_applied_from"),
         ))
 
     # Run tasks with concurrency limiter
@@ -2496,6 +2581,29 @@ def main() -> None:
             "from it ('pre-encoded' when set, else 'on-the-fly')."
         ),
     )
+    # DEV-1649: persist / reuse the agent's edited on-the-fly SLayer store.
+    parser.add_argument(
+        "--save-edited-models",
+        action="store_true",
+        help=(
+            "DEV-1649: after a SUCCESSFUL on-the-fly slayer run, persist the "
+            "agent's edited per-task SLayer store as "
+            "runs/<benchmark>/<db>/<iid>/edited_models.tar.gz (latest-wins). "
+            "Only valid with --query-mode slayer on an on-the-fly interact "
+            "framework (not raw / --pre-encoded-models / *_otf_encode)."
+        ),
+    )
+    parser.add_argument(
+        "--apply-edited-models",
+        action="store_true",
+        help=(
+            "DEV-1649: start each on-the-fly slayer task from the task's "
+            "previously-saved edited store (if present + still valid), instead "
+            "of the bare deterministic cache. Falls back to the cache when no "
+            "snapshot exists. Same framework/mode restrictions as "
+            "--save-edited-models."
+        ),
+    )
     # DEV-1638: unify the local entrypoint — fold the postgres bootstrap the
     # old scripts/run_local_postgres.py did into bird-interact.
     parser.add_argument(
@@ -2697,6 +2805,8 @@ def main() -> None:
             reasoning_effort=args.reasoning_effort,
             user_sim_prompt_version=args.user_sim_prompt_version,
             pre_encoded_source=args.pre_encoded_source,
+            save_edited_models=args.save_edited_models,
+            apply_edited_models=args.apply_edited_models,
         )
     )
 

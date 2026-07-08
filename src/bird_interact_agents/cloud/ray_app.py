@@ -801,6 +801,8 @@ async def _run_one_task_async(
     reasoning_effort: str | None = None,
     user_sim_prompt_version: str | None = None,
     pre_encoded_source: str | None = None,
+    save_edited_models: bool = False,
+    apply_edited_models: bool = False,
     cached_runner: Any = None,
 ) -> dict:
     # Defer the import so monkeypatching `bird_interact_agents.run.run_one_task`
@@ -831,6 +833,8 @@ async def _run_one_task_async(
         slayer_storage_root=slayer_storage_root,
         slayer_setup=slayer_setup,
         pre_encoded_source=pre_encoded_source,
+        save_edited_models=save_edited_models,
+        apply_edited_models=apply_edited_models,
     )
 
 
@@ -920,6 +924,8 @@ def _run_one_in_actor(
                                 slayer_storage_root=cfg.get("slayer_storage_root"),
                                 slayer_setup=cfg.get("slayer_setup", "pre-encoded"),
                                 pre_encoded_source=cfg.get("pre_encoded_source"),
+                                save_edited_models=cfg.get("save_edited_models", False),
+                                apply_edited_models=cfg.get("apply_edited_models", False),
                                 cached_runner=cached_runner,
                             )
                         )
@@ -1298,6 +1304,8 @@ def _maybe_build_cached_runner(cfg: dict[str, Any]):
         reasoning_effort=cfg.get("reasoning_effort"),
         user_sim_prompt_version=cfg.get("user_sim_prompt_version"),
         slayer_storage_root=None,
+        save_edited_models=cfg.get("save_edited_models", False),
+        apply_edited_models=cfg.get("apply_edited_models", False),
     )
 
 
