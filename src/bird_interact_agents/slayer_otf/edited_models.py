@@ -29,12 +29,13 @@ Design notes:
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import logging
 import os
 import shutil
 import sqlite3
 import tarfile
-import tempfile
 import uuid
 from pathlib import Path
 
@@ -43,6 +44,8 @@ from bird_interact_agents.slayer_otf.datasource_reanchor import (
     rewrite_datasource_connection_string,
 )
 from bird_interact_agents.slayer_otf.timing import log_otf_event
+
+logger = logging.getLogger(__name__)
 
 ARCHIVE_NAME = "edited_models.tar.gz"
 _BASELINE_MANIFEST = "_otf_edit_baseline.json"
@@ -152,7 +155,15 @@ def _checkpoint_wal(scratch: Path) -> None:
                 con.commit()
             finally:
                 con.close()
-        except sqlite3.Error:  # pragma: no cover - non-sqlite .db is unexpected
+        except sqlite3.Error as exc:  # pragma: no cover - locked/non-sqlite .db
+            # Best-effort, but NOT silent: a failed checkpoint can leave WAL
+            # data outside the archived .db (the WAL sidecar is excluded), so
+            # surface it — the "self-contained archive" invariant is at risk.
+            logger.warning(
+                "edited_models: WAL checkpoint failed for %s: %s: %s; "
+                "archived embeddings may be missing recently-committed rows",
+                db_file, type(exc).__name__, exc,
+            )
             continue
 
 
@@ -198,8 +209,6 @@ def save_edited_store(
             meta_bytes = json.dumps(meta, sort_keys=True).encode()
             info = tarfile.TarInfo(name=f"{db}/{_STORE_META}")
             info.size = len(meta_bytes)
-            import io
-
             tar.addfile(info, io.BytesIO(meta_bytes))
         os.replace(tmp, dest)
     finally:
@@ -246,7 +255,13 @@ async def materialize_from_saved_store(
 
     try:
         with tarfile.open(archive, "r:gz") as tar:
-            tar.extractall(work_dir, filter="data")
+            # PEP 706 ``filter="data"`` only exists on 3.11.4+/3.12+; the
+            # project's ``requires-python=">=3.11"`` admits 3.11.0-3.11.3, where
+            # the kwarg raises. Gate on the backport marker (``tarfile.data_filter``).
+            if hasattr(tarfile, "data_filter"):
+                tar.extractall(work_dir, filter="data")
+            else:  # pragma: no cover - only on pre-3.11.4 interpreters
+                tar.extractall(work_dir)
     except (tarfile.TarError, OSError):
         if scratch.exists():
             shutil.rmtree(scratch, ignore_errors=True)

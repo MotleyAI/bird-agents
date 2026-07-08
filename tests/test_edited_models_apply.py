@@ -124,7 +124,7 @@ def test_runtime_resolver_uses_saved_store(monkeypatch, tmp_path, checkout):
     archive = _save_store(tmp_path, cache_fp="fpCACHE")  # matches cache fp
     td = _task_data()
 
-    storage, deleted = asyncio.run(
+    storage, _deleted = asyncio.run(
         runtime.resolve_otf_task_storage_dir(
             db_name="alien", task_data=td,
             data_path_base=str(tmp_path), benchmark="mini-interact",

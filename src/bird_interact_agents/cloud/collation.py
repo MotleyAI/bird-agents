@@ -101,6 +101,12 @@ def _row_to_task_result_row(manifest: dict, r: dict) -> TaskResultRow:
         # for everything that ran in the cloud.
         phase1_observation_audited=r.get("phase1_observation_audited"),
         phase1_observation_original=r.get("phase1_observation_original"),
+        # DEV-1649: edited-models provenance. The default local process-pool
+        # path AND cloud fetch build the row through here, so without this the
+        # two columns would be NULL on every path except the legacy in-process
+        # one (run.py::_persist).
+        edited_models_saved_path=r.get("edited_models_saved_path"),
+        edited_models_applied_from=r.get("edited_models_applied_from"),
     )
 
 

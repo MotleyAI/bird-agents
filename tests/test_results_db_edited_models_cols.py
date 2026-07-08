@@ -63,6 +63,27 @@ def test_open_db_alters_legacy_db(tmp_path):
         conn.close()
 
 
+def test_collation_row_carries_new_columns():
+    """The default local process-pool path + cloud fetch build the row via
+    collation._row_to_task_result_row; it must carry the edited-models
+    provenance (DEV-1649 / process-reviews Codex #1)."""
+    from bird_interact_agents.cloud.collation import _row_to_task_result_row
+
+    manifest = {
+        "run_id": "r1", "framework": "claude_sdk_otf_ainteract",
+        "mode": "a-interact", "query_mode": "slayer",
+    }
+    r = {
+        "instance_id": "alien_1", "database": "alien",
+        "phase1_passed": True, "phase2_passed": False, "total_reward": 1.0,
+        "edited_models_saved_path": "/runs/alien/alien_1/edited_models.tar.gz",
+        "edited_models_applied_from": "/runs/alien/alien_1/edited_models.tar.gz",
+    }
+    row = _row_to_task_result_row(manifest, r)
+    assert row.edited_models_saved_path.endswith("edited_models.tar.gz")
+    assert row.edited_models_applied_from.endswith("edited_models.tar.gz")
+
+
 def test_insert_round_trips_new_columns(tmp_path):
     conn = results_db.open_db(tmp_path / "results.db")
     try:

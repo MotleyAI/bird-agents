@@ -2713,6 +2713,8 @@ def main() -> None:
             query_mode=args.query_mode,
             mode=args.mode,
             pre_encoded_source=args.pre_encoded_source,
+            save_edited_models=args.save_edited_models,
+            apply_edited_models=args.apply_edited_models,
         )
     except ValueError as e:
         parser.error(str(e))

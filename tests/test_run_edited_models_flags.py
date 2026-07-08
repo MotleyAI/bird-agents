@@ -166,3 +166,18 @@ def test_make_runner_rejects_flags_with_otf_encode():
         _make_runner(
             framework="claude_sdk_otf_encode", save_edited_models=True,
         )
+
+
+def test_cli_fast_fails_on_bad_flag_combo(monkeypatch, tmp_path):
+    """The main() fail-fast validation (before postgres bootstrap) must reject
+    a bad flag combo, not let it slip to run_evaluation (process-reviews
+    CodeRabbit major). argparse's parser.error exits with code 2."""
+    argv = _argv_base(tmp_path) + [
+        "--framework", "claude_sdk",
+        "--query-mode", "raw",
+        "--mode", "a-interact",
+        "--save-edited-models",
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit):
+        run_module.main()
