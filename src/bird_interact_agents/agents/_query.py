@@ -44,11 +44,14 @@ from __future__ import annotations
 import contextvars
 import copy
 import json
+import logging
 from typing import Any, Optional
 
 from bird_interact_agents.slayer_pipeline.filter_normalization import (
     normalize_filters_list,
 )
+
+logger = logging.getLogger(__name__)
 
 # DEV-1546: only these SlayerQuery DSL fields are accepted inside
 # ``query_json`` for the single-stage preview wrapper — exactly the
@@ -137,12 +140,21 @@ def _strip_tool_level_keys(parsed: Any) -> Any:
 
 
 class _TaskQueryState:
-    """Per-task SLayer storage handle + lazily-extracted tool-fn cache."""
+    """Per-task SLayer storage handle + the ONE MCP server built from it +
+    lazily-extracted tool-fn cache.
 
-    __slots__ = ("storage", "query_fn", "tool_fns")
+    DEV-1654: the ``mcp`` server (and hence the single ``SlayerQueryEngine`` /
+    asyncpg pool it owns) is cached per task context so every tool fn is
+    extracted from the SAME server — see :func:`ensure_task_server`. Before
+    this, ``_get_slayer_tool_fn`` built a fresh server per distinct tool NAME,
+    leaking one connection pool per name.
+    """
+
+    __slots__ = ("storage", "mcp", "query_fn", "tool_fns")
 
     def __init__(self, storage: Any = None) -> None:
         self.storage = storage
+        self.mcp: Any = None
         self.query_fn: Any = None
         self.tool_fns: dict[str, Any] = {}
 
@@ -186,11 +198,30 @@ def attach_storage(storage: Any) -> None:
     _query_state.set(_TaskQueryState(storage))
 
 
+def ensure_task_server() -> Any:
+    """Return the CURRENT task's single SLayer MCP server, building it once
+    (``create_mcp_server(storage)``) and caching it on the ``_TaskQueryState``.
+
+    DEV-1654: every ``_get_slayer_tool_fn`` name resolves against THIS one
+    server, so exactly one ``SlayerQueryEngine`` (one asyncpg pool) is created
+    per task context — instead of one per distinct tool name. The server's
+    engine is disposed at task teardown via :func:`dispose_slayer_engine`
+    (SLayer 0.9.5 exposes it as ``mcp._slayer_engine``).
+
+    Tests monkeypatch ``slayer.mcp.server.create_mcp_server`` to swap in a fake.
+    """
+    st = _state()
+    if st.mcp is None:
+        from slayer.mcp.server import create_mcp_server
+
+        st.mcp = create_mcp_server(st.storage)
+    return st.mcp
+
+
 def _get_slayer_tool_fn(name: str):
-    """Extract a SLayer MCP tool function via
-    ``create_mcp_server(storage)._tool_manager._tools[name].fn``,
-    cached per-task per-name on the current ``_TaskQueryState``. Tests
-    monkeypatch ``slayer.mcp.server.create_mcp_server`` to swap in a fake.
+    """Extract a SLayer MCP tool function ``.fn`` from the task's ONE server
+    (:func:`ensure_task_server`), cached per-task per-name on the current
+    ``_TaskQueryState``.
     """
     st = _state()
     if name == "query":
@@ -200,15 +231,37 @@ def _get_slayer_tool_fn(name: str):
         cached = st.tool_fns.get(name)
         if cached is not None:
             return cached
-    from slayer.mcp.server import create_mcp_server
 
-    mcp = create_mcp_server(st.storage)
+    mcp = ensure_task_server()
     fn = mcp._tool_manager._tools[name].fn
     if name == "query":
         st.query_fn = fn
     else:
         st.tool_fns[name] = fn
     return fn
+
+
+async def dispose_slayer_engine(mcp: Any) -> None:
+    """Best-effort dispose of the asyncpg pool owned by ``mcp``'s
+    ``SlayerQueryEngine`` (SLayer 0.9.5 ``mcp._slayer_engine``).
+
+    Awaited at task teardown on the task's own event loop (the asyncpg pool is
+    loop-bound). A ``None`` handle, an older SLayer server without
+    ``_slayer_engine``, or an engine without ``aclose`` are all silent no-ops;
+    a failing ``aclose`` is swallowed — disposal must never break the task.
+    """
+    if mcp is None:
+        return
+    engine = getattr(mcp, "_slayer_engine", None)
+    if engine is None:
+        return
+    aclose = getattr(engine, "aclose", None)
+    if aclose is None:
+        return
+    try:
+        await aclose()
+    except Exception:  # noqa: BLE001 — teardown must never raise into the task
+        logger.warning("dispose_slayer_engine: aclose failed", exc_info=True)
 
 
 def _get_slayer_query_fn():
