@@ -36,6 +36,7 @@ from claude_agent_sdk import (
 from bird_interact_agents.agents.claude_sdk.agent import (
     _ctx_var,
     SdkUsageTracker,
+    dispose_task_slayer_engine,
     get_all_external_knowledge_names,
     get_all_knowledge_definitions,
     get_knowledge_definition,
@@ -751,6 +752,15 @@ class ClaudeSDKOtfAgent:
                 deleted_kb_ids=deleted_kb_ids,
                 slayer_storage_dir=slayer_storage_dir,
             )
+        finally:
+            # DEV-1654: dispose this task's in-process SLayer engine (the
+            # `query` / `query_nested` natives build one) now that the agent
+            # session is closed — before grading (its own psycopg2 path) and
+            # while the loop is still alive; a reused cloud actor would
+            # otherwise retain one asyncpg pool per task. No-op when no
+            # in-process server was built. v1 disposes via run_main_with_discovery
+            # instead; this covers the v0 direct-session adapters.
+            await dispose_task_slayer_engine()
 
         result = (ctx_dict or {}).get("result") or {}
         _autopsy_result = None

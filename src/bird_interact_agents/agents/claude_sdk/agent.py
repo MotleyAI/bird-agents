@@ -668,12 +668,12 @@ _QUERY_TOOL_DESC = (
 )
 async def query(args: dict) -> dict:
     # Defer storage attach until first call so the per-task storage
-    # set in _slayer_client() is already in _ctx.
-    storage = _ctx.get("_slayer_storage")
-    if storage is None:
-        _slayer_client()  # populates _ctx["_slayer_storage"] as side-effect
-        storage = _ctx["_slayer_storage"]
-    _query_mod.attach_storage(storage)
+    # set in _slayer_client() is already in _ctx. DEV-1654: routing through
+    # _ensure_slayer_storage_attached ALSO registers this task's SLayer server
+    # on _ctx["_slayer_mcps"] so its asyncpg pool is disposed at teardown —
+    # `query` is the hottest tool, so skipping the stash here would leak the
+    # main client's engine on a reused cloud actor.
+    _ensure_slayer_storage_attached()
 
     import json as _json
 
@@ -767,11 +767,9 @@ _QUERY_NESTED_TOOL_DESC = (
     },
 )
 async def query_nested(args: dict) -> dict:
-    storage = _ctx.get("_slayer_storage")
-    if storage is None:
-        _slayer_client()
-        storage = _ctx["_slayer_storage"]
-    _query_mod.attach_storage(storage)
+    # DEV-1654: attach storage AND register the task's SLayer server for
+    # teardown disposal (see `query` above).
+    _ensure_slayer_storage_attached()
 
     result = await _query_mod.query_nested_impl(
         queries=args["queries"],
@@ -840,6 +838,34 @@ def _ensure_slayer_storage_attached() -> None:
         _slayer_client()  # populates _ctx["_slayer_storage"] as a side-effect
         storage = _ctx["_slayer_storage"]
     _query_mod.attach_storage(storage)
+    # DEV-1654: register this context's ONE SLayer MCP server on the SHARED
+    # ``_ctx`` dict so task teardown can dispose its asyncpg pool. main and
+    # discovery run in separate (possibly copied) contexts and each build their
+    # own server; recording ALL of them (keyed by id) — rather than a single
+    # last-writer-wins handle — ensures BOTH engines are disposed. The dict is
+    # mutated IN PLACE, so a stash from a child asyncio context is visible to
+    # the parent teardown. ``ensure_task_server`` is idempotent per context.
+    server = _query_mod.ensure_task_server()
+    if server is not None:
+        servers = _ctx.get("_slayer_mcps")
+        if servers is None:
+            servers = {}
+            _ctx["_slayer_mcps"] = servers
+        servers[id(server)] = server
+
+
+async def dispose_task_slayer_engine() -> None:
+    """Dispose every in-process SLayer engine built during this task (main +
+    discovery), releasing their asyncpg pools.
+
+    DEV-1654: called from the per-task async teardown (``run_main_with_discovery``'s
+    ``finally``) on the task's live event loop — the asyncpg pool is loop-bound,
+    so it must be closed before ``asyncio.run`` tears the loop down on a reused
+    cloud actor. A no-op when no in-process server was built (raw / v0-subprocess
+    tasks, or a task that never called a SLayer tool)."""
+    servers = _ctx.get("_slayer_mcps") or {}
+    for server in list(servers.values()):
+        await _query_mod.dispose_slayer_engine(server)
 
 
 # SLayer MCP tools we expose as in-process natives (no slayer stdio process).
