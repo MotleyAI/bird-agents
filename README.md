@@ -39,10 +39,13 @@ pip install -e ".[claude-sdk,dev]"
 
 # NOTE: the local `bird-interact` CLI is aligned with `bird-interact-cloud`:
 # `--dataset`, `--framework`, `--query-mode`, and `--agent-model` are
-# all REQUIRED (no defaults). `--mode` is OPTIONAL and defaults per benchmark:
+# all REQUIRED (no defaults). PREFER NOT TO SET `--mode` AT ALL: it is OPTIONAL
+# and, when omitted, defaults to the correct mode for the chosen benchmark —
 # `one-shot` for one-shot benchmarks (livesqlbench*) and `a-interact` for
 # interactive ones (mini-interact, bird-interact-full, bird-interact-lite-exp).
-# Only pass `--mode` to select a non-default mode (`oracle`, or `c-interact`
+# Leaving it unset is the recommended way to always get the right mode per
+# benchmark (same defaulting applies to `bird-interact-cloud submit`). Only pass
+# `--mode` to deliberately select a NON-default mode (`oracle`, or `c-interact`
 # if/when it is wired to an agent). For claude_sdk* runs on an Anthropic agent model
 # you must also choose `--subscription-auth` (Claude.ai OAuth via
 # CLAUDE_CODE_OAUTH_TOKEN) or `--no-subscription-auth` (ANTHROPIC_API_KEY).
@@ -54,7 +57,8 @@ uv run bird-interact --dataset mini-interact --framework claude_sdk --mode oracl
   --db-path /path/to/mini-interact/
 
 # Run with Claude Agent SDK, raw SQL mode (API-key auth)
-uv run bird-interact --dataset mini-interact --framework claude_sdk --query-mode raw --mode a-interact \
+# (--mode omitted → defaults to a-interact for mini-interact)
+uv run bird-interact --dataset mini-interact --framework claude_sdk --query-mode raw \
   --agent-model anthropic/claude-opus-4-7 --no-subscription-auth \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/ \
@@ -62,7 +66,8 @@ uv run bird-interact --dataset mini-interact --framework claude_sdk --query-mode
 
 # Run with SLayer mode (KB encoded on the fly) using the Claude.ai subscription
 # (requires a valid CLAUDE_CODE_OAUTH_TOKEN in the env)
-uv run bird-interact --dataset mini-interact --framework claude_sdk --query-mode slayer --mode a-interact \
+# (--mode omitted → defaults to a-interact for mini-interact)
+uv run bird-interact --dataset mini-interact --framework claude_sdk --query-mode slayer \
   --agent-model anthropic/claude-opus-4-7 --subscription-auth \
   --data /path/to/mini_interact.jsonl \
   --db-path /path/to/mini-interact/
