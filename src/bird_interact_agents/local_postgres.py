@@ -48,6 +48,12 @@ PG_USER = "bird_interact"
 PG_PASSWORD = "bird_interact"
 # Roles every cluster needs: the harness LOGIN role + the dump OWNER role.
 _REQUIRED_ROLES = (PG_USER, "root")
+# DEV-1654: raise max_connections above the stock Postgres default of 100 so the
+# shared single-tenant dev cluster has headroom for concurrent agents (each
+# SLayer query path holds a bounded async+sync pool) plus grading, without
+# masking a real leak. Passed as a postmaster `-c` override at start; a cluster
+# that is ALREADY running only picks up the new value after `--stop`/`--recreate`.
+PG_MAX_CONNECTIONS = 200
 
 
 # --------------------------------------------------------------------------- #
@@ -215,7 +221,8 @@ def start_cluster(bindir: Path, port: int) -> None:
         return
     subprocess.run(
         [str(bindir / "pg_ctl"), "-D", str(p["data"]), "-l", str(p["log"]),
-         "-o", f"-p {port} -k {p['sock']} -c listen_addresses=127.0.0.1",
+         "-o", (f"-p {port} -k {p['sock']} -c listen_addresses=127.0.0.1 "
+                f"-c max_connections={PG_MAX_CONNECTIONS}"),
          "-w", "start"],
         check=True, capture_output=True,
     )

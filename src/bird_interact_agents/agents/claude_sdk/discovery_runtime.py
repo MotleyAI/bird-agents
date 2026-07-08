@@ -22,7 +22,10 @@ from typing import Callable
 
 from pydantic import BaseModel
 
-from bird_interact_agents.agents.claude_sdk.agent import _ctx
+from bird_interact_agents.agents.claude_sdk.agent import (
+    _ctx,
+    dispose_task_slayer_engine,
+)
 from bird_interact_agents.agents.claude_sdk.context_budget import (
     update_context_tokens,
 )
@@ -107,6 +110,13 @@ async def run_main_with_discovery(
     if enter_cm_factory is not None:
         enter_kwargs["enter_cm_factory"] = enter_cm_factory
     async with contextlib.AsyncExitStack() as stack:
+        # DEV-1654: dispose the in-process SLayer engine(s) LAST in the LIFO
+        # unwind — pushed BEFORE the SDK clients are entered, so it runs after
+        # BOTH main and discovery clients are closed (no query in flight) but
+        # while this task's event loop is still alive (asyncpg pools are
+        # loop-bound; a reused cloud actor would otherwise accumulate pools
+        # across tasks). No-op when no in-process server was built.
+        stack.push_async_callback(dispose_task_slayer_engine)
         # Discovery FIRST → closes LAST (LIFO unwind). It is also the first
         # CLI subprocess spawned, so its enter-timing fires first.
         discovery_client = await stack.enter_async_context(
