@@ -178,6 +178,13 @@ def test_cli_fast_fails_on_bad_flag_combo(monkeypatch, tmp_path):
         "--mode", "a-interact",
         "--save-edited-models",
     ]
+
+    async def fail_run_evaluation(**_kwargs):  # pragma: no cover - must not run
+        pytest.fail("run_evaluation reached — fail-fast validation did not fire")
+
+    monkeypatch.setattr(run_module, "run_evaluation", fail_run_evaluation)
     monkeypatch.setattr(sys, "argv", argv)
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as exc_info:
         run_module.main()
+    # argparse's parser.error() exits with code 2.
+    assert exc_info.value.code == 2

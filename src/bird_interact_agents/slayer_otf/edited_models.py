@@ -31,7 +31,6 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-import logging
 import os
 import shutil
 import sqlite3
@@ -44,8 +43,6 @@ from bird_interact_agents.slayer_otf.datasource_reanchor import (
     rewrite_datasource_connection_string,
 )
 from bird_interact_agents.slayer_otf.timing import log_otf_event
-
-logger = logging.getLogger(__name__)
 
 ARCHIVE_NAME = "edited_models.tar.gz"
 _BASELINE_MANIFEST = "_otf_edit_baseline.json"
@@ -63,6 +60,26 @@ _EXCLUDED_NAMES = frozenset({_BASELINE_MANIFEST, _STORE_META})
 
 def _is_transient(name: str) -> bool:
     return name in _EXCLUDED_NAMES or name.endswith(_TRANSIENT_SUFFIXES)
+
+
+def _safe_extractall(tar: tarfile.TarFile, dest: Path) -> None:
+    """Path-traversal-safe extraction for interpreters lacking PEP 706's
+    ``filter="data"`` (pre-3.11.4). Rejects absolute paths, ``..`` escapes, and
+    links before extracting. The archive is self-produced by ``save_edited_store``,
+    but this keeps the pre-3.11.4 fallback on par with the ``filter="data"`` path
+    (and satisfies Ruff S202 / CWE-22)."""
+    dest = Path(dest).resolve()
+    for m in tar.getmembers():
+        target = (dest / m.name).resolve()
+        if target != dest and dest not in target.parents:
+            raise tarfile.TarError(
+                f"unsafe path in edited-models archive: {m.name!r}"
+            )
+        if m.issym() or m.islnk():
+            raise tarfile.TarError(
+                f"link in edited-models archive: {m.name!r}"
+            )
+    tar.extractall(dest)  # noqa: S202 — members validated just above
 
 
 def content_manifest(root: Path) -> dict[str, str]:
@@ -158,11 +175,12 @@ def _checkpoint_wal(scratch: Path) -> None:
         except sqlite3.Error as exc:  # pragma: no cover - locked/non-sqlite .db
             # Best-effort, but NOT silent: a failed checkpoint can leave WAL
             # data outside the archived .db (the WAL sidecar is excluded), so
-            # surface it — the "self-contained archive" invariant is at risk.
-            logger.warning(
-                "edited_models: WAL checkpoint failed for %s: %s: %s; "
-                "archived embeddings may be missing recently-committed rows",
-                db_file, type(exc).__name__, exc,
+            # emit it on the module's telemetry channel — the "self-contained
+            # archive" invariant is at risk and a silently-incomplete save must
+            # be discoverable.
+            log_otf_event(
+                "otf.edited_models.wal_checkpoint_failed",
+                db_file=str(db_file), error=repr(exc),
             )
             continue
 
@@ -257,11 +275,12 @@ async def materialize_from_saved_store(
         with tarfile.open(archive, "r:gz") as tar:
             # PEP 706 ``filter="data"`` only exists on 3.11.4+/3.12+; the
             # project's ``requires-python=">=3.11"`` admits 3.11.0-3.11.3, where
-            # the kwarg raises. Gate on the backport marker (``tarfile.data_filter``).
+            # the kwarg raises. Gate on the backport marker (``tarfile.data_filter``);
+            # the fallback validates members itself (path-traversal safe, S202).
             if hasattr(tarfile, "data_filter"):
                 tar.extractall(work_dir, filter="data")
             else:  # pragma: no cover - only on pre-3.11.4 interpreters
-                tar.extractall(work_dir)
+                _safe_extractall(tar, work_dir)
     except (tarfile.TarError, OSError):
         if scratch.exists():
             shutil.rmtree(scratch, ignore_errors=True)
