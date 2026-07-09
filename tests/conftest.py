@@ -298,14 +298,14 @@ def _forbid_real_llm_completions(request, monkeypatch):
     def _boom(*_a, **_k):
         raise RuntimeError(msg)
 
-    try:
-        from bird_interact_agents import usage as _usage
-        monkeypatch.setattr(_usage, "_acompletion", _aboom, raising=False)
-    except Exception:  # noqa: BLE001 — never block collection on a defensive guard
-        pass
-    try:
-        import litellm as _litellm
-        monkeypatch.setattr(_litellm, "acompletion", _aboom, raising=False)
-        monkeypatch.setattr(_litellm, "completion", _boom, raising=False)
-    except Exception:  # noqa: BLE001 — litellm always present; defensive
-        pass
+    # ``usage`` and ``litellm`` are non-optional core deps (the whole suite
+    # imports them), so we do NOT swallow import errors here — a broken import
+    # chain should surface loudly rather than silently disabling the guard.
+    # Imports live in the fixture (not module top) to match this conftest's
+    # established lazy-import style and keep collection cheap.
+    import litellm as _litellm
+
+    from bird_interact_agents import usage as _usage
+    monkeypatch.setattr(_usage, "_acompletion", _aboom, raising=False)
+    monkeypatch.setattr(_litellm, "acompletion", _aboom, raising=False)
+    monkeypatch.setattr(_litellm, "completion", _boom, raising=False)
