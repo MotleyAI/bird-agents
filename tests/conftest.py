@@ -257,3 +257,55 @@ def _disable_real_embeddings(monkeypatch):
     except Exception:  # noqa: BLE001 — embeddings extra not installed → nothing to do
         return
     monkeypatch.setattr(_emb_client, "is_available", lambda: False)
+
+
+@pytest.fixture(autouse=True)
+def _forbid_real_llm_completions(request, monkeypatch):
+    """Fail fast if a NON-integration test reaches a real LLM completion.
+
+    A unit/non-integration test must never make a paid, network-dependent
+    completion call — those belong behind ``@pytest.mark.integration`` (the
+    no-real-APIs rule, same spirit as ``_disable_real_embeddings`` above).
+
+    Patches the completion seams to raise: the user-sim / tracked entry
+    (``usage._acompletion`` — an indirection seam bound at import to
+    ``litellm.acompletion``) and the raw ``litellm.acompletion`` /
+    ``litellm.completion`` used by other adapters. Tests that legitimately
+    exercise these wrappers stub the same seam themselves — their ``setattr``
+    runs AFTER this autouse fixture and wins; anything that reaches a live call
+    trips the guard with an actionable message.
+
+    Motivating regression (DEV-1649 postmortem): a trajectory-shape test ran in
+    a-interact mode with ``model="test"``, whose TestModel auto-invoked the
+    ``ask_user`` tool — firing a REAL user-sim (haiku) call on every run. It
+    looked green for months and only failed once Anthropic credits ran out.
+
+    Does NOT cover the ``claude_sdk`` subprocess path (it spawns the bundled
+    ``claude`` Node CLI, not litellm); those tests stub the SDK client or are
+    integration-marked.
+    """
+    if request.node.get_closest_marker("integration"):
+        return
+    msg = (
+        "Real LLM completion in a non-integration test. Stub the seam "
+        "(usage._acompletion / litellm.acompletion / the ask_user_impl / the "
+        "agent model), or mark the test @pytest.mark.integration."
+    )
+
+    async def _aboom(*_a, **_k):
+        raise RuntimeError(msg)
+
+    def _boom(*_a, **_k):
+        raise RuntimeError(msg)
+
+    # ``usage`` and ``litellm`` are non-optional core deps (the whole suite
+    # imports them), so we do NOT swallow import errors here — a broken import
+    # chain should surface loudly rather than silently disabling the guard.
+    # Imports live in the fixture (not module top) to match this conftest's
+    # established lazy-import style and keep collection cheap.
+    import litellm as _litellm
+
+    from bird_interact_agents import usage as _usage
+    monkeypatch.setattr(_usage, "_acompletion", _aboom, raising=False)
+    monkeypatch.setattr(_litellm, "acompletion", _aboom, raising=False)
+    monkeypatch.setattr(_litellm, "completion", _boom, raising=False)

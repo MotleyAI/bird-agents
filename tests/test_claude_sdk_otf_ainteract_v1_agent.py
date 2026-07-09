@@ -527,7 +527,8 @@ def _stub_env(
         raising=False,
     )
 
-    async def fake_resolve(*, db_name, task_data, data_path_base, benchmark):
+    async def fake_resolve(*, db_name, task_data, data_path_base, benchmark,
+                           apply_edited_models=False):
         captured["resolve_kwargs"] = {
             "db_name": db_name, "benchmark": benchmark,
             "data_path_base": data_path_base,

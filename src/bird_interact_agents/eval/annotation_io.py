@@ -194,6 +194,27 @@ def run_trajectory_path(
     )
 
 
+def run_edited_models_archive(
+    *,
+    benchmark: str,
+    selected_database: str,
+    instance_id: str,
+    repo_root: Optional[Path] = None,
+) -> Path:
+    """``runs/<benchmark>/<db>/<instance_id>/edited_models.tar.gz`` (DEV-1649).
+
+    Per-task (no ``run_id`` component — latest-wins overwrite). A ``.tar.gz``,
+    never a ``*.json``, so the recursive ``rglob("*.json")`` annotation walkers
+    (``iter_run_annotations`` / ``latest_run_per_instance``) ignore it."""
+    return (
+        _runs_root(repo_root)
+        / _canonical_benchmark(benchmark)
+        / selected_database
+        / instance_id
+        / "edited_models.tar.gz"
+    )
+
+
 def _infer_benchmark_run_id(
     path: Path,
 ) -> "tuple[Optional[str], Optional[str]]":
