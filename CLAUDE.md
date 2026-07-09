@@ -123,6 +123,13 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   pass that to the `ray exec` inspection commands below. Use
   `uv run bird-interact-cloud list` / `fetch <run-id>` / `kill <run-id>` /
   `resubmit <run-id>` for the rest of the lifecycle.
+- **ALWAYS pass the run-id to `list` when you know it**:
+  `bird-interact-cloud list <run-id>` queries ONLY that run's manifest and
+  returns immediately. The bare `bird-interact-cloud list` (no arg) does a
+  bucket-wide scan over EVERY run's manifest and gets progressively slower as
+  runs accumulate — it can take tens of seconds and looks like a hang. For a
+  single-run status check (the common case in a watcher/status loop), the
+  positional `list <run-id>` form is the right tool.
 - **Postgres benchmarks (livesqlbench-base-lite, livesqlbench-base-full,
   livesqlbench-large, bird-interact-lite-exp, bird-interact-full)**: at worker
   startup `_ensure_postgres_loaded` starts ONE PostgreSQL instance per VM
@@ -225,7 +232,9 @@ Polling for a run's terminal state from a bash loop is a maintenance trap.
 The output of `bird-interact-cloud list` is positional (`run_id  combo
 state  done/total`), so an awk-column off-by-one (`$4` vs `$3`) makes the
 loop silently never terminate — once burned in DEV-1470 because the loop
-compared `done|error` against `0/1` instead of against `live`.
+compared `done|error` against `0/1` instead of against `live`. (And if you
+DO query a single run's line, always use `list <run-id>` — see the run-id
+note above — so you don't pay the bucket-wide manifest scan on every poll.)
 
 The canonical primitive is already in the driver and was used by
 `driver.submit` (non-detached path) from day one:

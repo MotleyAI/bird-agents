@@ -375,10 +375,13 @@ bash scripts/check_annotation_runs.sh --dry-run # preview without fetching
 ```
 
 A run counts as complete when `done == total` in `bird-interact-cloud list`
-(all submitted tasks have produced results). The script exits 0 if at least one
-run was fetched, 1 otherwise. Run it manually as needed — for programmatic
-waiting on a specific run, use `driver.wait_until_done` (see below) instead of
-a shell polling loop.
+(all submitted tasks have produced results). For a **single run's** status,
+pass its id — `bird-interact-cloud list <run-id>` — which queries only that
+run's manifest and returns immediately; the bare `list` scans every run's
+manifest bucket-wide and is much slower once runs accumulate. The script exits
+0 if at least one run was fetched, 1 otherwise. Run it manually as needed — for
+programmatic waiting on a specific run, use `driver.wait_until_done` (see below)
+instead of a shell polling loop.
 
 The script is pre-approved in `~/.claude/settings.json` so Claude Code runs
 it without a confirmation prompt.
