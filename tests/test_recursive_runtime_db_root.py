@@ -119,13 +119,16 @@ async def test_prepare_task_storage_threads_db_root_into_reanchor(
     entry = CacheEntry(cache_dir=cache_dir, fingerprint="dead", kb_rows=[])
 
     seen: list = []
-    real = runtime_mod.reanchor_connection_string
+    # DEV-1649: the reanchor helper moved to slayer_otf.datasource_reanchor
+    # (runtime aliases it); spy where it now lives + is called.
+    from bird_interact_agents.slayer_otf import datasource_reanchor as dr_mod
+    real = dr_mod.reanchor_connection_string
 
     def spy(cs, db, mini, *, db_root=None):
         seen.append(db_root)
         return real(cs, db, mini, db_root=db_root)
 
-    monkeypatch.setattr(runtime_mod, "reanchor_connection_string", spy)
+    monkeypatch.setattr(dr_mod, "reanchor_connection_string", spy)
 
     scratch = await prepare_task_storage(
         db="alien", deleted_kb_ids=set(), cache_entry=entry,

@@ -613,9 +613,19 @@ def test_merge_tool_stats_returns_none_when_all_parts_empty():
 async def test_trajectory_has_agents_key_and_final_output_excerpt(monkeypatch):
     from bird_interact_agents import usage as usage_mod
     from bird_interact_agents.agents.pydantic_ai_recursive import agent as pa_rec
+    from bird_interact_agents.agents.pydantic_ai_recursive import factories
 
     monkeypatch.setattr(usage_mod, "_cost_per_token", lambda **_: (0.0, 0.0))
     monkeypatch.setattr(pa_rec, "load_db_data_if_needed", lambda *a, **kw: None)
+
+    # a-interact mode: the projection-resolver TestModel auto-invokes the
+    # ``ask_user`` tool, whose impl (``_submit.ask_user_impl``) fires a REAL
+    # user-simulator LLM call via the default ``user_sim_model`` (haiku). Stub
+    # the tool boundary so the test is genuinely offline — TestModel handled the
+    # AGENT model, but not the user-sim.
+    async def _fake_ask_user(*a, **kw):
+        return "canned user-sim answer"
+    monkeypatch.setattr(factories, "ask_user_impl", _fake_ask_user)
 
     async def _no_storage(**kw): return "", []
     monkeypatch.setattr(pa_rec, "resolve_task_storage_dir", _no_storage)
@@ -645,10 +655,9 @@ async def test_trajectory_has_agents_key_and_final_output_excerpt(monkeypatch):
                         lambda *a, **kw: _StubConstructor())
 
     # model="test" (pydantic-ai TestModel): root + constructor are stubbed
-    # above, but the projection-resolver phase is NOT — with a real model it
-    # makes a live Anthropic call in run_task (~15-30s, paid, flaky). TestModel
-    # returns a canned list[str] instantly, keeping this trajectory-shape test
-    # offline + deterministic.
+    # above; the projection-resolver phase runs on TestModel (canned list[str],
+    # instant). Combined with the ask_user stub above, this trajectory-shape
+    # test is fully offline + deterministic — no agent OR user-sim network call.
     inst = pa_rec.PydanticAIRecursiveAgent(model="test")
     result = await inst.run_task(
         {"selected_database": "fake_db",

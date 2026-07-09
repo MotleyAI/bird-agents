@@ -79,6 +79,10 @@ _DIAGNOSTIC_COLUMNS: list[tuple[str, str]] = [
     # observation diagnostic — re-add them as nullable TEXT columns.
     ("phase1_observation_audited", "TEXT"),
     ("phase1_observation_original", "TEXT"),
+    # DEV-1649: provenance for the persisted edited-models feature. Both NULL
+    # unless --save-edited-models / --apply-edited-models were in effect.
+    ("edited_models_saved_path", "TEXT"),
+    ("edited_models_applied_from", "TEXT"),
 ]
 
 _RUN_METADATA_DDL = """
@@ -151,6 +155,9 @@ class TaskResultRow(BaseModel):
     # ``run.py::_persist`` actually writes them through to ``results.db``.
     phase1_observation_audited: str | None = None
     phase1_observation_original: str | None = None
+    # DEV-1649: edited-models persistence provenance (both nullable).
+    edited_models_saved_path: str | None = None
+    edited_models_applied_from: str | None = None
 
 
 def open_db(path: Path | str) -> sqlite3.Connection:
@@ -192,8 +199,9 @@ def insert_task_result(conn: sqlite3.Connection, row: TaskResultRow) -> None:
          user_query, submission_status, phase1_observation,
          phase2_observation, predicted_result_json, gold_result_json,
          n_agent_turns, tool_call_stats_json,
-         phase1_observation_audited, phase1_observation_original)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         phase1_observation_audited, phase1_observation_original,
+         edited_models_saved_path, edited_models_applied_from)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             row.run_id, row.framework, row.mode, row.query_mode,
@@ -207,6 +215,8 @@ def insert_task_result(conn: sqlite3.Connection, row: TaskResultRow) -> None:
             row.tool_call_stats_json,
             row.phase1_observation_audited,
             row.phase1_observation_original,
+            row.edited_models_saved_path,
+            row.edited_models_applied_from,
         ),
     )
     conn.commit()
