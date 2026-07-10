@@ -25,8 +25,6 @@ import tempfile
 import uuid
 from pathlib import Path
 
-import yaml
-
 from slayer.memories.models import MEMORY_CANONICAL_PREFIX
 
 from bird_interact_agents import paths as _paths
@@ -38,6 +36,7 @@ from bird_interact_agents.slayer_otf.cache import CacheEntry, ensure_db_cache
 from bird_interact_agents.slayer_otf.datasource_reanchor import (
     rewrite_datasource_connection_string as _rewrite_datasource_connection_string,
 )
+from bird_interact_agents.memory_store_io import persist_memories
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
@@ -217,7 +216,7 @@ async def prepare_task_storage(
             "prepare_task_storage.kb_mask",
             db=db, deleted_kb_ids=len(deleted_kb_ids),
         ):
-            _write_memories_yaml(
+            await _write_memories(
                 db=db, scratch=scratch,
                 kb_rows=cache_entry.kb_rows, deleted_kb_ids=deleted_kb_ids,
             )
@@ -229,25 +228,27 @@ async def prepare_task_storage(
     return scratch
 
 
-def _write_memories_yaml(
+async def _write_memories(
     *,
     db: str,
     scratch: Path,
     kb_rows: list[dict],
     deleted_kb_ids: set[int],
 ) -> None:
-    """Encode KB rows to memories and write them to ``<scratch>/memories.yaml``.
+    """Encode KB rows to memories and persist them into ``<scratch>``.
 
-    We bypass ``YAMLStorage.save_memory`` and write the file directly so
-    user-supplied memory ids (``<db>_kb_<n>``) are preserved verbatim —
-    the same trick ``hard8_preprocessor._copy_memories_and_embeddings``
-    uses for its variant copy."""
+    DEV-1668: persist through the slayer storage layer
+    (:func:`memory_store_io.persist_memories`) rather than hand-writing a flat
+    ``memories.yaml`` — slayer 0.9.6 stores per-id ``memories/<id>.md`` and the
+    helper preserves the user-supplied ids (``<db>_kb_<n>``) + EPOCH
+    ``created_at`` via the row-writer."""
     mems = encode_kb_as_memories(
         db, kb_rows, deleted_kb_ids=set(deleted_kb_ids),
     )
-    (scratch / "memories.yaml").write_text(
-        yaml.safe_dump(mems, sort_keys=False)
-    )
+    # replace=True: the scratch was copied from the cache's FULL memory store;
+    # re-encoding with deletions must drop the masked memories, not just upsert
+    # the survivors (mirrors the old whole-file overwrite).
+    await persist_memories(scratch, mems, replace=True)
 
 
 def _prune_deleted_memory_embeddings(

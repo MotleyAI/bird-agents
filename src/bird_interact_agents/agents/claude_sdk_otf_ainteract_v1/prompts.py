@@ -71,7 +71,7 @@ starts `KB <n> —`. The base tables are already ingested as SLayer models,
 but NOTHING is encoded yet: you encode exactly what THIS question needs,
 on the fly.
 
-YOUR TOOLS (read their own descriptions). Call `help` FIRST to learn the
+YOUR TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 `create_model` / `edit_model` to add columns and measures; `query` (single

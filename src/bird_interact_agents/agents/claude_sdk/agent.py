@@ -903,7 +903,13 @@ def _slayer_tool_metadata(name: str) -> tuple[str, dict]:
     """
     from slayer.mcp.server import create_mcp_server
 
-    mcp = create_mcp_server(None)
+    # DEV-1668 / DEV-1669: this is a metadata-only build (we only read the tool's
+    # description + JSON schema). Pass ``_seed_help=False`` so slayer 0.9.6's
+    # DEV-1658 help-seeding — which does ``await storage.get_memory_row(...)`` —
+    # never fires on this storage-less (``None``) server. Without it the seed
+    # crashes with ``AttributeError: 'NoneType'.get_memory_row`` / a spurious
+    # event-loop error. Upstream fix tracked in DEV-1669.
+    mcp = create_mcp_server(None, _seed_help=False)
     t = mcp._tool_manager._tools[name]
     return t.description, t.parameters
 

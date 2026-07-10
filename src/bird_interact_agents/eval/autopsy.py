@@ -47,12 +47,10 @@ import math
 import os
 import re
 import traceback as _tb
-from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 
 import anthropic
 import pydantic
-import yaml
 from pydantic import BaseModel
 
 from bird_interact_agents.agents.claude_sdk.context_budget import (
@@ -79,6 +77,7 @@ from bird_interact_agents.eval.annotation_schema import (
     UserSimResponseSummary,
 )
 from bird_interact_agents.model_string import native_model_id
+from bird_interact_agents.memory_store_io import read_memories
 
 if TYPE_CHECKING:
     from bird_interact_agents.eval.tolerant_grader import CascadeVerdict
@@ -453,29 +452,27 @@ def _read_kb_text(
     db_name: str,
     external_knowledge: list,
 ) -> str:
-    """Read KB SLayer memories relevant to this task from ``memories.yaml``.
+    """Read KB SLayer memories relevant to this task from the memory store.
 
     Only entries whose ID matches ``{db_name}_kb_{n}`` for ``n`` in
-    ``external_knowledge`` are included. Returns ``""`` if the file is absent,
+    ``external_knowledge`` are included. Returns ``""`` if the store is absent,
     the directory doesn't exist, or ``external_knowledge`` is empty.
+
+    DEV-1668: reads via :func:`memory_store_io.read_memories` (slayer 0.9.6
+    per-id ``memories/<id>.md``; tolerates a legacy flat ``memories.yaml``).
     """
     if not external_knowledge:
         return ""
-    memories_path = Path(slayer_storage_dir) / "memories.yaml"
-    if not memories_path.exists():
-        return ""
     try:
-        entries = yaml.safe_load(memories_path.read_text()) or []
+        memories = read_memories(slayer_storage_dir)
     except Exception:  # noqa: BLE001
-        logger.warning("[autopsy] failed to parse %s", memories_path)
+        logger.warning("[autopsy] failed to read memories from %s", slayer_storage_dir)
         return ""
     allowed_ids = {f"{db_name}_kb_{n}" for n in external_knowledge if isinstance(n, int)}
-    paragraphs = []
-    for entry in entries:
-        if isinstance(entry, dict) and entry.get("id") in allowed_ids:
-            learning = entry.get("learning") or ""
-            if learning:
-                paragraphs.append(learning)
+    paragraphs = [
+        m.learning for m in memories
+        if m.id in allowed_ids and m.learning
+    ]
     return "\n\n".join(paragraphs)
 
 

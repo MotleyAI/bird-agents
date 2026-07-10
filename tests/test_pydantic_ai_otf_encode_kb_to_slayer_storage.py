@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from pydantic_ai import RunContext
 
 from slayer.core.models import (
@@ -43,6 +42,7 @@ from slayer.storage.yaml_storage import YAMLStorage
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
+from bird_interact_agents.memory_store_io import write_memories_files
 
 
 DB = "tinydb"
@@ -81,9 +81,7 @@ async def _seed_storage(
     await storage.save_model(m)
 
     mems = encode_kb_as_memories(DB, kb_rows, deleted_kb_ids=set())
-    (tmp_path / "memories.yaml").write_text(
-        yaml.safe_dump(mems, sort_keys=False),
-    )
+    write_memories_files(tmp_path, mems)
     return storage
 
 

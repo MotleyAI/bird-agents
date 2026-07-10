@@ -111,8 +111,8 @@ def test_v0_slayer_whitelist_drops_write_tools():
 
     filtered = pe.strip_write_slayer_tools(SLAYER_MCP_TOOLS)
     assert set(filtered) & pe.WRITE_SLAYER_TOOLS == set()
-    # introspection survives
-    for keep in ("help", "list_datasources", "models_summary",
+    # introspection survives (DEV-1668: `help` removed — slayer 0.9.6 dropped it)
+    for keep in ("list_datasources", "models_summary",
                  "inspect_model", "search"):
         assert keep in filtered
 

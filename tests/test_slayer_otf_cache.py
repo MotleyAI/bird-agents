@@ -880,8 +880,6 @@ def test_materialise_cache_memories_passes_raw_text_to_embed_batch(
     Replaces the prior per-helper unit tests, which were tightly
     coupled to the deleted ``_truncate_for_embedding`` and would
     otherwise drift into testing SLayer's private helpers."""
-    from unittest.mock import MagicMock
-
     seen_inputs: list[str] = []
 
     async def stub_embed_batch(texts, *, model=None):
@@ -903,15 +901,14 @@ def test_materialise_cache_memories_passes_raw_text_to_embed_batch(
 
     monkeypatch.setattr(otf_cache, "render_memory_text_for_embedding", fake_render)
 
-    long_mem = MagicMock(); long_mem.id = "long"
-    short_mem = MagicMock(); short_mem.id = "short"
+    # DEV-1668: real Memory dicts so the per-id persist step can serialize
+    # them; the embedding path keys on ``memory.id`` (via fake_render).
     monkeypatch.setattr(
         otf_cache, "encode_kb_as_memories",
-        lambda *a, **kw: [{"id": "long"}, {"id": "short"}],
-    )
-    monkeypatch.setattr(
-        otf_cache.Memory, "model_validate",
-        lambda d: long_mem if d.get("id") == "long" else short_mem,
+        lambda *a, **kw: [
+            {"id": "long", "learning": "kb long", "entities": []},
+            {"id": "short", "learning": "kb short", "entities": []},
+        ],
     )
 
     build_dir = tmp_path / "build"
@@ -943,8 +940,6 @@ def test_materialise_cache_memories_logs_per_memory_observability(
     ``len(text)``, and a sha256 prefix so the two log streams can be
     correlated."""
     import logging
-    from unittest.mock import MagicMock
-
     async def stub_embed_batch(texts, *, model=None):
         return [[0.1] * 8 for _ in texts]
 
@@ -959,15 +954,13 @@ def test_materialise_cache_memories_logs_per_memory_observability(
         lambda *, memory: f"text for {memory.id}",
     )
 
-    mem_a = MagicMock(); mem_a.id = "alpha"
-    mem_b = MagicMock(); mem_b.id = "beta"
+    # DEV-1668: real Memory dicts so the per-id persist step can serialize them.
     monkeypatch.setattr(
         otf_cache, "encode_kb_as_memories",
-        lambda *a, **kw: [{"id": "alpha"}, {"id": "beta"}],
-    )
-    monkeypatch.setattr(
-        otf_cache.Memory, "model_validate",
-        lambda d: mem_a if d["id"] == "alpha" else mem_b,
+        lambda *a, **kw: [
+            {"id": "alpha", "learning": "kb alpha", "entities": []},
+            {"id": "beta", "learning": "kb beta", "entities": []},
+        ],
     )
 
     build_dir = tmp_path / "build"
@@ -1033,8 +1026,6 @@ def test_materialise_cache_memories_partial_batch_persists_good_skips_failed(
     mechanics (we don't assert on BadRequestError flows); we just
     contract on the per-input None we receive."""
     import logging
-    from unittest.mock import MagicMock
-
     persisted: list = []
 
     async def stub_embed_batch(texts, *, model=None):
@@ -1057,15 +1048,13 @@ def test_materialise_cache_memories_partial_batch_persists_good_skips_failed(
         lambda *, memory: f"text for {memory.id}",
     )
 
-    mem_good = MagicMock(); mem_good.id = "good_mem"
-    mem_bad = MagicMock(); mem_bad.id = "bad_mem"
+    # DEV-1668: real Memory dicts so the per-id persist step can serialize them.
     monkeypatch.setattr(
         otf_cache, "encode_kb_as_memories",
-        lambda *a, **kw: [{"id": "good_mem"}, {"id": "bad_mem"}],
-    )
-    monkeypatch.setattr(
-        otf_cache.Memory, "model_validate",
-        lambda d: mem_good if d["id"] == "good_mem" else mem_bad,
+        lambda *a, **kw: [
+            {"id": "good_mem", "learning": "kb good", "entities": []},
+            {"id": "bad_mem", "learning": "kb bad", "entities": []},
+        ],
     )
 
     # Patch YAMLStorage.save_embeddings to capture, NOT write to disk.

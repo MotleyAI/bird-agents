@@ -32,15 +32,17 @@ _HISTORICAL_LEAK_TOOLS = {
     "mcp__slayer__delete_model",
 }
 
-# The full advertised surface for the lock-pinned slayer (0.9.4). Pinning the
+# The full advertised surface for the lock-pinned slayer (0.9.6). Pinning the
 # exact set turns any upstream add/remove into a loud CI failure (the lock only
 # moves on a deliberate version bump) — the strongest anti-leak contract.
+# DEV-1668: slayer 0.9.6 removed the `help` MCP tool (help content is now
+# `inspect(reference="memory:help.intro", entity_type="memory")`) → 21 tools.
 _EXPECTED_SURFACE = {
     f"mcp__slayer__{t}"
     for t in (
         "create_datasource", "create_model", "delete_datasource",
         "delete_model", "describe_datasource", "edit_datasource",
-        "edit_model", "forget_memory", "get_datasource_priority", "help",
+        "edit_model", "forget_memory", "get_datasource_priority",
         "ingest_datasource_models", "inspect", "inspect_model",
         "list_datasources", "models_summary", "query", "query_nested",
         "recommend_root_model", "save_memory", "search",
@@ -76,10 +78,11 @@ def test_surface_contains_historical_leak_tools():
     assert not missing, f"leak tools absent from enumerated surface: {sorted(missing)}"
 
 
-def test_surface_matches_pinned_slayer_0_9_3_set():
+def test_surface_matches_pinned_slayer_set():
     """Exact-set pin on the lock-pinned slayer surface (Codex round-2). A
     tool added/removed upstream fails here on the next version bump, forcing a
-    review so a new tool can't silently leak."""
+    review so a new tool can't silently leak. DEV-1668: 0.9.6 = 21 tools
+    (``help`` removed)."""
     assert _fresh_surface() == _EXPECTED_SURFACE
 
 
@@ -129,8 +132,9 @@ def test_enumeration_uses_create_mcp_server_without_ingest(monkeypatch):
 
     calls = {}
 
-    def _fake_create(storage, *, ingest_on_startup=True):
+    def _fake_create(storage, *, ingest_on_startup=True, _seed_help=True):
         calls["ingest_on_startup"] = ingest_on_startup
+        calls["_seed_help"] = _seed_help
         calls["storage_type"] = type(storage).__name__
         return _FakeServer(["help", "query"])
 
@@ -139,6 +143,9 @@ def test_enumeration_uses_create_mcp_server_without_ingest(monkeypatch):
     try:
         out = sts.all_slayer_mcp_tool_names()
         assert calls["ingest_on_startup"] is False
+        # DEV-1668/DEV-1669: metadata-only enumeration must not trigger
+        # slayer 0.9.6's help-seeding.
+        assert calls["_seed_help"] is False
         assert calls["storage_type"] == "YAMLStorage"
         assert out == frozenset({"mcp__slayer__help", "mcp__slayer__query"})
     finally:
@@ -187,8 +194,9 @@ def test_derive_partitions_the_surface():
 
     all_slayer_mcp_tool_names.cache_clear()
     surface = all_slayer_mcp_tool_names()
-    # A representative allow-list drawn from the real surface.
-    allow_bare = ["help", "search", "models_summary", "inspect"]
+    # A representative allow-list drawn from the real surface (DEV-1668: `help`
+    # is no longer advertised — use `inspect_model` as the representative name).
+    allow_bare = ["inspect_model", "search", "models_summary", "inspect"]
     allow = {f"mcp__slayer__{t}" for t in allow_bare}
     disallowed = derive_disallowed_slayer_tools(allow_bare)
 
@@ -216,7 +224,7 @@ def test_derive_rejects_allow_list_not_in_surface():
     )
 
     with pytest.raises(ValueError):
-        derive_disallowed_slayer_tools(["help", "not_a_real_slayer_tool"])
+        derive_disallowed_slayer_tools(["search", "not_a_real_slayer_tool"])
 
 
 def test_derive_write_stripped_allow_list_disallows_write_tools():

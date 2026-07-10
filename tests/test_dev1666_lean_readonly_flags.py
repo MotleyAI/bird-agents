@@ -49,8 +49,9 @@ class TestDropSet:
         assert tsurf.READONLY_DROP == WRITE_SLAYER_TOOLS == _WRITE_TOOLS
 
     def test_lean_constants(self):
-        # list_datasources folded into lean (dead weight; v1 lacks it → no-op there).
-        assert tsurf.LEAN_DROP_SLAYER_MCP == frozenset({_INSPECT_MODEL, "list_datasources"})
+        # DEV-1668: models_summary + list_datasources folded into lean
+        # (subsumed by inspect(reference=None, entity_type=...)).
+        assert tsurf.LEAN_DROP_SLAYER_MCP == frozenset({_INSPECT_MODEL, "models_summary", "list_datasources"})
         assert tsurf.LEAN_DROP_NATIVE_KB == _KB_NATIVES
 
     def test_drops_false_false_empty(self):
@@ -61,7 +62,7 @@ class TestDropSet:
     def test_drops_lean_only(self):
         assert tsurf.slayer_flag_drops(
             lean_introspection=True, readonly_mode=False
-        ) == (frozenset({_INSPECT_MODEL, "list_datasources"}) | _KB_NATIVES)
+        ) == (frozenset({_INSPECT_MODEL, "models_summary", "list_datasources"}) | _KB_NATIVES)
 
     def test_drops_readonly_only(self):
         assert tsurf.slayer_flag_drops(
@@ -71,7 +72,7 @@ class TestDropSet:
     def test_drops_both(self):
         assert tsurf.slayer_flag_drops(
             lean_introspection=True, readonly_mode=True
-        ) == (frozenset({_INSPECT_MODEL, "list_datasources"}) | _KB_NATIVES | _WRITE_TOOLS)
+        ) == (frozenset({_INSPECT_MODEL, "models_summary", "list_datasources"}) | _KB_NATIVES | _WRITE_TOOLS)
 
 
 class TestFilterFlagDrops:
@@ -140,7 +141,12 @@ class TestV0ToolSurfaceIdentity:
         out = tsurf.filter_flag_drops(allow, lean_introspection=True, readonly_mode=False)
         assert _INSPECT_MODEL not in out
         assert "list_datasources" not in out
-        for keep in ("search", "inspect", "recommend_root_model", "help"):
+        # DEV-1668: models_summary is lean-dropped too (→ inspect(reference=None)).
+        assert "models_summary" not in out
+        # DEV-1668: `help` is gone entirely (removed from the base allow-list),
+        # so it is never present here regardless of the flags.
+        assert "help" not in out
+        for keep in ("search", "inspect", "recommend_root_model"):
             assert keep in out
 
     def test_readonly_removes_write_tools_from_allow(self):
@@ -184,12 +190,15 @@ class TestV1ToolSurfaceIdentity:
             bare = {n.split("__")[-1] for n in surface}
             assert _INSPECT_MODEL not in bare
             assert not (_KB_NATIVES & bare)
-        # per-client scoping (Codex #5): MAIN keeps recommend_root_model/help;
-        # DISCOVERY keeps models_summary. search/inspect on both.
+        # per-client scoping: MAIN keeps recommend_root_model; DISCOVERY keeps
+        # search/inspect. DEV-1668: `help` is gone from MAIN (tool removed) and
+        # `models_summary` is lean-dropped from DISCOVERY (→ inspect(reference=None)).
         m_bare = {n.split("__")[-1] for n in m}
         d_bare = {n.split("__")[-1] for n in d}
-        assert {"search", "inspect", "recommend_root_model", "help"} <= m_bare
-        assert {"search", "inspect", "models_summary"} <= d_bare
+        assert {"search", "inspect", "recommend_root_model"} <= m_bare
+        assert "help" not in m_bare
+        assert {"search", "inspect"} <= d_bare
+        assert "models_summary" not in d_bare
 
     def test_readonly_strips_writes_from_main_only(self):
         main, disc = self._bare()
@@ -607,10 +616,11 @@ class TestV0BuildSiteSurface:
         assert effective_slayer_allow(
             lean_introspection=False, readonly_mode=False, pre_encoded_source=None
         ) == list(SLAYER_MCP_TOOLS)
-        # lean drops inspect_model + list_datasources
+        # lean drops inspect_model + list_datasources + models_summary (DEV-1668)
         lean = effective_slayer_allow(
             lean_introspection=True, readonly_mode=False, pre_encoded_source=None)
         assert "inspect_model" not in lean and "list_datasources" not in lean
+        assert "models_summary" not in lean
         # readonly drops writes
         ro = effective_slayer_allow(
             lean_introspection=False, readonly_mode=True, pre_encoded_source=None)
@@ -644,6 +654,7 @@ class TestV1BuildSiteSurface:
         d = {n.split("__")[-1] for n in effective_discovery_tools(
             lean_introspection=True)}
         assert "inspect_model" not in d and not (_KB_NATIVES & d)
+        assert "models_summary" not in d  # DEV-1668: lean-dropped from discovery
 
 
 # --------------------------------------------------------------------------- #

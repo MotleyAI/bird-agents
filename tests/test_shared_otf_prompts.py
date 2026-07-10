@@ -79,8 +79,12 @@ import pytest
 # `QUERY_ROOT_GUIDANCE`), so the pre-encoded prompts — whose write tools are
 # stripped — are unchanged. Cuts the turn-waste where the agent filters on an
 # undefined nested-stage name and self-corrects.
-_ONE_SHOT_SHA256 = "64aa5fd4be4dc10148141aa65cc8e0d0ec61b46d2678be44a2be3c9d5055cc24"
-_AINTERACT_SHA256 = "fb142bf8cf8f1cf6b3b06d778c6b15e78681df5c98d0d1a1712de9bf7bbe1b35"
+# DEV-1668 re-baseline: the shared SLAYER-TOOLS onboarding line was re-pointed
+# from the removed `help` tool to
+# `inspect(reference="memory:help.intro", entity_type="memory", compact=False)`
+# (the only byte change vs the prior snapshot).
+_ONE_SHOT_SHA256 = "157efb9d19e961cbb1973e001e69516b799c495b01833ca4a90bc9f1d31e988d"
+_AINTERACT_SHA256 = "9a43d3ebdc125ea45a3a6027a2cd2a533e40d11ae75b7f108619a676a28062ba"
 
 
 def test_slayer_otf_one_shot_unchanged():

@@ -598,9 +598,17 @@ def test_submit_slayer_distinct_false_with_time_dim_only(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_motley_slayer_floor_is_at_least_0_9_1():
-    """``pyproject.toml`` must pin ``motley-slayer >= 0.9.1`` in BOTH
+def test_motley_slayer_floor_is_at_least_0_9_6():
+    """``pyproject.toml`` must pin ``motley-slayer >= 0.9.6`` in BOTH
     the ``slayer`` and ``all`` extras.
+
+    DEV-1668: 0.9.6 is the binding floor now — it removed the ``help`` MCP tool
+    and gave ``inspect`` the null-reference COLLECTION view
+    (``inspect(reference=None, entity_type="model"|"datasource")``, DEV-1667)
+    that the claude_sdk_otf* SLayer agents adopt in place of
+    ``models_summary`` / ``list_datasources`` / ``help``. A downgrade below it
+    would re-expose the removed ``help`` (crashing ``derive_disallowed_slayer_tools``)
+    and break the collection-view prompt guidance.
 
     0.7.2 introduced ``SlayerQuery.distinct_dimension_values`` (a floor
     regression below it silently strips the field via Pydantic). 0.8.3 shipped
@@ -621,7 +629,7 @@ def test_motley_slayer_floor_is_at_least_0_9_1():
 
     root = Path(__file__).resolve().parents[1]
     text = (root / "pyproject.toml").read_text()
-    # Both extras must use a >= floor at least 0.9.1 (allow patch bumps).
+    # Both extras must use a >= floor at least 0.9.6 (allow patch bumps).
     floors = re.findall(
         r'"motley-slayer\[advanced-search\]>=([0-9.]+)"', text,
     )
@@ -635,11 +643,12 @@ def test_motley_slayer_floor_is_at_least_0_9_1():
     for raw in floors:
         major, minor, patch, *_ = [*raw.split("."), "0", "0"]
         version = (int(major), int(minor), int(patch))
-        assert version >= (0, 9, 1), (
-            f"motley-slayer floor {raw!r} is below 0.9.1 — the claude_sdk "
-            "encoder's deps block calls inspect() (DEV-1588) directly, and the "
-            "SLayer-agent prompts call batch inspect() (DEV-1612) for "
-            "targeted detail reads."
+        assert version >= (0, 9, 6), (
+            f"motley-slayer floor {raw!r} is below 0.9.6 — DEV-1668 adopts the "
+            "unified `inspect` (null-reference collection view + help-into-inspect) "
+            "and removes `help`/`models_summary`/`list_datasources` from the lean "
+            "surface; a downgrade re-exposes the removed `help` tool and breaks the "
+            "collection-view prompt guidance."
         )
 
 

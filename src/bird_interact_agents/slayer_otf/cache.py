@@ -73,6 +73,7 @@ from slayer.storage.yaml_storage import YAMLStorage
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
+from bird_interact_agents.memory_store_io import persist_memories
 from bird_interact_agents.slayer_otf.timing import log_otf_event, otf_timer
 from bird_interact_agents.slayer_pipeline.orchestrator import (
     _phase1_ingest,
@@ -572,12 +573,11 @@ async def _materialise_cache_memories(
     """
     import hashlib
 
-    import yaml
-
     mems = encode_kb_as_memories(db, kb_rows, deleted_kb_ids=set())
-    (build_dir / "memories.yaml").write_text(
-        yaml.safe_dump(mems, sort_keys=False)
-    )
+    # DEV-1668: persist through the slayer storage layer (per-id
+    # ``memories/<id>.md``) rather than hand-writing a flat ``memories.yaml``.
+    memories = [Memory.model_validate(d) for d in mems]
+    await persist_memories(build_dir, memories)
 
     if not _embeddings_available():
         # Channel disabled (no extra installed, or no API key for the
@@ -588,9 +588,7 @@ async def _materialise_cache_memories(
         return
 
     model_name = _embedding_current_model()
-    # Memory.model_validate is cheap; the encoder's round-trip test
-    # already proves all dicts are valid.
-    memories = [Memory.model_validate(d) for d in mems]
+    # ``memories`` was already validated + persisted above; reuse it.
     # DEV-1557 / Stage 2: hand the rendered memory text to slayer
     # verbatim. SLayer 0.7.4+ `embed_batch` token-truncates per text via
     # `truncate_text_for_model` (cap - 256 margin) and falls back to

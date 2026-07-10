@@ -239,7 +239,9 @@ _MAIN_NATIVE_BARE = [
     "create_model",
     "edit_model",
     "validate_models",
-    "help",
+    # DEV-1668: `help` removed — the slayer 0.9.6 `help` tool is gone (help
+    # content is `inspect(reference="memory:help.intro", entity_type="memory")`),
+    # so the in-process native bridge cannot resolve its schema.
     "ask_discovery",
     *_KB_NATIVE_BARE,
 ]
@@ -279,9 +281,10 @@ def effective_main_tools(
 
 
 def effective_discovery_tools(*, lean_introspection: bool) -> list[str]:
-    """DEV-1666: the DISCOVERY client's native tool names after the lean drop
-    (inspect_model + KB natives; models_summary stays). readonly is inert here
-    (discovery holds no write tools). False == ``DISCOVERY_NATIVE_TOOL_NAMES``."""
+    """DEV-1666/DEV-1668: the DISCOVERY client's native tool names after the lean
+    drop (inspect_model + models_summary + KB natives — models_summary now routes
+    through ``inspect(reference=None, entity_type="model")``). readonly is inert
+    here (discovery holds no write tools). False == ``DISCOVERY_NATIVE_TOOL_NAMES``."""
     return filter_flag_drops(
         DISCOVERY_NATIVE_TOOL_NAMES,
         lean_introspection=lean_introspection, readonly_mode=False,
