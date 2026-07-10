@@ -482,7 +482,11 @@ async def test_run_task_passes_disallowed_slayer_tools_to_sdk(
     from bird_interact_agents.agents.claude_sdk_otf import agent as m
 
     captured = _stub_env(monkeypatch, m, tmp_path / "store")
-    agent = m.ClaudeSDKOtfAgent(model="anthropic/claude-sonnet-4-5")
+    # DEV-1666: pin the disallowed-derivation mechanism at the identity point
+    # (lean off) so the full on-the-fly allow-list is used; the flag-driven
+    # drops are covered by tests/test_dev1666_lean_readonly_flags.py.
+    agent = m.ClaudeSDKOtfAgent(
+        model="anthropic/claude-sonnet-4-5", lean_introspection=False)
     await agent.run_task(
         dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",
     )
@@ -531,6 +535,9 @@ async def test_run_task_pre_encoded_derives_disallowed_from_stripped_allow_list(
         model="anthropic/claude-sonnet-4-5",
         slayer_setup="pre-encoded",
         pre_encoded_source="otf",
+        # DEV-1666: identity point (lean off) — pin the write-stripped derivation
+        # without the flag-driven inspect_model / list_datasources drops.
+        lean_introspection=False,
     )
     await agent.run_task(
         dict(_TASK), str(tmp_path), 20.0, "slayer", eval_mode="one-shot",

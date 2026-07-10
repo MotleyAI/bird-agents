@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 from bird_interact_agents import paths, provider_registry
+from bird_interact_agents.agents import _slayer_tool_surface
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.cloud import benchmark_data, cluster, config, gcs, image, prereqs
 from bird_interact_agents.cloud import collation as _collation
@@ -365,9 +366,18 @@ def build_manifest(
     ``benchmark_data_prefix`` is the content-hashed GCS prefix the dataset was
     uploaded to at submit; the actor downloads from it per node."""
     instance_ids = list(args.instance_ids)
+    # DEV-1666: record the resolved slayer flags (None on raw / exempt framework).
+    _lean, _readonly = _slayer_tool_surface.resolve_recorded_flags(
+        framework=args.framework,
+        query_mode=args.query_mode,
+        lean_introspection=getattr(args, "lean_introspection", True),
+        readonly_mode=getattr(args, "readonly_mode", False),
+    )
     return {
         "run_id": run_id,
         "framework": args.framework,
+        "lean_introspection": _lean,
+        "readonly_mode": _readonly,
         # DEV-1591: the submitting code IS the producer, so it writes the run's
         # version literal here (v0/v1 on clean main). Downstream copies it;
         # nothing re-derives the version from the framework on the
@@ -865,6 +875,14 @@ def _cache_ttl_env_vars(*, cache_ttl: str, prompt_cache: bool = True) -> dict[st
 
 
 def submit(args) -> str:
+    # DEV-1666: warn when an explicit slayer flag was set on a run that will
+    # not apply it (raw OR an exempt slayer framework).
+    _slayer_tool_surface.maybe_warn_ignored_flags(
+        framework=args.framework,
+        query_mode=args.query_mode,
+        lean_introspection=getattr(args, "lean_introspection", True),
+        readonly_mode=getattr(args, "readonly_mode", False),
+    )
     _validate_instance_ids(args.instance_ids, _submit_benchmark(args))
     prereqs.check(args)
     repo_root = submitter_repo_root()
@@ -1014,6 +1032,12 @@ def _build_job_args(
     # `--pre-encoded-models None` (argparse would reject the choice).
     if getattr(args, "pre_encoded_source", None):
         job_args += ["--pre-encoded-models", args.pre_encoded_source]
+    # DEV-1666: emit the slayer flags ONLY on deviation from the default
+    # (lean on / readonly off) — the actor's argparse resolves an unset flag.
+    if not getattr(args, "lean_introspection", True):
+        job_args.append("--no-lean")
+    if getattr(args, "readonly_mode", False):
+        job_args.append("--readonly-mode")
     return job_args
 
 
@@ -1659,6 +1683,12 @@ def _build_resubmit_args(manifest: dict, run_id: str, missing: list[str],
         pre_src = "custom"
     if pre_src:
         job_args += ["--pre-encoded-models", pre_src]
+    # DEV-1666: re-emit the slayer flags from the manifest on deviation so a
+    # partial cloud rerun keeps the original run identity/behavior.
+    if manifest.get("lean_introspection") is False:
+        job_args.append("--no-lean")
+    if manifest.get("readonly_mode"):
+        job_args.append("--readonly-mode")
     return job_args
 
 

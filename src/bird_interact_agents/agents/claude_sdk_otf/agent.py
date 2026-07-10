@@ -51,16 +51,22 @@ from bird_interact_agents.slayer_otf.timing import otf_timer
 from bird_interact_agents.agents.claude_sdk_otf.prompts import (
     SLAYER_OTF_ONE_SHOT,
 )
+from bird_interact_agents.agents._shared_otf_prompts import (
+    build_slayer_otf_one_shot_v0,
+)
 from bird_interact_agents.agents._pre_encoded import (
     resolve_pre_encoded_storage_dir,
     strip_write_slayer_tools,
     validate_pre_encoded_source,
 )
 from bird_interact_agents.agents._slayer_tool_surface import (
+    LEAN_DROP_NATIVE_KB,
     derive_disallowed_slayer_tools,
+    filter_flag_drops,
 )
 from bird_interact_agents.agents._pre_encoded_prompts import (
     SLAYER_PRE_ENCODED_ONE_SHOT,
+    build_slayer_pre_encoded_one_shot,
 )
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.provider_registry import is_supported_agent_model
@@ -363,9 +369,36 @@ def _select_tools(eval_mode: str) -> list:
     return [*_KNOWLEDGE_TOOLS, submit_query]
 
 
+def effective_slayer_allow(
+    *, lean_introspection: bool, readonly_mode: bool, pre_encoded_source
+) -> list[str]:
+    """DEV-1666: the SLayer stdio allow-list after the pre-encoded write-strip
+    AND the flag drops (``inspect_model`` / ``list_datasources`` for lean; the
+    write tools for readonly). ``derive_disallowed_slayer_tools`` then strips the
+    complement's JSON schema every turn."""
+    allow = (
+        strip_write_slayer_tools(SLAYER_MCP_TOOLS)
+        if pre_encoded_source else list(SLAYER_MCP_TOOLS)
+    )
+    return filter_flag_drops(
+        allow, lean_introspection=lean_introspection, readonly_mode=readonly_mode
+    )
+
+
+def effective_native_tools(eval_mode: str, *, lean_introspection: bool) -> list:
+    """DEV-1666: the in-process ``bird-interact-tools`` natives after dropping
+    the 3 KB tools under lean (``query`` / ``submit_query`` always survive —
+    the drop-set is name-scoped to the KB tools)."""
+    tools = _select_tools(eval_mode)
+    if not lean_introspection:
+        return tools
+    return [t for t in tools if t.name not in LEAN_DROP_NATIVE_KB]
+
+
 def _build_prompt(
     eval_mode: str, task_data: dict, budget: float,
     pre_encoded_source: str | None = None,
+    *, lean_introspection: bool = True, readonly_mode: bool = False,
 ) -> str:
     if eval_mode != "one-shot":
         raise ValueError(
@@ -374,10 +407,15 @@ def _build_prompt(
         )
     user_query = task_data["amb_user_query"]
     db_name = task_data["selected_database"]
-    template = (
-        SLAYER_PRE_ENCODED_ONE_SHOT if pre_encoded_source
-        else SLAYER_OTF_ONE_SHOT
-    )
+    # DEV-1666: gated build — lean drops the `inspect_model` inventory mention;
+    # readonly drops the create/edit build mention. False/False == the frozen
+    # template. (The pre-encoded template's own prompt-text gating is a follow-up.)
+    if pre_encoded_source:
+        template = build_slayer_pre_encoded_one_shot(
+            lean_introspection=lean_introspection, readonly_mode=readonly_mode)
+    else:
+        template = build_slayer_otf_one_shot_v0(
+            lean_introspection=lean_introspection, readonly_mode=readonly_mode)
     return template.format(
         budget=budget, db_name=db_name, user_query=user_query,
     )
@@ -405,6 +443,8 @@ class ClaudeSDKOtfAgent:
         pre_encoded_source: str | None = None,
         save_edited_models: bool = False,
         apply_edited_models: bool = False,
+        lean_introspection: bool = True,
+        readonly_mode: bool = False,
     ) -> None:
         # DEV-1586: `pre_encoded_source` (None | "otf" | "custom") selects the
         # read-only pre-encoded mode. `slayer_setup` is derived upstream
@@ -433,6 +473,16 @@ class ClaudeSDKOtfAgent:
         self.pre_encoded_source = pre_encoded_source
         self.save_edited_models = save_edited_models
         self.apply_edited_models = apply_edited_models
+        # DEV-1666: slayer-only tool-surface flags.
+        self.lean_introspection = lean_introspection
+        self.readonly_mode = readonly_mode
+        if readonly_mode and pre_encoded_source is None:
+            logger.warning(
+                "readonly_mode=True on an on-the-fly (build) run: the SLayer "
+                "WRITE tools are dropped, so model definitions will NOT be "
+                "persisted; the agent must do the work inline at query time "
+                "(via `query`)."
+            )
 
     async def run_task(
         self,
@@ -591,9 +641,15 @@ class ClaudeSDKOtfAgent:
             }
             _ctx_var.set(ctx_dict)
 
-            tools = _select_tools(eval_mode)
+            # DEV-1666: lean_introspection drops the 3 KB natives from the
+            # in-process server (query/submit_query survive).
+            tools = effective_native_tools(
+                eval_mode, lean_introspection=self.lean_introspection
+            )
             prompt = _build_prompt(
                 eval_mode, task_data, budget, self.pre_encoded_source,
+                lean_introspection=self.lean_introspection,
+                readonly_mode=self.readonly_mode,
             )
 
             server = create_sdk_mcp_server(
@@ -607,11 +663,13 @@ class ClaudeSDKOtfAgent:
                     slayer_storage_dir, ingest_on_startup=False,
                 ),
             }
-            # DEV-1586: pre-encoded mode drops the SLayer WRITE tools (the
-            # agent introspects only). On-the-fly keeps the full whitelist.
-            slayer_tools = (
-                strip_write_slayer_tools(SLAYER_MCP_TOOLS)
-                if self.pre_encoded_source else SLAYER_MCP_TOOLS
+            # DEV-1586 + DEV-1666: pre-encoded / readonly drop the SLayer WRITE
+            # tools; lean drops inspect_model + list_datasources. The complement
+            # (derive_disallowed_slayer_tools) strips the dropped tools' schema.
+            slayer_tools = effective_slayer_allow(
+                lean_introspection=self.lean_introspection,
+                readonly_mode=self.readonly_mode,
+                pre_encoded_source=self.pre_encoded_source,
             )
             tool_names.extend(f"mcp__slayer__{t}" for t in slayer_tools)
             # DEV-1644: derive the disallowed set as the complement of the

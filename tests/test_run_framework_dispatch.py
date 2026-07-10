@@ -31,7 +31,7 @@ def test_main_framework_choices_expose_only_aggregator_tokens():
     """
     import inspect
 
-    src = inspect.getsource(run_mod.main)
+    src = inspect.getsource(run_mod.build_arg_parser)
     must_expose = ("claude_sdk", "claude_sdk_v1")
     must_hide = (
         "claude_sdk_otf",

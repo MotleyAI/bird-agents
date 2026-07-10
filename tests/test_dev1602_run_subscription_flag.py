@@ -114,7 +114,7 @@ def _find_add_argument(flag: str):
     import ast
     import inspect
 
-    src = inspect.getsource(run.main)
+    src = inspect.getsource(run.build_arg_parser)
     tree = ast.parse(src)
     for node in ast.walk(tree):
         if (
