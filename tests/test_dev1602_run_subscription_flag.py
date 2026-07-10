@@ -255,14 +255,15 @@ def test_main_mode_optional_defaults_per_benchmark():
 
 
 def test_main_value_defaults_aligned_with_cloud():
-    """Local CLI alignment of value-defaults with bird-interact-cloud:
-    --patience=250, --user-sim-model=claude-sonnet-4-6,
-    --use-audited-gold-sql default True via BooleanOptionalAction."""
+    """Local CLI value-defaults vs bird-interact-cloud:
+    --user-sim-model=claude-sonnet-4-6, --use-audited-gold-sql default True via
+    BooleanOptionalAction. NOTE: --patience INTENTIONALLY diverges — local
+    defaults to 500 (the value local sweeps run at); cloud keeps 250."""
     import ast
 
     pat = _find_add_argument("--patience")
     pkw = {k.arg: k.value for k in pat.keywords}
-    assert isinstance(pkw["default"], ast.Constant) and pkw["default"].value == 250
+    assert isinstance(pkw["default"], ast.Constant) and pkw["default"].value == 500
 
     usm = _find_add_argument("--user-sim-model")
     ukw = {k.arg: k.value for k in usm.keywords}

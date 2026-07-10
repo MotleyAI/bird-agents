@@ -2428,11 +2428,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit", type=int, default=None, help="Max tasks to run")
     parser.add_argument("--concurrency", type=int, default=3)
     parser.add_argument(
-        "--patience", type=int, default=250,
+        "--patience", type=int, default=500,
         help=(
-            "User patience budget (aligned with bird-interact-cloud's default "
-            "of 250; the old local default of 3 was too low and skewed eval "
-            "results)."
+            "User patience budget. Local default is 500 (the value we run "
+            "local sweeps at); bird-interact-cloud keeps 250. The old local "
+            "default of 3 was too low and skewed eval results."
         ),
     )
     parser.add_argument(
