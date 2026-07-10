@@ -295,3 +295,30 @@ __all__ = [
     "SLAYER_PRE_ENCODED_ONE_SHOT_V1",
     "SLAYER_PRE_ENCODED_AINTERACT_V1",
 ]
+
+
+# ---------------------------------------------------------------------------
+# DEV-1666: the pre-encoded (read-only) query templates get the tool-surface
+# leaning (inspect_model + KB tools dropped from the agent's tool list) but the
+# PROMPT-text gating for their four `inspect_model` sub-constants is tracked as a
+# follow-up (the templates are read-only and secondary to the on-the-fly path).
+# These builders are pass-through so the call sites are already flag-aware and
+# only the sub-constant swaps remain to land. readonly is inert here (no write
+# tools on the pre-encoded surface).
+# ---------------------------------------------------------------------------
+
+
+def build_slayer_pre_encoded_one_shot(
+    *, lean_introspection: bool = False, readonly_mode: bool = False
+) -> str:
+    """DEV-1666 flag-aware pre-encoded one-shot template (prompt-text gating is a
+    follow-up; currently pass-through). == ``SLAYER_PRE_ENCODED_ONE_SHOT``."""
+    return SLAYER_PRE_ENCODED_ONE_SHOT
+
+
+def build_slayer_pre_encoded_one_shot_v1(
+    *, lean_introspection: bool = False, readonly_mode: bool = False
+) -> str:
+    """DEV-1666 flag-aware pre-encoded one-shot v1 template (prompt-text gating is
+    a follow-up; currently pass-through). == ``SLAYER_PRE_ENCODED_ONE_SHOT_V1``."""
+    return SLAYER_PRE_ENCODED_ONE_SHOT_V1

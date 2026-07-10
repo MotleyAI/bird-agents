@@ -30,7 +30,7 @@ def _framework_choices_from_parser():
 
     from bird_interact_agents import run as run_mod
 
-    src = inspect.getsource(run_mod.main)
+    src = inspect.getsource(run_mod.build_arg_parser)
     tree = ast.parse(src)
     for node in ast.walk(tree):
         if (

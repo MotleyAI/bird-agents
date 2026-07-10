@@ -126,14 +126,31 @@ _DISCOVERY_COMPACT_NOTE = (
     + _COMPACT_SEARCH_DISCIPLINE
     + "\n"
 )
+# DEV-1666: lean variant — `inspect_model` dropped (a model's shape is read via
+# the compact `inspect(entity_type="model", …)` primitive); `models_summary`
+# stays on discovery.
+_DISCOVERY_COMPACT_NOTE_LEAN = (
+    "\nTOOL-USAGE EFFICIENCY. You own `search` and `inspect` (plus\n"
+    "`models_summary`); read a whole model's shape via\n"
+    '`inspect(entity_type="model", sections=["columns","joins"], compact=True)`.\n'
+    "Use the search-for-discovery, inspect-for-detail discipline below so a\n"
+    "single broad sweep does not bloat your warm context — and so the facts\n"
+    "you report stay crisp:\n\n"
+    + _COMPACT_SEARCH_DISCIPLINE
+    + "\n"
+)
 
 
-def build_discovery_prompt(*, with_ask_user: bool, query_mode: str) -> str:
+def build_discovery_prompt(
+    *, with_ask_user: bool, query_mode: str, lean_introspection: bool = False
+) -> str:
     """Compose the discovery subagent system prompt.
 
     ``query_mode`` selects the introspection surface: slayer discovery owns
     ``search`` / ``inspect`` (and gets the DEV-1591 search-vs-inspect
     discipline); raw discovery introspects via ``get_schema`` and has neither.
+    DEV-1666: ``lean_introspection`` drops the ``inspect_model`` mention from the
+    slayer note (inert for raw). ``lean_introspection=False`` ⇒ today's text.
     """
     if query_mode not in _VERIFY_TOOL_BY_MODE:
         raise ValueError(
@@ -142,7 +159,10 @@ def build_discovery_prompt(*, with_ask_user: bool, query_mode: str) -> str:
         )
     parts = [_DISCOVERY_PROMPT_COMMON]
     if query_mode == "slayer":
-        parts.append(_DISCOVERY_COMPACT_NOTE)
+        parts.append(
+            _DISCOVERY_COMPACT_NOTE_LEAN if lean_introspection
+            else _DISCOVERY_COMPACT_NOTE
+        )
     if with_ask_user:
         parts.append(_DISCOVERY_PROMPT_ASK_USER)
     return "".join(parts)
@@ -164,13 +184,48 @@ _INTROSPECTION_TOOLS_BY_MODE = {
 }
 
 
-def build_main_workflow_note(*, query_mode: str) -> str:
+# DEV-1666: lean variant of the slayer main discovery section — `inspect_model`
+# dropped (model shape via compact `inspect(entity_type="model", …)`), KB items
+# read as memories, recommend_root_model positioning folded in.
+_SLAYER_MAIN_DISCOVERY_LEAN = """
+## Discovery workflow
+
+You HOLD the schema-introspection tools `search` and `inspect` on your own
+surface — call them DIRECTLY. Use `search` to find models / columns / measures
+and `inspect` for detail: a known column's sample values via
+`inspect(entity_type="column", reference=["<db>.<model>.<col>"])`, and a whole
+model's shape via `inspect(entity_type="model", sections=["columns","joins"],
+compact=True)`. A long-lived warm 'discovery' assistant is ALSO available
+through the `ask_discovery` tool for delegating broad whole-schema questions
+(it owns `models_summary` and accumulates context across questions).
+Knowledge-base items are SLayer memories: `search` surfaces them (`kind:
+memory`); read them verbatim with `inspect(entity_type="memory",
+reference=["memory:<id>"])`.
+
+Call `recommend_root_model` only once you've decided which entities/columns the
+query needs, immediately before building the query, to get the root model +
+join paths for exactly those entities — use `search` + `inspect` for
+exploration, not `recommend_root_model` as a browser.
+
+""" + _COMPACT_SEARCH_DISCIPLINE + """
+"""
+
+
+def build_main_workflow_note(
+    *, query_mode: str, lean_introspection: bool = False
+) -> str:
     """Compose the main-agent workflow note.
 
     Codex r5: the verify-before-submit step must reference the tool
     the agent's tool surface actually exposes — ``query`` for slayer
     mode, ``execute_sql`` for raw mode. The shared discovery-subagent
     block stays identical across modes.
+
+    DEV-1666: ``lean_introspection`` swaps the slayer discovery section for a
+    lean variant that drops ``inspect_model`` (model shape read via the compact
+    ``inspect(entity_type="model", …)``) and reads KB items as memories rather
+    than via the knowledge tools; it also folds in the ``recommend_root_model``
+    positioning note. Inert for raw mode. ``False`` ⇒ today's text (byte-identical).
     """
     try:
         verify_tool, submit_tool = _VERIFY_TOOL_BY_MODE[query_mode]
@@ -180,10 +235,13 @@ def build_main_workflow_note(*, query_mode: str) -> str:
             f"expected one of {sorted(_VERIFY_TOOL_BY_MODE)}"
         ) from exc
     if query_mode == "slayer":
-        # DEV-1629: the slayer main loop now HOLDS `search` / `inspect_model`
+        # DEV-1629: the slayer main loop now HOLDS the introspection tools
         # directly; the warm discovery assistant is for grilling the user and
         # broad whole-schema questions, not the primary introspection path.
-        discovery_section = """
+        if lean_introspection:
+            discovery_section = _SLAYER_MAIN_DISCOVERY_LEAN
+        else:
+            discovery_section = """
 ## Discovery workflow
 
 You HOLD the schema-introspection tools `search`, `inspect_model`, and

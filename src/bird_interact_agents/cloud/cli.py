@@ -154,6 +154,25 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_submit.add_argument(
         "--slayer-storage-root", default="/data/slayer_models",
     )
+    # DEV-1666: slayer-only tool-surface flags. Single deviation flags (no
+    # `--no-*` pairs): pass a flag only to deviate from the default.
+    sp_submit.add_argument(
+        "--no-lean", action="store_false", dest="lean_introspection", default=True,
+        help=(
+            "DEV-1666: disable lean_introspection (slayer-only). Default lean "
+            "drops tools redundant with search/inspect (inspect_model, the 3 "
+            "knowledge tools, list_datasources); --no-lean restores them. "
+            "Ignored (warning) in raw mode / for exempt frameworks."
+        ),
+    )
+    sp_submit.add_argument(
+        "--readonly-mode", action="store_true", dest="readonly_mode", default=False,
+        help=(
+            "DEV-1666: drop the SLayer WRITE tools (create_model/edit_model/"
+            "save_memory/validate_models), slayer-only. For querying "
+            "pre-built/applied models. Ignored (warning) in raw / exempt."
+        ),
+    )
     sp_submit.add_argument(
         "--subscription-auth", action=argparse.BooleanOptionalAction,
         default=None, dest="subscription_auth",

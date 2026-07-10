@@ -472,6 +472,55 @@ and silently multiply rows."""
 # `inspect`: pass a list of same-kind refs in one call.)
 #
 # Format params: {db_name}
+
+# ---------------------------------------------------------------------------
+# DEV-1666: the SLAYER TOOLS inventory tail is a gated block. Defined here so
+# the constant-level occurrence in `_SLAYER_TOOLS_BLOCK` (which feeds the v1
+# template, FULL/byte-identical) and the two v0 template functions
+# (`_build_oneshot_v0` / `_build_ainteract_v0`, which shadow `_tools_tail` with
+# a param) all resolve. Four EXPLICITLY-AUTHORED variants — no runtime string
+# surgery. FULL is the frozen text (SHA-pinned); lean drops `inspect_model` in
+# favour of the compact `inspect(entity_type="model", …)`, readonly drops the
+# `create_model` / `edit_model` build mention.
+# ---------------------------------------------------------------------------
+_INSPECT_MODEL_LEAN = (
+    '`inspect(entity_type="model", sections=["columns","joins"], compact=True)`'
+)
+_TOOLS_TAIL_FULL = (
+    "`inspect_model` to see a whole model's columns / measures / joins;\n"
+    "`create_model` / `edit_model` to add columns and measures; `query` to test."
+)
+_TOOLS_TAIL_LEAN = (
+    "a whole model's columns / measures / joins via "
+    + _INSPECT_MODEL_LEAN
+    + ";\n`create_model` / `edit_model` to add columns and measures; "
+    "`query` to test."
+)
+_TOOLS_TAIL_READONLY = (
+    "`inspect_model` to see a whole model's columns / measures / joins. The\n"
+    "SLayer models are FIXED — you cannot create or edit models; `query` to test."
+)
+_TOOLS_TAIL_LEAN_READONLY = (
+    "a whole model's columns / measures / joins via "
+    + _INSPECT_MODEL_LEAN
+    + ". The\nSLayer models are FIXED — you cannot create or edit models; "
+    "`query` to test."
+)
+#: Module-level default used by the CONSTANT-level occurrence (v1 tools block);
+#: the v0 template functions shadow this name with their `_tools_tail` param.
+_tools_tail = _TOOLS_TAIL_FULL
+
+
+def _slayer_tools_tail(*, lean_introspection: bool, readonly_mode: bool) -> str:
+    if lean_introspection and readonly_mode:
+        return _TOOLS_TAIL_LEAN_READONLY
+    if lean_introspection:
+        return _TOOLS_TAIL_LEAN
+    if readonly_mode:
+        return _TOOLS_TAIL_READONLY
+    return _TOOLS_TAIL_FULL
+
+
 _SLAYER_TOOLS_BLOCK = (
     """\
 The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
@@ -486,8 +535,9 @@ the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 `search` to DISCOVER relevant memories and existing entities (it returns
 one-line descriptions only); `inspect` to read the FULL body of specific
 entities you have already pinned down — columns, measures, or memories — by
-reference; `inspect_model` to see a whole model's columns / measures / joins;
-`create_model` / `edit_model` to add columns and measures; `query` to test.
+reference; """
+    + _tools_tail
+    + """
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `inspect` the column reference
@@ -578,6 +628,26 @@ projected under that name; create anything else with `create_model` /
 and check spelling. SLayer rejects an unknown name outright rather than
 guessing."""
 
+# DEV-1666: readonly variant — the models are FIXED, so the "create anything
+# else with create_model / edit_model" escape hatch is dropped (project from the
+# prior stage instead). Only used when readonly_mode gates the v0 OTF prompts.
+_DEFINE_BEFORE_REFERENCE_READONLY = """\
+DEFINE BEFORE YOU REFERENCE. Every name you put in a `filter`, `dimension`,
+`measure`, or `order` must ALREADY exist on the model that stage queries —
+as a Column, a ModelMeasure, or a named alias. A nested-DAG stage can
+reference only what its own `source_model` defines or what the prior stage
+projected under that name; the SLayer models are FIXED (you cannot create or
+edit them), so project anything else from the prior stage BEFORE you reference
+it, and check spelling. SLayer rejects an unknown name outright rather than
+guessing."""
+
+
+def _slayer_define_ref(*, readonly_mode: bool) -> str:
+    return (
+        _DEFINE_BEFORE_REFERENCE_READONLY if readonly_mode
+        else _DEFINE_BEFORE_REFERENCE
+    )
+
 
 # ---------------------------------------------------------------------------
 # DEV-1629 — root-model / host selection via the SLayer `recommend_root_model`
@@ -649,7 +719,13 @@ merely a model where the input columns happen to live:
 # ---------------------------------------------------------------------------
 
 
-SLAYER_OTF_ONE_SHOT_V0 = (
+def _build_oneshot_v0(
+    _tools_tail: str, _define_ref: str = _DEFINE_BEFORE_REFERENCE
+) -> str:
+    # DEV-1666: the SLAYER TOOLS inventory tail is a gated block (`_tools_tail`)
+    # so lean/readonly can drop the `inspect_model` / `create_model`+`edit_model`
+    # mentions statically. Everything else is the frozen literal.
+    return (
     """\
 You are a data analyst. You have a SLayer semantic-layer MCP server plus a
 native `submit_query` tool. Your job: answer the user's question by
@@ -675,8 +751,9 @@ the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 `search` to DISCOVER relevant memories and existing entities (it returns
 one-line descriptions only); `inspect` to read the FULL body of specific
 entities you have already pinned down — columns, measures, or memories — by
-reference; `inspect_model` to see a whole model's columns / measures / joins;
-`create_model` / `edit_model` to add columns and measures; `query` to test.
+reference; """
+    + _tools_tail
+    + """
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `inspect` the column reference
@@ -899,11 +976,15 @@ User question: {user_query}
     + "\n\n"
     + ENCODE_HOST_GUIDANCE
     + "\n\n"
-    + _DEFINE_BEFORE_REFERENCE
+    + _define_ref
     + "\n"
 )
 
-SLAYER_OTF_AINTERACT_V0 = (
+def _build_ainteract_v0(
+    _tools_tail: str, _define_ref: str = _DEFINE_BEFORE_REFERENCE
+) -> str:
+    # DEV-1666: gated SLAYER TOOLS inventory tail (see _build_oneshot_v0).
+    return (
     """\
 You are a data analyst. You have a SLayer semantic-layer MCP server plus
 native `ask_user` and `submit_query` tools. Your job: answer the user's
@@ -934,8 +1015,9 @@ the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 `search` to DISCOVER relevant memories and existing entities (it returns
 one-line descriptions only); `inspect` to read the FULL body of specific
 entities you have already pinned down — columns, measures, or memories — by
-reference; `inspect_model` to see a whole model's columns / measures / joins;
-`create_model` / `edit_model` to add columns and measures; `query` to test.
+reference; """
+    + _tools_tail
+    + """
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `inspect` the column reference
@@ -1202,7 +1284,7 @@ User question: {user_query}
     + "\n\n"
     + ENCODE_HOST_GUIDANCE
     + "\n\n"
-    + _DEFINE_BEFORE_REFERENCE
+    + _define_ref
     + "\n"
 )
 
@@ -1516,3 +1598,45 @@ User question: {user_query}
     + "\n"
     + _RAW_HOST_PATH_PRINCIPLE
 )
+
+
+# ---------------------------------------------------------------------------
+# DEV-1666: lean_introspection / readonly_mode prompt gating (STATIC blocks).
+#
+# The SLAYER TOOLS inventory tail is the only flag-gated block in the v0 slayer
+# templates. It has four EXPLICITLY-AUTHORED variants (no runtime string
+# surgery): lean drops the `inspect_model` mention in favour of the compact
+# `inspect(entity_type="model", …)` primitive; readonly drops the
+# `create_model` / `edit_model` build mention. The FULL variant is the frozen
+# text, so `_build_*_v0(_TOOLS_TAIL_FULL)` == the byte-for-byte legacy constant
+# (pinned by the SHA-256 snapshot tests). Absence of the dropped tool names in
+# the lean/readonly variants is pinned by DEV-1666 tests.
+# ---------------------------------------------------------------------------
+
+#: The frozen legacy constants == the FULL-variant composition (byte-for-byte).
+SLAYER_OTF_ONE_SHOT_V0 = _build_oneshot_v0(_TOOLS_TAIL_FULL)
+SLAYER_OTF_AINTERACT_V0 = _build_ainteract_v0(_TOOLS_TAIL_FULL)
+
+
+def build_slayer_otf_one_shot_v0(
+    *, lean_introspection: bool = False, readonly_mode: bool = False
+) -> str:
+    """DEV-1666 gated build of the v0 slayer one-shot template. False/False ==
+    ``SLAYER_OTF_ONE_SHOT_V0`` (byte-for-byte)."""
+    return _build_oneshot_v0(
+        _slayer_tools_tail(
+            lean_introspection=lean_introspection, readonly_mode=readonly_mode),
+        _slayer_define_ref(readonly_mode=readonly_mode),
+    )
+
+
+def build_slayer_otf_ainteract_v0(
+    *, lean_introspection: bool = False, readonly_mode: bool = False
+) -> str:
+    """DEV-1666 gated build of the v0 slayer a-interact template. False/False ==
+    ``SLAYER_OTF_AINTERACT_V0`` (byte-for-byte)."""
+    return _build_ainteract_v0(
+        _slayer_tools_tail(
+            lean_introspection=lean_introspection, readonly_mode=readonly_mode),
+        _slayer_define_ref(readonly_mode=readonly_mode),
+    )

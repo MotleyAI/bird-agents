@@ -48,6 +48,7 @@ from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _NORMALIZE_WRITE_FILTERS_MATCHER,
     _SLAYER_SEARCH_TOOL,
     SLAYER_MCP_TOOLS,
+    effective_slayer_allow,
     _force_compact_search_hook,
     _make_query_before_submit_guard,
     _make_turn_budget_hook,
@@ -55,10 +56,14 @@ from bird_interact_agents.agents.claude_sdk_otf.agent import (
     _slayer_tool_names,
 )
 from bird_interact_agents.agents._slayer_tool_surface import (
+    LEAN_DROP_NATIVE_KB,
     derive_disallowed_slayer_tools,
 )
 from bird_interact_agents.agents.claude_sdk_otf_ainteract.prompts import (
     SLAYER_OTF_AINTERACT,
+)
+from bird_interact_agents.agents._shared_otf_prompts import (
+    build_slayer_otf_ainteract_v0,
 )
 from bird_interact_agents.agents._pre_encoded import (
     resolve_pre_encoded_storage_dir,
@@ -203,6 +208,7 @@ def _select_tools(eval_mode: str) -> list:
 def _build_prompt(
     eval_mode: str, task_data: dict, budget: float,
     pre_encoded_source: str | None = None,
+    *, lean_introspection: bool = True, readonly_mode: bool = False,
 ) -> str:
     if eval_mode != "a-interact":
         raise ValueError(
@@ -211,10 +217,14 @@ def _build_prompt(
         )
     user_query = task_data["amb_user_query"]
     db_name = task_data["selected_database"]
-    template = (
-        SLAYER_PRE_ENCODED_AINTERACT if pre_encoded_source
-        else SLAYER_OTF_AINTERACT
-    )
+    # DEV-1666: gated build — lean drops the inspect_model inventory mention,
+    # readonly drops the create/edit build mention. False/False == frozen text.
+    # (The pre-encoded a-interact template's prompt-text gating is a follow-up.)
+    if pre_encoded_source:
+        template = SLAYER_PRE_ENCODED_AINTERACT
+    else:
+        template = build_slayer_otf_ainteract_v0(
+            lean_introspection=lean_introspection, readonly_mode=readonly_mode)
     return template.format(
         budget=budget, db_name=db_name, user_query=user_query,
     )
@@ -241,6 +251,8 @@ class ClaudeSDKOtfAInteractAgent:
         pre_encoded_source: str | None = None,
         save_edited_models: bool = False,
         apply_edited_models: bool = False,
+        lean_introspection: bool = True,
+        readonly_mode: bool = False,
     ) -> None:
         # DEV-1586: `pre_encoded_source` (None | "otf" | "custom") selects the
         # read-only pre-encoded mode; `slayer_setup` is derived upstream.
@@ -267,6 +279,15 @@ class ClaudeSDKOtfAInteractAgent:
         self.pre_encoded_source = pre_encoded_source
         self.save_edited_models = save_edited_models
         self.apply_edited_models = apply_edited_models
+        # DEV-1666: slayer-only tool-surface flags.
+        self.lean_introspection = lean_introspection
+        self.readonly_mode = readonly_mode
+        if readonly_mode and pre_encoded_source is None:
+            logger.warning(
+                "readonly_mode=True on an on-the-fly (build) run: the SLayer "
+                "WRITE tools are dropped, so model definitions will NOT be "
+                "persisted; the agent must work inline at query time."
+            )
 
     async def run_task(
         self,
@@ -409,9 +430,15 @@ class ClaudeSDKOtfAInteractAgent:
             }
             _ctx_var.set(ctx_dict)
 
+            # DEV-1666: lean drops the 3 KB natives (query/submit_query/ask_user
+            # survive — the drop-set is name-scoped to the KB tools).
             tools = _select_tools(eval_mode)
+            if self.lean_introspection:
+                tools = [t for t in tools if t.name not in LEAN_DROP_NATIVE_KB]
             prompt = _build_prompt(
                 eval_mode, task_data, budget, self.pre_encoded_source,
+                lean_introspection=self.lean_introspection,
+                readonly_mode=self.readonly_mode,
             )
 
             server = create_sdk_mcp_server(
@@ -436,10 +463,13 @@ class ClaudeSDKOtfAInteractAgent:
             # DEV-1644: the disallowed set is DERIVED as the complement of the
             # (mode-specific) allow-list against the live SLayer surface, so a
             # write-stripped allow-list hides the write schemas automatically.
-            if self.pre_encoded_source:
-                slayer_tools = strip_write_slayer_tools(SLAYER_MCP_TOOLS)
-            else:
-                slayer_tools = SLAYER_MCP_TOOLS
+            # DEV-1666: compose the pre-encoded write-strip with the flag drops
+            # (lean → inspect_model + list_datasources; readonly → write tools).
+            slayer_tools = effective_slayer_allow(
+                lean_introspection=self.lean_introspection,
+                readonly_mode=self.readonly_mode,
+                pre_encoded_source=self.pre_encoded_source,
+            )
             tool_names.extend(f"mcp__slayer__{t}" for t in slayer_tools)
             disallowed_tool_names = derive_disallowed_slayer_tools(slayer_tools)
 
