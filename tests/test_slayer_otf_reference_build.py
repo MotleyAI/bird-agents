@@ -148,8 +148,10 @@ async def test_build_when_absent_runs_encoder_over_full_kb(fake_cache, tmp_path)
     assert sorted(record) == [1, 2, 3], "encoder must run over the full KB set"
     ref = tmp_path / "slayer_models_otf" / DB
     assert entry.reference_dir == ref
-    # DEV-1668: slayer 0.9.6 stores per-id ``memories/<id>.md``.
-    assert any((ref / "memories").glob("*.md"))
+    # DEV-1668: slayer 0.9.6 stores per-id ``memories/<id>.md`` — every encoded
+    # KB (1,2,3) must be materialized, not just one file (CodeRabbit).
+    kb_stems = {p.stem for p in (ref / "memories").glob("*.md")}
+    assert {f"{DB}_kb_{i}" for i in (1, 2, 3)} <= kb_stems
     assert (ref / "models" / DB / "households.yaml").exists()
     assert (ref / "_reference_fp.txt").exists()
     assert {r.kb_id for r in entry.setup_results} == {1, 2, 3}

@@ -76,6 +76,22 @@ def test_read_memories_empty_when_absent(tmp_path: Path):
     assert read_memories(tmp_path) == []
 
 
+def test_read_memories_orders_by_numeric_id(tmp_path: Path):
+    # Lexical order would put "10" before "2"; read_memories must sort by the
+    # trailing integer so KB paragraphs join in KB order (CodeRabbit).
+    write_memories_files(tmp_path, [
+        _dict("db_kb_2"), _dict("db_kb_10"), _dict("db_kb_1"),
+    ])
+    assert [m.id for m in read_memories(tmp_path)] == [
+        "db_kb_1", "db_kb_2", "db_kb_10",
+    ]
+
+
+def test_read_memories_numeric_ids_sort_numerically(tmp_path: Path):
+    write_memories_files(tmp_path, [_dict("2"), _dict("10"), _dict("1")])
+    assert [m.id for m in read_memories(tmp_path)] == ["1", "2", "10"]
+
+
 def test_read_memories_migrates_legacy_flat_file(tmp_path: Path):
     # A legacy flat ``memories.yaml`` must be migrated to per-id on read.
     (tmp_path / "memories.yaml").write_text(

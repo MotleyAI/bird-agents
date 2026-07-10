@@ -18,6 +18,7 @@ slayer concern (see [[feedback_reuse_slayer_not_reinvent]]).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from slayer.memories.models import Memory
@@ -31,6 +32,17 @@ from slayer.storage.yaml_storage import (
 
 def _as_memory(m: dict | Memory) -> Memory:
     return m if isinstance(m, Memory) else Memory.model_validate(m)
+
+
+def _natural_id_key(mem_id: str) -> tuple[int, int, str]:
+    """Sort key that orders ids by their TRAILING integer when present
+    (``<db>_kb_2`` before ``<db>_kb_10``, ``2`` before ``10``), falling back to
+    a string sort for non-numeric ids (e.g. ``help.intro``). Plain lexical
+    ``sorted(glob("*.md"))`` would put ``10.md`` before ``2.md``, so a consumer
+    that joins KB paragraphs (``autopsy._read_kb_text``) would emit them out of
+    KB order once ids reach double digits (CodeRabbit)."""
+    m = re.search(r"(\d+)$", mem_id)
+    return (0, int(m.group(1)), mem_id) if m else (1, 0, mem_id)
 
 
 async def persist_memories(
@@ -85,7 +97,9 @@ def read_memories(store_dir: Path | str) -> list[Memory]:
     mem_dir = base / "memories"
     if not mem_dir.is_dir():
         return []
-    return [
+    mems = [
         _md_to_memory(fp.stem, fp.read_text(encoding="utf-8"))
-        for fp in sorted(mem_dir.glob("*.md"))
+        for fp in mem_dir.glob("*.md")
     ]
+    mems.sort(key=lambda m: _natural_id_key(m.id))
+    return mems

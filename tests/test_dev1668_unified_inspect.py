@@ -257,7 +257,7 @@ def _inspect_fn():
             from pydantic.json_schema import PydanticJsonSchemaWarning
 
             warnings.simplefilter("ignore", PydanticJsonSchemaWarning)
-        except Exception:  # pragma: no cover
+        except ImportError:  # pragma: no cover
             pass
         server = create_mcp_server(
             YAMLStorage(base_dir=tmp.name), ingest_on_startup=False,

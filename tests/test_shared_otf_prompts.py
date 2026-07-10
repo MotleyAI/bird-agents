@@ -84,7 +84,10 @@ import pytest
 # `inspect(reference="memory:help.intro", entity_type="memory", compact=False)`
 # (the only byte change vs the prior snapshot).
 _ONE_SHOT_SHA256 = "157efb9d19e961cbb1973e001e69516b799c495b01833ca4a90bc9f1d31e988d"
-_AINTERACT_SHA256 = "9a43d3ebdc125ea45a3a6027a2cd2a533e40d11ae75b7f108619a676a28062ba"
+# DEV-1668 (CodeRabbit): the a-interact_v1 template's redundant second "FIRST"
+# (ask_discovery) was reworded to "BEFORE building" to remove the double-first
+# ordering ambiguity vs the inspect(memory:help.intro) syntax-onboarding line.
+_AINTERACT_SHA256 = "15cba676c84ecff666397e15ce7e88962ded3d63eaa9bc8f68edee20e1c6cc45"
 
 
 def test_slayer_otf_one_shot_unchanged():
