@@ -2907,6 +2907,8 @@ def main() -> None:
             pre_encoded_source=args.pre_encoded_source,
             save_edited_models=args.save_edited_models,
             apply_edited_models=args.apply_edited_models,
+            lean_introspection=args.lean_introspection,
+            readonly_mode=args.readonly_mode,
         )
     )
 

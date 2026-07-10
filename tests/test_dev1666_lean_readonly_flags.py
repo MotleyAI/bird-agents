@@ -638,6 +638,26 @@ class TestV1BuildSiteSurface:
 # --------------------------------------------------------------------------- #
 # 9. local runner wiring + warnings (Codex #2 / #4 / #5)
 # --------------------------------------------------------------------------- #
+class TestMainForwardsFlags:
+    """Regression (Codex): main() must forward args.lean_introspection /
+    args.readonly_mode into the run_evaluation call — else local runs silently
+    ignore --no-lean / --readonly-mode."""
+
+    def test_run_evaluation_call_passes_flags(self):
+        import ast
+        import inspect
+        from bird_interact_agents import run as run_mod
+
+        tree = ast.parse(inspect.getsource(run_mod.main))
+        forwarded = set()
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and getattr(node.func, "id", None) == "run_evaluation"):
+                forwarded = {kw.arg for kw in node.keywords}
+        assert "lean_introspection" in forwarded
+        assert "readonly_mode" in forwarded
+
+
 class TestRunnerWiring:
     """make_runner must pass the flags to in-scope query agents and NOT to
     raw/exempt agents. We patch the agent classes to capture kwargs without
