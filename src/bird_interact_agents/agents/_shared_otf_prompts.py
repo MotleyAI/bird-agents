@@ -628,6 +628,26 @@ projected under that name; create anything else with `create_model` /
 and check spelling. SLayer rejects an unknown name outright rather than
 guessing."""
 
+# DEV-1666: readonly variant — the models are FIXED, so the "create anything
+# else with create_model / edit_model" escape hatch is dropped (project from the
+# prior stage instead). Only used when readonly_mode gates the v0 OTF prompts.
+_DEFINE_BEFORE_REFERENCE_READONLY = """\
+DEFINE BEFORE YOU REFERENCE. Every name you put in a `filter`, `dimension`,
+`measure`, or `order` must ALREADY exist on the model that stage queries —
+as a Column, a ModelMeasure, or a named alias. A nested-DAG stage can
+reference only what its own `source_model` defines or what the prior stage
+projected under that name; the SLayer models are FIXED (you cannot create or
+edit them), so project anything else from the prior stage BEFORE you reference
+it, and check spelling. SLayer rejects an unknown name outright rather than
+guessing."""
+
+
+def _slayer_define_ref(*, readonly_mode: bool) -> str:
+    return (
+        _DEFINE_BEFORE_REFERENCE_READONLY if readonly_mode
+        else _DEFINE_BEFORE_REFERENCE
+    )
+
 
 # ---------------------------------------------------------------------------
 # DEV-1629 — root-model / host selection via the SLayer `recommend_root_model`
@@ -699,7 +719,9 @@ merely a model where the input columns happen to live:
 # ---------------------------------------------------------------------------
 
 
-def _build_oneshot_v0(_tools_tail: str) -> str:
+def _build_oneshot_v0(
+    _tools_tail: str, _define_ref: str = _DEFINE_BEFORE_REFERENCE
+) -> str:
     # DEV-1666: the SLAYER TOOLS inventory tail is a gated block (`_tools_tail`)
     # so lean/readonly can drop the `inspect_model` / `create_model`+`edit_model`
     # mentions statically. Everything else is the frozen literal.
@@ -954,11 +976,13 @@ User question: {user_query}
     + "\n\n"
     + ENCODE_HOST_GUIDANCE
     + "\n\n"
-    + _DEFINE_BEFORE_REFERENCE
+    + _define_ref
     + "\n"
 )
 
-def _build_ainteract_v0(_tools_tail: str) -> str:
+def _build_ainteract_v0(
+    _tools_tail: str, _define_ref: str = _DEFINE_BEFORE_REFERENCE
+) -> str:
     # DEV-1666: gated SLAYER TOOLS inventory tail (see _build_oneshot_v0).
     return (
     """\
@@ -1260,7 +1284,7 @@ User question: {user_query}
     + "\n\n"
     + ENCODE_HOST_GUIDANCE
     + "\n\n"
-    + _DEFINE_BEFORE_REFERENCE
+    + _define_ref
     + "\n"
 )
 
@@ -1599,8 +1623,11 @@ def build_slayer_otf_one_shot_v0(
 ) -> str:
     """DEV-1666 gated build of the v0 slayer one-shot template. False/False ==
     ``SLAYER_OTF_ONE_SHOT_V0`` (byte-for-byte)."""
-    return _build_oneshot_v0(_slayer_tools_tail(
-        lean_introspection=lean_introspection, readonly_mode=readonly_mode))
+    return _build_oneshot_v0(
+        _slayer_tools_tail(
+            lean_introspection=lean_introspection, readonly_mode=readonly_mode),
+        _slayer_define_ref(readonly_mode=readonly_mode),
+    )
 
 
 def build_slayer_otf_ainteract_v0(
@@ -1608,5 +1635,8 @@ def build_slayer_otf_ainteract_v0(
 ) -> str:
     """DEV-1666 gated build of the v0 slayer a-interact template. False/False ==
     ``SLAYER_OTF_AINTERACT_V0`` (byte-for-byte)."""
-    return _build_ainteract_v0(_slayer_tools_tail(
-        lean_introspection=lean_introspection, readonly_mode=readonly_mode))
+    return _build_ainteract_v0(
+        _slayer_tools_tail(
+            lean_introspection=lean_introspection, readonly_mode=readonly_mode),
+        _slayer_define_ref(readonly_mode=readonly_mode),
+    )

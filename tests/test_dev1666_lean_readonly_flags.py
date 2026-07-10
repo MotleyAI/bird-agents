@@ -552,6 +552,17 @@ class TestLeanReadonlyAbsence:
         assert "create_model" not in tail
         assert "edit_model" not in tail
 
+    def test_readonly_v0_full_template_has_no_write_tools(self):
+        # Codex round-2: the whole readonly v0 template must not name a write
+        # tool it dropped (inventory tail + _DEFINE_BEFORE_REFERENCE both gated).
+        from bird_interact_agents.agents import _shared_otf_prompts as sp
+        for builder in (sp.build_slayer_otf_one_shot_v0,
+                        sp.build_slayer_otf_ainteract_v0):
+            for lean in (True, False):
+                ro = builder(lean_introspection=lean, readonly_mode=True)
+                assert "create_model" not in ro
+                assert "edit_model" not in ro
+
     def test_lean_main_workflow_note_has_no_dropped_read_tools(self):
         from bird_interact_agents.agents.claude_sdk import partition
         lean = partition.build_main_workflow_note(
