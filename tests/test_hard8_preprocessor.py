@@ -426,6 +426,61 @@ async def test_variant_filters_memory_and_embedding_for_deleted_kb(
     assert f"{DB_NAME}.beta.amount" in cids
 
 
+async def test_variant_prunes_string_id_memory_embedding(
+    canonical_root: Path, tmp_path: Path
+):
+    """DEV-1668 (Codex): memories keyed with `<db>_kb_<n>` STRING ids (the
+    encode_kb_as_memories scheme) must have their `memory:<db>_kb_<n>`
+    embedding row pruned on KB deletion — the prune is id-scheme-agnostic and
+    mirrors runtime._prune_deleted_memory_embeddings, not just the int-id case.
+    """
+    import sqlite3
+
+    db_root = canonical_root / DB_NAME
+    write_memories_files(db_root, [
+        {"version": 1, "id": f"{DB_NAME}_kb_2",
+         "learning": "KB 2 — Important value bands\n\nbody",
+         "entities": [f"{DB_NAME}.beta.amount"],
+         "created_at": "2026-05-14T00:00:00Z"},
+        {"version": 1, "id": f"{DB_NAME}_kb_99",
+         "learning": "KB 99 — Unrelated note\n\nbody",
+         "entities": [f"{DB_NAME}.gamma"],
+         "created_at": "2026-05-14T00:00:00Z"},
+    ])
+    db_path = db_root / "embeddings.db"
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS embeddings (canonical_id TEXT NOT NULL, "
+        "embedding_model_name TEXT NOT NULL, entity_kind TEXT NOT NULL, "
+        "content_hash TEXT NOT NULL, embedding TEXT NOT NULL, "
+        "created_at TEXT NOT NULL, PRIMARY KEY (canonical_id, embedding_model_name))"
+    )
+    con.executemany("INSERT INTO embeddings VALUES (?, ?, ?, ?, ?, ?)", [
+        (f"memory:{DB_NAME}_kb_2", "test-model", "memory", "h1", "[]", "2026-05-14"),
+        (f"memory:{DB_NAME}_kb_99", "test-model", "memory", "h2", "[]", "2026-05-14"),
+        (f"{DB_NAME}.beta.amount", "test-model", "column", "h3", "[]", "2026-05-14"),
+    ])
+    con.commit()
+    con.close()
+
+    work = tmp_path / "work"
+    work.mkdir()
+    out = await build_task_variant_storage(
+        canonical_storage_root=canonical_root, db_name=DB_NAME,
+        deleted_kb_ids={2}, work_dir=work,
+    )
+    assert {m.id for m in read_memories(out)} == {f"{DB_NAME}_kb_99"}
+
+    con = sqlite3.connect(out / "embeddings.db")
+    cids = {r[0] for r in con.execute("SELECT canonical_id FROM embeddings")}
+    con.close()
+    # The dropped string-id memory's embedding is pruned; the survivor + the
+    # non-memory entity row stay.
+    assert f"memory:{DB_NAME}_kb_2" not in cids
+    assert f"memory:{DB_NAME}_kb_99" in cids
+    assert f"{DB_NAME}.beta.amount" in cids
+
+
 async def test_variant_omits_memories_when_canonical_lacks_them(
     canonical_root: Path, tmp_path: Path
 ):

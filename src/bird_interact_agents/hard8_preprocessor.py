@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from slayer.core.models import SlayerModel
-from slayer.memories.models import Memory
+from slayer.memories.models import MEMORY_CANONICAL_PREFIX, Memory
 from slayer.storage.yaml_storage import YAMLStorage
 
 from bird_interact_agents.memory_store_io import (
@@ -244,19 +244,14 @@ async def _copy_memories_and_embeddings(
     reads/persists via :mod:`bird_interact_agents.memory_store_io` (slayer 0.9.6 per-id
     ``memories/<id>.md``).
     """
-    surviving_ids: set[int] = set()
+    dropped_ids: list[str] = []
     kept: list[Memory] = []
     for mem in read_memories(canonical):
         kb_id = _memory_kb_id(mem.learning or "")
         if kb_id is not None and kb_id in deleted_kb_ids:
+            dropped_ids.append(mem.id)
             continue
         kept.append(mem)
-        try:
-            surviving_ids.add(int(mem.id))
-        except (TypeError, ValueError):
-            # Non-numeric memory id (e.g. ``<db>_kb_<n>``) — no ``memory:<int>``
-            # embedding row to prune for it.
-            pass
     if kept:
         await persist_memories(variant_root, kept)
 
@@ -264,38 +259,31 @@ async def _copy_memories_and_embeddings(
     dst_emb = variant_root / "embeddings.db"
     if src_emb.exists():
         shutil.copyfile(src_emb, dst_emb)
-        if deleted_kb_ids:
-            _prune_dropped_memory_embeddings(dst_emb, surviving_ids)
+        if dropped_ids:
+            _prune_dropped_memory_embeddings(dst_emb, dropped_ids)
 
 
 def _prune_dropped_memory_embeddings(
-    db_path: Path, surviving_memory_ids: set[int],
+    db_path: Path, dropped_memory_ids: list[str],
 ) -> None:
-    """Delete embedding rows whose ``canonical_id`` is ``memory:<n>`` for
-    any ``n`` not in ``surviving_memory_ids``. Non-memory canonical_ids
-    are left alone — they belong to the model/column/measure tree, which
-    ``_apply_deletions`` has already pruned at the YAML level (unused
-    embedding rows are inert because the search corpus is rebuilt from
-    the YAMLs each call).
+    """Delete the embedding rows for the DROPPED memories — the ones filtered
+    out above — keyed on ``memory:<id>``. Deleting by the dropped ids directly
+    (rather than a keep-list over int-parsed suffixes) is id-scheme-agnostic:
+    it handles both int ids (committed references) AND ``<db>_kb_<n>`` string
+    ids, mirroring ``runtime._prune_deleted_memory_embeddings`` (Codex). Non-
+    memory canonical_ids are left alone — they belong to the model/column/
+    measure tree, which ``_apply_deletions`` already pruned at the YAML level
+    (unused embedding rows are inert; the search corpus is rebuilt from the
+    YAMLs each call).
     """
+    if not dropped_memory_ids:
+        return
     con = sqlite3.connect(db_path)
     try:
-        rows = con.execute(
-            "SELECT canonical_id FROM embeddings WHERE canonical_id LIKE 'memory:%'"
-        ).fetchall()
-        to_delete: list[str] = []
-        for (cid,) in rows:
-            try:
-                mid = int(cid.split(":", 1)[1])
-            except (ValueError, IndexError):
-                continue
-            if mid not in surviving_memory_ids:
-                to_delete.append(cid)
-        if to_delete:
-            con.executemany(
-                "DELETE FROM embeddings WHERE canonical_id = ?",
-                [(cid,) for cid in to_delete],
-            )
-            con.commit()
+        con.executemany(
+            "DELETE FROM embeddings WHERE canonical_id = ?",
+            [(f"{MEMORY_CANONICAL_PREFIX}{mid}",) for mid in dropped_memory_ids],
+        )
+        con.commit()
     finally:
         con.close()
