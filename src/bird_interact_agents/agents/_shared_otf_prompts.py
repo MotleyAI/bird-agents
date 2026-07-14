@@ -1309,6 +1309,321 @@ User question: {user_query}
     + "\n"
 )
 
+
+# ---------------------------------------------------------------------------
+# DEV-1670: readonly QUERY-path token trim (the lean + readonly +
+# `--apply-edited-models` regime, which renders these v0 OTF builders with
+# readonly_mode=True — NOT the pre-encoded template). The readonly branch is a
+# DISCOVER-THEN-QUERY reframe: the encode/authoring guidance is inapplicable
+# (models are fixed, no write tools), so it is dropped; the query-quality blocks
+# and DEV-1672's `_NO_REDERIVE_READONLY` are kept. Two prompt-only turn-count
+# nudges (R1/R2) are readonly-only ADDED constants — NOT edits to the shared
+# blocks (which feed the non-readonly + v1 surfaces). All examples synthetic.
+# ---------------------------------------------------------------------------
+
+# R1 — front-load column inspects, write ONE query, converge. NOT a restatement
+# of DEV-1672's `_NO_REDERIVE_READONLY` (that governs referencing encoded
+# entities; this governs how many query-refinement TURNS you spend). Worded so it
+# does NOT contradict `_QUERY_BEFORE_SUBMIT` (which still requires ONE validating
+# `query` immediately before submit).
+_ONE_QUERY_DISCIPLINE_READONLY = """\
+WRITE ONE QUERY — DON'T PROBE ACROSS TURNS. Every turn re-reads the whole growing
+context, so each extra query round is expensive. Resolve the query SHAPE up front
+from the metadata, not by trial-and-error against the database: `inspect` the
+`Description:` and `Sample values:` of EVERY column you will filter, project,
+join, or group on FIRST, then assemble ONE complete query. Run it through `query`
+ONCE to validate (as the pre-submit check below requires); once it returns a
+plausible, non-empty rowset with the expected columns, STOP — do not re-run
+near-identical queries to keep sanity-checking the shape. Spend a further query
+only on a concrete, named doubt you could not settle from the column
+descriptions."""
+
+# R2 — batch the inspect point-lookups (`inspect` accepts a list — DEV-1612). An
+# ADDED readonly-only sentence, deliberately NOT folded into the shared
+# `_COMPACT_SEARCH_DISCIPLINE` (which is spliced into non-readonly + v1 prompts).
+_BATCH_INSPECT_READONLY = """\
+BATCH YOUR INSPECTS. `inspect(reference=[...])` takes a LIST — once `search` has
+handed you the candidate ids, `inspect` ALL the columns / memories you need in
+ONE batched call per kind (one call for every column, one call for every memory),
+never a separate single-reference `inspect` per entity. Each avoided round-trip
+is a whole turn off the bill."""
+
+# DEV-1670 baseline trim: the compact dedup rule for the readonly discover
+# templates — the actionable instruction only, WITHOUT the full
+# `_DEDUP_VS_RAW_ROWS` synthetic WRONG/RIGHT example (~300 tok dropped). Kept as a
+# named block so the artifact-check's "(see the DEDUP vs RAW ROWS rule above)"
+# cross-reference still resolves.
+_DEDUP_VS_RAW_ROWS_COMPACT = """\
+DEDUP vs RAW ROWS. A dimension-only query (empty `measures`) auto-GROUP BYs every
+projected column, collapsing rows that share the same dimension tuple. When the
+question wants raw PER-RECORD rows, set `distinct_dimension_values: false` inside
+the query JSON (validation: `measures` empty, at least one dimension projected)."""
+
+
+# Shared submission-shape contract for the readonly discover templates (JSON
+# braces doubled for `str.format`). Finding #3: "reference an already-encoded
+# named column, or build the value inline" — no `create_model` write-tool wording.
+_READONLY_SUBMIT_CONTRACT = """\
+Call `submit_query` with your final SLayer query — either a single-stage form
+(set `source_model` + projection fields) or a nested-DAG form (set `queries` to a
+list of stage objects). The shape is:
+
+  * Single-stage — a JSON object validating as a SlayerQuery, e.g.
+    {{"source_model": "orders", "dimensions": ["status"],
+    "measures": ["amount:sum"]}}.
+  * Nested DAG — a JSON ARRAY of stage objects. The last element is the DAG root;
+    every non-final element needs a `name`; later stages reference earlier ones
+    via `source_model: "<sibling name>"`. Pass this list as the `queries`
+    argument on `submit_query`.
+
+You MUST call `submit_query` to finish — a prose answer is not a submission. If a
+`filters` predicate needs a computed value, reference an already-encoded named
+column and filter on its name, or build the value inline in the query; raw SQL
+expressions are rejected in `filters`."""
+
+
+# Shared readonly "SLAYER TOOLS" + discovery preamble. help.intro is NOT called
+# here (DEV-1670 R4: it teaches only the query DSL, so it is deferred to the
+# query-prep step — see the readonly discipline body). Format params: {db_name}.
+_READONLY_TOOLS_BLOCK = (
+    """\
+The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
+knowledge-base (KB) item, with ids like `{db_name}_kb_<n>` whose body starts
+`KB <n> —`. The base tables are ingested as SLayer models, and the KB this
+question needs is EXPECTED to be already encoded on them as named columns /
+measures (tagged `meta.kb_id = <n>` with a `[kb=<n>]` line). The models are
+READ-ONLY — you cannot create or edit them.
+
+SLAYER TOOLS (read their own descriptions). Use `search` to DISCOVER the encoded
+entities and KB memories relevant to the question (it returns one-line
+descriptions only); `inspect` to read the FULL body of specific entities you have
+already pinned down — columns, measures, or memories — by reference; """
+    + _TOOLS_TAIL_LEAN_READONLY  # placeholder; the builder substitutes the gated tail
+    + """
+
+"""
+    + _BATCH_INSPECT_READONLY
+    + """
+
+READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a filter,
+projection, or join key — `inspect` the column reference (`<db>.<model>.<col>`)
+to read its `Description:` and `Sample values:` (single-entity point lookup, or
+batch several in one call per the rule above).
+The truncated `Sample values:` line is your authoritative source of which literal
+forms actually occur in this column — case variants, whitespace forms,
+abbreviations, alternate phrasings of the same concept. Use it BEFORE writing any
+IN-set (see rule 3 below).
+
+READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for a
+memory id you've already identified — `inspect(reference=["memory:<id>"],
+entity_type="memory", compact=False)` returns the full `learning` body.
+
+"""
+    + _COMPACT_SEARCH_DISCIPLINE
+)
+
+
+def _readonly_tools_block(*, lean_introspection: bool) -> str:
+    """The readonly tools block with the gated inventory tail substituted."""
+    return _READONLY_TOOLS_BLOCK.replace(
+        _TOOLS_TAIL_LEAN_READONLY,
+        _slayer_tools_tail(
+            lean_introspection=lean_introspection, readonly_mode=True
+        ),
+    )
+
+
+# Shared step-3 discover body (reference encoded entities BY NAME, with slack to
+# combine them / compute genuinely-unencoded quantities inline). No `create_model`
+# / `edit_model` wording (readonly). No format params.
+_READONLY_DISCOVER_STEP3 = """\
+2. For each block, `search` for the encoded column / measure that already
+   represents it (tagged `[kb=<n>]`) or the base column whose description
+   matches, and `inspect` it to confirm the entity is on the model you think and
+   that its definition matches the block. A `memory:<id>` token inside a KB body
+   means that KB DEPENDS ON the referenced KB.
+
+3. BUILD THE QUERY OFF THE ENCODED ENTITIES. Reference each encoded column /
+   measure BY NAME — do NOT re-derive or inline its logic. You MAY still write
+   query expressions that COMBINE the encoded entities (arithmetic over two
+   measures, a CASE over an encoded column, a filter), and you MAY compute a
+   quantity that is genuinely NOT encoded inline from the base columns — you just
+   must not re-compute an entity that already exists (see the rule at the end).
+   - To reach a column on another model, use a DECLARED join, alias-qualified
+     (e.g. `other_alias.col`); when you are unsure which model to root the query
+     at, use the "CHOOSING A QUERY ROOT" steps below. Never assume an undeclared
+     join.
+   - Normalise text ONLY in filter / predicate positions
+     (`LOWER(TRIM(col)) = 'value'`, lowercase the literal) — NEVER on a projected,
+     grouped, or join-key column (that would corrupt the returned value).
+   - If a literal the question names is ABSENT from the column's sampled values
+     (check via `inspect`), do not write that predicate."""
+
+
+# help.intro, repositioned (R4) to the query-prep step. No format params.
+_READONLY_HELP_INTRO_AT_QUERY = """\
+4. LEARN THE QUERY SYNTAX, THEN TEST. Before you write your first query, call
+   `inspect(reference="memory:help.intro", entity_type="memory", compact=False)`
+   ONCE to learn the query DSL — the colon-aggregation form (`revenue:sum`,
+   `*:count`) and the `source_model` / `dimensions` / `measures` / `filters`
+   schema. Then run the final query with `query` (single object or nested-DAG
+   `queries` list) and sanity-check the generated SQL."""
+
+
+def _build_oneshot_v0_readonly(*, lean_introspection: bool) -> str:
+    """DEV-1670 readonly discover reframe of the v0 slayer one-shot template.
+
+    Renders for the lean+readonly+apply-saved-models QUERY regime. Drops the
+    encode-authoring body (`ENCODE_HOST_GUIDANCE`, encode step-3); keeps the
+    query-quality blocks + `_slayer_define_ref(readonly=True)` (which bundles
+    `_DEFINE_BEFORE_REFERENCE_READONLY` + DEV-1672's `_NO_REDERIVE_READONLY`).
+    """
+    return (
+        """\
+You are a data analyst. You have a SLayer semantic-layer MCP server plus a native
+`submit_query` tool. The SLayer models are READ-ONLY — you have NO model-mutation
+tools. The domain knowledge this question needs is EXPECTED to be already
+materialised in the models as named columns / measures; your job: DISCOVER the
+relevant encoded entities and write a FINAL query that REFERENCES them by name.
+Where a quantity the question needs is genuinely NOT encoded, build it inline in
+the query from the base columns.
+
+"""
+        + _NO_USER_TO_CONSULT.format(
+            sources_desc="the encoded columns / measures, the\nKB memories, and the column descriptions"
+        )
+        + "\n\n"
+        + _readonly_tools_block(lean_introspection=lean_introspection)
+        + "\n\nDISCOVER-THEN-QUERY DISCIPLINE:\n\n"
+        + _DECOMPOSE_DISCIPLINE
+        + "\n\n"
+        + _DEDUP_VS_RAW_ROWS_COMPACT
+        + "\n\n"
+        + _READONLY_DISCOVER_STEP3
+        + "\n\n"
+        + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`inspect`")
+        + "\n\n"
+        + _ONE_QUERY_DISCIPLINE_READONLY
+        + "\n\n"
+        + _READONLY_HELP_INTRO_AT_QUERY
+        + "\n\n   "
+        + _SLAYER_SQL_ARTIFACT_CHECK
+        + "\n\n"
+        + _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT.format(
+            submit_tool="submit_query",
+            clause_b="encoded KB column / measure you are querying",
+        )
+        + "\n\n6. SUBMIT. Write the FINAL query so it REFERENCES the named columns /\n"
+        "   measures — do NOT inline their SQL. Project exactly the columns the\n"
+        "   question names, and only those.\n   "
+        + _COLUMN_NAMES_DONT_AFFECT_GRADING
+        + "\n\n   "
+        + _READONLY_SUBMIT_CONTRACT
+        + "\n\n"
+        + _QUERY_BEFORE_SUBMIT
+        + """
+
+Budget: {budget} bird-coins (`submit_query` costs 3; SLayer reads are free but
+your total work is turn-bounded — discover only what the question needs).
+
+Database: {db_name}
+User question: {user_query}
+
+"""
+        + QUERY_ROOT_GUIDANCE
+        + "\n\n"
+        + _slayer_define_ref(readonly_mode=True)
+        + "\n"
+    )
+
+
+def _build_ainteract_v0_readonly(*, lean_introspection: bool) -> str:
+    """DEV-1670 readonly discover reframe of the v0 slayer a-interact template.
+
+    Same discover reframe as one-shot, plus the interactive blocks (RULE-0 QUERY
+    variant, ask-again, user-sim trust, grader diagnostics, pivot, after-rejected).
+    The reframed RULE-0 keeps the ask-user-before-submit mandate (Codex #4).
+    """
+    return (
+        """\
+You are a data analyst. You have a SLayer semantic-layer MCP server plus native
+`ask_user` and `submit_query` tools. The SLayer models are READ-ONLY — you have
+NO model-mutation tools. The domain knowledge this question needs is EXPECTED to
+be already materialised in the models as named columns / measures; your job:
+DISCOVER the relevant encoded entities and write a FINAL query that REFERENCES
+them by name. Where a quantity the question needs is genuinely NOT encoded, build
+it inline in the query from the base columns.
+
+"""
+        + _RULE_0_ASK_BEFORE.format(
+            action_label="QUERY",
+            action_context="BEFORE building the final query,",
+            submit_tool="submit_query",
+        )
+        + "\n\n"
+        + _readonly_tools_block(lean_introspection=lean_introspection)
+        + "\n\nDISCOVER-THEN-QUERY DISCIPLINE:\n\n"
+        + _DECOMPOSE_DISCIPLINE
+        + "\n\n"
+        + _DEDUP_VS_RAW_ROWS_COMPACT
+        + "\n\n"
+        + _READONLY_DISCOVER_STEP3
+        + "\n\n"
+        + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`inspect`")
+        + "\n\n"
+        + _ONE_QUERY_DISCIPLINE_READONLY
+        + "\n\n4. "
+        + _ASK_AGAIN_RULE.format(knowledge_source="an encoded entity")
+        + "\n\n   "
+        + _USER_SIM_TRUST_CALIBRATION.format(knowledge_label="KB")
+        + "\n\n   "
+        + _PIVOT_AFTER_REPEATED_FAILURES.format(
+            artifact_inspect_step=(
+                "Inspect the generated SQL for SLayer artifacts (GROUP BY\n"
+                "     dedup, `lower(trim(...))` coercion, broken WHERE\n"
+                "     precedence; see the artifact-check rule below)."
+            ),
+            extra_hypothesis_axes=(
+                ", or `normalize_filters=false` on the offending `query` /\n"
+                "     `submit_query` call"
+            ),
+        )
+        + "\n\n   "
+        + _AFTER_REJECTED_DISCIPLINE
+        + "\n\n"
+        + _READONLY_HELP_INTRO_AT_QUERY.replace("4. LEARN", "5. LEARN")
+        + "\n\n   "
+        + _SLAYER_SQL_ARTIFACT_CHECK
+        + "\n\n"
+        + _PRE_SUBMIT_MUTATION_CHECK_AINTERACT.format(
+            submit_tool="submit_query",
+            clause_c="encoded KB column / measure you are querying",
+        )
+        + "\n\n7. SUBMIT. Write the FINAL query so it REFERENCES the named columns /\n"
+        "   measures — do NOT inline their SQL. Project exactly the columns the\n"
+        "   user named, and only those.\n\n   "
+        + _COLUMN_NAMES_DONT_AFFECT_GRADING
+        + "\n\n   "
+        + _READONLY_SUBMIT_CONTRACT
+        + "\n\n"
+        + _QUERY_BEFORE_SUBMIT
+        + """
+
+Budget: {budget} bird-coins. `ask_user` costs 2, `submit_query` costs 3; SLayer
+reads are free but your total work is turn-bounded — discover only what the
+question needs. If your budget runs out, submit immediately.
+
+Database: {db_name}
+User question: {user_query}
+
+"""
+        + QUERY_ROOT_GUIDANCE
+        + "\n\n"
+        + _slayer_define_ref(readonly_mode=True)
+        + "\n"
+    )
+
+
 RAW_OTF_ONE_SHOT_V0 = (
     """\
 You are a data analyst. You have direct SQL access to a database plus a
@@ -1642,8 +1957,15 @@ SLAYER_OTF_AINTERACT_V0 = _build_ainteract_v0(_TOOLS_TAIL_FULL)
 def build_slayer_otf_one_shot_v0(
     *, lean_introspection: bool = False, readonly_mode: bool = False
 ) -> str:
-    """DEV-1666 gated build of the v0 slayer one-shot template. False/False ==
-    ``SLAYER_OTF_ONE_SHOT_V0`` (byte-for-byte)."""
+    """DEV-1666/DEV-1670 gated build of the v0 slayer one-shot template.
+
+    False/False == ``SLAYER_OTF_ONE_SHOT_V0`` (byte-for-byte). readonly_mode
+    dispatches to the DEV-1670 DISCOVER reframe (encode-authoring body dropped,
+    query-quality blocks + `_NO_REDERIVE_READONLY` kept, R1/R2 nudges added,
+    help.intro deferred to query-prep).
+    """
+    if readonly_mode:
+        return _build_oneshot_v0_readonly(lean_introspection=lean_introspection)
     return _build_oneshot_v0(
         _slayer_tools_tail(
             lean_introspection=lean_introspection, readonly_mode=readonly_mode),
@@ -1654,8 +1976,13 @@ def build_slayer_otf_one_shot_v0(
 def build_slayer_otf_ainteract_v0(
     *, lean_introspection: bool = False, readonly_mode: bool = False
 ) -> str:
-    """DEV-1666 gated build of the v0 slayer a-interact template. False/False ==
-    ``SLAYER_OTF_AINTERACT_V0`` (byte-for-byte)."""
+    """DEV-1666/DEV-1670 gated build of the v0 slayer a-interact template.
+
+    False/False == ``SLAYER_OTF_AINTERACT_V0`` (byte-for-byte). readonly_mode
+    dispatches to the DEV-1670 DISCOVER reframe (see one-shot).
+    """
+    if readonly_mode:
+        return _build_ainteract_v0_readonly(lean_introspection=lean_introspection)
     return _build_ainteract_v0(
         _slayer_tools_tail(
             lean_introspection=lean_introspection, readonly_mode=readonly_mode),
