@@ -422,10 +422,42 @@ def _query_closure(
     return used_models, _expand_closure(seed, models_by_name)
 
 
+def _source_query_refs(model: SlayerModel) -> list[tuple[str, str]]:
+    """The (model, column/measure) refs a ``source_queries``-backed (nested-query) model
+    consumes on OTHER models. These are invisible to ``Column.sql`` traversal — a
+    grain-bridge model projects its output from a nested query, so its inputs (often the
+    base KB definitions) are load-bearing when the bridge's output is used, but the closure
+    would otherwise miss them and flag them UNUSED."""
+    refs: list[tuple[str, str]] = []
+    for sq in getattr(model, "source_queries", None) or []:
+        get = sq.get if isinstance(sq, dict) else (lambda k, _o=sq: getattr(_o, k, None))
+        src = get("source_model")
+        for d in get("dimensions") or []:
+            dget = d.get if isinstance(d, dict) else (lambda k, _o=d: getattr(_o, k, None))
+            dm, dn = dget("model") or src, dget("name")
+            if isinstance(dm, str) and isinstance(dn, str):
+                refs.append((dm, dn))
+        for meas in get("measures") or []:
+            mget = meas.get if isinstance(meas, dict) else (lambda k, _o=meas: getattr(_o, k, None))
+            mm, f = mget("model") or src, mget("formula")
+            if not isinstance(mm, str) or not isinstance(f, str):
+                continue
+            names: list[str] = []
+            try:
+                names = _measure_ref_names(_parse_formula(f))
+            except Exception:
+                names = []
+            if not names and re.match(r"^\w+$", f.strip()):
+                names = [f.strip()]  # a bare column/measure ref, e.g. "pfis"
+            refs.extend((mm, rn) for rn in names)
+    return refs
+
+
 def _expand_closure(
     seed: set[tuple[str, str]], models_by_name: dict[str, SlayerModel]
 ) -> set[tuple[str, str]]:
     used: set[tuple[str, str]] = set()
+    sq_expanded: set[str] = set()
     stack = list(seed)
     while stack:
         key = stack.pop()
@@ -436,6 +468,11 @@ def _expand_closure(
         model = models_by_name.get(model_name)
         if model is None:
             continue
+        # A source_queries-backed model that is USED pulls in its nested-query inputs
+        # (load-bearing base defs the Column.sql walk cannot see).
+        if getattr(model, "source_queries", None) and model_name not in sq_expanded:
+            sq_expanded.add(model_name)
+            stack.extend(_source_query_refs(model))
         measures = _measures_by_name(model)
         if name in measures:
             named = {n: m.formula for n, m in measures.items()}  # Codex #5: measure-of-measure

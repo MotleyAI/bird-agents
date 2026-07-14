@@ -472,6 +472,38 @@ async def test_cross_model_filter_reference_marks_joined_column_used():
     assert "unused_joined" in unused  # a genuinely-unreferenced joined column IS unused
 
 
+async def test_source_queries_backed_bridge_marks_base_defs_used():
+    """A source_queries-backed grain-bridge model consumes base KB defs INSIDE its
+    source_queries (invisible to Column.sql traversal). When the bridge's output is used by
+    the query, those base defs must count as USED — not false-flagged UNUSED (regression:
+    mental_healths_10, where the query joins nested-query bridges over base KB columns)."""
+    store = base_models() + [
+        tbl_model("assess", [
+            col("fac_id", "fac_id", type="INT"),
+            col("pfis", "0.5 * raw_score", kb=6),        # base KB def, consumed only via the bridge
+        ], table="assess"),
+        SlayerModel(
+            name="pfis_fac", data_source="db",
+            source_queries=[{"source_model": "assess",
+                             "measures": [{"name": "pfis", "formula": "pfis"}],
+                             "dimensions": [{"name": "fac_id", "model": "assess"}]}],
+            backing_query_sql="SELECT fac_id, pfis FROM assess",
+            columns=[col("fac_id", "fac_id", type="INT"), col("pfis", "pfis")]),
+        SlayerModel(
+            name="facilities", data_source="db", sql_table="facilities",
+            columns=[col("fkey", "fkey", type="TEXT", pk=True),
+                     col("rdd", "pfis_fac.pfis - 1", kb=34)],
+            joins=[{"target_model": "pfis_fac", "join_type": "left",
+                    "join_pairs": [["fkey", "fac_id"]]}]),
+    ]
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[kb(6, []), kb(34, [6])], relevant_kb_ids=[34],
+        winning_query={"source_model": "facilities", "dimensions": ["rdd"]})
+    unused = entities(findings, "UNUSED_AGENT_ENTITY")
+    assert "pfis" not in unused, "base KB def consumed inside a used bridge's source_queries must be USED"
+
+
 async def test_inline_extension_source_name_resolves_stored_refs():
     """Codex #2: source_model = ModelExtension {source_name, columns}. A stored column the
     query references (via the base model / filters) must count as USED, not false-UNUSED."""
