@@ -19,8 +19,8 @@ All operations reuse the single ``hide_expanded_jsonb_columns`` predicate via
 ``hide_store_dir`` / ``hide_archive`` and preserve archive ``cache_fp`` meta.
 
 Examples:
-    uv run python scripts/migrate_hide_raw_jsonb.py --reference --archives
-    uv run python scripts/migrate_hide_raw_jsonb.py --benchmark livesqlbench --reference
+    uv run python scripts/migrate_hide_raw_jsonb.py --benchmark livesqlbench-large
+    uv run python scripts/migrate_hide_raw_jsonb.py --benchmark mini-interact --reference
 """
 
 from __future__ import annotations
@@ -52,9 +52,14 @@ async def _sweep_store_root(root: Path, label: str) -> int:
     return total
 
 
-async def _sweep_archives(instance_ids: set[str] | None) -> int:
+async def _sweep_archives(benchmark: str, instance_ids: set[str] | None) -> int:
+    # Scope to this benchmark's runs subtree — archives live at
+    # runs/<benchmark>/<db>/<iid>/edited_models.tar.gz. This also excludes
+    # runs/_edited_models_backups/ (a sibling of <benchmark>/), so a
+    # benchmark-targeted migration never rewrites backups or other benchmarks.
+    root = paths.runs_root() / benchmark
     total = 0
-    for archive in sorted(paths.runs_root().rglob("edited_models.tar.gz")):
+    for archive in sorted(root.rglob("edited_models.tar.gz")):
         if instance_ids is not None and archive.parent.name not in instance_ids:
             continue
         n = await hide_archive(archive)
@@ -83,16 +88,19 @@ async def _run(args: argparse.Namespace) -> int:
             paths.slayer_otf_cache_root(benchmark=args.benchmark), "cache"
         )
     if do_archives:
-        print("saved edited-model archives:")
-        grand += await _sweep_archives(ids)
+        print(f"saved edited-model archives ({args.benchmark}):")
+        grand += await _sweep_archives(args.benchmark, ids)
     print(f"\nDone: {grand} raw JSON column(s) newly hidden.")
     return grand
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--benchmark", default="mini_interact",
-                    help="benchmark for the per-benchmark cache/reference roots")
+    ap.add_argument("--benchmark", required=True,
+                    choices=sorted(paths._KNOWN_BENCHMARKS),
+                    help="canonical benchmark name; scopes the cache/reference "
+                         "roots AND the archive sweep (e.g. livesqlbench-large, "
+                         "mini-interact)")
     ap.add_argument("--reference", action="store_true",
                     help="sweep slayer_models_otf/<db> (default on)")
     ap.add_argument("--archives", action="store_true",
