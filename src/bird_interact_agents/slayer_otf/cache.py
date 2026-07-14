@@ -108,6 +108,15 @@ logger = logging.getLogger(__name__)
 #            with per-input retry fallback.
 _EMBEDDING_BUILDER_VERSION = 3
 
+# DEV-1672: phase-3 JSONB-expansion BEHAVIOUR token. Bumped whenever the
+# deterministic phase-3 output shape changes in a way that a warm cache must
+# rebuild to pick up. ``hide_jsonb_v1`` = raw JSON columns are born
+# ``hidden=True`` once they own >=1 flat leaf. Fed into the IMPL fingerprint
+# only (NOT the full ``fingerprint_of`` / ``_cache_fp.txt``), so bumping it
+# invalidates warm caches for rebuild WITHOUT invalidating saved edited-model
+# archives (which stamp + validate the full fingerprint).
+_PHASE3_IMPL_TOKEN = "hide_jsonb_v1"
+
 
 # Completeness marker for a per-DB cache dir. Present ⇒ complete; written
 # LAST in the build tmp dir. Content = the build-time fingerprint (provenance).
@@ -270,6 +279,7 @@ def _impl_fingerprint_of(benchmark: object = None) -> str:
     h.update(f"slayer={_slayer_version()}\n".encode())
     h.update(f"embed={_active_embedding_model_or_none()}\n".encode())
     h.update(f"embed_builder={_EMBEDDING_BUILDER_VERSION}\n".encode())
+    h.update(f"phase3={_PHASE3_IMPL_TOKEN}\n".encode())
     if getattr(benchmark, "db_backend", "sqlite") == "postgres":
         pg_host = os.environ.get("BIRD_PG_HOST", "localhost")
         pg_port = os.environ.get("BIRD_PG_PORT", "5432")
