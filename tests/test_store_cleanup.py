@@ -23,6 +23,12 @@ def test_extract_rows_non_json_returns_empty():
     assert extract_result_rows("Error: model not found") == []
 
 
+def test_extract_rows_bracket_inside_string_value():
+    # Codex #8: a ']' inside a JSON string value must not truncate the parse
+    out = '[{"note": "a]b", "v": "5"}]\n\nMeasure attributes: ...'
+    assert extract_result_rows(out) == [["a]b", "5"]]
+
+
 def test_identical_ignores_column_headers():
     a = '[{"return_sal.avg_sal": "-256.47"}]'
     b = '[{"return_sal.round(sal_avg,_2)": "-256.47"}]'

@@ -29,22 +29,16 @@ def extract_result_rows(result: Any) -> list[list[Any]]:
         rows = result
     else:
         text = str(result).lstrip()
-        # the JSON payload is the first top-level [...] array; take up to its close
         if not text.startswith("["):
             return []
-        depth = 0
-        end = None
-        for i, ch in enumerate(text):
-            if ch == "[":
-                depth += 1
-            elif ch == "]":
-                depth -= 1
-                if depth == 0:
-                    end = i + 1
-                    break
-        if end is None:
+        # Decode the leading JSON array with a string-aware parser (Codex #8: a naive
+        # bracket-depth scan miscounts `]` inside JSON string values and truncates).
+        try:
+            rows, _end = json.JSONDecoder().raw_decode(text)
+        except json.JSONDecodeError:
             return []
-        rows = json.loads(text[:end])
+        if not isinstance(rows, list):
+            return []
     out: list[list[Any]] = []
     for row in rows:
         if isinstance(row, dict):

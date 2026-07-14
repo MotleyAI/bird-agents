@@ -70,7 +70,7 @@ def _latest_slayer_attempt(benchmark: str, instance_id: str) -> tuple[dict | Non
     results_root = _repo_root() / "results" / benchmark
     if not results_root.exists():
         return None, None
-    candidates: list[tuple[str, dict]] = []
+    candidates: list[tuple[str, str, dict]] = []
     for run_dir in results_root.iterdir():
         if "slayer" not in run_dir.name:
             continue
@@ -83,10 +83,11 @@ def _latest_slayer_attempt(benchmark: str, instance_id: str) -> tuple[dict | Non
             except Exception:
                 continue
             if d.get("submitted_query"):
-                candidates.append((run_dir.name, d))
+                candidates.append((run_dir.name, att.name, d))
     if not candidates:
         return None, None
-    run_id, attempt = max(candidates, key=lambda c: c[0])  # latest by run-id timestamp
+    # latest by (run-id timestamp, attempt file) so a tie on run-id picks the last attempt
+    run_id, _att, attempt = max(candidates, key=lambda c: (c[0], c[1]))
     return attempt, run_id
 
 

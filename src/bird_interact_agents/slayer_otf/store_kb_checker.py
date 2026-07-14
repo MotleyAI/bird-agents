@@ -188,6 +188,10 @@ def _join_key_columns(model: SlayerModel) -> set[str]:
     names: set[str] = set()
     for j in model.joins or []:
         for pair in getattr(j, "join_pairs", []) or []:
+            if isinstance(pair, (list, tuple)):  # Codex #4: join_pairs is list[list[str]]
+                if pair and isinstance(pair[0], str):
+                    names.add(pair[0])
+                continue
             for attr in ("source_column", "source_field", "from_column",
                          "left", "source", "column"):
                 v = getattr(pair, attr, None)
@@ -248,10 +252,16 @@ def _stage_reference_names(stage: dict, model: SlayerModel) -> set[str]:
         if n:
             names.add(n)
     for o in stage.get("order", []) or []:
-        if isinstance(o, dict) and o.get("column"):
-            names.add(o["column"])
-        elif isinstance(o, str):
-            names.add(o)
+        col = o.get("column") if isinstance(o, dict) else (o if isinstance(o, str) else None)
+        if col:
+            names.add(col.split(":", 1)[0])  # strip an agg suffix, e.g. "risk_score:avg" (Codex #6)
+    for td in stage.get("time_dimensions", []) or []:  # Codex #3
+        if isinstance(td, dict):
+            n = td.get("dimension") or td.get("name")
+            if n:
+                names.add(n)
+        elif isinstance(td, str):
+            names.add(td)
     for f in stage.get("filters", []) or []:
         if not isinstance(f, str):
             continue
@@ -260,6 +270,7 @@ def _stage_reference_names(stage: dict, model: SlayerModel) -> set[str]:
         except Exception:
             continue
     measures_by_name = _measures_by_name(model)
+    named = {n: m.formula for n, m in measures_by_name.items()}  # Codex #5: bare measure refs
     for meas in stage.get("measures", []) or []:
         ref = meas.get("formula") or meas.get("name") if isinstance(meas, dict) else meas
         if not isinstance(ref, str):
@@ -268,7 +279,7 @@ def _stage_reference_names(stage: dict, model: SlayerModel) -> set[str]:
             names.add(ref)
             continue
         try:
-            names.update(_measure_ref_names(_parse_formula(ref)))
+            names.update(_measure_ref_names(_parse_formula(ref, named_measures=named)))
         except Exception:
             continue
     return names
@@ -385,11 +396,15 @@ def _query_closure(
         if not isinstance(stage, dict):
             continue
         src = stage.get("source_model")
-        # source_model may be a bare model name (str), a prior-stage NAME (str), or
-        # an inline ModelExtension/SlayerModel (dict) — the dict form defines its
-        # own model inline and names no store model at the root, so skip it.
+        # source_model may be a bare model name (str), a prior-stage NAME (str), or an
+        # inline ModelExtension `{"source_name": <base model>, "columns": [...]}` (dict).
+        # For the extension, the BASE model (source_name) is still a real store model the
+        # query filters/dimensions can reference (Codex #2) — resolve it as the root.
         if isinstance(src, str):
             root = stage_root.get(src, src)  # prior-stage name → its root; else a store model
+        elif isinstance(src, dict) and isinstance(src.get("source_name"), str):
+            base = src["source_name"]
+            root = stage_root.get(base, base)
         else:
             root = None
         if stage.get("name") and root is not None:
@@ -423,8 +438,11 @@ def _expand_closure(
             continue
         measures = _measures_by_name(model)
         if name in measures:
+            named = {n: m.formula for n, m in measures.items()}  # Codex #5: measure-of-measure
             try:
-                for rn in _measure_ref_names(_parse_formula(measures[name].formula)):
+                for rn in _measure_ref_names(
+                    _parse_formula(measures[name].formula, named_measures=named)
+                ):
                     if model.get_column(rn) is not None or rn in measures:
                         stack.append((model_name, rn))
             except Exception:

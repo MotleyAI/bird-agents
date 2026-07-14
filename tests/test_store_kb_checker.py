@@ -472,6 +472,71 @@ async def test_cross_model_filter_reference_marks_joined_column_used():
     assert "unused_joined" in unused  # a genuinely-unreferenced joined column IS unused
 
 
+async def test_inline_extension_source_name_resolves_stored_refs():
+    """Codex #2: source_model = ModelExtension {source_name, columns}. A stored column the
+    query references (via the base model / filters) must count as USED, not false-UNUSED."""
+    store = base_models() + [
+        tbl_model("sprint_results", [
+            col("winner", "pos = 1", type="BOOLEAN", concept=True),   # used via filter
+            col("stray", "x + 1", kb=4),                              # unused
+        ], table="t"),
+    ]
+    q = {"source_model": {"source_name": "sprint_results",
+                          "columns": [{"name": "age", "sql": "floor(x)"}]},
+         "measures": ["floor(age:avg)"], "filters": ["winner = 1"]}
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[kb(4, [])], relevant_kb_ids=[4], winning_query=q)
+    unused = entities(findings, "UNUSED_AGENT_ENTITY")
+    assert "winner" not in unused
+    assert "stray" in unused
+
+
+async def test_time_dimension_reference_marks_used():
+    """Codex #3: a column referenced only via time_dimensions counts as used."""
+    store = base_models() + [
+        tbl_model("m", [col("event_date_norm", "cast(x as date)", type="DATE", concept=True)],
+                  table="t"),
+    ]
+    q = {"source_model": "m", "measures": ["*:count"],
+         "time_dimensions": [{"dimension": "event_date_norm", "granularity": "month"}]}
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[], relevant_kb_ids=[], winning_query=q)
+    assert "event_date_norm" not in entities(findings, "UNUSED_AGENT_ENTITY")
+
+
+async def test_order_by_agg_suffix_resolves_column():
+    """Codex #6: order by 'col:agg' strips the suffix and marks 'col' used."""
+    store = base_models() + [
+        tbl_model("m", [col("risk_score", "a + 1", kb=4)], table="t"),
+    ]
+    q = {"source_model": "m", "measures": ["*:count"],
+         "order": [{"column": "risk_score:avg", "direction": "desc"}]}
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[kb(4, [])], relevant_kb_ids=[4], winning_query=q)
+    assert "risk_score" not in entities(findings, "UNUSED_AGENT_ENTITY")
+
+
+async def test_declared_join_pairs_list_form_exempts_join_key():
+    """Codex #4: declared join with list-form join_pairs [[a,b]] exempts the source FK column."""
+    store = base_models() + [
+        SlayerModel(name="orders", data_source="db", sql_table="orders",
+                    columns=[col("oid", "oid", type="INT", pk=True),
+                             col("customer_id", "customer_id", type="INT")],  # FK, unused by query
+                    joins=[{"target_model": "customers", "join_type": "left",
+                            "join_pairs": [["customer_id", "id"]]}]),
+        tbl_model("customers", [col("id", "id", type="INT", pk=True),
+                                col("tier", "tier", kb=4)], table="customers"),
+    ]
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[kb(4, [])], relevant_kb_ids=[4],
+        winning_query={"source_model": "orders", "dimensions": ["customers.tier"]})
+    assert "customer_id" not in entities(findings, "UNUSED_AGENT_ENTITY")
+
+
 async def test_query_level_measure_agg_suffix_marks_column_used():
     """A query-level measure `"sal:avg"` (agg suffix stripped) marks `sal` used; a `"*:count"`
     marks NO column, so an unrelated unused column is still flagged."""
