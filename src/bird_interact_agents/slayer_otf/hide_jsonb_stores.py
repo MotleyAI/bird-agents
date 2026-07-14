@@ -72,6 +72,8 @@ def _extract_all(tar: tarfile.TarFile, dest: Path) -> None:
             raise tarfile.TarError(f"unsafe path in archive: {m.name!r}")
         if m.issym() or m.islnk():
             raise tarfile.TarError(f"link in archive: {m.name!r}")
+        if m.isdev():
+            raise tarfile.TarError(f"device/fifo entry in archive: {m.name!r}")
     tar.extractall(dest)  # noqa: S202 — members validated just above
 
 
