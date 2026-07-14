@@ -1,19 +1,18 @@
 #!/usr/bin/env python
 """DEV-1672: migrate existing stores so raw JSON columns are ``hidden=True``.
 
-The phase-3 encoder change hides raw JSON columns in FRESHLY-built OTF caches,
-and the ``_PHASE3_IMPL_TOKEN`` bump forces warm ``slayer_otf_cache`` to rebuild.
-This one-shot, idempotent migration covers the stores that rebuild does NOT
-touch:
+The phase-3 encoder change hides raw JSON columns only in FRESHLY-built OTF
+caches — a warm cache is not rebuilt just because the code changed. This
+one-shot, idempotent migration covers the already-built stores:
 
 * ``slayer_models_otf/<db>`` — OTF reference stores (merged, not cache-rebuilt);
 * saved ``runs/<bench>/<db>/<iid>/edited_models.tar.gz`` archives that
-  ``--apply-edited-models`` reuses (snapshotted from the OLD cache; the
-  apply-time self-heal fixes them at query time, but migrating the on-disk
+  ``--apply-edited-models`` reuses (snapshotted with visible raw columns; the
+  apply-time self-heal also hides them at query time, but migrating the on-disk
   archive makes the win visible without a run and keeps the file honest).
 
-``slayer_otf_cache/<db>`` is ALSO swept when ``--cache`` is passed, but note the
-token already rebuilds it on next use, so it is off by default.
+``slayer_otf_cache/<db>`` is swept only when ``--cache`` is passed (a warm cache
+that predates the encoder change keeps visible columns until then).
 
 All operations reuse the single ``hide_expanded_jsonb_columns`` predicate via
 ``hide_store_dir`` / ``hide_archive`` and preserve archive ``cache_fp`` meta.
@@ -70,7 +69,7 @@ async def _sweep_archives(benchmark: str, instance_ids: set[str] | None) -> int:
 
 
 async def _run(args: argparse.Namespace) -> int:
-    # Default: reference stores + archives (the two the token does not rebuild).
+    # Default: reference stores + archives (the encoder never rebuilds these).
     do_reference = args.reference or args.all or not (args.cache or args.archives)
     do_archives = args.archives or args.all or not (args.cache or args.reference)
     do_cache = args.cache or args.all
@@ -106,7 +105,7 @@ def main() -> None:
     ap.add_argument("--archives", action="store_true",
                     help="sweep saved edited_models.tar.gz under runs/ (default on)")
     ap.add_argument("--cache", action="store_true",
-                    help="also sweep slayer_otf_cache/<db> (token already rebuilds it)")
+                    help="also sweep a warm slayer_otf_cache/<db> that predates the change")
     ap.add_argument("--all", action="store_true", help="reference + cache + archives")
     ap.add_argument("--instance-ids", default=None,
                     help="comma-separated instance ids to limit the archive sweep to")

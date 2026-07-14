@@ -1,16 +1,16 @@
 """DEV-1672: propagate raw-JSON-column hiding to stores the build-time encoder
-change does NOT rebuild.
+change does NOT cover.
 
-The phase-3 encoder change hides raw JSON columns in freshly-built OTF caches,
-and the ``_PHASE3_IMPL_TOKEN`` bump forces warm caches to rebuild. But two store
-kinds are not covered by that:
+The phase-3 encoder change hides raw JSON columns in freshly-built OTF caches.
+But a warm cache is NOT rebuilt just because the code changed (the cache
+fingerprint hashes inputs, not bird-agents code), and two store kinds are never
+rebuilt by the encoder at all:
 
 * saved edited-model archives (``runs/<bench>/<db>/<iid>/edited_models.tar.gz``)
-  that ``--apply-edited-models`` reuses — they were snapshotted from the OLD
-  cache and are validated against the full ``_cache_fp.txt`` (unchanged), so
-  they are still accepted with visible raw columns;
+  that ``--apply-edited-models`` reuses — snapshotted with visible raw columns;
 * OTF reference stores (``slayer_models_otf/<db>``) that are merged, not
-  cache-rebuilt.
+  cache-rebuilt;
+* a warm ``slayer_otf_cache/<db>`` that predates the encoder change.
 
 ``hide_store_dir`` / ``hide_archive`` flip ``hidden=True`` on the already-expanded
 raw JSON columns in those stores, idempotently, reusing the single
