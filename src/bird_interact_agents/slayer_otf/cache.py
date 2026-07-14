@@ -270,6 +270,12 @@ def _impl_fingerprint_of(benchmark: object = None) -> str:
       — the persisted datasource YAML contains the connection URL; reusing a
       cache built against a different server would point the MCP server at the
       wrong host.
+    - phase-3 JSONB-expansion behaviour token (``_PHASE3_IMPL_TOKEN``, DEV-1672)
+      — bumped when the deterministic phase-3 output shape changes (e.g. raw
+      JSON columns now born ``hidden=True``). Contributes to ``_impl_fp.txt``
+      only; deliberately EXCLUDED from the full ``fingerprint_of`` /
+      ``_cache_fp.txt`` so warm caches rebuild while saved edited-model archives
+      (which stamp + validate the full fingerprint) stay valid on apply.
 
     Used by :func:`ensure_db_cache` on the reuse path: recompute, compare
     against the persisted ``_impl_fp.txt`` marker, and fall through to a

@@ -60,8 +60,19 @@ def _extract_all(tar: tarfile.TarFile, dest: Path) -> None:
     # older 3.11 interpreters (which raise on the kwarg) still work.
     if hasattr(tarfile, "data_filter"):
         tar.extractall(dest, filter="data")
-    else:  # pragma: no cover - only on pre-3.11.4 interpreters
-        tar.extractall(dest)  # noqa: S202 — archives here are operator-owned
+        return
+    # pragma: no cover - only on pre-3.11.4 interpreters. Path-traversal-safe
+    # fallback mirroring ``edited_models._safe_extractall`` (kept inline to
+    # avoid a circular import: edited_models already imports this module):
+    # reject absolute paths / ``..`` escapes / links before extracting.
+    resolved = Path(dest).resolve()
+    for m in tar.getmembers():
+        target = (resolved / m.name).resolve()
+        if target != resolved and resolved not in target.parents:
+            raise tarfile.TarError(f"unsafe path in archive: {m.name!r}")
+        if m.issym() or m.islnk():
+            raise tarfile.TarError(f"link in archive: {m.name!r}")
+    tar.extractall(dest)  # noqa: S202 — members validated just above
 
 
 async def hide_archive(archive_path) -> int:
