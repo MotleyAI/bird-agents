@@ -212,7 +212,9 @@ def _join_key_columns(model: SlayerModel) -> set[str]:
 
 
 def _measure_ref_names(parsed: Any) -> list[str]:
-    """Column/measure names referenced by a parsed formula/aggregation."""
+    """Column/measure names referenced by a parsed formula/aggregation, recursing into
+    window/scalar TransformFields (e.g. ``rank(snap_ts:max, partition_by=…)`` wraps its
+    aggregation in ``.inner``) so a column used only inside a transform still counts."""
     names: list[str] = []
     mn = getattr(parsed, "measure_name", None)
     if isinstance(mn, str):
@@ -226,6 +228,13 @@ def _measure_ref_names(parsed: Any) -> list[str]:
     extra = getattr(parsed, "measure_names", None)
     if extra:
         names.extend([n for n in extra if isinstance(n, str)])
+    inner = getattr(parsed, "inner", None)  # TransformField wraps its operand
+    if inner is not None and inner is not parsed:
+        names.extend(_measure_ref_names(inner))
+    subs = getattr(parsed, "sub_transforms", None)
+    if isinstance(subs, dict):
+        for s in subs.values():
+            names.extend(_measure_ref_names(s))
     return [n for n in names if n and n != "*"]
 
 
@@ -285,6 +294,24 @@ def _stage_reference_names(stage: dict, model: SlayerModel) -> set[str]:
     return names
 
 
+_CONST_SQL_RE = re.compile(r"^\s*('[^']*'|[+-]?[\d.]+|true|false|null)\s*$", re.I)
+
+
+def _inline_model_does_work(sm: dict) -> bool:
+    """True if an inline ModelExtension source_model does real computation worth encoding —
+    it has measures, or a column whose sql is not a pure constant literal. A constant-only
+    inline column (e.g. sql="'sprint'") is not encodable work, so it is not flagged."""
+    if sm.get("measures"):
+        return True
+    for key in ("columns", "extra_columns"):  # source_name/columns AND base_model/extra_columns forms
+        for c in sm.get(key) or []:
+            if isinstance(c, dict):
+                s = c.get("sql")
+                if s is not None and not _CONST_SQL_RE.match(str(s)):
+                    return True
+    return False
+
+
 _JSON_RE = re.compile(r"jsonb?_extract_path_text|->>|#>>", re.I)
 _CASE_RE = re.compile(r"\bcase\b", re.I)
 _ARITH_RE = re.compile(r"[+\-*/]")
@@ -303,7 +330,8 @@ def _inline_query_work(winning_query: dict | list) -> list["Finding"]:
         if not isinstance(stage, dict):
             continue
         loc = f"stage {si}" if listed else "query"
-        if isinstance(stage.get("source_model"), dict):
+        sm = stage.get("source_model")
+        if isinstance(sm, dict) and _inline_model_does_work(sm):
             out.append(Finding(
                 category="INLINE_QUERY_WORK", level="flag",
                 detail=f"{loc}: source_model is an inline model defined in the query — "
@@ -360,15 +388,24 @@ def _resolve_ref(
     name: str, root: SlayerModel, reachable: dict[str, SlayerModel]
 ) -> tuple[str, str] | None:
     """Resolve a query reference NAME to a (model, entity) that exists. Handles a
-    qualified ``Model.col`` / join-path ``a__b.col`` (target = last path segment) and a
+    qualified ``Model.col`` / join-path ``a__b.col`` / multi-hop dotted join-path
+    ``a.b.col`` (target = the deepest joined model, i.e. the last path segment) and a
     bare ``col`` (root first, then any reachable/joined model — matching SLayer's own
-    bare-name resolution). Returns None if it resolves to nothing in the store."""
+    bare-name resolution). Returns None if it resolves to nothing in the store.
+
+    SLayer expresses a multi-hop join path with DOTS (e.g.
+    ``RiskManagement.DataFlow.transfer_route`` from a ``Compliance`` root reachable via
+    ``Compliance -> RiskManagement -> DataFlow``); the intermediate hops are structural
+    and the entity lives on the LAST model segment. So the target is the final path
+    segment regardless of whether the path uses ``.`` or ``__`` separators."""
     def _has(m: SlayerModel, ent: str) -> bool:
         return m.get_column(ent) is not None or ent in _measures_by_name(m)
 
     if "." in name:
         prefix, col = name.rsplit(".", 1)
-        target = prefix.split("__")[-1]
+        # The deepest model in the path is the last segment under either separator: a
+        # dotted multi-hop path (``a.b.col`` → ``a.b`` → ``b``) or the ``a__b`` form.
+        target = prefix.split("__")[-1].split(".")[-1]
         m = reachable.get(target)
         if m is not None and _has(m, col):
             return (m.name, col)
@@ -556,6 +593,33 @@ async def check_models(
     used_models, used_entities = _query_closure(winning_query, store_by_name)
     relevant = relevant_kb_closure(kb_rows, relevant_kb_ids)
     join_keys_by_model = {m.name: _join_key_columns(m) for m in store_models}
+    # Far-side join keys: a declared join ``A.joins[*] -> target_model B`` on
+    # ``join_pairs [[a_col, b_col]]`` makes ``B.b_col`` a structural join key of B
+    # even though the join is declared on A (and B.joins is empty). Exempt it on B
+    # too — a source_queries bridge carries the fac_id/fac_key join column that the
+    # parent joins on but no column SQL references, so it would otherwise read as
+    # UNUSED scratch.
+    for m in store_models:
+        for j in m.joins or []:
+            tgt = getattr(j, "target_model", None)
+            tm = store_by_name.get(tgt) if isinstance(tgt, str) else None
+            if tm is None:
+                continue
+            tcols = {c.name for c in tm.columns or []}
+            for pair in getattr(j, "join_pairs", []) or []:
+                far = None
+                if isinstance(pair, (list, tuple)):
+                    if len(pair) >= 2 and isinstance(pair[1], str):
+                        far = pair[1]
+                else:
+                    for attr in ("target_column", "target_field", "to_column",
+                                 "right", "target", "column"):
+                        v = getattr(pair, attr, None)
+                        if isinstance(v, str):
+                            far = v
+                            break
+                if far and far in tcols:
+                    join_keys_by_model.setdefault(tgt, set()).add(far)
 
     # KBs carried by USED entities → their children_knowledge closure defines the
     # "support" KBs that a used entity legitimately depends on (for the inlined rule).
@@ -664,6 +728,14 @@ async def check_models(
         # unused entity below
         if is_pk or ename in join_keys_by_model.get(mname, set()):
             continue  # PK / join key is structural scaffolding, never "unused"
+        # A trivial-base (passthrough) column of a source_queries-backed bridge is a
+        # compiler-generated projection of the backing query, NOT independently
+        # removable scratch — you would have to rewrite the source_query, and a
+        # ratio-of-aggregates measure (e.g. ``mar = miss_appt:sum / pat_ref:count_distinct``)
+        # legitimately surfaces its component columns in the projection. Structural.
+        owner = store_by_name.get(mname)
+        if is_trivial and owner is not None and getattr(owner, "source_queries", None):
+            continue
         # inlined KB-support precedence: a derived [kb] entity whose KB supports a
         # used entity but is not referenced by name → reference it, don't delete.
         if is_derived and tag is not None and tag in support_kb_ids:

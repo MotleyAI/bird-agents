@@ -472,6 +472,60 @@ async def test_cross_model_filter_reference_marks_joined_column_used():
     assert "unused_joined" in unused  # a genuinely-unreferenced joined column IS unused
 
 
+async def test_multi_hop_dotted_join_path_reference_marks_used():
+    """A query reference using SLayer's multi-hop DOTTED join-path syntax
+    (``mid.leaf.col`` for a root reachable via root -> mid -> leaf) resolves to the
+    column on the deepest model segment and counts as USED — not a false UNUSED
+    (regression: cross_border_5, where the winning query references
+    ``RiskManagement.DataFlow.transfer_route`` from a ``Compliance`` root two hops
+    away, and the resolver only understood the ``__`` path separator)."""
+    root = SlayerModel(
+        name="compliance", data_source="db", sql_table="compliance",
+        columns=[col("comp_id", "comp_id", type="INT", pk=True),
+                 col("risk_link", "risk_link", type="INT")],
+        joins=[{"target_model": "risk", "join_type": "left",
+                "join_pairs": [["risk_link", "risk_id"]]}],
+    )
+    mid = SlayerModel(
+        name="risk", data_source="db", sql_table="risk",
+        columns=[col("risk_id", "risk_id", type="INT", pk=True),
+                 col("flow_link", "flow_link", type="INT")],
+        joins=[{"target_model": "flow", "join_type": "left",
+                "join_pairs": [["flow_link", "flow_id"]]}],
+    )
+    leaf = tbl_model("flow", [
+        col("flow_id", "flow_id", type="INT", pk=True),
+        col("route", "origin || ' -> ' || dest", type="TEXT", kb=70),   # used via dotted path
+        col("unused_leaf", "origin", type="TEXT", kb=71),               # never referenced
+    ], table="flow")
+    store = base_models() + [root, mid, leaf]
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[kb(70, []), kb(71, [])], relevant_kb_ids=[70],
+        winning_query={"source_model": "compliance",
+                       "dimensions": ["comp_id", "risk.flow.route"]},
+    )
+    unused = entities(findings, "UNUSED_AGENT_ENTITY")
+    assert "route" not in unused, "column referenced via a multi-hop dotted join path must be USED"
+    assert "unused_leaf" in unused  # a genuinely-unreferenced deep column IS still unused
+
+
+async def test_window_function_measure_ref_counts_column_used():
+    """A column used only inside a window/scalar transform (rank(col:max, partition_by=…))
+    must count as USED — the transform wraps its operand in .inner (regression: solar_panel_6,
+    where rank(snap_ts:max, partition_by=sitetie) is the only consumer of snap_ts)."""
+    store = base_models() + [
+        tbl_model("m", [col("acct", "acct", type="TEXT"),
+                        col("ts", "ts_raw + 1", kb=4)], table="t"),
+    ]
+    q = {"source_model": "m", "dimensions": ["acct"],
+         "measures": [{"formula": "rank(ts:max, partition_by=acct)", "name": "r"}]}
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[kb(4, [])], relevant_kb_ids=[4], winning_query=q)
+    assert "ts" not in entities(findings, "UNUSED_AGENT_ENTITY")
+
+
 async def test_source_queries_backed_bridge_marks_base_defs_used():
     """A source_queries-backed grain-bridge model consumes base KB defs INSIDE its
     source_queries (invisible to Column.sql traversal). When the bridge's output is used by
@@ -567,6 +621,65 @@ async def test_declared_join_pairs_list_form_exempts_join_key():
         kb_rows=[kb(4, [])], relevant_kb_ids=[4],
         winning_query={"source_model": "orders", "dimensions": ["customers.tier"]})
     assert "customer_id" not in entities(findings, "UNUSED_AGENT_ENTITY")
+
+
+async def test_far_side_bridge_join_key_not_flagged_unused():
+    """A declared join lives on the PARENT (facilities.joins -> target pfis_fac on
+    [fac_key, bridge_fac_id]); the bridge's OWN joins are empty. The far-side join
+    column on the bridge is structural scaffolding and must not read as UNUSED scratch
+    even when the winning query never projects it (regression: mental_healths_10 nested
+    bridges keyed on fac_id/fac_key on the target side of a parent-declared join)."""
+    store = base_models() + [
+        SlayerModel(
+            name="pfis_fac", data_source="db", sql_table="pfis_fac",
+            columns=[col("bridge_fac_id", "bridge_fac_id", type="INT"),  # far-side join key, non-PK, unprojected
+                     col("pfis", "raw_score", kb=6)],
+            joins=[]),
+        SlayerModel(
+            name="facilities", data_source="db", sql_table="facilities",
+            columns=[col("fac_key", "fac_key", type="TEXT", pk=True),
+                     col("rdd", "pfis_fac.pfis - 1", kb=34)],
+            joins=[{"target_model": "pfis_fac", "join_type": "left",
+                    "join_pairs": [["fac_key", "bridge_fac_id"]]}]),
+    ]
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[kb(6, []), kb(34, [6])], relevant_kb_ids=[34],
+        winning_query={"source_model": "facilities", "dimensions": ["rdd"]})
+    assert "bridge_fac_id" not in entities(findings, "UNUSED_AGENT_ENTITY")
+
+
+async def test_source_queries_bridge_trivial_component_column_not_flagged():
+    """A source_queries bridge's columns are the compiler's projection of its backing
+    query; a ratio-of-aggregates measure surfaces its COMPONENT columns (e.g.
+    miss_appt_sum, pat_ref_count_distinct for mar = miss_appt:sum / pat_ref:count_distinct).
+    Those trivial-base passthroughs are not independently-removable scratch and must not
+    read as UNUSED (regression: mental_healths_10 mar_fac2)."""
+    store = base_models() + [
+        SlayerModel(
+            name="mar_fac", data_source="db",
+            source_queries=[{"source_model": "returns",
+                             "measures": [{"name": "mar", "formula": "mar"}],
+                             "dimensions": [{"name": "fac_id", "model": "returns"}]}],
+            backing_query_sql="SELECT fac_id, miss_appt_sum, pat_ref_count_distinct, mar FROM returns",
+            columns=[col("fac_id", "fac_id", type="INT"),
+                     col("miss_appt_sum", "miss_appt_sum"),           # compiler-projected component, unreferenced
+                     col("pat_ref_count_distinct", "pat_ref_count_distinct"),
+                     col("mar", "mar")]),
+        SlayerModel(
+            name="facilities", data_source="db", sql_table="facilities",
+            columns=[col("fkey", "fkey", type="TEXT", pk=True),
+                     col("mar_col", "mar_fac.mar", kb=9)],
+            joins=[{"target_model": "mar_fac", "join_type": "left",
+                    "join_pairs": [["fkey", "fac_id"]]}]),
+    ]
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[kb(9, [])], relevant_kb_ids=[9],
+        winning_query={"source_model": "facilities", "dimensions": ["mar_col"]})
+    unused = entities(findings, "UNUSED_AGENT_ENTITY")
+    assert "miss_appt_sum" not in unused
+    assert "pat_ref_count_distinct" not in unused
 
 
 async def test_query_level_measure_agg_suffix_marks_column_used():
@@ -710,13 +823,30 @@ async def test_inline_query_work_multicol_arithmetic_filter():
 
 
 async def test_inline_query_work_inline_source_model():
+    """An inline source_model that does REAL work (a derived extra column) → flag."""
     store = base_models()
-    q = {"source_model": {"base_model": "financial_management", "extra_columns": []},
+    q = {"source_model": {"base_model": "financial_management",
+                          "extra_columns": [{"name": "fee_sum",
+                                             "sql": "shipping_fee + restocking_fee"}]},
          "measures": ["*:count"]}
     findings = await check_models(
         store_models=store, baseline_models=base_models(),
         kb_rows=[], relevant_kb_ids=[], winning_query=q)
     assert cats(findings, "INLINE_QUERY_WORK")
+
+
+async def test_inline_constant_only_source_model_not_flagged():
+    """An inline source_model whose only extra column is a pure constant literal
+    (e.g. sql="'sprint'") does no encodable work → NOT flagged (regression:
+    sports_events_18, a session_indeterminate_counts scaffold with a constant tag)."""
+    store = base_models()
+    q = {"source_model": {"base_model": "financial_management",
+                          "extra_columns": [{"name": "kind", "sql": "'sprint'"}]},
+         "measures": ["*:count"]}
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[], relevant_kb_ids=[], winning_query=q)
+    assert cats(findings, "INLINE_QUERY_WORK") == []
 
 
 async def test_simple_stored_column_filter_is_not_inline_work():
