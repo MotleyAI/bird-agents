@@ -35,7 +35,12 @@ from slayer.storage.yaml_storage import YAMLStorage
 from .. import paths
 from ..config import get_default_llm_model
 from .dates import detect_and_apply, make_anthropic_client
-from .jsonb import detect_drift, expand_one_column, jsonb_meaning_entries
+from .jsonb import (
+    detect_drift,
+    expand_one_column,
+    hide_expanded_jsonb_columns,
+    jsonb_meaning_entries,
+)
 from .overlay import apply_overlay, collect_key_columns, load_meanings
 from .portable_connection import absolute_sqlite_url
 
@@ -272,6 +277,11 @@ async def _phase3_jsonb(
                     col.meta = meta
                     jsonb_flagged = True
                 break
+        # DEV-1672: hide raw JSON columns that now own >=1 flat leaf so they
+        # vanish from inspect/search/models_summary (the leaves already cover
+        # every documented path). Reads persisted model state, so a raw col
+        # whose leaves were emitted on an EARLIER run is still hidden here.
+        hidden_flipped = hide_expanded_jsonb_columns(model)
         # Drift detection (top-level keys only, first cut). SQLite-native
         # value sampling — skipped for postgres (DEV-1648): the leaves are
         # already derived (drift-safe) and postgres ships no .sqlite file.
@@ -288,7 +298,7 @@ async def _phase3_jsonb(
                 drift_warnings.append(
                     f"{table}.{json_col}: documented key absent from sampled rows: '{key}'"
                 )
-        if added_here or changed_here or jsonb_flagged:
+        if added_here or changed_here or jsonb_flagged or hidden_flipped:
             await storage.save_model(model)
             added_total += added_here
             # DEV-1614: born-sampled leaves. Must run AFTER save_model — the
