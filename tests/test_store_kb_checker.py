@@ -649,6 +649,43 @@ async def test_far_side_bridge_join_key_not_flagged_unused():
     assert "bridge_fac_id" not in entities(findings, "UNUSED_AGENT_ENTITY")
 
 
+async def test_far_side_join_key_dotted_pair_form_exempted():
+    """Codex: SLayer supports dotted join_pairs (``["parent.fac_key", "bridge.bridge_id"]``).
+    The far-side exemption must strip the qualifier so the bridge's bridge_id column
+    (matched against a bare Column.name) is still recognised as a join key."""
+    store = base_models() + [
+        SlayerModel(
+            name="bridge", data_source="db", sql_table="bridge",
+            columns=[col("bridge_id", "bridge_id", type="INT"),  # far-side key, dotted in the pair
+                     col("val", "raw", kb=6)],
+            joins=[]),
+        SlayerModel(
+            name="parent", data_source="db", sql_table="parent",
+            columns=[col("fac_key", "fac_key", type="TEXT", pk=True),
+                     col("rdd", "bridge.val - 1", kb=34)],
+            joins=[{"target_model": "bridge", "join_type": "left",
+                    "join_pairs": [["parent.fac_key", "bridge.bridge_id"]]}]),
+    ]
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[kb(6, []), kb(34, [6])], relevant_kb_ids=[34],
+        winning_query={"source_model": "parent", "dimensions": ["rdd"]})
+    assert "bridge_id" not in entities(findings, "UNUSED_AGENT_ENTITY")
+
+
+async def test_inline_escaped_quote_constant_not_flagged():
+    """Codex: a constant string literal with an escaped quote (sql=\"'can''t'\") is still a
+    pure constant — not encodable inline work — so it must NOT flag INLINE_QUERY_WORK."""
+    store = base_models()
+    q = {"source_model": {"base_model": "financial_management",
+                          "extra_columns": [{"name": "kind", "sql": "'can''t'"}]},
+         "measures": ["*:count"]}
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[], relevant_kb_ids=[], winning_query=q)
+    assert cats(findings, "INLINE_QUERY_WORK") == []
+
+
 async def test_source_queries_bridge_trivial_component_column_not_flagged():
     """A source_queries bridge's columns are the compiler's projection of its backing
     query; a ratio-of-aggregates measure surfaces its COMPONENT columns (e.g.

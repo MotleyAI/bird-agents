@@ -179,6 +179,35 @@ def _all_column_refs(
     return refs
 
 
+_JOIN_PAIR_SRC_ATTRS = ("source_column", "source_field", "from_column", "left", "source", "column")
+_JOIN_PAIR_TGT_ATTRS = ("target_column", "target_field", "to_column", "right", "target", "column")
+
+
+def _bare_column(v: Any) -> str | None:
+    """Strip a ``model.column`` / ``alias.column`` qualifier down to the bare column
+    name (SLayer supports dotted join_pairs, e.g. ``["a.local_col", "b.remote_col"]``);
+    join keys are matched against unqualified ``Column.name``s."""
+    if not isinstance(v, str):
+        return None
+    return v.rsplit(".", 1)[-1]
+
+
+def _join_pair_names(pair: Any) -> tuple[str | None, str | None]:
+    """Source (near) and target (far) column names of one ``join_pairs`` entry —
+    list-form ``[src, tgt]`` (Codex #4) or an object exposing source/target-ish
+    attributes. Qualified names are reduced to the bare column. Either side may be
+    ``None`` when not resolvable."""
+    if isinstance(pair, (list, tuple)):
+        src = pair[0] if pair and isinstance(pair[0], str) else None
+        tgt = pair[1] if len(pair) >= 2 and isinstance(pair[1], str) else None
+        return _bare_column(src), _bare_column(tgt)
+    src = next((getattr(pair, a, None) for a in _JOIN_PAIR_SRC_ATTRS
+                if isinstance(getattr(pair, a, None), str)), None)
+    tgt = next((getattr(pair, a, None) for a in _JOIN_PAIR_TGT_ATTRS
+                if isinstance(getattr(pair, a, None), str)), None)
+    return _bare_column(src), _bare_column(tgt)
+
+
 def _join_key_columns(model: SlayerModel) -> set[str]:
     """Column names that are JOIN keys of ``model`` — from declared ``joins``
     (``join_pairs``) and, for a ``sql``/``backing_query_sql``-backed model, from
@@ -188,15 +217,9 @@ def _join_key_columns(model: SlayerModel) -> set[str]:
     names: set[str] = set()
     for j in model.joins or []:
         for pair in getattr(j, "join_pairs", []) or []:
-            if isinstance(pair, (list, tuple)):  # Codex #4: join_pairs is list[list[str]]
-                if pair and isinstance(pair[0], str):
-                    names.add(pair[0])
-                continue
-            for attr in ("source_column", "source_field", "from_column",
-                         "left", "source", "column"):
-                v = getattr(pair, attr, None)
-                if isinstance(v, str):
-                    names.add(v)
+            src, _ = _join_pair_names(pair)
+            if src is not None:
+                names.add(src)
     for sql in (getattr(model, "sql", None), getattr(model, "backing_query_sql", None)):
         if not sql:
             continue
@@ -294,7 +317,7 @@ def _stage_reference_names(stage: dict, model: SlayerModel) -> set[str]:
     return names
 
 
-_CONST_SQL_RE = re.compile(r"^\s*('[^']*'|[+-]?[\d.]+|true|false|null)\s*$", re.I)
+_CONST_SQL_RE = re.compile(r"^\s*('([^']|'')*'|[+-]?[\d.]+|true|false|null)\s*$", re.I)
 
 
 def _inline_model_does_work(sm: dict) -> bool:
@@ -607,17 +630,7 @@ async def check_models(
                 continue
             tcols = {c.name for c in tm.columns or []}
             for pair in getattr(j, "join_pairs", []) or []:
-                far = None
-                if isinstance(pair, (list, tuple)):
-                    if len(pair) >= 2 and isinstance(pair[1], str):
-                        far = pair[1]
-                else:
-                    for attr in ("target_column", "target_field", "to_column",
-                                 "right", "target", "column"):
-                        v = getattr(pair, attr, None)
-                        if isinstance(v, str):
-                            far = v
-                            break
+                _, far = _join_pair_names(pair)
                 if far and far in tcols:
                     join_keys_by_model.setdefault(tgt, set()).add(far)
 

@@ -262,6 +262,42 @@ Notes:
   `slayer_models` (custom) for the run's DBs; a missing required reference
   fails the submit before the cluster spins up. No upload-back (read-only).
 
+## Cleaning saved edited-model stores (DEV-1671)
+
+When a slayer run passes with `--save-edited-models`, the agent's on-the-fly
+edits are archived to `runs/<benchmark>/<db>/<iid>/edited_models.tar.gz` for
+reuse. A raw archive often also carries one-off query scaffolding, broken
+sibling columns, and answer-baking — so before a store is trusted for reuse it
+should be cleaned to hold **only** legitimate reusable definitions (KB-derived
+`[kb=N]` entities and reusable `[concept]` entities), with the winning query
+referencing them (a clean DAG, not inlined) and never encoding the graded
+answer itself.
+
+Two tools implement this:
+
+* **Scan** — `scripts/check_edited_model_stores.py` is a deterministic checker.
+  It reports, per store, whether every surviving agent-added entity is used by
+  the winning query, relevant KB items are materialized, entities reference
+  each other rather than inlining, and the query does no KB/concept work inline
+  that belongs in a stored column. Findings are recommendations; a store is
+  "passing" when no substantive finding remains.
+
+  ```bash
+  env -u SSH_AUTH_SOCK uv run python scripts/check_edited_model_stores.py \
+    --benchmark livesqlbench-large --instance-ids <iid>[,<iid>...]
+  ```
+
+* **Clean** — the `/clean-edited-model-store` skill
+  (`.claude/skills/clean-edited-model-store/SKILL.md`) documents the
+  reference-first → add-missing-encodings → delete-last recipe. It drives the
+  real SLayer MCP tools plus the `bird_interact_agents.slayer_otf.store_cleanup`
+  helpers (`materialize_store` / `verify_and_repack`), gating every change on an
+  identical-result check against the winning query and a checker-clean pass, so
+  a cleanup can never change what the store answers. **Never auto-delete**: a
+  `[kb]`/`[concept]` entity unused by the current query may be needed by an
+  equivalent correct query, so build the referencing query first and delete only
+  genuine scratch.
+
 ## Annotator Agent (DEV-1518)
 
 The annotator agent audits benchmark tasks and produces `TaskAnnotation` records
