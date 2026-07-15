@@ -258,6 +258,16 @@ def _measure_ref_names(parsed: Any) -> list[str]:
     if isinstance(subs, dict):
         for s in subs.values():
             names.extend(_measure_ref_names(s))
+    elif isinstance(subs, (list, tuple)):
+        # MixedArithmeticField.sub_transforms is a list[tuple] of (alias, TransformField)
+        # (e.g. `rank(snap_ts:max) / total:sum`); recurse into the non-alias members.
+        for s in subs:
+            if isinstance(s, (list, tuple)):
+                for part in s:
+                    if not isinstance(part, str):
+                        names.extend(_measure_ref_names(part))
+            else:
+                names.extend(_measure_ref_names(s))
     return [n for n in names if n and n != "*"]
 
 

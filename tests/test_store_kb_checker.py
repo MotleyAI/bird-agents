@@ -526,6 +526,26 @@ async def test_window_function_measure_ref_counts_column_used():
     assert "ts" not in entities(findings, "UNUSED_AGENT_ENTITY")
 
 
+async def test_mixed_arithmetic_transform_operand_counts_used():
+    """Codex: a mixed formula like `rank(ts:max) / tot:sum` parses to a MixedArithmeticField
+    whose sub_transforms is a list[tuple] of (alias, TransformField). A column used only inside
+    the transform (ts) must count as USED — the list-form sub_transforms must be walked, not
+    only the dict form."""
+    store = base_models() + [
+        tbl_model("m", [col("acct", "acct", type="TEXT"),
+                        col("ts", "ts_raw + 1", kb=4),
+                        col("tot", "tot_raw + 1", kb=0)], table="t"),
+    ]
+    q = {"source_model": "m", "dimensions": ["acct"],
+         "measures": [{"formula": "rank(ts:max) / tot:sum", "name": "r"}]}
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[kb(4, []), kb(0, [])], relevant_kb_ids=[4, 0], winning_query=q)
+    unused = entities(findings, "UNUSED_AGENT_ENTITY")
+    assert "ts" not in unused
+    assert "tot" not in unused
+
+
 async def test_source_queries_backed_bridge_marks_base_defs_used():
     """A source_queries-backed grain-bridge model consumes base KB defs INSIDE its
     source_queries (invisible to Column.sql traversal). When the bridge's output is used by
