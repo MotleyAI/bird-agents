@@ -467,14 +467,16 @@ def _query_closure(
             continue
         src = stage.get("source_model")
         # source_model may be a bare model name (str), a prior-stage NAME (str), or an
-        # inline ModelExtension `{"source_name": <base model>, "columns": [...]}` (dict).
-        # For the extension, the BASE model (source_name) is still a real store model the
-        # query filters/dimensions can reference (Codex #2) — resolve it as the root.
+        # inline ModelExtension dict in either shape — `{"source_name": <base>, "columns"}`
+        # or `{"base_model": <base>, "extra_columns"}`. For the extension, the BASE model is
+        # still a real store model the query filters/dimensions can reference (Codex #2), so
+        # resolve it as the root (CodeRabbit: accept both key shapes, mirroring
+        # `_inline_model_does_work`).
         if isinstance(src, str):
             root = stage_root.get(src, src)  # prior-stage name → its root; else a store model
-        elif isinstance(src, dict) and isinstance(src.get("source_name"), str):
-            base = src["source_name"]
-            root = stage_root.get(base, base)
+        elif isinstance(src, dict):
+            base = src.get("source_name") or src.get("base_model")
+            root = stage_root.get(base, base) if isinstance(base, str) else None
         else:
             root = None
         if stage.get("name") and root is not None:

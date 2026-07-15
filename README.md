@@ -293,7 +293,7 @@ Two tools implement this:
   real SLayer MCP tools plus the `bird_interact_agents.slayer_otf.store_cleanup`
   helpers (`materialize_store` / `verify_and_repack`), gating every change on an
   identical-result check against the winning query and a checker-clean pass, so
-  a cleanup can never change what the store answers. **Never auto-delete**: a
+  a cleanup cannot change the winning query's result. **Never auto-delete**: a
   `[kb]`/`[concept]` entity unused by the current query may be needed by an
   equivalent correct query, so build the referencing query first and delete only
   genuine scratch.

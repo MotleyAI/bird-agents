@@ -598,6 +598,28 @@ async def test_inline_extension_source_name_resolves_stored_refs():
     assert "stray" in unused
 
 
+async def test_inline_base_model_extension_resolves_stored_refs():
+    """CodeRabbit: the inline source_model dict has two shapes — `source_name`/`columns`
+    AND `base_model`/`extra_columns`. `_query_closure` must resolve the base model in both,
+    else a stored base-model column referenced by the query (here via a filter) is missed
+    and false-flagged UNUSED."""
+    store = base_models() + [
+        tbl_model("props", [
+            col("propref", "propref", type="INT", pk=True),
+            col("roomy", "propref + 1", concept=True),   # referenced via filter on the base model
+            col("stray", "x + 1", kb=4),                 # genuinely unused
+        ], table="props"),
+    ]
+    q = {"source_model": {"base_model": "props", "extra_columns": []},
+         "measures": ["*:count"], "filters": ["roomy > 20"]}
+    findings = await check_models(
+        store_models=store, baseline_models=base_models(),
+        kb_rows=[kb(4, [])], relevant_kb_ids=[4], winning_query=q)
+    unused = entities(findings, "UNUSED_AGENT_ENTITY")
+    assert "roomy" not in unused
+    assert "stray" in unused
+
+
 async def test_time_dimension_reference_marks_used():
     """Codex #3: a column referenced only via time_dimensions counts as used."""
     store = base_models() + [
