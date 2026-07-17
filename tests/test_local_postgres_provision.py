@@ -29,6 +29,15 @@ def _patch_steps(monkeypatch, calls: list[str]):
     monkeypatch.setattr(
         lp, "resolve_bindir", lambda: calls.append("resolve_bindir") or "BINDIR",
     )
+    # DEV-1685: provision_and_export now resolves a free port before touching
+    # the cluster. Patch the port-resolution steps deterministically (no
+    # running cluster; resolve is identity) so the order/return assertions stay
+    # pinned — resolve_port's own logic is covered in test_local_postgres_helpers.
+    monkeypatch.setattr(
+        lp, "running_cluster_port",
+        lambda bindir: calls.append("running_cluster_port") or None,
+    )
+    monkeypatch.setattr(lp, "resolve_port", lambda preferred, running: preferred)
     monkeypatch.setattr(
         lp, "resolve_dbs_for",
         lambda bench, ids: (calls.append(f"resolve:{ids}") or ["db_a"]),
@@ -58,9 +67,11 @@ def test_provision_and_export_step_order_and_return(monkeypatch):
 
     exports = lp.provision_and_export(_BENCH, ["solar_panel_6"], 5544)
 
-    # Steps run in dependency order; bindir + DB resolution precede cluster ops.
+    # Steps run in dependency order; bindir + port + DB resolution precede
+    # cluster ops.
     assert calls == [
         "resolve_bindir",
+        "running_cluster_port",
         "resolve:['solar_panel_6']",
         "ensure_cluster",
         "start_cluster",
@@ -77,6 +88,8 @@ def test_provision_and_export_step_order_and_return(monkeypatch):
 
 def test_resolve_failure_propagates(monkeypatch):
     monkeypatch.setattr(lp, "resolve_bindir", lambda: "BINDIR")
+    monkeypatch.setattr(lp, "running_cluster_port", lambda bindir: None)
+    monkeypatch.setattr(lp, "resolve_port", lambda preferred, running: preferred)
 
     def _boom(bench, ids):
         raise SystemExit("pg_dumps/ missing")

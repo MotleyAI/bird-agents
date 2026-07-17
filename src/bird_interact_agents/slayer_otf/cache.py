@@ -257,24 +257,28 @@ def _impl_fingerprint_of(benchmark: object = None) -> str:
       models. (Mitigates DEV-1508 risk #1 — Codex review of the plan.)
     - active embedding model name (or ``"none"``) — search ranks would
       degrade silently if embeddings were built against a different model.
-    - postgres connection identity (host:port:user) when benchmark is postgres
-      — the persisted datasource YAML contains the connection URL; reusing a
-      cache built against a different server would point the MCP server at the
-      wrong host.
+
+    DEV-1685: the postgres connection identity (host:port:user) is NO LONGER a
+    fingerprint component. It used to be hashed here because the persisted
+    datasource YAML baked the connection URL, so reusing a cache built against
+    a different server would dial the wrong host. That is now handled the right
+    way — the connection is RUNTIME-supplied: ``prepare_task_storage`` (and the
+    other consumers) re-anchor the postgres URL from ``BIRD_PG_*`` at task prep
+    (``portable_connection.reanchor_postgres_connection_string``), and persisted
+    references are portabilised to canonical defaults. So the cache is
+    port/host-independent — a cache built on one port is reused verbatim on
+    another, and the local provisioner's auto-port (DEV-1685) never thrashes it.
+    ``benchmark`` is retained for signature stability / callers.
 
     Used by :func:`ensure_db_cache` on the reuse path: recompute, compare
     against the persisted ``_impl_fp.txt`` marker, and fall through to a
     full rebuild on mismatch.
     """
+    del benchmark  # no longer part of the fingerprint (see DEV-1685 note above)
     h = hashlib.sha256()
     h.update(f"slayer={_slayer_version()}\n".encode())
     h.update(f"embed={_active_embedding_model_or_none()}\n".encode())
     h.update(f"embed_builder={_EMBEDDING_BUILDER_VERSION}\n".encode())
-    if getattr(benchmark, "db_backend", "sqlite") == "postgres":
-        pg_host = os.environ.get("BIRD_PG_HOST", "localhost")
-        pg_port = os.environ.get("BIRD_PG_PORT", "5432")
-        pg_user = os.environ.get("BIRD_PG_USER", "bird_interact")
-        h.update(f"pg_conn={pg_host}:{pg_port}:{pg_user}\n".encode())
     return h.hexdigest()[:16]
 
 

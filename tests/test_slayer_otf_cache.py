@@ -660,6 +660,30 @@ async def test_impl_fp_helper_changes_on_embed_model(monkeypatch):
     assert a != b
 
 
+def test_impl_fp_invariant_across_postgres_connection(monkeypatch):
+    """DEV-1685 B2: the postgres connection (host/port/user) is RUNTIME-supplied
+    and reanchored per task, so it must NOT feed the impl fingerprint. A cache
+    built on one port must be reused verbatim on another — no `pg_conn` block.
+    Guards against the auto-port change thrashing the OTF cache."""
+    class _PgBench:
+        db_backend = "postgres"
+
+    monkeypatch.setenv("BIRD_PG_HOST", "127.0.0.1")
+    monkeypatch.setenv("BIRD_PG_PORT", "5544")
+    monkeypatch.setenv("BIRD_PG_USER", "bird_interact")
+    a = otf_cache._impl_fingerprint_of(_PgBench())
+
+    monkeypatch.setenv("BIRD_PG_HOST", "otherhost")
+    monkeypatch.setenv("BIRD_PG_PORT", "5433")
+    monkeypatch.setenv("BIRD_PG_USER", "someone_else")
+    b = otf_cache._impl_fingerprint_of(_PgBench())
+    assert a == b
+
+    # And a postgres benchmark now fingerprints identically to a non-postgres
+    # one (given the same slayer/embed state) — the connection is gone entirely.
+    assert otf_cache._impl_fingerprint_of(_PgBench()) == otf_cache._impl_fingerprint_of(None)
+
+
 async def test_reuse_rebuilds_on_slayer_version_mismatch(
     fake_mini_interact_root: Path, mock_orchestrator: dict, tmp_path: Path,
     monkeypatch,
