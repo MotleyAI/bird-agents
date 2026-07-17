@@ -458,6 +458,48 @@ a shared lookup or log table — those chains are one-to-many at each step
 and silently multiply rows."""
 
 
+# DEV-1670 (raw-mode parity): two general SQL-correctness instructions that the
+# SLAYER OTF prompts carry but the raw prompts did not. RAW-ONLY — spliced into
+# the four raw prompts (v0/v1 x one-shot/a-interact), NEVER into a slayer prompt,
+# so the SHA-pinned slayer snapshots stay byte-identical. No format fields; pure
+# SQL vocabulary (no slayer terms), synthetic example identifiers.
+#   * _RAW_ROW_GRAIN_DISCIPLINE — the per-record-vs-distinct-combinations
+#     interpretation choice. Slayer states it through its auto-dedup /
+#     `distinct_dimension_values` mechanism; raw SQL must instead pick `SELECT`
+#     vs `SELECT DISTINCT` / `GROUP BY`. Raw's default (plain SELECT) keeps
+#     duplicates, so the risk is INVERTED vs slayer's dedup-by-default.
+#   * _RAW_PRECEDENCE_PARENS_CHECK — parenthesise weighted-sum comparisons, a
+#     universal SQL operator-precedence bug the slayer artifact check warns about
+#     but the raw prompts omitted.
+_RAW_ROW_GRAIN_DISCIPLINE = """\
+PER-RECORD vs DISTINCT COMBINATIONS. Decide, before writing the query,
+whether the question wants every matching RECORD or the DISTINCT
+combinations of the projected columns — a plain `SELECT` keeps duplicate
+rows, while `SELECT DISTINCT` (or a `GROUP BY` over exactly the projected
+columns) collapses rows that share the same projected tuple.
+  * Keep duplicates (plain `SELECT`) when the question asks to LIST each
+    record — e.g. "list each depot's region and tier; if two depots share
+    the same region and tier, return BOTH rows".
+  * Deduplicate (`SELECT DISTINCT`) when the question asks for the distinct
+    / unique combinations that occur (e.g. "the different region, tier
+    pairs").
+Adding `DISTINCT` / `GROUP BY` when the question wants per-record rows
+silently DROPS rows; omitting it when the question wants distinct
+combinations returns duplicate tuples the grader does not expect. Make
+this choice explicitly from the question's wording — it is not a default."""
+
+
+_RAW_PRECEDENCE_PARENS_CHECK = """\
+PARENTHESISE WEIGHTED-SUM COMPARISONS. When a `WHERE` or `HAVING`
+predicate compares a sum of weighted (or otherwise additive) terms against
+a threshold, wrap the WHOLE sum in parentheses:
+`(expr1*w1 + expr2*w2) > threshold`, never `expr1*w1 + expr2*w2 >
+threshold`. Without the outer parentheses the comparator binds only to the
+LAST additive term (`expr2*w2 > threshold`), silently changing which rows
+pass. The same holds for any additive expression on either side of a
+comparison."""
+
+
 # DEV-1550 A3: shared "SLAYER TOOLS" block — extracted byte-for-byte
 # from the previously-duplicated `_AINTERACT_SLAYER_TOOLS` /
 # `_ENCODE_CORE_HEAD` (verified identical at extraction time), with
@@ -1358,6 +1400,10 @@ QUERY DISCIPLINE:
 
 """
     + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`get_column_meaning`")
+    + "\n\n"
+    + _RAW_ROW_GRAIN_DISCIPLINE
+    + "\n\n"
+    + _RAW_PRECEDENCE_PARENS_CHECK
     + """
 
 4. TEST the final query with `execute_sql`; sanity-check the result
@@ -1492,6 +1538,10 @@ QUERY DISCIPLINE:
 
 """
     + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`get_column_meaning`")
+    + "\n\n"
+    + _RAW_ROW_GRAIN_DISCIPLINE
+    + "\n\n"
+    + _RAW_PRECEDENCE_PARENS_CHECK
     + """
 
 4. ASK AGAIN IF NEEDED. Rule 0 covers the FIRST ask; for any further

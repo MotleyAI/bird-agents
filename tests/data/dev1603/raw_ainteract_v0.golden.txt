@@ -88,6 +88,31 @@ Either way, do NOT submit a guessed literal and then blind-iterate on
 variants when it returns 0 rows: each such retry burns a whole submit
 cycle.
 
+PER-RECORD vs DISTINCT COMBINATIONS. Decide, before writing the query,
+whether the question wants every matching RECORD or the DISTINCT
+combinations of the projected columns — a plain `SELECT` keeps duplicate
+rows, while `SELECT DISTINCT` (or a `GROUP BY` over exactly the projected
+columns) collapses rows that share the same projected tuple.
+  * Keep duplicates (plain `SELECT`) when the question asks to LIST each
+    record — e.g. "list each depot's region and tier; if two depots share
+    the same region and tier, return BOTH rows".
+  * Deduplicate (`SELECT DISTINCT`) when the question asks for the distinct
+    / unique combinations that occur (e.g. "the different region, tier
+    pairs").
+Adding `DISTINCT` / `GROUP BY` when the question wants per-record rows
+silently DROPS rows; omitting it when the question wants distinct
+combinations returns duplicate tuples the grader does not expect. Make
+this choice explicitly from the question's wording — it is not a default.
+
+PARENTHESISE WEIGHTED-SUM COMPARISONS. When a `WHERE` or `HAVING`
+predicate compares a sum of weighted (or otherwise additive) terms against
+a threshold, wrap the WHOLE sum in parentheses:
+`(expr1*w1 + expr2*w2) > threshold`, never `expr1*w1 + expr2*w2 >
+threshold`. Without the outer parentheses the comparator binds only to the
+LAST additive term (`expr2*w2 > threshold`), silently changing which rows
+pass. The same holds for any additive expression on either side of a
+comparison.
+
 4. ASK AGAIN IF NEEDED. Rule 0 covers the FIRST ask; for any further
    operationalisation choice not pinned by a knowledge definition or column
    description, call `ask_user` again. If a reply lists multiple criteria

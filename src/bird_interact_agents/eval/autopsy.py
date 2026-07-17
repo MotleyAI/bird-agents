@@ -56,6 +56,9 @@ from pydantic import BaseModel
 from bird_interact_agents.agents.claude_sdk.context_budget import (
     context_window_for,
 )
+from bird_interact_agents.agents.claude_sdk.sdk_env import (
+    _subscription_auth_selected,
+)
 from bird_interact_agents.provider_registry import (
     get_provider,
     provider_api_key,
@@ -93,6 +96,12 @@ logger = logging.getLogger(__name__)
 # `rate_limit_error` 429 → eval_failed). Raise it so a transient 429 is ridden
 # out rather than recorded as an autopsy failure.
 _AUTOPSY_MAX_RETRIES = 6
+
+
+class _AutopsyAuthUnavailable(RuntimeError):
+    """Raised by ``_build_anthropic_client`` on the subscription path when no
+    OAuth token is available — signals ``run_autopsy`` to SKIP (not error) the
+    autopsy rather than billing the operator-opted-out ANTHROPIC_API_KEY."""
 
 
 def _build_anthropic_client(model: str = "") -> "anthropic.AsyncAnthropic":
@@ -159,8 +168,27 @@ def _build_anthropic_client(model: str = "") -> "anthropic.AsyncAnthropic":
         )
     oauth = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
     if oauth:
+        # DEV-1602 parity: pass api_key="" (NOT None) exactly as the registry
+        # branch above. With api_key=None the Anthropic SDK silently loads the
+        # ambient ANTHROPIC_API_KEY env var and sends BOTH an x-api-key header
+        # AND the OAuth Bearer — the server then honours the x-api-key, so a
+        # local run with an ambient (often depleted) developer key bypasses the
+        # subscription and 400s with "credit balance too low". Cloud never hit
+        # this because `_apply_actor_env_local` pops ANTHROPIC_API_KEY on the
+        # OAuth path; local runs keep it for the litellm user-sim, so the
+        # explicit empty string is what forces the OAuth token to be used.
         return anthropic.AsyncAnthropic(
-            auth_token=oauth, api_key=None, max_retries=_AUTOPSY_MAX_RETRIES,
+            auth_token=oauth, api_key="", max_retries=_AUTOPSY_MAX_RETRIES,
+        )
+    if _subscription_auth_selected():
+        # Subscription path with no usable OAuth token: DO NOT fall back to
+        # ANTHROPIC_API_KEY (mirrors sdk_env.assert_api_key_auth's no-silent-
+        # fallback rule for the agent). Raise so run_autopsy SKIPS the autopsy
+        # instead of billing the API key the operator opted out of.
+        raise _AutopsyAuthUnavailable(
+            "subscription path (BIRD_INTERACT_SUBSCRIPTION_AUTH set) but no "
+            "CLAUDE_CODE_OAUTH_TOKEN available to the autopsy worker; skipping "
+            "the autopsy rather than falling back to ANTHROPIC_API_KEY."
         )
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if api_key:
@@ -908,6 +936,18 @@ async def run_autopsy(
             AutopsyLLMOutputOneShot if is_one_shot else AutopsyLLMOutput
         )
         client = _build_anthropic_client(model)
+    except _AutopsyAuthUnavailable as exc:
+        # Intentional skip on the subscription path with no OAuth token — NOT a
+        # failure. Logged at INFO (no traceback) and recorded with a distinct
+        # `auth_unavailable` kind so it is not confused with a real API error.
+        logger.info(
+            "[autopsy] skipped on %s: %s",
+            task_annotation.instance_id, exc,
+        )
+        return _autopsy_error_result(
+            kind="auth_unavailable", exc=exc, prompt=prompt, kb_text=kb_text,
+            trajectory=trajectory, model=model,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "[autopsy] prep failed on %s",

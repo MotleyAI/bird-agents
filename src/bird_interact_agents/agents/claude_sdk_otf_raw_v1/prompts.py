@@ -14,6 +14,8 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
     _RAW_HOST_PATH_PRINCIPLE,
+    _RAW_PRECEDENCE_PARENS_CHECK,
+    _RAW_ROW_GRAIN_DISCIPLINE,
     _SAMPLE_VALUE_FILTER_MANDATE,
 )
 
@@ -89,6 +91,10 @@ RAW_OTF_ONE_SHOT = (
     + _RAW_RULES_2_3
     + "\n\n"
     + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`get_column_meaning`")
+    + "\n\n"
+    + _RAW_ROW_GRAIN_DISCIPLINE
+    + "\n\n"
+    + _RAW_PRECEDENCE_PARENS_CHECK
     + "\n\n4. TEST the final query with `execute_sql`; sanity-check the result\n"
       "   shape, row count, and values.\n\n"
     + _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT.format(

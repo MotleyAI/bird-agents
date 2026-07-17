@@ -20,6 +20,8 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _PIVOT_AFTER_REPEATED_FAILURES,
     _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
     _RAW_HOST_PATH_PRINCIPLE,
+    _RAW_PRECEDENCE_PARENS_CHECK,
+    _RAW_ROW_GRAIN_DISCIPLINE,
     _RULE_0_ASK_BEFORE,
     _SAMPLE_VALUE_FILTER_MANDATE,
     _USER_SIM_TRUST_CALIBRATION,
@@ -100,6 +102,10 @@ RAW_OTF_AINTERACT = (
     + _RAW_AINTERACT_RULES_2_3
     + "\n\n"
     + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`get_column_meaning`")
+    + "\n\n"
+    + _RAW_ROW_GRAIN_DISCIPLINE
+    + "\n\n"
+    + _RAW_PRECEDENCE_PARENS_CHECK
     + "\n\n"
     + _ASK_AGAIN_RULE.format(knowledge_source="a knowledge definition")
     + "\n\n   "

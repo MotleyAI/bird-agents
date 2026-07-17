@@ -71,13 +71,27 @@ def test_flags_default_false(monkeypatch, tmp_path):
     assert kwargs.get("apply_edited_models") is False
 
 
-def test_flags_parse_and_plumb(monkeypatch, tmp_path):
+def test_save_flag_parse_and_plumb(monkeypatch, tmp_path):
+    argv = _slayer_argv(tmp_path) + ["--save-edited-models"]
+    kwargs = _drive_main(monkeypatch, argv)
+    assert kwargs.get("save_edited_models") is True
+    assert kwargs.get("apply_edited_models") is False
+
+
+def test_apply_flag_parse_and_plumb(monkeypatch, tmp_path):
+    argv = _slayer_argv(tmp_path) + ["--apply-edited-models"]
+    kwargs = _drive_main(monkeypatch, argv)
+    assert kwargs.get("apply_edited_models") is True
+    assert kwargs.get("save_edited_models") is False
+
+
+def test_save_and_apply_flags_are_mutually_exclusive_cli(monkeypatch, tmp_path):
+    # argparse mutually-exclusive group → SystemExit (exit code 2) with both.
     argv = _slayer_argv(tmp_path) + [
         "--save-edited-models", "--apply-edited-models",
     ]
-    kwargs = _drive_main(monkeypatch, argv)
-    assert kwargs.get("save_edited_models") is True
-    assert kwargs.get("apply_edited_models") is True
+    with pytest.raises(SystemExit):
+        _drive_main(monkeypatch, argv)
 
 
 def test_flags_threaded_to_agent_constructor(monkeypatch, tmp_path):
@@ -110,13 +124,13 @@ def test_flags_threaded_to_agent_constructor(monkeypatch, tmp_path):
         framework="claude_sdk_otf_ainteract",
         slayer_setup="on-the-fly",
         save_edited_models=True,
-        apply_edited_models=True,
+        apply_edited_models=False,
         dataset="mini-interact",
         limit=0,
     ))
 
     assert captured_init.get("save_edited_models") is True
-    assert captured_init.get("apply_edited_models") is True
+    assert captured_init.get("apply_edited_models") is False
 
 
 # --------------------------------------------------------------------------
@@ -141,8 +155,19 @@ def _make_runner(**over):
     return run_module.make_runner(**kwargs)
 
 
-def test_make_runner_accepts_slayer_on_the_fly_with_flags():
-    _make_runner(save_edited_models=True, apply_edited_models=True)
+def test_make_runner_accepts_slayer_on_the_fly_with_save():
+    _make_runner(save_edited_models=True)
+
+
+def test_make_runner_accepts_slayer_on_the_fly_with_apply():
+    _make_runner(apply_edited_models=True)
+
+
+def test_make_runner_rejects_both_flags():
+    # Defensive guard in _validate_slayer_setup — catches programmatic / cloud
+    # callers even though the CLI already blocks it via the argparse group.
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        _make_runner(save_edited_models=True, apply_edited_models=True)
 
 
 def test_make_runner_rejects_flags_with_raw():

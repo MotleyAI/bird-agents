@@ -142,6 +142,19 @@ def _validate_slayer_setup(
         validate_pre_encoded_source,
     )
 
+    # --save-edited-models and --apply-edited-models are MUTUALLY EXCLUSIVE:
+    # ``apply`` reuses the task's previously-saved store as the starting point,
+    # while ``save`` overwrites it with THIS run's edits — combining them would
+    # silently clobber the store you asked to reuse. This guard is the single
+    # choke point (the CLI also declares an argparse mutually-exclusive group,
+    # but this catches programmatic / cloud-cfg callers too).
+    if save_edited_models and apply_edited_models:
+        raise ValueError(
+            "--save-edited-models and --apply-edited-models are mutually "
+            "exclusive: apply reuses a prior saved store, save overwrites it. "
+            "Pick one."
+        )
+
     # DEV-1649: --save-edited-models / --apply-edited-models persist and reuse
     # the agent's edited on-the-fly SLayer store. They only make sense for an
     # on-the-fly slayer INTERACT run: reject raw (no slayer store), pre-encoded
@@ -2637,7 +2650,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     # DEV-1649: persist / reuse the agent's edited on-the-fly SLayer store.
-    parser.add_argument(
+    # MUTUALLY EXCLUSIVE — apply reuses a saved store, save overwrites it;
+    # passing both would clobber the store you asked to reuse.
+    _edited_models_group = parser.add_mutually_exclusive_group()
+    _edited_models_group.add_argument(
         "--save-edited-models",
         action="store_true",
         help=(
@@ -2645,10 +2661,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "agent's edited per-task SLayer store as "
             "runs/<benchmark>/<db>/<iid>/edited_models.tar.gz (latest-wins). "
             "Only valid with --query-mode slayer on an on-the-fly interact "
-            "framework (not raw / --pre-encoded-models / *_otf_encode)."
+            "framework (not raw / --pre-encoded-models / *_otf_encode). "
+            "Mutually exclusive with --apply-edited-models."
         ),
     )
-    parser.add_argument(
+    _edited_models_group.add_argument(
         "--apply-edited-models",
         action="store_true",
         help=(
@@ -2656,7 +2673,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "previously-saved edited store (if present + still valid), instead "
             "of the bare deterministic cache. Falls back to the cache when no "
             "snapshot exists. Same framework/mode restrictions as "
-            "--save-edited-models."
+            "--save-edited-models. Mutually exclusive with --save-edited-models."
         ),
     )
     # DEV-1638: unify the local entrypoint — fold the postgres bootstrap the
