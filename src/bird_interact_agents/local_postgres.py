@@ -94,12 +94,22 @@ def resolve_port(preferred: int, running_port: "int | None") -> int:
       singleton, so whatever port it is already listening on wins — even over
       an explicit ``preferred`` (caller logs the adoption; migrate with
       ``--stop``). This also keeps the exported ``BIRD_PG_PORT`` stable across
-      runs, so the OTF cache is not thrashed.
+      runs, so the OTF cache is not thrashed. EXCEPTION: a running cluster on a
+      ``_RESERVED_PORTS`` port (a legacy ``.local_pg`` predating DEV-1685, since
+      we never START one there) is NOT adopted — that would collide with the
+      IAP tunnel; hard-fail and require a stop+migrate.
     * else scan ``preferred .. preferred+_PORT_SCAN_SPAN`` (inclusive, capped at
       ``_MAX_PORT``), skipping ``_RESERVED_PORTS``, and return the first free
       port. ``SystemExit`` if the whole window is occupied.
     """
     if running_port is not None:
+        if running_port in _RESERVED_PORTS:
+            raise SystemExit(
+                f"local postgres is running on reserved port {running_port} "
+                "(a legacy .local_pg cluster); it would collide with the IAP "
+                "tunnel. Stop it first so it can be restarted on a free port: "
+                "scripts/setup_local_postgres.py --stop"
+            )
         return running_port
     if not (1 <= preferred <= _MAX_PORT):
         raise SystemExit(

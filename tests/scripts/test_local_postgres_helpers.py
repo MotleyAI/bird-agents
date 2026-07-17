@@ -207,6 +207,21 @@ def test_resolve_port_adopts_running_verbatim(monkeypatch):
     assert slp.resolve_port(preferred=5432, running_port=5533) == 5533
 
 
+def test_resolve_port_rejects_reserved_running_cluster(monkeypatch):
+    """A legacy .local_pg cluster on a reserved port (:5432) must NOT be
+    adopted — that would collide with the IAP tunnel. Hard-fail instead so the
+    operator stops + migrates it (CodeRabbit, DEV-1685)."""
+    slp = setup_local_postgres
+
+    def _boom(*a, **k):
+        raise AssertionError("_port_available must not be probed on the "
+                             "reserved-running-port reject path")
+
+    monkeypatch.setattr(slp, "_port_available", _boom)
+    with pytest.raises(SystemExit, match="reserved"):
+        slp.resolve_port(preferred=5544, running_port=5432)
+
+
 def test_resolve_port_preferred_free_unchanged(monkeypatch):
     slp = setup_local_postgres
     monkeypatch.setattr(slp, "_port_available", lambda *a, **k: True)
