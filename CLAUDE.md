@@ -154,6 +154,24 @@ best-effort syncs the authoritative task annotations from GCS (opt out with
 retired — `bird-interact` IS the one local entrypoint for both sqlite and
 postgres benchmarks now.
 
+**Auto-port (DEV-1685)**: the self-hosted cluster never binds `:5432` (reserved
+for a `gcloud start-iap-tunnel` to a REMOTE PostgreSQL — the default
+`BIRD_PG_PORT=5432` reaches the remote DB through that tunnel). The target port
+(`--pg-port`/`--port`/`BIRD_PG_PORT`, default `5544`) auto-bumps to the next
+free port when it is busy or reserved, instead of dying with a cryptic `pg_ctl`
+bind error; the reason-aware `port … using free port …` line names what
+happened. An already-running `.local_pg` cluster is ADOPTED (its port wins,
+even over an explicit `--port` — `--stop` to migrate) rather than duplicated,
+so the chosen port stays stable across runs. The resolved port flows into
+`BIRD_PG_*` and `.local_pg/env.sh`. The port resolver
+(`local_postgres.resolve_port` / `running_cluster_port` / `_port_available`) is
+pinned by `tests/scripts/test_local_postgres_helpers.py`. Because the postgres
+connection is now RUNTIME-reanchored from `BIRD_PG_*` at task prep
+(`slayer_pipeline.portable_connection.reanchor_postgres_connection_string`) and
+persisted references are portabilised to canonical defaults, the OTF cache
+fingerprint no longer embeds `host:port:user` — a port change never forces a
+cache rebuild.
+
 ```bash
 env -u SSH_AUTH_SOCK uv run bird-interact \
   --dataset livesqlbench-large \

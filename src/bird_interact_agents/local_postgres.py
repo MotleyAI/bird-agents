@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -55,10 +56,84 @@ _REQUIRED_ROLES = (PG_USER, "root")
 # that is ALREADY running only picks up the new value after `--stop`/`--recreate`.
 PG_MAX_CONNECTIONS = 200
 
+# DEV-1685: :5432 is reserved for the `gcloud start-iap-tunnel` mapping to a
+# REMOTE PostgreSQL (the benchmark's default BIRD_PG_PORT=5432 reaches the
+# remote DB through that tunnel). Our self-hosted cluster must NEVER bind it,
+# even when free. When the target port is occupied, scan a bounded window for
+# the next free port instead of dying with a cryptic pg_ctl bind error.
+_RESERVED_PORTS = frozenset({5432})
+_PORT_SCAN_SPAN = 64  # scan preferred .. preferred+_PORT_SCAN_SPAN (inclusive)
+_MAX_PORT = 65535
+
 
 # --------------------------------------------------------------------------- #
 # Pure helpers (unit-testable — no subprocess / filesystem side effects)
 # --------------------------------------------------------------------------- #
+def _port_available(port: int, host: str = "127.0.0.1") -> bool:
+    """True iff a TCP listener can bind ``(host, port)`` right now.
+
+    Plain bind-probe with NO ``SO_REUSEADDR`` so an active listener (the IAP
+    tunnel, a stray process, or a foreign postgres) reads as unavailable. This
+    is inherently TOCTOU — a port free at probe time can be taken before
+    ``pg_ctl`` binds it — so ``start_cluster`` still surfaces a clear error on
+    the losing race (the window is narrow and this only degrades to the old
+    failure mode, never to a silent wrong-port).
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+            return True
+        except OSError:
+            return False
+
+
+def resolve_port(preferred: int, running_port: "int | None") -> int:
+    """The port to provision/connect on (DEV-1685).
+
+    * ``running_port`` not None → adopt it verbatim: the private cluster is a
+      singleton, so whatever port it is already listening on wins — even over
+      an explicit ``preferred`` (caller logs the adoption; migrate with
+      ``--stop``). This also keeps the exported ``BIRD_PG_PORT`` stable across
+      runs, so the OTF cache is not thrashed.
+    * else scan ``preferred .. preferred+_PORT_SCAN_SPAN`` (inclusive, capped at
+      ``_MAX_PORT``), skipping ``_RESERVED_PORTS``, and return the first free
+      port. ``SystemExit`` if the whole window is occupied.
+    """
+    if running_port is not None:
+        return running_port
+    if not (1 <= preferred <= _MAX_PORT):
+        raise SystemExit(
+            f"invalid preferred postgres port {preferred}; must be "
+            f"1..{_MAX_PORT}. Set --pg-port / BIRD_PG_PORT to a valid port."
+        )
+    last = min(preferred + _PORT_SCAN_SPAN, _MAX_PORT)
+    for port in range(preferred, last + 1):
+        if port in _RESERVED_PORTS:
+            continue
+        if _port_available(port):
+            return port
+    raise SystemExit(
+        f"no free port in {preferred}..{last} "
+        f"(reserved: {sorted(_RESERVED_PORTS)}); free one up or set "
+        f"--pg-port / BIRD_PG_PORT to an open port."
+    )
+
+
+def _port_change_note(
+    requested: int, resolved: int, running_port: "int | None"
+) -> "str | None":
+    """A human-readable, reason-aware log line when the resolved port differs
+    from the requested one, else ``None``. Never names the tunnel."""
+    if resolved == requested:
+        return None
+    if running_port is not None:
+        return (
+            f"adopting the already-running local postgres cluster on port "
+            f"{resolved} (requested {requested}); stop it (--stop) to migrate."
+        )
+    if requested in _RESERVED_PORTS:
+        return f"port {requested} is reserved; using free port {resolved}"
+    return f"port {requested} unavailable (busy); using free port {resolved}"
 def cluster_dir() -> Path:
     return paths.main_checkout_root() / ".local_pg"
 
@@ -205,11 +280,35 @@ def _running_port(data: Path) -> "int | None":
     return None
 
 
+def running_cluster_port(bindir: Path) -> "int | None":
+    """The port our ``.local_pg`` cluster is CURRENTLY listening on, or ``None``
+    if it is not running (DEV-1685).
+
+    Gates on ``pg_ctl status`` so a stale ``postmaster.pid`` left by a crashed
+    cluster reports ``None`` (not the dead port). Used to adopt an
+    already-running singleton instead of spawning a second cluster.
+    """
+    data = _paths()["data"]
+    if not _server_running(bindir, data):
+        return None
+    return _running_port(data)
+
+
 def start_cluster(bindir: Path, port: int) -> None:
     p = _paths()
     if _server_running(bindir, p["data"]):
         actual = _running_port(p["data"])
-        if actual is not None and actual != port:
+        if actual is None:
+            # Running but its port is unreadable (missing/malformed
+            # postmaster.pid line 4). Returning here would export
+            # BIRD_PG_PORT=<port> while the server listens on an unknown port,
+            # so every downstream connection could fail silently.
+            raise SystemExit(
+                "local postgres appears to be running but its port could not "
+                f"be read from {p['data'] / 'postmaster.pid'}. Stop it first: "
+                "scripts/setup_local_postgres.py --stop"
+            )
+        if actual != port:
             # A cluster is up on a different port than requested; returning
             # here would export BIRD_PG_PORT=<port> while the server listens on
             # <actual>, so every downstream psql/agent connection would fail.
@@ -219,13 +318,24 @@ def start_cluster(bindir: Path, port: int) -> None:
                 f"scripts/setup_local_postgres.py --stop"
             )
         return
-    subprocess.run(
-        [str(bindir / "pg_ctl"), "-D", str(p["data"]), "-l", str(p["log"]),
-         "-o", (f"-p {port} -k {p['sock']} -c listen_addresses=127.0.0.1 "
-                f"-c max_connections={PG_MAX_CONNECTIONS}"),
-         "-w", "start"],
-        check=True, capture_output=True,
-    )
+    try:
+        subprocess.run(
+            [str(bindir / "pg_ctl"), "-D", str(p["data"]), "-l", str(p["log"]),
+             "-o", (f"-p {port} -k {p['sock']} -c listen_addresses=127.0.0.1 "
+                    f"-c max_connections={PG_MAX_CONNECTIONS}"),
+             "-w", "start"],
+            check=True, capture_output=True, text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        # Most likely a TOCTOU race: the port we probed free was taken before
+        # pg_ctl bound it. Surface a clear message (requested port + log path)
+        # instead of a raw CalledProcessError traceback.
+        raise SystemExit(
+            f"failed to start local postgres on port {port} "
+            f"(data={p['data']}); the port may have been taken after it was "
+            f"probed free. See {p['log']} for the postmaster's bind error.\n"
+            f"{(exc.stderr or '').strip()}"
+        ) from exc
 
 
 def stop_cluster(bindir: Path) -> None:
@@ -344,6 +454,12 @@ def provision_and_export(
     the connection env becomes visible.
     """
     bindir = resolve_bindir()
+    running = running_cluster_port(bindir)
+    resolved = resolve_port(port, running)
+    note = _port_change_note(port, resolved, running)
+    if note:
+        print(f"[bird-interact] {note}", file=sys.stderr)
+    port = resolved
     dbs = resolve_dbs_for(benchmark, instance_ids)
     print(f"[bird-interact] provisioning {len(dbs)} DB(s) for {benchmark} "
           f"on port {port}", file=sys.stderr)
