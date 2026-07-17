@@ -30,13 +30,12 @@ BENCHMARK="${1:?Usage: $0 <benchmark-name>  e.g. livesqlbench-base-lite}"
 # Postgres settings (user-space, no sudo)
 # ---------------------------------------------------------------------------
 PGDATA="${PGDATA:-$HOME/.local/share/bird-agents/pgdata}"
-# IMPORTANT: the OTF cache implementation fingerprint embeds
-# BIRD_PG_HOST:BIRD_PG_PORT:BIRD_PG_USER (cache.py _impl_fp.txt).
-# Cloud workers default to localhost:5432:bird_interact — so this script
-# defaults to the same port/user so pre-built caches are reused on cloud
-# without a fingerprint-mismatch rebuild.  If port 5432 conflicts with a
-# system postgres on your dev machine, set PGPORT=5435 (or any free port)
-# but be aware that caches built that way will NOT be reused by cloud workers.
+# NOTE (DEV-1685): the OTF cache impl fingerprint NO LONGER embeds the postgres
+# connection (host:port:user) — the connection is runtime-reanchored from
+# BIRD_PG_* and persisted references are portabilised to canonical defaults, so
+# the port you build on here does not affect cache reuse across machines/cloud.
+# The 5432 default below is now only about which local server this script talks
+# to; set PGPORT to any free port if 5432 is taken (e.g. by the IAP tunnel).
 PGPORT="${PGPORT:-5432}"
 PGHOST="${PGHOST:-localhost}"
 ADMIN_USER="postgres"  # role created by initdb; used only for admin operations

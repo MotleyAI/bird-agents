@@ -493,3 +493,23 @@ def test_aggregate_partitions_correctly(isolated_tree):
     assert agg["p_counts"]["l1_correct_original"] == 2
     assert agg["p_counts"]["l3_audited_primary"] == 1
     assert agg["p_counts"]["l11_fail"] == 1
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        # Local runs: underscore-delimited, mode is the TRAILING slug. These
+        # were silently dropped by the old ``-(raw|slayer)-`` regex (the bug).
+        ("20260711t1044_claude_sdk_raw.json", "raw"),
+        ("20260714t1224_claude_sdk_slayer.json", "slayer"),
+        ("local_20260702t1345_claude_sdk_raw.json", "raw"),
+        ("20260714t1224_claude_sdk_slayer.trajectory.json", "slayer"),
+        # Cloud runs: hyphen-delimited, mode mid-name.
+        ("20260601-pydanti-raw-abc123.json", "raw"),
+        ("20260601-pydanti-slayer-abc123.json", "slayer"),
+        # No mode slot.
+        ("something_unrelated.json", None),
+    ],
+)
+def test_mode_from_filename_handles_local_and_cloud_formats(name, expected):
+    assert cascade_for_combo.mode_from_filename(name) == expected

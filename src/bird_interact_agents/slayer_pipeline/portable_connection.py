@@ -28,9 +28,65 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import quote, urlsplit, urlunsplit
 
 _SQLITE_PREFIX_ABSOLUTE = "sqlite:////"
 _SQLITE_PREFIX_RELATIVE = "sqlite:///"
+
+# DEV-1685: postgres connection identity (host:port:user) is RUNTIME-supplied,
+# never cached. Both URL scheme spellings are handled. Canonical defaults match
+# ``db_connection.py`` (and the cloud worker's bundled server), so a persisted
+# reference is machine-independent and an env-less reanchor still points at the
+# right place.
+_PG_SCHEMES = ("postgresql://", "postgres://")
+_PG_DEFAULT_HOST = "localhost"
+_PG_DEFAULT_PORT = "5432"
+_PG_DEFAULT_USER = "bird_interact"
+
+
+def _rewrite_pg_netloc(
+    connection_string: str, host: str, port: str, user: str
+) -> str:
+    """Rewrite the ``user@host:port`` netloc of a ``postgres(ql)://`` URL,
+    PRESERVING the database name (path) and any query, and DROPPING any
+    password (the password rides ``PGPASSWORD``, never the URL — it must not
+    leak into a persisted YAML or a subprocess argv)."""
+    parts = urlsplit(connection_string)
+    netloc = f"{quote(user, safe='')}@{host}:{port}"
+    return urlunsplit(
+        (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
+    )
+
+
+def reanchor_postgres_connection_string(connection_string: str) -> str:
+    """Re-anchor a postgres ``connection_string`` to the LIVE cluster from
+    ``BIRD_PG_HOST``/``BIRD_PG_PORT``/``BIRD_PG_USER`` (DEV-1685).
+
+    UNCONDITIONAL: when the env is unset it falls back to the canonical
+    defaults, because the cloud worker does NOT forward ``BIRD_PG_*`` for
+    postgres benchmarks (it runs a bundled server on ``localhost:5432``) — so a
+    laptop-built cache that baked a non-5432 port MUST still re-anchor to the
+    default, not survive stale. Non-postgres / empty strings pass through.
+    """
+    if not connection_string or not connection_string.startswith(_PG_SCHEMES):
+        return connection_string
+    host = os.environ.get("BIRD_PG_HOST", _PG_DEFAULT_HOST)
+    port = os.environ.get("BIRD_PG_PORT", _PG_DEFAULT_PORT)
+    user = os.environ.get("BIRD_PG_USER", _PG_DEFAULT_USER)
+    return _rewrite_pg_netloc(connection_string, host, port, user)
+
+
+def portabilise_postgres_connection_string(connection_string: str) -> str:
+    """Neutralise a postgres ``connection_string`` to canonical, env-INDEPENDENT
+    defaults so a committed OTF reference (and its fingerprint) is identical on
+    every machine (DEV-1685 B1b — the postgres analogue of stripping an
+    absolute sqlite path to the relative form). Non-postgres / empty strings
+    pass through."""
+    if not connection_string or not connection_string.startswith(_PG_SCHEMES):
+        return connection_string
+    return _rewrite_pg_netloc(
+        connection_string, _PG_DEFAULT_HOST, _PG_DEFAULT_PORT, _PG_DEFAULT_USER
+    )
 
 
 def absolute_sqlite_url(path: Path | str) -> str:
@@ -55,6 +111,8 @@ def to_portable_connection_string(
     """
     if not connection_string:
         return connection_string
+    if connection_string.startswith(_PG_SCHEMES):
+        return portabilise_postgres_connection_string(connection_string)
     # Tolerate the malformed 5-slash form that some pipeline runs
     # emitted (``sqlite://///abs``) by normalising any run of 4+
     # slashes after ``sqlite:`` down to exactly 4.
@@ -170,7 +228,14 @@ def reanchor_connection_string(
 
     A ``None`` / empty / non-sqlite connection_string is returned
     unchanged so non-sqlite datasources pass through untouched.
+
+    DEV-1685: a ``postgres(ql)://`` connection_string is re-anchored to the
+    live cluster from ``BIRD_PG_*`` (this is the single choke point that
+    ``prepare_task_storage`` / ``edited_models`` / ``reference_build`` all
+    route through). ``mini_interact_root`` / ``db_root`` are irrelevant there.
     """
+    if connection_string and connection_string.startswith(_PG_SCHEMES):
+        return reanchor_postgres_connection_string(connection_string)
     if not connection_string or not connection_string.startswith("sqlite:"):
         return connection_string
     # Count leading slashes after ``sqlite:`` — 3 = relative, 4+ = absolute

@@ -20,7 +20,7 @@ from typing import Callable, Iterable, Optional
 
 from pydantic import BaseModel
 
-from slayer.core.models import Column, DataType
+from slayer.core.models import Column, DataType, SlayerModel
 
 from .casts import pg_nullsafe_cast, quote_ident
 from .pg_sampling import detect_date_format, detect_fraction_pg_token
@@ -201,6 +201,39 @@ def leaf_to_column(leaf: LeafInfo, json_col: str) -> Column:
         hidden=False,
         meta=meta,
     )
+
+
+def hide_expanded_jsonb_columns(model: SlayerModel) -> int:
+    """DEV-1672: hide raw JSON model columns that have been expanded into leaves.
+
+    A raw JSON column (``meta.jsonb is True``) adds no query capability once its
+    documented paths are flat leaf columns — every leaf's ``sql``
+    (``JSON_EXTRACT`` / ``jsonb_extract_path_text``) resolves to the underlying
+    TABLE column, not the model column. Leaving it visible only tempts the query
+    agent to re-extract a leaf inline (a submit-verify thrash driver). Set
+    ``hidden=True`` on any such column that owns AT LEAST ONE derived leaf on
+    the same model (a column whose ``meta.derived_from.json_col`` matches its
+    name, case-insensitively). The decision reads PERSISTED model state, not a
+    "touched this run" set. A documented JSON column with no leaves stays
+    visible so its data remains discoverable. Idempotent; returns the count of
+    columns newly hidden.
+    """
+    # Raw JSON column names that own >=1 derived leaf on this model.
+    owned: set[str] = set()
+    for col in model.columns:
+        src = ((col.meta or {}).get("derived_from") or {}).get("json_col")
+        if src:
+            owned.add(str(src).lower())
+    flipped = 0
+    for col in model.columns:
+        if not (col.meta or {}).get("jsonb"):
+            continue
+        if col.name.lower() not in owned:
+            continue
+        if not col.hidden:
+            col.hidden = True
+            flipped += 1
+    return flipped
 
 
 def expand_one_column(

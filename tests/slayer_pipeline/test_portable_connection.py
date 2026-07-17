@@ -8,6 +8,7 @@ to an absolute path anchored at the supplied root (overridable via
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,9 @@ import sqlite3
 from bird_interact_agents.slayer_pipeline.portable_connection import (
     absolute_sqlite_url,
     expected_connection_string,
+    portabilise_postgres_connection_string,
     reanchor_connection_string,
+    reanchor_postgres_connection_string,
     resolve_committed_connection_string,
     to_portable_connection_string,
 )
@@ -101,13 +104,143 @@ def test_to_portable_leaves_outside_paths_alone(tmp_path):
     assert to_portable_connection_string(abs_uri, root) == abs_uri
 
 
-def test_to_portable_passthrough_for_non_sqlite():
-    """Postgres / other backends are returned unchanged."""
+def test_to_portable_rewrites_postgres_to_canonical():
+    """DEV-1685 B1b: a persisted postgres datasource must be portabilised to
+    canonical defaults so a committed OTF reference (and its fingerprint) is
+    machine-independent — the runtime reanchor supplies the real connection.
+    Non-postgres, non-sqlite noise (empty) is still returned unchanged."""
     assert (
-        to_portable_connection_string("postgresql://user@host/db", Path("/tmp"))
-        == "postgresql://user@host/db"
+        to_portable_connection_string(
+            "postgresql://someuser@somehost:5544/alien", Path("/tmp")
+        )
+        == "postgresql://bird_interact@localhost:5432/alien"
     )
     assert to_portable_connection_string("", Path("/tmp")) == ""
+
+
+# ---------------------------------------------------------------------------
+# DEV-1685: postgres connection is RUNTIME-supplied, never cached. The
+# persisted datasource is portabilised to canonical defaults; at task-prep it
+# is reanchored to the live cluster from BIRD_PG_* (or defaults when unset —
+# the cloud path, which does not forward BIRD_PG_* for postgres benchmarks).
+# ---------------------------------------------------------------------------
+
+
+def test_reanchor_postgres_rewrites_host_port_user_from_env(monkeypatch):
+    monkeypatch.setenv("BIRD_PG_HOST", "127.0.0.1")
+    monkeypatch.setenv("BIRD_PG_PORT", "5433")
+    monkeypatch.setenv("BIRD_PG_USER", "bird_interact")
+    out = reanchor_postgres_connection_string(
+        "postgresql://staleuser@stalehost:5544/alien"
+    )
+    assert out == "postgresql://bird_interact@127.0.0.1:5433/alien"
+
+
+def test_reanchor_postgres_defaults_when_env_unset(monkeypatch):
+    """Cloud does NOT forward BIRD_PG_* for postgres benchmarks; the worker's
+    bundled server lives at localhost:5432. So an unset env must reanchor a
+    laptop-baked non-5432 URL to the canonical default, NOT leave it stale."""
+    for v in ("BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER"):
+        monkeypatch.delenv(v, raising=False)
+    out = reanchor_postgres_connection_string(
+        "postgresql://someone@127.0.0.1:5544/households"
+    )
+    assert out == "postgresql://bird_interact@localhost:5432/households"
+
+
+def test_reanchor_postgres_preserves_db_name_and_query(monkeypatch):
+    monkeypatch.setenv("BIRD_PG_HOST", "localhost")
+    monkeypatch.setenv("BIRD_PG_PORT", "5544")
+    monkeypatch.setenv("BIRD_PG_USER", "bird_interact")
+    out = reanchor_postgres_connection_string(
+        "postgresql://u@h:1/solar_panel?sslmode=disable"
+    )
+    assert out == "postgresql://bird_interact@localhost:5544/solar_panel?sslmode=disable"
+
+
+def test_reanchor_postgres_drops_password(monkeypatch):
+    """The persisted URL is passwordless (password rides PGPASSWORD); a stray
+    password in the input must not survive the rewrite into a YAML/argv."""
+    monkeypatch.setenv("BIRD_PG_HOST", "localhost")
+    monkeypatch.setenv("BIRD_PG_PORT", "5432")
+    monkeypatch.setenv("BIRD_PG_USER", "bird_interact")
+    out = reanchor_postgres_connection_string(
+        "postgresql://u:secretpw@h:5544/alien"
+    )
+    assert "secretpw" not in out
+    assert out == "postgresql://bird_interact@localhost:5432/alien"
+
+
+@pytest.mark.parametrize("noise", ["", "sqlite:///x/x.sqlite", "yaml:///x"])
+def test_reanchor_postgres_passthrough_for_non_postgres(noise):
+    assert reanchor_postgres_connection_string(noise) == noise
+
+
+def test_portabilise_postgres_to_canonical_defaults():
+    assert (
+        portabilise_postgres_connection_string(
+            "postgresql://someuser@somehost:5544/alien?x=1"
+        )
+        == "postgresql://bird_interact@localhost:5432/alien?x=1"
+    )
+
+
+def test_portabilise_postgres_ignores_env(monkeypatch):
+    """Portabilise is env-INDEPENDENT (canonical), unlike reanchor — the
+    committed form must be identical on every machine."""
+    monkeypatch.setenv("BIRD_PG_HOST", "somewhere")
+    monkeypatch.setenv("BIRD_PG_PORT", "9999")
+    monkeypatch.setenv("BIRD_PG_USER", "other")
+    assert (
+        portabilise_postgres_connection_string("postgresql://a@b:1/db")
+        == "postgresql://bird_interact@localhost:5432/db"
+    )
+
+
+def test_reanchor_connection_string_dispatches_postgres(monkeypatch):
+    """The shared choke point routes postgres URLs through the postgres
+    reanchor (so prepare_task_storage / edited_models / reference_build all
+    get it), while sqlite behaviour is untouched."""
+    monkeypatch.setenv("BIRD_PG_HOST", "127.0.0.1")
+    monkeypatch.setenv("BIRD_PG_PORT", "5433")
+    monkeypatch.setenv("BIRD_PG_USER", "bird_interact")
+    out = reanchor_connection_string(
+        "postgresql://stale@stale:5544/alien", "alien", Path("/tmp"),
+    )
+    assert out == "postgresql://bird_interact@127.0.0.1:5433/alien"
+
+
+def test_short_postgres_scheme_is_also_handled(monkeypatch):
+    """The plan requires BOTH postgres:// and postgresql:// to dispatch. The
+    scheme is preserved on rewrite."""
+    monkeypatch.setenv("BIRD_PG_HOST", "127.0.0.1")
+    monkeypatch.setenv("BIRD_PG_PORT", "5433")
+    monkeypatch.setenv("BIRD_PG_USER", "bird_interact")
+    # reanchor (env-driven) preserves the postgres:// scheme.
+    assert reanchor_postgres_connection_string(
+        "postgres://stale@stale:5544/alien"
+    ) == "postgres://bird_interact@127.0.0.1:5433/alien"
+    # portabilise (canonical) preserves the postgres:// scheme.
+    assert portabilise_postgres_connection_string(
+        "postgres://a@b:1/alien"
+    ) == "postgres://bird_interact@localhost:5432/alien"
+    # to_portable dispatches the short scheme too.
+    assert to_portable_connection_string(
+        "postgres://a@b:1/alien", Path("/tmp")
+    ) == "postgres://bird_interact@localhost:5432/alien"
+    # reanchor_connection_string dispatches the short scheme too.
+    assert reanchor_connection_string(
+        "postgres://a@b:1/alien", "alien", Path("/tmp"),
+    ) == "postgres://bird_interact@127.0.0.1:5433/alien"
+
+
+@pytest.mark.parametrize("scheme", ["postgresql", "postgres"])
+def test_resolve_committed_leaves_postgres_untouched(scheme):
+    """resolve_committed_connection_string is the sqlite RELATIVE-form resolver
+    only; postgres (no relative form) still passes through unchanged after
+    DEV-1685 — only reanchor_connection_string / to_portable dispatch it."""
+    url = f"{scheme}://u@h:5544/alien"
+    assert resolve_committed_connection_string(url, Path("/tmp")) == url
 
 
 def test_resolve_committed_uses_supplied_root(tmp_path, monkeypatch):
@@ -230,7 +363,11 @@ def test_reanchor_honors_env_over_supplied_root(tmp_path, monkeypatch):
     assert out == want
 
 
-@pytest.mark.parametrize("noise", ["", "postgresql://x", "yaml:///x"])
+# NB: "postgresql://…" is deliberately NOT in this list any more — DEV-1685
+# routes postgres URLs through the postgres reanchor (see
+# test_reanchor_connection_string_dispatches_postgres). Only genuinely
+# unrecognised / empty forms pass through unchanged.
+@pytest.mark.parametrize("noise", ["", "yaml:///x"])
 def test_reanchor_passthrough_for_non_sqlite(noise, tmp_path):
     assert reanchor_connection_string(noise, "credit", tmp_path) == noise
 

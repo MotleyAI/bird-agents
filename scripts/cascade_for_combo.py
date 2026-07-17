@@ -51,12 +51,19 @@ from bird_interact_agents.eval.cascading_report import (
 logger = logging.getLogger("cascade_for_combo")
 
 
-_FILE_MODE_RE = re.compile(r"-(raw|slayer)-")
+# The mode slot is delimited by ``-`` OR ``_`` and may sit mid-name (cloud
+# ``<ts>-<framework>-<mode>-<hash>.json``) OR at the very end (local
+# ``<ts>_<framework>_<mode>.json`` / ``local_<ts>_<framework>_<mode>.json``).
+# Anchor on a leading ``-``/``_`` and a trailing ``-``/``_``/``.`` or end so the
+# trailing-slug local form is matched too (the old ``-(raw|slayer)-`` missed it).
+_FILE_MODE_RE = re.compile(r"[-_](raw|slayer)(?=[-_.]|$)")
 
 
 def mode_from_filename(name: str) -> Optional[str]:
-    """Return ``"raw"`` / ``"slayer"`` / ``None`` from the slot token in the
-    cloud-run filename (``<ts>-<framework>-<mode>-<hash>.json``)."""
+    """Return ``"raw"`` / ``"slayer"`` / ``None`` from the mode slot token in a
+    run filename — BOTH the cloud form (``<ts>-<framework>-<mode>-<hash>.json``)
+    and the local form (``<ts>_<framework>_<mode>.json``, optionally
+    ``local_``-prefixed)."""
     m = _FILE_MODE_RE.search(name)
     return m.group(1) if m else None
 

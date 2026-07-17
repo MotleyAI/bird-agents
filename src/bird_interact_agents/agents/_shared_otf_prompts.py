@@ -684,11 +684,32 @@ it, and check spelling. SLayer rejects an unknown name outright rather than
 guessing."""
 
 
+# DEV-1672: the stern "don't re-derive an already-encoded quantity" rule. Only
+# spliced into the READONLY branch (``--apply-edited-models --readonly-mode`` /
+# any fixed-models run) — a fresh-encode run legitimately writes inline formulas
+# to CREATE columns, so this must not reach it. All examples synthetic.
+_NO_REDERIVE_READONLY = """\
+DO NOT RE-DERIVE AN ALREADY-ENCODED QUANTITY. The models here are FIXED: every
+KB / concept quantity this task needs is ALREADY materialised as a named column
+or measure (tagged `[kb=N]` / `[concept]`). Before you write ANY inline formula
+in a query — a weighted sum, a JSON-path extraction, a CASE mapping, date math,
+or a threshold on a derived value — `search` / `inspect` for the entity that
+already encodes it. If a named column / measure exists, you MUST reference it BY
+NAME; never re-compute its logic inline. Re-deriving an available definition
+wastes turns and risks a wrong term — one mistake fails grading and forces a
+submit-verify retry loop. Inline computation is ONLY for a quantity that is
+genuinely NOT encoded (e.g. a deferred KB with no materialised entity).
+
+The conceptual help shows adding ad-hoc columns to a query via `ModelExtension`.
+In THIS fixed-models run, use `ModelExtension` ONLY for a genuinely-unencoded
+quantity — never to re-create a column / measure that already exists. When in
+doubt, discover the encoded entity first, then reference it by name."""
+
+
 def _slayer_define_ref(*, readonly_mode: bool) -> str:
-    return (
-        _DEFINE_BEFORE_REFERENCE_READONLY if readonly_mode
-        else _DEFINE_BEFORE_REFERENCE
-    )
+    if readonly_mode:
+        return _DEFINE_BEFORE_REFERENCE_READONLY + "\n\n" + _NO_REDERIVE_READONLY
+    return _DEFINE_BEFORE_REFERENCE
 
 
 # ---------------------------------------------------------------------------
