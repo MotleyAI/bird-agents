@@ -14,6 +14,8 @@ claude_sdk-only, mirroring the cloud CLI policy.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from bird_interact_agents import run
@@ -32,7 +34,14 @@ def _err(msg: str):
 
 @pytest.fixture(autouse=True)
 def _clear_signal(monkeypatch):
+    # Clear before AND after: several tests call the production
+    # ``_apply_subscription_auth_env`` which sets BIRD_INTERACT_SUBSCRIPTION_AUTH
+    # directly via ``os.environ`` (not through monkeypatch), so without an
+    # explicit teardown the "1" leaks into every later test and hijacks their
+    # claude_sdk auth path.
     monkeypatch.delenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", raising=False)
+    yield
+    os.environ.pop("BIRD_INTERACT_SUBSCRIPTION_AUTH", None)
 
 
 def test_subscription_on_sets_signal(monkeypatch):
